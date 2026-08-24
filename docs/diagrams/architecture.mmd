@@ -200,6 +200,8 @@
 %% after timeout; used by expedite_cli and babysitter_check.
 %% BL-1020 (2026-08-24): mono-router-active-role is topology only on router
 %% packs; standing packs ignore leftovers as stale (attach / resolve-resident).
+%% BL-1084 (2026-08-24): ready_for_next supersede guard — .swarmforge/superseded/
+%% markers stop every stage, not only the role a note reached.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

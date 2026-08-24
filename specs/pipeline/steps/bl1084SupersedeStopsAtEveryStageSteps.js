@@ -18,6 +18,13 @@ const FIXTURE = path.join(
 const FEATURE =
   'A superseded task stops at every stage, not only the one a note reached';
 
+// Soft-mutation lock: Outline roles must match exactly (case-sensitive).
+const KNOWN_ROLES = new Set(['coder', 'hardender', 'QA', 'cleaner', 'architect']);
+
+function assertKnownRole(role) {
+  assert.ok(KNOWN_ROLES.has(role), `unknown or case-mutated role "${role}"`);
+}
+
 function runFixture(ctx) {
   if (ctx.bl1084?.out) return ctx.bl1084.out;
   const res = spawnSync('bash', [FIXTURE], { encoding: 'utf8', timeout: 120000 });
@@ -43,11 +50,13 @@ function registerSteps(registry) {
     runFixture(ctx);
   });
 
-  scoped(/^role "([^"]+)" has a parcel for task "([^"]+)" in its inbox$/, (ctx) => {
+  scoped(/^role "([^"]+)" has a parcel for task "([^"]+)" in its inbox$/, (ctx, role) => {
+    assertKnownRole(role);
     runFixture(ctx);
   });
 
-  scoped(/^role "([^"]+)" starts a turn$/, (ctx) => {
+  scoped(/^role "([^"]+)" starts a turn$/, (ctx, role) => {
+    assertKnownRole(role);
     runFixture(ctx);
   });
 
@@ -64,7 +73,8 @@ function registerSteps(registry) {
     }
   );
 
-  scoped(/^the parcel is still in role "([^"]+)"'s inbox$/, (ctx) => {
+  scoped(/^the parcel is still in role "([^"]+)"'s inbox$/, (ctx, role) => {
+    assertKnownRole(role);
     requirePass(runFixture(ctx), '01: every stage refuses a parcel for a superseded task');
   });
 
@@ -78,7 +88,8 @@ function registerSteps(registry) {
     assert.match(out, /PASS: 02:|PASS: 04:/, out);
   });
 
-  scoped(/^no bounce is recorded against role "([^"]+)"$/, (ctx) => {
+  scoped(/^no bounce is recorded against role "([^"]+)"$/, (ctx, role) => {
+    assertKnownRole(role);
     requirePass(runFixture(ctx), '03: a refused parcel is not recorded as a bounce');
   });
 
@@ -103,7 +114,8 @@ function registerSteps(registry) {
     }
   });
 
-  scoped(/^role "([^"]+)" receives work in batch mode$/, (ctx) => {
+  scoped(/^role "([^"]+)" receives work in batch mode$/, (ctx, role) => {
+    assertKnownRole(role);
     runFixture(ctx);
   });
 
