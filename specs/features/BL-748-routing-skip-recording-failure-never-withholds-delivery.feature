@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7d40c533a693dc224697e87ffcd2d3144942b95b681a9c2621f35542d1f8e728
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T13:29:29.811417160Z","feature_name":"a routing-skip recording failure never withholds delivery","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-748-routing-skip-recording-failure-never-withholds-delivery.feature","background_hash":"46ade7548f28d869073369d8ab1ee4b97350d1e65039e1c687394d47e15f3c0a","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a journal write failure degrades to a warning and the send completes","scenario_hash":"a16a1c997148652b752fa9d39c14676c1116871dc8da7c2c94c69fafca4d5498","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-24T13:29:29.811417160Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a routing-skip recording failure never withholds delivery
 
   swarm_handoff.bb's -main binds, in one `let` and therefore in strict order:
