@@ -38,8 +38,8 @@ description: >
   2. Standing pack swarmforge/packs/cursor-forge.conf — depth 3, remote_control
      off, all pipeline windows on cursor (cooldown still off for the night it
      landed).
-  3. Pipeline Board: escapeHtml emits &#160; for U+00A0 (not named &nbsp;,
-     which Telegram shows literally); deriveKebabSlug default maxWords=3.
+  3. Pipeline Board: escapeHtml emits &nbsp; for U+00A0; deriveKebabSlug
+     default maxWords=3.
   4. Telegram Cursor Remote: CreatePlan progress surfaces Confirm plan /
      Reject plan buttons via telegramCursorBridgeLive + OperatorCore helpers.
 
@@ -57,7 +57,7 @@ qa_e2e_procedure: >
   actions proceed|ff-only|wait-reconcile|deadlock-tripped. (3) With deadlock
   active and behind>0, confirm dropped-parcel path logs suppressed. (4) Parse
   cursor-forge.conf: standing, depth 3, remote_control off, cursor windows.
-  (5) extension vitest pipelineBoard tests for &#160; and 3-word slugs.
+  (5) extension vitest pipelineBoard tests for &nbsp; and 3-word slugs.
   (6) Drive or unit-test CreatePlan progress → Confirm/Reject buttons +
   pending plan-confirm file. (7) Record degraded gate where shell/Babashka
   has no mutation/CRAP/DRY. Leave Hotfix-Certification pending until human
