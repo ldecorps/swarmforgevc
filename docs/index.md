@@ -50,6 +50,7 @@ expects them, and are not migrated or rewritten here.
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
 - [Let's Talk — Discrete Audio Turns in the Mini App Console](how-to/BL-696-miniapp-lets-talk-cursor-audio.md)
+- [Telegram Cursor Remote operator commands](how-to/BL-698-telegram-cursor-operator-commands.md) — phone-first slash verbs on the Cursor Remote topic, danger tiers, and (BL-1113) CreatePlan **Confirm plan** / **Reject plan** progress buttons.
 - [Reordering Epic Priority in the Mini App Console](how-to/BL-572-console-epic-priority-reorder.md)
 - [Relaunch Resume and the Orphan-Claim Sweep](how-to/BL-648-relaunch-resume-orphan-claims.md)
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
@@ -69,7 +70,7 @@ expects them, and are not migrated or rewritten here.
 - [`/pilot safe` — auto-pick a low-blast defect for offline pilot](how-to/BL-722-pilot-safe-defects.md) — the safe-pool filter (approved, low-mutation, specced defect, not needs_design), its ranking, and the empty-pool refusal.
 - [Certifying an operator hotfix](how-to/BL-848-certify-an-operator-hotfix.md) — declaring a hand-landed hotfix with the `Hotfix-Certification: pending` trailer, the ledger state machine, and why no hotfix becomes an official swarm deal on green tests alone.
 - [Master-Checkout Drift Alarm — Understanding the Alert](how-to/BL-839-master-checkout-drift-alarm.md) — what to do when the master checkout's daemon-executed scripts no longer match `main`.
-- [Master-Main Reconcile Sweep — Understanding the Note](how-to/BL-891-master-main-reconcile-sweep.md) — the cadence sweep that merges `origin/main` forward into the master checkout's local `main` ref, and what to do when it surfaces a dirty-overlap-or-conflict note instead.
+- [Master-Main Reconcile Sweep — Understanding the Note](how-to/BL-891-master-main-reconcile-sweep.md) — the cadence sweep that merges `origin/main` forward into the master checkout's local `main` ref, what to do when it surfaces a dirty-overlap-or-conflict note, and (BL-1113) the coordinator step-0 `main_sync_status_cli` gate plus trip-once deadlock that suppresses drop-nudges until `behind=0`.
 - [Token-Burn Exhaustion Warning in the Morning Briefing](how-to/BL-619-token-burn-briefing-warning.md) — recording a usage-percentage anchor, what the warning looks like, the weekly-reset config, and troubleshooting a missing or wrong projection.
 - [Bedtime vs. lights-out: which stop verb to run](how-to/BL-762-finish-shift-bedtime-vs-lights-out.md) — the keep-vs-kill table `./finish-shift` and `./stop-swarm.sh` both read, and why bedtime leaves the phone path up.
 - [Diagnosing a wake with attribution records](how-to/BL-870-wake-attribution.md) — the `wake-attribution-<YYYY-MM>.jsonl` log every landed or skipped wake now writes, its fields, and how to read a false-wake report from it.

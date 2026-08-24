@@ -110,6 +110,32 @@ push-sweep's own alarm flags use).
 - Re-running the sweep on an already-reconciled tree is a no-op by
   construction (step 2 above).
 
+## Coordinator step 0 and the main-sync deadlock breaker (BL-1113)
+
+Stamp-off of Cursor hotfix `27273f2b0a` (ledger certification still follows
+[BL-848](BL-848-certify-an-operator-hotfix.md)). BL-891 still owns the
+reconcile join itself; this layer only **gates coordinator bookkeeping** and
+stops drop-nudge spam while local `main` is behind.
+
+**Status CLI.** `swarmforge/scripts/main_sync_status_cli.bb <project-root>`
+prints one JSON object with `ahead`, `behind`, `ready`, and the only allowed
+`action`:
+
+| `ahead` / `behind` / deadlock | `action` |
+|---|---|
+| behind = 0 (deadlock clear) | `proceed` |
+| behind > 0, ahead = 0 | `ff-only` |
+| ahead > 0 and behind > 0 | `wait-reconcile` |
+| deadlock marker active | `deadlock-tripped` |
+
+**Trip-once deadlock.** When behind stays positive long enough with an aged
+coordinator `in_process` parcel (and ahead>0 or a dirty/conflict reconcile
+escalation), `master_main_reconcile_lib.bb` writes
+`.swarmforge/daemon/main-sync-deadlock.json`, raises **at most one** alert for
+that trip, and suppresses dropped-parcel nudges until `behind=0` (then the
+marker clears). Do not treat a quiet drop-nudge path as “reconcile finished”
+while the deadlock marker is still active — clear behind first.
+
 ## See also
 
 - [BL-632: Commit-Time Guard Refuses Pipeline Code on
