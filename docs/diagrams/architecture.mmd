@@ -48,6 +48,10 @@
 %% BL-1093: nobody-assigned? (absent/blank/none/unassigned) at the read
 %% boundary — those tickets go to unassigned-active nudge, never auto-route
 %% as to: none; failed auto-routes log the validator reason.
+%% BL-1097: coordinator router (route_backlog_to_coder /
+%% promote_and_route_next) refuses to originate a parcel when
+%% ticket-dispatched? (same decide-dispatch-gaps predicate as the sweep);
+%% --force for deliberate re-route; exit 3 leaves YAML untouched.
 %% BL-1106: effective-depth pause + throttle paths resolve at master via
 %% resolve-identity-root (same as BL-966 conf), so a worktree cannot miss
 %% control-pause.json and promote past a human hold.

@@ -170,6 +170,29 @@
              #{"BL-1" "BL-3"}
              sweep-says)))
 
+;; BL-1097: ticket-dispatched? must stay a thin wrapper over decide-dispatch-gaps
+;; (invariant 2 by definition). A bare contains? rewrite is currently
+;; behaviour-equivalent and would survive the truth-table above — lock the
+;; source so that "optimisation" cannot land silently.
+(let [lib-src (slurp (str (fs/path (fs/parent (fs/canonicalize *file*))
+                                   ".." "chase_sweep_lib.bb")))
+      ;; Body of ticket-dispatched? only (stop before the next defn).
+      body (second (re-find #"(?s)\(defn ticket-dispatched\?.*?\[ticket-id dispatched-ids\](.*?)(?=\n\(def|\n\(defn)"
+                            lib-src))
+      route-src (slurp (str (fs/path (fs/parent (fs/canonicalize *file*))
+                                     ".." "route_backlog_to_coder.sh")))
+      cli-src (slurp (str (fs/path (fs/parent (fs/canonicalize *file*))
+                                   ".." "dispatch_trail_cli.bb")))]
+  (assert= "bl1097-16: ticket-dispatched? body calls decide-dispatch-gaps"
+           true
+           (boolean (and body (str/includes? body "decide-dispatch-gaps"))))
+  (assert= "bl1097-17: route script refuses with exit 3 on DISPATCHED"
+           true
+           (boolean (re-find #"TRAIL_ANSWER\" == \"DISPATCHED\"[\s\S]*?exit 3" route-src)))
+  (assert= "bl1097-18: dispatch_trail_cli prints DISPATCHED for a positive answer"
+           true
+           (boolean (re-find #"ticket-dispatched-in\?[\s\S]*?\"DISPATCHED\"" cli-src))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 
 (if (seq @failures)
