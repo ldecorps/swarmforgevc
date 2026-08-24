@@ -1,6 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1091: Telegram Expedite's paused→active
+**Last Updated:** August 24, 2026 (BL-1100: promotion candidacy is decided by
+structured fields, never by free prose. `promote_and_route_next.sh` used to
+grep the whole ticket YAML for a hold phrase, so an orthogonality caution, a
+`depends_on` wait written in notes, or a numbered acceptance step that merely
+described "do not promote" silently disqualified live tickets on the auto-pick
+path (`continue` with no message). That prose check is deleted; candidacy uses
+`type: epic`, `status: blocked`, directory (`backlog/hold/`), and
+`promotion_gates_cli.bb` only. Every auto-pick skip announces
+`skip <id> gate=<gate>`. Prior prose parks (BL-553/556/828) were re-expressed
+as structured holds so they still refuse. Complements BL-957 (depends_on gate)
+and BL-900 (ranking). Acceptance:
+`specs/features/BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1091: Telegram Expedite's paused→active
 promotion is committed as both ends of the rename. Pathspec-scoped commits
 (BL-419/BL-490) correctly protect concurrent writers, but Expedite named only
 the post-move `backlog/active/` path — the `backlog/paused/` deletion stayed
