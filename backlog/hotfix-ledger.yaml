@@ -100,7 +100,14 @@
 - commit: f02f6ae5b4
   subject: "Hotfix Cursor full-forge readiness: agent-aware babysitter, seat heal, leaner bootstrap."
   detected_at: 2026-08-23
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1108
+  human_decision: null
+  decided_at: null
+- commit: 27273f2b0a
+  subject: "Land Cursor hotfix: main-sync deadlock breaker, cursor-forge, board UX, plan confirm."
+  detected_at: 2026-08-24
+  state: pending
+  stamp_ticket: BL-1113
   human_decision: null
   decided_at: null
