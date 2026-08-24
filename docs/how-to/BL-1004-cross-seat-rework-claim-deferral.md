@@ -106,7 +106,8 @@ node specs/pipeline/cli.js specs/features/BL-1004-a-rework-is-claimed-only-by-a-
   lives entirely at the claim.
 - It does not implement BL-1001's difficulty-aware routing (which seat gets
   *fresh* work first); this only decides who may claim a rework of a parcel
-  that already exists. The two are orthogonal and land independently.
+  that already exists. The two are orthogonal and land independently —
+  see `docs/how-to/BL-1001-difficulty-aware-coder-seat-routing.md`.
 - It does not wire the batch claim path (`ready_for_next_batch.bb`) — no
   multi-seat batch stage exists yet to protect.
 
