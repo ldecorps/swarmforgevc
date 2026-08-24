@@ -44,6 +44,17 @@ function runGate(env, paths) {
   };
 }
 
+/** Seam env for the real hygiene gate against fixture corpora. */
+function gateEnv(ctx) {
+  const env = { BACKLOG_HYGIENE_ROOT: ctx.bl1105.root };
+  if (ctx.bl1105.unreadablePublished) {
+    env.BACKLOG_HYGIENE_PUBLISHED_UNREADABLE = '1';
+  } else {
+    env.BACKLOG_HYGIENE_PUBLISHED_ROOT = ctx.bl1105.published;
+  }
+  return env;
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -94,13 +105,7 @@ function registerSteps(registry) {
     (ctx, filename, id) => {
       const rel = path.join('paused', filename);
       const subject = writeTicket(ctx.bl1105.root, rel, id);
-      ctx.bl1105.result = runGate(
-        {
-          BACKLOG_HYGIENE_ROOT: ctx.bl1105.root,
-          BACKLOG_HYGIENE_PUBLISHED_ROOT: ctx.bl1105.published,
-        },
-        [subject]
-      );
+      ctx.bl1105.result = runGate(gateEnv(ctx), [subject]);
       ctx.bl1105.subject = subject;
     }
   );
@@ -108,19 +113,13 @@ function registerSteps(registry) {
   scoped(/^the specifier runs the hygiene gate on a new ticket whose id is "([^"]+)"$/, (ctx, id) => {
     const rel = path.join('paused', `${id}-minted-now.yaml`);
     const subject = writeTicket(ctx.bl1105.root, rel, id);
-    const env = { BACKLOG_HYGIENE_ROOT: ctx.bl1105.root };
-    if (ctx.bl1105.unreadablePublished) {
-      env.BACKLOG_HYGIENE_PUBLISHED_UNREADABLE = '1';
-    } else {
-      env.BACKLOG_HYGIENE_PUBLISHED_ROOT = ctx.bl1105.published;
-    }
     const paths = [subject];
     if (ctx.bl1105.includeMissingEpic) {
       const bad = path.join(ctx.bl1105.root, 'paused', 'BL-9001-no-epic.yaml');
       fs.writeFileSync(bad, 'id: BL-9001\ntitle: "no epic"\ntype: feature\npriority: 1\n');
       paths.push(bad);
     }
-    ctx.bl1105.result = runGate(env, paths);
+    ctx.bl1105.result = runGate(gateEnv(ctx), paths);
     ctx.bl1105.subject = subject;
   });
 
