@@ -145,3 +145,33 @@ test('BL-1039 D4: the real extension/test tree creates no git repository of its 
       violations.map((v) => `  ${v.file}: ${v.reason}`).join('\n')
   );
 });
+
+// ── BL-1092: recognise creation by what the helper spawns ─────────────────
+
+test('BL-1092: a runGit helper that spawns git is flagged when called with init', () => {
+  const text = [
+    'function runGit(cwd, args) { execFileSync("git", args, { cwd }); }',
+    "runGit(dir, ['init', '-q']);",
+  ].join('\n');
+  assert.equal(createsRepository(text), true);
+});
+
+test('BL-1092: a one-letter g helper that spawns git is flagged when called with init', () => {
+  const text = [
+    'function g(cwd, args) { execFileSync("git", args, { cwd }); }',
+    "g(dir, ['init', '-q']);",
+  ].join('\n');
+  assert.equal(createsRepository(text), true);
+});
+
+test('BL-1092: a runTar helper that spawns tar is not flagged for an init-shaped call', () => {
+  const text = [
+    'function runTar(cwd, args) { execFileSync("tar", args, { cwd }); }',
+    "runTar(dir, ['init', '-q']);",
+  ].join('\n');
+  assert.equal(createsRepository(text), false);
+});
+
+test('BL-1092: runGit without a same-file definition is not flagged (no binding to resolve)', () => {
+  assert.equal(createsRepository("runGit(dir, ['init', '-q']);"), false);
+});

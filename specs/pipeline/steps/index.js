@@ -362,6 +362,7 @@ const DOMAINS = [
   require('./bl1007ContentionBudgetSteps'),
   require('./bl1008BoundedWatchDeadlineSteps'),
   require('./bl1009UnifiedPipelineGridAcrossSwarmsSteps'),
+  require('./bl1092RepoCreationByBehaviourSteps'),
   require('./bl675DaemonLogFreshnessSteps'),
   require('./bl630PushSweepQaGateSteps'),
   require('./bl1081AcpHostDrivesOneSeatSteps'),
