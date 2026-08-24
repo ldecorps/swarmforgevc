@@ -390,6 +390,7 @@ const DOMAINS = [
   require('./bl812HandoffdCwdWakeRemapSteps'),
   require('./bl813DeathAlarmAttachAndAmbulanceRaceSteps'),
   require('./bl807BabysitterStuckInProcessOwnerLivenessSteps'),
+  require('./bl1109BabysitterStarvedIdleOwnerInProcessSteps'),
   require('./bl810HostQueuePollClearAllTtlSteps'),
   require('./bl814LiveRoleHeldLoudDegradeSteps'),
   require('./bl808BacklogDepthWarningCountsNonTicketEntriesSteps'),
