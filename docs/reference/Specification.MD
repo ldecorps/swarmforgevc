@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1027: the specifier mint-time hygiene
+**Last Updated:** August 24, 2026 (BL-1095: Article 3.2.4 expedite lane is
+`type: defect` only; legacy `type: bug` is refused at mint
+(`RETIRED-TICKET-TYPE`) so retirement cannot silently cost a ticket its lane.
+Promotion ranking and property restatements drop the transition member.
+Constitution prose trim remains specifier/BL-798. Acceptance:
+`specs/features/BL-1095-retire-the-expedite-lanes-legacy-bug-type.feature`.
+How-to: `docs/how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1027: the specifier mint-time hygiene
 gate refuses a single-line `acceptance:` pointer whose path is absent from
 the working tree (`DANGLING-ACCEPTANCE`), using BL-880’s `applicable?`
 predicate so mint and pre-QA never disagree. Absent / epic prose / block
@@ -5613,7 +5623,7 @@ Three different promotion gates were bypassed in 48 hours, each caught only beca
 `promotion_gates_lib.bb` (pure decisions) and `promotion_gates_cli.bb` (its one shell-callable entry point) are now the single chokepoint every promotion path calls, never a locally-reimplemented check:
 
 - **`human_approval`** — any present value other than the literal `approved` (pending, amending, rejected, or unrecognized) refuses promotion; an absent field passes (not applicable). Absence never buys expedite priority either (below).
-- **Article 3.2.4 expedite lane** — a `defect`/`bug` ticket with `severity: critical` or `high` sorts ahead of every non-expedited candidate regardless of priority number; missing `severity:` fails closed (never expedited, never guessed).
+- **Article 3.2.4 expedite lane** — a `defect` ticket with `severity: critical` or `high` sorts ahead of every non-expedited candidate regardless of priority number; missing `severity:` fails closed (never expedited, never guessed). Legacy `type: bug` is retired (BL-1095): the predicate no longer matches it, and mint-time hygiene refuses it (`RETIRED-TICKET-TYPE`) so a later `bug` ticket cannot silently lose the lane.
 - **Assignee / spec-stage routing** — `assigned_to: specifier` is never rewritten and always routes to the specifier; every other value routes to coder, and is corrected to `coder` only when it does not already read `coder` (so an already-correct ticket triggers no write).
 - **`active_backlog_max_depth`**, **orthogonality** (two active tickets sharing an `epic:` are treated as the same in-flight scope), and the **hold marker** (a ticket parked in `backlog/hold/` is never a promotion candidate, including by direct `BL-id` name) — pre-existing behavior, now folded through the same chokepoint so a future auto-picker cannot grow a second, divergent copy.
 
