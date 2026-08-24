@@ -148,7 +148,7 @@ announce_skip() {
 is_buildable() {
   local f="$1"
   local id
-  id="$(grep -E '^id:' "$f" | head -1 | awk '{print $2}' | tr -d '\r')"
+  id="$(ticket_id_of "$f")"
   if grep -qE '^acceptance:' "$f"; then
     # acceptance may be a path on the next line or inline
     local acc
