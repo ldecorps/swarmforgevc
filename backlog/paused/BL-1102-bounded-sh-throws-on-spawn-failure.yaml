@@ -22,7 +22,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1102-bounded-sh-throws-on-spawn-failure.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One decision needs sign-off, and it is the same trade-off BL-1031 was asked
   about, pointing the other way. Making a spawn failure a RETURNED result means
