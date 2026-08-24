@@ -210,6 +210,8 @@
 %% active (or refuses) before stages; move-ticket! never silent-no-ops.
 %% BL-748 (2026-08-24): routing-skip journal I/O fails nonfatally (stderr);
 %% sync inject + draft consume still run.
+%% BL-752 (2026-08-24): residual allowlist — non-stage backlog/topics basename
+%% collision proven; unreachable BL-694 step handler exercised.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

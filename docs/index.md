@@ -47,6 +47,8 @@ expects them, and are not migrated or rewritten here.
 - [Wire Mistral Vibe into the Intelligence Layer](how-to/BL-682-mistral-vibe-intelligence-layer-routing.md) — ModelFactory maps `mistral`→`vibe`; Steward seeds `mistral/mistral-medium-3.5` from the live vibe config alias (registration only; packs/launchers unchanged).
 - [Handling Pre-QA Gate Handoff Refusals](how-to/BL-531-handoff-refusal-remedies.md)
 - [Routing-skip journal failure never withholds delivery](how-to/BL-748-routing-skip-recording-failure-never-withholds-delivery.md) — `ROUTING-SKIP RECORD FAILED` on stderr; parcel still delivered (BL-748 / BL-623).
+- [Residual-word allowlist survives backlog stage moves](how-to/BL-694-residual-word-allowlist-survives-stage-moves.md) — basename under active/paused/hold only (BL-694).
+- [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
