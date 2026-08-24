@@ -19,6 +19,14 @@ const FIXTURE = path.join(
 const FEATURE =
   'push-sweep caches its refusal and gathers the ahead range once';
 
+// Soft-mutation lock: Outline ahead_shape cells must match exactly.
+const KNOWN_AHEAD_SHAPES = new Set([
+  'a non-QA-approved commit',
+  'a bounced parcel riding under an approved tip',
+  'a noop landing merge',
+  'only QA-approved commits',
+]);
+
 function runFixture(ctx) {
   if (ctx.bl1085?.out) return ctx.bl1085.out;
   const res = spawnSync('bash', [FIXTURE], { encoding: 'utf8', timeout: 120000 });
@@ -95,7 +103,11 @@ function registerSteps(registry) {
     requirePass(runFixture(ctx), '05: gathering tick walks ahead range exactly once');
   });
 
-  scoped(/^the ahead range contains (.+)$/, (ctx) => {
+  scoped(/^the ahead range contains (.+)$/, (ctx, shape) => {
+    assert.ok(
+      KNOWN_AHEAD_SHAPES.has(shape),
+      `unknown or mutated ahead_shape "${shape}"`
+    );
     runFixture(ctx);
   });
 
