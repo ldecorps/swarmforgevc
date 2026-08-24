@@ -172,11 +172,22 @@
 ;; sees EOF. `sleep 5` outlives the 200ms bound by a wide margin, and reaps
 ;; itself long before the suite ends (destroy-tree cannot reach it: it was
 ;; reparented the instant its parent exited).
+;;
+;; BL-1031 QA bounce: bare `sleep 5 & exit 0` races on WSL — the grandchild
+;; sometimes never retains the write end, so sh! correctly returns exit 0 and
+;; the suite flakes (silent "success"). Handshake via a fifo so the parent
+;; only exits after the pipe-holder is alive and holding the fds.
+(def undrainable-cmd
+  ["bash" "-c"
+   (str "echo child-output; "
+        "s=$(mktemp -u); mkfifo \"$s\" || exit 1; "
+        "(echo ready >\"$s\"; exec sleep 5) & "
+        "read _ <\"$s\"; rm -f \"$s\"; exit 0")])
+
 (let [fired (atom nil)]
   (reset! daemon-cycle-guard-lib/on-timeout! (fn [info] (reset! fired info)))
   (reset! daemon-cycle-guard-lib/current-context "dispatch-gap-sweep")
-  (let [[r elapsed] (bounded-call 15000 200
-                                  "bash" "-c" "echo child-output; sleep 5 & exit 0")]
+  (let [[r elapsed] (apply bounded-call 15000 200 undrainable-cmd)]
     (assert-true "a child whose grandchild holds the pipe open still RETURNS - the bound covers the stream drain, not only the exit code"
                  (not= ::hung r))
     (when (not= ::hung r)
@@ -187,7 +198,7 @@
                    (and (str/includes? (:err r) "200ms") (str/includes? (:err r) "bash")))
       (assert= "the timeout is ANNOUNCED, attributed to the sweep that owns the call - never silent"
                "dispatch-gap-sweep" (:context @fired))
-      (assert= "the announcement carries the command" ["bash" "-c" "echo child-output; sleep 5 & exit 0"]
+      (assert= "the announcement carries the command" undrainable-cmd
                (:cmd @fired))))
   (reset! daemon-cycle-guard-lib/on-timeout! (fn [_] nil))
   (reset! daemon-cycle-guard-lib/current-context "outside-sweep"))

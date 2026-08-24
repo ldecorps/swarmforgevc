@@ -151,6 +151,10 @@
 (def p1-pidfile (str (fs/path p1-fixture-dir "spawned.pids")))
 (def p1-hang-script (str (fs/path p1-fixture-dir "hang_at_depth.sh")))
 
+;; BL-1031 QA bounce: bare `"$0" … &; exit 0` races on WSL the same way as
+;; `sleep & exit` — the deeper pipe-holder sometimes never retains stdout,
+;; so sh! returns exit 0 with no on-timeout. Handshake on a fifo so the
+;; parent exits only after the child (which inherits the write ends) is live.
 (spit p1-hang-script
       (str "#!/bin/bash\n"
            "d=\"$1\"; secs=\"$2\"; pidfile=\"$3\"\n"
@@ -158,8 +162,15 @@
            "if [ \"$d\" -le 1 ]; then\n"
            "  exec sleep \"$secs\"\n"
            "fi\n"
-           "\"$0\" $((d-1)) \"$secs\" \"$pidfile\" &\n"
-           "echo \"$!\" >> \"$pidfile\"\n"
+           "syncf=$(mktemp -u \"$pidfile.sync.XXXXXX\")\n"
+           "mkfifo \"$syncf\" || exit 1\n"
+           "(\n"
+           "  echo $$ >> \"$pidfile\"\n"
+           "  echo ready > \"$syncf\"\n"
+           "  exec \"$0\" $((d-1)) \"$secs\" \"$pidfile\"\n"
+           ") &\n"
+           "read _ < \"$syncf\"\n"
+           "rm -f \"$syncf\"\n"
            "exit 0\n"))
 (fs/set-posix-file-permissions p1-hang-script "rwxr-xr-x")
 (spit p1-pidfile "")
