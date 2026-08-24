@@ -17,6 +17,13 @@ const SWARMFORGE_SCRIPTS = path.join(__dirname, '..', '..', '..', 'swarmforge', 
 const LANDED_HARNESS = path.join(SWARMFORGE_SCRIPTS, 'test', 'landed_but_open_sweep_harness.bb');
 const CHASE_LIB = path.join(SWARMFORGE_SCRIPTS, 'chase_sweep_lib.bb');
 
+// Outline 03 Examples must stay load-bearing (BL-113 survivors otherwise treat
+// ticket ids as interchangeable labels within a self-consistent row).
+const EXPECTED_SIBLING_ROWS = {
+  'BL-2003|no dispatch trail|dispatch-gap': true,
+  'BL-2004|no assignee|unassigned-active': true,
+};
+
 function git(root, args) {
   return execFileSync('git', ['-C', root, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
     encoding: 'utf8',
@@ -351,6 +358,15 @@ Mentions ${bodyTicket} only in the body — must not flag that id.`;
   });
 
   registry.define(/^the "([^"]+)" sweep still returns "([^"]+)"$/, (ctx, owner, ticketId) => {
+    const key = `${ticketId}|${ctx.siblingOwnerCondition}|${owner}`;
+    if (!EXPECTED_SIBLING_ROWS[key]) {
+      throw new Error(`Examples row must match locked table (got ${key})`);
+    }
+    if (ctx.siblingOwnerTicket && ctx.siblingOwnerTicket !== ticketId) {
+      throw new Error(
+        `ticket drift across steps: Given ${ctx.siblingOwnerTicket} Then ${ticketId}`
+      );
+    }
     if (!siblingOwns(ctx, owner, ticketId)) {
       throw new Error(`expected ${owner} to still return ${ticketId}`);
     }
