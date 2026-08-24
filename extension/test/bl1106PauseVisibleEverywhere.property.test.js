@@ -11,7 +11,9 @@
 // worktree (with a real pause on master only) and against a plain temp dir.
 //
 // Non-vacuity: temporarily point pause-marker-path at raw project-root →
-// worktree prints 7 while master prints 0. Restored.
+// worktree prints 7 while master prints 0. Restored. Path equality (not
+// String.startsWith(master)) also kills a raw project-root throttle path —
+// `${master}-wt`.startsWith(master) is true and would hide that mutant.
 //
 // Runs ONLY via `npm run test:properties`.
 
@@ -111,11 +113,19 @@ test(
           ],
           { encoding: 'utf8' }
         ).trim();
-        assert.ok(pausePath.startsWith(master), `pause path must be under master, got ${pausePath}`);
-        assert.ok(
-          throttlePath.startsWith(master),
-          `throttle path must be under master, got ${throttlePath}`
+        // Exact master-relative paths — never String.startsWith(master): a
+        // sibling worktree named `${master}-wt` still prefixes with master
+        // (BL-1106 hardener: that vacuity let a raw project-root throttle
+        // path survive).
+        const expectedPause = path.join(master, '.swarmforge', 'operator', 'control-pause.json');
+        const expectedThrottle = path.join(
+          master,
+          '.swarmforge',
+          'coordinator',
+          'throttle-recommendation.json'
         );
+        assert.equal(pausePath, expectedPause, `pause path must be ${expectedPause}`);
+        assert.equal(throttlePath, expectedThrottle, `throttle path must be ${expectedThrottle}`);
       }),
       { numRuns: 6 }
     );
