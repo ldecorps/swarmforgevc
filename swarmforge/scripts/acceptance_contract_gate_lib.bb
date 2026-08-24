@@ -43,23 +43,33 @@
 
 (defn evaluate
   "opts: {:ticket-id :declaration-readable? :registry-loadable?
-   :registry-load-error :unresolved-steps}. Returns {:findings [...]
-   :warnings [...]}.
+   :registry-load-error :unresolved-steps :wait-bound-hit?}. Returns
+   {:findings [...] :warnings [...]}.
 
    - declaration-readable? false -> one :acceptance-contract finding, fails
      CLOSED; registry-loadable?/unresolved-steps are never consulted (there
      is nothing to resolve steps against).
+   - wait-bound-hit? true (BL-1031 ruling b) -> one :acceptance-contract
+     finding naming the wait-bound, fails CLOSED — \"we could not check\"
+     must never look like a clean pass or a silent fail-open warning.
    - declaration-readable? true but registry-loadable? false -> no finding,
-     one warning naming registry-load-error - fails OPEN.
+     one warning naming registry-load-error - fails OPEN (infrastructure).
    - both readable/loadable -> one :acceptance-contract finding per
      unresolved step (every scenario, every Scenario Outline example row,
      every step - none skipped, sampled, or assumed matched), in the order
      gathered. Empty unresolved-steps -> a clean pass: no findings, no
      warnings."
-  [{:keys [ticket-id declaration-readable? registry-loadable? registry-load-error unresolved-steps]}]
+  [{:keys [ticket-id declaration-readable? registry-loadable? registry-load-error
+           unresolved-steps wait-bound-hit?]}]
   (cond
     (not declaration-readable?)
     {:findings [{:class :acceptance-contract :ticket-id ticket-id :detail unreadable-declaration-detail}]
+     :warnings []}
+
+    wait-bound-hit?
+    {:findings [{:class :acceptance-contract :ticket-id ticket-id
+                 :detail (format "acceptance-contract:%s subprocess wait-bound hit (%s)"
+                                 ticket-id (or registry-load-error "exit 124"))}]
      :warnings []}
 
     (not registry-loadable?)
