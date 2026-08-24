@@ -1137,16 +1137,19 @@ async function suppressEdgeApprovalRequestedWhenAskOnLiveTopic(
   }
   const liveApprovalsTopicId = await adapters.routeAdapters.ensureApprovalsTopic();
   const recordedAsks = adapters.readApprovalAskMessages?.() ?? {};
-  return events.filter((event) => {
-    if (event.type !== 'ApprovalRequested' || event.backlogId === null) {
-      return true;
+  const kept: SwarmEvent[] = [];
+  for (const event of events) {
+    const suppress =
+      event.type === 'ApprovalRequested' &&
+      event.backlogId !== null &&
+      approvalAskRecordedOnLiveTopic(event.backlogId, recordedAsks, liveApprovalsTopicId);
+    if (suppress) {
+      alreadyEmitted.add(swarmEventKey(event));
+      continue;
     }
-    if (!approvalAskRecordedOnLiveTopic(event.backlogId, recordedAsks, liveApprovalsTopicId)) {
-      return true;
-    }
-    alreadyEmitted.add(swarmEventKey(event));
-    return false;
-  });
+    kept.push(event);
+  }
+  return kept;
 }
 
 async function processConciergeEvent(
