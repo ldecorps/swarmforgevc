@@ -96,6 +96,7 @@ import {
   ReplyRelayLoopState,
   computeReplyRelayCycleResult,
   applyReplyRelayCycleResult,
+  assertReplyRelayEventsResponse,
   sustainedOutageThresholdMs,
   SUSTAINED_OUTAGE_CONF_KEY,
   decideEnsureOperatorTopicAction,
@@ -2482,86 +2483,96 @@ async function connectAndRelayReplies(
   openaiApiKey: string | undefined
 ): Promise<void> {
   const res = await fetch(`${bridgeUrl}/events`, { headers: { authorization: `Bearer ${bridgeToken}` } });
-  if (!res.body) {
-    return;
-  }
-  const reader = res.body.getReader();
+  // BL-1111: empty/non-OK used to return as success and reset the outage
+  // episode without delivering. Fail loudly so reconnect backoff runs.
+  assertReplyRelayEventsResponse(res);
+  const reader = res.body!.getReader();
   const decoder = new TextDecoder();
-  await relaySseReplies(
-    '',
-    {
-      readChunk: async () => {
-        const { done, value } = await reader.read();
-        return { done, chunk: done ? '' : decoder.decode(value, { stream: true }) };
+  try {
+    await relaySseReplies(
+      '',
+      {
+        readChunk: async () => {
+          const { done, value } = await reader.read();
+          return { done, chunk: done ? '' : decoder.decode(value, { stream: true }) };
+        },
+        // BL-329: serialises this reply into the ticket's own durable record,
+        // ONLY when topicId resolves back to an actual BL-### ticket - a
+        // SUP-### thread reply has no backlogForTopic mapping and is
+        // deliberately skipped (that channel has its own store, BL-329 is
+        // BL-topics only).
+        // BL-440: retractsPendingQuestion (set by operator-decide.ts's
+        // runApprove on a successful gate answer, threaded here through the
+        // reply-outbox/SSE relay) rides straight onto this SAME append - the
+        // real production write of that field, never a second synthetic
+        // message unconnected to an actual send.
+        sendReply: (topicId, text, retractsPendingQuestion) =>
+          sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => {
+            const backlogId = backlogForTopic(readBacklogTopicMap(targetPath), topicId);
+            if (backlogId) {
+              appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text, retractsPendingQuestion });
+            }
+            return undefined;
+          }),
+        // BL-355: falls back to the backlog topic map so a reply whose
+        // threadId names a BL-### item (operator-decide.js's approve relay,
+        // invoked with backlogId as threadId) reaches that item's own topic
+        // - the SAME resolver every SUP-### reply already went through -
+        // and additionally decides whether General needs its own copy or
+        // pointer (resolveReplyTopicId's own bare-topic-id resolution is
+        // unchanged and still exported for any other caller).
+        resolveDelivery: (subjectId) => resolveReplyDelivery(readFrontDeskTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
+        ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
+        // BL-466: sendPoll/recordPollMapping/agentQuestionsTopicId - the
+        // outbound half of the agent-question round trip (deliverAgentQuestion,
+        // telegramFrontDeskBotCore.ts). agentQuestionsTopicId reuses the SAME
+        // ensureAgentQuestionsTopic the inbound side (buildPollAdapters above)
+        // and main()'s own pre-loop binding call use - never a second lookup.
+        // BL-483: sendPoll/recordPollMapping kept wired (their poll-answer
+        // sibling, processPollAnswer, is still valid, generically reusable
+        // code) but deliverAgentQuestion no longer calls them for an
+        // options-carrying ask - see sendAskButtons/recordAskMessage below.
+        sendPoll: (topicId, question, options) => sendTelegramPoll(botToken, chatId, question, options, topicId).then((r) => ({ pollId: r.pollId })),
+        recordPollMapping: (pollId, threadId, options) => {
+          const map = readPollMap(targetPath);
+          map[pollId] = { threadId, options };
+          writePollMap(targetPath, map);
+          return Promise.resolve();
+        },
+        // BL-483: tappable inline-keyboard buttons - the SUPERSEDING outbound
+        // half of the agent-question round trip for an options-carrying ask.
+        sendAskButtons: (topicId, text, buttons) =>
+          sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId, buttons).then((r) => ({ success: r.success, messageId: r.messageId })),
+        recordAskMessage: (threadId, topicId, messageId, text) => {
+          recordAskMessage(targetPath, threadId, topicId, messageId, text);
+          return Promise.resolve();
+        },
+        agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
+        // BL-607: a roleQuestion record's own delivery target (deliverRoleQuestion,
+        // telegramFrontDeskBotCore.ts) - the forward role->topic lookup,
+        // entirely distinct from agentQuestionsTopicId above.
+        roleTopicIdFor: (role) => Promise.resolve(roleTopicIdFor(targetPath, role)),
+        // GH-26: the undeliverable-drop counterpart to roleTopicIdFor above -
+        // see deliverRoleQuestion (telegramFrontDeskBotCore.ts) and
+        // markRoleQuestionUndeliverable's own comment for the marker-rewrite
+        // this performs.
+        markRoleQuestionUndeliverable: (role, question, options) => {
+          markRoleQuestionUndeliverable(targetPath, role, question, options);
+          return Promise.resolve();
+        },
+        ...buildVoiceReplyAdapters(openaiApiKey, botToken, chatId, targetPath),
       },
-      // BL-329: serialises this reply into the ticket's own durable record,
-      // ONLY when topicId resolves back to an actual BL-### ticket - a
-      // SUP-### thread reply has no backlogForTopic mapping and is
-      // deliberately skipped (that channel has its own store, BL-329 is
-      // BL-topics only).
-      // BL-440: retractsPendingQuestion (set by operator-decide.ts's
-      // runApprove on a successful gate answer, threaded here through the
-      // reply-outbox/SSE relay) rides straight onto this SAME append - the
-      // real production write of that field, never a second synthetic
-      // message unconnected to an actual send.
-      sendReply: (topicId, text, retractsPendingQuestion) =>
-        sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => {
-          const backlogId = backlogForTopic(readBacklogTopicMap(targetPath), topicId);
-          if (backlogId) {
-            appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text, retractsPendingQuestion });
-          }
-          return undefined;
-        }),
-      // BL-355: falls back to the backlog topic map so a reply whose
-      // threadId names a BL-### item (operator-decide.js's approve relay,
-      // invoked with backlogId as threadId) reaches that item's own topic
-      // - the SAME resolver every SUP-### reply already went through -
-      // and additionally decides whether General needs its own copy or
-      // pointer (resolveReplyTopicId's own bare-topic-id resolution is
-      // unchanged and still exported for any other caller).
-      resolveDelivery: (subjectId) => resolveReplyDelivery(readFrontDeskTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
-      ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
-      // BL-466: sendPoll/recordPollMapping/agentQuestionsTopicId - the
-      // outbound half of the agent-question round trip (deliverAgentQuestion,
-      // telegramFrontDeskBotCore.ts). agentQuestionsTopicId reuses the SAME
-      // ensureAgentQuestionsTopic the inbound side (buildPollAdapters above)
-      // and main()'s own pre-loop binding call use - never a second lookup.
-      // BL-483: sendPoll/recordPollMapping kept wired (their poll-answer
-      // sibling, processPollAnswer, is still valid, generically reusable
-      // code) but deliverAgentQuestion no longer calls them for an
-      // options-carrying ask - see sendAskButtons/recordAskMessage below.
-      sendPoll: (topicId, question, options) => sendTelegramPoll(botToken, chatId, question, options, topicId).then((r) => ({ pollId: r.pollId })),
-      recordPollMapping: (pollId, threadId, options) => {
-        const map = readPollMap(targetPath);
-        map[pollId] = { threadId, options };
-        writePollMap(targetPath, map);
-        return Promise.resolve();
-      },
-      // BL-483: tappable inline-keyboard buttons - the SUPERSEDING outbound
-      // half of the agent-question round trip for an options-carrying ask.
-      sendAskButtons: (topicId, text, buttons) =>
-        sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId, buttons).then((r) => ({ success: r.success, messageId: r.messageId })),
-      recordAskMessage: (threadId, topicId, messageId, text) => {
-        recordAskMessage(targetPath, threadId, topicId, messageId, text);
-        return Promise.resolve();
-      },
-      agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
-      // BL-607: a roleQuestion record's own delivery target (deliverRoleQuestion,
-      // telegramFrontDeskBotCore.ts) - the forward role->topic lookup,
-      // entirely distinct from agentQuestionsTopicId above.
-      roleTopicIdFor: (role) => Promise.resolve(roleTopicIdFor(targetPath, role)),
-      // GH-26: the undeliverable-drop counterpart to roleTopicIdFor above -
-      // see deliverRoleQuestion (telegramFrontDeskBotCore.ts) and
-      // markRoleQuestionUndeliverable's own comment for the marker-rewrite
-      // this performs.
-      markRoleQuestionUndeliverable: (role, question, options) => {
-        markRoleQuestionUndeliverable(targetPath, role, question, options);
-        return Promise.resolve();
-      },
-      ...buildVoiceReplyAdapters(openaiApiKey, botToken, chatId, targetPath),
-    },
-    seenIds
-  );
+      seenIds
+    );
+  } finally {
+    // BL-1111: release the prior SSE body so the next reconnect is not
+    // fighting a half-open undici reader (the live "terminated" signature).
+    try {
+      await reader.cancel();
+    } catch {
+      // already closed
+    }
+  }
 }
 
 // BL-320: retry-forever with capped backoff around the SSE connection
@@ -2630,7 +2641,7 @@ async function subscribeReplies(
   let state: ReplyRelayLoopState = { consecutiveFailures: 0, sustainedOutage: { escalated: false } };
   for (;;) {
     const errorMessage = await attemptReplyRelayConnection(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds, openaiApiKey);
-    const cycle = computeReplyRelayCycleResult(state, errorMessage === undefined, config, Date.now());
+    const cycle = computeReplyRelayCycleResult(state, errorMessage === undefined, config, Date.now(), errorMessage);
     state = cycle.state;
     await applyReplyRelayCycleResult(cycle, errorMessage, (message) => process.stderr.write(message), sleep, (message) =>
       sendDirectEscalation(botToken, chatId, message)
