@@ -2,7 +2,8 @@
 ;; TDD runner for required_stages_lib.bb (BL-606) - pure assertions only,
 ;; mirroring backlog_depth_test_runner.bb's own shape.
 (ns required-stages-test-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "required_stages_lib.bb")))
 
@@ -11,6 +12,10 @@
 (defn assert= [msg expected actual]
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
+
+(defn assert-true [msg actual]
+  (when (not actual)
+    (swap! failures conj (str "FAIL: " msg "\n  expected truthy\n  actual:   " (pr-str actual)))))
 
 ;; ── read-required-stages ──────────────────────────────────────────────────
 
@@ -214,12 +219,13 @@
 
 ;; ── read-stage-skip-reasons ────────────────────────────────────────────────
 
-(assert= "absent block reads as an empty map"
-         {}
+(assert= "absent block reads as empty reasons"
+         {:reasons {} :malformed nil}
          (required-stages-lib/read-stage-skip-reasons "id: BL-1\nrequired_stages: [coder, qa]\n"))
 
 (assert= "a present block is read as stage->reason, keys normalized"
-         {"cleaner" "not touched, config-only change" "architect" "no design impact"}
+         {:reasons {"cleaner" "not touched, config-only change" "architect" "no design impact"}
+          :malformed nil}
          (required-stages-lib/read-stage-skip-reasons
           (str "id: BL-1\n"
                "required_stages: [coder, qa]\n"
@@ -230,7 +236,8 @@
 
 
 (assert= "flow-style mapping is read as stage->reason, keys normalized"
-         {"cleaner" "style-only commit" "architect" "no design impact"}
+         {:reasons {"cleaner" "style-only commit" "architect" "no design impact"}
+          :malformed nil}
          (required-stages-lib/read-stage-skip-reasons
           (str "id: BL-1\n"
                "required_stages: [coder, qa]\n"
@@ -238,26 +245,52 @@
                "status: todo\n")))
 
 (assert= "flow-style quoted reason keeps commas and braces"
-         {"cleaner" "touched {a, b}, still style-only"}
+         {:reasons {"cleaner" "touched {a, b}, still style-only"} :malformed nil}
          (required-stages-lib/read-stage-skip-reasons
           "id: BL-1\nstage_skip_reasons: { cleaner: \"touched {a, b}, still style-only\" }\n"))
 
 (assert= "flow-style hardener alias normalizes to hardender"
-         {"hardender" "coverage only"}
+         {:reasons {"hardender" "coverage only"} :malformed nil}
          (required-stages-lib/read-stage-skip-reasons
           "id: BL-1\nstage_skip_reasons: { hardener: \"coverage only\" }\n"))
 
 (assert= "empty flow map reads as empty"
-         {}
+         {:reasons {} :malformed nil}
          (required-stages-lib/read-stage-skip-reasons
           "id: BL-1\nstage_skip_reasons: {}\n"))
 
 ;; BL-661 scenario 05: swarm_handoff embeds :reasons from read-stage-skip-reasons —
 ;; covered here by asserting the reader returns the flow reason that handoff would embed.
 (assert= "flow reason available for skip-trail audit embedding"
-         {"architect" "no design fork"}
+         {:reasons {"architect" "no design fork"} :malformed nil}
          (required-stages-lib/read-stage-skip-reasons
           "id: BL-661\nrequired_stages: [coder, qa]\nstage_skip_reasons: { architect: \"no design fork\" }\n"))
+
+;; ── BL-754: single-quote parity + unquoted comma surfacing ───────────────
+(assert= "BL-754: single-quoted reason keeps commas; next stage still parses"
+         {:reasons {"cleaner" "no test, obvious" "architect" "covered"} :malformed nil}
+         (required-stages-lib/read-stage-skip-reasons
+          "id: BL-1\nstage_skip_reasons: { cleaner: 'no test, obvious', architect: 'covered' }\n"))
+
+(assert= "BL-754: double-quoted reason keeps commas; next stage still parses"
+         {:reasons {"cleaner" "no test, obvious" "architect" "covered"} :malformed nil}
+         (required-stages-lib/read-stage-skip-reasons
+          "id: BL-1\nstage_skip_reasons: { cleaner: \"no test, obvious\", architect: \"covered\" }\n"))
+
+(let [r (required-stages-lib/read-stage-skip-reasons
+         "id: BL-1\nstage_skip_reasons: { cleaner: no test, obvious, architect: covered }\n")]
+  (assert-true "BL-754: unquoted comma-bearing reason is reported malformed"
+               (some? (:malformed r)))
+  (assert-true "BL-754: malformed report names the unparseable remainder"
+               (str/includes? (:malformed r) "no test, obvious"))
+  (assert-true "BL-754: partial result is not presented as complete (architect not silently kept alone as success)"
+               (or (nil? (get (:reasons r) "architect"))
+                   (some? (:malformed r)))))
+
+(assert= "BL-754: unquoted reason with no comma is still accepted"
+         {:reasons {"cleaner" "no test"} :malformed nil}
+         (required-stages-lib/read-stage-skip-reasons
+          "id: BL-1\nstage_skip_reasons: { cleaner: no test }\n"))
 
 ;; ── ran-and-skipped (acceptance scenario 08) ──────────────────────────────
 
