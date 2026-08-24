@@ -202,33 +202,17 @@ heartbeat_age_secs() {
 # those are dead).
 in_flight_sweep_under_budget() {
   marker_path=$1
-  if [ ! -f "$marker_path" ]; then
-    return 1
-  fi
+  [ -f "$marker_path" ] || return 1
   raw=$(cat "$marker_path" 2>/dev/null || true)
-  if [ -z "$raw" ]; then
-    return 1
-  fi
+  [ -n "$raw" ] || return 1
+  # Compact or spaced JSON idle forms (POSIX case — no jq).
   case "$raw" in
-    *'"sweep":"idle"'*|*"\"sweep\":\"idle\""*|*'\"sweep\": \"idle\"'*) return 1 ;;
-  esac
-  # Also reject explicit idle with spaces after colon.
-  case "$raw" in
-    *'"sweep": "idle"'*) return 1 ;;
+    *'"sweep":"idle"'*|*'"sweep": "idle"'*) return 1 ;;
   esac
   started=$(printf '%s' "$raw" | sed -n 's/.*"started_at_ms"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)
-  if [ -z "$started" ]; then
-    return 1
-  fi
-  now_ms=$((NOW * 1000))
-  age_ms=$((now_ms - started))
-  if [ "$age_ms" -lt 0 ]; then
-    return 1
-  fi
-  if [ "$age_ms" -le "$IN_SWEEP_BUDGET_MS" ]; then
-    return 0
-  fi
-  return 1
+  [ -n "$started" ] || return 1
+  age_ms=$((NOW * 1000 - started))
+  [ "$age_ms" -ge 0 ] && [ "$age_ms" -le "$IN_SWEEP_BUDGET_MS" ]
 }
 
 # BL-1011: a value that is not an age never renders as a number. This is the
