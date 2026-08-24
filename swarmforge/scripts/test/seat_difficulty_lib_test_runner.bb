@@ -43,6 +43,26 @@
          true
          (seat-difficulty-lib/seat-accepts? nil "high"))
 
+(let [tiers {"coder" "hard"}]
+  (assert= "undeclared seat on tiered stage skips high (architect bounce)"
+           :skip-ineligible
+           (seat-difficulty-lib/difficulty-claim-decision
+            {:me "coder@sonnet2" :my-tier nil :cost "high" :stage "coder"
+             :tiers tiers
+             :sibling-states [{:role "coder" :tier "hard" :busy? true}]}))
+  (assert= "undeclared seat on tiered stage skips low too (declaration required)"
+           :skip-ineligible
+           (seat-difficulty-lib/difficulty-claim-decision
+            {:me "coder@sonnet2" :my-tier nil :cost "low" :stage "coder"
+             :tiers tiers
+             :sibling-states [{:role "coder" :tier "hard" :busy? true}]}))
+  (assert= "hard does not defer-better-fit to an undeclared idle sibling"
+           :claim
+           (seat-difficulty-lib/difficulty-claim-decision
+            {:me "coder" :my-tier "hard" :cost "low" :stage "coder"
+             :tiers tiers
+             :sibling-states [{:role "coder@sonnet2" :tier nil :busy? false}]})))
+
 (let [tiers {"coder" "hard" "coder@sonnet2" "easy"}
       sibs [{:role "coder@sonnet2" :tier "easy" :busy? false}]]
   (assert= "low prefers idle easy over hard"

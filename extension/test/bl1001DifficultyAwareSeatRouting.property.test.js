@@ -73,3 +73,18 @@ test('BL-1001: no declared tiers leaves BL-983 claim path unchanged', () => {
   );
   assert.equal(d, 'claim');
 });
+
+test('BL-1001 architect bounce: undeclared seat never claims on a tier-active stage', () => {
+  let reached = 0;
+  fc.assert(
+    fc.property(fc.constantFrom(...costs), fc.boolean(), (cost, hardBusy) => {
+      reached += 1;
+      const d = edn(
+        `(seat-difficulty-lib/difficulty-claim-decision {:me "coder@sonnet2" :my-tier nil :cost ${JSON.stringify(cost)} :stage "coder" :tiers {"coder" "hard"} :sibling-states [{:role "coder" :tier "hard" :busy? ${hardBusy}}]})`
+      );
+      assert.equal(d, 'skip-ineligible');
+    }),
+    { numRuns: 12 }
+  );
+  assert.ok(reached >= 3);
+});
