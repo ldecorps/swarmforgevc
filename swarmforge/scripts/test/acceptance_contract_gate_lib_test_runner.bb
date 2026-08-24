@@ -63,6 +63,18 @@
   (assert-true "a nil registry-load-error still produces a readable warning, never throws"
                (re-find #"unknown error" (first (:warnings result)))))
 
+;; ── BL-1031 ruling (b): wait-bound hit fails CLOSED with a named finding ─
+
+(let [result (acceptance-contract-gate-lib/evaluate
+              {:ticket-id "BL-999" :declaration-readable? true
+               :registry-loadable? false :wait-bound-hit? true
+               :registry-load-error "wait-bound hit (exit 124): daemon-cycle-guard: bounded-wait timeout"
+               :unresolved-steps []})]
+  (assert= "wait-bound hit produces exactly one finding" 1 (count (:findings result)))
+  (assert= "wait-bound hit produces no fail-open warning" [] (:warnings result))
+  (assert-true "the finding names the wait-bound"
+               (re-find #"wait-bound" (:detail (first (:findings result))))))
+
 ;; ── declaration readable + registry loadable + no unresolved steps -> clean pass
 
 (let [result (acceptance-contract-gate-lib/evaluate

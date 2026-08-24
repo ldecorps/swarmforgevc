@@ -2,7 +2,6 @@
 ;; Shared by swarm_handoff.bb (sync deliver) and available to handoffd.bb later.
 (ns handoff-inject-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [clojure.string :as str]))
 
 (def scripts-dir (fs/path (fs/parent (fs/canonicalize *file*))))
@@ -39,7 +38,8 @@
     (spit (str file) (str stamp " " body "\n") :append true)))
 
 (defn tmux! [& args]
-  (apply process/sh "tmux" args))
+  ;; BL-1031: bounded chokepoint (daemon-cycle-guard-lib/sh! via handoff_lib).
+  (apply daemon-cycle-guard-lib/sh! "tmux" args))
 
 (defn capture-pane-text [socket session]
   (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))

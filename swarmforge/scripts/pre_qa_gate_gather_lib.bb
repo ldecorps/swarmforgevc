@@ -16,7 +16,6 @@
 
 (ns pre-qa-gate-gather-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -29,9 +28,15 @@
 ;; ── small git helpers ────────────────────────────────────────────────────
 
 (defn- run-git [project-root args]
-  (process/sh (into ["git" "-C" (str project-root)] args)))
+  ;; BL-1031: bounded chokepoint (daemon-cycle-guard-lib via handoff_lib).
+  (daemon-cycle-guard-lib/sh! (into ["git" "-C" (str project-root)] args)))
 
 (defn- git-ok? [res] (zero? (:exit res)))
+
+;; BL-1031: exit 124 is the bounded chokepoint's wait-bound signal (mirrors
+;; coreutils timeout). Named at every call site that must fail CLOSED.
+(defn- wait-bound-hit-result? [res]
+  (= 124 (:exit res)))
 
 (defn ref-exists? [project-root ref]
   (git-ok? (run-git project-root ["rev-parse" "--verify" "-q" ref])))
@@ -275,9 +280,12 @@
         (let [feature-path (str (fs/path tmp-dir "contract.feature"))
               ir-path (str (fs/path tmp-dir "ir.json"))]
           (spit feature-path feature-text)
-          (let [res (process/sh {:continue true :dir vendor-dir} "bb" "gherkin-parser" feature-path ir-path)]
-            (when (and (git-ok? res) (fs/exists? ir-path))
-              ir-path)))))))
+          (let [res (daemon-cycle-guard-lib/sh! {:dir vendor-dir} "bb" "gherkin-parser" feature-path ir-path)]
+            (cond
+              ;; BL-1031 ruling (b): wait-bound is fail-CLOSED, named at the call site.
+              (wait-bound-hit-result? res) :wait-bound-hit
+              (and (git-ok? res) (fs/exists? ir-path)) ir-path
+              :else nil)))))))
 
 (defn- list-tracked-paths-at-commit [project-root cited-commit subpath]
   (let [res (run-git project-root ["ls-tree" "-r" "--name-only" cited-commit "--" subpath])]
@@ -325,9 +333,18 @@
    the caller has one fail-open path, not several."
   [project-root pipeline-dir ir-path]
   (let [script (str (fs/path project-root "specs" "pipeline" "scripts" "resolve_contract_steps.js"))
-        res (process/sh {:continue true} "node" script pipeline-dir ir-path)]
-    (if-not (git-ok? res)
+        res (daemon-cycle-guard-lib/sh! "node" script pipeline-dir ir-path)]
+    (cond
+      ;; BL-1031 ruling (b): wait-bound hit is named and fail-CLOSED upstream —
+      ;; never absorbed into a silent fail-open warning.
+      (wait-bound-hit-result? res)
+      {:loadable false :wait-bound-hit? true
+       :error (str/trim (str "wait-bound hit (exit 124): " (:err res)))}
+
+      (not (git-ok? res))
       {:loadable false :error (str/trim (str "resolver exited " (:exit res) ": " (:err res)))}
+
+      :else
       (try
         (let [{:keys [loadable unresolved error]} (json/parse-string (:out res) true)]
           {:loadable (boolean loadable) :unresolved unresolved :error error})
@@ -363,6 +380,10 @@
           {:declaration-readable? true :registry-loadable? false
            :registry-load-error "the vendored APS parser (swarmforge/vendor/aps) is not present on this checkout"}
 
+          (= :wait-bound-hit parse-result)
+          {:declaration-readable? true :registry-loadable? false :wait-bound-hit? true
+           :registry-load-error "gherkin-parser wait-bound hit (exit 124)"}
+
           (nil? parse-result)
           {:declaration-readable? false}
 
@@ -372,9 +393,12 @@
             (if-not pipeline-dir
               {:declaration-readable? true :registry-loadable? false
                :registry-load-error "specs/pipeline could not be listed at the cited commit"}
-              (let [{:keys [loadable unresolved error]} (run-contract-step-resolver project-root pipeline-dir ir-path)]
+              (let [{:keys [loadable unresolved error wait-bound-hit?]}
+                    (run-contract-step-resolver project-root pipeline-dir ir-path)]
                 (if-not loadable
-                  {:declaration-readable? true :registry-loadable? false :registry-load-error error}
+                  {:declaration-readable? true :registry-loadable? false
+                   :registry-load-error error
+                   :wait-bound-hit? (boolean wait-bound-hit?)}
                   {:declaration-readable? true :registry-loadable? true
                    :unresolved-steps (mapv (fn [{:keys [scenario exampleIndex stepText]}]
                                               {:scenario scenario :example-index exampleIndex :step-text stepText})
