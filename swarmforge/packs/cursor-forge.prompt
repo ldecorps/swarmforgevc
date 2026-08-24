@@ -1,0 +1,33 @@
+# cursor-forge overlay: standing Cursor full-forge, no specifier
+
+Read this when your swarm was launched with the `cursor-forge` pack.
+
+## Model / agent routing (this pack)
+
+| Role | Agent | Model |
+|------|--------|--------|
+| coder, cleaner, architect, hardender, documenter, QA | `cursor` (`cursor-agent`) | `auto` |
+| coordinator (separate process) | `cursor` | `auto` |
+| specifier | **absent** — no pane, no session |
+
+Standing topology: each listed role has its own live pane. Coordinator is
+always provisioned separately.
+
+## Pipeline shape
+
+- Full chain from coder onward: **coder → cleaner → architect → hardender →
+  documenter → QA**. Already-specced `backlog/active/` work enters at coder.
+- **No specifier.** Coordinator promotes from `backlog/paused/` into
+  `backlog/active/` (respect `active_backlog_max_depth`) and routes
+  **directly to coder** — never wait for a specifier hop.
+- **This pack is for already-specced work.** Do not mint or cold-specify new
+  intake here. Leave raw root/`backlog/*.yaml` intakes for a
+  specifier-capable pack. Spec-defect bounces that truly need a specifier:
+  surface to the human / leave a durable note — do not invent a specifier seat.
+- Every gate still runs unabridged.
+
+## Handoff drafts
+
+Write to `swarmforge/runtime/handoff-draft.txt` then run
+`swarmforge/scripts/swarm_handoff.sh` on that file. Never use repo-root `tmp/`
+for drafts.
