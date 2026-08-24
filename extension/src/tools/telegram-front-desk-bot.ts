@@ -2132,8 +2132,19 @@ export async function runExpediteDispatch(targetPath: string, backlogId: string)
 // commitApprovalWrites (util/commitIntegrityRunner.ts), reused by every
 // other automated human_approval writer (paused-pager Approve, Telegram
 // Approve/Reject/Amend) so none of them re-derive this same locate step.
-export async function commitExpediteWrites(targetPath: string, backlogId: string): Promise<boolean> {
-  return commitApprovalWrites(targetPath, backlogId, `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`);
+export async function commitExpediteWrites(
+  targetPath: string,
+  backlogId: string,
+  sourcePath?: string
+): Promise<boolean> {
+  // BL-1091: a paused→active rename must pathspec-commit BOTH ends. Naming
+  // only the destination leaves the paused/ deletion uncommitted.
+  return commitApprovalWrites(
+    targetPath,
+    backlogId,
+    `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`,
+    sourcePath ? [sourcePath] : []
+  );
 }
 
 function buildApprovalAskCloseAdapterFields(botToken: string, targetPath: string, chatId: string) {
@@ -2202,7 +2213,7 @@ function buildPollAdapters(
     // now refuse this promotion, and a refusal the operator is not told about
     // is the silent no-op invariant 2 forbids.
     promoteTicketIfPaused: (backlogId) => Promise.resolve(promoteToActive(targetPath, backlogId)),
-    commitExpediteWrites: (backlogId) => commitExpediteWrites(targetPath, backlogId),
+    commitExpediteWrites: (backlogId, sourcePath) => commitExpediteWrites(targetPath, backlogId, sourcePath),
     // BL-892: every other automated human_approval writer's own commit
     // step - shares commitApprovalWrites (util/commitIntegrityRunner.ts)
     // with commitExpediteWrites above, never a second locate-file path.
