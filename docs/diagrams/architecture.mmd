@@ -27,6 +27,8 @@
 %% holds a superseded blob (or is absent with no delete commit) — content no
 %% commit authored the change back to — is refused before push, with the
 %% reason keyword :silent-revert distinct from BL-855's :noop-landing-merge.
+%% BL-1085: push-sweep ahead-range gather at most once per tick; cache
+%% keyed on tip SHA + ordered ahead SHAs (replay complete only; no tip-only).
 %% BL-820 added the closing-ceremony lean pass: ./finish-shift runs
 %% closing-ceremony-run.js before it stops the pipeline, folding the BL-819
 %% ledger into a shift packet stored under lean/ceremony/ and delivered to
@@ -202,6 +204,8 @@
 %% packs; standing packs ignore leftovers as stale (attach / resolve-resident).
 %% BL-1084 (2026-08-24): ready_for_next supersede guard — .swarmforge/superseded/
 %% markers stop every stage, not only the role a note reached.
+%% BL-1085 (2026-08-24): push-sweep ahead-range cache — one walk/tick; replay
+%% complete gather on tip+ahead-SHA key (never tip-only / BL-952).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

@@ -2785,21 +2785,22 @@
        :ahead-commits (mapv #(select-keys % [:sha :merge? :second-parent-sha :offered-paths :tree-equals-parent1?])
                             commit-facts)})))
 
+(defn- tip-ancestry-unreadable?
+  "True when swarmforge-QA is present but tip ancestry cannot be read —
+   fail closed rather than caching around a tooling hole."
+  [qa-present? tip-check]
+  (and qa-present? (or (nil? tip-check) (not (:ok? tip-check)))))
+
 (defn- read-ahead-range-key! []
   (let [main-tip (git-rev-parse "main")
-        tip-check (when (and main-tip (git-ref-exists? "swarmforge-QA"))
-                    (qa-ancestor? main-tip))
-        shas (git-ahead-shas)]
+        shas (when main-tip (git-ahead-shas))
+        qa-present? (boolean (git-ref-exists? "swarmforge-QA"))
+        tip-check (when (and main-tip qa-present?) (qa-ancestor? main-tip))]
     (cond
       (nil? main-tip) nil
       (nil? shas) nil
-      ;; Tip ancestry unreadable with QA present => cannot form a stable key
-      ;; for a complete gather; force a miss so the tick fails closed.
-      (and (git-ref-exists? "swarmforge-QA")
-           (or (nil? tip-check) (not (:ok? tip-check))))
-      nil
+      (tip-ancestry-unreadable? qa-present? tip-check) nil
       :else (push-sweep-ahead-range-lib/cache-key main-tip shas))))
-
 (defn- enumerate-ahead-range! [{:keys [main-tip ahead-shas]}]
   (try
     (let [qa (qa-facts-from-ahead-shas ahead-shas)
@@ -2840,6 +2841,7 @@
     (catch Exception e
       (log! "push-sweep-noop-merge-gate-error" (.getMessage e))
       {:facts-complete? false})))
+
 ;; BL-1098: real git wiring for push_sweep_lib.bb/silent-revert-decision.
 ;; Pure decision stays in the lib; this gatherer shells to git objects only
 ;; (never the working tree - every rev is an explicit ref:path). Candidate
