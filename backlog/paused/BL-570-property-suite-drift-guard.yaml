@@ -106,6 +106,9 @@ approval_context: >
   prompted it is already fixed either way.
 
 acceptance: specs/features/BL-570-property-suite-drift-guard.feature
+# FF-only rematch: hitchhiked coder tip deliberately dropped.
+abandoned_commits:
+  - "43e56446b0"
 
 qa_e2e_procedure: |
   With the guard installed, in a scratch branch:
