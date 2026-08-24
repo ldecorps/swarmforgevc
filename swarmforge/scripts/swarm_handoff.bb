@@ -319,9 +319,14 @@
         ;; BL-953 task/commit coherence gate: refuses a git_handoff whose
         ;; commit POSITIVELY contradicts its task's ticket (see
         ;; task_commit_coherence_gate_lib.bb - fail-open is absolute; an
-        ;; unreadable subject warns and passes).
+        ;; unreadable subject warns and passes). BL-1094: skip for the
+        ;; daemon's dispatch-gap auto-route (HEAD is tip, not ticket work).
         coherence-block
-        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name))
+                   (task-commit-coherence-gate-lib/check-enabled?
+                    {:dispatch-gap-autoroute?
+                     (= "1" (System/getenv
+                             task-commit-coherence-gate-lib/dispatch-gap-autoroute-env))}))
           (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
                 {:keys [exit out]} (daemon-cycle-guard-lib/sh!
                                     ["git" "-C" (str (project-root))

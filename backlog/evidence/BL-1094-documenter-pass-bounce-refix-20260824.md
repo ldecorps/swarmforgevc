@@ -2,6 +2,10 @@
 
 Commit reviewed: `c0136037c8` (hardener forward on coder hitchhiker strip
 `a1a2feb5b3`). Merge into documenter completed; ancestry confirmed.
+Also merged stranded QA bounce revert `4f44f255ab` for the PRE_QA ancestry
+gate, then restored tip content from the pre-merge documenter tip
+(`a85731905b`) so the revert could not silently re-delete the re-fix
+(BL-954).
 
 ## Review inventory (Article 4.4)
 

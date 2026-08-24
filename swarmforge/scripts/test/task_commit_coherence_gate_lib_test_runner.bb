@@ -75,6 +75,46 @@
   (assert-includes "warning names the check" line "coherence")
   (assert-includes "warning names the commit" line "896e1d5cb2"))
 
+;; ── BL-1094: dispatch-gap auto-route exemption + operator log naming ─────
+
+(assert-true "hand-authored path keeps the coherence check enabled"
+             (task-commit-coherence-gate-lib/check-enabled?
+              {:dispatch-gap-autoroute? false}))
+(assert-false "daemon auto-route path disables the coherence check"
+              (task-commit-coherence-gate-lib/check-enabled?
+               {:dispatch-gap-autoroute? true}))
+
+(let [line (task-commit-coherence-gate-lib/operator-refusal-log-line
+            "Cannot send git_handoff for BL-1094: commit x belongs to BL-999, not to the task's ticket BL-1094 (BL-953).")]
+  (assert-includes "log names the coherence gate" line "gate=task-commit-coherence (BL-953)")
+  (assert-includes "log carries a reason=" line "reason="))
+
+(let [line (task-commit-coherence-gate-lib/operator-refusal-log-line
+            "HANDOFF INVALID: to: none is not a role")]
+  (assert-includes "validation refusal names handoff-validation" line "gate=handoff-validation")
+  (assert-includes "validation refusal carries reason=" line "reason=HANDOFF INVALID"))
+
+(let [line (task-commit-coherence-gate-lib/operator-refusal-log-line
+            "bb exploded: unrelated stderr")]
+  (assert-includes "unclassified refusal names unknown" line "gate=unknown")
+  (assert-includes "unclassified refusal carries reason=" line "reason=bb exploded"))
+
+(assert-true "missing auto-route flag keeps the check enabled"
+             (task-commit-coherence-gate-lib/check-enabled? {}))
+
+;; BL-1094: production wiring — auto-route! must set the exemption env.
+;; Acceptance drives the harness (which also sets the flag); without this
+;; check, deleting the handoffd assoc leaves every suite green.
+(let [scripts-dir (str (fs/parent (fs/canonicalize *file*)) "/..")
+      handoffd (slurp (str (fs/path scripts-dir "handoffd.bb")))
+      harness (slurp (str (fs/path scripts-dir "test" "dispatch_gap_sweep_harness.bb")))
+      env-assoc "task-commit-coherence-gate-lib/dispatch-gap-autoroute-env \"1\""]
+  (assert-includes "handoffd auto-route! sets DISPATCH_GAP env" handoffd env-assoc)
+  (assert-includes "dispatch-gap harness sets DISPATCH_GAP env" harness env-assoc)
+  (assert-includes "handoffd names the BL-1094 env constant"
+                   handoffd
+                   task-commit-coherence-gate-lib/dispatch-gap-autoroute-env))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))

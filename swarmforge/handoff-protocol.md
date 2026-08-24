@@ -577,6 +577,18 @@ Mechanics (`task_commit_coherence_gate_lib.bb`):
 - If the send is refused, it rides `validate`'s shared error path —
   nothing is delivered to any mailbox, no wake is injected.
 
+**Dispatch-gap auto-route exemption (BL-1094).** The daemon's dispatch-gap
+sweep generates a `git_handoff` that cites HEAD as "current tip", not "the
+work for this ticket". That premise does not fit BL-953's stale-draft catch,
+so almost every auto-route was refused when HEAD's subject named a different
+ticket. `handoffd`'s `auto-route!` (and its test harness only) sets
+`SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1` on that one `swarm_handoff` process;
+`check-enabled?` then skips the coherence gate. Hand-authored drafts never
+set the env, so a contradicting `task:`/`commit:` pair is still refused.
+When an auto-route send still fails, `dispatch-gap-autoroute-error` logs
+`gate=<name> reason=…` (coherence, handoff-validation, or unknown) so the
+operator line names which gate blocked it.
+
 Refusal message names the task, the commit, the ticket(s) the commit's
 subject actually resolves to, and the usual cause:
 

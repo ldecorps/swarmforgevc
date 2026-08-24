@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0637c9a141704073a1cd5d4bc835880963c943d0eb204b771ebbf6c347f4e992
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T07:37:09.254823531Z","feature_name":"The daemon can deliver the auto-route it generates","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1094-the-auto-route-cites-head-so-the-coherence-gate-blocks-it.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"An auto-route is delivered whatever HEAD's subject names","scenario_hash":"2a880acf984887545f11da55025a1298025302287275b2ca393798810a7076a1","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-24T07:37:09.254823531Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The daemon can deliver the auto-route it generates
 
   A ticket sitting active with no dispatch trail is auto-routed by the
