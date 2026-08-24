@@ -206,9 +206,16 @@ emit_labeled_list() {
   return 0
 }
 fail=0
-emit_labeled_list "SURVIVORS (each is a real test gap):" "${SURVIVORS[@]}" && fail=1
+# Length-before-expand: under bash 3.2 + set -u, "${arr[@]}" on an empty
+# array is an unbound-variable error *before* emit_labeled_list runs. Guard
+# first (coder shape); keep the helper for the non-empty path (cleaner DRY).
+if [[ "${#SURVIVORS[@]}" -gt 0 ]]; then
+  emit_labeled_list "SURVIVORS (each is a real test gap):" "${SURVIVORS[@]}" && fail=1
+fi
 # BL-1101: a skipped mutant produced no evidence — never certify the run.
-emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "${SKIPPED[@]}" && fail=1
+if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
+  emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "${SKIPPED[@]}" && fail=1
+fi
 if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi

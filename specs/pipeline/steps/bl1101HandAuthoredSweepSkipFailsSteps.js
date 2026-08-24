@@ -120,8 +120,13 @@ emit_labeled_list() {
   return 0
 }
 fail=0
-emit_labeled_list "SURVIVORS (each is a real test gap):" "\${SURVIVORS[@]}" && fail=1
-emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "\${SKIPPED[@]}" && fail=1
+# Length-before-expand (bash 3.2 + set -u): never expand an empty array.
+if [[ "\${#SURVIVORS[@]}" -gt 0 ]]; then
+  emit_labeled_list "SURVIVORS (each is a real test gap):" "\${SURVIVORS[@]}" && fail=1
+fi
+if [[ "\${#SKIPPED[@]}" -gt 0 ]]; then
+  emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "\${SKIPPED[@]}" && fail=1
+fi
 if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
@@ -165,6 +170,17 @@ function registerSteps(registry) {
       'live sweep must report skipped labels before failing'
     );
     assert.match(real, /emit_labeled_list "SKIPPED/, 'live sweep must fail via emit_labeled_list for SKIPPED');
+    // Architect bounce D1: empty-array expand under set -u must not precede the helper.
+    assert.match(
+      real,
+      /\[\[ "\$\{#SKIPPED\[@\]\}" -gt 0 \]\]/,
+      'live sweep must length-guard SKIPPED before expanding under set -u'
+    );
+    assert.match(
+      real,
+      /\[\[ "\$\{#SURVIVORS\[@\]\}" -gt 0 \]\]/,
+      'live sweep must length-guard SURVIVORS before expanding under set -u'
+    );
     ctx.bl1101 = {
       dir: fs.mkdtempSync(path.join(os.tmpdir(), 'bl1101-')),
       mutants: defaultMutants(),
