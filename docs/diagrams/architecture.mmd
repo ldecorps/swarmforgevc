@@ -214,6 +214,8 @@
 %% collision proven; unreachable BL-694 step handler exercised.
 %% BL-754 (2026-08-24): stage_skip_reasons flow parse — unquoted interior comma
 %% surfaces :malformed / skip_reasons_malformed=; never silent stage drop.
+%% BL-1000 (2026-08-24): freshness shell suites pin CONF to tracked fixture,
+%% not live daemon_log_freshness.conf (ops raise cannot redden suite).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
