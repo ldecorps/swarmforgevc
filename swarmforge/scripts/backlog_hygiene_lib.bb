@@ -100,6 +100,10 @@
       (swap! out conj v))
     (when-let [v (dangling-acceptance-violation text opts)]
       (swap! out conj v))
+    ;; BL-1095: type: bug is retired from the expedite lane — refuse at mint
+    ;; so a later bug ticket cannot silently lose expedite eligibility.
+    (when (= typ "bug")
+      (swap! out conj {:kind :retired-ticket-type :id id :path path :ticket-type "bug"}))
     @out))
 
 (defn violations-for-file [f]
@@ -107,7 +111,7 @@
         id (or (field text "id") (last (str/split (str f) #"/")))]
     (violations-for-text text {:id id :path (str f)})))
 
-(defn format-violation [{:keys [kind id path feature-path others message]}]
+(defn format-violation [{:keys [kind id path feature-path others message ticket-type]}]
   (case kind
     :missing-epic (str "MISSING-EPIC " id "  " path "  (non-epic ticket needs epic:)")
     :missing-epic-on-epic (str "MISSING-EPIC " id "  " path "  (type: epic must self-declare epic:)")
@@ -116,6 +120,8 @@
                                  " scalar hiding " feature-path " - rewrite as a single-line pointer)")
     :dangling-acceptance (str "DANGLING-ACCEPTANCE " id "  " path
                               "  (acceptance: pointer \"" feature-path "\" does not exist on the working tree)")
+    :retired-ticket-type (str "RETIRED-TICKET-TYPE " id "  " path
+                              "  (type: " (or ticket-type "bug") " is retired — use type: defect)")
     :duplicate-id (str "DUPLICATE-ID " id "  " path
                        "  also: " (str/join ", " (map :path others))
                        "  (duplicate ticket id — refuse at mint)")
