@@ -391,6 +391,7 @@ const DOMAINS = [
   require('./bl813DeathAlarmAttachAndAmbulanceRaceSteps'),
   require('./bl807BabysitterStuckInProcessOwnerLivenessSteps'),
   require('./bl1109BabysitterStarvedIdleOwnerInProcessSteps'),
+  require('./bl1114DeadLetterQuarantineMustNotBeSilentSteps'),
   require('./bl810HostQueuePollClearAllTtlSteps'),
   require('./bl814LiveRoleHeldLoudDegradeSteps'),
   require('./bl808BacklogDepthWarningCountsNonTicketEntriesSteps'),
