@@ -23,7 +23,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHECKER="$SRC/daemon_log_freshness_check.sh"
-CONF="$SRC/daemon_log_freshness.conf"
+CONF="$SCRIPT_DIR/fixtures/daemon_log_freshness.fixture.conf"
 KILL_PIPELINE="$SRC/kill_pipeline_swarm.sh"
 STOP_ANCILLARY="$SRC/stop_ancillary_services.sh"
 START_HANDOFF="$SRC/start_handoff_daemon.sh"
@@ -80,8 +80,8 @@ run_checker() {
 }
 
 NOW=1700000000
-STALE_HANDOFFD="$(ts_of $((NOW - 200)))"   # >120s threshold
-STALE_BABYSITTERD="$(ts_of $((NOW - 700)))" # >600s threshold
+STALE_HANDOFFD="$(ts_of $((NOW - 200)))"   # > pinned fixture handoffd|120
+STALE_BABYSITTERD="$(ts_of $((NOW - 700)))" # > pinned fixture babysitterd|600
 FRESH="$(ts_of "$NOW")"
 
 # ── 01: full-stack stop — a checker run restarts NEITHER daemon ────────────
@@ -126,7 +126,7 @@ check "03: stale handoffd is restarted exactly as today" \
 check "03: incident record appended before announce" \
   'grep -q "daemon=handoffd" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "action=restart" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
 check "03: announce carries the existing FRESHNESS_VIOLATION text" \
-  'grep -q "FRESHNESS_VIOLATION restart daemon=handoffd" "$ROOT/announces.log"'
+  'grep -q "FRESHNESS_VIOLATION restart swarm=primary daemon=handoffd" "$ROOT/announces.log"'
 pass "03: unconditional-suppression regression scenario — no marker, no suppression"
 
 # ── 04: stop, then start (real script), then stale — restart happens ───────
