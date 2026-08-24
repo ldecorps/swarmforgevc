@@ -622,6 +622,7 @@ const DOMAINS = [
   require('./bl1058PortableMktempSteps'),
   require('./bl1066MetricsTickSteps'),
   require('./bl1074PostCloseRefileDurationSteps'),
+  require('./bl609ResidentSpyFontSizeControlSteps'),
   require('./bl1015BoyScoutRunCleansOneThingSteps'),
   require('./bl1057HostSwitchoverDoctorSteps'),
   require('./bl1069TmuxServerVersionSteps'),

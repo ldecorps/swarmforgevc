@@ -136,3 +136,89 @@ test('BL-929: the strip stays hidden before the first snapshot names a layout (f
   dom.window.eval(extractInlineScript(html));
   assert.equal(dom.window.document.getElementById('ticket-strip').hidden, true);
 });
+
+// ── BL-609: pane font-size control ───────────────────────────────────────
+
+test('BL-609: default pane font size is 13px via --pane-font-size (was 11px)', () => {
+  const html = getResidentSpyUiHtml();
+  assert.match(html, /--pane-font-size:\s*13px/);
+  assert.match(html, /font-size:\s*var\(--pane-font-size\)/);
+  assert.doesNotMatch(html.replace(/\/\*[\s\S]*?\*\//g, ''), /pre\s*\{[^}]*font-size:\s*11px/);
+});
+
+test('BL-609: crowded-grid pre rule is a relative step below the chosen size', () => {
+  const html = getResidentSpyUiHtml();
+  assert.match(
+    html,
+    /\.split\.pane-count-7 pre[\s\S]*?font-size:\s*calc\(var\(--pane-font-size\)\s*-\s*2px\)/
+  );
+});
+
+test('BL-609: +/- control lives outside #fs-head and survives a fullscreen refresh', async () => {
+  const claimAt = Date.now() - 90_000;
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: true,
+      panes: [
+        {
+          id: 'resident',
+          label: 'Resident',
+          pane: pane({
+            ticketId: 'BL-609',
+            ticketTitle: 'font size',
+            roleLabel: 'Resident',
+            modelLabel: 'Sonnet',
+            claimEnteredAtMs: claimAt,
+            paneText: 'hello pane',
+          }),
+        },
+      ],
+    })
+  );
+  await flush();
+  const { document } = dom.window;
+  document.querySelector('.pane-col[data-pane-id="resident"]').dispatchEvent(
+    new dom.window.MouseEvent('click', { bubbles: true })
+  );
+  assert.equal(document.getElementById('fs-head').contains(document.getElementById('fs-font-ctrl')), false);
+  document.getElementById('fs-font-inc').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '14px');
+  document.querySelector('.pane-col[data-pane-id="resident"]').dispatchEvent(
+    new dom.window.MouseEvent('click', { bubbles: true })
+  );
+  assert.ok(document.getElementById('fs-font-ctrl'));
+  assert.equal(document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '14px');
+  assert.match(document.getElementById('fs-head').textContent, /BL-609/);
+  assert.match(document.getElementById('fs-head').textContent, /font size/);
+  assert.match(document.getElementById('fs-head').textContent, /Resident/);
+  assert.match(document.getElementById('fs-head').textContent, /Sonnet/);
+  assert.match(document.getElementById('fs-head').textContent, /entered/);
+});
+
+test('BL-609: at the maximum bound the increase control is shown unavailable', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: true,
+      panes: [{ id: 'resident', label: 'Resident', pane: pane({ paneText: 'x' }) }],
+    })
+  );
+  await flush();
+  const { document } = dom.window;
+  document.querySelector('.pane-col[data-pane-id="resident"]').dispatchEvent(
+    new dom.window.MouseEvent('click', { bubbles: true })
+  );
+  const inc = document.getElementById('fs-font-inc');
+  for (let i = 0; i < 20; i += 1) {
+    inc.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  }
+  assert.equal(document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '20px');
+  assert.equal(inc.disabled, true);
+  assert.ok(inc.classList.contains('is-unavailable'));
+});
+
+test('BL-609: the HTML shell never references browser storage', () => {
+  const html = getResidentSpyUiHtml();
+  assert.doesNotMatch(html, /localStorage|sessionStorage/);
+});
