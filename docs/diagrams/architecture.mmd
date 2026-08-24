@@ -48,6 +48,9 @@
 %% BL-1106: effective-depth pause + throttle paths resolve at master via
 %% resolve-identity-root (same as BL-966 conf), so a worktree cannot miss
 %% control-pause.json and promote past a human hold.
+%% BL-1104: landed-but-open sibling of dispatch-gap/unassigned-active —
+%% subject-anchored QA approval on origin/main + still in active/ + no Close
+%% → one note to QA to resend coordinator notify (never closes/moves).
 %% BL-891 added a master-main-reconcile sweep to the same handoffd.bb
 %% cadence, mirroring BL-356's push-sweep! in the opposite direction:
 %% origin/main's landed commits never reached the master checkout's own
@@ -249,7 +252,7 @@ flowchart TB
 
   PANES -->|read/write| HANDOFFS
   PANES -->|vibe seat: acp-host-pane writes\nsnapshot; babysitter reads (BL-1081)| ACPDIR
-  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nmaster-main-reconcile sweep (BL-891),\nlifecycle-snapshot sweep (BL-897),\nnotifies via tmux send-keys| SOCKET
+  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nmaster-main-reconcile sweep (BL-891),\nlifecycle-snapshot sweep (BL-897),\nlanded-but-open sweep (BL-1104),\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
   PANES -->|lean-ledger-record.js at handoff\ncompletion + close-commit (BL-819)| LEANDIR
   PANES -->|closing-ceremony-run.js at\n./finish-shift, before pipeline stop (BL-820):\nreads LEANDIR, writes a run| CEREMONYDIR
