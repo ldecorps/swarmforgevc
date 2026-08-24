@@ -208,6 +208,8 @@
 %% complete gather on tip+ahead-SHA key (never tip-only / BL-952).
 %% BL-1023 (2026-08-24): expedite initiation adopts paused/hold run ticket into
 %% active (or refuses) before stages; move-ticket! never silent-no-ops.
+%% BL-748 (2026-08-24): routing-skip journal I/O fails nonfatally (stderr);
+%% sync inject + draft consume still run.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
