@@ -224,14 +224,20 @@ mid-run (BL-637).
    whole token is a forbidden flag or the command cannot be tokenized with
    confidence. Decided before anything else moves, so a refusal here costs
    nothing — see [Refusals](#refusals).
-3. Park every other ticket in `backlog/active/` to `backlog/hold/`; write the park record.
-4. Run the stop command — the same line just checked, handed in rather than re-read.
-5. **Re-probe and verify.** The stop's exit code is not trusted.
-6. Refuse if not clean (unless `--override`).
-7. Create `expedite/<BL-id>` and its worktree.
-8. Walk the stage chain.
-9. Move the ticket yaml to `backlog/done/` on success.
-10. Restart — reported, never blocking.
+3. **Ensure the run ticket is bookkeepable** (BL-1023): locate it under
+   `backlog/{active,paused,hold}/`. Already in `active/` → ready. In `paused/` or
+   `hold/` → adopt into `active/` (skipped on `--dry-run`). Missing → refuse and
+   name the ticket before stages spend. `move-ticket!` returns `{:ok? …}`; a
+   failed move exits loudly — never the old silent nil.
+4. Park every *other* ticket in `backlog/active/` to `backlog/hold/`; write the park record.
+5. Run the stop command — the same line just checked, handed in rather than re-read.
+6. **Re-probe and verify.** The stop's exit code is not trusted.
+7. Refuse if not clean (unless `--override`).
+8. Create `expedite/<BL-id>` and its worktree.
+9. Walk the stage chain.
+10. Move the ticket yaml to `backlog/done/` on success (source must be `active/` —
+    guaranteed by step 3, or the run already refused).
+11. Restart — reported, never blocking.
 
 ## Refusals
 
@@ -239,6 +245,8 @@ mid-run (BL-637).
 |---|---|---|
 | `REFUSE stop command carries a forbidden flag: <flag> (in: <command>)` | `--sweep-inbox`, `--reset-worktrees` or `--full` present as a whole token of the configured stop command | never pass these: they archive the parcels a parked ticket needs to resume |
 | `REFUSE stop command could not be read as a command line, so it is refused rather than admitted: <command>` | `EXPEDITE_STOP_CMD` can't be tokenized with confidence — an unterminated quote, a dangling escape, a parameter expansion (`$var`), or a command substitution (`` `cmd` ``/`$(cmd)`) | simplify the configured stop command to a plain line the guard can read; it fails **closed** on anything it cannot read (BL-1030) rather than admitting it |
+| `REFUSE run ticket <id> was not found in backlog/{active,paused,hold}/ — cannot bookkeep at teardown` | yaml missing from those folders | restore or file the ticket; re-run (BL-1023 — before stages) |
+| `REFUSE run ticket <id> is in backlog/<folder>/ — cannot bookkeep at teardown` | ticket found outside the adoptable set | move it into `paused/`/`hold/`/`active/` and re-run |
 | `REFUSE teardown did not reach a clean slate: <names>` | the swarm is live and the stop could not clear it | stop the named processes by hand; `./stop-swarm.sh` misses `babysitterd` and the Operator agent |
 | `REFUSE could not create the run worktree` | branch or directory conflict | remove the stale worktree, or delete the branch |
 | `EXHAUSTED {...:probable-spec-defect...}` | the bounce bound was reached on one repeating class | route to the specifier with the named class; do not re-run the coder |
@@ -246,7 +254,9 @@ mid-run (BL-637).
 
 The two stop-command rows fire **before** `park-others!` (BL-1030) — nothing
 has been parked and the stop command has not run, so that refusal costs
-nothing and the closing summary reports `no tickets are held`. The teardown
+nothing and the closing summary reports `no tickets are held`. The BL-1023
+bookkeep refuse also fires **before** parking siblings and before stages.
+The teardown
 and worktree-creation rows still fire **after** `park-others!` has already
 staged sibling tickets into `backlog/hold/` (BL-1024) — so each of those also
 prints the `OUTSTANDING` block and writes `run.json`'s `outstanding` array
@@ -289,8 +299,11 @@ A deferral nobody is told about is a drop.
 
 - **No push.** Publishing local `main` is a human decision on the next boot.
   *Owner: a human, on the next boot.*
-- **No promotion.** One ticket, one run; it has no queue.
-  *Owner: the coordinator, through ordinary promotion.*
+- **No promotion of a next ticket.** One ticket, one run; it has no queue. It
+  **does** adopt the *run* ticket from `paused/`/`hold/` into `active/` when
+  needed so teardown can close it (BL-1023) — that is bookkeeping for this run,
+  not coordinator promotion.
+  *Owner: the coordinator, through ordinary promotion, for any later ticket.*
 - **No BL topic record, no briefing hook, no board sync.** Those need front-desk
   machinery it exists to work without. All three appear in `deferred`.
   *Owner: the next live swarm; they reconcile on their own sweeps.*
@@ -362,13 +375,16 @@ schedule, if it runs at all.
 
 | command | covers |
 |---|---|
-| `bb swarmforge/scripts/test/expedite_lib_test_runner.bb` | 110 assertions over the pure decisions |
+| `bb swarmforge/scripts/test/expedite_lib_test_runner.bb` | assertions over the pure decisions (incl. BL-1023 `bookkeep-plan` / `bookkeep-move-ok?`) |
 | `bb swarmforge/scripts/test/expedite_lib_property_runner.bb` | 8 properties × 500 seeded runs, with generator coverage asserted |
+| `bb swarmforge/scripts/test/bl1023_bookkeep_property_runner.bb` | BL-1023: bookkeep-plan / move-ok? properties |
+| `bash swarmforge/scripts/test/test_bl1023_expedite_bookkeep.sh` | BL-1023: shell fixtures for adopt / refuse / dry-run |
 | `bash swarmforge/scripts/test/expedite_prove_nonvacuity.sh` | breaks each invariant; confirms the suite rejects it |
 | `bash swarmforge/scripts/test/expedite_mutation_sweep.sh` | Hand-authored mutants over `expedite_lib.bb` (Stryker/Gherkin cannot see `.bb`). **BL-1101:** a skipped anchor (fragment absent) fails the run and names the labels — never `ALL MUTANTS KILLED` / exit 0 without evidence. |
 | `bb swarmforge/scripts/test/bounded_run_lib_test_runner.bb` | **BL-1103:** shared `bounded_run_lib.bb` (`run-bounded!`) — setsid/group-kill and no-deref-after-timeout; also used by babysitter ensure. |
-| `bash swarmforge/scripts/test/test_expedite_cli.sh` | 58 assertions end to end against a real fixture |
+| `bash swarmforge/scripts/test/test_expedite_cli.sh` | end to end against a real fixture |
 | `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-567-*.feature <out> specs/pipeline/steps/expeditorOfflineSingleTicketPipelineSteps.js` | 21 scenarios |
+| `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.feature <out> specs/pipeline/steps/bl1023ExpediteBookkeepSteps.js` | BL-1023: 6 scenarios |
 | `bash swarmforge/scripts/test/test_expedite_qa_verdict_store.sh` | BL-1025: the run writes its QA-hat verdict; `--dry-run` writes none |
 | `bash swarmforge/scripts/test/test_is_qa_ancestor_expedite_store.sh` | BL-1025: the shared predicate's reader half, including the fail-closed rows |
 | `bb swarmforge/scripts/test/bl1025_expedite_approval_property_runner.bb` | BL-1025: both declared invariants, exhaustive over all 32 states |

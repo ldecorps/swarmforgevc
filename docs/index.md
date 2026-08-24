@@ -30,6 +30,7 @@ expects them, and are not migrated or rewritten here.
 - [Daemon Death Alarm — Understanding the Alert and Recovery](how-to/BL-144-daemon-death-alarm.md)
 - [Stuck-Role Escalation Email — Understanding the Alert](how-to/BL-349-stuck-role-escalation-email.md)
 - [Driving one ticket through every gate with the swarm stopped (the expeditor)](how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md)
+- [Expeditor adopts (or refuses) a run ticket it cannot close](how-to/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.md) — no silent success with the yaml still in paused/hold (BL-1023).
 - [Ambulance mode — running one ticket exclusively while the swarm stays live](how-to/BL-655-ambulance-mode-the-hold.md)
 - [Host switchover doctor — the post-move checklist](how-to/BL-1057-host-switchover-doctor.md)
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)

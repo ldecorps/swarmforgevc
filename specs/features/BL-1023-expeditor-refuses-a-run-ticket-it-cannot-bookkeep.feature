@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=9a9a0e2661cc8ac8a805d2fd7410b5902abbf4ea14e1b11b23c062e3de570629
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T13:28:10.631583814Z","feature_name":"an expedited run never reports success with its ticket's backlog state unchanged","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.feature","background_hash":"f46c148b8a37423a88aa3e0a869cd00e5a227066bf36dff403dca1e0726ec245","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a run ticket the expeditor cannot close never passes silently","scenario_hash":"841f17b81e498e5f3f7a76a386597a22a9d1897f1e95995aa93c1f1457846050","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-24T13:28:10.631583814Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: an expedited run never reports success with its ticket's backlog state unchanged
 
   # BL-1023. The expeditor ends a passing run by moving its ticket from
