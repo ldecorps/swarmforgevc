@@ -212,18 +212,32 @@ test('escalation-04: exhausted retries escalate to a needs-human state instead o
   writeRecoveryAttempts(filePath, CFG.maxRecoveryAttempts);
 
   const escalations = [];
+  const wakes = [];
   const logged = [];
   const outcomes = recoverDeadLettersForRole('coder', inboxNewDir, CFG, noopAdapters({
     setNeedsHuman: (role, needsHuman) => escalations.push({ role, needsHuman }),
+    sendWakeUp: (role) => wakes.push(role),
     logRemediation: (o) => logged.push(o),
   }));
 
   assert.equal(outcomes.length, 1);
   assert.equal(outcomes[0].action, 'escalated');
-  assert.equal(fs.existsSync(filePath), true, 'an escalated parcel is surfaced, not silently discarded from failed/');
   assert.deepEqual(escalations, [{ role: 'coder', needsHuman: true }]);
+  assert.deepEqual(wakes, ['coder'], 'BL-1114: owning role must be woken on terminal escalation');
   assert.equal(logged.length, 1);
   assert.equal(logged[0].attempts, CFG.maxRecoveryAttempts);
+
+  // BL-1114: .dead leaves inbox/new (silent debris) for handoffs/failed/, and
+  // a terminal note tells the holder the parcel is exhausted.
+  assert.equal(fs.existsSync(filePath), false, 'escalated .dead must leave inbox/new');
+  // Fixture layout is target/inbox/new → failed box is target/failed
+  // (handoffs/inbox/new → handoffs/failed in production).
+  const failedPath = path.join(target, 'failed', path.basename(filePath));
+  assert.equal(fs.existsSync(failedPath), true, `escalated .dead must land in failed/: ${failedPath}`);
+  const notes = fs.readdirSync(inboxNewDir).filter((f) => f.endsWith('.handoff') && !f.endsWith('.dead'));
+  assert.equal(notes.length, 1, 'exactly one terminal note for the holder');
+  const noteBody = fs.readFileSync(path.join(inboxNewDir, notes[0]), 'utf8');
+  assert.match(noteBody, /TERMINAL|needs human|exhausted/i);
 });
 
 // ── recoverDeadLetters across multiple roles ──────────────────────────────

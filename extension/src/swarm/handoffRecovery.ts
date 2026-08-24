@@ -63,6 +63,82 @@ export function writeRecoveryAttempts(filePath: string, attempts: number): void 
   fs.writeFileSync(recoveryAttemptsPath(filePath), JSON.stringify({ attempts }), 'utf-8');
 }
 
+// BL-1114: handoffs/failed/ relative to inbox/new (…/handoffs/inbox/new →
+// …/handoffs/failed). Same box babysitterd's dead-letter-nonempty CRIT reads.
+export function failedBoxDir(inboxNewDir: string): string {
+  return path.join(inboxNewDir, '..', '..', 'failed');
+}
+
+function truncateMessage(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 1)}…`;
+}
+
+// Role-visible terminal signal: a real note in inbox/new the holder can
+// dequeue, naming the exhausted .dead. Message header stays ≤80 chars to
+// match swarm_handoff note limits.
+export function installTerminalRecoveryNote(
+  role: string,
+  inboxNewDir: string,
+  deadPath: string,
+  attempts: number
+): string {
+  const deadBase = path.basename(deadPath);
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const dest = path.join(inboxNewDir, `00_${stamp}_from_recovery_to_${role}_for_${role}.handoff`);
+  const message = truncateMessage(
+    `TERMINAL dead-letter ${deadBase} after ${attempts} recovery attempts — needs human`,
+    80
+  );
+  const body = [
+    `id: recovery_exhausted_${stamp}`,
+    'from: recovery',
+    `to: ${role}`,
+    `recipient: ${role}`,
+    'priority: 00',
+    'type: note',
+    `message: ${message}`,
+    `created_at: ${now.toISOString()}`,
+    '',
+    `Recovery exhausted for ${deadBase} (${attempts} attempts).`,
+    'The .dead parcel was moved to handoffs/failed/. Needs human.',
+    '',
+  ].join('\n');
+  fs.writeFileSync(dest, body, 'utf-8');
+  return dest;
+}
+
+// Move the silent .dead (+ recovery sidecar) out of inbox/new into failed/.
+export function disposeEscalatedDeadLetter(deadPath: string, failedDir: string): string {
+  fs.mkdirSync(failedDir, { recursive: true });
+  const dest = path.join(failedDir, path.basename(deadPath));
+  fs.renameSync(deadPath, dest);
+  const recoverySrc = recoveryAttemptsPath(deadPath);
+  if (fs.existsSync(recoverySrc)) {
+    fs.renameSync(recoverySrc, path.join(failedDir, path.basename(recoverySrc)));
+  }
+  fs.rmSync(`${deadPath}.chase.json`, { force: true });
+  return dest;
+}
+
+function applyExhaustedEscalation(
+  role: string,
+  inboxNewDir: string,
+  deadPath: string,
+  attempts: number,
+  adapters: RecoveryAdapters
+): RecoveryOutcome {
+  const failedDir = failedBoxDir(inboxNewDir);
+  installTerminalRecoveryNote(role, inboxNewDir, deadPath, attempts);
+  const disposedPath = disposeEscalatedDeadLetter(deadPath, failedDir);
+  const outcome: RecoveryOutcome = { role, filePath: disposedPath, action: 'escalated', attempts };
+  adapters.setNeedsHuman(role, true);
+  adapters.sendWakeUp(role);
+  adapters.logRemediation(outcome);
+  return outcome;
+}
+
 // A live holder actively processing work is never clobbered by a
 // re-delivery (BL-109's busy-recipient dead-letter bug was exactly this
 // failure mode in reverse). Once bounded retries are exhausted without ever
@@ -120,10 +196,9 @@ export function recoverDeadLettersForRole(
       adapters.sendWakeUp(role);
       adapters.logRemediation(outcome);
     } else if (action === 'escalated') {
-      const outcome: RecoveryOutcome = { role, filePath: dl.filePath, action, attempts };
-      outcomes.push(outcome);
-      adapters.setNeedsHuman(role, true);
-      adapters.logRemediation(outcome);
+      // BL-1114: needs-human alone left the holder with silent .dead debris
+      // after Operator announce-once. Wake + terminal note + move to failed/.
+      outcomes.push(applyExhaustedEscalation(role, inboxNewDir, dl.filePath, attempts, adapters));
     } else {
       // skipped-busy: deferred to the next sweep, not lost — leave the
       // dead letter and its attempt count untouched.
