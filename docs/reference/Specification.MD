@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-748: a failure appending
+**Last Updated:** August 24, 2026 (BL-752: a same-basename file under a
+non-stage backlog path such as `backlog/topics/` is proven not exempt from the
+residual-word scan. BL-694 Outline 04 renders the previously-dead handler;
+BL-752 acceptance pins the collision, keeps stage-move exemption, and asserts
+every `bl694ResidualAllowlistSteps.js` handler matches ≥1 rendered step.
+Complements BL-694. Acceptance:
+`specs/features/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.feature`.
+How-to: `docs/how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md`,
+`docs/how-to/BL-694-residual-word-allowlist-survives-stage-moves.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-748: a failure appending
 `.swarmforge/routing-skips.jsonl` never aborts a handoff send.
 `log-routing-skip!` catches, reports `ROUTING-SKIP RECORD FAILED:` on stderr
 via shared `report-nonfatal!`, and returns — so `try-sync-deliver!` and draft
