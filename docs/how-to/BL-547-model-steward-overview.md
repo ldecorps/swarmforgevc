@@ -1,6 +1,6 @@
 # Model Steward: Onboarding, Certification, and Role Recommendations
 
-Last Updated: 2026-08-23
+Last Updated: 2026-08-24
 
 SwarmForge's **Model Steward** maintains the Model Registry, Capability Registry, Role Recommendation Matrix, and Prompt Adapter catalogue — the permanent home for knowledge about each language model the swarm uses.
 
@@ -27,9 +27,20 @@ bb swarmforge/scripts/model_steward_cli.bb register anthropic/claude-opus-4-8 \
 
 **Note:** A model always enters as `candidate` by default. It is never certified automatically.
 
-### 2. Certify the model
+### 2. Prefer capture-then-evaluate (BL-556)
 
-Once you have benchmarked the model and confirmed it meets SwarmForge quality standards, plant a compliance-battery scorecard at the well-known path under the steward state dir, then certify:
+Once recruiter / bake-off evidence exists as a file, **ingest** it with
+`evaluate` (Slice 2). That path updates capabilities, writes an
+evidence-backed certification report with real gates, and records a
+role-matrix ranking whose evidence pointer is the scorecard id (and bake-off
+id when given). See [Capture then evaluate](#capture-then-evaluate-bl-556)
+below. `evaluate` does **not** spawn the battery or recruiter — capture is a
+separate step.
+
+### 3. Or certify from a planted scorecard (BL-1079)
+
+When you only have the well-known compliance-battery scorecard path (no
+recruiter capture wrapper), plant it and certify:
 
 ```bash
 STATE="${MODEL_STEWARD_STATE_DIR:-.swarmforge/model-steward}"
@@ -48,10 +59,79 @@ present, the CLI outputs the certification report path and the scorecard path
 it read. For the Cursor identity specifically, see
 [Certifying a Cursor identity](./BL-1079-cursor-identity-steward-certify-and-residuals.md).
 
+## Capture then evaluate (BL-556)
+
+`evaluate` is pure ingest: it reads captured JSON and updates the registry.
+Recruiter / bake-off tools print to stdout today — pipe them to a file first
+(operator capture, or a named future wiring step). Do not expect `evaluate`
+to run the battery.
+
+### Capture wrapper contract
+
+Paths may be absolute or relative to the steward state dir (typically under
+`evidence/`). Each capture file must carry a stable id — missing ids are
+refused; ids are never invented:
+
+| Artifact | Required top-level field | Body |
+|---|---|---|
+| Recruiter scorecard | `scorecard_id` | BatteryScorecard fields (`model`, `entries`, `overall`) at the top level **or** under `scorecard` |
+| Bake-off run (optional) | `bakeoff_run_id` | LabeledRecruiterReport fields at the top level **or** under `report` |
+
+### Run evaluate
+
+```bash
+STATE="${MODEL_STEWARD_STATE_DIR:-.swarmforge/model-steward}"
+mkdir -p "$STATE/evidence"
+
+# Capture (illustrative — redirect recruiter-run / bakeoff-run stdout yourself)
+# node extension/out/tools/recruiter-run.js … > "$STATE/evidence/my-scorecard.json"
+# Ensure the file includes "scorecard_id": "recruiter-scorecard:…"
+
+bb swarmforge/scripts/model_steward_cli.bb evaluate <provider>/<model> \
+  --role <role> \
+  --scorecard <path-to-scorecard.json> \
+  [--bakeoff <path-to-bakeoff.json>] \
+  [--decertify-on-regression]
+```
+
+Example:
+
+```bash
+bb swarmforge/scripts/model_steward_cli.bb evaluate anthropic/claude-sonnet-5 \
+  --role coder \
+  --scorecard .swarmforge/model-steward/evidence/coder-scorecard.json
+```
+
+What happens on success:
+
+1. Capability registry dimensions are updated from the scorecard (and bake-off
+   when given).
+2. A role-matrix ranking for `--role` records the evidence pointer
+   (`scorecard_id`, or `scorecard_id+bakeoff_run_id` when bake-off is present).
+3. A certification report under `certification-reports/` carries non-empty
+   gates from the ingested entries, the scorecard id, and (when re-evaluating)
+   a pass→fail regression diff vs the prior report.
+4. Clean gates certify the model; with `--decertify-on-regression`, a
+   pass→fail regression also drives `decertify` with a regression reason.
+   Manual `decertify` remains available without that flag.
+
+Register the model first — `evaluate` refuses an unknown `provider/model`.
+
+Confirm:
+
+```bash
+bb swarmforge/scripts/model_steward_cli.bb show <provider>/<model>
+bb swarmforge/scripts/model_steward_cli.bb capability <provider>/<model>
+bb swarmforge/scripts/model_steward_cli.bb role-matrix <role>
+```
+
 ## Certification Workflow
 
 ### Certifying a model
 
+- **`evaluate … --scorecard …`** (BL-556) — preferred when you have a captured
+  recruiter / bake-off artifact; produces evidence-backed gates and role-matrix
+  evidence pointers.
 - **`certify <provider>/<model>`** — Records a model as production-ready **only
   when** a compliance-battery scorecard exists at
   `scorecards/<provider>__<model>.json` under the steward state dir (BL-1079).
@@ -77,6 +157,9 @@ bb swarmforge/scripts/model_steward_cli.bb decertify anthropic/claude-opus-4-7 \
 ```
 
 **Required.** The `--reason` flag must always be present and non-empty. The new status defaults to `candidate` if omitted.
+
+Scripted path: `evaluate … --decertify-on-regression` when a re-ingest shows a
+gate that previously passed now failing.
 
 ## Reading the Role Recommendation Matrix
 
@@ -170,7 +253,14 @@ In production mode:
 - **Committed registry schema:** `swarmforge/model-steward/schema/registry.schema.json`
 - **Seed models:** `swarmforge/model-steward/seed/models.seed.json`
 - **Runtime state:** `.swarmforge/model-steward/` (gitignored; initialized on first read from seed on your local repository)
-- **Certification reports:** `.swarmforge/model-steward/reports/{timestamp}-{provider}-{model}.json`
+- **Captured evidence (BL-556):** `.swarmforge/model-steward/evidence/` (operator-written JSON for `evaluate`)
+- **Certification reports:** `.swarmforge/model-steward/certification-reports/` (and legacy `reports/` paths where older tickets still name them)
+- **BL-1079 certify scorecards:** `.swarmforge/model-steward/scorecards/<provider>__<model>.json`
 
 All CLI commands read from and write to the runtime state, so changes persist across future invocations.
+
+Related: [Route work to a local-model seat](./BL-1053-route-work-to-a-local-model-seat.md),
+[ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md).
+
+Acceptance (Slice 2): `specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature`.
 
