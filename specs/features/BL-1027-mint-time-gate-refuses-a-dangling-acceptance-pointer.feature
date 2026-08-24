@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7a9eb52e3d9986c58228350946c40fe94971d34b0077bf298b40a05cf1135672
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T14:41:50.891012561Z","feature_name":"the specifier's hygiene gate refuses a ticket whose acceptance pointer names a file that is not there","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.feature","background_hash":"8f0ee5f17bd83f5a5609aec04e712406fda6c619742389e3ee2a019bd22705f7","implementation_hash":"unknown","scenarios":[{"index":0,"name":"only a pointer that names a missing file is refused","scenario_hash":"30693e33460ddc02d519bc8dd94a290cccc60398a54af3eaf53ba3b436cbee1d","mutation_count":14,"result":{"Total":14,"Killed":14,"Survived":0,"Errors":0},"tested_at":"2026-08-24T14:41:50.891012561Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the specifier's hygiene gate refuses a ticket whose acceptance pointer names a file that is not there
 
   # BL-1027. The existence check already exists twice, and neither copy runs

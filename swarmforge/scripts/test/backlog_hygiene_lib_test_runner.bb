@@ -95,14 +95,16 @@ title: test slice
 type: feature
 epic: test-epic
 milestone: M8
-acceptance: specs/features/BL-042-example.feature
+acceptance: specs/features/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.feature
 priority: 5
 ")
 
 (assert=
  "a single-line pointer is not an unreadable-acceptance violation"
  []
- (backlog-hygiene-lib/violations-for-text (sample-single-line-pointer) {:id "BL-994" :path "fixture.yaml"}))
+ (backlog-hygiene-lib/violations-for-text (sample-single-line-pointer)
+                                          {:id "BL-994" :path "fixture.yaml"
+                                           :repo-root (str (fs/parent (fs/parent (fs/parent (fs/parent (fs/canonicalize *file*))))))}))
 
 (defn sample-block-scalar-honest-placeholder []
   "id: BL-993
@@ -224,5 +226,59 @@ priority: 5
  true
  (boolean (:error (backlog-hygiene-lib/read-local-id-index
                    "/tmp/bl1105-no-such-backlog-root"))))
+
+;; ── BL-1027: dangling acceptance pointer at mint ───────────────────────────
+
+(def ^:private repo-root-for-tests
+  (str (fs/parent (fs/parent (fs/parent (fs/parent (fs/canonicalize *file*))))))
+)
+
+(defn sample-dangling-pointer []
+  "id: BL-1027
+title: test slice
+type: feature
+epic: test-epic
+milestone: M8
+acceptance: specs/features/BL-1027-does-not-exist-anywhere.feature
+priority: 5
+")
+
+(assert=
+ "a single-line pointer to a missing feature file is a dangling-acceptance violation"
+ [{:kind :dangling-acceptance :id "BL-1027" :path "fixture.yaml"
+   :feature-path "specs/features/BL-1027-does-not-exist-anywhere.feature"}]
+ (backlog-hygiene-lib/violations-for-text (sample-dangling-pointer)
+                                          {:id "BL-1027" :path "fixture.yaml"
+                                           :repo-root repo-root-for-tests}))
+
+(assert=
+ "an absent acceptance field is never a dangling-acceptance violation"
+ []
+ (backlog-hygiene-lib/violations-for-text (sample-no-acceptance-field)
+                                          {:id "BL-992" :path "fixture.yaml"
+                                           :repo-root repo-root-for-tests}))
+
+(assert=
+ "epic-tracker nested none: prose is never a dangling-acceptance violation"
+ []
+ (backlog-hygiene-lib/violations-for-text
+  "id: BL-541
+title: EPIC
+type: epic
+epic: code-quality-gates
+milestone: M8
+acceptance:
+  none: \"tracker only — see decomposes_into children for acceptance\"
+priority: 0
+"
+  {:id "BL-541" :path "fixture.yaml" :repo-root repo-root-for-tests}))
+
+(assert=
+ "format-violation for dangling-acceptance names the ticket and the path"
+ true
+ (boolean (re-find #"DANGLING-ACCEPTANCE BL-1027.*fixture\.yaml.*does-not-exist"
+                    (backlog-hygiene-lib/format-violation
+                     {:kind :dangling-acceptance :id "BL-1027" :path "fixture.yaml"
+                      :feature-path "specs/features/BL-1027-does-not-exist-anywhere.feature"}))))
 
 (println "backlog_hygiene_lib_test: all passed")
