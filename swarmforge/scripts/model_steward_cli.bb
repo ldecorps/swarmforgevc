@@ -9,13 +9,14 @@
 ;; Usage:
 ;;   model_steward_cli.bb status
 ;;   model_steward_cli.bb show <provider>/<model>
-;;   model_steward_cli.bb register <provider>/<model> [--status candidate|certified|deprecated] [--context-window N] [--cost-class low|medium|high]
+;;   model_steward_cli.bb register <provider>/<model> [--status candidate|certified|deprecated] [--context-window N] [--cost-class low|medium|high] [--limitations "a;b"]
 ;;   model_steward_cli.bb certify <provider>/<model>
 ;;   model_steward_cli.bb decertify <provider>/<model> --reason <text> [--status candidate|deprecated]
 ;;   model_steward_cli.bb evaluate <provider>/<model> --role <role> --scorecard <path> [--bakeoff <path>] [--decertify-on-regression]
 ;;   model_steward_cli.bb role-matrix <role> [--include-uncertified]
 ;;   model_steward_cli.bb capability <provider>/<model>
 ;;   model_steward_cli.bb adapter <provider>/<model>
+;;   model_steward_cli.bb compat-docs [--out <path>]
 ;;   model_steward_cli.bb eligible <provider>/<model> --role <role> [--override-uncertified]
 (ns model-steward-cli
   (:require [babashka.fs :as fs]
@@ -90,7 +91,7 @@
   (println "Commands:")
   (println "  status")
   (println "  show <provider>/<model>")
-  (println "  register <provider>/<model> [--status S] [--context-window N] [--cost-class C]")
+  (println "  register <provider>/<model> [--status S] [--context-window N] [--cost-class C] [--limitations \"a;b\"]")
   (println "  certify <provider>/<model>")
   (println "  decertify <provider>/<model> --reason <text> [--status candidate|deprecated]")
   (println "  role-matrix <role> [--include-uncertified]")
@@ -98,6 +99,7 @@
   (println "  adapter <provider>/<model>")
   (println "  eligible <provider>/<model> --role <role> [--override-uncertified]")
   (println "  evaluate <provider>/<model> --role <role> --scorecard <path> [--bakeoff <path>] [--decertify-on-regression]")
+  (println "  compat-docs [--out <path>]")
   (System/exit 1))
 
 (defn run-status []
@@ -128,9 +130,26 @@
                  registry provider model
                  {:status status
                   :context_window (when context-window (Long/parseLong context-window))
-                  :cost_class cost-class})]
+                  :cost_class cost-class
+                  :known_limitations (when-let [lim (opt-value flags "--limitations")]
+                                       (mapv str/trim (str/split lim (re-pattern ";"))))})]
     (save-registry! updated)
     (println (str provider "/" model " " (:status (model-steward-lib/model-entry updated provider model))))))
+
+(defn default-compat-docs-path
+  []
+  (or (System/getenv "MODEL_STEWARD_COMPAT_DOCS_PATH")
+      (str (fs/path (model-steward-store/repo-root) "docs/reference/model-compatibility.md"))))
+
+(defn run-compat-docs
+  "BL-557: write the registry projection to the committed docs path (or
+   --out / MODEL_STEWARD_COMPAT_DOCS_PATH for isolated acceptance runs)."
+  [rest-args]
+  (let [out-path (or (opt-value rest-args "--out") (default-compat-docs-path))
+        body (model-steward-lib/render-compat-docs (load-registry))]
+    (fs/create-dirs (fs/parent out-path))
+    (spit out-path body)
+    (println (str "wrote " out-path))))
 
 (defn run-certify
   "BL-1079: certify requires a compliance-battery scorecard artifact at the
@@ -305,6 +324,7 @@
     "certify" (run-certify rest-args)
     "decertify" (run-decertify rest-args)
     "evaluate" (run-evaluate rest-args)
+    "compat-docs" (run-compat-docs rest-args)
     "role-matrix" (run-role-matrix rest-args)
     "capability" (run-capability rest-args)
     "adapter" (run-adapter rest-args)
