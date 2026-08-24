@@ -41,6 +41,35 @@ write_heartbeat() {
   bb -e "(require '[cheshire.core :as j]) (spit \"$root/.swarmforge/operator/front-desk-poll-heartbeat.json\" (j/generate-string {:lastHeartbeatMs (- $now $age_ms)}))"
 }
 
+# BL-1089: model "served, then stopped listening" the way a real child does.
+# A heartbeat backdated past this child's spawn is NOT "stopped listening" under
+# BL-1035 — it is a predecessor's leftover and falls into startup grace. Stamp
+# an OWN heartbeat (age 0, after spawn), then wait past the stall window so the
+# same timestamp ages in place.
+stamp_own_heartbeat_then_age_past_stall() {
+  local root="$1"
+  local stall_ms="${FRONT_DESK_STALL_MS:-1000}"
+  write_heartbeat "$root" 0
+  # Fractional sleep: stall_ms + 300ms cushion (bash sleep accepts decimals).
+  sleep "$(awk -v s="$stall_ms" 'BEGIN { printf "%.3f", (s + 300) / 1000 }')"
+}
+
+# Drive stall→restart until gave-up (or 15 tries). Sets gave_up=0|1.
+drive_until_gave_up() {
+  local root="$1"
+  gave_up=0
+  local _
+  for _ in $(seq 1 15); do
+    stamp_own_heartbeat_then_age_past_stall "$root"
+    check_once "$root" > /dev/null
+    sleep 0.2
+    if [[ "$(jget "$root/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]; then
+      gave_up=1
+      break
+    fi
+  done
+}
+
 check_once() {
   BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=y TELEGRAM_PRINCIPAL_USER_ID=1 \
     FRONT_DESK_MAX_ATTEMPTS="${FRONT_DESK_MAX_ATTEMPTS:-3}" \
@@ -68,9 +97,9 @@ check_once "$F" > /dev/null
 check "front-desk-liveness-02: a quiet-but-polling front desk is reported healthy, never stalled" \
   '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == running ]]'
 
-# A stale heartbeat (older than FRONT_DESK_STALL_MS=1000) on a still-alive
-# pid - the ~9h-outage failure mode itself.
-write_heartbeat "$F" 5000
+# Served once (own heartbeat), then went quiet past FRONT_DESK_STALL_MS —
+# the ~9h-outage failure mode itself (BL-1089: never backdate before spawn).
+stamp_own_heartbeat_then_age_past_stall "$F"
 check_once "$F" > /dev/null
 check "front-desk-liveness-01: a stopped-listening bot is reported as stalled, never plain 'running'" \
   '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == stalled ]]'
@@ -81,11 +110,23 @@ grep -q "stalled bot" "$F/.swarmforge/operator/front-desk-supervisor.log" \
 cleanup_children "$F"
 rm -rf "$F"
 
+# ── BL-1089: predecessor heartbeat inside grace must not stall (BL-1035) ──
+# Pins the own-heartbeat guard end-to-end. A 60s-backdated stamp cannot belong
+# to a child that spawned ~seconds ago; without the guard this falsely stalls.
+F="$(make_fixture)"
+check_once "$F" > /dev/null
+write_heartbeat "$F" 60000
+check_once "$F" > /dev/null
+check "bl-1089: a predecessor heartbeat inside startup grace is not declared stalled" \
+  '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == running ]]'
+cleanup_children "$F"
+rm -rf "$F"
+
 # ── front-desk-liveness-03: a stalled front desk is restarted, no human ────
 F="$(make_fixture)"
 export FRONT_DESK_STALL_MS=1000 FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=40
 check_once "$F" > /dev/null
-write_heartbeat "$F" 5000
+stamp_own_heartbeat_then_age_past_stall "$F"
 check_once "$F" > /dev/null
 check "the bot transitions to stalled" \
   '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == stalled ]]'
@@ -103,16 +144,7 @@ rm -rf "$F"
 F="$(make_fixture)"
 export FRONT_DESK_STALL_MS=1000 FRONT_DESK_MAX_ATTEMPTS=1 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20
 check_once "$F" > /dev/null
-gave_up=0
-for _ in $(seq 1 15); do
-  write_heartbeat "$F" 5000
-  check_once "$F" > /dev/null
-  sleep 0.2
-  if [[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]; then
-    gave_up=1
-    break
-  fi
-done
+drive_until_gave_up "$F"
 check "front-desk-liveness-04: repeated stalls stop restarting at the cap (gives up)" \
   '[[ "$gave_up" -eq 1 ]]'
 check "front-desk-liveness-04: the failure is escalated to the human (logged loudly)" \
@@ -128,16 +160,7 @@ export FRONT_DESK_STALL_MS=1000 FRONT_DESK_MAX_ATTEMPTS=1 FRONT_DESK_BACKOFF_BAS
        FRONT_DESK_ESCALATION_BACKOFF_BASE_MS=1 FRONT_DESK_ESCALATION_BACKOFF_MAX_MS=1 \
        FRONT_DESK_ESCALATION_FORCE_RESULT='{"success":false}'
 check_once "$F" > /dev/null
-gave_up=0
-for _ in $(seq 1 15); do
-  write_heartbeat "$F" 5000
-  check_once "$F" > /dev/null
-  sleep 0.2
-  if [[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]; then
-    gave_up=1
-    break
-  fi
-done
+drive_until_gave_up "$F"
 check "front-desk-liveness-05 setup: the bot gives up" '[[ "$gave_up" -eq 1 ]]'
 attempts_1="$(jget "$F/.swarmforge/operator/front-desk-escalation-alarm.json" "[:bot :delivery-attempts]")"
 check "front-desk-liveness-05: a failed escalation send is NOT armed (never silenced on a mere attempt)" \

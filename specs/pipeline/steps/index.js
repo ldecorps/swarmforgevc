@@ -188,6 +188,7 @@ const DOMAINS = [
   require('./controlLossIsNotAgentDeathSteps'),
   require('./operatorPassesAQuestionDownSteps'),
   require('./frontDeskLivenessMeansListeningSteps'),
+  require('./bl1089FrontDeskLivenessSuiteSteps'),
   require('./alwaysOnOperatorPresenceSteps'),
   require('./aDroppedMessageMustNotParkTheOffsetSteps'),
   require('./aChurnRewriteDoesNotMintACommitSteps'),
