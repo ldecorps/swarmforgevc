@@ -281,4 +281,48 @@ priority: 0
                      {:kind :dangling-acceptance :id "BL-1027" :path "fixture.yaml"
                       :feature-path "specs/features/BL-1027-does-not-exist-anywhere.feature"}))))
 
+;; ── BL-1095: retired type: bug at mint ─────────────────────────────────────
+
+(defn sample-retired-bug []
+  "id: BL-1095
+title: retired type
+type: bug
+epic: fixture-epic
+milestone: M8
+severity: high
+priority: 5
+")
+
+(defn sample-defect-replacement []
+  "id: BL-1095
+title: replacement type
+type: defect
+epic: fixture-epic
+milestone: M8
+severity: high
+priority: 5
+")
+
+(assert=
+ "type: bug is a retired-ticket-type violation"
+ [{:kind :retired-ticket-type :id "BL-1095" :path "fixture.yaml" :ticket-type "bug"}]
+ (backlog-hygiene-lib/violations-for-text (sample-retired-bug)
+                                          {:id "BL-1095" :path "fixture.yaml"
+                                           :repo-root repo-root-for-tests}))
+
+(assert=
+ "type: defect is never a retired-ticket-type violation"
+ []
+ (backlog-hygiene-lib/violations-for-text (sample-defect-replacement)
+                                          {:id "BL-1095" :path "fixture.yaml"
+                                           :repo-root repo-root-for-tests}))
+
+(assert=
+ "format-violation for retired-ticket-type names the ticket and type"
+ true
+ (boolean (re-find #"RETIRED-TICKET-TYPE BL-1095.*fixture\.yaml.*bug"
+                    (backlog-hygiene-lib/format-violation
+                     {:kind :retired-ticket-type :id "BL-1095" :path "fixture.yaml"
+                      :ticket-type "bug"}))))
+
 (println "backlog_hygiene_lib_test: all passed")

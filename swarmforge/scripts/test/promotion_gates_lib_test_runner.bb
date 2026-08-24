@@ -57,7 +57,7 @@
 
 (assert-true "defect + high is expedited" (promotion-gates-lib/expedited? "type: defect\nseverity: high\n"))
 (assert-true "defect + critical is expedited" (promotion-gates-lib/expedited? "type: defect\nseverity: critical\n"))
-(assert-true "legacy type: bug + high is still expedited (transition clause)" (promotion-gates-lib/expedited? "type: bug\nseverity: high\n"))
+(assert-false "retired type: bug + high is not expedited" (promotion-gates-lib/expedited? "type: bug\nseverity: high\n"))
 (assert-false "defect + medium is not expedited" (promotion-gates-lib/expedited? "type: defect\nseverity: medium\n"))
 (assert-false "defect with no severity fails CLOSED - not expedited" (promotion-gates-lib/expedited? "type: defect\n"))
 (assert-false "feature + high is not expedited (wrong type)" (promotion-gates-lib/expedited? "type: feature\nseverity: high\n"))

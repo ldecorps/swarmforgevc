@@ -494,6 +494,7 @@ const DOMAINS = [
   require('./bl921ChaseVerifiesLiveIdentitySteps'),
   require('./bl922UnreadableAcceptanceCaughtAtMintSteps'),
   require('./bl1027MintTimeDanglingAcceptanceSteps'),
+  require('./bl1095RetireExpediteBugTypeSteps'),
   require('./bl918PeriodicSamplesAreNotStallsSteps'),
   require('./bl678BatchClaimProgressSidecarSteps'),
   require('./bl640ConstitutionReferenceAmendmentDeliverySteps'),
