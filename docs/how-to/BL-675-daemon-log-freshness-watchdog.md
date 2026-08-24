@@ -76,6 +76,22 @@ announced. This is scoped to the file-absent sentinel only: a daemon that
 came back up and then went stale again inside the grace window is a genuine
 violation and still fires normally.
 
+## In-flight sweep suppress (BL-1110)
+
+`handoffd` refreshes its log heartbeat only at cycle start and end. A heavy
+mid-cycle sweep can age that heartbeat past the 120s base budget while the
+daemon is still progressing — the supervisor already trusted
+`.swarmforge/daemon/handoffd.sweep-marker` for that case; the freshness cron
+did not, and restarted a live delivery loop (`stale-heartbeat` → flap).
+
+When the marker shows an in-flight sweep younger than the in-sweep budget
+(`FRESHNESS_IN_SWEEP_BUDGET_MS`, default 225000 ms — same default as the
+supervisor's BL-977 budget), the checker records
+`action=suppress-in-sweep` / `reason=in-sweep-progress` and does **not**
+restart. A truly wedged daemon that stops refreshing the marker still trips
+`stale-heartbeat` as before. The conf pin stays `handoffd|120` — this is not
+a threshold bump.
+
 ## Install
 
 **Automatic (BL-783).** `start_ancillary_services.sh` — the lifecycle start
