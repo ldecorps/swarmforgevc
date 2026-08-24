@@ -50,6 +50,12 @@ export interface BacklogMoveResult {
   moved: boolean;
   destination?: string;
   /**
+   * Absolute path the file was moved FROM. A rename is two paths; a
+   * pathspec-scoped commit that names only the destination leaves the
+   * source deletion uncommitted (BL-1091).
+   */
+  source?: string;
+  /**
    * BL-1083: set when the promotion gates REFUSED, carrying the gate's own
    * words. Distinct from a plain `moved: false`, which still means "there was
    * nothing in paused/ to promote" - an operator told only "false" learns
@@ -65,7 +71,7 @@ function moveBacklogFileTo(filePath: string, destDir: string): BacklogMoveResult
   fs.mkdirSync(destDir, { recursive: true });
   const destination = path.join(destDir, path.basename(filePath));
   fs.renameSync(filePath, destination);
-  return { moved: true, destination };
+  return { moved: true, destination, source: filePath };
 }
 
 // Moves the file only - it never rewrites the status field. The done/
