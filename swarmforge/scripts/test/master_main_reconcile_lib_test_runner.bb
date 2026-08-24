@@ -441,6 +441,27 @@
   (assert= "sweep!: an up-to-date tick never escalates (sanity, matches the never-blocked never-escalates contract)"
            0 (:escalate! @calls)))
 
+;; ── sync-action / deadlock (coordinator step 0 + circuit breaker) ────────
+(assert= "sync-action: behind 0 -> proceed"
+         :proceed (master-main-reconcile-lib/sync-action {:ahead 9 :behind 0}))
+(assert= "sync-action: pure lag -> ff-only"
+         :ff-only (master-main-reconcile-lib/sync-action {:ahead 0 :behind 30}))
+(assert= "sync-action: diverged -> wait-reconcile"
+         :wait-reconcile (master-main-reconcile-lib/sync-action {:ahead 9 :behind 30}))
+(assert= "sync-action: dirty escalated -> wait-dirty-clear"
+         :wait-dirty-clear (master-main-reconcile-lib/sync-action
+                            {:ahead 9 :behind 30 :reconcile-surfaced "dirty" :reconcile-escalated true}))
+(assert= "sync-action: deadlock active wins"
+         :deadlock-tripped (master-main-reconcile-lib/sync-action
+                            {:ahead 0 :behind 0 :deadlock-active? true}))
+(assert-true "deadlock-trip-due?: trips when shape + aged + threshold"
+             (master-main-reconcile-lib/deadlock-trip-due?
+              {:ahead 9 :behind 30 :reconcile-escalated true
+               :coordinator-in-process-aged? true :blocked-ticks 3
+               :deadlock-state {} :threshold-ticks 3}))
+(assert-true "deadlock-clear?: behind 0 clears"
+             (master-main-reconcile-lib/deadlock-clear? 0))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")

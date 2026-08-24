@@ -239,6 +239,85 @@
   [reason]
   (str "SwarmForge: master main reconcile stuck (" (name reason) ")"))
 
+;; ── main-sync status + deadlock circuit breaker (coordinator step 0) ─────
+;; Gate bookkeeping on behind=0. When ahead+behind (or dirty-escalated
+;; reconcile) holds an aged coordinator in_process parcel, trip once:
+;; suppress wakes / dropped-parcel notes and stop burning tokens.
+
+(defn sync-action
+  "Pure. What should the coordinator do before QA bookkeeping?
+   :proceed | :ff-only | :wait-reconcile | :wait-dirty-clear | :deadlock-tripped"
+  [{:keys [ahead behind reconcile-surfaced reconcile-escalated deadlock-active?]}]
+  (let [ahead (or ahead 0)
+        behind (or behind 0)]
+    (cond
+      deadlock-active? :deadlock-tripped
+      (zero? behind) :proceed
+      (and (pos? behind) (zero? ahead)) :ff-only
+      (and (pos? behind)
+           (or reconcile-escalated
+               (#{"dirty" "conflict"} (str reconcile-surfaced))))
+      :wait-dirty-clear
+      (and (pos? ahead) (pos? behind)) :wait-reconcile
+      :else :wait-reconcile)))
+
+(defn deadlock-path [daemon-dir]
+  (str (fs/path daemon-dir "main-sync-deadlock.json")))
+
+(defn read-deadlock [daemon-dir]
+  (or (read-json (deadlock-path daemon-dir)) {}))
+
+(defn write-deadlock! [daemon-dir state]
+  (spit (deadlock-path daemon-dir) (json/generate-string state)))
+
+(defn clear-deadlock! [daemon-dir]
+  (write-deadlock! daemon-dir {}))
+
+(defn deadlock-active?
+  [state]
+  (boolean (:active state)))
+
+(def deadlock-default-threshold-ticks
+  "Consecutive blocked-main ticks before trip. ~3 handoffd cycles."
+  3)
+
+(defn deadlock-trip-due?
+  "True when behind>0, (ahead>0 or reconcile dirty/conflict escalated),
+   coordinator holds aged in_process, threshold crossed, and not yet active."
+  [{:keys [ahead behind reconcile-surfaced reconcile-escalated
+           coordinator-in-process-aged? blocked-ticks deadlock-state
+           threshold-ticks]}]
+  (let [ahead (or ahead 0)
+        behind (or behind 0)
+        ticks (or blocked-ticks 0)
+        threshold (or threshold-ticks deadlock-default-threshold-ticks)
+        blocked-shape?
+        (and (pos? behind)
+             (or (pos? ahead)
+                 reconcile-escalated
+                 (#{"dirty" "conflict"} (str reconcile-surfaced))))]
+    (boolean
+     (and blocked-shape?
+          coordinator-in-process-aged?
+          (>= ticks threshold)
+          (not (deadlock-active? deadlock-state))))))
+
+(defn deadlock-clear?
+  "Clear when origin is absorbed."
+  [behind]
+  (zero? (or behind 0)))
+
+(defn deadlock-alert-subject []
+  "SwarmForge: main-sync deadlock — bookkeeping halted")
+
+(defn deadlock-alert-text
+  [{:keys [ahead behind reason]}]
+  (str "⚠️ main-sync deadlock: local main ahead=" (or ahead 0)
+       " behind=" (or behind 0)
+       " (" (or reason "diverged-or-dirty") "). "
+       "Coordinator bookkeeping held; wakes and drop-nudges suppressed until behind=0. "
+       "Clear overlapping dirty paths or wait for BL-891 reconcile."))
+
 ;; ── adapter-injected orchestration ───────────────────────────────────────
 ;; adapters: {:rev-counts!          (fn [] -> {:ahead int :behind int}) -
 ;;                                   already fetches origin/main as a side

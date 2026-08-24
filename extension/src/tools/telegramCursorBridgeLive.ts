@@ -44,10 +44,14 @@ import {
 import {
   formatOperatorConfirmPrompt,
   formatOperatorStopModePrompt,
+  formatPlanConfirmPrompt,
   operatorConfirmButtons,
   operatorStopModeButtons,
+  planConfirmButtons,
   type PendingOperatorConfirm,
+  type PendingPlanConfirm,
 } from './telegramCursorOperatorCore';
+import { createThrottledProgressReporter, PLAN_AWAITING_PROGRESS_PREFIX } from '../bridge/cursorBridgeProgress';
 import {
   executeOperatorVerb,
   executeStopMode,
@@ -95,7 +99,6 @@ import {
   splitTelegramHtmlChunks,
   telegramHtmlToPlainText,
 } from '../bridge/cursorBridgeTelegramHtml';
-import { createThrottledProgressReporter } from '../bridge/cursorBridgeProgress';
 import {
   beginActiveRun,
   endActiveRun,
@@ -290,6 +293,47 @@ export function writePendingOperatorConfirm(
   pending: PendingOperatorConfirm
 ): void {
   const filePath = pendingOperatorConfirmPath(repoRoot);
+  if (!pending) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch {
+      // absent is fine
+    }
+    return;
+  }
+  atomicWrite(filePath, JSON.stringify(pending));
+}
+
+export function pendingPlanConfirmPath(repoRoot: string): string {
+  return path.join(repoRoot, '.swarmforge', 'operator', 'cursor-remote-pending-plan.json');
+}
+
+export function readPendingPlanConfirm(repoRoot: string): PendingPlanConfirm {
+  const filePath = pendingPlanConfirmPath(repoRoot);
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as {
+      plan?: string;
+      callId?: string;
+      postedAtMs?: number;
+    };
+    if (typeof parsed.plan !== 'string' || !parsed.plan.trim()) {
+      return undefined;
+    }
+    return {
+      plan: parsed.plan,
+      postedAtMs: typeof parsed.postedAtMs === 'number' ? parsed.postedAtMs : Date.now(),
+      ...(typeof parsed.callId === 'string' ? { callId: parsed.callId } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function writePendingPlanConfirm(repoRoot: string, pending: PendingPlanConfirm): void {
+  const filePath = pendingPlanConfirmPath(repoRoot);
   if (!pending) {
     try {
       fs.unlinkSync(filePath);
@@ -715,7 +759,27 @@ async function handlePromptInboundAction(
     previewPromptForActiveRun(promptMessage),
     detectProgressLocale(localeSource)
   );
-  const reportProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, (line) => {
+  const reportProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, async (line) => {
+    if (line.startsWith(PLAN_AWAITING_PROGRESS_PREFIX)) {
+      const plan = line.slice(PLAN_AWAITING_PROGRESS_PREFIX.length);
+      writePendingPlanConfirm(ctx.repoRoot, { plan, postedAtMs: Date.now() });
+      const text = formatPlanConfirmPrompt(plan);
+      const buttons = planConfirmButtons() as InlineKeyboardButton[][];
+      const sent = await sendTelegramMessage(
+        ctx.botToken,
+        ctx.chatId,
+        text,
+        undefined,
+        undefined,
+        topicId,
+        buttons
+      );
+      if (!sent.success) {
+        await postInboundReply(ctx, topicId, `${text}\n(Confirm buttons failed — reply Confirm plan / Reject plan.)`, undefined);
+      }
+      recordActiveRunProgress('📋 Plan awaiting confirmation…');
+      return;
+    }
     recordActiveRunProgress(line);
     return postInboundReply(ctx, topicId, line, undefined);
   });
@@ -1346,6 +1410,38 @@ export async function handleInboundDecision(
       decision.photoFileIds
     );
   }
+  if (decision.action === 'confirm-plan') {
+    const pending = readPendingPlanConfirm(ctx.repoRoot);
+    writePendingPlanConfirm(ctx.repoRoot, undefined);
+    if (!pending) {
+      await postInboundReply(ctx, topicId, 'No plan is awaiting confirmation.', replyToMessageId);
+      return ctx.busy;
+    }
+    await postInboundReply(ctx, topicId, '-- Plan confirmed. Continuing…', replyToMessageId);
+    return handlePromptInboundAction(
+      ctx,
+      topicId,
+      'The human confirmed the plan you proposed. Proceed to execute it now. Do not ask for plan confirmation again unless the plan materially changes.',
+      replyToMessageId,
+      resetAgent
+    );
+  }
+  if (decision.action === 'reject-plan') {
+    const pending = readPendingPlanConfirm(ctx.repoRoot);
+    writePendingPlanConfirm(ctx.repoRoot, undefined);
+    if (!pending) {
+      await postInboundReply(ctx, topicId, 'No plan is awaiting confirmation.', replyToMessageId);
+      return ctx.busy;
+    }
+    await postInboundReply(ctx, topicId, '-- Plan rejected.', replyToMessageId);
+    return handlePromptInboundAction(
+      ctx,
+      topicId,
+      'The human rejected the plan you proposed. Stop executing that plan. Revise or ask a clarifying question; do not proceed with the rejected plan.',
+      replyToMessageId,
+      resetAgent
+    );
+  }
   if (decision.action === 'pilot') {
     return handlePilotInboundAction(ctx, topicId, decision.ticket, replyToMessageId, resetAgent);
   }
@@ -1692,6 +1788,7 @@ async function processInboundUpdates(
       continue;
     }
     const pending = readPendingOperatorConfirm(deps.repoRoot);
+    const pendingPlan = readPendingPlanConfirm(deps.repoRoot);
     const rawDecision = decideInboundAction(
       inbound,
       deps.principalUserId,
@@ -1700,7 +1797,8 @@ async function processInboundUpdates(
         cursorTopicId: holder.state.cursorTopicId,
         bubbleTopicId: holder.state.bubbleTopicId,
       },
-      pending
+      pending,
+      pendingPlan
     );
     if (inbound.kind === 'callback' && inbound.callbackQueryId) {
       await answerCallbackQuery(deps.botToken, inbound.callbackQueryId);

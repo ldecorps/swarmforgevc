@@ -1958,19 +1958,22 @@
 
 (defn dropped-parcel-sweep! [roles]
   (try
-    (let [now-ms (System/currentTimeMillis)
-          all-dirs (dispatch-gap-scan-dirs roles)
-          live-dirs (dropped-parcel-live-mail-dirs roles)
-          candidates (chase-sweep-lib/dropped-parcel-items
-                      (active-backlog-dir) all-dirs live-dirs now-ms (dropped-parcel-stall-threshold-ms))
-          cooldown-ms (dropped-parcel-cooldown-ms)]
-      (doseq [item candidates]
-        (try
-          (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
-                     (read-dropped-parcel-last-sent-ms (:id item)) now-ms cooldown-ms)
-            (nudge-coordinator-dropped-parcel! item))
-          (catch Exception e
-            (log! "dropped-parcel-nudge-error" (:id item) (.getMessage e))))))
+    (if (master-main-reconcile-lib/deadlock-active?
+         (master-main-reconcile-lib/read-deadlock (str daemon-dir)))
+      (log! "dropped-parcel-suppressed" "main-sync-deadlock")
+      (let [now-ms (System/currentTimeMillis)
+            all-dirs (dispatch-gap-scan-dirs roles)
+            live-dirs (dropped-parcel-live-mail-dirs roles)
+            candidates (chase-sweep-lib/dropped-parcel-items
+                        (active-backlog-dir) all-dirs live-dirs now-ms (dropped-parcel-stall-threshold-ms))
+            cooldown-ms (dropped-parcel-cooldown-ms)]
+        (doseq [item candidates]
+          (try
+            (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
+                       (read-dropped-parcel-last-sent-ms (:id item)) now-ms cooldown-ms)
+              (nudge-coordinator-dropped-parcel! item))
+            (catch Exception e
+              (log! "dropped-parcel-nudge-error" (:id item) (.getMessage e)))))))
     (catch Exception e
       (log! "dropped-parcel-sweep-error" (.getMessage e)))))
 
@@ -3011,6 +3014,72 @@
     (catch Exception e
       (log! "master-main-reconcile-sweep-error" (.getMessage e)))))
 
+(defn- coordinator-in-process-aged?
+  "True when coordinator inbox/in_process holds a *.handoff older than 15 min."
+  []
+  (try
+    (let [ri (handoff-lib/load-role-info "coordinator" (str project-root))
+          dir (when ri (handoff-lib/mailbox-dir ri :in_process))
+          cutoff (- (System/currentTimeMillis) (* 15 60 1000))]
+      (boolean
+       (when (and dir (fs/directory? dir))
+         (->> (fs/list-dir dir)
+              (filter #(str/ends-with? (str (fs/file-name %)) ".handoff"))
+              (some (fn [p]
+                      (let [lm (.toMillis (fs/last-modified-time p))]
+                        (<= lm cutoff))))))))
+    (catch Exception _ false)))
+
+(defn main-sync-deadlock-sweep! []
+  "Trip-once when diverged/dirty main holds aged coordinator bookkeeping."
+  (try
+    (let [counts (push-sweep-rev-counts!)
+          ahead (or (:ahead counts) 0)
+          behind (or (:behind counts) 0)
+          reconcile (master-main-reconcile-lib/read-state (str daemon-dir))
+          deadlock (master-main-reconcile-lib/read-deadlock (str daemon-dir))]
+      (when (master-main-reconcile-lib/deadlock-clear? behind)
+        (when (master-main-reconcile-lib/deadlock-active? deadlock)
+          (master-main-reconcile-lib/clear-deadlock! (str daemon-dir))
+          (log! "main-sync-deadlock-cleared" "behind=0")))
+      (let [deadlock (master-main-reconcile-lib/read-deadlock (str daemon-dir))
+            blocked-ticks (or (:ticks reconcile) 0)
+            due? (master-main-reconcile-lib/deadlock-trip-due?
+                  {:ahead ahead :behind behind
+                   :reconcile-surfaced (:surfaced reconcile)
+                   :reconcile-escalated (:escalated reconcile)
+                   :coordinator-in-process-aged? (coordinator-in-process-aged?)
+                   :blocked-ticks (max blocked-ticks 3)
+                   :deadlock-state deadlock
+                   :threshold-ticks 3})]
+        (when due?
+          (let [payload {:active true
+                         :reason (or (:surfaced reconcile) "diverged")
+                         :ahead ahead :behind behind
+                         :tripped_at (str (java.time.Instant/now))
+                         :alerted true}]
+            (master-main-reconcile-lib/write-deadlock! (str daemon-dir) payload)
+            (log! "main-sync-deadlock-tripped" ahead behind)
+            (let [subject (master-main-reconcile-lib/deadlock-alert-subject)
+                  body (master-main-reconcile-lib/deadlock-alert-text
+                        {:ahead ahead :behind behind :reason (:reason payload)})
+                  reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
+              (try
+                (fs/create-dirs (fs/parent reply-outbox))
+                (spit (str reply-outbox)
+                      (str (json/generate-string {"threadId" "OPERATOR" "text" body}) "\n")
+                      :append true)
+                (catch Exception e (log! "main-sync-deadlock-telegram-error" (.getMessage e))))
+              (try
+                (daemon-alarm-lib/send-configured-email!
+                 project-root conf-file subject body
+                 {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+                  :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+                  :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+                (catch Exception e (log! "main-sync-deadlock-email-error" (.getMessage e)))))))))
+    (catch Exception e
+      (log! "main-sync-deadlock-sweep-error" (.getMessage e)))))
+
 ;; BL-437: shells to the compiled emit-fleet-status.js CLI (Babashka has no
 ;; way to import compiled TS) - reuses createSwarmNode/rollupStatus
 ;; unchanged, the exact same rollup fleet-console.ts used to reconstruct for
@@ -3569,6 +3638,8 @@
                     ;; this cadence block is.
                     (run-sweep! "master-main-reconcile-sweep"
                         #(master-main-reconcile-sweep!))
+                    (run-sweep! "main-sync-deadlock-sweep"
+                        #(main-sync-deadlock-sweep!))
                     ;; BL-437: fleet-status sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350/BL-356

@@ -393,24 +393,24 @@ or `note` referencing that ticket id. A coder or architect "bookkeeping stale"
 successful close, the CLI also abandons every role's pending `new/` and
 `in_process/` handoffs for that ticket so the pipeline cannot keep routing
 closed work.
-0. **Sync your local `main` with origin, before anything else.** QA lands its
-   own approved commits straight on `origin/main`, so your checkout's `main`
-   pointer can silently lag behind origin by the time its approval note reaches
-   you — observed twice on 2026-07-27, safe both times only because it was
-   caught by hand during bookkeeping rather than as a standing first step.
+0. **Absorb `origin/main` before anything else (gate on `behind=0`).** QA lands
+   approved commits on `origin/main`; your checkout must contain that tip before
+   freshness sync or any backlog move on `main`. Run:
    ```
-   git fetch origin main && git merge --ff-only origin/main
+   bb swarmforge/scripts/main_sync_status_cli.bb <project-root>
    ```
-   Run it BEFORE `build_freshness_cli.bb sync` and before any backlog move on
-   `main`: a freshness sync over a lagging checkout re-arms the stale build it
-   exists to replace, and a close/promote commit over one lands your
-   bookkeeping on a `main` that is already behind.
-   - **This is the one git exception to "no merge, no push".** It is a
-     fast-forward catch-up of YOUR checkout to work QA already pushed — never
-     merging the parcel yourself, never a push, never a non-fast-forward.
-   - **If `--ff-only` fails, stop loudly.** A refused fast-forward means the
-     checkout has diverged; do NOT close or promote over it. Report the
-     divergence rather than reconciling it silently.
+   Obey the printed `action` — never invent a merge the CLI did not name.
+   - **`proceed`** — already absorbed (`behind=0`). Continue.
+   - **`ff-only`** — pure lag (`behind>0`, `ahead=0`). Then and only then:
+     `git fetch origin main && git merge --ff-only origin/main`.
+   - **`wait-reconcile` / `wait-dirty-clear` / `deadlock-tripped`** — local tip
+     has diverged or dirty overlap blocks BL-891's master-main reconcile
+     sweep (`git merge --no-edit origin/main` in handoffd). **Do not** run
+     `--ff-only` (it cannot succeed when `ahead>0`). **Do not** merge
+     yourself (Article 1.1 / BL-247; the daemon owns non-ff joins). Keep the
+     QA parcel in `in_process`, report the CLI output loudly, and **stop this
+     turn** — no further shell archaeology. When deadlock is tripped, wakes
+     and dropped-parcel nudges are suppressed until `behind=0`.
 
 1. **Make the merged code actually RUN** (BL-328):
    `bb swarmforge/scripts/build_freshness_cli.bb <project-root> sync`
