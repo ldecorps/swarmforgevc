@@ -13,11 +13,11 @@
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { spawnSync, execFileSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
+const { pollHeartbeatStale } = require('./lib/pollHeartbeatStale');
 
 const FEATURE = 'The front-desk liveness suite gates the guarantee it names';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'front_desk_supervisor_lib.bb');
 const LIVENESS_TEST = path.join(
   REPO_ROOT,
   'swarmforge',
@@ -44,19 +44,14 @@ function expectPass(output, label) {
   }
 }
 
-function predicateStale({ heartbeat, now }) {
-  const hb = heartbeat === null ? 'nil' : String(heartbeat);
-  const out = execFileSync(
-    'bb',
-    [
-      '-e',
-      `(require '[babashka.fs :as fs])
-(load-file "${LIB}")
-(println (front-desk-supervisor-lib/poll-heartbeat-stale? ${hb} ${now} ${STALL_MS} ${SPAWN_AT} ${GRACE_MS}))`,
-    ],
-    { encoding: 'utf8' }
-  );
-  return out.trim() === 'true';
+function predicateStale(ctx) {
+  return pollHeartbeatStale({
+    heartbeat: ctx.heartbeat,
+    now: ctx.now,
+    stall: STALL_MS,
+    spawn: SPAWN_AT,
+    grace: GRACE_MS,
+  });
 }
 
 function registerSteps(registry) {
@@ -79,7 +74,7 @@ function registerSteps(registry) {
 
   scoped(/^the supervisor checks the bot$/, (ctx) => {
     if (ctx.usePredicate) {
-      ctx.verdict = predicateStale({ heartbeat: ctx.heartbeat, now: ctx.now });
+      ctx.verdict = predicateStale(ctx);
       return;
     }
     ctx.livenessOutput = ctx.livenessOutput || runLivenessTest(ctx);
@@ -146,7 +141,7 @@ function registerSteps(registry) {
 
   scoped(/^the bot is not declared stalled$/, (ctx) => {
     assert.ok(ctx.usePredicate, 'not-stalled assertion is predicate-scoped');
-    ctx.verdict = predicateStale({ heartbeat: ctx.heartbeat, now: ctx.now });
+    ctx.verdict = predicateStale(ctx);
     assert.equal(ctx.verdict, false, 'predicate must report not stalled');
   });
 }
