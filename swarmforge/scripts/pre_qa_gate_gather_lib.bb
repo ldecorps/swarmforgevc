@@ -153,13 +153,33 @@
 
 ;; ── ancestry fact-gathering ───────────────────────────────────────────────
 
+(defn commit-touched-paths
+  "Paths changed by full-sha. Uses `git diff-tree -m` so merge commits list
+   each parent's contribution (name-only without -m is blind to merges).
+   nil when the commit cannot be read."
+  [project-root full-sha]
+  (let [res (run-git project-root ["diff-tree" "-r" "--name-only" "-m" "--no-commit-id" full-sha])]
+    (when (git-ok? res)
+      (vec (distinct (remove str/blank? (str/split-lines (:out res))))))))
+
+(defn- merge-base-with-main
+  "merge-base of cited-commit against main or origin/main, or nil."
+  [project-root cited-commit]
+  (or (when (ref-exists? project-root "main")
+        (let [res (run-git project-root ["merge-base" cited-commit "main"])]
+          (when (git-ok? res) (str/trim (:out res)))))
+      (when (ref-exists? project-root "origin/main")
+        (let [res (run-git project-root ["merge-base" cited-commit "origin/main"])]
+          (when (git-ok? res) (str/trim (:out res)))))))
+
 (defn gather-ancestry-facts
   "role-branch-commits/main-reachable-set/cited-ancestors-set/warnings, all
    keyed on a 10-char sha abbreviation (this project's standard commit
    header length, e.g. abandoned_commits prefix matching). Only commits
    whose message already references ticket-id are carried past this
    function - the same commits pre_qa_gate_lib.bb's evaluate would keep
-   anyway, kept small here purely to bound the number of merge-base calls."
+   anyway, kept small here purely to bound the number of merge-base calls.
+   Each matching commit carries :paths (touched paths) for BL-972 evidence."
   [project-root ticket-id cited-commit]
   (let [{:keys [branches warnings]} (role-branches project-root)
         gathered
@@ -169,9 +189,13 @@
              (let [matching (->> commits
                                   (filter #(pre-qa-gate-lib/message-references-ticket? (:message %) ticket-id))
                                   (map (fn [{:keys [sha message]}]
-                                         {:sha (subs sha 0 10) :full-sha sha :message message})))]
+                                         {:sha (subs sha 0 10)
+                                          :full-sha sha
+                                          :message message
+                                          :paths (or (commit-touched-paths project-root sha) [])})))]
                (-> acc
-                   (assoc-in [:role-branch-commits branch] (mapv #(dissoc % :full-sha) matching))
+                   (assoc-in [:role-branch-commits branch]
+                             (mapv #(dissoc % :full-sha) matching))
                    (update :candidates into matching)))
              (update acc :warnings conj (format "role-branch:%s commit log unreadable" branch))))
          {:role-branch-commits {} :warnings (vec warnings) :candidates []}
@@ -200,6 +224,26 @@
   (let [prefix (str field ": ")]
     (some (fn [line] (when (str/starts-with? line prefix) (str/trim (subs line (count prefix)))))
           (str/split-lines content))))
+
+(defn parcel-paths-for-cited
+  "Paths the cited parcel introduced vs its merge-base with main, widened by
+   the ticket's acceptance: pointer and required_wiring paths when present.
+   Empty vector when the diff cannot be read (BL-972: no evidence → no block)."
+  [project-root cited-commit yaml-content]
+  (let [base (merge-base-with-main project-root cited-commit)
+        from-diff (when base
+                    (let [res (run-git project-root ["diff" "--name-only" (str base "..." cited-commit)])]
+                      (when (git-ok? res)
+                        (remove str/blank? (str/split-lines (:out res))))))
+        acceptance (when yaml-content (read-yaml-field yaml-content "acceptance"))
+        wiring-paths (when yaml-content
+                       (->> (pre-qa-gate-lib/read-required-wiring yaml-content)
+                            :items
+                            (keep pre-qa-gate-lib/parse-wiring-entry)
+                            (map :path)))]
+    (vec (distinct (concat (or from-diff [])
+                           (when (and acceptance (not (str/blank? acceptance))) [acceptance])
+                           (or wiring-paths []))))))
 
 (defn find-ticket-yaml-content
   "The raw content of ticket-id's own backlog YAML, searched across
@@ -494,12 +538,14 @@
                   :detail "required_wiring: field is present but could not be parsed (expected a flow-style [a, b] or block-style - a / - b list)"}])
               abandoned-commits (if (:present? abandoned-field) (or (:items abandoned-field) []) [])
               file-contents (gather-wiring-facts project-root cited-commit wiring-entries)
+              parcel-paths (parcel-paths-for-cited project-root cited-commit yaml-content)
               result (pre-qa-gate-lib/evaluate
                       {:type "git_handoff" :to to :ticket-id ticket-id :cited-commit cited-commit
                        :role-branch-commits (:role-branch-commits ancestry)
                        :main-reachable-set (:main-reachable-set ancestry)
                        :cited-ancestors-set (:cited-ancestors-set ancestry)
                        :no-dropped-work-set (:no-dropped-work-set ancestry)
+                       :parcel-paths parcel-paths
                        :wiring-entries wiring-entries
                        :file-contents file-contents
                        :abandoned-commits abandoned-commits})
@@ -510,4 +556,6 @@
                         :ticket-id ticket-id))
                 {:findings [] :warnings []})]
           {:findings (vec (concat (:findings result) field-level-manifest-finding (:findings acceptance-result)))
-           :warnings (vec (concat (:warnings ancestry) ticket-warnings (:warnings acceptance-result)))})))))
+           :warnings (vec (concat (:warnings ancestry) ticket-warnings
+                                  (:warnings result)
+                                  (:warnings acceptance-result)))})))))
