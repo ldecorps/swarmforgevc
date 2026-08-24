@@ -6,10 +6,21 @@
 # promotion, it must obey the same gate promote_and_route_next.sh does,
 # never force assigned_to back to coder as a side effect of routing).
 #
+# BL-1097: it also REFUSES to originate a parcel for a ticket that already has
+# a dispatch trail. Article 1.9 forbids forwarding a parcel whose commit
+# produces no functional change; the same rule has to bind the router that
+# originates one. A ticket sits in backlog/active/ with its mint `status: todo`
+# and its `assigned_to` from promotion until the coordinator's separate
+# bookkeeping step moves it to backlog/done/, and nothing writes `status:` in
+# between - so for that whole window finished work looks exactly like unstarted
+# work here. The answer comes from dispatch_trail_cli.bb, which is the daemon's
+# own dispatch-gap predicate, so the router and the sweep cannot disagree.
+#
 # Usage:
-#   route_backlog_to_coder.sh [BL-id] [project-root]
+#   route_backlog_to_coder.sh [--force] [BL-id] [project-root]
 #   route_backlog_to_coder.sh              # first *.yaml in backlog/active
 #   route_backlog_to_coder.sh BL-154
+#   route_backlog_to_coder.sh --force BL-154   # deliberate re-route
 #
 set -euo pipefail
 
@@ -17,11 +28,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 usage() {
   cat <<'EOF'
-Usage: route_backlog_to_coder.sh [BL-id] [project-root]
+Usage: route_backlog_to_coder.sh [--force] [BL-id] [project-root]
 
 Finds a backlog/active/*.yaml (by BL-id prefix or first file), sends a note
 handoff through swarm_handoff.sh (SWARMFORGE_SKIP_DAEMON=1) to coder, or to
 the specifier when the ticket's own assigned_to says so.
+
+Refuses (exit 3, nothing sent, nothing rewritten) when the ticket already has
+a dispatch trail - it has been routed before, so a parcel now would carry work
+that is already done (BL-1097). --force is the operator's explicit override for
+a deliberate re-route, e.g. a ticket re-promoted out of backlog/done/.
 EOF
 }
 
@@ -29,6 +45,21 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi
+
+# --force is pulled out before the positional parsing below, so it may appear
+# in any position and the BL-id/project-root forms keep working unchanged.
+FORCE=0
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--force" ]]; then
+    FORCE=1
+  else
+    ARGS+=("$arg")
+  fi
+done
+# Stock macOS /bin/bash 3.2 raises "unbound variable" expanding an EMPTY array
+# under set -u; the +"..." form is the portable spelling (BL-801).
+set -- ${ARGS[@]+"${ARGS[@]}"}
 
 ROOT=""
 ITEM=""
@@ -60,6 +91,28 @@ if [[ -z "$YAML" || ! -f "$YAML" ]]; then
 fi
 
 BASENAME="$(basename "$YAML" .yaml)"
+
+# ── BL-1097: the no-op rule, applied to the sender ────────────────────────
+# Before anything is written or rewritten. A refusal must leave the ticket
+# EXACTLY as it found it - in particular it must not perform the assigned_to
+# rewrite below, which would be a side effect of a route that never happened.
+TICKET_ID="$(grep -E '^id:' "$YAML" | head -1 | awk '{print $2}' | tr -d '\r')"
+[[ -n "$TICKET_ID" ]] || TICKET_ID="$BASENAME"
+
+if (( FORCE == 0 )); then
+  TRAIL_RC=0
+  TRAIL_ANSWER="$(bb "$SCRIPT_DIR/dispatch_trail_cli.bb" "$ROOT" dispatched "$TICKET_ID")" || TRAIL_RC=$?
+  if (( TRAIL_RC != 0 )); then
+    # Fail OPEN, and say so. A ticket that is never routed because the trail
+    # could not be read is starved silently; a ticket routed twice is at worst
+    # the defect this gate exists to reduce. The louder failure is the safer
+    # one here.
+    echo "route_backlog_to_coder: could not read the dispatch trail for ${TICKET_ID} (rc=${TRAIL_RC}) — routing anyway; see the error above" >&2
+  elif [[ "$TRAIL_ANSWER" == "DISPATCHED" ]]; then
+    echo "route_backlog_to_coder: ${TICKET_ID} already has a dispatch trail — NOT routing. A parcel now would carry work that is already done (Article 1.9 binds the sender too; BL-1097). If the ticket is finished, close it: move it to backlog/done/. If this is a deliberate re-route, pass --force." >&2
+    exit 3
+  fi
+fi
 
 # promotion_gates: the routing target and whether assigned_to may be
 # rewritten both come from the shared BL-663 chokepoint — assigned_to:
