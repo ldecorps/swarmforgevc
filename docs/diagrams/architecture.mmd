@@ -176,6 +176,9 @@
 %% → unavailable (never control-plane-missing / ensure).
 %% BL-1114 (2026-08-24): exhausted dead-letter recovery — terminal note +
 %% wake holder; move .dead to handoffs/failed/ (not silent inbox debris).
+%% BL-1031 (2026-08-24): spawn-reachable subtree through sh! chokepoint
+%% (inject/pre_qa_gather/salvage); wait-bound on acceptance-contract
+%% gather fails CLOSED with a named finding; BL-1022 ratchet retired.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

@@ -71,6 +71,14 @@ daemon keeps cycling. If the log ends on `stopped` with no further heartbeat
 after a PATH change, check that `tmux` (and other cycle binaries) are still
 reachable before treating it as a clean stop.
 
+**Update, BL-1031 (2026-08-24):** BL-1022's spawn-edge closure found three
+more libraries on the daemon path still calling unbounded `babashka.process`
+(`handoff_inject_lib`, `pre_qa_gate_gather_lib`, `salvage_lib`). Those sites
+now use the same `sh!` chokepoint; the BL-1022 named-file ratchet is empty.
+A wait-bound hit while gathering the acceptance-contract (gherkin-parser /
+resolve_contract_steps) fails the pre-QA gate CLOSED with a finding that
+names the wait-bound — it must never look like a clean contract pass.
+
 **Update, BL-1021 (2026-08-21):** the bound above used to cover only the
 *exit-code* wait — `(deref proc bound ::timed-out)`. If the direct child
 exited promptly but something it spawned kept the inherited stdout/stderr
