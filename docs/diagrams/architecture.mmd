@@ -190,6 +190,8 @@
 %% origin/main corpora; fail-closed unreadable; key on id not slug).
 %% BL-1090 (2026-08-24): concierge — shared live-ask predicate suppresses edge
 %% re-post when ask store already has Approvals topic ask; remint still posts.
+%% BL-972 (2026-08-24): pre-QA ancestry blocks on path overlap with parcel;
+%% subject-only stranded commits warn, never refuse; abandoned_commits exempts.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
