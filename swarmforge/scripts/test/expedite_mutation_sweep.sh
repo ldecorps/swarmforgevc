@@ -38,6 +38,7 @@ trap cleanup EXIT
 
 killed=0; survived=0; skipped=0
 declare -a SURVIVORS=()
+declare -a SKIPPED=()
 
 # mutate <label> <from> <to>
 mutate() {
@@ -53,6 +54,7 @@ open(p, 'w').write(s.replace(a, b, 1))
 PY
   then
     echo "  skip     $label (anchor not found)"
+    SKIPPED+=("$label")
     skipped=$((skipped + 1)); return
   fi
 
@@ -191,9 +193,19 @@ restore
 
 echo
 echo "mutants: killed=$killed survived=$survived skipped=$skipped"
+fail=0
 if [[ "${#SURVIVORS[@]}" -gt 0 ]]; then
   echo "SURVIVORS (each is a real test gap):"
   for s in "${SURVIVORS[@]}"; do echo "  - $s"; done
+  fail=1
+fi
+# BL-1101: a skipped mutant produced no evidence — never certify the run.
+if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
+  echo "SKIPPED (anchors not found — no evidence produced):"
+  for s in "${SKIPPED[@]}"; do echo "  - $s"; done
+  fail=1
+fi
+if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
 echo "ALL MUTANTS KILLED"
