@@ -57,6 +57,15 @@ cat .swarmforge/operator/control-pause.json
 - `{"active":true}` - paused with no timer (a human "pause until I resume").
 - `{"active":true,"untilMs":1753382400000}` - paused until that epoch-ms (either a human timed pause or the cooldown window).
 
+**Effective depth from any checkout (BL-1106).** The marker file lives only on
+the master checkout. Promotion and
+`bb swarmforge/scripts/effective_backlog_depth_cli.bb <project-root>` must
+still see it when `<project-root>` is a linked worktree — both resolve the
+pause (and throttle recommendation) at the same master root BL-966 already
+uses for the pack conf. While paused, master and worktree CLIs print the same
+cap (`0` for an active no-timer pause). If they disagree, the pause path is
+broken again; do not promote from a worktree until they match.
+
 To see which window instance the cooldown has already handled:
 
 ```bash
