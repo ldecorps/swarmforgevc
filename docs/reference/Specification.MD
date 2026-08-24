@@ -1,6 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1093: an active ticket whose
+**Last Updated:** August 24, 2026 (BL-1097: the coordinator's router never
+originates a parcel for a ticket that already has a dispatch trail. Finished
+work stays in `backlog/active/` with mint `status: todo` until bookkeeping
+closes it, so `route_backlog_to_coder.sh` / `promote_and_route_next.sh` used to
+re-hand QA-approved commits as fresh work (four times in one hour; BL-973
+built a rival implementation). Router now asks the same
+`decide-dispatch-gaps` / `ticket-dispatched?` predicate the daemon uses
+(`dispatch_trail_cli.bb`); refuses with exit 3 and no send when a trail
+exists; `--force` for a deliberate re-route. Complements BL-1093/BL-1094
+(auto-route) and BL-1104 (`landed-but-open`). Acceptance:
+`specs/features/BL-1097-the-router-re-routes-a-ticket-that-has-already-been-worked.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1093: an active ticket whose
 `assigned_to` names nobody — absent, blank, `none`, or `unassigned` — reaches
 the coordinator instead of stranding between two sweeps. Before the fix,
 `dispatch-gap` auto-routed `to: none` (handoff refused) while

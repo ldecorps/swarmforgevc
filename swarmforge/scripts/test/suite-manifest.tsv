@@ -162,6 +162,7 @@ test_bl1033_property_runner_temp_root_survives_a_throw.sh	standing
 test_bl1049_provider_env_scrub.sh	excluded	2026-08-23	live-only: correlated with the 2026-08-22 wipe of all 8 live tmux sessions when run from an agent pane; run from a detached host shell with env -u TMUX
 test_bl1061_tunnel_reap_enumerates_full_command_lines.sh	standing		
 test_bl1069_tmux_server_version.sh	standing		
+test_bl1097_router_refuses_dispatched_ticket.sh	standing		
 test_bl648_resident_boot_role_override.sh	standing		
 test_bl657_harness_env_scrub_wiring.sh	standing		
 test_bl657_wait_for_ready_sustained_check.sh	standing		
@@ -379,3 +380,4 @@ tool_miss_heal_lib_test_runner.bb	standing
 untracked_collision_clear_lib_test_runner.bb	standing		
 upstream_drift_check_lib_test_runner.bb	standing		
 wake_attribution_lib_test_runner.bb	standing		
+bl1097_router_dispatch_trail_test_runner.bb	standing		

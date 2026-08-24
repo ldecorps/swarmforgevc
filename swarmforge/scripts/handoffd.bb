@@ -1726,10 +1726,13 @@
 
 (defn active-backlog-dir [] (fs/path project-root "backlog" "active"))
 
+;; BL-1097: the state list and the path construction moved into
+;; chase_sweep_lib.bb so the coordinator's router reads the SAME directories
+;; this sweep does. Two components answering "has this ticket been dispatched?"
+;; from different directory sets could disagree, and the disagreement would be
+;; silent - so there is one definition, here delegated to.
 (defn dispatch-gap-scan-dirs [roles]
-  (vec (for [[_ role-info] roles
-             state [:new :in_process :completed :sent :outbox]]
-         (str (handoff-lib/mailbox-dir role-info state)))))
+  (chase-sweep-lib/dispatch-trail-dirs (vals roles)))
 
 (defn write-scratch-draft! [lines]
   (let [tmp-dir (fs/path daemon-dir "dispatch-gap-drafts")]

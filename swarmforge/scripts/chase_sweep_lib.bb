@@ -904,6 +904,59 @@
   [active-dir scan-dirs]
   (decide-dispatch-gaps (read-active-items active-dir) (collect-dispatched-ticket-ids scan-dirs)))
 
+;; ── BL-1097: the ROUTER's half of the same question ────────────────────────
+;; Article 1.9 forbids FORWARDING a parcel whose commit produces no functional
+;; change. The coordinator's router (route_backlog_to_coder.sh, and
+;; promote_and_route_next.sh through it) ORIGINATES one, and nothing stopped
+;; it re-originating a parcel for work already finished: a ticket stays in
+;; backlog/active/ with its mint `status: todo` and its `assigned_to` from the
+;; moment it is promoted until the coordinator's separate bookkeeping step
+;; moves it to backlog/done/, and nothing in swarmforge/scripts/ writes
+;; `status:` at all. For that whole window finished work is indistinguishable
+;; from unstarted work to the router. Measured 2026-08-23: four such routes in
+;; about an hour, and on BL-973 the receiving coder did not notice, and built a
+;; second complete rival implementation.
+;;
+;; The ticket's second invariant is that the router and the BL-222 sweep above
+;; must not hold contradictory answers to "has this ticket been dispatched?".
+;; That is met here by DEFINITION rather than by discipline: ticket-dispatched?
+;; is decide-dispatch-gaps, asked about one ticket. There is one predicate, so
+;; there is nothing to keep in sync and no way for the two to drift. Do not
+;; "optimise" it into a bare contains? - that would recreate the second copy
+;; the invariant exists to forbid, and it would silently diverge the first time
+;; decide-dispatch-gaps learns a nuance (id canonicalization, say).
+
+(defn ticket-dispatched?
+  "True when ticket-id already has a dispatch trail in dispatched-ids - i.e.
+   the router must NOT originate another parcel for it. Literally
+   decide-dispatch-gaps asked about a single ticket, so the router's answer and
+   the sweep's answer are the same answer (BL-1097 invariant 2)."
+  [ticket-id dispatched-ids]
+  (empty? (decide-dispatch-gaps [{:id ticket-id}] dispatched-ids)))
+
+;; The mailbox states a sent parcel can be sitting in. This list used to live
+;; privately inside handoffd.bb's dispatch-gap-scan-dirs; it moved here so the
+;; router reads the SAME directories the sweep does. A router scanning fewer
+;; states would answer "undispatched" for a ticket the sweep knows about, which
+;; is the contradiction invariant 2 forbids - and it would do so silently.
+(def dispatch-trail-states [:new :in_process :completed :sent :outbox])
+
+(defn dispatch-trail-dirs
+  "Every mailbox directory that counts as proof of dispatch, for the given
+   role-infos (handoff-lib/load-all-roles shape, or the vals of handoffd's own
+   roles map). Paths are resolved through handoff-lib/mailbox-dir - the one
+   shared resolver (BL-128) - never rebuilt here."
+  [role-infos]
+  (vec (for [role-info role-infos
+             state dispatch-trail-states]
+         (str (handoff-lib/mailbox-dir role-info state)))))
+
+(defn ticket-dispatched-in?
+  "Full pipeline for the router's one-ticket question: reads the trail set from
+   scan-dirs with the SAME reader the sweep uses, then answers for ticket-id."
+  [ticket-id scan-dirs]
+  (ticket-dispatched? ticket-id (collect-dispatched-ticket-ids scan-dirs)))
+
 (def dispatch-gap-note-max-length 80)
 
 (defn dispatch-gap-note-message
