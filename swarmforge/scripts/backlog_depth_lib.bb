@@ -183,16 +183,8 @@
    persisted output rather than re-deriving the diagnosis here."
   [".swarmforge" "coordinator" "throttle-recommendation.json"])
 
-(defn- master-runtime-path
-  "BL-1106 / BL-966: every effective-depth input (throttle, pause, and —
-   via conf-file-path — the configured cap) resolves under the repository's
-   MASTER checkout. Non-git / failed git roots fall through to project-root
-   unchanged via resolve-identity-root."
-  [project-root relpath-segments]
-  (apply fs/path (resolve-identity-root project-root) relpath-segments))
-
 (defn throttle-recommendation-path [project-root]
-  (master-runtime-path project-root throttle-recommendation-relpath))
+  (apply fs/path project-root throttle-recommendation-relpath))
 
 (defn read-recommended-cap
   "The impure fs-reading half of the recommendation: nil (no throttle
@@ -251,7 +243,7 @@
   [".swarmforge" "operator" "control-pause.json"])
 
 (defn pause-marker-path [project-root]
-  (master-runtime-path project-root pause-marker-relpath))
+  (apply fs/path project-root pause-marker-relpath))
 
 (defn read-pause-state
   "The impure fs-reading half: {:active false} for a missing/unreadable/
