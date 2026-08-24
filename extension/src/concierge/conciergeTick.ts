@@ -15,6 +15,7 @@ import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
 import { PipelineBoardTicketMeta, computePipelineBoard } from './pipelineBoard';
+import { readSwarmName } from '../bridge/holisticProjections';
 import { PipelineBoardAdapters, PipelineBoardState, PipelineBoardSyncResult, syncPipelineBoard } from './pipelineBoardSync';
 import { PipelineBoardPinAdapters, PipelineBoardPinSyncResult, syncPipelineBoardPin } from './pipelineBoardPinSync';
 import { ApprovalsRosterAdapters, ApprovalsRosterState, syncApprovalsRoster } from './approvalsRosterSync';
@@ -64,6 +65,8 @@ export interface BacklogFolderItem {
   filename?: string;
   // Paused-pager ordering: lower number = higher urgency (backlogReader.ts).
   priority?: number;
+  // BL-1009: optional swarm: from ticket YAML (BL-090).
+  swarm?: string;
 }
 
 export interface BacklogFoldersSnapshot {
@@ -219,6 +222,10 @@ export interface ConciergeTickAdapters {
   // the section rendering with "age unknown" rather than omitting the ticket -
   // an unresolvable date must never make a held ticket invisible again.
   readHeldSinceMs?: (filename: string) => number | undefined;
+  // BL-1009: project root for readSwarmName (local vs remote row ownership).
+  // Live-wired to the front-desk targetPath; absent falls back to cwd so
+  // fixtures that never set this still resolve a swarm name.
+  readBoardProjectRoot?: () => string;
   // BL-465: the repo's GitHub base URL (e.g.
   // "https://github.com/ldecorps/swarmforgevc"), derived from the origin
   // remote - undefined when unresolvable (e.g. no git remote), in which
@@ -437,11 +444,25 @@ function buildTicketMetaLookup(
 ): Record<string, PipelineBoardTicketMeta> {
   const lookup: Record<string, PipelineBoardTicketMeta> = {};
   for (const item of folders.active) {
-    lookup[item.id] = { epic: item.epic, type: item.type, title: item.title, filename: item.filename, location: 'active' };
+    lookup[item.id] = {
+      epic: item.epic,
+      type: item.type,
+      title: item.title,
+      filename: item.filename,
+      location: 'active',
+      ...(item.swarm !== undefined ? { swarm: item.swarm } : {}),
+    };
   }
   for (const item of folders.paused) {
     if (lookup[item.id] === undefined) {
-      lookup[item.id] = { epic: item.epic, type: item.type, title: item.title, filename: item.filename, location: 'paused' };
+      lookup[item.id] = {
+        epic: item.epic,
+        type: item.type,
+        title: item.title,
+        filename: item.filename,
+        location: 'paused',
+        ...(item.swarm !== undefined ? { swarm: item.swarm } : {}),
+      };
     }
   }
   for (const item of folders.done) {
@@ -569,7 +590,8 @@ async function syncBoardIfWired(
   readRepoBaseUrl: (() => string | undefined) | undefined,
   nowMs: number,
   doneClosedAtMs: Record<string, number>,
-  readHeldSinceMs?: (filename: string) => number | undefined
+  readHeldSinceMs?: (filename: string) => number | undefined,
+  readBoardProjectRoot?: () => string
 ): Promise<{ state?: PipelineBoardState; outcome?: PipelineBoardSyncResult['outcome'] }> {
   if (!boardAdapters || !readRoleHeldTickets) {
     return { state: prevBoard };
@@ -600,6 +622,9 @@ async function syncBoardIfWired(
     return { state: prevBoard };
   }
   const rootIntakeFiles = readRootIntakeFiles?.() ?? [];
+  // BL-1009: shared reader (holisticProjections) — never a private second
+  // resolver for "which swarm is this host".
+  const localSwarmName = readSwarmName(readBoardProjectRoot?.() ?? process.cwd());
   const data = computePipelineBoard(roleHeldTickets, folders.paused, buildTicketMetaLookup(folders, rootIntakeFiles), {
     rootIntake: rootIntakeFiles,
     recentlyClosed: recentlyClosedItems(folders, doneClosedAtMs),
@@ -609,6 +634,7 @@ async function syncBoardIfWired(
     // the board could not represent until now.
     held: heldItems(folders, readHeldSinceMs),
     nowMs,
+    localSwarmName,
   });
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
   logBoardSyncFailure(result);
@@ -1295,7 +1321,8 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     adapters.readRepoBaseUrl,
     nowMs,
     doneClosedAtMs,
-    adapters.readHeldSinceMs
+    adapters.readHeldSinceMs,
+    adapters.readBoardProjectRoot
   );
   const pipelineBoard = await syncBoardPinIfWired(boardSync.state, adapters.boardPinAdapters);
 

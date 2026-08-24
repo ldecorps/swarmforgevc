@@ -360,6 +360,7 @@ const DOMAINS = [
   require('./bl1000FreshnessPinnedFixtureSteps'),
   require('./bl1001DifficultyAwareSeatRoutingSteps'),
   require('./bl1007ContentionBudgetSteps'),
+  require('./bl1009UnifiedPipelineGridAcrossSwarmsSteps'),
   require('./bl675DaemonLogFreshnessSteps'),
   require('./bl630PushSweepQaGateSteps'),
   require('./bl1081AcpHostDrivesOneSeatSteps'),
