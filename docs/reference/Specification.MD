@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1070 FF-only rematch: hitchhike-clean
+**Last Updated:** August 24, 2026 (BL-579: morning briefing diagram allowlist
+adds `handoff-mechanism` → `docs/diagrams/handoff-flow.mmd` (HOW a parcel
+travels; `swarm-flow` remains WHO). Allowlist stays explicit, not a directory
+scan. Complements BL-260/BL-286. Acceptance:
+`specs/features/BL-579-handoff-mechanism-briefing-diagram.feature`.
+How-to: `docs/how-to/BL-579-handoff-mechanism-briefing-diagram.md`.
+Diagram: `docs/diagrams/handoff-flow.mmd`. No new extension command, setting,
+or UI change beyond the briefing email.)
+Prior entry —
+August 24, 2026 (BL-1070 FF-only rematch: hitchhike-clean
 tip recreated on architect; pane-tree descendant liveness and RC UNAVAILABLE
 locks reconfirmed. Downstream roles must recreate on this tip — do not merge
 into contaminated ancestry. Complements BL-1019/BL-1108/BL-514. Acceptance:
