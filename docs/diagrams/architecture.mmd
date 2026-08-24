@@ -206,6 +206,8 @@
 %% markers stop every stage, not only the role a note reached.
 %% BL-1085 (2026-08-24): push-sweep ahead-range cache — one walk/tick; replay
 %% complete gather on tip+ahead-SHA key (never tip-only / BL-952).
+%% BL-1023 (2026-08-24): expedite initiation adopts paused/hold run ticket into
+%% active (or refuses) before stages; move-ticket! never silent-no-ops.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

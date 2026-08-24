@@ -295,6 +295,24 @@
   "Folders initiation will look in for the run ticket, in priority order."
   ["active" "paused" "hold"])
 
+(def ^:private adoptable-run-folders #{"paused" "hold"})
+
+(defn- refuse-missing [ticket]
+  {:action :refuse :ticket ticket :folder nil
+   :message (str "REFUSE run ticket " ticket
+                 " was not found in backlog/{active,paused,hold}/"
+                 " — cannot bookkeep at teardown")})
+
+(defn- refuse-wrong-folder [ticket folder]
+  {:action :refuse :ticket ticket :folder folder
+   :message (str "REFUSE run ticket " ticket " is in backlog/" folder
+                 "/ — cannot bookkeep at teardown")})
+
+(defn- adopt-from [ticket folder]
+  {:action :adopt :ticket ticket :folder folder :from folder :to "active"
+   :message (str "ADOPT run ticket " ticket " from backlog/" folder
+                 "/ into backlog/active/ so teardown can close it")})
+
 (defn bookkeep-plan
   "Pure: given the folder the run ticket currently lives in (or nil), decide
    how initiation prepares teardown bookkeeping.
@@ -302,24 +320,10 @@
    Returns {:action :ready|:adopt|:refuse :ticket :folder ...}."
   [{:keys [folder ticket]}]
   (cond
-    (nil? folder)
-    {:action :refuse :ticket ticket :folder nil
-     :message (str "REFUSE run ticket " ticket
-                   " was not found in backlog/{active,paused,hold}/"
-                   " — cannot bookkeep at teardown")}
-
-    (= "active" folder)
-    {:action :ready :ticket ticket :folder "active"}
-
-    (#{"paused" "hold"} folder)
-    {:action :adopt :ticket ticket :folder folder :from folder :to "active"
-     :message (str "ADOPT run ticket " ticket " from backlog/" folder
-                   "/ into backlog/active/ so teardown can close it")}
-
-    :else
-    {:action :refuse :ticket ticket :folder folder
-     :message (str "REFUSE run ticket " ticket " is in backlog/" folder
-                   "/ — cannot bookkeep at teardown")}))
+    (nil? folder) (refuse-missing ticket)
+    (= "active" folder) {:action :ready :ticket ticket :folder "active"}
+    (contains? adoptable-run-folders folder) (adopt-from ticket folder)
+    :else (refuse-wrong-folder ticket folder)))
 
 (defn bookkeep-move-ok?
   "True only when a move-ticket! result reports success. A nil or missing

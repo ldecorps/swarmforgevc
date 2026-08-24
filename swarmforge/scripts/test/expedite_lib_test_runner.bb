@@ -194,6 +194,10 @@
               (expedite-lib/bookkeep-move-ok? nil))
 (assert-false "BL-1023: :ok? false is not ok"
               (expedite-lib/bookkeep-move-ok? {:ok? false}))
+(assert-false "BL-1023: truthy non-true :ok? is not ok (silent no-op shape)"
+              (expedite-lib/bookkeep-move-ok? {:ok? 1}))
+(assert-false "BL-1023: string :ok? is not ok"
+              (expedite-lib/bookkeep-move-ok? {:ok? "yes"}))
 
 
 ;; BL-1030. These four assertions used to pass PRE-SPLIT vectors - a shape the

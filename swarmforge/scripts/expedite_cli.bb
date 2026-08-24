@@ -266,27 +266,42 @@
       {:ok? true :path (str dst) :ticket ticket :from from :to to})
     {:ok? false :ticket ticket :from from :to to}))
 
+(defn- must-move-ticket!
+  "Move or refuse loudly. Replaces the pre-BL-1023 silent when-let no-op."
+  [project-root ticket from to & fail-parts]
+  (let [moved (move-ticket! project-root ticket from to)]
+    (when-not (expedite-lib/bookkeep-move-ok? moved)
+      (apply log! fail-parts)
+      (exit! 1))
+    moved))
+
 (defn- locate-run-ticket-folder [project-root ticket]
   (some (fn [sub] (when (ticket-file project-root sub ticket) sub))
         expedite-lib/run-ticket-folders))
 
+(defn- apply-bookkeep-plan!
+  [{:keys [project-root ticket dry-run?]} plan]
+  (case (:action plan)
+    :refuse (do (log! (:message plan)) (exit! 1))
+    :adopt
+    (do (log! (:message plan))
+        (when-not dry-run?
+          (must-move-ticket!
+           project-root ticket (:from plan) "active"
+           "REFUSE could not adopt run ticket" ticket
+           "from backlog/" (:from plan) "/")))
+    :ready nil
+    (do (log! "REFUSE unrecognized bookkeep action" (pr-str (:action plan)))
+        (exit! 1))))
+
 (defn- ensure-run-ticket-bookkeepable!
   "BL-1023: decide at initiation whether teardown can close the run ticket.
    Adopt from paused/hold into active when needed; refuse when missing."
-  [{:keys [project-root ticket dry-run?]}]
+  [{:keys [project-root ticket] :as opts}]
   (let [folder (locate-run-ticket-folder project-root ticket)
         plan (expedite-lib/bookkeep-plan {:folder folder :ticket ticket})]
     (log! "bookkeep" (pr-str (select-keys plan [:action :ticket :folder])))
-    (when (= :refuse (:action plan))
-      (log! (:message plan))
-      (exit! 1))
-    (when (= :adopt (:action plan))
-      (log! (:message plan))
-      (when-not dry-run?
-        (let [moved (move-ticket! project-root ticket (:from plan) "active")]
-          (when-not (expedite-lib/bookkeep-move-ok? moved)
-            (log! "REFUSE could not adopt run ticket" ticket "from backlog/" (:from plan) "/")
-            (exit! 1)))))
+    (apply-bookkeep-plan! opts plan)
     plan))
 
 (defn- role-branch-tips [project-root]
@@ -310,10 +325,9 @@
         (doseq [t (:park plan)]
           (log! "park" t "->" (str "backlog/" (:destination plan) "/"))
           (when-not dry-run?
-            (let [moved (move-ticket! project-root t "active" (:destination plan))]
-              (when-not (expedite-lib/bookkeep-move-ok? moved)
-                (log! "REFUSE could not park" t "from backlog/active/")
-                (exit! 1)))))
+            (must-move-ticket!
+             project-root t "active" (:destination plan)
+             "REFUSE could not park" t "from backlog/active/")))
         (when-not dry-run? (write-json! (fs/path run-dir "park-record.json") record))))
     ;; BL-1024: registered AFTER the moves, so the register records what was
     ;; actually done rather than what was planned. Everything downstream of
@@ -604,13 +618,12 @@
           ticket-moved?
           (boolean
            (when (and (= :done (:ticket staged)) (not (:dry-run? opts)))
-             (let [moved (move-ticket! root ticket "active" "done")]
-               (when-not (expedite-lib/bookkeep-move-ok? moved)
-                 (log! "REFUSE could not move run ticket" ticket
-                       "from backlog/active/ to backlog/done/"
-                       "- stages passed but bookkeeping failed")
-                 (exit! 1))
-               true)))
+             (must-move-ticket!
+              root ticket "active" "done"
+              "REFUSE could not move run ticket" ticket
+              "from backlog/active/ to backlog/done/"
+              "- stages passed but bookkeeping failed")
+             true))
           _ (note-ticket-moved! ticket-moved?)
           restart (restart-stack! opts)
           _ (when (not (:dry-run? opts))
