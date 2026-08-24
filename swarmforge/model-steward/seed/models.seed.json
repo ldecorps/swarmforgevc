@@ -3,7 +3,10 @@
     { "provider": "anthropic", "model": "claude-sonnet-5", "status": "certified", "context_window": 200000, "cost_class": "medium" },
     { "provider": "openai", "model": "gpt-5.3-codex", "status": "certified", "context_window": 128000, "cost_class": "medium" },
     { "provider": "cerebras", "model": "llama-3.3-70b", "status": "candidate", "context_window": 32000, "cost_class": "low" },
-    { "provider": "cursor", "model": "auto", "status": "candidate", "context_window": 200000, "cost_class": "medium" }
+    { "provider": "cursor", "model": "auto", "status": "candidate", "context_window": 200000, "cost_class": "medium" },
+    { "provider": "mistral", "model": "mistral-medium-3.5", "status": "candidate", "context_window": 200000, "cost_class": "medium",
+      "underlying_name": "mistral-vibe-cli-latest",
+      "trace": "vibe-config alias=mistral-medium-3.5 name=mistral-vibe-cli-latest input_price=1.5 output_price=7.5 auto_compact_threshold=200000" }
   ],
 
   "capabilities": {
