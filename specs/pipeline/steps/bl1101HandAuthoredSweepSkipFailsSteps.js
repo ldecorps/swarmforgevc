@@ -116,6 +116,7 @@ emit_labeled_list() {
   for s in "$@"; do echo "  - $s"; done
 }
 fail=0
+# Length-before-expand (bash 3.2 + set -u): never expand an empty array.
 if [[ "\${#SURVIVORS[@]}" -gt 0 ]]; then
   emit_labeled_list "SURVIVORS (each is a real test gap):" "\${SURVIVORS[@]}"
   fail=1
@@ -171,14 +172,19 @@ function registerSteps(registry) {
       /SKIPPED \(anchors not found/,
       'live sweep must report skipped labels before failing'
     );
+    assert.match(real, /emit_labeled_list "SKIPPED/, 'live sweep must name skips via emit_labeled_list');
+    // Architect bounce D1 / QA hitchhiker: length-guard before expand under set -u.
     assert.match(
       real,
-      /\$\{#SKIPPED\[@\]\}" -gt 0/,
-      'live sweep must length-guard SKIPPED before expand (bash 3.2 + set -u)'
+      /\[\[ "\$\{#SKIPPED\[@\]\}" -gt 0 \]\]/,
+      'live sweep must length-guard SKIPPED before expanding under set -u'
     );
-    assert.match(real, /emit_labeled_list "SKIPPED/, 'live sweep must name skips via emit_labeled_list');
-    // Soft/surgical lock: skip list must set fail=1 (not print-only), and
-    // the fail path must exit 1 before ALL MUTANTS KILLED.
+    assert.match(
+      real,
+      /\[\[ "\$\{#SURVIVORS\[@\]\}" -gt 0 \]\]/,
+      'live sweep must length-guard SURVIVORS before expanding under set -u'
+    );
+    // Soft/surgical lock: skip list must set fail=1, and fail path exits before certify.
     assert.match(
       real,
       /if \[\[ "\$\{#SKIPPED\[@\]\}" -gt 0 \]\]; then\n[\s\S]*?fail=1\nfi/,
