@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1053: the intelligence layer can route
+**Last Updated:** August 24, 2026 (BL-556: Model Steward Slice 2 —
+`model-steward evaluate` ingests a captured recruiter scorecard JSON
+(optional bake-off) into the capability registry, role-matrix evidence
+pointer, and an evidence-backed certification report with non-empty gates.
+Pure ingest only — no battery/recruiter subprocess. Capture wrappers must
+carry `scorecard_id` / `bakeoff_run_id` (never invented). Optional
+`--decertify-on-regression` scripts pass→fail into `decertify`. How-to:
+`docs/how-to/BL-547-model-steward-overview.md` (capture-then-evaluate).
+Acceptance:
+`specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature`.
+No new extension command, setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1053: the intelligence layer can route
 work to a local-model seat. ModelFactory's `provider->agent` map adds
 `local` → `local-model` so on-host models are not filed under `openai`
 (which still resolves to `codex`). `resolve-launch-agent` reports an

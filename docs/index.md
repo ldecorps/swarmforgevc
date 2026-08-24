@@ -38,7 +38,7 @@ expects them, and are not migrated or rewritten here.
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Answering the Swarm Offline](how-to/BL-441-answering-offline-runbook.md)
 - [Bringing Up the FES Second Swarm (mono-rotate, own Telegram identity)](how-to/BL-439-fes-second-swarm-bringup.md)
-- [Model Steward: Onboarding, Certification, and Role Recommendations](how-to/BL-547-model-steward-overview.md)
+- [Model Steward: Onboarding, Certification, and Role Recommendations](how-to/BL-547-model-steward-overview.md) — register / certify; **capture-then-evaluate** ingest (BL-556) for recruiter/bake-off evidence into capabilities, role-matrix pointers, and gated certification reports.
 - [ModelFactory: Assigning and Applying Agent Models](how-to/BL-525-model-factory-assign-and-apply.md)
 - [Pull and serve a named model on this host](how-to/BL-1082-pull-and-serve-a-named-model.md) — Ollama-backed `named-model` CLI: pull by id into `~/.swarmforge/models/ollama`, serve/reuse a loopback OpenAI-compatible endpoint, status that names the URL; Linux/WSL2 v1; seat staffing is BL-1052, routing BL-1053.
 - [Staff a role seat with a downloaded local model](how-to/BL-1052-local-model-seat-launch.md) — agent token `local-model` + pack `local-model-mono-router` against the BL-1082 loopback endpoint; first-quest binary `qwen`; health refusal names the URL; second model id is a window-line change only; `qwen-mono-router` (aider) stays separate.
