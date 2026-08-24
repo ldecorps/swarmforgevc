@@ -17,7 +17,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1094-the-auto-route-cites-head-so-the-coherence-gate-blocks-it.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: the auto-route must be able to succeed. Today it structurally cannot,
   except by coincidence.
