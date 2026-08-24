@@ -41,6 +41,17 @@ bb "$SCRIPT_DIR/bl1079_cursor_certification_gate_property_runner.bb" | grep -q "
 
 pass "01c: BL-1079 Cursor certification gate property (status×override / escape)"
 
+# ── 1d: BL-1053 local provider -> local-model seat routing ─────────────────
+bb "$SCRIPT_DIR/bl1053_local_provider_routing_test_runner.bb" | grep -q "ALL PASS" \
+  || fail "01d: bl1053_local_provider_routing_test_runner.bb did not report ALL PASS"
+
+pass "01d: BL-1053 local provider routing unit tests"
+
+bb "$SCRIPT_DIR/bl1053_provider_routing_property_runner.bb" | grep -q "ALL PROPERTIES HELD" \
+  || fail "01e: bl1053_provider_routing_property_runner.bb did not report ALL PROPERTIES HELD"
+
+pass "01e: BL-1053 local provider routing properties"
+
 # ── 2: assign-returns-role-map-01 — quality mode against the committed seed ─
 ASSIGN_OUT="$(bb "$CLI" assign --mode quality)"
 for role in architect coder cleaner QA hardender documenter specifier; do
