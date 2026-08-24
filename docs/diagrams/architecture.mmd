@@ -181,6 +181,8 @@
 %% gather fails CLOSED with a named finding; BL-1022 ratchet retired.
 %% BL-1096 (2026-08-24): check_pipeline_code_on_main QA-import exemption
 %% anchors is_qa_ancestor per path last-touch, not merge tip alone.
+%% BL-1107 (2026-08-24): property lane — bl796 inv 2–3 enumerate finite
+%% spaces (not oversample); 120s override; verdict not host-load-bound.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=4db5eaea0441175c54ec31c563fb2d0903d54241e921bb7b4b6c789a1d61bb67
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T11:29:04.307677653Z","feature_name":"A property lane verdict turns on the code, not on host load","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1107-property-lane-verdict-turns-on-host-load-not-code.feature","background_hash":"b2a901f369c3182586b5e4a3f30596d72e3d2e5dae696fd6dc600b949aac7447","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A property spawns no more subprocesses than its space has points","scenario_hash":"0b9d61c15cbc459a659c47aa74a5ffe6ed216c7cc6771213416c28a0e104bca4","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T11:29:04.307677653Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A property lane verdict turns on the code, not on host load
 
   bl796's property 3 draws 12 random samples over a six-point input space,
