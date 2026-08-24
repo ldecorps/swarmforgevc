@@ -1749,24 +1749,20 @@
 
 (defn auto-route! [item]
   (let [commit (or (head-commit-10) "")
-        draft (write-scratch-draft! (chase-sweep-lib/dispatch-gap-draft-lines item commit))
-        ;; BL-1094: SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1 exempts this one
-        ;; machine-generated git_handoff from the BL-953 coherence gate
-        ;; (HEAD is tip, not ticket work). Hand-authored drafts never set it.
-        env (merge (into {} (System/getenv))
-                   {"SWARMFORGE_ROLE" "coordinator"
-                    task-commit-coherence-gate-lib/dispatch-gap-autoroute-env "1"})
-        ;; process/sh's varargs form (cmd arg1 arg2 opts-map) silently drops
-        ;; :dir/:env overrides - only the [cmd & args] vector form applies
-        ;; them (confirmed empirically). Must use the vector form here:
-        ;; auto-route! only works at all if SWARMFORGE_ROLE actually
-        ;; resolves to "coordinator" inside the subprocess.
-        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
-    (if (zero? (:exit result))
-      (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item)
-            (if (str/blank? commit) "note-fallback" "git_handoff"))
-      (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item)
-            (task-commit-coherence-gate-lib/operator-refusal-log-line (:err result))))))
+        lines (chase-sweep-lib/dispatch-gap-draft-lines item commit)]
+    ;; BL-1093: draft-lines returns nil for nobody-assignees (belt-and-braces;
+    ;; read-active-items already excludes them from the sweep input).
+    (when lines
+      (let [draft (write-scratch-draft! lines)
+            env (merge (into {} (System/getenv))
+                       {"SWARMFORGE_ROLE" "coordinator"
+                        task-commit-coherence-gate-lib/dispatch-gap-autoroute-env "1"})
+            result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+        (if (zero? (:exit result))
+          (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item)
+                (if (str/blank? commit) "note-fallback" "git_handoff"))
+          (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item)
+                (task-commit-coherence-gate-lib/operator-refusal-log-line (:err result))))))))
 
 (defn dispatch-gap-sweep! [roles]
   (doseq [item (chase-sweep-lib/dispatch-gap-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
