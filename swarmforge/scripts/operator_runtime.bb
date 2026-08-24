@@ -2014,25 +2014,6 @@
 (defn write-status! [m]
   (atomic-spit! status-file (str (json/generate-string (assoc m :updated_at (now-iso))) "\n")))
 
-(defn status-llm-provider
-  "Label for status.json :provider — follows the active pack so cursor-forge
-   does not keep reporting 'claude' after Operator moved to cursor-agent."
-  []
-  (try
-    (let [identity-file (fs/path state-dir "swarm-identity")
-          pack (when (fs/exists? identity-file)
-                 (some (fn [line]
-                         (when (str/starts-with? line "launch_pack\t")
-                           (second (str/split line #"\t" 2))))
-                       (str/split-lines (slurp (str identity-file)))))]
-      (cond
-        (and pack (str/includes? pack "cursor")) "cursor"
-        (and pack (str/starts-with? pack "gemini")) "gemini"
-        (and pack (str/starts-with? pack "codex")) "codex"
-        (and pack (str/includes? pack "openrouter")) "openrouter"
-        :else "claude"))
-    (catch Exception _ "claude")))
-
 ;; ── remote-access tunnel ──────────────────────────────────────────────────────
 
 (defn ensure-tunnel!
@@ -2363,9 +2344,9 @@
       ;; never a second write-status! call — which is what makes "neither
       ;; Operator's state has overwritten the other's" a property of the
       ;; wiring rather than something either status shape has to encode.
-                      (write-status! (cond-> (operator-lib/render-status
+      (write-status! (cond-> (operator-lib/render-status
                               {:state state :llm-running? llm-running?
-                               :provider (status-llm-provider) :provider-state provider-state
+                               :provider "claude" :provider-state provider-state
                                :agents-running agents-running
                                :pending-count pending-count
                                :oldest-pending-age-ms oldest-pending-age-ms})
