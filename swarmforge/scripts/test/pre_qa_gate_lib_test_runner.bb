@@ -151,25 +151,30 @@
 ;; ── evaluate: not armed -> no findings, no work done ─────────────────────
 
 (assert= "unarmed evaluate returns armed? false and no findings"
-         {:armed? false :findings []}
+         {:armed? false :findings [] :warnings []}
          (pre-qa-gate-lib/evaluate
           {:type "git_handoff" :to "cleaner" :ticket-id "BL-1" :cited-commit "aaaaaaaaaa"
            :role-branch-commits {} :main-reachable-set #{} :cited-ancestors-set #{}
            :wiring-entries [] :file-contents {} :abandoned-commits []}))
 
-;; ── evaluate: ancestry findings ───────────────────────────────────────────
+;; ── evaluate: ancestry findings (BL-972: path evidence required to block) ─
+
+(def parcel-path "extension/src/swarm/foo.ts")
 
 (let [opts {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
-            :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490 lineage"}
-                                                       {:sha "b2c3d4e5f6" :message "unrelated commit"}]}
+            :role-branch-commits {"swarmforge-coder"
+                                  [{:sha "a1b2c3d4e5" :message "Fix BL-490 lineage"
+                                    :paths [parcel-path]}
+                                   {:sha "b2c3d4e5f6" :message "unrelated commit"}]}
             :main-reachable-set #{}
             :cited-ancestors-set #{}
+            :parcel-paths [parcel-path]
             :wiring-entries []
             :file-contents {}
             :abandoned-commits []}]
   (let [result (pre-qa-gate-lib/evaluate opts)]
     (assert-true "armed when addressed to QA" (:armed? result))
-    (assert= "one stranded ticket commit is one ancestry finding"
+    (assert= "one stranded ticket commit with path overlap is one ancestry finding"
              1
              (count (:findings result)))
     (assert= "the finding is class :ancestry naming the stranded sha"
@@ -180,36 +185,44 @@
          []
          (:findings (pre-qa-gate-lib/evaluate
                      {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
-                      :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "BL-490 bookkeeping"}]}
+                      :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "BL-490 bookkeeping"
+                                                                 :paths [parcel-path]}]}
                       :main-reachable-set #{"a1b2c3d4e5"}
                       :cited-ancestors-set #{}
+                      :parcel-paths [parcel-path]
                       :wiring-entries [] :file-contents {} :abandoned-commits []})))
 
 (assert= "a commit already an ancestor of the cited commit is never a finding"
          []
          (:findings (pre-qa-gate-lib/evaluate
                      {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
-                      :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490"}]}
+                      :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490"
+                                                                 :paths [parcel-path]}]}
                       :main-reachable-set #{}
                       :cited-ancestors-set #{"a1b2c3d4e5"}
+                      :parcel-paths [parcel-path]
                       :wiring-entries [] :file-contents {} :abandoned-commits []})))
 
 (assert= "a stranded commit recorded under abandoned_commits is never a finding"
          []
          (:findings (pre-qa-gate-lib/evaluate
                      {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
-                      :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490"}]}
+                      :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490"
+                                                                 :paths [parcel-path]}]}
                       :main-reachable-set #{}
                       :cited-ancestors-set #{}
+                      :parcel-paths [parcel-path]
                       :wiring-entries [] :file-contents {}
                       :abandoned-commits ["a1b2c3d4e5"]})))
 
 (assert-true "abandoned_commits matches by sha PREFIX (10-char abbrev covers a longer sha)"
              (empty? (:findings (pre-qa-gate-lib/evaluate
                                   {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
-                                   :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5f6a7b8c9d0" :message "Fix BL-490"}]}
+                                   :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5f6a7b8c9d0" :message "Fix BL-490"
+                                                                              :paths [parcel-path]}]}
                                    :main-reachable-set #{}
                                    :cited-ancestors-set #{}
+                                   :parcel-paths [parcel-path]
                                    :wiring-entries [] :file-contents {}
                                    :abandoned-commits ["a1b2c3d4e5"]}))))
 
@@ -217,22 +230,47 @@
          []
          (:findings (pre-qa-gate-lib/evaluate
                      {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
-                      :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-100"}]}
+                      :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-100"
+                                                                 :paths [parcel-path]}]}
                       :main-reachable-set #{}
                       :cited-ancestors-set #{}
+                      :parcel-paths [parcel-path]
                       :wiring-entries [] :file-contents {} :abandoned-commits []})))
 
-;; hardener: with 2+ candidate branches, both stranded, findings must
-;; aggregate across ALL of them, sorted by branch name - a single-branch
-;; test can't tell "iterates every branch" from "handles the first one and
-;; stops", nor prove the stable branch-name ordering the CLI's multi-line
-;; output depends on.
+;; BL-972: subject-only match warns, does not block
 (let [result (pre-qa-gate-lib/evaluate
-              {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
-               :role-branch-commits {"swarmforge-hardener" [{:sha "z9z9z9z9z9" :message "Fix BL-490 in hardener"}]
-                                      "swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490 lineage"}]}
+              {:type "git_handoff" :to "QA" :ticket-id "BL-900" :cited-commit "cccccccccc"
+               :role-branch-commits {"swarmforge-coder"
+                                     [{:sha "aaaaaaaaaa" :message "Revert BL-900 bookkeeping"
+                                       :paths ["backlog/topics/BL-900.md"]}]}
                :main-reachable-set #{}
                :cited-ancestors-set #{}
+               :parcel-paths [parcel-path "specs/features/BL-900-x.feature"]
+               :wiring-entries [] :file-contents {} :abandoned-commits []})]
+  (assert= "subject-only stranded commit produces no blocking finding"
+           []
+           (:findings result))
+  (assert-true "subject-only stranded commit produces a warning naming the sha"
+               (and (= 1 (count (:warnings result)))
+                    (re-find #"aaaaaaaaaa" (first (:warnings result)))
+                    (re-find #"subject-only" (first (:warnings result))))))
+
+(assert-true "paths-overlap? is true only when sets share a path"
+             (and (pre-qa-gate-lib/paths-overlap? ["a.ts" "b.ts"] ["b.ts" "c.ts"])
+                  (not (pre-qa-gate-lib/paths-overlap? ["a.ts"] ["b.ts"]))
+                  (not (pre-qa-gate-lib/paths-overlap? [] ["b.ts"]))
+                  (not (pre-qa-gate-lib/paths-overlap? ["a.ts"] []))))
+
+;; hardener: with 2+ candidate branches, both stranded WITH path evidence
+(let [result (pre-qa-gate-lib/evaluate
+              {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
+               :role-branch-commits {"swarmforge-hardener" [{:sha "z9z9z9z9z9" :message "Fix BL-490 in hardener"
+                                                             :paths [parcel-path]}]
+                                      "swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490 lineage"
+                                                           :paths [parcel-path]}]}
+               :main-reachable-set #{}
+               :cited-ancestors-set #{}
+               :parcel-paths [parcel-path]
                :wiring-entries [] :file-contents {} :abandoned-commits []})]
   (assert= "two stranded branches each contribute their own finding"
            2
@@ -241,15 +279,16 @@
            ["swarmforge-coder" "swarmforge-hardener"]
            (mapv :branch (:findings result))))
 
-;; hardener: with 2+ stranded commits, only the NON-abandoned one must
-;; survive - a single-candidate test can't distinguish "filters correctly"
-;; from "coincidentally the only candidate happened to be exempt/findable".
+;; hardener: abandoned + real path-overlap fix
 (let [result (pre-qa-gate-lib/evaluate
               {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
-               :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490 abandoned half"}
-                                                          {:sha "f6f6f6f6f6" :message "Fix BL-490 real fix"}]}
+               :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490 abandoned half"
+                                                           :paths [parcel-path]}
+                                                          {:sha "f6f6f6f6f6" :message "Fix BL-490 real fix"
+                                                           :paths [parcel-path]}]}
                :main-reachable-set #{}
                :cited-ancestors-set #{}
+               :parcel-paths [parcel-path]
                :wiring-entries [] :file-contents {}
                :abandoned-commits ["a1b2c3d4e5"]})]
   (assert= "only the non-abandoned stranded commit survives as a finding"
@@ -267,20 +306,24 @@
          []
          (:findings (pre-qa-gate-lib/evaluate
                      {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
-                      :role-branch-commits {"swarmforge-coder" [{:sha "e5e5e5e5e5" :message "merge coder work for BL-531"}]}
+                      :role-branch-commits {"swarmforge-coder" [{:sha "e5e5e5e5e5" :message "merge coder work for BL-531"
+                                                                 :paths [parcel-path]}]}
                       :main-reachable-set #{}
                       :cited-ancestors-set #{}
                       :no-dropped-work-set #{"e5e5e5e5e5"}
+                      :parcel-paths [parcel-path]
                       :wiring-entries [] :file-contents {} :abandoned-commits []})))
 
 (assert= "a commit whose tree matches the cited commit is excluded (condition 5)"
          []
          (:findings (pre-qa-gate-lib/evaluate
                      {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
-                      :role-branch-commits {"swarmforge-coder" [{:sha "t3t3t3t3t3" :message "Fix BL-531 tree-identical"}]}
+                      :role-branch-commits {"swarmforge-coder" [{:sha "t3t3t3t3t3" :message "Fix BL-531 tree-identical"
+                                                                 :paths [parcel-path]}]}
                       :main-reachable-set #{}
                       :cited-ancestors-set #{}
                       :no-dropped-work-set #{"t3t3t3t3t3"}
+                      :parcel-paths [parcel-path]
                       :wiring-entries [] :file-contents {} :abandoned-commits []})))
 
 (assert= "a genuine single-parent stranded fix with unique content still IS a finding (condition 5 does not over-exclude)"
@@ -288,19 +331,24 @@
          (mapv #(select-keys % [:class :ticket-id :sha :branch])
                (:findings (pre-qa-gate-lib/evaluate
                            {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
-                            :role-branch-commits {"swarmforge-coder" [{:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+                            :role-branch-commits {"swarmforge-coder" [{:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"
+                                                                       :paths [parcel-path]}]}
                             :main-reachable-set #{}
                             :cited-ancestors-set #{}
                             :no-dropped-work-set #{}
+                            :parcel-paths [parcel-path]
                             :wiring-entries [] :file-contents {} :abandoned-commits []}))))
 
 (let [result (pre-qa-gate-lib/evaluate
               {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
-               :role-branch-commits {"swarmforge-coder" [{:sha "e5e5e5e5e5" :message "merge coder work for BL-531 empty diff"}
-                                                          {:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+               :role-branch-commits {"swarmforge-coder" [{:sha "e5e5e5e5e5" :message "merge coder work for BL-531 empty diff"
+                                                           :paths [parcel-path]}
+                                                          {:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"
+                                                           :paths [parcel-path]}]}
                :main-reachable-set #{}
                :cited-ancestors-set #{}
                :no-dropped-work-set #{"e5e5e5e5e5"}
+               :parcel-paths [parcel-path]
                :wiring-entries [] :file-contents {} :abandoned-commits []})]
   (assert= "with one empty-diff merge and one real fix stranded, only the real fix survives"
            ["f6f6f6f6f6"]
@@ -310,9 +358,11 @@
          1
          (count (:findings (pre-qa-gate-lib/evaluate
                              {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
-                              :role-branch-commits {"swarmforge-coder" [{:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+                              :role-branch-commits {"swarmforge-coder" [{:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"
+                                                                         :paths [parcel-path]}]}
                               :main-reachable-set #{}
                               :cited-ancestors-set #{}
+                              :parcel-paths [parcel-path]
                               :wiring-entries [] :file-contents {} :abandoned-commits []}))))
 
 ;; ── evaluate: wiring findings ──────────────────────────────────────────
@@ -389,8 +439,10 @@
 
 (let [result (pre-qa-gate-lib/evaluate
               {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
-               :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-531"}]}
+               :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-531"
+                                                           :paths [parcel-path]}]}
                :main-reachable-set #{} :cited-ancestors-set #{}
+               :parcel-paths [parcel-path]
                :wiring-entries ["missing/path.bb::fn"]
                :file-contents {}
                :abandoned-commits []})]
