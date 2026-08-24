@@ -118,6 +118,12 @@
         entry (model-steward-lib/capability-entry (load-registry) provider model)]
     (print-entry-or-die entry json/generate-string "capability entry" provider model)))
 
+(defn- parse-limitations-flag
+  "Splits --limitations \"a;b\" into trimmed strings; absent/blank → nil."
+  [flags]
+  (when-let [lim (not-empty (opt-value flags "--limitations"))]
+    (into [] (remove str/blank? (map str/trim (str/split lim #";"))))))
+
 (defn run-register [rest-args]
   (when (empty? rest-args) (usage))
   (let [[provider model] (parse-provider-model (first rest-args))
@@ -131,8 +137,7 @@
                  {:status status
                   :context_window (when context-window (Long/parseLong context-window))
                   :cost_class cost-class
-                  :known_limitations (when-let [lim (opt-value flags "--limitations")]
-                                       (mapv str/trim (str/split lim (re-pattern ";"))))})]
+                  :known_limitations (parse-limitations-flag flags)})]
     (save-registry! updated)
     (println (str provider "/" model " " (:status (model-steward-lib/model-entry updated provider model))))))
 

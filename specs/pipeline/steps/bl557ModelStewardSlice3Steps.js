@@ -29,6 +29,14 @@ function cli(stateDir, args, extraEnv = {}) {
   });
 }
 
+/** Fixture limitation text for Outline status re-register (not production). */
+function limitationFor(model, status) {
+  if (model === 'old-model') return 'retired from swarm use';
+  return status === 'certified'
+    ? 'seed limitation for certified row'
+    : 'seed limitation for non-certified row';
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -157,24 +165,15 @@ function registerSteps(registry) {
     const st = ctx.bl557;
     const { provider } = KNOWN_MODELS[model];
     const id = `${provider}/${model}`;
-    if (model === 'old-model') {
-      cli(st.stateDir, [
-        'register',
-        id,
-        '--status',
-        status,
-        '--limitations',
-        'retired from swarm use',
-      ]);
-    } else {
-      // Seed already carries these; re-register to pin the Examples status
-      // without requiring certify's scorecard for this projection scenario.
-      const lim =
-        status === 'certified'
-          ? 'seed limitation for certified row'
-          : 'seed limitation for non-certified row';
-      cli(st.stateDir, ['register', id, '--status', status, '--limitations', lim]);
-    }
+    // Re-register to pin Outline status without certify's scorecard.
+    cli(st.stateDir, [
+      'register',
+      id,
+      '--status',
+      status,
+      '--limitations',
+      limitationFor(model, status),
+    ]);
     ctx.bl557 = { ...st, expectModel: model, expectStatus: status, expectId: id };
   });
 
