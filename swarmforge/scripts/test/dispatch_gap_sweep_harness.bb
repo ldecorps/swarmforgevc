@@ -8,6 +8,10 @@
 ;; approximation of it. Mirrors chase_sweep_test_runner.bb's role as a
 ;; companion test harness for chase_sweep_lib.bb.
 ;;
+;; BL-1094: supplies HEAD (10-char) and SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1
+;; exactly as production auto-route! does — the prior note-only path never
+;; exercised the coherence-gate collision this ticket fixes.
+;;
 ;; Usage: dispatch_gap_sweep_harness.bb <project-root>
 (ns dispatch-gap-sweep-harness
   (:require [babashka.fs :as fs]
@@ -16,6 +20,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "task_commit_coherence_gate_lib.bb")))
 
 (def project-root (first *command-line-args*))
 (def swarm-handoff-script (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "swarm_handoff.bb")))
@@ -41,15 +46,26 @@
       (spit (str draft) (str (str/join "\n" lines) "\n"))
       draft)))
 
+(defn head-commit-10 []
+  (let [result (process/sh ["git" "-C" project-root "rev-parse" "--short=10" "HEAD"])]
+    (when (zero? (:exit result))
+      (str/trim (:out result)))))
+
 ;; SWARMFORGE_SKIP_SYNC_INJECT=1: the harness fixture has no live tmux
 ;; session, and real delivery (the tmux-dependent half of swarm_handoff.bb)
 ;; is already covered by that script's own test suite - this harness scopes
-;; to what BL-222 adds, same posture as test_dispatch_gap_autoroute.sh.
+;; to what BL-222/BL-1094 add, same posture as test_dispatch_gap_autoroute.sh.
 (defn auto-route! [item]
-  (let [draft (write-scratch-draft! (chase-sweep-lib/dispatch-gap-draft-lines item))
-        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator" "SWARMFORGE_SKIP_SYNC_INJECT" "1"})
+  (let [commit (or (head-commit-10) "")
+        draft (write-scratch-draft! (chase-sweep-lib/dispatch-gap-draft-lines item commit))
+        env (merge (into {} (System/getenv))
+                   {"SWARMFORGE_ROLE" "coordinator"
+                    "SWARMFORGE_SKIP_SYNC_INJECT" "1"
+                    task-commit-coherence-gate-lib/dispatch-gap-autoroute-env "1"})
         result (process/sh ["bb" swarm-handoff-script (str draft)] {:dir project-root :env env})]
-    (println "AUTO-ROUTED" (:id item) "exit=" (:exit result))))
+    (println "AUTO-ROUTED" (:id item) "exit=" (:exit result)
+             (when-not (zero? (:exit result))
+               (task-commit-coherence-gate-lib/operator-refusal-log-line (:err result))))))
 
 (defn -main []
   (let [roles (load-roles)

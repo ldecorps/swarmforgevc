@@ -134,7 +134,7 @@ function coordinatorOutboxDir(ctx) {
   return path.join(ctx.targetPath, '.swarmforge', 'handoffs', 'coordinator', 'outbox');
 }
 
-function listQueuedNotesFor(ctx, itemId) {
+function listQueuedAutoroutesFor(ctx, itemId) {
   const dir = coordinatorOutboxDir(ctx);
   let files;
   try {
@@ -144,7 +144,14 @@ function listQueuedNotesFor(ctx, itemId) {
   }
   return files
     .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
-    .filter((content) => new RegExp(`^message: ${itemId}`, 'm').test(content));
+    .filter((content) => {
+      // Legacy soft-note auto-route OR BL-1094 git_handoff citing the ticket.
+      if (new RegExp(`^message: ${itemId}`, 'm').test(content)) return true;
+      return (
+        /^type: git_handoff$/m.test(content) &&
+        new RegExp(`^task: ${itemId}(?:-|$)`, 'm').test(content)
+      );
+    });
 }
 
 function registerSteps(registry) {
@@ -285,19 +292,19 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the assignee receives a routing handoff for the item$/, (ctx) => {
-    const queued = listQueuedNotesFor(ctx, ITEM_ID);
+    const queued = listQueuedAutoroutesFor(ctx, ITEM_ID);
     if (queued.length === 0) {
-      throw new Error(`expected an auto-routed note for ${ITEM_ID} queued via the real swarm_handoff.bb, got sweep output: ${ctx.sweepOutput}`);
+      throw new Error(`expected an auto-routed parcel for ${ITEM_ID} queued via the real swarm_handoff.bb, got sweep output: ${ctx.sweepOutput}`);
     }
     if (!queued.some((content) => /^to: coder$/m.test(content))) {
-      throw new Error(`expected the queued note addressed to the assignee (coder), got: ${queued.join('\n---\n')}`);
+      throw new Error(`expected the queued parcel addressed to the assignee (coder), got: ${queued.join('\n---\n')}`);
     }
   });
 
   registry.define(/^the sweep sends no further routing handoff for the item$/, (ctx) => {
-    const queued = listQueuedNotesFor(ctx, ITEM_ID);
+    const queued = listQueuedAutoroutesFor(ctx, ITEM_ID);
     if (queued.length > 0) {
-      throw new Error(`expected no auto-routed note for ${ITEM_ID} (already dispatched or progressed), got: ${queued.join('\n---\n')}`);
+      throw new Error(`expected no auto-routed parcel for ${ITEM_ID} (already dispatched or progressed), got: ${queued.join('\n---\n')}`);
     }
   });
 }
