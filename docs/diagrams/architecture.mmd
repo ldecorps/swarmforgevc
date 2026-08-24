@@ -186,6 +186,8 @@
 %% BL-557 (2026-08-24): Model Steward Slice 3 — coordinator-assignable
 %% infrastructure role (no standing pane); compat-docs from registry →
 %% docs/reference/model-compatibility.md.
+%% BL-1105 (2026-08-24): mint hygiene refuses duplicate ticket id: (local +
+%% origin/main corpora; fail-closed unreadable; key on id not slug).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

@@ -1,6 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-557: Model Steward Slice 3 — graduate
+**Last Updated:** August 24, 2026 (BL-1105: a duplicate ticket id is refused
+at mint. Parallel sessions can pick the same next `id:` by hand; git will not
+notice because filenames carry the slug, so two different YAMLs under one id
+merge cleanly. The specifier's existing per-ticket hygiene gate
+(`specifier_backlog_hygiene_gate.bb` / `backlog_hygiene_lib.bb`) now indexes
+`id:` across local pools (`paused`/`active`/`hold`/`done`) and the published
+corpus (`origin/main` by default), keys on the field never the slug, names
+both holders on refusal, and fails closed when a corpus cannot be fully read.
+Does not displace epic/milestone checks. Acceptance:
+`specs/features/BL-1105-a-duplicate-ticket-id-is-refused-at-mint.feature`.
+See "Mint-Time Duplicate-Id Gate (BL-1105)" in `swarmforge/handoff-protocol.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-557: Model Steward Slice 3 — graduate
 the steward to a coordinator-assignable infrastructure role and generate
 compatibility docs from the registry. The Slice 1 stub prompt becomes a real
 role the coordinator MAY assign discrete tasks to (onboard / re-certify /
