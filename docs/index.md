@@ -36,6 +36,7 @@ expects them, and are not migrated or rewritten here.
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
+- [One unified pipeline grid across swarms](how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md) — one kanban; caption `s1`/`s2` badges when multi-swarm; remote held-by-role never guessed (BL-1009).
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Answering the Swarm Offline](how-to/BL-441-answering-offline-runbook.md)
 - [Bringing Up the FES Second Swarm (mono-rotate, own Telegram identity)](how-to/BL-439-fes-second-swarm-bringup.md)

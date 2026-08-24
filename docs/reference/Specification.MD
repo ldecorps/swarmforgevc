@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1007: unit-lane Vitest budgets scale
+**Last Updated:** August 24, 2026 (BL-1009: one Telegram pipeline-board grid
+covers every swarm’s active tickets. Caption badges (`primary`→`s1`,
+`second`→`s2`) only when multiple swarms are visible; mono-swarm boards stay
+byte-identical with no badges. Absent `swarm:` defaults to local via
+`readSwarmName`; remote rows never show a live held-by-role mark. Complements
+BL-090/BL-452. Acceptance:
+`specs/features/BL-1009-one-unified-pipeline-grid-across-swarms.feature`.
+How-to: `docs/how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command or
+setting; Pipeline Board Telegram surface only.)
+Prior entry —
+August 24, 2026 (BL-1007: unit-lane Vitest budgets scale
 with a recorded host contention factor (`loadavg1m/cores`), floored at the
 statically parseable base on quiet/unusable hosts and clamped by a finite
 ceiling (120s). Run evidence names the factor and load-normalized durations.
