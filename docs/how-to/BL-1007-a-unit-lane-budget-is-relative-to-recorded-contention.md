@@ -32,5 +32,9 @@ Do not “fix” load-artifact reds by raising absolute timeouts alone. Prefer t
 relative budget. Extreme contention still fails past the ceiling rather than
 granting unbounded time.
 
+The bounded `fs.watch` wait helper (`boundedWatchWait.js`) is scaled the same
+way and kept strictly below the test budget — see
+`docs/how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md`.
+
 Acceptance:
 `specs/features/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.feature`
