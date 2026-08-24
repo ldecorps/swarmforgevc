@@ -26,6 +26,8 @@ function mkFixtureProjectRoot() {
   fs.writeFileSync(path.join(diagramsDir, 'architecture.mmd'), FIXTURE_MMD);
   fs.writeFileSync(path.join(diagramsDir, 'swarm-flow.mmd'), FIXTURE_MMD);
   fs.writeFileSync(path.join(diagramsDir, 'handoff-flow.mmd'), FIXTURE_MMD);
+  // BL-580: front-desk mechanism joins the allowlist; fixture must supply it.
+  fs.writeFileSync(path.join(diagramsDir, 'front-desk-flow.mmd'), FIXTURE_MMD);
   return root;
 }
 
@@ -48,7 +50,7 @@ test(
 
     assert.deepEqual(
       diagrams.map((d) => d.name),
-      ['architecture', 'swarm-flow', 'handoff-mechanism']
+      ['architecture', 'swarm-flow', 'handoff-mechanism', 'front-desk']
     );
     for (const { base64 } of diagrams) {
       const png = Buffer.from(base64, 'base64');
@@ -70,7 +72,7 @@ test('a missing diagram source file rejects rather than silently omitting it (ha
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'render-briefing-diagrams.js');
 
 function runCliSubprocess(cwd) {
-  // Three diagram PNGs as base64 exceed Node's default 1 MiB maxBuffer.
+  // Four diagram PNGs as base64 exceed Node's default 1 MiB maxBuffer.
   return execFileSync('node', [CLI], { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 }
 
@@ -107,7 +109,7 @@ test(
 
     assert.deepEqual(
       diagrams.map((d) => d.name),
-      ['architecture', 'swarm-flow', 'handoff-mechanism']
+      ['architecture', 'swarm-flow', 'handoff-mechanism', 'front-desk']
     );
     for (const { base64 } of diagrams) {
       assert.ok(Buffer.from(base64, 'base64').subarray(0, 8).equals(PNG_MAGIC));
@@ -129,7 +131,7 @@ test(
 
     assert.deepEqual(
       diagrams.map((d) => d.name),
-      ['architecture', 'swarm-flow', 'handoff-mechanism']
+      ['architecture', 'swarm-flow', 'handoff-mechanism', 'front-desk']
     );
     for (const { base64 } of diagrams) {
       assert.ok(Buffer.from(base64, 'base64').subarray(0, 8).equals(PNG_MAGIC));
