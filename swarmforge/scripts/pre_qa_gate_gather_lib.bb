@@ -33,6 +33,11 @@
 
 (defn- git-ok? [res] (zero? (:exit res)))
 
+;; BL-1031: exit 124 is the bounded chokepoint's wait-bound signal (mirrors
+;; coreutils timeout). Named at every call site that must fail CLOSED.
+(defn- wait-bound-hit-result? [res]
+  (= 124 (:exit res)))
+
 (defn ref-exists? [project-root ref]
   (git-ok? (run-git project-root ["rev-parse" "--verify" "-q" ref])))
 
@@ -278,7 +283,7 @@
           (let [res (daemon-cycle-guard-lib/sh! {:dir vendor-dir} "bb" "gherkin-parser" feature-path ir-path)]
             (cond
               ;; BL-1031 ruling (b): wait-bound is fail-CLOSED, named at the call site.
-              (= 124 (:exit res)) :wait-bound-hit
+              (wait-bound-hit-result? res) :wait-bound-hit
               (and (git-ok? res) (fs/exists? ir-path)) ir-path
               :else nil)))))))
 
@@ -332,7 +337,7 @@
     (cond
       ;; BL-1031 ruling (b): wait-bound hit is named and fail-CLOSED upstream —
       ;; never absorbed into a silent fail-open warning.
-      (= 124 (:exit res))
+      (wait-bound-hit-result? res)
       {:loadable false :wait-bound-hit? true
        :error (str/trim (str "wait-bound hit (exit 124): " (:err res)))}
 

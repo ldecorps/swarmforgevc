@@ -1,6 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1071 re-pass × BL-1102: control-plane
+**Last Updated:** August 24, 2026 (BL-1031: every subprocess the handoff
+daemon can reach — by load *or* spawn edge — runs under the bounded
+chokepoint. BL-1022 widened the closure and held three libraries
+(`handoff_inject_lib.bb`, `pre_qa_gate_gather_lib.bb`, `salvage_lib.bb`) as
+a ratchet of unbounded `babashka.process` calls; this ticket routes those
+sites through `daemon-cycle-guard-lib/sh!` and retires the ratchet. A wait-
+bound hit (exit 124) on the acceptance-contract gather fails CLOSED with a
+named finding — "we could not check" is never the same as a clean pass
+(operator ruling b). Call options (`:dir`) and distinguishable outcomes are
+preserved. Complements BL-967/BL-1021/BL-1022/BL-1102. Acceptance:
+`specs/features/BL-1031-bounded-chokepoint-covers-the-spawn-reachable-subtree.feature`.
+Runbook note: `docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1071 re-pass × BL-1102: control-plane
 `observe!` maps a tmux spawn that never happened to `:unavailable`, not
 `:control-plane-missing`. After BL-1102's non-throwing `sh!`, a missing
 `tmux` returned a result instead of throwing, so the probe looked like a
