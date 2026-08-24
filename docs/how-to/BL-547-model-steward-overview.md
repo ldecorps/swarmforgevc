@@ -259,9 +259,39 @@ In production mode:
 
 All CLI commands read from and write to the runtime state, so changes persist across future invocations.
 
+## Slice 3 (BL-557): steward as a role + compatibility docs
+
+The Model Steward graduates from a Slice 1 stub prompt into a
+**coordinator-assignable infrastructure role**. The coordinator MAY assign it
+discrete tasks such as onboard a new model, re-certify after a bake-off, or
+investigate a capability regression. The steward's output is certification and
+registry knowledge only — it never mutates ModelFactory routing.
+
+### What the steward is not
+
+- No always-on pane, mailbox, worktree, or standing event loop
+- Not a permanent resident of the swarm roster
+- Not a routing authority (routing stays with ModelFactory / packs)
+
+### Compatibility docs (generated)
+
+```bash
+# From repo root (after registry updates / known_limitations changes)
+bb swarmforge/scripts/model_steward_cli.bb compat-docs
+# → writes docs/reference/model-compatibility.md
+```
+
+That file is the human-facing projection of registry statuses,
+`known_limitations`, and the certified role-recommendation matrix. **Do not
+hand-edit it** — regenerate via `compat-docs`. The docs index links it under
+Reference.
+
+## Related
+
 Related: [Route work to a local-model seat](./BL-1053-route-work-to-a-local-model-seat.md),
 [Wire Mistral Vibe into the Intelligence Layer](./BL-682-mistral-vibe-intelligence-layer-routing.md),
 [ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md).
 
 Acceptance (Slice 2): `specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature`.
+Acceptance (Slice 3): `specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature`.
 

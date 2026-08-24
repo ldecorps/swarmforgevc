@@ -15,3 +15,6 @@ BL-557-model-steward-slice3-role-and-compat-docs
 
 ## Acceptance cross-check
 Aligned with `specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature` (role graduation + generated compat docs).
+
+## Follow-up
+Slice 3 how-to section landed in a second commit after the first tip (handoff draft format fix: type/priority/commit, to: QA).
