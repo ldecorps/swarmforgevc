@@ -49,6 +49,7 @@ expects them, and are not migrated or rewritten here.
 - [Routing-skip journal failure never withholds delivery](how-to/BL-748-routing-skip-recording-failure-never-withholds-delivery.md) — `ROUTING-SKIP RECORD FAILED` on stderr; parcel still delivered (BL-748 / BL-623).
 - [Residual-word allowlist survives backlog stage moves](how-to/BL-694-residual-word-allowlist-survives-stage-moves.md) — basename under active/paused/hold only (BL-694).
 - [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).
+- [Malformed stage_skip_reasons is surfaced, never silently truncated](how-to/BL-754-stage-skip-reasons-never-silently-loses-a-stage.md) — unquoted comma → `skip_reasons_malformed=`; handoff still delivers (BL-754 / BL-661).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)

@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-752: a same-basename file under a
+**Last Updated:** August 24, 2026 (BL-754: a present-but-malformed flow
+`stage_skip_reasons` is never read as complete. Unquoted reasons with an
+interior comma set `:malformed` (carried as `skip_reasons_malformed=` on the
+routing-skip record); single- and double-quoted reasons with commas stay
+equivalent; simple unquoted reasons remain accepted. Reading is observational
+— the handoff still delivers. Complements BL-661/BL-951. Acceptance:
+`specs/features/BL-754-stage-skip-reasons-never-silently-loses-a-stage.feature`.
+How-to: `docs/how-to/BL-754-stage-skip-reasons-never-silently-loses-a-stage.md`,
+`docs/how-to/BL-661-stage-skip-reasons-flow-style.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-752: a same-basename file under a
 non-stage backlog path such as `backlog/topics/` is proven not exempt from the
 residual-word scan. BL-694 Outline 04 renders the previously-dead handler;
 BL-752 acceptance pins the collision, keeps stage-move exemption, and asserts

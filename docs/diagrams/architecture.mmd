@@ -212,6 +212,8 @@
 %% sync inject + draft consume still run.
 %% BL-752 (2026-08-24): residual allowlist — non-stage backlog/topics basename
 %% collision proven; unreachable BL-694 step handler exercised.
+%% BL-754 (2026-08-24): stage_skip_reasons flow parse — unquoted interior comma
+%% surfaces :malformed / skip_reasons_malformed=; never silent stage drop.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
