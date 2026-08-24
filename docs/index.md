@@ -62,6 +62,7 @@ expects them, and are not migrated or rewritten here.
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
 - [Morning briefing handoff-mechanism diagram](how-to/BL-579-handoff-mechanism-briefing-diagram.md) — HOW a parcel travels; allowlist entry `handoff-mechanism` (BL-579).
+- [Mean ticket time ends at close, not a later re-file](how-to/BL-1074-post-close-refile-inflates-measured-ticket-duration.md) — duration ignores post-close `done/` moves (BL-1074).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)

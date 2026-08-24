@@ -11,6 +11,14 @@ depends_on: [BL-1066]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1074-post-close-refile-inflates-measured-ticket-duration.feature
+# FF-only rematch: hitchhiked / superseded coder tips deliberately dropped.
+abandoned_commits:
+  - "695f6d89ad"
+  - "f90ce7421d"
+  - "9886d6e6f4"
+  - "fbf3c7d319"
+  - "9262b4dfde"
+  - "6eb8f3a47a"
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1074::this ticket's step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
 
