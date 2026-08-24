@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=fb48fec72913e4da5200d20da1e7f984ecc7b507c6336b0a57827b07d4b30887
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T14:18:24.558664100Z","feature_name":"One pipeline grid across every swarm, badged by owner","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1009-one-unified-pipeline-grid-across-swarms.feature","background_hash":"29dbf3ca3270fffe5e4d755d3bdefde98a3b45a9b3d3fc92290cb1c970136a49","implementation_hash":"unknown","scenarios":[{"index":1,"name":"each caption names the swarm that owns its ticket","scenario_hash":"56b6d760718570df7f101f94a4a11a932997eb67af48d1d3b7ca32d6e3878d66","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-24T14:18:24.558664100Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: One pipeline grid across every swarm, badged by owner
 
   The pipeline board is mono-swarm today: its rows are exactly
