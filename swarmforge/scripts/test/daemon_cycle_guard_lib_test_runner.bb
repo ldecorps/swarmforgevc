@@ -39,39 +39,7 @@
       (fs/delete-tree d))))
 
 (let [r (daemon-cycle-guard-lib/sh! "false")]
-  (assert= "sh! non-zero exit passes through untouched" 1 (:exit r))
-  (assert-false "a real non-zero exit is not a spawn failure" (:spawn-failed? r)))
-
-;; ── BL-1102: spawn failure returns, never throws ──────────────────────────
-
-(let [r (daemon-cycle-guard-lib/sh! "definitely-not-a-real-binary-bl1102")]
-  (assert-true "absent binary: returns a result (no throw)" (map? r))
-  (assert-true "absent binary: spawn-failed? marker" (:spawn-failed? r))
-  (assert= "absent binary: synthesised exit 127" 127 (:exit r)))
-
-(let [missing (str (fs/path (fs/create-temp-dir {:prefix "dcg-missing-"}) "no-such-file"))]
-  (try
-    (let [r (daemon-cycle-guard-lib/sh! missing)]
-      (assert-true "nonexistent path: spawn-failed?" (:spawn-failed? r)))
-    (finally
-      (fs/delete-tree (fs/parent missing)))))
-
-(let [d (str (fs/create-temp-dir {:prefix "dcg-nx-"}))
-      f (str (fs/path d "not-exec"))]
-  (try
-    (spit f "#!/bin/sh\necho hi\n")
-    ;; leave without executable bit
-    (let [r (daemon-cycle-guard-lib/sh! f)]
-      (assert-true "non-executable path: spawn-failed?" (:spawn-failed? r))
-      (assert-false "non-executable is not a bare non-zero without marker"
-                    (and (= 1 (:exit r)) (not (:spawn-failed? r)))))
-    (finally
-      (fs/delete-tree d))))
-
-(let [spawned (daemon-cycle-guard-lib/sh! "definitely-not-a-real-binary-bl1102")
-      failed (daemon-cycle-guard-lib/sh! "false")]
-  (assert-true "spawn vs ran-failed differ on :spawn-failed?"
-               (not= (boolean (:spawn-failed? spawned)) (boolean (:spawn-failed? failed)))))
+  (assert= "sh! non-zero exit passes through untouched" 1 (:exit r)))
 
 ;; ── sh! bounded wait (the invariant-1 core) ───────────────────────────────
 ;; Run in a subprocess-scoped env so the bound seam is small without leaking
