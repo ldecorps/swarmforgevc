@@ -198,6 +198,14 @@
   (assert-true "the load error names the missing vendor tool, not the declaration"
                (and (:registry-load-error facts) (re-find #"vendor" (:registry-load-error facts)))))
 
+;; ── BL-1031: wait-bound-hit-result? is the gather-side named signal ───────
+;; evaluate is fed :wait-bound-hit? by gather; a mutant that makes the
+;; predicate always false leaves exit-124 absorbed into fail-OPEN warnings.
+(let [pred @(ns-resolve 'pre-qa-gate-gather-lib 'wait-bound-hit-result?)]
+  (assert-true "exit 124 is a wait-bound hit" (pred {:exit 124 :err "timeout"}))
+  (assert-false "exit 0 is not a wait-bound hit" (pred {:exit 0}))
+  (assert-false "exit 1 is not a wait-bound hit" (pred {:exit 1 :err "fail"})))
+
 ;; ── end to end through evaluate ──────────────────────────────────────────
 
 (let [{:keys [root cited-commit]}
