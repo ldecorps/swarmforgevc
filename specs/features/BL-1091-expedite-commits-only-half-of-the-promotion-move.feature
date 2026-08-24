@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=4b39c04c6c3eac9a93f65ecfaee3794c4a08884358cf2e0751da8295da728cbe
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T10:45:02.894357320Z","feature_name":"A backlog promotion is committed as both of its paths","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1091-expedite-commits-only-half-of-the-promotion-move.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":2,"name":"An in-place approval writer still commits exactly one path","scenario_hash":"8316945690e7cf3c29f1bc8245fe3ba0728e7f04b4342fe69d9ca882107e3b3a","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-24T10:45:02.894357320Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A backlog promotion is committed as both of its paths
 
   Expedite both approves a ticket and promotes it, and a promotion is a
