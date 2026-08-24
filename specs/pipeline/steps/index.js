@@ -625,7 +625,8 @@ const DOMAINS = [
   require('./bl1094DispatchGapAutorouteSteps'),
   require('./bl1106PauseVisibleEverywhereSteps'),
   require('./bl1104LandedButOpenSteps'),
-  require('./bl1093NobodyAssigneeSteps')
+  require('./bl1093NobodyAssigneeSteps'),
+  require('./bl1102SpawnFailureSteps')
 ];
 
 function registerSteps(registry) {

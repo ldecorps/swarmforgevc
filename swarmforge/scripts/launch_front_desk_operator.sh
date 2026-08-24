@@ -53,6 +53,12 @@ if [[ "${FRONT_DESK_LAUNCH_DRYRUN:-}" == "1" ]]; then
     openrouter|claude_direct)
       printf "DRYRUN would run: claude -p --output-format json --tools '' --settings <pack-settings>\n"
       ;;
+    copilot)
+      printf "DRYRUN would run: copilot --yolo --allow-all-paths --add-dir <root> -C <root> -i <front-desk-prompt>\n"
+      ;;
+    cursor)
+      printf "DRYRUN would run: cursor-agent -p --output-format json --mode ask --force --trust --workspace <root> --model <model>\n"
+      ;;
   esac
   exit 0
 fi
