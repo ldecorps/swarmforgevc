@@ -15,6 +15,9 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // by the time this config loads.
 const require = createRequire(import.meta.url);
 const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool } = require('./out/tools/vitest-worker-memory-budget');
+// BL-1007: load-relative suite default (compile-free helper; never import out/).
+const { resolveUnitLaneTimeout } = require('../specs/pipeline/steps/lib/contentionBudget');
+const UNIT_LANE_TIMEOUT = resolveUnitLaneTimeout(20000);
 // BL-792: MAX_WORKERS is a ceiling tuned for the 15360MB reference incident
 // host, not a promise that every host running this suite has that much RAM.
 // resolveWorkerPoolSize shrinks the actual fork count to what THIS host's
@@ -48,7 +51,11 @@ export default defineConfig({
     // envRestoreGuardSetup.js) alongside BL-420's tmp-dir sweep above - both
     // are per-file setupFiles so both re-register for every test file even
     // though isolate:false keeps them in the same worker.
-    setupFiles: ['./test/helpers/tmpDirSetup.js', './test/helpers/envRestoreGuardSetup.js'],
+    setupFiles: [
+      './test/helpers/tmpDirSetup.js',
+      './test/helpers/envRestoreGuardSetup.js',
+      './test/helpers/contentionBudgetSetup.js',
+    ],
     // BL-422: an unbounded `vitest run` sizes its worker pool to the CPU
     // count (20 on the reference host) with no per-worker heap limit - one
     // run ballooned four workers to ~13GB and drove the kernel OOM-killer
@@ -105,7 +112,9 @@ export default defineConfig({
     // one 30s+ offender, BL-125) now runs in-process via a spy double, so a
     // normal cap is fine; the rest still spawn a fake-tmux binary and stay
     // comfortably under this.
-    testTimeout: 20000,
+    // BL-1007: base 20000 stays the quiet-host budget; under load the
+    // contentionBudget helper scales it up to a finite ceiling.
+    testTimeout: UNIT_LANE_TIMEOUT.effectiveMs,
     // BL-124: replace the old `c8 + node --test` coverage path. The v8
     // provider's `json` reporter writes coverage/coverage-final.json in the
     // same Istanbul shape crapReport.js already reads.
