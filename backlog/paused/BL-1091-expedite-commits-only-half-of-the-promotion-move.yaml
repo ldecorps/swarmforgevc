@@ -18,7 +18,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1091-expedite-commits-only-half-of-the-promotion-move.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   No judgement call in the fix itself - a rename must be committed as both of
   its paths or neither, and the commit-integrity CLI already accepts a plural

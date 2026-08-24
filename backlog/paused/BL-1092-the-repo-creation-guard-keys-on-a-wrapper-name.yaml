@@ -19,7 +19,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   This one genuinely needs your steer on WHETHER, not just how - I can argue it
   either way and I would rather you decided.

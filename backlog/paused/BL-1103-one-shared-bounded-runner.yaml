@@ -16,7 +16,7 @@ required_wiring:
   - 'swarmforge/scripts/expedite_cli.bb::bounded_run_lib.bb::the expeditor must source the shared runner, not keep its own sh-bounded copy'
   - 'swarmforge/scripts/babysitter_check.bb::bounded_run_lib.bb::the babysitter must source the shared runner, not keep its own run-bounded! copy'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Nothing about the extraction itself needs a ruling - the two copies are the
   same function and BL-571 already records this hand-copy shape as a defect

@@ -18,7 +18,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1105-a-duplicate-ticket-id-is-refused-at-mint.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: the id is chosen by hand and nothing checks it, twice in two days now.
   The refusal belongs in the gate the specifier already runs on every minted
