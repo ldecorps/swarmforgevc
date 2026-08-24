@@ -149,6 +149,10 @@ function registerSteps(registry) {
     ctx.bl694Source = fs.readFileSync(BL694_STEPS, 'utf8');
     ctx.handlerPatterns = extractDefinePatterns(ctx.bl694Source);
     assert.ok(ctx.handlerPatterns.length > 0, 'expected handlers in bl694ResidualAllowlistSteps.js');
+    // Plant a canary so the unreachable-handler assert cannot pass vacuously
+    // when every live handler already matches (soft/surgical lock).
+    ctx.canaryPattern = '__BL752_CANARY_UNREACHABLE__';
+    ctx.handlerPatterns = [...ctx.handlerPatterns, ctx.canaryPattern];
   });
 
   scoped(/^each registered handler is matched against every step the feature renders$/, (ctx) => {
@@ -176,7 +180,11 @@ function registerSteps(registry) {
         unmatched.push(raw);
       }
     }
-    assert.deepEqual(unmatched, [], `unreachable handlers:\n${unmatched.join('\n')}`);
+    assert.deepEqual(
+      unmatched,
+      [ctx.canaryPattern],
+      `expected only the planted canary unreachable; got:\n${unmatched.join('\n')}`
+    );
   });
 }
 

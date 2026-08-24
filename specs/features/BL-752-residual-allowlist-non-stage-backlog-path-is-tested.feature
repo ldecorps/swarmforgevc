@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T13:34:21.456071268Z","feature_name":"a basename match at a non-stage backlog path is proven, not asserted","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.feature","background_hash":"339dc73be9e13d09b6292fd5dfb0d17940fc9b39064dd0c471084abe628fbc51","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: a basename match at a non-stage backlog path is proven, not asserted
 
   BL-694's residual-word allowlist excuses a grandfathered ticket file when it
