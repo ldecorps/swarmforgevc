@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=dde57172706eb2c99b553fbe1f5fff5038c295688ccc95e8e697d665f306328b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T09:55:59.445630395Z","feature_name":"An active ticket with no real assignee reaches the coordinator","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1093-an-active-ticket-with-no-real-assignee-strands-between-two-sweeps.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A value that names nobody makes a ticket unassigned","scenario_hash":"9c31da9ae49eae659347bba4178a13294b4eb33eb6c00c7459bca099ff0b881e","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T09:55:59.445630395Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: An active ticket with no real assignee reaches the coordinator
 
   Two sweeps divide the active backlog between them. The dispatch-gap sweep
