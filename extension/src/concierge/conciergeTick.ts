@@ -20,7 +20,11 @@ import { PipelineBoardPinAdapters, PipelineBoardPinSyncResult, syncPipelineBoard
 import { ApprovalsRosterAdapters, ApprovalsRosterState, syncApprovalsRoster } from './approvalsRosterSync';
 import { RecertPostingAdapters, RecertPostingState, syncRecertPosting } from './recertPostingSync';
 import { RecertifiableScenario } from '../docs/recertification';
-import { RecordedApprovalAsk, approvalAsksNeedingRepost } from './approvalAskReconcile';
+import {
+  RecordedApprovalAsk,
+  approvalAskRecordedOnLiveTopic,
+  approvalAsksNeedingRepost,
+} from './approvalAskReconcile';
 
 export interface BacklogFolderItem {
   id: string;
@@ -1118,6 +1122,33 @@ async function synthesizeMissingApprovalAsks(
   );
 }
 
+// Drop edge-derived ApprovalRequested events whose ask is already on the
+// LIVE Approvals topic (ask store), and mark them emitted so durable dedup
+// catches up after a crash between Telegram/ask-store write and tick state.
+// Remint (stale topicId) is intentionally NOT suppressed — reconcile still
+// re-posts those. No-op when there is no ApprovalRequested edge this tick.
+async function suppressEdgeApprovalRequestedWhenAskOnLiveTopic(
+  events: SwarmEvent[],
+  alreadyEmitted: Set<string>,
+  adapters: ConciergeTickAdapters
+): Promise<SwarmEvent[]> {
+  if (!events.some((e) => e.type === 'ApprovalRequested' && e.backlogId !== null)) {
+    return events;
+  }
+  const liveApprovalsTopicId = await adapters.routeAdapters.ensureApprovalsTopic();
+  const recordedAsks = adapters.readApprovalAskMessages?.() ?? {};
+  return events.filter((event) => {
+    if (event.type !== 'ApprovalRequested' || event.backlogId === null) {
+      return true;
+    }
+    if (!approvalAskRecordedOnLiveTopic(event.backlogId, recordedAsks, liveApprovalsTopicId)) {
+      return true;
+    }
+    alreadyEmitted.add(swarmEventKey(event));
+    return false;
+  });
+}
+
 async function processConciergeEvent(
   event: SwarmEvent,
   folders: BacklogFoldersSnapshot,
@@ -1165,7 +1196,17 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   const epicIcons = resolveAllEpicIcons(allEpicIdsFor(folders));
   const state = adapters.readTickState();
   const alreadyEmitted = new Set(state.emittedKeys);
-  const edgeEvents = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
+  const edgeEventsRaw = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
+  // Edge-only duplicate guard: diffApprovalRequested does not consult the
+  // ask store. If a prior tick posted + recorded the ask then died before
+  // writeTickState, the next tick re-derives ApprovalRequested and would
+  // post an exact duplicate; reconcile correctly skips, but the edge path
+  // still fired. Drop those events and catch up emittedKeys.
+  const edgeEvents = await suppressEdgeApprovalRequestedWhenAskOnLiveTopic(
+    edgeEventsRaw,
+    alreadyEmitted,
+    adapters
+  );
   const alreadyQueuedApprovalIds = new Set(
     edgeEvents.filter((e) => e.type === 'ApprovalRequested' && e.backlogId !== null).map((e) => e.backlogId as string)
   );

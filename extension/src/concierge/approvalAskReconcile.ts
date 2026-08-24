@@ -17,6 +17,23 @@ export function approvalRequestedEmittedKey(backlogId: string): string {
   return `ApprovalRequested:${backlogId}`;
 }
 
+// True when telegram-approval-ask-messages.json already points at a buttoned
+// ask on the LIVE Approvals topic. Shared by reconcile (skip synthesize) and
+// the edge-trigger guard (skip re-post after a crash between Telegram post +
+// ask-store write and durable tick-state write — otherwise
+// diffApprovalRequested fires again and posts an exact duplicate).
+export function approvalAskRecordedOnLiveTopic(
+  backlogId: string,
+  recordedAsks: Readonly<Record<string, RecordedApprovalAsk>>,
+  liveApprovalsTopicId: number | undefined
+): boolean {
+  if (liveApprovalsTopicId === undefined) {
+    return false;
+  }
+  const ask = recordedAsks[backlogId];
+  return ask !== undefined && ask.topicId === liveApprovalsTopicId;
+}
+
 // Returns backlog ids that should synthesize an ApprovalRequested this tick.
 // Deterministic sort so tick routing order stays stable.
 export function approvalAsksNeedingRepost(
@@ -30,10 +47,10 @@ export function approvalAsksNeedingRepost(
   }
   return pendingIds
     .filter((id) => {
-      const ask = recordedAsks[id];
-      if (ask !== undefined && ask.topicId === liveApprovalsTopicId) {
+      if (approvalAskRecordedOnLiveTopic(id, recordedAsks, liveApprovalsTopicId)) {
         return false;
       }
+      const ask = recordedAsks[id];
       // Remint / wrong-topic ask: always re-post onto the live Approvals id,
       // even if emittedKeys still carries ApprovalRequested:<id> from the
       // dead-thread post.
