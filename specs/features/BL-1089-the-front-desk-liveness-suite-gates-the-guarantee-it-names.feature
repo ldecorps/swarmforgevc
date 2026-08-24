@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T06:53:47.706940503Z","feature_name":"The front-desk liveness suite gates the guarantee it names","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1089-the-front-desk-liveness-suite-gates-the-guarantee-it-names.feature","background_hash":"cd4172d969f8b41b611e887e3d8f20f0fc97fec472a3b7b555c4a65baf5fe28d","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: The front-desk liveness suite gates the guarantee it names
 
   BL-370 exists because a front-desk bot once held a live pid for about nine
