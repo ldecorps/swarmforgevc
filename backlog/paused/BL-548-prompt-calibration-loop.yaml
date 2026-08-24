@@ -1,8 +1,9 @@
 id: BL-548
+do-not-promote: until BL-556 evaluate and SWARMFORGE_PROMPT_EXPERIMENT land on main
 title: "Prompt calibration loop — test prompt variants against a model via Model Steward evaluate; promote winners to adapter catalogue"
 milestone: M5
 type: feature
-status: todo
+status: blocked
 epic: swarm-intelligence-layer
 human_approval: approved
 approval_context: >
@@ -22,7 +23,7 @@ promotion_blockers: >
   (adapters + experiment mode) AND BL-547 Slice 2 (model-steward evaluate) on main —
   not merely those tickets done at Slice 1. Coordinator: verify both Slice 2 parcels
   landed before promoting this ticket.
-assigned_to: coder
+assigned_to:
 source: |
   Human intake 2026-07-21 via Cursor chat — follow-up to Swarm Intelligence Layer
   spec session: "Go for it" on speccing automatic PromptEngine calibration that tests
@@ -146,6 +147,7 @@ qa_e2e_procedure: |
        adapter still used.
 
 notes: |
+  2026-08-24 coordinator: re-demoted after mistaken auto-promote same turn; status:blocked + do-not-promote until BL-556 + experiment env contract land.
   2026-08-24 coordinator: demoted active→paused on coder note (priority 00). Blockers still unmet: BL-547 Slice 2 / BL-556 `model-steward evaluate` not on main; SWARMFORGE_PROMPT_EXPERIMENT isolation still absent (BL-546/BL-574 adapters landed without experiment env contract). Do not re-promote until both land. See backlog/evidence/BL-548-promotion-blocker-unmet-20260723-coder.md.
 
 
