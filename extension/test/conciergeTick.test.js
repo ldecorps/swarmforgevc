@@ -659,6 +659,66 @@ test('approval ask reconcile: recorded ask on the LIVE Approvals topic is a no-o
   assert.equal(asks.length, 0);
 });
 
+// Exact-duplicate guard: Telegram + ask-store write can succeed while
+// writeTickState never lands (restart). Edge then re-derives
+// ApprovalRequested; reconcile would skip, but without this guard the edge
+// still posts a second identical ask.
+test('approval ask edge: recorded ask on LIVE topic suppresses re-post after lost tick baseline', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-525', title: 'ModelFactory', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-525'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-525': { title: 'ModelFactory' } },
+      pendingApproval: [],
+    },
+    emittedKeys: [],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 2 };
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-525': { topicId: 750 } });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 0);
+  assert.equal(asks.length, 0);
+  assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-525'));
+  assert.deepEqual(state.snapshot.pendingApproval, ['BL-525']);
+});
+
+test('approval ask edge: recorded ask on STALE topic still re-posts via edge (remint)', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-525', title: 'ModelFactory', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-525'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-525': { title: 'ModelFactory' } },
+      pendingApproval: [],
+    },
+    emittedKeys: [],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 3 };
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-525': { topicId: 100 } });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 1);
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].topicId, 750);
+  assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-525'));
+});
+
 test('BL-434: an ApprovalRequested that fails to post is retried on a later tick', async () => {
   const { adapters, setFolders, state } = fakeAdapters();
   // Isolate to ONLY the ApprovalRequested transition: not newly active this
