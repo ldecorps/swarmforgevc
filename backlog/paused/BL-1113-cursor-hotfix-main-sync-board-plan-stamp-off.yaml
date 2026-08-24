@@ -14,7 +14,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1113-cursor-hotfix-main-sync-board-plan-stamp-off.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   This is a BL-848 hotfix stamp-off. The human decision requested is whether
   the already-landed commit 27273f2b0a is certified or waived after the normal
