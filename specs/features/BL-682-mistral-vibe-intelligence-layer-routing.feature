@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=30fac0b262ef9a2259ad853841bb41bdb8eb5362993cd16670c024560dfe82f6
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T07:07:47.979054903Z","feature_name":"Mistral Vibe is reachable through the Intelligence Layer","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-682-mistral-vibe-intelligence-layer-routing.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the existing provider mappings are unchanged","scenario_hash":"b12d84e2b62742d05485a288fc15fff91601748255d15f15c2e71edd3ba76fff","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-24T07:07:47.979054903Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Mistral Vibe is reachable through the Intelligence Layer
 
   Everything Vibe needs to RUN already exists in this repo and is verified

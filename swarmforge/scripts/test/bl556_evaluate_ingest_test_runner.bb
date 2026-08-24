@@ -57,6 +57,32 @@
   (assert= "one gate regressed" 1 (count diffs))
   (assert= "send-handoff regressed" "send-handoff" (:gate (first diffs))))
 
+;; Report result must flip to "regressed" when prior gates fail now — a mutant
+;; that hard-codes :result "certified" empties the regression signal.
+(let [reg (model-steward-lib/register-model model-steward-lib/empty-registry
+                                            "test" "winner-model"
+                                            {:status "candidate" :context_window 1000 :cost_class "medium"})
+      out (model-steward-evaluate-lib/apply-evaluate
+           reg "test" "winner-model" "coder" regressed-art nil prior-report "t")]
+  (assert= "report result is regressed when pass→fail present"
+           "regressed"
+           (get-in out [:report :result]))
+  (assert-true "report carries regression_diff"
+               (seq (get-in out [:report :regression_diff]))))
+
+;; Mixed pass/fail scorecard must not score every dimension at 1.0 — a
+;; pass-rate mutant that always returns 1.0 would hide failed competencies.
+(let [mixed {:scorecard_id "recruiter-scorecard:mixed"
+             :model "winner-model"
+             :entries [{:competency "receive" :status "pass"}
+                       {:competency "send-handoff" :status "fail"}]
+             :overall "fail"}
+      caps (model-steward-evaluate-lib/capabilities-from-scorecard
+            (model-steward-evaluate-lib/scorecard-body mixed))
+      coding (get-in caps ["coding_quality" :score])]
+  (assert-true "mixed scorecard coding_quality is below 1.0"
+               (< (double coding) 1.0)))
+
 (assert-true "missing scorecard_id throws"
              (try (model-steward-evaluate-lib/require-scorecard-id {:model "x" :entries []})
                   false

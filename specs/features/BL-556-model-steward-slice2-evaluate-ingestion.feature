@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T07:07:48.060200267Z","feature_name":"Model Steward evaluate ingests captured benchmark evidence into the registry","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature","background_hash":"cbf07c82ad887d4e39cda723f8940704b0bbc0f1c1d832ca64eaaadf309943e7","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Model Steward evaluate ingests captured benchmark evidence into the registry
 
   # BL-556 (BL-547 Slice 2, drained from
