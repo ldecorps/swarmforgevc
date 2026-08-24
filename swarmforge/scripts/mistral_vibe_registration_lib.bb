@@ -28,10 +28,11 @@
 
 (defn- model-row-for-active [models active]
   (when (and active (seq models))
-    (first (filter (fn [row]
-                     (or (= active (:alias row))
-                         (= active (:name row))))
-                   models))))
+    (some (fn [row]
+            (when (or (= active (:alias row))
+                      (= active (:name row)))
+              row))
+          models)))
 
 (defn- alias-registration [row]
   (let [alias (:alias row)
