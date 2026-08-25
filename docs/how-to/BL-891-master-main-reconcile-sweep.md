@@ -70,7 +70,7 @@ genuine content conflict still aborts exactly as before.
 | up to date | Local `main` already has everything `origin/main` has. Nothing emitted. |
 | reconciled | Local `main` was behind and no dirty path overlapped a path the merge would change (clean tree, or dirty-but-non-overlapping) — merged forward automatically. Nothing emitted; check `git log` if you want to see it happen. |
 | dirty overlap, not reconciled | Local `main` is behind and a dirty (or untracked) path collides with a path the incoming merge would write to — the one case a plain `git merge` would itself refuse. The sweep leaves the checkout exactly as it found it and surfaces a `note` naming the offending path(s) (a count, past the first, if naming them all would blow the note's 80-char budget) to the coordinator. |
-| merge conflict / refuse-rematch (BL-1130) | Predicted or real conflict on the **automated** path. Aborted (or never started); checkout has no `MERGE_HEAD` / unmerged paths; surface says rematch/refuse — rematch the tip onto `origin/main`, do not finish a daemon merge in an editor. |
+| merge conflict / refuse-rematch (BL-1130 / BL-1141) | Predicted or real conflict on the **automated** path. Aborted (or never started); checkout has no `MERGE_HEAD` / unmerged paths. **(BL-1141)** live handoffd / Process B then **execute** rematch onto `origin/main` so `behind=0` — not a standing Cursor wait-reconcile. Do not finish a daemon merge in an editor. |
 | human merge in progress (BL-1120) | `MERGE_HEAD` was already set when the tick ran. The sweep does **not** merge and does **not** abort — a human (or other agent) owns the join. Surfaces a note; finish or abort the merge yourself. |
 
 Both surfaced cases send **one** note and then go quiet for that same reason
@@ -96,10 +96,12 @@ push-sweep's own alarm flags use).
    reconciles automatically — there is no manual merge command to run. Any
    *other* dirty path in the tree, overlapping or not, is irrelevant to
    this decision.
-4. For an automated conflict refuse (BL-1130): the checkout is already
-   clean — rematch the landing tip onto current `origin/main` and re-land.
-   Do not open an editor to finish a merge the daemon refused. Human-owned
-   mid-merges still follow BL-1120.
+4. For an automated conflict refuse (BL-1130 / BL-1141): the checkout is
+   already clean. Live absorb **rematches** onto `origin/main` automatically
+   (BL-1141); a standing `refuse-rematch` wait for Cursor is not the designed
+   end state. Re-land any ticket tip that still needs tip purity. Do not open
+   an editor to finish a merge the daemon refused. Human-owned mid-merges
+   still follow BL-1120.
 
 ## What it does not do
 
@@ -135,12 +137,12 @@ exemption.
 bb swarmforge/scripts/post_hotfix_merge_origin.bb <project-root>
 ```
 
-3. Exit `0` means fetch+merge succeeded (or already up to date). Exit `1`
-   with `:refuse-rematch` (BL-1130) means conflict foresight or a real
-   conflict: the helper aborted if needed, printed rematch/refuse (and
-   conflicted paths), and left the worktree **not** mid-merge. Rematch the
-   tip onto `origin/main`; never `reset --hard` / `stash` as the reconcile
-   path, and never finish a refused absorb in an editor.
+3. Exit `0` means fetch+merge succeeded (or already up to date), including
+   **(BL-1141)** successful rematch after a refuse-rematch plan. Exit `1`
+   with `:refuse-rematch` means rematch itself failed (or mid-merge blocked
+   recovery): the helper left the worktree **not** mid-merge. Retry; never
+   finish a refused absorb in an editor, and never treat Cursor
+   Complete-origin/main-merge as the standing path.
 4. A clean tip that is still behind must not stay stuck on a stale dirty
    deadlock/sync reason — the helper refreshes that honesty seam (see
    `post_hotfix_merge_origin_lib.bb`).

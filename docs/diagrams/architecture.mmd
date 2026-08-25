@@ -286,6 +286,9 @@
 %% MERGE_HEAD (human-merge-in-progress); never abort foreign merges.
 %% BL-1130 (2026-08-25): automated absorb — merge-tree foresight +
 %% :refuse-rematch; never leaves MERGE_HEAD for an external editor.
+%% BL-1141 (2026-08-25): :refuse-rematch executes rematch onto
+%% origin/main (handoffd + Process B); clears standing surface;
+%% BL-1138 bookkeeping rematch sibling — no Cursor wait-reconcile.
 %% BL-1131 (2026-08-25): rematch-then-FF land — behind=0 without
 %% operator Complete origin/main merge; BL-1130 refuse preserved.
 %% BL-534 (2026-08-25): thin-main gate — tools main() exported,

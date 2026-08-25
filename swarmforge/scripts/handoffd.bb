@@ -3074,6 +3074,20 @@
                                              {:dir (str project-root)})]
         (master-main-reconcile-lib/merge-tree-reports-conflict? (:out tree))))))
 
+(defn- master-main-rematch-onto-origin!
+  "BL-1138/1141: reset --hard origin/main. Never touches foreign MERGE_HEAD."
+  [success-outcome failure-outcome]
+  (if (master-main-merge-head-present?)
+    {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
+    (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
+                              ["git" "reset" "--hard" "origin/main"]
+                              {:dir (str project-root)})]
+      (if (zero? exit)
+        {:success true :outcome success-outcome}
+        {:success false
+         :error (str/trim (or err (name failure-outcome)))
+         :outcome failure-outcome}))))
+
 (defn- master-main-reconcile-merge! []
   (let [{:keys [ahead behind]} (push-sweep-rev-counts!)
         tip-ok? (master-main-origin-is-ancestor?)
@@ -3094,35 +3108,23 @@
       {:success true :outcome :noop}
 
       :replay-bookkeeping
-      ;; BL-1138: execute rematch onto origin/main (reset — not conflicted
-      ;; absorb merge). Failure still surfaces rematch-bookkeeping; success
-      ;; clears behind so deadlock cannot stick. BL-1120: never touch foreign
-      ;; MERGE_HEAD.
-      (if mid?
-        {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
-        (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
-                                  ["git" "reset" "--hard" "origin/main"]
-                                  {:dir (str project-root)})]
-          (if (zero? exit)
-            {:success true :outcome :rematched-bookkeeping}
-            {:success false
-             :error (str/trim (or err "rematch-bookkeeping"))
-             :outcome :rematch-bookkeeping})))
+      (master-main-rematch-onto-origin! :rematched-bookkeeping :rematch-bookkeeping)
 
       :refuse-rematch
-      {:success false :error "refuse-rematch" :outcome :refuse-rematch}
+      (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch)
 
-      ;; :ff-absorb — rematch-prepared lands only.
+      ;; :ff-absorb — rematch-prepared lands only; if FF fails, rematch (BL-1141).
       (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
                                 ["git" "merge" "--ff-only" "--no-edit" "origin/main"]
                                 {:dir (str project-root)})]
-        (if (zero? exit)
-          {:success true}
+        (cond
+          (zero? exit) {:success true}
+          mid?
           (do
             (when (master-main-reconcile-lib/may-abort-failed-merge? true)
               (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)}))
-            {:success false :error (str/trim (or err "")) :outcome :refuse-rematch}))))))
-
+            {:success false :error (str/trim (or err "")) :outcome :refuse-rematch})
+          :else (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch))))))
 ;; Same outbound path as auto-route!/nudge-coordinator-unassigned! above:
 ;; a `note` shelled through swarm_handoff.bb (SWARMFORGE_ROLE=coordinator)
 ;; rather than a hand-written inbox file, reusing its full existing

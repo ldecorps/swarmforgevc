@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1141: `:refuse-rematch` executes
+rematch onto `origin/main` on live handoffd reconcile and Process B
+`post_hotfix_merge_origin` — same recovery class as BL-1138
+`:replay-bookkeeping`. Clears standing refuse-rematch surface on success
+(`behind=0` / `proceed`|`ff-only`); never design-ends as Cursor
+wait-reconcile / Complete-origin/main-merge. BL-1130 (no editor
+`MERGE_HEAD`) and BL-1120 (foreign merge not aborted) hold. Acceptance:
+`specs/features/BL-1141-bl1138-residual-refuse-rematch-not-executed.feature`.
+How-to: `docs/how-to/BL-1141-bl1138-residual-refuse-rematch-not-executed.md`
+(updates BL-1138 / BL-1130 / BL-891). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-893: Approvals offers Ambulance as a
 fifth choice — button `ambulance:<id>` and typed `/ambulance BL-xxx` in the
 Approvals topic engage the existing Control ambulance marker

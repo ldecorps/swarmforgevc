@@ -68,6 +68,7 @@ qa_e2e_procedure: >
   preserved. (4) main_sync_status_cli ready after recovery.
 assigned_to: coder
 notes: |
+  - "[2026-08-25T18:15Z] coder: refuse-rematch executes rematch (handoffd + Process B); clears surface on success."
   - [2026-08-25T18:08Z] human (Cursor): rematch ops done (merge origin/main
     → behind=0); soft-mint BL-1141 priority 0 queue-jump approved. Specifier
     owns feature file. Residual of BL-1138: refuse-rematch branch still
