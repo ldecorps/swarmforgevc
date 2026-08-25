@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T21:11:45.617390821Z","feature_name":"Mutation concurrency is resolved from the launching host","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-786-mutation-concurrency-host-resolved.feature","background_hash":"6100f324a5ec987c0f7ce18bb1e7639df7e631bec7e3ad6a64f910bff363d88b","implementation_hash":"unknown","scenarios":[{"index":2,"name":"Every mutation entry point resolves its own concurrency","scenario_hash":"e8427a6b4e11eb462fc8ad25cf2e94d0bc9ba8699c096eac1b18a23a70af42a0","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-25T21:11:45.617390821Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Mutation concurrency is resolved from the launching host
   Every Stryker mutation entry point sizes its worker count from the host it is
   launched on, instead of reading a constant frozen into a config file. The pure
