@@ -1,13 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (GH-25: unanswered `role_ask` markers past
-`SWARMFORGE_ASK_ESCALATION_MINUTES` (default 30) escalate once via a GitHub
-`@ldecorps` mention on the configured ops issue; `escalated_at_ms` one-shot;
-`status.json` surfaces pending/escalated and `ask_escalation.transport`;
-missing ops issue → warn, no crash. Acceptance:
-`specs/features/GH-25-role-ask-email-escalation.feature`.
-How-to: `docs/how-to/GH-25-email-escalation-for-unanswered-role-questions.md`.
-No new extension command or setting.)
+**Last Updated:** August 25, 2026 (BL-1138: rematch-bookkeeping recovery
+**executes** onto `origin/main` to `behind=0`; successful recovery clears
+`main-sync-deadlock`; rematch-owner reasons are never designed to end as
+durable `deadlock-tripped` waiting for Cursor (BL-1135 residual). Acceptance:
+`specs/features/BL-1138-bl1135-residual-rematch-bookkeeping-deadlock.feature`.
+How-to: `docs/how-to/BL-1138-bl1135-residual-rematch-bookkeeping-deadlock.md`
+(updates BL-1135). No new extension command or setting.)
 Prior entry —
 **Last Updated:** August 25, 2026 (BL-778: `test_rule_proposal.sh` asserts the
 real `HANDOFF QUEUED (mailbox only, no tmux inject):` success grammar and pins

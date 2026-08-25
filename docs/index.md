@@ -119,6 +119,7 @@ expects them, and are not migrated or rewritten here.
 - [Landing on main without external conflict resolution](how-to/BL-1130-land-on-main-without-external-conflict-resolution.md) — automated absorb completes or `:refuse-rematch` (no editor leftover) (BL-1130).
 - [Ticket land without operator absorb merge](how-to/BL-1131-ticket-land-without-operator-absorb-merge.md) — rematch-then-FF; `behind=0` / proceed without Complete-origin/main-merge (BL-1131); live rematch-bookkeeping closed by BL-1135.
 - [Live land rematch must not ops-page absorb](how-to/BL-1135-bl1131-residual-live-land-no-operator-absorb.md) — `:rematch-bookkeeping` / `:refuse-rematch` stay distinct from conflict; no Operator absorb escalate (BL-1135).
+- [Rematch-bookkeeping must recover — not durable-deadlock](how-to/BL-1138-bl1135-residual-rematch-bookkeeping-deadlock.md) — execute rematch to `behind=0`; clear deadlock; never design-end as Cursor wait (BL-1138).
 - [Stamp-off: main_sync_status_cli ahead/behind swap](how-to/BL-1115-swarm-stamp-main-sync-status-cli-ahead-behind-swap.md) — hotfix `a3bf11b533`; `origin/main...main` + `[behind ahead]` matches handoffd (BL-1115).
 - [Stamp-off: Pipeline Board numeric &#160;](how-to/BL-1117-swarm-stamp-pipeline-board-numeric-nbsp.md) — tip `646ffe85d`; `escapeHtml` never emits named `&nbsp;` (BL-1117).
 - [Stamp-off: extension WIP hotfixes 2026-08-24](how-to/BL-1116-swarm-stamp-extension-wip-hotfixes-20260824.md) — five pending ledger keys; human certify/waive (BL-1116).

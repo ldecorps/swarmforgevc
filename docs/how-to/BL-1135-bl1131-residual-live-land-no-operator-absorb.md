@@ -30,5 +30,12 @@ surface.
 - [BL-1130 clean-refuse absorb](BL-1130-land-on-main-without-external-conflict-resolution.md)
 - [BL-891 master-main reconcile](BL-891-master-main-reconcile-sweep.md)
 
+## Residual closed by BL-1138
+
+Surfacing rematch-bookkeeping without executing rematch still left
+`deadlock-tripped` waiting for Cursor. BL-1138 makes rematch-bookkeeping
+**run** to `behind=0` and clears deadlock — see
+[BL-1138 rematch-bookkeeping recovery](BL-1138-bl1135-residual-rematch-bookkeeping-deadlock.md).
+
 Acceptance:
 `specs/features/BL-1135-bl1131-residual-live-land-no-operator-absorb.feature`
