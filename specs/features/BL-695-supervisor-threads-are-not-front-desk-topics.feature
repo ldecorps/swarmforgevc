@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=42ecf42087636f4413e1ea7422e88bb5cff4f9deb55f12d045c453b71e48b032
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T10:06:01.114038638Z","feature_name":"A supervisor conversation is not a front-desk topic","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-695-supervisor-threads-are-not-front-desk-topics.feature","background_hash":"8011b8953da80b0fee76fda51a012fe1e05ed73d26c41f9d2b60c60618a8da4f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a supervisor thread gets no git-tracked record","scenario_hash":"21b91a52b29bc9b4890b2c1d29ebc947bd3f7e6ef976e129eae6685e6bcc8bf7","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-25T10:06:01.114038638Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A supervisor conversation is not a front-desk topic
 
   The concierge serialises every Telegram topic it touches into a git-tracked record
