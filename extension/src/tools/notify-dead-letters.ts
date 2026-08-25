@@ -21,7 +21,8 @@ import { buildRoleInboxes } from '../watchdog/chaserMonitor';
 import { decideDeadLetterAnnouncement, buildDeadLetterAnnouncementText } from '../notify/deadLetterNotifier';
 import { sendTelegramMessage, SendMessageResult } from '../notify/telegramClient';
 import { resolveCliMainWorktreeContext, printJsonToStdout, runCliMain } from './swarm-metrics';
-import { readTopicMap, resolveLiveRoles } from './telegram-front-desk-bot';
+import { readTopicMap } from './telegram-front-desk-bot';
+import { resolveLiveRoles } from './telegramPipelineDrain';
 import { topicForSubject, OPERATOR_SUBJECT_ID } from './telegramFrontDeskBotCore';
 import { atomicWrite } from '../util/atomicWrite';
 

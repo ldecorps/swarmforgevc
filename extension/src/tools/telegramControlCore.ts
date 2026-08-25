@@ -215,3 +215,15 @@ export function decideDrainOutcome(pipelineEmpty: boolean, startedAtMs: number, 
   }
   return nowMs - startedAtMs >= timeoutMs ? 'forced' : 'wait';
 }
+
+// BL-759: pure env parse for the bounded-drain wait (moved out of the
+// front-desk bot so operator liveness can import it without a cycle).
+export const CONTROL_DRAIN_TIMEOUT_ENV_VAR = 'SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS';
+export const DEFAULT_CONTROL_DRAIN_TIMEOUT_MS = 10 * 60 * 1000;
+
+export function controlDrainTimeoutMs(
+  rawEnv: string | undefined = process.env[CONTROL_DRAIN_TIMEOUT_ENV_VAR]
+): number {
+  const parsed = rawEnv ? Number(rawEnv) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTROL_DRAIN_TIMEOUT_MS;
+}

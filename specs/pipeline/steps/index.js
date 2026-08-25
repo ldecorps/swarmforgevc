@@ -675,6 +675,7 @@ const DOMAINS = [
   require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
   require('./bl1115MainSyncStatusCliStampOffSteps'),
   require('./bl1119ClosingCeremonyRoleQualityDialSteps'),
+  require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps')
 ];
