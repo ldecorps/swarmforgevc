@@ -83,7 +83,7 @@
       calls (atom [])
       adapters {:daemon-dir daemon
                 :fetch! (fn [] (swap! calls conj :fetch))
-                :rev-counts! (fn [] {:ahead 1 :behind 2})
+                :rev-counts! (fn [] {:ahead 0 :behind 2})
                 :dirty-paths! (fn [] [])
                 :would-conflict! (fn [] true)
                 :tip-contains-origin! (fn [] false)
@@ -95,6 +95,27 @@
   (assert= "preflight refuses without merge" [:fetch] @calls)
   (assert= "preflight outcome refuse-rematch" :refuse-rematch (:outcome result))
   (assert-true "preflight not mid-merge" (not (:mid-merge? result))))
+
+;; BL-1131: local-ahead + conflict foresight → rematch bookkeeping, not operator merge.
+(let [daemon (str (fs/create-temp-dir {:prefix "bl1131-replay-"}))
+      calls (atom [])
+      adapters {:daemon-dir daemon
+                :fetch! (fn [] (swap! calls conj :fetch))
+                :rev-counts! (fn [] {:ahead 1 :behind 2})
+                :dirty-paths! (fn [] [])
+                :would-conflict! (fn [] true)
+                :tip-contains-origin! (fn [] false)
+                :merge! (fn [] (swap! calls conj :merge) {:success true})
+                :abort! (fn [] (swap! calls conj :abort))
+                :status-porcelain! (fn [] "")
+                :mid-merge? (fn [] false)}
+      result (post-hotfix-merge-origin-lib/run-post-hotfix-merge! adapters)]
+  (assert= "BL-1131 no merge on colliding ahead" [:fetch] @calls)
+  (assert= "BL-1131 outcome rematch-bookkeeping" :rematch-bookkeeping (:outcome result))
+  (assert-true "BL-1131 not mid-merge" (not (:mid-merge? result)))
+  (assert-true "BL-1131 not operator absorb recovery"
+               (not (master-main-reconcile-lib/designed-recovery-is-operator-absorb?
+                     (:outcome result)))))
 
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1118-honest-"}))
       _ (master-main-reconcile-lib/write-state! daemon {:surfaced "dirty" :escalated true})

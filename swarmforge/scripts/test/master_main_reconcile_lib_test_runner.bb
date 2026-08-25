@@ -135,6 +135,52 @@
 (assert-true "post-absorb-clean: MERGE_HEAD is dirty"
              (not (master-main-reconcile-lib/post-absorb-clean? true 0)))
 
+;; BL-1131 rematch-then-FF
+(assert= "prepublish: tip already contains origin"
+         :already-contains-origin
+         (master-main-reconcile-lib/prepublish-rematch-plan
+          {:tip-contains-origin? true :rematch-would-conflict? false}))
+(assert= "prepublish: clean rematch"
+         :rematch-clean
+         (master-main-reconcile-lib/prepublish-rematch-plan
+          {:tip-contains-origin? false :rematch-would-conflict? false}))
+(assert= "prepublish: conflicting rematch refuses lander"
+         :refuse-lander
+         (master-main-reconcile-lib/prepublish-rematch-plan
+          {:tip-contains-origin? false :rematch-would-conflict? true}))
+(assert-true "may-publish after rematch-clean"
+             (master-main-reconcile-lib/may-publish-land-tip? :rematch-clean))
+(assert-true "may-not-publish on refuse-lander"
+             (not (master-main-reconcile-lib/may-publish-land-tip? :refuse-lander)))
+(assert= "post-land: behind-only is ff-absorb"
+         :ff-absorb
+         (master-main-reconcile-lib/post-land-absorb-plan
+          {:behind 2 :ahead 0 :tip-contains-origin? false :absorb-would-conflict? false}))
+(assert= "post-land: colliding ahead is replay-bookkeeping"
+         :replay-bookkeeping
+         (master-main-reconcile-lib/post-land-absorb-plan
+          {:behind 2 :ahead 1 :tip-contains-origin? false :absorb-would-conflict? true}))
+(let [ok (master-main-reconcile-lib/land-pipeline-outcome
+          {:prepublish-plan :rematch-clean :absorb-plan :ff-absorb :mid-merge? false})]
+  (assert= "land success behind 0" 0 (:behind ok))
+  (assert= "land success proceed" :proceed (:sync-action ok))
+  (assert-true "land success ok" (:ok? ok))
+  (assert-true "land success not operator absorb"
+               (not (:designed-recovery-operator-absorb? ok))))
+(let [race (master-main-reconcile-lib/land-pipeline-outcome
+            {:prepublish-plan :already-contains-origin
+             :absorb-plan :replay-bookkeeping :mid-merge? false})]
+  (assert= "race recovery bookkeeping" :rematch-bookkeeping-owner (:recovery race))
+  (assert-true "race not operator absorb"
+               (not (:designed-recovery-operator-absorb? race)))
+  (assert-true "race not mid-merge" (not (:mid-merge? race))))
+(assert-true "operator absorb phrase detected"
+             (master-main-reconcile-lib/designed-recovery-is-operator-absorb?
+              "Complete origin/main merge: resolve UU"))
+(assert-true "rematch lander is not operator absorb"
+             (not (master-main-reconcile-lib/designed-recovery-is-operator-absorb?
+                   :rematch-lander)))
+
 (assert= "surface-draft-lines: a note to the coordinator, priority 00"
          ["type: note" "to: coordinator" "priority: 00" "message: hello"]
          (master-main-reconcile-lib/surface-draft-lines "hello"))

@@ -28,8 +28,15 @@ the ticket tip onto current `origin/main` (tip purity) and re-land — do not
 open an editor to finish a daemon merge. Human-owned merges still use the
 BL-1120 skip path (`human-merge-in-progress`).
 
+## Residual closed by BL-1131
+
+Refuse-clean alone still left `wait-dirty-clear` until an operator finished
+an absorb merge. [BL-1131](BL-1131-ticket-land-without-operator-absorb-merge.md)
+adds rematch-then-FF so successful lands reach `behind=0` without that ops page.
+
 ## Related
 
+- [BL-1131 rematch-then-FF land](BL-1131-ticket-land-without-operator-absorb-merge.md)
 - [BL-891 master-main reconcile](BL-891-master-main-reconcile-sweep.md) (Process B updated)
 - [BL-1120 foreign merge abort skip](BL-1120-handoffd-must-not-abort-foreign-merge.md)
 
