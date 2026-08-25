@@ -658,6 +658,7 @@ const DOMAINS = [
   require('./bl1099GiveUpCooldownRetirementSteps'),
   require('./bl1108CursorSeatReadinessSteps'),
   require('./bl1113CursorHotfixStampOffSteps'),
+  require('./bl1117PipelineBoardNumericNbspStampOffSteps'),
   require('./bl1094DispatchGapAutorouteSteps'),
   require('./bl1097RouterNoOpOriginationSteps'),
   require('./bl1106PauseVisibleEverywhereSteps'),
