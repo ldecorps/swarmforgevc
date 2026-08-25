@@ -49,6 +49,16 @@ test('decideIdleQueueTransition posts choose-next poll when idle without pin', (
   assert.deepEqual(out, { kind: 'post-choose-next-poll' });
 });
 
+test('decideIdleQueueTransition clears stale pin then polls when pin id is gone', () => {
+  const pending = [mkPrompt('q2', 'second')];
+  const out = decideIdleQueueTransition({
+    pendingPrompts: pending,
+    enqueueNextPromptId: 'gone',
+    hostFinishingReplyIsQuestion: false,
+  });
+  assert.deepEqual(out, { kind: 'clear-stale-pin-then-poll' });
+});
+
 test('clearEnqueueNextIfStale drops pin when id is gone', () => {
   const state = {
     updateOffset: 0,
