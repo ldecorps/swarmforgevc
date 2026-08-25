@@ -80,11 +80,14 @@ const APPROVALS_TOPIC_APPROVE_PATTERN = /^approve\s+(\S+)\s*$/i;
 // "approve"/"reject") so it reads as a command, and so it can never collide
 // with a ticket's own reason/note text starting with the word "qjump".
 const APPROVALS_TOPIC_QJUMP_PATTERN = /^\/qjump\s+(\S+)\s*$/i;
+// BL-893: typed twin of the Approvals Ambulance button — same engage as Control.
+const APPROVALS_TOPIC_AMBULANCE_PATTERN = /^\/ambulance\s+(\S+)\s*$/i;
 
 export type ApprovalsTopicReplyAction =
   | { kind: 'approve'; backlogId: string }
   | { kind: 'reject'; backlogId: string; reason: string }
   | { kind: 'qjump'; backlogId: string }
+  | { kind: 'ambulance'; backlogId: string }
   | { kind: 'none' };
 
 // Pure: reject checked before approve (mirrors classifyApprovalReplyAction's
@@ -106,6 +109,10 @@ export function classifyApprovalsTopicReply(text: string): ApprovalsTopicReplyAc
   const qjumpMatch = trimmed.match(APPROVALS_TOPIC_QJUMP_PATTERN);
   if (qjumpMatch) {
     return { kind: 'qjump', backlogId: qjumpMatch[1] };
+  }
+  const ambulanceMatch = trimmed.match(APPROVALS_TOPIC_AMBULANCE_PATTERN);
+  if (ambulanceMatch) {
+    return { kind: 'ambulance', backlogId: ambulanceMatch[1] };
   }
   return { kind: 'none' };
 }

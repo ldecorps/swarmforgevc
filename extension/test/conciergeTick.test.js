@@ -611,7 +611,10 @@ test('approval ask reconcile: pending already in baseline with no recorded ask p
       { text: 'Reject', callbackData: 'reject:BL-525' },
       { text: 'Q jump', callbackData: 'expedite:BL-525' },
     ],
-    [{ text: 'More', callbackData: 'more:BL-525' }],
+    [
+      { text: 'More', callbackData: 'more:BL-525' },
+      { text: 'Ambulance', callbackData: 'ambulance:BL-525' },
+    ],
   ]);
   assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-525'));
 });

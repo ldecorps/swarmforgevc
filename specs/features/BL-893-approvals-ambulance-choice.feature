@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:58:53.465865584Z","feature_name":"Approvals offers Ambulance as a hold for that ticket","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-893-approvals-ambulance-choice.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Approvals offers Ambulance as a hold for that ticket
 
   # BL-893 approvals-ambulance-button-01

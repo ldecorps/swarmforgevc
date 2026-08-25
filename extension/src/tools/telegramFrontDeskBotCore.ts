@@ -161,6 +161,7 @@ export type BotUpdateDecision =
   // the ask's Q jump button, reached through the SAME
   // recordExpediteDecisionAndClose routine, never a second effect path.
   | { action: 'approvals-topic-qjump'; backlogId: string; text: string }
+  | { action: 'approvals-topic-ambulance'; backlogId: string; text: string }
   // A reply in the Approvals topic that names no recognizable verb+id at
   // all - never silently dropped as a subject post (front-desk-operator-
   // fabricates-backlog-state memory); the orchestration layer surfaces it.
@@ -299,6 +300,9 @@ function decideApprovalsTopicReplyAction(text: string): BotUpdateDecision {
   }
   if (parsed.kind === 'qjump') {
     return { action: 'approvals-topic-qjump', backlogId: parsed.backlogId, text };
+  }
+  if (parsed.kind === 'ambulance') {
+    return { action: 'approvals-topic-ambulance', backlogId: parsed.backlogId, text };
   }
   return { action: 'approvals-topic-unrecognized', text };
 }
@@ -1020,6 +1024,9 @@ export interface PollAdapters {
   // (unlike stop/restart/pause): the ticket id is already in the text, so
   // the decision is self-contained.
   engageAmbulance?: (ticket: string) => Promise<void>;
+  // BL-893: Approvals button/slash — returns the Control receipt text for
+  // posting in Approvals (does not flip human_approval / promote / dispatch).
+  engageApprovalsAmbulance?: (ticket: string) => Promise<{ ok: boolean; text: string }>;
   releaseAmbulance?: () => Promise<void>;
   /** BL-698: Control slash aliases for hold/reinstate/drain-* via shared Cursor Remote exec. */
   executeSharedOperator?: (verb: string, args?: string) => Promise<void>;
@@ -1413,7 +1420,7 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
 // cannot narrow that way.
 type ApprovalsTopicReplyDecision = Extract<
   BotUpdateDecision,
-  { action: 'approvals-topic-approve' | 'approvals-topic-reject' | 'approvals-topic-qjump' | 'approvals-topic-unrecognized' }
+  { action: 'approvals-topic-approve' | 'approvals-topic-reject' | 'approvals-topic-qjump' | 'approvals-topic-ambulance' | 'approvals-topic-unrecognized' }
 >;
 
 // Narrows AND collapses the four-way OR below into one call - split out so
@@ -1426,6 +1433,7 @@ function isApprovalsTopicReplyDecision(decision: BotUpdateDecision): decision is
     decision.action === 'approvals-topic-approve' ||
     decision.action === 'approvals-topic-reject' ||
     decision.action === 'approvals-topic-qjump' ||
+    decision.action === 'approvals-topic-ambulance' ||
     decision.action === 'approvals-topic-unrecognized'
   );
 }
@@ -1459,6 +1467,27 @@ async function deliverApprovalsTopicQjump(backlogId: string, topicId: number | u
   return 'posted';
 }
 
+// BL-893: Approvals Ambulance — engage hold only; never approve/promote/dispatch.
+async function engageApprovalsAmbulanceHold(
+  backlogId: string,
+  adapters: PollAdapters
+): Promise<{ ok: boolean; text: string }> {
+  if (!adapters.engageApprovalsAmbulance) {
+    return { ok: false, text: `Ambulance not wired for ${backlogId}.` };
+  }
+  return adapters.engageApprovalsAmbulance(backlogId);
+}
+
+async function deliverApprovalsTopicAmbulance(
+  backlogId: string,
+  topicId: number | undefined,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  const result = await engageApprovalsAmbulanceHold(backlogId, adapters);
+  await adapters.notifyApprovalsTopic?.(topicId, result.text);
+  return result.ok ? 'posted' : 'dropped';
+}
+
 async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision, topicId: number | undefined, update: TelegramUpdate, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (decision.action === 'approvals-topic-unrecognized') {
     return 'dropped';
@@ -1466,6 +1495,9 @@ async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision,
   const { backlogId } = decision;
   if (decision.action === 'approvals-topic-qjump') {
     return deliverApprovalsTopicQjump(backlogId, topicId, adapters);
+  }
+  if (decision.action === 'approvals-topic-ambulance') {
+    return deliverApprovalsTopicAmbulance(backlogId, topicId, adapters);
   }
   // BL-955: a caption-derived reason lands in a DURABLE ticket record -
   // whoever reads that rejection a week later is exactly the reader who
@@ -1617,6 +1649,7 @@ export type CallbackButtonDecision =
   | { action: 'approve'; backlogId: string }
   | { action: 'expedite'; backlogId: string }
   | { action: 'more'; backlogId: string }
+  | { action: 'ambulance'; backlogId: string }
   | { action: 'await-followup'; backlogId: string; kind: 'reject' | 'amend' }
   | { action: 'answer-ask'; threadId: string; optionIndex: number }
   | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'unrecognized-data' };
@@ -1626,7 +1659,7 @@ export type CallbackButtonDecision =
 // (decideCallbackQueryAction below), never a second callback path.
 // More: read-only expand of the ask (spec + Gherkin) — same namespace,
 // never a decision verb.
-const CALLBACK_DATA_PATTERN = /^(approve|reject|amend|expedite|more):(.+)$/;
+const CALLBACK_DATA_PATTERN = /^(approve|reject|amend|expedite|more|ambulance):(.+)$/;
 // BL-483: an ask option's own callback_data - an option INDEX + the ask's
 // threadId, never the label text (the ticket's own "callback_data <= 64
 // bytes" constraint - a label is unbounded, an index plus a short SUP-###
@@ -1693,6 +1726,9 @@ function decisionForApprovalCallbackKind(kind: string, backlogId: string): Callb
   }
   if (kind === 'more') {
     return { action: 'more', backlogId };
+  }
+  if (kind === 'ambulance') {
+    return { action: 'ambulance', backlogId };
   }
   return { action: 'await-followup', backlogId, kind: kind as 'reject' | 'amend' };
 }
@@ -1916,13 +1952,28 @@ async function dispatchExpediteCallback(
   return 'posted';
 }
 
+// BL-893: Ambulance tap — engage Control marker only; never approve/Q-jump/expedite.
+async function dispatchAmbulanceCallback(
+  callbackQuery: TelegramCallbackQuery,
+  decision: { action: 'ambulance'; backlogId: string },
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  const result = await engageApprovalsAmbulanceHold(decision.backlogId, adapters);
+  await adapters.answerCallbackQuery(callbackQuery.id, result.ok ? undefined : result.text);
+  if (adapters.notifyApprovalsTopic) {
+    const topicId = callbackQuery.message?.message_thread_id;
+    await adapters.notifyApprovalsTopic(topicId, result.text);
+  }
+  return result.ok ? 'posted' : 'dropped';
+}
+
 // The remaining decision shapes once 'answer-ask' and 'expedite' have both
 // already been dispatched by the caller - narrowed via Exclude (rather than
 // re-checked with an `as`) so dispatchApproveOrFollowup below stays
 // type-safe over exactly the variants it can actually receive.
 type RecognizedApprovalDecision = Exclude<
   CallbackButtonDecision,
-  { action: 'answer-ask' } | { action: 'expedite' } | { action: 'more' }
+  { action: 'answer-ask' } | { action: 'expedite' } | { action: 'more' } | { action: 'ambulance' }
 >;
 
 // Hardener 2026-07-17: split out of dispatchRecognizedCallbackDecision below
@@ -2034,6 +2085,9 @@ async function dispatchRecognizedCallbackDecision(
   }
   if (decision.action === 'expedite') {
     return dispatchExpediteCallback(callbackQuery, decision, adapters);
+  }
+  if (decision.action === 'ambulance') {
+    return dispatchAmbulanceCallback(callbackQuery, decision, adapters);
   }
   if (decision.action === 'more') {
     return dispatchMoreCallback(callbackQuery, decision, adapters);

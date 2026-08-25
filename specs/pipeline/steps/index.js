@@ -476,6 +476,7 @@ const DOMAINS = [
   require('./bl863LetsTalkAudioPreferenceSteps'),
   require('./bl864BubbleSettingsVoiceEngineSelectorSteps'),
   require('./bl721ApprovalsQjumpLabelAndTelegramVerbSteps'),
+  require('./bl893ApprovalsAmbulanceChoiceSteps'),
   require('./bl763BubbleTunnelHandFixesSwarmStampSteps'),
   require('./bl730PipelineTeardownSurvivorScopeSteps'),
   require('./bl888TeardownCopilotKillScopeSteps'),
