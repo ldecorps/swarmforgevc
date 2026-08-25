@@ -83,3 +83,10 @@ it does not, by itself, guarantee an answer can reach every *rotating*
 pipeline role while that role is mid-turn with in-process work; that gap is
 tracked separately as BL-846. The coordinator's own standing session is not
 subject to that gap, since its pane never goes dormant.
+
+## Related — unanswered escalation (GH-25)
+
+If a `role_ask` stays unanswered past
+`SWARMFORGE_ASK_ESCALATION_MINUTES` (default 30), the operator runtime posts
+one GitHub mention on the configured ops issue and stamps `escalated_at_ms`.
+See [Email escalation for unanswered role questions](GH-25-email-escalation-for-unanswered-role-questions.md).
