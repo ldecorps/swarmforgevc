@@ -225,7 +225,11 @@ function approvalRequestedButtons(backlogId: string): InlineKeyboardButton[][] {
     // More: full spec + Gherkin in an in-topic follow-up (Telegram alert
     // text is ~200 chars — too small for APS prose). Second row keeps the
     // four decision verbs on one thumb-reachable line.
-    [{ text: 'More', callbackData: `more:${backlogId}` }],
+    [
+      { text: 'More', callbackData: `more:${backlogId}` },
+      // BL-893: hold the live stack for this ticket (same Control marker).
+      { text: 'Ambulance', callbackData: `ambulance:${backlogId}` },
+    ],
   ];
 }
 

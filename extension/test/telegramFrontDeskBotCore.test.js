@@ -1903,6 +1903,155 @@ test('BL-721: "/qjump <id>" in the Approvals topic closes the posted ask - strip
   assert.equal(result.posted, 1);
 });
 
+// ── BL-893: Approvals Ambulance — engage hold only; never approve/Q-jump ──
+
+test('BL-893: "/ambulance <id>" in Approvals engages via engageApprovalsAmbulance and posts the receipt', async () => {
+  const engages = [];
+  const notified = [];
+  const approvals = [];
+  const promotions = [];
+  const dispatches = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/ambulance BL-893' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    promoteTicketIfPaused: async (backlogId) => {
+      promotions.push(backlogId);
+      return true;
+    },
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatches.push(backlogId);
+      return true;
+    },
+    engageApprovalsAmbulance: async (backlogId) => {
+      engages.push(backlogId);
+      return { ok: true, text: `Ambulance engaged for ${backlogId} - only its parcels move now; everything else queues in place, untouched.` };
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(engages, ['BL-893']);
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /Ambulance engaged for BL-893/);
+  assert.deepEqual(approvals, []);
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(dispatches, []);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-893: ambulance:<id> callback engages hold and does not approve or Q-jump', async () => {
+  const engages = [];
+  const approvals = [];
+  const promotions = [];
+  const dispatches = [];
+  const notified = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [
+        {
+          update_id: 1,
+          callback_query: {
+            id: 'cbq-amb',
+            data: 'ambulance:BL-893',
+            from: { id: PRINCIPAL_ID },
+            message: { chat: { id: 1 }, message_thread_id: 750 },
+          },
+        },
+      ],
+    }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for ambulance callback');
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    promoteTicketIfPaused: async (backlogId) => {
+      promotions.push(backlogId);
+      return true;
+    },
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatches.push(backlogId);
+      return true;
+    },
+    engageApprovalsAmbulance: async (backlogId) => {
+      engages.push(backlogId);
+      return { ok: true, text: `Ambulance engaged for ${backlogId} - only its parcels move now; everything else queues in place, untouched.` };
+    },
+    answerCallbackQuery: async () => {},
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(engages, ['BL-893']);
+  assert.deepEqual(approvals, []);
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(dispatches, []);
+  assert.match(notified[0].text, /Ambulance engaged for BL-893/);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-893: "/ambulance" for a refused engage posts the refusal and does not approve', async () => {
+  const notified = [];
+  const approvals = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/ambulance BL-99999' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    engageApprovalsAmbulance: async (backlogId) => ({
+      ok: false,
+      text: `Ambulance refused for ${backlogId} - no YAML file for it anywhere under backlog/ (would hold everything forever).`,
+    }),
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, []);
+  assert.match(notified[0].text, /refused/);
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-893: "/ambulance" with engageApprovalsAmbulance unwired posts not-wired and does not approve', async () => {
+  const notified = [];
+  const approvals = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/ambulance BL-893' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    // engageApprovalsAmbulance intentionally omitted
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, []);
+  assert.match(notified[0].text, /Ambulance not wired for BL-893/);
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1);
+});
+
 // BL-484 decided-ask-closes-02: a typed-reply decision closes the posted
 // ask exactly the way a button tap does - proves the Approvals-topic reply
 // path routes through the SAME recordApprovalDecisionAndClose routine as

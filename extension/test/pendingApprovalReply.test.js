@@ -263,6 +263,24 @@ test('BL-721: "/expedite <id>" (the offline Cursor-bridge verb) is never classif
   assert.deepEqual(classifyApprovalsTopicReply('/expedite BL-433'), { kind: 'none' });
 });
 
+// BL-893: "/ambulance <id>" — typed twin of the Approvals Ambulance button.
+
+test('BL-893: "/ambulance <id>" is classified as ambulance for that exact ticket id', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/ambulance BL-893'), { kind: 'ambulance', backlogId: 'BL-893' });
+});
+
+test('BL-893: "/ambulance" classification is case-insensitive on the verb', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/Ambulance BL-893'), { kind: 'ambulance', backlogId: 'BL-893' });
+});
+
+test('BL-893: a bare "/ambulance" with no id classifies as none', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/ambulance'), { kind: 'none' });
+});
+
+test('BL-893: "/ambulance <id>" is never classified as qjump', () => {
+  assert.notEqual(classifyApprovalsTopicReply('/ambulance BL-893').kind, 'qjump');
+});
+
 // ── rejectHumanApprovalText (pure) - BL-409 ────────────────────────────────
 
 test('flips a pending ticket to rejected, recording the reason as a trailing comment', () => {

@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-893: Approvals offers Ambulance as a
+fifth choice — button `ambulance:<id>` and typed `/ambulance BL-xxx` in the
+Approvals topic engage the existing Control ambulance marker
+(`engageOperatorAmbulance` / `engageApprovalsAmbulanceHold`) for that ticket
+only. Does **not** flip `human_approval`, promote, dispatch, or start the
+offline expeditor (not Q jump / expedite). Missing ids refuse without engage.
+Tip-pure rematch4 onto current `origin/main` (keep bounce evidence + `docs/briefings/2026-08-25.md`). Acceptance:
+`specs/features/BL-893-approvals-ambulance-choice.feature`.
+How-to: `docs/how-to/BL-893-approvals-ambulance-choice.md`
+(updates BL-655 / BL-721). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1140: steward-driven local model bake-off
 — `apply-local-bakeoff-results` ingests BL-1127 battery results into the
 role-matrix; ranking sorts by authority tier then score so revoked

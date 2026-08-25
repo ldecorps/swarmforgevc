@@ -135,7 +135,10 @@ test('approval-ask-content-02: the frozen reply-grammar line and buttons stay by
       { text: 'Reject', callbackData: 'reject:BL-123' },
       { text: 'Q jump', callbackData: 'expedite:BL-123' },
     ],
-    [{ text: 'More', callbackData: 'more:BL-123' }],
+    [
+      { text: 'More', callbackData: 'more:BL-123' },
+      { text: 'Ambulance', callbackData: 'ambulance:BL-123' },
+    ],
   ]);
 });
 
@@ -202,7 +205,10 @@ test('BL-410: decideTopicAction attaches Approve/Amend/Reject inline-keyboard bu
       { text: 'Reject', callbackData: 'reject:BL-123' },
       { text: 'Q jump', callbackData: 'expedite:BL-123' },
     ],
-    [{ text: 'More', callbackData: 'more:BL-123' }],
+    [
+      { text: 'More', callbackData: 'more:BL-123' },
+      { text: 'Ambulance', callbackData: 'ambulance:BL-123' },
+    ],
   ]);
 });
 
@@ -219,7 +225,10 @@ test('BL-410: decideTopicAction attaches buttons on the reuse path too, not only
         { text: 'Reject', callbackData: 'reject:BL-123' },
         { text: 'Q jump', callbackData: 'expedite:BL-123' },
       ],
-      [{ text: 'More', callbackData: 'more:BL-123' }],
+      [
+        { text: 'More', callbackData: 'more:BL-123' },
+        { text: 'Ambulance', callbackData: 'ambulance:BL-123' },
+      ],
     ],
   });
 });
@@ -236,13 +245,21 @@ test('BL-721: the Q jump button carries the expedite verb tagged with the ticket
 test('BL-721: Approve, Amend, and Reject are still present alongside Q jump', () => {
   const action = decideTopicAction(event({ type: 'ApprovalRequested' }), {}, 'a fine feature');
   const labels = action.buttons.flat().map((b) => b.text);
-  assert.deepEqual(labels, ['Approve', 'Amend', 'Reject', 'Q jump', 'More']);
+  assert.deepEqual(labels, ['Approve', 'Amend', 'Reject', 'Q jump', 'More', 'Ambulance']);
 });
 
 test('Approvals More button: More is present with more:<id> callback_data', () => {
   const action = decideTopicAction(event({ type: 'ApprovalRequested' }), {}, 'a fine feature');
   const more = action.buttons.flat().find((b) => b.text === 'More');
   assert.deepEqual(more, { text: 'More', callbackData: 'more:BL-123' });
+});
+
+test('BL-893: Ambulance sits on the second row next to More with ambulance:<id> callback_data', () => {
+  const action = decideTopicAction(event({ type: 'ApprovalRequested' }), {}, 'a fine feature');
+  assert.deepEqual(action.buttons[1], [
+    { text: 'More', callbackData: 'more:BL-123' },
+    { text: 'Ambulance', callbackData: 'ambulance:BL-123' },
+  ]);
 });
 
 test('BL-410: decideTopicAction attaches no buttons key at all for other event types (existing shapes unaffected)', () => {

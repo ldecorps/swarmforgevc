@@ -31,7 +31,12 @@ In the Control topic, alongside the existing pause verbs:
 - `ambulance off` — releases it. Every held parcel resumes moving on the next
   poll/dequeue/rotation decision — nothing needs restarting.
 
-Both are confirmed back in the topic, naming the ticket. The Telegram bot is
+**BL-893 — from Approvals:** the Approvals ask also offers an **Ambulance**
+button, and the Approvals topic accepts `/ambulance BL-xxx`. Both call the
+same engage path (hold only — never approve, Q-jump, or expedite). See
+[Approvals Ambulance choice](BL-893-approvals-ambulance-choice.md).
+
+Both Control verbs are confirmed back in the topic, naming the ticket. The Telegram bot is
 one of the marker's two writers, matching how it already writes
 `control-pause.json` — this is deliberate: the operator's own first need for
 this mode was phone-bound at 01:15, and a CLI-only ambulance would be

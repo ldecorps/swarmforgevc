@@ -9,10 +9,15 @@ priority: 44
 direction: human-requested
 depends_on: []
 mutation_cost: low
+abandoned_commits:
+  - 8e4c5184e8
+  - 2b13bf03ab
+  - 48eae4ff42
+  - ebbdcac5a1
 human_approval: approved
 required_stages: [coder, cleaner, hardender, documenter, qa]
 stage_skip_reasons: { architect: "wires the existing engageOperatorAmbulance / Control engage-ambulance adapter into the Approvals button+verb namespace already proven by Q jump (BL-721); no new hold mechanism or data-flow design" }
-acceptance: specs/features/BL-893-approvals-ambulance-choice.feature.draft
+acceptance: specs/features/BL-893-approvals-ambulance-choice.feature
 
 approval_context: >
   Human-requested 2026-08-14 (Host /queue, typed): "Est-ce qu'ambulance

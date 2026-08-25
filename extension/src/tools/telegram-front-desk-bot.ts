@@ -2376,6 +2376,10 @@ function buildPollAdapters(
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
       await engageAmbulance(targetPath, botToken, chatId, controlTopicId, ticket);
     },
+    engageApprovalsAmbulance: async (ticket) => {
+      const { engageOperatorAmbulance } = await import('./telegramOperatorAmbulance');
+      return engageOperatorAmbulance(targetPath, ticket);
+    },
     releaseAmbulance: async () => {
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
       await releaseAmbulance(targetPath, botToken, chatId, controlTopicId);
