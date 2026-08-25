@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:31:28.658175676Z","feature_name":"done_with_current.sh rejects arguments instead of completing silently","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-652-done-with-current-arg-rejection.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: done_with_current.sh rejects arguments instead of completing silently
 
   # BL-652: dispatch_lib.bb run-helper! drops argv entirely, so a usage
