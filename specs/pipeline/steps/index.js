@@ -47,6 +47,7 @@ const DOMAINS = [
   require('./bl615OrphanedClaimProgressSidecarReapSteps'),
   require('./bl652DoneWithCurrentArgRejectionSteps'),
   require('./bl1140StewardLocalModelBakeoffSteps'),
+  require('./bl1142LocalOllamaMonoVsForgeCpuSteps'),
   require('./bl595HumanLoopReliabilityTrendSteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
