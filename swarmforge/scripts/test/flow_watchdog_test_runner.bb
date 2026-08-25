@@ -386,7 +386,7 @@
       alarms (atom [])]
   (write-handoff! (str (fs/path new-dir "p1.handoff"))
                    [["id" "p1"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep!
    [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
    now-ms (str root) daemon-dir
@@ -412,7 +412,7 @@
       adapters {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))}]
   (write-handoff! (str (fs/path new-dir "p2.handoff"))
                    [["id" "p2"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir adapters)
   (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir adapters)
   (assert= "acceptance-02: a second sweep at the same age emits no additional alarm"
@@ -431,12 +431,13 @@
   (write-handoff! (str (fs/path new-dir "p3.handoff"))
                    [["id" "p3"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
                     ["enqueued_at" (iso enqueued-epoch-s)]])
-  ;; Sweep 1: age 90s >= warn(60s), < escalate(240s) -> warn alarm.
-  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 90000) (str root) daemon-dir adapters)
-  ;; Sweep 2: age 300s >= escalate(240s) -> escalate alarm.
-  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 300000) (str root) daemon-dir adapters)
+  ;; Fixture warn/escalate 60s/240s × slack 2 → effective 120s / 480s.
+  ;; Sweep 1: age 130s >= warn(120s), < escalate(480s) -> warn alarm.
+  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 130000) (str root) daemon-dir adapters)
+  ;; Sweep 2: age 500s >= escalate(480s) -> escalate alarm.
+  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 500000) (str root) daemon-dir adapters)
   ;; Sweep 3: still past escalate, already alarmed at :escalate -> no re-fire.
-  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 310000) (str root) daemon-dir adapters)
+  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 510000) (str root) daemon-dir adapters)
   (assert= "acceptance-03: exactly one warn alarm then exactly one escalate alarm - no third repeat"
            2
            (count @alarms))
@@ -455,7 +456,7 @@
       file (str (fs/path new-dir "p4.handoff"))]
   (write-handoff! file
                    [["id" "p4"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir adapters)
   (assert= "acceptance-04 setup: parcel alarmed once before progressing"
            1
@@ -488,11 +489,11 @@
   (write-handoff! (str (fs/path new-dir "held.handoff"))
                    [["id" "held660"] ["from" "specifier"] ["to" "cleaner"] ["type" "git_handoff"]
                     ["task" "BL-660"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 300))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 510))]])
   (write-handoff! (str (fs/path new-dir "own.handoff"))
                    [["id" "own654"] ["from" "specifier"] ["to" "cleaner"] ["type" "git_handoff"]
                     ["task" "BL-654"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 300))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 510))]])
   (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir adapters)
   (assert= "ambulance-perimeter-01: exactly one alarm - the held BL-660 parcel never alarms"
            1
@@ -654,7 +655,7 @@
       alarms (atom [])]
   (write-handoff! (str (fs/path new-dir "p6.handoff"))
                    [["id" "p6"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep!
    [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
    now-ms (str root) daemon-dir
@@ -686,10 +687,10 @@
   (flow-watchdog-lib/write-state! daemon-dir {:p8b {:snoozed true}})
   (write-handoff! (str (fs/path new-dir "p8a.handoff"))
                    [["id" "p8a"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (write-handoff! (str (fs/path new-dir "p8b.handoff"))
                    [["id" "p8b"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep!
    [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
    now-ms (str root) daemon-dir
@@ -710,12 +711,12 @@
       alarms (atom [])]
   (write-handoff! (str (fs/path new-dir "p10.handoff"))
                    [["id" "p10"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep!
    [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
    now-ms (str root) daemon-dir
    {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
-  (assert= "acceptance-10: a parcel aged 90s with configured warn-ms 60000 alarms"
+  (assert= "acceptance-10: a parcel aged past 2× configured warn-ms 60000 alarms"
            1
            (count @alarms)))
 
@@ -730,7 +731,10 @@
         "config flow_watchdog_warn_ms banana\nconfig flow_watchdog_escalate_ms banana\n")
   (write-handoff! (str (fs/path new-dir "p11.handoff"))
                    [["id" "p11"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) (inc (quot flow-watchdog-lib/default-warn-ms 1000))))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000)
+                                           (inc (quot (* flow-watchdog-lib/default-warn-ms
+                                                          flow-watchdog-lib/calibrated-warn-slack-factor)
+                                                       1000))))]])
   (flow-watchdog-lib/run-sweep!
    [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
    now-ms (str root) daemon-dir
@@ -752,7 +756,7 @@
                          :emit-alarm! (fn [_text] (swap! attempts inc) false)}]
   (write-handoff! (str (fs/path new-dir "p13.handoff"))
                    [["id" "p13"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir failing-adapters)
   (assert= "acceptance-13: an unconfirmed emit-alarm! attempt is made"
            1
@@ -776,7 +780,7 @@
                           :emit-alarm! (fn [_text] (throw (ex-info "outbox write failed" {})))}]
   (write-handoff! (str (fs/path new-dir "p13c.handoff"))
                    [["id" "p13c"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir throwing-adapters)
   (assert= "acceptance-13b: a throwing emit-alarm! does not crash the sweep and is not recorded as alarmed"
            nil
@@ -795,7 +799,7 @@
                        :emit-alarm! (fn [text] (swap! alarms conj text) @confirm?)}]
   (write-handoff! (str (fs/path new-dir "p13d.handoff"))
                    [["id" "p13d"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir flaky-adapters)
   (reset! confirm? true)
   (flow-watchdog-lib/run-sweep! inboxes (+ now-ms 1000) (str root) daemon-dir flaky-adapters)
@@ -874,24 +878,31 @@
 (let [global {:warn-ms 900000 :escalate-ms 3600000}
       specs {"cleaner->architect|git_handoff" {:warn-ms 1200000 :escalate-ms 7200000 :n 20 :source "exact"}
              "*->architect|git_handoff" {:warn-ms 1000000 :escalate-ms 6000000 :n 40 :source "to-type"}
-             "*->*|git_handoff" {:warn-ms 800000 :escalate-ms 5000000 :n 80 :source "type"}}]
+             "*->*|git_handoff" {:warn-ms 800000 :escalate-ms 5000000 :n 80 :source "type"}}
+      ;; Calibrated exact/to-type AND global fallback are × slack (all transitions).
+      slack flow-watchdog-lib/calibrated-warn-slack-factor]
   (assert= "resolve-thresholds prefers the exact from->to|type key"
-           {:warn-ms 1200000 :escalate-ms 7200000 :resolved-via "cleaner->architect|git_handoff"}
+           {:warn-ms (* 1200000 slack) :escalate-ms (* 7200000 slack)
+            :resolved-via "cleaner->architect|git_handoff"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "cleaner" :to "architect" :type "git_handoff"} specs global))
   (assert= "resolve-thresholds falls back to *->to|type when exact is missing"
-           {:warn-ms 1000000 :escalate-ms 6000000 :resolved-via "*->architect|git_handoff"}
+           {:warn-ms (* 1000000 slack) :escalate-ms (* 6000000 slack)
+            :resolved-via "*->architect|git_handoff"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "coder" :to "architect" :type "git_handoff"} specs global))
   (assert= "resolve-thresholds skips *->*|type and uses global when exact/to-type miss"
-           {:warn-ms 900000 :escalate-ms 3600000 :resolved-via "global"}
+           {:warn-ms (* 900000 slack) :escalate-ms (* 3600000 slack) :resolved-via "global"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "coder" :to "hardender" :type "git_handoff"}
             (dissoc specs "*->architect|git_handoff") global))
   (assert= "resolve-thresholds falls back to the global conf pair when no spec matches"
-           {:warn-ms 900000 :escalate-ms 3600000 :resolved-via "global"}
+           {:warn-ms (* 900000 slack) :escalate-ms (* 3600000 slack) :resolved-via "global"}
            (flow-watchdog-lib/resolve-thresholds
-            {:from "a" :to "b" :type "note"} {} global)))
+            {:from "a" :to "b" :type "note"} {} global))
+  (assert= "calibrated-warn-slack-factor is at least 2 (human 2026-08-25)"
+           true
+           (>= slack 2)))
 
 (let [headers (map (fn [i]
                      {:from "cleaner" :to "architect" :type "git_handoff"
@@ -932,8 +943,10 @@
            nil
            (get-in table [:specs "*->cleaner|note"]))
   (assert= "BL-835: resolution for a sub-floor route falls through to the global pair"
-           {:warn-ms flow-watchdog-lib/default-warn-ms
-            :escalate-ms flow-watchdog-lib/default-escalate-ms
+           {:warn-ms (* flow-watchdog-lib/default-warn-ms
+                        flow-watchdog-lib/calibrated-warn-slack-factor)
+            :escalate-ms (* flow-watchdog-lib/default-escalate-ms
+                            flow-watchdog-lib/calibrated-warn-slack-factor)
             :resolved-via "global"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "coder" :to "cleaner" :type "note"} (:specs table) global))
@@ -1000,7 +1013,9 @@
            {:warn-ms 1200000 :escalate-ms 7200000 :n 10 :source "exact"}
            entry)
   (assert= "resolve-thresholds accepts the round-tripped entry (numeric guard passes)"
-           {:warn-ms 1200000 :escalate-ms 7200000 :resolved-via "cleaner->architect|git_handoff"}
+           {:warn-ms (* 1200000 flow-watchdog-lib/calibrated-warn-slack-factor)
+            :escalate-ms (* 7200000 flow-watchdog-lib/calibrated-warn-slack-factor)
+            :resolved-via "cleaner->architect|git_handoff"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "cleaner" :to "architect" :type "git_handoff"}
             (:specs read-back)
@@ -1294,7 +1309,11 @@
 ;; just past the plain 15m default-warn-ms) does not warn under a
 ;; rotation-router pack, but still warns under a parallel/all-resident pack.
 (let [now-ms (* 1784900000 1000)
-      enqueued-ms (- now-ms flow-watchdog-lib/default-warn-ms 1000)
+      ;; Past 2× default-warn (slack) so parallel pack still WARNs; router
+      ;; pack still uses the higher router pair so the same wall age stays quiet.
+      enqueued-ms (- now-ms (* flow-watchdog-lib/default-warn-ms
+                                flow-watchdog-lib/calibrated-warn-slack-factor)
+                     1000)
       router-root (mk-tmp)
       parallel-root (mk-tmp)
       new-dir-for (fn [root] (fs/path root "cleaner" "inbox" "new"))
@@ -1498,7 +1517,7 @@
                             ["completed_at" (str "2026-08-01T00:30:" (format "%02d" i) "Z")]]))]
   (write-handoff! (str (fs/path new-dir "stuck.handoff"))
                    [["id" "stuck"] ["from" "cleaner"] ["to" "architect"] ["type" "git_handoff"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 130))]])
   (flow-watchdog-lib/run-sweep!
    [{:role "architect" :new-dir new-dir
      :in-process-dir (fs/path root "architect" "inbox" "in_process")

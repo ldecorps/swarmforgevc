@@ -33,6 +33,15 @@ describe('BL-989 portable grep tab anchors', () => {
         `${rel} must keep an explicit tab anchor via printf '...\\t'`
       );
     }
+    // Lifecycle predicates: both has and lacks must keep the tab (hardener).
+    const life = fs.readFileSync(
+      path.join(REPO, 'swarmforge/scripts/test/test_role_lifecycle_cli.sh'),
+      'utf8'
+    );
+    const hasLine = life.split('\n').find((l) => /roles_tsv_has\s*\(/.test(l));
+    const lacksLine = life.split('\n').find((l) => /roles_tsv_lacks\s*\(/.test(l));
+    assert.ok(hasLine && /\\t/.test(hasLine), 'roles_tsv_has must printf a tab');
+    assert.ok(lacksLine && /\\t/.test(lacksLine), 'roles_tsv_lacks must printf a tab');
   });
 
   it('stock /usr/bin/grep accepts the portable printf tab pattern', () => {
@@ -85,7 +94,8 @@ describe('BL-989 portable grep tab anchors', () => {
       [
         '-c',
         // Match command invocations only (not comments): start of token `grep` then flags containing P.
-        `cd "$1" && grep -rn --include='*.sh' -E '(^|[^#[:alnum:]_])grep[[:space:]]+-[A-Za-z]*P\\b' swarmforge/scripts 2>/dev/null | grep -v 'pgrep' | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true`,
+        // Exclude hardener *mutation_sweep.sh — those deliberately encode the antipattern as mutants.
+        `cd "$1" && grep -rn --include='*.sh' -E '(^|[^#[:alnum:]_])grep[[:space:]]+-[A-Za-z]*P\\b' swarmforge/scripts 2>/dev/null | grep -v 'pgrep' | grep -v 'mutation_sweep\\.sh' | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true`,
         'x',
         REPO,
       ],

@@ -188,6 +188,12 @@ notes: >
   relocation in the same commit - and see BL-986 for what a careless
   relocation can silently break.
 
+abandoned_commits:
+  - ce6e7fdd3
+  - 4c6291921
+  - e8706ec9c
+  - 6931617460
+
 qa_e2e_procedure: >
   1. Run ALL THREE shell suites on stock macOS - not only the originally
      named one - and confirm none emits an "invalid option" line on stderr:

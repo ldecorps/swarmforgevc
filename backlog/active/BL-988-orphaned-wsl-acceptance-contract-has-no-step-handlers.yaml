@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 severity: medium
 status: active
-assigned_to: coder
+assigned_to: hardender
 epic: code-quality-gates
 human_approval: approved
 priority: 30
@@ -119,3 +119,6 @@ approval_context: >
 
   Flag if you already know the behaviour was withdrawn; that collapses this
   to a small retirement and I will amend.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-25, by: QA, blamed: hardender, class: behavior, commit: 6aba034ed5, evidence: backlog/evidence/BL-988-qa-bounce4-20260825.md }

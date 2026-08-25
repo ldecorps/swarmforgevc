@@ -101,27 +101,17 @@
         pair {:warn-ms warn-ms :escalate-ms escalate-ms}
         route-a {:from (rword) :to (rword) :type (rword)}
         route-b {:from (rword) :to (rword) :type (rword)}
-        ;; Route A resolves via an EXACT spec-table hit; route B resolves via
-        ;; the GLOBAL fallback with the identical numeric pair - two
-        ;; structurally different resolution paths landing on the same numbers.
-        specs-a {(flow-watchdog-lib/spec-key route-a) (assoc pair :n 20 :source "exact")}
+        ;; Two calibrated paths with the SAME stored pair — both take
+        ;; calibrated-warn-slack-factor, so decide-tier must agree. Comparing
+        ;; calibrated vs global would disagree after slack (intentional).
         via (if (rbool) :exact :to-type)
         specs-a (if (= via :to-type)
                   {(flow-watchdog-lib/to-type-key route-a) (assoc pair :n 20 :source "to-type")}
-                  specs-a)
+                  {(flow-watchdog-lib/spec-key route-a) (assoc pair :n 20 :source "exact")})
+        specs-b {(flow-watchdog-lib/spec-key route-b) (assoc pair :n 20 :source "exact")}
         resolved-a (flow-watchdog-lib/resolve-thresholds route-a specs-a {:warn-ms 1 :escalate-ms 2})
-        resolved-b (flow-watchdog-lib/resolve-thresholds route-b {} pair)
+        resolved-b (flow-watchdog-lib/resolve-thresholds route-b specs-b {:warn-ms 1 :escalate-ms 2})
         age-ms (rlong 1000000)
-        highest (rword)
-        input-fn (fn [resolved]
-                   {:age-ms age-ms
-                    :warn-ms (:warn-ms resolved)
-                    :escalate-ms (:escalate-ms resolved)
-                    :highest-tier-alarmed (when (rbool) (keyword highest))
-                    :snoozed? false})
-        ;; Both inputs are built from the SAME highest-tier-alarmed coin flip
-        ;; so only the resolved numbers (never route-a/route-b's identity)
-        ;; can drive a difference in decide-tier's verdict.
         snoozed? false
         highest-kw (when (rbool) :warn)
         tier-a (flow-watchdog-lib/decide-tier {:age-ms age-ms :warn-ms (:warn-ms resolved-a) :escalate-ms (:escalate-ms resolved-a)
@@ -131,8 +121,11 @@
     (swap! p2-branches-hit conj via)
     (assert-true (str "resolve-thresholds output must carry only :warn-ms/:escalate-ms/:resolved-via, never route identity (got keys " (keys resolved-a) ")")
                  (= #{:warn-ms :escalate-ms :resolved-via} (set (keys resolved-a))))
-    (assert-true (str "two structurally different routes resolving to the same numeric pair (" pair ") must yield the SAME decide-tier verdict "
-                       "(route-a via " via " -> " tier-a ", route-b via global -> " tier-b ")")
+    (assert-true (str "calibrated slack must apply (resolved warn is stored×factor)")
+                 (= (:warn-ms resolved-a)
+                    (* warn-ms flow-watchdog-lib/calibrated-warn-slack-factor)))
+    (assert-true (str "two calibrated routes resolving to the same stored pair (" pair ") must yield the SAME decide-tier verdict "
+                       "(route-a via " via " -> " tier-a ", route-b via exact -> " tier-b ")")
                  (= tier-a tier-b))))
 
 (assert-true "P2 generator reached both exact-key and to-type-key resolution paths"
