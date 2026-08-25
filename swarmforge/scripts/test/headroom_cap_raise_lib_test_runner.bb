@@ -203,6 +203,23 @@
   (assert= "cooldown blocks immediate second raise" :noop (:action again))
   (assert= "reason cooldown" "cooldown" (:reason again)))
 
+;; ── BL-1132: telemetry-path must not throw; resolves chaser-YYYY-MM.jsonl ─
+(assert= "bl1132: format-chaser-year-month formats YearMonth via ofPattern"
+         "2026-08"
+         (headroom-cap-raise-lib/format-chaser-year-month
+          (java.time.YearMonth/of 2026 8)))
+(let [root (mk-root)
+      p (headroom-cap-raise-lib/telemetry-path root "2026-08")]
+  (assert-true "bl1132: telemetry-path does not throw"
+               (string? p))
+  (assert-true "bl1132: path ends with chaser-YYYY-MM.jsonl"
+               (str/ends-with? p "chaser-2026-08.jsonl"))
+  (assert-true "bl1132: path sits under .swarmforge/telemetry"
+               (str/includes? p ".swarmforge/telemetry")))
+(let [live (headroom-cap-raise-lib/telemetry-path (mk-root))]
+  (assert-true "bl1132: one-arity live path matches chaser-YYYY-MM.jsonl"
+               (boolean (re-find #"chaser-\d{4}-\d{2}\.jsonl$" live))))
+
 (when (seq @failures)
   (doseq [f @failures] (println f))
   (System/exit 1))

@@ -134,11 +134,23 @@
           (quot (parse-long (second m)) 1024))))
     (catch Exception _ nil)))
 
-(defn- telemetry-path [root]
-  (or (System/getenv "SWARMFORGE_HEADROOM_TELEMETRY_PATH")
-      (let [ym (.format (java.time.YearMonth/now) java.time.format.DateTimeFormatter/ofPattern "yyyy-MM")]
-        (str (fs/path (backlog-depth-lib/resolve-identity-root root)
-                      ".swarmforge" "telemetry" (str "chaser-" ym ".jsonl"))))))
+(defn format-chaser-year-month
+  "Pure: format a YearMonth as `yyyy-MM` for chaser telemetry filenames.
+   BL-1132: must use `(DateTimeFormatter/ofPattern …)` — bare `ofPattern`
+   interop throws and fails closed to pressure."
+  ([] (format-chaser-year-month (java.time.YearMonth/now)))
+  ([year-month]
+   (.format year-month (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM"))))
+
+(defn telemetry-path
+  "Resolve `.swarmforge/telemetry/chaser-YYYY-MM.jsonl` for root.
+   Optional second arg injects the `yyyy-MM` stamp for tests."
+  ([root]
+   (telemetry-path root (format-chaser-year-month)))
+  ([root ym-str]
+   (or (System/getenv "SWARMFORGE_HEADROOM_TELEMETRY_PATH")
+       (str (fs/path (backlog-depth-lib/resolve-identity-root root)
+                     ".swarmforge" "telemetry" (str "chaser-" ym-str ".jsonl"))))))
 
 (defn- parse-host-load-ratios [text]
   (->> (str/split-lines (or text ""))
