@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-724: shell-test discovery sweep —
+every `test_*.sh` under `swarmforge/scripts/test/` is reached, excluded with
+a dated reason, or a loud failure (untracked orphan / unaccounted); silence
+is never a clean run. Builds on BL-973 `suite-manifest.tsv`. Acceptance:
+`specs/features/BL-724-orphan-red-shell-test-untracked-and-undiscovered.feature`.
+How-to: `docs/how-to/BL-724-orphan-red-shell-test-untracked-and-undiscovered.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-778: `test_rule_proposal.sh` asserts the
 real `HANDOFF QUEUED (mailbox only, no tmux inject):` success grammar and pins
 mailbox-only delivery — the stale `^HANDOFF QUEUED:` literal never matched

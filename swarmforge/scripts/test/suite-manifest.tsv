@@ -388,3 +388,4 @@ bl1137_cwd_scoped_mute_property_runner.bb	standing
 test_local_coder_battery.sh	standing		
 bl568_menu_blocked_test_runner.bb	standing		
 bl691_ambulance_gaps_test_runner.bb	standing		
+test_shell_test_discovery.sh	standing		
