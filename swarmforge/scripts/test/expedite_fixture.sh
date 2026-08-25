@@ -26,11 +26,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# BL-1124: never seed into / rename a live swarmforge checkout.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../property_suite_shared_repo_guard.sh
+source "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh"
+if [[ -e "$DEST" ]]; then
+  bl1124_refuse_live_fixture_dest "$DEST" || exit 1
+fi
+
 rm -rf "$DEST"
 mkdir -p "$DEST"/{backlog/{active,paused,hold,done,evidence},specs/features,.swarmforge/{tmux,launch,handoffs/coder/inbox/new,handoffs/cleaner/inbox/new}}
 
 cd "$DEST"
-git init -q .
+git init -q -b main .
 git config user.email "expedite-fixture@example.com"
 git config user.name "expedite fixture"
 git config commit.gpgsign false
@@ -157,6 +165,6 @@ chmod +x stage-runner-hung.sh
 
 git add -A
 git commit -qm "fixture: initial"
-git branch -M main 2>/dev/null || true
+# Branch already main via init -b; never `branch -M` (renames live HEAD if cwd wrong).
 
 echo "$DEST"

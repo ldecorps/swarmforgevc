@@ -12,9 +12,14 @@
 #   SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 — warn and exit 0 (recovery).
 #
 # Exit 0: path skip, override, green suite, or toolchain unavailable.
-# Exit 1: genuine property regression (suite red).
+# Exit 1: genuine property regression (suite red) OR BL-1124 shared-repo
+#         canary failure (core.bare flipped / live refs rewritten).
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=property_suite_shared_repo_guard.sh
+source "$SCRIPT_DIR/property_suite_shared_repo_guard.sh"
 
 warn_override() {
   echo "property-suite-guard: overridden" >&2
@@ -67,6 +72,9 @@ fi
 
 echo "property-suite-guard: run" >&2
 
+# BL-1124: canary the live checkout before fixtures run.
+BEFORE="$(bl1124_snapshot "$REPO_ROOT")"
+
 set +e
 if (( $# > 0 )); then
   OUT="$("$@" 2>&1)"
@@ -85,6 +93,17 @@ if (( STATUS == 127 )); then
   warn_skipped
   [[ -n "$OUT" ]] && echo "$OUT" >&2
   exit 0
+fi
+
+# Always assert canary after a real suite run (green or red).
+set +e
+bl1124_assert_unchanged "$REPO_ROOT" "$BEFORE"
+CANARY=$?
+set -e
+if (( CANARY != 0 )); then
+  [[ -n "$OUT" ]] && echo "$OUT" >&2
+  echo "Commit rejected: property suite mutated the shared checkout (BL-1124)." >&2
+  exit 1
 fi
 
 if (( STATUS != 0 )); then
