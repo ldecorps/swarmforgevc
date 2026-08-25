@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1119: closing ceremony packet gains
+per-role quality dial recommendations (raise/lower/hold) from BL-819/820
+lean signals only; never rewrites pack conf; auto window models → hold
+only. Acceptance:
+`specs/features/BL-1119-closing-ceremony-role-quality-dial.feature`.
+How-to: `docs/how-to/BL-1119-closing-ceremony-role-quality-dial.md`.
+Complements BL-820. No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1079: re-entry — APS allow-list token
 parse includes `-` so hyphenated agents (e.g. `local-model`) match the
 launcher `validate_agent` case; steward certify path unchanged.

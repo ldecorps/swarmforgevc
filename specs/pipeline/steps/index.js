@@ -674,7 +674,8 @@ const DOMAINS = [
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
   require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
-  require('./bl1115MainSyncStatusCliStampOffSteps')
+  require('./bl1115MainSyncStatusCliStampOffSteps'),
+  require('./bl1119ClosingCeremonyRoleQualityDialSteps')
 ];
 
 function registerSteps(registry) {

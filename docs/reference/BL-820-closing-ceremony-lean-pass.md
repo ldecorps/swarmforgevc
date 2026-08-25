@@ -27,6 +27,12 @@ detectable, rather than indistinguishable from "the ceremony never ran".
    ceremony records `no_change` itself rather than delivering an empty
    packet and waiting on a specifier turn that has nothing to react to.
 
+5. **(BL-1119)** The packet also carries per-role quality dial
+   recommendations (raise / lower / hold) from the same lean signals.
+   Auto window models are hold-only; pack conf is never rewritten in
+   this slice — see
+   [BL-1119 how-to](../how-to/BL-1119-closing-ceremony-role-quality-dial.md).
+
 ## Storage
 
 One durable run record per shift at
