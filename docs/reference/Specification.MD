@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-626: promotion refuses a ticket whose
+**Last Updated:** August 25, 2026 (BL-1128: raise standing configured
+`active_backlog_max_depth` on sustained CPU+memory headroom via
+`headroom_cap_raise_cli.bb` (raise / unhold / undo); unhold eligible
+`hold/`→`paused/` only; promotion prefers depth/cap/throttle tickets.
+Symmetric with Article 3.5 lower-only throttle. Acceptance:
+`specs/features/BL-1128-raise-active-cap-on-host-headroom.feature`.
+How-to: `docs/how-to/BL-1128-raise-active-cap-on-host-headroom.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-626: promotion refuses a ticket whose
 `acceptance:` points at a missing `.feature` or a parked `.feature.draft`.
 Explicit path is authoritative (no same-id sibling glob rescue). Gate sits in
 `promotion_gates_lib.bb` after `human_approval`, before `depends_on`;

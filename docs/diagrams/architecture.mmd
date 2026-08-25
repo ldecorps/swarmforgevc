@@ -233,6 +233,9 @@
 %% behaviour, not only a literal git( wrapper name.
 %% BL-1027 (2026-08-24): mint-time hygiene refuses dangling acceptance:
 %% pointers via shared applicable? + working-tree exists probe.
+%% BL-1128 (2026-08-25): headroom_cap_raise_cli raises configured
+%% active_backlog_max_depth on sustained CPU+memory headroom; unhold
+%% eligible hold→paused; prefer depth/cap/throttle at promote.
 %% BL-626 (2026-08-25): promotion refuses missing/draft acceptance
 %% pointers; explicit path authoritative; audit-acceptance CLI.
 %% BL-1095 (2026-08-24): Article 3.2.4 expedite lane is type: defect only;
