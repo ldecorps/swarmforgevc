@@ -57,9 +57,12 @@ qa_e2e_procedure: >
   cite. (2) Pack/launch path matches decision; over-cap cannot silently
   staff unbounded local seats. (3) qwen-forge not used as substitute.
   (4) cursor-forge day-shift untouched by this ticket alone.
+assigned_to: coder
 notes: |
   - [2026-08-25T18:35Z] specifier: minted JumpQ under BL-1125 from
     INTAKE-prioritize-local-ollama-remaining-20260825.md; feature armed;
     depends_on BL-1140. Epic remaining_slices updated.
-
-assigned_to: coder
+  - [2026-08-25T19:01Z] human (Cursor): /qjump — force-promote+route JumpQ ollama remaining slices.
+  - [2026-08-25T19:05Z] specifier (coder 001100): ack — BL-1143 present under
+    backlog/active/ after rematch restore (f75ac89d7); YAML hygiene fixed
+    (assigned_to was nested under notes:). Coder may continue routing.
