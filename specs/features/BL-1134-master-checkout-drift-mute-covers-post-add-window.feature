@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T13:39:34.692355147Z","feature_name":"Master-checkout drift mute covers the post-add staged window","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1134-master-checkout-drift-mute-covers-post-add-window.feature","background_hash":"51931620413d7fe21626fa905fe2475514b3f76c512dff8fe3029f07f806a43d","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Master-checkout drift mute covers the post-add staged window
   BL-1122 mutes MASTER CHECKOUT DRIFT WARN only while `.git/index.lock`
   exists. After `git add` the lock is gone but the index still differs from
