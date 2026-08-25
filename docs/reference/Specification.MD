@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1129: babysitter
+`check-rotate-not-honored` gated on BL-804 `rotation-router?` — standing
+packs never emit that CRIT (empty `mono-router-active-role` is expected);
+rotating/mono-router packs keep existing unhonored-rotate detection.
+Acceptance:
+`specs/features/BL-1129-babysitter-rotate-not-honored-skips-standing.feature`.
+How-to: `docs/how-to/BL-1129-babysitter-rotate-not-honored-skips-standing.md`
+and check 9 in `docs/how-to/BL-611-babysitterd-runbook.md`.
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1116: stamp-off of five Cursor
 extension WIP hotfixes — ledger keys `b81334b107` (resident-pane path
 credentials), `4d5375fdad` (skip duplicate approval ask), `ae983877c4`

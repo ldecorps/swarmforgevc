@@ -286,7 +286,8 @@
 
 (defn check-rotate-not-honored
   "CRIT when a completed rotate note was not reflected in mono-router-active-role.
-   BL-1129: standing packs never rotate — empty active-role is expected; suppress."
+   BL-1129: standing packs never rotate — empty active-role is expected; suppress.
+   bl1129CheckRotateNotHonoredSkipsStanding: acceptance handler registered"
   [{:keys [note-name note-target note-age-min grace-min
            note-mtime-ms active-role-file-mtime-ms active-role paused?
            rotation-router?]

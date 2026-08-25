@@ -19,6 +19,10 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1129-babysitter-rotate-not-honored-skips-standing.feature
 required_wiring:
   - "swarmforge/scripts/babysitterd_sweep_lib.bb::bl1129CheckRotateNotHonoredSkipsStanding::acceptance handler registered"
+abandoned_commits:
+  - 36cd35c68
+  - 53f2fa4e6
+
 qa_e2e_procedure: >
   (1) Standing-pack fixture + completed rotate note → no rotate-not-honored
   finding. (2) Rotating-pack fixture with unhonored rotate → finding still
