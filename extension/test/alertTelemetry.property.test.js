@@ -43,6 +43,18 @@ test('aggregateFalsePositiveRateByType groups by alert type', () => {
   assert.equal(byType['active-backlog-depth'][0].value, 1);
 });
 
+test('aggregateFalsePositiveRate ignores records where fired is false', () => {
+  const hour = 60 * 60 * 1000;
+  const series = aggregateFalsePositiveRate(
+    [
+      { at: '2026-08-25T10:00:00.000Z', alertType: 'AGENT_EXITED', verdict: 'false-positive', fired: false },
+      { at: '2026-08-25T10:30:00.000Z', alertType: 'AGENT_EXITED', verdict: 'actionable', fired: true },
+    ],
+    hour
+  );
+  assert.equal(series.length, 1);
+  assert.equal(series[0].value, 0);
+});
 test('evaluateAlertWithTelemetry does not change evaluation result', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl598-unit-'));
   const out = evaluateAlertWithTelemetry(root, 'operator-actionable', 'actionable', () => 42);

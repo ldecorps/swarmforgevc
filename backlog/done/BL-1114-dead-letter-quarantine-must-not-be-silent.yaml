@@ -61,3 +61,5 @@ notes: >
 
 notes: |
   2026-08-24 coordinator: ready in paused/; holding — human_approval pending. Active cap full (BL-556/BL-682/BL-1089). Expedite lane after approval (severity: high).
+
+assigned_to: coder

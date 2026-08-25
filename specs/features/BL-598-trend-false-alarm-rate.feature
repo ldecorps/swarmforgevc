@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7b0ffe5f66a3f17f75c1d680b31a1babe444420d263a5fc079a3a541f22348aa
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T21:11:55.950745281Z","feature_name":"false-alarm rate trend makes observability noise measurable","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-598-trend-false-alarm-rate.feature","background_hash":"70625d1fcf253253db86560ffbce4d9b39e55e9dda5664c53ea92d45068f7041","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each emitted alert logs a verdict the sweep already computed","scenario_hash":"17c400aa252c3ce3db5bc70e542fcafa23a35fd962dac1f222a0f4bc43d010f6","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-08-25T21:11:55.950745281Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: false-alarm rate trend makes observability noise measurable
   BL-598 (epic BL-594). AGENT_EXITED false positives, active-backlog-depth
   warnings under a cap-of-1 steady state, and other self-cancelling alerts
