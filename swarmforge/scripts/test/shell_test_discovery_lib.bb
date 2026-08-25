@@ -37,31 +37,30 @@
                  "swarmforge/scripts/test/test_*.sh")
       #{}))
 
+(def ^:private inventory-label-rewrites
+  [["not in the manifest: " "unaccounted test: "]
+   ["excluded without a reason: " "exclusion missing its reason: "]
+   ["in the manifest but not in the tree: " "stale exclusion: "]])
+
+(defn- relabel-inventory-problem
+  [problem]
+  (or (some (fn [[from to]]
+              (when (str/starts-with? problem from)
+                (str to (subs problem (count from)))))
+            inventory-label-rewrites)
+      problem))
+
 (defn check-discovery
   "Pure-ish verdict given tracked set, untracked set, and manifest rows.
-   Returns problem strings (empty = clean)."
+   Returns problem strings (empty = clean). Shell-test rows only — .bb
+   runners stay under the suite-inventory gate."
   [tracked untracked rows]
-  (let [base (suite-inventory-lib/check tracked rows)
-        ;; Restrict base problems that mention .bb runners — we only account
-        ;; for shell tests in this sweep. Filter manifest rows to shell tests.
-        shell-rows (filterv #(shell-test-name? (:file %)) rows)
+  (let [shell-rows (filterv #(shell-test-name? (:file %)) rows)
         shell-base (suite-inventory-lib/check tracked shell-rows)
         orphan-probs (for [f (sort untracked)]
                        (str "untracked orphan: " f
                             " - track it, exclude it with a dated reason, or remove it"))
-        ;; Re-label inventory "not in the manifest" as unaccounted test
-        relabeled (map (fn [p]
-                         (cond
-                           (str/starts-with? p "not in the manifest: ")
-                           (str/replace p #"^not in the manifest: " "unaccounted test: ")
-                           (str/starts-with? p "excluded without a reason: ")
-                           (str/replace p #"^excluded without a reason: "
-                                        "exclusion missing its reason: ")
-                           (str/starts-with? p "in the manifest but not in the tree: ")
-                           (str/replace p #"^in the manifest but not in the tree: "
-                                        "stale exclusion: ")
-                           :else p))
-                       shell-base)]
+        relabeled (map relabel-inventory-problem shell-base)]
     (vec (concat relabeled orphan-probs))))
 
 (defn account-label
