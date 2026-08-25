@@ -13,7 +13,7 @@ direction: aligned
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-human_approval: pending
+human_approval: approved
 approval_context: >
   Human (Cursor) 2026-08-25: after live MASTER CHECKOUT DRIFT Alerts,
   "the swarm must deal with durable daemon-script drift without human
@@ -73,6 +73,7 @@ source: |
   master_checkout_drift_lib.bb + master-checkout-drift-sweep! in handoffd.bb.
 
 notes:
+  - "[2026-08-25T18:00Z] human (Cursor): approved BL-1139; closing — repair on main + QA pass."
   - "[2026-08-25T16:25Z] coder: repair-master-checkout-drift! + deferred handoffd bounce."
   - [2026-08-25T16:05Z] specifier: minted from root intake; human sentence
     preserved: "the swarm must deal with durable daemon-script drift without
