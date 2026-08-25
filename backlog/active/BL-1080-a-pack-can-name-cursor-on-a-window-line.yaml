@@ -29,6 +29,16 @@ required_wiring:
   - "swarmforge/scripts/swarmforge.sh::BL-1080-choose-a-cursor-seat::every unsupported-agent refusal must name the how-to by path - a refusal that names nothing is exactly the dead end invariant 1 forbids, and docs/how-to/ alone would be vacuous here because the launcher already cites three other how-tos"
   - "swarmforge/packs/cursor-mono-router.conf::window::the pack must exist as a committed conf carrying a window line - this entry earns its keep on the path check rather than the pattern, because a pack that lives only as a snippet inside the how-to gives the operator nothing to pass to --pack"
   - "specs/pipeline/steps/index.js::bl1080::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler"
+abandoned_commits:
+  - 0ae507b37
+  - e382c7afd
+  - 69f9c3bd0
+  - deebf72ab
+  - 844339c18
+  - 8f5d220ac
+  - fe9ae59af
+  - d569c8c7a
+
 
 invariants:
   - "The unsupported-agent error for a rejected cursor token points operators at the Cursor-seat how-to, not a dead end."

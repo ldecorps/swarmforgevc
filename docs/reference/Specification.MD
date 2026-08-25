@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1117: stamp-off of tip
+**Last Updated:** August 25, 2026 (BL-1080: operators can choose a Cursor
+seat — pack `swarmforge/packs/cursor-mono-router.conf` names `cursor` on
+window lines; how-to `docs/how-to/BL-1080-choose-a-cursor-seat.md` states
+when Cursor vs `/pilot` vs Claude; every unsupported-agent refusal in
+`swarmforge.sh` (validate_agent + launch builder) appends that how-to path.
+Acceptance:
+`specs/features/BL-1080-a-pack-can-name-cursor-on-a-window-line.feature`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1117: stamp-off of tip
 `646ffe85d` — Pipeline Board `escapeHtml` emits numeric `&#160;` for
 U+00A0, never named `&nbsp;` (Telegram HTML named-entity set is only
 `&lt;` `&gt;` `&amp;` `&quot;`). Ledger pending for human certify/waive

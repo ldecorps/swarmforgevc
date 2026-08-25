@@ -45,3 +45,5 @@ role '…'`. That message also points here:
 
 Fix the pack `window` line (or `coordinator_agent`) to a supported token —
 including `cursor` when you intend a Cursor seat — then relaunch.
+
+Acceptance: `specs/features/BL-1080-a-pack-can-name-cursor-on-a-window-line.feature`
