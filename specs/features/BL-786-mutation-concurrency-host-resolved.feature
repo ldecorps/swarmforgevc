@@ -6,12 +6,6 @@ Feature: Mutation concurrency is resolved from the launching host
   each entry point goes through before Stryker starts, which reads the host,
   computes the number, passes it to Stryker, and says out loud what it chose.
 
-  DRAFT — not executable yet. This file is a .draft on purpose: no step handlers
-  exist for these scenarios, and a live .feature would make the acceptance runner
-  hard-fail repo-wide (BL-233). Materialize it to
-  specs/features/BL-786-mutation-concurrency-host-resolved.feature in the same
-  parcel as its step handlers, and point the ticket's acceptance: at it then.
-
   Entry points are enumerated from extension/package.json at implementation time.
   As of 2026-08-23 there are TWO — mutation and mutation:lets-talk-cursor-bridge.
   There is no mutation:lets-talk-core script; stryker.letsTalkCore.config.json is

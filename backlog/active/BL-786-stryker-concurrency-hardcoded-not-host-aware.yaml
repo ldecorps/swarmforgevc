@@ -183,41 +183,7 @@ description: |
   the call sites. This ticket's entire value is the call site existing, which
   is precisely what that gate is for.
 
-acceptance: |
-  Specifier writes the Gherkin when this is approved and promoted. Minimum
-  behaviour:
-
-  1. On a host with plenty of free RAM, a mutation run resolves a concurrency
-     equal to the recommender's output for that host's readings, and Stryker
-     is invoked with that value rather than the config file's.
-
-  2. On a RAM-starved host — free RAM below the reserve — the resolved value
-     is 1, not 0 and not negative, and the run still starts.
-
-  3. On a host whose RAM headroom would allow more workers than it has cores,
-     the resolved value is the core count.
-
-  4. Every mutation entry point that actually exists resolves its own
-     concurrency the same way, proven per entry point — a scenario that covers
-     only the default config must not be able to pass this. As of 2026-08-23
-     that is TWO npm scripts, not three: `mutation` and
-     `mutation:lets-talk-cursor-bridge`. There is no `mutation:lets-talk-core`
-     script; `stryker.letsTalkCore.config.json` is an orphan config with no
-     invoker anywhere in the tree (see the 2026-08-23 re-baseline in `source:`).
-     Enumerate the entry points from `extension/package.json` at implementation
-     time and cover each one found — do not write an example row for a script
-     that does not exist, and do not treat the orphan config as an entry point
-     unless a script for it is added.
-
-  5. An explicit pin is honoured exactly, even when it is far above or far
-     below what the host would have been sized to, and the output says the
-     value was pinned rather than computed.
-
-  6. Every run prints the resolved concurrency together with the free RAM,
-     core count, per-worker peak and reserve it was derived from.
-
-  7. The declared per-worker peak has exactly one definition in the tree, and
-     changing it changes what every entry point resolves.
+acceptance: specs/features/BL-786-mutation-concurrency-host-resolved.feature
 
 out_of_scope: |
   - Changing `recommendMutationConcurrency`'s formula, its clamping, or the
