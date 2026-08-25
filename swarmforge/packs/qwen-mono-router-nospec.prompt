@@ -1,6 +1,6 @@
-# qwen-mono-router overlay: one resident aider agent on Alibaba Token Plan
+# qwen-mono-router-nospec overlay: Qwen Token Plan mono-router
 
-Read this when your swarm was launched with the `qwen-mono-router` pack.
+Read this when your swarm was launched with the `qwen-mono-router-nospec` pack.
 You are always the one resident process (aider via Alibaba Token Plan
 OpenAI-compatible API — `QWEN_API_KEY` / mapped `OPENAI_API_KEY`, not Claude).
 
@@ -9,12 +9,11 @@ OpenAI-compatible API — `QWEN_API_KEY` / mapped `OPENAI_API_KEY`, not Claude).
 | Role | Qwen model |
 |------|------------|
 | specifier / architect | `qwen3.8-max` |
-| cleaner / hardender / documenter / QA | `qwen3.7-max` |
-| coder | `qwen3.7-plus` |
-| coordinator (separate process) | `qwen3.6-flash` |
+| hardender / QA | `qwen3.7-max` |
+| coder / cleaner / documenter | `qwen3.7-plus` |
+| coordinator (separate process) | `qwen3.7-plus` |
 
 API host: `https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`
-
 
 ## Pipeline shape
 
@@ -22,6 +21,7 @@ API host: `https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v
   → hardender → documenter → QA**. **coder is your "home" identity**.
 - Every gate still runs unabridged.
 - Coordinator stays a separate process when provisioned.
+- Specifier is a rotation target for intakes and spec-defect bounces.
 
 ## How you rotate
 
