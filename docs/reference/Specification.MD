@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-988: restore BL-578 WSL bounce acceptance
+binding — handlers already ship; `index.js` registration + every feature step
+must resolve. Property regression
+`bl988Bl578ContractBinding.property.test.js` prevents re-orphan. Decision:
+RESTORE (not retire). Acceptance:
+`specs/features/BL-578-devhost-bounce-wsl-window-leak.feature`.
+How-to: `docs/how-to/BL-988-orphaned-wsl-acceptance-contract-binding.md`
+(updates BL-578). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1100 rematch: re-verify structured-only
 promotion candidacy on tip — `is_do_not_promote` remains deleted; auto-pick
 skips announce `skip <id> gate=<gate>` via `is_epic_type` /
