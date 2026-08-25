@@ -118,3 +118,10 @@
   stamp_ticket: BL-1115
   human_decision: null
   decided_at: null
+- commit: 646ffe85d
+  subject: "Fix Pipeline Board: emit &#160; so Telegram renders NBSP as a space."
+  detected_at: 2026-08-24
+  state: pending
+  stamp_ticket: BL-1117
+  human_decision: null
+  decided_at: null

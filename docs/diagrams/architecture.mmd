@@ -162,7 +162,7 @@
 %% step-0 main_sync_status_cli + trip-once main-sync deadlock (suppresses
 %% drop-nudges until behind=0; BL-891 still owns non-ff joins); standing
 %% pack cursor-forge (depth 3, remote_control off, cursor windows);
-%% Pipeline Board escapeHtml &nbsp; + deriveKebabSlug maxWords=3;
+%% Pipeline Board escapeHtml &#160; (BL-1117) + deriveKebabSlug maxWords=3;
 %% Telegram Cursor Remote CreatePlan Confirm/Reject.
 %% BL-1102 (2026-08-24): daemon_cycle_guard_lib/sh! returns
 %% {:exit 127 :spawn-failed? true} on unspawnable binaries (no throw);
@@ -260,6 +260,8 @@
 %% MERGE_HEAD (human-merge-in-progress); never abort foreign merges.
 %% BL-1130 (2026-08-25): automated absorb — merge-tree foresight +
 %% :refuse-rematch; never leaves MERGE_HEAD for an external editor.
+%% BL-1117 (2026-08-25): Pipeline Board escapeHtml emits &#160;
+%% not named &nbsp; (Telegram HTML); stamp tip 646ffe85d.
 %% BL-1124 (2026-08-25): property-suite canary — shared core.bare + HEAD
 %% must not change across the lane; refuse reset-to-origin when ahead.
 %% BL-1079 (2026-08-25): re-entry — APS allow-list parse includes
