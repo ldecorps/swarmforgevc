@@ -9,6 +9,12 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits:
+  - 2da6498ac3
+  - 57a70662e4
+  - 15344e198f
+  - 7a16fffd04
+  - b82979e57e
 human_approval: approved
 approval_context: >
   Slice 1 only: ceremony packet gains per-role quality up/down/hold
