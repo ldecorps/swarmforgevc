@@ -199,6 +199,7 @@ import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
+import { readSwarmEnvValue } from './swarmEnv';
 import { routeOnboardingMessage } from '../onboarding/onboarderContractPhaseRouter';
 import { ContractPhaseAdapters } from '../onboarding/contractPhaseRelay';
 import { createRealContractPhaseAdapters } from './contractPhaseRealAdapters';
@@ -1616,13 +1617,29 @@ export async function enqueueRoleAnswerNote(targetPath: string, role: string, te
 // without ever calling openSubject (and therefore never externally
 // minting a second SUP-###) or re-notifying the Operator a second time.
 export async function openSubjectAndRecord(targetPath: string, topicId: number | undefined, text: string, updateId: number): Promise<string> {
-  const cursorTopicId = readCursorBridgeTopicId(targetPath);
-  if (cursorTopicId !== undefined && topicId === cursorTopicId) {
-    throw new Error('openSubjectAndRecord: Cursor Remote topic is owned by telegram-cursor-bridge, not the front desk');
-  }
   const already = readTopicMap(targetPath)[updateOpenKey(updateId)];
   if (already !== undefined) {
     return already;
+  }
+  const cursorTopicId = readCursorBridgeTopicId(targetPath);
+  const letsTalkProvider = (
+    readSwarmEnvValue(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') ||
+    process.env.SWARMFORGE_LETS_TALK_PROVIDER?.trim() ||
+    ''
+  ).toLowerCase();
+  const cursorBridgeRoutingEnabled = letsTalkProvider === '' || letsTalkProvider === 'cursor';
+  if (cursorTopicId !== undefined && topicId === cursorTopicId) {
+    if (cursorBridgeRoutingEnabled) {
+      throw new Error('openSubjectAndRecord: Cursor Remote topic is owned by telegram-cursor-bridge, not the front desk');
+    }
+    // Provider switched away from cursor: adopt this legacy topic into the
+    // front-desk operator subject so pings continue to get answers.
+    const topicMap = readTopicMap(targetPath);
+    topicMap[topicMapKey(topicId)] = OPERATOR_SUBJECT_ID;
+    topicMap[updateOpenKey(updateId)] = OPERATOR_SUBJECT_ID;
+    writeTopicMap(targetPath, topicMap);
+    appendOperatorEvent(targetPath, { type: 'TELEGRAM_TOPIC_MESSAGE', subject: OPERATOR_SUBJECT_ID });
+    return OPERATOR_SUBJECT_ID;
   }
   const subjectId = await openSubject(targetPath, text);
   const topicMap = readTopicMap(targetPath);
@@ -2155,6 +2172,12 @@ function buildPollAdapters(
   openaiApiKey: string | undefined,
   scheduleConciergeTick?: () => void
 ): PollAdapters {
+  const letsTalkProvider = (
+    readSwarmEnvValue(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') ||
+    process.env.SWARMFORGE_LETS_TALK_PROVIDER?.trim() ||
+    ''
+  ).toLowerCase();
+  const cursorBridgeRoutingEnabled = letsTalkProvider === '' || letsTalkProvider === 'cursor';
   return {
     chatId,
     // BL-620: every dropped update leaves exactly one bounded audit line in
@@ -2175,9 +2198,14 @@ function buildPollAdapters(
     },
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
-    cursorBridgeTopicId: () => Promise.resolve(readCursorBridgeTopicId(targetPath)),
-    bubbleTopicId: () => Promise.resolve(readBubbleTopicId(targetPath)),
+    cursorBridgeTopicId: () =>
+      Promise.resolve(cursorBridgeRoutingEnabled ? readCursorBridgeTopicId(targetPath) : undefined),
+    bubbleTopicId: () =>
+      Promise.resolve(cursorBridgeRoutingEnabled ? readBubbleTopicId(targetPath) : undefined),
     forwardCursorBridgeUpdate: async (update) => {
+      if (!cursorBridgeRoutingEnabled) {
+        return false;
+      }
       try {
         appendCursorBridgeInboundUpdate(path.join(targetPath, '.swarmforge', 'operator'), update as { update_id?: number } & Record<string, unknown>);
         return true;
