@@ -6,7 +6,7 @@ type: epic
 epic: local-llm-swarm
 priority: 10
 depends_on: []
-decomposes_into: [BL-1126, BL-1127, BL-1140]
+decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143]
 remaining_slices:
   - "Mono-router vs full-forge under CPU (depth cap / rotation) — mint next as queue-jump (human prioritize 2026-08-25 evening)."
   - "Cold-swap day-shift to ollama-qwen3-mono-router — BL-1126+BL-1127+BL-1140 green; human authorized prioritize 2026-08-25 evening; do not thrash to qwen-forge without explicit ask."
@@ -21,6 +21,7 @@ source: |
   backlog/INTAKE-prioritize-local-ollama-remaining-20260825.md.
 
 notes: |
+  - [2026-08-25T19:14Z] specifier: re-link decomposes_into after rematch drops.
   UMBRELLA / tracking item (type: epic), NOT directly promotable — coordinator
   promotes CHILD slices. Children carry epic: local-llm-swarm.
 
