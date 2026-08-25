@@ -322,10 +322,11 @@
          "effect while its ticket sits closed.\n"
          (str/join "\n" (keep drift-line (remove (fn [[_ v]] (= v :no-drift)) per-file))))))
 
-;; BL-1122 / BL-1134: mid-commit mute for false :staged-for-reversion WARNs.
-;; BL-1122 covered `.git/index.lock`. BL-1134 widens to the post-add window:
-;; after `git add` the lock is gone while index≠main until `git commit`
-;; finishes — observe live `git add`/`git commit` argv mentioning this root.
+;; BL-1122 / BL-1134 / BL-1137: mid-commit mute for false :staged-for-reversion
+;; WARNs. BL-1122 covered `.git/index.lock`. BL-1134 widened to live
+;; `git add`/`git commit` argv mentioning this root. BL-1137 widens again:
+;; cwd-scoped `git add`/`git commit` (no `-C`, root absent from argv) must
+;; also mute when the process cwd is this project root.
 
 (def ^:private git-add-or-commit-argv-re
   "Matches `git add` / `git commit`, including `git -C <path> …` and
@@ -336,18 +337,53 @@
 (defn git-add-or-commit-argv-for-root?
   "Pure read-only classifier: true when argv looks like `git add` or
    `git commit` (optionally `git -C <path> …`) whose command line mentions
-   this project root. Never mutates anything."
+   this project root. Never mutates anything. (BL-1134; kept for argv-only
+   call sites — prefer git-add-or-commit-process-for-root? for cwd-aware.)"
   [argv project-root]
   (let [a (str argv)
         root (str project-root)]
     (boolean (and (str/includes? a root)
                   (re-find git-add-or-commit-argv-re a)))))
 
-(defn- list-process-argvs!
-  "Read-only snapshot of live process command lines via process-table-lib.
-   Empty vector when the table cannot be enumerated (BL-849 nil → no mute)."
+(defn- normalize-process-snapshot
+  "Accept a cmdline string (BL-1134 tests) or {:cmdline :cwd} map (BL-1137)."
+  [process]
+  (if (map? process)
+    {:cmdline (str (or (:cmdline process) ""))
+     :cwd (some-> (:cwd process) str)}
+    {:cmdline (str process) :cwd nil}))
+
+(defn- cwd-under-root?
+  [cwd project-root]
+  (let [c (str cwd)
+        root (str project-root)]
+    (boolean (and (not (str/blank? c))
+                  (or (= c root)
+                      (str/starts-with? c (str root "/")))))))
+
+(defn git-add-or-commit-process-for-root?
+  "Pure read-only: true when process is a live `git add`/`git commit` scoped
+   to this project root via argv (root string / git -C) OR via process cwd
+   under the root (BL-1137). Never mutates anything."
+  [process project-root]
+  (let [{:keys [cmdline cwd]} (normalize-process-snapshot process)
+        root (str project-root)]
+    (boolean
+     (and (re-find git-add-or-commit-argv-re cmdline)
+          (or (str/includes? cmdline root)
+              (cwd-under-root? cwd root))))))
+
+(defn- list-process-snapshots!
+  "Read-only snapshots of live processes. For candidates that look like
+   git add/commit, also best-effort cwd (BL-1137). Empty when the table
+   cannot be enumerated."
   []
-  (mapv :cmdline (or (process-table-lib/list-processes!) [])))
+  (mapv (fn [{:keys [pid cmdline]}]
+          (let [cmd (str cmdline)
+                needs-cwd? (boolean (re-find git-add-or-commit-argv-re cmd))]
+            {:cmdline cmd
+             :cwd (when needs-cwd? (process-table-lib/cwd! pid))}))
+        (or (process-table-lib/list-processes!) [])))
 
 (defn index-lock-present?
   "Read-only: true when `.git/index.lock` exists under project-root."
@@ -355,20 +391,20 @@
   (fs/exists? (fs/path project-root ".git" "index.lock")))
 
 (defn- live-git-add-or-commit-for-root?
-  [project-root process-argvs]
-  (boolean (some #(git-add-or-commit-argv-for-root? % project-root)
-                 process-argvs)))
+  [project-root process-snapshots]
+  (boolean (some #(git-add-or-commit-process-for-root? % project-root)
+                 process-snapshots)))
 
 (defn commit-in-flight?
   "Read-only: true when a commit/add is observably in flight for this root —
-   either `.git/index.lock` is held, or a live `git add`/`git commit` argv
-   mentions this project root (BL-1134 post-add window). Optional second
-   arg injects a process-argv snapshot for tests."
+   `.git/index.lock`, a live argv mentioning this root (BL-1134), or a
+   cwd-scoped `git add`/`git commit` under this root (BL-1137). Optional
+   second arg injects process snapshots (strings or {:cmdline :cwd} maps)."
   ([project-root]
-   (commit-in-flight? project-root (list-process-argvs!)))
-  ([project-root process-argvs]
+   (commit-in-flight? project-root (list-process-snapshots!)))
+  ([project-root process-snapshots]
    (or (index-lock-present? project-root)
-       (live-git-add-or-commit-for-root? project-root process-argvs))))
+       (live-git-add-or-commit-for-root? project-root process-snapshots))))
 
 (defn should-alarm-on-result?
   "Emit MASTER CHECKOUT DRIFT WARN unless the only drift is
