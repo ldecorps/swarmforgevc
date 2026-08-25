@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T14:29:37.981419090Z","feature_name":"Master-checkout drift mute covers cwd-scoped git add/commit","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1137-master-checkout-drift-mute-covers-cwd-scoped-git.feature","background_hash":"51931620413d7fe21626fa905fe2475514b3f76c512dff8fe3029f07f806a43d","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Master-checkout drift mute covers cwd-scoped git add/commit
   BL-1134 mutes MASTER CHECKOUT DRIFT WARN while `.git/index.lock` is
   held or a live argv looks like `git add`/`git commit` and literally
