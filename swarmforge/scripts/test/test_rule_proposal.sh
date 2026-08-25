@@ -77,7 +77,7 @@ run_swarm_handoff() {
       SWARMFORGE_ROLE=coder \
       SWARMFORGE_SKIP_SYNC_INJECT=1 \
       PATH="$FAKE_BIN:$PATH" \
-      bb "$SWARM_HANDOFF" "$draft"
+      bb "$SWARM_HANDOFF" "$draft" 2>&1
   )
 }
 
@@ -163,9 +163,7 @@ assert_rejected() {
   local draft
   draft="$(make_draft "$CODER_WT" "$@")"
   set +e
-  OUT="$(cd "$CODER_WT" && env -u SWARMFORGE_SKIP_DAEMON -u SWARMFORGE_MAILBOX_ONLY \
-    SWARMFORGE_ROLE=coder SWARMFORGE_SKIP_SYNC_INJECT=1 PATH="$FAKE_BIN:$PATH" \
-    bb "$SWARM_HANDOFF" "$draft" 2>&1)"
+  OUT="$(run_swarm_handoff "$draft")"
   RC=$?
   set -e
   [[ $RC -ne 0 ]] || fail "02 ($label): invalid draft was not rejected; got: $OUT"
