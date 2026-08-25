@@ -73,6 +73,7 @@ expects them, and are not migrated or rewritten here.
 - [Expedite lane is defect-only; type bug retired](how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md) — predicate + mint `RETIRED-TICKET-TYPE`; use `type: defect` (BL-1095).
 - [Pane liveness walks the whole tree under the pane](how-to/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.md) — babysitter finds wrapper-launched agents; RC UNAVAILABLE when gate unmet (BL-1070).
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).
+- [Host-resolved Stryker mutation concurrency](how-to/BL-786-mutation-concurrency-host-resolved.md) — `mutation-concurrency.js` sizes workers from free RAM + BL-427 peak; `MUTATION_CONCURRENCY` pin wins (BL-786).
 - [Supervisor threads are not front-desk topics](how-to/BL-695-supervisor-threads-are-not-front-desk-topics.md) — SUP/unbound never write tracked topic JSON; icons stay durable off-git (BL-695).
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
 - [Thin-main CRAP-visible CLI gate](how-to/BL-534-thin-main-crap-visible-cli-gate.md) — tools `main()` must be exported and CC≤2; parcel never allowlists (BL-534).
