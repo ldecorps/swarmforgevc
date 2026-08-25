@@ -2132,15 +2132,25 @@ async function processSteeringUpdate(
   if (decision.kind === 'refuse') {
     return 'dropped';
   }
+  // BL-955: the annotation is applied HERE, at the forwarding boundary -
+  // decideSteeringAction above already classified the raw text, and both
+  // onward paths (the live pane and the queued answer note below) carry
+  // the same annotated text, so no reader believes the image was seen.
   const forwardedText = annotateRoutedMediaText(decision.text, update);
+  // BL-568: ordinary steers must not type into an AskUserQuestion menu.
   const menuBlock = roleMenuBlocked ? await roleMenuBlocked(decision.role) : undefined;
   const result: SteerDeliveryResult =
     menuBlock?.blocked === true
       ? { kind: 'menu-blocked', pollHint: menuBlock.pollHint }
       : await redirectToRole(decision.role, forwardedText);
+  // BL-607: when this role has a clarifying question pending, this reply
+  // IS the answer (Leg 1 reuses redirectToRole — live pane). A dormant
+  // pane queues a note into the role's own inbox (Leg 2). Marker clears
+  // once the answer is captured.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
     await captureRoleAnswer(decision.role, result.kind === 'delivered', forwardedText, enqueueRoleAnswerNote, clearRolePendingQuestion);
   }
+  // Optional adapter: absent means no receipt (pre-receipt behavior).
   if (notifyRoleTopic) {
     await notifyRoleTopic(topicIdOf(update), formatSteerReceipt(decision.role, result));
   }

@@ -1850,11 +1850,31 @@
 (def ^:private bl568-menu-footer-re
   #"(?i)Enter to select.*(?:Tab|Arrow).*Esc to cancel")
 
+(def ^:private bl568-nav-hint-re
+  #"(?i)Tab/Arrow keys to navigate")
+
+(def ^:private bl568-footer-noise-re
+  #"(?i)Tab/Arrow|Esc to cancel")
+
 (def ^:private bl568-option-line-re
   #"(?m)^[❯>]?\s*(\d+)[.)]\s+(.+)$")
 
 (def ^:private bl568-checkbox-option-re
   #"(?m)^[❯>]?\s*\[[ xX]\]\s+(.+)$")
+
+(def ^:private bl568-choice-marker-re
+  #"(?m)^[❯>]\s+\S")
+
+(defn- bl568-menu-chrome?
+  [pane-text]
+  (boolean (or (re-find bl568-menu-footer-re pane-text)
+               (re-find bl568-nav-hint-re pane-text))))
+
+(defn- bl568-has-option-chrome?
+  [pane-text]
+  (boolean (or (re-find bl568-option-line-re pane-text)
+               (re-find bl568-checkbox-option-re pane-text)
+               (re-find bl568-choice-marker-re pane-text))))
 
 (defn bl568-detect-menu-blocked
   "True when pane text shows a Claude Code interactive menu footer (or
@@ -1862,12 +1882,7 @@
    option. Menu-blocked is BLOCKED, not idle."
   [pane-text]
   (let [t (str pane-text)]
-    (boolean
-     (and (or (re-find bl568-menu-footer-re t)
-              (re-find #"(?i)Tab/Arrow keys to navigate" t))
-          (or (re-find bl568-option-line-re t)
-              (re-find bl568-checkbox-option-re t)
-              (re-find #"(?m)^[❯>]\s+\S" t))))))
+    (boolean (and (bl568-menu-chrome? t) (bl568-has-option-chrome? t)))))
 
 ;; camelCase alias required by ticket required_wiring
 (def bl568DetectMenuBlocked bl568-detect-menu-blocked)
@@ -1886,6 +1901,12 @@
   [text]
   (boolean (re-find #"(?i)^(type something|other|something else|write your own)" (str text))))
 
+(defn- bl568-question-candidate-line?
+  [line]
+  (not (or (re-find bl568-menu-footer-re line)
+           (re-find bl568-footer-noise-re line)
+           (bl568-parse-option-line line))))
+
 (defn bl568-menu-fingerprint
   "Stable fingerprint of question + ordered option texts (surface-time)."
   [question options]
@@ -1901,13 +1922,7 @@
         opts (vec (keep bl568-parse-option-line lines))
         option-texts (mapv :text opts)
         ;; Question: last non-option, non-footer line above the first option.
-        opt-set (set option-texts)
-        question (->> lines
-                      (remove #(or (re-find bl568-menu-footer-re %)
-                                   (re-find #"(?i)Tab/Arrow|Esc to cancel" %)
-                                   (bl568-parse-option-line %)))
-                      last
-                      str)
+        question (->> lines (filter bl568-question-candidate-line?) last str)
         free-idxs (vec (keep-indexed (fn [i o] (when (bl568-free-text-option? o) i)) option-texts))
         multi? (boolean (some #(= :checkbox (:kind %)) opts))]
     {:blocked? blocked?
