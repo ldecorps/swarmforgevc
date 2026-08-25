@@ -21,6 +21,7 @@ trap 'rm -rf "$ROOT"' EXIT
 
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=t@t -c user.name=t commit -q --allow-empty -m one
+COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 CODER_WT="$ROOT/.worktrees/coder"
 git -C "$ROOT" worktree add -q -b coder "$CODER_WT"
@@ -31,8 +32,10 @@ mkdir -p "$ROOT/.swarmforge" \
          "$CODER_WT/.swarmforge/handoffs/inbox/completed"
 
 drop_handoff() {  # dir name recipient
-  printf 'id: %s\nfrom: specifier\nto: %s\nrecipient: %s\npriority: 00\ntype: git_handoff\ntask: demo-task\ncommit: 0123456789\n\nbody\n' \
-    "$2" "$3" "$3" > "$1/00_$2.handoff"
+  # BL-610: commit must resolve to a real object now that dequeue re-checks
+  # it - $COMMIT is ROOT's own init commit, not a placeholder.
+  printf 'id: %s\nfrom: specifier\nto: %s\nrecipient: %s\npriority: 00\ntype: git_handoff\ntask: demo-task\ncommit: %s\n\nbody\n' \
+    "$2" "$3" "$3" "$COMMIT" > "$1/00_$2.handoff"
 }
 
 # ── baseline: no sentinel means the normal NO_TASK path is untouched ────────

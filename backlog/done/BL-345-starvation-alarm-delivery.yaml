@@ -1,0 +1,98 @@
+id: BL-345
+title: "The starvation alarm suppresses itself on a FAILED send — arm on delivered, never on attempted"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 2
+direction: expedite
+depends_on: []
+source: "Architect rule_proposal during BL-333 review (handoff 50_20260713T071707Z_000194). The architect forwarded BL-333 onward rather than bouncing it, and BL-333 was QA-approved (f37be9f8dd) and closed before the proposal could be actioned — so the defect is now LIVE ON MAIN (commit f86b9ae, swarmforge/scripts/operator_runtime.bb:918)."
+
+notes: |
+  THE BUG, VERIFIED AGAINST THE CODE AS LANDED ON MAIN (not from the proposal's description).
+
+  BL-333 shipped an anti-spam guard: alarm on the EDGE of starvation, then "arm" so the
+  alarm does not re-fire every tick for two days. Correct requirement. But the arming keys
+  off the ATTEMPT, not the DELIVERY:
+
+      operator_runtime.bb:918  (write-starvation-state! {... :armed? armed?})   ; <- armed BEFORE the send
+      operator_runtime.bb:919  (when should-alarm?
+      operator_runtime.bb:922    (send-starvation-alarm-email! ...))            ; <- result DISCARDED
+
+  `armed?` is `(boolean starving?)` — computed with no reference to whether the email
+  actually went out — and it is persisted to disk BEFORE the send is even attempted. The
+  send's return value is then thrown away.
+
+  WHY IT IS QUIET. `daemon_alarm_lib.bb`'s `default-post!` CATCHES its own exceptions and
+  returns `{:success false :error ...}`. Nothing throws. So a transient network/API failure
+  at the exact tick starvation crosses the threshold marks the alarm as armed, sends nothing,
+  and suppresses every further alarm for the WHOLE episode — which for the condition BL-333
+  was written about is DAYS. The alarm for a silent failure fails silently. That is the same
+  defect class this ticket's parent exists to eliminate, reproduced inside the fix.
+
+  PRECEDENT — THIS IS THE SECOND TIME. BL-215 fixed this exact defect class in this exact
+  library. Its own source comment still reads: "the two off states [were] indistinguishable,
+  and the supervisor caller just swallowed the result." A new caller swallowed the result
+  again. This is why the rule now lives in the engineering article (committed alongside this
+  ticket), not just in a ticket.
+
+  SCOPE — CONSULT THE RESULT THAT IS ALREADY IN HAND. No new plumbing: `send-configured-email!`
+  ALREADY returns `{:success bool :reason kw :error str}`. `send-starvation-alarm-email!`
+  already returns it to the caller. The caller simply has to look at it, and the arming
+  decision has to move to AFTER the send:
+    1. `{:success true}` -> ARM (suppress re-alarms until starvation clears). Today's behavior,
+       and the only case in which today's behavior is right.
+    2. `{:success false}` with NO `:reason` -> a TRANSIENT failure (HTTP non-2xx, DNS, timeout).
+       Do NOT arm; the next tick retries. BOUND the retries — cap the attempts and space them
+       with a backoff, configurable with sane defaults, per the engineering article's mandatory
+       bounded-retry rule. On reaching the cap: arm anyway (it must not spin forever) and record
+       the undelivered alarm LOUDLY in the log.
+       Name the tradeoff honestly: on exhaustion the escalation channel IS the broken email, so
+       the log line and the status file are the only signals left. That is accepted (human,
+       2026-07-13); do not invent a new notifier to work around it.
+    3. `{:success false :reason :disabled}` (no recipient) or `:missing-api-key` -> TERMINAL
+       misconfiguration. Retrying can never succeed, so do NOT retry. `warn-missing-key-if-needed!`
+       already owns the loud warn-once; ARM.
+    A `:reason` of `:test-fixture-suppressed` must never reach the network and must never be
+    treated as a real delivery failure.
+
+  DO NOT re-alarm every tick, and DO NOT send real email proving this works. Mind BL-326: this
+  project has already sent 136 real emails by accident. Exercise the send path with the send
+  captured/injected, never live.
+
+  SCENARIO OUTLINE WARNING. Scenario 11 is a Scenario Outline. Its step handler MUST validate
+  the misconfiguration value against an explicit KNOWN_VALUES lookup and fail on any value not
+  in it — never a bare passthrough, and never a binary ===/ternary that lumps an unrecognized
+  (mutated) value into an else branch. This project has been bitten by that exact gap 5x
+  (BL-250/252/253); the engineering article spells it out.
+
+  E2E QA PROCEDURE. Drive the real tick function with the email seam injected, not a fixture of
+  the decision function alone — the whole bug is that the pure decision (`starvation-alarm-decision`
+  in operator_lib.bb) is CORRECT in isolation and its CALLER ignores the send result, so a unit
+  test of the pure function passes while the live path stays broken. Assert, against the caller:
+  (a) a failing send leaves the alarm UNARMED, and the next tick retries it; (b) retries stop at
+  the configured cap and the give-up is logged loudly; (c) a successful send arms exactly once,
+  and no re-alarm follows on later ticks; (d) a keyless/recipientless channel warns once and is
+  not retried; (e) no real email is sent by the test suite.
+
+acceptance:
+  feature: specs/features/BL-333-front-desk-starvation-alarm.feature
+  draft: specs/features/BL-345-starvation-alarm-delivery.feature.draft
+  steps:
+    - "A starvation lasting days raises one alarm, not one per tick (AMENDED: delivered, not raised)"
+    - "A starvation that clears and returns is alarmed again (AMENDED: delivered, not raised)"
+    - "An alarm that failed to deliver is retried, not treated as sent"
+    - "Alarm delivery is not retried forever"
+    - "A misconfigured alarm channel is warned about, not retried"
+
+  # BL-233: the five scenarios above are PARKED in the .feature.draft companion and are NOT yet
+  # in any live *.feature file — they have no step handlers, and the acceptance runner
+  # (specs/pipeline/runtime.js:24) THROWS on an unmatched step, which would hard-fail the suite
+  # for every ticket while this one sits paused. The coder folds them into the live
+  # BL-333 feature file (the durable contract for this behavior) TOGETHER WITH their step
+  # handlers, in the same parcel, and deletes the .feature.draft.
+
+human_approval: pending
+
+mutation_cost: low

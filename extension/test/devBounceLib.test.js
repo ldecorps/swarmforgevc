@@ -1,9 +1,16 @@
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   parseMarker,
   isMarkerFresh,
   filterDevHostPids,
   decideNextStep,
+  resolveVsCodeBinary,
+  buildDevHostLaunchCommand,
+  isWslPlatform,
+  buildWindowsKillOldCommands,
+  headlessMarkerDecision,
+  recordBounceHostCount,
 } = require('../scripts/bounceLib');
 
 // --- parseMarker ---
@@ -145,4 +152,124 @@ test('the overall timeout fails at the activation stage even if a host is runnin
 test('a fresh marker wins even at the edge of the overall timeout', () => {
   const step = decideNextStep(state({ markerFresh: true, totalElapsedMs: 60000 }));
   assert.equal(step.action, 'success');
+});
+
+// --- resolveVsCodeBinary (BL-361) ---
+
+test('resolveVsCodeBinary picks the darwin default when it is executable', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'darwin',
+    env: {},
+    isExecutable: (candidate) => candidate === '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
+  });
+  assert.deepEqual(result, { binary: '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code' });
+});
+
+test('resolveVsCodeBinary falls back to a bare "code" on PATH when no linux default install is found', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: {},
+    isExecutable: (candidate) => candidate === 'code',
+  });
+  assert.deepEqual(result, { binary: 'code' });
+});
+
+test('resolveVsCodeBinary prefers a platform default over the bare "code" fallback when both are executable', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: {},
+    isExecutable: () => true,
+  });
+  assert.notEqual(result.binary, 'code');
+});
+
+test('BL-361 scenario 05: an operator-named VSCODE_BIN override is authoritative', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: { VSCODE_BIN: '/custom/code' },
+    isExecutable: (candidate) => candidate === '/custom/code',
+  });
+  assert.deepEqual(result, { binary: '/custom/code' });
+});
+
+test('an unusable VSCODE_BIN override fails fast instead of silently falling back to a default', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: { VSCODE_BIN: '/custom/code' },
+    isExecutable: () => false,
+  });
+  assert.equal(result.error, 'vscode-not-found');
+  assert.match(result.message, /\/custom\/code/);
+});
+
+test('BL-361 scenario 04: the WSL trap — a resolvable but non-executable candidate fails fast naming the no-usable-VS-Code stage', () => {
+  // `command -v code` would succeed here (the Windows binary IS on PATH),
+  // but isExecutable simulates the real ENOEXEC failure from the missing
+  // WSLInterop binfmt handler - resolution must not treat "resolves" as
+  // "usable".
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: {},
+    isExecutable: () => false,
+  });
+  assert.equal(result.error, 'vscode-not-found');
+  assert.equal(typeof result.then, 'undefined', 'resolution is synchronous - it must not wait out any timeout to fail');
+});
+
+// --- buildDevHostLaunchCommand (BL-361) ---
+
+test('buildDevHostLaunchCommand asks the named VS Code binary to open the extension in development mode', () => {
+  const cmd = buildDevHostLaunchCommand('/path/to/code', '/repo/extension', '/repo/extension/swarmforge-vc.code-workspace');
+  assert.equal(cmd.command, '/path/to/code');
+  assert.deepEqual(cmd.args, ['--extensionDevelopmentPath=/repo/extension', '/repo/extension/swarmforge-vc.code-workspace']);
+});
+
+test('buildDevHostLaunchCommand never uses GUI keystroke automation (no open, no osascript)', () => {
+  const cmd = buildDevHostLaunchCommand('/path/to/code', '/repo/extension', '/repo/extension/swarmforge-vc.code-workspace');
+  assert.notEqual(cmd.command, 'open');
+  assert.notEqual(cmd.command, 'osascript');
+  assert.ok(!cmd.args.some((arg) => /osascript|key code|System Events/.test(arg)));
+});
+
+// --- BL-578 WSL kill-old + headless guard ---
+
+test('isWslPlatform is true only on linux with WSL env markers', () => {
+  assert.equal(isWslPlatform({ platform: 'linux', env: { WSL_DISTRO_NAME: 'Ubuntu' } }), true);
+  assert.equal(isWslPlatform({ platform: 'linux', env: {} }), false);
+  assert.equal(isWslPlatform({ platform: 'darwin', env: { WSL_DISTRO_NAME: 'Ubuntu' } }), false);
+});
+
+test('buildWindowsKillOldCommands targets Code.exe mains for the extension path', () => {
+  const cmds = buildWindowsKillOldCommands('/home/dev/swarmforgevc');
+  assert.equal(cmds.length, 1);
+  assert.equal(cmds[0].command, 'powershell.exe');
+  const joined = cmds[0].args.join(' ');
+  assert.match(joined, /extensionDevelopmentPath/);
+  assert.match(joined, /\/home\/dev\/swarmforgevc/);
+  assert.match(joined, /Stop-Process/);
+  assert.match(joined, /--type=/);
+});
+
+test('buildWindowsKillOldCommands keeps spaced paths inside the PowerShell script', () => {
+  const cmds = buildWindowsKillOldCommands('/home/dev/swarm forge vc with spaces');
+  const script = cmds[0].args[cmds[0].args.length - 1];
+  assert.match(script, /swarm forge vc with spaces/);
+  assert.equal(cmds[0].command, 'powershell.exe');
+});
+
+test('two consecutive bounce accountings stay at exactly one live host', () => {
+  const after1 = recordBounceHostCount(0, 0, 1);
+  const after2 = recordBounceHostCount(after1, 1, 1);
+  assert.equal(after1, 1);
+  assert.equal(after2, 1);
+});
+
+test('headlessMarkerDecision refuses without --force and warns with --force', () => {
+  assert.equal(headlessMarkerDecision({ markerPresent: false, force: false }).action, 'proceed');
+  const refuse = headlessMarkerDecision({ markerPresent: true, force: false });
+  assert.equal(refuse.action, 'refuse');
+  assert.match(refuse.message, /headless-swarm/);
+  const warn = headlessMarkerDecision({ markerPresent: true, force: true });
+  assert.equal(warn.action, 'warn-and-proceed');
+  assert.match(warn.message, /headless-swarm/);
 });

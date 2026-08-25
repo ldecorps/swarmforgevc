@@ -1,0 +1,97 @@
+id: BL-480
+title: "The Approvals-topic ask must carry enough ticket meat to decide: title + what-it-solves + acceptance signal, not a bare 'BL-XXX needs your approval'"
+milestone: M8
+type: bug
+severity: medium
+epic: ""
+priority: 4
+direction: human-requested
+depends_on: []
+source: "Human (ldecorps) 2026-07-17, direct session, on receiving the first BL-479 approval ask on the Approvals Telegram topic: 'the message should have more meat. there is not enough info to approve.' Screenshot evidence: the posted ask reads only 'BL-479 needs your approval before it can proceed. Reply here with ...' + Approve/Amend/Reject buttons — no title, no summary, nothing to base the decision on."
+
+notes: |
+  THE DEFECT. approvalRequestedText (extension/src/concierge/topicRouter.ts, ~line 122) renders an
+  ApprovalRequested event as ONLY the ticket id plus the reply grammar. The human is being asked to make
+  a real decision (approve a spec / a governance change) from a message that carries zero content about
+  what they are approving. Every approval therefore forces a context switch out of Telegram into the
+  repo, which defeats the one-tap Approve/Amend/Reject buttons BL-410 added.
+
+  THE ASYMMETRY THAT PROVES THE FIX IS CHEAP. TaskStarted already gets a rich render — BL-322's
+  taskStartedText builds a what-it-is/what-it-solves/how-it-works summary from the ticket YAML already
+  on disk. ApprovalRequested was explicitly left UNCHANGED at the time (regression guard
+  topic-opening-summary-04). The conciergeTick snapshot's ticketSummaries map ALREADY carries
+  title/notes/firstAcceptanceStep for live tickets, so the data is on hand at render time; only the
+  ApprovalRequested branch ignores it.
+
+  WHAT TO RENDER (target shape — specifier's draft, wording open to the coder/cleaner):
+    <id> — <title>
+    <what-it-solves: first paragraph(s) of notes, or description fallback, BOUNDED — see length rule>
+    <"First acceptance signal: " + firstAcceptanceStep, when present>
+    <"Approval context: " + approval_context field, when present — BL-479 introduced this field for
+     exactly this purpose: the 2-3 sentences saying what specifically needs the human's sign-off>
+    <the existing reply-grammar line VERBATIM: 'Reply here with "approve <id>" (or "reject <id>
+     <reason>") to act.' — pendingApprovalReply.ts's classifyApprovalsTopicReply and the BL-410 buttons
+     both key off this grammar; the enrichment must not alter it or the button callback wiring>
+
+  HUMAN CLARIFICATION (2026-07-17, verbatim intent): the details must be co-located "on the same
+  message that has the answer buttons" — ONE Telegram message carrying the enriched text with the
+  Approve/Amend/Reject buttons attached to it. Never a separate detail post alongside a thin ask.
+
+  CONSTRAINTS:
+    - Telegram sendMessage caps text at 4096 chars; notes: blocks routinely run far longer (BL-419's
+      notes alone exceed it). Truncate the summary deterministically (e.g. first N chars of the first
+      paragraphs + ellipsis) the same way taskStartedText already handles long notes — reuse, don't
+      re-derive (DRY with taskStartedText's own summarizer; extract a shared helper if needed).
+    - The buttons row (Approve/Amend/Reject, approvalRequestedButtons) stays EXACTLY as is.
+    - Only the ApprovalRequested branch changes; TaskStarted/TaskCompleted/NeedsApproval renders are
+      regression-guarded (topic-opening-summary-04, and this feature's own -06) and must not drift.
+    - Pure-function change: approvalRequestedText grows a ticketSummary parameter (same shape
+      messageTextForEvent already threads for TaskStarted) — directly unit-testable with fixture
+      summaries, no I/O.
+
+  CODER WIRING NOTES (specifier, 2026-07-17, verified against the tree):
+    - The event path is symmetric to BL-322: swarmEventStream.ts:117 diffApprovalRequested currently
+      mints payload {} (exactly as TaskStarted did pre-BL-322). Build its payload from
+      curr.ticketSummaries[id] the way taskStartedPayload (swarmEventStream.ts:89) already does, then
+      have approvalRequestedText render it. ticketSummariesFor (conciergeTick.ts:198) already carries
+      {title, notes, firstAcceptanceStep}.
+    - approval_context is NOT yet parsed. backlogReader.ts reads title/notes/firstAcceptanceStep but no
+      approval_context; TicketSummary lacks the field. To render the "Approval context:" line you must
+      wire approval_context end-to-end this parcel: parse it in backlogReader.ts, add it to
+      TicketSummary + ticketSummariesFor, thread it into the ApprovalRequested payload, and render it.
+      The raw field exists on disk (BL-479), so the data source is real — only the parse hop is missing.
+      (Guard scenario -03 with a fixture whose approval_context is load-bearing per the disk-input
+      test rule.)
+    - CO-CHANGE HAZARD — five sibling step files locate the approval message by the substring
+      "needs your approval" (bl408/bl409/bl410/bl434 step handlers + pendingApprovalAsksInTopicSteps.js
+      via APPROVAL_TEXT_PATTERN=/needs your approval/). If the enriched render drops that phrase, all
+      five setups fail to find the message and their features false-fail. Either KEEP the "needs your
+      approval" phrase in the enriched text (simplest, meaning-preserving), or update those five
+      locators in THIS parcel (grep -rl 'needs your approval' before handoff — engineering.prompt
+      call-site-sweep rule). The FROZEN contract is only the reply-grammar clause
+      ('Reply here with "approve <id>" (or "reject <id> <reason>") to act.') and the buttons.
+
+  E2E QA PROCEDURE: with the front desk live, flip a paused test ticket's human_approval to literal
+  'pending' and observe the Approvals-topic post: it must show the id, title, a bounded summary, the
+  acceptance signal, and the unchanged reply-grammar line with the three buttons. Tap Amend and confirm
+  the callback still routes (the grammar/callback contract held). Confirm a ticket with a >4096-char
+  notes block posts successfully (truncated), not a Telegram 400.
+
+acceptance:
+  feature: specs/features/BL-480-approval-ask-content.feature
+  steps:
+    - "An ApprovalRequested post carries the ticket title, a what-it-solves summary, and the acceptance signal alongside the id"
+    - "The reply-grammar line and Approve/Amend/Reject buttons are byte-identical to the pre-change contract"
+    - "A ticket's approval_context, when present, is included in the ask"
+    - "A ticket with an oversized notes block renders a truncated summary within Telegram's message cap"
+    - "A ticket with no summary source still renders a well-formed ask carrying the reply-grammar line"
+    - "TaskStarted, TaskCompleted and NeedsApproval renders are unchanged"
+
+human_approval: approved
+approval_context: >
+  Human reported the defect directly (2026-07-17) after receiving the first BL-479 ask: 'not enough info
+  to approve.' This ticket makes the Approvals-topic ask self-contained. Approving here approves the
+  target render shape above; exact wording is the pipeline's to polish. The reply grammar and button
+  wiring are contractually frozen.
+
+mutation_cost: low

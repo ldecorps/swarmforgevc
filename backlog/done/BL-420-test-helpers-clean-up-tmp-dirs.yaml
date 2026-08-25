@@ -1,0 +1,72 @@
+id: BL-420
+title: "Extension test helpers must clean up their /tmp mkdtemp dirs (the leak's source)"
+milestone: M8
+type: bug
+status: done  # reconciled 2026-07-16 (BL-459 intake): folder already done, field was stale
+severity: high
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-disk-space-low-alert.md follow-up (2026-07-15T11:40Z, 'Generator identified'): /tmp gained +41k entries in <1h (~42/sec while agents run tests); newest are per-test mkdtemp dirs from the extension suite (sfvc-bridge-server-*, sfvc-inbox-chaser-*, sfvc-metrics-*, relay-*, negotiate-*, ...) the helpers never rm. At this rate /tmp regrows to ~1M entries/day EVEN AFTER a sweep."
+
+notes: |
+  WHY THIS, NOT JUST THE SWEEP (BL-413): the sweep bounds the STOCK (removes
+  accumulated + crash-orphaned sandboxes); this bounds the FLOW at the source.
+  The generator is measured: ~147 extension test files call
+  `fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-*'))` (and relay-*/negotiate-*)
+  once per test and never remove the dir — ~42/sec while the suite runs, ~1M
+  entries/day. A sweep alone leaves /tmp regrowing to the same inode-count
+  degradation between sweeps; the leak has to be stopped where it is created.
+
+  FIX: a shared test temp-dir helper (extension/test/helpers/ — a `helpers/`
+  dir already exists, e.g. dependencyGateFixture.js, fakeTmux.js) that:
+    - creates the mkdtemp dir (preserving the existing sfvc-/relay-/negotiate-
+      naming so nothing else that greps for them breaks), and
+    - REGISTERS it for automatic removal on test teardown (afterEach / a
+      registered cleanup that also runs on the throwing path — try/finally or an
+      afterEach that rms every dir the helper handed out this test).
+  Then migrate the ~147 raw `fs.mkdtempSync(os.tmpdir(), ...)` call sites in
+  extension/test/ to allocate through the helper. ~65 test files already do
+  SOME afterEach/rmSync cleanup; fold those into the one helper rather than
+  leaving N hand-rolled variants.
+
+  DO NOT ASSERT ON A /tmp LISTING (engineering shared-global-directory rule,
+  BL-112): several worktrees run the suite concurrently, so a before/after diff
+  of os.tmpdir() flakes. The helper's own test asserts the EXACT path it created
+  no longer exists after teardown — never a listing of the shared parent.
+
+  REGRESSION GUARD (makes the flow-bound durable): a guard/lint test that fails
+  if any extension test allocates an os.tmpdir mkdtemp OUTSIDE the shared helper,
+  so a new test cannot silently reintroduce an un-cleaned leak. This is the
+  load-bearing "the migration is COMPLETE" assertion (scenario 03), not just
+  "the helper exists".
+
+  Scope: a new extension/test/helpers/ temp-dir helper + migrating the ~147
+  os.tmpdir mkdtemp call sites in extension/test/ to it + a regression guard.
+  Large but mechanical and test-only (low product risk).
+
+  OVERLAP: complements BL-413 (periodic sweep) — different files (test helpers +
+  test suite here; a new sweep module + always-alive-loop wiring there), so they
+  can proceed in parallel; both are needed (flow + stock). Not the disk ALERT
+  (BL-412).
+
+acceptance:
+  feature: specs/features/BL-420-test-helpers-clean-up-tmp-dirs.feature
+  steps:
+    - "The shared temp-dir helper removes the exact directory it created when the test's teardown runs (assert that path, never a /tmp listing)"
+    - "The temp directory is cleaned up even when the test body throws"
+    - "A guard fails if any extension test allocates an os.tmpdir mkdtemp outside the shared helper"
+
+qa_e2e: |
+  1. Unit: a test uses the helper, records the created path, triggers teardown,
+     asserts that exact path is gone (fs.existsSync === false). A second test
+     throws in its body and asserts teardown still removed its exact path.
+  2. Guard: run the regression scan over extension/test/ and assert zero raw
+     os.tmpdir mkdtemp call sites remain outside the helper (break-then-fix: add
+     one raw call, confirm the guard fails; remove it).
+  3. Live: run the full extension suite once and confirm the helper-created dirs
+     for a sampled set of tests are gone afterward (checking each sampled test's
+     OWN recorded path, not a /tmp count), so the suite no longer leaks.
+
+human_approval: approved
+mutation_cost: medium

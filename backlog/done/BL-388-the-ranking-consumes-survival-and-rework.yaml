@@ -1,0 +1,63 @@
+id: BL-388
+title: "WIRING SLICE — the score, the report and the leaderboard must actually CONSUME survival and rework, or the epic stays dark"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: role-benchmarking
+priority: 5
+direction: human-requested
+depends_on: [BL-385, BL-387]
+source: "backlog/INTAKE-benchmark-scoring-cannot-discriminate.md — the human, 2026-07-14 in SUP-3. Scoring shape settled with him the same day: harder tasks scored WITH rework cost. Slice 4 of BL-384, and the slice that makes the epic real."
+
+notes: |
+  THIS IS THE EPIC'S MANDATORY WIRING SLICE. The engineering article's rule is explicit and this
+  epic is the exact shape it warns about: an emit -> route -> consume pipeline whose slices are pure
+  foundation modules is NOT complete until a slice CALLS them on a real trigger and persists their
+  result. BL-386 (a battery with a real ceiling) and BL-387 (an oracle that measures survival and
+  rework) can BOTH land, fully green, with every test passing — while `rank.ts` still ranks on
+  first-pass test counts and BL-347's leaderboard still shows the human a first-pass answer. Green
+  tests, dark behaviour. Do not close BL-384 until this ticket lands.
+
+  WHAT IT WIRES.
+    - Quality becomes what SURVIVED the pipeline (BL-387's signal), not the first diff's test count.
+    - Cost becomes what the model actually cost, INCLUDING the rework it caused. This is the human's
+      own definition of value and the reason the epic exists: "a coder's value isn't its first diff,
+      it's the diff that survives." A model with a cheap first diff that bounces four times is not a
+      cheap model, and scenario 02 is the assertion that pins it.
+    - The report (`report.ts` / `reportArtifact.ts`) carries the new signals, and BL-347's
+      leaderboard presents them (scenario 03). A signal the human cannot see has not shipped.
+
+  SCENARIO 04 PROTECTS SLICE 1 — DO NOT DROP IT. A richer signal makes ties LESS likely; it does not
+  make them impossible. If every model survives equally and needs the same rework, that is still a
+  tie, and BL-385's honest-tie result must still hold. It would be a poor joke to fix the false
+  winner in slice 1 and then reintroduce it in slice 4 by ranking on a new metric with the same
+  strict-`>` maxBy. Reuse BL-385's tie handling; do not write a second one.
+
+  DEPENDS ON BOTH BL-385 AND BL-387, AND THAT IS DELIBERATE. BL-387 is the WRITER of the survival and
+  rework signals this ticket READS — per the specifier's own spec-time rule, a slice that reads a
+  store must have a real producer of that exact store named, never an assumed sibling. BL-385 owns
+  the tie semantics this ticket must preserve. Neither is optional.
+
+  SCOPE. `extension/src/benchmark/rank.ts`, `aggregate.ts`, `report.ts`, `reportArtifact.ts`,
+  `types.ts`, and the BL-347 leaderboard surface. All pure and testable from fixtures — no live
+  models, no network, no swarm needed to test any of it.
+
+  E2E QA PROCEDURE: run the full battery through the pipeline oracle for the three Claude models and
+  publish the report. Assert the leaderboard's answer is now derived from what survived and what the
+  rework cost — and specifically, check whether the answer is STILL Haiku. If a cheap model's diffs
+  bounce more, the rework-aware ranking should say something the first-pass benchmark could not, and
+  that difference is the entire return on this epic. Assert that a genuinely tied run still reports
+  the could-not-discriminate result rather than naming a winner.
+
+acceptance:
+  feature: specs/features/BL-388-the-ranking-consumes-survival-and-rework.feature
+  steps:
+    - "A model's quality is what survived, not what it first produced"
+    - "A cheap diff that caused a lot of rework is not cheap"
+    - "The leaderboard shows the human the rework-aware answer"
+    - "Models that still cannot be told apart are still reported as a tie"
+
+human_approval: approved
+
+mutation_cost: medium

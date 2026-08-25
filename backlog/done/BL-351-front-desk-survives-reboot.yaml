@@ -1,0 +1,69 @@
+id: BL-351
+title: "A reboot silently kills the human's entire phone and Telegram surface — the front desk has no boot unit"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 5
+direction: expedite
+depends_on: []
+source: "backlog/evidence/BL-336-headless-dark-emitter-audit-20260713.md, findings G1/G2 — BL-336's audit. The coder ranked it THIRD of the five and classed it as a distinct 'process-level dark-on-restart' shape, not a vscode-gated code path."
+
+notes: |
+  THE DEFECT. The bridge and the Telegram front-desk bot — together, the human's ENTIRE phone-card,
+  holistic-UI, Concierge and Telegram surface — are running on this box right now only because
+  something launched them by hand. There is no boot-persistent unit for them. A reboot takes the
+  human's only channel to the swarm with it, and nothing brings it back.
+
+  LIVE EVIDENCE (real box, not a code reading):
+    - `systemctl list-unit-files | grep -i swarmforge` returns NOTHING. No swarmforge unit of any
+      kind is installed on this host, despite `swarmforge/deploy/generate_systemd_units.sh` existing.
+    - That generator's own `case` statement has branches for ONLY `--unit=swarm` (handoffd +
+      handoffd_supervisor) and `--unit=operator` (operator_runtime, `Restart=always`). There is NO
+      `--unit=front-desk` branch at all.
+    - `launch_front_desk.sh` is invoked only by itself, its own tests, and `build_freshness_cli.bb`'s
+      coordinator-triggered `restart-front-desk-group!` — never autonomously on boot.
+    - The three front-desk processes ARE live right now (started 2026-07-13T10:15), so this is not
+      currently dark. It is dark ON RESTART — which is worse, because it looks fine until the one
+      moment it matters.
+
+  WHY SEVERITY IS HIGH DESPITE NOTHING BEING BROKEN TODAY. handoffd, handoffd_supervisor and
+  operator_runtime all survive a reboot. The front desk is the ONE that does not — and it is the one
+  carrying the human's only way to see or talk to the swarm from his phone. BL-334 restricted the
+  operator so the human could reach it safely; BL-346 is building him a standing front door to it.
+  Both are worthless if a reboot silently removes the building. This is also exactly the class of
+  incident that produced the 2026-07-13 recovery session, where his only channel was screenshots.
+
+  SCOPE:
+    1. Add a `--unit=front-desk` branch to `swarmforge/deploy/generate_systemd_units.sh`, wired to
+       `launch_front_desk.sh`, mirroring the existing `--unit=operator` branch (including
+       `Restart=always`) — reuse that shape, do not invent a second one.
+    2. The front desk comes back after a reboot, and a died front-desk process is restarted without
+       a human.
+    3. Installing/starting the unit when the front desk is ALREADY running must not leave two of
+       them (the group is currently hand-launched, so this WILL be the state on the day it ships).
+    4. OUT OF SCOPE: actually installing the units on any particular host (that is an operator step,
+       not a code change — but say so plainly in the docs, because a generated-but-uninstalled unit
+       is exactly as dark as no unit at all, and this box proves it). The other four BL-336
+       findings. G3 (the PWA workflow's push-only trigger), which the audit explicitly declined to
+       raise as a finding.
+
+  E2E QA PROCEDURE: generate the units, install the front-desk unit on a real host, and REBOOT it —
+  a simulated restart proves nothing about a boot path, which is the entire deliverable. After the
+  reboot, assert the bridge and the bot are both up, and assert the human's Telegram message
+  actually reaches the front desk (the surface, not just the pid). Then kill the front-desk process
+  and assert it restarts unattended. Finally, install the unit while a hand-launched front desk is
+  already running and assert exactly one ends up alive.
+
+acceptance:
+  feature: specs/features/BL-351-front-desk-survives-reboot.feature
+  steps:
+    - "The front desk is among the services installed to start on boot"
+    - "The front desk comes back up after a reboot"
+    - "The human's phone and Telegram surface answers again after a reboot"
+    - "A front desk that dies is restarted without a human"
+    - "Installing the boot services does not start a second front desk"
+
+human_approval: pending
+
+mutation_cost: low

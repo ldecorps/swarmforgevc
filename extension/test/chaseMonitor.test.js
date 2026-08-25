@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -7,7 +8,7 @@ const { evaluateChase, appendChaseEvent } = require('../out/chase/ChaseMonitor')
 const { createMessage, readLog, currentStatus } = require('../out/swarm/messageBus');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-chase-'));
+  return mkTmpDir('sfvc-chase-');
 }
 
 const CFG = { chaseTimeoutSeconds: 90, maxChases: 3 };

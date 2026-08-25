@@ -1,0 +1,41 @@
+id: BL-703
+title: "Cursor Remote operator surface slice 2 — hydrate, mint, autopilot, land"
+milestone: M8
+type: feature
+severity: high
+status: done
+epic: swarmforge-console
+human_approval: approved
+priority: 03
+direction: human-requested
+depends_on: [BL-702]
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: QA
+
+invariants:
+  - "/pilot /autopilot /land refuse while swarm is live unless Stop & run confirm runs first."
+  - "/hydrate /mint refuse when any full-pack pipeline role is up; stop on specifier→coder handoff."
+  - "After /land clears in-flight work, ask each time whether to drain-stop (BL-698 Q3)."
+  - "/autopilot selects every already-specced type:defect plus high/critical (BL-698 Q4)."
+
+approval_context: >
+  Slice 2 of 3 from BL-698 (Q5 pin 2026-07-29). Depends on BL-702 confirm
+  + env-reload foundation.
+
+description: |
+  ## What
+
+  Prep and batch verbs on Cursor Remote: `/hydrate` `/mint` `/autopilot`
+  `/land` (and dry variants), swarm-up refuse + Stop & run, land-then-ask-
+  sleep.
+
+  ## Out of scope
+
+  - Shared parse / danger tiers / env-reload (BL-702)
+  - Shifts / holidays / full documenter suite (BL-704)
+
+acceptance: specs/features/BL-703-operator-hydrate-autopilot-land.feature
+
+source: |
+  BL-698 clarifications Q1–Q5 pinned 2026-07-29. Slice 2 of 3.

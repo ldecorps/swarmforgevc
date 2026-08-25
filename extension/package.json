@@ -115,6 +115,30 @@
       {
         "command": "swarmforge.clearResendApiKey",
         "title": "SwarmForge: Clear Resend API Key"
+      },
+      {
+        "command": "swarmforge.setMistralApiKey",
+        "title": "SwarmForge: Set Mistral API Key"
+      },
+      {
+        "command": "swarmforge.clearMistralApiKey",
+        "title": "SwarmForge: Clear Mistral API Key"
+      },
+      {
+        "command": "swarmforge.setTelegramBotToken",
+        "title": "SwarmForge: Set Telegram Bot Token"
+      },
+      {
+        "command": "swarmforge.clearTelegramBotToken",
+        "title": "SwarmForge: Clear Telegram Bot Token"
+      },
+      {
+        "command": "swarmforge.setTelegramChatId",
+        "title": "SwarmForge: Set Telegram Chat Id"
+      },
+      {
+        "command": "swarmforge.clearTelegramChatId",
+        "title": "SwarmForge: Clear Telegram Chat Id"
       }
     ],
     "configuration": {
@@ -124,6 +148,11 @@
           "type": "string",
           "default": "",
           "description": "Path to the target project for SwarmForge runs."
+        },
+        "swarmforge.configPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the swarm config file (e.g. swarmforge/packs/seven-pack.conf). Overrides swarmforge/swarmforge.conf when launching. SWARMFORGE_CONFIG env var takes precedence."
         },
         "swarmforge.agentCommand": {
           "type": "string",
@@ -237,13 +266,19 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
+    "postcompile": "node scripts/stampBuildSha.js",
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node scripts/recordTestDuration.js",
+    "test:properties": "npm run compile && vitest run --config vitest.properties.config.mjs",
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
-    "mutation": "npm run compile && stryker run",
+    "mutation": "npm run compile && node scripts/ensureStrykerSandboxSiblings.js && node scripts/mutation-concurrency.js run -- stryker run",
     "dry": "jscpd --config .jscpd.json src",
     "coverage": "npm run compile && vitest run --coverage",
-    "crap": "npm run coverage && node scripts/crapReport.js"
+    "coverage:lets-talk-cursor-bridge": "npm run compile && vitest run --coverage letsTalk cursorBridge telegramCursorBridge startBridgeHeadless bridgeAuth telegramCursorBridgeCli && node scripts/letsTalkCursorBridgeCoverage.js",
+    "crap": "npm run coverage && node scripts/crapReport.js",
+    "thin-main-gate": "npm run compile && node out/tools/thin-main-gate.js",
+    "crap:lets-talk-cursor-bridge": "npm run coverage:lets-talk-cursor-bridge && node scripts/crapReport.js src/bridge/letsTalkCore.ts src/bridge/letsTalkRoutes.ts src/bridge/letsTalkAudio.ts src/bridge/letsTalkLocalAudio.ts src/bridge/letsTalkUiHtml.ts src/bridge/cursorBridgeAgentSession.ts src/bridge/cursorBridgeTelegramHtml.ts src/tools/telegramCursorBridgeCore.ts src/tools/telegramCursorBridgeLive.ts src/tools/telegramCursorBridgePilot.ts src/tools/telegram-cursor-bridge.ts src/tools/start-bridge-headless.ts",
+    "mutation:lets-talk-cursor-bridge": "npm run compile && node scripts/ensureStrykerSandboxSiblings.js && node scripts/mutation-concurrency.js run -- stryker run stryker.letsTalkCursorBridge.config.json"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",
@@ -253,12 +288,17 @@
     "@types/vscode": "^1.85.0",
     "@vitest/coverage-v8": "^3.2.6",
     "c8": "^11.0.0",
+    "dependency-cruiser": "^18.0.0",
+    "fast-check": "4.9.0",
     "jscpd": "^5.0.11",
     "jsdom": "^29.1.1",
     "typescript": "^5.3.3",
     "vitest": "^3.2.6"
   },
   "dependencies": {
+    "@cursor/sdk": "^1.0.24",
+    "@resvg/resvg-js": "^2.6.2",
+    "beautiful-mermaid": "^1.1.3",
     "js-yaml": "^5.2.1"
   }
 }

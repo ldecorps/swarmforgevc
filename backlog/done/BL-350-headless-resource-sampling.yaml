@@ -1,0 +1,71 @@
+id: BL-350
+title: "The cost-health sidecar's resourceAnomalies field is always empty — nothing samples resources headless"
+milestone: M8
+type: defect
+status: todo
+severity: medium
+priority: 5
+direction: expedite
+depends_on: []
+source: "backlog/evidence/BL-336-headless-dark-emitter-audit-20260713.md, finding H1 — BL-336's audit. The coder ranked it SECOND of the five and called it 'the insidious variant the ticket warned about'."
+
+notes: |
+  THE DEFECT, AND WHY IT IS THE NASTIEST ONE IN THE AUDIT. The cost-health sidecar (BL-272) is
+  emitted headless every single day and looks perfectly healthy. Its `resourceAnomalies` field is
+  present in the schema, emitted daily — and ALWAYS EMPTY. The container looks fixed; one of its
+  own fields is silently dead. Nothing about the sidecar's existence tells you this.
+
+  ROOT CAUSE: the only thing that samples resources is
+  `extension/src/metrics/resourceTelemetry.ts:startResourceSampler`, and its ONLY trigger is
+  `extension.ts:startOrRestartResourceSampler` — called from `activate()`/bounce/target-switch,
+  i.e. `vscode.*`-gated. The audit grepped every `swarmforge/scripts/*.bb` and
+  `.github/workflows/*.yml` for `resource_sample`/`resourceTelemetry`/`ResourceSampler`: ZERO hits.
+
+  LIVE EVIDENCE, NOT A CODE READING — this is what makes it certain:
+    - `.swarmforge/telemetry/chaser-2026-07.jsonl` has 1677 real lines accumulated this month.
+      `grep -c "resource"` on it returns 0. It is the SAME file the headless chase-sweep AND the
+      host-only resource sampler both write to — only the headless side has ever written anything.
+    - `docs/briefings/2026-07-13.json`'s `resourceAnomalies` is `[]`. Today. On a live swarm.
+
+  SCOPE:
+    1. Sample resources from a headless caller — a periodic sweep inside `handoffd.bb`'s or
+       `operator_runtime.bb`'s existing poll loop, shelling to a sampling CLI. Follow the shape of
+       the sweeps that already work headlessly next to it (`emit-cost-health-sidecar!`,
+       `suite-duration-briefing-line`); do NOT invent a new scheduling mechanism.
+    2. The samples must actually reach the sidecar: a day with a real anomaly must show it in
+       `resourceAnomalies`, and a quiet day must be distinguishable from a broken one (report "none
+       found", not silence — that distinction is the entire point of this ticket).
+    3. Do not double-sample when an editor IS attached and its host-side sampler is also running.
+    4. Keep the existing telemetry writes to the same file working — this ADDS the missing writer,
+       it does not replace the chase-sweep's lines.
+    5. If the sampling logic must be reachable from a CLI, its `main()` stays a THIN wrapper over
+       exported pure helpers (standing engineering rule — logic reachable only by spawning a
+       subprocess is invisible to in-process coverage and mutation, and the hardener catches it
+       late every time).
+    6. OUT OF SCOPE: the other four BL-336 findings (BL-349/351/352/353); changing what counts as
+       an anomaly (reuse the existing detection — this ticket is about it never RUNNING, not about
+       its thresholds).
+
+  SCOPE OVERLAP — SEQUENCE, DO NOT RUN CONCURRENTLY. BL-349 (finding H4) also edits `handoffd.bb`.
+  `depends_on: []` is honest — neither BLOCKS the other — but they touch the same file and must not
+  be in flight simultaneously (constitution: Concurrent Work Orthogonality). BL-349 goes first.
+
+  E2E QA PROCEDURE: the proof is a NON-EMPTY field on a real box with NO editor attached — a fixture
+  proves nothing here, because the defect is precisely that the real path never runs. Run the real
+  headless swarm, let it sample, and assert `.swarmforge/telemetry/chaser-<month>.jsonl` gains real
+  resource lines (today: zero, out of 1677). Then emit the real cost-health sidecar and assert
+  `resourceAnomalies` reflects what was sampled. Assert a quiet period reports "none found" rather
+  than an indistinguishable `[]`. Then attach an editor and assert intervals are not double-counted.
+
+acceptance:
+  feature: specs/features/BL-350-headless-resource-sampling.feature
+  steps:
+    - "Resource samples are recorded with no editor attached"
+    - "The daily cost-health report carries the anomalies it found"
+    - "A quiet period reports no anomalies rather than reporting nothing"
+    - "Samples accumulate alongside the existing telemetry, not instead of it"
+    - "Sampling does not run twice when an editor is also attached"
+
+human_approval: pending
+
+mutation_cost: medium

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-015: COMMs hole-closing — bug regression tests and new coverage.
  */
@@ -14,7 +15,7 @@ const { pickupPendingMessages } = require('../out/swarm/respawnPickup');
 const { isHumanInputMessage, logHumanInput } = require('../out/swarm/humanInput');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl015-'));
+  return mkTmpDir('sfvc-bl015-');
 }
 
 const CFG = { chaseTimeoutSeconds: 90, maxChases: 3 };

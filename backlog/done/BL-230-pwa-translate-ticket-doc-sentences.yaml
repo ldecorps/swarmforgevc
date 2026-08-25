@@ -1,0 +1,72 @@
+id: BL-230
+title: "PWA: build-time auto-translate ticket/doc sentences into configured locales (N languages, FR first), jargon preserved"
+direction: i18n
+priority: 30
+mutation_cost: medium
+source: "operator 2026-07-10: 'FR should translate everything' -> 'sentences translated, jargon stays english' -> DECISION (via coordinator): build-time auto-translate, design for N languages."
+
+description: |
+  Follow-up to BL-118. In a non-source locale the chrome is translated but the
+  ticket titles/descriptions and doc content — the English text the operator
+  authors — stay English. Operator decisions (2026-07-10):
+    1. Sentences must be translated; jargon terms may stay English.
+    2. MECHANISM: build-time auto-translate (confirmed — no longer an open
+       decision; this ticket is now buildable).
+    3. DESIGN FOR N LANGUAGES, not just French.
+
+  So an automated pass at dashboard-build time translates source content into each
+  configured target locale, preserving jargon, and the PWA renders any configured
+  locale. French is the first delivered target; nothing hardcodes a two-language
+  assumption. pwa/app.js already has a French-specific hook (ticketTitle returns
+  ticket.titleFr, pwa/app.js:183) — generalize it to per-locale content.
+
+  Wanted behavior:
+    - A ticket title renders as a sentence in a configured target locale, from a
+      translation produced at build time; jargon tokens (BL-ids, role names,
+      product/tech terms) are preserved.
+    - A missing translation falls back to the source text (no error/blank).
+    - The source locale shows the authored text unchanged.
+    - Adding a new target locale is a config + translation-pass operation, with NO
+      per-language code change (the N-language design proof).
+
+  Mechanism/design constraints:
+    - The translation pass runs at BUILD time (backlogDashboard.ts) and writes
+      per-locale content fields into backlog.json — never a runtime browser call
+      (respect the PWA offline / no-localStorage / secret rules).
+    - The engine (an LLM via the swarm's existing model access, or a translation
+      API) is an architect/coder choice; jargon preservation is a hard requirement,
+      so it must support a preserve-list (an LLM prompt fits well).
+    - Generalize the French-specific hook and the en/fr LOCALES toggle to an
+      arbitrary configured locale set (per-locale content keyed by locale code; a
+      selector listing configured locales).
+    - Cost control: cache translations; only (re)translate source content that
+      changed, not every item every build.
+
+  Scope: extension/src/metrics/backlogDashboard.ts (build-time translation pass),
+  pwa/app.js (per-locale content + selector generalization), pwa/locales.js
+  (per-locale chrome coverage per language). Jargon preserve-list is a defined,
+  reviewable list.
+
+  DELIVER IN SLICES: (1) titles, FR, at build; (2) generalize to N locales +
+  selector; (3) descriptions and docs via the same mechanism. The independent
+  label fix is BL-229 and can proceed in parallel.
+
+acceptance: specs/features/BL-230-pwa-translate-ticket-doc-sentences.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs:
+  1. Build the dashboard for a backlog with prose ticket titles; assert backlog.json
+     carries per-locale translated fields (fr) with jargon tokens (BL-id, role name)
+     preserved. Open the PWA in French; assert titles show French sentences.
+  2. For a ticket with no translation for the active locale, assert French falls
+     back to the source text (no error/blank).
+  3. Open the PWA in the source locale; assert titles show authored English.
+  4. Add a second target locale to the configured set, rebuild, open the PWA in it;
+     assert its content is auto-translated and rendered with NO code change specific
+     to that language.
+  5. Confirm translation happens at build time (backlog.json), not via a runtime
+     browser call, and that unchanged items are not re-translated every build.
+
+# HUMAN APPROVAL: feature file specs/features/BL-230-...feature is a new draft
+# authored by the specifier and is pending human review. Mechanism (build-time
+# auto-translate) and N-language design are per the operator's 2026-07-10 decision.

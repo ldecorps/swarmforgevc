@@ -1,0 +1,101 @@
+id: BL-460
+title: "The BL-413/BL-458 /tmp sweeps are production no-ops: they bound the SCAN, not DELETES (bounded-scan wedge)"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 1
+direction: expedite
+expedite: true  # Operator directive (ldecorps relay) 2026-07-16 — spec ahead of root queue, promote ahead of paused queue
+depends_on: []
+source: ".swarmforge/operator/INTAKE-tmp-sweeps-wedged-bounded-scan-window.md — URGENT Operator directive relayed by ldecorps 2026-07-16. Defect in work QA approved+closed TODAY (BL-413, BL-458). Verified live: 76 fixture-rooted orphan processes untouched after 40+ ticks (21h old, 6h threshold); /tmp GROWING +21/min (481.8k -> 484.5k); zero sweep log lines."
+
+notes: |
+  EXPEDITE (Operator directive, 2026-07-16): a real, tracked bug against
+  just-shipped work — spec ahead of the backlog-root queue, promote ahead of the
+  paused queue. When the fix lands, the production numbers must actually fall
+  (orphan process count and /tmp entry count), not just a fixture.
+
+  ROOT CAUSE (verified in code — the defect is entirely in the WINDOWING, the
+  pure predicates are correct):
+    - operator_runtime.bb `sandbox-sweep!` (~L711):
+      `(doseq [name (take max-per-tick ((:list-entries! adapters) root))] ...)`
+    - fixture_reaper_sweep_lib.bb `sweep!` (~L137):
+      `(doseq [name (take cap ((:list-entries! adapters) root))] ...)`
+    Both examine only the FIRST `cap` (default 100) entries of /tmp in raw
+    readdir order every tick; the window advances ONLY when an entry INSIDE it is
+    deleted. Live, /tmp's first 100 readdir entries held 0 reapable (5 fresh
+    allowlist matches, 95 non-matching), so both sweeps re-scan the same 100
+    non-reapable entries forever. It is a bounded SCAN where the design needed
+    bounded DELETES. `sandbox_sweep_lib.bb` removable? and `fixture_reaper_lib.bb`
+    reapable? are FINE — do not touch them beyond the allowlist extension below.
+
+  FIX (both sweeps share the defect — prefer extracting ONE shared bounded-delete
+  windowing helper both call, so a single fix + test covers both):
+    1. Bound the DELETES per tick, not the scan. Filter the listing to reapable
+       entries FIRST and take `cap` of those, OR keep a rotating cursor so
+       successive ticks cover the whole directory. Must PROVABLY make progress
+       when >cap non-reapable entries precede the reapable ones in readdir order.
+       Watch listing cost: `fs/list-dir` on a 484k-entry dir every 30s tick is
+       itself heavy — keep the per-tick work bounded (lazy stream + prefix-filter
+       before the expensive age/liveness checks, or a cursor file). Prefix-match
+       is cheap; reserve stat/liveness/delete for prefix-matching candidates and
+       cap the deletes.
+    2. Observability ("no silent caps"): one summary line when a sweep reaps
+       something (how many), and a PERIODIC — not per-tick-spammy — line when it
+       scanned and found nothing, so a silent no-op can never again be
+       indistinguishable from success. The reaper sweep currently logs NOTHING;
+       the dir sweep logs only on a removal.
+    3. Extend BOTH allowlists EXPLICITLY (never a glob; keep the allowlist-not-
+       denylist guardrail) with the observed-at-volume prefixes, classified to
+       the sweep that owns them (dir scratch -> the dir sweep; process-spawning
+       fixture roots -> the reaper): atomic-test-, render-briefing-diagrams-test-,
+       propose-onboarding-prompts-target-, propose-onboarding-prompts-test-,
+       live-ticket-files-, chase-trend-test-, negotiate-onboarding-contract-target-,
+       relay-onboarding-negotiation-*, provision-onboarding-telegram-channel-test-.
+       Also sweep the repo's mkdtemp/create-temp-dir call sites for any others.
+    4. Regression acceptance: a fixture /tmp root whose first >cap entries are
+       non-reapable with reapable entries BEYOND them — assert the sweep still
+       reaps within a bounded number of ticks. Today's tests only proved
+       small-directory happy paths, which is exactly how the wedge passed QA.
+
+  GUARDRAILS UNCHANGED (keep exactly as-is): never touch /tmp/swarmforge-${UID}
+  (the live swarm socket root — unlinking decapitates the swarm); never remove an
+  entry with a live process rooted in it; allowlist-only; the sweep/reaper temp
+  root stays reachable through the redirectable ${SWARMFORGE_...:-<default>} env
+  seam so every test runs against a test-owned dir, NEVER the real /tmp or a live
+  swarm. "Couldn't test it safely" = a MISSING SEAM to add in-parcel.
+
+  RELATED: the +21/min growth suggests BL-459's flow-side traps may not cover the
+  currently-hot producers (the prefixes above are bb test-runner scratch dirs from
+  the live pipeline's own runs). Verify BL-459's traps actually landed on those
+  runner files; if a hot producer is uncovered, note it (this ticket bounds the
+  STOCK-sweep defect; the FLOW gap is BL-459's scope).
+
+acceptance:
+  feature: specs/features/BL-460-tmp-sweeps-bound-deletes-not-scan.feature
+  steps:
+    - "A reapable entry ordered after the per-tick scan cap is still removed within a bounded number of ticks (bound DELETES, not SCAN) — proven for BOTH the stale-dir sweep and the orphan-process reaper"
+    - "Each tick removes at most the per-tick cap of entries; the remainder are removed on subsequent ticks"
+    - "The reworked windowing removes only entries the pure predicate allows (fresh/unknown/socket-root/live-process are never removed)"
+    - "A sweep that reaps logs a summary line; a sweep that repeatedly finds nothing logs a periodic (not per-tick) nothing-found line"
+    - "The newly-observed fixture prefixes are recognised by the allowlist"
+
+qa_e2e: |
+  1. Unit/wiring (fakes, no real /tmp): drive the sweep windowing with an
+     injected listing where the first >cap entries are non-reapable and reapable
+     entries sit beyond them; assert every reapable entry is removed within a
+     bounded tick count, at most cap per tick, for BOTH sweeps (ideally the one
+     shared windowing helper). Assert fresh/unknown/socket-root/live-process
+     entries are never removed. Assert the reap-summary and periodic
+     nothing-found log lines appear as specified. Assert the observed prefixes
+     classify as known fixtures.
+  2. Live (the operator's acceptance evidence, on the production box): with the
+     new build running, confirm the ~76 orphan fixture processes are actually
+     killed and the /tmp top-level entry count FALLS (not grows) over successive
+     ticks, while the live swarm stays controllable (its socket root untouched).
+     Both numbers must move on the real box, not only in a fixture.
+
+human_approval: pending  # new feature file — needs human review of the Gherkin (BL-251). Work is Operator-authorized URGENT; approval gates the acceptance contract, not the go-ahead.
+
+mutation_cost: medium

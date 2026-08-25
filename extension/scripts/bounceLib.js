@@ -75,4 +75,123 @@ function decideNextStep(state) {
   return { action: 'wait' };
 }
 
-module.exports = { parseMarker, isMarkerFresh, filterDevHostPids, decideNextStep };
+// Ordered platform-specific default install locations to try before falling
+// back to a bare "code" resolved from PATH.
+function platformVsCodeCandidates(platform) {
+  if (platform === 'darwin') {
+    return ['/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code'];
+  }
+  if (platform === 'linux') {
+    return ['/usr/share/code/bin/code', '/snap/bin/code'];
+  }
+  return [];
+}
+
+// Resolves which VS Code CLI binary to launch the dev host with (BL-361).
+// `env.VSCODE_BIN` names an explicit operator override and is authoritative:
+// it is checked alone and never silently replaced by a platform default.
+// Otherwise tries platform-specific default install locations, then a bare
+// "code" (PATH lookup), stopping at the first candidate `isExecutable`
+// confirms can actually run ON THIS HOST. A candidate merely resolving to a
+// path is not enough - the WSL cross-arch trap is a binary that resolves
+// (it is ON PATH) but cannot execute (missing binfmt interop), so
+// `isExecutable` must be an actual execution probe, not a PATH/stat check.
+function resolveVsCodeBinary({ platform, env, isExecutable }) {
+  const override = env && env.VSCODE_BIN;
+  if (override) {
+    if (isExecutable(override)) {
+      return { binary: override };
+    }
+    return {
+      error: 'vscode-not-found',
+      message: `VSCODE_BIN=${override} cannot be executed on this host.`,
+    };
+  }
+  const candidates = [...platformVsCodeCandidates(platform), 'code'];
+  for (const candidate of candidates) {
+    if (isExecutable(candidate)) {
+      return { binary: candidate };
+    }
+  }
+  return {
+    error: 'vscode-not-found',
+    message: `No usable VS Code CLI found (tried: ${candidates.join(', ')}). Set VSCODE_BIN to override.`,
+  };
+}
+
+// Builds the dev-host launch invocation: the editor's own command line, no
+// GUI automation. `code --extensionDevelopmentPath=<extensionDir>
+// <workspacePath>` opens a new Extension Development Host window running
+// the extension in development mode - the same effect as pressing F5 in the
+// editor's own UI, on every supported platform.
+function buildDevHostLaunchCommand(binary, extensionDir, workspacePath) {
+  return { command: binary, args: [`--extensionDevelopmentPath=${extensionDir}`, workspacePath] };
+}
+
+
+// BL-578: WSL vs native — interop kill path only on WSL (WSL_DISTRO_NAME / WSLEnv).
+function isWslPlatform({ platform, env }) {
+  const e = env || {};
+  return platform === 'linux' && Boolean(e.WSL_DISTRO_NAME || e.WSL_INTEROP || e.WSLENV);
+}
+
+// Pure: PowerShell Stop-Process for Code.exe mains whose command line carries
+// --extensionDevelopmentPath=<extensionPath> (no --type= helpers).
+function powershellSingleQuoted(value) {
+  return String(value || '').replace(/'/g, "''");
+}
+
+function buildWindowsKillOldCommands(extensionPath) {
+  const psPath = powershellSingleQuoted(extensionPath);
+  const script =
+    "$p='" + psPath + "';" +
+    "Get-CimInstance Win32_Process |" +
+    " Where-Object {" +
+    " $_.Name -match '^(Code|Code - Insiders)\.exe$' -and" +
+    " $_.CommandLine -like ('*--extensionDevelopmentPath=' + $p + '*') -and" +
+    " $_.CommandLine -notlike '*--type=*'" +
+    " } |" +
+    " ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
+  return [
+    {
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-NonInteractive', '-Command', script],
+    },
+  ];
+}
+
+// BL-578: refuse bounce when headless marker present unless --force.
+function headlessMarkerDecision({ markerPresent, force }) {
+  if (!markerPresent) {
+    return { action: 'proceed' };
+  }
+  if (force) {
+    return {
+      action: 'warn-and-proceed',
+      message: 'BOUNCE WARNING: .swarmforge/headless-swarm present; --force overrides refusal',
+    };
+  }
+  return {
+    action: 'refuse',
+    message: 'BOUNCE FAILED [stage: headless-swarm] .swarmforge/headless-swarm is present; pass --force to override',
+  };
+}
+
+// Accounting for consecutive bounce kill+launch cycles (scenario 02).
+function recordBounceHostCount(priorLiveCount, terminatedCount, launchedCount) {
+  const afterKill = Math.max(0, (priorLiveCount || 0) - (terminatedCount || 0));
+  return afterKill + (launchedCount || 0);
+}
+
+module.exports = {
+  parseMarker,
+  isMarkerFresh,
+  filterDevHostPids,
+  decideNextStep,
+  resolveVsCodeBinary,
+  buildDevHostLaunchCommand,
+  isWslPlatform,
+  buildWindowsKillOldCommands,
+  headlessMarkerDecision,
+  recordBounceHostCount,
+};

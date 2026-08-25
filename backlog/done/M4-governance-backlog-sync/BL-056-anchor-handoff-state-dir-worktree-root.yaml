@@ -1,7 +1,7 @@
 id: BL-056
 title: BUG — anchor handoff outbox/inbox at the worktree root (nested-outbox stall)
 milestone: M4
-status: todo
+status: done
 priority: 03
 assigned_to: coder
 

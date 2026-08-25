@@ -1,0 +1,86 @@
+id: BL-282
+title: "Operator long-term memory: distill durable facts to a runtime-owned store + reload them per wake (Talk slice 2)"
+milestone: M8
+status: todo
+priority: 25
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-281]
+parent_epic: BL-274
+source: "BL-274 front-desk framing (.swarmforge/operator/INTAKE-telegram-front-desk-bl274.md), MEMORY slice (slice 2). Locked decision: memory = per-thread transcript reloaded every reply (BL-281) PLUS distil durable facts into the Operator's long-term memory. Specced by specifier 2026-07-11."
+
+description: |
+  Slice 2 of the refocused BL-274 (Talk). BL-281 gives each subject a per-thread
+  TRANSCRIPT reloaded on every wake (no cross-subject bleed). This slice adds the
+  Operator's LONG-TERM memory: durable, generalizable facts distilled from
+  conversations, persisted across the disposable Operator's death/restarts, and
+  reloaded on every wake alongside the subject transcript.
+
+  SCOPE CORRECTION (verified 2026-07-11): the BL-274 epic listed "the Operator's
+  long-term memory store" under EXISTING-INFRA-TO-REUSE, but there is NO operator
+  memory infra today — operator_runtime.bb and operator.prompt have zero memory
+  refs, and no memory files/dirs exist. This slice therefore BUILDS that store
+  (net-new), it does not reuse one. It is modelled on BL-275's proven store split,
+  not invented from scratch.
+
+  Live layer verified 2026-07-11 (reuse the PATTERN; the store itself is net-new):
+    - BL-275 store split is the template: a PURE lib (support_lib.bb — thread shape,
+      append, adapter-injected record-interaction!) over an fs adapter
+      (support_thread_store.bb — atomic-spit! JSON under .swarmforge/support/threads/,
+      read/write/list adapters constructed by adapters-for state-dir). Mirror this
+      exactly for a NET-NEW long-term memory store:
+        * a PURE memory lib: given the current store + a set of proposed durable facts,
+          return the store with those facts appended and DEDUPED (idempotent);
+          given the store, return the facts to load for a wake.
+        * an fs adapter alongside support_thread_store.bb: atomic-spit! JSON for the
+          store, under a sibling machine-local path (e.g. .swarmforge/support/memory/),
+          runtime-owned like the thread store.
+    - Distillation is an Operator (LLM) JUDGEMENT, made testable the BL-275 way: the
+      disposable Operator PROPOSES the durable facts; the pure lib appends+dedups; the
+      adapter writes. Drive tests with the proposed-facts input + fake read/write
+      adapters — never a real LLM call. (Mirror record-interaction!'s adapter-injected
+      decision seam.)
+    - Reload is the BL-281 transcript-reload extended: on a wake the runtime loads the
+      long-term store alongside that subject's transcript and passes BOTH into the
+      disposable Operator's kickoff context. The Operator prompt gains the distil +
+      reload guidance WITH this slice (specifier-owned prompt change, sequenced).
+
+  Wanted behavior (see the feature file):
+    - A durable fact distilled by one disposable Operator run is available to a later
+      run (persists across the per-event LLM's death).
+    - Every wake reloads the durable facts together with the subject's transcript.
+    - Long-term memory holds only durable, GENERALIZABLE facts; a subject's raw private
+      transcript is never written into it, so reloading memory for subject B never
+      surfaces subject A's transcript (the BL-281 no-bleed guarantee is preserved).
+    - Re-distilling an already-known fact does not duplicate it (idempotent append).
+
+  Scope boundary: MVP loads ALL durable facts on each wake — relevance-RANKING /
+  retrieval scoring is DEFERRED (avoid premature retrieval infra; the distilled fact
+  set is small and already curated). Notify (BL-284), Decide+Status (BL-285),
+  coordinator handoff (BL-283), and lifecycle/close (BL-276) remain their own slices.
+
+  Constraints / testability:
+    - The append+dedup and the load-for-wake are PURE functions over provided inputs
+      (fixture store + proposed facts); the fs adapter is the only impure edge. NO real
+      LLM, NO real network, NO real timers. Never seed a fixture timestamp from the real
+      clock while the code reads its own clock (de0991e).
+    - Anti-bleed is a hard contract: the distil step must extract only durable,
+      generalizable facts; raw per-subject messages stay only in that subject's
+      transcript. A test must prove a wake for subject B, with subject A having private
+      undistilled transcript detail, never exposes subject A's transcript.
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+    - The long-term store is machine-local (gitignored), never committed; it lives
+      under the runtime's state dir like the thread store.
+
+  QA e2e procedure (fake adapters/proposed-facts; no real LLM/network/timer):
+    - Distil a durable fact via the pure lib + a fake write adapter; start a fresh
+      "run" reading the persisted store; assert the fact is present (survives restart).
+    - Load a wake context for a subject that has a transcript while the store holds
+      durable facts; assert BOTH the facts and that subject's transcript are present,
+      and a second subject's transcript is absent (independence + no-bleed).
+    - Distil the same fact twice; assert the store holds it exactly once (idempotent).
+    - Assert a raw subject message string is never written into the long-term store.
+
+acceptance: specs/features/BL-282-operator-longterm-memory.feature
+mutation_cost: medium

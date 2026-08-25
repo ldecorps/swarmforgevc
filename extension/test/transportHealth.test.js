@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-121: delivery-level transport health detection — unit tests.
  *
@@ -23,7 +24,7 @@ const {
 const NOW = new Date('2026-07-05T22:00:00Z').getTime();
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-transport-health-'));
+  return mkTmpDir('sfvc-transport-health-');
 }
 
 function writeHandoff(dir, name, headers, mtimeMs) {

@@ -1,11 +1,16 @@
 #!/usr/bin/env node
-// Robust extension dev-host bounce (BL-058).
+// Robust extension dev-host bounce (BL-058, cross-platform launch by BL-361).
 //
 // Contract: exit 0 only after observing a FRESH activation marker written by
 // the extension running in Development mode — never on a blind delay. Any
 // failed stage exits non-zero naming the stage. If a dev host for this
 // extension path is already running, it is terminated first, so a successful
 // run always ends with exactly one dev host on the freshly compiled build.
+//
+// The dev host is launched by VS Code's own command line
+// (--extensionDevelopmentPath=<ext-dir>), on every supported platform - no
+// GUI automation. Set VSCODE_BIN to name a specific VS Code CLI binary;
+// otherwise a platform default is tried, then a bare "code" on PATH.
 //
 // Stages: compile → vscode-not-found → workspace-not-found →
 //         terminate-old-dev-host → launch-trigger / activation-timeout
@@ -15,12 +20,21 @@ const { spawnSync, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { isMarkerFresh, filterDevHostPids, decideNextStep } = require('./bounceLib');
+const {
+  isMarkerFresh,
+  filterDevHostPids,
+  decideNextStep,
+  resolveVsCodeBinary,
+  buildDevHostLaunchCommand,
+  isWslPlatform,
+  buildWindowsKillOldCommands,
+  headlessMarkerDecision,
+  recordBounceHostCount,
+} = require('./bounceLib');
 
 const EXT_DIR = path.resolve(__dirname, '..');
 const WORKSPACE_PATH = path.join(EXT_DIR, 'swarmforge-vc.code-workspace');
 const MARKER_PATH = path.join(EXT_DIR, '.dev-activation.json');
-const VSCODE_APP = process.env.VSCODE_APP || '/Applications/Visual Studio Code.app';
 
 const POLL_INTERVAL_MS = 500;
 const ATTEMPT_TIMEOUT_MS = Number(process.env.BOUNCE_ATTEMPT_TIMEOUT_MS || 15000);
@@ -62,14 +76,25 @@ function compile() {
   }
 }
 
+// An actual execution probe, not a PATH/stat check - on this host's exact
+// WSL trap, a Windows `code` binary resolves on PATH but dies with
+// "Exec format error" (missing WSLInterop binfmt registration), so merely
+// finding the path is not enough to call it usable.
+function isExecutable(binary) {
+  const result = spawnSync(binary, ['--version'], { stdio: 'ignore' });
+  return !result.error && result.status === 0;
+}
+
 // ── stage: vscode-not-found / workspace-not-found ────────────────────────────
 function checkPrerequisites() {
-  if (!fs.existsSync(VSCODE_APP)) {
-    fail('vscode-not-found', `VS Code not found at: ${VSCODE_APP} (set VSCODE_APP to override).`);
+  const resolved = resolveVsCodeBinary({ platform: process.platform, env: process.env, isExecutable });
+  if (resolved.error) {
+    fail(resolved.error, resolved.message);
   }
   if (!fs.existsSync(WORKSPACE_PATH)) {
     fail('workspace-not-found', `Workspace file not found at: ${WORKSPACE_PATH}`);
   }
+  return resolved.binary;
 }
 
 // ── stage: terminate-old-dev-host ────────────────────────────────────────────
@@ -105,32 +130,23 @@ function terminateOldDevHosts() {
 }
 
 // ── launch trigger ───────────────────────────────────────────────────────────
-// The standard CLI on this machine does not reliably start an Extension
-// Development Host directly, so the trigger opens the workspace and presses
-// F5 (key code 96) to fire the "Run Extension" launch configuration.
-function triggerLaunch() {
-  const open = spawnSync('open', ['-a', 'Visual Studio Code', WORKSPACE_PATH]);
-  if (open.status !== 0) {
-    return false;
-  }
-  const script = [
-    'tell application "Visual Studio Code" to activate',
-    'delay 2',
-    'tell application "System Events" to tell process "Code" to key code 96',
-  ].join('\n');
-  const osa = spawnSync('osascript', ['-e', script]);
-  return osa.status === 0;
+// The editor's own command line starts the Extension Development Host
+// directly (BL-361) - no GUI automation, on any platform.
+function triggerLaunch(vscodeBinary) {
+  const { command, args } = buildDevHostLaunchCommand(vscodeBinary, EXT_DIR, WORKSPACE_PATH);
+  const result = spawnSync(command, args, { stdio: 'ignore' });
+  return !result.error && result.status === 0;
 }
 
 // ── stage: launch-trigger / activation-timeout ───────────────────────────────
-function launchAndVerify() {
+function launchAndVerify(vscodeBinary) {
   const baselineMs = Date.now();
   const startMs = baselineMs;
   let attempt = 1;
   let attemptStartMs = startMs;
 
   console.log(`bounce: launching dev host (attempt ${attempt}/${MAX_ATTEMPTS})…`);
-  if (!triggerLaunch()) {
+  if (!triggerLaunch(vscodeBinary)) {
     console.error('bounce: launch trigger reported an error; will retry per policy.');
   }
 
@@ -154,7 +170,7 @@ function launchAndVerify() {
         attempt += 1;
         attemptStartMs = Date.now();
         console.log(`bounce: no dev host appeared; retrying launch (attempt ${attempt}/${MAX_ATTEMPTS})…`);
-        if (!triggerLaunch()) {
+        if (!triggerLaunch(vscodeBinary)) {
           console.error('bounce: launch trigger reported an error; will retry per policy.');
         }
         break;
@@ -171,17 +187,55 @@ function launchAndVerify() {
   }
 }
 
-function main() {
+function repoRoot() {
+  return path.resolve(EXT_DIR, '..');
+}
+
+function headlessMarkerPath() {
+  return path.join(repoRoot(), '.swarmforge', 'headless-swarm');
+}
+
+function parseForceFlag(argv) {
+  return (argv || []).includes('--force');
+}
+
+function terminateWindowsDevHosts() {
+  if (!isWslPlatform({ platform: process.platform, env: process.env })) {
+    return;
+  }
+  const cmds = buildWindowsKillOldCommands(EXT_DIR);
+  for (const { command, args } of cmds) {
+    console.log(`bounce: WSL interop kill-old via ${command}`);
+    spawnSync(command, args, { stdio: 'ignore' });
+  }
+}
+
+function main(argv = process.argv.slice(2)) {
+  const force = parseForceFlag(argv);
+  const markerPresent = fs.existsSync(headlessMarkerPath());
+  const guard = headlessMarkerDecision({ markerPresent, force });
+  if (guard.action === 'refuse') {
+    console.error(guard.message);
+    process.exit(1);
+  }
+  if (guard.action === 'warn-and-proceed') {
+    console.warn(guard.message);
+  }
+
   compile();
-  checkPrerequisites();
+  const vscodeBinary = checkPrerequisites();
+  const prior = devHostPids().length;
   terminateOldDevHosts();
-  launchAndVerify();
+  terminateWindowsDevHosts();
+  const afterKill = devHostPids().length;
+  launchAndVerify(vscodeBinary);
 
   const pids = devHostPids();
-  if (pids.length !== 1) {
+  const live = recordBounceHostCount(prior, Math.max(0, prior - afterKill), pids.length > 0 ? 1 : 0);
+  if (pids.length !== 1 || live !== 1) {
     fail(
       'dev-host-count',
-      `Expected exactly one dev host after the bounce, found ${pids.length} (${pids.join(', ') || 'none'}).`
+      `Expected exactly one dev host after the bounce, found ${pids.length} (accounting=${live}; ${pids.join(', ') || 'none'}).`
     );
   }
   console.log(`bounce: SUCCESS — verified fresh activation, dev host pid ${pids[0]}.`);

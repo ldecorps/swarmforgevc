@@ -1,0 +1,78 @@
+id: BL-504
+title: "TS metrics extractTicketId uses an unbounded [A-Za-z]+ prefix and requires a hyphen: it drops no-hyphen task names (blNNN) and over-matches non-tickets (usable-493, ABL-217), silently corrupting stage-dwell / holding-window / rework metrics"
+milestone: M8
+type: defect
+severity: low
+epic: ""
+priority: 6
+direction: expedite   # silent metric-correctness defect; bugs-first, but below the daemon-facing BL-503
+depends_on: []
+source: >
+  Sibling of BL-503, from the same coordinator rule_proposal (scope engineering), live
+  2026-07-17, handoff 000558. Split out because it is a different subsystem (extension-host
+  TS metrics, not the .bb daemon), carries the full TS mutation/CRAP gate, and is lower
+  severity (wrong/omitted metrics vs a dropped board row + spurious auto-route). Filed rather
+  than left latent per engineering.prompt's "enumerate the siblings of a shared defect" rule.
+
+notes: |
+  ROOT CAUSE (grep- and node-confirmed 2026-07-17):
+    - extension/src/metrics/swarmMetrics.ts:351 — the SHARED exported extractTicketId is
+      `task.match(/^([A-Za-z]+-\d+)/)` returning match[1] verbatim. Two defects:
+        (a) HYPHEN REQUIRED: "bl493-fold-ticket-events" -> null (no hyphen between "bl" and
+            "493"), so the ticket is omitted from every derived metric.
+        (b) UNBOUNDED PREFIX (over-match): the prefix is [A-Za-z]+, not the (BL|GH) allowlist
+            the two .bb extractors use. Verified: "usable-493-x" -> "usable-493" and
+            "ABL-217-x" -> "ABL-217" — it fabricates/swallows ids. This is the exact
+            BL-217/BL-222 failure mode the .bb allowlist was introduced to prevent; this TS
+            copy never adopted the allowlist.
+    - Consumers that inherit the bug (all call the shared function, none should keep a copy):
+      stageDwell.ts, ticketHoldingWindows.ts (L34), reworkObservatorySource.ts (L57,70),
+      swarmState.ts (L125). Net: a blNNN ticket is missing from these reports, and a
+      non-ticket "word-NN" task token can inject a bogus row.
+    - OUT OF SCOPE: gitHistoryAdapter.ts has its OWN extractTicketId(filePath) over backlog
+      FILE PATHS, which are always canonical "BL-NNN-slug" — unaffected, do not touch.
+
+  THE FIX (align with the .bb extractors; exact regex is the coder's call):
+    1. ADOPT THE (BL|GH) ALLOWLIST — never an unbounded [A-Za-z]+. Closes the over-match
+       (the "usable-493" / "ABL-217" rows in feature scenario 01 are the regression).
+    2. HYPHEN OPTIONAL — "blNNN" and "BL-NNN" both match.
+    3. CANONICALIZE — return upper-case hyphenated BL-NNN regardless of input case/hyphenation
+       (it returns the raw match today), so downstream keys/joins agree with canonical ids.
+
+  SCOPE (verify the live path at build):
+    - extension/src/metrics/swarmMetrics.ts — extractTicketId only; consumers inherit.
+    - Full TS gate: 100% coverage, no surviving mutants, CRAP <= 6. Scope Stryker --mutate to
+      the COMPILED out/**/*.js path for the changed file, NEVER src/**/*.ts (BL-387).
+
+  ORTHOGONALITY: touches only extension/src/metrics/swarmMetrics.ts (extension-host TS).
+  Disjoint from BL-503 (which is .bb only) and from all current in-flight tickets; the two can
+  run concurrently. If both BL-503 and BL-504 are in flight, they share NO files.
+
+  QA E2E PROCEDURE:
+    1. Drive stage-dwell-report.ts (or rework-observatory.ts) over a fixture mailbox whose
+       handoffs use `task: bl493-...`; assert the report includes an entry keyed by "BL-493".
+    2. Regression: a fixture using the canonical `task: BL-493-...` yields the identical entry.
+    3. Over-match guard: a fixture handoff with `task: usable-217-...` or `task: ABL-217-...`
+       for a role does NOT inject a "usable-217"/"ABL-217" row and does NOT resolve to BL-217.
+
+acceptance:
+  # The observable contract: the shared TS metrics extractTicketId resolves a no-hyphen task
+  # header (blNNN) to the canonical BL-NNN (so the ticket appears in derived metrics), and
+  # rejects any non-(BL|GH) prefix (no over-match), canonicalizing every match to upper-case
+  # hyphenated form. Consumers (stage-dwell, holding windows, rework observatory) inherit it.
+  feature: specs/features/BL-504-ts-metrics-ticket-id-extractor-allowlist-hyphen-optional.feature
+
+human_approval: approved
+approval_context: >
+  Lower-severity TS sibling of BL-503, same root cause surfaced by the coordinator today.
+  The shared swarmMetrics.ts extractTicketId both (a) drops no-hyphen task names (blNNN ->
+  null, so those tickets vanish from stage-dwell / holding-window / rework metrics) and,
+  worse, (b) uses an UNBOUNDED [A-Za-z]+ prefix that over-matches — "usable-493" resolves to
+  "usable-493" and "ABL-217" to "ABL-217", the very id-swallowing the .bb allowlist prevents.
+  FIRM: adopt the (BL|GH) allowlist, make the hyphen optional, canonicalize to BL-NNN; fix the
+  shared function only (consumers inherit); leave gitHistoryAdapter's filename extractor alone.
+  I split this from BL-503 because it is a different subsystem with the full TS mutation gate
+  and is lower severity — approve/defer/reject it independently of BL-503. If you would rather
+  fold it into BL-503 as one cross-cutting fix, say so and I will merge them.
+
+mutation_cost: low

@@ -1,7 +1,7 @@
 id: BL-060
 title: Cut test-gate cost per parcel — fast suite first, tiered stage runs only if still needed
 milestone: M4
-status: todo
+status: done
 priority: 01
 assigned_to: coder
 

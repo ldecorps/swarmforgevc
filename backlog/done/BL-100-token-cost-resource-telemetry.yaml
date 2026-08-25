@@ -1,0 +1,86 @@
+id: BL-100
+title: cost & resource telemetry — tokens per agent and per ticket, CPU/RAM per role, folded into trends, briefing, UI, and phone
+milestone: M5
+status: todo
+priority: 02
+direction: non-aligned
+source: operator request 2026-07-04 ("token consumption per agent, per ticket; cpu/ram; anything useful — rather too much than not enough")
+depends_on: BL-096 (trend framework), BL-098 (telemetry log family + holding periods)
+
+notes: |
+  Sliced by specifier 2026-07-09 (coder scope-gap evidence
+  BL-100-scope-gap-20260709.md): this ticket is now the COMPUTATION/TELEMETRY
+  layer (cost-01/02/03/04/07) — transcript token parser, per-ticket
+  attribution, pricing/cost, resource sampler, absent-data zeros — all
+  buildable now against BL-096/BL-098. The briefing "cost & health paragraph"
+  (cost-05) and the phone/backlog.json surfacing (cost-06) moved to BL-213:
+  they need BL-097's Action/backlog.json (unbuilt) and an extendable briefing
+  content path (BL-099 is "done" but LLM-composed via a nudge with no code
+  path/sidecar to extend). BL-100's depends_on (BL-096, BL-098) is now correct
+  for what remains.
+  Extend the metrics story with cost and resource telemetry. Operator
+  stance: include generously — they will prune later. Everything lands in
+  the BL-096 trend framework (series + windowed delta), the bridge/BL-094
+  UI, the BL-099 briefing, and (at daily granularity) the BL-097 phone
+  dashboard.
+
+  Data sources (verified 2026-07-04, no new infrastructure):
+    - TOKENS: the claude CLI already writes per-message usage
+      (input/output/cache-creation/cache-read tokens) into JSONL
+      transcripts under ~/.claude/projects/<cwd-slug>/, one directory per
+      working directory — and each role's worktree gets its own slug, so
+      per-agent attribution is a direct parse. Read-only; never modify
+      these files.
+    - PER-TICKET attribution: join transcript message timestamps against
+      each role's ticket-holding windows (handoff dequeued_at ->
+      completed_at from headers plus the BL-098 telemetry log). This is
+      honest-approximate: label it "attributed", document the method;
+      unattributable activity (idle chatter, startup) reports under an
+      explicit "unattributed" bucket per role, never silently dropped or
+      smeared across tickets.
+    - COST: estimated dollars from a versioned model-pricing table
+      committed in the repo (per-model input/output/cache rates). The
+      table is data, not code; updating prices is a one-line PR. Cache
+      reads priced separately so the cache-hit savings are visible.
+    - CPU/RAM: the extension host samples each role pane's process tree
+      (rss, %cpu) on a slow timer and appends to the BL-098 telemetry
+      JSONL family (type: resource_sample). Also the extension host's own
+      process. Local-only data, same posture as chase/nudge events.
+
+  Deliverable metrics (the generous set; operator prunes later):
+    - Tokens (in/out/cache-read/cache-created) and estimated cost: per
+      agent per day; per ticket (attributed, with unattributed bucket);
+      per model. Cost-per-closed-ticket alongside cycle time.
+    - CPU/RAM: current and trend per role; host process included; flag
+      the hungriest role in the briefing only when it changed
+      meaningfully (trend framework decides "meaningfully").
+    - Flow balance: backlog intake rate vs closure rate (specced/day vs
+      closed/day) — the "are we sinking or draining" number.
+    - Reliability roll-up (from BL-098 + handoffd state): chases, nudges,
+      respawns, failed deliveries, daemon restarts, context-clears
+      (BL-089 events) — per day, trended.
+    - Swarm uptime: continuous-run duration, incident count (tmux/daemon
+      down events where detectable).
+
+  Surfaces:
+    - Metrics module/CLI + bridge endpoint: full detail, live.
+    - BL-099 briefing: a "cost & health" paragraph — tokens/cost
+      yesterday per agent (one line), top-3 most expensive tickets to
+      date, CPU/RAM anomalies only, flow balance, reliability counts —
+      all as trends per the briefing's trend rule.
+    - Phone (BL-097): daily granularity WITHOUT publishing runtime data
+      to git directly — the committed daily briefing file is the carrier:
+      the Action parses the latest docs/briefings/<date>.md metrics block
+      (or a small committed sidecar docs/briefings/<date>.json emitted by
+      the same briefing flow) into backlog.json. Live-granularity
+      cost/resource data stays local to the bridge/UI.
+
+  Scope (this ticket, sliced): metrics module (transcript parser,
+  attribution join, pricing table, resource-sample reader), host resource
+  sampler (thin adapter), bridge/CLI additions. Transcript parsing must
+  tolerate unknown JSONL fields and missing dirs (role never ran here ->
+  zeros). The briefing content contract addition and the Action/backlog.json
+  additive fields are OUT of scope here — they are BL-213.
+
+acceptance: specs/features/BL-100-token-cost-resource-telemetry.feature
+mutation_cost: low

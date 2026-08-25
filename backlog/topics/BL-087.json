@@ -1,0 +1,1 @@
+{"id":"BL-087","messages":[{"seq":0,"ts":1784302565263,"author":"swarm","type":"outbound","text":"BL-087 ✅ done — BUG — chaser respawns a live, actively-working agent (liveness false positive)"},{"seq":1,"ts":1784518662504,"author":"swarm","type":"outbound","text":"BL-087 ✅ done — BUG — chaser respawns a live, actively-working agent (liveness false positive)"}]}

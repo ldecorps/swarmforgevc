@@ -1,0 +1,79 @@
+id: BL-395
+title: "The NeedsApproval message shows the terminal's input box and footer, not the question — strip VISIBLE chrome"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784071005331.md — a Telegram question the Operator could not answer, 2026-07-14T23:16Z: 'Can you make this look better?'. Drained with the human 2026-07-15: he attached a screenshot confirming 'this' = the NeedsApproval message, and it is showing his Claude Code TUI chrome (box-rule lines, the '⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents' footer, a bare ❯ prompt, spinner/tofu glyphs) instead of the question."
+
+notes: |
+  WHAT THE HUMAN SAW (his screenshot, BL-359-shaped NeedsApproval on Telegram). The message body was:
+  a prompt line, then a wall of `────` box-rule separators, an unrenderable `▯▯` glyph, then
+  `bypass permissions on (shift+tab to cycle) · ← for agents`. That is the Claude Code TUI's input
+  box and permission-mode footer, scraped from the specifier's pane — not the approval question.
+
+  THIS IS A DISTINCT FOLLOW-ON TO BL-391, NOT A DUPLICATE. BL-391 stripped INVISIBLE control bytes
+  (ANSI/CSI/OSC escapes + C0 bytes) at the human-facing boundary and shipped. Its `stripTerminalChrome`
+  (extension/src/panel/needsHumanDetection.ts:18) EXPLICITLY, by its own comment, leaves VISIBLE
+  glyphs alone: "never a Unicode GLYPH like a box-drawing character or prompt arrow ... only invisible
+  control bytes are stripped." So after BL-391 the escape codes are gone (the screenshot shows no
+  `\e[..m`) but the box-rule lines, the footer furniture and the tofu glyphs remain — because they are
+  visible printable text. That surviving VISIBLE chrome is this ticket.
+
+  THE LIVE SEAM — VERIFIED, NOT ASSUMED (specifier's own rule). `extractQuestionSnippet`
+  (needsHumanDetection.ts:29) is the SINGLE production source of the human-facing snippet:
+  `extension/src/bridge/gateSnapshot.ts:42` calls it to build each gate's `snippet`, which becomes the
+  NeedsApproval event payload (swarmEventStream.ts) that both the Telegram send AND the git-committed
+  topic record (`backlog/topics/*.json`) render. Because it is ONE source feeding BOTH destinations,
+  fixing it there covers the send and the record together (scenario 05 locks that). The defect is the
+  extraction heuristic: it takes the LAST 3 non-empty pane lines, which for a Claude Code TUI are the
+  input box + footer, i.e. reliably chrome — the real question sits ABOVE the input box.
+
+  THE FIX. Extend the human-facing snippet extraction to EXCLUDE visible terminal chrome LINES before
+  choosing the last few real content lines, complementing BL-391's invisible-byte strip. A line is
+  chrome when (after byte-stripping) it is:
+    - ENTIRELY box-drawing / horizontal-rule characters (e.g. a run of `─`/`━`/`│`), optionally with
+      spinner/placeholder glyphs and whitespace;
+    - the Claude Code permission/shortcut FOOTER furniture — the known status hints such as
+      `bypass permissions`, `shift+tab to cycle`, `accept edits`, `for agents`, `⏵⏵`;
+    - a BARE prompt marker line (`❯`/`>` with only placeholder text like `type`/`message`, matching
+      needsHumanDetection.ts's own input-box regex) or an empty line;
+    - only spinner / unrenderable placeholder glyphs.
+  Keep the meaningful lines. The result is the actual question, not the box and footer.
+
+  PRECISION IS LOAD-BEARING — THE NEIGHBOUR GUARD (scenario 04, BL-391's own posture). BL-391
+  deliberately did NOT touch visible text precisely so it could never mangle prose. This ticket must
+  reintroduce visible-line filtering WITHOUT that risk: a line is dropped only when it is
+  UNAMBIGUOUSLY chrome (all-rule-characters, a known footer string, a bare prompt marker). A line that
+  contains real words is NEVER chrome, even if it also contains a dash. Prove ordinary prose passes
+  through byte-identical — a sanitiser that eats a real question to remove a box rule is a worse bug
+  than the one it fixes.
+
+  E2E QA PROCEDURE. Feed `extractQuestionSnippet` a real captured Claude Code pane (reproduce the
+  screenshot: a question line, then the box-rule input box, then the `⏵⏵ bypass permissions ...`
+  footer) and assert the snippet is the question line only — no `────`, no `bypass permissions`, no
+  bare `❯`, no tofu glyph. Assert an ordinary prose message is returned unchanged. Then drive a live
+  NeedsApproval to Telegram (or inspect the topic record it writes) and confirm the human sees the
+  question, not the input box. No live tmux needed for the unit-level proof — the function is pure
+  over a captured string.
+
+  ADJACENT, DO NOT DUPLICATE. BL-391 (invisible bytes) is the predecessor at the SAME boundary and is
+  already merged, so no concurrent-edit hazard — this is additive. BL-325 established the snippet must
+  carry the real QUESTION (not just a ticket id); this ticket is what makes that promise actually
+  readable. BL-392/BL-393 are the same human-grade-rendering spirit for the briefing email.
+
+acceptance:
+  feature: specs/features/BL-395-approval-snippet-visible-chrome.feature
+  steps:
+    - "The input-box border rules are excluded from the snippet"
+    - "The terminal permission-mode and shortcut footer is excluded"
+    - "The actual question survives the chrome filter"
+    - "An ordinary prose message is left unchanged (neighbour guard)"
+    - "The ticket's topic record is free of the chrome too"
+
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
+
+mutation_cost: low

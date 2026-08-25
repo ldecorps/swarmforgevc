@@ -1,0 +1,95 @@
+id: BL-285
+title: "Operator Decide + Status: answer status queries from a topic + relay gate approvals via the BL-240 write path (Talk slice 4)"
+milestone: M8
+status: todo
+priority: 35
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-281]
+parent_epic: BL-274
+source: "BL-274 front-desk framing (.swarmforge/operator/INTAKE-telegram-front-desk-bl274.md), DECIDE+STATUS slice (slice 4). Epic intent: ask the desk about swarm/backlog/ticket state (reuse projections) + approve gates from a topic (reuse BL-240 write + BL-265 gate view). Specced by specifier 2026-07-11 against the LANDED BL-281 egress."
+
+description: |
+  Slice 4 (Decide + Status) of the refocused BL-274 front desk. The Operator, handling
+  a topic message, can now either ANSWER a status question or RELAY a gate decision,
+  replying into the same topic — over the landed BL-281 egress (inbound
+  POST /telegram-inbound -> operator event -> reply outbox -> SSE -> bot -> topic).
+  Only the ACTION differs from Talk; the transport is unchanged.
+
+  STATUS (verified reuse 2026-07-11): a status query in a topic -> the Operator reads
+  the relevant LIVE projection and replies the answer into that topic. Projections to
+  read (all git/host-derivable, already built):
+    - backlog.json (computeBacklogDashboard, the git projection: ticket states,
+      board, burndown) for ticket/backlog questions.
+    - the operator status.json (operator_runtime.bb write-status!, .swarmforge/operator/
+      status.json: pipeline/threads/heartbeat) for swarm-liveness questions.
+    - the BL-265 gate view (gateSnapshot.ts computeRoleGateStatesLive/
+      filterPendingGates) for "who needs me / what's gated" questions.
+  The Operator NEVER fabricates state — the reply is derived from the projection, so an
+  unknown answer is "I don't know / not in the projection", never a guess.
+
+  DECIDE (verified reuse 2026-07-11): an approval / go-ahead in a topic -> the Operator
+  answers a CURRENTLY-PENDING gate via the existing BL-240 write path, then confirms in
+  the topic. Seams:
+    - Which gate: the BL-265 live gate view (computeRoleGateStatesLive + filterPendingGates)
+      is the source of truth for pending gates. The Operator answers ONLY a gate that is
+      actually pending (mirrors BL-240 gateAnswerPath's "only answer a currently-captured
+      gate" - the live pane is truth, no gate-id ledger).
+    - How: answerCapturedGate (extension/src/bridge/gateAnswerPath.ts, BL-240) is the
+      ONE write path - do NOT invent a second. Reaching it from the Operator's handling
+      must stay consistent with BL-281's indirection (the Operator does not directly
+      drive a pane/route; it emits an intent the bridge/runtime executes via the BL-240
+      path, same posture as the reply outbox). Exact wiring is the build's call, but it
+      REUSES the BL-240 write path + BL-265 view, adds no new gate surface.
+    - Disambiguation (anti-fabrication, hard contract): exactly one pending gate ->
+      answer it + confirm; NO pending gate -> answer nothing, reply "nothing to approve";
+      MORE THAN ONE pending gate -> answer nothing, ask in-topic which gate. The Operator
+      never fabricates an approval and never answers a non-pending gate.
+
+  The desk's decide/status guidance lands in the Operator prompt WITH this slice
+  (specifier-owned prompt change, sequenced): how to recognise a status query vs a
+  decision, which projection to read, and the answer-only-a-pending-gate + disambiguate
+  rules.
+
+  Wanted behavior (see the feature file):
+    - A status query in a topic is answered in that same topic from the live projection,
+      stating the actual projected state (never fabricated).
+    - An approval with exactly one pending gate answers that gate via the BL-240 write
+      path and confirms in the topic.
+    - An approval with no pending gate writes no gate answer and says there is nothing to
+      approve.
+    - An approval with several pending gates writes no gate answer and asks which to
+      answer.
+
+  Scope boundary: this slice is READ status + RELAY a gate approval. Turning an
+  actionable topic discussion into a NEW BL-### (coordinator handoff) is BL-283;
+  proactive pings are BL-284; lifecycle/close is BL-276. Threat-model hardening of the
+  gate-answer auth (BL-241) is unchanged and out of scope.
+
+  Constraints / testability:
+    - The gate-selection decision (given the live pending-gate view + a decision ->
+      {answer role R | ask-which | nothing}) is a PURE function over provided inputs,
+      unit-tested with a fixture gate view - no live swarm, no tmux, no network. The
+      status answer is composed over a fixture projection. Answering + replying go
+      through fake adapters (fake answerCapturedGate/sendAnswer + fake reply outbox),
+      never a real pane/route. NO real timers; never seed a fixture timestamp from the
+      real clock while the code reads its own clock (de0991e).
+    - Answer-only-a-pending-gate is a hard contract: a test with zero and with multiple
+      pending gates asserts NO gate answer is written and the right in-topic reply.
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+    - Reuse ONLY the existing gate-answer write path (answerCapturedGate) + gate view
+      (gateSnapshot) + the built projections; add no new write surface or projection.
+
+  QA e2e procedure (fixture projection + fixture gate view + fake adapters; no live swarm):
+    - Feed a status query about a known ticket; assert the reply carries that ticket's
+      projected state and goes into the asking topic; feed a query about an unknown thing
+      and assert it does not fabricate.
+    - Feed an approval with exactly one pending gate; assert answerCapturedGate is called
+      for that gate and the topic gets a confirmation.
+    - Feed an approval with zero pending gates; assert no gate answer and a
+      "nothing to approve" reply. Feed one with several pending; assert no gate answer and
+      a "which gate?" reply.
+
+acceptance: specs/features/BL-285-operator-decide-status.feature
+mutation_cost: medium

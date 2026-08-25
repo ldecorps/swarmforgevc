@@ -1,0 +1,267 @@
+id: BL-629
+title: "`build_freshness_cli.bb sync` must refuse a `main` tip that is not QA-approved — the guard that would have contained the BL-590 pre-QA landing"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 04
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_wiring:
+  - "swarmforge/scripts/build_freshness_cli.bb::swarmforge-QA::the gate only matters if sync's own run path consults the QA integration ref — a lib-only decision with no CLI call site repeats BL-419"
+
+approval_context: >
+  Operator ruling 2026-07-25 on the BL-590 incident: fix forward rather than
+  revert, with the sync frozen until BL-590 clears QA, plus this
+  recurrence-guard ticket. The freeze itself is today an unenforced human
+  discipline — that is the defect.
+
+source: |
+  INCIDENT, 2026-07-25. All of BL-590 slice 1 — coder work, the rework for the
+  architect's first bounce, and the cleaner pass — reached `main` AND was
+  pushed to `origin/main` having passed neither architect (bounced twice),
+  hardener, documenter, nor QA. Article 4.2 / BL-247 make QA the only
+  integration point; the entire back half of the pipeline was bypassed.
+
+  Commits, verified still outside `swarmforge-QA` at filing time:
+    - 73706d79e  BL-590 coder rework            (not an ancestor of swarmforge-QA)
+    - f8dc07963  Merge commit '73706d79ed'      (not an ancestor)
+    - ebd12542d  BL-590 cleaner DRY pass        (not an ancestor)
+
+  `f8dc07963` merged the coder's rework straight into `main` mid-flight;
+  `ebd12542d` was committed onto `main` directly instead of onto
+  `swarmforge-cleaner`.
+
+description: |
+  ## What contained it, and what did not
+
+  Nothing contained it by design. It was caught by an architect pass noticing
+  the branch state, and the damage stayed out of production only because the
+  long-lived daemons happened not to have synced: `build_freshness_cli.bb
+  report` showed bridge, bot, front_desk_supervisor, handoffd,
+  handoffd_supervisor and operator_runtime all still on the prior QA-approved
+  sha `4e9cd883d`, correctly flagged `stale` against the compromised tip.
+
+  **That is luck, not a control.** The single action that would have deployed
+  three known-live defects to every daemon is the ordinary, routine post-QA
+  step: `build_freshness_cli.bb sync`. Any role or human running it during
+  this window ships them.
+
+  ## The gap
+
+  `build_freshness_cli.bb` has **no `freeze`, no `hold`, and no gate** —
+  confirmed by inspection at filing time. `sync` will happily deploy whatever
+  `main` currently points at. There is no notion of "this tip is not
+  QA-approved, refuse".
+
+  There is also no park-marker convention in place for this (the
+  `front-desk-PARKED.md` pattern used elsewhere is not present here), so the
+  operational freeze agreed for this incident is carried by nothing more
+  durable than a human remembering.
+
+  ## Root cause — ESTABLISHED 2026-07-25, supersedes the original hypothesis
+
+  This section originally named the mono-router rotating-worktree lag as the
+  working hypothesis and asked the specifier to confirm it. **A post-mortem the
+  same day disproved it.** Rotation worked correctly: every role's launch script
+  cds to its own worktree (`.swarmforge/launch/cleaner.sh:5`), each role's
+  transcript sits under its own project dir, and the coder's commits are in
+  `.worktrees/coder`'s own HEAD reflog. Do not build on the lag hypothesis.
+
+  **Actual cause: the cleaner prefixed `cd /home/carillon/swarmforgevc` to its
+  own git commands, so it ran its entire BL-590 pass in the MASTER checkout,
+  which has `main` checked out.** From the role's own transcript
+  (`~/.claude/projects/-home-carillon-swarmforgevc--worktrees-cleaner/ad7326f1-*.jsonl`):
+
+  ```
+  e18   cd /home/carillon/swarmforgevc && merge_and_process coder 73706d79ed
+  e38   cd /home/carillon/swarmforgevc && git merge 73706d79ed --no-ff   -> f8dc07963 on main
+  e66   Read /home/carillon/swarmforgevc/extension/src/onboarding/...ts  (".worktrees/cleaner/" dropped)
+  e223  cd /home/carillon/swarmforgevc && git add -A && git commit        -> ebd12542d on main
+  ```
+
+  The parcel's own first instruction (`merge_and_process cleaner <sha>`) ran in
+  the wrong checkout, so `main` became the working branch for the whole pass.
+  Nothing errored: `main` already held the coder's code from the cleaner's own
+  bad merge at e38, so the wrong-path reads returned plausible content.
+
+  Two aggravating findings, both with their own tickets:
+
+  - `git add -A` in a shared checkout swept the operator's uncommitted morning
+    edits (`human_approval: pending -> approved` on BL-619..BL-625,
+    `docs/briefings/.sent.json`) into a commit titled "By cleaner."
+  - `handoffd`'s `push-sweep!` published every bad commit to `origin/main`
+    within 15-140 seconds, with no QA check. **BL-630.**
+  - Nothing detected any of it; an architect found it by eye hours later.
+    **BL-631.**
+
+  The mono-router is relevant in one way only: `mono-router.conf` has
+  `window specifier claude master`, so a pipeline role living in the master
+  checkout on `main` is a NORMAL state in this pack. That makes the slip
+  invisible — it does not cause it.
+
+  ## Shape
+
+  Two independent layers; the specifier decides whether both are in scope or
+  whether the second is a follow-on:
+
+  1. **Deploy-time gate (the load-bearing one).** `sync` refuses when the tip
+     it would deploy is not an ancestor of `swarmforge-QA`, naming the
+     offending commits. This is deterministic, needs no new state, and is
+     exactly the check that was run by hand to diagnose the incident:
+     `git merge-base --is-ancestor <sha> swarmforge-QA`.
+  2. **Land-time detection.** Something notices a commit reaching `main`
+     outside the QA path and raises it, rather than waiting for an architect
+     to spot it. Cheaper than preventing the landing, and it shortens the
+     window.
+
+  Preventing the landing itself was originally rejected here on the grounds
+  that it "fights the mono-router's rotating-worktree design". **That reasoning
+  died with the hypothesis it rested on** (see the root cause section). A
+  `pre-commit`/`pre-merge-commit` hook in the master checkout, keyed on
+  `SWARMFORGE_ROLE` — refuse a commit on `main` from any role but QA, with
+  `specifier`/`coordinator` allowed the bookkeeping paths — is now viable and
+  would have blocked all four commits at source. It is still not in THIS
+  ticket's scope (the deploy gate is): the operator ruled it out to its own
+  ticket, **BL-632**, filed 2026-07-25.
+
+  ## Spec resolution (specifier, 2026-07-25)
+
+  1. **Layer decision (delegated above): layer 1 only.** Land-time detection
+     is BL-631, filed in the same post-mortem — not a follow-on to invent
+     here. This ticket is the deploy-time gate.
+
+  2. **"QA-approved tip" is judged on the DEPLOYED CODE SURFACE, not raw tip
+     ancestry.** Measured at spec time: `main` is 89 commits ahead of
+     `swarmforge-QA`, and outside the incident commits that drift is
+     legitimate — backlog moves, spec/ticket commits, and the DAILY generated
+     `extension/docs/briefings/*.json` sidecar (`cb85b9e4b`). A literal
+     "tip must be an ancestor of swarmforge-QA" check refuses the routine
+     post-QA sync every single day; acceptance item 2 forbids exactly that,
+     and a daily-refused gate becomes a daily-overridden gate, which item 3
+     forbids. The gate therefore refuses iff the drift since the last
+     QA-landed commit (`git merge-base main swarmforge-QA`) CHANGES the
+     deployed code surface — what sync actually ships: extension compile
+     inputs (`extension/src/`, `extension/package.json`,
+     `extension/package-lock.json`, `extension/tsconfig*`) and
+     `swarmforge/scripts/` excluding `test/`. ONE constant, defined once in
+     the lib; the incident commits (extension/src) refuse, the sidecar and
+     bookkeeping never do.
+
+  3. **The gate judges the WORKING TREE too.** `sync` compiles and restarts
+     from disk, not from the tip — a tip-only check would bless a deploy
+     whose tree differs from the approved tip. Uncommitted modifications
+     under the deployed code surface refuse identically (scenarios 09/10);
+     the operator's routine bookkeeping dirt never does.
+
+  4. **Missing `swarmforge-QA` ref fails CLOSED** (scenario 08) — absence
+     must never buy a deploy, mirroring Article 3.2.4's missing-severity
+     posture. The explicit override is the escape hatch.
+
+  5. **The refusal exit status is a NEW documented code**, distinct from 0
+     (success) and 2 (usage/operational failure) — 3 unless the coder finds
+     a conflict; document it in the CLI usage header so callers can tell
+     "gate refused" from "restart broke".
+
+  6. **Known accepted friction: expeditor-landed code.** BL-567's commits
+     are QA-stamped through the expeditor but are NOT swarmforge-QA
+     ancestry, so a post-expedite sync refuses until the next normal QA
+     landing self-heals the ancestry. That is precisely what the explicit,
+     logged override is FOR — do not widen the gate to special-case it.
+
+  7. **The pure decision lives in `build_freshness_lib.bb`** over gathered
+     facts (drift commits with per-commit touched-surface flags, dirty
+     surface paths, ref-exists, override flag) — no git/fs in the lib, the
+     same contract `stale?` already keeps. The CLI gathers and acts.
+
+acceptance: |
+  specs/features/BL-629-sync-refuses-non-qa-approved-main.feature
+
+  Every scenario needs its step handler wired in this same parcel — the
+  acceptance runner (specs/pipeline/runtime.js) throws on an unhandled
+  scenario (BL-233). Step handlers SHELL OUT to the real
+  build_freshness_cli.bb against a temp fixture git repo (create main +
+  swarmforge-QA, commit the drift classes; the BL-610 fixture-repo pattern),
+  never reimplement the gate in JS. The Scenario Outline handler validates
+  example values against explicit KNOWN_VALUES (empty | bookkeeping-only).
+  The feature file linted clean (gherkin_lint_gate.sh) and was IR-DRY
+  reviewed; all 12 findings are deliberate opposites or literal reuse of one
+  parameterized step with concrete values — approved/not-approved,
+  under/outside the surface, with/without override — not drift.
+
+  Scenario -> acceptance-minimum map (the numbered minimums are the
+  operator's, from filing): 01 refuse + name offending shas only + remedy
+  text + no restart/recompile (minimums 1, 3); 02/03 friction-free routine
+  path, including a QA branch mid-review (minimum 2); 04/05 explicit,
+  durably-logged, never-sticky override (minimum 3); 06/07 report
+  distinguishes stale from stale-behind-unapproved-tip (minimum 4); 08
+  missing-ref fails closed; 09/10 working-tree drift refuses / bookkeeping
+  dirt never does. Minimum 5's regression is scenario 01's fixture (a main
+  tip containing a non-QA-ancestor code commit) plus the unit gate below.
+
+  Supporting gates the Gherkin does not pin (the .bb unit suite is the real
+  gate for swarm scripts — engineering.prompt tool table):
+  - The deployable-drift decision has direct .bb unit coverage in
+    build_freshness_lib's suite: empty drift; bookkeeping-only; code drift
+    (refused, offending shas listed, bookkeeping shas NOT listed); a merge
+    commit in the drift; missing-ref fail-closed; dirty-surface vs
+    dirty-outside; override present/absent.
+  - Refusal ORDERING is unit-proven with an injected restart seam: on
+    refusal the gate decision precedes and suppresses recompile and every
+    restart dispatch (the seam records zero invocations) — the acceptance
+    fixture cannot prove this non-vacuously because a fixture repo has no
+    stale processes to restart.
+  - test_build_freshness_cli.sh updated: it pins report's output shape
+    today; report gains the tip-approval distinction and sync gains the
+    refusal path. No other production consumer parses report's JSON
+    (verified at spec time), so the shape change is contained to that suite.
+  - No real timers, fixtures under the worktree's own ./tmp, env seams not
+    chdir (engineering.prompt).
+
+  QA end-to-end procedure (live swarm):
+  1. `build_freshness_cli.bb <root> report` on the LIVE repo: the
+     tip-approval distinction must be present, and its value must match
+     what `git log $(git merge-base main swarmforge-QA)..main -- <surface>`
+     shows at that moment — naming the offending commits iff any exist.
+     Per-process staleness reads as today. Exit 0.
+  2. If the BL-590 freeze is still standing at QA time: run `sync` on the
+     live root — expect REFUSAL naming the BL-590 shas, the documented
+     refusal exit status, and daemon pids unchanged (a refusing sync is
+     read-only by definition; this demonstrates the incident's containment
+     live). If the tip is deployable by then, run the same check on a
+     fixture repo instead.
+  3. On a FIXTURE repo (never the live root): sync with the explicit
+     override proceeds and the durable override record names the sha(s).
+  4. Fixture: bookkeeping-only drift -> sync proceeds with no refusal.
+  5. Confirm the refusal message's remedy names both paths out: land
+     through QA, or the explicit override flag.
+
+out_of_scope: |
+  - Fixing BL-590's three redelivery defects. Those go through the pipeline as
+    BL-590's own rework (operator ruled fix-forward, 2026-07-25).
+  - Reverting anything on `main`. Explicitly rejected: `f8dc07963` is a merge
+    commit, and reverting it would trigger the recorded revert-of-merge trap on
+    code that is not running anyway.
+  - Branch protection or pre-commit hooks. See the shape section.
+  - Land-time detection of commits reaching `main` outside the QA path —
+    that is BL-631 (spec resolution item 1).
+  - Special-casing expeditor-landed commits in the gate — accepted friction,
+    handled by the explicit override (spec resolution item 6).
+
+notes: |
+  OPERATIONAL FREEZE IN EFFECT UNTIL BL-590 IS QA-APPROVED: do not run
+  `build_freshness_cli.bb sync`. Doing so deploys three known-live defects in
+  the Telegram redelivery path — a redelivered older update is re-applied, a
+  stale redelivered `pause` re-pauses after the human resumed, and marking an
+  update processed after a failed outbound send consumes the retry so the
+  human never receives a reply. Detail in
+  `backlog/evidence/BL-590-facilitator-slice1-architect-bounce2-20260725.md`.
+
+  This ticket existing is what makes that freeze durable. Until it ships, the
+  freeze is carried by human memory alone. Once it lands, the freeze becomes
+  mechanical: a live `sync` during any unapproved-drift window refuses on its
+  own, naming the commits — no human memory involved.

@@ -1,0 +1,70 @@
+id: BL-344
+title: "Onboarding, remaining slice: the human negotiates the scope contract back and forth, not once"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 6
+direction: human-requested
+epic: onboarding-target-repo
+depends_on: []
+source: ".swarmforge/operator/INTAKE-epic-topics-in-telegram.md — surfaced as an UN-TICKETED slice of the onboarding epic. Ticketed at the coordinator's explicit request (handoff 000307, 2026-07-13). Verified: the negotiation loop appears in the repo ONLY inside the notes of BL-262 and BL-269, both DONE — it was cut to 'its own slice' and that slice was never written down. Exactly the failure mode BL-341 exists to make visible."
+
+notes: |
+  WHAT SHIPPED, AND WHAT WAS CUT. BL-262 delivered the onboarding scope contract: the swarm surveys
+  a target repo and PROPOSES a negotiable scope contract, gated on the human editing/approving it.
+  BL-269 then generated the target's `project.prompt` + `engineering.prompt` from that survey.
+  Both are done.
+
+  But BL-262 shipped a SINGLE-ROUND proposal: the swarm proposes ONCE, the human accepts or edits
+  the file by hand. THE BACK-AND-FORTH — the human pushes back, the swarm re-surveys and RE-
+  PROPOSES against that pushback, converging over several rounds — was explicitly re-scoped out
+  into "its own slice" and then NEVER TICKETED. It has sat as a sentence in a done ticket's notes
+  since 2026-07-10.
+
+  WHY THE MISSING HALF IS THE HALF THAT MATTERS. The word in BL-262's own framing is NEGOTIABLE. A
+  single-round proposal is not a negotiation — it is a take-it-or-edit-it-yourself. If the swarm's
+  first survey misreads the target repo (and on an unfamiliar codebase, it will), the human's only
+  recourse today is to hand-write the contract himself, which is precisely the work onboarding was
+  supposed to do FOR him. The value of the epic is concentrated in the rounds that were cut.
+
+  SCOPE:
+    1. THE HUMAN CAN PUSH BACK ON A PROPOSED CONTRACT, in his own words — not only by editing the
+       YAML by hand.
+    2. THE SWARM RE-PROPOSES IN RESPONSE, and the new proposal ACTUALLY REFLECTS the pushback. A
+       re-proposal that ignores what he said, or that merely re-emits the previous one, is the
+       failure this ticket exists to prevent — and it is the most likely way to build this wrong,
+       because a loop that runs and converges on the SAME answer looks like it works.
+    3. IT CONVERGES AND TERMINATES. The loop must end — on the human's approval, and also on a
+       bounded number of rounds, so a disagreement cannot spin forever burning tokens.
+    4. THE APPROVAL GATE FROM BL-262 STILL HOLDS. Nothing is onboarded until the human approves the
+       contract. Iteration must not become a path that quietly approves by exhaustion.
+    5. EACH ROUND IS RECORDED — what he asked for, what changed in response. Without that, a
+       disputed contract has no history and the human cannot see whether he was heard.
+
+  REUSE, DO NOT REBUILD: the front desk now genuinely round-trips (BL-298 a reply in a topic is
+  heard; BL-325 a gate states its question and the answer reaches the blocked agent; BL-320
+  at-least-once egress). "Ask the human something and act on his answer" IS ALREADY PLUMBING THAT
+  EXISTS — this loop should ride it rather than inventing a second ask/answer channel. Note the
+  contract gate's known behaviour ([[contract-gate-holds-self-target]]): it returns HOLD for a repo
+  with no `.swarmforge/contract.yaml`, which reads as "drained" rather than "blocked" — do not let
+  an iteration round get silently swallowed by that.
+
+  E2E QA PROCEDURE: run a REAL negotiation against a REAL scratch target repo. Propose; push back
+  with a SUBSTANTIVE objection; assert the NEXT proposal actually differs IN THE WAY THE PUSHBACK
+  ASKED FOR — not merely that a second proposal was emitted. Then assert the loop terminates on
+  approval, and terminates on the round cap without approving anything.
+
+acceptance:
+  feature: specs/features/BL-344-onboarding-iterative-negotiation-loop.feature
+  steps:
+    - "The human can push back on a proposed contract in his own words"
+    - "The next proposal reflects what the human pushed back on"
+    - "The negotiation ends when the human approves"
+    - "The negotiation ends after a bounded number of rounds, without approving"
+    - "Nothing is onboarded until the human has approved the contract"
+    - "Each round records what was asked for and what changed"
+
+human_approval: pending
+
+mutation_cost: medium

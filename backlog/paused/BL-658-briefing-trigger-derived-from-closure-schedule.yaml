@@ -1,0 +1,186 @@
+id: BL-658
+title: "Closing ceremony: at closure time the coordinator drains the in-flight parcel, rotates the resident to the DOCUMENTER for the morning briefing as the night's last act, then everything stops"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 103
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+invariants:
+  - "The morning briefing is produced only as the closing sequence's last act — no independent clock can fire it against a stopped swarm or separate it from the stop."
+
+approval_context: >
+  Operator, 2026-07-26 morning, refining their own earlier ruling ("juste
+  avant la fermeture") into a full closing routine: "à l'heure dite, le
+  coordinateur attend que la parcelle en cours se termine. si par hasard elle
+  est avec le documenter, happy days, il enchaîne avec la production du
+  briefing. sinon le coordinateur le rotate vers le documenter et lui demande
+  la production du morning briefing. et ensuite tout s'arrête." That sequence
+  IS the spec; this file pins its edges.
+
+source: |
+  ## Why a ceremony and not a trigger time
+
+  First scheduled night (2026-07-26): the briefing constant (07:00Z) fired
+  two hours after the 06:00 stop — no email, silent. The first patch was a
+  moved constant (04:30Z, in force as the INTERIM until this ships), which
+  created a sibling-clock hazard: change the night window, forget the
+  constant, the mailman dies again. The operator's routine dissolves both
+  problems: the briefing is not AT a time, it is THE LAST ACT of closing —
+  it always covers the whole night, and it can never fire against a stopped
+  swarm because it is what precedes the stop.
+
+  Bonus it buys for free: the 06:00 hard cut was the main producer of
+  orphaned claims at scheduled stops (BL-648's live case, twice on 07-25/26).
+  A drained parcel is a real boundary; the orphan class shrinks to crashes,
+  which BL-648 owns.
+
+description: |
+  ## The sequence (operator's design, edges pinned)
+
+  ```
+  H_close-begin (DERIVED from the closure schedule, not a sibling constant)
+    1. closing marker set: promotion FREEZES (reuse pause machinery);
+       new parcels stop being delivered; queues hold in place
+    2. the resident FINISHES its in-flight parcel — bounded by a drain
+       deadline; a parcel exceeding it is parked CLEANLY (claim intact,
+       surfaced loudly; BL-648's resume owns the morning after), never
+       killed mid-write
+    3. happy-days branch: if the drained parcel ended AT the documenter,
+       it chains straight into briefing production, no rotation
+       otherwise: coordinator rotates the resident to documenter with the
+       briefing instruction
+    4. briefing written, committed, EMAIL SENT — verified, not assumed
+    5. full stop (the night-stop sequence: ancillaries, babysitterd,
+       swarm, survivor audit)
+  cron hard deadline (unchanged, e.g. 06:00): the unconditional backstop —
+    if the ceremony hangs at any step, night-stop kills anyway. The ceremony
+    makes the backstop RARE; it never replaces it.
+  ```
+
+  ## Edges the specifier must pin
+
+  1. **Drain deadline sizing** — from measured parcel dwell (median front-
+     half stage ~7-11 min; p90 matters more), so the ceremony begin-time =
+     closure − (drain budget + briefing budget). Both derived, one source.
+  2. **The briefing instruction is explicit** — the documenter gets "produce
+     the morning briefing for <date>" as its parcel, not an ambient hope; a
+     documenter that bounces or wedges on it hits the same drain deadline
+     and the backstop, with the missing briefing surfaced LOUDLY (the one
+     forbidden outcome stays silence).
+  3. **Send verification** — step 4 is done when the email sweep confirms
+     the send (`.sent.json`), not when the file exists. The 2026-07-26
+     gap-fill (operator-authored, marked sent) must not be double-sent.
+  4. **Watchdog/metrics** — ceremony time counts as could-not-process for
+     held parcels (BL-650's active-time clock); the frozen promotion is not
+     a starvation signal.
+  5. **Interim retirement** — `briefing_morning_time_utc 04:30` (the
+     constant patch) is RETIRED by this ticket on the closure-scheduled
+     path; kept as the trigger for 24/7 swarms with no closure schedule
+     (byte-identical behaviour for them).
+  6. **WHERE the closure schedule is READ from — OPEN; the ask is QUEUED,
+     not sent (2026-07-27).** `role_ask.bb` refused it: the specifier's
+     one-pending slot is still held by BL-687's drill-down reordering
+     question, unanswered since 09:04Z. The four candidate answers are
+     enumerated below; whoever frees that slot sends them verbatim as
+     `role_ask.bb --options`.
+     Verified at spec time: no TRACKED file knows the stop
+     time. The whole closure schedule is the host crontab
+     (`0 9 * * * .swarmforge/operator/night-stop.sh`) plus that script,
+     both untracked runtime state. So "DERIVED from the closure schedule"
+     has no committed source to derive FROM today, and the obvious patch
+     — adding `config closure_stop_local HH:MM` to swarmforge.conf —
+     RECREATES the exact sibling-clock hazard this ticket exists to kill
+     (a second constant that drifts from the cron nobody edits in step;
+     the live cron-vs-conf disagreement is already on the operator's
+     desk). Scenarios 05/06 deliberately leave the source abstract and
+     pin only the resolver's contract (moves with the schedule; `absent`
+     and `ambiguous` degrade to today's fixed-time trigger, never to a
+     guess). The coder must NOT choose the source unilaterally — the
+     answer lands as a note on this ticket before build.
+
+     **The question to send** — "The ceremony must derive its begin time
+     from the closure schedule, but no file in git knows when the swarm
+     stops: the schedule is the host crontab plus an untracked script.
+     Where should the resolver read the stop time FROM?" with these four
+     options:
+
+     a. **"Parse the live crontab"** — the resolver shells `crontab -l`
+        and reads the `night-stop.sh` entry. Single source, zero drift by
+        construction, and it moves the moment you edit the cron. Cost: the
+        swarm reads host state it cannot test against and cannot see on
+        another machine; a reworded cron line breaks the parse. `absent`
+        and `ambiguous` (two matching entries, unparseable spec) both fall
+        to scenario 06's fixed-time degrade.
+     b. **"night-stop.sh writes a runtime state file"** — the closure path
+        itself publishes `.swarmforge/closure-schedule.json` (next stop
+        instant) and the resolver reads only that. Still untracked, but it
+        is a declared interface instead of a scraped one, and the writer
+        is the thing that actually stops the swarm. Cost: staleness if the
+        cron fires a script that no longer writes it.
+     c. **"`closure_stop_local HH:MM` in swarmforge.conf"** — tracked,
+        testable, visible in git; the plain option. Cost: it IS the sibling
+        clock this ticket exists to kill — the conf and the cron drift the
+        first time one is edited alone (already live on your desk today).
+        Only pick this if the drift is acceptable in exchange for the
+        schedule being in git.
+     d. **"Conf is authoritative and the cron is GENERATED from it"** —
+        `closure_stop_local` in swarmforge.conf as in (c), plus the cron
+        entry installed/regenerated from that value, so the crontab is a
+        build artifact nobody hand-edits. The only option that puts the
+        schedule in git WITHOUT a second editable clock. Cost: the largest
+        slice — it takes over crontab installation, which nothing in the
+        repo does today, and would likely be its own sibling ticket that
+        this one depends on.
+
+acceptance: specs/features/BL-658-briefing-trigger-derived-from-closure-schedule.feature
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::closing-ceremony::BL-419 shape: handoffd.bb's briefing sweep is the ONLY live consumer of the morning trigger (configured-morning-time, ~line 1970). A ceremony lib that is fully unit-tested but never consulted here leaves 04:30 firing unchanged and the ticket's value at zero."
+
+out_of_scope: |
+  - Crash-path resume (BL-648 owns it; the ceremony only shrinks the class).
+  - Moving briefing AUTHORSHIP off the documenter. The routine hands it the
+    pen at the right moment; who writes is unchanged.
+  - The sidecar needsApproval[] emptiness observed 2026-07-26 — separate
+    backlogDashboard defect.
+
+notes: |
+  Supersedes this ticket's own first draft (trigger derived from closure —
+  a better constant). The operator's second pass made it a sequence instead
+  of a time, which is strictly stronger: whole-night coverage, orphan-free
+  scheduled stops, and the mailman structurally incapable of missing the
+  swarm. Seventh member of the week's schedule-blindness family, and the
+  first that removes a class instead of patching an instance.
+
+  2026-07-27 specifier pass: feature file written (8 scenarios), gherkin
+  lint gate clean, IR-DRY reviewed — 14 findings, all medium-confidence
+  near-duplicate/possible-synonym on one parameterised step
+  (`the recorded closing sequence is "<seq>"`) and on
+  `the resident is "<role>" holding an in-flight parcel`; the varying
+  quoted value IS the parameter in both, so the wording differences are
+  deliberate, not drift. No normalisation applied.
+
+  NOT READY TO PROMOTE until edge 6 is answered — the ticket's premise
+  needs a closure-time source that exists in git.
+
+  2026-08-19 coordinator: DE-PROMOTED active/ -> paused/. It was promoted and
+  routed to the coder despite this ticket's own explicit "NOT READY TO PROMOTE
+  until edge 6 is answered" marker above; the coder correctly reported it
+  unbuildable and idled rather than choosing the source unilaterally. Edge 6 is
+  a human decision (four enumerated options a-d) and its role_ask is STILL
+  unsent: the specifier's one-pending slot has been held since 12:58Z by the
+  BL-951 bounce-fix routing question. Blocked on the human, not asleep. Re-promote
+  only after the edge-6 answer lands as a note on this ticket.
+
+  2026-08-19 specifier (ack of coder note 18:33Z): confirmed — the edge-6 ask
+  stays queued behind BL-951's pending slot; no second role_ask may be raised
+  and no polling. STANDING NEXT ACTION for the specifier: the moment the
+  BL-951 answer arrives and is acted on, send edge 6's question and options
+  a-d VERBATIM via role_ask.bb --options in the same turn, then note this
+  ticket and the coordinator that the ask is finally live.

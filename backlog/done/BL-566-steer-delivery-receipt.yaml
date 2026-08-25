@@ -1,0 +1,120 @@
+id: BL-566
+title: "Steering a role topic reports whether the steer actually reached a pane (delivery receipt)"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 25
+direction: human-requested
+depends_on: [BL-425]
+assigned_to: QA
+mutation_cost: low
+landed_out_of_band: |
+  IMPLEMENTATION AND UNIT TESTS ALREADY LANDED at commit 2eb173fc7 on main,
+  filed by the operator tunnel at the human's request during a live session,
+  BEFORE this ticket/spec/feature existed. That ordering is the defect this
+  ticket also records: the human's standing instruction is that out-of-bounds
+  changes are to be avoided precisely because they are not properly captured.
+  This ticket, its feature file, its step handlers and its runbook were written
+  AFTER the fact to close that gap.
+
+  What therefore REMAINS is verification, not construction: QA runs the
+  acceptance scenarios and the unit suites against the already-landed code and
+  either confirms it or bounces it. Do NOT re-implement. If a scenario fails,
+  the code is wrong and gets fixed - the spec here is the contract, not a
+  description of whatever the code happens to do.
+source: |
+  Human, 2026-07-23, after being told that steering a dormant role silently
+  no-ops: "can you make it send a message up?" - i.e. report the outcome of a
+  steer back into the topic it was sent from. Chosen from three options
+  (receipt only / relay the agent's reply / both); the human picked receipt only.
+
+description: |
+  ## Problem
+
+  BL-425 slice 1 gives each of the eight swarm roles its own Telegram topic;
+  a message there from the authorised principal is injected into that role's
+  live tmux pane as a verified nudge. `redirectToRole`
+  (telegram-front-desk-bot.ts) deliberately never throws - the established
+  "a live-network/pane adapter never throws out of the poll cycle"
+  convention - so BOTH of its failure paths were swallowed into a
+  `process.stderr.write` the human never sees:
+
+    - no pane resolved for that role at all
+    - a pane exists, but `sendInstructionVerified` did not land
+
+  The human therefore could not distinguish a steer that worked from one that
+  vanished. This is not a rare edge: on a mono-router pack only
+  `swarmforge-coordinator` and `swarmforge-coder` hold live panes, and the
+  other six roles are dormant rotation targets. Six of the eight steering
+  topics were silent no-ops by construction, and looked exactly like the two
+  that worked.
+
+  ## Behaviour
+
+  After a redirect is attempted, a one-line receipt is posted back into the
+  SAME role topic the steer arrived in:
+
+    delivered    ->  "OK steered <role>"      (rendered with a check mark)
+    no pane      ->  "WARN <role> has no live pane - not delivered"
+    send failed  ->  "WARN not delivered to <role>: <reason>"
+
+  Three design constraints the implementation must keep:
+
+  1. **`no-pane` stays distinct from a send failure.** On a mono-router the
+     former is the EXPECTED steady state for six roles; collapsing the two
+     would train the human to ignore a message that sometimes reports a real
+     fault. Different fact, different text.
+  2. **Every receipt names the role.** A receipt arriving in the wrong topic
+     is itself a symptom worth being able to spot.
+  3. **An unauthorised sender gets no receipt at all.** The `refuse` branch
+     returns before the redirect is attempted, so nothing confirms anything
+     to them - a receipt would leak that the topic is live and steerable.
+
+  The stderr lines are unchanged: they remain the operator-facing record,
+  the receipt is the human-facing one.
+
+  ## Shape
+
+  - `SteerDeliveryResult` (telegramFrontDeskBotCore.ts) - a discriminated
+    union, not a boolean, for the same reason `SttResult`/`TtsResult` in that
+    file are: two failures that need telling apart.
+  - `formatSteerReceipt(role, result)` - pure, the whole decision.
+  - `redirectToRole` returns the result instead of `void`; it still never
+    throws.
+  - `notifyRoleTopic` - an OPTIONAL PollAdapters entry. Missing means
+    steering behaves exactly as it did before this ticket, silently: the same
+    "a new capability degrades to prior behaviour" posture BL-410/BL-425/
+    BL-426 already use, so a deployment that wires steering but not receipts
+    is not a broken half-state.
+  - The poll cycle's `posted` outcome still reports the STEER's delivery,
+    never whether the receipt itself landed.
+
+acceptance: |
+  See specs/features/BL-566-steer-delivery-receipt.feature for the executable
+  scenarios (delivered / no-pane / send-failure receipts, unauthorised sender
+  gets none, unwired adapter stays silent, non-role topics unaffected).
+
+  QA additionally runs, against the already-landed commit:
+    npx vitest run test/telegramFrontDeskBotCore.test.js test/telegramFrontDeskBotCli.test.js
+  which must pass, and must include direct coverage of formatSteerReceipt's
+  three outcomes plus redirectToRole returning no-pane rather than swallowing.
+
+  QA end-to-end (live swarm, manual): post a message in the coordinator's
+  role topic and confirm the check-mark receipt appears in that same topic;
+  post one in a dormant role's topic (specifier on a mono-router) and confirm
+  the no-live-pane receipt appears rather than silence.
+
+out_of_scope: |
+  - Relaying the agent's actual REPLY back into the topic. That was the
+    explicitly rejected alternative at spec time; it needs pane capture plus
+    turn-completion detection and is closer to BL-425's parked slice 2
+    (the non-disruptive QUESTION mode).
+  - Making a steer to a dormant role WORK (waking/rotating the resident into
+    that role). This ticket only makes the existing failure visible; whether
+    the swarm should rotate on demand is a separate question.
+  - Any change to the redirect injection itself (sendInstructionVerified,
+    resolveRolePaneTarget) or to the two BL-425 guards.
+  - Receipts for any non-role topic (BL-ticket, Operator, Approvals, SUP).

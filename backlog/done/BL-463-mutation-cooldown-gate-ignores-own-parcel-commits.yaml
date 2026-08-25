@@ -1,0 +1,88 @@
+id: BL-463
+title: "BUG: mutation cooldown gate skip-cooldowns every fresh parcel — it counts the parcel's own just-committed change as recent churn"
+milestone: M8
+type: bug
+severity: high
+status: todo
+epic: ""
+priority: 1
+direction: expedite
+depends_on: []
+source: "hardener via rule_proposal (scope role:hardender) 2026-07-16, dispositioned by the specifier as a TOOL DEFECT rather than a prompt rule. Observed live on BL-461: the gate skip-cooldown'd swarm_ensure.bb because it had been committed 20 minutes prior."
+
+description: |
+  The BL-149 file-change cooldown gate is VACUOUS on fresh work: it returns skip-cooldown on
+  essentially every parcel's changed files, so the hardener's mutation pass is bypassed on the very
+  code the parcel just changed (same "hardener gate does nothing" family as BL-446).
+
+  ROOT CAUSE: swarmforge/scripts/mutation_cooldown_gate.bb's last-committed-ms reads
+  `git log -1 --format=%at -- <file>` and its docstring justifies this as "ignoring the change at hand
+  … any uncommitted/in-flight diff is already excluded by construction." That assumption is FALSE for
+  SwarmForge: every role COMMITS its work and forwards a commit via git_handoff, so by the hardener's
+  stage the coder / cleaner / architect have already committed the changed file. `git log -1 -- <file>`
+  in the hardener's worktree therefore returns the PARCEL'S OWN commit from minutes ago; age <
+  mutation_cooldown_days (default 3), so mutation_cooldown_lib.bb's decide-mutation-gate returns
+  skip-cooldown. The pure decide logic is correct — the INPUT it is fed is wrong.
+
+  THE FIX (behavior; exact git incantation is a build detail for the coder): the cooldown clock must
+  genuinely "ignore the change at hand" — measure the file's last committed touch that is NOT part of
+  the in-flight parcel. The integration branch `main` does not yet contain the parcel's role-branch
+  commits (QA lands on main only at the end), so the last commit touching the file ON main is the
+  correct "prior integrated history" baseline. Consequences the acceptance pins:
+    - A file the parcel itself just changed is decided on its PRIOR integrated history, not its own
+      fresh commit → it becomes eligible to RUN (given a quiet host and no other recent churn).
+    - Genuine churn by OTHER recent tickets (a commit already on main within the window) STILL triggers
+      skip-cooldown — the original BL-149 intent (don't prematurely stabilize a churning file) is
+      preserved, just measured against other work, not this parcel.
+    - A file the parcel NEWLY introduces (no prior integrated history) is eligible to RUN, not skipped.
+      (Today the no-history fallback returns now-ms → age 0 → skip-cooldown, which also wrongly skips
+      brand-new code; the fix must make new code RUN.)
+
+  Scope (grep-confirm at build):
+    - swarmforge/scripts/mutation_cooldown_gate.bb — last-committed-ms: resolve the last committed
+      touch from integrated history (main), excluding the in-flight parcel's own commits; make a file
+      with no prior integrated history decide RUN (eligible), not skip-cooldown. Keep the existing
+      test-only load/core env overrides untouched.
+    - swarmforge/scripts/test/test_mutation_cooldown_gate.sh — add scenarios with a git fixture that
+      has a `main` branch plus an in-flight branch, exercising: parcel-own-commit-only → run; recent
+      main churn → skip-cooldown; settled main history → run; new file → run. Reach fixtures via the
+      existing env seams / a temp git repo, never chdir/HOME overlay; register a cleanup trap for any
+      temp root (BL-459).
+    - mutation_cooldown_lib.bb — pure decide logic is CORRECT; do not change it unless the fix needs a
+      new pure helper (prefer keeping the decision pure and testable).
+
+  Constraints:
+    - The DECISION vocabulary (skip-cooldown / skip-busy / run) is UNCHANGED — do not touch
+      hardender.prompt's decision handling. The specifier owns the one-line skip-cooldown prose
+      clarification ("measured against work OTHER than the current parcel") and will apply it to
+      hardender.prompt when this fix lands (specifier-owned file; not a coder edit).
+    - Do not weaken the churn protection: a file genuinely churned by multiple recent tickets must
+      still skip-cooldown.
+
+  E2E QA PROCEDURE: in a throwaway git repo, commit a file to `main`, branch off, and commit a fresh
+  change to that file on the branch (simulating a parcel in flight); run
+  `bb swarmforge/scripts/mutation_cooldown_gate.bb <root> <file>` with
+  SWARMFORGE_MUTATION_GATE_FORCE_LOAD_AVG=0 and assert DECISION: run (NOT skip-cooldown), proving the
+  parcel's own commit no longer resets the clock. Then commit a SECOND change to the file directly on
+  `main` (other integrated churn within 3 days) and assert DECISION: skip-cooldown. Then a file whose
+  last main commit is >3 days old → run; a brand-new file only on the branch → run. Confirm against the
+  real gate script, not the pure lib.
+
+acceptance:
+  feature: specs/features/BL-463-mutation-cooldown-gate-ignores-own-parcel-commits.feature
+  steps:
+    - "A file changed only by the current parcel's own commits is eligible to run"
+    - "A file recently churned by other integrated work is still skipped for cooldown"
+    - "A settled file past the cooldown window runs on a quiet host"
+    - "A file newly introduced by the parcel is eligible to run, not skipped"
+
+human_approval: >
+  Not human-originated — raised by the hardener (rule_proposal) and dispositioned by the specifier as a
+  defect: the BL-149 mutation cooldown gate is vacuous because it counts the parcel's own just-committed
+  change as recent churn, so skip-cooldown fires on nearly every parcel (bypassing the hardener's
+  mutation gate on fresh code). Fix pins behavior: the parcel's own commit no longer resets the cooldown
+  clock (measured against integrated `main` history), genuine cross-ticket churn still skips, and
+  brand-new files run. Exact git incantation and branch resolution are build details. Expedite: a
+  quality gate is currently doing nothing on fresh work.
+
+mutation_cost: low

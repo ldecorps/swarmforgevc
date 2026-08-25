@@ -7,7 +7,7 @@ const path = require('node:path');
 // contributed command in package.json, so this fails loudly the moment a
 // command is renamed or removed without updating the guide.
 
-const GUIDE_PATH = path.join(__dirname, '..', '..', 'docs', 'GettingStarted.md');
+const GUIDE_PATH = path.join(__dirname, '..', '..', 'docs', 'tutorials', 'GettingStarted.md');
 const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
 
 // Stryker (extension/stryker.config.json) sandboxes only the extension/
@@ -32,7 +32,7 @@ function contributedCommandIds() {
 
 test('every swarmforge.* command mentioned in GettingStarted.md is a contributed command', (t) => {
   if (!guideAvailable) {
-    t.skip('docs/GettingStarted.md not present outside extension/ in this sandbox');
+    t.skip('docs/tutorials/GettingStarted.md not present outside extension/ in this sandbox');
     return;
   }
   const guide = fs.readFileSync(GUIDE_PATH, 'utf8');
@@ -47,9 +47,23 @@ test('every swarmforge.* command mentioned in GettingStarted.md is a contributed
 
 test('GettingStarted.md declares its documenter ownership', (t) => {
   if (!guideAvailable) {
-    t.skip('docs/GettingStarted.md not present outside extension/ in this sandbox');
+    t.skip('docs/tutorials/GettingStarted.md not present outside extension/ in this sandbox');
     return;
   }
   const guide = fs.readFileSync(GUIDE_PATH, 'utf8');
   assert.match(guide, /documenter/i);
+});
+
+// BL-364: the guide must carry a real, findable Windows section naming the
+// Remote-WSL extension - "the documented setup keeps naming things that
+// really exist", and a Windows developer must be told how to set this up
+// at all, not left with a flat "unsupported" dead end.
+test('GettingStarted.md documents Windows via a real section naming the Remote-WSL extension', (t) => {
+  if (!guideAvailable) {
+    t.skip('docs/tutorials/GettingStarted.md not present outside extension/ in this sandbox');
+    return;
+  }
+  const guide = fs.readFileSync(GUIDE_PATH, 'utf8');
+  assert.match(guide, /^#+ .*Windows.*Remote-WSL/im, 'expected a heading naming Windows and Remote-WSL');
+  assert.match(guide, /Remote\s*-\s*WSL/i, 'expected the guide to name the real "Remote - WSL" extension');
 });

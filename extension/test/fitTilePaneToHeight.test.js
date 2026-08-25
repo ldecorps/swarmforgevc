@@ -1,12 +1,13 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { PaneTailer, normalizePaneRows } = require('../out/panel/paneTailer');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fitpane-'));
+  return mkTmpDir('sfvc-fitpane-');
 }
 
 function writeState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\tclaude\n') {
@@ -43,7 +44,7 @@ test('normalizePaneRows defaults to DEFAULT_TILE_PANE_ROWS (200) for null/undefi
 test('PaneTailer.updatePaneRows resizes only the reporting role\'s pane', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     let resizeWindowCalls = [];
     const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
@@ -70,7 +71,7 @@ test('PaneTailer.updatePaneRows resizes only the reporting role\'s pane', () => 
 test('PaneTailer.updatePaneRows normalizes the value via normalizePaneRows', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     let resizeWindowCalls = [];
     const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
@@ -96,7 +97,7 @@ test('PaneTailer.updatePaneRows normalizes the value via normalizePaneRows', () 
 test('PaneTailer.updatePaneRows skips resizing if value unchanged for that role', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     let resizeWindowCalls = [];
     const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
@@ -127,7 +128,7 @@ test('PaneTailer.updatePaneRows is per-role: sizing one role does not resize oth
     targetPath,
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
   );
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     let resizeWindowCalls = [];
     const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
@@ -166,7 +167,7 @@ test('PaneTailer.applyPaneSettings preserves each role\'s own reported pane rows
     targetPath,
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
   );
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     let resizeWindowCalls = [];
     const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
@@ -198,7 +199,7 @@ test('PaneTailer.applyPaneSettings preserves each role\'s own reported pane rows
 test('PaneTailer.updatePaneRows records the value but skips resizing before the socket is known', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     let resizeWindowCalls = [];
     const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
@@ -223,7 +224,7 @@ test('PaneTailer.updatePaneRows records the value but skips resizing before the 
 test('PaneTailer.updatePaneRows is a no-op when the role is unknown', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     let resizeWindowCalls = [];
     const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;

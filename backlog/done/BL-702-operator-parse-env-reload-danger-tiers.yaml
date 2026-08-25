@@ -1,0 +1,54 @@
+id: BL-702
+title: "Cursor Remote operator surface slice 1 — shared parse, env-reload, danger tiers"
+milestone: M8
+type: feature
+severity: high
+status: done
+epic: swarmforge-console
+human_approval: approved
+priority: 02
+direction: human-requested
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: QA
+
+invariants:
+  - "Hard-tier verbs never mutate without principal + Cursor Remote (or aligned Control) + confirm gate."
+  - "Soft-tier verbs need one Confirm tap before execute (BL-698 Q1)."
+  - "buildLaunchEnv / bounce / restart / start / redeploy child env merges .swarmforge/swarm.env over host process.env."
+
+approval_context: >
+  Slice 1 of 3 from BL-698 (Q5 pin 2026-07-29). Foundation only: shared
+  decision module, light/hard confirms, /confirm-off, env-reload on swarm
+  relaunch, wire existing lifecycle verbs through the gate. Hydrate /
+  autopilot / land / shifts / holidays are BL-703 / BL-704.
+
+description: |
+  ## What
+
+  Land the shared Cursor Remote operator decision core and env-reload fix
+  that later BL-698 slices depend on.
+
+  ## Scope
+
+  - Pure decide module (twin Control pattern): text/callback →
+    `ignore | refuse | prompt-confirm | execute-*`
+  - Danger tiers: read (none), soft (light confirm), hard (two-step)
+  - `/confirm-off` clears pending confirm
+  - Merge `loadSwarmEnvFile` into `buildLaunchEnv` / swarm bounce paths
+  - Wire existing verbs that already have backends (`/restart`, `/stop`,
+    `/pause`, `/redeploy`, `/syncenv`, `/compile`, `/pull`, `/doctor`,
+    `/tunnel`, bounce scopes) through the new gate on Cursor Remote
+  - Unit tests + feature scenarios for this slice
+  - Short how-to note for confirm + env-reload (full phone guide is BL-704)
+
+  ## Out of scope
+
+  - `/hydrate` `/mint` `/autopilot` `/land` (BL-703)
+  - `/shift` `/holiday` `/oncall` + Mermaid how-to suite (BL-704)
+
+acceptance: specs/features/BL-702-operator-parse-env-reload-danger-tiers.feature
+
+source: |
+  BL-698 clarifications Q1–Q5 pinned 2026-07-29. Slice 1 of 3.

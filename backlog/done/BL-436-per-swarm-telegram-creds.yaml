@@ -1,0 +1,74 @@
+id: BL-436
+title: "Per-swarm Telegram creds: front_desk_supervisor.bb resolves botToken/chatId/bridgePort by swarm_name from a fleet creds file, env fallback for primary"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: fleet-second-swarm
+priority: 20
+direction: human-requested
+depends_on: []
+source: "INTAKE-fleet-beefup-second-swarm-fes-guinea-pig.md (epic BL-435, suggested slice 1). The FES second-swarm epic's first proof-point is Telegram channel separation; this slice makes it robust at the launch boundary."
+
+description: |
+  Make a swarm's Telegram identity a property of the SWARM, keyed by `swarm_name`, not of whatever shell
+  launched it. This is the first proof-enabler for the FES second-swarm epic (BL-435): the FES swarm must
+  run its own bot+group and never steal the primary's inbound.
+
+  THE FOOTGUN THIS CLOSES. The one-bot-per-target rule is already settled and structurally enforced (a
+  shared token gives Telegram `409 Conflict` and a shared global getUpdates offset = silent message
+  theft, per BL-380). But the isolation is fragile at the LAUNCH boundary: `front_desk_supervisor.bb`
+  today resolves creds from the ambient environment (`System/getenv "TELEGRAM_BOT_TOKEN"` /
+  `"TELEGRAM_CHAT_ID"` at ~lines 277-279, `BRIDGE_PORT` at ~line 123), so a second supervisor launched
+  from a shell that already exported the primary's token silently inherits it. Moving creds into a
+  per-swarm file removes that footgun.
+
+  DESIGN (settled with the human, 2026-07-15).
+    - Per-swarm creds file: `~/.swarmforge/fleet/<swarm_name>/telegram.json` = { botToken, chatId,
+      bridgePort }, under host $HOME — NEVER inside the target working tree (secrets rule; extension-host
+      owns the rendezvous dir).
+    - `front_desk_supervisor.bb` resolves creds by its own `swarm_name` from that file. It FALLS BACK to
+      the env vars for the primary swarm when no creds file exists, so nothing existing breaks.
+    - `bridgePort` lives in the same file so `swarm_name` keys the whole front-desk stack (bridge port is
+      already parameterized: `start-bridge-headless.js <target> <port>`; supervisor reads `BRIDGE_PORT`).
+    - `provision-onboarding-telegram-channel` writes this file on group-detection (a small change to its
+      persistence target — today it persists the channel elsewhere).
+
+  INTEGRATION POINT — VERIFY THE LIVE PATH (specifier rule). Confirm at build time the live source of the
+  running swarm's `swarm_name` that `front_desk_supervisor.bb` can read (SWARM_NAME env, and/or the
+  launch identity written at launch time — BL-090 parses swarm_name in swarmforge.sh, default `primary`).
+  The resolver must read the value the supervisor ACTUALLY has at runtime, not merely re-parse a config.
+
+  Constraints:
+    - Env fallback for `primary` is mandatory — the existing single-swarm setup must keep working with no
+      creds file present.
+    - Do not write creds into the target working tree or any commit (secrets rule).
+    - This slice does NOT change getUpdates/offset semantics (BL-380/444) — only WHERE the creds come from.
+
+  Scope (verify at build time): `swarmforge/scripts/front_desk_supervisor.bb` (creds + bridge-port
+  resolution by swarm_name with env fallback), the creds-file schema and its reader, and
+  `extension/src/tools/provision-onboarding-telegram-channel.ts` /
+  `extension/src/onboarding/telegramChannelProvisioning.ts` (write the creds file on group detection).
+
+  E2E QA PROCEDURE: with a fleet creds file for swarm "fes", start the FES front-desk supervisor from a
+  shell that ALSO exports the primary's TELEGRAM_BOT_TOKEN, and assert it uses the FES token (no 409, no
+  inbound theft). Remove the creds file for "primary" and assert the primary still resolves from env.
+
+acceptance:
+  feature: specs/features/BL-436-per-swarm-telegram-creds.feature
+  steps:
+    - "A non-primary swarm resolves its bot token and chat id from its fleet creds file, not the environment"
+    - "The primary swarm with no creds file falls back to the environment"
+    - "A creds file overrides an inherited primary token exported into the launching shell"
+    - "The bridge port is read from the creds file for a non-primary swarm"
+    - "Channel provisioning writes the creds file (botToken/chatId/bridgePort) on successful group detection"
+
+approval_context: >
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The creds-file
+  design (per-swarm telegram.json keyed by swarm_name, env fallback for primary) was settled with the
+  human 2026-07-15 (recorded in the intake); the human then approved promotion as-is, accepting the live
+  source of swarm_name at supervisor runtime be re-verified during build rather than blocking promotion.
+  Held on promotion for a separate reason: overlaps active BL-411's front_desk_supervisor.bb /
+  front_desk_supervisor_lib.bb work — sequence behind it, not a human-approval gate.
+
+mutation_cost: low

@@ -1,0 +1,48 @@
+Feature: The in-app slider is a hold-music control; the phone owns how loud Bubble speaks
+  DRAFT — parked per BL-233. The Node acceptance runner cannot execute Kotlin.
+  Promote to a live `.feature` only when bound to step handlers that drive the
+  gradle JVM unit suite (as BL-769's do); otherwise the ticket is verified by
+  its recorded manual device procedure and this file stays a draft.
+
+  BL-765 already contracted the split: the setting governs music only and the
+  reply voice follows the phone's media volume. `TalkEngine` applied the same
+  slider gain to both surfaces and `ReplyAudioPlayer` defaulted to 0.55, so on
+  2026-08-07 a human with the phone at full volume heard replies as a whisper.
+  Scenarios below cover the pure gain-routing logic; actual loudness on a
+  device is device-surface behaviour and is not asserted here.
+
+  Background:
+    Given a talk engine with a hold music player and a reply player
+
+  # BL-850 bubble-reply-volume-01
+  Scenario: the reply player starts at full app gain
+    When the talk engine initialises
+    Then the reply player gain is full
+
+  # BL-850 bubble-reply-volume-02
+  Scenario Outline: moving the slider scales hold music only
+    When the slider is set to <percent> percent
+    Then the hold music gain scales to <percent> percent
+    And the reply player gain is full
+
+    Examples:
+      | percent |
+      | 0       |
+      | 55      |
+      | 100     |
+
+  # BL-850 bubble-reply-volume-03
+  Scenario: the slider is labelled for what it actually controls
+    When the settings surface is rendered
+    Then the volume control is labelled as the hold music volume
+
+  # BL-850 bubble-reply-volume-04
+  Scenario Outline: every reply leg is left at full gain
+    Given a reply delivered over <leg>
+    When the slider is set to any percent
+    Then that leg is played at full gain
+
+    Examples:
+      | leg               |
+      | recorded audio    |
+      | text to speech    |

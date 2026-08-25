@@ -36,6 +36,10 @@ export function getWorkTreeHtml(nonce: string): string {
     tr.done td { opacity: 0.45; text-decoration: line-through; }
     tr.active { cursor: pointer; }
     tr.active:hover td { background: var(--vscode-list-hoverBackground); }
+    tr.active:focus, tr.active:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder);
+      outline-offset: -2px;
+    }
     .badge {
       display: inline-block; padding: 1px 6px; border-radius: 3px;
       font-size: 10px; text-align: center;
@@ -72,10 +76,15 @@ export function getWorkTreeHtml(nonce: string): string {
         const commit = item.lastCommit
           ? '<span class="commit-hash" title="' + escapeHtml(item.lastCommit.message) + '">' + escapeHtml(item.lastCommit.hash) + '</span>'
           : '—';
-        const clickAttr = item.status === 'active' && role
-          ? ' onclick="highlight(\'' + escapeHtml(role) + '\')"'
+        // BL-238: a row that highlights a role on activation is keyboard-
+        // operable (tabindex + Enter/Space via the shared onRowKey handler,
+        // mirroring the click behavior) and screen-reader-labeled - a
+        // <tr onclick> alone is mouse-only and has no accessible name.
+        const interactiveAttrs = item.status === 'active' && role
+          ? ' onclick="highlight(\'' + escapeHtml(role) + '\')" onkeydown="onRowKey(event, \'' + escapeHtml(role) + '\')"' +
+            ' tabindex="0" role="button" aria-label="Highlight ' + escapeHtml(role) + '\'s tile"'
           : '';
-        return '<tr class="' + cls + '"' + clickAttr + '>' +
+        return '<tr class="' + cls + '"' + interactiveAttrs + '>' +
           '<td>' + badge(item.status) + '</td>' +
           '<td>' + escapeHtml(item.id) + '</td>' +
           '<td>' + escapeHtml(item.title) + '</td>' +
@@ -93,6 +102,15 @@ export function getWorkTreeHtml(nonce: string): string {
 
     function highlight(role) {
       vscode.postMessage({ type: 'highlightTile', role });
+    }
+
+    // BL-238: Enter/Space activates a row exactly like a click, completing
+    // the role="button" keyboard contract for the work-tree's active rows.
+    function onRowKey(event, role) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        highlight(role);
+      }
     }
 
     window.addEventListener('message', event => {
@@ -198,6 +216,13 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       display: flex;
       justify-content: space-between;
     }
+    /* BL-238 keyboard-nav-tiles-01: an explicit, visible focus ring for the
+       header's own role="button"/tabindex - do not rely on a bare div's
+       default (often nonexistent) UA focus styling. */
+    .tile-header:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder);
+      outline-offset: -2px;
+    }
     .tile-agent {
       opacity: 0.7;
       font-weight: 400;
@@ -213,6 +238,22 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       font-weight: 500;
     }
     .tile.bl-active .tile-bl-badge {
+      display: inline-block;
+    }
+    /* BL-238 status-not-color-only-04: a textual equivalent of the
+       liveness border colors below (.tile.stalled/.dead/.needs-human/
+       .working), so status is never color-only. */
+    .tile-status-badge {
+      display: none;
+      margin-left: 6px;
+      padding: 1px 6px;
+      font-size: 10px;
+      border-radius: 3px;
+      background: var(--vscode-badge-background, #555);
+      color: var(--vscode-badge-foreground, #fff);
+      font-weight: 500;
+    }
+    .tile-status-badge.visible {
       display: inline-block;
     }
     /* BL-077: one stable color per pipeline stage. Ordered along the
@@ -295,6 +336,60 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       background: #e53935;
       color: #fff;
     }
+    /* handoffd process status — always visible in the header. */
+    .daemon-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 8px;
+      padding: 1px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+    }
+    .daemon-status::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.9;
+    }
+    .daemon-status.skipped {
+      color: var(--vscode-descriptionForeground);
+      border-color: var(--vscode-panel-border);
+      background: var(--vscode-editor-background);
+    }
+    .daemon-status.dead,
+    .daemon-status.halted {
+      color: #fff;
+      background: #c62828;
+      border-color: #b71c1c;
+    }
+    .daemon-status.starting,
+    .daemon-status.stale {
+      color: #1e1e1e;
+      background: #ffb300;
+      border-color: #ff8f00;
+      animation: daemon-pulse 1.4s ease-in-out infinite;
+    }
+    .daemon-status.up {
+      color: #fff;
+      background: #2e7d32;
+      border-color: #1b5e20;
+    }
+    .daemon-status.polling {
+      color: #fff;
+      background: #00897b;
+      border-color: #00695c;
+      animation: daemon-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes daemon-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.72; }
+    }
     /* BL-069 graceful bounce: draining banner + per-tile busy/idle hint. */
     .bounce-drain-banner {
       display: none;
@@ -323,6 +418,20 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     .tile.stalled {
       border-color: #d4a017;
     }
+    /* Soft teal border pulse while a pane is actively producing output. */
+    @keyframes working-beam {
+      0%, 100% {
+        border-color: #26a69a;
+        box-shadow: 0 0 0 1px rgba(38, 166, 154, 0.35);
+      }
+      50% {
+        border-color: rgba(38, 166, 154, 0.35);
+        box-shadow: 0 0 10px 2px rgba(38, 166, 154, 0.55);
+      }
+    }
+    .tile.working:not(.needs-human):not(.dead):not(.stalled) {
+      animation: working-beam 1.2s ease-in-out infinite;
+    }
     .tile.dead {
       border-color: #e53935;
     }
@@ -340,6 +449,30 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     }
     .tile.needs-human:not(.dead) {
       animation: needs-human-blink 1.5s ease-in-out infinite;
+    }
+    /* BL-421: a resolved AskUserQuestion decision menu lingers in the tile's
+       reconstructed transcript indistinguishable from a live one - the
+       existing needs-human border alone is "far too subtle" against a
+       fully-rendered menu (the ticket's own words), so this is a loud banner
+       directly above the transcript, not another small corner badge. */
+    .tile-decision-banner {
+      display: none;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .tile-decision-banner.visible {
+      display: block;
+    }
+    .tile-decision-banner.live {
+      background: #e53935;
+      color: #fff;
+    }
+    .tile-decision-banner.resolved {
+      background: var(--vscode-badge-background, #555);
+      color: var(--vscode-badge-foreground, #fff);
+      opacity: 0.85;
     }
     .restart-btn {
       display: none;
@@ -368,6 +501,26 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     }
     .tile.stalled .nudge-btn {
       display: inline-block;
+    }
+    .model-select {
+      margin-left: 6px;
+      padding: 1px 4px;
+      font-size: 11px;
+      max-width: 9em;
+      background: var(--vscode-dropdown-background, transparent);
+      color: var(--vscode-dropdown-foreground, inherit);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 3px;
+    }
+    .effort-select {
+      margin-left: 6px;
+      padding: 1px 4px;
+      font-size: 11px;
+      max-width: 7em;
+      background: var(--vscode-dropdown-background, transparent);
+      color: var(--vscode-dropdown-foreground, inherit);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 3px;
     }
     #open-pr-btn {
       display: none;
@@ -540,6 +693,7 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     <h1>SwarmForge</h1>
     <span class="status" id="status">Waiting for swarm...</span>
     <span class="stage" id="stage"></span>
+    <span class="daemon-status skipped" id="daemon-status">handoffd …</span>
     <span class="transport-health" id="transport-health"></span>
     <button id="open-pr-btn" title="Open pull request for this swarm run">Open PR</button>
   </header>
@@ -554,22 +708,22 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
   <div id="bottom-row" style="display:none;">
     <div id="recent-runs" style="display:none;">
       <div class="section-header">
-        <span class="section-title">Recent Runs</span>
-        <button class="collapse-btn" id="runs-toggle" title="Toggle">▾</button>
+        <span class="section-title" id="runs-title">Recent Runs</span>
+        <button class="collapse-btn" id="runs-toggle" aria-label="Toggle Recent Runs section" aria-expanded="true" aria-controls="runs-list">▾</button>
       </div>
       <div id="runs-list"></div>
     </div>
     <div id="backlog" style="display:none;">
       <div class="section-header">
-        <span class="section-title">Backlog</span>
-        <button class="collapse-btn" id="backlog-toggle" title="Toggle">▾</button>
+        <span class="section-title" id="backlog-title">Backlog</span>
+        <button class="collapse-btn" id="backlog-toggle" aria-label="Toggle Backlog section" aria-expanded="true" aria-controls="backlog-list">▾</button>
       </div>
       <div id="backlog-list"></div>
     </div>
     <div id="metrics" style="display:none;">
       <div class="section-header">
-        <span class="section-title">Metrics</span>
-        <button class="collapse-btn" id="metrics-toggle" title="Toggle">▾</button>
+        <span class="section-title" id="metrics-title">Metrics</span>
+        <button class="collapse-btn" id="metrics-toggle" aria-label="Toggle Metrics section" aria-expanded="true" aria-controls="metrics-list">▾</button>
       </div>
       <div id="metrics-list"></div>
     </div>

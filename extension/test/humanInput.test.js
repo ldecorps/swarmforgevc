@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -8,7 +9,7 @@ const { readLog } = require('../out/swarm/messageBus');
 const { logHumanInput, isHumanInputMessage } = require('../out/swarm/humanInput');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-human-'));
+  return mkTmpDir('sfvc-human-');
 }
 
 // ── logHumanInput ──────────────────────────────────────────────────────────

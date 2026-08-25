@@ -1,0 +1,81 @@
+id: BL-448
+title: "mono-rotate pack: one resident agent rotates through the whole pipeline (all gates preserved) - FES's new default bring-up"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: fleet-second-swarm
+priority: 37
+direction: human-requested
+depends_on: []
+source: "backlog-root INTAKE-operator-directive-1784183634293.md (Operator, 2026-07-16T06:33:54Z): add a mono-role rotating agent pack - ONE agent plays the pipeline roles one at a time instead of one persistent agent per role, to fit the memory-constrained FES host (15GB, OOM-crashed). Drained by the specifier per the backlog-root rule; the three open design points the Operator left were resolved with the human 2026-07-16 (see notes)."
+
+notes: |
+  A new pack `mono-rotate`: ONE resident pipeline agent walks each parcel through every role in turn
+  (assume a role, do the work + its gate, self-hand-off, re-prompt into the next role: coder -> cleaner ->
+  architect -> hardener -> documenter -> QA, plus the specifier stage as the intake boundary allows),
+  instead of one long-lived agent per role. The coordinator stays separately auto-provisioned (reserved
+  infrastructure, BL-243). One resident pipeline process instead of two-plus is the point: it fits a
+  memory-constrained host far better than even the 2-pack.
+
+  HUMAN DECISIONS 2026-07-16 (answers to the specifier's drain questions - the Operator explicitly left
+  these to be resolved):
+    1. GATE MODEL = FULL pipeline, ALL gates preserved. The memory saving comes ONLY from one resident
+       process, NEVER from dropping a gate. Every gate the full pack runs (acceptance, coverage,
+       mutation/no-survivors, CRAP<=6, QA final) still runs. Slower wall-clock is the accepted cost. This
+       is NOT a reduced-rigor cheap mode.
+    2. FES RELATIONSHIP = mono-rotate BECOMES FES's default bring-up, superseding BL-439's 2-pack. BL-439
+       is reshaped in the same pass to point at mono-rotate and gains depends_on BL-448 (a swarm cannot
+       default to a pack that does not exist yet).
+    3. ROTATION MECHANISM = the ARCHITECT chooses the substrate mechanism (single re-prompted process vs.
+       role windows sequenced one-at-a-time vs. other). This ticket fixes the observable CONTRACT, not the
+       mechanism - so much of the acceptance is a live QA procedure whose executable-vs-live split is
+       settled at build time once the mechanism is fixed (as BL-439).
+
+  INDEPENDENCE CAVEAT (the load-bearing design risk - flag for the architect). SwarmForge's quality model
+  rests on role INDEPENDENCE: a downstream role bounces the upstream role's work. With one agent playing
+  both sides, a "bounce" becomes a self-review. The human chose FULL gates knowingly; the architect must
+  decide how a self-bounce is made meaningful (e.g. a genuine re-prompt into fresh role context, so the QA
+  pass is not merely the coder's own eyes on its own work) and document the reduced independence honestly
+  rather than paper over it. Resolve this at design; it is the central risk of the whole config.
+
+  DELIVERABLE:
+    - swarmforge/packs/mono-rotate.conf (new pack; exact grammar follows the architect's mechanism).
+    - A role/pipeline prompt overlay (e.g. swarmforge/packs/mono-rotate.prompt) telling the single agent
+      how to rotate through role prompts and self-hand-off while preserving every gate.
+    - Whatever swarmforge.sh parse/provision change the mechanism needs (coordinator stays auto-provisioned,
+      never a window line - BL-243).
+    - Reshape BL-439 to adopt mono-rotate as FES's default (done in this spec pass).
+
+  Scope (verify the live path at build time - specifier rule): swarmforge/scripts/swarmforge.sh's
+  parse_config / provision_coordinator / write_roles_file -> .swarmforge/roles.tsv (the pack parse+provision
+  seam; there is a shell test seam it already uses - test_coordinator_provisioned_infrastructure.sh /
+  test_backlog_depth_pack_override.sh, with env -u SWARMFORGE_CONFIG per the engineering rule);
+  swarmforge/packs/ (the new conf + prompt overlay); and the coordinator/tmux-remote-control provisioning
+  path. This is governance/config text the specifier authored; the mechanism is the architect's.
+
+  ACCEPTANCE FILE STATUS (BL-441 risk - do NOT drop this): the contract Gherkin is parked in
+  specs/features/BL-448-mono-rotate-pack.feature.draft (non-executable; will not break the acceptance
+  runner, BL-233) because the testable seam depends on the architect's undecided mechanism. When this is
+  promoted and the mechanism is fixed, MATERIALIZE the .draft into a live
+  specs/features/BL-448-mono-rotate-pack.feature with step handlers - do NOT let it reach QA still a .draft.
+
+  E2E QA PROCEDURE: launch a target with `--pack mono-rotate`; confirm exactly one resident pipeline agent
+  process serves all roles alongside the separately-provisioned coordinator (not one process per role - the
+  memory-economy property); drive one parcel end to end and confirm it passes through coder->cleaner->
+  architect->hardener->documenter->QA in order with every gate (acceptance, coverage, mutation, CRAP, QA)
+  actually run, reaching done only after QA; confirm the resident-process count is materially below the
+  2-pack's on the same host.
+
+acceptance:
+  feature: specs/features/BL-448-mono-rotate-pack.feature
+  steps:
+    - "The mono-rotate pack brings up one resident pipeline agent covering all roles, coordinator auto-provisioned separately"
+    - "A parcel is carried through every pipeline role in order before it is done"
+    - "Every quality gate the full pack enforces still runs under mono-rotate - no gate skipped for being lighter"
+
+human_approval: >
+  Design points settled with the human 2026-07-16 (specifier drain questions): full gates, mono-rotate
+  becomes FES's default, architect chooses the mechanism. The TICKET itself still needs the normal
+  per-ticket human_approval before promotion, and the .feature.draft needs human review once materialized.
+mutation_cost: medium

@@ -1,0 +1,64 @@
+id: BL-453
+title: "Rebrand the front-desk standing topic Operator -> Concierge: bell icon (🛎) + 'Concierge' label"
+milestone: M8
+type: chore
+severity: low
+status: todo
+epic: ""
+priority: 15
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784200528742.md (front-desk rebrand -> Concierge; set the front-desk topic icon+label) + backlog/INTAKE-operator-question-1784200719791.md (glyph addendum: human chose the bell 🛎, 'The bell is fine', OPERATOR thread 2026-07-16 11:16Z). Two backlog-root intake items folded into one ticket per the addendum's own instruction ('fold 🛎 into that Concierge icon+label ticket... No new topic needed')."
+
+description: |
+  The front-desk/Telegram surface is being renamed Operator -> Concierge. Set the front-desk standing
+  topic's ICON to the bell-hop desk bell (🛎, human-chosen) and its LABEL to "Concierge". Small,
+  human-requested rebrand; a tracked ticket per the human's explicit ask.
+
+  Seams (verified in code 2026-07-16 — grep-confirm at build before editing):
+    - Icon: `STANDING_TOPIC_ICON.operator` in extension/src/concierge/topicIcon.ts, TODAY '🏛'
+      (opera-house, BL-418) -> change to the bell '🛎'. The concierge tick's `syncTopicIcon` already
+      drives the standing-topic icon from this table (conciergeTick.ts:311), resolving the glyph's sticker
+      id via `resolveIconStickerId`/`IconStickerLookup`. A single-topic single edit — no fan-out storm.
+      This SUPERSEDES the BL-418 opera-house choice for the front desk; update docs/branding/icon-system.md
+      to match in the documenter pass.
+    - Label: `OPERATOR_TOPIC_NAME` in extension/src/tools/telegramFrontDeskBotCore.ts, TODAY 'Operator' ->
+      'Concierge'. That constant is the create-time name (telegram-front-desk-bot.ts:314 createForumTopic).
+      Because the front-desk topic already EXISTS and is bound (ensureOperatorTopic, idempotent), the LIVE
+      topic must be RENAMED via `editForumTopic(name)` too — not only the constant for future creation.
+      Reuse the existing topic-title edit seam (topicTitleSync.ts / editForumTopic, BL-414), rate-limit-safe.
+    - Do NOT change `OPERATOR_SUBJECT_ID` ('OPERATOR') — it is the durable binding/ownership key, not the
+      display label; changing it would re-mint or orphan the topic. Only the display name + icon change.
+
+  Out of scope: the broader Operator -> Concierge rename of message SIGNATURES / bylines (the still-unfiled
+  Concierge rename the intake names) — a separate follow-up, not this icon+label ticket.
+
+  Constraints:
+    - Single-topic single edit for both icon and title (no mass fan-out; edge-gated like the existing
+      icon/title sync — do not re-edit an already-correct topic every tick).
+    - Reuse the existing bound topic; never re-mint the front-desk topic (durable binding id unchanged).
+    - Keep the change to the two constants + the existing-topic rename; behavior otherwise unchanged.
+
+  Sequencing (repo file-overlap-via-notes convention): touches topicIcon.ts and the front-desk topic
+  title, overlapping active BL-449 (topic musical-form icons) and BL-414 (topic-title-age sync) —
+  sequence behind them, not concurrent on the shared files.
+
+  E2E QA PROCEDURE: with the front-desk bot running, assert the front-desk standing topic shows the bell
+  (🛎) icon and is titled "Concierge" in Telegram; assert the existing bound topic was reused (same
+  message-thread id, not a newly-created topic) and its durable binding id is unchanged; assert a second
+  tick does not re-edit the already-correct icon/title.
+
+acceptance:
+  feature: specs/features/BL-453-concierge-front-desk-icon-label.feature
+  steps:
+    - "The front-desk standing topic uses the bell icon"
+    - "The front-desk standing topic is labelled Concierge"
+    - "Rebranding reuses the existing bound topic rather than re-creating it"
+
+human_approval: >
+  Human-requested and glyph human-chosen 2026-07-16 (front-desk rebrand -> Concierge; "The bell is fine"
+  = 🛎). Icon + label scope is explicit in the intake; message-signature rename is a separate follow-up.
+  Hold on promotion for file overlap with active BL-449 (topic icons) and BL-414 (title sync) — sequence
+  behind them, not a human-approval gate.
+
+mutation_cost: low

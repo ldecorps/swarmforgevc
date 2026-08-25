@@ -61,13 +61,21 @@
 (defn run-helper! [script]
   (process/exec (str (fs/path script-dir script))))
 
+(defn refuse-unexpected-args!
+  "BL-652: done_with_current family takes no arguments. Any argv (including
+   --help) must fail fast with usage text and zero completion side effects.
+   Call before any mailbox mutation or helper dispatch."
+  []
+  (when (seq *command-line-args*)
+    (exit! 2 "Usage: done_with_current.sh takes no arguments")))
+
 (defn run-dispatch!
   "Dispatch to the shell helper configured for the current role's receive mode.
    mode->script maps receive-mode string (\"task\"/\"batch\") to the sibling
    .sh wrapper to exec."
   [mode->script]
   (let [role-name (role)
-        mode (receive-mode role-name)]
+        mode      (receive-mode role-name)]
     (if-let [script (get mode->script mode)]
       (run-helper! script)
       (exit! 2 (str "INVALID_RECEIVE_MODE: " mode " for role " role-name)))))

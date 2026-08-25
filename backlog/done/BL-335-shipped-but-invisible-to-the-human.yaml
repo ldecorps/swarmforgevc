@@ -1,0 +1,75 @@
+id: BL-335
+title: "Three features shipped, closed and STILL INVISIBLE to the human — find out why a done ticket doesn't reach him"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 3
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-shipped-but-invisible-to-the-human.md — three separate bug reports the human filed in the Telegram front desk between 2026-07-12T00:26Z and 03:24Z, which then went UNREAD FOR TWO DAYS (BL-333/BL-334). Each says a ticket marked done did not reach his screen. These are live reports, not stale complaints."
+
+notes: |
+  THE REPORTS. Each POST-DATES the fix that was supposed to deliver it — that is the whole point.
+    1. "The diagrams in the daily email are still not rendered" (2026-07-12T03:24Z).
+       BL-286 (email images must be cid inline attachments, not data-URIs) merged 2026-07-11 13:41
+       — FOURTEEN HOURS BEFORE the complaint. BL-286 is done.
+    2. "Bug: this is still not showing on pwa and email: unit-test suite-duration trend with a
+       regression flag (BL-252)" (2026-07-12T02:14Z). BL-252 AND BL-290 are both done.
+    3. "Can I get the architecture diagram on the daily briefing. As well as on the pwa."
+       (2026-07-12T00:26Z). BL-260 (briefing diagrams) is done; the PWA half is unclear and may
+       genuinely never have been built — CHECK BEFORE ASSUMING IT IS A DELIVERY BUG.
+
+  WHY THIS IS ONE TICKET AND NOT THREE. The PATTERN is the finding. Three tickets are green,
+  merged and closed, and the only person whose opinion counts says the thing is not there. The
+  likely truth is not "three broken features" but "three features that were never actually
+  EXECUTING in the human's real environment". Two known mechanisms in this codebase produce
+  exactly this shape, and both were discovered the same way — a human noticing a dark surface:
+    - STALE BUILD (BL-328, now done): merged code never reached the running processes. The bot and
+      bridge were found running a 25-HOUR-OLD build, so BL-298/BL-320/BL-325 were merged, closed
+      and INERT. Any compiled emitter — briefing render, PWA data, email — can be stale the same
+      way. BL-328 landed a freshness report + sync; USE IT (`build_freshness_cli.bb <root> report`)
+      as a first-line diagnostic rather than reasoning about it.
+    - HOST-ONLY / DARK WHEN HEADLESS (BL-336, the audit the human asked for): work that only runs
+      from the VS Code host silently does nothing on a headless day. BL-214/BL-258/BL-272 were all
+      this class.
+
+  SCOPE — VERIFICATION FIRST, FIX SECOND. Do NOT start by writing code.
+    1. FOR EACH OF THE THREE: reproduce THE HUMAN'S VIEW. Open the ACTUAL briefing email he
+       receives (not a generated fixture, not a test render); load the ACTUAL deployed PWA (not a
+       local dev server, unless you first prove they are the same artifact). State plainly, with
+       evidence, whether the feature is PRESENT.
+    2. IF PRESENT -> the report was stale. Say so, show the evidence, close that one. A stale
+       report is a legitimate outcome and must be reported as such, not quietly fixed.
+    3. IF ABSENT -> find WHY A DONE TICKET IS INVISIBLE. Stale build? Host-only path with no
+       headless caller? Emitter never wired to the surface at all? FIX THE CAUSE, NOT THE SYMPTOM.
+       Re-rendering a diagram by hand is not a fix; finding out why the render never ran is.
+    4. REPORT THE CAUSE OF EACH, EVEN THE ONES THAT TURN OUT FINE. The human asked three
+       questions and is owed three answers.
+
+  THE ONE RULE THAT MATTERS: DO NOT MARK ANY OF THESE VERIFIED FROM A UNIT TEST. The entire class
+  of bug is "green in tests, dead in the human's actual view". A passing test is what these three
+  tickets ALREADY HAD when they were closed. If your evidence is a test, you have reproduced the
+  bug, not found it.
+
+  NOTE ON REPORT 3: "as well as on the pwa" may be a FEATURE REQUEST rather than a delivery
+  defect — BL-260 delivered the briefing half and the PWA half may simply never have been in
+  scope. If so, say that plainly and raise it as a separate ticket. Do not silently build it here
+  and do not silently drop it.
+
+  E2E QA PROCEDURE: QA must independently confirm the human's view for each of the three — the
+  real email, the real PWA — and must reject any claim of "verified" whose only evidence is a
+  test run, a local render, or a code reading.
+
+acceptance:
+  feature: specs/features/BL-335-shipped-but-invisible-to-the-human.feature
+  steps:
+    - "Each report is checked against the surface the human actually looks at"
+    - "A feature that is present is reported as a stale complaint, with evidence"
+    - "A feature that is absent has its cause found, not just its symptom patched"
+    - "No report is closed on the strength of a passing test"
+    - "The human gets an answer for every report he filed"
+
+human_approval: pending
+
+mutation_cost: medium

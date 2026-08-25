@@ -1,125 +1,124 @@
 # Workflow Rules
 
+## How Work Moves — Normal Live Swarm, Queue-Jump, Ambulance, Expeditor (BL-715)
+- **The normal live swarm is the default path** for every ticket. Three
+  named specials exist and **none replaces it**: **queue-jump** (reorders
+  promotion only, Article 3.2.4), **ambulance** (holds other parcels for
+  one ticket, `docs/how-to/BL-655-ambulance-mode-the-hold.md`), and
+  **expeditor** (drives one ticket with the swarm stopped,
+  `swarmforge/scripts/expedite.sh`). **queue-jump ≠ ambulance ≠
+  expeditor.** See **workflow-detailed.prompt** for the escalation ladder.
+
+## Handoff transport (tmux primary, mailbox backup)
+- Agents send work via `swarm_handoff.sh` only — never direct tmux commands.
+  A successful handoff delivers to `inbox/new/` and injects a tmux wake; run
+  `ready_for_next.sh` and work the task. A backup-mailbox delivery gets a
+  brief note.
+
 ## Context Clear Requires Startup Re-Read
-- Whenever an agent's context is cleared (a `/clear`, an idle-boundary context
-  clear, a respawn, or any other event that empties the conversation), the very
-  next thing the agent does is re-run its full startup instructions: re-read
-  `swarmforge/constitution.prompt` (and every file it refers to, recursively),
-  `swarmforge/PIPELINE.md`, and its own `swarmforge/roles/<role>.prompt`, then
-  resume its role loop (for most roles: `ready_for_next.sh`).
-- Never continue working after a clear on remembered or summarized instructions
-  alone — the governing files are the source of truth and may have changed
-  since they were last read.
-- Whoever issues a `/clear` to an agent pane must follow it with the startup
-  instruction message; an agent left cleared without one must still perform the
-  re-read on its next wake-up before touching any work.
-- The maximum number of items allowed in `backlog/active/` at once is defined in
-  `swarmforge/swarmforge.conf` by the line `config active_backlog_max_depth <N>`.
-- Reading that config line is part of reading this constitution: any role whose
-  behavior depends on the cap (the coordinator's promotion decisions, the
-  specifier's routing awareness, orthogonality checks below) must read the
-  CURRENT value from `swarmforge.conf` at startup and before each promotion
-  decision — never assume a remembered or default value; the conf is the single
-  source of truth and may change between sessions.
-- A value of `-1` means the depth cap is disabled: the coordinator promotes
-  every eligible paused item regardless of how many are already active.
-  Disabling the cap does not disable Concurrent Work Orthogonality below —
-  overlapping-scope items are still sequenced, never run concurrently.
+- On any context clear, immediately re-enter your role loop from a fresh
+  chat — never continue on remembered chat alone. The system prefix
+  survives a `/clear` without a respawn (BL-519); whoever issues one
+  follows it with the launch kickoff line.
+- `active_backlog_max_depth` (`swarmforge.conf`): read the CURRENT value,
+  never a remembered one, before each promotion decision. `-1` disables
+  the cap only, not Concurrent Work Orthogonality below. See
+  **workflow-detailed.prompt**.
 
 ## Backlog Intake Order
-- The backlog root (`backlog/` itself, not a subfolder) is the human's raw intake
-  queue: requests the human drops there directly, not yet turned into specs.
-- The specifier must DRAIN the backlog root before looking at any queued items.
-  Root items take precedence over items already in `backlog/paused/` and
-  `backlog/active/`.
-- Draining a root item means: read the raw item, resolve ambiguity with the human
-  if needed, write a proper spec for it (prose `description:` + Gherkin
-  `acceptance:`), place that spec into `backlog/paused/`, and remove the raw item
-  from the root so it is not processed twice.
-- Only once the backlog root is empty may the specifier turn to queued work.
-- This governs the specifier's intake order only. The coordinator's separate
-  promotion order (paused before root) is unchanged.
+- The backlog root (`backlog/` itself) is the human's raw intake queue —
+  the specifier DRAINS it before queued items, taking precedence over
+  `paused/`/`active/` until empty. See **workflow-detailed.prompt**.
+
+## Amending An In-Flight Ticket's Spec (BL-317/BL-325)
+- A ticket's spec can change WHILE in flight; committing to `main` is NOT
+  enough — every role reads its OWN stale worktree copy until it merges.
+  **The specifier sends a `note` (priority `00`) to whoever HOLDS the
+  parcel**; **the receiver merges `main` first**. See
+  **workflow-detailed.prompt**.
 
 ## Concurrent Work Orthogonality
-- Applies to the coordinator when `active_backlog_max_depth` > 1, so more than one
-  parcel can be in flight at once.
-- Before promoting the next item into `backlog/active/`, compare its scope (the
-  files, modules, and areas named in the ticket's `description:`/`Scope:`) against
-  the scope of every item already active or in flight.
-- Prefer a concurrently-active set that is ORTHOGONAL — items that touch different
-  files/modules/areas. Do not run two items that edit the same file or a tightly
-  coupled area at the same time; overlapping concurrent edits cause merge
-  conflicts and rework.
-- If the next item by priority would overlap something already in flight, skip
-  past it to the next orthogonal candidate, keeping priority and bugs-first order
-  among the orthogonal candidates. If no orthogonal candidate exists, leave the
-  slot empty and let the overlapping in-flight item finish before promoting the
-  overlapping one — never force two overlapping items to run concurrently.
-- This is a "where possible" preference, not an absolute bar: a lone high-priority
-  item with no orthogonal companion still runs alone, and nothing is starved — the
-  moment its overlapping sibling merges, promote it next.
-- Orthogonality never overrides the hard caps: stay at or below
-  `active_backlog_max_depth`, and keep bugs-first ordering among equally-orthogonal
-  candidates.
+- Applies to the coordinator when `active_backlog_max_depth` > 1: prefer an
+  ORTHOGONAL concurrently-active set (never two items touching the same
+  file); skip an overlapping item for the next candidate (expedited
+  defects first, Article 3.2.4), leaving the slot empty if none exists.
+  See **workflow-detailed.prompt**.
 
 ## Worktree Discipline
-- At startup, discover and remember the branch or worktree assigned to your role.
-- If your assigned worktree is `master`, work in the main project checkout on its current branch; do not expect or create a `.worktrees/<role>` directory for that role.
-- Work only in your assigned branch or worktree.
-- Do not inspect, diff, merge, or base work on another branch unless that branch is specifically named in a handoff or explicit user instruction.
-- Do not run `./swarm` from an agent worktree to repair helper scripts. If handoff helper scripts are missing from PATH, stop and report the startup failure.
+- At startup, discover and remember your assigned branch/worktree; work
+  only there. Do not base work on another branch unless named in a
+  handoff. Do not run `./swarm` from an agent worktree to repair helper
+  scripts — stop and report instead. See **workflow-detailed.prompt**.
 
 ## Forwarded Commits Carry Their Lineage
-- When you receive a `git_handoff` and forward the parcel after your stage
-  work, the commit you forward MUST have the received commit as an
-  ancestor (`git merge-base --is-ancestor <received> <yours>` must hold).
-  `merge_and_process` means merge FIRST, then work, then forward.
-- The merge step is a plain `git merge <received-commit>` (or `git merge
-  --no-ff <received-commit>` to keep a visible merge commit) into your
-  current worktree branch — never `git reset --hard`, never `git checkout
-  <commit> -- .`, never any operation that replaces your tree instead of
-  combining it with the received one. A reset/checkout-style "sync" silently
-  discards local work not yet present in the received commit, which reads
-  exactly like a reverted bug at the next session start (BL-126: this
-  ambiguity — `merge_and_process` naming an outcome, not a command — was one
-  of two suspected mechanisms behind recurring phantom-revert diffs; the
-  other, confirmed one was `extension/out/` being tracked-but-gitignored,
-  see the engineering article).
-- Before sending any forward, run that ancestry check; if it fails, you
-  are about to forward a parcel that silently drops upstream work — stop
-  and merge the received commit properly.
-- The receiving role (including the specifier at merge time) re-runs the
-  same check and refuses parcels that fail it, reporting to the
-  coordinator instead of processing them.
-- (Added 2026-07-05 after BL-090/BL-103's implementation was dropped: the
-  documenter forwarded its docs commit without merging the hardener's
-  verified work, and QA approved a parcel whose code never existed in its
-  tree.)
+- A forwarded commit MUST have the received commit as an ancestor
+  (`git merge-base --is-ancestor <received> <yours>`). Merge FIRST (plain
+  `git merge`/`--no-ff`, never `reset --hard`), then work, then forward,
+  re-running the ancestry check every time. See
+  **workflow-detailed.prompt**.
 
-## Announcements
-- Do not add role bylines to announcements or check-in comments.
+## An Approval Authorizes Only Its Ticket's Work (BL-506)
+- A parcel carries ONE ticket's task name; QA approval authorizes ONLY that
+  work. Stage ONLY the paths your ticket touched — ticket-less changes stay
+  unstaged, never folded in via `git add -A`. Review stages reject
+  out-of-scope diffs. See **workflow-detailed.prompt**.
 
-## Commit Messages
-- Include your role byline in every git commit message in this form: `By <role>.`
-- Example:
+## A Bounce Must Be Reverted Out Of The Bouncing Branch (BL-490/BL-495)
+- Bouncing sends a `note` back but does NOT remove the bounced commit —
+  revert it in the same step (`git revert -m 1 <your-review-merge>`;
+  confirm CONTENT is gone, never by ancestry). **EXCEPTION: already an
+  ancestor of `main` → do NOT revert**; report the breach.
+- **Entangled batch merge**: if `-m 1` would revert OTHER tickets' work,
+  revert the bounced ticket's own commits/paths instead — never the batch
+  merge, never nothing. If you cannot, the branch is QUARANTINED: forward
+  nothing from it until the content is gone (BL-956).
+- **A re-fix merge can drop it again**: after merging a re-fix for a ticket
+  you bounced-and-reverted, diff every file against the sender's tip before
+  committing — the merge can silently re-apply your own revert's deletion
+  with no conflict marker (BL-954). See **workflow-detailed.prompt**.
 
-```text
-Implement handoff validation
+## Never Blind-Forward A Bounce You Cannot Fix (BL-425/BL-576)
+- A bounce routes to the role that owns the fix. One reaching you for a
+  defect OUTSIDE your domain: do NOT merge/forward it onward — bounce it
+  on to the owning role. Owning it yourself is also wrong. See
+  **workflow-detailed.prompt**.
 
-By coder.
-```
+## A Prior QA Bounce Is Not In Your Worktree — Check It Against `main` (BL-340)
+- Before you PASS/approve/forward, check whether the ticket was already
+  bounced for a defect still unfixed. **Read bounce history from a `main`
+  REF**, never worktree files. See **workflow-detailed.prompt** for the
+  full pre-trim wording.
+- **Read BOTH `main` and `origin/main` — either can be the stale one**;
+  the local ref is not reliably the fresher. Run `git rev-list
+  --left-right --count main...origin/main` before trusting either, and
+  read the one that is ahead (BL-891). See **workflow-detailed.prompt**.
 
-## Temporary Files
-- Use `./tmp/` in your assigned worktree for temporary files; do not use `/tmp`.
+## QA merge-up broadcast (worktree roles)
+- A pipeline worktree role receiving a merge-up `note` from QA: `git merge
+  <qa-commit>` in your worktree, resolve conflicts, then
+  `done_with_current.sh` — do not forward, the chain ended at QA. Specifier
+  and coordinator are not merge-up recipients (BL-247). See
+  **workflow-detailed.prompt**.
+
+## Announcements, Commit Messages, Temporary Files
+- Announcements/check-in comments: no role bylines. Every git commit
+  message: include a role byline, `By <role>.` Temporary files: `./tmp/`
+  in your assigned worktree, never `/tmp`. See **workflow-detailed.prompt**.
+
+## Clean Up After Yourself — Never Delete What You Did Not Create
+- Remove scratch artifacts YOU created this turn before ending it.
+- NEVER delete, move, or `git clean` a file you did not create.
+- Ticket-less changes you did not make are SURFACED, not swept.
+- `git stash` is repo-wide; never bare-reach for it to tidy just one worktree.
+  See **workflow-detailed.prompt**.
 
 ## Failure Conditions
-- If the expected git layout or assigned worktree is missing, stop and report instead of silently working in the wrong place.
+- If the expected git layout or assigned worktree is missing, stop and
+  report instead of silently working in the wrong place. See
+  **workflow-detailed.prompt**.
 
 ## Coordinator Session Must Never Exit (BL-107)
-- The coordinator is the swarm-forge cleanup owner: its pane exiting tears
-  down the entire swarm (kills `handoffd` and every role's session), not
-  just the coordinator's own process. The coordinator must never exit its
-  session for any reason — a swarm restart is requested through the bounce
-  procedure (`swarmforge/scripts/remote_bounce.sh`), never by exiting.
-  See `swarmforge/roles/coordinator.prompt` for the full bounce procedure
-  and its durable acknowledgement (`.swarmforge/bounce-ack.json`).
+- The coordinator's pane exiting tears down the ENTIRE swarm. It must
+  never exit for any reason — a restart goes through the bounce procedure
+  (`swarmforge/scripts/remote_bounce.sh`), never exiting. See
+  `swarmforge/roles/coordinator.prompt` and **workflow-detailed.prompt**.

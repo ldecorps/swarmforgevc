@@ -1,7 +1,7 @@
 id: BL-078
 title: track test-suite duration over time — surface creep before it throttles the swarm
 milestone: M5
-status: todo
+status: done
 priority: 17
 assigned_to: coder
 
