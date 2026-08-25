@@ -2,8 +2,9 @@ id: BL-1142
 title: "Local Ollama: mono-router vs full-forge under CPU (depth / rotation)"
 milestone: M8
 type: feature
-status: todo
+status: active
 epic: local-llm-swarm
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: [BL-1140]
@@ -58,6 +59,10 @@ qa_e2e_procedure: >
   staff unbounded local seats. (3) qwen-forge not used as substitute.
   (4) cursor-forge day-shift untouched by this ticket alone.
 notes: |
+  - [2026-08-25T19:05Z] coder: decision mono-router stay (depth 1). Evidence:
+    BL-1127 pass + ~4.8Gi avail RAM / load~5. Gate
+    local_ollama_pack_shape_gate.sh wired into start-swarm-ollama-qwen.sh;
+    how-to + APS + property + shell unit. Acceptance 4/4.
   - [2026-08-25T18:35Z] specifier: minted JumpQ under BL-1125 from
     INTAKE-prioritize-local-ollama-remaining-20260825.md; feature armed;
     depends_on BL-1140. Epic remaining_slices updated.
