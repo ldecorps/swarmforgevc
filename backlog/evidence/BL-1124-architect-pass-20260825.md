@@ -1,38 +1,33 @@
 # BL-1124 — architect pass — 20260825
 
-**Tip:** cleaner `404b9fbc34` (BL-1124 stacked on hitchhike-gate-clean rematch
-stack)  
-**Handoff:** `00_20260825T103504Z_000768_from_cleaner_to_architect_for_architect.handoff`
+**Tip:** cleaner `f4f01e96f4` (coder rematch `3ddab12d4f`)
+**Handoff:** `00_20260825T190040Z_000859_from_cleaner_to_architect`
 
 ## Verdict
 
 **Pass** — forward to hardender. Review inventory: NONE.
 
-## Inventory
+## Scope / tip purity
 
-| Surface | Status |
-|---------|--------|
-| Feature | on tip |
-| APS + index | on tip |
-| `property_suite_shared_repo_guard.sh` + drift/expedite wiring | on tip |
-| Unit (`property_suite_shared_repo_guard_test_runner.sh`) | ALL PASS |
-| Drift guard tests | ALL PASS |
-| Acceptance | **4/4** |
-| how-to | present |
+`origin/main...f4f01e96f4` = **4 paths**, **0 deletes** (tip-pure reset).
+Rematch only: canary spawn paths must not inherit
+`SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD`. Guard product already on tip/main.
 
-Hitchhike gate `acpHostClient|hotfix-ledger|^backlog/INTAKE-|done/M8` → CLEAN.
-Tip vs `origin/main` includes prior rematch stack (BL-506: forward authorizes
-**BL-1124 paths only**).
+## Architecture
 
-## Declared invariants
+- Root cause of rematch: agent commit env set the skip override, so APS
+  scenario 02 / shell 05 green-washed without exercising the bare-flip canary.
+- Fix: opt-in `enforcePropertyGuard` deletes the skip in APS `sh()` for the
+  canary spawn; shell runner uses `env -u SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD`.
+- Isolation ownership unchanged — skip remains valid for non-canary commit
+  paths; only verification of the canary forces the real guard.
 
-1. Fixtures never rename/advance live main/role refs — snapshot/assert +
-   refuse_live_fixture_dest (unit + acceptance).
-2. Shared `core.bare` stays false after suite — assert_not_bare (unit + acceptance).
+## Verification
 
-Also: refuse reset-to-origin when ahead (recovery safety).
+| Check | Result |
+|-------|--------|
+| `property_suite_shared_repo_guard_test_runner.sh` with `SKIP=1` | ALL PASS |
+| APS BL-1124 with `SKIP=1` | 4/4 pass |
+| Tip deletes | 0 |
 
-Architecture: small bash helpers, thin wiring into drift guard; cleaner DRY
-of bare assert via snapshot field.
-
-Hardener: recreate on tip; do not mash unrelated stacks further.
+By architect.
