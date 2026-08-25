@@ -186,7 +186,8 @@ import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } fr
 import { readBacklogFolders, lookupBacklogItemById } from '../panel/backlogReader';
 import { loadApprovalMoreText } from '../concierge/approvalAskMore';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
-import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs } from '../concierge/blTopicStore';
+import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs, topicsDir } from '../concierge/blTopicStore';
+import { retireTrackedSupervisorRecords } from '../concierge/topicThreadKind';
 import { IconStickerLookup, StandingTopicTarget, ROLE_TOPIC_ICON, RoleTopicIconRole, RoleTopicTarget } from '../concierge/topicIcon';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
@@ -3340,6 +3341,10 @@ export async function main(): Promise<void> {
   // BL-426 slice 1: optional - absent means voice I/O is simply not wired
   // (see buildPollAdapters/connectAndRelayReplies), never a startup failure.
   const openaiApiKey = process.env.OPENAI_API_KEY;
+
+  // BL-695: migrate legacy tracked SUP-*.json icons into untracked store
+  // before binding standing topics (inv2 — before ensureOperatorTopic).
+  retireTrackedSupervisorRecords(targetPath, topicsDir(targetPath));
 
   // BL-346: bind the standing Operator topic BEFORE any loop starts
   // polling, so no inbound message can ever reach it while it is still
