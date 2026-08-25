@@ -32,28 +32,23 @@ bl1142_window_count() {
 # Classify a pack body for local Ollama staffing.
 # Prints one of: mono-router | capped-forge | uncapped-forge | unknown
 # Args: pack_body
-bl1142_classify_pack_shape() {
-  local body="$1"
-  local rotation depth windows
-  rotation="$(bl1142_pack_config "$body" rotation)"
-  depth="$(bl1142_pack_config "$body" active_backlog_max_depth)"
-  windows="$(bl1142_window_count "$body")"
-
-  if [[ "$rotation" == "router" ]]; then
-    if [[ -n "$depth" && "$depth" -le "$LOCAL_OLLAMA_MONO_MAX_DEPTH" ]]; then
-      echo mono-router
-      return 0
-    fi
-    # Router without a tight depth is still rotation-disciplined but not our
-    # durable local default — treat as capped-forge only when depth is set.
-    if [[ -n "$depth" && "$depth" -gt 0 ]]; then
-      echo capped-forge
-      return 0
-    fi
-    echo uncapped-forge
+bl1142_classify_router_shape() {
+  local depth="$1"
+  if [[ -n "$depth" && "$depth" -le "$LOCAL_OLLAMA_MONO_MAX_DEPTH" ]]; then
+    echo mono-router
     return 0
   fi
+  # Router without a tight depth is still rotation-disciplined but not our
+  # durable local default — treat as capped-forge only when depth is set.
+  if [[ -n "$depth" && "$depth" -gt 0 ]]; then
+    echo capped-forge
+    return 0
+  fi
+  echo uncapped-forge
+}
 
+bl1142_classify_standing_shape() {
+  local depth="$1" windows="$2"
   # Standing (non-router) local multi-seat without a positive depth cap
   # would wedge Ollama under concurrent seats.
   if [[ -n "$depth" && "$depth" -gt 0 && "$windows" -le 8 ]]; then
@@ -65,6 +60,20 @@ bl1142_classify_pack_shape() {
     return 0
   fi
   echo unknown
+}
+
+bl1142_classify_pack_shape() {
+  local body="$1"
+  local rotation depth windows
+  rotation="$(bl1142_pack_config "$body" rotation)"
+  depth="$(bl1142_pack_config "$body" active_backlog_max_depth)"
+  windows="$(bl1142_window_count "$body")"
+
+  if [[ "$rotation" == "router" ]]; then
+    bl1142_classify_router_shape "$depth"
+    return 0
+  fi
+  bl1142_classify_standing_shape "$depth" "$windows"
 }
 
 # Exit 0 if shape is allowed under the durable mono decision.
