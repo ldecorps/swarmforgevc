@@ -58,6 +58,8 @@ test('renderBriefingBurndown uses the shared snapshot records when a fresh one i
 // carries its own override (BL-914's "other three are fast" inventory
 // miscounted it, which is how it sat on the suite default until it
 // hard-failed under live-swarm load).
+// BL-999: both fallback siblings share the same measured 90000ms budget as
+// the no-flags CLI (worst sibling fail 48926ms @ load 77; margin ~1.6x).
 test(
   'renderBriefingBurndown falls back to deriving its own history when no snapshot path is given (smoke test against the real repo)',
   () => {
@@ -66,7 +68,7 @@ test(
     assert.equal(diagrams.length, 1);
     assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
   },
-  45000
+  90000
 );
 
 test(
@@ -76,7 +78,7 @@ test(
     const diagrams = renderBriefingBurndown(repoRoot, Date.now(), '/no/such/snapshot.json');
     assert.equal(diagrams.length, 1);
   },
-  45000
+  90000
 );
 
 // ── main(): argv parsing + stdout plumbing ───────────────────────────────
@@ -118,7 +120,7 @@ test('the compiled CLI reads --snapshot from argv and reflects the shared snapsh
 
 // BL-969: no --snapshot flag means the FULL real-repo derive
 // (runGitLog/deriveTicketLifecycles) plus a real PNG render - the same
-// heavy path as the two 45000ms-override tests above, not a fixture test.
+// heavy path as the two 90000ms-override tests above, not a fixture test.
 // Budget basis (measured 2026-08-20): 50808ms under live-swarm load
 // (load average 148 on 4 cores; the hardener measured ~23s at lower
 // load), and this parcel's own qa_e2e double-run then measured 54991ms

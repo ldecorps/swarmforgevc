@@ -176,3 +176,8 @@ approval_context: >
   than a silent wrong result. Push back to `low` if a flaky budget in one
   test file reads as cosmetic to you, though I would note the coder lost
   four attempted verification runs to it during a different ticket.
+
+  - "[2026-08-25T18:55Z] coder: siblings raised 45000→90000 (shared measured
+    budget); renderBriefingBurndownCli.budgets.js records worst×1.6 margin;
+    bl999BudgetJustificationInvariant relation guard; APS steps registered.
+    Acceptance BL-999 4/4 green."
