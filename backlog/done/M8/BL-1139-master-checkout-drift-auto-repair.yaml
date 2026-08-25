@@ -6,7 +6,7 @@ severity: high
 # high: daemons can keep running code that is not what landed on main while
 # tickets sit closed — broken live-health signal and silent non-effect of
 # QA-approved fixes. Not critical: recoverable; no confirmed data loss.
-status: paused
+status: done
 epic: swarm-reliability
 priority: 25
 direction: aligned
