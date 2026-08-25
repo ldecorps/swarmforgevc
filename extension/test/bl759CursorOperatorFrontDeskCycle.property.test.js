@@ -38,11 +38,29 @@ test('BL-759/BL-654 invariant 2: bot re-exports match extracted implementations'
     { numRuns: 20 }
   );
 
+  // Env parse must honour positive ints (kills "always default" mutants).
+  assert.equal(bot.controlDrainTimeoutMs('5000'), 5000);
+  assert.equal(bot.controlDrainTimeoutMs(undefined), core.DEFAULT_CONTROL_DRAIN_TIMEOUT_MS);
+  assert.equal(bot.controlDrainTimeoutMs('0'), core.DEFAULT_CONTROL_DRAIN_TIMEOUT_MS);
+  assert.equal(bot.controlDrainTimeoutMs('x'), core.DEFAULT_CONTROL_DRAIN_TIMEOUT_MS);
+
   const root = mkTmpDir('bl759-prop-');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `coder\tcoder\t${root}\t_\tcoder\tclaude\n`);
-  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
-  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
-  assert.equal(bot.isPipelineEmpty(root), drain.isPipelineEmpty(root));
-  assert.deepEqual(bot.resolveLiveRoles(root), drain.resolveLiveRoles(root));
+  const inboxNew = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new');
+  const inProcess = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+  fs.mkdirSync(inboxNew, { recursive: true });
+  fs.mkdirSync(inProcess, { recursive: true });
+
+  // Empty + roles present (kills always-[] resolveLiveRoles and always-true empty).
+  const roles = bot.resolveLiveRoles(root);
+  assert.equal(roles.length, 1);
+  assert.equal(roles[0].role, 'coder');
+  assert.deepEqual(roles, drain.resolveLiveRoles(root));
+  assert.equal(bot.isPipelineEmpty(root), true);
+  assert.equal(drain.isPipelineEmpty(root), true);
+
+  fs.writeFileSync(path.join(inboxNew, 'x.handoff'), 'type: awake\nto: coder\npriority: 50\n');
+  assert.equal(bot.isPipelineEmpty(root), false);
+  assert.equal(drain.isPipelineEmpty(root), false);
 });

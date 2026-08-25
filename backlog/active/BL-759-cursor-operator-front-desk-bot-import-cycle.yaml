@@ -18,6 +18,10 @@ acceptance: specs/features/BL-759-cursor-operator-front-desk-cycle.feature
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 required_wiring:
   - "specs/pipeline/steps/index.js::bl759CursorOperatorFrontDeskCycleSteps::acceptance handler registered"
+abandoned_commits:
+  - cb38f70b5
+  - f381696a1
+
 qa_e2e_procedure: >
   Compile then full-repo dependency-gate exit 0; per-file gate on the
   three modules; unit + APS BL-759 scenarios green; diff is structural only.
