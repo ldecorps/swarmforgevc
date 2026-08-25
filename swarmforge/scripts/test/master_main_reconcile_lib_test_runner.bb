@@ -135,6 +135,65 @@
 (assert-true "post-absorb-clean: MERGE_HEAD is dirty"
              (not (master-main-reconcile-lib/post-absorb-clean? true 0)))
 
+
+;; BL-1144 publish-time rematch + land/close serialize
+(assert-true "gate vs publish SHA drift detected"
+             (master-main-reconcile-lib/origin-advanced-since-gate? "aaa" "bbb"))
+(assert-true "same SHA is not advanced"
+             (not (master-main-reconcile-lib/origin-advanced-since-gate? "aaa" "aaa")))
+(assert= "publish-time: tip already pure -> push"
+         :push
+         (master-main-reconcile-lib/publish-time-purity-action
+          {:tip-contains-origin-now? true :rematch-would-conflict? false
+           :attempt 0 :peer-holds-land-lock? false}))
+(assert= "publish-time: stale tip rematches before push"
+         :rematch-then-push
+         (master-main-reconcile-lib/publish-time-purity-action
+          {:tip-contains-origin-now? false :rematch-would-conflict? false
+           :attempt 0 :peer-holds-land-lock? false}))
+(assert= "publish-time: residual race retries once"
+         :retry-rematch
+         (master-main-reconcile-lib/publish-time-purity-action
+          {:tip-contains-origin-now? false :rematch-would-conflict? false
+           :attempt 1 :peer-holds-land-lock? false}))
+(assert= "publish-time: attempts exhausted -> wait lock (bounded)"
+         :wait-land-lock
+         (master-main-reconcile-lib/publish-time-purity-action
+          {:tip-contains-origin-now? false :rematch-would-conflict? false
+           :attempt 2 :peer-holds-land-lock? false}))
+(assert= "publish-time: peer lock waits rather than bounce"
+         :wait-land-lock
+         (master-main-reconcile-lib/publish-time-purity-action
+          {:tip-contains-origin-now? false :rematch-would-conflict? false
+           :attempt 0 :peer-holds-land-lock? true}))
+(assert= "publish-time: conflict refuses rematch lander"
+         :refuse-rematch-lander
+         (master-main-reconcile-lib/publish-time-purity-action
+          {:tip-contains-origin-now? false :rematch-would-conflict? true
+           :attempt 0 :peer-holds-land-lock? false}))
+(assert= "lock edge: free lock admits"
+         :admit
+         (master-main-reconcile-lib/land-close-publisher-admission
+          {:lock-available? true :already-rematched-at-edge? false}))
+(assert= "lock edge: second publisher rematches once"
+         :rematch-once-at-edge
+         (master-main-reconcile-lib/land-close-publisher-admission
+          {:lock-available? false :already-rematched-at-edge? false}))
+(assert= "lock edge: after one rematch, wait"
+         :wait-lock
+         (master-main-reconcile-lib/land-close-publisher-admission
+          {:lock-available? false :already-rematched-at-edge? true}))
+(assert= "contention: wait-lock wins over rematch-then-push"
+         :wait-land-lock
+         (master-main-reconcile-lib/contention-publish-next
+          {:purity-action :rematch-then-push :lock-admission :wait-lock}))
+(assert-true "residual recovery rematch lander ok"
+             (master-main-reconcile-lib/residual-race-recovery-ok? :rematch-lander))
+(assert-true "operator absorb not ok residual"
+             (not (master-main-reconcile-lib/residual-race-recovery-ok? :operator-absorb)))
+(assert-true "tip purity always required"
+             (master-main-reconcile-lib/tip-purity-required?))
+
 ;; BL-1131 rematch-then-FF
 (assert= "prepublish: tip already contains origin"
          :already-contains-origin
