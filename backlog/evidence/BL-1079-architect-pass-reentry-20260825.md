@@ -1,6 +1,6 @@
 # BL-1079 — architect pass (re-entry after unhold) — 20260825
 
-**Tip:** cleaner `3b52b93a03` (coder `747a48564e` on origin/main-only rematch)
+**Tip:** cleaner `3b52b93a03` (coder `747a48564e`)
 **Handoff:** `50_20260825T113314Z_000790_from_cleaner_to_architect`
 
 ## Verdict
@@ -9,25 +9,23 @@
 
 ## Scope
 
-Re-entry only. Product already on `origin/main`. Intentional delta: APS
-`launcherAllowListTokens` character class `[a-z0-9_|-]+` so hyphenated
-agents (`local-model`) parse like the babashka property runner. Ticket
-restored hold→active. Tip paths = **4**, BL-1079-only.
+Re-entry only. Product already on `origin/main`. Delta: APS
+`launcherAllowListTokens` uses `[a-z0-9_|-]+` for hyphenated agents.
+Tip = cleaner tip + this evidence.
 
 ## Architecture
 
-No production module change this hop. Steward certify / seed / ModelFactory
-gates unchanged. APS still drives real launcher source.
+No production change this hop. APS drives real launcher source.
 
-## Invariants (2) — encoded on tip (babashka runners)
+## Invariants
 
-Both property runners green this pass:
+Babashka property runners green:
 - `bl1079_provider_agent_allowlist_property_runner.bb` — ALL PASS
 - `bl1079_cursor_certification_gate_property_runner.bb` — ALL PASS
 
 ## Correctness
 
-Acceptance **5/5 PASS**. No defect spotted.
+Acceptance **5/5**. No defect spotted.
 
 ## Findings
 
