@@ -58,6 +58,11 @@ function baseDeps(ctx) {
     readAcceptanceDeclaration: () => ctx.acceptanceDeclaration,
     resolveFeatureFilePath: (declaration) =>
       ctx.resolveOverride ? ctx.resolveOverride(declaration) : resolveFeatureFilePath(ctx.repoRootFixture, declaration),
+    isLifecycleTeardownTicket: () => false,
+    assessMultiworktreeFixture: () => ({
+      satisfied: true,
+      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: ctx.repoRootFixture },
+    }),
     runAcceptance: async () => ctx.acceptanceRunResult,
     // BL-729 added a second refusal reason to this same landing path; this
     // feature is about the FIRST one (acceptance-contract execution), so

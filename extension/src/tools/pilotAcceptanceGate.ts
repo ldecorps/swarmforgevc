@@ -34,10 +34,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BacklogMoveResult } from '../panel/backlogWriter';
+import {
+  MultiworktreeFixtureAssessment,
+  MultiworktreeFixtureMetadata,
+  MULTIWORKTREE_REQUIRED_REFUSAL,
+} from './multiworktreeAcceptanceFixture';
 
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
+  multiWorktreeFixture?: MultiworktreeFixtureMetadata;
 }
 
 export interface AcceptanceReceipt {
@@ -47,6 +53,7 @@ export interface AcceptanceReceipt {
   result: 'passed';
   landedAt: string;
   commitClaimsChecked: number;
+  multiWorktreeFixture?: MultiworktreeFixtureMetadata;
 }
 
 export interface UnsupportedCommitClaim {
@@ -66,6 +73,8 @@ export type CommitClaimsCheckOutcome =
 export interface PilotAcceptanceGateDeps {
   readAcceptanceDeclaration: (ticketId: string) => string | undefined;
   resolveFeatureFilePath: (acceptanceDeclaration: string) => string | undefined;
+  isLifecycleTeardownTicket: (ticketId: string) => boolean;
+  assessMultiworktreeFixture: () => MultiworktreeFixtureAssessment;
   runAcceptance: (featureFilePath: string) => Promise<AcceptanceRunResult> | AcceptanceRunResult;
   checkCommitClaims: () => CommitClaimsCheckOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
@@ -83,7 +92,7 @@ export interface PilotLandSuccess {
 
 export interface PilotLandRefusal {
   landed: false;
-  reasonKind: 'no-contract' | 'contract-failed' | 'claim-unsupported' | 'move-failed';
+  reasonKind: 'no-contract' | 'multiworktree-required' | 'contract-failed' | 'claim-unsupported' | 'move-failed';
   reason: string;
   unmatchedStep?: string;
   failingScenario?: string;
@@ -135,16 +144,38 @@ function resolveContract(ticketId: string, deps: PilotAcceptanceGateDeps): Contr
   return { declaration: declaration!, featureFilePath };
 }
 
-// Step 2: run the resolved feature file through the acceptance pipeline, or
+// Step 2: lifecycle/teardown tickets refuse land when the host only offers a
+// single-worktree sandbox — the BL-637 class of defect hides behind that.
+function requireMultiworktreeFixture(
+  ticketId: string,
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { fixture: MultiworktreeFixtureAssessment } {
+  if (!deps.isLifecycleTeardownTicket(ticketId)) {
+    return { fixture: { satisfied: true, metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '' } } };
+  }
+  const fixture = deps.assessMultiworktreeFixture();
+  if (!fixture.satisfied) {
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'multiworktree-required',
+        reason: `${ticketId} refuses land: ${MULTIWORKTREE_REQUIRED_REFUSAL}`,
+      },
+    };
+  }
+  return { fixture };
+}
+
+// Step 3: run the resolved feature file through the acceptance pipeline, or
 // the contract-failed refusal naming the unmatched step / failing scenario.
 async function runContract(
   ticketId: string,
   featureFilePath: string,
   deps: PilotAcceptanceGateDeps
-): Promise<{ refusal: PilotLandRefusal } | undefined> {
+): Promise<{ refusal: PilotLandRefusal } | { runResult: AcceptanceRunResult }> {
   const result = await deps.runAcceptance(featureFilePath);
   if (result.success) {
-    return undefined;
+    return { runResult: result };
   }
   const { failingScenario, unmatchedStep } = describeAcceptanceFailure(result.output);
   const named = failingScenario
@@ -193,7 +224,8 @@ function moveAndRecordReceipt(
   ticketId: string,
   declaration: string,
   deps: PilotAcceptanceGateDeps,
-  claimsCheck: CommitClaimsCheckOutcome
+  claimsCheck: CommitClaimsCheckOutcome,
+  multiWorktreeFixture?: MultiworktreeFixtureMetadata
 ): PilotLandOutcome {
   // Captured before the move: if getLandedCommit() itself fails (e.g. no
   // HEAD yet), nothing has moved or been written yet either.
@@ -216,6 +248,9 @@ function moveAndRecordReceipt(
     landedAt: deps.now(),
     commitClaimsChecked: claimsCheck.checked ? claimsCheck.commitsChecked : 0,
   };
+  if (multiWorktreeFixture) {
+    receipt.multiWorktreeFixture = multiWorktreeFixture;
+  }
   deps.writeReceipt(ticketId, receipt);
 
   const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
@@ -231,9 +266,14 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return contract.refusal;
   }
 
-  const contractFailure = await runContract(ticketId, contract.featureFilePath, deps);
-  if (contractFailure) {
-    return contractFailure.refusal;
+  const fixtureGate = requireMultiworktreeFixture(ticketId, deps);
+  if ('refusal' in fixtureGate) {
+    return fixtureGate.refusal;
+  }
+
+  const contractRun = await runContract(ticketId, contract.featureFilePath, deps);
+  if ('refusal' in contractRun) {
+    return contractRun.refusal;
   }
 
   const claims = checkClaims(deps);
@@ -241,7 +281,12 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return claims.refusal;
   }
 
-  return moveAndRecordReceipt(ticketId, contract.declaration, deps, claims.claimsCheck);
+  const fixtureMetadata =
+    deps.isLifecycleTeardownTicket(ticketId) && fixtureGate.fixture.satisfied
+      ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
+      : undefined;
+
+  return moveAndRecordReceipt(ticketId, contract.declaration, deps, claims.claimsCheck, fixtureMetadata);
 }
 
 // Pure, fs-based: an acceptance declaration is executable only when it

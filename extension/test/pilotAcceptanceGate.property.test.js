@@ -41,6 +41,11 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false) {
   return {
     readAcceptanceDeclaration: () => (declKind === 'absent' ? undefined : 'specs/features/fixture.feature'),
     resolveFeatureFilePath: () => (declKind === 'existingFile' ? '/repo/specs/features/fixture.feature' : undefined),
+    isLifecycleTeardownTicket: () => false,
+    assessMultiworktreeFixture: () => ({
+      satisfied: true,
+      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
+    }),
     runAcceptance: async () =>
       contractGreen
         ? { success: true, output: 'ok' }

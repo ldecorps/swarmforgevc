@@ -23,6 +23,11 @@ import {
   AcceptanceRunResult,
   AcceptanceReceipt,
 } from './pilotAcceptanceGate';
+import {
+  assessMultiworktreeFixture,
+  extractHandoffdRootsFromPs,
+  isLifecycleTeardownTicket,
+} from './multiworktreeAcceptanceFixture';
 import { resolveRunCommits, checkCommitClaims, RunCommit } from './commitClaimGitReader';
 import { findBacklogFilePath, markDone, BacklogMoveResult } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
@@ -49,19 +54,73 @@ export function readAcceptanceDeclaration(repoRoot: string, ticketId: string): s
   if (!filePath) {
     return undefined;
   }
-  const item = parseBacklogYaml(fs.readFileSync(filePath, 'utf8'));
+  const content = fs.readFileSync(filePath, 'utf8');
+  const item = parseBacklogYaml(content);
   return item?.acceptance;
+}
+
+function readRequiredWiring(repoRoot: string, ticketId: string): string[] | undefined {
+  const filePath = findBacklogFilePath(repoRoot, ticketId);
+  if (!filePath) {
+    return undefined;
+  }
+  const content = fs.readFileSync(filePath, 'utf8');
+  const blockMatch = content.match(/^required_wiring:\s*\n((?:[ \t]+-[^\n]*\n?)*)/m);
+  if (!blockMatch) {
+    return undefined;
+  }
+  const entries = blockMatch[1]
+    .split('\n')
+    .map((line) => line.replace(/^\s*-\s*/, '').replace(/#.*$/, '').trim())
+    .filter((line) => line.length > 0);
+  return entries.length > 0 ? entries : undefined;
+}
+
+export function listLinkedWorktreePaths(repoRoot: string): string[] {
+  const out = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
+  return out
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length).trim());
+}
+
+export function probeHandoffdRootsFromPs(): string[] {
+  const out = execFileSync('ps', ['-eo', 'args='], { encoding: 'utf8' });
+  return extractHandoffdRootsFromPs(out);
 }
 
 // async so a synchronous require() failure (missing/uncompiled
 // runnerAdapter.js) surfaces as a rejected promise like every other outcome
 // here, rather than a synchronous throw callers awaiting this would miss.
-export async function runAcceptance(repoRoot: string, featureFilePath: string): Promise<AcceptanceRunResult> {
+export async function runAcceptance(
+  repoRoot: string,
+  featureFilePath: string,
+  fixtureAssessment?: ReturnType<typeof assessMultiworktreeFixture>
+): Promise<AcceptanceRunResult> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { runPipeline } = require(path.join(repoRoot, 'specs', 'pipeline', 'runnerAdapter.js'));
   const outDir = path.join(repoRoot, 'specs', 'pipeline', 'generated');
   const stepsModulePath = path.join(repoRoot, 'specs', 'pipeline', 'steps', 'index.js');
-  return runPipeline(featureFilePath, outDir, stepsModulePath);
+  const prevFixture = process.env.SWARMFORGE_MULTIWORKTREE_FIXTURE;
+  if (fixtureAssessment?.satisfied) {
+    process.env.SWARMFORGE_MULTIWORKTREE_FIXTURE = JSON.stringify(fixtureAssessment.metadata);
+  } else {
+    delete process.env.SWARMFORGE_MULTIWORKTREE_FIXTURE;
+  }
+  try {
+    const pipelineResult = await runPipeline(featureFilePath, outDir, stepsModulePath);
+    const result: AcceptanceRunResult = { ...pipelineResult };
+    if (fixtureAssessment?.satisfied) {
+      result.multiWorktreeFixture = fixtureAssessment.metadata;
+    }
+    return result;
+  } finally {
+    if (prevFixture === undefined) {
+      delete process.env.SWARMFORGE_MULTIWORKTREE_FIXTURE;
+    } else {
+      process.env.SWARMFORGE_MULTIWORKTREE_FIXTURE = prevFixture;
+    }
+  }
 }
 
 export function moveTicketToDone(repoRoot: string, ticketId: string): BacklogMoveResult {
@@ -79,10 +138,14 @@ export function getLandedCommit(repoRoot: string): string {
 }
 
 export function buildDeps(repoRoot: string): PilotAcceptanceGateDeps {
+  let cachedFixture = assessMultiworktreeFixture(repoRoot, listLinkedWorktreePaths(repoRoot), probeHandoffdRootsFromPs());
   return {
     readAcceptanceDeclaration: (ticketId) => readAcceptanceDeclaration(repoRoot, ticketId),
     resolveFeatureFilePath: (declaration) => resolveFeatureFilePath(repoRoot, declaration),
-    runAcceptance: (featureFilePath) => runAcceptance(repoRoot, featureFilePath),
+    isLifecycleTeardownTicket: (ticketId) =>
+      isLifecycleTeardownTicket(readAcceptanceDeclaration(repoRoot, ticketId), readRequiredWiring(repoRoot, ticketId)),
+    assessMultiworktreeFixture: () => cachedFixture,
+    runAcceptance: (featureFilePath) => runAcceptance(repoRoot, featureFilePath, cachedFixture),
     checkCommitClaims: () => checkCommitClaims(repoRoot),
     moveTicketToDone: (ticketId) => moveTicketToDone(repoRoot, ticketId),
     writeReceipt: (ticketId, receipt) => writeReceipt(repoRoot, ticketId, receipt),
