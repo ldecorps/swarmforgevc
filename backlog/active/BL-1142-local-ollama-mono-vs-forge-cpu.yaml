@@ -61,3 +61,5 @@ notes: |
   - [2026-08-25T18:35Z] specifier: minted JumpQ under BL-1125 from
     INTAKE-prioritize-local-ollama-remaining-20260825.md; feature armed;
     depends_on BL-1140. Epic remaining_slices updated.
+
+assigned_to: coder
