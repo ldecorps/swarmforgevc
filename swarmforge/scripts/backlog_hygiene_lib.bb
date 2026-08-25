@@ -9,9 +9,12 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_pointer_gate_lib.bb")))
 
+(defn- strip-yaml-quotes [s]
+  (-> s str/trim (str/replace #"^[\"']|[\"']$" "")))
+
 (defn field [text name]
   (when-let [[_ v] (re-find (re-pattern (str "(?m)^" name ":\\s*(.*)$")) text)]
-    (let [v (-> v str/trim (str/replace #"^\"|\"$" "") (str/replace #"^'|'$" ""))]
+    (let [v (strip-yaml-quotes v)]
       (when-not (str/blank? v) v))))
 
 (defn- acceptance-line-tail-and-body
@@ -81,6 +84,103 @@
         (when-not (fs/exists? abs)
           {:kind :dangling-acceptance :id id :path path :feature-path tail})))))
 
+(defn- git-ls-files-tracked?
+  "True when `git ls-files --error-unmatch` succeeds for rel path under root."
+  [repo-root rel]
+  (try
+    (let [r @(process/process ["git" "-C" (str repo-root) "ls-files" "--error-unmatch" (str rel)]
+                              {:out :string :err :string})]
+      (zero? (:exit r)))
+    (catch Exception _
+      false)))
+
+(defn untracked-acceptance-violation
+  "BL-533: acceptance path exists on disk but is absent from git ls-files —
+   never pass the spec-ready hygiene gate (untracked working-tree half)."
+  [text {:keys [id path] :as opts}]
+  (when-let [[tail _] (acceptance-line-tail-and-body text)]
+    (when (acceptance-pointer-gate-lib/applicable? tail)
+      (let [root (hygiene-repo-root opts)
+            abs (str (fs/path root tail))]
+        (when (and (fs/exists? abs)
+                   (not (git-ls-files-tracked? root tail)))
+          {:kind :untracked-acceptance :id id :path path :feature-path tail})))))
+
+(defn read-yaml-list-field
+  "Flow `[a, b]` or block `- a` list under a column-0 field. Empty when absent."
+  [text field]
+  (let [lines (str/split-lines (or text ""))
+        prefix (str field ":")
+        idx (some (fn [[i l]] (when (str/starts-with? l prefix) i)) (map-indexed vector lines))]
+    (if (nil? idx)
+      []
+      (let [line (str/trim (nth lines idx))
+            after (str/trim (subs line (inc (str/index-of line ":"))))]
+        (cond
+          (and (str/starts-with? after "[") (str/ends-with? after "]"))
+          (->> (str/split (subs after 1 (dec (count after))) #",")
+               (map strip-yaml-quotes)
+               (remove str/blank?)
+               vec)
+
+          (str/blank? after)
+          (->> (drop (inc idx) lines)
+               (take-while #(or (str/blank? %) (re-matches #"^\s+.*$" %)))
+               (keep #(when-let [[_ item] (re-matches #"^\s+-\s+(.+?)\s*$" %)]
+                        (strip-yaml-quotes item)))
+               vec)
+
+          :else [])))))
+
+(defn required-wiring-nonempty?
+  "True when required_wiring is present with at least one non-blank entry."
+  [ticket-text]
+  (boolean (seq (read-yaml-list-field ticket-text "required_wiring"))))
+
+(defn epic-wiring-exit-checklist
+  "BL-533: epic with >=2 decomposes_into children fails unless at least one
+   child declares non-empty required_wiring. child-texts is a seq of YAML
+   bodies aligned to those children (missing bodies count as unwired).
+   Returns {:ok? bool :applicable? bool :child-count n}."
+  [epic-text child-texts]
+  (let [children (read-yaml-list-field epic-text "decomposes_into")
+        n (count children)
+        texts (vec (or child-texts []))]
+    (if (< n 2)
+      {:ok? true :applicable? false :child-count n}
+      (let [wired? (some required-wiring-nonempty? texts)]
+        {:ok? (boolean wired?)
+         :applicable? true
+         :child-count n}))))
+
+(defn- resolve-child-ticket-text
+  "Slurp first matching BL-*-yaml for child id under backlog pools, else \"\"."
+  [backlog-root child-id]
+  (or (some (fn [pool]
+              (when-let [hits (seq (fs/glob (fs/path backlog-root pool)
+                                            (str child-id "-*.yaml")))]
+                (slurp (str (first hits)))))
+            ["active" "paused" "hold" "done"])
+      ""))
+
+(defn epic-wiring-exit-violation
+  "When type: epic, >=2 decomposes_into, and child YAML bodies are available
+   via :child-texts or :resolve-children? + :backlog-root — fail if no child
+   has non-empty required_wiring."
+  [text {:keys [id path child-texts resolve-children? backlog-root]}]
+  (when (= "epic" (or (field text "type") ""))
+    (let [ids (read-yaml-list-field text "decomposes_into")
+          bodies (cond
+                   (some? child-texts) (mapv str child-texts)
+                   (and resolve-children? backlog-root)
+                   (mapv #(resolve-child-ticket-text backlog-root %) ids)
+                   :else nil)]
+      (when bodies
+        (let [result (epic-wiring-exit-checklist text bodies)]
+          (when (and (:applicable? result) (not (:ok? result)))
+            {:kind :epic-wiring-missing :id id :path path
+             :child-count (:child-count result)}))))))
+
 (defn violations-for-text [text {:keys [id path] :as opts}]
   (let [id (or id (field text "id") path)
         typ (or (field text "type") "")
@@ -93,12 +193,16 @@
         (when-not epic
           (swap! out conj {:kind :missing-epic-on-epic :id id :path path}))
         (when-not ms
-          (swap! out conj {:kind :missing-milestone :id id :path path})))
+          (swap! out conj {:kind :missing-milestone :id id :path path}))
+        (when-let [v (epic-wiring-exit-violation text opts)]
+          (swap! out conj v)))
       (when-not epic
         (swap! out conj {:kind :missing-epic :id id :path path})))
     (when-let [v (unreadable-acceptance-violation text opts)]
       (swap! out conj v))
     (when-let [v (dangling-acceptance-violation text opts)]
+      (swap! out conj v))
+    (when-let [v (untracked-acceptance-violation text opts)]
       (swap! out conj v))
     ;; BL-1095: type: bug is retired from the expedite lane — refuse at mint
     ;; so a later bug ticket cannot silently lose expedite eligibility.
@@ -107,14 +211,17 @@
     @out))
 
 (defn violations-for-file
-  "Slurp a ticket path and collect hygiene violations. Optional repo-root
-   is the working-tree root for BL-1027 dangling-acceptance probes."
+  "Slurp a ticket path and collect hygiene violations. Second arg may be a
+   repo-root string (BL-1027) or an opts map (:repo-root, :child-texts,
+   :resolve-children?, :backlog-root)."
   ([f] (violations-for-file f nil))
-  ([f repo-root]
+  ([f root-or-opts]
    (let [text (slurp (str f))
          id (or (field text "id") (last (str/split (str f) #"/")))
-         opts (cond-> {:id id :path (str f)}
-                repo-root (assoc :repo-root repo-root))]
+         opts (cond
+                (string? root-or-opts) {:id id :path (str f) :repo-root root-or-opts}
+                (map? root-or-opts) (merge {:id id :path (str f)} root-or-opts)
+                :else {:id id :path (str f)})]
      (violations-for-text text opts))))
 
 (defn format-violation [{:keys [kind id path feature-path others message ticket-type]}]
@@ -126,6 +233,12 @@
                                  " scalar hiding " feature-path " - rewrite as a single-line pointer)")
     :dangling-acceptance (str "DANGLING-ACCEPTANCE " id "  " path
                               "  (acceptance: pointer \"" feature-path "\" does not exist on the working tree)")
+    :untracked-acceptance (str "UNTRACKED-ACCEPTANCE " id "  " path
+                               "  (acceptance: pointer \"" feature-path
+                               "\" exists on disk but is not in git ls-files)")
+    :epic-wiring-missing (str "EPIC-WIRING-MISSING " id "  " path
+                              "  (runtime-wiring declaration is missing — "
+                              "multi-slice epic needs required_wiring on a child)")
     :retired-ticket-type (str "RETIRED-TICKET-TYPE " id "  " path
                               "  (type: " (or ticket-type "bug") " is retired — use type: defect)")
     :duplicate-id (str "DUPLICATE-ID " id "  " path
