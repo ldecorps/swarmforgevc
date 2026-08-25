@@ -50,6 +50,7 @@ expects them, and are not migrated or rewritten here.
 - [Route work to a local-model seat (intelligence layer)](how-to/BL-1053-route-work-to-a-local-model-seat.md) — Steward registration under provider `local` (cost class `low`); ModelFactory maps `local`→`local-model`; unknown providers fail loudly; a second on-host model is registration-only.
 - [Wire Mistral Vibe into the Intelligence Layer](how-to/BL-682-mistral-vibe-intelligence-layer-routing.md) — ModelFactory maps `mistral`→`vibe`; Steward seeds `mistral/mistral-medium-3.5` from the live vibe config alias (registration only; packs/launchers unchanged).
 - [Handling Pre-QA Gate Handoff Refusals](how-to/BL-531-handoff-refusal-remedies.md)
+- [Rule-proposal shell test asserts real handoff queue grammar](how-to/BL-778-rule-proposal-test-asserts-stale-queue-grammar.md) — pin mailbox-only; assert full `HANDOFF QUEUED (mailbox only…)` line (BL-778).
 - [Routing-skip journal failure never withholds delivery](how-to/BL-748-routing-skip-recording-failure-never-withholds-delivery.md) — `ROUTING-SKIP RECORD FAILED` on stderr; parcel still delivered (BL-748 / BL-623).
 - [Residual-word allowlist survives backlog stage moves](how-to/BL-694-residual-word-allowlist-survives-stage-moves.md) — basename under active/paused/hold only (BL-694).
 - [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).
@@ -203,7 +204,7 @@ expects them, and are not migrated or rewritten here.
 
 - [SwarmForge VS Code Extension — Milestone Roadmap](explanation/Milestone%20Roadmap.MD)
 - [Headless swarm + extension reattach (operator doctrine)](explanation/headless-reattach-doctrine.md)
-- [Handoff dual-path delivery (tmux primary, mailbox backup)](explanation/handoff-dual-path.md)
+- [Handoff dual-path delivery (tmux primary, mailbox backup)](explanation/handoff-dual-path.md) — including the exact `HANDOFF DELIVERED` / `QUEUED (mailbox only…)` / `QUEUED (daemon backup…)` success lines tests must assert (BL-778).
 - [How the front desk works](explanation/how-the-front-desk-works.md) — Telegram → bridge → restricted Operator (`--tools ""`, no repo) → reply outbox/SSE; companion diagram `front-desk-flow.mmd` (BL-580).
 - [Why the expeditor commands the stack but never depends on it](explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md)
 - [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.

@@ -1,12 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-882: `handoffd.bb` BL-617 pause-gate
-comment no longer claims sibling sweeps "keep running unconditionally" —
-they are pause-exempt only and still share `chase-sweep-every-cycles`;
-comment-only, gate structure frozen. Acceptance:
-`specs/features/BL-882-handoffd-cadence-comment-accuracy.feature`.
-How-to: `docs/how-to/BL-617-nightly-cooldown-window.md` (cadence note).
-No new extension command or setting.)
+**Last Updated:** August 25, 2026 (BL-778: `test_rule_proposal.sh` asserts the
+real `HANDOFF QUEUED (mailbox only, no tmux inject):` success grammar and pins
+mailbox-only delivery — the stale `^HANDOFF QUEUED:` literal never matched
+any `swarm_handoff.bb` output and aborted BL-035 at scenario 01. Test-only;
+no product behavior change. Acceptance:
+`specs/features/BL-778-rule-proposal-test-asserts-stale-queue-grammar.feature`.
+How-to: `docs/how-to/BL-778-rule-proposal-test-asserts-stale-queue-grammar.md`
+(updates `docs/explanation/handoff-dual-path.md`). No new extension command
+or setting.)
 Prior entry —
 **Last Updated:** August 25, 2026 (BL-691: ambulance mode closes three live-run
 gaps — sync `deliver-parcel!` consults the same hold; chase may rotate a busy
