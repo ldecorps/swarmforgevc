@@ -28,6 +28,8 @@
 ;; acceptance-pointer-gate-lib/applicable? is the sole checkability predicate
 ;; (same BL-897 posture as BL-1027's mint-time dangling check).
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_pointer_gate_lib.bb")))
+;; BL-1128: depth/cap/throttle prefer predicate — one copy in headroom-cap-raise-lib.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "headroom_cap_raise_lib.bb")))
 
 ;; ── ticket field reading ──────────────────────────────────────────────────
 ;; Same "small live-glue duplicated across independent pure libs" idiom as
@@ -194,20 +196,11 @@
     (or (and epic (get epic-index epic))
         (read-priority content))))
 
-(defn- depth-cap-throttle-prefer?
-  "BL-1128: paused depth/cap/throttle correctness tickets sort ahead of
-   unrelated work inside the non-expedited bucket (after expedite, before
-   epic-priority). Keyword match on title/body; explicit headroom_prefer: depth."
-  [content]
-  (let [blob (str/lower-case (or content ""))]
-    (boolean (or (re-find #"headroom_prefer:\s*depth" blob)
-                 (re-find #"\b(active[_ ]?backlog[_ ]?max[_ ]?depth|backlog depth|depth warning|depth cap|intake cap|throttle|headroom)\b" blob)))))
-
 (defn- rank-key [content epic-index]
   ;; Sort keys: lower wins. Expedite (0) first; then depth/cap/throttle prefer
   ;; (0) ahead of unrelated (1); then epic-priority / own-priority / id.
   [(if (expedited? content) 0 1)
-   (if (depth-cap-throttle-prefer? content) 0 1)
+   (if (headroom-cap-raise-lib/depth-cap-throttle-ticket? content) 0 1)
    (epic-priority content epic-index)
    (read-priority content)
    (or (read-id content) "")])

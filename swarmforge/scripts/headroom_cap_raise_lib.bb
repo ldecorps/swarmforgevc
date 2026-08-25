@@ -180,6 +180,22 @@
   (fs/create-dirs (fs/parent path))
   (spit (str path) text))
 
+(defn- apply-raise!
+  [root policy now from to]
+  (let [new-text (rewrite-max-depth-line (:conf-text policy) to)]
+    (write-conf! (:conf-path policy) new-text)
+    (append-audit! root {:ts (.toString (java.time.Instant/ofEpochMilli now))
+                         :atMs now
+                         :action "raise"
+                         :from from
+                         :to to
+                         :confPath (:conf-path policy)
+                         :reason "sustained CPU+memory headroom"})
+    (fs/create-dirs (fs/parent (last-raise-path root)))
+    (spit (str (last-raise-path root))
+          (json/generate-string {:atMs now :from from :to to :confPath (:conf-path policy)}))
+    {:action :raise :to to :from from :conf-path (:conf-path policy)}))
+
 (defn run-raise! [root {:keys [now-ms]}]
   (let [now (or now-ms (System/currentTimeMillis))
         policy (read-policy root)
@@ -195,21 +211,7 @@
                    :cooldown-active? (cooldown-active? root policy now)})]
     (if (not= :raise (:action decision))
       decision
-      (let [to (:to decision)
-            from (:configured policy)
-            new-text (rewrite-max-depth-line (:conf-text policy) to)]
-        (write-conf! (:conf-path policy) new-text)
-        (append-audit! root {:ts (.toString (java.time.Instant/ofEpochMilli now))
-                             :atMs now
-                             :action "raise"
-                             :from from
-                             :to to
-                             :confPath (:conf-path policy)
-                             :reason "sustained CPU+memory headroom"})
-        (fs/create-dirs (fs/parent (last-raise-path root)))
-        (spit (str (last-raise-path root))
-              (json/generate-string {:atMs now :from from :to to :confPath (:conf-path policy)}))
-        (assoc decision :from from :conf-path (:conf-path policy))))))
+      (apply-raise! root policy now (:configured policy) (:to decision)))))
 
 (defn run-undo! [root]
   (try
