@@ -19,7 +19,8 @@ required_wiring:
 
 
 abandoned_commits:
-  - d4fad4e55e  # pre-tip-pure coder feat tip stranded on swarmforge-coder; superseded by tip-pure 46fceb651
+  # pre-tip-pure coder feat tip stranded on swarmforge-coder; superseded by tip-pure 46fceb651
+  - d4fad4e55e
 
 description: |
   ## What
