@@ -1,5 +1,5 @@
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-25T10:36:21.396366316Z","feature_name":"BL-1124 property-suite fixtures must not mutate shared main","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# {"version":1,"tested_at":"2026-08-25T19:02:49.412221143Z","feature_name":"BL-1124 property-suite fixtures must not mutate shared main","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
 # acceptance-mutation-manifest-end
 
 Feature: BL-1124 property-suite fixtures must not mutate shared main
