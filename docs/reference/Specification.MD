@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1131: rematch-then-FF ticket land —
+**Last Updated:** August 25, 2026 (BL-695: supervisor / unbound Telegram
+threads never write git-tracked `backlog/topics/*.json`. Classification in
+`topicThreadKind.ts`; fail-closed for unrecognised kinds; supervisor icon
+memory under `.swarmforge/`. Legacy `SUP-*.json` topic records removed.
+Ticket topics unchanged. Acceptance:
+`specs/features/BL-695-supervisor-threads-are-not-front-desk-topics.feature`.
+How-to: `docs/how-to/BL-695-supervisor-threads-are-not-front-desk-topics.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1131: rematch-then-FF ticket land —
 pre-publish tip must contain `origin/main`; post-land absorb is FF-only
 or rematch lander/bookkeeping owner — never an operator
 `Complete origin/main merge`. Successful land reaches `behind=0` /
