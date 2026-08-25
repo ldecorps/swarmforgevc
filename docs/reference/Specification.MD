@@ -1,5 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1117: stamp-off of tip
+`646ffe85d` — Pipeline Board `escapeHtml` emits numeric `&#160;` for
+U+00A0, never named `&nbsp;` (Telegram HTML named-entity set is only
+`&lt;` `&gt;` `&amp;` `&quot;`). Ledger pending for human certify/waive
+(BL-848); green tests do not certify. Follow-on to BL-1113 named-entity
+era. Acceptance:
+`specs/features/BL-1117-swarm-stamp-pipeline-board-numeric-nbsp.feature`.
+How-to: `docs/how-to/BL-1117-swarm-stamp-pipeline-board-numeric-nbsp.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1130: automated `origin/main`
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-833: host-agent activity feed —
 tee of existing SDK progress lines into a bounded per-session buffer
 (`hostActivityFeed.ts`, bound 128). Catch-up `GET /host-activity` and live
