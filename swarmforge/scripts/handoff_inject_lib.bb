@@ -9,6 +9,7 @@
 (load-file (str (fs/path scripts-dir "agent_runtime_lib.bb")))
 (load-file (str (fs/path scripts-dir "agent_runtime_inject.bb")))
 (load-file (str (fs/path scripts-dir "chase_sweep_lib.bb")))
+(load-file (str (fs/path scripts-dir "ambulance_lib.bb")))
 
 (def wake-message agent-runtime-lib/default-wake-chat-message)
 
@@ -173,24 +174,30 @@
         pane (try (capture-pane-text socket wake-sess) (catch Exception _ ""))]
     (chase-sweep-lib/actively-processing? pane)))
 
-(defn deliver-parcel!
-  "Moves outbox parcel to each recipient inbox/new and wakes the pane."
-  [project-root outbox-path sender-role & {:keys [log-fn]}]
-  (let [state-dir (fs/path project-root ".swarmforge")
-        roles-file (fs/path state-dir "roles.tsv")
-        socket-file (fs/path state-dir "tmux-socket")
-        roles (load-roles roles-file)
-        socket (when (fs/exists? socket-file)
-                 (str/trim (slurp (str socket-file))))
-        filename (fs/file-name outbox-path)
-        message (parse-message outbox-path)
-        headers (:headers message)
-        recipients (some-> (get headers "to") (str/split #",") seq)
-        notified-sessions (atom #{})]
-    (when-not socket
-      (throw (ex-info "tmux socket file missing" {:path (str socket-file)})))
-    (when-not recipients
-      (throw (ex-info "missing to header" {:path (str outbox-path)})))
+(defn- notify-delivered-recipient!
+  "Wake one recipient unless deduped or busy. Mutates notified-sessions."
+  [socket session wake-sess notified-sessions recipient role-info
+   project-root filename log-fn]
+  (cond
+    (contains? @notified-sessions wake-sess)
+    (when log-fn (log-fn "deliver-notify-skip-dedup" recipient wake-sess))
+
+    (recipient-pane-busy? socket session)
+    (when log-fn (log-fn "deliver-notify-skip-busy" recipient wake-sess))
+
+    :else
+    (do (swap! notified-sessions conj wake-sess)
+        (notify! socket session
+                 :log-fn log-fn
+                 :agent (:agent role-info)
+                 :traffic {:project-root project-root
+                            :source "sync-deliver"
+                            :role recipient
+                            :parcel filename}))))
+
+(defn- write-parcel-to-recipients!
+  [project-root outbox-path message roles socket filename recipients log-fn]
+  (let [notified-sessions (atom #{})]
     (doseq [recipient recipients]
       (let [role-info (get roles recipient)]
         (when-not role-info
@@ -202,20 +209,36 @@
           (fs/create-dirs (fs/parent target))
           (when-not (fs/exists? target)
             (spit (str target) (render-message (:headers delivered) (:body delivered))))
-          (cond
-            (contains? @notified-sessions wake-sess)
-            (when log-fn (log-fn "deliver-notify-skip-dedup" recipient wake-sess))
+          (notify-delivered-recipient!
+           socket session wake-sess notified-sessions recipient role-info
+           project-root filename log-fn))))))
 
-            (recipient-pane-busy? socket session)
-            (when log-fn (log-fn "deliver-notify-skip-busy" recipient wake-sess))
-
-            :else
-            (do (swap! notified-sessions conj wake-sess)
-                (notify! socket session
-                         :log-fn log-fn
-                         :agent (:agent role-info)
-                         :traffic {:project-root project-root
-                                    :source "sync-deliver"
-                                    :role recipient
-                                    :parcel filename}))))))
-    (move-with-collision outbox-path (sent-dir (get roles sender-role)))))
+(defn deliver-parcel!
+  "Moves outbox parcel to each recipient inbox/new and wakes the pane.
+   BL-691 D1: consults ambulance-lib/parcel-held? — a held parcel stays in
+   the sender outbox byte-identical (daemon delivers on release)."
+  [project-root outbox-path sender-role & {:keys [log-fn]}]
+  (let [state-dir (fs/path project-root ".swarmforge")
+        roles-file (fs/path state-dir "roles.tsv")
+        socket-file (fs/path state-dir "tmux-socket")
+        roles (load-roles roles-file)
+        socket (when (fs/exists? socket-file)
+                 (str/trim (slurp (str socket-file))))
+        filename (fs/file-name outbox-path)
+        message (parse-message outbox-path)
+        ambulance (ambulance-lib/read-ambulance-state (str project-root))
+        headers (:headers message)
+        recipients (some-> (get headers "to") (str/split #",") seq)]
+    (if (ambulance-lib/parcel-held? ambulance message)
+      (do
+        (when log-fn (log-fn "deliver-skip-ambulance" (str outbox-path) (:ticket ambulance)))
+        :held)
+      (do
+        (when-not socket
+          (throw (ex-info "tmux socket file missing" {:path (str socket-file)})))
+        (when-not recipients
+          (throw (ex-info "missing to header" {:path (str outbox-path)})))
+        (write-parcel-to-recipients!
+         project-root outbox-path message roles socket filename recipients log-fn)
+        (move-with-collision outbox-path (sent-dir (get roles sender-role)))
+        :delivered))))

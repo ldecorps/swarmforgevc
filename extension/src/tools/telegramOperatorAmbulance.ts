@@ -4,7 +4,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { lookupBacklogItemById } from '../panel/backlogReader';
+import { lookupBacklogFolderById, lookupBacklogItemById } from '../panel/backlogReader';
 
 export function controlAmbulanceStatePath(repoRoot: string): string {
   return path.join(repoRoot, '.swarmforge', 'operator', 'control-ambulance.json');
@@ -43,6 +43,15 @@ export function engageOperatorAmbulance(
     return {
       ok: false,
       text: `Ambulance refused for ${id} - no YAML file for it anywhere under backlog/ (would hold everything forever).`,
+    };
+  }
+  const folder = lookupBacklogFolderById(repoRoot, id);
+  // BL-691 D3: mirror ambulance_lib/engage-refusal — only active/ may engage.
+  if (folder !== 'active') {
+    const where = folder ?? 'unknown';
+    return {
+      ok: false,
+      text: `Ambulance refused for ${id} - ticket sits in ${where}/, not active/; promote it before engaging (ambulance does not auto-promote).`,
     };
   }
   const raw = readRawAmbulanceMarker(repoRoot);

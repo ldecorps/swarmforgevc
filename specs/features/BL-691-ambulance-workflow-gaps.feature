@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=10a117805c1ccada55f94cfd728c82a8e289835787118be060461c21feb0292c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T15:08:46.643569574Z","feature_name":"the ambulance moves the patient and nothing else","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-691-ambulance-workflow-gaps.feature","background_hash":"214a251279658e33cc1955622b50bba73868dfe622dd103dd4dffb93db21ac90","implementation_hash":"unknown","scenarios":[{"index":2,"name":"every path that moves a parcel consults the same hold","scenario_hash":"80b168327e290b22e8d340996819166aeb83351fa48ed4e19777c152cf354bbb","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-25T15:08:46.643569574Z"},{"index":6,"name":"engaging on a patient that cannot move is refused","scenario_hash":"6093d819a14bf393c39c76be2f70b280d02bb20e7b21bc7c2e96e8dd9a4651ca","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-25T15:08:46.643569574Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the ambulance moves the patient and nothing else
 
   BL-655 shipped ambulance mode and its first live run moved everything

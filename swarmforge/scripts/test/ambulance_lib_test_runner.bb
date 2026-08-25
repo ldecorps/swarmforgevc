@@ -415,6 +415,38 @@
            true
            (< (.indexOf text "BL-661") (.indexOf text "Ambulance auto-released"))))
 
+
+;; ── BL-691 D3: engage-refusal ───────────────────────────────────────────────
+
+(let [root (mk-tmp)]
+  (write-ticket! root "paused" "BL-691")
+  (assert= "BL-691: engage-refusal names paused/ for a paused patient"
+           true
+           (clojure.string/includes? (ambulance-lib/engage-refusal root "BL-691") "paused")))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "hold" "BL-691")
+  (assert= "BL-691: engage-refusal names hold/"
+           true
+           (clojure.string/includes? (ambulance-lib/engage-refusal root "BL-691") "hold")))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "done" "BL-691")
+  (assert= "BL-691: engage-refusal names done/"
+           true
+           (clojure.string/includes? (ambulance-lib/engage-refusal root "BL-691") "done")))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "active" "BL-691")
+  (assert= "BL-691: engage-refusal nil for active patient"
+           nil
+           (ambulance-lib/engage-refusal root "BL-691")))
+
+(let [root (mk-tmp)]
+  (assert= "BL-691: engage-refusal for vanished ticket mentions backlog/"
+           true
+           (clojure.string/includes? (or (ambulance-lib/engage-refusal root "BL-691") "") "backlog")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

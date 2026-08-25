@@ -24,7 +24,10 @@ mode when the pipeline is fine and one ticket just needs to go first.
 In the Control topic, alongside the existing pause verbs:
 
 - `ambulance BL-654` — engages ambulance mode for that ticket. The bot refuses
-  and reports back if the id names no ticket anywhere under `backlog/`.
+  and reports back if the id names no ticket anywhere under `backlog/`, **or**
+  if the ticket sits anywhere except `backlog/active/` (BL-691) — the refusal
+  names the folder and tells you to promote before engaging; ambulance never
+  auto-promotes.
 - `ambulance off` — releases it. Every held parcel resumes moving on the next
   poll/dequeue/rotation decision — nothing needs restarting.
 
@@ -43,11 +46,13 @@ swarmforge/scripts/ambulance_cli.bb <project-root> release
 ```
 
 Each subcommand prints one JSON object and exits 0 on success. `engage`
-refuses (exit 1) a syntactically invalid id, or a well-formed `BL-###` with no
-YAML file anywhere under `backlog/` — engaging a ticket that does not exist
-would hold everything forever, which is exactly the deadlock this mode is
-built to avoid. `release` and a repeated `engage` of the same ticket are both
-no-ops: the marker file is left byte-identical, not rewritten.
+refuses (exit 1) a syntactically invalid id, a well-formed `BL-###` with no
+YAML file anywhere under `backlog/`, **or** a ticket that exists but is not in
+`backlog/active/` (BL-691) — e.g. `paused/`, `hold/`, `done/`. Engaging a
+missing or non-active patient would freeze the pipeline for work that cannot
+move; the refusal names the folder and says to promote first. `release` and a
+repeated `engage` of the same ticket are both no-ops: the marker file is left
+byte-identical, not rewritten.
 
 ## What "held" means
 
@@ -72,19 +77,31 @@ restarting anything.
 
 ## Where the hold applies
 
-Four live decision points, all wired, or the mode would be a dark marker:
+Five live decision points, all wired to the **same**
+`ambulance-lib/parcel-held?` predicate (BL-655 + BL-691), or the mode would
+be a dark marker:
 
-1. **Delivery** (`handoffd.bb`'s poll) — a held parcel simply is not delivered
-   this poll; it stays in the sender's `outbox/` and is re-tried next poll.
-2. **Dequeue** (`handoff_lib.bb`'s `resolve-dequeueable-candidates`) — a held
+1. **Daemon delivery** (`handoffd.bb`'s poll) — a held parcel simply is not
+   delivered this poll; it stays in the sender's `outbox/` and is re-tried
+   next poll.
+2. **Synchronous send** (`swarm_handoff.bb` → `handoff_inject_lib/deliver-parcel!`,
+   BL-691) — the outbox→inbox path that does not wait for the daemon consults
+   the same hold. A held parcel stays in the sender's `outbox/` byte-identical
+   and lands only on release — closing the live gap where a sync
+   `HANDOFF DELIVERED` bypassed the hold.
+3. **Dequeue** (`handoff_lib.bb`'s `resolve-dequeueable-candidates`) — a held
    parcel already sitting in `inbox/new/` when the mode engaged is not offered
    as a dequeue candidate; it stays in `new/`.
-3. **Rotation actionability** (mono-router packs) — held mail is never
+4. **Rotation actionability** (mono-router packs) — held mail is never
    actionable, so the resident is never pulled to it. This composes with
    [BL-576's aged-note rule](BL-576-aged-note-actionability-mono-router.md)
    rather than forking it: ambulance filters the candidate set first, aging
-   still decides among whatever survives that filter.
-4. **Chase sweep** (`chase_sweep_lib.bb`'s `sweep-role-inbox!`, BL-852) — a
+   still decides among whatever survives that filter. **Exception for the
+   patient (BL-691):** when the patient's own parcel waits in role R's
+   `inbox/new/`, chase may rotate the resident to R even if the resident pane
+   is busy — ambulance mode exists so the patient interrupts; cooldown and
+   once-per-sweep budget are unchanged.
+5. **Chase sweep** (`chase_sweep_lib.bb`'s `sweep-role-inbox!`, BL-852) — a
    held parcel already sitting in `inbox/new/` draws no chase wake-up, no
    `.chase.json` write, no forced respawn, and no dead-letter; its on-disk
    footprint (parcel and sidecars) stays byte-identical across any number of
@@ -94,9 +111,8 @@ Four live decision points, all wired, or the mode would be a dark marker:
    `chaseTimeoutSeconds` and draws a chase on the very next sweep. A held
    parcel already in `completed/`/`abandoned/` is still reaped, never held —
    provably-finished residue is not work being protected, and holding it
-   would leave the ambulance guarding litter. Reuses the same
-   `handoff-lib/default-ambulance-held?` predicate as the other three sites,
-   never a second notion of held.
+   would leave the ambulance guarding litter. Reuses the same hold predicate
+   as the other sites, never a second notion of held.
 
 Work already claimed into a role's `in_process/` before the mode engaged is
 **not** retracted — a mid-turn claim always finishes. Engaging an ambulance
@@ -218,3 +234,7 @@ bb swarmforge/scripts/test/bl852_chase_sweep_ambulance_hold_property_runner.bb
 
 The perimeter's own acceptance scenarios live in
 `specs/features/BL-679-ambulance-mode-perimeter.feature` (11/11 passing).
+
+## Related
+
+- [Ambulance workflow gaps from the first live run (BL-691)](BL-691-ambulance-mode-workflow-gaps-from-bl688-live-run.md) — sync-hold, busy-rotate for patient mail, engage-only-from-`active/`.

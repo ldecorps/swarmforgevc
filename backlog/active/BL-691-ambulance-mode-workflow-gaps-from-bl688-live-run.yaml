@@ -3,13 +3,13 @@ title: "Ambulance mode's first live run moved everything except the patient: the
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: active
 epic: swarm-reliability
 human_approval: approved
 priority: 150
 direction: human
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 
 invariants:
@@ -136,7 +136,7 @@ description: |
   site, verified at some of them. Both invariants are stated so the sweep is
   a single pass over all movers and all gates, not one bounce per site.
 
-acceptance: specs/features/BL-691-ambulance-workflow-gaps.feature.draft
+acceptance: specs/features/BL-691-ambulance-workflow-gaps.feature
 
 out_of_scope: |
   - **D4 from the intake — `assigned_to` stale after a forward.** A different
@@ -157,6 +157,12 @@ out_of_scope: |
     the contract rather than amending it.
 
 notes: |
+  - [2026-08-25T14:52Z] specifier (coord Work 001623): re-verified live gaps
+    still open — deliver-parcel! has zero ambulance consults (D1);
+    should-rotate-resident? still busy-gates without ambulance input (D2);
+    engage still accepts any backlog/ YAML, not active-only (D3). Spec +
+    `.feature.draft` unchanged; forwarded to coder (git_handoff). Coder
+    promotes draft→feature and wires handlers in the same parcel.
   Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
   wires handlers in the same commit. New file rather than appending to
   `specs/features/BL-655-ambulance-mode-hold.feature`, which stays live and

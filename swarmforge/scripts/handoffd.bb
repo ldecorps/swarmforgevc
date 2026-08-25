@@ -1381,6 +1381,24 @@
           (chase-sweep-lib/pane-recently-active?
            activity-role now-ms chase-resident-recent-activity-ms)))))
 
+
+(defn- ambulance-patient-waiting-at?
+  "True when ambulance is engaged and target-role inbox/new holds a parcel
+   attributed to the patient ticket (BL-691 D2 — busy must not defer it)."
+  [target-role]
+  (let [ambulance (ambulance-lib/read-ambulance-state (str project-root))
+        role-info (get (load-roles) target-role)]
+    (boolean
+     (and (:active ambulance)
+          role-info
+          (let [new-dir (str (handoff-lib/mailbox-dir role-info :new))
+                ticket (:ticket ambulance)]
+            (some (fn [item]
+                    (contains? (ambulance-lib/attributed-tickets
+                                (handoff-envelope (:filePath item)))
+                               ticket))
+                  (chase-sweep-lib/scan-inbox-new new-dir)))))))
+
 (defn- attempt-resident-rotate!
   "Shared gate+rotate for chase. Returns the rotate-resident-to! result map,
    or {:ok false :reason ...} when the busy/cooldown/already-active gate
@@ -1393,6 +1411,7 @@
                ;; target-role must not refuse the very rotate that would fix it.
                :live-role (handoff-lib/resident-live-role socket (handoff-lib/mono-router-resident-session))
                :resident-busy? (resident-pane-busy? socket)
+               :ignore-busy? (ambulance-patient-waiting-at? target-role)
                :last-rotate-at-ms @last-chase-rotate-at-ms
                :now-ms (System/currentTimeMillis)
                :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]

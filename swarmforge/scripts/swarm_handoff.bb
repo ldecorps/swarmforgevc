@@ -813,8 +813,8 @@
 
 (defn try-sync-deliver! [outbox-file sender]
   (try
-    (deliver-sync! outbox-file sender)
-    :delivered
+    (let [result (deliver-sync! outbox-file sender)]
+      (if (= result :held) :held :delivered))
     (catch Exception e
       (report-nonfatal! "HANDOFF SYNC INJECT FAILED:" e))))
 
@@ -854,6 +854,9 @@
           (cond
             (= sync-result :delivered)
             (println (str "HANDOFF DELIVERED:" (str outbox-file)))
+
+            (= sync-result :held)
+            (println (str "HANDOFF HELD (ambulance):" (str outbox-file)))
 
             (= sync-result :skipped)
             (if (skip-daemon?)

@@ -487,11 +487,14 @@
    to agree with target-role - a stale marker claiming the resident is
    already the target must not refuse the very rotate that would fix it.
    See live-role-agrees? for the unreadable-is-divergence rule; omitting
-   live-role treats it as unreadable, never as agreement."
-  [{:keys [active-role target-role live-role resident-busy? last-rotate-at-ms now-ms cooldown-ms]}]
+   live-role treats it as unreadable, never as agreement.
+   BL-691 D2: :ignore-busy? true skips the busy refuse when the ambulance
+   patient's dequeueable parcel waits at target-role — patient work interrupts."
+  [{:keys [active-role target-role live-role resident-busy? ignore-busy?
+           last-rotate-at-ms now-ms cooldown-ms]}]
   (let [cooldown (or cooldown-ms default-rotate-cooldown-ms)]
     (cond
-      resident-busy? :busy
+      (and resident-busy? (not ignore-busy?)) :busy
       (and active-role target-role (= (str active-role) (str target-role))
            (live-role-agrees? live-role target-role)) :already-active
       (and last-rotate-at-ms (pos? last-rotate-at-ms)

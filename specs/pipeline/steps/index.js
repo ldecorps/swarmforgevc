@@ -455,6 +455,7 @@ const DOMAINS = [
   require('./bl715WorkflowPromptModesOrientationSteps'),
   require('./bl859BootPrefixBudgetGateSteps'),
   require('./bl679AmbulanceModePerimeterSteps'),
+  require('./bl691AmbulanceWorkflowGapsSteps'),
   require('./bl880StaleAcceptancePointerRefusedAtFirstHopSteps'),
   require('./bl883BootPrefixBudgetTrimSteps'),
   require('./bl886VitestOrphanReaperHotfixSteps'),
