@@ -15,7 +15,7 @@ pass() { echo "PASS: $*"; }
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
 
-git -C "$ROOT" init -q
+git -C "$ROOT" init -q -b main
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
 
 GREEN=(bash -c 'exit 0')
@@ -113,6 +113,7 @@ rm -rf "$ROOT/extension"
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
 cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$ROOT/swarmforge/scripts/property_suite_shared_repo_guard.sh"
+cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$ROOT/swarmforge/scripts/incoming_merge_parent_lib.sh"
 cp "$SCRIPT_DIR/../check_commit_size.sh" "$ROOT/swarmforge/scripts/check_commit_size.sh"
 cp "$SCRIPT_DIR/../check_ticket_deletion.sh" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
 cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
@@ -128,5 +129,74 @@ stage backlog/paused/BL-999-example.yaml
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m ordinary \
   || fail "07: ordinary commit must succeed with the property guard wired"
 pass "07: pre-commit wires the property guard; docs/backlog commit still succeeds"
+
+# ── 08: BL-1121 reconcile import (MERGE_HEAD + byte-identical) skips suite ─
+# Fixture commits must not fire the repo's pre-commit (pipeline-code on main).
+git -C "$ROOT" config core.hooksPath /dev/null
+git -C "$ROOT" reset -q --hard HEAD
+rm -rf "$ROOT/extension"
+mkdir -p "$ROOT/extension/src"
+echo "base" > "$ROOT/extension/src/pipelineBoard.ts"
+git -C "$ROOT" add extension/src/pipelineBoard.ts
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m base-ext \
+  || fail "08: base-ext commit failed"
+git -C "$ROOT" checkout -q -b incoming
+echo "imported" > "$ROOT/extension/src/pipelineBoard.ts"
+git -C "$ROOT" add extension/src/pipelineBoard.ts
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m incoming-ext \
+  || fail "08: incoming-ext commit failed"
+INCOMING_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+git -C "$ROOT" checkout -q main
+# Divergent tip so merge is not a fast-forward; keep local unrelated change.
+mkdir -p "$ROOT/docs"
+echo "local-only" > "$ROOT/docs/local.txt"
+git -C "$ROOT" add docs/local.txt
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m local-docs \
+  || fail "08: local-docs commit failed"
+git -C "$ROOT" -c user.email=test@test -c user.name=test \
+  merge --no-commit --no-ff "$INCOMING_SHA" >/dev/null 2>&1 \
+  || fail "08: setup merge --no-commit must succeed"
+set +e
+OUT08="$(cd "$ROOT" && bash "$GUARD" "${RED[@]}" 2>&1)"
+ST08=$?
+set -e
+[[ "$ST08" -eq 0 ]] || fail "08: reconcile import must allow without suite, got $ST08: $OUT08"
+echo "$OUT08" | grep -q 'property-suite-guard: skip-reconcile-import' \
+  || fail "08: expected skip-reconcile-import marker, got: $OUT08"
+echo "$OUT08" | grep -q 'property-suite-guard: run' \
+  && fail "08: must not run the suite for byte-identical import"
+echo "$OUT08" | grep -qi 'overridden' \
+  && fail "08: must not use recovery override for standing reconcile skip"
+pass "08: MERGE_HEAD byte-identical import skips suite (not env override)"
+git -C "$ROOT" merge --abort >/dev/null 2>&1 || git -C "$ROOT" reset -q --hard HEAD
+
+# ── 09: ordinary extension/src commit still runs (invariant 2) ────────────
+git -C "$ROOT" checkout -q main
+rm -rf "$ROOT/extension"
+mkdir -p "$ROOT/extension/src"
+echo "fresh-edit" > "$ROOT/extension/src/pipelineBoard.ts"
+git -C "$ROOT" add extension/src/pipelineBoard.ts
+set +e
+OUT09="$(cd "$ROOT" && bash "$GUARD" "${GREEN[@]}" 2>&1)"
+ST09=$?
+set -e
+[[ "$ST09" -eq 0 ]] || fail "09: ordinary green suite must allow: $OUT09"
+echo "$OUT09" | grep -q 'property-suite-guard: run' \
+  || fail "09: ordinary commit must run the suite, got: $OUT09"
+echo "$OUT09" | grep -q 'skip-reconcile-import' \
+  && fail "09: ordinary commit must not claim reconcile-import skip"
+pass "09: non-reconcile extension/src commit still runs the suite"
+
+# ── 10: recovery override stays distinct from skip-reconcile-import ───────
+set +e
+OUT10="$(cd "$ROOT" && SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 bash "$GUARD" "${RED[@]}" 2>&1)"
+ST10=$?
+set -e
+[[ "$ST10" -eq 0 ]] || fail "10: override must allow"
+echo "$OUT10" | grep -qi 'overridden' \
+  || fail "10: override path must warn overridden"
+echo "$OUT10" | grep -q 'skip-reconcile-import' \
+  && fail "10: override must not print skip-reconcile-import"
+pass "10: SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD remains recovery-only (distinct marker)"
 
 echo "ALL PASS"
