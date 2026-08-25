@@ -62,6 +62,7 @@ expects them, and are not migrated or rewritten here.
 - [Pane liveness walks the whole tree under the pane](how-to/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.md) — babysitter finds wrapper-launched agents; RC UNAVAILABLE when gate unmet (BL-1070).
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
+- [Reconcile import skips the property-suite guard](how-to/BL-1121-reconcile-import-skips-property-suite-guard.md) — byte-identical mid-merge import → `skip-reconcile-import`; env override stays recovery-only (BL-1121).
 - [Property-suite fixtures must not mutate shared main](how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md) — canary bare/HEAD around the property lane; refuse reset-to-origin when ahead (BL-1124).
 - [Local Agent Telegram turn reliability](how-to/BL-1126-local-agent-telegram-turn-reliability.md) — fast-path probes skip Ollama; real turns stream progress and abort cleanly (BL-1126).
 - [Morning briefing handoff-mechanism diagram](how-to/BL-579-handoff-mechanism-briefing-diagram.md) — HOW a parcel travels; allowlist entry `handoff-mechanism` (BL-579).

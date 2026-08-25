@@ -88,33 +88,11 @@ pipeline_path_import_exempt() {
 }
 
 if (( ${#offenders[@]} > 0 )); then
-  # Finding the incoming merge parent: .git/MERGE_HEAD is reliable when the
-  # merge was explicitly stopped (--no-commit, or a real conflict later
-  # completed via `git commit --no-edit` - the pre-commit path) but is NOT
-  # written to disk before pre-merge-commit runs for a clean, no-conflict
-  # `git merge` (confirmed empirically, git 2.36.1 - the fast path commits
-  # in one step and never persists throwaway merge state). For that case,
-  # fall back to the GITHEAD_<sha>=<name> environment variables git's own
-  # merge machinery sets for each merge parent - the same longstanding
-  # contract external merge-driver tools (kdiff3, meld, ...) rely on. Used
-  # only when exactly one such variable is present, so an ambiguous or
-  # absent signal never grants the exemption (fails closed).
-  merge_head_sha="$(git rev-parse -q --verify MERGE_HEAD 2>/dev/null || true)"
-  if [[ -z "$merge_head_sha" ]]; then
-    githead_count=0
-    githead_candidate=""
-    while IFS='=' read -r env_name env_value; do
-      case "$env_name" in
-        GITHEAD_????????????????????????????????????????)
-          githead_candidate="${env_name#GITHEAD_}"
-          githead_count=$((githead_count + 1))
-          ;;
-      esac
-    done < <(env)
-    if [[ "$githead_count" -eq 1 ]]; then
-      merge_head_sha="$githead_candidate"
-    fi
-  fi
+  # Finding the incoming merge parent: shared resolve_incoming_merge_parent
+  # (MERGE_HEAD, else a lone GITHEAD_<sha> — see incoming_merge_parent_lib.sh).
+  # shellcheck source=incoming_merge_parent_lib.sh
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/incoming_merge_parent_lib.sh"
+  merge_head_sha="$(resolve_incoming_merge_parent || true)"
   if [[ -n "$merge_head_sha" ]]; then
     non_matching=()
     for f in "${offenders[@]}"; do
