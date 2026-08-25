@@ -16,6 +16,15 @@ export type CeremonyOutcomeType = (typeof KNOWN_CEREMONY_OUTCOME_TYPES)[number];
 export const KNOWN_CEREMONY_ADJUSTMENT_KINDS = ['promotion_order', 'throttle_posture'] as const;
 export type CeremonyAdjustmentKind = (typeof KNOWN_CEREMONY_ADJUSTMENT_KINDS)[number];
 
+// BL-1119: per-role quality dial recommendations (slice 1 — recommend only;
+// never rewrite pack conf). raise = next shift should run hotter effort;
+// lower = role worked well, cheaper/faster is fine; hold = no clear signal.
+export const KNOWN_QUALITY_DIALS = ['raise', 'lower', 'hold'] as const;
+export type QualityDial = (typeof KNOWN_QUALITY_DIALS)[number];
+
+export const KNOWN_QUALITY_DISPOSITIONS = ['recommended', 'refused', 'held'] as const;
+export type QualityDisposition = (typeof KNOWN_QUALITY_DISPOSITIONS)[number];
+
 // Human decision 7: "tentative" ceremony adjustments must be reversible
 // FROM THE RECORD ALONE - either a ticket id (grep it, revert its
 // promotion) or a note pointer (find it, act on it) - never a silent edit.
@@ -65,6 +74,14 @@ export interface CeremonyStallSummary {
   count: number;
 }
 
+export interface CeremonyQualityRecommendation {
+  role: string;
+  dial: QualityDial;
+  /** Lean ledger field names that drove the dial (BL-819/820 only). */
+  citedFields: string[];
+  disposition: QualityDisposition;
+}
+
 export interface CeremonyPacket {
   shiftKey: string;
   pathTaken: string[];
@@ -73,6 +90,7 @@ export interface CeremonyPacket {
   skipReasons: string[];
   stalls: CeremonyStallSummary[];
   hypotheses: string[];
+  qualityRecommendations: CeremonyQualityRecommendation[];
 }
 
 export interface CeremonyRun {
@@ -240,7 +258,113 @@ function computeStalls(events: LeanLedgerEvent[]): CeremonyStallSummary[] {
   return [...stallCounts.values()];
 }
 
-export function buildClosingCeremonyPacket(shiftKey: string, allEvents: LeanLedgerEvent[]): CeremonyPacket {
+function addCited(map: Map<string, Set<string>>, role: string, field: string): void {
+  const set = map.get(role);
+  if (set) {
+    set.add(field);
+  } else {
+    map.set(role, new Set([field]));
+  }
+}
+
+function bounceBlamedRole(e: LeanLedgerEvent): string | null {
+  if (e.type !== 'bounce') {
+    return null;
+  }
+  if (typeof e.data.blamedRole === 'string' && e.data.blamedRole.length > 0) {
+    return e.data.blamedRole;
+  }
+  return e.role ?? null;
+}
+
+// BL-1119: well → lower; rework → raise; auto window models → hold only.
+
+/** True for provider-auto window models (auto, cursor/auto, copilot/auto, …). */
+export function isAutoWindowModel(model: string | undefined | null): boolean {
+  if (!model) {
+    return false;
+  }
+  const m = model.trim().toLowerCase();
+  return m === 'auto' || m.endsWith('/auto');
+}
+
+function dialForRole(
+  role: string,
+  reworkFields: Set<string> | undefined,
+  windowModels: Record<string, string>
+): CeremonyQualityRecommendation {
+  const auto = isAutoWindowModel(windowModels[role]);
+  if (auto) {
+    return {
+      role,
+      dial: 'hold',
+      citedFields: reworkFields ? [...reworkFields].sort() : [],
+      disposition: 'held',
+    };
+  }
+  if (reworkFields) {
+    return {
+      role,
+      dial: 'raise',
+      citedFields: [...reworkFields].sort(),
+      disposition: 'recommended',
+    };
+  }
+  return {
+    role,
+    dial: 'lower',
+    citedFields: ['stage_transition'],
+    disposition: 'recommended',
+  };
+}
+
+function computeQualityRecommendations(
+  events: LeanLedgerEvent[],
+  windowModels: Record<string, string> = {}
+): CeremonyQualityRecommendation[] {
+  const rework = new Map<string, Set<string>>();
+  const activeRoles = new Set<string>();
+
+  for (const e of events) {
+    if (e.type === 'stall' && e.role) {
+      addCited(rework, e.role, 'stalls');
+    }
+    const blamed = bounceBlamedRole(e);
+    if (blamed) {
+      addCited(rework, blamed, 'bounce.blamedRole');
+    }
+    if ((e.type === 'stage_transition' || e.type === 'close') && e.role) {
+      activeRoles.add(e.role);
+    }
+  }
+
+  const roles = new Set<string>([...rework.keys(), ...activeRoles]);
+  // Auto seats with only lean signal still get a hold row when they appear in rework/active.
+  const out: CeremonyQualityRecommendation[] = [];
+  for (const role of roles) {
+    out.push(dialForRole(role, rework.get(role), windowModels));
+  }
+  return out.sort((a, b) => a.role.localeCompare(b.role));
+}
+
+export function markQualityRecommendationsRefused(packet: CeremonyPacket): CeremonyPacket {
+  if (packet.qualityRecommendations.length === 0) {
+    return packet;
+  }
+  return {
+    ...packet,
+    qualityRecommendations: packet.qualityRecommendations.map((r) => ({
+      ...r,
+      disposition: 'refused' as const,
+    })),
+  };
+}
+
+export function buildClosingCeremonyPacket(
+  shiftKey: string,
+  allEvents: LeanLedgerEvent[],
+  windowModels: Record<string, string> = {}
+): CeremonyPacket {
   const events = eventsForShiftKey(allEvents, shiftKey);
 
   const pathTaken = computePathTaken(events);
@@ -249,8 +373,18 @@ export function buildClosingCeremonyPacket(shiftKey: string, allEvents: LeanLedg
   const skipReasons = computeSkipReasons(events);
   const stalls = computeStalls(events);
   const hypotheses = buildHypotheses({ pathTaken, dwellHotspots, bounceClasses, skipReasons, stalls });
+  const qualityRecommendations = computeQualityRecommendations(events, windowModels);
 
-  return { shiftKey, pathTaken, dwellHotspots, bounceClasses, skipReasons, stalls, hypotheses };
+  return {
+    shiftKey,
+    pathTaken,
+    dwellHotspots,
+    bounceClasses,
+    skipReasons,
+    stalls,
+    hypotheses,
+    qualityRecommendations,
+  };
 }
 
 export function isEmptyCeremonyPacket(packet: CeremonyPacket): boolean {

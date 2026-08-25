@@ -10,6 +10,7 @@ const {
   ceremonyRunState,
   buildClosingCeremonyNoteDraft,
   buildCeremonyFailureNoteDraft,
+  markQualityRecommendationsRefused,
 } = require('../out/quality/closingCeremony');
 
 // BL-820: pure core for the closing-ceremony lean pass - the shift-scoped
@@ -160,7 +161,78 @@ test('packet excludes tickets from other shifts (only the requested day)', () =>
 
 test('packet contains no raw log transcript - closed field shape only', () => {
   const packet = buildClosingCeremonyPacket('2026-08-08', [event()]);
-  assert.deepEqual(Object.keys(packet).sort(), ['bounceClasses', 'dwellHotspots', 'hypotheses', 'pathTaken', 'shiftKey', 'skipReasons', 'stalls'].sort());
+  assert.deepEqual(
+    Object.keys(packet).sort(),
+    ['bounceClasses', 'dwellHotspots', 'hypotheses', 'pathTaken', 'qualityRecommendations', 'shiftKey', 'skipReasons', 'stalls'].sort()
+  );
+});
+
+// ── BL-1119: per-role quality dial from lean signals ───────────────────
+
+test('BL-1119: elevated stalls for a role recommend quality raise citing stalls', () => {
+  const events = [
+    event({ type: 'stall', source: 'chaser-telemetry', role: 'coder', data: { eventType: 'chase', count: 1 } }),
+  ];
+  const packet = buildClosingCeremonyPacket('2026-08-08', events);
+  assert.deepEqual(packet.qualityRecommendations, [
+    { role: 'coder', dial: 'raise', citedFields: ['stalls'], disposition: 'recommended' },
+  ]);
+});
+
+test('BL-1119: bounce blamedRole recommends quality raise citing bounce.blamedRole', () => {
+  const events = [
+    {
+      ticket: 'BL-900',
+      type: 'bounce',
+      source: 'bounce-store',
+      at: '2026-08-08T10:00:00.000Z',
+      data: { blamedRole: 'architect', failureClass: 'behavior' },
+    },
+  ];
+  const packet = buildClosingCeremonyPacket('2026-08-08', events);
+  assert.deepEqual(packet.qualityRecommendations, [
+    { role: 'architect', dial: 'raise', citedFields: ['bounce.blamedRole'], disposition: 'recommended' },
+  ]);
+});
+
+test('BL-1119: clean stage work without rework recommends quality lower', () => {
+  const events = [event({ role: 'cleaner', data: { processingMs: 1000 } })];
+  const packet = buildClosingCeremonyPacket('2026-08-08', events);
+  assert.deepEqual(packet.qualityRecommendations, [
+    { role: 'cleaner', dial: 'lower', citedFields: ['stage_transition'], disposition: 'recommended' },
+  ]);
+});
+
+test('BL-1119: markQualityRecommendationsRefused sets disposition refused without changing dial', () => {
+  const packet = buildClosingCeremonyPacket('2026-08-08', [
+    event({ type: 'stall', source: 'chaser-telemetry', role: 'coder', data: { eventType: 'chase', count: 1 } }),
+  ]);
+  const refused = markQualityRecommendationsRefused(packet);
+  assert.equal(refused.qualityRecommendations[0].disposition, 'refused');
+  assert.equal(refused.qualityRecommendations[0].dial, 'raise');
+});
+
+test('BL-1119: auto window model never raise/lower — hold only even with stalls', () => {
+  const events = [
+    event({ type: 'stall', source: 'chaser-telemetry', role: 'coder', data: { eventType: 'chase', count: 1 } }),
+  ];
+  for (const model of ['auto', 'cursor/auto', 'copilot/auto']) {
+    const packet = buildClosingCeremonyPacket('2026-08-08', events, { coder: model });
+    assert.deepEqual(
+      packet.qualityRecommendations,
+      [{ role: 'coder', dial: 'hold', citedFields: ['stalls'], disposition: 'held' }],
+      `model ${model}`
+    );
+  }
+});
+
+test('BL-1119: isAutoWindowModel recognizes auto and */auto', () => {
+  const { isAutoWindowModel } = require('../out/quality/closingCeremony');
+  assert.equal(isAutoWindowModel('auto'), true);
+  assert.equal(isAutoWindowModel('cursor/auto'), true);
+  assert.equal(isAutoWindowModel('copilot/auto'), true);
+  assert.equal(isAutoWindowModel('opus'), false);
+  assert.equal(isAutoWindowModel(''), false);
 });
 
 // ── hypotheses: 1-3, derived from whatever signal is present ───────────
