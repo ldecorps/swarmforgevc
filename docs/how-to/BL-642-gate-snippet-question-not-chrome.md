@@ -26,6 +26,11 @@ live panes:
 
 `detectNeedsHuman` is unchanged.
 
+**BL-732 residual:** the original pane-title matcher only matched a single
+`[A-Za-z][\w-]*` token. Multi-word and `@`-seat titles from
+`display_name_for_role` (`Model Steward`, `Coder@Sonnet2`) still leaked.
+See [BL-732](BL-732-pane-title-chrome-covers-every-producible-role-name.md).
+
 ## Tests
 
 ```bash
