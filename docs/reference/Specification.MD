@@ -1,5 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1127 rematch3: tip-pure rebuild after
+documenter rematch2 hitchhike — local coder steward evidence bar unchanged;
+docs substance unchanged. Acceptance:
+`specs/features/BL-1127-local-coder-steward-evidence-bar.feature`.
+How-to: `docs/how-to/BL-1127-local-coder-steward-evidence-bar.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1136 rematch3: tip-pure stamp-off of
 hotfix `fbf6f1a909` — babysitterd pulse dual-cite BL-1133 + cursor-forge pack
 parse; hardener rematch2 hitchhike cleared; ledger still pending human
