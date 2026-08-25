@@ -19,6 +19,16 @@ acceptance: specs/features/BL-533-spec-commit-and-runtime-wiring-exit-gates.feat
 required_wiring:
   - "specs/pipeline/steps/index.js::bl533SpecCommitAndRuntimeWiringExitGatesSteps::acceptance handler registered"
   - "swarmforge/scripts/specifier_backlog_hygiene_gate.bb::acceptance::hygiene gate must evaluate the ticket acceptance path"
+abandoned_commits:
+  - 7e3f42dd5f
+  - 9bdafd00c
+  - d8dcbb570
+  - ff30e6e71
+  - 45fdac472
+  - 576360ceb
+  - eee8f31c2
+  - dc42fd90b
+
 invariants:
   - "An acceptance path that exists only as an untracked working-tree file never passes the spec-ready hygiene gate."
   - "An epic with two or more children and zero required_wiring declarations never passes the wiring exit checklist."
