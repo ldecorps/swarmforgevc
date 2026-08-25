@@ -35,7 +35,8 @@ mk_root() {
 
 read_identity_value() {
   local file="$1" key="$2"
-  grep -P "^${key}\t" "$file" | head -1 | cut -f2-
+  # BL-989: tab anchor without the GNU PCRE flag (BSD grep rejects it).
+  grep "$(printf '^%s\t' "$key")" "$file" | head -1 | cut -f2-
 }
 
 # ── 1: a --pack/SWARMFORGE_CONFIG override's cap is the one persisted,

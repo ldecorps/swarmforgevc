@@ -3,7 +3,8 @@ title: "three shell test helpers use GNU-only `grep -P`, which stock macOS BSD g
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: active
+assigned_to: coder
 epic: code-quality-gates
 human_approval: approved
 priority: 30
@@ -170,6 +171,13 @@ notes: >
   are unchanged from the 2026-08-20 widening, so the existing approval
   stands. What changed is the QA procedure, which had been left naming only
   the first file after the scope widened to three.
+
+  - "[2026-08-25T18:45Z] coder: replaced GNU PCRE grep flag with
+    printf '^%s\\t' tab anchors in test_role_lifecycle_cli.sh (both
+    predicates), test_backlog_depth_pack_override.sh, and
+    test_coordinator_provider_configurable.sh. Sweep clean.
+    Property test bl989PortableGrepTabAnchor. All three shell suites green;
+    BL-343 acceptance run with this parcel."
 
   Rule candidate, blocked on budget: engineering.prompt already carries
   "target stock macOS /bin/bash 3.2, not Homebrew bash" for shell syntax. The
