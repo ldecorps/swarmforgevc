@@ -24,6 +24,10 @@
 ;; time here, which is exactly the kind of divergent copy this file's own
 ;; header comment (above) warns against.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+;; BL-626: which declarations are path pointers is NOT re-decided here —
+;; acceptance-pointer-gate-lib/applicable? is the sole checkability predicate
+;; (same BL-897 posture as BL-1027's mint-time dangling check).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_pointer_gate_lib.bb")))
 
 ;; ── ticket field reading ──────────────────────────────────────────────────
 ;; Same "small live-glue duplicated across independent pure libs" idiom as
@@ -305,26 +309,73 @@
     {:gate "hold marker"
      :reason "ticket is parked in backlog/hold/, never auto-promoted"}))
 
+;; ── gate: acceptance executable at promotion (BL-626) ─────────────────────
+;; An acceptance: pointer under specs/features/ must resolve to an existing
+;; .feature file. A parked .feature.draft is never executable. An explicit
+;; pointer is authoritative — never rescued by a same-id sibling glob.
+
+(defn- draft-pointer? [p]
+  (str/ends-with? (str p) ".feature.draft"))
+
+(defn- specs-features-pointer?
+  "True when raw is an applicable single-line pointer under specs/features/."
+  [raw]
+  (boolean (and (acceptance-pointer-gate-lib/applicable? raw)
+                (str/starts-with? raw "specs/features/"))))
+
+(defn- path-exists-under? [root rel]
+  (fs/exists? (fs/path root rel)))
+
+(defn acceptance-executable-refusal
+  "nil when the gate does not apply or the pointer resolves to a live
+   .feature; otherwise {:gate \"acceptance\" :reason ...} naming the
+   offending path(s). root is required whenever a specs/features/ pointer
+   is present — absence fails closed."
+  [content root]
+  (let [raw (read-field content "acceptance")]
+    (when (specs-features-pointer? raw)
+      (cond
+        (nil? root)
+        {:gate "acceptance"
+         :reason (format "cannot verify acceptance path %s without project root" raw)}
+
+        (draft-pointer? raw)
+        {:gate "acceptance"
+         :reason (format "acceptance names draft %s as not executable" raw)}
+
+        (path-exists-under? root raw)
+        nil
+
+        :else
+        (let [draft (str raw ".draft")]
+          (if (path-exists-under? root draft)
+            {:gate "acceptance"
+             :reason (format "missing feature file %s (draft present: %s)" raw draft)}
+            {:gate "acceptance"
+             :reason (format "missing feature file %s" raw)}))))))
+
 ;; ── the chokepoint ────────────────────────────────────────────────────────
 
 (defn evaluate
   "{:ok true} (optionally carrying :advisory) or {:ok false :gate .. :reason
    ..} for ONE candidate against every BLOCKING gate (human_approval,
-   depends_on (BL-957), active_backlog_max_depth, hold marker -
-   assignee/spec-stage is not a promotion blocker; see route-target above). First failing gate wins, in a
-   fixed order, so the refusal is deterministic even when more than one gate
-   would fire. held? is checked first: a held ticket's other fields are
-   irrelevant, it is not a promotion candidate at all. BL-854 invariant 1:
-   orthogonality is never in this refusal chain - once every blocking gate
-   passes, the result is always :ok true, optionally carrying an
-   orthogonality :advisory (never instead of :ok true)."
-  [{:keys [content held? active-count max-depth active-epics done-ids]}]
-  ;; BL-957: depends_on sits after human_approval and before depth - a
-  ;; ticket-property refusal beats a transient global one, so the
-  ;; coordinator gets the actionable reason. The fixed first-failing-gate-
-  ;; wins order is unchanged for every pre-existing gate.
+   acceptance (BL-626), depends_on (BL-957), active_backlog_max_depth, hold
+   marker - assignee/spec-stage is not a promotion blocker; see route-target
+   above). First failing gate wins, in a fixed order, so the refusal is
+   deterministic even when more than one gate would fire. held? is checked
+   first: a held ticket's other fields are irrelevant, it is not a promotion
+   candidate at all. BL-854 invariant 1: orthogonality is never in this
+   refusal chain - once every blocking gate passes, the result is always
+   :ok true, optionally carrying an orthogonality :advisory (never instead
+   of :ok true). Optional :root enables the BL-626 acceptance existence
+   check against the working tree."
+  [{:keys [content held? active-count max-depth active-epics done-ids root]}]
+  ;; BL-626: acceptance sits after human_approval and before depends_on — a
+  ;; ticket-property refusal beats a transient global one. BL-957 depends_on
+  ;; keeps the same relative place vs depth.
   (or (some->> (hold-refusal held?) (merge {:ok false}))
       (some->> (human-approval-refusal content) (merge {:ok false}))
+      (some->> (acceptance-executable-refusal content root) (merge {:ok false}))
       (some->> (depends-on-refusal content done-ids) (merge {:ok false}))
       (some->> (depth-refusal active-count max-depth) (merge {:ok false}))
       (merge {:ok true}
@@ -342,6 +393,23 @@
   [root status]
   (let [dir (fs/path root "backlog" status)]
     (if (fs/exists? dir) (fs/glob dir "**.yaml") [])))
+
+(defn acceptance-audit-findings
+  "Read-only scan of backlog/paused and backlog/active: every ticket whose
+   acceptance: pointer fails acceptance-executable-refusal, with :id,
+   :path, :feature-path, and :reason."
+  [root]
+  (->> (concat (status-yaml-files root "paused")
+               (status-yaml-files root "active"))
+       (keep (fn [f]
+               (let [content (slurp (str f))
+                     refusal (acceptance-executable-refusal content root)]
+                 (when refusal
+                   {:id (or (read-id content) (fs/file-name f))
+                    :path (str f)
+                    :feature-path (read-field content "acceptance")
+                    :reason (:reason refusal)}))))
+       vec))
 
 (defn done-ids
   "The set of ticket ids landed under backlog/done/ - flat files AND <Mx>/
