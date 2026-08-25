@@ -73,31 +73,57 @@
      :conflicted-paths paths
      :mid-merge? still-mid?}))
 
+(defn- finish-replay-bookkeeping
+  "BL-1131: colliding local-ahead absorb → rematch bookkeeping owner, not operator."
+  [rev-counts! mid-merge?]
+  (binding [*out* *err*]
+    (println "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)"))
+  {:ok? false :exit 1 :outcome :rematch-bookkeeping
+   :mid-merge? (boolean (mid-merge?))
+   :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))})
+
 (defn run-post-hotfix-merge!
-  "Fetch origin/main; merge when behind. On predicted or real conflict:
-   refuse-rematch without leaving MERGE_HEAD (BL-1130). Never reset/stash."
+  "Fetch origin/main; absorb when behind under BL-1131 rematch-then-FF.
+   FF-only / noop when clean; colliding local-ahead → replay-bookkeeping
+   (rematch owner). Predicted or real conflict → refuse-rematch without
+   MERGE_HEAD (BL-1130). Never reset/stash; never pages operator absorb."
   [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! abort!
            status-porcelain! mid-merge? would-conflict! tip-contains-origin!]}]
   (fetch!)
   (refresh-honest-surfaced! daemon-dir (set (or (dirty-paths!) #{})))
-  (let [{:keys [behind]} (rev-counts!)
+  (let [{:keys [ahead behind]} (rev-counts!)
         tip-ok? (boolean (when tip-contains-origin! (tip-contains-origin!)))
         conflict? (boolean (when would-conflict! (would-conflict!)))
-        plan (master-main-reconcile-lib/automated-absorb-plan
-              {:merge-head-present? (boolean (mid-merge?))
-               :behind behind
-               :would-conflict? conflict?
-               :tip-contains-origin? tip-ok?})]
-    (case plan
-      :noop (finish-ok daemon-dir rev-counts! :noop)
-      :skip-human-merge-in-progress
+        ;; BL-1130 foresight still refuses true tip conflicts with no ahead.
+        bl1130-plan (master-main-reconcile-lib/automated-absorb-plan
+                     {:merge-head-present? (boolean (mid-merge?))
+                      :behind behind
+                      :would-conflict? conflict?
+                      :tip-contains-origin? tip-ok?})
+        land-plan (master-main-reconcile-lib/post-land-absorb-plan
+                   {:merge-head-present? (boolean (mid-merge?))
+                    :behind behind
+                    :ahead ahead
+                    :tip-contains-origin? tip-ok?
+                    :absorb-would-conflict? conflict?})]
+    (cond
+      (= bl1130-plan :skip-human-merge-in-progress)
       {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
-      :refuse-rematch
+
+      (= land-plan :noop)
+      (finish-ok daemon-dir rev-counts! :noop)
+
+      (= land-plan :replay-bookkeeping)
+      (finish-replay-bookkeeping rev-counts! mid-merge?)
+
+      (= bl1130-plan :refuse-rematch)
       (do
         (print-refuse-rematch!)
         {:ok? false :exit 1 :outcome :refuse-rematch :mid-merge? (boolean (mid-merge?))
-         :ahead (:ahead (rev-counts!)) :behind behind})
-      :run-merge
+         :ahead ahead :behind behind})
+
+      ;; :ff-absorb or legacy :run-merge — attempt merge (CLI uses --ff-only).
+      :else
       (let [merge-res (merge!)]
         (if (:success merge-res)
           (finish-ok daemon-dir rev-counts! :merged)

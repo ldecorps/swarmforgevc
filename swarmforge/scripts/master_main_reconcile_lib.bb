@@ -169,6 +169,75 @@
   [merge-tree-out]
   (boolean (re-find #"(?i)changed in both|CONFLICT|added in both" (or merge-tree-out ""))))
 
+;; BL-1131: rematch-then-FF land — behind=0 without operator absorb merge.
+(defn prepublish-rematch-plan
+  "Before publish: tip must contain origin/main.
+   :already-contains-origin | :rematch-clean | :refuse-lander"
+  [{:keys [tip-contains-origin? rematch-would-conflict?]}]
+  (cond
+    tip-contains-origin? :already-contains-origin
+    rematch-would-conflict? :refuse-lander
+    :else :rematch-clean))
+
+(defn post-land-absorb-plan
+  "After a rematch-prepared tip lands on origin/main.
+   :noop | :ff-absorb | :replay-bookkeeping | :refuse-rematch-lander |
+   :skip-human-merge-in-progress.
+   Never plans an operator content-conflict absorb merge."
+  [{:keys [merge-head-present? behind ahead tip-contains-origin?
+           absorb-would-conflict?]}]
+  (cond
+    merge-head-present? :skip-human-merge-in-progress
+    (or (zero? (or behind 0)) tip-contains-origin?) :noop
+    (and (pos? (or behind 0)) (zero? (or ahead 0))) :ff-absorb
+    absorb-would-conflict? :replay-bookkeeping
+    :else :ff-absorb))
+
+(defn designed-recovery-is-operator-absorb?
+  "True only when wording pages an operator to finish a conflicted absorb."
+  [outcome-or-message]
+  (boolean
+   (re-find #"(?i)complete origin/main merge|operator.*(absorb|finish).*merge|finish this merge in an editor"
+            (str outcome-or-message))))
+
+(defn land-pipeline-outcome
+  "Compose pre-publish + post-land absorb into a single land result map.
+   Successful rematch-then-FF: {:behind 0 :sync-action :proceed :ok? true
+   :recovery :none :mid-merge? false}.
+   Conflicted rematch/race: rematch lander/bookkeeping — never operator absorb."
+  [{:keys [prepublish-plan absorb-plan mid-merge?]}]
+  (let [clean? (not mid-merge?)]
+    (case prepublish-plan
+      :refuse-lander
+      {:ok? false :behind nil :sync-action nil
+       :recovery :rematch-lander :mid-merge? (boolean mid-merge?)
+       :designed-recovery-operator-absorb? false}
+      (case absorb-plan
+        (:noop :ff-absorb)
+        {:ok? true :behind 0 :sync-action :proceed :recovery :none
+         :mid-merge? (boolean mid-merge?)
+         :designed-recovery-operator-absorb? false}
+        :replay-bookkeeping
+        {:ok? false :behind nil :sync-action nil
+         :recovery :rematch-bookkeeping-owner :mid-merge? (boolean mid-merge?)
+         :designed-recovery-operator-absorb? false}
+        :refuse-rematch-lander
+        {:ok? false :behind nil :sync-action nil
+         :recovery :rematch-lander :mid-merge? (boolean mid-merge?)
+         :designed-recovery-operator-absorb? false}
+        :skip-human-merge-in-progress
+        {:ok? false :behind nil :sync-action nil
+         :recovery :human-merge-in-progress :mid-merge? true
+         :designed-recovery-operator-absorb? false}
+        {:ok? false :behind nil :sync-action nil
+         :recovery :refuse-rematch :mid-merge? (not clean?)
+         :designed-recovery-operator-absorb? false}))))
+
+(defn may-publish-land-tip?
+  "Tip may publish only when prepublish plan is ready (contains origin or rematch-clean)."
+  [prepublish-plan]
+  (contains? #{:already-contains-origin :rematch-clean} prepublish-plan))
+
 ;; ── observable drift report (scenario 04: "the drift check runs" and
 ;;    reports both counts) - trivial, but gives the ahead/behind numbers
 ;;    their own directly-testable unit distinct from the full sweep. ───────
