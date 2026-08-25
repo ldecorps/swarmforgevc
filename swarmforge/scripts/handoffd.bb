@@ -2221,7 +2221,8 @@
 ;; (see master_checkout_drift_lib.bb's own header for the incident this
 ;; guards against). Reuses flow-watchdog-emit-alarm! - the same durable
 ;; Telegram OPERATOR-topic outbox every other unsuppressable alarm in this
-;; sweep block writes to - so this needs no new alerting channel. BL-1139: durable drift auto-repairs via repair-master-checkout-drift!
+;; sweep block writes to - so this needs no new alerting channel.
+;; BL-1139: durable drift auto-repairs via repair-master-checkout-drift!
 ;; (check-master-checkout-drift! stays write-free).
 
 (defn- defer-handoffd-bounce-after-drift-repair! []
