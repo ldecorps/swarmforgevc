@@ -13,7 +13,7 @@ BL-810 how-to extended with enqueue-next pin/hold; Spec Last Updated;
 index BL-810 cross-ref.
 
 ## Abandoned
-`32f621d9e7`, `8f3a3fc147`, `b19a189c4b`, `0d16c0fc39`
+`32f621d9e7`, `8f3a3fc147`, `b19a189c4b`, `0d16c0fc39`, `882c8f6272`
 
 ## Review inventory (Article 4.4)
 NONE.
