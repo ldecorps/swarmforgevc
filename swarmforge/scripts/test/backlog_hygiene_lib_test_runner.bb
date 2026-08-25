@@ -325,4 +325,41 @@ priority: 5
                      {:kind :retired-ticket-type :id "BL-1095" :path "fixture.yaml"
                       :ticket-type "bug"}))))
 
+;; ── BL-533: untracked acceptance + epic wiring checklist ───────────────────
+
+(assert=
+ "epic with two unwired children fails checklist"
+ false
+ (:ok? (backlog-hygiene-lib/epic-wiring-exit-checklist
+        "id: BL-E\ntype: epic\ndecomposes_into: [BL-1, BL-2]\n"
+        ["id: BL-1\n" "id: BL-2\n"])))
+
+(assert=
+ "epic with one wired child passes checklist"
+ true
+ (:ok? (backlog-hygiene-lib/epic-wiring-exit-checklist
+        "id: BL-E\ntype: epic\ndecomposes_into:\n  - BL-1\n  - BL-2\n"
+        ["id: BL-1\nrequired_wiring: [a::b]\n" "id: BL-2\n"])))
+
+(assert=
+ "single-child epic is not applicable"
+ false
+ (:applicable? (backlog-hygiene-lib/epic-wiring-exit-checklist
+                "id: BL-E\ntype: epic\ndecomposes_into: [BL-1]\n"
+                ["id: BL-1\n"])))
+
+(assert=
+ "epic-wiring-exit-violation with unwired children"
+ {:kind :epic-wiring-missing :id "BL-E" :path "e.yaml" :child-count 2}
+ (backlog-hygiene-lib/epic-wiring-exit-violation
+  "id: BL-E\ntype: epic\nepic: e\nmilestone: M8\ndecomposes_into: [BL-1, BL-2]\n"
+  {:id "BL-E" :path "e.yaml" :child-texts ["id: BL-1\n" "id: BL-2\n"]}))
+
+(assert=
+ "format-violation for untracked-acceptance names the path"
+ true
+ (boolean (re-find #"UNTRACKED-ACCEPTANCE.*ls-files"
+                    (backlog-hygiene-lib/format-violation
+                     {:kind :untracked-acceptance :id "BL-533" :path "t.yaml"
+                      :feature-path "specs/features/BL-533-x.feature"}))))
 (println "backlog_hygiene_lib_test: all passed")

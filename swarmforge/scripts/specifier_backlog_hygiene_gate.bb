@@ -69,7 +69,7 @@
       (if (backlog-hygiene-lib/all-clean? violations)
         (do (println "specifier_backlog_hygiene_gate: ok")
             (System/exit 0))
-        (do (println "specifier_backlog_hygiene_gate: FAIL — assign epic: on slices; set milestone: on type: epic trackers; refuse duplicate ticket ids; refuse dangling acceptance: pointers; refuse retired type: bug before handoff")
+        (do (println "specifier_backlog_hygiene_gate: FAIL — assign epic: on slices; set milestone: on type: epic trackers; refuse duplicate ticket ids; refuse dangling acceptance: pointers; refuse untracked acceptance: paths; refuse retired type: bug before handoff")
             (System/exit 1))))))
 
 (-main)
