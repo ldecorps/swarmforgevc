@@ -47,6 +47,14 @@ const PANE_TITLE_SESSION_NAME_PATTERN = new RegExp(
   `^SwarmForge ${DISPLAY_NAME_TOKEN}(?: ${DISPLAY_NAME_TOKEN})*$`
 );
 
+/** Title-case one alphanumeric run; leave punctuation chunks unchanged (zsh (C)). */
+function titleCaseAlnumChunk(chunk: string): string {
+  if (!/^[A-Za-z0-9]/.test(chunk)) {
+    return chunk;
+  }
+  return chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase();
+}
+
 /** Mirror of swarmforge.sh display_name_for_role — single source for tests. */
 export function displayNameForRole(role: string): string {
   return role
@@ -54,16 +62,7 @@ export function displayNameForRole(role: string): string {
     .trim()
     .split(/\s+/)
     .filter(Boolean)
-    .map((part) =>
-      part
-        .split(/([^A-Za-z0-9]+)/)
-        .map((chunk) =>
-          /^[A-Za-z0-9]/.test(chunk)
-            ? chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase()
-            : chunk
-        )
-        .join('')
-    )
+    .map((part) => part.split(/([^A-Za-z0-9]+)/).map(titleCaseAlnumChunk).join(''))
     .join(' ');
 }
 
