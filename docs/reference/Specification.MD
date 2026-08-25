@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1123: master-checkout integrity guard
+heals `core.bare=true` and refuses collapsed tip trees below a tip-floor;
+`master_checkout_integrity_lib.bb` + CLI; handoffd sweep alongside drift.
+Acceptance: `specs/features/BL-1123-guard-master-checkout-against-bare-and-collapsed-tip.feature`.
+How-to: `docs/how-to/BL-1123-guard-master-checkout-against-bare-and-collapsed-tip.md`.
+Complements BL-839. Diagram note: `docs/diagrams/architecture.mmd`. No new
+extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1126: Local Agent Telegram turns stay
 live under Ollama latency — fast-path probes skip Ollama; real turns stream
 progress; empty completions recover; turn/idle/socket deadlines abort wedges.
