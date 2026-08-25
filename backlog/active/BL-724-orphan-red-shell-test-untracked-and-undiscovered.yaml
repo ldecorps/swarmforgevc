@@ -18,9 +18,7 @@ required_wiring:
   - "swarmforge/scripts/test/test_shell_test_discovery.sh::test_swarm_handoff_mono_router_auto_rotate::the sweep's own test proves the orphan case is caught"
 
 
-abandoned_commits:
-  # pre-tip-pure coder feat tip stranded on swarmforge-coder; superseded by tip-pure 46fceb651
-  - d4fad4e55e
+abandoned_commits: [d4fad4e55e]
 
 description: |
   ## What
