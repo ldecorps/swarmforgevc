@@ -3,7 +3,7 @@ title: "BL-969's standing guard asserts a heavy test's timeout is PRESENT, never
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: active
 epic: code-quality-gates
 human_approval: approved
 priority: 30
