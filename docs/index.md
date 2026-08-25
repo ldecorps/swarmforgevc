@@ -22,6 +22,8 @@ expects them, and are not migrated or rewritten here.
 
 ## How-to guides
 
+- [Keep BL-578 acceptance bound](how-to/BL-988-orphaned-wsl-acceptance-contract-binding.md) — restore orphaned step binding; property regression against re-orphan (BL-988).
+
 *Task-oriented: recipes to accomplish a specific goal.*
 
 - [Bringing Up a Second Swarm on Windows via WSL2](how-to/BL-091-wsl2-second-swarm-bringup.md)
