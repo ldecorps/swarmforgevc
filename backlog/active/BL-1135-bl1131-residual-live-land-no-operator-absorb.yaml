@@ -14,6 +14,14 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 human_approval: approved
+abandoned_commits:
+  - 9ab1d195e6
+  - 8e0c9cbd9f
+  - 2be9126d60
+  - 25f02d70eb
+  - eb394ea217
+  - c63bf1200c
+  - 69e74946dd
 approval_context: >
   Human (Cursor) 2026-08-25: confirmed residual mint after BL-1131 done —
   asked whether another ticket is needed so landing tickets on main does
