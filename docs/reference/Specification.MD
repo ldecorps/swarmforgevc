@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1131: rematch-then-FF ticket land —
+**Last Updated:** August 25, 2026 (BL-533: exit gates — untracked
+acceptance features fail specifier hygiene (`untracked-acceptance`);
+multi-slice epics (≥2 `decomposes_into` children) fail the wiring exit
+checklist unless at least one child has non-empty `required_wiring`.
+Hooks: `specifier_backlog_hygiene_gate`, epic milestone audit, pre-QA
+acceptance-at-cited-commit. Acceptance:
+`specs/features/BL-533-spec-commit-and-runtime-wiring-exit-gates.feature`.
+How-to: `docs/how-to/BL-533-spec-commit-and-runtime-wiring-exit-gates.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1131: rematch-then-FF ticket land —
 pre-publish tip must contain `origin/main`; post-land absorb is FF-only
 or rematch lander/bookkeeping owner — never an operator
 `Complete origin/main merge`. Successful land reaches `behind=0` /
