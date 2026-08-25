@@ -2,7 +2,7 @@ id: GH-25
 title: "Email escalation for unanswered role questions (role_ask): unanswered past a threshold alerts the human via GitHub mention"
 milestone: M8
 type: feature
-status: todo
+status: active
 epic: swarm-reliability
 human_approval: approved
 severity: medium
@@ -78,9 +78,10 @@ out_of_scope: |
   - Re-escalation / reminder cadence after the one-shot escalation; the
     single stamp is the contract.
 
-acceptance: specs/features/GH-25-role-ask-email-escalation.feature.draft
+acceptance: specs/features/GH-25-role-ask-email-escalation.feature
 
 notes: |
+  - "[2026-08-25T16:05Z] coder: role_ask_escalation_lib + operator_runtime tick wiring; gh mention transport."
   QA e2e procedure: with the operator runtime live, write a synthetic
   role-awaiting marker back-dated past the threshold (no escalated_at_ms);
   observe within one tick a GitHub comment mentioning the human on the ops

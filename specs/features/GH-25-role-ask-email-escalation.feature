@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:10:32.168137552Z","feature_name":"unanswered role questions escalate to the human by email","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/GH-25-role-ask-email-escalation.feature","background_hash":"daeeaf929958e6f35d1ae8fcd2b3525865e900cc1dc8d3be4df6d07bff982e26","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: unanswered role questions escalate to the human by email
 
   # GH-25: operator_runtime.bb tick scans role-awaiting markers; a marker

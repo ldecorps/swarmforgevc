@@ -389,3 +389,5 @@ test_local_coder_battery.sh	standing
 bl568_menu_blocked_test_runner.bb	standing		
 bl691_ambulance_gaps_test_runner.bb	standing		
 test_shell_test_discovery.sh	standing		
+role_ask_escalation_lib_test_runner.bb	standing		
+gh25_role_ask_escalation_test_runner.bb	standing		

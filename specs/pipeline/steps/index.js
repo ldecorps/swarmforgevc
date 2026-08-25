@@ -354,6 +354,7 @@ const DOMAINS = [
   require('./bl674EpicDrilldownUiSteps'),
   require('./bl655AmbulanceModeHoldSteps'),
   require('./bl724OrphanRedShellTestUntrackedAndUndiscoveredSteps'),
+  require('./gh25RoleAskEmailEscalationSteps'),
   require('./bl778RuleProposalTestAssertsStaleQueueGrammarSteps'),
   require('./bl684OnboarderRenameSteps'),
   require('./bl696LetsTalkSteps'),

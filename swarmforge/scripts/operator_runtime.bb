@@ -50,6 +50,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "role_ask_escalation_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "llm_cost_ledger_lib.bb")))
 ;; BL-281 (reshaped 2026-07-11, bridge-client architecture): Telegram
 ;; forum-topic threads over the bridge. The runtime NEVER talks to
@@ -2064,6 +2065,77 @@
 ;; from status.json entirely by tick!'s own cond-> below, the SAME "absent
 ;; means nothing to report" convention read-tunnel-status/
 ;; read-telegram-console-status above already use.
+
+;; GH-25: unanswered role_ask escalation (GitHub mention → human email).
+(defn- ask-escalation-threshold-ms []
+  (role-ask-escalation-lib/threshold-ms
+   (role-ask-escalation-lib/parse-threshold-minutes
+    (System/getenv "SWARMFORGE_ASK_ESCALATION_MINUTES"))))
+
+(defn- conf-ask-escalation-issue [conf-text]
+  (when conf-text
+    (when-let [m (re-find #"(?m)^(?:config\s+)?ask_escalation_issue\s+(\d+)\b" conf-text)]
+      (second m))))
+
+(defn- resolve-ask-escalation-issue []
+  (or (role-ask-escalation-lib/parse-ops-issue (System/getenv "SWARMFORGE_ASK_ESCALATION_ISSUE"))
+      (role-ask-escalation-lib/parse-ops-issue
+       (conf-ask-escalation-issue
+        (when (fs/exists? conf-file) (try (slurp (str conf-file)) (catch Exception _ nil)))))))
+
+(defn- read-role-awaiting-markers []
+  (if-not (fs/exists? role-awaiting-dir)
+    {}
+    (->> (fs/list-dir role-awaiting-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".json"))
+         (map (fn [f]
+                [(str/replace (fs/file-name f) #"\.json$" "")
+                 (try (json/parse-string (slurp (str f)) true)
+                      (catch Exception _ {}))]))
+         (into {}))))
+
+(defn- post-ask-escalation-comment! [issue body]
+  (let [{:keys [exit]} (process/sh "gh" "issue" "comment" (str issue) "--body" body)]
+    (zero? exit)))
+
+(defn- stamp-marker-file! [role marker now]
+  (let [path (fs/path role-awaiting-dir (str role ".json"))
+        stamped (role-ask-escalation-lib/stamp-escalated marker now)]
+    (atomic-spit! path (json/generate-string stamped))
+    stamped))
+
+(defn- escalate-one-role-ask! [role marker now thresh issue]
+  (when (= :posted-and-stamped
+           (role-ask-escalation-lib/decide-escalation-outcome marker now thresh))
+    (if-not issue
+      :unconfigured
+      (let [body (role-ask-escalation-lib/format-mention-body role (:question marker))]
+        (if (post-ask-escalation-comment! issue body)
+          (do (stamp-marker-file! role marker now)
+              (log! "ask-escalation" role "posted")
+              :posted-and-stamped)
+          (do (log! "ask-escalation" role "gh-comment-failed")
+              :post-failed))))))
+
+(defn escalate-role-ask-markers!
+  "GH-25: one-shot escalate past-threshold role-awaiting markers. Returns
+   {:transport :configured|:unconfigured :outcomes {role → keyword}}."
+  [now]
+  (let [thresh (ask-escalation-threshold-ms)
+        issue (resolve-ask-escalation-issue)
+        markers (read-role-awaiting-markers)
+        outcomes (into {}
+                       (keep (fn [[role marker]]
+                               (when-let [o (escalate-one-role-ask! role marker now thresh issue)]
+                                 [role o])))
+                       markers)]
+    (when (and (nil? issue) (seq outcomes))
+      (log! "ask-escalation" "WARN ops issue unconfigured - no stamp"))
+    {:transport (if issue :configured :unconfigured)
+     :outcomes outcomes
+     :markers (read-role-awaiting-markers)
+     :threshold_ms thresh}))
+
 (defn read-role-questions-undeliverable []
   (if-not (fs/exists? role-awaiting-dir)
     {}
@@ -2296,6 +2368,9 @@
           tunnel (read-tunnel-status)
           telegram-console (read-telegram-console-status)
           role-questions-undeliverable (read-role-questions-undeliverable)
+          ask-escalation (escalate-role-ask-markers! now)
+          role-questions (role-ask-escalation-lib/render-role-questions
+                          (:markers ask-escalation) now (:threshold_ms ask-escalation))
           miniapp-watchdog (miniapp-watchdog-status)
           cursor-bridge-watchdog (cursor-bridge-watchdog-status)
           babysitterd-watchdog (babysitterd-watchdog-status)
@@ -2353,6 +2428,9 @@
                        tunnel (assoc :tunnel tunnel)
                        telegram-console (assoc :telegram_console telegram-console)
                        (seq role-questions-undeliverable) (assoc :role_questions_undeliverable role-questions-undeliverable)
+                       (seq role-questions) (assoc :role_questions role-questions)
+                       true (assoc :ask_escalation
+                                   {:transport (name (:transport ask-escalation))})
                        true (assoc :miniapp_watchdog miniapp-watchdog)
                        true (assoc :cursor_bridge_watchdog cursor-bridge-watchdog)
                        true (assoc :babysitterd_watchdog babysitterd-watchdog)
