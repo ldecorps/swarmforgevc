@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1134: master-checkout drift mute covers
+the post-`git add` window — `commit-in-flight?` is true for `.git/index.lock`
+**or** a live `git add`/`git commit` argv naming this root; durable staged
+reversion with no signal still alarms. Acceptance:
+`specs/features/BL-1134-master-checkout-drift-mute-covers-post-add-window.feature`.
+How-to: `docs/how-to/BL-1134-master-checkout-drift-mute-covers-post-add-window.md`
+(updates BL-1122 / BL-839). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-888: `kill_pipeline_swarm.sh` Copilot
 kill is root-scoped — argv must name this `$ROOT`; sibling roots' agents
 are never signaled. Replaces unscoped `pkill -f 'copilot.*SwarmForge'`.
