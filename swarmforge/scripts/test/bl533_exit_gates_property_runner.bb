@@ -4,8 +4,7 @@
 ;;   I2 multi-slice epic needs required_wiring on a child
 
 (require '[babashka.fs :as fs]
-         '[babashka.process :as process]
-         '[clojure.string :as str])
+         '[babashka.process :as process])
 
 (def script-dir (fs/parent (fs/canonicalize *file*)))
 (load-file (str (fs/path script-dir ".." "backlog_hygiene_lib.bb")))
