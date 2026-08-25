@@ -186,3 +186,21 @@ notes: >
   exists to draw - collapsing them would erase the behaviour under test.
 notes: |
   Human 2026-08-23 (Cursor): HELD — finish BL-1078 only. Promotion frozen; reinstate after Cursor launcher token lands.
+
+abandoned_commits:
+  - 3f6bdbb589
+  - 1cee1437c
+  - 9141662c00
+  - 9b1b052aef
+  - 31560f0689
+  - 7af96d97e8
+  - feedbbf096
+  - 83d0037e79
+  - 6231c29d1a
+  - 4f4e8ae58f
+  - 7b189db43a
+  - 063f372735
+  - 0923676ec3
+  - e8791965aa
+  - 103d0003f8
+  - 375413089f

@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1100 rematch: re-verify structured-only
+promotion candidacy on tip — `is_do_not_promote` remains deleted; auto-pick
+skips announce `skip <id> gate=<gate>` via `is_epic_type` /
+`is_blocked_status` only. No further product change; 2026-08-24 docs stand.
+Acceptance:
+`specs/features/BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1124 rematch: property-suite bare-flip
 canary acceptance and unit runner unset `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD`
 so a commit-time override cannot green-wash scenario 02. Prior shared-repo
