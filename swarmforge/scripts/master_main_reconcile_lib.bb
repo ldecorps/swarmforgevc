@@ -193,6 +193,25 @@
     absorb-would-conflict? :replay-bookkeeping
     :else :ff-absorb))
 
+(defn absorb-dispatch-plan
+  "Single absorb decision for handoffd + post_hotfix runners.
+   Prefer land noop/replay, then BL-1130 refuse-rematch, else :ff-absorb.
+   Never returns an operator content-conflict absorb."
+  [{:keys [merge-head-present? behind ahead tip-contains-origin?
+           would-conflict? absorb-would-conflict?] :as ctx}]
+  (let [conflict? (or would-conflict? absorb-would-conflict?)
+        bl1130 (automated-absorb-plan
+                (assoc ctx :would-conflict? conflict?
+                       :tip-contains-origin? tip-contains-origin?))
+        land (post-land-absorb-plan
+              (assoc ctx :absorb-would-conflict? conflict?))]
+    (cond
+      (= bl1130 :skip-human-merge-in-progress) :skip-human-merge-in-progress
+      (= land :noop) :noop
+      (= land :replay-bookkeeping) :replay-bookkeeping
+      (= bl1130 :refuse-rematch) :refuse-rematch
+      :else :ff-absorb)))
+
 (defn designed-recovery-is-operator-absorb?
   "True only when wording pages an operator to finish a conflicted absorb."
   [outcome-or-message]

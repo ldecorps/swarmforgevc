@@ -94,36 +94,30 @@
   (let [{:keys [ahead behind]} (rev-counts!)
         tip-ok? (boolean (when tip-contains-origin! (tip-contains-origin!)))
         conflict? (boolean (when would-conflict! (would-conflict!)))
-        ;; BL-1130 foresight still refuses true tip conflicts with no ahead.
-        bl1130-plan (master-main-reconcile-lib/automated-absorb-plan
-                     {:merge-head-present? (boolean (mid-merge?))
-                      :behind behind
-                      :would-conflict? conflict?
-                      :tip-contains-origin? tip-ok?})
-        land-plan (master-main-reconcile-lib/post-land-absorb-plan
-                   {:merge-head-present? (boolean (mid-merge?))
-                    :behind behind
-                    :ahead ahead
-                    :tip-contains-origin? tip-ok?
-                    :absorb-would-conflict? conflict?})]
-    (cond
-      (= bl1130-plan :skip-human-merge-in-progress)
+        plan (master-main-reconcile-lib/absorb-dispatch-plan
+              {:merge-head-present? (boolean (mid-merge?))
+               :behind behind
+               :ahead ahead
+               :tip-contains-origin? tip-ok?
+               :would-conflict? conflict?
+               :absorb-would-conflict? conflict?})]
+    (case plan
+      :skip-human-merge-in-progress
       {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
 
-      (= land-plan :noop)
+      :noop
       (finish-ok daemon-dir rev-counts! :noop)
 
-      (= land-plan :replay-bookkeeping)
+      :replay-bookkeeping
       (finish-replay-bookkeeping rev-counts! mid-merge?)
 
-      (= bl1130-plan :refuse-rematch)
+      :refuse-rematch
       (do
         (print-refuse-rematch!)
         {:ok? false :exit 1 :outcome :refuse-rematch :mid-merge? (boolean (mid-merge?))
          :ahead ahead :behind behind})
 
-      ;; :ff-absorb or legacy :run-merge — attempt merge (CLI uses --ff-only).
-      :else
+      ;; :ff-absorb — CLI merge! is --ff-only.
       (let [merge-res (merge!)]
         (if (:success merge-res)
           (finish-ok daemon-dir rev-counts! :merged)

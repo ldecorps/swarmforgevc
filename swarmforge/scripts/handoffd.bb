@@ -3044,32 +3044,27 @@
         tip-ok? (master-main-origin-is-ancestor?)
         conflict? (master-main-merge-would-conflict?)
         mid? (master-main-merge-head-present?)
-        bl1130 (master-main-reconcile-lib/automated-absorb-plan
-                {:merge-head-present? mid?
-                 :behind behind
-                 :would-conflict? conflict?
-                 :tip-contains-origin? tip-ok?})
-        land (master-main-reconcile-lib/post-land-absorb-plan
+        plan (master-main-reconcile-lib/absorb-dispatch-plan
               {:merge-head-present? mid?
                :behind behind
                :ahead ahead
                :tip-contains-origin? tip-ok?
+               :would-conflict? conflict?
                :absorb-would-conflict? conflict?})]
-    (cond
-      (= bl1130 :skip-human-merge-in-progress)
+    (case plan
+      :skip-human-merge-in-progress
       {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
 
-      (= land :noop)
+      :noop
       {:success true :outcome :noop}
 
-      (= land :replay-bookkeeping)
+      :replay-bookkeeping
       {:success false :error "rematch-bookkeeping" :outcome :rematch-bookkeeping}
 
-      (= bl1130 :refuse-rematch)
+      :refuse-rematch
       {:success false :error "refuse-rematch" :outcome :refuse-rematch}
 
-      :else
-      ;; BL-1131: FF-only absorb after rematch-prepared lands.
+      ;; :ff-absorb — rematch-prepared lands only.
       (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
                                 ["git" "merge" "--ff-only" "--no-edit" "origin/main"]
                                 {:dir (str project-root)})]
