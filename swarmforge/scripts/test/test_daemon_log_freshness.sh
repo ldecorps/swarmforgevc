@@ -88,13 +88,13 @@ run_checker() {
   /bin/sh "$CHECKER"
 }
 
-# ── 01: babysitterd heartbeats every tick with no work ────────────────────
+# ── 01: babysitterd heartbeats every tick with no work (BL-1133: 2/tick) ─
 ROOT="$(make_root)"
 for _ in 1 2 3; do
   bash "$BABYSITTERD_SH" "$ROOT" --tick-once >/dev/null
 done
 HB_COUNT="$(grep -cE '[[:space:]]heartbeat([[:space:]]|$)' "$ROOT/.swarmforge/babysitterd/babysitterd.log" || true)"
-check "daemon-log-freshness-01: three ticks yield three heartbeat lines" '[[ "$HB_COUNT" -eq 3 ]]'
+check "daemon-log-freshness-01: three ticks yield six heartbeat lines (start+end)" '[[ "$HB_COUNT" -eq 6 ]]'
 pass "01: babysitterd heartbeats every tick with no work"
 
 # ── 02a: stale handoffd heartbeat → kill + restart via start script + record + announce ─

@@ -102,19 +102,19 @@ pass "02: a second start is refused while the pidfile is live; original process 
 kill -KILL "$FIRST_PID" 2>/dev/null || true
 rm -rf "$ROOT"
 
-# ── heartbeat: --tick-once appends exactly one heartbeat line, no daemonizing ─
+# ── heartbeat: --tick-once pulses start+end (BL-1133), no daemonizing ─
 ROOT="$(make_root)"
 bash "$DAEMON" "$ROOT" --tick-once >/dev/null
 LOG="$ROOT/.swarmforge/babysitterd/babysitterd.log"
 [[ -f "$LOG" ]] || fail "tick-once: expected a log file"
 HB="$(grep -cE '[[:space:]]heartbeat([[:space:]]|$)' "$LOG" || true)"
-[[ "$HB" -eq 1 ]] || fail "tick-once: expected exactly one heartbeat line; got $HB"
+[[ "$HB" -eq 2 ]] || fail "tick-once: expected two heartbeat lines (start+end); got $HB"
 [[ ! -f "$ROOT/.swarmforge/babysitterd/babysitterd.pid" ]] || fail "tick-once: must not write a pidfile (not daemonizing)"
 bash "$DAEMON" "$ROOT" --tick-once >/dev/null
 bash "$DAEMON" "$ROOT" --tick-once >/dev/null
 HB3="$(grep -cE '[[:space:]]heartbeat([[:space:]]|$)' "$LOG" || true)"
-[[ "$HB3" -eq 3 ]] || fail "tick-once: three invocations should yield three heartbeat lines; got $HB3"
-pass "tick-once: emits one heartbeat line per invocation without daemonizing"
+[[ "$HB3" -eq 6 ]] || fail "tick-once: three invocations should yield six heartbeat lines; got $HB3"
+pass "tick-once: emits start+end heartbeat lines per invocation without daemonizing"
 rm -rf "$ROOT"
 
 # ── BL-802-01: start succeeds when setsid is NOT resolvable on PATH ────────

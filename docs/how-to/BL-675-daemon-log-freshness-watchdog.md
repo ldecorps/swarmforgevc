@@ -22,12 +22,17 @@ thresholds — see "Contention-relative threshold" below for how the
 *effective* threshold the checker actually applies can exceed them on a
 loaded host.
 
-Both daemons emit a timestamped, content-free `heartbeat` line on every loop
-tick, so a healthy quiet period (cooldown pause, no work) never looks dead.
+Both daemons emit a timestamped, content-free `heartbeat` line so a healthy
+quiet period (cooldown pause, no work) never looks dead.
 `handoffd` writes it **twice per cycle — at the start AND the end** (BL-789):
 observed Mac cycles run 140-232s, close to/past the 120s threshold, so a
 start-of-cycle pulse is what keeps a merely-slow cycle from looking
 identical to a wedged one until the whole cycle finishes.
+`babysitterd` uses the same start+end shape, plus a cold-start pulse before
+the first tick (BL-1133): its 600s base threshold still trips a truly mute
+log, but a long mid-tick gather (e.g. pipeline-code-on-main) or host sleep
+across `sleep` no longer floods Operator with false
+`FRESHNESS_VIOLATION … stale-heartbeat` cool-off escalates.
 
 ## Contention-relative threshold (BL-1012)
 

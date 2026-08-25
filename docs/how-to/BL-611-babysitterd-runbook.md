@@ -120,7 +120,7 @@ original process is left running. A second start while the pidfile is
 
 ```
 .swarmforge/babysitterd/babysitterd.pid       daemon pidfile
-.swarmforge/babysitterd/babysitterd.log       bounded ~2000 lines; one heartbeat line per tick
+.swarmforge/babysitterd/babysitterd.log       bounded ~2000 lines; content-free heartbeat at process start and at each tick start+end (BL-1133)
 .swarmforge/babysitterd/streak                swarm-starved idle-sweep streak
 .swarmforge/babysitterd/nudge-dedup.json      {finding-key -> last-nudged-ms}
 .swarmforge/babysitterd/pane-hash-<role>      last 3 stable content hashes (check 7)
@@ -134,10 +134,13 @@ reads the old directory. `stop_ancillary_services.sh` best-effort clears any
 leftover hawk process/socket it finds there as migration hygiene, not as part
 of the daemon's own lifecycle.
 
-The heartbeat line lets `daemon_log_freshness.conf` (BL-675) tell "quiet but
-alive" from "wedged" — see
-[Daemon log-freshness watchdog](BL-675-daemon-log-freshness-watchdog.md),
-which also restarts babysitterd if its log goes stale.
+The heartbeat lines let `daemon_log_freshness.conf` (BL-675) tell "quiet but
+alive" from "wedged". babysitterd pulses a content-free `heartbeat` (1) on
+daemon start before the first check, (2) at the start of every tick, and
+(3) at the end of every tick — same shape as handoffd (BL-789 / BL-1133).
+A long mid-tick gather or host sleep no longer looks identical to a mute
+loop. See [Daemon log-freshness watchdog](BL-675-daemon-log-freshness-watchdog.md),
+which still restarts babysitterd if the log goes truly stale.
 
 ## The env skip flipped meaning
 
@@ -503,9 +506,12 @@ Acceptance feature:
 Check 13's gather (BL-631, above) used to re-derive its answer from scratch
 every 300s tick, spawning `is_qa_ancestor.sh` once per candidate SHA. On a
 `main` sitting ~23 commits ahead of `swarmforge-QA`, that overran
-babysitterd's 600s freshness threshold — and since the daemon writes its
-heartbeat only *after* the check returns, a slow gather read as a dead daemon
-and triggered a mid-sweep restart (`age_secs=1146`, 2026-08-22).
+babysitterd's 600s freshness threshold — and while the daemon still
+heartbeated only *after* the check returned, a slow gather read as a dead
+daemon and triggered a mid-sweep restart (`age_secs=1146`, 2026-08-22).
+**(BL-1133)** pulses start+end (and cold-start) so a live mid-tick gather
+no longer looks stale; the BL-1086 cache/batch work below remains the
+cost fix for that gather itself.
 
 **The cache is on disk, not in memory.** Each tick's `babysitterd.sh` shells a
 fresh `babysitter_check.sh` process, so an in-memory cache would never survive
