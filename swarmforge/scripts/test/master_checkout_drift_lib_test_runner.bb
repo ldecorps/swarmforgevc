@@ -413,6 +413,70 @@
   (assert= "an unreadable working-tree file -> :unknown, never masked as :no-drift by a resolvable main/index" :unknown (:overall result))
   (assert= "an alarm is emitted" 1 (count @alarms)))
 
+;; ── BL-1122 / BL-1134: commit-in-flight? + argv classifier ───────────────────
+
+(assert-true "bl1134: git -C <root> add classifies as in-flight argv"
+             (master-checkout-drift-lib/git-add-or-commit-argv-for-root?
+              "git -C /proj/root add swarmforge/scripts/handoffd.bb" "/proj/root"))
+
+(assert-true "bl1134: git -C <root> commit classifies as in-flight argv"
+             (master-checkout-drift-lib/git-add-or-commit-argv-for-root?
+              "git -C /proj/root commit -m x" "/proj/root"))
+
+(assert-true "bl1134: absolute /usr/bin/git commit with root still classifies"
+             (master-checkout-drift-lib/git-add-or-commit-argv-for-root?
+              "/usr/bin/git -C /proj/root commit -m x" "/proj/root"))
+
+(assert-true "bl1134: foreign-root git commit does not classify for this root"
+             (not (master-checkout-drift-lib/git-add-or-commit-argv-for-root?
+                   "git -C /other/root commit -m x" "/proj/root")))
+
+(assert-true "bl1134: git status must not classify as add/commit"
+             (not (master-checkout-drift-lib/git-add-or-commit-argv-for-root?
+                   "git -C /proj/root status" "/proj/root")))
+
+(assert-true "bl1134: two-arity commit-in-flight? sees post-add argv without lock"
+             (master-checkout-drift-lib/commit-in-flight?
+              "/proj/root"
+              ["git -C /proj/root add swarmforge/scripts/handoffd.bb"]))
+
+(assert-true "bl1134: empty process table + no lock → not in flight"
+             (not (master-checkout-drift-lib/commit-in-flight? "/proj/no-such-root-xyz" [])))
+
+(let [tmp (str (fs/create-temp-dir {:prefix "bl1134-unit-"}))
+      git (fs/path tmp ".git")]
+  (try
+    (fs/create-dirs git)
+    (assert-true "bl1134: index-lock-present? false when absent"
+                 (not (master-checkout-drift-lib/index-lock-present? tmp)))
+    (assert-true "bl1134: commit-in-flight? false with no lock and empty argv"
+                 (not (master-checkout-drift-lib/commit-in-flight? tmp [])))
+    (spit (str (fs/path git "index.lock")) "")
+    (assert-true "bl1134: index-lock-present? true when lock exists"
+                 (master-checkout-drift-lib/index-lock-present? tmp))
+    (assert-true "bl1134: commit-in-flight? true from lock alone (empty argv)"
+                 (master-checkout-drift-lib/commit-in-flight? tmp []))
+    (fs/delete-if-exists (fs/path git "index.lock"))
+    (finally
+      (fs/delete-tree tmp))))
+
+;; Mute decision: staged-only while in-flight must not alarm; durable reversion still does.
+(assert-true "bl1122/1134: should-alarm false for staged-only while in-flight"
+             (not (master-checkout-drift-lib/should-alarm-on-result?
+                   {:overall :drift
+                    :per-file {"a.bb" :staged-for-reversion}}
+                   true)))
+(assert-true "bl1122/1134: should-alarm true for durable staged reversion"
+             (master-checkout-drift-lib/should-alarm-on-result?
+              {:overall :drift
+               :per-file {"a.bb" :staged-for-reversion}}
+              false))
+(assert-true "bl1122/1134: uncommitted-edit still alarms while in-flight"
+             (master-checkout-drift-lib/should-alarm-on-result?
+              {:overall :drift
+               :per-file {"a.bb" :uncommitted-edit}}
+              true))
+
 (if (empty? @failures)
   (println "master_checkout_drift_lib (BL-839): ALL TESTS PASSED")
   (do (println (str "master_checkout_drift_lib (BL-839): " (count @failures) " FAILURE(S):"))

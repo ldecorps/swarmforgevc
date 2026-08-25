@@ -105,3 +105,6 @@ notes: |
   Related standing lesson: "Scope pkill to your worktree, never a bare tool
   name" — this is that lesson's own codebase violating it in the teardown
   path.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-25, by: architect, blamed: coder, class: invariant-unencoded, commit: b91011afa5, evidence: backlog/evidence/BL-888-architect-bounce-20260825.md }

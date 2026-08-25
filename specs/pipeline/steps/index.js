@@ -420,6 +420,7 @@ const DOMAINS = [
   require('./bl773CoordinatorRoleAskSteps'),
   require('./bl839MasterCheckoutDriftSteps'),
   require('./bl1122MasterCheckoutDriftMutesWarnWhileCommitInFlightSteps'),
+  require('./bl1134MasterCheckoutDriftMuteCoversPostAddWindowSteps'),
   require('./bl822HostLoadAnomalySteps'),
   require('./bl848HotfixCertificationSteps'),
   require('./bl619TokenBurnWarningSteps'),
@@ -681,13 +682,15 @@ const DOMAINS = [
   require('./bl1131TicketLandWithoutOperatorAbsorbMergeSteps'),
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
   require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
-  require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl833HostAgentActivityFeedSteps'),
-  require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl534ThinMainCrapVisibleCliGateSteps'),
+  require('./bl695SupervisorThreadsNotFrontDeskTopicsSteps'),
   require('./bl1121ReconcileImportSkipsPropertySuiteGuardSteps'),
+  require('./bl533SpecCommitAndRuntimeWiringExitGatesSteps'),
   require('./bl1115MainSyncStatusCliStampOffSteps'),
   require('./bl1119ClosingCeremonyRoleQualityDialSteps'),
+  require('./bl759CursorOperatorFrontDeskCycleSteps'),
+  require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps')
 ];
 
