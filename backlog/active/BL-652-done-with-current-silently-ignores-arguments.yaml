@@ -2,7 +2,7 @@ id: BL-652
 title: "done_with_current.sh silently ignores every argument and completes anyway: a usage probe (--help) archives the whole in-process batch"
 milestone: M8
 type: defect
-status: todo
+status: active
 epic: swarm-reliability
 human_approval: approved
 severity: medium
@@ -69,9 +69,10 @@ out_of_scope: |
   - Other swarm scripts' arg hygiene: a broader sweep is a separate ticket
     if wanted; this one fixes the script whose fail-open is destructive.
 
-acceptance: specs/features/BL-652-done-with-current-arg-rejection.feature.draft
+acceptance: specs/features/BL-652-done-with-current-arg-rejection.feature
 
 notes: |
+  - "[2026-08-25T16:30Z] coder: refuse-unexpected-args! on done_with_current family before any completion side effect."
   QA e2e procedure: in a scratch role mailbox with a two-item in_process
   batch, run `done_with_current.sh --help` — expect non-zero exit, usage
   text, both items still in in_process, no completed batch dir, and no
