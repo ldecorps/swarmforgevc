@@ -10,6 +10,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
 import { commitScopedFile, isFileCommitted } from '../util/gitCommitScopedFile';
+import {
+  UnboundThreadReporter,
+  classifyTopicThread,
+  mayWriteTrackedTopicRecord,
+  readSupervisorSwarmIconId,
+  recordSupervisorSwarmIconId,
+  reportUnboundThreadToStderr,
+} from './topicThreadKind';
 
 export type TopicMessageDirection = 'inbound' | 'outbound';
 
@@ -158,6 +166,9 @@ export function readRecord(targetPath: string, ticketId: string): TopicRecord {
 // on ITS false meaning "no-op, do not report EMITTED", which stays exactly
 // as it was).
 export function commitTopicRecord(targetPath: string, filePath: string, ticketId: string): boolean {
+  if (!mayWriteTrackedTopicRecord(ticketId)) {
+    return true;
+  }
   if (isFileCommitted(targetPath, filePath)) {
     return true;
   }
@@ -202,8 +213,13 @@ export function appendMessage(
     updateId?: number;
     retractsPendingQuestion?: boolean;
   },
-  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
-): TopicMessage {
+  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr,
+  reportUnbound: UnboundThreadReporter = reportUnboundThreadToStderr
+): TopicMessage | undefined {
+  if (!mayWriteTrackedTopicRecord(ticketId)) {
+    maybeReportUnbound(ticketId, reportUnbound);
+    return undefined;
+  }
   const record = readRecord(targetPath, ticketId);
   const entry: TopicMessage = {
     seq: record.messages.length,
@@ -232,15 +248,34 @@ export function appendMessage(
 // brand-new topic, at creation time) - readRecord/atomicWrite already
 // tolerate an empty `messages` array, so this needs no special case.
 export function readSwarmIconId(targetPath: string, ticketId: string): string | undefined {
+  if (classifyTopicThread(ticketId) === 'supervisor') {
+    return readSupervisorSwarmIconId(targetPath, ticketId);
+  }
   return readRecord(targetPath, ticketId).swarmIconId;
+}
+
+function maybeReportUnbound(ticketId: string, reportUnbound: UnboundThreadReporter): void {
+  if (classifyTopicThread(ticketId) === 'unbound') {
+    reportUnbound(ticketId);
+  }
 }
 
 export function recordSwarmIconId(
   targetPath: string,
   ticketId: string,
   iconId: string,
-  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
+  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr,
+  reportUnbound: UnboundThreadReporter = reportUnboundThreadToStderr
 ): void {
+  const kind = classifyTopicThread(ticketId);
+  if (kind === 'supervisor') {
+    recordSupervisorSwarmIconId(targetPath, ticketId, iconId);
+    return;
+  }
+  if (kind !== 'ticket') {
+    maybeReportUnbound(ticketId, reportUnbound);
+    return;
+  }
   const record = readRecord(targetPath, ticketId);
   record.swarmIconId = iconId;
   const filePath = recordPath(targetPath, ticketId);
