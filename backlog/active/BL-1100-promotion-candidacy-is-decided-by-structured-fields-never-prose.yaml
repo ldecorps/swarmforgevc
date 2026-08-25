@@ -9,7 +9,7 @@ severity: high
 # candidate does not appear, no refusal is printed, and nothing anywhere
 # records that a ticket was considered and dropped. It is undetectable
 # except by reading the script - which is how it was found.
-status: paused
+status: active
 epic: swarm-reliability
 assigned_to: coder
 priority: 8
@@ -19,6 +19,12 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature
 human_approval: approved
+notes: |
+  - "[2026-08-25T18:57Z] coder: re-verified — is_do_not_promote already deleted;
+    auto-pick emits skip <id> gate=<gate>; acceptance 8/8; property 2/2.
+    Implementation tip 7aaf51f70 / QA c9b3c5be1 already on this branch; ticket
+    YAML had been re-paused then re-promoted after a prior close — no further
+    code change in this parcel."
 approval_context: >
   Firm: prose must never decide promotion. A sentence a human wrote to
   EXPLAIN an ordering constraint cannot be indistinguishable from one that
@@ -180,3 +186,21 @@ notes: >
   exists to draw - collapsing them would erase the behaviour under test.
 notes: |
   Human 2026-08-23 (Cursor): HELD — finish BL-1078 only. Promotion frozen; reinstate after Cursor launcher token lands.
+
+abandoned_commits:
+  - 3f6bdbb589
+  - 1cee1437c
+  - 9141662c00
+  - 9b1b052aef
+  - 31560f0689
+  - 7af96d97e8
+  - feedbbf096
+  - 83d0037e79
+  - 6231c29d1a
+  - 4f4e8ae58f
+  - 7b189db43a
+  - 063f372735
+  - 0923676ec3
+  - e8791965aa
+  - 103d0003f8
+  - 375413089f
