@@ -273,6 +273,42 @@
   (assert-true "compat-docs projects the role matrix"
                (str/includes? doc "## Role recommendation matrix")))
 
+;; ── BL-1127: local coder battery eligibility ───────────────────────────────
+(let [pass (model-steward-lib/bl1127CoderBatteryEligibility
+            {:result "pass" :path "backlog/evidence/x.md" :provider "ollama" :model "qwen2.5-coder"})]
+  (assert-true "bl1127: pass is eligible" (:eligible? pass))
+  (assert= "bl1127: pass cites evidence path" "backlog/evidence/x.md" (:evidence_path pass))
+  (assert-true "bl1127: pass? true" (:pass? pass)))
+
+(let [fail (model-steward-lib/bl1127CoderBatteryEligibility {:result "fail" :path "x"})]
+  (assert-true "bl1127: fail is ineligible" (not (:eligible? fail)))
+  (assert-true "bl1127: fail?" (:fail? fail)))
+
+(let [absent (model-steward-lib/bl1127CoderBatteryEligibility nil)]
+  (assert-true "bl1127: absent is ineligible" (not (:eligible? absent)))
+  (assert-true "bl1127: absent?" (:absent? absent)))
+
+(let [blank (model-steward-lib/bl1127CoderBatteryEligibility {:result "  " :path "p"})]
+  (assert-true "bl1127: blank result is absent/ineligible"
+               (and (:absent? blank) (not (:eligible? blank)))))
+
+(let [reg (model-steward-lib/register-model model-steward-lib/empty-registry
+                                            "ollama" "qwen2.5-coder" {})
+      updated (model-steward-lib/apply-coder-battery-to-scorecard
+               reg {:result "PASS" :path "ev.md" :provider "ollama" :model "qwen2.5-coder"})
+      ranks (get-in updated [:role_matrix "coder"])]
+  (assert-true "bl1127: pass scorecard ranks coder"
+               (seq ranks))
+  (assert= "bl1127: pass score is 1.0" 1.0 (:score (first ranks)))
+  (assert= "bl1127: pass scorecard cites evidence" "ev.md" (:evidence (first ranks))))
+
+(let [reg (model-steward-lib/register-model model-steward-lib/empty-registry
+                                            "ollama" "qwen2.5-coder" {})
+      updated (model-steward-lib/apply-coder-battery-to-scorecard
+               reg {:result "fail" :path "ev-fail.md" :provider "ollama" :model "qwen2.5-coder"})
+      ranks (get-in updated [:role_matrix "coder"])]
+  (assert= "bl1127: fail score is 0.0 (ineligible)" 0.0 (:score (first ranks))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

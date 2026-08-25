@@ -675,6 +675,7 @@ const DOMAINS = [
   require('./bl1111ReplyRelayTerminatedOutageSteps'),
   require('./bl1091ExpeditePromotionCommitSteps'),
   require('./bl1100PromotionProseNeverBlocksSteps'),
+  require('./bl1127LocalCoderStewardEvidenceBarSteps'),
   require('./bl1128RaiseActiveCapOnHostHeadroomSteps'),
   require('./bl1129BabysitterRotateNotHonoredSkipsStandingSteps'),
   require('./bl1118PostCursorBatchMergeOriginMainSteps'),

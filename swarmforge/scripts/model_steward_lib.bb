@@ -262,3 +262,42 @@
          (str/join "\n" (map render-model-section models))
          "\n"
          (render-role-matrix-section registry))))
+
+;; ── BL-1127 local coder battery eligibility ───────────────────────────────
+
+(defn parse-coder-battery-evidence
+  "Pure: interpret a battery evidence map {:result \"pass\"|\"fail\" :path ...
+   :provider ... :model ...}. Missing/blank result is treated as absent."
+  [evidence]
+  (let [result (some-> evidence :result str str/lower-case)]
+    {:pass? (= "pass" result)
+     :fail? (= "fail" result)
+     :absent? (or (nil? evidence) (str/blank? result))
+     :path (:path evidence)
+     :provider (:provider evidence)
+     :model (:model evidence)}))
+
+(defn bl1127-coder-battery-eligibility
+  "BL-1127: coder is eligible for the local forge pack only when a pass
+   battery evidence artifact is cited. Fail or absent → ineligible."
+  [evidence]
+  (let [parsed (parse-coder-battery-evidence evidence)]
+    (assoc parsed
+           :eligible? (:pass? parsed)
+           :evidence_path (:path parsed))))
+
+;; camelCase alias required by ticket required_wiring naming
+(def bl1127CoderBatteryEligibility bl1127-coder-battery-eligibility)
+
+(defn apply-coder-battery-to-scorecard
+  "Pure: update role_matrix coder ranking evidence from a battery result.
+   Pass cites the evidence path; fail/absent clears eligibility (score 0)."
+  [registry evidence]
+  (let [{:keys [eligible? evidence_path provider model]}
+        (bl1127-coder-battery-eligibility evidence)]
+    (add-role-ranking registry
+                      "coder"
+                      (or provider "ollama")
+                      (or model "unknown")
+                      (if eligible? 1.0 0.0)
+                      (or evidence_path ""))))
