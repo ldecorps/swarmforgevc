@@ -293,29 +293,14 @@ function dialForRole(
   reworkFields: Set<string> | undefined,
   windowModels: Record<string, string>
 ): CeremonyQualityRecommendation {
-  const auto = isAutoWindowModel(windowModels[role]);
-  if (auto) {
-    return {
-      role,
-      dial: 'hold',
-      citedFields: reworkFields ? [...reworkFields].sort() : [],
-      disposition: 'held',
-    };
+  const citedFromRework = reworkFields ? [...reworkFields].sort() : [];
+  if (isAutoWindowModel(windowModels[role])) {
+    return { role, dial: 'hold', citedFields: citedFromRework, disposition: 'held' };
   }
   if (reworkFields) {
-    return {
-      role,
-      dial: 'raise',
-      citedFields: [...reworkFields].sort(),
-      disposition: 'recommended',
-    };
+    return { role, dial: 'raise', citedFields: citedFromRework, disposition: 'recommended' };
   }
-  return {
-    role,
-    dial: 'lower',
-    citedFields: ['stage_transition'],
-    disposition: 'recommended',
-  };
+  return { role, dial: 'lower', citedFields: ['stage_transition'], disposition: 'recommended' };
 }
 
 function computeQualityRecommendations(
