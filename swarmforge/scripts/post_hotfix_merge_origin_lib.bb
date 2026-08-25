@@ -47,43 +47,25 @@
   [daemon-dir rev-counts! outcome]
   (let [{:keys [ahead behind]} (rev-counts!)]
     (when (master-main-reconcile-lib/deadlock-clear? behind)
-      (master-main-reconcile-lib/clear-deadlock! daemon-dir))
+      (master-main-reconcile-lib/clear-deadlock! daemon-dir)
+      ;; BL-1141: successful rematch clears standing refuse-rematch surface.
+      (master-main-reconcile-lib/write-state! daemon-dir {}))
     {:ok? true :exit 0 :outcome outcome :ahead ahead :behind behind}))
 
 (def ^:private refuse-rematch-line
   "BL-1130: absorb refused — rematch tip onto origin/main (no editor)")
 
-(defn- print-refuse-rematch! []
-  (binding [*out* *err*]
-    (println refuse-rematch-line)))
-
-(defn- finish-conflict
-  [abort! status-porcelain! mid-merge? merge-res]
-  (abort!)
-  ;; BL-1130: designed recovery is rematch/refuse — never leave mid-merge.
-  (when (mid-merge?)
-    (abort!))
-  (let [paths (or (:conflicted-paths merge-res)
-                  (conflicted-paths-from-status (status-porcelain!)))
-        still-mid? (boolean (mid-merge?))]
-    (binding [*out* *err*]
-      (println "CONFLICTED:" (str/join " " paths)))
-    (print-refuse-rematch!)
-    {:ok? false :exit 1 :outcome :refuse-rematch
-     :conflicted-paths paths
-     :mid-merge? still-mid?}))
-
-(defn- surface-rematch-bookkeeping
-  [rev-counts! message]
+(defn- surface-absorb-failure
+  [rev-counts! outcome message]
   (binding [*out* *err*] (println message))
-  {:ok? false :exit 1 :outcome :rematch-bookkeeping
+  {:ok? false :exit 1 :outcome outcome
    :mid-merge? false
    :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))})
 
-(defn- finish-replay-bookkeeping
-  "BL-1131/1138: colliding local-ahead → rematch onto origin/main when
-   rematch! is provided; otherwise surface rematch-bookkeeping (no operator)."
-  [daemon-dir rev-counts! mid-merge? rematch!]
+(defn- finish-rematch-recovery
+  "Shared rematch-or-surface path for refuse-rematch and rematch-bookkeeping."
+  [daemon-dir rev-counts! mid-merge? rematch!
+   {:keys [success-outcome fail-outcome fail-message no-rematch-message]}]
   (cond
     (mid-merge?)
     {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
@@ -91,21 +73,52 @@
     rematch!
     (let [r (rematch!)]
       (if (:success r)
-        (finish-ok daemon-dir rev-counts! :rematched-bookkeeping)
-        (surface-rematch-bookkeeping
-         rev-counts!
-         "BL-1138: rematch bookkeeping failed — will retry (no operator merge)")))
+        (finish-ok daemon-dir rev-counts! success-outcome)
+        (surface-absorb-failure rev-counts! fail-outcome fail-message)))
 
     :else
-    (surface-rematch-bookkeeping
-     rev-counts!
-     "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)")))
+    (surface-absorb-failure rev-counts! fail-outcome no-rematch-message)))
+
+(defn- finish-refuse-rematch
+  "BL-1141: refuse-rematch recovers by rematching onto origin/main when
+   rematch! is provided — never print+exit alone as the standing path."
+  [daemon-dir rev-counts! mid-merge? rematch!]
+  (finish-rematch-recovery daemon-dir rev-counts! mid-merge? rematch!
+                           {:success-outcome :rematched-refuse
+                            :fail-outcome :refuse-rematch
+                            :fail-message "BL-1141: rematch after refuse failed — will retry (no operator merge)"
+                            :no-rematch-message refuse-rematch-line}))
+
+(defn- finish-conflict
+  [abort! status-porcelain! mid-merge? merge-res daemon-dir rev-counts! rematch!]
+  (abort!)
+  ;; BL-1130: designed recovery is rematch/refuse — never leave mid-merge.
+  (when (mid-merge?)
+    (abort!))
+  (let [paths (or (:conflicted-paths merge-res)
+                  (conflicted-paths-from-status (status-porcelain!)))
+        result (finish-refuse-rematch daemon-dir rev-counts! mid-merge? rematch!)]
+    (binding [*out* *err*]
+      (println "CONFLICTED:" (str/join " " paths)))
+    (cond-> result
+      (seq paths) (assoc :conflicted-paths paths))))
+
+(defn- finish-replay-bookkeeping
+  "BL-1131/1138: colliding local-ahead → rematch onto origin/main when
+   rematch! is provided; otherwise surface rematch-bookkeeping (no operator)."
+  [daemon-dir rev-counts! mid-merge? rematch!]
+  (finish-rematch-recovery daemon-dir rev-counts! mid-merge? rematch!
+                           {:success-outcome :rematched-bookkeeping
+                            :fail-outcome :rematch-bookkeeping
+                            :fail-message "BL-1138: rematch bookkeeping failed — will retry (no operator merge)"
+                            :no-rematch-message "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)"}))
 
 (defn run-post-hotfix-merge!
   "Fetch origin/main; absorb when behind under BL-1131 rematch-then-FF.
    FF-only / noop when clean; colliding local-ahead → rematch! onto origin/main (BL-1138),
-   else surface rematch-bookkeeping. Predicted or real conflict → refuse-rematch without
-   MERGE_HEAD (BL-1130). Never reset/stash; never pages operator absorb."
+   else surface rematch-bookkeeping. Predicted or real conflict → rematch! when wired
+   (BL-1141), else refuse-rematch without MERGE_HEAD (BL-1130). Never reset/stash;
+   never pages operator absorb."
   [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! abort!
            status-porcelain! mid-merge? would-conflict! tip-contains-origin!
            rematch!]}]
@@ -132,13 +145,11 @@
       (finish-replay-bookkeeping daemon-dir rev-counts! mid-merge? rematch!)
 
       :refuse-rematch
-      (do
-        (print-refuse-rematch!)
-        {:ok? false :exit 1 :outcome :refuse-rematch :mid-merge? (boolean (mid-merge?))
-         :ahead ahead :behind behind})
+      (finish-refuse-rematch daemon-dir rev-counts! mid-merge? rematch!)
 
       ;; :ff-absorb — CLI merge! is --ff-only.
       (let [merge-res (merge!)]
         (if (:success merge-res)
           (finish-ok daemon-dir rev-counts! :merged)
-          (finish-conflict abort! status-porcelain! mid-merge? merge-res))))))
+          (finish-conflict abort! status-porcelain! mid-merge? merge-res
+                           daemon-dir rev-counts! rematch!))))))
