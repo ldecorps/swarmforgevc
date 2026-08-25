@@ -6,7 +6,7 @@ severity: high
 # high: every QA land that trips refuse-rematch freezes coordinator
 # bookkeep / Process B on wait-reconcile until a human rematches. Not
 # critical: recoverable; no silent data loss if noticed.
-status: todo
+status: active
 epic: swarm-reliability
 priority: 0
 direction: queue-jump
@@ -66,9 +66,14 @@ qa_e2e_procedure: >
   → behind=0 / proceed; no Complete-origin/main-merge. (2) refuse-rematch
   surface does not stand across ticks waiting for human. (3) BL-1130/1120
   preserved. (4) main_sync_status_cli ready after recovery.
-assigned_to: specifier
+assigned_to: coder
 notes: |
   - [2026-08-25T18:08Z] human (Cursor): rematch ops done (merge origin/main
     → behind=0); soft-mint BL-1141 priority 0 queue-jump approved. Specifier
     owns feature file. Residual of BL-1138: refuse-rematch branch still
     surfaces only.
+  - [2026-08-25T17:12Z] specifier (coord Work 001762): confirmed live gap —
+    handoffd :refuse-rematch still returns surface-only failure; Process B
+    print-refuse-rematch! + exit 1. Filled acceptance feature (4 scenarios);
+    invariants already ≤3. Soft foresight/false-refuse stays in description
+    only. Forwarded to coder.
