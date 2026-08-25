@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1137: master-checkout drift mute covers
+cwd-scoped `git add`/`git commit` — process cwd under this project root mutes
+`:staged-for-reversion` even when argv omits the root string; durable
+reversion with no signal still alarms (BL-839). Acceptance:
+`specs/features/BL-1137-master-checkout-drift-mute-covers-cwd-scoped-git.feature`.
+How-to: `docs/how-to/BL-1137-master-checkout-drift-mute-covers-cwd-scoped-git.md`
+(updates BL-1134). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1132 rematch4: tip-pure rebuild after
 documenter rematch3 hitchhike — headroom telemetry-path + coordinator raise
 duty unchanged; docs substance unchanged. Acceptance:
