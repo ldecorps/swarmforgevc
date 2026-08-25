@@ -11,6 +11,15 @@ depends_on: []
 assigned_to: coder
 mutation_cost: low
 human_approval: approved
+abandoned_commits:
+  - 0865b6b9c4
+  - e878a8a93b
+  - 9d24fb25cb
+  - 92709f6101
+  - 51d702b4a4
+  - b91011afa5
+  - c0463bcebe
+  - 01ce5c8f92
 approval_context: >
   Severity call needs your eyes: medium, not high, because the kill is
   latent today — it fires only when a sibling root is running copilot
