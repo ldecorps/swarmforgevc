@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T11:41:19.965837332Z","feature_name":"BL-1120 handoffd must not abort a foreign master-main merge","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1120-handoffd-must-not-abort-foreign-merge.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1120 handoffd must not abort a foreign master-main merge
   handoffd's master-main reconcile must never git merge --abort a merge
   that this tick did not start. A pre-existing MERGE_HEAD means a human

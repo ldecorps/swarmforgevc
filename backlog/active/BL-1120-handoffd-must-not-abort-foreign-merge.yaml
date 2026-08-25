@@ -25,7 +25,7 @@ required_wiring:
   - "specs/pipeline/steps/index.js::bl1120HandoffdMustNotAbortForeignMergeSteps::acceptance handler registered"
 
 # Prior stacked tips superseded by this origin/main-only rematch (BL-531).
-abandoned_commits: ["7743cfd0b5", "84f3b64f4c", "5c24f8146a", "561c2b1b14", "d6cf0c3fa7", "53c8d50110", "bfe3e7a53a"]
+abandoned_commits: ["7743cfd0b5", "84f3b64f4c", "5c24f8146a", "561c2b1b14", "d6cf0c3fa7", "53c8d50110", "bfe3e7a53a", "50e12eab7c", "0addcfeb94", "6226a02b86", "4d15832113", "658f62556d", "f413784762"]
 
 invariants:
   - "A reconcile tick that observes a pre-existing MERGE_HEAD never runs git merge --abort."
