@@ -497,15 +497,21 @@ worktree_path_for_name() {
 # with the EXACT same message/exit-1 shape a bogus window-line agent
 # already does, rather than a second near-identical case statement drifting
 # out of sync with the first.
+#
+# BL-1080: keep the literal "Unsupported agent" wording (existing tests);
+# append the Cursor-seat how-to so a refusal is not a dead end.
+refuse_unsupported_agent() {
+  local agent="$1" role="$2"
+  error_msg "Unsupported agent '$agent' for role '$role' — see docs/how-to/BL-1080-choose-a-cursor-seat.md"
+  exit 1
+}
+
 validate_agent() {
   local agent="$1" role="$2"
   case "$agent" in
     claude|codex|copilot|grok|aider|vibe|gemini|cursor|local-model) ;;
     *)
-      # BL-1080: keep the literal Unsupported agent wording (existing tests);
-      # append the Cursor-seat how-to so a refusal is not a dead end.
-      error_msg "Unsupported agent '$agent' for role '$role' — see docs/how-to/BL-1080-choose-a-cursor-seat.md"
-      exit 1
+      refuse_unsupported_agent "$agent" "$role"
       ;;
   esac
 }
@@ -1740,9 +1746,7 @@ RESUMECHECK
       launch_body="qwen --auth-type openai -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     *)
-      # BL-1080: same Unsupported agent wording + how-to pointer as validate_agent.
-      error_msg "Unsupported agent '$agent' for role '$role' — see docs/how-to/BL-1080-choose-a-cursor-seat.md"
-      exit 1
+      refuse_unsupported_agent "$agent" "$role"
       ;;
   esac
 
