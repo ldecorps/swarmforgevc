@@ -103,7 +103,7 @@ expects them, and are not migrated or rewritten here.
 - [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md)
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)
 - [Breaking the front-desk ↔ Cursor-operator import cycle](how-to/BL-759-cursor-operator-front-desk-bot-import-cycle.md) — drain helpers in leaf modules; full-repo dependency gate green (BL-759).
-- [The Host question queue: selection poll, clear-all, and 72h TTL](how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md)
+- [The Host question queue: selection poll, clear-all, and 72h TTL](how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md) — includes enqueue-next pin + hold on host question (BL-1146).
 - [Queued questions answer where they were asked](how-to/BL-767-queued-question-answers-in-origin-topic.md)
 - [Named tunnel Bubble — fixed URL on a Cloudflare zone you own](how-to/named-tunnel-bubble-musicalsifu.md)
 - [Running Bubble's JVM unit suite](how-to/BL-769-android-jvm-unit-suite.md) — which Kotlin logic is testable on the host JVM, and where the pure-logic/device-surface line falls.
