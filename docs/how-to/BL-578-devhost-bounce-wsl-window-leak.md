@@ -35,4 +35,8 @@ After bounce: one Extension Development Host on the Windows taskbar for this
 extension path. If a window reappears on a **headless** deployment without
 `--force`, that is a new marker-bypass defect — not this ticket reopened.
 
+**(BL-988)** The acceptance feature must stay **bound** in
+`specs/pipeline/steps/index.js` — see
+[orphaned-contract binding](BL-988-orphaned-wsl-acceptance-contract-binding.md).
+
 Acceptance: `specs/features/BL-578-devhost-bounce-wsl-window-leak.feature`.

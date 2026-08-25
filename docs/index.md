@@ -85,6 +85,7 @@ expects them, and are not migrated or rewritten here.
 - [Resident Spy pane font-size control](how-to/BL-609-resident-spy-font-size-control.md) — compact +/- in header; default 13px; no browser storage (BL-609).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Dev-host bounce under WSL: exactly one window](how-to/BL-578-devhost-bounce-wsl-window-leak.md) — Windows-side kill-old + headless-swarm refuse/`--force` (BL-578).
+- [Keep BL-578 acceptance bound](how-to/BL-988-orphaned-wsl-acceptance-contract-binding.md) — restore orphaned step binding; property regression against re-orphan (BL-988).
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
