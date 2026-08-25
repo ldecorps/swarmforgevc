@@ -62,20 +62,39 @@
                      (master-main-reconcile-lib/read-deadlock daemon)))))
 
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1118-conflict-"}))
-      mid? (atom true)
+      mid? (atom false)
       adapters {:daemon-dir daemon
                 :fetch! (fn [] nil)
                 :rev-counts! (fn [] {:ahead 1 :behind 2})
                 :dirty-paths! (fn [] [])
-                :merge! (fn [] {:success false :conflicted-paths ["a.bb"]})
+                :merge! (fn [] (reset! mid? true)
+                          {:success false :conflicted-paths ["a.bb"]})
                 :abort! (fn [] (reset! mid? false))
                 :status-porcelain! (fn [] "UU a.bb\n")
                 :mid-merge? (fn [] @mid?)}
       result (post-hotfix-merge-origin-lib/run-post-hotfix-merge! adapters)]
   (assert-true "conflict not ok" (not (:ok? result)))
   (assert= "conflict exit 1" 1 (:exit result))
+  (assert= "conflict outcome refuse-rematch" :refuse-rematch (:outcome result))
   (assert= "conflict paths" ["a.bb"] (:conflicted-paths result))
   (assert-true "not left mid-merge" (not (:mid-merge? result))))
+
+(let [daemon (str (fs/create-temp-dir {:prefix "bl1130-preflight-"}))
+      calls (atom [])
+      adapters {:daemon-dir daemon
+                :fetch! (fn [] (swap! calls conj :fetch))
+                :rev-counts! (fn [] {:ahead 1 :behind 2})
+                :dirty-paths! (fn [] [])
+                :would-conflict! (fn [] true)
+                :tip-contains-origin! (fn [] false)
+                :merge! (fn [] (swap! calls conj :merge) {:success true})
+                :abort! (fn [] (swap! calls conj :abort))
+                :status-porcelain! (fn [] "")
+                :mid-merge? (fn [] false)}
+      result (post-hotfix-merge-origin-lib/run-post-hotfix-merge! adapters)]
+  (assert= "preflight refuses without merge" [:fetch] @calls)
+  (assert= "preflight outcome refuse-rematch" :refuse-rematch (:outcome result))
+  (assert-true "preflight not mid-merge" (not (:mid-merge? result))))
 
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1118-honest-"}))
       _ (master-main-reconcile-lib/write-state! daemon {:surfaced "dirty" :escalated true})

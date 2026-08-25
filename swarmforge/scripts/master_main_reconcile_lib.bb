@@ -135,6 +135,40 @@
     :skip-human-merge-in-progress
     :run-merge))
 
+;; BL-1130: automated absorb never leaves mid-merge for an external editor.
+(defn tip-contains-origin?
+  "True when origin/main is already an ancestor of HEAD — absorb is FF/noop."
+  [origin-is-ancestor-of-head?]
+  (boolean origin-is-ancestor-of-head?))
+
+(defn automated-absorb-plan
+  "Plan for the automated origin/main absorb path.
+   :noop | :skip-human-merge-in-progress | :refuse-rematch | :run-merge.
+   Never starts a merge known to conflict (no MERGE_HEAD left for an editor)."
+  [{:keys [merge-head-present? behind would-conflict? tip-contains-origin?]}]
+  (cond
+    merge-head-present? :skip-human-merge-in-progress
+    (or (zero? (or behind 0)) tip-contains-origin?) :noop
+    would-conflict? :refuse-rematch
+    :else :run-merge))
+
+(defn post-absorb-clean?
+  "Invariant 1: after automated absorb, no MERGE_HEAD and no unmerged paths."
+  [merge-head-present? unmerged-path-count]
+  (and (not merge-head-present?) (zero? (or unmerged-path-count 0))))
+
+(defn absorb-outcome-names-rematch-or-refuse?
+  "Invariant 2: refuse vocabulary — rematch/refuse, never editor recovery."
+  [outcome-or-message]
+  (let [s (str outcome-or-message)]
+    (and (or (str/includes? s "rematch") (str/includes? s "refuse"))
+         (not (re-find #"(?i)finish this merge in an editor|resolve.*(in|with).*editor" s)))))
+
+(defn merge-tree-reports-conflict?
+  "True when `git merge-tree` output names a content/add conflict."
+  [merge-tree-out]
+  (boolean (re-find #"(?i)changed in both|CONFLICT|added in both" (or merge-tree-out ""))))
+
 ;; ── observable drift report (scenario 04: "the drift check runs" and
 ;;    reports both counts) - trivial, but gives the ahead/behind numbers
 ;;    their own directly-testable unit distinct from the full sweep. ───────
@@ -152,21 +186,23 @@
 ;;    form rather than truncating a path into something misleading. ────────
 (defn surface-message
   [{:keys [behind reason overlapping-paths]}]
-  (case reason
-    :dirty
-    (let [paths (vec (or overlapping-paths []))
-          base (str "BL-891: master main " behind " behind origin, dirty overlap")
-          suffix " - not reconciled"
-          detail (case (count paths)
-                   0 ""
-                   1 (str ": " (first paths))
-                   (str ": " (count paths) " paths"))
-          named (str base detail suffix)]
-      (if (<= (count named) 80) named (str base suffix)))
-    :conflict (str "BL-891: master main reconcile hit a merge conflict, aborted, " behind " behind")
-    :human-merge-in-progress
-    (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
-      (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted"))))
+  (let [refuse-absorb (str "BL-1130: absorb refused — rematch onto origin/main, " behind " behind")]
+    (case reason
+      :dirty
+      (let [paths (vec (or overlapping-paths []))
+            base (str "BL-891: master main " behind " behind origin, dirty overlap")
+            suffix " - not reconciled"
+            detail (case (count paths)
+                     0 ""
+                     1 (str ": " (first paths))
+                     (str ": " (count paths) " paths"))
+            named (str base detail suffix)]
+        (if (<= (count named) 80) named (str base suffix)))
+      :conflict refuse-absorb
+      :refuse-rematch refuse-absorb
+      :human-merge-in-progress
+      (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
+        (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted")))))
 
 (defn surface-draft-lines
   "A `note` to the coordinator only - reconciling the master checkout's own
@@ -429,11 +465,15 @@
               ((:log! adapters) "master-main-reconcile" "reconciled")
               (write-state! daemon-dir {}))
             (let [outcome (or (:outcome result) :conflict)
-                  reason (if (= outcome :human-merge-in-progress)
-                           "human-merge-in-progress"
+                  reason (case outcome
+                           :human-merge-in-progress "human-merge-in-progress"
+                           :refuse-rematch "refuse-rematch"
                            "conflict")
-                  log-args (if (= outcome :human-merge-in-progress)
+                  log-args (case outcome
+                             :human-merge-in-progress
                              ["master-main-reconcile" "human-merge-in-progress"]
+                             :refuse-rematch
+                             ["master-main-reconcile" "refuse-rematch" (str (:error result))]
                              ["master-main-reconcile" "conflict" (str (:error result))])]
               (apply (:log! adapters) log-args)
               (handle-blocked! reason
