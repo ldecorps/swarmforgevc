@@ -83,6 +83,7 @@ notes: |
     origin/main with BL-1135 product/docs/test/evidence only. Does not
     delete BL-626 evidence or bl626 property runner (see
     backlog/evidence/BL-1135-qa-bounce-20260825.md).
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-25, by: QA, blamed: coder, class: behavior, commit: 539bcff288, evidence: backlog/evidence/BL-1135-qa-bounce-20260825.md }
+  - { at: 2026-08-25, by: QA, blamed: cleaner, class: behavior, commit: 970511cbbf, evidence: backlog/evidence/BL-1135-qa-bounce-rematch-20260825.md }
