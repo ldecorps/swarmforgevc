@@ -2,7 +2,7 @@ id: BL-1127
 title: "Local coder evidence bar + steward eligibility before full local swarm staffing"
 milestone: M8
 type: feature
-status: active
+status: done
 epic: local-llm-swarm
 priority: 0
 direction: queue-jump
