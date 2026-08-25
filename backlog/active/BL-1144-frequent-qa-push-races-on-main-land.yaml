@@ -65,3 +65,5 @@ qa_e2e_procedure: >
 notes: |
   - [2026-08-25T20:32Z] specifier (coord 001877): minted JumpQ from intake;
     locked late rematch-at-publish + land/close serialize. Feature armed.
+
+assigned_to: coder
