@@ -121,6 +121,20 @@
       (seq (overlapping-paths dirty-paths merge-changed-paths)) :dirty-blocked
       :else :should-reconcile)))
 
+;; BL-1120: never abort a merge this tick did not start.
+(defn may-abort-failed-merge?
+  "True only when this tick started the merge attempt (MERGE_HEAD was absent
+   before git merge). A pre-existing MERGE_HEAD is a foreign merge — never abort."
+  [started-this-tick?]
+  (boolean started-this-tick?))
+
+(defn merge-attempt-plan
+  "Given whether MERGE_HEAD already exists: :skip-human-merge-in-progress or :run-merge."
+  [merge-head-already-present?]
+  (if merge-head-already-present?
+    :skip-human-merge-in-progress
+    :run-merge))
+
 ;; ── observable drift report (scenario 04: "the drift check runs" and
 ;;    reports both counts) - trivial, but gives the ahead/behind numbers
 ;;    their own directly-testable unit distinct from the full sweep. ───────
@@ -149,7 +163,10 @@
                    (str ": " (count paths) " paths"))
           named (str base detail suffix)]
       (if (<= (count named) 80) named (str base suffix)))
-    :conflict (str "BL-891: master main reconcile hit a merge conflict, aborted, " behind " behind")))
+    :conflict (str "BL-891: master main reconcile hit a merge conflict, aborted, " behind " behind")
+    :human-merge-in-progress
+    (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
+      (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted"))))
 
 (defn surface-draft-lines
   "A `note` to the coordinator only - reconciling the master checkout's own
@@ -411,6 +428,14 @@
             (do
               ((:log! adapters) "master-main-reconcile" "reconciled")
               (write-state! daemon-dir {}))
-            (do
-              ((:log! adapters) "master-main-reconcile" "conflict" (str (:error result)))
-              (handle-blocked! "conflict" (surface-message {:behind behind :reason :conflict})))))))))
+            (let [outcome (or (:outcome result) :conflict)
+                  reason (if (= outcome :human-merge-in-progress)
+                           "human-merge-in-progress"
+                           "conflict")
+                  log-args (if (= outcome :human-merge-in-progress)
+                             ["master-main-reconcile" "human-merge-in-progress"]
+                             ["master-main-reconcile" "conflict" (str (:error result))])]
+              (apply (:log! adapters) log-args)
+              (handle-blocked! reason
+                               (surface-message {:behind behind
+                                                 :reason (keyword reason)})))))))))
