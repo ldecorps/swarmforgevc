@@ -1842,3 +1842,117 @@
   (if (empty? items)
     "none"
     (str/join "," (map #(str (:id %) "=" (:approval-commit %)) items))))
+
+;; ── BL-568: AskUserQuestion / menu-blocked pane detection ───────────────────
+;; Pure: classify a pane capture as menu-blocked and extract question/options
+;; for Telegram poll surfacing. Never auto-answers; transport only.
+
+(def ^:private bl568-menu-footer-re
+  #"(?i)Enter to select.*(?:Tab|Arrow).*Esc to cancel")
+
+(def ^:private bl568-option-line-re
+  #"(?m)^[❯>]?\s*(\d+)[.)]\s+(.+)$")
+
+(def ^:private bl568-checkbox-option-re
+  #"(?m)^[❯>]?\s*\[[ xX]\]\s+(.+)$")
+
+(defn bl568-detect-menu-blocked
+  "True when pane text shows a Claude Code interactive menu footer (or
+   equivalent AskUserQuestion chrome) with at least one numbered/checkbox
+   option. Menu-blocked is BLOCKED, not idle."
+  [pane-text]
+  (let [t (str pane-text)]
+    (boolean
+     (and (or (re-find bl568-menu-footer-re t)
+              (re-find #"(?i)Tab/Arrow keys to navigate" t))
+          (or (re-find bl568-option-line-re t)
+              (re-find bl568-checkbox-option-re t)
+              (re-find #"(?m)^[❯>]\s+\S" t))))))
+
+;; camelCase alias required by ticket required_wiring
+(def bl568DetectMenuBlocked bl568-detect-menu-blocked)
+
+(defn- bl568-parse-option-line
+  [line]
+  (let [trimmed (str/trim (str line))]
+    (or (when-let [[_ n rest] (re-matches bl568-option-line-re trimmed)]
+          {:index (Long/parseLong n) :text (str/trim rest) :kind :numbered})
+        (when-let [[_ text] (re-matches bl568-checkbox-option-re trimmed)]
+          {:index nil :text (str/trim text) :kind :checkbox})
+        (when (re-matches #"^[❯>]\s+.+" trimmed)
+          {:index nil :text (str/replace trimmed #"^[❯>]\s+" "") :kind :choice}))))
+
+(defn- bl568-free-text-option?
+  [text]
+  (boolean (re-find #"(?i)^(type something|other|something else|write your own)" (str text))))
+
+(defn bl568-menu-fingerprint
+  "Stable fingerprint of question + ordered option texts (surface-time)."
+  [question options]
+  (str (hash (pr-str [(str question) (mapv str options)]))))
+
+(defn bl568-extract-menu
+  "Pure extract: {:question :options :multi-select? :free-text-indexes :fingerprint
+   :blocked?} from a pane capture. Options are display strings in menu order."
+  [pane-text]
+  (let [t (str pane-text)
+        blocked? (bl568-detect-menu-blocked t)
+        lines (->> (str/split-lines t) (map str/trim) (remove str/blank?))
+        opts (vec (keep bl568-parse-option-line lines))
+        option-texts (mapv :text opts)
+        ;; Question: last non-option, non-footer line above the first option.
+        opt-set (set option-texts)
+        question (->> lines
+                      (remove #(or (re-find bl568-menu-footer-re %)
+                                   (re-find #"(?i)Tab/Arrow|Esc to cancel" %)
+                                   (bl568-parse-option-line %)))
+                      last
+                      str)
+        free-idxs (vec (keep-indexed (fn [i o] (when (bl568-free-text-option? o) i)) option-texts))
+        multi? (boolean (some #(= :checkbox (:kind %)) opts))]
+    {:blocked? blocked?
+     :question (if (str/blank? question) "(menu)" question)
+     :options option-texts
+     :multi-select? multi?
+     :free-text-indexes free-idxs
+     :fingerprint (bl568-menu-fingerprint question option-texts)}))
+
+(def ^:private bl568-tg-question-max 300)
+(def ^:private bl568-tg-option-max 100)
+(def ^:private bl568-tg-options-max 10)
+
+(defn bl568-truncate-ellipsis
+  [s limit]
+  (let [t (str s)]
+    (if (<= (count t) limit)
+      t
+      (str (subs t 0 (max 0 (dec limit))) "…"))))
+
+(defn bl568-poll-surface-plan
+  "Decide poll vs text fallback for Telegram caps. Returns
+   {:mode :poll :question :options :allows-multiple} or
+   {:mode :text-fallback :reason :question}."
+  [extracted]
+  (let [opts (vec (:options extracted))
+        q (bl568-truncate-ellipsis (:question extracted) bl568-tg-question-max)
+        truncated-opts (mapv #(bl568-truncate-ellipsis % bl568-tg-option-max) opts)]
+    (cond
+      (not (:blocked? extracted))
+      {:mode :skip :reason "not-menu-blocked"}
+
+      (empty? opts)
+      {:mode :text-fallback :reason "no-options" :question q}
+
+      (> (count opts) bl568-tg-options-max)
+      {:mode :text-fallback :reason "too-many-options" :question q :option-count (count opts)}
+
+      (some #(<= (count (str %)) 0) truncated-opts)
+      {:mode :text-fallback :reason "empty-option-after-truncate" :question q}
+
+      :else
+      {:mode :poll
+       :question q
+       :options truncated-opts
+       :allows-multiple (boolean (:multi-select? extracted))
+       :fingerprint (:fingerprint extracted)
+       :free-text-indexes (:free-text-indexes extracted)})))

@@ -1210,7 +1210,13 @@ export function pollMapPath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'telegram-poll-map.json');
 }
 
-export type PollMap = Record<string, { threadId: string; options: string[] }>;
+export type PollMapEntry = {
+  threadId: string;
+  options: string[];
+  /** BL-568: present when this poll is a menu-answer surface for a role pane. */
+  menuAnswer?: import('../notify/telegramClient').MenuAnswerPollMapping;
+};
+export type PollMap = Record<string, PollMapEntry>;
 
 // Hardener (BL-466): exported so a wiring test can prove this NEW on-disk
 // read/write is load-bearing with a real fixture file, rather than only
@@ -2302,6 +2308,16 @@ function buildPollAdapters(
       return Promise.resolve();
     },
     enqueueRoleAnswerNote: (role, text) => enqueueRoleAnswerNote(targetPath, role, text),
+    // BL-568: suppress ordinary steers while a menu-answer poll is live.
+    roleMenuBlocked: async (role) => {
+      const map = readPollMap(targetPath);
+      for (const [pollId, entry] of Object.entries(map)) {
+        if (entry.menuAnswer?.role === role) {
+          return { blocked: true, pollHint: pollId };
+        }
+      }
+      return { blocked: false };
+    },
     agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
     getPendingAgentQuestionThread: () => Promise.resolve(readAwaitingAnswer(targetPath)?.threadId),
     resolvePollThread: (pollId) => Promise.resolve(readPollMap(targetPath)[pollId]),
