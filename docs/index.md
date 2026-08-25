@@ -22,6 +22,8 @@ expects them, and are not migrated or rewritten here.
 
 ## How-to guides
 
+- [Keep BL-578 acceptance bound](how-to/BL-988-orphaned-wsl-acceptance-contract-binding.md) — restore orphaned step binding; property regression against re-orphan (BL-988).
+
 *Task-oriented: recipes to accomplish a specific goal.*
 
 - [Bringing Up a Second Swarm on Windows via WSL2](how-to/BL-091-wsl2-second-swarm-bringup.md)
@@ -103,7 +105,7 @@ expects them, and are not migrated or rewritten here.
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
-- [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md)
+- [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md) — BL-727 contract execution, BL-729 commit-claim check, BL-731 multi-worktree fixture for lifecycle/teardown tickets
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)
 - [Breaking the front-desk ↔ Cursor-operator import cycle](how-to/BL-759-cursor-operator-front-desk-bot-import-cycle.md) — drain helpers in leaf modules; full-repo dependency gate green (BL-759).
 - [The Host question queue: selection poll, clear-all, and 72h TTL](how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md) — includes enqueue-next pin + hold on host question (BL-1146).
