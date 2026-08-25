@@ -160,3 +160,10 @@
   stamp_ticket: BL-1116
   human_decision: null
   decided_at: null
+- commit: fbf6f1a909
+  subject: "Land Cursor hotfix: babysitterd start/end heartbeat + cursor-forge pack parse."
+  detected_at: 2026-08-25
+  state: pending
+  stamp_ticket: BL-1136
+  human_decision: null
+  decided_at: null

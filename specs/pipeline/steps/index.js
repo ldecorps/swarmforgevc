@@ -688,6 +688,7 @@ const DOMAINS = [
   require('./bl1121ReconcileImportSkipsPropertySuiteGuardSteps'),
   require('./bl533SpecCommitAndRuntimeWiringExitGatesSteps'),
   require('./bl1115MainSyncStatusCliStampOffSteps'),
+  require('./bl1136BabysitterdCursorForgeStampOffSteps'),
   require('./bl1119ClosingCeremonyRoleQualityDialSteps'),
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
