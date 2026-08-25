@@ -91,9 +91,10 @@ mkdir -p "$FIX/extension/src"
 echo 'x' > "$FIX/extension/src/a.ts"
 git -C "$FIX" add extension/src/a.ts
 # Suite flips bare then exits 0 — canary must still reject.
+# Unset commit-time skip override so this runner exercises the real canary.
 FLIP=(bash -c "git -C '$FIX' config core.bare true; exit 0")
 set +e
-OUT05="$(cd "$FIX" && bash "$DRIFT" "${FLIP[@]}" 2>&1)"
+OUT05="$(cd "$FIX" && env -u SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD bash "$DRIFT" "${FLIP[@]}" 2>&1)"
 ST05=$?
 set -e
 [[ "$ST05" -ne 0 ]] || fail "05: drift guard must fail canary on bare flip: $OUT05"

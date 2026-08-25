@@ -17,10 +17,16 @@ const RECOVERY = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'main_recovery_re
 const EXPEDITE = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'expedite_fixture.sh');
 
 function sh(cwd, args, opts = {}) {
+  const env = { ...process.env, ...(opts.env || {}) };
+  // Acceptance must exercise the real canary — never inherit a commit-time
+  // skip override from the agent/role shell (BL-1124 scenario 02).
+  if (opts.enforcePropertyGuard) {
+    delete env.SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD;
+  }
   return spawnSync(args[0], args.slice(1), {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, ...(opts.env || {}) },
+    env,
   });
 }
 
@@ -90,7 +96,7 @@ function registerSteps(registry) {
     const s = ensure(ctx);
     // Green suite that flips bare — canary must fail the lane.
     const flip = ['bash', '-c', `git -C '${s.shared}' config core.bare true; exit 0`];
-    s.last = sh(s.shared, ['bash', DRIFT, ...flip]);
+    s.last = sh(s.shared, ['bash', DRIFT, ...flip], { enforcePropertyGuard: true });
   });
 
   scoped(/^a post-lane assert requires core\.bare to still be false$/, (ctx) => {

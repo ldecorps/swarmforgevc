@@ -66,3 +66,11 @@ Also keep `origin/main...HEAD` to BL-1124 product/docs/evidence (guard
 scripts, APS, how-to, ticket YAML). Hitchhiked tips belong under
 `abandoned_commits`.
 
+## Canary must not inherit commit-time skip (rematch)
+
+`SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` is a legitimate **commit-time**
+recovery override. Acceptance and the shared-repo guard unit runner must
+**unset** it when exercising the bare-flip canary so scenario 02 cannot go
+green under a shell that still carries the override from a prior rematch
+commit.
+
