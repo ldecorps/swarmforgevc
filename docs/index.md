@@ -62,6 +62,7 @@ expects them, and are not migrated or rewritten here.
 - [Pane liveness walks the whole tree under the pane](how-to/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.md) — babysitter finds wrapper-launched agents; RC UNAVAILABLE when gate unmet (BL-1070).
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
+- [Local Agent Telegram turn reliability](how-to/BL-1126-local-agent-telegram-turn-reliability.md) — fast-path probes skip Ollama; real turns stream progress and abort cleanly (BL-1126).
 - [Morning briefing handoff-mechanism diagram](how-to/BL-579-handoff-mechanism-briefing-diagram.md) — HOW a parcel travels; allowlist entry `handoff-mechanism` (BL-579).
 - [Morning briefing front-desk mechanism diagram](how-to/BL-580-front-desk-mechanism-briefing-diagram.md) — Telegram in → answer out; allowlist entry `front-desk` (BL-580).
 - [Mean ticket time ends at close, not a later re-file](how-to/BL-1074-post-close-refile-inflates-measured-ticket-duration.md) — duration ignores post-close `done/` moves (BL-1074).
