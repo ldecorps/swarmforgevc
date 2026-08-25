@@ -58,3 +58,7 @@ notes: |
   Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
 
   Pilot-process half of the BL-642 shortfall pair.
+
+  - [2026-08-25T21:20Z] specifier (coord Work 001907): filled acceptance
+    feature (4 scenarios); depends_on BL-727; invariants ≤3. Forwarded to coder
+    (3bb4a5f5d9).
