@@ -9,6 +9,7 @@
 
 (load-file (str (fs/path script-dir "handoff_lib.bb")))
 (load-file (str (fs/path script-dir "pipeline_stage_lib.bb")))
+(load-file (str (fs/path script-dir "dispatch_lib.bb")))
 
 (defn run-ready! []
   (process/exec (str (fs/path script-dir "ready_for_next_task.sh")) "--idle-boundary"))
@@ -46,6 +47,8 @@
               (println "lean-ledger-record-warn:" ticket-id (.getMessage e)))))))))
 
 (defn -main []
+  ;; BL-652: family contract — direct helper invocation also refuses argv.
+  (dispatch-lib/refuse-unexpected-args!)
   (let [in-process-dir (handoff-lib/my-mailbox-dir :in_process)
         completed-dir  (handoff-lib/my-mailbox-dir :completed)]
     (doseq [dir [in-process-dir completed-dir]]
