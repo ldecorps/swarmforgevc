@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-759: Cursor-operator modules no
+longer import drain helpers from `telegram-front-desk-bot.ts`.
+`isPipelineEmpty` / `resolveLiveRoles` live in `telegramPipelineDrain.ts`;
+`controlDrainTimeoutMs` in `telegramControlCore.ts`; the bot re-exports
+unchanged bindings. Full-repo dependency-rule gate reports zero forbidden
+edges (the standing acyclic cycle is gone). Drain semantics unchanged.
+Acceptance: `specs/features/BL-759-cursor-operator-front-desk-cycle.feature`.
+How-to: `docs/how-to/BL-759-cursor-operator-front-desk-bot-import-cycle.md`.
+No new extension command or setting.)
+Prior entry —
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-683: handoff depth warning counts
 ticket YAML only — same family as handoffd open-slot/status counters;
 `.gitkeep` no longer inflates `active=` (product BL-808; APS armed).
