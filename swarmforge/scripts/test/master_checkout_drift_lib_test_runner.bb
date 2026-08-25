@@ -477,6 +477,43 @@
                :per-file {"a.bb" :uncommitted-edit}}
               true))
 
+;; ── BL-1137: cwd-scoped git add/commit must mute (argv may omit root) ───────
+
+(assert-true "bl1137: plain git commit + cwd at root classifies in-flight"
+             (master-checkout-drift-lib/git-add-or-commit-process-for-root?
+              {:cmdline "git commit -m foo" :cwd "/proj/root"}
+              "/proj/root"))
+
+(assert-true "bl1137: plain git add + cwd at root classifies in-flight"
+             (master-checkout-drift-lib/git-add-or-commit-process-for-root?
+              {:cmdline "git add swarmforge/scripts/handoffd.bb" :cwd "/proj/root"}
+              "/proj/root"))
+
+(assert-true "bl1137: plain git commit + foreign cwd does not classify"
+             (not (master-checkout-drift-lib/git-add-or-commit-process-for-root?
+                   {:cmdline "git commit -m foo" :cwd "/other/project"}
+                   "/proj/root")))
+
+(assert-true "bl1137: plain git commit without cwd and without root in argv does not classify"
+             (not (master-checkout-drift-lib/git-add-or-commit-process-for-root?
+                   {:cmdline "git commit -m foo" :cwd nil}
+                   "/proj/root")))
+
+(assert-true "bl1137: two-arity commit-in-flight? sees cwd-scoped commit snapshot"
+             (master-checkout-drift-lib/commit-in-flight?
+              "/proj/root"
+              [{:cmdline "git commit -m foo" :cwd "/proj/root"}]))
+
+(assert-true "bl1137: string-only argv without root still works for git -C (BL-1134)"
+             (master-checkout-drift-lib/commit-in-flight?
+              "/proj/root"
+              ["git -C /proj/root commit -m x"]))
+
+(assert-true "bl1137: foreign-cwd snapshot does not mute this root"
+             (not (master-checkout-drift-lib/commit-in-flight?
+                   "/proj/root"
+                   [{:cmdline "git commit -m foo" :cwd "/other/project"}])))
+
 (if (empty? @failures)
   (println "master_checkout_drift_lib (BL-839): ALL TESTS PASSED")
   (do (println (str "master_checkout_drift_lib (BL-839): " (count @failures) " FAILURE(S):"))

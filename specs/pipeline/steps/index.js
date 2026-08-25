@@ -421,6 +421,7 @@ const DOMAINS = [
   require('./bl839MasterCheckoutDriftSteps'),
   require('./bl1122MasterCheckoutDriftMutesWarnWhileCommitInFlightSteps'),
   require('./bl1134MasterCheckoutDriftMuteCoversPostAddWindowSteps'),
+  require('./bl1137MasterCheckoutDriftMuteCoversCwdScopedGitSteps'),
   require('./bl822HostLoadAnomalySteps'),
   require('./bl848HotfixCertificationSteps'),
   require('./bl619TokenBurnWarningSteps'),
