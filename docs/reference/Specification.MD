@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1144: reduce frequent QA push-race
+rematch storms — publish-time authoritative rematch (bounded attempts) plus
+`.swarmforge/land-main.publish.lock` serializes land/close publishers;
+`land_main_publish.sh` decide-only wiring; tip purity mandatory. Acceptance:
+`specs/features/BL-1144-frequent-qa-push-races-on-main-land.feature`.
+How-to: `docs/how-to/BL-1144-frequent-qa-push-races-on-main-land.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1145: open-slot nudge skips
 type: epic trackers — `promotion_gates_lib/evaluate` gains structured
 `epic-type-refusal` + `blocked-status-refusal` after hold so open-slot
