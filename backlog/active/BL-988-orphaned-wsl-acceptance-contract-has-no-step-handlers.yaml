@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 severity: medium
 status: active
-assigned_to: documenter
+assigned_to: hardender
 epic: code-quality-gates
 human_approval: approved
 priority: 30
