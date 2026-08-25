@@ -326,26 +326,56 @@ function dialForRole(
   return { role, dial: 'lower', citedFields: ['stage_transition'], disposition: 'recommended' };
 }
 
+/** Accumulate rework cites + active roles from lean events (keeps dial CC low). */
+function collectReworkAndActive(events: LeanLedgerEvent[]): {
+  rework: Map<string, Set<string>>;
+  activeRoles: Set<string>;
+} {
+  const rework = new Map<string, Set<string>>();
+  const activeRoles = new Set<string>();
+  for (const e of events) {
+    noteReworkEvent(rework, activeRoles, e);
+  }
+  return { rework, activeRoles };
+}
+
+function noteStallCite(rework: Map<string, Set<string>>, e: LeanLedgerEvent): void {
+  if (e.type === 'stall' && e.role) {
+    addCited(rework, e.role, 'stalls');
+  }
+}
+
+function noteBounceCite(rework: Map<string, Set<string>>, e: LeanLedgerEvent): void {
+  const blamed = bounceBlamedRole(e);
+  if (blamed) {
+    addCited(rework, blamed, 'bounce.blamedRole');
+  }
+}
+
+function noteActiveRole(activeRoles: Set<string>, e: LeanLedgerEvent): void {
+  if (!e.role) {
+    return;
+  }
+  if (e.type === 'stage_transition' || e.type === 'close') {
+    activeRoles.add(e.role);
+  }
+}
+
+function noteReworkEvent(
+  rework: Map<string, Set<string>>,
+  activeRoles: Set<string>,
+  e: LeanLedgerEvent
+): void {
+  noteStallCite(rework, e);
+  noteBounceCite(rework, e);
+  noteActiveRole(activeRoles, e);
+}
+
 function computeQualityRecommendations(
   events: LeanLedgerEvent[],
   windowModels: Record<string, string> = {}
 ): CeremonyQualityRecommendation[] {
-  const rework = new Map<string, Set<string>>();
-  const activeRoles = new Set<string>();
-
-  for (const e of events) {
-    if (e.type === 'stall' && e.role) {
-      addCited(rework, e.role, 'stalls');
-    }
-    const blamed = bounceBlamedRole(e);
-    if (blamed) {
-      addCited(rework, blamed, 'bounce.blamedRole');
-    }
-    if ((e.type === 'stage_transition' || e.type === 'close') && e.role) {
-      activeRoles.add(e.role);
-    }
-  }
-
+  const { rework, activeRoles } = collectReworkAndActive(events);
   const roles = new Set<string>([...rework.keys(), ...activeRoles]);
   // Auto seats with only lean signal still get a hold row when they appear in rework/active.
   const out: CeremonyQualityRecommendation[] = [];

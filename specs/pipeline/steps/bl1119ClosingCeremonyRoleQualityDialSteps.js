@@ -13,7 +13,10 @@ const FEATURE = 'BL-1119 closing ceremony recommends per-role quality dial';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
 
-const { buildClosingCeremonyPacket } = require(path.join(EXT_DIR, 'out', 'quality', 'closingCeremony'));
+const {
+  buildClosingCeremonyPacket,
+  isAutoWindowModel,
+} = require(path.join(EXT_DIR, 'out', 'quality', 'closingCeremony'));
 const {
   writeCeremonyRun,
   readCeremonyRun,
@@ -86,9 +89,11 @@ function registerSteps(registry) {
     st.windowModels = { [st.role]: 'opus' };
   });
 
-  scoped(/^that role's window model is (auto|cursor\/auto|copilot\/auto)$/, (ctx, model) => {
+  // Capture any token so soft Example mutants (opus, etc.) reach the hold Then.
+  scoped(/^that role's window model is (\S+)$/, (ctx, model) => {
     const st = mkTarget(ctx);
     st.windowModels = { [st.role]: model };
+    st.expectedAuto = isAutoWindowModel(model);
   });
 
   scoped(/^the closing-ceremony packet is built$/, (ctx) => {
@@ -105,6 +110,11 @@ function registerSteps(registry) {
     } else if (dialText === 'lower or hold') {
       assert.ok(rec.dial === 'lower' || rec.dial === 'hold', `expected lower|hold, got ${rec.dial}`);
     } else if (dialText === 'hold or skip') {
+      assert.equal(
+        st.expectedAuto,
+        true,
+        `hold/skip requires an auto window model, got models=${JSON.stringify(st.windowModels)}`
+      );
       assert.equal(rec.dial, 'hold');
       assert.ok(rec.disposition === 'held' || rec.disposition === 'skipped', `got disposition ${rec.disposition}`);
     } else {
