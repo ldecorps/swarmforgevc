@@ -76,6 +76,7 @@ expects them, and are not migrated or rewritten here.
 - [Reconcile import skips the property-suite guard](how-to/BL-1121-reconcile-import-skips-property-suite-guard.md) — byte-identical mid-merge import → `skip-reconcile-import`; env override stays recovery-only (BL-1121).
 - [Property-suite fixtures must not mutate shared main](how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md) — canary bare/HEAD around the property lane; refuse reset-to-origin when ahead (BL-1124).
 - [Local Agent Telegram turn reliability](how-to/BL-1126-local-agent-telegram-turn-reliability.md) — fast-path probes skip Ollama; real turns stream progress and abort cleanly (BL-1126).
+- [Local Ollama mono vs forge under CPU](how-to/BL-1142-local-ollama-mono-vs-forge-cpu.md) — durable decision: mono-router depth 1; uncapped / qwen-forge substitutes refused (BL-1142).
 - [Morning briefing handoff-mechanism diagram](how-to/BL-579-handoff-mechanism-briefing-diagram.md) — HOW a parcel travels; allowlist entry `handoff-mechanism` (BL-579).
 - [Morning briefing front-desk mechanism diagram](how-to/BL-580-front-desk-mechanism-briefing-diagram.md) — Telegram in → answer out; allowlist entry `front-desk` (BL-580).
 - [Mean ticket time ends at close, not a later re-file](how-to/BL-1074-post-close-refile-inflates-measured-ticket-duration.md) — duration ignores post-close `done/` moves (BL-1074).
