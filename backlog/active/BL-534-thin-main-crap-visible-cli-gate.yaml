@@ -33,6 +33,16 @@ abandoned_commits:
   - 144c08a150
   - d6068ba8b9
   - ebdb353a96
+  - 62271db635
+  - 9a7f39661d
+  - 3c9b6ceb67
+  - 13e291c41b
+  - 45fdac4720
+  - ff30e6e717
+  - 576360ceb0
+  - eee8f31c27
+  - dc42fd90b0
+
 required_wiring:
   - "extension/package.json::thin-main-gate::npm script must invoke the compiled thin-main-gate.js"
   - "specs/pipeline/steps/index.js::bl534ThinMainCrapVisibleCliGateSteps::acceptance handler registered so the runner executes every review scenario"

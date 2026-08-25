@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1131: rematch-then-FF ticket land —
+**Last Updated:** August 25, 2026 (BL-534: thin-main CRAP-visible CLI
+gate — tools under `extension/src/tools/` must export `main` with
+cyclomatic complexity ≤ 2. Parcel mode never allowlists; full-repo
+`thin-main-allowlist.txt` may only shrink. Runner:
+`npm run thin-main-gate` / `extension/out/tools/thin-main-gate.js`.
+Acceptance: `specs/features/BL-534-thin-main-crap-visible-cli-gate.feature`.
+How-to: `docs/how-to/BL-534-thin-main-crap-visible-cli-gate.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1131: rematch-then-FF ticket land —
 pre-publish tip must contain `origin/main`; post-land absorb is FF-only
 or rematch lander/bookkeeping owner — never an operator
 `Complete origin/main merge`. Successful land reaches `behind=0` /
