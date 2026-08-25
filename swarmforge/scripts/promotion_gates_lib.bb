@@ -28,6 +28,8 @@
 ;; acceptance-pointer-gate-lib/applicable? is the sole checkability predicate
 ;; (same BL-897 posture as BL-1027's mint-time dangling check).
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_pointer_gate_lib.bb")))
+;; BL-1128: depth/cap/throttle prefer predicate — one copy in headroom-cap-raise-lib.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "headroom_cap_raise_lib.bb")))
 
 ;; ── ticket field reading ──────────────────────────────────────────────────
 ;; Same "small live-glue duplicated across independent pure libs" idiom as
@@ -195,21 +197,22 @@
         (read-priority content))))
 
 (defn- rank-key [content epic-index]
+  ;; Sort keys: lower wins. Expedite (0) first; then depth/cap/throttle prefer
+  ;; (0) ahead of unrelated (1); then epic-priority / own-priority / id.
   [(if (expedited? content) 0 1)
+   (if (headroom-cap-raise-lib/depth-cap-throttle-ticket? content) 0 1)
    (epic-priority content epic-index)
    (read-priority content)
    (or (read-id content) "")])
 
 (defn rank-candidates
   "candidates: a seq of {:file :content}. Returns the winning candidate map
-   (nil for an empty seq) under Article 3.2.4 plus BL-900: every expedited
-   candidate sorts ahead of every non-expedited one regardless of priority
-   number; within a bucket, epic-priority (epic-index, defaulted to {} when
-   omitted - every candidate then falls back to its own priority, preserving
-   pre-BL-900 ordering exactly) breaks ties before own-priority; own-priority
-   then id breaks the rest - the same tie-break promote_and_route_next.sh's
-   pre-existing candidate_sort_line already used, preserved so a fully-
-   compliant, non-expedited, epic-tracker-less pick is unchanged."
+   (nil for an empty seq) under Article 3.2.4 plus BL-900 plus BL-1128:
+   every expedited candidate sorts ahead of every non-expedited one
+   regardless of priority number; within a bucket, depth/cap/throttle
+   correctness titles (BL-1128) sort ahead of unrelated work; then
+   epic-priority (epic-index, defaulted to {} when omitted) breaks ties
+   before own-priority; own-priority then id breaks the rest."
   ([candidates] (rank-candidates candidates {}))
   ([candidates epic-index]
    (some->> (seq candidates)

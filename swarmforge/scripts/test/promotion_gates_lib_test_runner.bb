@@ -82,6 +82,20 @@
   (assert= "with no expedited candidates, lower priority number wins as before"
            "b.yaml" (:file winner)))
 
+;; ── BL-1128: depth/cap/throttle preference inside the non-expedited bucket ─
+(let [depth {:file "depth.yaml"
+             :content "id: BL-683\ntitle: \"handoff depth warning off-by-one\"\npriority: 90\n"}
+      unrelated {:file "other.yaml"
+                 :content "id: BL-9000\ntitle: unrelated low-priority work\npriority: 1\n"}
+      winner (promotion-gates-lib/rank-candidates [unrelated depth])]
+  (assert= "BL-1128: depth/cap/throttle title preferred over better-priority unrelated"
+           "depth.yaml" (:file winner)))
+(let [defect {:file "defect.yaml" :content "id: BL-2\ntype: defect\nseverity: high\npriority: 50\n"}
+      depth {:file "depth.yaml" :content "id: BL-683\ntitle: backlog depth cap wiring\npriority: 1\n"}
+      winner (promotion-gates-lib/rank-candidates [depth defect])]
+  (assert= "BL-1128: expedite lane still beats depth preference"
+           "defect.yaml" (:file winner)))
+
 ;; ── epic-priority / epic-priority-index (BL-900) ─────────────────────────
 
 (assert= "epic-priority resolves through the index when the epic has a tracker"

@@ -18,6 +18,11 @@
 ;;
 ;; Usage: effective_backlog_depth_cli.bb <project-root>
 ;; Prints the resolved EFFECTIVE active_backlog_max_depth and exits 0.
+;;
+;; BL-1128: raising the STANDING configured cap on host headroom is owned by
+;; headroom_cap_raise_cli.bb (not this reader). After a raise, this CLI's next
+;; call reflects the higher configured ceiling via read-effective-max-depth.
+;; Wiring needle (required_wiring / APS): bl1128HeadroomRaiseConfiguredCap
 
 (ns effective-backlog-depth-cli
   (:require [babashka.fs :as fs]
@@ -25,6 +30,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+;; bl1128HeadroomRaiseConfiguredCap — acceptance handler registered (BL-1128)
 
 (defn usage []
   (binding [*out* *err*]
