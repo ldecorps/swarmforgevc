@@ -23,6 +23,13 @@ UNCAPPED=$'window coder a\nwindow specifier b\nwindow cleaner c\n'
   || fail "02: expected uncapped-forge"
 pass "02: uncapped standing multi-seat"
 
+# ── 02b: router depth above mono max is capped-forge (not uncapped) ───────
+# Hardener BL-1142: kills flipping the router capped branch to uncapped.
+CAPPED_ROUTER=$'config active_backlog_max_depth 2\nconfig rotation router\nwindow coder a\n'
+[[ "$(bl1142_classify_pack_shape "$CAPPED_ROUTER")" == "capped-forge" ]] \
+  || fail "02b: expected capped-forge for router depth 2"
+pass "02b: router depth>mono max is capped-forge"
+
 # ── 03: mono decision allows only mono-router ─────────────────────────────
 bl1142_shape_allowed_for_local_decision mono-router || fail "03: mono allowed"
 bl1142_shape_allowed_for_local_decision capped-forge && fail "03: capped must refuse"
@@ -45,7 +52,11 @@ printf '%s\n' "$UNCAPPED" > "$ROOT/swarmforge/packs/local-fake-forge.conf"
 if bash "$GATE" "$ROOT" local-fake-forge >/dev/null 2>&1; then
   fail "05: gate must refuse uncapped local-fake-forge"
 fi
-pass "05: gate accepts mono; refuses uncapped"
+printf '%s\n' "$CAPPED_ROUTER" > "$ROOT/swarmforge/packs/local-capped-router.conf"
+if bash "$GATE" "$ROOT" local-capped-router >/dev/null 2>&1; then
+  fail "05: gate must refuse capped-forge router depth>mono"
+fi
+pass "05: gate accepts mono; refuses uncapped and capped-router"
 
 # ── 06: gate refuses qwen-forge by name even if conf exists ───────────────
 printf '%s\n' "$MONO" > "$ROOT/swarmforge/packs/qwen-forge.conf"
