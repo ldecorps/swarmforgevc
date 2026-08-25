@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1124: property-suite fixtures must not
+**Last Updated:** August 25, 2026 (BL-1079: re-entry — APS allow-list token
+parse includes `-` so hyphenated agents (e.g. `local-model`) match the
+launcher `validate_agent` case; steward certify path unchanged.
+Acceptance:
+`specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature`.
+How-to: `docs/how-to/BL-1079-cursor-identity-steward-certify-and-residuals.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1124: property-suite fixtures must not
 mutate shared `main` / role refs or flip `core.bare`. Pre-commit canary in
 `check_property_suite_drift.sh`; recovery refuses reset-to-origin when ahead;
 `expedite_fixture.sh` refuses live checkout dests. Acceptance:
