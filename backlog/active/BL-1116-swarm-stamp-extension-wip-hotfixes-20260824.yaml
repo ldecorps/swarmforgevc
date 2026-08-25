@@ -22,6 +22,16 @@ approval_context: >
   alone never certify. Do not reimplement.
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1116ExtensionWipHotfixStampOffSteps::acceptance handler registered so the runner executes every review scenario"
+abandoned_commits:
+  - e9114395d
+  - 0c9833c6e
+  - 5077130e1
+  - 0734f3122
+  - 92c351eb6
+  - 6cebdcd4f
+  - cc1e1212f
+  - 5a77b8e94
+
 invariants:
   - "This stamp-off never reimplements any of the five hotfixes — review confirms or refutes the landed commits only."
   - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."
