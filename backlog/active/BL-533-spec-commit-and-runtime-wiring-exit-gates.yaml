@@ -20,6 +20,7 @@ required_wiring:
   - "specs/pipeline/steps/index.js::bl533SpecCommitAndRuntimeWiringExitGatesSteps::acceptance handler registered"
   - "swarmforge/scripts/specifier_backlog_hygiene_gate.bb::acceptance::hygiene gate must evaluate the ticket acceptance path"
 abandoned_commits:
+  - 7e3f42dd5f
   - 9bdafd00c
   - d8dcbb570
   - ff30e6e71
