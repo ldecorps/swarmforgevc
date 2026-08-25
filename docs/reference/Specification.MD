@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1133 rematch4: tip-pure rebuild after
+documenter rematch3 hitchhike — babysitterd start/end/cold-start pulses
+unchanged (coder `512eb4c7a`); docs substance unchanged. Acceptance:
+`specs/features/BL-1133-babysitterd-heartbeat-start-and-end-of-tick.feature`.
+How-to: `docs/how-to/BL-611-babysitterd-runbook.md` and
+`docs/how-to/BL-675-daemon-log-freshness-watchdog.md`. No new extension
+command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1134: master-checkout drift mute covers
 the post-`git add` window — `commit-in-flight?` is true for `.git/index.lock`
 **or** a live `git add`/`git commit` argv naming this root; durable staged
