@@ -199,12 +199,12 @@
   60000)
 
 (def calibrated-warn-slack-factor
-  "Human 2026-08-25: calibrated WARN fired too early on healthy hops
-   (architect->hardender|git_handoff WARN at raw p67 ≈ 7m). Multiply
-   calibrated warn and escalate by this factor at resolve time so the
-   on-disk table keeps historical percentiles while alarms wait at least
-   2× longer before considering a warning. The global conf pair is
-   operator-chosen and is NOT multiplied."
+  "Human 2026-08-25: WARN fired too early (architect->hardender|git_handoff
+   at raw p67 ≈ 7m). Multiply EVERY resolved warn/escalate pair — calibrated
+   exact/to-type AND the global conf fallback — by this factor at resolve
+   time so all transitions wait at least 2× longer before considering a
+   warning. Amendment same evening: do it for all transitions, not only
+   calibrated hops."
   2)
 
 (defn spec-key
@@ -273,8 +273,9 @@
                    fallback-levels)))))
 
 (defn- apply-calibrated-warn-slack
-  "Multiply a calibrated warn/escalate pair by calibrated-warn-slack-factor,
-   keeping escalate strictly above warn. Pure. Preserves other keys
+  "Multiply a warn/escalate pair by calibrated-warn-slack-factor, keeping
+   escalate strictly above warn. Applied to every resolve-thresholds
+   outcome (calibrated and global). Pure. Preserves other keys
    (e.g. :resolved-via)."
   [{:keys [warn-ms escalate-ms] :as pair}]
   (let [f (long calibrated-warn-slack-factor)
@@ -287,28 +288,28 @@
    *->to|type, then the global conf pair. (BL-827 gap 2: the *->*|type row
    is no longer written at all — a type-level mix of QA→specifier hops and
    rotation waits would mis-calibrate dormant pipeline roles, which is why
-   nothing ever consulted it.) Calibrated exact/to-type hits are multiplied
-   by calibrated-warn-slack-factor (human 2026-08-25: at least 2× before
-   WARN); the global conf pair is not. Returns
+   nothing ever consulted it.) Every resolved pair — calibrated or global —
+   is multiplied by calibrated-warn-slack-factor (human 2026-08-25: at least
+   2× before WARN on all transitions). Returns
    {:warn-ms :escalate-ms :resolved-via} — resolved-via is the matched key
    or \"global\". decide-tier never sees the route identity."
   [{:keys [from to type]} specs-table global-thresholds]
   (let [specs (or specs-table {})
         candidates [(spec-key {:from from :to to :type type})
-                    (to-type-key {:to to :type type})]]
-    (or (some (fn [k]
-                (when-let [e (get specs k)]
-                  (when (and (number? (:warn-ms e)) (number? (:escalate-ms e))
-                             (pos? (:warn-ms e)) (pos? (:escalate-ms e))
-                             (> (:escalate-ms e) (:warn-ms e)))
-                    (apply-calibrated-warn-slack
-                     {:warn-ms (long (:warn-ms e))
-                      :escalate-ms (long (:escalate-ms e))
-                      :resolved-via k}))))
-              candidates)
-        {:warn-ms (:warn-ms global-thresholds)
-         :escalate-ms (:escalate-ms global-thresholds)
-         :resolved-via "global"})))
+                    (to-type-key {:to to :type type})]
+        raw (or (some (fn [k]
+                        (when-let [e (get specs k)]
+                          (when (and (number? (:warn-ms e)) (number? (:escalate-ms e))
+                                     (pos? (:warn-ms e)) (pos? (:escalate-ms e))
+                                     (> (:escalate-ms e) (:warn-ms e)))
+                            {:warn-ms (long (:warn-ms e))
+                             :escalate-ms (long (:escalate-ms e))
+                             :resolved-via k})))
+                      candidates)
+                {:warn-ms (:warn-ms global-thresholds)
+                 :escalate-ms (:escalate-ms global-thresholds)
+                 :resolved-via "global"})]
+    (apply-calibrated-warn-slack raw)))
 
 (defn- parse-instant-ms
   "Pure: an ISO-8601 instant string to epoch millis, or nil when absent,
