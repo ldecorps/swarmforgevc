@@ -67,14 +67,34 @@ make_draft() {
   echo "$file"
 }
 
+# BL-778: pin delivery mode so success grammar is environment-independent.
+# Fixture intends outbox queue + daemon drain — never ambient DELIVERED/exit-1.
+run_swarm_handoff() {
+  local draft="$1"
+  (
+    cd "$CODER_WT"
+    env -u SWARMFORGE_SKIP_DAEMON -u SWARMFORGE_MAILBOX_ONLY \
+      SWARMFORGE_ROLE=coder \
+      SWARMFORGE_SKIP_SYNC_INJECT=1 \
+      PATH="$FAKE_BIN:$PATH" \
+      bb "$SWARM_HANDOFF" "$draft" 2>&1
+  )
+}
+
+assert_queued() {
+  local label="$1" out="$2"
+  grep -q "^HANDOFF QUEUED (mailbox only, no tmux inject):" <<< "$out" \
+    || fail "$label: valid send was not queued with mailbox-only grammar; got: $out"
+}
+
 # ── 01: a valid proposal is queued and delivered to the specifier's inbox ───
 DRAFT="$(make_draft "$CODER_WT" \
   'type: rule_proposal' 'to: specifier' 'priority: 50' \
   'scope: constitution' \
   'body: Batch roles must forward every parcel, not just their own step.' \
   'rationale: BL-075 dropped a docs-only parcel this way.')"
-OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT")"
-grep -q "^HANDOFF QUEUED:" <<< "$OUT" || fail "01: valid rule_proposal was not queued; got: $OUT"
+OUT="$(run_swarm_handoff "$DRAFT")"
+assert_queued "01" "$OUT"
 
 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
 DAEMON_PID=$!
@@ -115,8 +135,8 @@ DRAFT="$(make_draft "$CODER_WT" \
   'scope: engineering' \
   "body: $TABBED_BODY" \
   'rationale: regression for the hand-rolled json-escape bug')"
-OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT")"
-grep -q "^HANDOFF QUEUED:" <<< "$OUT" || fail "03b: tab-bearing rule_proposal was not queued; got: $OUT"
+OUT="$(run_swarm_handoff "$DRAFT")"
+assert_queued "03b" "$OUT"
 
 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
 DAEMON_PID=$!
@@ -143,7 +163,7 @@ assert_rejected() {
   local draft
   draft="$(make_draft "$CODER_WT" "$@")"
   set +e
-  OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$draft" 2>&1)"
+  OUT="$(run_swarm_handoff "$draft")"
   RC=$?
   set -e
   [[ $RC -ne 0 ]] || fail "02 ($label): invalid draft was not rejected; got: $OUT"
@@ -187,8 +207,8 @@ for draft_lines in \
   "type: note|to: specifier|priority: 50|message: unaffected by rule_proposal"; do
   IFS='|' read -ra LINES <<< "$draft_lines"
   DRAFT="$(make_draft "$CODER_WT" "${LINES[@]}")"
-  OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT")"
-  grep -q "^HANDOFF QUEUED:" <<< "$OUT" || fail "04: existing type regressed for draft [$draft_lines]; got: $OUT"
+  OUT="$(run_swarm_handoff "$DRAFT")"
+  assert_queued "04 [$draft_lines]" "$OUT"
 done
 pass "04: awake, git_handoff, and note drafts still validate and queue exactly as before"
 
