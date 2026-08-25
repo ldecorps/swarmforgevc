@@ -26,3 +26,16 @@ Full reconcile context: [BL-891](BL-891-master-main-reconcile-sweep.md).
 
 Acceptance:
 `specs/features/BL-1120-handoffd-must-not-abort-foreign-merge.feature`
+
+## Bare origin/main rematch
+
+QA bounced stacked tips that hitchhiked sibling rematches. Recreate on
+current `origin/main` and land **BL-1120 paths only** (never merge into
+hitchhiked ancestry). Hitchhike gate:
+
+```bash
+git diff --name-only origin/main...HEAD \
+  | rg 'acpHostClient|hotfix-ledger|^backlog/INTAKE-|done/M8' \
+  && echo FAIL || echo CLEAN
+```
+
