@@ -46,6 +46,7 @@ const DOMAINS = [
   require('./sidecarNoOrphanSteps'),
   require('./bl615OrphanedClaimProgressSidecarReapSteps'),
   require('./bl652DoneWithCurrentArgRejectionSteps'),
+  require('./bl595HumanLoopReliabilityTrendSteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),

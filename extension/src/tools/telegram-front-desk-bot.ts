@@ -180,6 +180,7 @@ import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } fr
 import { readTicketMessageMap, writeTicketMessageEntry } from '../concierge/ticketMessageMapStore';
 import { ALL_SWARM_ROLES, readRoleTopicMap, writeRoleTopicMap } from '../concierge/roleTopicMapStore';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFoldersSnapshot, TickState, epicDefinitionsFor } from '../concierge/conciergeTick';
+import { emitTickDuration } from '../metrics/humanLoopReliabilityStore';
 import { approvalRequestedEventKey } from '../events/swarmEventStream';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
@@ -2187,6 +2188,8 @@ function buildPollAdapters(
   const cursorBridgeRoutingEnabled = letsTalkProvider === '' || letsTalkProvider === 'cursor';
   return {
     chatId,
+    // BL-595: human-loop reliability ledger root (async append-only).
+    humanLoopRoot: targetPath,
     // BL-620: every dropped update leaves exactly one bounded audit line in
     // the supervisor log (the same stderr stream this file's other
     // operational notices use) - the incident class this closes took a
@@ -2463,7 +2466,8 @@ async function pollLoop(
       (message) => process.stderr.write(message),
       sleep,
       (message) => sendDirectEscalation(botToken, chatId, message),
-      () => writeFrontDeskPollHeartbeat(targetPath)
+      () => writeFrontDeskPollHeartbeat(targetPath),
+      targetPath
     );
   }
 }
@@ -3277,9 +3281,14 @@ export async function runOneConciergeTick(
   reconcileAdapters: ReconcileAdapters,
   deletionAdapters: TopicDeletionAdapters,
   nowMs: number = Date.now(),
-  retentionWindowMs: number = topicRetentionWindowMs()
+  retentionWindowMs: number = topicRetentionWindowMs(),
+  humanLoopRoot?: string
 ): Promise<void> {
+  const tickStartedMs = Date.now();
   await runConciergeTick(adapters, nowMs);
+  if (humanLoopRoot) {
+    emitTickDuration(humanLoopRoot, Date.now() - tickStartedMs);
+  }
   // BL-493 architect bounce: folders is read ONCE and reused for BOTH
   // doneTickets and epicDefinitionsFor - reconcileTopicLifecycle needs the
   // latter to resolve an epic-bound done ticket's real epic TITLE (never
@@ -3307,7 +3316,7 @@ function createConciergeTickScheduler(targetPath: string, botToken: string, chat
   const adapters = buildConciergeTickAdapters(targetPath, botToken, chatId);
   const reconcileAdapters = buildReconcileAdapters(targetPath, adapters.routeAdapters);
   const deletionAdapters = buildTopicDeletionAdapters(targetPath, botToken, chatId);
-  return new ConciergeTickScheduler(() => runOneConciergeTick(adapters, reconcileAdapters, deletionAdapters));
+  return new ConciergeTickScheduler(() => runOneConciergeTick(adapters, reconcileAdapters, deletionAdapters, Date.now(), topicRetentionWindowMs(), targetPath));
 }
 
 async function tickLoop(targetPath: string, scheduler: ConciergeTickScheduler, intervalMs: number): Promise<void> {
