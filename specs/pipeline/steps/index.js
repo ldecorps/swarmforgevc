@@ -48,6 +48,7 @@ const DOMAINS = [
   require('./bl652DoneWithCurrentArgRejectionSteps'),
   require('./bl1140StewardLocalModelBakeoffSteps'),
   require('./bl1142LocalOllamaMonoVsForgeCpuSteps'),
+  require('./bl1143ColdSwapDayShiftOllamaQwenSteps'),
   require('./bl595HumanLoopReliabilityTrendSteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
