@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T15:03:09.204848668Z","feature_name":"BL-568 menu-blocked pane questions as mapped Telegram polls","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-568-menu-blocked-pane-questions-as-mapped-polls.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-568 menu-blocked pane questions as mapped Telegram polls
   # When a role pane is blocked on a Claude Code AskUserQuestion (or kin)
   # menu, front desk auto-surfaces a native poll in that role's steering
