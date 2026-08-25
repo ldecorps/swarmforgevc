@@ -51,6 +51,7 @@ expects them, and are not migrated or rewritten here.
 - [Wire Mistral Vibe into the Intelligence Layer](how-to/BL-682-mistral-vibe-intelligence-layer-routing.md) — ModelFactory maps `mistral`→`vibe`; Steward seeds `mistral/mistral-medium-3.5` from the live vibe config alias (registration only; packs/launchers unchanged).
 - [Handling Pre-QA Gate Handoff Refusals](how-to/BL-531-handoff-refusal-remedies.md)
 - [Rule-proposal shell test asserts real handoff queue grammar](how-to/BL-778-rule-proposal-test-asserts-stale-queue-grammar.md) — pin mailbox-only; assert full `HANDOFF QUEUED (mailbox only…)` line (BL-778).
+- [Run BL-528 claim-progress acceptance via APS handlers](how-to/BL-612-claim-progress-acceptance-step-handlers.md) — handlers drive `claim_progress_lib.bb`; no behaviour change (BL-612).
 - [Routing-skip journal failure never withholds delivery](how-to/BL-748-routing-skip-recording-failure-never-withholds-delivery.md) — `ROUTING-SKIP RECORD FAILED` on stderr; parcel still delivered (BL-748 / BL-623).
 - [Residual-word allowlist survives backlog stage moves](how-to/BL-694-residual-word-allowlist-survives-stage-moves.md) — basename under active/paused/hold only (BL-694).
 - [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).

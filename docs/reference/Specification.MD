@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-612: APS step handlers for the existing
+BL-528 claim-without-progress feature —
+`bl612ClaimProgressAcceptanceStepHandlersSteps.js` drives
+`claim_progress_lib.bb` / `clear-claim-progress!` via `bb -e` with explicit
+`KNOWN_*` allow-lists so `run_acceptance.sh` on
+`specs/features/BL-528-claim-without-progress-auto-heal.feature` executes.
+Handlers only; no claim-progress behaviour, threshold, or halt-path change.
+How-to: `docs/how-to/BL-612-claim-progress-acceptance-step-handlers.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-578: under WSL, extension-dev bounce
 kill-old terminates Windows-side `Code.exe` hosts for this
 `extensionDevelopmentPath`; `.swarmforge/headless-swarm` refuses bounce

@@ -2,15 +2,18 @@ id: BL-612
 title: "Wire step handlers for BL-528's acceptance feature (claim-without-progress auto-heal)"
 milestone: M8
 type: defect
-status: paused
+status: active
 epic: swarm-reliability
-assigned_to:
+assigned_to: coder
 severity: medium
 priority: 184
 mutation_cost: medium
 direction: swarm-proposed
 depends_on: []
 human_approval: approved
+abandoned_commits:
+  - c7d961529b
+  - a4b8698c00
 source: "QA follow-up on BL-528 (backlog/evidence/BL-528-qa-followups-20260724.md item 1); architect raised the same as SECONDARY in backlog/evidence/BL-528-architect-bounce.md; coder note to specifier 2026-07-24T02:37Z."
 
 approval_context: >
@@ -33,6 +36,7 @@ description: >
   change claim-progress behaviour.
 
 notes: |
+  - "[2026-08-25T16:20Z] coder: APS handlers drive claim_progress_lib + clear-claim-progress!."
   READ FIRST — this is NOT a missing-spec defect: the acceptance path below
   ALREADY EXISTS on main. The work is the step-handler module behind it, in the
   same parcel, so run_acceptance.sh on that feature file goes green.

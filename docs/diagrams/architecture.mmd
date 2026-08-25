@@ -95,6 +95,10 @@
 %% dropped-parcel sweep; it never re-forwards or re-delivers the parcel
 %% itself, and never becomes a liveness oracle for a dead owner (BL-648's
 %% job) or touches BL-528's task-mode claim-idle ladder.
+%% BL-612 (2026-08-25): APS step handlers
+%% (bl612ClaimProgressAcceptanceStepHandlersSteps.js) make the existing
+%% BL-528 claim-without-progress feature executable under run_acceptance.sh
+%% by driving claim_progress_lib.bb — no ladder/threshold change.
 %% BL-896 (2026-08-16, heading confirmed 2026-08-17): the open-ticket-chart
 %% CLI (module still named render-briefing-burndown.ts) plots open tickets
 %% remaining per day next to the architecture diagrams in the briefing

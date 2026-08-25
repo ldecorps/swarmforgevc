@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:19:00.607516227Z","feature_name":"a claim without progress is auto-healed, and real work is never mistaken for idleness","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-528-claim-without-progress-auto-heal.feature","background_hash":"1bed7e3e28d34146e52b183d87d14c2362718cd9aa4611d5b30d822062d00d2c","implementation_hash":"unknown","scenarios":[{"index":1,"name":"evidence of activity suppresses idle counting past the timeout","scenario_hash":"08c88a3c3d60b97c6dc7f864b698865a85830ca6e0258a5e555eae48afda86ce","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-25T16:19:00.607516227Z"},{"index":6,"name":"a halt is refused while the swarm is demonstrably alive","scenario_hash":"26834e1b8046844936f31fd05b52899d91f0090a4f77ab99570db74357454a1b","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-25T16:19:00.607516227Z"},{"index":7,"name":"a role whose work legitimately runs long gets a longer idle timeout","scenario_hash":"c6a23a238bd2bf8937be78e693d4cde3de8a235cc2446f8dcfb6c27ed786974e","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-25T16:19:00.607516227Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a claim without progress is auto-healed, and real work is never mistaken for idleness
 
   A role can hold an in_process task, keep reclaiming it, and sit idle while every
