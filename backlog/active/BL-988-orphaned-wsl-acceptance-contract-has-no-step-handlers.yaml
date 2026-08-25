@@ -3,7 +3,8 @@ title: "BL-578's acceptance contract is orphaned: no step handler matches 'Given
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: active
+assigned_to: coder
 epic: code-quality-gates
 human_approval: approved
 priority: 30
@@ -85,6 +86,14 @@ notes: >
   durable contract). So the ticket YAML cannot be consulted for intent;
   git history for the contract and its original implementation is the source
   of truth for the restore-vs-retire decision.
+
+  - "[2026-08-25T18:40Z] coder: RESTORE. Behaviour still ships
+    (bounceLib buildWindowsKillOldCommands + headlessMarkerDecision;
+    start-extension-dev WSL kill-old). Handlers present in
+    bl578DevhostBounceWslWindowLeakSteps.js and registered in index.js.
+    Acceptance 7/7 green. Deliberate break (empty kill-old cmds) turned the
+    Windows-target scenarios red; restore returned green. Binding regression
+    in specs/pipeline/test/bl988Bl578ContractBinding.property.test.js."
 
 qa_e2e_procedure: >
   1. Run the contract:
