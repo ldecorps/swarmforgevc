@@ -1,12 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1137: master-checkout drift mute covers
-cwd-scoped `git add`/`git commit` — process cwd under this project root mutes
-`:staged-for-reversion` even when argv omits the root string; durable
-reversion with no signal still alarms (BL-839). Acceptance:
-`specs/features/BL-1137-master-checkout-drift-mute-covers-cwd-scoped-git.feature`.
-How-to: `docs/how-to/BL-1137-master-checkout-drift-mute-covers-cwd-scoped-git.md`
-(updates BL-1134). No new extension command or setting.)
+**Last Updated:** August 25, 2026 (BL-691: ambulance mode closes three live-run
+gaps — sync `deliver-parcel!` consults the same hold; chase may rotate a busy
+resident to the role holding patient mail; CLI/Telegram engage refuses any
+patient not in `backlog/active/` and names the folder. Acceptance:
+`specs/features/BL-691-ambulance-workflow-gaps.feature`.
+How-to: `docs/how-to/BL-691-ambulance-mode-workflow-gaps-from-bl688-live-run.md`
+(updates BL-655). No new extension command or setting.)
 Prior entry —
 **Last Updated:** August 25, 2026 (BL-1132 rematch4: tip-pure rebuild after
 documenter rematch3 hitchhike — headroom telemetry-path + coordinator raise
@@ -6696,6 +6696,8 @@ The watchdog maintains `.swarmforge/daemon/flow-watchdog-state.json` keyed by pa
 **Dedup/pacing:** one alarm per parcel per tier — a parcel progresses (picked up, claimed, or reappears in another role's inbox) and its entry clears; no future re-alarms for that parcel even if it stalls again elsewhere.
 
 **Snooze (read-only in this ticket):** if `snoozed: true`, the watchdog honors that state and does not alarm until the snooze is cleared by human action (a future slice wiring the snooze writer).
+
+**Ambulance mode's sync deliver path, busy-resident rotate gate, and engage target are closed to the first live-run gaps (BL-691).** BL-655 wired the hold into daemon poll delivery and dequeue, but `swarm_handoff.bb`'s synchronous `handoff_inject_lib/deliver-parcel!` never consulted `ambulance-lib/parcel-held?` — a non-patient parcel could land in `inbox/new/` with a sync `HANDOFF DELIVERED` while the hold was engaged. That path now uses the same predicate; held parcels stay byte-identical in the sender outbox until release. Mono-router chase may rotate a busy resident to the role whose `inbox/new/` holds patient mail (`:ignore-busy?` when patient mail waits) — ambulance exists so the patient interrupts; cooldown / once-per-sweep budget unchanged. CLI and Telegram `engage` refuse any patient not in `backlog/active/`, naming the folder and instructing promote-before-engage (never auto-promote), closing the silent deadlock of engaging a `paused/` ticket. How-to: `docs/how-to/BL-691-ambulance-mode-workflow-gaps-from-bl688-live-run.md` (updates BL-655).
 
 **Ambulance hold composes into the same snooze channel (BL-679):** a parcel held by an engaged [ambulance mode](../how-to/BL-655-ambulance-mode-the-hold.md) is muted through this exact mechanism — `evaluate-parcel-tier` (the caller that assembles `decide-tier`'s input map) ORs the parcel's ambulance-held state in alongside any pre-existing human-ack snooze, so `decide-tier` itself gains no new branch and the design guarantee above (five allowed input keys) is untouched. The ambulance ticket's own parcels are never held, so they are never muted by this path.
 
