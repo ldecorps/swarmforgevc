@@ -18,7 +18,7 @@ abandoned_commits:
   - e7aac3e3b0
   - d050bbda2a
   - 20e9a723f0
-approval_context: KEEP
+  - e41a1b4a00
 assigned_to: coder
 approval_context: >
   Human (Cursor) 2026-08-25: residual after BL-1128 done — raise CLI returns
