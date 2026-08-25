@@ -3078,10 +3078,20 @@
       {:success true :outcome :noop}
 
       :replay-bookkeeping
-      ;; BL-1135: live path must surface rematch-bookkeeping (not conflict /
-      ;; needs-a-human absorb). Sweep maps this outcome to rematch-owner
-      ;; recovery without Operator escalate.
-      {:success false :error "rematch-bookkeeping" :outcome :rematch-bookkeeping}
+      ;; BL-1138: execute rematch onto origin/main (reset — not conflicted
+      ;; absorb merge). Failure still surfaces rematch-bookkeeping; success
+      ;; clears behind so deadlock cannot stick. BL-1120: never touch foreign
+      ;; MERGE_HEAD.
+      (if mid?
+        {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
+        (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
+                                  ["git" "reset" "--hard" "origin/main"]
+                                  {:dir (str project-root)})]
+          (if (zero? exit)
+            {:success true :outcome :rematched-bookkeeping}
+            {:success false
+             :error (str/trim (or err "rematch-bookkeeping"))
+             :outcome :rematch-bookkeeping})))
 
       :refuse-rematch
       {:success false :error "refuse-rematch" :outcome :refuse-rematch}

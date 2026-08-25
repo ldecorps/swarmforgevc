@@ -57,6 +57,11 @@
        (post-hotfix-merge-origin-lib/conflicted-paths-from-status
         (:out (sh root "git" "status" "--porcelain=v1")))})))
 
+(defn- rematch-onto-origin! [root]
+  ;; BL-1138: rematch bookkeeping onto origin/main — reset, never conflicted absorb.
+  (let [r (sh root "git" "reset" "--hard" "origin/main")]
+    {:success (zero? (:exit r)) :error (str/trim (:err r))}))
+
 (defn- real-adapters [root daemon-dir]
   {:daemon-dir daemon-dir
    :fetch! (fn [] (sh root "git" "fetch" "origin" "main"))
@@ -64,6 +69,7 @@
    :dirty-paths! (fn [] (dirty-paths! root))
    :tip-contains-origin! (fn [] (tip-contains-origin? root))
    :would-conflict! (fn [] (would-conflict? root))
+   :rematch! (fn [] (rematch-onto-origin! root))
    :merge! (fn [] (merge-origin! root))
    :abort! (fn [] (sh root "git" "merge" "--abort"))
    :status-porcelain! (fn [] (:out (sh root "git" "status" "--porcelain=v1")))

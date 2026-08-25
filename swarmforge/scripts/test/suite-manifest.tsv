@@ -389,3 +389,4 @@ test_local_coder_battery.sh	standing
 bl568_menu_blocked_test_runner.bb	standing		
 bl691_ambulance_gaps_test_runner.bb	standing		
 test_shell_test_discovery.sh	standing		
+bl1138_rematch_bookkeeping_test_runner.bb	standing		

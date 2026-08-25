@@ -74,21 +74,36 @@
      :mid-merge? still-mid?}))
 
 (defn- finish-replay-bookkeeping
-  "BL-1131: colliding local-ahead absorb → rematch bookkeeping owner, not operator."
-  [rev-counts! mid-merge?]
-  (binding [*out* *err*]
-    (println "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)"))
-  {:ok? false :exit 1 :outcome :rematch-bookkeeping
-   :mid-merge? (boolean (mid-merge?))
-   :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))})
+  "BL-1131/1138: colliding local-ahead → rematch onto origin/main when
+   rematch! is provided; otherwise surface rematch-bookkeeping (no operator)."
+  [daemon-dir rev-counts! mid-merge? rematch!]
+  (if (mid-merge?)
+    {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
+    (if rematch!
+      (let [r (rematch!)]
+        (if (:success r)
+          (finish-ok daemon-dir rev-counts! :rematched-bookkeeping)
+          (do
+            (binding [*out* *err*]
+              (println "BL-1138: rematch bookkeeping failed — will retry (no operator merge)"))
+            {:ok? false :exit 1 :outcome :rematch-bookkeeping
+             :mid-merge? false
+             :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))})))
+      (do
+        (binding [*out* *err*]
+          (println "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)"))
+        {:ok? false :exit 1 :outcome :rematch-bookkeeping
+         :mid-merge? false
+         :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))}))))
 
 (defn run-post-hotfix-merge!
   "Fetch origin/main; absorb when behind under BL-1131 rematch-then-FF.
-   FF-only / noop when clean; colliding local-ahead → replay-bookkeeping
-   (rematch owner). Predicted or real conflict → refuse-rematch without
+   FF-only / noop when clean; colliding local-ahead → rematch! onto origin/main (BL-1138),
+   else surface rematch-bookkeeping. Predicted or real conflict → refuse-rematch without
    MERGE_HEAD (BL-1130). Never reset/stash; never pages operator absorb."
   [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! abort!
-           status-porcelain! mid-merge? would-conflict! tip-contains-origin!]}]
+           status-porcelain! mid-merge? would-conflict! tip-contains-origin!
+           rematch!]}]
   (fetch!)
   (refresh-honest-surfaced! daemon-dir (set (or (dirty-paths!) #{})))
   (let [{:keys [ahead behind]} (rev-counts!)
@@ -109,7 +124,7 @@
       (finish-ok daemon-dir rev-counts! :noop)
 
       :replay-bookkeeping
-      (finish-replay-bookkeeping rev-counts! mid-merge?)
+      (finish-replay-bookkeeping daemon-dir rev-counts! mid-merge? rematch!)
 
       :refuse-rematch
       (do

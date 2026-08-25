@@ -607,6 +607,54 @@
                     (not (re-find #"(?i)needs a human|complete origin/main merge"
                                   (str (first @surfaced)))))))
 
+
+;; ── BL-1138: rematch-bookkeeping recovers; never durable deadlock-tripped ─
+(assert-true "bl1138: rematch-bookkeeping does not trip deadlock"
+             (not (master-main-reconcile-lib/deadlock-trip-due?
+                   {:ahead 249 :behind 38
+                    :reconcile-surfaced "rematch-bookkeeping"
+                    :reconcile-escalated false
+                    :coordinator-in-process-aged? true
+                    :blocked-ticks 99
+                    :deadlock-state {}
+                    :threshold-ticks 3})))
+(assert-true "bl1138: refuse-rematch does not trip deadlock"
+             (not (master-main-reconcile-lib/deadlock-trip-due?
+                   {:ahead 2 :behind 3
+                    :reconcile-surfaced "refuse-rematch"
+                    :coordinator-in-process-aged? true
+                    :blocked-ticks 99
+                    :deadlock-state {}
+                    :threshold-ticks 3})))
+(assert-true "bl1138: dirty still can trip deadlock"
+             (master-main-reconcile-lib/deadlock-trip-due?
+              {:ahead 1 :behind 2
+               :reconcile-surfaced "dirty"
+               :reconcile-escalated true
+               :coordinator-in-process-aged? true
+               :blocked-ticks 99
+               :deadlock-state {}
+               :threshold-ticks 3}))
+
+(let [land (master-main-reconcile-lib/land-pipeline-outcome
+            {:prepublish-plan :rematch-clean
+             :absorb-plan :ff-absorb
+             :mid-merge? false})
+      after (master-main-reconcile-lib/after-successful-rematch-status
+             {:ahead 0 :behind 0 :deadlock-was-active? true})]
+  (assert= "bl1138: rematch success behind 0" 0 (:behind after))
+  (assert= "bl1138: rematch success sync proceed" :proceed (:sync-action after))
+  (assert-true "bl1138: rematch success clears deadlock flag" (:clear-deadlock? after))
+  (assert-true "bl1138: rematch success not deadlock-tripped"
+               (not= :deadlock-tripped (:sync-action after))))
+
+(assert-true "bl1138: rematch-bookkeeping not designed end-state deadlock"
+             (not (master-main-reconcile-lib/designed-end-state-is-deadlock-tripped?
+                   "rematch-bookkeeping")))
+(assert-true "bl1138: conflict may still design-trip (non-rematch)"
+             (master-main-reconcile-lib/designed-end-state-is-deadlock-tripped?
+              "conflict"))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")
