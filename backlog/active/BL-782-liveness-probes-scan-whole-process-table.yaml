@@ -119,7 +119,7 @@ out_of_scope: |
 notes: |
   - [2026-08-25T21:22Z] specifier (documenter bounce D1 Work 000721): filled
     acceptance feature (5 scenarios); single-line pointer for pre-QA gate.
-    Forwarded to coder.
+    Forwarded to coder (6f5ad94ecb).
 
   This is the same class as the standing operator lesson about `pgrep`/`pkill`
   self-matching, one layer out: there the risk is a probe matching ITSELF, here

@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-669: outage-driven seat failover via
+Model Steward — sustained provider-outage records (BL-650) trigger steward
+consult for certified substitutes; `outage_failover_lib.bb` + CLI/store;
+`handoffd.bb` sweep applies at idle boundary and auto-reverts when outage
+closes; attended hours propose-only (`OUTAGE_FAILOVER_ATTENDED=1`);
+`anthropic/claude-opus-4-8` registered as architect fallback. Acceptance:
+`specs/features/BL-669-outage-driven-seat-failover-via-steward.feature`.
+How-to: `docs/how-to/BL-669-outage-driven-seat-failover-via-steward.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-598: false-alarm rate trend telemetry —
 append-only `.swarmforge/telemetry/alerts-YYYY-MM.jsonl` records each fired
 alert with a sweep-provided `false-positive` or `actionable` verdict;
