@@ -1,7 +1,6 @@
 # acceptance-mutation-manifest-begin
 # {"version":1,"tested_at":"2026-08-25T20:44:34.759818512Z","feature_name":"frequent QA push races on main land are reduced","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1144-frequent-qa-push-races-on-main-land.feature","background_hash":"5dcde02008e40997a2a018f896bfe9ccd6356ab4301421254e1ad8333a71af2c","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
 # acceptance-mutation-manifest-end
-
 Feature: frequent QA push races on main land are reduced
   Human reports push races all the time during QA approve→land. Rematch
   recovery (BL-1130 / BL-1131 / BL-1138 / BL-1141) works; frequency is the

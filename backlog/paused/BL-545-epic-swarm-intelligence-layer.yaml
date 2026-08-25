@@ -62,6 +62,10 @@ notes: |
   promotes CHILD slices, never this. Children carry `epic: swarm-intelligence-layer`
   and are listed in `decomposes_into`.
 
+  2026-08-25T20:42Z coordinator (BL-798): open-slot nudge cleared — epic tracker
+  not promotable; sweep top-ranked this id with "awaiting approval" suffix.
+  Slots filled by JumpQ BL-1144+BL-1145; do not promote BL-545 itself.
+
   ## Onboarder-orbit reshape, 2026-07-26 (BL-680 authority, coordinator-invited)
 
   Reviewed BL-590/624/625/643 for merge or split. One split done, two refused, and
