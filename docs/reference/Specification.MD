@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1120: handoffd master-main reconcile
+**Last Updated:** August 25, 2026 (BL-683: handoff depth warning counts
+ticket YAML only — same family as handoffd open-slot/status counters;
+`.gitkeep` no longer inflates `active=` (product BL-808; APS armed).
+Acceptance:
+`specs/features/BL-683-handoff-depth-warning-counts-non-tickets.feature`.
+How-to: `docs/how-to/BL-683-handoff-depth-warning-counts-non-tickets.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1120: handoffd master-main reconcile
 never `git merge --abort`s a merge it did not start. Pre-existing
 `MERGE_HEAD` → skip and surface `human-merge-in-progress`; only a
 tick-started conflict may abort. Pure helpers in
