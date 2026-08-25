@@ -60,4 +60,6 @@ notes: |
   - [2026-08-25T20:32Z] specifier (coord 001877): minted JumpQ from intake;
     locked epic refusal on promotion_gates_lib/evaluate. Feature armed.
 
+  - "[2026-08-25T20:45Z] coder: epic-type-refusal + blocked-status-refusal on promotion_gates_lib/evaluate (after hold, before human_approval). Open-slot nudge inherits via nudge-eligible-candidates; APS 3/3; unit+property green. Tip pure onto origin/main next."
+
 assigned_to: coder

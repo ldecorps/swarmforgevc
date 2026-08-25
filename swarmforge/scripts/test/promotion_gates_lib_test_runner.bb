@@ -227,6 +227,34 @@
 (assert-nil "not held passes" (promotion-gates-lib/hold-refusal false))
 (assert= "held refuses naming hold marker" "hold marker" (:gate (promotion-gates-lib/hold-refusal true)))
 
+;; ── BL-1145: epic-type / blocked-status refusals (structured, on evaluate) ──
+
+(assert-nil "non-epic type passes epic-type-refusal"
+            (promotion-gates-lib/epic-type-refusal "type: feature\n"))
+(assert= "type: epic refuses naming gate epic"
+         "epic"
+         (:gate (promotion-gates-lib/epic-type-refusal "type: epic\n")))
+(assert-nil "non-blocked status passes blocked-status-refusal"
+            (promotion-gates-lib/blocked-status-refusal "status: todo\n"))
+(assert= "status: blocked refuses naming gate blocked"
+         "blocked"
+         (:gate (promotion-gates-lib/blocked-status-refusal "status: blocked\n")))
+(assert= "BL-1145: evaluate refuses type: epic before human_approval"
+         "epic"
+         (:gate (promotion-gates-lib/evaluate
+                 {:content "type: epic\nhuman_approval: pending\n" :held? false
+                  :active-count 0 :max-depth 5 :active-epics {}})))
+(assert= "BL-1145: evaluate refuses status: blocked before human_approval"
+         "blocked"
+         (:gate (promotion-gates-lib/evaluate
+                 {:content "type: feature\nstatus: blocked\nhuman_approval: pending\n" :held? false
+                  :active-count 0 :max-depth 5 :active-epics {}})))
+(assert= "BL-1145: hold still beats epic when both would fire"
+         "hold marker"
+         (:gate (promotion-gates-lib/evaluate
+                 {:content "type: epic\n" :held? true
+                  :active-count 0 :max-depth 5 :active-epics {}})))
+
 ;; ── BL-957: read-depends-on, the gate's OWN reader ───────────────────────
 ;; read-field is unusable here by documented design (nil for a blank value,
 ;; so a block list reads as NO dependencies - fail-open on exactly the

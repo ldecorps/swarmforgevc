@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T20:42:44.338409466Z","feature_name":"open-slot nudge skips type epic trackers","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1145-open-slot-nudge-skips-epic-trackers.feature","background_hash":"39f4702eb0a44cfb968af2af03351c66bde285a29f4caf611f4c1a757de5f35e","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: open-slot nudge skips type epic trackers
   Open-slot nudge/escalation named BL-545 (type: epic) as top candidate
   through 3 nudges while promote_and_route_next correctly refuses epics.

@@ -590,6 +590,7 @@ const DOMAINS = [
   require('./bl948SocketFixtureShortRootSteps'),
   require('./bl964RetiredEnsureEnvVarGateSteps'),
   require('./bl963NudgeGateChainSteps'),
+  require('./bl1145OpenSlotNudgeSkipsEpicTrackersSteps'),
   require('./bl965HealWrapperTempCleanupSteps'),
   require('./bl591EpicEtaSteps'),
   require('./bl971PropertyLaneTimeoutGreenSteps'),
