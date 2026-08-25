@@ -336,6 +336,11 @@
     (= overall :unknown) true
     :else (boolean (some #{:unknown :uncommitted-edit} (vals per-file)))))
 
+(defn- maybe-emit-alarm!
+  [emit-alarm! result in-flight?]
+  (when (and emit-alarm! (should-alarm-on-result? result in-flight?))
+    (emit-alarm! (format-alarm-text result))))
+
 ;; ── impure: real git/filesystem IO (read-only) ──────────────────────────────
 
 (defn- run-git
@@ -377,11 +382,11 @@
          run-git* run-git
          read-disk* read-disk
          commit-in-flight?* commit-in-flight?}}]
-  (let [main-ok? (:ok? (run-git* project-root ["rev-parse" "--verify" "main"]))]
+  (let [main-ok? (:ok? (run-git* project-root ["rev-parse" "--verify" "main"]))
+        in-flight? (boolean (commit-in-flight?* project-root))]
     (if-not main-ok?
       (let [result {:overall :unknown :per-file {}}]
-        (when (and emit-alarm! (should-alarm-on-result? result (boolean (commit-in-flight?* project-root))))
-          (emit-alarm! (format-alarm-text result)))
+        (maybe-emit-alarm! emit-alarm! result in-flight?)
         result)
       (let [read-file (fn [bare-name]
                          (let [r (read-disk* project-root scripts-subdir bare-name)]
@@ -399,8 +404,6 @@
                                   :index-content (:content index) :index-ok? (:ok? index)
                                   :worktree-content (:content disk) :worktree-ok? (:ok? disk)})])))
             overall (aggregate-verdict per-file)
-            result {:overall overall :per-file per-file}
-            in-flight? (boolean (commit-in-flight?* project-root))]
-        (when (and emit-alarm! (should-alarm-on-result? result in-flight?))
-          (emit-alarm! (format-alarm-text result)))
+            result {:overall overall :per-file per-file}]
+        (maybe-emit-alarm! emit-alarm! result in-flight?)
         result))))
