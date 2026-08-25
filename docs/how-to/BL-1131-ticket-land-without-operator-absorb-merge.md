@@ -23,8 +23,17 @@ Policy lives in `master_main_reconcile_lib.bb` (`prepublish-rematch-plan`,
 `handoffd` / Process B share that dispatch. BL-1130 `:refuse-rematch` and
 BL-1120 foreign-merge skip remain for true tip / human-owned failures.
 
+## Residual closed by BL-1135
+
+Policy alone still let the live absorb sweep treat `:rematch-bookkeeping`
+as `conflict` and page Operator for absorb merge.
+[BL-1135](BL-1135-bl1131-residual-live-land-no-operator-absorb.md) keeps
+rematch outcomes distinct and never escalates designed rematch recovery
+as "needs a human".
+
 ## Related
 
+- [BL-1135 live rematch vs absorb page](BL-1135-bl1131-residual-live-land-no-operator-absorb.md)
 - [BL-1130 clean-refuse absorb](BL-1130-land-on-main-without-external-conflict-resolution.md)
 - [BL-891 master-main reconcile](BL-891-master-main-reconcile-sweep.md)
 

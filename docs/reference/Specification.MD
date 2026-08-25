@@ -1,5 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1135 rematch4: tip-pure rebuild after
+documenter rematch3 hitchhike — rematch-bookkeeping must not Operator-escalate
+absorb; docs substance unchanged. Acceptance:
+`specs/features/BL-1135-bl1131-residual-live-land-no-operator-absorb.feature`.
+How-to: `docs/how-to/BL-1135-bl1131-residual-live-land-no-operator-absorb.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1134: master-checkout drift mute covers
 the post-`git add` window — `commit-in-flight?` is true for `.git/index.lock`
 **or** a live `git add`/`git commit` argv naming this root; durable staged
