@@ -37,6 +37,7 @@ function addRunCommit(ctx, sha, message, patchText) {
 }
 
 function baseDeps(ctx) {
+  let executedFeaturePath;
   return {
     readAcceptanceDeclaration: () => 'specs/features/bl729-fixture.feature',
     resolveFeatureFilePath: () => '/repo/specs/features/bl729-fixture.feature',
@@ -46,6 +47,10 @@ function baseDeps(ctx) {
       metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
     }),
     runAcceptance: async () => ({ success: true, output: 'ok' }),
+    recordAcceptanceExecution: (featureFilePath) => {
+      executedFeaturePath = featureFilePath;
+    },
+    readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () =>
       ctx.commitsResolvable ? { checked: true, ...evaluateCommitClaims(ctx.runCommits) } : { checked: false },
     moveTicketToDone: () => {

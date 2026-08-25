@@ -9,6 +9,7 @@ const { PRODUCER_CROSSCHECK_REQUIRED_REFUSAL } = require('../out/tools/producerC
 
 function patternDeps(overrides = {}) {
   const calls = { move: 0, receipt: 0 };
+  let executedFeaturePath;
   return {
     deps: {
       readAcceptanceDeclaration: () => 'specs/features/BL-733-role-crosscheck.feature',
@@ -20,6 +21,10 @@ function patternDeps(overrides = {}) {
         metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
       }),
       runAcceptance: async () => ({ success: true, output: 'ok' }),
+      recordAcceptanceExecution: (featureFilePath) => {
+        executedFeaturePath = featureFilePath;
+      },
+      readAcceptanceExecution: () => executedFeaturePath,
       checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
       moveTicketToDone: () => {
         calls.move += 1;
