@@ -13,6 +13,10 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits:
+  - bb5638638b
+  - 48822b22f8
+  - 7674dbca4f
 acceptance: specs/features/BL-1115-swarm-stamp-main-sync-status-cli-ahead-behind-swap.feature
 human_approval: approved
 approval_context: >

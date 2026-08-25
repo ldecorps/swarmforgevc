@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1124: property-suite fixtures must not
+**Last Updated:** August 25, 2026 (BL-1115: stamp-off Cursor hotfix
+`a3bf11b533` — `main_sync_status_cli.bb` counts with
+`git rev-list --left-right --count origin/main...main` and binds
+`[behind ahead]` (same as handoffd); after absorb, `behind:0` / `proceed`,
+never inverted labels. Ledger row stays pending until human decision.
+Acceptance:
+`specs/features/BL-1115-swarm-stamp-main-sync-status-cli-ahead-behind-swap.feature`.
+How-to: `docs/how-to/BL-1115-swarm-stamp-main-sync-status-cli-ahead-behind-swap.md`.
+Complements BL-1113 / BL-891 / BL-848. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1124: property-suite fixtures must not
 mutate shared `main` / role refs or flip `core.bare`. Pre-commit canary in
 `check_property_suite_drift.sh`; recovery refuses reset-to-origin when ahead;
 `expedite_fixture.sh` refuses live checkout dests. Acceptance:
