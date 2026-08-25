@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:24:24.287364827Z","feature_name":"BL-839 follow-on — auto-repair durable master-checkout drift on daemon scripts","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1139-master-checkout-drift-auto-repair.feature","background_hash":"ea098f15c9a40a18884a9c941a0b7d99527f30c9fa3efb8b00a264c443783b1a","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-839 follow-on — auto-repair durable master-checkout drift on daemon scripts
   BL-839 detects when daemon-executed scripts on the master checkout drift
   from main (MASTER CHECKOUT DRIFT). Auto-restore was deferred because it
