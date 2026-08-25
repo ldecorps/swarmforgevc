@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1128: raise standing configured
+**Last Updated:** August 25, 2026 (BL-1118: after a Cursor/operator batch
+advances local `main`, run `bb swarmforge/scripts/post_hotfix_merge_origin.bb`
+to fetch+merge `origin/main` under BL-891 invariants — abort on conflict,
+print conflicted paths, never leave mid-merge; honesty refresh so a clean
+behind tip is not stuck on a stale dirty sync reason. Keep
+`SWARMFORGE_ROLE=QA` (no HOTFIX exemption). Acceptance:
+`specs/features/BL-1118-post-cursor-batch-merge-origin-main.feature`.
+How-to: Process B in `docs/how-to/BL-891-master-main-reconcile-sweep.md` and
+checklist in `docs/how-to/BL-848-certify-an-operator-hotfix.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1128: raise standing configured
 `active_backlog_max_depth` on sustained CPU+memory headroom via
 `headroom_cap_raise_cli.bb` (raise / unhold / undo); unhold eligible
 `hold/`→`paused/` only; promotion prefers depth/cap/throttle tickets.
