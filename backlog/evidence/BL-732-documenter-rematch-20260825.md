@@ -13,10 +13,12 @@ e9668fb28f / origin `aa1843d4d1` — D1 tip purity (stale tip deleted
 (`707571810` … `d0633ea9fe`) → re-apply BL-732 docs only.
 
 ## Tip purity
-- `origin/main` is ancestor
+- `origin/main` (`aa1843d4d1`) is ancestor
 - `dels_on_origin=0`
 - BL-595 QA evidence and `docs/briefings/2026-08-25.json` present
-- Paths authorize BL-732 (+ bounce evidence on main)
+- Paths authorize BL-732 only
+- `abandoned_commits`: tip-pure dupes `7075718109`, `dc62173208`,
+  `38e5efee28`, `d0633ea9fe` (pre-rematch role tips replaced by cherry-picks)
 
 ## Review inventory (Article 4.4)
 D1 cleared (rematch). No further inventory items.

@@ -10,6 +10,11 @@ priority: 75
 direction: normal
 depends_on: []
 mutation_cost: low
+abandoned_commits:
+  - 7075718109
+  - dc62173208
+  - 38e5efee28
+  - d0633ea9fe
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-732-pane-title-chrome-covers-every-producible-role-name.feature
 
