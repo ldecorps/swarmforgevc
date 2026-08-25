@@ -182,3 +182,17 @@ it up from the trailer) and `--link` it to its ticket.
 - BL-1113 — stamp-off ticket for Cursor hotfix `27273f2b0a` (main-sync
   deadlock, `cursor-forge`, Pipeline Board UX, CreatePlan confirm); human
   ledger certify/waive still happens after the stamp reaches `done`.
+
+## Post-batch merge of origin/main (BL-1118 process B)
+
+After every Cursor/operator batch that advances local `main`, run the
+post-batch merge helper before ending the session:
+
+```bash
+bb swarmforge/scripts/post_hotfix_merge_origin.bb <project-root>
+```
+
+**Keep `SWARMFORGE_ROLE=QA` for pipeline-path hotfix lands on main.** Do not
+replace that path with `SWARMFORGE_HOTFIX=1` or another exemption. Details and
+conflict behaviour: [BL-891 master-main reconcile how-to](BL-891-master-main-reconcile-sweep.md)
+(Process B section).
