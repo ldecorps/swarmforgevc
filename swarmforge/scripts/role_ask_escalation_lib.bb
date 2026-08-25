@@ -71,4 +71,3 @@
   (let [s (some-> raw str str/trim)]
     (when (and s (re-matches #"\d+" s)) s)))
 
-(when (= *file* (System/getProperty "babashka.file")) nil)

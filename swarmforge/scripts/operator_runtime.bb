@@ -2095,7 +2095,7 @@
          (into {}))))
 
 (defn- post-ask-escalation-comment! [issue body]
-  (let [{:keys [exit err out]} (process/sh "gh" "issue" "comment" (str issue) "--body" body)]
+  (let [{:keys [exit]} (process/sh "gh" "issue" "comment" (str issue) "--body" body)]
     (zero? exit)))
 
 (defn- stamp-marker-file! [role marker now]
