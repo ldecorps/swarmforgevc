@@ -668,7 +668,8 @@ const DOMAINS = [
   require('./bl1110HandoffdHeartbeatSteps'),
   require('./bl1111ReplyRelayTerminatedOutageSteps'),
   require('./bl1091ExpeditePromotionCommitSteps'),
-  require('./bl1100PromotionProseNeverBlocksSteps')
+  require('./bl1100PromotionProseNeverBlocksSteps'),
+  require('./bl1128RaiseActiveCapOnHostHeadroomSteps')
 ];
 
 function registerSteps(registry) {
