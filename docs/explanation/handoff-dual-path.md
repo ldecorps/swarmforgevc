@@ -52,6 +52,25 @@ Send a test note:
 
 F5 config: **Run Extension (mailbox-only)** in `.vscode/launch.json` (no `SKIP_DAEMON`).
 
+
+## Success stdout grammar (what tests must assert)
+
+`swarm_handoff.sh` / `swarm_handoff.bb` prints exactly one of these on a
+successful send — never a bare `HANDOFF QUEUED:` prefix:
+
+| Line | When |
+|------|------|
+| `HANDOFF DELIVERED:<file>` | Sync inject delivered into the recipient inbox |
+| `HANDOFF QUEUED (mailbox only, no tmux inject):<file>` | Mailbox-only / skip-sync-inject path (files only) |
+| `HANDOFF QUEUED (daemon backup will deliver):<file>` | Sync inject failed; daemon backup will deliver |
+
+Shell fixtures that exercise rule_proposal / handoff success must **pin** the
+delivery mode they mean (`SWARMFORGE_SKIP_SYNC_INJECT`, `SWARMFORGE_MAILBOX_ONLY`,
+or scrub ambient env) and assert the matching full literal. Asserting
+`^HANDOFF QUEUED:` matches none of the real lines and aborts the suite under
+`set -e` before later scenarios run (BL-778 / BL-035 `test_rule_proposal.sh`).
+Sibling references: `test_mailbox_only_delivery.sh`, `test_swarm_handoff_daemon_backup.sh`.
+
 ## Pane narration — mail is silent unless novel
 
 **Default (happy path):** After a tmux wake, the agent runs `ready_for_next.sh`
