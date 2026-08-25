@@ -99,8 +99,10 @@ CONF
   printf '%s' "$root"
 }
 
-roles_tsv_has() { grep -qP "^$2\t" "$1/.swarmforge/roles.tsv"; }
-roles_tsv_lacks() { ! grep -qP "^$2\t" "$1/.swarmforge/roles.tsv"; }
+# Tab-anchored roles.tsv predicates — portable across BSD/GNU grep (BL-989).
+# Do NOT use the GNU PCRE flag; stock macOS BSD grep rejects it.
+roles_tsv_has() { grep -q "$(printf '^%s\t' "$2")" "$1/.swarmforge/roles.tsv"; }
+roles_tsv_lacks() { ! grep -q "$(printf '^%s\t' "$2")" "$1/.swarmforge/roles.tsv"; }
 session_alive() { local root="$1" session="$2"; local sock; sock="$(roster_sock "$root")"; tmux -S "$sock" has-session -t "$session" 2>/dev/null; }
 session_dead() { ! session_alive "$1" "$2"; }
 

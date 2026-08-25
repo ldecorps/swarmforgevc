@@ -127,7 +127,8 @@ env -u SWARMFORGE_CONFIG zsh -c "
 "
 ROLES_TSV="$ROOT4/.swarmforge/roles.tsv"
 [[ -f "$ROLES_TSV" ]] || fail "04: expected roles.tsv to be written"
-COORDINATOR_ROW="$(grep -P '^coordinator\t' "$ROLES_TSV" || true)"
+# BL-989: tab anchor without the GNU PCRE flag (BSD grep rejects it).
+COORDINATOR_ROW="$(grep "$(printf '^coordinator\t')" "$ROLES_TSV" || true)"
 [[ -n "$COORDINATOR_ROW" ]] || fail "04: expected a coordinator row in roles.tsv, got: $(cat "$ROLES_TSV")"
 COORDINATOR_AGENT_COL="$(echo "$COORDINATOR_ROW" | cut -f6)"
 [[ "$COORDINATOR_AGENT_COL" == "copilot" ]] \
