@@ -106,6 +106,8 @@ cp "$GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
 cp "$SIZE_GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
 cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
 cp "$SCRIPT_DIR/../check_property_suite_drift.sh" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
+cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$ROOT/swarmforge/scripts/property_suite_shared_repo_guard.sh"
+cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$ROOT/swarmforge/scripts/incoming_merge_parent_lib.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
 cp "$COMMIT_MSG_HOOK" "$ROOT/swarmforge/git-hooks/commit-msg"
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/"*

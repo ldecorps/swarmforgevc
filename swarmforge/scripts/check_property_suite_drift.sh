@@ -22,6 +22,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=property_suite_shared_repo_guard.sh
 source "$SCRIPT_DIR/property_suite_shared_repo_guard.sh"
+# shellcheck source=incoming_merge_parent_lib.sh
+source "$SCRIPT_DIR/incoming_merge_parent_lib.sh"
 
 warn_override() {
   echo "property-suite-guard: overridden" >&2
@@ -54,32 +56,6 @@ collect_trigger_paths() {
 staged_needs_check() {
   collect_trigger_paths
   (( ${#TRIGGER_PATHS[@]} > 0 ))
-}
-
-# Incoming merge parent — same contract as check_pipeline_code_on_main.sh
-# (MERGE_HEAD, else a lone GITHEAD_<sha> env). Empty when not mid-merge.
-resolve_incoming_merge_parent() {
-  local merge_head_sha githead_count githead_candidate env_name
-  merge_head_sha="$(git rev-parse -q --verify MERGE_HEAD 2>/dev/null || true)"
-  if [[ -n "$merge_head_sha" ]]; then
-    printf '%s\n' "$merge_head_sha"
-    return 0
-  fi
-  githead_count=0
-  githead_candidate=""
-  while IFS='=' read -r env_name _; do
-    case "$env_name" in
-      GITHEAD_????????????????????????????????????????)
-        githead_candidate="${env_name#GITHEAD_}"
-        githead_count=$((githead_count + 1))
-        ;;
-    esac
-  done < <(env)
-  if [[ "$githead_count" -eq 1 ]]; then
-    printf '%s\n' "$githead_candidate"
-    return 0
-  fi
-  return 1
 }
 
 # True when every suite-triggering staged path is byte-identical to the
