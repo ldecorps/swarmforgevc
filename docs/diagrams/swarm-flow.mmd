@@ -23,6 +23,10 @@
 %% global one). A dependency counts as satisfied only in backlog/done/ —
 %% an ACTIVE dependency still refuses — and the gate fails closed on an
 %% id it cannot resolve. The refusal names every unsatisfied id.
+%% BL-626 (2026-08-25): acceptance joins the refusing gates, between
+%% human_approval and depends_on. An explicit specs/features/ pointer must
+%% resolve to a live .feature (drafts are never executable); no same-id
+%% sibling glob rescue. audit-acceptance lists the exposure read-only.
 %% cleaner and hardender are batch-mode roles (consume all queued
 %% equal-priority handoffs as one batch); every other pipeline role is
 %% task-mode (one handoff at a time). The coordinator sits outside the
@@ -50,7 +54,7 @@ flowchart LR
 
   ROOT -->|drain: spec ambiguous items,\nwrite prose+Gherkin spec| SPEC
   SPEC -->|places spec| PAUSED
-  PAUSED -->|promote (promotion_gates:\nhuman_approval, depends_on,\nexpedite lane, depth, hold marker\nrefuse; epic-priority ranks before\nown priority; orthogonality advises only)| COORD
+  PAUSED -->|promote (promotion_gates:\nhuman_approval, acceptance,\ndepends_on, expedite lane, depth,\nhold marker refuse; epic-priority\nranks before own priority;\northogonality advises only)| COORD
   COORD -->|promotes into| ACTIVE
   COORD -->|routes first parcel| SPEC
   SPEC -->|git_handoff\npriority 00| CODER

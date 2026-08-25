@@ -57,6 +57,7 @@ expects them, and are not migrated or rewritten here.
 - [Bounded fs.watch deadline follows recorded contention](how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md) — BL-933 helper scales 10s base with BL-1007 factor; stays under test budget (BL-1008).
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
 - [Mint-time hygiene refuses a dangling acceptance pointer](how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md) — `DANGLING-ACCEPTANCE` at specifier hygiene; shared `applicable?` with BL-880 (BL-1027).
+- [Promotion refuses a missing or draft acceptance feature](how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md) — blocking `acceptance` gate + `audit-acceptance`; no sibling-glob rescue (BL-626).
 - [Expedite lane is defect-only; type bug retired](how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md) — predicate + mint `RETIRED-TICKET-TYPE`; use `type: defect` (BL-1095).
 - [Pane liveness walks the whole tree under the pane](how-to/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.md) — babysitter finds wrapper-launched agents; RC UNAVAILABLE when gate unmet (BL-1070).
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).

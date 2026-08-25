@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-580: morning briefing diagram allowlist
+**Last Updated:** August 25, 2026 (BL-626: promotion refuses a ticket whose
+`acceptance:` points at a missing `.feature` or a parked `.feature.draft`.
+Explicit path is authoritative (no same-id sibling glob rescue). Gate sits in
+`promotion_gates_lib.bb` after `human_approval`, before `depends_on`;
+`promotion_gates_cli.bb audit-acceptance` lists the exposure read-only.
+Complements BL-1027 / BL-880 / BL-663. Acceptance:
+`specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature`.
+How-to: `docs/how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md`.
+Diagram: `docs/diagrams/swarm-flow.mmd`. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-580: morning briefing diagram allowlist
 adds `front-desk` → `docs/diagrams/front-desk-flow.mmd` (Telegram in → answer
 out; restricted Operator `--tools ""` with no repo read). Allowlist stays
 explicit, not a directory scan. Complements BL-579 / BL-260 / BL-286.
