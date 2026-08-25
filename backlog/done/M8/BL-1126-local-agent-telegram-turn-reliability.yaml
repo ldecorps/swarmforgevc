@@ -3,7 +3,7 @@ title: "Local Agent Telegram turns: progress, empty-recovery, deadlines — no s
 milestone: M8
 type: defect
 severity: high
-status: active
+status: done
 epic: local-llm-swarm
 priority: 21
 direction: human-requested
