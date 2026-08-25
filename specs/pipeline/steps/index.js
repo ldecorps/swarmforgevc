@@ -682,6 +682,7 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl833HostAgentActivityFeedSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
+  require('./bl1121ReconcileImportSkipsPropertySuiteGuardSteps'),
   require('./bl1115MainSyncStatusCliStampOffSteps'),
   require('./bl1119ClosingCeremonyRoleQualityDialSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps')
