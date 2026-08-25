@@ -309,13 +309,6 @@
       ranks (get-in updated [:role_matrix "coder"])]
   (assert= "bl1127: fail score is 0.0 (ineligible)" 0.0 (:score (first ranks))))
 
-;; ── report ────────────────────────────────────────────────────────────────
-(if (empty? @failures)
-  (println "ALL PASS")
-  (do (doseq [f @failures] (println f))
-      (println (count @failures) "FAILURES")
-      (System/exit 1)))
-
 ;; ── BL-1140 revoked human-priority + bake-off + pack align ────────────────
 (let [reg (-> model-steward-lib/empty-registry
               (model-steward-lib/register-model "ollama" "qwen-human" {:status "certified"})
@@ -350,3 +343,10 @@
 (let [reg model-steward-lib/empty-registry
       out (model-steward-lib/local-pack-align-outcome reg "coder" "window coder --model openai/x\n")]
   (assert= "BL-1140: no winner yet" :no-winner-yet (:outcome out)))
+
+;; ── report ────────────────────────────────────────────────────────────────
+(if (empty? @failures)
+  (println "ALL PASS")
+  (do (doseq [f @failures] (println f))
+      (println (count @failures) "FAILURES")
+      (System/exit 1)))

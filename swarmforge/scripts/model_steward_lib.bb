@@ -79,7 +79,7 @@
 
 (defn revoked-human-priority-evidence?
   [evidence]
-  (and (string? evidence) (str/includes? (str evidence) revoked-human-priority-tag)))
+  (and (string? evidence) (str/includes? evidence revoked-human-priority-tag)))
 
 (defn battery-or-scorecard-evidence?
   "Evidence strings that cite battery / scorecard / bake-off artifacts."
@@ -337,17 +337,17 @@
 (defn apply-local-bakeoff-results
   "Pure: ingest per-candidate battery results into role_matrix for role.
    Each result is {:provider :model :result \"pass\"|\"fail\" :path}.
-   Pass entries score 1.0 and cite the evidence path (steward-native)."
+   Reuses BL-1127 eligibility so pass/fail scoring stays one path."
   [registry role results]
   (reduce
    (fn [reg r]
-     (let [ev (parse-coder-battery-evidence r)
-           score (if (:pass? ev) 1.0 0.0)
-           path (or (:path ev) (str "bake-off:" (:provider r) "/" (:model r)))]
+     (let [{:keys [pass? evidence_path provider model]}
+           (bl1127-coder-battery-eligibility r)
+           path (or evidence_path (str "bake-off:" (:provider r) "/" (:model r)))]
        (add-role-ranking reg role
-                         (or (:provider r) "ollama")
-                         (or (:model r) "unknown")
-                         score
+                         (or provider (:provider r) "ollama")
+                         (or model (:model r) "unknown")
+                         (if pass? 1.0 0.0)
                          path)))
    registry
    results))
@@ -379,10 +379,10 @@
    Never implies rewriting cursor-forge — caller inspects only."
   [registry role pack-body]
   (let [top (top-local-recommendation registry role)
-        pack-id (pack-window-model-id pack-body)]
+        pack-id (pack-window-model-id pack-body)
+        steward (steward-model-id top)]
     (cond
       (nil? top) {:outcome :no-winner-yet :pack-model pack-id :steward-model nil}
-      (nil? pack-id) {:outcome :no-winner-yet :pack-model nil :steward-model (steward-model-id top)}
-      (= pack-id (steward-model-id top))
-      {:outcome :aligned :pack-model pack-id :steward-model (steward-model-id top)}
-      :else {:outcome :mismatch :pack-model pack-id :steward-model (steward-model-id top)})))
+      (nil? pack-id) {:outcome :no-winner-yet :pack-model nil :steward-model steward}
+      (= pack-id steward) {:outcome :aligned :pack-model pack-id :steward-model steward}
+      :else {:outcome :mismatch :pack-model pack-id :steward-model steward})))
