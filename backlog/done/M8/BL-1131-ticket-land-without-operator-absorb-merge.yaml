@@ -6,7 +6,7 @@ severity: high
 # high: standing ops page every conflicting land — BL-1130 refuse leaves
 # behind>0 → wait-dirty-clear; coordinator parcels stop until Cursor
 # completes origin/main merge by hand. Not critical: no data loss if noticed.
-status: todo
+status: done
 epic: swarm-reliability
 priority: 0
 direction: queue-jump
