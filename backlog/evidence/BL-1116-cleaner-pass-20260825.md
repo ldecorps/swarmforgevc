@@ -2,21 +2,21 @@
 
 ## Inbound
 
-Coder tip `dc97f105e6` — rematched onto `origin/main` = `cb12bfd8ba`
-(includes BL-1117). Conflicts resolved: steps index keeps 1117+1116;
-hotfix ledger keeps BL-1117 pending row plus five BL-1116 pending rows.
-`acpHostClient` + ledger are stamp-off product for this ticket (not hitchhikers).
+Coder tip `8f99f86911` (property rematch after architect bounce). Stamp-off
+product `d645defc9` + bounce evidence also rematched onto
+`origin/main` = `cb12bfd8ba` (1116-only; hitchhike ledger/acpHostClient
+are stamp-off surface).
 
 ## Checks run
 
-1. `npm run compile` — OK
-2. `vitest` bridgeAuth + acpHostClient — 28/28
-3. Gherkin — BL-1116 feature — 5/5
+1. Gherkin — BL-1116 feature — 5/5
+2. `bl1116ExtensionWipHotfixStampOff.property.test.js` — ALL PROPERTIES HOLD
+3. vitest `bridgeAuth` + `acpHostClient` — 28/28
+4. Ledger rows for five keys remain `state: pending` / `human_decision: null`
 
 ## Cleanup performed
 
-NONE — stamp-off of already-authored hotfixes; no redesign. Ledger stays
-pending/null (tests do not certify).
+- APS steps: extract `assertTipCommit` for the five tip-reachability checks.
 
 ## Forward
 

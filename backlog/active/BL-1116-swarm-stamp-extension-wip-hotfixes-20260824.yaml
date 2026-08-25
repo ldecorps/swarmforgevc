@@ -77,6 +77,3 @@ source: |
   Operator/Cursor extension WIP batch 2026-08-24; BL-848; consolidating intake 2026-08-25.
 
 assigned_to: coder
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-25, by: architect, blamed: coder, class: invariant-unencoded, commit: cc1e1212f2, evidence: backlog/evidence/BL-1116-architect-bounce-20260825.md }

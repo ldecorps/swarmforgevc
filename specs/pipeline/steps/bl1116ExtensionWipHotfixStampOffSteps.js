@@ -16,6 +16,13 @@ function load(rel) {
   return require(path.join(EXT, 'out', ...rel.split('/')));
 }
 
+function assertTipCommit(abbrev) {
+  assert.equal(
+    execFileSync('git', ['cat-file', '-t', abbrev], { cwd: REPO, encoding: 'utf8' }).trim(),
+    'commit'
+  );
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -36,10 +43,7 @@ function registerSteps(registry) {
   scoped(/^the path credentials are accepted as equivalent to query credentials$/, (ctx) => {
     assert.equal(ctx.cred, 'path-secret');
     assert.equal(ctx.ok, true);
-    assert.equal(
-      execFileSync('git', ['cat-file', '-t', 'b81334b107'], { cwd: REPO, encoding: 'utf8' }).trim(),
-      'commit'
-    );
+    assertTipCommit('b81334b107');
   });
 
   scoped(/^a live ticket topic already has an approval ask recorded$/, (ctx) => {
@@ -55,10 +59,7 @@ function registerSteps(registry) {
 
   scoped(/^no duplicate approval ask is posted$/, (ctx) => {
     assert.equal(ctx.already, true);
-    assert.equal(
-      execFileSync('git', ['cat-file', '-t', '4d5375fdad'], { cwd: REPO, encoding: 'utf8' }).trim(),
-      'commit'
-    );
+    assertTipCommit('4d5375fdad');
   });
 
   scoped(/^a Let's Talk turn addressed to a configured ancillary provider seat$/, (ctx) => {
@@ -76,10 +77,7 @@ function registerSteps(registry) {
 
   scoped(/^the bridge is allowed to run the ancillary front desk$/, (ctx) => {
     assert.equal(ctx.hasFrontDesk, true);
-    assert.equal(
-      execFileSync('git', ['cat-file', '-t', 'ae983877c4'], { cwd: REPO, encoding: 'utf8' }).trim(),
-      'commit'
-    );
+    assertTipCommit('ae983877c4');
   });
 
   scoped(/^a launch script that names a non-Claude agent model for a seat$/, (ctx) => {
@@ -103,10 +101,7 @@ function registerSteps(registry) {
     assert.equal(ctx.modelId, 'gpt-test-model');
     assert.ok(ctx.label);
     assert.ok(!/^claude-/i.test(ctx.modelId));
-    assert.equal(
-      execFileSync('git', ['cat-file', '-t', 'd6214efe6f'], { cwd: REPO, encoding: 'utf8' }).trim(),
-      'commit'
-    );
+    assertTipCommit('d6214efe6f');
     try {
       fs.rmSync(ctx.tmp, { recursive: true, force: true });
     } catch (_) {
@@ -140,10 +135,7 @@ function registerSteps(registry) {
     // Pure machine: durable seat state lives elsewhere; invalid agent lines must not flip phase to ready.
     assert.equal(ctx.isReady(ctx.state), false);
     assert.equal(JSON.stringify(ctx.state), before);
-    assert.equal(
-      execFileSync('git', ['cat-file', '-t', 'f88913a3df'], { cwd: REPO, encoding: 'utf8' }).trim(),
-      'commit'
-    );
+    assertTipCommit('f88913a3df');
     const ledger = fs.readFileSync(path.join(REPO, 'backlog', 'hotfix-ledger.yaml'), 'utf8');
     for (const key of KEYS) {
       assert.match(ledger, new RegExp(`commit: ${key}`));
