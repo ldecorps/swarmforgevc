@@ -431,12 +431,13 @@
   (write-handoff! (str (fs/path new-dir "p3.handoff"))
                    [["id" "p3"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
                     ["enqueued_at" (iso enqueued-epoch-s)]])
-  ;; Sweep 1: age 90s >= warn(60s), < escalate(240s) -> warn alarm.
-  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 90000) (str root) daemon-dir adapters)
-  ;; Sweep 2: age 300s >= escalate(240s) -> escalate alarm.
-  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 300000) (str root) daemon-dir adapters)
+  ;; Fixture warn/escalate 60s/240s × slack 2 → effective 120s / 480s.
+  ;; Sweep 1: age 130s >= warn(120s), < escalate(480s) -> warn alarm.
+  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 130000) (str root) daemon-dir adapters)
+  ;; Sweep 2: age 500s >= escalate(480s) -> escalate alarm.
+  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 500000) (str root) daemon-dir adapters)
   ;; Sweep 3: still past escalate, already alarmed at :escalate -> no re-fire.
-  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 310000) (str root) daemon-dir adapters)
+  (flow-watchdog-lib/run-sweep! inboxes (+ base-ms 510000) (str root) daemon-dir adapters)
   (assert= "acceptance-03: exactly one warn alarm then exactly one escalate alarm - no third repeat"
            2
            (count @alarms))
@@ -488,11 +489,11 @@
   (write-handoff! (str (fs/path new-dir "held.handoff"))
                    [["id" "held660"] ["from" "specifier"] ["to" "cleaner"] ["type" "git_handoff"]
                     ["task" "BL-660"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 300))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 510))]])
   (write-handoff! (str (fs/path new-dir "own.handoff"))
                    [["id" "own654"] ["from" "specifier"] ["to" "cleaner"] ["type" "git_handoff"]
                     ["task" "BL-654"]
-                    ["enqueued_at" (iso (- (quot now-ms 1000) 300))]])
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 510))]])
   (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir adapters)
   (assert= "ambulance-perimeter-01: exactly one alarm - the held BL-660 parcel never alarms"
            1
@@ -1308,7 +1309,11 @@
 ;; just past the plain 15m default-warn-ms) does not warn under a
 ;; rotation-router pack, but still warns under a parallel/all-resident pack.
 (let [now-ms (* 1784900000 1000)
-      enqueued-ms (- now-ms flow-watchdog-lib/default-warn-ms 1000)
+      ;; Past 2× default-warn (slack) so parallel pack still WARNs; router
+      ;; pack still uses the higher router pair so the same wall age stays quiet.
+      enqueued-ms (- now-ms (* flow-watchdog-lib/default-warn-ms
+                                flow-watchdog-lib/calibrated-warn-slack-factor)
+                     1000)
       router-root (mk-tmp)
       parallel-root (mk-tmp)
       new-dir-for (fn [root] (fs/path root "cleaner" "inbox" "new"))
