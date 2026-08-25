@@ -40,7 +40,7 @@ import { readPipelineStages } from '../swarm/swarmState';
 import { drainAgentSessions } from '../swarm/swarmStopper';
 import { parkToHold, reinstateFromHold } from '../panel/backlogWriter';
 import { engageOperatorAmbulance, releaseOperatorAmbulance } from './telegramOperatorAmbulance';
-import { isPipelineEmpty } from './telegram-front-desk-bot';
+import { isPipelineEmpty } from './telegramPipelineDrain';
 import { decideDrainOutcome } from './telegramControlCore';
 import { appendAvailabilityRecord } from '../metrics/availabilityLedgerStore';
 

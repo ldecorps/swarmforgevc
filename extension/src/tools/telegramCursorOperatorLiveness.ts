@@ -3,8 +3,8 @@
 
 import { readLiveSwarmRoles, type SwarmRole } from '../swarm/tmuxClient';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
-import { decideDrainOutcome } from './telegramControlCore';
-import { isPipelineEmpty, controlDrainTimeoutMs } from './telegram-front-desk-bot';
+import { decideDrainOutcome, controlDrainTimeoutMs } from './telegramControlCore';
+import { isPipelineEmpty } from './telegramPipelineDrain';
 
 export interface LivenessSnapshot {
   roles: Array<{ role: string; session: string }>;
