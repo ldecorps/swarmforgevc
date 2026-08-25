@@ -40,7 +40,10 @@ push-sweep, flow watchdog, master-checkout drift). Each tick:
    closed to blocked, never to reconciling.
 5. If the merge itself hits a conflict (only possible once step 3 has
    already decided there's no known dirty-path overlap), it aborts
-   immediately and surfaces the same way.
+   immediately and surfaces the same way — **but only when this tick
+   started the merge** (BL-1120). If `MERGE_HEAD` already existed, the
+   tick skips entirely and surfaces `human-merge-in-progress` without
+   `git merge --abort`.
 
 **(BL-925)** Step 3's merge used to be refused for a reason that had
 nothing to do with a real conflict: `origin/main`'s incoming tip routinely
@@ -67,7 +70,8 @@ genuine content conflict still aborts exactly as before.
 | up to date | Local `main` already has everything `origin/main` has. Nothing emitted. |
 | reconciled | Local `main` was behind and no dirty path overlapped a path the merge would change (clean tree, or dirty-but-non-overlapping) — merged forward automatically. Nothing emitted; check `git log` if you want to see it happen. |
 | dirty overlap, not reconciled | Local `main` is behind and a dirty (or untracked) path collides with a path the incoming merge would write to — the one case a plain `git merge` would itself refuse. The sweep leaves the checkout exactly as it found it and surfaces a `note` naming the offending path(s) (a count, past the first, if naming them all would blow the note's 80-char budget) to the coordinator. |
-| merge conflict, aborted | The merge itself hit a conflict. Aborted immediately (`git merge --abort`) so the checkout is never left mid-conflict — surfaced to the coordinator the same way. |
+| merge conflict, aborted | The merge itself hit a conflict **on a merge this tick started**. Aborted immediately (`git merge --abort`) so the checkout is never left mid-conflict — surfaced to the coordinator the same way. |
+| human merge in progress (BL-1120) | `MERGE_HEAD` was already set when the tick ran. The sweep does **not** merge and does **not** abort — a human (or other agent) owns the join. Surfaces a note; finish or abort the merge yourself. |
 
 Both surfaced cases send **one** note and then go quiet for that same reason
 — reaching a clean/resolved state clears the flag, so a *later*, unrelated

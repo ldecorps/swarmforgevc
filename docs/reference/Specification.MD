@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1081: re-entry after unhold — APS
+**Last Updated:** August 25, 2026 (BL-1120: handoffd master-main reconcile
+never `git merge --abort`s a merge it did not start. Pre-existing
+`MERGE_HEAD` → skip and surface `human-merge-in-progress`; only a
+tick-started conflict may abort. Pure helpers in
+`master_main_reconcile_lib.bb`. Complements BL-891 / BL-925. Acceptance:
+`specs/features/BL-1120-handoffd-must-not-abort-foreign-merge.feature`.
+How-to: `docs/how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md`.
+Related: `docs/how-to/BL-891-master-main-reconcile-sweep.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1081: re-entry after unhold — APS
 wake-style baseline includes `local-model` → `chat-message` so scenario 05
 (provider table gains a dimension, not a fork) stays green; product ACP
 host path unchanged. Acceptance:

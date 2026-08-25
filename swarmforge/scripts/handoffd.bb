@@ -3019,13 +3019,26 @@
 ;; conflicted merge is aborted immediately so the checkout is left exactly
 ;; as it was found (invariant 2's "never partially updated") rather than
 ;; sitting mid-conflict for a human to stumble into.
+;; BL-1120: if MERGE_HEAD already exists, a human (or other agent) owns the
+;; merge — skip and surface, never git merge --abort.
+(defn- master-main-merge-head-present? []
+  (zero? (:exit (daemon-cycle-guard-lib/sh! ["git" "rev-parse" "-q" "--verify" "MERGE_HEAD"]
+                                            {:dir (str project-root)}))))
+
 (defn- master-main-reconcile-merge! []
-  (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["git" "merge" "--no-edit" "origin/main"] {:dir (str project-root)})]
-    (if (zero? exit)
-      {:success true}
-      (do
-        (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)})
-        {:success false :error (str/trim (or err ""))}))))
+  (if (= :skip-human-merge-in-progress
+         (master-main-reconcile-lib/merge-attempt-plan (master-main-merge-head-present?)))
+    {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
+    (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["git" "merge" "--no-edit" "origin/main"]
+                                                         {:dir (str project-root)})]
+      (if (zero? exit)
+        {:success true}
+        (do
+          ;; This tick started the merge (MERGE_HEAD was absent above), so
+          ;; abort is allowed (BL-1120 invariant 2).
+          (when (master-main-reconcile-lib/may-abort-failed-merge? true)
+            (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)}))
+          {:success false :error (str/trim (or err "")) :outcome :conflict})))))
 
 ;; Same outbound path as auto-route!/nudge-coordinator-unassigned! above:
 ;; a `note` shelled through swarm_handoff.bb (SWARMFORGE_ROLE=coordinator)
