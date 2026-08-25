@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-609: Resident Spy live screen gains a
+**Last Updated:** August 25, 2026 (BL-580: morning briefing diagram allowlist
+adds `front-desk` → `docs/diagrams/front-desk-flow.mmd` (Telegram in → answer
+out; restricted Operator `--tools ""` with no repo read). Allowlist stays
+explicit, not a directory scan. Complements BL-579 / BL-260 / BL-286.
+Acceptance: `specs/features/BL-580-front-desk-mechanism-briefing-diagram.feature`.
+How-to: `docs/how-to/BL-580-front-desk-mechanism-briefing-diagram.md`.
+Explanation: `docs/explanation/how-the-front-desk-works.md`.
+Diagram: `docs/diagrams/front-desk-flow.mmd`. No new extension command, setting,
+or UI change beyond the briefing email.)
+Prior entry —
+August 24, 2026 (BL-609: Resident Spy live screen gains a
 compact +/- pane font-size control. Default pane text 13px (was 11px) via
 `--pane-font-size`; shared `pre` rule covers grid tiles and fullscreen.
 Crowded 7–8 pane grids use `calc(var(--pane-font-size) - 2px)`. Control mounts

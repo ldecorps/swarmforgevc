@@ -491,6 +491,7 @@ const DOMAINS = [
   require('./bl632CommitTimeGuardSteps'),
   require('./bl570PropertySuiteDriftGuardSteps'),
   require('./bl579HandoffMechanismBriefingDiagramSteps'),
+  require('./bl580FrontDeskMechanismBriefingDiagramSteps'),
   require('./bl916BubbleColdStartExpandSwarmStampSteps'),
   require('./bl625OnboarderPromptsLaunchHandoffSteps'),
   require('./bl913PinnedShellClassifiedRetrySteps'),

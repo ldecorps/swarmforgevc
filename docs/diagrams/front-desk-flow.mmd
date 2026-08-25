@@ -1,0 +1,72 @@
+%% Front-desk MECHANISM (activity): how a human message in Telegram reaches
+%% the swarm and how an answer gets back. Every hop is mediated by the
+%% bridge - the bot is never coupled to the Operator runtime directly.
+%% Note the answering agent is the RESTRICTED front-desk Operator, spawned
+%% with --tools "" : it has the contract, the thread transcript and operator
+%% memory, and NO ability to read the repo.
+flowchart TD
+  HUMAN(["human posts in a Telegram topic"])
+  POLL["telegram-front-desk-bot\npolls getUpdates"]
+  AUTH{"from my chat\nAND the principal?"}
+  DROP(["dropped, silently"])
+
+  ROLETOPIC{"one of the 8\nrole topics?"}
+  STEER["redirect: inject into that\nrole's live pane as a\nverified nudge"]
+  RECEIPT["post delivery receipt\nback into the topic"]
+
+  RESERVED{"reserved topic?\nAPPROVALS / RECERT /\nAGENT_QUESTIONS / CONTROL"}
+  RESHANDLER["that topic's own handler:\napproval verdict, recert verdict,\npending-question answer, pause"]
+
+  VOICE{"voice note in\nthe Concierge topic?"}
+  STT["transcribe via whisper-1"]
+
+  KNOWN{"topic already bound\nto a SUP subject?"}
+  OPENSUB["mint a fresh SUP-###\nand record topic -> subject"]
+  BRIDGE["POST /telegram-inbound\n(authed, fire-and-forget)"]
+  EVENTS["bridge appends an operator event\n.swarmforge/operator/events.jsonl"]
+
+  RUNTIME["operator_runtime.bb loop reads events"]
+  CLAIM["claims ONE subject's events,\nwrites inflight + dispatch context"]
+  PROMPT["composes a FULL self-contained prompt:\ncontract.yaml + thread transcript\n+ long-term operator memory"]
+  RESTRICTED["spawns claude -p --tools ''\n(no repo access, answer-only)"]
+
+  JUDGE{"can it answer\ncorrectly itself?"}
+  REPLY["operator_reply.bb"]
+  FILE["operator_file_question.bb:\nwrites backlog/INTAKE-<slug>.md,\nCOMMITS it, and replies"]
+  SPECIFIER(["specifier drains the backlog root\nBEFORE all other work"])
+
+  OUTBOX["append to telegram-reply-outbox.jsonl\n+ thread transcript"]
+  SSE["bot receives it over the bridge SSE stream"]
+  VOICEOUT{"was this turn\nvoice-originated?"}
+  TTS["synthesize opus voice note\nand send as audio"]
+  TEXT["post text into the mapped topic"]
+
+  HUMAN --> POLL --> AUTH
+  AUTH -->|no| DROP
+  AUTH -->|yes| ROLETOPIC
+  ROLETOPIC -->|yes| STEER --> RECEIPT
+  ROLETOPIC -->|no| RESERVED
+  RESERVED -->|yes| RESHANDLER
+  RESERVED -->|no| VOICE
+  VOICE -->|yes| STT --> KNOWN
+  VOICE -->|no| KNOWN
+  KNOWN -->|no - unmapped topic or DM| OPENSUB --> BRIDGE
+  KNOWN -->|yes| BRIDGE
+  BRIDGE --> EVENTS --> RUNTIME --> CLAIM --> PROMPT --> RESTRICTED --> JUDGE
+  JUDGE -->|yes| REPLY --> OUTBOX
+  JUDGE -->|no| FILE --> OUTBOX
+  FILE -.->|raw intake queue| SPECIFIER
+  OUTBOX --> SSE --> VOICEOUT
+  VOICEOUT -->|yes| TTS
+  VOICEOUT -->|no| TEXT
+
+  classDef gate fill:#9a6700,color:#fff,stroke:#5c4200;
+  classDef bad fill:#cf222e,color:#fff,stroke:#82071e;
+  classDef store fill:#57606a,color:#fff,stroke:#32383f;
+  classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
+  classDef op fill:#8250df,color:#fff,stroke:#4c2889;
+  class AUTH,ROLETOPIC,RESERVED,VOICE,KNOWN,JUDGE,VOICEOUT gate;
+  class DROP bad;
+  class EVENTS,OUTBOX,OPENSUB store;
+  class POLL,STEER,RECEIPT,RESHANDLER,STT,BRIDGE,SSE,TTS,TEXT act;
+  class RUNTIME,CLAIM,PROMPT,RESTRICTED,REPLY,FILE op;
