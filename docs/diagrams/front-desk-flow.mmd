@@ -11,8 +11,9 @@ flowchart TD
   DROP(["dropped, silently"])
 
   ROLETOPIC{"one of the 8\nrole topics?"}
+  MENUBLOCK{"pane menu-blocked?\n(BL-568 AskUserQuestion)"}
   STEER["redirect: inject into that\nrole's live pane as a\nverified nudge"]
-  RECEIPT["post delivery receipt\nback into the topic"]
+  RECEIPT["post delivery receipt\nback into the topic\n(incl. menu_blocked)"]
 
   RESERVED{"reserved topic?\nAPPROVALS / RECERT /\nAGENT_QUESTIONS / CONTROL"}
   RESHANDLER["that topic's own handler:\napproval verdict, recert verdict,\npending-question answer, pause"]
@@ -44,7 +45,9 @@ flowchart TD
   HUMAN --> POLL --> AUTH
   AUTH -->|no| DROP
   AUTH -->|yes| ROLETOPIC
-  ROLETOPIC -->|yes| STEER --> RECEIPT
+  ROLETOPIC -->|yes| MENUBLOCK
+  MENUBLOCK -->|yes| RECEIPT
+  MENUBLOCK -->|no| STEER --> RECEIPT
   ROLETOPIC -->|no| RESERVED
   RESERVED -->|yes| RESHANDLER
   RESERVED -->|no| VOICE
@@ -65,7 +68,7 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef op fill:#8250df,color:#fff,stroke:#4c2889;
-  class AUTH,ROLETOPIC,RESERVED,VOICE,KNOWN,JUDGE,VOICEOUT gate;
+  class AUTH,ROLETOPIC,MENUBLOCK,RESERVED,VOICE,KNOWN,JUDGE,VOICEOUT gate;
   class DROP bad;
   class EVENTS,OUTBOX,OPENSUB store;
   class POLL,STEER,RECEIPT,RESHANDLER,STT,BRIDGE,SSE,TTS,TEXT act;

@@ -313,6 +313,7 @@ const DOMAINS = [
   require('./coChangeMaxBufferSteps'),
   require('./bl560GithubScheduledAutoIntakeSteps'),
   require('./bl566SteerDeliveryReceiptSteps'),
+  require('./bl568MenuBlockedPaneQuestionsAsMappedPollsSteps'),
   require('./bl576AgedNoteActionabilitySteps'),
   require('./bl636RotatePreferenceParcelPrioritySteps'),
   require('./bl637LifecycleScriptScopeSteps'),

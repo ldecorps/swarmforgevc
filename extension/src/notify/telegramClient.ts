@@ -309,7 +309,8 @@ export async function sendTelegramPoll(
   question: string,
   options: string[],
   messageThreadId?: number,
-  postFn: TelegramPostFn = defaultPost
+  postFn: TelegramPostFn = defaultPost,
+  allowsMultipleAnswers = false
 ): Promise<SendPollResult> {
   const body = JSON.stringify({
     chat_id: chatId,
@@ -317,6 +318,7 @@ export async function sendTelegramPoll(
     options: options.map((text) => ({ text })),
     ...(messageThreadId !== undefined ? { message_thread_id: messageThreadId } : {}),
     is_anonymous: false,
+    allows_multiple_answers: allowsMultipleAnswers,
   });
 
   const result = await callTelegramApi(token, 'sendPoll', body, postFn);
@@ -324,6 +326,64 @@ export async function sendTelegramPoll(
     return { success: false, error: result.error };
   }
   return { success: true, pollId: extractPollId(result.json), messageId: extractMessageId(result.json) };
+}
+
+// BL-568: menu-answer poll mapping (extends BL-466 poll plumbing).
+export type MenuAnswerPollMapping = {
+  kind: 'menu-answer';
+  role: string;
+  paneId: string;
+  options: string[];
+  fingerprint: string;
+  multiSelect: boolean;
+  freeTextOptionIndexes: number[];
+};
+
+export function bl568MenuAnswerPollMapping(input: {
+  role: string;
+  paneId: string;
+  options: string[];
+  fingerprint: string;
+  multiSelect?: boolean;
+  freeTextOptionIndexes?: number[];
+}): MenuAnswerPollMapping {
+  return {
+    kind: 'menu-answer',
+    role: input.role,
+    paneId: input.paneId,
+    options: [...input.options],
+    fingerprint: input.fingerprint,
+    multiSelect: Boolean(input.multiSelect),
+    freeTextOptionIndexes: [...(input.freeTextOptionIndexes ?? [])],
+  };
+}
+
+export function bl568FingerprintMatches(surface: string, live: string): boolean {
+  return surface.length > 0 && surface === live;
+}
+
+export type MenuAnswerDrivePlan =
+  | { action: 'inject'; optionIndexes: number[]; freeTextFollowUp: boolean }
+  | { action: 'drop'; reason: 'stale-fingerprint' | 'empty-vote' };
+
+export function bl568PlanMenuAnswerDrive(args: {
+  mapping: MenuAnswerPollMapping;
+  liveFingerprint: string;
+  optionIds: number[];
+}): MenuAnswerDrivePlan {
+  if (!bl568FingerprintMatches(args.mapping.fingerprint, args.liveFingerprint)) {
+    return { action: 'drop', reason: 'stale-fingerprint' };
+  }
+  if (!args.optionIds.length) {
+    return { action: 'drop', reason: 'empty-vote' };
+  }
+  const free = args.optionIds.some((i) => args.mapping.freeTextOptionIndexes.includes(i));
+  return { action: 'inject', optionIndexes: [...args.optionIds], freeTextFollowUp: free };
+}
+
+export function bl568TextFallbackMessage(question: string, reason: string, rcHint?: string): string {
+  const rc = rcHint ? ` RC: ${rcHint}` : '';
+  return `Menu blocked (poll caps: ${reason}). Open the pane to answer.${rc}\nQ: ${question}`;
 }
 
 // BL-452: edits an EXISTING message's text in place - the pipeline board's

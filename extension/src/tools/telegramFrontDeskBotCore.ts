@@ -417,6 +417,7 @@ export function decideSteeringAction(
 export type SteerDeliveryResult =
   | { kind: 'delivered' }
   | { kind: 'no-pane' }
+  | { kind: 'menu-blocked'; pollHint?: string }
   | { kind: 'undelivered'; reason: string };
 
 // Pure: the receipt posted back into the role topic after a steer. Before
@@ -432,6 +433,10 @@ export function formatSteerReceipt(role: string, result: SteerDeliveryResult): s
   }
   if (result.kind === 'no-pane') {
     return `⚠ ${role} has no live pane - not delivered`;
+  }
+  if (result.kind === 'menu-blocked') {
+    const hint = result.pollHint ? ` — see live poll ${result.pollHint}` : ' — answer the live menu poll in this topic';
+    return `⚠ ${role} is menu_blocked${hint}`;
   }
   return `⚠ not delivered to ${role}: ${result.reason}`;
 }
@@ -886,6 +891,10 @@ export interface PollAdapters {
   // readRoleTopicMap.
   getRolePendingQuestion?: (role: string) => Promise<boolean>;
   clearRolePendingQuestion?: (role: string) => Promise<void>;
+  // BL-568: when a role pane is menu-blocked with a live poll, ordinary
+  // steers must not inject (would type into the menu). Optional: absent
+  // means pre-BL-568 behavior (steer proceeds).
+  roleMenuBlocked?: (role: string) => Promise<{ blocked: boolean; pollHint?: string } | undefined>;
   // The dormant-pane leg itself: enqueues text as a `type: note` handoff
   // into role's OWN inbox so ready_for_next.sh returns it on that role's
   // next rotation - the piece that does not exist anywhere before this
@@ -2113,7 +2122,8 @@ async function processSteeringUpdate(
   notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>,
   getRolePendingQuestion?: (role: string) => Promise<boolean>,
   clearRolePendingQuestion?: (role: string) => Promise<void>,
-  enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>
+  enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>,
+  roleMenuBlocked?: (role: string) => Promise<{ blocked: boolean; pollHint?: string } | undefined>
 ): Promise<UpdateDeliveryOutcome | undefined> {
   const decision = decideSteeringAction(update, principalUserId, chatId, roleTopicMap);
   if (decision.kind === 'ignore') {
@@ -2127,24 +2137,20 @@ async function processSteeringUpdate(
   // onward paths (the live pane and the queued answer note below) carry
   // the same annotated text, so no reader believes the image was seen.
   const forwardedText = annotateRoutedMediaText(decision.text, update);
-  const result = await redirectToRole(decision.role, forwardedText);
+  // BL-568: ordinary steers must not type into an AskUserQuestion menu.
+  const menuBlock = roleMenuBlocked ? await roleMenuBlocked(decision.role) : undefined;
+  const result: SteerDeliveryResult =
+    menuBlock?.blocked === true
+      ? { kind: 'menu-blocked', pollHint: menuBlock.pollHint }
+      : await redirectToRole(decision.role, forwardedText);
   // BL-607: when this role has a clarifying question pending, this reply
-  // IS the answer (Leg 1 reuses redirectToRole exactly as above - the
-  // ticket's own "reuse it verbatim" for the live-pane case). A dormant
-  // pane must not silently drop it the way a plain steer already does
-  // (redirectToRole's 'no-pane' result, unchanged for every OTHER
-  // role-topic message) - it is queued as a note into the role's own
-  // inbox instead (Leg 2). The pending marker clears once the answer is
-  // actually captured (delivered or queued) so the role is free to ask
-  // its next question - see captureRoleAnswer above.
+  // IS the answer (Leg 1 reuses redirectToRole — live pane). A dormant
+  // pane queues a note into the role's own inbox (Leg 2). Marker clears
+  // once the answer is captured.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
     await captureRoleAnswer(decision.role, result.kind === 'delivered', forwardedText, enqueueRoleAnswerNote, clearRolePendingQuestion);
   }
-  // Optional adapter: absent means no receipt, the exact pre-receipt
-  // behavior - the same "a new capability degrades to prior behavior"
-  // posture every other optional adapter in this file uses. The outcome
-  // stays 'posted' either way: the steer's own delivery is what that
-  // reports, never whether the receipt about it landed.
+  // Optional adapter: absent means no receipt (pre-receipt behavior).
   if (notifyRoleTopic) {
     await notifyRoleTopic(topicIdOf(update), formatSteerReceipt(decision.role, result));
   }
@@ -2176,7 +2182,8 @@ async function attemptSteeringDelivery(
     adapters.notifyRoleTopic,
     adapters.getRolePendingQuestion,
     adapters.clearRolePendingQuestion,
-    adapters.enqueueRoleAnswerNote
+    adapters.enqueueRoleAnswerNote,
+    adapters.roleMenuBlocked
   );
 }
 
