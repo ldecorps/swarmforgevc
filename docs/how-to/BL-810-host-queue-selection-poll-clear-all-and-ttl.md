@@ -60,6 +60,25 @@ has scrolled off the topic.
 10. **Votes still ride the front desk's existing fan-out** (BL-764) —
    `poll_answer` updates reach the bridge the same way any other Host/Bubble
    update does; this feature adds no second transport.
+11. **Enqueue-next while busy (BL-1146).** While a run is in flight, `/queue`
+   (and any queue poll posted during busy) offers **enqueue-next**: voting
+   pins exactly one queued prompt id (`enqueueNextPromptId`) and acks
+   `Enqueued next: <label>. Will start when idle.` — the vote is never
+   dropped and never run-now.
+12. **Idle with a pin auto-starts when safe.** When the bridge becomes idle
+   with a valid pin and the host agent's finishing reply is **not** a
+   question, the pinned item starts automatically and the choose-next poll is
+   skipped.
+13. **Idle with a pin holds on a host question.** When the finishing reply
+   **is** a question (trailing `?`, yes/no shape, or
+   `.swarmforge/operator/awaiting-answer.json` present), the pin is held:
+   the item stays queued, no auto-start, and no choose-next poll on that
+   transition — answer the host first, then `/queue` or wait for the next
+   idle cycle.
+14. **Clear-all, dequeue, drop, or expiry clears the pin.** Any path that
+   removes the pinned id also clears `enqueueNextPromptId`. A stale pin on
+   idle is cleared and a fresh choose-next poll is posted when questions
+   remain.
 
 ## Safety: a vote retraction never wipes the queue (BL-811 D1)
 
