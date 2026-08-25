@@ -110,6 +110,37 @@ push-sweep's own alarm flags use).
 - Re-running the sweep on an already-reconciled tree is a no-op by
   construction (step 2 above).
 
+
+## Process B — post-Cursor-batch merge of origin/main (BL-1118)
+
+Local `main` often advances from Cursor/operator batches while QA lands on
+`origin/main`. Do **not** wait for the next BL-891 reconcile tick.
+
+**Keep `SWARMFORGE_ROLE=QA` for pipeline-path hotfix lands on main** (BL-632
+unchanged). This slice does **not** add `SWARMFORGE_HOTFIX=1` or any other
+exemption.
+
+### Post-batch checklist
+
+1. Land the hotfix with `SWARMFORGE_ROLE=QA` when touching
+   `extension/src|test` or `specs/pipeline/steps`.
+2. Before ending the Cursor/operator session, run:
+
+```bash
+bb swarmforge/scripts/post_hotfix_merge_origin.bb <project-root>
+```
+
+3. Exit `0` means fetch+merge succeeded (or already up to date). Exit `1`
+   means the merge conflicted: the helper aborted (`git merge --abort`),
+   printed `CONFLICTED: <paths>`, and left the worktree **not** mid-merge.
+   Resolve by hand; never `reset --hard` / `stash` as the reconcile path.
+4. A clean tip that is still behind must not stay stuck on a stale dirty
+   deadlock/sync reason — the helper refreshes that honesty seam (see
+   `post_hotfix_merge_origin_lib.bb`).
+
+Also named in [BL-848](BL-848-certify-an-operator-hotfix.md) as the
+post-batch merge helper operators run after declaring a hotfix.
+
 ## Coordinator step 0 and the main-sync deadlock breaker (BL-1113)
 
 Stamp-off of Cursor hotfix `27273f2b0a` (ledger certification still follows
