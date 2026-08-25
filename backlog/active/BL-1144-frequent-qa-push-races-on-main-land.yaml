@@ -67,6 +67,7 @@ notes: |
     locked late rematch-at-publish + land/close serialize. Feature armed.
 
   - "[2026-08-25T20:55Z] coder: publish-time rematch + land/close lock in master_main_reconcile_lib; land_main_publish.sh; QA.prompt land discipline; how-to; APS 3/3; unit green. Tip-pure onto origin/main."
+  - "[2026-08-25T21:51Z] QA bounce D1: tip 21cb524715 not ancestor of origin/main (BL-1145 landed during queue). Documenter rematch2 onto current main; product already on main; keep bounce evidence."
 
 assigned_to: coder
 
@@ -76,3 +77,6 @@ abandoned_commits:
   - d6ae31366c
   - 6efa7d9125
   - 47214d079e
+  - c36d7f130e
+  - 21cb524715
+  - eec5d3369
