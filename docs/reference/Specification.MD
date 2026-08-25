@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1117: stamp-off of tip
+**Last Updated:** August 25, 2026 (BL-1129: babysitter
+`check-rotate-not-honored` gated on BL-804 `rotation-router?` — standing
+packs never emit that CRIT (empty `mono-router-active-role` is expected);
+rotating/mono-router packs keep existing unhonored-rotate detection.
+Acceptance:
+`specs/features/BL-1129-babysitter-rotate-not-honored-skips-standing.feature`.
+How-to: `docs/how-to/BL-1129-babysitter-rotate-not-honored-skips-standing.md`
+and check 9 in `docs/how-to/BL-611-babysitterd-runbook.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1117: stamp-off of tip
 `646ffe85d` — Pipeline Board `escapeHtml` emits numeric `&#160;` for
 U+00A0, never named `&nbsp;` (Telegram HTML named-entity set is only
 `&lt;` `&gt;` `&amp;` `&quot;`). Ledger pending for human certify/waive
