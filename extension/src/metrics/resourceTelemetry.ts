@@ -142,7 +142,12 @@ export function computeResourceTrends(
 
 // ── writer (thin adapter) ────────────────────────────────────────────────
 
-function monthlyTelemetryFile(targetPath: string, atMs: number): string {
+/**
+ * Compose the monthly chaser telemetry path the same way every writer does.
+ * Exported so headless audits (BL-987) resolve the live file at run time
+ * instead of pinning a calendar-month literal that goes stale on month roll.
+ */
+export function monthlyTelemetryFile(targetPath: string, atMs: number): string {
   const monthKey = new Date(atMs).toISOString().slice(0, 7); // YYYY-MM
   return path.join(chaserTelemetryDir(targetPath), `chaser-${monthKey}.jsonl`);
 }
