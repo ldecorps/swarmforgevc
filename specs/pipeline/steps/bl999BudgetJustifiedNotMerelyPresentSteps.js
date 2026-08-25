@@ -4,15 +4,12 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { parseTestTimeouts } = require('./lib/testTimeoutParser');
 
 const FEATURE = 'A test budget is justified, not merely present';
 const REPO = path.join(__dirname, '..', '..', '..');
 const TEST_FILE = path.join(REPO, 'extension', 'test', 'renderBriefingBurndownCli.test.js');
 const BUDGETS = path.join(REPO, 'extension', 'test', 'renderBriefingBurndownCli.budgets.js');
-const INVARIANT = path.join(REPO, 'extension', 'test', 'bl999BudgetJustificationInvariant.test.js');
-const FIXTURE_MARKERS = ['writeFixtureSnapshot(', "'--snapshot'"];
 
 function ensure(ctx) {
   if (!ctx.bl999) ctx.bl999 = {};
@@ -23,22 +20,9 @@ function classifyFromSource(source) {
   const {
     evaluateRealRepoBudgets,
     evaluateFixtureDecisions,
+    classifyBurndownCliTests,
   } = require(BUDGETS);
-  const calls = parseTestTimeouts(source);
-  const anchored = calls.map((c) => ({
-    ...c,
-    at: source.indexOf(`'${c.name.replace(/'/g, "\\'")}'`),
-  }));
-  anchored.sort((a, b) => a.at - b.at);
-  const classified = anchored.map((c, i) => {
-    const end = i + 1 < anchored.length ? anchored[i + 1].at : source.length;
-    const slice = source.slice(c.at, end);
-    return {
-      name: c.name,
-      timeoutMs: c.timeoutMs,
-      fixture: FIXTURE_MARKERS.some((m) => slice.includes(m)),
-    };
-  });
+  const classified = classifyBurndownCliTests(source, parseTestTimeouts);
   return {
     classified,
     realFailures: evaluateRealRepoBudgets(classified),

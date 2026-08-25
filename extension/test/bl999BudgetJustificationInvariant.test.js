@@ -18,29 +18,14 @@ const {
   requiredBudgetMs,
   evaluateRealRepoBudgets,
   evaluateFixtureDecisions,
+  classifyBurndownCliTests,
   REAL_REPO_MEASUREMENTS,
 } = require('./renderBriefingBurndownCli.budgets');
 
 const TARGET = path.join(__dirname, 'renderBriefingBurndownCli.test.js');
-const FIXTURE_MARKERS = ['writeFixtureSnapshot(', "'--snapshot'"];
 
 function classify() {
-  const source = fs.readFileSync(TARGET, 'utf8');
-  const calls = parseTestTimeouts(source);
-  const anchored = calls.map((c) => ({
-    ...c,
-    at: source.indexOf(`'${c.name.replace(/'/g, "\\'")}'`),
-  }));
-  for (const c of anchored) {
-    assert.ok(c.at >= 0, `could not anchor test '${c.name}'`);
-  }
-  anchored.sort((a, b) => a.at - b.at);
-  return anchored.map((c, i) => {
-    const end = i + 1 < anchored.length ? anchored[i + 1].at : source.length;
-    const slice = source.slice(c.at, end);
-    const fixture = FIXTURE_MARKERS.some((m) => slice.includes(m));
-    return { name: c.name, timeoutMs: c.timeoutMs, fixture };
-  });
+  return classifyBurndownCliTests(fs.readFileSync(TARGET, 'utf8'), parseTestTimeouts);
 }
 
 test('BL-999: every real-repo budget covers its recorded worst run × margin, and siblings match', () => {

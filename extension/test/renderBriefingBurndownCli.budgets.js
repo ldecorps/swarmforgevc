@@ -95,12 +95,40 @@ function evaluateFixtureDecisions(classified) {
   return failures;
 }
 
+const FIXTURE_MARKERS = ['writeFixtureSnapshot(', "'--snapshot'"];
+
+/** Classify burndown CLI tests as fixture vs real-repo for budget guards. */
+function classifyBurndownCliTests(source, parseTestTimeouts) {
+  const calls = parseTestTimeouts(source);
+  const anchored = calls.map((c) => ({
+    ...c,
+    at: source.indexOf(`'${c.name.replace(/'/g, "\\'")}'`),
+  }));
+  for (const c of anchored) {
+    if (c.at < 0) {
+      throw new Error(`could not anchor test '${c.name}'`);
+    }
+  }
+  anchored.sort((a, b) => a.at - b.at);
+  return anchored.map((c, i) => {
+    const end = i + 1 < anchored.length ? anchored[i + 1].at : source.length;
+    const slice = source.slice(c.at, end);
+    return {
+      name: c.name,
+      timeoutMs: c.timeoutMs,
+      fixture: FIXTURE_MARKERS.some((m) => slice.includes(m)),
+    };
+  });
+}
+
 module.exports = {
   SUITE_DEFAULT_MS,
   MARGIN,
   REAL_REPO_MEASUREMENTS,
   FIXTURE_DECISIONS,
+  FIXTURE_MARKERS,
   requiredBudgetMs,
   evaluateRealRepoBudgets,
   evaluateFixtureDecisions,
+  classifyBurndownCliTests,
 };
