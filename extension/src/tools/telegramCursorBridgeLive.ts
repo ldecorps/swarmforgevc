@@ -27,6 +27,10 @@ import {
   decideInboundAction,
   decidePollBackoffMs,
   decideQueuedPollAnswerAction,
+  formatEnqueueNextAckMessage,
+  clearEnqueueNextIfStale,
+  decideIdleQueueTransition,
+  hostReplyTextIsQuestion,
   formatHelpMessage,
   formatStatusMessage,
   gateBusy,
@@ -40,7 +44,9 @@ import {
   type CursorBridgeChoicePoll,
   type CursorBridgeInboundEvent,
   type EnsureCursorTopicAction,
+  type CursorBridgeQueuePollMode,
 } from './telegramCursorBridgeCore';
+import { needsHumanFromAwaitingAnswer } from './emit-fleet-status';
 import {
   formatOperatorConfirmPrompt,
   formatOperatorStopModePrompt,
@@ -362,6 +368,21 @@ function queuePromptOptionLabel(prompt: CursorBridgeQueuedPrompt, index: number)
   return `${index + 1}) ${body || '(empty)'}`;
 }
 
+function hostFinishingReplyIsQuestion(reply: string | undefined, repoRoot: string): boolean {
+  return hostReplyTextIsQuestion(reply) || needsHumanFromAwaitingAnswer(repoRoot);
+}
+
+function queuePollQuestionText(pendingCount: number, mode: CursorBridgeQueuePollMode): string {
+  if (mode === 'enqueue-next') {
+    return pendingCount > QUEUE_POLL_MAX_OPTIONS
+      ? `Bridge busy: choose which queued question to run when idle (${pendingCount} total, showing first ${QUEUE_POLL_MAX_OPTIONS})`
+      : `Bridge busy: choose which queued question to run when idle (${pendingCount} queued)`;
+  }
+  return pendingCount > QUEUE_POLL_MAX_OPTIONS
+    ? `Bridge ready: choose next queued question (${pendingCount} total, showing first ${QUEUE_POLL_MAX_OPTIONS})`
+    : `Bridge ready: choose next queued question (${pendingCount} queued)`;
+}
+
 function queuePromptSummary(state: CursorBridgePersistedState, maxItems = 5): string {
   const pending = state.pendingPrompts ?? [];
   if (pending.length === 0) {
@@ -428,10 +449,10 @@ async function sweepExpiredQueuedPrompts(
   if (dropped.length === 0) {
     return;
   }
-  holder.state = clearQueuedPollIfStale({
+  holder.state = clearQueuedPollIfStale(clearEnqueueNextIfStale({
     ...holder.state,
     pendingPrompts: kept,
-  });
+  }));
   writeJsonFile(deps.statePath, holder.state);
   const receipt = formatDroppedPromptReceipt(dropped, nowMs);
   const receiptsByTopic = new Map<number, CursorBridgeQueuedPrompt[]>();
@@ -801,6 +822,7 @@ async function handlePromptInboundAction(
     return telegramProgress(line);
   };
   void (async () => {
+    let finishingReply: string | undefined;
     try {
       const started =
         typeof promptMessage === 'string'
@@ -808,6 +830,7 @@ async function handlePromptInboundAction(
           : '🚀 Agent started with photo…';
       await postInboundReply(ctx, topicId, started, undefined);
       const reply = await runPromptWithActiveRunRecovery(ctx, promptMessage, resetAgent, reportProgress);
+      finishingReply = reply;
       await postInboundReply(ctx, topicId, reply, replyToMessageId);
     } catch (err) {
       const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
@@ -820,7 +843,7 @@ async function handlePromptInboundAction(
       // idle — do not wait for the next inbound update, and do not trust
       // ctx.state alone (prompts queued during this run were written via the
       // poll-loop holder onto disk).
-      await presentQueueSelectionPollAfterIdle(ctx);
+      await presentQueueSelectionPollAfterIdle(ctx, finishingReply);
       await syncBridgeLivenessCues({
         botToken: ctx.botToken,
         chatId: ctx.chatId,
@@ -1279,6 +1302,10 @@ async function handleDequeueInboundAction(
     currentPoll.itemIds.some((id) => nextPending.some((item) => item.id === id));
   ctx.state.pendingPrompts = nextPending;
   ctx.state.pendingPromptPoll = pollStillValid ? currentPoll : undefined;
+  if (ctx.state.enqueueNextPromptId === removed.id) {
+    ctx.state.enqueueNextPromptId = undefined;
+  }
+  ctx.state = clearEnqueueNextIfStale(ctx.state);
   ctx.persistState();
   await postInboundReply(ctx, topicId, `Dequeued #${position}: ${removed.text}`, replyToMessageId);
   return ctx.busy;
@@ -1531,6 +1558,11 @@ function hasQueueablePromptDecision(decision: InboundDecision): decision is Extr
 function syncQueuePollFieldsFromHolder(ctx: CursorBridgeHandlerContext, holder: { state: CursorBridgePersistedState }): void {
   ctx.state.pendingPrompts = holder.state.pendingPrompts;
   ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
+  if (holder.state.enqueueNextPromptId !== undefined) {
+    ctx.state.enqueueNextPromptId = holder.state.enqueueNextPromptId;
+  } else {
+    delete ctx.state.enqueueNextPromptId;
+  }
   if (holder.state.cursorTopicId !== undefined) {
     ctx.state.cursorTopicId = holder.state.cursorTopicId;
   }
@@ -1563,31 +1595,47 @@ async function handleQueueInboundAction(
   }
   const statePath = path.join(ctx.opDir, STATE_FILE_NAME);
   const holder = { state: ctx.state };
-  await postQueueSelectionPoll({ botToken: ctx.botToken, chatId: ctx.chatId, statePath }, holder, ctx.post);
+  const pollMode: CursorBridgeQueuePollMode =
+    ctx.busy || isActiveRunInFlight() ? 'enqueue-next' : 'choose-next';
+  await postQueueSelectionPoll(
+    { botToken: ctx.botToken, chatId: ctx.chatId, statePath },
+    holder,
+    ctx.post,
+    { pollMode }
+  );
   syncQueuePollFieldsFromHolder(ctx, holder);
   ctx.persistState();
   return ctx.busy;
 }
 
+export type PostQueuePollOptions = {
+  pollMode?: CursorBridgeQueuePollMode;
+};
+
 async function postQueueSelectionPoll(
   deps: Pick<CursorBridgeLoopDeps, 'botToken' | 'chatId' | 'statePath'>,
   holder: { state: CursorBridgePersistedState },
-  post: PostChunksFn
+  post: PostChunksFn,
+  options: PostQueuePollOptions = {}
 ): Promise<void> {
-  holder.state = clearQueuedPollIfStale(holder.state);
+  holder.state = clearEnqueueNextIfStale(clearQueuedPollIfStale(holder.state));
   const topicId = holder.state.cursorTopicId;
   const pending = holder.state.pendingPrompts ?? [];
   if (topicId === undefined || pending.length === 0 || holder.state.pendingPromptPoll) {
     return;
   }
+  const pollMode = options.pollMode ?? 'choose-next';
+  if (pollMode === 'choose-next' && holder.state.enqueueNextPromptId) {
+    const pinStillQueued = pending.some((item) => item.id === holder.state.enqueueNextPromptId);
+    if (pinStillQueued) {
+      return;
+    }
+  }
   const items = pending.slice(0, QUEUE_POLL_MAX_OPTIONS);
-  const question =
-    pending.length > QUEUE_POLL_MAX_OPTIONS
-      ? `Bridge ready: choose next queued question (${pending.length} total, showing first ${QUEUE_POLL_MAX_OPTIONS})`
-      : `Bridge ready: choose next queued question (${pending.length} queued)`;
-  const options = [...items.map((item, idx) => queuePromptOptionLabel(item, idx)), 'Clear all queued questions'];
-  const clearAllOptionIndex = options.length - 1;
-  const sent = await sendTelegramPoll(deps.botToken, deps.chatId, question, options, topicId);
+  const question = queuePollQuestionText(pending.length, pollMode);
+  const optionsList = [...items.map((item, idx) => queuePromptOptionLabel(item, idx)), 'Clear all queued questions'];
+  const clearAllOptionIndex = optionsList.length - 1;
+  const sent = await sendTelegramPoll(deps.botToken, deps.chatId, question, optionsList, topicId);
   if (!sent.success || !sent.pollId) {
     await post(deps.botToken, deps.chatId, topicId, `Queue pending (${pending.length}) but poll failed.\n${queuePromptSummary(holder.state)}`);
     return;
@@ -1598,13 +1646,96 @@ async function postQueueSelectionPoll(
       pollId: sent.pollId,
       itemIds: items.map((item) => item.id),
       clearAllOptionIndex,
+      mode: pollMode,
     },
   };
   writeJsonFile(deps.statePath, holder.state);
 }
 
-/** Idle-transition path: reload queue from disk, then post the selection poll if needed. */
-async function presentQueueSelectionPollAfterIdle(ctx: CursorBridgeHandlerContext): Promise<void> {
+type IdleQueueHandlerCtx = ReturnType<typeof makePollHandlerContext>;
+
+async function startQueuedPromptFromPoll(
+  deps: CursorBridgeLoopDeps,
+  holder: { state: CursorBridgePersistedState; busy: boolean },
+  selected: CursorBridgeQueuedPrompt,
+  handlerCtx: IdleQueueHandlerCtx
+): Promise<void> {
+  const pending = holder.state.pendingPrompts ?? [];
+  holder.state = {
+    ...holder.state,
+    pendingPromptPoll: undefined,
+    enqueueNextPromptId: undefined,
+    pendingPrompts: pending.filter((item) => item.id !== selected.id),
+  };
+  writeJsonFile(deps.statePath, holder.state);
+  holder.busy = await handleInboundDecision(
+    { action: 'prompt', text: selected.text, ...(selected.photoFileIds ? { photoFileIds: selected.photoFileIds } : {}) },
+    {
+      repoRoot: deps.repoRoot,
+      botToken: deps.botToken,
+      chatId: deps.chatId,
+      state: holder.state,
+      busy: true,
+      agentSession: deps.agentSession,
+      opDir: deps.opDir,
+      post: handlerCtx.post,
+      persistState: handlerCtx.persistState,
+      syncAgentIdFromSession: handlerCtx.syncAgentIdFromSession,
+      telegramPostFn: deps.telegramPostFn,
+    },
+    selected.replyToMessageId,
+    handlerCtx.resetAgent,
+    resolveDeferredReplyTopicId(selected.originTopicId, holder.state.cursorTopicId)
+  );
+}
+
+/** BL-1146: idle transition after a run — auto-start pin, hold on host question, or post poll. */
+export async function applyIdleQueueTransition(
+  deps: Pick<CursorBridgeLoopDeps, 'botToken' | 'chatId' | 'statePath' | 'repoRoot' | 'agentSession' | 'opDir' | 'telegramPostFn'>,
+  holder: { state: CursorBridgePersistedState; busy: boolean },
+  hostFinishingReply: string | undefined,
+  handlerCtx: IdleQueueHandlerCtx
+): Promise<'auto-started' | 'held-pin' | 'posted-poll' | 'noop'> {
+  holder.state = clearEnqueueNextIfStale(clearQueuedPollIfStale(holder.state));
+  const transition = decideIdleQueueTransition({
+    pendingPrompts: holder.state.pendingPrompts ?? [],
+    enqueueNextPromptId: holder.state.enqueueNextPromptId,
+    hostFinishingReplyIsQuestion: hostFinishingReplyIsQuestion(hostFinishingReply, deps.repoRoot),
+  });
+  if (transition.kind === 'auto-start') {
+    const pending = holder.state.pendingPrompts ?? [];
+    const selected = pending.find((item) => item.id === transition.itemId);
+    if (!selected) {
+      holder.state = { ...holder.state, enqueueNextPromptId: undefined };
+      writeJsonFile(deps.statePath, holder.state);
+      return 'noop';
+    }
+    await startQueuedPromptFromPoll(deps as CursorBridgeLoopDeps, holder, selected, handlerCtx);
+    return 'auto-started';
+  }
+  if (transition.kind === 'hold-pin') {
+    writeJsonFile(deps.statePath, holder.state);
+    return 'held-pin';
+  }
+  if (transition.kind === 'clear-stale-pin-then-poll') {
+    holder.state = { ...holder.state, enqueueNextPromptId: undefined };
+    writeJsonFile(deps.statePath, holder.state);
+    await postQueueSelectionPoll(deps, holder, handlerCtx.post, { pollMode: 'choose-next' });
+    return 'posted-poll';
+  }
+  if (transition.kind === 'post-choose-next-poll') {
+    await postQueueSelectionPoll(deps, holder, handlerCtx.post, { pollMode: 'choose-next' });
+    return 'posted-poll';
+  }
+  writeJsonFile(deps.statePath, holder.state);
+  return 'noop';
+}
+
+/** Idle-transition path: reload queue from disk, then auto-start, hold pin, or post poll. */
+async function presentQueueSelectionPollAfterIdle(
+  ctx: CursorBridgeHandlerContext,
+  hostFinishingReply?: string
+): Promise<void> {
   if (isActiveRunInFlight()) {
     return;
   }
@@ -1618,21 +1749,52 @@ async function presentQueueSelectionPollAfterIdle(ctx: CursorBridgeHandlerContex
       ...onDisk,
       pendingPrompts: onDisk.pendingPrompts ?? ctx.state.pendingPrompts,
       pendingPromptPoll: onDisk.pendingPromptPoll,
+      enqueueNextPromptId: onDisk.enqueueNextPromptId ?? ctx.state.enqueueNextPromptId,
       cursorTopicId: onDisk.cursorTopicId ?? ctx.state.cursorTopicId,
       livenessStatus: ctx.state.livenessStatus ?? onDisk.livenessStatus,
       queuedWorkLivenessStatus: onDisk.queuedWorkLivenessStatus ?? ctx.state.queuedWorkLivenessStatus,
     },
+    busy: ctx.busy,
   };
-  await postQueueSelectionPoll(
-    { botToken: ctx.botToken, chatId: ctx.chatId, statePath },
+  const handlerCtx = makePollHandlerContext(
+    {
+      repoRoot: ctx.repoRoot,
+      botToken: ctx.botToken,
+      chatId: ctx.chatId,
+      principalUserId: '',
+      opDir: ctx.opDir,
+      statePath,
+      topicMapPath: path.join(ctx.opDir, 'cursor-bridge-topic-map.json'),
+      agentSession: ctx.agentSession,
+      post: ctx.post,
+      telegramPostFn: ctx.telegramPostFn,
+    },
+    holder
+  );
+  await applyIdleQueueTransition(
+    {
+      botToken: ctx.botToken,
+      chatId: ctx.chatId,
+      statePath,
+      repoRoot: ctx.repoRoot,
+      agentSession: ctx.agentSession,
+      opDir: ctx.opDir,
+      telegramPostFn: ctx.telegramPostFn,
+    },
     holder,
-    ctx.post
+    hostFinishingReply,
+    handlerCtx
   );
   // Keep handler ctx aligned for the following liveness sync; persist via
   // writeJsonFile only (ctx.persistState may still point at a stale loop holder).
   syncQueuePollFieldsFromHolder(ctx, holder);
   if (holder.state.queuedWorkLivenessStatus !== undefined) {
     ctx.state.queuedWorkLivenessStatus = holder.state.queuedWorkLivenessStatus;
+  }
+  if (holder.state.enqueueNextPromptId !== undefined) {
+    ctx.state.enqueueNextPromptId = holder.state.enqueueNextPromptId;
+  } else {
+    delete ctx.state.enqueueNextPromptId;
   }
   if (!fs.existsSync(statePath)) {
     return;
@@ -1641,6 +1803,7 @@ async function presentQueueSelectionPollAfterIdle(ctx: CursorBridgeHandlerContex
     ...parseCursorBridgeState(loadJsonFile(statePath)),
     pendingPrompts: holder.state.pendingPrompts,
     pendingPromptPoll: holder.state.pendingPromptPoll,
+    enqueueNextPromptId: holder.state.enqueueNextPromptId,
   });
 }
 
@@ -1679,7 +1842,12 @@ async function processQueuedPollAnswer(
   }
   if (decided.kind === 'clear-all') {
     const pending = holder.state.pendingPrompts ?? [];
-    holder.state = { ...holder.state, pendingPrompts: [], pendingPromptPoll: undefined };
+    holder.state = {
+      ...holder.state,
+      pendingPrompts: [],
+      pendingPromptPoll: undefined,
+      enqueueNextPromptId: undefined,
+    };
     writeJsonFile(deps.statePath, holder.state);
     if (pending.length > 0 && holder.state.cursorTopicId !== undefined) {
       await handlerCtx.post(
@@ -1700,33 +1868,29 @@ async function processQueuedPollAnswer(
     return;
   }
   if (holder.busy || isActiveRunInFlight()) {
+    if (pendingPoll.mode === 'enqueue-next') {
+      const selectedIndex = pendingPoll.itemIds.indexOf(decided.itemId);
+      const label = queuePromptOptionLabel(selected, Math.max(0, selectedIndex));
+      holder.state = {
+        ...holder.state,
+        enqueueNextPromptId: decided.itemId,
+      };
+      writeJsonFile(deps.statePath, holder.state);
+      if (holder.state.cursorTopicId !== undefined) {
+        await handlerCtx.post(
+          deps.botToken,
+          deps.chatId,
+          holder.state.cursorTopicId,
+          formatEnqueueNextAckMessage(label),
+          undefined
+        );
+      }
+      return;
+    }
     writeJsonFile(deps.statePath, holder.state);
     return;
   }
-  holder.state = {
-    ...holder.state,
-    pendingPrompts: pending.filter((item) => item.id !== selected.id),
-  };
-  writeJsonFile(deps.statePath, holder.state);
-  holder.busy = await handleInboundDecision(
-    { action: 'prompt', text: selected.text, ...(selected.photoFileIds ? { photoFileIds: selected.photoFileIds } : {}) },
-    {
-      repoRoot: deps.repoRoot,
-      botToken: deps.botToken,
-      chatId: deps.chatId,
-      state: holder.state,
-      busy: true,
-      agentSession: deps.agentSession,
-      opDir: deps.opDir,
-      post: handlerCtx.post,
-      persistState: handlerCtx.persistState,
-      syncAgentIdFromSession: handlerCtx.syncAgentIdFromSession,
-      telegramPostFn: deps.telegramPostFn,
-    },
-    selected.replyToMessageId,
-    handlerCtx.resetAgent,
-    resolveDeferredReplyTopicId(selected.originTopicId, holder.state.cursorTopicId)
-  );
+  await startQueuedPromptFromPoll(deps, holder, selected, handlerCtx);
 }
 
 function choicePromptFromPoll(poll: CursorBridgeChoicePoll, selectedIndex: number): string {
@@ -1871,9 +2035,14 @@ async function processInboundUpdates(
     );
   }
   await sweepExpiredQueuedPrompts(deps, holder, handlerCtx.post);
-  holder.state = clearQueuedPollIfStale(holder.state);
+  holder.state = clearEnqueueNextIfStale(clearQueuedPollIfStale(holder.state));
   if (!holder.busy && !isActiveRunInFlight()) {
-    await postQueueSelectionPoll(deps, holder, handlerCtx.post);
+    const pending = holder.state.pendingPrompts ?? [];
+    const pin = holder.state.enqueueNextPromptId;
+    const pinHeld = pin !== undefined && pending.some((item) => item.id === pin);
+    if (!pinHeld) {
+      await postQueueSelectionPoll(deps, holder, handlerCtx.post, { pollMode: 'choose-next' });
+    }
   }
   await syncBridgeLivenessCues({
     botToken: deps.botToken,
