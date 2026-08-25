@@ -45,6 +45,13 @@ import {
   PRODUCER_CROSSCHECK_REQUIRED_REFUSAL,
   ProducerCrosscheckMetadata,
 } from './producerCrosscheckAcceptance';
+import {
+  ACCEPTANCE_NOT_EXECUTED_REFUSAL,
+  acceptanceExecutedForFeature,
+  assessRelandNotes,
+  isRevertRelandTicket,
+  RELAND_NOTES_REQUIRED_REFUSAL,
+} from './pilotAcceptanceExecution';
 
 export {
   assessProducerCrosscheck,
@@ -93,10 +100,14 @@ export type CommitClaimsCheckOutcome =
 export interface PilotAcceptanceGateDeps {
   readAcceptanceDeclaration: (ticketId: string) => string | undefined;
   readRequiredWiring?: (ticketId: string) => string[] | undefined;
+  readTicketNotes?: (ticketId: string) => string | undefined;
+  acceptanceReceiptExists?: (ticketId: string) => boolean;
   resolveFeatureFilePath: (acceptanceDeclaration: string) => string | undefined;
   isLifecycleTeardownTicket: (ticketId: string) => boolean;
   assessMultiworktreeFixture: () => MultiworktreeFixtureAssessment;
   runAcceptance: (featureFilePath: string) => Promise<AcceptanceRunResult> | AcceptanceRunResult;
+  recordAcceptanceExecution?: (featureFilePath: string) => void;
+  readAcceptanceExecution?: () => string | undefined;
   checkCommitClaims: () => CommitClaimsCheckOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
@@ -116,6 +127,8 @@ export interface PilotLandRefusal {
   reasonKind:
     | 'no-contract'
     | 'multiworktree-required'
+    | 'acceptance-not-executed'
+    | 'reland-notes-required'
     | 'contract-failed'
     | 'producer-crosscheck-required'
     | 'claim-unsupported'
@@ -202,6 +215,7 @@ async function runContract(
 ): Promise<{ refusal: PilotLandRefusal } | { runResult: AcceptanceRunResult }> {
   const result = await deps.runAcceptance(featureFilePath);
   if (result.success) {
+    deps.recordAcceptanceExecution?.(featureFilePath);
     return { runResult: result };
   }
   const { failingScenario, unmatchedStep } = describeAcceptanceFailure(result.output);
@@ -242,6 +256,45 @@ function checkClaims(deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal
     };
   }
   return { claimsCheck };
+}
+
+// Step 2b: revert-then-reland tickets must carry visible yaml notes before
+// a second done move — the BL-559 double-land hygiene gap.
+function requireRelandNotes(ticketId: string, deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal } | { ok: true } {
+  const notes = deps.readTicketNotes?.(ticketId);
+  if (!isRevertRelandTicket(notes)) {
+    return { ok: true };
+  }
+  if (!assessRelandNotes(notes).satisfied) {
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'reland-notes-required',
+        reason: `${ticketId} refuses land: ${RELAND_NOTES_REQUIRED_REFUSAL}`,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+// Step 3a: declaration alone is insufficient — the acceptance pipeline must
+// have executed for this landing attempt before anything moves.
+function requireAcceptanceExecuted(
+  ticketId: string,
+  featureFilePath: string,
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { ok: true } {
+  const executed = deps.readAcceptanceExecution?.();
+  if (acceptanceExecutedForFeature(executed, featureFilePath)) {
+    return { ok: true };
+  }
+  return {
+    refusal: {
+      landed: false,
+      reasonKind: 'acceptance-not-executed',
+      reason: `${ticketId} refuses land: ${ACCEPTANCE_NOT_EXECUTED_REFUSAL}`,
+    },
+  };
 }
 
 // Step 3b: pattern/regex tickets must carry exhaustive producer crosscheck
@@ -326,9 +379,19 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return fixtureGate.refusal;
   }
 
+  const relandNotes = requireRelandNotes(ticketId, deps);
+  if ('refusal' in relandNotes) {
+    return relandNotes.refusal;
+  }
+
   const contractRun = await runContract(ticketId, contract.featureFilePath, deps);
   if ('refusal' in contractRun) {
     return contractRun.refusal;
+  }
+
+  const executed = requireAcceptanceExecuted(ticketId, contract.featureFilePath, deps);
+  if ('refusal' in executed) {
+    return executed.refusal;
   }
 
   const requiredWiring = deps.readRequiredWiring?.(ticketId);

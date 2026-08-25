@@ -48,6 +48,7 @@ function ensureCtx(ctx) {
 
 function baseDeps(ctx) {
   ensureCtx(ctx);
+  let executedFeaturePath;
   return {
     readAcceptanceDeclaration: () => ctx.acceptanceDeclaration,
     resolveFeatureFilePath: (declaration) => resolveFeatureFilePath(ctx.repoRootFixture, declaration),
@@ -64,6 +65,10 @@ function baseDeps(ctx) {
       };
       return ctx.lastAcceptanceRun;
     },
+    recordAcceptanceExecution: (featureFilePath) => {
+      executedFeaturePath = featureFilePath;
+    },
+    readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;

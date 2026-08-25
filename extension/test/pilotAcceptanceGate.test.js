@@ -13,6 +13,7 @@ const {
 
 function mkDeps(overrides) {
   const calls = { move: 0, writeReceipt: 0 };
+  let executedFeaturePath;
   const deps = {
     readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
     resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
@@ -22,6 +23,10 @@ function mkDeps(overrides) {
       metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
     }),
     runAcceptance: async () => ({ success: true, output: 'ok' }),
+    recordAcceptanceExecution: (featureFilePath) => {
+      executedFeaturePath = featureFilePath;
+    },
+    readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => ({ checked: true, commitsChecked: 3 }),
     moveTicketToDone: () => {
       calls.move += 1;
@@ -406,4 +411,52 @@ test('landPilotedTicket records multiWorktreeFixture on the receipt for a green 
   const outcome = await landPilotedTicket('BL-LC', deps);
   assert.equal(outcome.landed, true);
   assert.deepEqual(receipt.multiWorktreeFixture, fixture);
+});
+
+test('landPilotedTicket refuses when acceptance was declared but execution was not recorded for this attempt', async () => {
+  const { deps, calls } = mkDeps({
+    recordAcceptanceExecution: () => {},
+    readAcceptanceExecution: () => undefined,
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, false);
+  assert.equal(outcome.reasonKind, 'acceptance-not-executed');
+  assert.match(outcome.reason, /declared but not executed/);
+  assert.equal(calls.move, 0);
+  assert.equal(calls.writeReceipt, 0);
+});
+
+test('landPilotedTicket refuses revert-reland tickets whose yaml notes omit the required history', async () => {
+  const { deps, calls } = mkDeps({
+    readTicketNotes: () => 'Re-land after revert with no explanation.',
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, false);
+  assert.equal(outcome.reasonKind, 'reland-notes-required');
+  assert.equal(calls.move, 0);
+});
+
+test('landPilotedTicket refuses when notes record a prior done landing without any acceptance receipt', async () => {
+  const { deps, calls } = mkDeps({
+    readTicketNotes: () =>
+      'Previously landed to backlog/done without an acceptance receipt; reverted to active.',
+    acceptanceReceiptExists: () => false,
+    recordAcceptanceExecution: () => {},
+    readAcceptanceExecution: () => undefined,
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, false);
+  assert.equal(outcome.reasonKind, 'acceptance-not-executed');
+  assert.equal(calls.move, 0);
+});
+
+test('landPilotedTicket lands revert-reland tickets when yaml notes explain the revert and reland', async () => {
+  const { deps, calls } = mkDeps({
+    readTicketNotes: () =>
+      'First landing reverted because acceptance never ran. Re-land is warranted because BL-727 gate now executes acceptance.',
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, true);
+  assert.equal(calls.move, 1);
+  assert.equal(calls.writeReceipt, 1);
 });
