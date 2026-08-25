@@ -1,5 +1,6 @@
 #!/usr/bin/env bb
-;; BL-1137 property encoding (declared ticket invariants):
+;; BL-1137 property encoding (declared mute invariants encoded /
+;; declared ticket invariants):
 ;;   I1 durable staged reversion with no in-flight signal still alarms (BL-839)
 ;;   I2 commit-in-flight? is read-only (lock and/or process observation; no writes)
 ;;   I3 plain git add/commit with cwd at this root counts as in-flight (BL-1134
