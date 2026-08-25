@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1081: re-entry after unhold — APS
+**Last Updated:** August 25, 2026 (BL-1119: closing ceremony packet gains
+per-role quality dial recommendations (raise/lower/hold) from BL-819/820
+lean signals only; never rewrites pack conf; auto window models → hold
+only. Acceptance:
+`specs/features/BL-1119-closing-ceremony-role-quality-dial.feature`.
+How-to: `docs/how-to/BL-1119-closing-ceremony-role-quality-dial.md`.
+Complements BL-820. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1081: re-entry after unhold — APS
 wake-style baseline includes `local-model` → `chat-message` so scenario 05
 (provider table gains a dimension, not a fork) stays green; product ACP
 host path unchanged. Acceptance:
