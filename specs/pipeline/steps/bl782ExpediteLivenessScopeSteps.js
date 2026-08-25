@@ -72,6 +72,14 @@ function probeCountsAsAlive(result, probeName) {
   return Boolean(val);
 }
 
+function spawnNeighbourDecoys(ctx, prefix, argvList) {
+  reapDecoys(ctx);
+  const neighbourRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  ctx.neighbourRoot = neighbourRoot;
+  ctx.decoys = argvList.map((argv) => spawnDecoy(argv.replace(/\{root\}/g, neighbourRoot)));
+  spawnSync('sleep', ['0.2']);
+}
+
 function registerSteps(registry) {
   registry.defineScoped(
     /^expedite_cli is auditing project root "([^"]+)"$/,
@@ -128,15 +136,11 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^real handoffd\.bb handoffd_supervisor\.bb and babysitterd\.sh processes for a different project root are alive throughout the run$/,
     (ctx) => {
-      reapDecoys(ctx);
-      const beta = fs.mkdtempSync(path.join(os.tmpdir(), 'bl782-beta-'));
-      ctx.neighbourRoot = beta;
-      ctx.decoys = [
-        spawnDecoy(`bb ${beta}/swarmforge/scripts/handoffd.bb ${beta}`),
-        spawnDecoy(`bb ${beta}/swarmforge/scripts/handoffd_supervisor.bb ${beta}`),
-        spawnDecoy(`${beta}/.swarmforge/operator/babysitterd.sh`),
-      ];
-      spawnSync('sleep', ['0.2']);
+      spawnNeighbourDecoys(ctx, 'bl782-beta-', [
+        'bb {root}/swarmforge/scripts/handoffd.bb {root}',
+        'bb {root}/swarmforge/scripts/handoffd_supervisor.bb {root}',
+        '{root}/.swarmforge/operator/babysitterd.sh',
+      ]);
     },
     FEATURE_NAME,
   );
@@ -178,11 +182,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a real handoffd\.bb for a different project root is alive throughout the run$/,
     (ctx) => {
-      reapDecoys(ctx);
-      const beta = fs.mkdtempSync(path.join(os.tmpdir(), 'bl782-neighbour-'));
-      ctx.neighbourRoot = beta;
-      ctx.decoys = [spawnDecoy(`bb ${beta}/swarmforge/scripts/handoffd.bb ${beta}`)];
-      spawnSync('sleep', ['0.2']);
+      spawnNeighbourDecoys(ctx, 'bl782-neighbour-', ['bb {root}/swarmforge/scripts/handoffd.bb {root}']);
     },
     FEATURE_NAME,
   );
@@ -214,7 +214,6 @@ function registerSteps(registry) {
     /^expedite_cli probes the operator liveness signal$/,
     (ctx) => {
       ctx.operatorSource = fs.readFileSync(CLI, 'utf8');
-      ctx.operatorProbe = probeLiveness(ctx.auditRoot || '/repos/alpha');
     },
     FEATURE_NAME,
   );
