@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1143: authorized cold-swap of live
+day-shift onto `./start-swarm-ollama-qwen.sh` / `ollama-qwen3-mono-router`;
+verify/execute/rollback how-to; refuses qwen-forge substitute; does not
+rewrite cursor-forge without explicit ask. Depends on BL-1142 pack-shape
+gate. Acceptance:
+`specs/features/BL-1143-cold-swap-day-shift-ollama-qwen.feature`.
+How-to: `docs/how-to/BL-1143-cold-swap-day-shift-ollama-qwen.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1142: durable local Ollama pack shape on
 this WSL/CPU host is **mono-router depth 1** (`ollama-qwen3-mono-router`);
 `start-swarm-ollama-qwen.sh` runs pack-shape gate refusing uncapped multi-seat

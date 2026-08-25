@@ -81,5 +81,14 @@ pass "02: execute kill+start seams; no qwen-forge"
   || fail "03: how-to missing (create before shipping)"
 pass "03: how-to present"
 
+# ── 04: no-winner-yet steward outcome is still allowed (BL-1140) ──────────
+# Hardener: kills dropping no-winner-yet from the align allow-list.
+rm -f "$ROOT/backlog/evidence"/BL-1127-coder-battery-*.md
+OUT04="$(bash "$ROOT/swarmforge/scripts/cold_swap_day_shift_to_ollama_qwen.sh" "$ROOT" --verify 2>&1)" \
+  || fail "04: verify without battery must still pass (no-winner-yet): $OUT04"
+echo "$OUT04" | grep -qE 'OUTCOME=no-winner-yet|VERIFY OK' \
+  || fail "04: expected no-winner-yet or VERIFY OK: $OUT04"
+pass "04: no-winner-yet align path allowed"
+
 rm -rf "$ROOT"
 echo "BL-1143 cold_swap_day_shift: ALL PASS"
