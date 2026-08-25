@@ -12,7 +12,8 @@ trap 'rm -rf "$ROOT" "$PSF"; [[ -n "${FIX_PID}" ]] && kill "$FIX_PID" 2>/dev/nul
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
-eval "$(sed -n '/^copilot_pids_for_root()/,/^}/p' "$KILL_SH")"
+# Pull match + pid helpers (markers keep the sed range stable under cleanup).
+eval "$(sed -n '/^copilot_argv_matches_root()/,/^}/p; /^copilot_pids_for_root()/,/^}/p' "$KILL_SH")"
 
 # 01: other root — must not match THIS root
 cat > "$PSF" <<EOF

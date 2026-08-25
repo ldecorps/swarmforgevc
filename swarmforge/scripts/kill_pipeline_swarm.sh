@@ -247,6 +247,12 @@ done < <(pgrep -fl "handoffd\.bb.*$ROOT" 2>/dev/null | grep -v handoffd_supervis
 # Match via ps argv: must contain copilot + SwarmForge + this $ROOT path
 # (launch_body puts `-C '<worktree under ROOT>'` before `--name 'SwarmForge …'`).
 # Optional SWARMFORGE_COPILOT_PS_FILE seam for fixture snapshots (tests).
+# --- BL-888 copilot match helpers (sourced by unit test via sed range) ---
+copilot_argv_matches_root() {
+  local rest="$1" root="$2"
+  [[ "$rest" == *copilot* && "$rest" == *SwarmForge* && "$rest" == *"$root"* ]]
+}
+
 copilot_pids_for_root() {
   local root="$1"
   local ps_out line pid rest
@@ -260,21 +266,25 @@ copilot_pids_for_root() {
     pid="$(printf '%s\n' "$line" | awk '{print $1}')"
     rest="$(printf '%s\n' "$line" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*//')"
     [[ "$pid" =~ ^[0-9]+$ ]] || continue
-    [[ "$rest" == *copilot* ]] || continue
-    [[ "$rest" == *SwarmForge* ]] || continue
-    [[ "$rest" == *"$root"* ]] || continue
+    copilot_argv_matches_root "$rest" "$root" || continue
     printf '%s\n' "$pid"
   done <<< "$ps_out"
+}
+
+reap_copilot_pid() {
+  local pid="$1"
+  kill -TERM "$pid" 2>/dev/null || return 1
+  sleep 0.2
+  kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+  log "reaped copilot pid=$pid"
+  return 0
 }
 
 signaled_copilot=0
 while IFS= read -r pid; do
   [[ -n "$pid" ]] || continue
-  if kill -TERM "$pid" 2>/dev/null; then
+  if reap_copilot_pid "$pid"; then
     signaled_copilot=1
-    sleep 0.2
-    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
-    log "reaped copilot pid=$pid"
   fi
 done < <(copilot_pids_for_root "$ROOT")
 if [[ "$signaled_copilot" -eq 1 ]]; then

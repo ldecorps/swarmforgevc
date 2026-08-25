@@ -63,6 +63,14 @@ function reapFixtures(ctx) {
   ctx.fixturePids = [];
 }
 
+function fixtureArgvForKind(ctx, kind) {
+  const pathInArgv =
+    kind === 'same'
+      ? path.join(ctx.teardownRoot, '.worktrees', 'coder')
+      : '/foreign/bl888-other-root/.worktrees/coder';
+  return `copilot -C ${pathInArgv} --name SwarmForge coder`;
+}
+
 function spawnFixture(ctx, argvLabel) {
   // Keep the child attached so a TERM'd sleep is reaped (not left as a
   // zombie that still satisfies process.kill(pid, 0)).
@@ -86,6 +94,22 @@ function fixtureIsAlive(pid) {
   return true;
 }
 
+function assertFixtureFate(ctx, fate) {
+  const pid = ctx.lastFixturePid;
+  const alive = fixtureIsAlive(pid);
+  if (fate === 'alive' && !alive) {
+    throw new Error(`expected fixture pid ${pid} still running, but it is gone`);
+  }
+  if (fate === 'dead' && alive) {
+    throw new Error(`expected fixture pid ${pid} signaled, but it is still running`);
+  }
+  if (fate !== 'dead') return;
+  ctx.fixturePids = (ctx.fixturePids || []).filter((p) => p !== pid);
+  for (const child of ctx.fixtureChildren || []) {
+    if (child.pid === pid) child.kill('SIGKILL');
+  }
+}
+
 function registerSteps(registry) {
   registry.defineScoped(
     /^a project root under teardown$/,
@@ -100,12 +124,7 @@ function registerSteps(registry) {
     (ctx, processRootPhrase) => {
       ensureRoot(ctx);
       const kind = knownProcessRoot(processRootPhrase.trim());
-      const pathInArgv =
-        kind === 'same'
-          ? path.join(ctx.teardownRoot, '.worktrees', 'coder')
-          : '/foreign/bl888-other-root/.worktrees/coder';
-      const argv = `copilot -C ${pathInArgv} --name SwarmForge coder`;
-      spawnFixture(ctx, argv);
+      spawnFixture(ctx, fixtureArgvForKind(ctx, kind));
     },
     FEATURE_NAME
   );
@@ -140,23 +159,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the fixture process is (.+)$/,
     (ctx, fatePhrase) => {
-      const fate = knownFate(fatePhrase.trim());
-      const pid = ctx.lastFixturePid;
-      const alive = fixtureIsAlive(pid);
-      if (fate === 'alive' && !alive) {
-        throw new Error(`expected fixture pid ${pid} still running, but it is gone`);
-      }
-      if (fate === 'dead' && alive) {
-        throw new Error(`expected fixture pid ${pid} signaled, but it is still running`);
-      }
-      if (fate === 'dead') {
-        ctx.fixturePids = (ctx.fixturePids || []).filter((p) => p !== pid);
-        for (const child of ctx.fixtureChildren || []) {
-          if (child.pid === pid) {
-            child.kill('SIGKILL');
-          }
-        }
-      }
+      assertFixtureFate(ctx, knownFate(fatePhrase.trim()));
     },
     FEATURE_NAME
   );
