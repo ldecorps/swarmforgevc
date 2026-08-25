@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1124 rematch: property-suite bare-flip
+canary acceptance and unit runner unset `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD`
+so a commit-time override cannot green-wash scenario 02. Prior shared-repo
+guard docs stand. Acceptance:
+`specs/features/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.feature`.
+How-to: `docs/how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-999: burndown CLI test budgets are
 justified by measurement — shared `renderBriefingBurndownCli.budgets.js`
 table enforces `budgetMs >= ceil(worstMs * 1.6)`; identical derive+render
