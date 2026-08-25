@@ -37,8 +37,11 @@
   (assert-false "a trailing high sample breaks the headroom streak"
                 (headroom-cap-raise-lib/sustained-cpu-headroom? pressure 1.0 sustained interval))
   (assert-false "one sample alone never counts as sustained"
-                (headroom-cap-raise-lib/sustained-cpu-headroom? [{:ratio 0.1}] 1.0 sustained interval)))
-
+                (headroom-cap-raise-lib/sustained-cpu-headroom? [{:ratio 0.1}] 1.0 sustained interval))
+  ;; Killer: interval == sustained would satisfy the duration arm for trailing=1;
+  ;; the count arm must still refuse (kills `> trailing 1` → `>= trailing 1`).
+  (assert-false "one sample spanning the whole window still never counts"
+                (headroom-cap-raise-lib/sustained-cpu-headroom? [{:ratio 0.1}] 1.0 interval interval)))
 (assert-true "memory at/above floor is headroom"
              (headroom-cap-raise-lib/memory-headroom? 4096 2048))
 (assert-false "memory below floor is pressure"
