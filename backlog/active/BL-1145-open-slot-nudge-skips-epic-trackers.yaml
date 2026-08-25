@@ -63,3 +63,11 @@ notes: |
   - "[2026-08-25T20:45Z] coder: epic-type-refusal + blocked-status-refusal on promotion_gates_lib/evaluate (after hold, before human_approval). Open-slot nudge inherits via nudge-eligible-candidates; APS 3/3; unit+property green. Tip pure onto origin/main next."
 
 assigned_to: coder
+
+abandoned_commits:
+  - e921608549
+  - c39547cb61
+  - 7e6d5a6552
+  - 990a77c33b
+  - 17cf20b291
+  - 79c5289e20

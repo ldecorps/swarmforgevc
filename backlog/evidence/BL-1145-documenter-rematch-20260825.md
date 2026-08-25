@@ -12,7 +12,8 @@ ancestry verified immediately before handoff.
 How-to; Spec Last Updated prepend; index link; stage evidence.
 
 ## Abandoned
-(none — first documenter tip from hardener parcel)
+`e921608549`, `c39547cb61`, `7e6d5a6552`, `990a77c33b`, `17cf20b291`,
+`79c5289e20`
 
 ## Review inventory (Article 4.4)
 NONE.
