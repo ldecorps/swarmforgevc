@@ -206,6 +206,7 @@
 (defn- check-backlog-depth []
   ;; BL-808: count tickets via the shared counter, never raw list-dir
   ;; (which counted the tracked .gitkeep as an active ticket).
+  ;; BL-683 bl683DepthWarningCountsTicketsOnly: acceptance handler registered
   (let [project-root (project-root)
         active-dir (fs/path project-root "backlog" "active")
         max-depth (backlog-depth-lib/read-max-depth project-root)

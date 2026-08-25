@@ -88,3 +88,8 @@ notes: |
   wires handlers in the same commit.
 notes:
   - [2026-08-25T12:40Z] coordinator: specifier ready ack — --force routed Work to coder.
+
+abandoned_commits:
+  - 3e1d0b6c9b
+  - bda85faeec
+  - c596b96fc9
