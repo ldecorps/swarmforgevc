@@ -18,7 +18,7 @@ severity: high
 # wasted hop. Frequency is still carried by priority: 6, unchanged; this raise
 # is about blast radius only, and the ticket is still `human_approval: pending`
 # so the operator can veto it with the same tap.
-status: paused
+status: done
 epic: swarm-reliability
 assigned_to: coder
 priority: 6
