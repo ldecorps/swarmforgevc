@@ -71,6 +71,13 @@ test('parseQueryCredential prefers bearer over token', () => {
   assert.equal(parseQueryCredential('/console'), undefined);
 });
 
+test('parseQueryCredential accepts resident-pane path credentials when query is stripped', () => {
+  assert.equal(parseQueryCredential('/resident-pane/secret-token'), 'secret-token');
+  assert.equal(parseQueryCredential('/resident-pane/a%2Fb'), 'a/b');
+  assert.equal(parseQueryCredential('https://example.test/resident-pane/proxied'), 'proxied');
+  assert.equal(parseQueryCredential('/resident-pane'), undefined);
+});
+
 test('formatQueryCredential emits a bearer query param', () => {
   assert.equal(formatQueryCredential(TOKEN), `?bearer=${encodeURIComponent(TOKEN)}`);
 });

@@ -46,11 +46,36 @@ export function isAuthorizedByQueryToken(queryToken: string | undefined, token: 
 /** Read credential from `?bearer=` (preferred) or legacy `?token=` on a request URL. */
 export function parseQueryCredential(url: string): string | undefined {
   const queryIndex = url.indexOf('?');
-  if (queryIndex === -1) {
+  if (queryIndex !== -1) {
+    const params = new URLSearchParams(url.slice(queryIndex + 1));
+    const queryCred = params.get('bearer') ?? params.get('token') ?? undefined;
+    if (queryCred) {
+      return queryCred;
+    }
+  }
+
+  // Some edge/proxy setups normalize or drop query strings on selected paths.
+  // Support a path credential fallback for resident-pane polling:
+  //   /resident-pane/<credential>
+  let pathname = (url.split('?')[0] ?? '').split('#')[0] ?? '';
+  // Proxies may forward absolute-form targets (e.g. https://host/path).
+  // Normalize to pathname so resident-pane path credential parsing still works.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pathname)) {
+    try {
+      pathname = new URL(pathname).pathname;
+    } catch {
+      // Keep raw pathname fallback when URL parsing fails.
+    }
+  }
+  const pathMatch = pathname.match(/^\/resident-pane\/([^/?#]+)/);
+  if (!pathMatch) {
     return undefined;
   }
-  const params = new URLSearchParams(url.slice(queryIndex + 1));
-  return params.get('bearer') ?? params.get('token') ?? undefined;
+  try {
+    return decodeURIComponent(pathMatch[1]);
+  } catch {
+    return pathMatch[1];
+  }
 }
 
 export function formatQueryCredential(credential: string): string {
