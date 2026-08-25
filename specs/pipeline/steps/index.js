@@ -367,6 +367,7 @@ const DOMAINS = [
   require('./bl675DaemonLogFreshnessSteps'),
   require('./bl630PushSweepQaGateSteps'),
   require('./bl1081AcpHostDrivesOneSeatSteps'),
+  require('./bl1080ChooseACursorSeatSteps'),
   require('./bl1082NamedModelServingSteps'),
   require('./bl1077DocumentedQwenCredentialNameSteps'),
   require('./bl714HardeningGatesBlockedSteps'),
