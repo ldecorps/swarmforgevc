@@ -20,6 +20,12 @@ abandoned_commits:
   - d2248274fc
   - cbece1d928
   - 76d990e202
+  - a286855bba
+  - 6e0831bfb2
+  - 019d93df9e
+  - 2381663fee
+  - e1b3fa77f7
+  - be3419c28e
 approval_context: >
   Human (Cursor) 2026-08-25: recurring
   `FRESHNESS_VIOLATION escalate swarm=primary daemon=babysitterd
@@ -91,7 +97,8 @@ notes: |
     origin/main with BL-1133 product/docs/test/evidence only. Does not
     delete BL-626 evidence or bl626 property runner (see
     backlog/evidence/BL-1133-qa-bounce-20260825.md).
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-08-25, by: QA, blamed: coder, class: behavior, commit: d9b04c907d, evidence: backlog/evidence/BL-1133-qa-bounce-20260825.md }
   - { at: 2026-08-25, by: QA, blamed: cleaner, class: behavior, commit: 2cbb141430, evidence: backlog/evidence/BL-1133-qa-bounce-rematch-20260825.md }
+  - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: c918b5ec8c, evidence: backlog/evidence/BL-1133-qa-bounce-rematch3-20260825.md }
