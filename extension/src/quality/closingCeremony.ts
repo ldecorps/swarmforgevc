@@ -288,6 +288,29 @@ export function isAutoWindowModel(model: string | undefined | null): boolean {
   return m === 'auto' || m.endsWith('/auto');
 }
 
+/** Lean ledger field names the dial may cite (BL-819/820 only — invariant 2). */
+export const KNOWN_QUALITY_CITED_FIELDS = ['stalls', 'bounce.blamedRole', 'stage_transition'] as const;
+
+/**
+ * Parse pack conf `window <role> … --model <id>` lines into role → model.
+ * Lines without `--model` are omitted (caller treats missing as non-auto).
+ */
+export function parseWindowModelsFromConf(confContent: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of confContent.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line.startsWith('window ')) {
+      continue;
+    }
+    const role = line.split(/\s+/)[1];
+    const modelMatch = line.match(/--model(?:=|\s+)(\S+)/);
+    if (role && modelMatch) {
+      out[role] = modelMatch[1];
+    }
+  }
+  return out;
+}
+
 function dialForRole(
   role: string,
   reworkFields: Set<string> | undefined,

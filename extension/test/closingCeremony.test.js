@@ -235,6 +235,20 @@ test('BL-1119: isAutoWindowModel recognizes auto and */auto', () => {
   assert.equal(isAutoWindowModel(''), false);
 });
 
+test('BL-1119: parseWindowModelsFromConf reads window --model lines', () => {
+  const { parseWindowModelsFromConf } = require('../out/quality/closingCeremony');
+  const conf = [
+    'window specifier cursor master --model auto',
+    'window coder cursor coder --model opus',
+    'window cleaner claude cleaner',
+    '# comment',
+  ].join('\n');
+  assert.deepEqual(parseWindowModelsFromConf(conf), {
+    specifier: 'auto',
+    coder: 'opus',
+  });
+});
+
 // ── hypotheses: 1-3, derived from whatever signal is present ───────────
 
 test('a shift with real signal carries between one and three hypotheses', () => {

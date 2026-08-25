@@ -6,13 +6,24 @@
 // *_FORCE_RESULT env bypasses") so this function is fully unit-testable
 // without shelling to the real swarm_handoff.sh - the CLI wrapper
 // (tools/closing-ceremony-run.ts) supplies the real one.
+import * as fs from 'fs';
 import * as path from 'path';
 import { readLeanLedgerEvents } from './leanLedgerStore';
 import { readCeremonyRun, writeCeremonyRun, findOpenCeremonyRunsBefore, finalizeCeremonyRunAsFailed, ceremonyRunFilePath } from './closingCeremonyStore';
-import { CeremonyRun, buildClosingCeremonyPacket, isEmptyCeremonyPacket, buildClosingCeremonyNoteDraft, buildCeremonyFailureNoteDraft } from '../quality/closingCeremony';
+import {
+  CeremonyRun,
+  buildClosingCeremonyPacket,
+  isEmptyCeremonyPacket,
+  buildClosingCeremonyNoteDraft,
+  buildCeremonyFailureNoteDraft,
+  parseWindowModelsFromConf,
+} from '../quality/closingCeremony';
+import { parseSwarmIdentityConfPath } from '../util/swarmforgeConfig';
 
 export interface ClosingCeremonyRunDeps {
   sendNote: (targetPath: string, draft: string) => void;
+  /** BL-1119: role → window --model from effective pack conf (injectable). */
+  readWindowModels?: (targetPath: string) => Record<string, string>;
 }
 
 export type ClosingCeremonyRunStatus = 'created' | 'already_exists' | 'auto_no_change';
@@ -22,6 +33,30 @@ export interface ClosingCeremonyRunResult {
   status: ClosingCeremonyRunStatus;
   run: CeremonyRun;
   finalizedFailed: string[];
+}
+
+function readPackConfText(targetPath: string): string | null {
+  try {
+    const identityPath = path.join(targetPath, '.swarmforge', 'swarm-identity');
+    const persisted = parseSwarmIdentityConfPath(fs.readFileSync(identityPath, 'utf8'));
+    if (persisted) {
+      const confPath = path.isAbsolute(persisted) ? persisted : path.join(targetPath, persisted);
+      return fs.readFileSync(confPath, 'utf8');
+    }
+  } catch {
+    // fall through
+  }
+  try {
+    return fs.readFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/** Default loader: effective pack conf (swarm-identity path) or swarmforge.conf. */
+export function readWindowModelsFromTarget(targetPath: string): Record<string, string> {
+  const text = readPackConfText(targetPath);
+  return text ? parseWindowModelsFromConf(text) : {};
 }
 
 // Human decision 5: "the packet reaches the specifier, not only the
@@ -47,7 +82,8 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
   }
 
   const allEvents = readLeanLedgerEvents(targetPath);
-  const packet = buildClosingCeremonyPacket(shiftKey, allEvents);
+  const windowModels = (deps.readWindowModels ?? readWindowModelsFromTarget)(targetPath);
+  const packet = buildClosingCeremonyPacket(shiftKey, allEvents, windowModels);
 
   // Scenario "empty-shift-still-produces-an-explicit-no-change": nothing
   // happened this shift, so there is nothing for the specifier to evaluate -

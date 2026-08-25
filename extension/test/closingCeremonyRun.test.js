@@ -107,3 +107,49 @@ test('a prior shift that DID receive an outcome before the next shift runs is le
   assert.deepEqual(result.finalizedFailed, []);
   assert.equal(readCeremonyRun(target, '2026-08-06').failedAt, null);
 });
+
+test('BL-1119: runClosingCeremony with auto window model holds despite stalls (wired path)', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const target = mkTmp();
+  const packs = path.join(target, 'swarmforge', 'packs');
+  fs.mkdirSync(packs, { recursive: true });
+  const packConf = path.join(packs, 'demo.conf');
+  fs.writeFileSync(packConf, 'window coder cursor coder --model auto\n');
+  fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'swarm-identity'),
+    `active_backlog_max_depth_conf_path\t${packConf}\n`
+  );
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-1119',
+    type: 'stall',
+    source: 'chaser-telemetry',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { eventType: 'chase', count: 1 },
+  });
+  const { deps } = fakeDeps();
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  const rec = result.run.packet.qualityRecommendations.find((r) => r.role === 'coder');
+  assert.ok(rec);
+  assert.equal(rec.dial, 'hold');
+  assert.equal(rec.disposition, 'held');
+});
+
+test('BL-1119: runClosingCeremony without window models still raises on stalls (compat)', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-1119',
+    type: 'stall',
+    source: 'chaser-telemetry',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { eventType: 'chase', count: 1 },
+  });
+  const { deps } = fakeDeps();
+  deps.readWindowModels = () => ({});
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  const rec = result.run.packet.qualityRecommendations.find((r) => r.role === 'coder');
+  assert.equal(rec.dial, 'raise');
+});
