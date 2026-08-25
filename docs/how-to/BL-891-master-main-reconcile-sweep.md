@@ -154,7 +154,8 @@ stops drop-nudge spam while local `main` is behind.
 
 **Status CLI.** `swarmforge/scripts/main_sync_status_cli.bb <project-root>`
 prints one JSON object with `ahead`, `behind`, `ready`, and the only allowed
-`action`:
+`action`. Counts use `origin/main...main` bound as `[behind ahead]` — same as
+handoffd (BL-1115 stamp-off of hotfix `a3bf11b533`; do not invert the range):
 
 | `ahead` / `behind` / deadlock | `action` |
 |---|---|
