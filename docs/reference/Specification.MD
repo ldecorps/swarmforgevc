@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1140: steward-driven local model bake-off
+— `apply-local-bakeoff-results` ingests BL-1127 battery results into the
+role-matrix; ranking sorts by authority tier then score so revoked
+`human-operator-priority:ollama-local-qwen-20260825` never outranks
+battery/scorecard evidence; `local-pack-align-outcome` reports
+aligned / no-winner-yet / mismatch for the Ollama pack without silently
+rewriting cursor-forge. Acceptance:
+`specs/features/BL-1140-steward-local-model-bakeoff.feature`.
+How-to: `docs/how-to/BL-1140-steward-local-model-bakeoff.md`
+(updates BL-547 / BL-1127). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-732 rematch: pane-title chrome filter
 mirrors `display_name_for_role` — multi-word names (`Model Steward`) and
 `@`-seat titles (`Coder@Sonnet2`) are dropped as chrome, not leaked into

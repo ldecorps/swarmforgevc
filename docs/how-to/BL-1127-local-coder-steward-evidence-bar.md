@@ -38,3 +38,11 @@ cited **pass** evidence path (`LOCAL_CODER_BATTERY_EVIDENCE_PATH` or the newest
 
 Pack: `swarmforge/packs/ollama-qwen3-mono-router.conf` (Ollama OpenAI-compat on
 `127.0.0.1:11434`). Does not require `QWEN_API_KEY` / Bailian Token Plan keys.
+
+## Steward bake-off (BL-1140)
+
+For choosing **which** local model leads the role-matrix (and whether the
+Ollama pack `--model` matches), see
+[Steward-driven local model bake-off](BL-1140-steward-local-model-bakeoff.md).
+Battery evidence from this ticket feeds that ranking; revoked
+`human-operator-priority:ollama-local-qwen-20260825` cannot outrank a pass.

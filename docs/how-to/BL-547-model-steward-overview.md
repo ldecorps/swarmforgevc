@@ -184,6 +184,11 @@ The output is a ranked list of `provider/model score evidence-pointer` tuples, w
 - `score` is a numerical ranking (higher = better fit for this role)
 - `evidence` points to the source (bakeoff run or recruiter scorecard)
 
+**BL-1140 ranking authority:** entries are ordered by authority tier first
+(battery/scorecard/bake-off citations beat other evidence; revoked
+`human-operator-priority:ollama-local-qwen-20260825` is worst), then by
+score. See [Steward-driven local model bake-off](BL-1140-steward-local-model-bakeoff.md).
+
 **By default, only certified models appear.** To include uncertified candidates:
 
 ```bash
