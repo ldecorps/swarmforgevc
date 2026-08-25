@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:41:03.268211714Z","feature_name":"every pane title the launcher can produce is recognized as chrome","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-732-pane-title-chrome-covers-every-producible-role-name.feature","background_hash":"97a79a21cd993cd51ceb5aca4ce4aae38f5cd5634ce93a49a727e6e6273d050d","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: every pane title the launcher can produce is recognized as chrome
 
   tmux paints the session name into a box-drawing rule at the top of each pane
