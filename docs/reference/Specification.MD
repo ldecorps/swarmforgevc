@@ -8,7 +8,7 @@ How-to: `docs/how-to/BL-1123-guard-master-checkout-against-bare-and-collapsed-ti
 Complements BL-839. Diagram note: `docs/diagrams/architecture.mmd`. No new
 extension command or setting.)
 Prior entry —
-**Last Updated:** August 25, 2026 (BL-1126: Local Agent Telegram turns stay
+August 25, 2026 (BL-1126: Local Agent Telegram turns stay
 live under Ollama latency — fast-path probes skip Ollama; real turns stream
 progress; empty completions recover; turn/idle/socket deadlines abort wedges.
 Scripts under `swarmforge/scripts/local_agent/`. Acceptance:

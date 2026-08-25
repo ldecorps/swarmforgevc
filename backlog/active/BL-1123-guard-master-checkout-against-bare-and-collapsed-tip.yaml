@@ -33,6 +33,8 @@ abandoned_commits:
   - 1a19b9d61d
   - 743bc30a6d
   - d7f79a5ec0
+  - 63095c6517
+  - 83f8fb47d0
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps::acceptance handler registered"
 invariants:
