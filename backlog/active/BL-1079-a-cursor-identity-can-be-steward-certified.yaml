@@ -35,7 +35,7 @@ required_wiring:
 # when Claude seats were weekly-capped (content landed as f1e5c731b /
 # c23ba315e / 06bffc38c / af84f81c9). Gate ancestry wants either the coder
 # SHAs or this deliberate-drop list (BL-531).
-abandoned_commits: ["05bf3dc776", "9bba33f7ce", "80e44d374c", "0436e720c6"]
+abandoned_commits: ["05bf3dc776", "9bba33f7ce", "80e44d374c", "0436e720c6", "5c7d764cae"]
 
 invariants:
   - "Before ordinary pack routing or ModelFactory assignment, a Cursor identity is registered as candidate, runs the steward compliance battery, produces an evidence artifact, then certify — never a fabricated Anthropic id."

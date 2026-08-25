@@ -193,3 +193,10 @@ uncertified identity. Cost attribution stays on `cursor/…` either way.
 | BL-1108 | Stamp-off ticket confirming the Cursor readiness hotfix |
 
 Acceptance: `specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature`.
+## Re-entry (2026-08-25)
+
+Acceptance steps that extract launcher allow-list tokens must treat `-` as
+part of an agent token (`[a-z0-9_|-]+`), so hyphenated providers such as
+`local-model` parse the same way as the Babashka property runner and the
+shell `validate_agent` case.
+

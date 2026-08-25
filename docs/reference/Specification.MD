@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1115: stamp-off Cursor hotfix
+**Last Updated:** August 25, 2026 (BL-1079: re-entry — APS allow-list token
+parse includes `-` so hyphenated agents (e.g. `local-model`) match the
+launcher `validate_agent` case; steward certify path unchanged.
+Acceptance:
+`specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature`.
+How-to: `docs/how-to/BL-1079-cursor-identity-steward-certify-and-residuals.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1115: stamp-off Cursor hotfix
 `a3bf11b533` — `main_sync_status_cli.bb` counts with
 `git rev-list --left-right --count origin/main...main` and binds
 `[behind ahead]` (same as handoffd); after absorb, `behind:0` / `proceed`,
