@@ -36,10 +36,14 @@ export interface CursorBridgeQueuedPrompt {
   createdAtMs: number;
 }
 
+export type CursorBridgeQueuePollMode = 'choose-next' | 'enqueue-next';
+
 export interface CursorBridgeQueuedPromptPoll {
   pollId: string;
   itemIds: string[];
   clearAllOptionIndex?: number;
+  /** BL-1146: while busy, votes pin enqueueNextPromptId instead of run-now. */
+  mode?: CursorBridgeQueuePollMode;
 }
 
 export type QueuedPollAnswerAction =
@@ -65,6 +69,71 @@ export function decideQueuedPollAnswerAction(
     return { kind: 'clear-all' };
   }
   return { kind: 'ignore' };
+}
+
+/** BL-1146: human ack after pinning a queued item while the bridge is busy. */
+export function formatEnqueueNextAckMessage(label: string): string {
+  return `Enqueued next: ${label}. Will start when idle.`;
+}
+
+/** BL-1146: pure text signal for a host finishing reply that needs human answer first. */
+export function hostReplyTextIsQuestion(reply: string | undefined): boolean {
+  if (!reply?.trim()) {
+    return false;
+  }
+  const lines = reply
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const last = lines[lines.length - 1] ?? '';
+  if (/[?]$/.test(last)) {
+    return true;
+  }
+  const tail = lines.slice(-5).join('\n').toLowerCase();
+  return /\((y\/n)\)|yes\s*\/\s*no|yes\s*or\s*no/.test(tail);
+}
+
+/** BL-1146: drop enqueueNextPromptId when the pinned id is no longer queued. */
+export function clearEnqueueNextIfStale(state: CursorBridgePersistedState): CursorBridgePersistedState {
+  const pin = state.enqueueNextPromptId;
+  if (!pin) {
+    return state;
+  }
+  const pending = state.pendingPrompts ?? [];
+  if (pending.some((item) => item.id === pin)) {
+    return state;
+  }
+  return { ...state, enqueueNextPromptId: undefined };
+}
+
+export type IdleQueueTransition =
+  | { kind: 'auto-start'; itemId: string }
+  | { kind: 'hold-pin' }
+  | { kind: 'post-choose-next-poll' }
+  | { kind: 'clear-stale-pin-then-poll' };
+
+/** BL-1146: decide what happens when the bridge becomes idle with a queue. */
+export function decideIdleQueueTransition(args: {
+  pendingPrompts: CursorBridgeQueuedPrompt[];
+  enqueueNextPromptId?: string;
+  hostFinishingReplyIsQuestion: boolean;
+}): IdleQueueTransition {
+  const { pendingPrompts, enqueueNextPromptId, hostFinishingReplyIsQuestion } = args;
+  if (enqueueNextPromptId) {
+    const pinned = pendingPrompts.find((item) => item.id === enqueueNextPromptId);
+    if (!pinned) {
+      return pendingPrompts.length > 0 ? { kind: 'clear-stale-pin-then-poll' } : { kind: 'hold-pin' };
+    }
+    if (hostFinishingReplyIsQuestion) {
+      return { kind: 'hold-pin' };
+    }
+    return { kind: 'auto-start', itemId: enqueueNextPromptId };
+  }
+  if (pendingPrompts.length > 0) {
+    return { kind: 'post-choose-next-poll' };
+  }
+  return { kind: 'hold-pin' };
 }
 
 export interface CursorBridgeChoicePoll {
@@ -106,6 +175,8 @@ export interface CursorBridgePersistedState {
    * cursorTopicId that currently holds (or recently held) queued work.
    */
   queuedWorkLivenessStatus?: Record<string, CursorBridgeLivenessStatusState>;
+  /** BL-1146: queued prompt id to auto-start on idle (unless host asked a question). */
+  enqueueNextPromptId?: string;
 }
 
 export interface CursorBridgeInboundEvent {
@@ -733,6 +804,9 @@ function parseQueuedPromptPoll(value: unknown): CursorBridgeQueuedPromptPoll | u
   if (typeof value.clearAllOptionIndex === 'number' && value.clearAllOptionIndex >= 0) {
     poll.clearAllOptionIndex = value.clearAllOptionIndex;
   }
+  if (value.mode === 'enqueue-next' || value.mode === 'choose-next') {
+    poll.mode = value.mode;
+  }
   return poll;
 }
 
@@ -803,6 +877,10 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   const queuedWorkLivenessStatus = parseQueuedWorkLivenessStatus(record.queuedWorkLivenessStatus);
   if (queuedWorkLivenessStatus) {
     state.queuedWorkLivenessStatus = queuedWorkLivenessStatus;
+  }
+  const enqueueNextPromptId = parseOptionalNonEmptyString(record.enqueueNextPromptId);
+  if (enqueueNextPromptId !== undefined) {
+    state.enqueueNextPromptId = enqueueNextPromptId;
   }
   return state;
 }
