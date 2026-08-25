@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1124: property-suite fixtures must not
+**Last Updated:** August 25, 2026 (BL-1081: re-entry after unhold — APS
+wake-style baseline includes `local-model` → `chat-message` so scenario 05
+(provider table gains a dimension, not a fork) stays green; product ACP
+host path unchanged. Acceptance:
+`specs/features/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.feature`.
+Reference: `docs/reference/BL-1081-acp-hosted-seat-snapshot.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1124: property-suite fixtures must not
 mutate shared `main` / role refs or flip `core.bare`. Pre-commit canary in
 `check_property_suite_drift.sh`; recovery refuses reset-to-origin when ahead;
 `expedite_fixture.sh` refuses live checkout dests. Acceptance:
