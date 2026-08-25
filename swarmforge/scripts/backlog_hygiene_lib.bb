@@ -9,9 +9,12 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_pointer_gate_lib.bb")))
 
+(defn- strip-yaml-quotes [s]
+  (-> s str/trim (str/replace #"^[\"']|[\"']$" "")))
+
 (defn field [text name]
   (when-let [[_ v] (re-find (re-pattern (str "(?m)^" name ":\\s*(.*)$")) text)]
-    (let [v (-> v str/trim (str/replace #"^\"|\"$" "") (str/replace #"^'|'$" ""))]
+    (let [v (strip-yaml-quotes v)]
       (when-not (str/blank? v) v))))
 
 (defn- acceptance-line-tail-and-body
@@ -102,9 +105,6 @@
         (when (and (fs/exists? abs)
                    (not (git-ls-files-tracked? root tail)))
           {:kind :untracked-acceptance :id id :path path :feature-path tail})))))
-
-(defn- strip-yaml-quotes [s]
-  (-> s str/trim (str/replace #"^[\"']|[\"']$" "")))
 
 (defn read-yaml-list-field
   "Flow `[a, b]` or block `- a` list under a column-0 field. Empty when absent."
