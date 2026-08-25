@@ -874,13 +874,17 @@
 (let [global {:warn-ms 900000 :escalate-ms 3600000}
       specs {"cleaner->architect|git_handoff" {:warn-ms 1200000 :escalate-ms 7200000 :n 20 :source "exact"}
              "*->architect|git_handoff" {:warn-ms 1000000 :escalate-ms 6000000 :n 40 :source "to-type"}
-             "*->*|git_handoff" {:warn-ms 800000 :escalate-ms 5000000 :n 80 :source "type"}}]
+             "*->*|git_handoff" {:warn-ms 800000 :escalate-ms 5000000 :n 80 :source "type"}}
+      ;; Calibrated exact/to-type hits are × calibrated-warn-slack-factor (2).
+      slack flow-watchdog-lib/calibrated-warn-slack-factor]
   (assert= "resolve-thresholds prefers the exact from->to|type key"
-           {:warn-ms 1200000 :escalate-ms 7200000 :resolved-via "cleaner->architect|git_handoff"}
+           {:warn-ms (* 1200000 slack) :escalate-ms (* 7200000 slack)
+            :resolved-via "cleaner->architect|git_handoff"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "cleaner" :to "architect" :type "git_handoff"} specs global))
   (assert= "resolve-thresholds falls back to *->to|type when exact is missing"
-           {:warn-ms 1000000 :escalate-ms 6000000 :resolved-via "*->architect|git_handoff"}
+           {:warn-ms (* 1000000 slack) :escalate-ms (* 6000000 slack)
+            :resolved-via "*->architect|git_handoff"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "coder" :to "architect" :type "git_handoff"} specs global))
   (assert= "resolve-thresholds skips *->*|type and uses global when exact/to-type miss"
@@ -891,7 +895,10 @@
   (assert= "resolve-thresholds falls back to the global conf pair when no spec matches"
            {:warn-ms 900000 :escalate-ms 3600000 :resolved-via "global"}
            (flow-watchdog-lib/resolve-thresholds
-            {:from "a" :to "b" :type "note"} {} global)))
+            {:from "a" :to "b" :type "note"} {} global))
+  (assert= "calibrated-warn-slack-factor is at least 2 (human 2026-08-25)"
+           true
+           (>= slack 2)))
 
 (let [headers (map (fn [i]
                      {:from "cleaner" :to "architect" :type "git_handoff"
@@ -1000,7 +1007,9 @@
            {:warn-ms 1200000 :escalate-ms 7200000 :n 10 :source "exact"}
            entry)
   (assert= "resolve-thresholds accepts the round-tripped entry (numeric guard passes)"
-           {:warn-ms 1200000 :escalate-ms 7200000 :resolved-via "cleaner->architect|git_handoff"}
+           {:warn-ms (* 1200000 flow-watchdog-lib/calibrated-warn-slack-factor)
+            :escalate-ms (* 7200000 flow-watchdog-lib/calibrated-warn-slack-factor)
+            :resolved-via "cleaner->architect|git_handoff"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "cleaner" :to "architect" :type "git_handoff"}
             (:specs read-back)
