@@ -11,6 +11,11 @@ depends_on: []
 assigned_to: coder
 mutation_cost: low
 human_approval: approved
+acceptance: specs/features/BL-782-liveness-probes-scan-whole-process-table.feature
+required_wiring:
+  - "swarmforge/scripts/expedite_cli.bb::live-probe-or-pids-matching::root-scoped needles at call sites"
+  - "specs/pipeline/steps/index.js::bl782ExpediteLivenessScopeSteps::acceptance handler registered"
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 invariants:
   - "Every liveness/survivor probe in a teardown or audit path matches only processes belonging to the project root under test — a process from another root, or from the operator's own tooling, can never be counted as a survivor."
 
@@ -98,25 +103,11 @@ description: |
   The verification bar is behavioural: both suites must pass on a host with a
   live swarm running, which is the condition that exposes the defect. A green
   run on a quiet host proves nothing here and must not be offered as evidence.
-
-acceptance: |
-  Specifier writes the Gherkin when this is approved and promoted. Minimum
-  behaviour:
-
-  1. `test_lifecycle_script_scope.sh` passes with a real `handoffd.bb` for a
-     different project root alive throughout the run.
-  2. `test_expedite_cli.sh` passes with a real `handoffd.bb`,
-     `handoffd_supervisor.bb`, and a `babysitterd.sh` for a different root
-     alive throughout the run.
-  3. Both still FAIL when a genuine survivor belonging to the root under test
-     is left running — the scoping must not be so tight it stops detecting the
-     thing these probes exist to detect. This is the scenario that proves the
-     fix is a narrowing and not a defeat.
-  4. `kill_pipeline_swarm.sh`'s teardown behaviour on its own root is
-     unchanged, and every existing BL-637 scenario still passes.
-  5. The operator-agent probe either scopes to the root under test, or
-     documents in the code why it cannot and what it therefore means.
-
+qa_e2e_procedure: >
+  (1) Neighbour-root decoys alive → unpinned test_expedite_cli cases pass without
+  EXPEDITE_PROBE_FILE. (2) Genuine survivor on audited root still detected.
+  (3) test_lifecycle_script_scope regression guard with neighbour handoffd.
+  (4) Operator probe scopes or documents. (5) BL-637/kill_pipeline behaviour unchanged.
 out_of_scope: |
   - BL-637's pipeline-only lifecycle boundary — unchanged; this ticket only
     fixes how the survivor check MATCHES, never what it kills.
@@ -126,6 +117,10 @@ out_of_scope: |
   - The `EXPEDITE_PROBE_FILE` seam, which already exists and works.
 
 notes: |
+  - [2026-08-25T21:22Z] specifier (documenter bounce D1 Work 000721): filled
+    acceptance feature (5 scenarios); single-line pointer for pre-QA gate.
+    Forwarded to coder (6f5ad94ecb).
+
   This is the same class as the standing operator lesson about `pgrep`/`pkill`
   self-matching, one layer out: there the risk is a probe matching ITSELF, here
   it is a probe matching a NEIGHBOUR. Both produce a survivor that was never a
