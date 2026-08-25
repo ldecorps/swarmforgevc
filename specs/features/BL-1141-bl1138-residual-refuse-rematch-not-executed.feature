@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T17:21:43.910904201Z","feature_name":"BL-1138 residual — refuse-rematch must rematch live (not wait for Cursor)","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1141-bl1138-residual-refuse-rematch-not-executed.feature","background_hash":"b4352d5dc26f18961fe1e43796d45e0f850f8f4e790233e75406d53c8a0a12ed","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1138 residual — refuse-rematch must rematch live (not wait for Cursor)
   BL-1138 made :replay-bookkeeping execute rematch (`git reset --hard
   origin/main`) so rematch-bookkeeping no longer durable-deadlocks. Same
