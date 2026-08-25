@@ -23,6 +23,10 @@ approval_context: >
 acceptance: specs/features/BL-1130-land-on-main-without-external-conflict-resolution.feature
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1130LandOnMainWithoutExternalConflictResolutionSteps::acceptance handler registered so the runner executes every review scenario"
+abandoned_commits:
+  - be43a5373
+  - 2bf1e3396
+
 invariants:
   - "The automated origin/main absorb path never leaves the master checkout with MERGE_HEAD and unmerged paths."
   - "A land that cannot absorb conflict-free refuses cleanly (abort + rematch/named refuse) and never escalates finish-this-merge-in-an-editor as the designed recovery."
