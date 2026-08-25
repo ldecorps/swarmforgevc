@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-759: Cursor-operator modules no
+**Last Updated:** August 25, 2026 (BL-833: host-agent activity feed —
+tee of existing SDK progress lines into a bounded per-session buffer
+(`hostActivityFeed.ts`, bound 128). Catch-up `GET /host-activity` and live
+`event: host-activity` on authenticated `/events`; quiet when no session.
+Telegram reporter unchanged (tee, not re-route). Feed write failures never
+damage the turn. Screen is BL-834. Acceptance:
+`specs/features/BL-833-host-agent-activity-feed.feature`.
+How-to: `docs/how-to/BL-833-host-agent-activity-feed.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-759: Cursor-operator modules no
 longer import drain helpers from `telegram-front-desk-bot.ts`.
 `isPipelineEmpty` / `resolveLiveRoles` live in `telegramPipelineDrain.ts`;
 `controlDrainTimeoutMs` in `telegramControlCore.ts`; the bot re-exports
@@ -9,7 +19,6 @@ edges (the standing acyclic cycle is gone). Drain semantics unchanged.
 Acceptance: `specs/features/BL-759-cursor-operator-front-desk-cycle.feature`.
 How-to: `docs/how-to/BL-759-cursor-operator-front-desk-bot-import-cycle.md`.
 No new extension command or setting.)
-Prior entry —
 Prior entry —
 **Last Updated:** August 25, 2026 (BL-683: handoff depth warning counts
 ticket YAML only — same family as handoffd open-slot/status counters;

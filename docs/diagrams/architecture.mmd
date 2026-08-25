@@ -173,6 +173,8 @@
 %% BL-1111 (2026-08-24): reply-relay transport reconnect — 5s backoff
 %% cap for terminated/fetch-failed, assert OK /events body, cancel SSE
 %% on exit, sticky lastError keeps health unhealthy (BL-621 alert kept).
+%% BL-833 (2026-08-25): host activity feed — tee progress lines into
+%% bounded buffer; GET /host-activity + SSE event host-activity (auth).
 %% BL-1091 (2026-08-24): Expedite paused→active rename pathspec-commits
 %% both source and destination (Approve/Reject/Amend stay single-path).
 %% BL-1100 (2026-08-24): promote_and_route_next candidacy — structured
