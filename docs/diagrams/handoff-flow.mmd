@@ -28,7 +28,7 @@ flowchart TD
 
   WORK["agent executes the task\nand commits"]
   FORWARD["sends the next git_handoff\n(10-char commit hex)"]
-  DONE["done_with_current.sh:\nin_process/ -> completed/"]
+  DONE["done_with_current.sh:\nin_process/ -> completed/\n(BL-652: any argv fails fast,\nzero side effects)"]
   STALE(["skipping this leaves a stale claim\nthat re-shows on the next wake"])
 
   START --> DRAFT --> VALIDATE

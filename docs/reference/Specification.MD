@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-652: `done_with_current.sh` / family
+refuse any argv via `dispatch-lib/refuse-unexpected-args!` — non-zero exit,
+usage text, zero completion side effects in task and batch modes; `--help`
+is not special. Argumentless completion unchanged. Acceptance:
+`specs/features/BL-652-done-with-current-arg-rejection.feature`.
+How-to: `docs/how-to/BL-652-done-with-current-arg-rejection.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1139: durable master-checkout drift on
 daemon-executed scripts auto-repairs via `repair-master-checkout-drift!` —
 restore from `main` when not commit-in-flight, one-shot
