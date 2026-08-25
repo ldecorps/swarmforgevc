@@ -92,7 +92,7 @@ function launcherAllowListTokens() {
   const fn = src.match(/^validate_agent\(\) \{[\s\S]*?^\}$/m);
   assert.ok(fn, 'validate_agent could not be located in the launcher');
   assert.match(fn[0], /Unsupported agent/, 'extracted function is not the allow-list');
-  const alts = fn[0].match(/^\s+([a-z0-9_|]+)\)\s*;;\s*$/m);
+  const alts = fn[0].match(/^\s+([a-z0-9_|-]+)\)\s*;;\s*$/m);
   assert.ok(alts, 'validate_agent case arm with agent tokens was not found');
   return new Set(alts[1].split('|').filter(Boolean));
 }
