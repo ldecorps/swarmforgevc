@@ -200,6 +200,7 @@ import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
+import { readSwarmEnvValue } from './swarmEnv';
 import { routeOnboardingMessage } from '../onboarding/onboarderContractPhaseRouter';
 import { ContractPhaseAdapters } from '../onboarding/contractPhaseRelay';
 import { createRealContractPhaseAdapters } from './contractPhaseRealAdapters';
@@ -212,8 +213,12 @@ import {
 } from '../onboarding/onboarderStateStore';
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
-import { buildRoleInboxes } from '../watchdog/chaserMonitor';
-import { scanInboxNew, scanInProcess } from '../swarm/inboxChaser';
+import { controlDrainTimeoutMs } from './telegramControlCore';
+import { isPipelineEmpty, resolveLiveRoles } from './telegramPipelineDrain';
+// BL-759: re-export drain helpers so existing bot consumers keep resolving
+// the same implementations after the extract.
+export { controlDrainTimeoutMs } from './telegramControlCore';
+export { isPipelineEmpty, resolveLiveRoles } from './telegramPipelineDrain';
 import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
 import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
 import { commitApprovalWrites } from '../util/commitIntegrityRunner';
@@ -1613,13 +1618,29 @@ export async function enqueueRoleAnswerNote(targetPath: string, role: string, te
 // without ever calling openSubject (and therefore never externally
 // minting a second SUP-###) or re-notifying the Operator a second time.
 export async function openSubjectAndRecord(targetPath: string, topicId: number | undefined, text: string, updateId: number): Promise<string> {
-  const cursorTopicId = readCursorBridgeTopicId(targetPath);
-  if (cursorTopicId !== undefined && topicId === cursorTopicId) {
-    throw new Error('openSubjectAndRecord: Cursor Remote topic is owned by telegram-cursor-bridge, not the front desk');
-  }
   const already = readTopicMap(targetPath)[updateOpenKey(updateId)];
   if (already !== undefined) {
     return already;
+  }
+  const cursorTopicId = readCursorBridgeTopicId(targetPath);
+  const letsTalkProvider = (
+    readSwarmEnvValue(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') ||
+    process.env.SWARMFORGE_LETS_TALK_PROVIDER?.trim() ||
+    ''
+  ).toLowerCase();
+  const cursorBridgeRoutingEnabled = letsTalkProvider === '' || letsTalkProvider === 'cursor';
+  if (cursorTopicId !== undefined && topicId === cursorTopicId) {
+    if (cursorBridgeRoutingEnabled) {
+      throw new Error('openSubjectAndRecord: Cursor Remote topic is owned by telegram-cursor-bridge, not the front desk');
+    }
+    // Provider switched away from cursor: adopt this legacy topic into the
+    // front-desk operator subject so pings continue to get answers.
+    const topicMap = readTopicMap(targetPath);
+    topicMap[topicMapKey(topicId)] = OPERATOR_SUBJECT_ID;
+    topicMap[updateOpenKey(updateId)] = OPERATOR_SUBJECT_ID;
+    writeTopicMap(targetPath, topicMap);
+    appendOperatorEvent(targetPath, { type: 'TELEGRAM_TOPIC_MESSAGE', subject: OPERATOR_SUBJECT_ID });
+    return OPERATOR_SUBJECT_ID;
   }
   const subjectId = await openSubject(targetPath, text);
   const topicMap = readTopicMap(targetPath);
@@ -1747,18 +1768,7 @@ export async function synthesizeVoiceReply(openaiApiKey: string, text: string): 
 // this file's own established "testable core, thin live wrapper" split,
 // applied a fourth time (mirrors Approvals/Recert/Agent Questions above).
 
-const CONTROL_DRAIN_TIMEOUT_ENV_VAR = 'SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS';
-const DEFAULT_CONTROL_DRAIN_TIMEOUT_MS = 10 * 60 * 1000;
 const CONTROL_DRAIN_POLL_INTERVAL_MS = 2000;
-
-// Exported (CLI main() thin-wrapper rule), same shape as
-// conciergeTickIntervalMs below - unset/invalid/non-positive all fall back
-// to the human-decided 10-minute default (2026-07-16), env-overridable so
-// a test can drive the bounded drain wait small and deterministic.
-export function controlDrainTimeoutMs(rawEnv: string | undefined = process.env[CONTROL_DRAIN_TIMEOUT_ENV_VAR]): number {
-  const parsed = rawEnv ? Number(rawEnv) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTROL_DRAIN_TIMEOUT_MS;
-}
 
 const CONTROL_RESTART_ACK_TIMEOUT_ENV_VAR = 'SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS';
 const DEFAULT_CONTROL_RESTART_ACK_TIMEOUT_MS = 5 * 60 * 1000;
@@ -1813,21 +1823,6 @@ export function pauseMenuButtons(): InlineKeyboardButton[][] {
 
 export function resumeNowButtons(): InlineKeyboardButton[][] {
   return [[{ text: 'Resume now', callbackData: CONTROL_CALLBACK_DATA.resumeNow }]];
-}
-
-// BL-423: "no parcel in any role's inbox/in_process" (the ticket's own
-// drain-empty definition) - reuses inboxChaser.ts's own scanInboxNew/
-// scanInProcess (the SAME scan the chase sweep itself drives), never a
-// second, divergent notion of "is there work".
-export function isPipelineEmpty(targetPath: string): boolean {
-  // resolveLiveRoles (below) reads the persisted roles.tsv directly - the
-  // SAME source notify-dead-letters.ts's own live-roles resolution uses -
-  // rather than readSwarmRoles's sessions.tsv (only populated while a real
-  // tmux swarm is actually up), so a drain-stop's own "is anything still
-  // in flight" check works from static role/worktree config alone.
-  const roles = resolveLiveRoles(targetPath).map((r) => r.role);
-  const roleInboxes = buildRoleInboxes(targetPath, roles);
-  return roleInboxes.every(({ inboxNewDir, inProcessDir }) => scanInboxNew(inboxNewDir).length === 0 && scanInProcess(inProcessDir).length === 0);
 }
 
 export function killAllSwarmScriptPath(targetPath: string): string {
@@ -2178,6 +2173,12 @@ function buildPollAdapters(
   openaiApiKey: string | undefined,
   scheduleConciergeTick?: () => void
 ): PollAdapters {
+  const letsTalkProvider = (
+    readSwarmEnvValue(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') ||
+    process.env.SWARMFORGE_LETS_TALK_PROVIDER?.trim() ||
+    ''
+  ).toLowerCase();
+  const cursorBridgeRoutingEnabled = letsTalkProvider === '' || letsTalkProvider === 'cursor';
   return {
     chatId,
     // BL-620: every dropped update leaves exactly one bounded audit line in
@@ -2198,9 +2199,14 @@ function buildPollAdapters(
     },
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
-    cursorBridgeTopicId: () => Promise.resolve(readCursorBridgeTopicId(targetPath)),
-    bubbleTopicId: () => Promise.resolve(readBubbleTopicId(targetPath)),
+    cursorBridgeTopicId: () =>
+      Promise.resolve(cursorBridgeRoutingEnabled ? readCursorBridgeTopicId(targetPath) : undefined),
+    bubbleTopicId: () =>
+      Promise.resolve(cursorBridgeRoutingEnabled ? readBubbleTopicId(targetPath) : undefined),
     forwardCursorBridgeUpdate: async (update) => {
+      if (!cursorBridgeRoutingEnabled) {
+        return false;
+      }
       try {
         appendCursorBridgeInboundUpdate(path.join(targetPath, '.swarmforge', 'operator'), update as { update_id?: number } & Record<string, unknown>);
         return true;
@@ -2721,21 +2727,6 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
     hold: pick(folders.hold),
     done: pick(folders.done),
   };
-}
-
-// BL-301: resolveRoleWorktrees is file-local in bridge/bridgeState.ts -
-// duplicated here rather than exported/imported, same "no shared lifecycle
-// worth coupling" posture gateSnapshot.ts's own header already documents
-// for this exact live-glue class of function.
-export function resolveLiveRoles(targetPath: string): { role: string; worktreePath: string }[] {
-  try {
-    return parseRolesTsv(fs.readFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), 'utf8')).map((r) => ({
-      role: r.role,
-      worktreePath: r.worktreePath,
-    }));
-  } catch {
-    return [];
-  }
 }
 
 // BL-325: computeRoleGateStatesLive's RoleGateState.snippet (the gated
@@ -3351,8 +3342,8 @@ export async function main(): Promise<void> {
   // (see buildPollAdapters/connectAndRelayReplies), never a startup failure.
   const openaiApiKey = process.env.OPENAI_API_KEY;
 
-  // BL-695 inv2: migrate SUP-* icon markers off tracked topics into the
-  // untracked store before any loop can re-set Telegram icons (restart-safe).
+  // BL-695: migrate legacy tracked SUP-*.json icons into untracked store
+  // before binding standing topics (inv2 — before ensureOperatorTopic).
   retireTrackedSupervisorRecords(targetPath, topicsDir(targetPath));
 
   // BL-346: bind the standing Operator topic BEFORE any loop starts
