@@ -392,3 +392,4 @@ test_shell_test_discovery.sh	standing
 role_ask_escalation_lib_test_runner.bb	standing		
 gh25_role_ask_escalation_test_runner.bb	standing		
 bl1138_rematch_bookkeeping_test_runner.bb	standing		
+bl615_orphaned_claim_progress_test_runner.bb	standing		

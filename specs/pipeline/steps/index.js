@@ -44,6 +44,7 @@ const DOMAINS = [
   require('./burndownEtaSteps'),
   require('./pwaTranslatedContentSteps'),
   require('./sidecarNoOrphanSteps'),
+  require('./bl615OrphanedClaimProgressSidecarReapSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),
   require('./backendSwitchSteps'),

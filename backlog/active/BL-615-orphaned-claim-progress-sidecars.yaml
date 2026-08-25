@@ -2,7 +2,7 @@ id: BL-615
 title: "Orphaned .claim-progress.json sidecars accumulate in inbox/in_process with no matching handoff"
 milestone: M8
 type: defect
-status: todo
+status: active
 epic: swarm-reliability
 severity: medium
 priority: 192
@@ -127,12 +127,13 @@ description: |
   ## Acceptance materialization (BL-233 / BL-441)
 
   Scenarios are parked in
-  specs/features/BL-615-orphaned-claim-progress-sidecar-reap.feature.draft
+  specs/features/BL-615-orphaned-claim-progress-sidecar-reap.feature
   because the runner hard-fails on handler-less scenarios. The coder MUST,
   in the same parcel, rename the draft to .feature and wire its step
   handlers. Do not close this ticket with the draft unmaterialized.
-acceptance: specs/features/BL-615-orphaned-claim-progress-sidecar-reap.feature.draft
+acceptance: specs/features/BL-615-orphaned-claim-progress-sidecar-reap.feature
 notes: |
+  - "[2026-08-25T16:25Z] coder: abandon-stale! remove-sidecars-of!; in_process orphan reap backstop."
   e2e QA procedure: seed a scratch role inbox/in_process with (a) a real
   handoff + sidecar and (b) a sidecar with no matching handoff. Complete (a)
   via done_with_current.sh and verify no sidecar remains for it; run the

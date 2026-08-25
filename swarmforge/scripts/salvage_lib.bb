@@ -80,6 +80,9 @@
            target (fs/path abandoned-dir (fs/file-name file))]
        (fs/create-dirs abandoned-dir)
        (fs/move file target {:replace-existing false})
+       ;; BL-615: same post-move sidecar cleanup as done_with_current_task —
+       ;; remove-sidecars-of! deletes by the pre-move path string.
+       (handoff-lib/remove-sidecars-of! file)
        target))))
 
 (defn latest-item-handoffs

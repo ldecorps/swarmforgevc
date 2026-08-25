@@ -486,11 +486,17 @@
                      (not (contains? names parent))))
                  filenames))))
 
-(defn reap-orphaned-sidecars! [inbox-new-dir]
-  (when (fs/exists? inbox-new-dir)
-    (let [filenames (map fs/file-name (fs/list-dir inbox-new-dir))]
-      (doseq [orphan (orphaned-sidecar-filenames filenames)]
-        (fs/delete (fs/path inbox-new-dir orphan))))))
+(defn reap-orphaned-sidecars!
+  "BL-232/BL-615: delete sidecar files whose parent .handoff is gone.
+   Returns the orphan filenames reaped (for logging)."
+  [dir]
+  (if-not (fs/exists? dir)
+    []
+    (let [filenames (map fs/file-name (fs/list-dir dir))
+          orphans (orphaned-sidecar-filenames filenames)]
+      (doseq [orphan orphans]
+        (fs/delete (fs/path dir orphan)))
+      (vec orphans))))
 
 ;; BL-852: reuses handoff-lib/default-ambulance-held? (already in scope via
 ;; this file's own load-file of handoff_lib.bb, per the ticket's "no new
@@ -631,6 +637,12 @@
     ((:mark-rate-limit-cooldown-woken! adapters) role cooldown-until-ms)))
 
 (defn- sweep-role! [role inbox-new-dir in-process-dir completed-dir abandoned-dir now-ms config adapters]
+  ;; BL-615: reap orphaned claim-progress sidecars in in_process (backstop).
+  (let [reaped (reap-orphaned-sidecars! in-process-dir)]
+    (when (seq reaped)
+      ((:log-telemetry! adapters)
+       {:type "reap-orphaned-sidecar" :role role :orphans reaped}
+       now-ms)))
   (sweep-in-process! role in-process-dir now-ms config adapters)
   (sweep-role-inbox! role inbox-new-dir completed-dir abandoned-dir now-ms config adapters))
 
