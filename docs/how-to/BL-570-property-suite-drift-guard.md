@@ -22,7 +22,8 @@ hand (e.g. `d63e80320` on 2026-07-22).
 | Green | Commit allowed |
 | Red | Commit blocked; output names the failure |
 | Toolchain missing (`node_modules` / npm / exit 127) | Warn + allow (fail open) |
-| `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` | Warn + allow (recovery override) |
+| Mid-merge byte-identical import (BL-1121) | `skip-reconcile-import` + allow (standing recipe; not the env override) |
+| `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` | Warn + allow (recovery override only) |
 
 ## Operator note
 
