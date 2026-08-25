@@ -5,6 +5,8 @@
 
 ## Docs
 
+- Abandoned stranded pre-tip-pure coder tip `d4fad4e55e` (superseded by `46fceb651`)
+
 - How-to: shell-test discovery CLI + accounting table
 - BL-973 Related pointer
 - Spec stamp + index

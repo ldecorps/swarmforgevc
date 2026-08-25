@@ -17,6 +17,10 @@ invariants:
 required_wiring:
   - "swarmforge/scripts/test/test_shell_test_discovery.sh::test_swarm_handoff_mono_router_auto_rotate::the sweep's own test proves the orphan case is caught"
 
+
+abandoned_commits:
+  - d4fad4e55e  # pre-tip-pure coder feat tip stranded on swarmforge-coder; superseded by tip-pure 46fceb651
+
 description: |
   ## What
 
@@ -79,6 +83,7 @@ description: |
 acceptance: specs/features/BL-724-orphan-red-shell-test-untracked-and-undiscovered.feature
 
 notes: |
+  - "[2026-08-25T15:35Z] documenter: abandon stranded pre-tip-pure coder tip d4fad4e55e (superseded by 46fceb651)."
   - "[2026-08-25T15:20Z] coder: shell_test_discovery CLI + self-test; untracked orphans fail loud."
   Evidence gathered 2026-07-30 while draining the coder's note:
   - `grep -c 'MONO-ROUTER' swarmforge/scripts/swarm_handoff.bb` -> 0 on main,
