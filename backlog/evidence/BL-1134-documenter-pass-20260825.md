@@ -14,6 +14,11 @@
 
 NONE
 
+## Pre-QA
+
+Merged stranded hardener soft-Gherkin stamp `0558c49020` onto tip (not
+abandoned) so ancestry clears.
+
 ## Forward
 
 `git_handoff` to QA, priority `00`, same task name.
