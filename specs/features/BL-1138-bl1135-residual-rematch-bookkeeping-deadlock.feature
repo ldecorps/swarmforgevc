@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:13:29.051720497Z","feature_name":"BL-1135 residual — rematch-bookkeeping must not durable-deadlock absorb","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1138-bl1135-residual-rematch-bookkeeping-deadlock.feature","background_hash":"abea6f255b756d8dfba0f32d193b71bba8bae94b8f2af2ec69648b159bf96a1c","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1135 residual — rematch-bookkeeping must not durable-deadlock absorb
   BL-1135 closed claiming live lands reach behind=0 without Operator/Cursor
   completing an absorb merge. Measured same evening: reconcile surfaces
