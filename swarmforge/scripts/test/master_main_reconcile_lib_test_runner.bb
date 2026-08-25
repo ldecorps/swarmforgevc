@@ -550,6 +550,63 @@
               (master-main-reconcile-lib/surface-message {:behind 3 :reason :human-merge-in-progress})
               "human-merge-in-progress"))
 
+;; ── BL-1135: rematch-bookkeeping must not page Operator absorb ───────────
+(assert= "bl1135: merge-failure-reason keeps rematch-bookkeeping distinct"
+         "rematch-bookkeeping"
+         (master-main-reconcile-lib/merge-failure-reason :rematch-bookkeeping))
+(assert= "bl1135: merge-failure-reason keeps refuse-rematch distinct"
+         "refuse-rematch"
+         (master-main-reconcile-lib/merge-failure-reason :refuse-rematch))
+(assert= "bl1135: unknown merge outcome still maps to conflict"
+         "conflict"
+         (master-main-reconcile-lib/merge-failure-reason :weird))
+(assert-true "bl1135: rematch-bookkeeping is rematch-owner recovery"
+             (master-main-reconcile-lib/rematch-owner-recovery? "rematch-bookkeeping"))
+(assert-true "bl1135: refuse-rematch is rematch-owner recovery"
+             (master-main-reconcile-lib/rematch-owner-recovery? :refuse-rematch))
+(assert-true "bl1135: conflict is not rematch-owner recovery"
+             (not (master-main-reconcile-lib/rematch-owner-recovery? "conflict")))
+
+(let [msg (master-main-reconcile-lib/surface-message {:behind 4 :reason :rematch-bookkeeping})]
+  (assert-true "bl1135: surface-message rematch-bookkeeping cites BL-1135"
+               (clojure.string/includes? msg "BL-1135"))
+  (assert-true "bl1135: surface-message rematch-bookkeeping names rematch"
+               (clojure.string/includes? msg "rematch"))
+  (assert-true "bl1135: surface-message rematch-bookkeeping stays within 80 chars"
+               (<= (count msg) 80))
+  (assert-true "bl1135: surface-message rematch-bookkeeping never says needs a human"
+               (not (re-find #"(?i)needs a human" msg))))
+
+(let [tg (master-main-reconcile-lib/escalation-telegram-text "rematch-bookkeeping" 2 3)]
+  (assert-true "bl1135: rematch telegram names rematch-bookkeeping"
+               (clojure.string/includes? tg "rematch-bookkeeping"))
+  (assert-true "bl1135: rematch telegram never says needs a human"
+               (not (re-find #"(?i)needs a human" tg)))
+  (assert-true "bl1135: rematch telegram never says complete origin/main merge"
+               (not (re-find #"(?i)complete origin/main merge" tg))))
+
+(let [tg (master-main-reconcile-lib/escalation-telegram-text "conflict" 2 3)]
+  (assert-true "bl1135: conflict telegram still pages a human"
+               (re-find #"(?i)needs a human" tg)))
+
+;; Live sweep: rematch-bookkeeping surfaces once and never escalate!s.
+(let [daemon (mk-tmp)
+      {:keys [calls surfaced adapters]}
+      (mk-adapters {:ahead 1 :behind 2
+                    :merge-result {:success false
+                                   :outcome :rematch-bookkeeping
+                                   :error "rematch-bookkeeping"}})]
+  (dotimes [_ 4]
+    (master-main-reconcile-lib/sweep! daemon 3 adapters))
+  (assert= "bl1135: rematch-bookkeeping surfaces exactly once across ticks"
+           1 (:surface! @calls))
+  (assert= "bl1135: rematch-bookkeeping never escalate!s (not Operator absorb)"
+           0 (:escalate! @calls))
+  (assert-true "bl1135: surfaced text is rematch recovery, not needs-a-human"
+               (and (seq @surfaced)
+                    (not (re-find #"(?i)needs a human|complete origin/main merge"
+                                  (str (first @surfaced)))))))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")
