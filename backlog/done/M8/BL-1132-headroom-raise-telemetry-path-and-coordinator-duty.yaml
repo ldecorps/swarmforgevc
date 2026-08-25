@@ -6,7 +6,7 @@ severity: high
 # high: standing intake cap stuck; false "pressure" blocks every raise while
 # host has headroom; over-cap qjumps with no recovery path. Not critical:
 # swarm stays up; depth just never grows.
-status: paused
+status: done
 epic: swarm-reliability
 priority: 0
 direction: queue-jump
