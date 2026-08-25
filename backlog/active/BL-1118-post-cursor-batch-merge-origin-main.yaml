@@ -22,6 +22,8 @@ abandoned_commits:
   - 32251b16b8
   - 1983c202a2
   - 1573a341c0
+  - f0542c2a97
+  - f9e696ba5f
 human_approval: approved
 approval_context: >
   Process B: keep SWARMFORGE_ROLE=QA for pipeline-path hotfixes on main
