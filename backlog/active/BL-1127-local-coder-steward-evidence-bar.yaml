@@ -50,6 +50,7 @@ notes:
     paused→active (depth was full 5/5) and route to coder. BL-1126 already done."
   - "[2026-08-25T11:06Z] coordinator: mint ack; approved; depends_on BL-1126; active cap full (3/3) — promote after BL-1126 / when cap allows. Epic BL-1125 never promoted."
   - "[2026-08-25T10:48Z] specifier: minted under epic BL-1125; feature armed; depends_on BL-1126."
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-25, by: QA, blamed: cleaner, class: behavior, commit: eb4bef96fd, evidence: backlog/evidence/BL-1127-qa-bounce-20260825.md }
+  - { at: 2026-08-25, by: QA, blamed: hardender, class: behavior, commit: 9390aab8e8, evidence: backlog/evidence/BL-1127-qa-bounce-rematch-20260825.md }
