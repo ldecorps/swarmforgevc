@@ -2,7 +2,7 @@ id: BL-1140
 title: "Steward-driven local model bake-off + pack alignment (BL-1125 remaining slice)"
 milestone: M8
 type: feature
-status: active
+status: done
 epic: local-llm-swarm
 priority: 22
 direction: aligned
