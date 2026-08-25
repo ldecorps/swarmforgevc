@@ -39,6 +39,7 @@ const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 const DECL_KINDS = ['absent', 'inline', 'missingPath', 'existingFile'];
 
 function buildDeps(declKind, contractGreen, calls, claimUnsupported = false) {
+  let executedFeaturePath;
   return {
     readAcceptanceDeclaration: () => (declKind === 'absent' ? undefined : 'specs/features/fixture.feature'),
     resolveFeatureFilePath: () => (declKind === 'existingFile' ? '/repo/specs/features/fixture.feature' : undefined),
@@ -51,6 +52,10 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false) {
       contractGreen
         ? { success: true, output: 'ok' }
         : { success: false, output: 'Scenario "S": no step handler matched "Given x"' },
+    recordAcceptanceExecution: (featureFilePath) => {
+      executedFeaturePath = featureFilePath;
+    },
+    readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () =>
       claimUnsupported
         ? { checked: true, commitsChecked: 1, unsupported: { commit: 'a'.repeat(10), identifier: 'x!', sentence: 'restore x!' } }
