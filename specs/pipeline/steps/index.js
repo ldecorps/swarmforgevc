@@ -351,6 +351,7 @@ const DOMAINS = [
   require('./bl673TopicMakeTopPrioritySteps'),
   require('./bl674EpicDrilldownUiSteps'),
   require('./bl655AmbulanceModeHoldSteps'),
+  require('./bl778RuleProposalTestAssertsStaleQueueGrammarSteps'),
   require('./bl684OnboarderRenameSteps'),
   require('./bl696LetsTalkSteps'),
   require('./bl766MiniAppLetsTalkRetiredSteps'),

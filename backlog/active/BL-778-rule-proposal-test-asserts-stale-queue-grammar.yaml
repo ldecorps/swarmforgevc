@@ -3,7 +3,7 @@ title: "test_rule_proposal.sh asserts \"^HANDOFF QUEUED:\" — a string swarm_ha
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: active
 epic: swarm-reliability
 priority: 152
 direction: normal
@@ -119,6 +119,7 @@ description: |
     fix them in this parcel.
 
 notes: |
+  - "[2026-08-25T15:15Z] coder: pin mailbox-only queue grammar; scrub ambient delivery env."
   No `human_approval` gate: the correct behaviour is not a judgement call —
   the test must assert a string the tool actually prints — so there is
   nothing for the human to sign off, and the approval queue is currently a
