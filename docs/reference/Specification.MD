@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-598: false-alarm rate trend telemetry —
+append-only `.swarmforge/telemetry/alerts-YYYY-MM.jsonl` records each fired
+alert with a sweep-provided `false-positive` or `actionable` verdict;
+`alertTelemetry.ts` aggregates per-type false-positive rate via `trend.ts`;
+`swarm_handoff.bb` logs steady-state `active-backlog-depth` warnings as
+false-positive without blocking send (BL-562 noise measurable). Acceptance:
+`specs/features/BL-598-trend-false-alarm-rate.feature`.
+How-to: `docs/how-to/BL-598-trend-false-alarm-rate.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-786: host-resolved Stryker mutation
 concurrency — every `extension/package.json` mutation npm script runs through
 `scripts/mutation-concurrency.js` → `resolve-mutation-concurrency.ts`, which
