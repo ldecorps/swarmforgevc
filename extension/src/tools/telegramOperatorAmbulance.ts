@@ -46,10 +46,12 @@ export function engageOperatorAmbulance(
     };
   }
   const folder = lookupBacklogFolderById(repoRoot, id);
+  // BL-691 D3: mirror ambulance_lib/engage-refusal — only active/ may engage.
   if (folder !== 'active') {
+    const where = folder ?? 'unknown';
     return {
       ok: false,
-      text: `Ambulance refused for ${id} - ticket sits in ${folder}/, not active/; promote it before engaging (ambulance does not auto-promote).`,
+      text: `Ambulance refused for ${id} - ticket sits in ${where}/, not active/; promote it before engaging (ambulance does not auto-promote).`,
     };
   }
   const raw = readRawAmbulanceMarker(repoRoot);
