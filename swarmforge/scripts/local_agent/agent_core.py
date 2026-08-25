@@ -74,12 +74,25 @@ def _safe_path(root: Path, rel: str) -> Path:
     return candidate
 
 
-def run_shell(command: str, *, root: Path) -> str:
-    """Run a bash command under LOCAL_AGENT_ROOT and return stdout+stderr."""
+def _blocked_shell_reason(command: str) -> str | None:
     lowered = command.strip().lower()
     for bad in _BLOCKED_SHELL:
         if bad in lowered:
             return f"refused: blocked shell pattern ({bad!r})"
+    return None
+
+
+def _clip_shell_out(text: str) -> str:
+    if len(text) > 12_000:
+        return text[:12_000] + "\n…(truncated)"
+    return text
+
+
+def run_shell(command: str, *, root: Path) -> str:
+    """Run a bash command under LOCAL_AGENT_ROOT and return stdout+stderr."""
+    blocked = _blocked_shell_reason(command)
+    if blocked is not None:
+        return blocked
     try:
         p = subprocess.run(
             ["bash", "-lc", command],
@@ -90,9 +103,7 @@ def run_shell(command: str, *, root: Path) -> str:
         )
         out = (p.stdout or "") + (p.stderr or "")
         text = out.strip() or f"(exit {p.returncode}, empty output)"
-        if len(text) > 12_000:
-            text = text[:12_000] + "\n…(truncated)"
-        return text
+        return _clip_shell_out(text)
     except Exception as e:  # noqa: BLE001 — surface to model
         return f"error: {e}"
 
@@ -223,17 +234,24 @@ _FAST_REPLIES: dict[str, str] = {
 }
 
 
+def _normalize_probe_key(user_text: str) -> str:
+    key = "".join(ch for ch in user_text.strip().lower() if ch.isalnum() or ch.isspace())
+    return " ".join(key.split())
+
+
+def _soft_liveness_hit(key: str) -> bool:
+    if key.startswith("ok ") and "working" in key:
+        return True
+    return "are you" in key and any(w in key for w in ("working", "there", "alive", "online", "up"))
+
+
 def fast_path_reply(user_text: str) -> str | None:
     """Return an immediate reply for trivial probes, else None."""
-    key = "".join(ch for ch in user_text.strip().lower() if ch.isalnum() or ch.isspace())
-    key = " ".join(key.split())
+    key = _normalize_probe_key(user_text)
     hit = _FAST_REPLIES.get(key)
     if hit is not None:
         return hit
-    # Soft match common liveness phrasings that still shouldn't burn CPU.
-    if key.startswith("ok ") and "working" in key:
-        return "Yes — Local Agent online."
-    if "are you" in key and any(w in key for w in ("working", "there", "alive", "online", "up")):
+    if _soft_liveness_hit(key):
         return "Yes — Local Agent online."
     return None
 
@@ -258,6 +276,11 @@ def _is_stream_break(exc: BaseException) -> bool:
     return isinstance(exc, OSError) and "timed out" in str(exc).lower()
 
 
+def _note_if(gate: TurnGate | None) -> None:
+    if gate is not None:
+        gate.note_progress()
+
+
 def _emit(
     on_event: Any,
     event_type: str,
@@ -271,8 +294,7 @@ def _emit(
     write cannot look like fresh progress and mask the idle watchdog.
     """
     if on_event is None:
-        if gate is not None:
-            gate.note_progress()
+        _note_if(gate)
         return
     try:
         on_event({"type": event_type, "text": text, **extra})
@@ -280,8 +302,7 @@ def _emit(
         if _is_stream_break(exc):
             raise StreamBroken(str(exc) or "client disconnected") from exc
         return
-    if gate is not None:
-        gate.note_progress()
+    _note_if(gate)
 
 
 def _dispatch(name: str, args: dict[str, Any], root: Path) -> str:
@@ -362,6 +383,82 @@ def _chat_with_gate(
     return box["r"]
 
 
+def _quick_turn(
+    user_text: str,
+    messages: list[dict[str, Any]],
+    *,
+    on_event: Any,
+    gate: TurnGate,
+) -> tuple[str, list[dict[str, Any]]] | None:
+    quick = fast_path_reply(user_text)
+    if quick is None:
+        return None
+    messages.append({"role": "user", "content": user_text})
+    messages.append({"role": "assistant", "content": quick})
+    _emit(on_event, "final", quick, gate=gate)
+    return (quick, messages)
+
+
+def _abort_turn_reply(
+    exc: TurnAborted,
+    messages: list[dict[str, Any]],
+    *,
+    on_event: Any,
+    gate: TurnGate,
+) -> tuple[str, list[dict[str, Any]]]:
+    err = str(exc)
+    try:
+        _emit(on_event, "error", err, gate=gate)
+    except StreamBroken:
+        pass
+    return (err, messages)
+
+
+def _real_turn(
+    messages: list[dict[str, Any]],
+    *,
+    user_text: str,
+    model_name: str,
+    project_root: Path,
+    on_event: Any,
+    chat: ChatFn,
+    now: NowFn,
+    started: float,
+    limit: float | None,
+    gate: TurnGate,
+) -> tuple[str, list[dict[str, Any]]]:
+    messages.append({"role": "user", "content": user_text})
+    try:
+        return _tool_loop(
+            messages,
+            model_name=model_name,
+            project_root=project_root,
+            on_event=on_event,
+            chat=chat,
+            now=now,
+            started=started,
+            limit=limit,
+            gate=gate,
+        )
+    except StreamBroken as exc:
+        return (f"stream broken: {exc}", messages)
+    except TurnAborted as exc:
+        return _abort_turn_reply(exc, messages, on_event=on_event, gate=gate)
+
+
+def _ensure_system_messages(history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = list(history or [])
+    if not messages or messages[0].get("role") != "system":
+        return [{"role": "system", "content": SYSTEM}, *messages]
+    return messages
+
+
+def _make_turn_gate(gate: TurnGate | None, now: NowFn) -> TurnGate:
+    if gate is not None:
+        return gate
+    return TurnGate(now_fn=now, idle_s=TURN_IDLE_S)
+
+
 def run_turn(
     user_text: str,
     *,
@@ -389,45 +486,62 @@ def run_turn(
     now = now_fn or time.time
     limit = TURN_DEADLINE_S if deadline_s is None else deadline_s
     started = now()
-    idle = TURN_IDLE_S if gate is None else 0.0
-    turn_gate = gate if gate is not None else TurnGate(now_fn=now, idle_s=idle)
+    turn_gate = _make_turn_gate(gate, now)
+    messages = _ensure_system_messages(history)
 
-    messages: list[dict[str, Any]] = list(history or [])
-    if not messages or messages[0].get("role") != "system":
-        messages = [{"role": "system", "content": SYSTEM}, *messages]
-
-    quick = fast_path_reply(user_text)
+    quick = _quick_turn(user_text, messages, on_event=on_event, gate=turn_gate)
     if quick is not None:
-        messages.append({"role": "user", "content": user_text})
-        messages.append({"role": "assistant", "content": quick})
-        _emit(on_event, "final", quick, gate=turn_gate)
-        return (quick, messages)
+        return quick
 
-    project_root = _resolve_root(root)
-    model_name = model or DEFAULT_MODEL
-    messages.append({"role": "user", "content": user_text})
+    return _real_turn(
+        messages,
+        user_text=user_text,
+        model_name=model or DEFAULT_MODEL,
+        project_root=_resolve_root(root),
+        on_event=on_event,
+        chat=chat,
+        now=now,
+        started=started,
+        limit=limit,
+        gate=turn_gate,
+    )
 
-    try:
-        return _tool_loop(
-            messages,
-            model_name=model_name,
-            project_root=project_root,
-            on_event=on_event,
-            chat=chat,
-            now=now,
-            started=started,
-            limit=limit,
-            gate=turn_gate,
+
+def _emit_deadline(
+    on_event: Any,
+    gate: TurnGate,
+    messages: list[dict[str, Any]],
+    limit: float | None,
+) -> tuple[str, list[dict[str, Any]]]:
+    err = _deadline_message(float(limit or 0))
+    _emit(on_event, "error", err, gate=gate)
+    return (err, messages)
+
+
+def _deadline_hit(
+    now: NowFn,
+    started: float,
+    limit: float | None,
+    gate: TurnGate,
+) -> bool:
+    gate.raise_if_stale()
+    return deadline_exceeded(now(), start=started, limit_s=limit)
+
+
+def _continue_after_tools(
+    messages: list[dict[str, Any]],
+    *,
+    on_event: Any,
+    gate: TurnGate,
+    round_i: int,
+) -> None:
+    if messages and messages[-1].get("role") == "tool":
+        _emit(
+            on_event,
+            "status",
+            f"continuing after tools (round {round_i + 1})…",
+            gate=gate,
         )
-    except StreamBroken as exc:
-        return (f"stream broken: {exc}", messages)
-    except TurnAborted as exc:
-        err = str(exc)
-        try:
-            _emit(on_event, "error", err, gate=turn_gate)
-        except StreamBroken:
-            pass
-        return (err, messages)
 
 
 def _tool_loop(
@@ -446,11 +560,8 @@ def _tool_loop(
     tool_notes: list[str] = []
     empty_nudges = 0
     for round_i in range(MAX_TOOL_ROUNDS):
-        gate.raise_if_stale()
-        if deadline_exceeded(now(), start=started, limit_s=limit):
-            err = _deadline_message(float(limit or 0))
-            _emit(on_event, "error", err, gate=gate)
-            return (err, messages)
+        if _deadline_hit(now, started, limit, gate):
+            return _emit_deadline(on_event, gate, messages, limit)
         reply_or_none, empty_nudges = _one_model_round(
             messages,
             model_name=model_name,
@@ -464,18 +575,9 @@ def _tool_loop(
         )
         if reply_or_none is not None:
             return (reply_or_none, messages)
-        gate.raise_if_stale()
-        if deadline_exceeded(now(), start=started, limit_s=limit):
-            err = _deadline_message(float(limit or 0))
-            _emit(on_event, "error", err, gate=gate)
-            return (err, messages)
-        if messages and messages[-1].get("role") == "tool":
-            _emit(
-                on_event,
-                "status",
-                f"continuing after tools (round {round_i + 1})…",
-                gate=gate,
-            )
+        if _deadline_hit(now, started, limit, gate):
+            return _emit_deadline(on_event, gate, messages, limit)
+        _continue_after_tools(messages, on_event=on_event, gate=gate, round_i=round_i)
 
     final = "Stopped: tool-round limit reached. Try a narrower request."
     _emit(on_event, "final", final, gate=gate)
@@ -502,6 +604,105 @@ def _recover_empty_reply(
     return (err, empty_nudges)
 
 
+def _ollama_fail(
+    on_event: Any,
+    gate: TurnGate,
+    empty_nudges: int,
+    err: str,
+) -> tuple[str | None, int]:
+    _emit(on_event, "error", err, gate=gate)
+    return (err, empty_nudges)
+
+
+def _chat_round_or_error(
+    chat: ChatFn,
+    gate: TurnGate,
+    messages: list[dict[str, Any]],
+    *,
+    model_name: str,
+    on_event: Any,
+    empty_nudges: int,
+) -> tuple[dict[str, Any] | None, tuple[str | None, int] | None]:
+    """Returns (resp, None) on success or (None, error_tuple) on soft failure."""
+    gate.raise_if_aborted()
+    try:
+        return (
+            _chat_with_gate(chat, gate, messages, model=model_name, tools=True),
+            None,
+        )
+    except TurnAborted:
+        raise
+    except urllib.error.URLError as e:
+        return (None, _ollama_fail(on_event, gate, empty_nudges, f"Ollama unreachable at {OLLAMA_HOST}: {e}"))
+    except TimeoutError as e:
+        return (None, _ollama_fail(on_event, gate, empty_nudges, f"Ollama timeout after {OLLAMA_TIMEOUT_S}s: {e}"))
+    except Exception as e:  # noqa: BLE001
+        return (None, _ollama_fail(on_event, gate, empty_nudges, f"Ollama error: {e}"))
+
+
+def _normalize_assistant_msg(msg: dict[str, Any]) -> tuple[list[Any], str]:
+    if isinstance(msg.get("content"), str):
+        msg["content"] = _strip_think_artifacts(msg["content"])
+    tool_calls = msg.get("tool_calls") or []
+    interim = (msg.get("content") or "").strip()
+    return tool_calls, interim
+
+
+def _finalize_text_reply(
+    messages: list[dict[str, Any]],
+    *,
+    interim: str,
+    tool_notes: list[str],
+    on_event: Any,
+    gate: TurnGate,
+    empty_nudges: int,
+) -> tuple[str | None, int]:
+    if not interim:
+        return _recover_empty_reply(
+            messages, on_event=on_event, gate=gate, empty_nudges=empty_nudges
+        )
+    _emit(on_event, "final", _clip(interim), gate=gate)
+    if not tool_notes:
+        return (interim, empty_nudges)
+    preface = "\n".join(tool_notes[:6])
+    return (f"{preface}\n\n{interim}" if preface else interim, empty_nudges)
+
+
+def _run_tool_calls(
+    tool_calls: list[Any],
+    *,
+    messages: list[dict[str, Any]],
+    project_root: Path,
+    on_event: Any,
+    gate: TurnGate,
+    tool_notes: list[str],
+    round_i: int,
+) -> None:
+    for tc in tool_calls:
+        gate.raise_if_aborted()
+        name, args, short_args = _tool_call_bits(tc)
+        _emit(on_event, "tool_call", f"{name}({short_args})", gate=gate, round=round_i + 1)
+        result = _dispatch(name, args, project_root)
+        _emit(on_event, "tool_result", _clip(result), gate=gate, tool=name, round=round_i + 1)
+        tool_notes.append(f"• {name}({short_args})")
+        messages.append({"role": "tool", "tool_name": name, "content": result})
+
+
+def _emit_round_progress(
+    on_event: Any,
+    gate: TurnGate,
+    *,
+    round_i: int,
+    thinking: str,
+    interim: str,
+    tool_calls: list[Any],
+) -> None:
+    if thinking:
+        _emit(on_event, "status", f"reasoned {len(thinking)} chars…", gate=gate, round=round_i + 1)
+    if interim and tool_calls:
+        _emit(on_event, "assistant", _clip(interim), gate=gate, round=round_i + 1)
+
+
 def _one_model_round(
     messages: list[dict[str, Any]],
     *,
@@ -515,69 +716,64 @@ def _one_model_round(
     empty_nudges: int,
 ) -> tuple[str | None, int]:
     """One Ollama call + optional tools. Returns (final reply or None to continue, empty_nudges)."""
-    gate.raise_if_aborted()
-    try:
-        resp = _chat_with_gate(chat, gate, messages, model=model_name, tools=True)
-    except TurnAborted:
-        raise
-    except urllib.error.URLError as e:
-        err = f"Ollama unreachable at {OLLAMA_HOST}: {e}"
-        _emit(on_event, "error", err, gate=gate)
-        return (err, empty_nudges)
-    except TimeoutError as e:
-        err = f"Ollama timeout after {OLLAMA_TIMEOUT_S}s: {e}"
-        _emit(on_event, "error", err, gate=gate)
-        return (err, empty_nudges)
-    except Exception as e:  # noqa: BLE001
-        err = f"Ollama error: {e}"
-        _emit(on_event, "error", err, gate=gate)
-        return (err, empty_nudges)
+    resp, err_tuple = _chat_round_or_error(
+        chat,
+        gate,
+        messages,
+        model_name=model_name,
+        on_event=on_event,
+        empty_nudges=empty_nudges,
+    )
+    if err_tuple is not None:
+        return err_tuple
 
     gate.raise_if_aborted()
-    msg = resp.get("message") or {}
-    if isinstance(msg.get("content"), str):
-        msg["content"] = _strip_think_artifacts(msg["content"])
-    tool_calls = msg.get("tool_calls") or []
-    interim = (msg.get("content") or "").strip()
-    thinking = (msg.get("thinking") or "").strip()
-    if thinking:
-        _emit(on_event, "status", f"reasoned {len(thinking)} chars…", gate=gate, round=round_i + 1)
-    if interim and tool_calls:
-        _emit(on_event, "assistant", _clip(interim), gate=gate, round=round_i + 1)
+    msg = (resp or {}).get("message") or {}
+    tool_calls, interim = _normalize_assistant_msg(msg)
+    _emit_round_progress(
+        on_event,
+        gate,
+        round_i=round_i,
+        thinking=(msg.get("thinking") or "").strip(),
+        interim=interim,
+        tool_calls=tool_calls,
+    )
     messages.append(msg)
     if not tool_calls:
-        if not interim:
-            return _recover_empty_reply(
-                messages, on_event=on_event, gate=gate, empty_nudges=empty_nudges
-            )
-        _emit(on_event, "final", _clip(interim), gate=gate)
-        if tool_notes:
-            preface = "\n".join(tool_notes[:6])
-            return (f"{preface}\n\n{interim}" if preface else interim, empty_nudges)
-        return (interim, empty_nudges)
+        return _finalize_text_reply(
+            messages,
+            interim=interim,
+            tool_notes=tool_notes,
+            on_event=on_event,
+            gate=gate,
+            empty_nudges=empty_nudges,
+        )
 
-    for tc in tool_calls:
-        gate.raise_if_aborted()
-        name, args, short_args = _tool_call_bits(tc)
-        _emit(on_event, "tool_call", f"{name}({short_args})", gate=gate, round=round_i + 1)
-        result = _dispatch(name, args, project_root)
-        _emit(on_event, "tool_result", _clip(result), gate=gate, tool=name, round=round_i + 1)
-        tool_notes.append(f"• {name}({short_args})")
-        messages.append({"role": "tool", "tool_name": name, "content": result})
+    _run_tool_calls(
+        tool_calls,
+        messages=messages,
+        project_root=project_root,
+        on_event=on_event,
+        gate=gate,
+        tool_notes=tool_notes,
+        round_i=round_i,
+    )
     return (None, empty_nudges)
+
+
+def _parse_tool_args(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
 
 
 def _tool_call_bits(tc: dict[str, Any]) -> tuple[str, dict[str, Any], str]:
     fn = tc.get("function") or {}
     name = fn.get("name") or ""
-    args = fn.get("arguments") or {}
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except json.JSONDecodeError:
-            args = {}
-    if not isinstance(args, dict):
-        args = {}
+    args = _parse_tool_args(fn.get("arguments") or {})
     short_args = json.dumps(args, ensure_ascii=False)
     if len(short_args) > 120:
         short_args = short_args[:120] + "…"

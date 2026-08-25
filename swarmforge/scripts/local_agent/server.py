@@ -86,30 +86,51 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(404, {"ok": False, "error": "not found"})
 
-    def do_POST(self) -> None:  # noqa: N802
-        path = urlparse(self.path).path
-        if path not in ("/turn", "/turn/stream"):
-            self._send(404, {"ok": False, "error": "not found"})
-            return
+    def _run_locked_turn(
+        self,
+        text: str,
+        history: list[dict[str, Any]],
+        *,
+        on_event: Any | None = None,
+        gate: TurnGate | None = None,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Fast-path skips the infer lock so pings never queue behind Ollama."""
+        kwargs: dict[str, Any] = {"history": history, "root": ROOT}
+        if on_event is not None:
+            kwargs["on_event"] = on_event
+        if gate is not None:
+            kwargs["gate"] = gate
+        if fast_path_reply(text) is None:
+            with _infer_lock:
+                return run_turn(text, **kwargs)
+        return run_turn(text, **kwargs)
+
+    def _parse_turn_request(self) -> tuple[str, str, list[dict[str, Any]]] | None:
         body = self._read_json()
         text = str(body.get("text") or "").strip()
         session_id = str(body.get("session_id") or "default")
         if not text:
             self._send(400, {"ok": False, "error": "text required"})
-            return
+            return None
         with _sessions_lock:
             history = list(_sessions.get(session_id) or [])
+        return text, session_id, history
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        if path not in ("/turn", "/turn/stream"):
+            self._send(404, {"ok": False, "error": "not found"})
+            return
+        parsed = self._parse_turn_request()
+        if parsed is None:
+            return
+        text, session_id, history = parsed
 
         if path == "/turn/stream":
             self._stream_turn(text, session_id, history)
             return
 
-        # Fast path skips the infer lock so pings never queue behind Ollama.
-        if fast_path_reply(text) is None:
-            with _infer_lock:
-                reply, updated = run_turn(text, history=history, root=ROOT)
-        else:
-            reply, updated = run_turn(text, history=history, root=ROOT)
+        reply, updated = self._run_locked_turn(text, history)
         trimmed = updated[-40:]
         with _sessions_lock:
             _sessions[session_id] = trimmed
@@ -140,12 +161,8 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     pass
 
-        def on_event(evt: dict[str, Any]) -> None:
-            write_event(evt)
-
         # Soft checks inside run_turn miss a wedged chat()/blocked write. Abort
-        # the gate first; delay socket close so error/done NDJSON can still flush
-        # (instant shutdown left Telegram with "client disconnected" / offline).
+        # the gate first; delay socket close so error/done NDJSON can still flush.
         gate = TurnGate(idle_s=TURN_IDLE_S)
         reason = f"turn deadline exceeded ({TURN_DEADLINE_S:.0f}s)"
 
@@ -160,15 +177,9 @@ class Handler(BaseHTTPRequestHandler):
             close_delay_s=2.0,
         )
         try:
-            if fast_path_reply(text) is None:
-                with _infer_lock:
-                    reply, updated = run_turn(
-                        text, history=history, root=ROOT, on_event=on_event, gate=gate
-                    )
-            else:
-                reply, updated = run_turn(
-                    text, history=history, root=ROOT, on_event=on_event, gate=gate
-                )
+            reply, updated = self._run_locked_turn(
+                text, history, on_event=write_event, gate=gate
+            )
             trimmed = updated[-40:]
             with _sessions_lock:
                 _sessions[session_id] = trimmed
@@ -178,13 +189,17 @@ class Handler(BaseHTTPRequestHandler):
         except ConnectionResetError:
             sys.stderr.write("[local-agent] client reset mid-stream\n")
         except Exception as e:  # noqa: BLE001
-            try:
-                write_event({"type": "error", "ok": False, "text": str(e), "error": str(e)})
-                write_event({"type": "done", "ok": False, "error": str(e), "session_id": session_id})
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+            _write_stream_error(write_event, session_id, str(e))
         finally:
             cancel_deadline(deadline_timer)
+
+
+def _write_stream_error(write_event: Any, session_id: str, err: str) -> None:
+    try:
+        write_event({"type": "error", "ok": False, "text": err, "error": err})
+        write_event({"type": "done", "ok": False, "error": err, "session_id": session_id})
+    except (BrokenPipeError, ConnectionResetError):
+        pass
 
 
 def main() -> None:

@@ -9,6 +9,31 @@ import time
 from typing import Callable
 
 
+def _shutdown_conn(conn: socket.socket) -> None:
+    try:
+        conn.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
+def _fire_deadline(
+    conn: socket.socket,
+    on_fire: Callable[[], None] | None,
+    close_delay_s: float,
+) -> None:
+    if on_fire is not None:
+        try:
+            on_fire()
+        except Exception:  # noqa: BLE001 — watchdog must still shut the socket
+            pass
+    if close_delay_s <= 0:
+        _shutdown_conn(conn)
+        return
+    closer = threading.Timer(close_delay_s, lambda: _shutdown_conn(conn))
+    closer.daemon = True
+    closer.start()
+
+
 def arm_connection_deadline(
     conn: socket.socket,
     seconds: float,
@@ -25,27 +50,9 @@ def arm_connection_deadline(
     """
     if seconds is None or seconds <= 0:
         return None
-
-    def do_close() -> None:
-        try:
-            conn.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-
-    def fire() -> None:
-        if on_fire is not None:
-            try:
-                on_fire()
-            except Exception:  # noqa: BLE001 — watchdog must still shut the socket
-                pass
-        if close_delay_s > 0:
-            closer = threading.Timer(close_delay_s, do_close)
-            closer.daemon = True
-            closer.start()
-        else:
-            do_close()
-
-    timer = threading.Timer(seconds, fire)
+    timer = threading.Timer(
+        seconds, lambda: _fire_deadline(conn, on_fire, close_delay_s)
+    )
     timer.daemon = True
     timer.start()
     return timer
