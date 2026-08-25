@@ -33,8 +33,16 @@ bb swarmforge/scripts/main_sync_status_cli.bb .
 If you still see `deadlock-tripped` / `rematch-bookkeeping` after this land,
 that is a new residual — not the designed path.
 
+## Residual closed by BL-1141
+
+`:refuse-rematch` still only surfaced (Process B print+exit) until a human
+rematched. [BL-1141](BL-1141-bl1138-residual-refuse-rematch-not-executed.md)
+makes refuse-rematch **execute** the same rematch recovery and clear the
+standing surface.
+
 ## Related
 
+- [BL-1141 refuse-rematch recovery](BL-1141-bl1138-residual-refuse-rematch-not-executed.md)
 - [BL-1135 live rematch surface](BL-1135-bl1131-residual-live-land-no-operator-absorb.md)
 - [BL-1131 rematch-then-FF](BL-1131-ticket-land-without-operator-absorb-merge.md)
 - [BL-891 master-main reconcile](BL-891-master-main-reconcile-sweep.md)
