@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-626: promotion refuses a ticket whose
+**Last Updated:** August 25, 2026 (BL-1126: Local Agent Telegram turns stay
+live under Ollama latency — fast-path probes skip Ollama; real turns stream
+progress; empty completions recover; turn/idle/socket deadlines abort wedges.
+Scripts under `swarmforge/scripts/local_agent/`. Acceptance:
+`specs/features/BL-1126-local-agent-telegram-turn-reliability.feature`.
+How-to: `docs/how-to/BL-1126-local-agent-telegram-turn-reliability.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-626: promotion refuses a ticket whose
 `acceptance:` points at a missing `.feature` or a parked `.feature.draft`.
 Explicit path is authoritative (no same-id sibling glob rescue). Gate sits in
 `promotion_gates_lib.bb` after `human_approval`, before `depends_on`;
