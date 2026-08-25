@@ -671,7 +671,8 @@ const DOMAINS = [
   require('./bl1100PromotionProseNeverBlocksSteps'),
   require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
   require('./bl1128RaiseActiveCapOnHostHeadroomSteps'),
-  require('./bl1118PostCursorBatchMergeOriginMainSteps')
+  require('./bl1118PostCursorBatchMergeOriginMainSteps'),
+  require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps')
 ];
 
 function registerSteps(registry) {
