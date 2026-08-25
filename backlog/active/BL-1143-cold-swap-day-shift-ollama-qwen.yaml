@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: active
 epic: local-llm-swarm
-assigned_to: hardender
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: [BL-1140]
@@ -80,3 +80,12 @@ notes: |
     Coder tip 4741a45c33 impl still separate land.
   - [2026-08-25T19:16Z] specifier (coder 001111): ack — tip 1e3c1171c0 at
     hardender mid-pipeline; land awaits QA. assigned_to→hardender.
+
+abandoned_commits:
+  - 351da71529
+  - 9b12e8511e
+  - 1e3c1171c0
+  - f9bc48e92c
+  - 4741a45c33
+  - e9572fa893
+  - 8dc6cf92ae
