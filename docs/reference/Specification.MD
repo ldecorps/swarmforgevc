@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-731: `/pilot` acceptance gate refuses
+lifecycle/teardown-class tickets unless ≥2 linked worktrees are active and a
+sibling worktree's `handoffd.bb` is running — single-worktree-only acceptance
+cannot land BL-637-class neighbour-process defects. `multiworktreeAcceptanceFixture.ts`
+classifies tickets; refusal `reasonKind: multiworktree-required`; receipt
+records `multiWorktreeFixture` metadata. Acceptance:
+`specs/features/BL-731-bl637-pilot-never-ran-acceptance-multiworktree.feature`.
+How-to: `docs/how-to/BL-727-pilot-acceptance-contract-gate.md` (multi-worktree
+fixture section).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-669: outage-driven seat failover via
 Model Steward — sustained provider-outage records (BL-650) trigger steward
 consult for certified substitutes; `outage_failover_lib.bb` + CLI/store;

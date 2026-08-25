@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -57,6 +57,36 @@ This closes the BL-636 gap: a landing commit claimed a fix (`deliver!`) that
 existed only on an unmerged sibling branch, and nothing compared the message
 against the diff before the ticket reached `backlog/done/`.
 
+## Multi-worktree fixture (BL-731)
+
+BL-637's own acceptance suite fails 8/8 the moment a second worktree's
+`handoffd.bb` is running — the multi-worktree reality this repo runs every
+day. A pilot that lands lifecycle/teardown tickets after acceptance ran in a
+single-worktree sandbox can pass while hiding unscoped survivor scans and
+other neighbour-process defects.
+
+Before the gate runs a lifecycle/teardown ticket's acceptance contract, it
+now checks the host fixture:
+
+1. **Classify** the ticket as lifecycle/teardown when its `acceptance:` path
+   or `required_wiring` names lifecycle scripts or teardown paths (for
+   example `kill_pipeline`, `stop-swarm`, `babysitter`, `handoffd_supervisor`).
+2. **Assess** the live host: `git worktree list` must show at least two
+   linked worktrees, and `ps` must show `handoffd.bb` running for at least
+   one root other than the pilot worktree's own.
+3. **Refuse** (`reasonKind: multiworktree-required`) when either condition
+   fails. The refusal names `single-worktree-only acceptance is insufficient
+   for lifecycle/teardown tickets`. A refused land is inert — no yaml move,
+   no receipt.
+4. **Run** acceptance with `SWARMFORGE_MULTIWORKTREE_FIXTURE` set to JSON
+   metadata (`worktreeCount`, `siblingHandoffdRoots`, `pilotRoot`) so step
+   handlers can assert the fixture was present.
+5. **Record** that metadata on the acceptance receipt (`multiWorktreeFixture`)
+   when the contract passes and the ticket lands.
+
+Non-lifecycle tickets are unchanged: the fixture gate is skipped and the
+receipt omits `multiWorktreeFixture`.
+
 ## Why
 
 A live pipeline run has two independent places that execute a ticket's
@@ -91,6 +121,15 @@ run, and no gate ever noticed.
   `extension/test/commitClaimCheck.property.test.js`
 - Commit-claim acceptance:
   `specs/features/BL-729-commit-claims-match-their-own-diff.feature`
+- Multi-worktree fixture (BL-731), pure classification + assessment:
+  `extension/src/tools/multiworktreeAcceptanceFixture.ts`
+- Multi-worktree fixture wiring (git worktree list, `ps` probe, env export):
+  `extension/src/tools/pilot-acceptance-gate.ts` → `runAcceptance`
+- Multi-worktree step handlers:
+  `specs/pipeline/steps/bl731PilotMultiworktreeAcceptanceSteps.js`
+- Multi-worktree tests: `extension/test/multiworktreeAcceptanceFixture.test.js`
+- Multi-worktree acceptance:
+  `specs/features/BL-731-bl637-pilot-never-ran-acceptance-multiworktree.feature`
 
 ## Out of scope
 
@@ -109,9 +148,16 @@ run, and no gate ever noticed.
   history before assuming it transfers.
 - No retro-check of already-landed commits: `backlog/done/` is not
   re-swept, and BL-636's own `deliver!` discrepancy is owned by BL-728.
+- BL-731's fixture gate is `/pilot`-only, same as BL-727/BL-729. The
+  ordinary live pipeline's pre-QA gate does not yet enforce multi-worktree
+  fixture metadata — lifecycle tickets there still depend on the host
+  actually running several worktrees during acceptance, not a gate refusal.
 
 ## Siblings
 
 - BL-699 — quality and bounce-back rules
 - BL-700 — Telegram status posts on ticket / hat / bounce
 - BL-701 — orphan acceptance / Stryker cleanup at stage boundaries
+- BL-731 — lifecycle/teardown tickets require multi-worktree acceptance
+  fixture before `/pilot` land (companion BL-730 remaining-work on unscoped
+  survivor pgrep)
