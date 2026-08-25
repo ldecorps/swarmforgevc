@@ -3,7 +3,7 @@ title: "needsHumanDetection pane-title chrome regex misses every role display na
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: active
 epic: swarmforge-console
 assigned_to: specifier
 priority: 75
@@ -46,6 +46,7 @@ source: |
   multi-word role.
 
 notes: |
+  - "[2026-08-25T16:40Z] coder: derive pane-title chrome from display_name_for_role contract (spaces + @ seats)."
   BL-723 coder verdict on BL-642: not-on-par for this gap — the rest of the
   fix (FOOTER_START_PATTERN, NO_QUESTION_TEXT_CAPTURED fail-closed fallback)
   is correct and well tested. Linked pilot-process defect: BL-733.

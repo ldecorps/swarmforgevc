@@ -37,7 +37,39 @@ const BOX_RULE_OR_PLACEHOLDER_LINE_PATTERN = /^[\s─-╿▀-▟■-◿⠀-⣿]+
 // ("──── SwarmForge Coder ──"). Letters mean the whole-line box test above
 // misses it; the session-name shape the launcher itself creates is exact
 // chrome, not a heuristic over arbitrary words.
-const PANE_TITLE_SESSION_NAME_PATTERN = /^SwarmForge [A-Za-z][\w-]*$/;
+//
+// BL-732: display_name_for_role (swarmforge.sh) rewrites '-' / '_' to spaces,
+// title-cases each alphanumeric run (zsh (C) splits on non-alnum, so '@'
+// yields Coder@Sonnet2), and joins with single spaces. The recognized set is
+// DERIVED from that contract — never a hand-extended character class.
+const DISPLAY_NAME_TOKEN = '[A-Z][A-Za-z0-9]*(?:@[A-Z][A-Za-z0-9]*)*';
+const PANE_TITLE_SESSION_NAME_PATTERN = new RegExp(
+  `^SwarmForge ${DISPLAY_NAME_TOKEN}(?: ${DISPLAY_NAME_TOKEN})*$`
+);
+
+/** Mirror of swarmforge.sh display_name_for_role — single source for tests. */
+export function displayNameForRole(role: string): string {
+  return role
+    .replace(/[-_]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) =>
+      part
+        .split(/([^A-Za-z0-9]+)/)
+        .map((chunk) =>
+          /^[A-Za-z0-9]/.test(chunk)
+            ? chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase()
+            : chunk
+        )
+        .join('')
+    )
+    .join(' ');
+}
+
+export function isLauncherPaneSessionName(text: string): boolean {
+  return PANE_TITLE_SESSION_NAME_PATTERN.test(text);
+}
 
 // A bare prompt marker with only placeholder text - mirrors
 // detectNeedsHuman's own standard-input-box regex below.
@@ -69,7 +101,7 @@ function isPaneTitleRuleLine(line: string): boolean {
   if (withoutBox === line) {
     return false;
   }
-  return PANE_TITLE_SESSION_NAME_PATTERN.test(withoutBox.trim());
+  return isLauncherPaneSessionName(withoutBox.trim());
 }
 
 function isFooterFurnitureLine(line: string): boolean {

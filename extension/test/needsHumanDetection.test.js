@@ -6,6 +6,8 @@ const {
   transcriptShowsDecisionMenu,
   classifyDecisionStatus,
   NO_QUESTION_TEXT_CAPTURED,
+  displayNameForRole,
+  isLauncherPaneSessionName,
 } = require('../out/panel/needsHumanDetection');
 
 test('detectNeedsHuman returns false for empty text', () => {
@@ -419,4 +421,48 @@ test('classifyDecisionStatus prefers LIVE over RESOLVED when both the current fr
 test('classifyDecisionStatus treats a null/undefined transcript as containing no menu', () => {
   assert.equal(classifyDecisionStatus(NO_MENU_OUTPUT, null), 'none');
   assert.equal(classifyDecisionStatus(NO_MENU_OUTPUT, undefined), 'none');
+});
+
+// ── extractQuestionSnippet: every producible role display name (BL-732) ─────
+const BL732_ROLES = [
+  'coder',
+  'QA',
+  'model-steward',
+  'coder_extra',
+  'coder@sonnet2',
+  'hardender@zz9',
+];
+
+test('displayNameForRole mirrors swarmforge.sh for every configured role shape', () => {
+  assert.equal(displayNameForRole('coder'), 'Coder');
+  assert.equal(displayNameForRole('QA'), 'Qa');
+  assert.equal(displayNameForRole('model-steward'), 'Model Steward');
+  assert.equal(displayNameForRole('coder_extra'), 'Coder Extra');
+  assert.equal(displayNameForRole('coder@sonnet2'), 'Coder@Sonnet2');
+  assert.equal(displayNameForRole('hardender@zz9'), 'Hardender@Zz9');
+});
+
+for (const role of BL732_ROLES) {
+  test(`extractQuestionSnippet drops pane-title chrome for role ${role}`, () => {
+    const display = displayNameForRole(role);
+    assert.equal(isLauncherPaneSessionName(`SwarmForge ${display}`), true);
+    const rule = `${'─'.repeat(24)} SwarmForge ${display} ──`;
+    const pane = [rule, QUESTION].join('\n');
+    const snippet = extractQuestionSnippet(pane);
+    assert.equal(snippet, QUESTION);
+    assert.doesNotMatch(snippet, /SwarmForge/);
+  });
+}
+
+test('extractQuestionSnippet keeps a box-rule line carrying real prose (BL-732)', () => {
+  const rule = `${'─'.repeat(10)} Waiting for your answer ──`;
+  const pane = [rule, QUESTION].join('\n');
+  const snippet = extractQuestionSnippet(pane);
+  assert.match(snippet, /Waiting for your answer/);
+  assert.match(snippet, new RegExp(QUESTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('extractQuestionSnippet fail-closes when only seat pane-title chrome remains (BL-732)', () => {
+  const rule = `${'─'.repeat(24)} SwarmForge ${displayNameForRole('coder@sonnet2')} ──`;
+  assert.equal(extractQuestionSnippet(rule), NO_QUESTION_TEXT_CAPTURED);
 });

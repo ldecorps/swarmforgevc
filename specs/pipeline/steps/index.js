@@ -342,6 +342,7 @@ const DOMAINS = [
   require('./bl610UnresolvableCommitQuarantinedSteps'),
   require('./bl577FlowWatchdogParcelAgeInvariantSteps'),
   require('./bl642GateSnippetTerminalChromeSteps'),
+  require('./bl732PaneTitleChromeCoversEveryProducibleRoleNameSteps'),
   require('./bl646DaemonAlarmFixtureLeakSteps'),
   require('./bl627PricingTableCorrectnessSteps'),
   require('./bl575CostRankHorizonPinnedClockSteps'),
