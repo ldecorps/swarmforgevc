@@ -105,6 +105,7 @@ expects them, and are not migrated or rewritten here.
 - [handoffd must not abort a foreign master-main merge](how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md) — pre-existing `MERGE_HEAD` → skip/surface, never `git merge --abort` (BL-1120).
 - [Landing on main without external conflict resolution](how-to/BL-1130-land-on-main-without-external-conflict-resolution.md) — automated absorb completes or `:refuse-rematch` (no editor leftover) (BL-1130).
 - [Stamp-off: main_sync_status_cli ahead/behind swap](how-to/BL-1115-swarm-stamp-main-sync-status-cli-ahead-behind-swap.md) — hotfix `a3bf11b533`; `origin/main...main` + `[behind ahead]` matches handoffd (BL-1115).
+- [Stamp-off: Pipeline Board numeric &#160;](how-to/BL-1117-swarm-stamp-pipeline-board-numeric-nbsp.md) — tip `646ffe85d`; `escapeHtml` never emits named `&nbsp;` (BL-1117).
 - [Push-sweep caches its refusal and gathers the ahead range once](how-to/BL-1085-push-sweep-caches-its-refusal-and-gathers-once.md) — tip+ahead-SHA cache; one walk per tick for QA/noop-merge gates; never restores tip-only skip (BL-1085 / BL-952).
 - [Token-Burn Exhaustion Warning in the Morning Briefing](how-to/BL-619-token-burn-briefing-warning.md) — recording a usage-percentage anchor, what the warning looks like, the weekly-reset config, and troubleshooting a missing or wrong projection.
 - [Bedtime vs. lights-out: which stop verb to run](how-to/BL-762-finish-shift-bedtime-vs-lights-out.md) — the keep-vs-kill table `./finish-shift` and `./stop-swarm.sh` both read, and why bedtime leaves the phone path up.

@@ -182,6 +182,8 @@ it up from the trailer) and `--link` it to its ticket.
 - BL-1113 — stamp-off ticket for Cursor hotfix `27273f2b0a` (main-sync
   deadlock, `cursor-forge`, Pipeline Board UX, CreatePlan confirm); human
   ledger certify/waive still happens after the stamp reaches `done`.
+- BL-1117 — stamp-off for tip `646ffe85d` (Pipeline Board `escapeHtml`
+  numeric `&#160;`; ledger pending until human certify/waive).
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 

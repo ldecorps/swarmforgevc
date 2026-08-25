@@ -22,6 +22,10 @@ approval_context: >
   numeric &#160; is. Do not reimplement.
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1117PipelineBoardNumericNbspStampOffSteps::acceptance handler registered so the runner executes every review scenario"
+abandoned_commits:
+  - 0688be054
+  - 464b09288
+
 invariants:
   - "This stamp-off never reimplements the tip — review confirms or refutes landed commit 646ffe85d only."
   - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."

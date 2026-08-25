@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1130: automated `origin/main`
+**Last Updated:** August 25, 2026 (BL-1117: stamp-off of tip
+`646ffe85d` — Pipeline Board `escapeHtml` emits numeric `&#160;` for
+U+00A0, never named `&nbsp;` (Telegram HTML named-entity set is only
+`&lt;` `&gt;` `&amp;` `&quot;`). Ledger pending for human certify/waive
+(BL-848); green tests do not certify. Follow-on to BL-1113 named-entity
+era. Acceptance:
+`specs/features/BL-1117-swarm-stamp-pipeline-board-numeric-nbsp.feature`.
+How-to: `docs/how-to/BL-1117-swarm-stamp-pipeline-board-numeric-nbsp.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1130: automated `origin/main`
 absorb — handoffd reconcile and Process B `post_hotfix_merge_origin` —
 either completes conflict-free or clean-refuses (`:refuse-rematch` + abort).
 Merge-tree foresight refuses before starting a known-conflict join; never
