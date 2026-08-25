@@ -4,6 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { Agent, CursorAgentError, type SDKAgent, type SDKMessage, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
 import { collectAssistantTextFromMessages, shouldResetCursorAgentSession, isCursorResourceExhausted, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
@@ -35,6 +36,83 @@ export interface CursorBridgeAgentSessionDeps {
   promptAgent: PromptCursorAgent;
   resetSession: ResetCursorAgentSession;
   readAgentId: ReadCursorAgentId;
+}
+
+function readActivePackFromTmuxEnv(targetPath: string): string | undefined {
+  try {
+    const envFile = path.join(targetPath, '.swarmforge', 'tmux-env');
+    const raw = fs.readFileSync(envFile, 'utf8');
+    const match = raw.match(/(^|\n)SWARMFORGE_PACK=([^\n]+)/);
+    return match?.[2]?.trim();
+  } catch {
+    return undefined;
+  }
+}
+
+function shouldUseFrontDeskRunner(targetPath: string): boolean {
+  // Prefer repo-local swarm.env over inherited process env so runtime mode
+  // switches apply without requiring a clean parent shell environment.
+  const forced =
+    readSwarmEnvValue(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') ||
+    process.env.SWARMFORGE_LETS_TALK_PROVIDER?.trim();
+  if (forced) {
+    return forced !== 'cursor';
+  }
+  const pack = readActivePackFromTmuxEnv(targetPath);
+  return Boolean(pack && pack.startsWith('copilot'));
+}
+
+function runFrontDeskOneShot(targetPath: string, prompt: string): string {
+  const opDir = path.join(targetPath, '.swarmforge', 'operator');
+  fs.mkdirSync(opDir, { recursive: true });
+  const stamp = `${Date.now()}-${process.pid}`;
+  const promptFile = path.join(opDir, `lets-talk-${stamp}.prompt.txt`);
+  const resultFile = path.join(opDir, `lets-talk-${stamp}.result.json`);
+  const runner = path.join(targetPath, 'swarmforge', 'scripts', 'run_ancillary_front_desk.sh');
+  try {
+    fs.writeFileSync(promptFile, `${prompt}\n`, 'utf8');
+    execFileSync('bash', [runner, targetPath, promptFile, resultFile], {
+      cwd: targetPath,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    const parsed = JSON.parse(fs.readFileSync(resultFile, 'utf8')) as {
+      is_error?: boolean;
+      result?: unknown;
+    };
+    if (parsed.is_error) {
+      throw new Error('ancillary front desk reported error');
+    }
+    const text = typeof parsed.result === 'string' ? parsed.result.trim() : '';
+    if (text.length === 0) {
+      throw new Error('ancillary front desk returned empty reply');
+    }
+    return text;
+  } finally {
+    try {
+      fs.unlinkSync(promptFile);
+    } catch {
+      // best effort
+    }
+    try {
+      fs.unlinkSync(resultFile);
+    } catch {
+      // best effort
+    }
+  }
+}
+
+function createLiveFrontDeskBridgeSession(targetPath: string): CursorBridgeAgentSessionDeps {
+  const agentId = 'ancillary-front-desk';
+  return {
+    readAgentId: () => agentId,
+    resetSession: async () => ({ agentId }),
+    promptAgent: async (prompt: string | SDKUserMessage) => {
+      const text = typeof prompt === 'string' ? prompt : prompt.text;
+      const replyText = runFrontDeskOneShot(targetPath, text);
+      return { replyText, agentId };
+    },
+  };
 }
 
 function statePathOf(targetPath: string): string {
@@ -288,6 +366,9 @@ export async function runCursorAgentPrompt(
 }
 
 export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBridgeAgentSessionDeps {
+  if (shouldUseFrontDeskRunner(targetPath)) {
+    return createLiveFrontDeskBridgeSession(targetPath);
+  }
   const apiKey = resolveCursorApiKey(targetPath);
   const modelId = process.env.CURSOR_BRIDGE_MODEL?.trim() || readSwarmEnvValue(targetPath, 'CURSOR_BRIDGE_MODEL') || 'auto';
   let cachedAgent: SDKAgent | undefined;

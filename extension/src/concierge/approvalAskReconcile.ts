@@ -50,10 +50,11 @@ export function approvalAsksNeedingRepost(
       if (approvalAskRecordedOnLiveTopic(id, recordedAsks, liveApprovalsTopicId)) {
         return false;
       }
-      // Remint / wrong-topic ask: any recorded ask that is not on the live
-      // topic (live match already returned above) always re-posts, even if
-      // emittedKeys still carries ApprovalRequested:<id> from the dead thread.
-      if (recordedAsks[id] !== undefined) {
+      const ask = recordedAsks[id];
+      // Remint / wrong-topic ask: always re-post onto the live Approvals id,
+      // even if emittedKeys still carries ApprovalRequested:<id> from the
+      // dead-thread post.
+      if (ask !== undefined && ask.topicId !== liveApprovalsTopicId) {
         return true;
       }
       // No recorded ask: only re-fire when the edge-trigger also would not

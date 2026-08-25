@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1117: stamp-off of tip
+**Last Updated:** August 25, 2026 (BL-1116: stamp-off of five Cursor
+extension WIP hotfixes — ledger keys `b81334b107` (resident-pane path
+credentials), `4d5375fdad` (skip duplicate approval ask), `ae983877c4`
+(Let's Talk provider / ancillary front desk), `d6214efe6f` (launch-script
+seat models), `f88913a3df` (ACP host client state machine). Ledger rows
+`pending` for human certify/waive (BL-848); green tests do not certify.
+Acceptance:
+`specs/features/BL-1116-swarm-stamp-extension-wip-hotfixes-20260824.feature`.
+How-to: `docs/how-to/BL-1116-swarm-stamp-extension-wip-hotfixes-20260824.md`.
+No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1117: stamp-off of tip
 `646ffe85d` — Pipeline Board `escapeHtml` emits numeric `&#160;` for
 U+00A0, never named `&nbsp;` (Telegram HTML named-entity set is only
 `&lt;` `&gt;` `&amp;` `&quot;`). Ledger pending for human certify/waive

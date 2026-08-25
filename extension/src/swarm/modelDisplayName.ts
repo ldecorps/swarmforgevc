@@ -11,6 +11,7 @@ export const MODEL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   // Cursor seat (cursor-agent --model auto); steward identity cursor/auto.
   auto: 'Cursor Auto',
   'cursor/auto': 'Cursor Auto',
+  'copilot/auto': 'Copilot Auto',
   'openai/qwen3.7-plus': 'Qwen 3.7 Plus',
   'openai/qwen3.7-max': 'Qwen 3.7 Max',
   'openai/qwen3.6-flash': 'Qwen 3.6 Flash',

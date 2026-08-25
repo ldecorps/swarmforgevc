@@ -50,14 +50,25 @@ function readLaunchScriptModel(
       path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`),
       'utf8'
     );
-    const isAider = /\baider\b/.test(script);
-    const isCursor = /\bcursor-agent\b/.test(script);
-    const prefersLaunchOverClaudeSettings = isAider || isCursor;
-    const match =
-      script.match(/\baider\b[^\n]*--model\s+(\S+)/) ??
-      script.match(/\bcursor-agent\b[^\n]*--model\s+(\S+)/) ??
-      (prefersLaunchOverClaudeSettings ? script.match(/--model\s+(\S+)/) : null);
-    return { model: match?.[1], prefersLaunchOverClaudeSettings };
+    const agent =
+      script.match(/\bcursor-agent\b/) ? 'cursor' :
+      script.match(/\bcopilot\b/) ? 'copilot' :
+      script.match(/\bcodex\b/) ? 'codex' :
+      script.match(/\baider\b/) ? 'aider' :
+      script.match(/\bgemini\b/) ? 'gemini' :
+      script.match(/\bvibe\b/) ? 'vibe' :
+      script.match(/\bgrok\b/) ? 'grok' :
+      script.match(/\bclaude\b/) ? 'claude' :
+      undefined;
+    const prefersLaunchOverClaudeSettings = agent !== undefined && agent !== 'claude';
+    const match = script.match(/--model\s+(\S+)/);
+    let model = match?.[1];
+    if (model === 'auto' && agent === 'copilot') {
+      model = 'copilot/auto';
+    } else if (model === 'auto' && agent === 'cursor') {
+      model = 'cursor/auto';
+    }
+    return { model, prefersLaunchOverClaudeSettings };
   } catch {
     return { prefersLaunchOverClaudeSettings: false };
   }

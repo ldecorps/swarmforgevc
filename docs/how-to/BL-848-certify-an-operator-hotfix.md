@@ -184,6 +184,8 @@ it up from the trailer) and `--link` it to its ticket.
   ledger certify/waive still happens after the stamp reaches `done`.
 - BL-1117 — stamp-off for tip `646ffe85d` (Pipeline Board `escapeHtml`
   numeric `&#160;`; ledger pending until human certify/waive).
+- BL-1116 — batch stamp-off for five extension WIP hotfixes
+  (`b81334b107` … `f88913a3df`); ledger pending until human certify/waive.
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 
