@@ -90,12 +90,17 @@ function registerSteps(registry) {
   });
 
   scoped(/^steward has (.+) for coder from bake-off evidence$/, (ctx, state) => {
-    ensure(ctx).stewardState = state.trim();
+    const text = state.trim();
+    assert.ok(
+      text === 'a top eligible local recommendation' || text === 'no winner yet',
+      `unknown steward_state example: ${text}`
+    );
+    ensure(ctx).stewardState = text;
   });
 
   scoped(/^the local Ollama pack used by start-swarm-ollama-qwen is applied or inspected$/, (ctx) => {
     const st = ensure(ctx);
-    const hasWinner = /top eligible local recommendation/.test(st.stewardState);
+    const hasWinner = st.stewardState === 'a top eligible local recommendation';
     st.raw = runBb(`
 (load-file "${LIB}")
 (def reg (if ${hasWinner}
@@ -112,10 +117,12 @@ function registerSteps(registry) {
 
   scoped(/^the pack outcome is (.+)$/, (ctx, outcome) => {
     const text = outcome.trim();
-    if (/window model id matches/.test(text)) {
+    if (text === 'window model id matches the steward winner') {
       assert.match(ensure(ctx).raw, /OUTCOME=aligned/);
-    } else {
+    } else if (text === 'clear no-winner-yet refusal') {
       assert.match(ensure(ctx).raw, /OUTCOME=no-winner-yet/);
+    } else {
+      assert.fail(`unknown pack_outcome example: ${text}`);
     }
   });
 

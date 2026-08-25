@@ -310,6 +310,25 @@
   (assert= "bl1127: fail score is 0.0 (ineligible)" 0.0 (:score (first ranks))))
 
 ;; ── BL-1140 revoked human-priority + bake-off + pack align ────────────────
+(assert= "BL-1140: revoked human-priority is worst authority tier"
+         2
+         (model-steward-lib/ranking-authority-tier
+          {:evidence "human-operator-priority:ollama-local-qwen-20260825"}))
+(assert= "BL-1140: battery evidence is best authority tier"
+         0
+         (model-steward-lib/ranking-authority-tier {:evidence "battery:pass.md"}))
+
+(let [reg (-> model-steward-lib/empty-registry
+              (model-steward-lib/register-model "ollama" "qwen-human" {:status "certified"})
+              (model-steward-lib/register-model "ollama" "qwen-other" {:status "certified"})
+              (model-steward-lib/add-role-ranking "coder" "ollama" "qwen-human" 0.99
+                "human-operator-priority:ollama-local-qwen-20260825")
+              (model-steward-lib/add-role-ranking "coder" "ollama" "qwen-other" 0.1
+                "steering-note:legacy"))
+      ranked (model-steward-lib/role-recommendations reg "coder")]
+  (assert= "BL-1140: revoked loses to non-battery other evidence by tier"
+           "qwen-other" (:model (first ranked))))
+
 (let [reg (-> model-steward-lib/empty-registry
               (model-steward-lib/register-model "ollama" "qwen-human" {:status "certified"})
               (model-steward-lib/register-model "ollama" "qwen-battery" {:status "certified"})

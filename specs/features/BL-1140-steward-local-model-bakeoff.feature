@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=26ab76f51d1acb03b774b428b6949eafcc7db44597371c956e2105379e0c7bca
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:53:12.684175575Z","feature_name":"steward-driven local model bake-off and pack alignment","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1140-steward-local-model-bakeoff.feature","background_hash":"af05c1ec3413980849ff0433a3c54783f34ffca1e6682647fc2b7eeca2db42e6","implementation_hash":"unknown","scenarios":[{"index":2,"name":"local pack launch path matches steward winner or refuses clearly","scenario_hash":"3f4166f0565192c98326ab7f7d3bffe23dbb36c1717ed8806f0f31acb8472afc","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-25T16:53:12.684175575Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: steward-driven local model bake-off and pack alignment
   Epic BL-1125 remaining slice: which local model to use on this WSL/CPU
   host. Human has no strong opinion which concrete local model to use;
