@@ -57,6 +57,25 @@ function sortedBuckets(map: Map<number, number[]>): WindowSummary[] {
     }));
 }
 
+function pushBucketValue(
+  buckets: Map<number, number[]>,
+  atIso: string,
+  windowMs: number,
+  value: number | null
+): void {
+  if (value === null) return;
+  const atMs = Date.parse(atIso);
+  if (Number.isNaN(atMs)) return;
+  const key = bucketStartMs(atMs, windowMs);
+  const list = buckets.get(key) ?? [];
+  list.push(value);
+  buckets.set(key, list);
+}
+
+function meanSeries(buckets: Map<number, number[]>): TrendSeriesPoint[] {
+  return sortedBuckets(buckets).map(({ periodStart, value }) => ({ periodStart, value }));
+}
+
 /** Per-window success rate (successes / total) for categorical outcome records. */
 export function aggregateOutcomeSuccessRate(
   records: HumanLoopOutcomeRecord[],
@@ -64,14 +83,9 @@ export function aggregateOutcomeSuccessRate(
 ): TrendSeriesPoint[] {
   const buckets = new Map<number, number[]>();
   for (const record of records) {
-    const atMs = Date.parse(record.at);
-    if (Number.isNaN(atMs)) continue;
-    const key = bucketStartMs(atMs, windowMs);
-    const list = buckets.get(key) ?? [];
-    list.push(SUCCESS_OUTCOMES.has(record.outcome) ? 1 : 0);
-    buckets.set(key, list);
+    pushBucketValue(buckets, record.at, windowMs, SUCCESS_OUTCOMES.has(record.outcome) ? 1 : 0);
   }
-  return sortedBuckets(buckets).map(({ periodStart, value }) => ({ periodStart, value }));
+  return meanSeries(buckets);
 }
 
 /** Per-window mean duration for tick-duration records. */
@@ -81,14 +95,14 @@ export function aggregateTickDurationMean(
 ): TrendSeriesPoint[] {
   const buckets = new Map<number, number[]>();
   for (const record of records) {
-    const atMs = Date.parse(record.at);
-    if (Number.isNaN(atMs) || !Number.isFinite(record.durationMs)) continue;
-    const key = bucketStartMs(atMs, windowMs);
-    const list = buckets.get(key) ?? [];
-    list.push(record.durationMs);
-    buckets.set(key, list);
+    pushBucketValue(
+      buckets,
+      record.at,
+      windowMs,
+      Number.isFinite(record.durationMs) ? record.durationMs : null
+    );
   }
-  return sortedBuckets(buckets).map(({ periodStart, value }) => ({ periodStart, value }));
+  return meanSeries(buckets);
 }
 
 export function trendForOutcomeRecords(
