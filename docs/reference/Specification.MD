@@ -1,13 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-533: exit gates — untracked
+acceptance features fail specifier hygiene (`untracked-acceptance`);
+multi-slice epics (≥2 `decomposes_into` children) fail the wiring exit
+checklist unless at least one child has non-empty `required_wiring`.
+Hooks: `specifier_backlog_hygiene_gate`, epic milestone audit, pre-QA
+acceptance-at-cited-commit. Acceptance:
+`specs/features/BL-533-spec-commit-and-runtime-wiring-exit-gates.feature`.
+How-to: `docs/how-to/BL-533-spec-commit-and-runtime-wiring-exit-gates.md`.
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-534: thin-main CRAP-visible CLI
 gate — tools under `extension/src/tools/` must export `main` with
 cyclomatic complexity ≤ 2. Parcel mode never allowlists; full-repo
 `thin-main-allowlist.txt` may only shrink. Runner:
 `npm run thin-main-gate` / `extension/out/tools/thin-main-gate.js`.
 Acceptance: `specs/features/BL-534-thin-main-crap-visible-cli-gate.feature`.
-How-to: `docs/how-to/BL-534-thin-main-crap-visible-cli-gate.md`.
-No new extension command or setting.)
+How-to: `docs/how-to/BL-534-thin-main-crap-visible-cli-gate.md`.No new extension command or setting.)
 Prior entry —
 August 25, 2026 (BL-1131: rematch-then-FF ticket land —
 pre-publish tip must contain `origin/main`; post-land absorb is FF-only

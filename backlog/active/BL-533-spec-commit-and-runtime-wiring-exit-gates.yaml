@@ -1,0 +1,79 @@
+id: BL-533
+title: "Exit gates: feature committed + runtime wiring before 'done'"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+priority: 97
+mutation_cost: medium
+direction: human-requested
+depends_on: []
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+human_approval: approved
+approval_context: >
+  Arms mechanical exit gates for (1) acceptance features must be
+  git-tracked before spec-ready and (2) multi-slice epics need at least
+  one child with required_wiring before the wiring exit checklist
+  passes. Review hook sites named in the feature narrative.
+acceptance: specs/features/BL-533-spec-commit-and-runtime-wiring-exit-gates.feature
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl533SpecCommitAndRuntimeWiringExitGatesSteps::acceptance handler registered"
+  - "swarmforge/scripts/specifier_backlog_hygiene_gate.bb::acceptance::hygiene gate must evaluate the ticket acceptance path"
+abandoned_commits:
+  - 7e3f42dd5f
+  - 9bdafd00c
+  - d8dcbb570
+  - ff30e6e71
+  - 45fdac472
+  - 576360ceb
+  - eee8f31c2
+  - dc42fd90b
+
+invariants:
+  - "An acceptance path that exists only as an untracked working-tree file never passes the spec-ready hygiene gate."
+  - "An epic with two or more children and zero required_wiring declarations never passes the wiring exit checklist."
+description: >
+  WHAT. Mechanical exit gates so claimed deliverables are tracked and
+  wired before close — Rank 6 / BL-FIX-006 from the recurring-failure-mode
+  audit. Specifier prose already says git status must be clean (BL-314);
+  this ticket enforces it and the multi-slice runtime-wiring checklist.
+
+  WHY. Specs and modules get reported ready while untracked or unwired
+  (dark features). Rule proposals L8–L9; BL-256 coverage-never-built.
+
+  HOW (direction, not mandate).
+  1. Extend specifier_backlog_hygiene_gate so an acceptance: path that
+     exists on disk but is absent from git ls-files fails closed.
+  2. Ensure pre-QA / handoff-to-QA acceptance checks refuse when the
+     path is missing from the cited commit (partner to BL-1027 dangling
+     pointer — this is the untracked/working-tree half).
+  3. Epic wiring exit checklist: epics with >=2 decomposes_into children
+     fail unless at least one child declares non-empty required_wiring
+     (BL-531 shape). Hook into backlog_epic_milestone_audit or the
+     promotion/close path — one chokepoint, fail closed.
+  Prefer extending existing gates over a third parallel CLI.
+
+qa_e2e_procedure: >
+  (1) Fixture ticket pointing at an untracked .feature → hygiene exits
+  non-zero naming the path. (2) git add that feature → commit-tracking
+  check passes. (3) Fixture epic with two children and no
+  required_wiring → wiring checklist fails. (4) Add required_wiring to
+  one child → checklist passes. (5) Documenter→QA still refuses missing
+  acceptance blob at cited commit. Record degraded Babashka gate if any.
+
+out_of_scope: |
+  - Rewriting every historical epic that lacks wiring (grandfather or
+    one-shot backfill is a follow-up if the audit fails loud on main).
+  - Replacing BL-531's per-ticket required_wiring pre-QA check.
+  - Changing the BL-314 prose rule beyond pointing at this gate.
+
+notes: |
+  - [2026-08-25T09:53Z] coordinator: ready notice ack; hold — human_approval pending and/or active at cap 3/3 (BL-534, BL-658, BL-695).
+  Source: BL-512 audit BL-FIX-006. Spec-gap: backlog/evidence/BL-533-coder-spec-gap-20260824.md
+  and operator INTAKE-BL-533-no-feature-spec-gap.md. 2026-08-25 specifier:
+  armed feature file; acceptance is a single-line pointer; stays paused
+  with human_approval pending.
+
+source: "BL-512 audit BL-FIX-006. Evidence: rule_proposals L8–L9; BL-256 coverage-never-built bounce subject."
+
+assigned_to: coder

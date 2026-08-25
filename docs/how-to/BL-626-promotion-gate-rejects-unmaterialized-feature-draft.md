@@ -40,6 +40,7 @@ bb swarmforge/scripts/promotion_gates_cli.bb audit-acceptance <project-root>
 Exit `2` lists every dangling pointer; exit `0` prints `ok`.
 
 Mint-time sibling: [BL-1027](BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md).
+Untracked working-tree half: [BL-533](BL-533-spec-commit-and-runtime-wiring-exit-gates.md).
 Handoff-time existence check: [BL-880 in BL-531](BL-531-handoff-refusal-remedies.md#acceptance-pointer-refusals-bl-880).
 
 Acceptance:

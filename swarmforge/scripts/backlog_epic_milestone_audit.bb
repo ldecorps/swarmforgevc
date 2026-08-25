@@ -23,33 +23,34 @@
        (mapcat #(fs/glob % "BL-*.yaml"))
        (sort-by str)))
 
+(defn- print-bucket [label vs]
+  (println (str label (count vs)))
+  (doseq [v vs]
+    (println (str "  " (backlog-hygiene-lib/format-violation v)))))
+
 (defn -main []
   (let [files (open-ticket-files project-root)
-        violations (mapcat #(backlog-hygiene-lib/violations-for-file % project-root)
+        backlog-root (str (fs/path project-root "backlog"))
+        violations (mapcat (fn [f]
+                             (backlog-hygiene-lib/violations-for-file
+                              f
+                              {:repo-root project-root
+                               :resolve-children? true
+                               :backlog-root backlog-root}))
                            files)
-        missing-epic (filter #(#{:missing-epic :missing-epic-on-epic} (:kind %)) violations)
-        missing-ms (filter #(= :missing-milestone (:kind %)) violations)
-        ;; BL-922: all-clean? counts EVERY kind, so a kind added to the lib
-        ;; alone would exit 1 having printed nothing about why - name it here.
-        unreadable-acceptance (filter #(= :unreadable-acceptance (:kind %)) violations)
-        dangling-acceptance (filter #(= :dangling-acceptance (:kind %)) violations)
-        retired-type (filter #(= :retired-ticket-type (:kind %)) violations)]
+        by-kind (group-by :kind violations)
+        pick (fn [kinds] (mapcat #(get by-kind % []) kinds))]
     (println (str "open tickets: " (count files)))
-    (println (str "missing epic (non-epic): " (count missing-epic)))
-    (doseq [v missing-epic]
-      (println (str "  " (backlog-hygiene-lib/format-violation v))))
-    (println (str "epics missing milestone: " (count missing-ms)))
-    (doseq [v missing-ms]
-      (println (str "  " (backlog-hygiene-lib/format-violation v))))
-    (println (str "unreadable acceptance (block scalar hiding a feature pointer): " (count unreadable-acceptance)))
-    (doseq [v unreadable-acceptance]
-      (println (str "  " (backlog-hygiene-lib/format-violation v))))
-    (println (str "dangling acceptance (pointer missing on working tree): " (count dangling-acceptance)))
-    (doseq [v dangling-acceptance]
-      (println (str "  " (backlog-hygiene-lib/format-violation v))))
-    (println (str "retired ticket type (type: bug): " (count retired-type)))
-    (doseq [v retired-type]
-      (println (str "  " (backlog-hygiene-lib/format-violation v))))
+    (print-bucket "missing epic (non-epic): " (pick [:missing-epic :missing-epic-on-epic]))
+    (print-bucket "epics missing milestone: " (pick [:missing-milestone]))
+    (print-bucket "unreadable acceptance (block scalar hiding a feature pointer): "
+                  (pick [:unreadable-acceptance]))
+    (print-bucket "dangling acceptance (pointer missing on working tree): "
+                  (pick [:dangling-acceptance]))
+    (print-bucket "untracked acceptance (on disk, not ls-files): "
+                  (pick [:untracked-acceptance]))
+    (print-bucket "epic wiring exit checklist failures: " (pick [:epic-wiring-missing]))
+    (print-bucket "retired ticket type (type: bug): " (pick [:retired-ticket-type]))
     (if (backlog-hygiene-lib/all-clean? violations)
       (do (println "backlog_epic_milestone_audit: ok")
           (System/exit 0))
