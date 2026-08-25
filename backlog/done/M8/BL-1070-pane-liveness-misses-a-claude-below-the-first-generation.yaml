@@ -3,7 +3,7 @@ title: "The babysitter's liveness check only looks one generation under the pane
 milestone: M8
 type: defect
 severity: high
-status: paused
+status: done
 epic: swarm-reliability
 priority: 96
 direction: swarm-reported
