@@ -62,6 +62,30 @@ function bbCount(expr) {
   return execFileSync('bb', ['-e', expr], { encoding: 'utf8' }).trim();
 }
 
+function countActiveTickets(activeDir) {
+  return Number(
+    bbCount(
+      `(load-file "${BACKLOG_DEPTH_LIB}") (println (backlog-depth-lib/count-active-tickets "${activeDir}"))`
+    )
+  );
+}
+
+function countBacklogYaml(activeDir) {
+  return Number(
+    bbCount(
+      `(load-file "${CHASE_SWEEP_LIB}") (println (chase-sweep-lib/count-backlog-yaml "${activeDir}"))`
+    )
+  );
+}
+
+function countStatusSnapshotYaml(activeDir) {
+  return Number(
+    bbCount(
+      `(require '[babashka.fs :as fs]) (require '[clojure.string :as str]) (println (count (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".yaml")) (fs/list-dir "${activeDir}"))))`
+    )
+  );
+}
+
 function runDepthCheck(ctx) {
   const { targetPath } = ensureFixture(ctx);
   const draft = path.join(targetPath, 'draft.txt');
@@ -106,12 +130,7 @@ function registerSteps(registry) {
     // Cap 0 + zero tickets: depth-exceeded? is false (0 > 0 is false), so no
     // warning. Prove the shared counter itself is 0 (and handoff stayed silent).
     const { activeDir, handoffOutput } = ensureFixture(ctx);
-    const viaLib = Number(
-      bbCount(
-        `(load-file "${BACKLOG_DEPTH_LIB}") (println (backlog-depth-lib/count-active-tickets "${activeDir}"))`
-      )
-    );
-    assert.equal(viaLib, 0);
+    assert.equal(countActiveTickets(activeDir), 0);
     assert.equal(reportedActiveFromWarning(handoffOutput), null);
     assert.doesNotMatch(handoffOutput || '', /Active backlog depth exceeded/i);
   });
@@ -120,27 +139,15 @@ function registerSteps(registry) {
     registry,
     /^the handoff depth check, the open-slot gate and the status snapshot report the same count$/,
     (ctx) => {
-      const { targetPath, activeDir } = ensureFixture(ctx);
+      const { activeDir } = ensureFixture(ctx);
       setTickets(ctx, 4);
       fs.writeFileSync(path.join(activeDir, '.gitkeep'), '');
       runDepthCheck(ctx);
       const warningCount = reportedActiveFromWarning(ctx.bl683.handoffOutput);
-      const libCount = Number(
-        bbCount(
-          `(load-file "${BACKLOG_DEPTH_LIB}") (println (backlog-depth-lib/count-active-tickets "${activeDir}"))`
-        )
-      );
-      const openSlotCount = Number(
-        bbCount(
-          `(load-file "${CHASE_SWEEP_LIB}") (println (chase-sweep-lib/count-backlog-yaml "${activeDir}"))`
-        )
-      );
+      const libCount = countActiveTickets(activeDir);
+      const openSlotCount = countBacklogYaml(activeDir);
       // Status snapshot uses the same yaml-only filter (handoffd count-yaml-files).
-      const statusCount = Number(
-        bbCount(
-          `(require '[babashka.fs :as fs]) (require '[clojure.string :as str]) (println (count (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".yaml")) (fs/list-dir "${activeDir}"))))`
-        )
-      );
+      const statusCount = countStatusSnapshotYaml(activeDir);
       assert.equal(warningCount, 4);
       assert.equal(libCount, 4);
       assert.equal(openSlotCount, 4);
@@ -148,7 +155,6 @@ function registerSteps(registry) {
       assert.equal(warningCount, libCount);
       assert.equal(warningCount, openSlotCount);
       assert.equal(warningCount, statusCount);
-      void targetPath;
     }
   );
 }
