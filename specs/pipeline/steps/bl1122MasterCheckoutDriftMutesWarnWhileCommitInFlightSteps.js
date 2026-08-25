@@ -3,8 +3,6 @@
 // BL-1122: mute MASTER CHECKOUT DRIFT WARN while index.lock / commit in flight.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -36,39 +34,6 @@ function ensure(ctx) {
 function runCheck(ctx) {
   const st = ensure(ctx);
   const script = `
-(load-file "${LIB}")
-(def alarms (atom []))
-(def main-content "(defn foo [] :main)\\n")
-(def index-content ${st.stagedReversion || st.indexDiffers ? '"(defn foo [] :index)\\n"' : 'main-content'})
-(def work-content main-content)
-(def result
-  (master-checkout-drift-lib/check-master-checkout-drift!
-   {:project-root "/tmp/bl1122-unused"
-    :entrypoints #{"handoffd.bb"}
-    :emit-alarm! (fn [t] (swap! alarms conj t))
-    :commit-in-flight?* (fn [_] ${st.inFlight ? 'true' : 'false'})
-    :run-git* (fn [_root args]
-                (cond
-                  (= args ["rev-parse" "--verify" "main"]) {:ok? true :content "ok"}
-                  (str/starts-with? (str (first args)) "show")
-                  (let [spec (second args)]
-                    (cond
-                      (str/starts-with? (str spec) "main:") {:ok? true :content main-content}
-                      (str/starts-with? (str spec) ":") {:ok? true :content index-content}
-                      :else {:ok? false :content nil}))
-                  :else {:ok? false :content nil}))
-    :read-disk* (fn [_ _ bare]
-                  (if (= bare "handoffd.bb")
-                    {:ok? true :content "(load-file \\"a.bb\\")\\n"}
-                    {:ok? true :content work-content}))}))
-(require '[clojure.string :as str])
-(println "OVERALL" (name (:overall result)))
-(println "ALARM_COUNT" (count @alarms))
-(doseq [a @alarms] (println "ALARM" a))
-(println "PER" (pr-str (:per-file result)))
-`;
-  // Fix order: require str before use in script - rewrite cleaner
-  const fixed = `
 (require '[clojure.string :as str])
 (load-file "${LIB}")
 (def alarms (atom []))
@@ -108,7 +73,7 @@ function runCheck(ctx) {
 (doseq [a @alarms] (println "ALARM" a))
 (println "PER" (pr-str (:per-file result)))
 `;
-  const r = runBb(fixed);
+  const r = runBb(script);
   assert.equal(r.status, 0, r.stderr || r.stdout);
   const raw = `${r.stdout || ''}${r.stderr || ''}`;
   st.raw = raw;
