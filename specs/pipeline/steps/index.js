@@ -593,6 +593,7 @@ const DOMAINS = [
   require('./bl1145OpenSlotNudgeSkipsEpicTrackersSteps'),
   require('./bl1146HostQueueEnqueueNextHoldOnHostQuestionSteps'),
   require('./bl786MutationConcurrencyHostResolvedSteps'),
+  require('./bl598TrendFalseAlarmRateSteps'),
   require('./bl965HealWrapperTempCleanupSteps'),
   require('./bl591EpicEtaSteps'),
   require('./bl971PropertyLaneTimeoutGreenSteps'),

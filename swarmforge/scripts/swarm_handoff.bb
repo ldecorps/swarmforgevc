@@ -213,7 +213,14 @@
         active-count (backlog-depth-lib/count-active-tickets active-dir)]
     (when (backlog-depth-lib/depth-exceeded? active-count max-depth)
       (binding [*out* *err*]
-        (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))
+        (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth)))
+      ;; BL-598: the send path already classified this steady-state depth warn
+      ;; as non-actionable noise — record without blocking the handoff.
+      (try
+        (let [cli (str (fs/path project-root "extension" "out" "tools" "emit-alert-telemetry.js"))]
+          (when (fs/exists? cli)
+            (command project-root "node" cli (str project-root) "active-backlog-depth" "false-positive")))
+        (catch Exception _ nil)))))
 
 (def pre-qa-gate-remedy
   "Merge the named commit / land the named wiring and re-forward, or record a deliberately dropped commit under abandoned_commits:.")
