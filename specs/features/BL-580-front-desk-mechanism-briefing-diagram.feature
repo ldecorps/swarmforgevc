@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T09:21:18.844321613Z","feature_name":"the morning briefing carries a front-desk MECHANISM diagram, Telegram in and answer out","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-580-front-desk-mechanism-briefing-diagram.feature","background_hash":"48713d38270af93a15817eeaef4e40284dc9bf78ba94b83d064f923eb45c1773","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: the morning briefing carries a front-desk MECHANISM diagram, Telegram in and answer out
 
   # BL-580. Human, 2026-07-23, on being offered it alongside BL-579:
