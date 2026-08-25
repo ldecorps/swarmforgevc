@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1146: host queue enqueue-next pin
+while busy; idle auto-start when host reply is not a question; hold pin when
+host reply is a question. `enqueueNextPromptId` on bridge persisted state;
+extends BL-810/BL-894 choose-next poll path. Acceptance:
+`specs/features/BL-1146-host-queue-enqueue-next-hold-on-host-question.feature`.
+How-to: `docs/how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md`
+(BL-1146 section). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1144: reduce frequent QA push-race
 rematch storms — publish-time authoritative rematch (bounded attempts) plus
 `.swarmforge/land-main.publish.lock` serializes land/close publishers;

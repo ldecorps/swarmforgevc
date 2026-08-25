@@ -77,3 +77,10 @@ notes: |
     locked pin/hold/amendment; feature armed; forwarded to coder.
 
 assigned_to: coder
+
+abandoned_commits:
+  - 32f621d9e7
+  - 8f3a3fc147
+  - b19a189c4b
+  - 0d16c0fc39
+  - 882c8f6272
