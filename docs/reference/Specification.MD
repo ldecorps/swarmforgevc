@@ -1,11 +1,11 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-882: `handoffd.bb` BL-617 pause-gate
-comment no longer claims sibling sweeps "keep running unconditionally" —
-they are pause-exempt only and still share `chase-sweep-every-cycles`;
-comment-only, gate structure frozen. Acceptance:
-`specs/features/BL-882-handoffd-cadence-comment-accuracy.feature`.
-How-to: `docs/how-to/BL-617-nightly-cooldown-window.md` (cadence note).
+**Last Updated:** August 25, 2026 (BL-724: shell-test discovery sweep —
+every `test_*.sh` under `swarmforge/scripts/test/` is reached, excluded with
+a dated reason, or a loud failure (untracked orphan / unaccounted); silence
+is never a clean run. Builds on BL-973 `suite-manifest.tsv`. Acceptance:
+`specs/features/BL-724-orphan-red-shell-test-untracked-and-undiscovered.feature`.
+How-to: `docs/how-to/BL-724-orphan-red-shell-test-untracked-and-undiscovered.md`.
 No new extension command or setting.)
 Prior entry —
 **Last Updated:** August 25, 2026 (BL-691: ambulance mode closes three live-run

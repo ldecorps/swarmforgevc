@@ -118,3 +118,10 @@ the manifest's `excluded` rows for the specific live-tmux tests).
 scenario `01` (the lean-ledger fixture runs green), `02`/`03` (each guarded
 list's closure check, and that it fires on a new upstream edge), `04`/`05`
 (the suite inventory catches and reports an unlisted test file).
+
+## Related — shell-test orphans (BL-724)
+
+`suite-manifest.tsv` also feeds a **shell-test discovery** sweep
+(`shell_test_discovery_cli.bb`) that fails loud on untracked or unaccounted
+`test_*.sh` files under `swarmforge/scripts/test/`. See
+[Shell-test discovery](BL-724-orphan-red-shell-test-untracked-and-undiscovered.md).
