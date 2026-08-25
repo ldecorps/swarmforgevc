@@ -111,3 +111,10 @@
   stamp_ticket: BL-1113
   human_decision: null
   decided_at: null
+- commit: a3bf11b533
+  subject: "Fix main_sync_status_cli ahead/behind swap (match handoffd rev-list)."
+  detected_at: 2026-08-25
+  state: pending
+  stamp_ticket: BL-1115
+  human_decision: null
+  decided_at: null

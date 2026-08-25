@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1120: handoffd master-main reconcile
+**Last Updated:** August 25, 2026 (BL-1115: stamp-off Cursor hotfix
+`a3bf11b533` — `main_sync_status_cli.bb` counts with
+`git rev-list --left-right --count origin/main...main` and binds
+`[behind ahead]` (same as handoffd); after absorb, `behind:0` / `proceed`,
+never inverted labels. Ledger row stays pending until human decision.
+Acceptance:
+`specs/features/BL-1115-swarm-stamp-main-sync-status-cli-ahead-behind-swap.feature`.
+How-to: `docs/how-to/BL-1115-swarm-stamp-main-sync-status-cli-ahead-behind-swap.md`.
+Complements BL-1113 / BL-891 / BL-848. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1120: handoffd master-main reconcile
 never `git merge --abort`s a merge it did not start. Pre-existing
 `MERGE_HEAD` → skip and surface `human-merge-in-progress`; only a
 tick-started conflict may abort. Pure helpers in
