@@ -24,6 +24,10 @@ approval_context: >
 acceptance: specs/features/BL-1131-ticket-land-without-operator-absorb-merge.feature
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1131TicketLandWithoutOperatorAbsorbMergeSteps::acceptance handler registered so the runner executes every review scenario"
+abandoned_commits:
+  - 30f234dae
+  - d5a0b54d5
+
 invariants:
   - "After a successful ticket land under this rule, local main reaches behind=0 against origin/main without a human completing a conflicted absorb merge."
   - "Ordinary land races must not leave coordinator sync on wait-dirty-clear pending an operator merge-commit as the designed recovery."

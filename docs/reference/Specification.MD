@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1122: master-checkout drift
+**Last Updated:** August 25, 2026 (BL-1131: rematch-then-FF ticket land —
+pre-publish tip must contain `origin/main`; post-land absorb is FF-only
+or rematch lander/bookkeeping owner — never an operator
+`Complete origin/main merge`. Successful land reaches `behind=0` /
+coordinator `proceed`. BL-1130 clean-refuse preserved. Acceptance:
+`specs/features/BL-1131-ticket-land-without-operator-absorb-merge.feature`.
+How-to: `docs/how-to/BL-1131-ticket-land-without-operator-absorb-merge.md`
+and BL-1130. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1122: master-checkout drift
 mutes `:staged-for-reversion` WARN while `.git/index.lock` shows a commit
 in flight — durable staged reversion with no lock still alarms (BL-839);
 mute is read-only and not sticky. Acceptance:
