@@ -7,7 +7,7 @@ severity: high
 # and unmerged paths; reconcile escalates dirty-blocked / needs-human even
 # after BL-1120. Swarm stays up but coordinator bookkeeping and wakes stall
 # until Cursor finishes the merge. Not critical: no data loss if noticed.
-status: paused
+status: done
 epic: swarm-reliability
 priority: 5
 direction: human-requested
