@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T19:17:44.788168028Z","feature_name":"cold-swap day-shift to ollama-qwen3-mono-router","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1143-cold-swap-day-shift-ollama-qwen.feature","background_hash":"a2db324616093873c514992d9c14bbbf0b61c8ac4717342a63ea30164bcde94f","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: cold-swap day-shift to ollama-qwen3-mono-router
   Epic BL-1125 remaining slice B. Human authorized cold-swap of the live
   day-shift off cursor-forge onto ./start-swarm-ollama-qwen.sh /

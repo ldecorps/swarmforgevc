@@ -2,8 +2,9 @@ id: BL-1143
 title: "Cold-swap day-shift to ollama-qwen3-mono-router (authorized)"
 milestone: M8
 type: feature
-status: todo
+status: active
 epic: local-llm-swarm
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: [BL-1140]
@@ -63,8 +64,10 @@ qa_e2e_procedure: >
   ollama-qwen (evidence). (2) Pack models match BL-1140 winner or refuse
   no-winner-yet; revoked human-priority not authoritative. (3) No
   qwen-forge thrash. (4) How-to/runbook documents switch + rollback.
-assigned_to: hardender
 notes: |
+  - [2026-08-25T19:10Z] coder: verify path green — staffing+shape+steward aligned;
+    day_shift_pack=ollama-qwen3-mono-router; how-to+APS 3/3. Live --execute left
+    for operator/post-handoff (kills panes). Evidence BL-1143-cold-swap-*.md.
   - [2026-08-25T18:35Z] specifier: minted JumpQ under BL-1125 from
     INTAKE-prioritize-local-ollama-remaining-20260825.md; feature armed;
     depends_on BL-1140. Keep slice small (ops+runbook). Epic updated.
@@ -72,8 +75,12 @@ notes: |
   - [2026-08-25T19:05Z] specifier (coder 001100): ack — BL-1143 present under
     backlog/active/ after rematch restore (f75ac89d7); YAML hygiene fixed
     (assigned_to was nested under notes:). Coder may continue routing.
-  - [2026-08-25T19:15Z] specifier (coord 001862): tip restore pushed to
-    origin/main so rematch reset cannot drop JumpQ yaml+features again.
-    Coder tip 4741a45c33 impl still separate land.
-  - [2026-08-25T19:16Z] specifier (coder 001111): ack — tip 1e3c1171c0 at
-    hardender mid-pipeline; land awaits QA. assigned_to→hardender.
+
+abandoned_commits:
+  - 351da71529
+  - 9b12e8511e
+  - 1e3c1171c0
+  - f9bc48e92c
+  - 4741a45c33
+  - e9572fa893
+  - 8dc6cf92ae
