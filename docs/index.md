@@ -62,6 +62,7 @@ expects them, and are not migrated or rewritten here.
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
 - [Morning briefing handoff-mechanism diagram](how-to/BL-579-handoff-mechanism-briefing-diagram.md) — HOW a parcel travels; allowlist entry `handoff-mechanism` (BL-579).
+- [Morning briefing front-desk mechanism diagram](how-to/BL-580-front-desk-mechanism-briefing-diagram.md) — Telegram in → answer out; allowlist entry `front-desk` (BL-580).
 - [Mean ticket time ends at close, not a later re-file](how-to/BL-1074-post-close-refile-inflates-measured-ticket-duration.md) — duration ignores post-close `done/` moves (BL-1074).
 - [Stale approval-ask email escalation](how-to/BL-584-stale-approval-ask-email-escalation.md) — digest + Telegram deep links when Approvals asks go unanswered (BL-584).
 - [Resident Spy pane font-size control](how-to/BL-609-resident-spy-font-size-control.md) — compact +/- in header; default 13px; no browser storage (BL-609).
@@ -156,7 +157,7 @@ expects them, and are not migrated or rewritten here.
 - [Ticket Lifecycle Ledger (BL-819)](reference/BL-819-ticket-lifecycle-ledger.md) — the coordinator-owned, append-only per-ticket lifecycle record: event/snapshot schema, storage, idempotency, write points, and its boundary vs the coordinator's other duties.
 - [Closing-Ceremony Lean Pass (BL-820)](reference/BL-820-closing-ceremony-lean-pass.md) — the shift-close step that folds BL-819's ledger into a packet, delivers it to the specifier, and records a coordinator adjustment / specifier outcome; storage, CLIs, and boundary.
 - [Model Compatibility Matrix (generated)](reference/model-compatibility.md) — registry-projected statuses, known limitations, and certified role recommendations (`model-steward compat-docs`; do not hand-edit).
-- Architecture, swarm-flow, and handoff-mechanism diagrams: [architecture.mmd](diagrams/architecture.mmd), [swarm-flow.mmd](diagrams/swarm-flow.mmd), [handoff-flow.mmd](diagrams/handoff-flow.mmd) (Mermaid sources; morning briefing allowlist)
+- Architecture, swarm-flow, handoff-mechanism, and front-desk diagrams: [architecture.mmd](diagrams/architecture.mmd), [swarm-flow.mmd](diagrams/swarm-flow.mmd), [handoff-flow.mmd](diagrams/handoff-flow.mmd), [front-desk-flow.mmd](diagrams/front-desk-flow.mmd) (Mermaid sources; morning briefing allowlist)
 - [Non-Pipeline Agents — Reference Table](reference/BL-643-non-pipeline-agents-reference-table.md) — every launcher, stop path, role prompt (or its stated absence), log location, and supervising service, checked against the repo.
 - [Fixture Tmux-Server Reaper Adoption (BL-817)](reference/BL-817-fixture-tmux-server-reaper-adoption.md) — the seven step-handler files that now register their fixture tmux servers with the shared `fixtureReaper`, the socket-path-only kill guardrail, and the standing `tmuxReaperGuard` gate that catches the idiom returning.
 - [Socket-Fixture Short Root and Its Gate (BL-948)](reference/BL-948-socket-fixture-short-root-and-gate.md) — the shared short-base fixture-root helper for socket-building step files, its headroom assertion and exit-hook backstop, and the by-inspection gate (plus BL-897 parity test) that stops the long-base root returning.
@@ -173,6 +174,7 @@ expects them, and are not migrated or rewritten here.
 - [SwarmForge VS Code Extension — Milestone Roadmap](explanation/Milestone%20Roadmap.MD)
 - [Headless swarm + extension reattach (operator doctrine)](explanation/headless-reattach-doctrine.md)
 - [Handoff dual-path delivery (tmux primary, mailbox backup)](explanation/handoff-dual-path.md)
+- [How the front desk works](explanation/how-the-front-desk-works.md) — Telegram → bridge → restricted Operator (`--tools ""`, no repo) → reply outbox/SSE; companion diagram `front-desk-flow.mmd` (BL-580).
 - [Why the expeditor commands the stack but never depends on it](explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md)
 - [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.
 - [The Non-Pipeline Agents, As a Class](explanation/BL-643-non-pipeline-agents-as-a-class.md) — what makes an agent non-pipeline, the taxonomy, and what the Onboarder's three shipped slices actually do.

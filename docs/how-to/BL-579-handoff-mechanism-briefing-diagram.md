@@ -20,9 +20,10 @@ source fails loudly; the email still sends with the no-diagram note.
 
 ## Operator note
 
-After the next briefing send, expect three diagram images inline
-(architecture, swarm-flow, handoff-mechanism). To extend the set, add both
-a committed `.mmd` and an allowlist entry together.
+After the next briefing send, expect the allowlisted diagram images inline
+(architecture, swarm-flow, handoff-mechanism, and — once BL-580 has landed —
+front-desk). To extend the set, add both a committed `.mmd` and an allowlist
+entry together.
 
 Acceptance:
 `specs/features/BL-579-handoff-mechanism-briefing-diagram.feature`

@@ -1,5 +1,8 @@
 # Sharing one Telegram bot between the front desk and the Cursor bridge (BL-764)
 
+For the end-to-end Telegram → answer path (and the restricted Operator
+constraint), see [How the front desk works](../explanation/how-the-front-desk-works.md).
+
 Telegram hands each `getUpdates` poll result to exactly one caller per bot
 token. When the front desk and `telegram-cursor-bridge` (Cursor Remote /
 Bubble) are configured with the SAME token, both used to call `getUpdates`,
