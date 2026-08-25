@@ -272,6 +272,12 @@ the **working tree**, so a dangling pointer is refused as
 any handoff. See
 `docs/how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md`.
 
+**Promotion sibling (BL-626):** `promotion_gates_lib.bb` refuses promote when
+an explicit `specs/features/` pointer is missing or names a
+`.feature.draft` (drafts are never executable; no same-id sibling glob
+rescue). See
+`docs/how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md`.
+
 **Example output:**
 ```
 PRE_QA_GATE_FAIL acceptance-pointer BL-880 declared acceptance: path "specs/features/BL-880-....feature" does not exist at cited commit a1b2c3d9e8

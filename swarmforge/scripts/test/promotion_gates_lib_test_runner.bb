@@ -4,7 +4,8 @@
 ;; is routed.
 
 (ns promotion-gates-lib-test-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "promotion_gates_lib.bb")))
 
@@ -329,6 +330,98 @@
 (assert-nil "a compliant candidate whose epic has no active overlap carries no advisory"
             (:advisory (promotion-gates-lib/evaluate {:content "human_approval: approved\nepic: solo\n" :held? false
                                                         :active-count 0 :max-depth 5 :active-epics {}})))
+
+;; ── BL-626: acceptance must resolve to an executable .feature ───────────
+
+(defn- bl626-ticket [acceptance]
+  (str "id: BL-6626\nhuman_approval: approved\nepic: solo\n"
+       (when acceptance (str "acceptance: " acceptance "\n"))))
+
+(let [root (mk-root)
+      feat "specs/features/BL-6626-demo.feature"
+      draft (str feat ".draft")]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (spit (str (fs/path root draft)) "Feature: draft only\n")
+  (let [r (promotion-gates-lib/evaluate
+           {:content (bl626-ticket feat) :held? false :root root
+            :active-count 0 :max-depth 5 :active-epics {}})]
+    (assert-false "BL-626: feature shadowed by draft only is refused" (:ok r))
+    (assert= "BL-626: gate name is acceptance" "acceptance" (:gate r))
+    (assert-true "BL-626: refusal names the missing feature"
+                 (str/includes? (or (:reason r) "") feat))
+    (assert-true "BL-626: refusal names the draft"
+                 (str/includes? (or (:reason r) "") draft))))
+
+(let [root (mk-root)
+      draft "specs/features/BL-6626-parked.feature.draft"]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (spit (str (fs/path root draft)) "Feature: parked\n")
+  (let [r (promotion-gates-lib/evaluate
+           {:content (bl626-ticket draft) :held? false :root root
+            :active-count 0 :max-depth 5 :active-epics {}})]
+    (assert-false "BL-626: acceptance pointing at a draft is refused" (:ok r))
+    (assert-true "BL-626: refusal says the draft is not executable"
+                 (boolean (and (str/includes? (or (:reason r) "") "not executable")
+                               (str/includes? (or (:reason r) "") draft))))))
+
+(let [root (mk-root)
+      feat "specs/features/BL-6626-absent.feature"]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (let [r (promotion-gates-lib/evaluate
+           {:content (bl626-ticket feat) :held? false :root root
+            :active-count 0 :max-depth 5 :active-epics {}})]
+    (assert-false "BL-626: missing feature with no draft is refused" (:ok r))
+    (assert-true "BL-626: refusal names the missing feature alone"
+                 (str/includes? (or (:reason r) "") feat))))
+
+(let [root (mk-root)
+      feat "specs/features/BL-6626-ok.feature"]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (spit (str (fs/path root feat)) "Feature: ok\n")
+  (assert-true "BL-626: resolving acceptance promotes (evaluate allows)"
+               (:ok (promotion-gates-lib/evaluate
+                     {:content (bl626-ticket feat) :held? false :root root
+                      :active-count 0 :max-depth 5 :active-epics {}}))))
+
+(assert-true "BL-626: prose acceptance (no path) is outside the gate"
+             (:ok (promotion-gates-lib/evaluate
+                   {:content (str (bl626-ticket nil)
+                                  "acceptance: |\n  Do the thing manually.\n")
+                    :held? false :root (mk-root)
+                    :active-count 0 :max-depth 5 :active-epics {}})))
+
+(let [root (mk-root)
+      missing "specs/features/BL-6626-dangling.feature"
+      sibling "specs/features/BL-6626-other.feature"]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (spit (str (fs/path root sibling)) "Feature: decoy\n")
+  (let [r (promotion-gates-lib/evaluate
+           {:content (bl626-ticket missing) :held? false :root root
+            :active-count 0 :max-depth 5 :active-epics {}})]
+    (assert-false "BL-626: same-prefix sibling does not rescue a dangling pointer" (:ok r))
+    (assert-true "BL-626: refusal still names the missing explicit pointer"
+                 (str/includes? (or (:reason r) "") missing))))
+
+(let [root (mk-root)]
+  (fs/create-dirs (fs/path root "backlog" "paused"))
+  (fs/create-dirs (fs/path root "backlog" "active"))
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (spit (str (fs/path root "backlog" "paused" "BL-1-a.yaml"))
+        "id: BL-1\nhuman_approval: approved\nacceptance: specs/features/BL-1-missing.feature\n")
+  (spit (str (fs/path root "backlog" "active" "BL-2-b.yaml"))
+        "id: BL-2\nhuman_approval: approved\nacceptance: specs/features/BL-2-missing.feature\n")
+  (spit (str (fs/path root "backlog" "paused" "BL-3-ok.yaml"))
+        "id: BL-3\nhuman_approval: approved\nacceptance: specs/features/BL-3-ok.feature\n")
+  (spit (str (fs/path root "specs" "features" "BL-3-ok.feature")) "Feature: ok\n")
+  (let [hits (promotion-gates-lib/acceptance-audit-findings root)
+        ids (set (map :id hits))]
+    (assert-true "BL-626 audit lists paused dangling" (contains? ids "BL-1"))
+    (assert-true "BL-626 audit lists active dangling" (contains? ids "BL-2"))
+    (assert-false "BL-626 audit omits resolving ticket" (contains? ids "BL-3"))
+    (assert-true "BL-626 audit names the failed path for BL-1"
+                 (boolean (some #(and (= "BL-1" (:id %))
+                                      (re-find #"BL-1-missing\.feature" (or (:feature-path %) "")))
+                                hits)))))
 
 ;; ── active-count / active-epics (impure readers) ─────────────────────────
 

@@ -37,11 +37,14 @@ If you see `DANGLING-ACCEPTANCE`, create or rename the feature file (or fix
 the pointer) before handoff — do not wait for promotion or the first coder
 hop.
 
-Promotion (BL-626) and pre-QA pointer (BL-880) gates stay as backstops for
-paths that dangle **after** mint.
+Promotion ([BL-626](BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md))
+and pre-QA pointer (BL-880) gates stay as backstops for paths that dangle
+**after** mint — including a pointer that goes stale by rename, or a draft
+that was never materialised before promote.
 
 Acceptance:
 `specs/features/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.feature`
 
 Related: `docs/how-to/BL-531-handoff-refusal-remedies.md` (acceptance-pointer
-at handoff time).
+at handoff time);
+`docs/how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md`.

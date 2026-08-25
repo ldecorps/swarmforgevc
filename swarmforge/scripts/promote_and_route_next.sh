@@ -153,11 +153,20 @@ is_buildable() {
     # acceptance may be a path on the next line or inline
     local acc
     acc="$(awk '/^acceptance:/{if ($2!="") {print $2; exit} getline; gsub(/^[ \t]+/,"",$0); print; exit}' "$f")"
-    if [[ -n "$acc" && -f "$ROOT/$acc" ]]; then
-      return 0
-    fi
-    if [[ -n "$acc" && -f "$acc" ]]; then
-      return 0
+    acc="${acc%\"}"
+    acc="${acc#\"}"
+    acc="${acc%\'}"
+    acc="${acc#\'}"
+    # Explicit path pointer is authoritative (BL-626): never glob-rescue a
+    # dangling acceptance via specs/features/<id>-*.feature.
+    if [[ -n "$acc" && "$acc" != ">" && "$acc" != "|" && "$acc" == */* ]]; then
+      if [[ "$acc" == *.feature.draft ]]; then
+        return 1
+      fi
+      if [[ -f "$ROOT/$acc" || -f "$acc" ]]; then
+        return 0
+      fi
+      return 1
     fi
   fi
   if [[ -n "$id" ]] && compgen -G "$ROOT/specs/features/${id}-*.feature" >/dev/null 2>&1; then
