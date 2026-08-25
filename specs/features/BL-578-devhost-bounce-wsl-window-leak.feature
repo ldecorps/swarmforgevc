@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T16:15:33.885851061Z","feature_name":"dev-host bounce under WSL terminates the prior Windows-side window instead of leaking it","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-578-devhost-bounce-wsl-window-leak.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: dev-host bounce under WSL terminates the prior Windows-side window instead of leaking it
 
   # BL-578: start-extension-dev.js promises "a successful run always ends

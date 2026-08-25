@@ -1,3 +1,4 @@
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   parseMarker,
@@ -6,6 +7,10 @@ const {
   decideNextStep,
   resolveVsCodeBinary,
   buildDevHostLaunchCommand,
+  isWslPlatform,
+  buildWindowsKillOldCommands,
+  headlessMarkerDecision,
+  recordBounceHostCount,
 } = require('../scripts/bounceLib');
 
 // --- parseMarker ---
@@ -224,4 +229,47 @@ test('buildDevHostLaunchCommand never uses GUI keystroke automation (no open, no
   assert.notEqual(cmd.command, 'open');
   assert.notEqual(cmd.command, 'osascript');
   assert.ok(!cmd.args.some((arg) => /osascript|key code|System Events/.test(arg)));
+});
+
+// --- BL-578 WSL kill-old + headless guard ---
+
+test('isWslPlatform is true only on linux with WSL env markers', () => {
+  assert.equal(isWslPlatform({ platform: 'linux', env: { WSL_DISTRO_NAME: 'Ubuntu' } }), true);
+  assert.equal(isWslPlatform({ platform: 'linux', env: {} }), false);
+  assert.equal(isWslPlatform({ platform: 'darwin', env: { WSL_DISTRO_NAME: 'Ubuntu' } }), false);
+});
+
+test('buildWindowsKillOldCommands targets Code.exe mains for the extension path', () => {
+  const cmds = buildWindowsKillOldCommands('/home/dev/swarmforgevc');
+  assert.equal(cmds.length, 1);
+  assert.equal(cmds[0].command, 'powershell.exe');
+  const joined = cmds[0].args.join(' ');
+  assert.match(joined, /extensionDevelopmentPath/);
+  assert.match(joined, /\/home\/dev\/swarmforgevc/);
+  assert.match(joined, /Stop-Process/);
+  assert.match(joined, /--type=/);
+});
+
+test('buildWindowsKillOldCommands keeps spaced paths inside the PowerShell script', () => {
+  const cmds = buildWindowsKillOldCommands('/home/dev/swarm forge vc with spaces');
+  const script = cmds[0].args[cmds[0].args.length - 1];
+  assert.match(script, /swarm forge vc with spaces/);
+  assert.equal(cmds[0].command, 'powershell.exe');
+});
+
+test('two consecutive bounce accountings stay at exactly one live host', () => {
+  const after1 = recordBounceHostCount(0, 0, 1);
+  const after2 = recordBounceHostCount(after1, 1, 1);
+  assert.equal(after1, 1);
+  assert.equal(after2, 1);
+});
+
+test('headlessMarkerDecision refuses without --force and warns with --force', () => {
+  assert.equal(headlessMarkerDecision({ markerPresent: false, force: false }).action, 'proceed');
+  const refuse = headlessMarkerDecision({ markerPresent: true, force: false });
+  assert.equal(refuse.action, 'refuse');
+  assert.match(refuse.message, /headless-swarm/);
+  const warn = headlessMarkerDecision({ markerPresent: true, force: true });
+  assert.equal(warn.action, 'warn-and-proceed');
+  assert.match(warn.message, /headless-swarm/);
 });

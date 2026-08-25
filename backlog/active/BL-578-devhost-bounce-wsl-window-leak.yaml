@@ -2,14 +2,14 @@ id: BL-578
 title: "Dev-host bounce leaks a VS Code window per bounce under WSL — 'exactly one dev host' contract silently becomes one more"
 milestone: M8
 type: defect
-status: needs_design
+status: active
 epic: swarm-reliability
 human_approval: approved
 severity: low
 priority: 175
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 approval_context: >
   Hydrate-batch-2 commit only materializes this already-approved prose into
@@ -79,3 +79,6 @@ out_of_scope: |
     effective via the marker since 118ecc79f).
   - Any change to the headless bridge/bot/daemon stack (not involved).
   - Windows-native (non-WSL) VS Code development flows.
+
+notes: |
+  - "[2026-08-25T16:15Z] coder: WSL powershell kill-old seam + headless-swarm refuse/--force; APS green."

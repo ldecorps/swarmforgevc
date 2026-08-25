@@ -172,6 +172,7 @@ const DOMAINS = [
   require('./pushSweepSteps'),
   require('./bl1098SilentRevertSteps'),
   require('./devHostLauncherSteps'),
+  require('./bl578DevhostBounceWslWindowLeakSteps'),
   require('./hotTestFilesStopWaitingSteps'),
   require('./systemdUnitsCanStartSteps'),
   require('./corruptHandoffNeverDispatchedSteps'),
