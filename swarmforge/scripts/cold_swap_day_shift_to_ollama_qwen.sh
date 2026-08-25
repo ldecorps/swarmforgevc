@@ -14,6 +14,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=local_ollama_pack_shape_lib.sh
+source "$SCRIPT_DIR/local_ollama_pack_shape_lib.sh"
+
 ROOT="${1:-}"
 MODE="${2:---verify}"
 
@@ -39,10 +42,11 @@ if [[ "$MODE" != "--verify" && "$MODE" != "--execute" ]]; then
   exit 2
 fi
 
-# Refuse forbidden substitutes by name (BL-1142 / BL-1143).
-case "$TARGET_PACK" in
-  qwen-forge|*token-plan*) echo "ERROR: BL-1143 refuses qwen-forge substitute" >&2; exit 1 ;;
-esac
+# Refuse forbidden substitutes by name (BL-1142 shared predicate).
+if bl1142_is_forbidden_substitute_pack "$TARGET_PACK"; then
+  echo "ERROR: BL-1143 refuses qwen-forge / Token Plan substitute" >&2
+  exit 1
+fi
 
 [[ -f "$START_SCRIPT" ]] || { echo "ERROR: missing $START_SCRIPT" >&2; exit 1; }
 [[ -f "$ROOT/swarmforge/packs/${TARGET_PACK}.conf" ]] || {
