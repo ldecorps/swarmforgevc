@@ -63,7 +63,7 @@ qa_e2e_procedure: >
   ollama-qwen (evidence). (2) Pack models match BL-1140 winner or refuse
   no-winner-yet; revoked human-priority not authoritative. (3) No
   qwen-forge thrash. (4) How-to/runbook documents switch + rollback.
-assigned_to: coder
+assigned_to: hardender
 notes: |
   - [2026-08-25T18:35Z] specifier: minted JumpQ under BL-1125 from
     INTAKE-prioritize-local-ollama-remaining-20260825.md; feature armed;
@@ -75,3 +75,5 @@ notes: |
   - [2026-08-25T19:15Z] specifier (coord 001862): tip restore pushed to
     origin/main so rematch reset cannot drop JumpQ yaml+features again.
     Coder tip 4741a45c33 impl still separate land.
+  - [2026-08-25T19:16Z] specifier (coder 001111): ack — tip 1e3c1171c0 at
+    hardender mid-pipeline; land awaits QA. assigned_to→hardender.
