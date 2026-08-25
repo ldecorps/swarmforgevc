@@ -45,6 +45,18 @@ config cooldown_end_local 07:00
 5. While ANY pause is active (human or cooldown), `handoffd.bb` also freezes its own outbound wake activity: no parcel delivery into a recipient's inbox, no chase nudges, no dispatch-gap/unassigned-active/open-slot nudges to the coordinator, and no startup notify. A parcel handed to `swarm_handoff.sh` during the window is still accepted into the sender's outbox - it just sits there, undelivered, until the pause clears, then delivers on the very next poll cycle.
 6. At the window's close time, the existing pause-auto-resume sweep (`resume-expired-pauses.js`, unchanged since BL-423) clears the pause and posts the "Resumed" announcement. Delivery and chase resume immediately.
 
+
+## Cadence note (BL-882)
+
+While a pause is active, delivery / chase / dispatch-gap / unassigned-active /
+open-slot / startup-notify are suppressed. Sibling sweeps outside that pause
+gate (briefing, context-clear, dead-letter, resource, push, fleet-status,
+answer-drain, and the pause/cooldown sweeps themselves) are **pause-exempt**,
+not every-tick: they still fire only on the shared `chase-sweep-every-cycles`
+cadence (~10 polled cycles at best; longer under load). Do not read an old
+"keep running unconditionally" comment as a phantom 10× cadence bug — that
+phrasing was corrected in `handoffd.bb` under BL-882 with no gate change.
+
 ## Checking Cooldown State
 
 The pause state file is the one externally readable source of truth every process (human, this swarm, an operator-layer babysitter) should read - never infer "the swarm looks idle" from silence alone:
