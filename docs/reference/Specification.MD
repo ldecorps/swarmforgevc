@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1117: stamp-off of tip
+**Last Updated:** August 25, 2026 (BL-1122: master-checkout drift
+mutes `:staged-for-reversion` WARN while `.git/index.lock` shows a commit
+in flight — durable staged reversion with no lock still alarms (BL-839);
+mute is read-only and not sticky. Acceptance:
+`specs/features/BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.feature`.
+How-to: `docs/how-to/BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.md`
+and BL-839. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1117: stamp-off of tip
 `646ffe85d` — Pipeline Board `escapeHtml` emits numeric `&#160;` for
 U+00A0, never named `&nbsp;` (Telegram HTML named-entity set is only
 `&lt;` `&gt;` `&amp;` `&quot;`). Ledger pending for human certify/waive
