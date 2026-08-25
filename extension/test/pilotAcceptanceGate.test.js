@@ -1,5 +1,6 @@
 'use strict';
 
+const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -15,6 +16,11 @@ function mkDeps(overrides) {
   const deps = {
     readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
     resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
+    isLifecycleTeardownTicket: () => false,
+    assessMultiworktreeFixture: () => ({
+      satisfied: true,
+      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
+    }),
     runAcceptance: async () => ({ success: true, output: 'ok' }),
     checkCommitClaims: () => ({ checked: true, commitsChecked: 3 }),
     moveTicketToDone: () => {
@@ -362,4 +368,42 @@ test('landPilotedTicket refuses when moveTicketToDone reports moved=true but omi
   assert.equal(outcome.landed, false);
   assert.equal(outcome.reasonKind, 'move-failed');
   assert.equal(calls.writeReceipt, 0);
+});
+
+// ── landPilotedTicket: BL-731 multi-worktree fixture for lifecycle tickets ─
+
+test('landPilotedTicket refuses lifecycle tickets when the multi-worktree fixture is not satisfied', async () => {
+  const { deps, calls } = mkDeps({
+    isLifecycleTeardownTicket: () => true,
+    assessMultiworktreeFixture: () => ({
+      satisfied: false,
+      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
+    }),
+  });
+  const outcome = await landPilotedTicket('BL-LC', deps);
+  assert.equal(outcome.landed, false);
+  assert.equal(outcome.reasonKind, 'multiworktree-required');
+  assert.match(outcome.reason, /single-worktree-only acceptance is insufficient/);
+  assert.equal(calls.move, 0);
+  assert.equal(calls.writeReceipt, 0);
+});
+
+test('landPilotedTicket records multiWorktreeFixture on the receipt for a green lifecycle land', async () => {
+  const fixture = {
+    worktreeCount: 2,
+    siblingHandoffdRoots: ['/repo/coder'],
+    pilotRoot: '/repo/main',
+  };
+  let receipt;
+  const { deps } = mkDeps({
+    isLifecycleTeardownTicket: () => true,
+    assessMultiworktreeFixture: () => ({ satisfied: true, metadata: fixture }),
+    runAcceptance: async () => ({ success: true, output: 'ok', multiWorktreeFixture: fixture }),
+    writeReceipt: (_ticketId, written) => {
+      receipt = written;
+    },
+  });
+  const outcome = await landPilotedTicket('BL-LC', deps);
+  assert.equal(outcome.landed, true);
+  assert.deepEqual(receipt.multiWorktreeFixture, fixture);
 });
