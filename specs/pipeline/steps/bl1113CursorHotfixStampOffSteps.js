@@ -196,9 +196,9 @@ function registerSteps(registry) {
   });
 
   scoped(/^the stage header uses an HTML nbsp entity between DC and QA$/, (ctx) => {
-    // Feature wording is "HTML nbsp entity". origin/main's pipelineBoard emits
-    // the named entity &nbsp; for U+00A0 (see wrapPipelineBoardHtml).
-    assert.match(ctx.boardHtml, /DC&nbsp;QA/);
+    // Tip 646ffe85d / BL-1117: Telegram accepts numeric &#160;, not named &nbsp;.
+    assert.match(ctx.boardHtml, /DC&#160;QA/);
+    assert.ok(!ctx.boardHtml.includes('&nbsp;'), 'named &nbsp; must not appear in board HTML');
   });
 
   // ── create-plan-confirm-05 ───────────────────────────────────────────
