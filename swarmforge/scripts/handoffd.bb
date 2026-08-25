@@ -3663,7 +3663,14 @@
                     ;; resource/push/fleet-status/answer-drain) are out of
                     ;; this ticket's scope (BL-617 notes: "load-bearing scope
                     ;; - verified gap" names only delivery/chase/dispatch/
-                    ;; open-slot) and keep running unconditionally.
+                    ;; open-slot) and are exempt ONLY from this pause gate —
+                    ;; they still share the chase-sweep-every-cycles gate
+                    ;; above (fire every ~10 polled cycles at best, and
+                    ;; stretch further under load: sweeps in this block run
+                    ;; serially, and whole cycles have been observed at
+                    ;; 140-232s on Mac — see the BL-789 note at the loop
+                    ;; head). "Unconditional" here means
+                    ;; pause-exempt, never every-tick (BL-882).
                     (when-not (outbound-wakes-suppressed?)
                       (run-sweep! "chase-sweep"
                           #(chase-sweep! (load-roles) socket))

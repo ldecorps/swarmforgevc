@@ -33,6 +33,7 @@ const DOMAINS = [
   require('./providerErrorTaxonomySteps'),
   require('./gherkinMutationSteps'),
   require('./bl884GherkinMutationRunnerFailsLoudSteps'),
+  require('./bl882HandoffdCadenceCommentAccuracySteps'),
   require('./swarmMutationCostPrepassSteps'),
   require('./providerObservabilityParitySteps'),
   require('./pwaLabelCatalogSteps'),

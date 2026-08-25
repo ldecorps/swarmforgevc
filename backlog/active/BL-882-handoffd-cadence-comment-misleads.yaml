@@ -3,7 +3,7 @@ title: "DEFECT — handoffd.bb's BL-617 gate comment says sibling sweeps 'keep r
 milestone: M8
 type: defect
 severity: low
-status: todo
+status: active
 epic: swarm-reliability
 priority: 150
 direction: normal
@@ -11,7 +11,7 @@ mutation_cost: low
 human_approval: approved
 required_stages: [coder, documenter, qa]
 stage_skip_reasons: { cleaner: "comment-prose-only change, nothing to refactor", architect: "no design or behavior change; the gate structure is explicitly frozen by this ticket's own constraint", hardender: "no executable surface changes; Babashka layer has no mutation tooling wired (BL-472 deferred)" }
-acceptance: specs/features/BL-882-handoffd-cadence-comment-accuracy.feature.draft
+acceptance: specs/features/BL-882-handoffd-cadence-comment-accuracy.feature
 
 approval_context: >
   New feature draft needs review. The judgement call worth your eye: this is
@@ -109,6 +109,8 @@ description: |
      i.e. the comment edit broke no reader syntax (bb parses the file).
 
 notes: |
+  - "[2026-08-25T15:10Z] coder: reword BL-617 gate comment — pause-exempt,
+    never every-tick; promote draft→feature."
   The other half of the coder's report — per-gated-cycle serialization
   making cooldown-sweep! (last in the chain) fire latest — is inherent to
   the shared-cadence single-thread design that BL-222 onward deliberately
