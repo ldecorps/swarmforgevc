@@ -9,6 +9,18 @@ const FEATURE =
   'the front desk emits reliability telemetry the trend surface can plot';
 const REPO = path.join(__dirname, '..', '..', '..');
 
+/** Canonical outcomes/reasons from the feature Examples — load-bearing for soft Gherkin. */
+const KNOWN_OUTCOMES = new Set([
+  'recorded',
+  'repaint-failed',
+  'delivered',
+  'no-pane',
+  'undelivered',
+  'degraded',
+  'conflict-409',
+]);
+const KNOWN_DROP_REASONS = new Set(['not-my-chat', 'not-principal', 'unrecognized-data']);
+
 function loadStore() {
   return require(path.join(REPO, 'extension', 'out', 'metrics', 'humanLoopReliabilityStore'));
 }
@@ -87,7 +99,9 @@ function registerSteps(registry) {
   });
 
   scoped(/^the record carries the outcome (.+)$/, (ctx, outcome) => {
-    assert.equal(ensure(ctx).last.outcome, outcome.trim());
+    const want = outcome.trim();
+    assert.ok(KNOWN_OUTCOMES.has(want), `unknown outcome example: ${want}`);
+    assert.equal(ensure(ctx).last.outcome, want);
   });
 
   scoped(/^the record carries when it happened$/, (ctx) => {
@@ -96,7 +110,9 @@ function registerSteps(registry) {
   });
 
   scoped(/^the record distinguishes (.+) from every other drop reason$/, (ctx, reason) => {
-    assert.equal(ensure(ctx).last.reason, reason.trim());
+    const want = reason.trim();
+    assert.ok(KNOWN_DROP_REASONS.has(want), `unknown drop reason example: ${want}`);
+    assert.equal(ensure(ctx).last.reason, want);
   });
 
   scoped(/^the record carries the tick's wall-clock duration$/, (ctx) => {
@@ -116,22 +132,27 @@ function registerSteps(registry) {
         { at: '2026-08-25T10:30:00.000Z', series: 'approval-tap', outcome: 'repaint-failed' },
         { at: '2026-08-25T11:00:00.000Z', series: 'approval-tap', outcome: 'recorded' },
       ];
-    } else {
+    } else if (st.kind === 'tick-duration') {
       st.input = [
         { at: '2026-08-25T10:00:00.000Z', series: 'tick-duration', durationMs: 10 },
         { at: '2026-08-25T10:00:01.000Z', series: 'tick-duration', durationMs: 30 },
         { at: '2026-08-25T11:00:00.000Z', series: 'tick-duration', durationMs: 100 },
       ];
+    } else {
+      assert.fail(`unknown series kind example: ${st.kind}`);
     }
   });
 
   scoped(/^the series is aggregated$/, (ctx) => {
     const st = ensure(ctx);
     const pure = loadPure();
-    st.series =
-      st.kind === 'outcome'
-        ? pure.aggregateOutcomeSuccessRate(st.input, st.windowMs)
-        : pure.aggregateTickDurationMean(st.input, st.windowMs);
+    if (st.kind === 'outcome') {
+      st.series = pure.aggregateOutcomeSuccessRate(st.input, st.windowMs);
+    } else if (st.kind === 'tick-duration') {
+      st.series = pure.aggregateTickDurationMean(st.input, st.windowMs);
+    } else {
+      assert.fail(`unknown series kind for aggregation: ${st.kind}`);
+    }
   });
 
   scoped(/^each window reports (.+)$/, (ctx, summary) => {
@@ -141,9 +162,11 @@ function registerSteps(registry) {
     if (text === 'its success rate') {
       assert.equal(st.series[0].value, 0.5);
       assert.equal(st.series[1].value, 1);
-    } else {
+    } else if (text === 'a summary of the durations in it') {
       assert.equal(st.series[0].value, 20);
       assert.equal(st.series[1].value, 100);
+    } else {
+      assert.fail(`unknown summary example: ${text}`);
     }
   });
 
