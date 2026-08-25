@@ -33,15 +33,15 @@
   (str "id: BL-6626\nhuman_approval: approved\nepic: e\n"
        (when acceptance (str "acceptance: " acceptance "\n"))))
 
+(defn- eval-opts [root content]
+  {:content content :held? false :root root
+   :active-count 0 :max-depth 5 :active-epics {}})
+
 (defn allows? [root content]
-  (:ok (promotion-gates-lib/evaluate
-        {:content content :held? false :root root
-         :active-count 0 :max-depth 5 :active-epics {}})))
+  (:ok (promotion-gates-lib/evaluate (eval-opts root content))))
 
 (defn refuses-naming? [root content needle]
-  (let [r (promotion-gates-lib/evaluate
-           {:content content :held? false :root root
-            :active-count 0 :max-depth 5 :active-epics {}})]
+  (let [r (promotion-gates-lib/evaluate (eval-opts root content))]
     (and (not (:ok r))
          (= "acceptance" (:gate r))
          (str/includes? (or (:reason r) "") needle))))
@@ -61,45 +61,52 @@
 ;; reachability floor the invariant requires (never a hoped-for one).
 (def forced-shapes [:missing :draft-shadow :draft-ptr :sibling :ok-feat :prose])
 
+(defn- shape-for [i]
+  (if (< i (count forced-shapes))
+    (nth forced-shapes i)
+    (pick forced-shapes)))
+
+(defn- assert-shape! [shape root feat draft sibling]
+  (case shape
+    :missing
+    (assert! "missing feature refuses and names path"
+             (refuses-naming? root (ticket feat) feat))
+
+    :draft-shadow
+    (do (spit (str (fs/path root draft)) "Feature: d\n")
+        (assert! "draft-shadow refuses naming feature and draft"
+                 (and (refuses-naming? root (ticket feat) feat)
+                      (refuses-naming? root (ticket feat) draft))))
+
+    :draft-ptr
+    (do (spit (str (fs/path root draft)) "Feature: d\n")
+        (assert! "draft pointer refuses as not executable"
+                 (and (refuses-naming? root (ticket draft) draft)
+                      (refuses-naming? root (ticket draft) "not executable"))))
+
+    :sibling
+    (do (spit (str (fs/path root sibling)) "Feature: decoy\n")
+        (assert! "sibling decoy does not rescue dangling pointer"
+                 (refuses-naming? root (ticket feat) feat)))
+
+    :ok-feat
+    (do (spit (str (fs/path root feat)) "Feature: ok\n")
+        (assert! "resolving feature allows"
+                 (allows? root (ticket feat))))
+
+    :prose
+    (assert! "prose acceptance allows"
+             (allows? root (str (ticket nil) "acceptance: |\n  prose only\n")))))
+
 (dotimes [i runs]
   (let [root (mk-root)
         slug (str "BL-6626-" (mod (next-u32) 100000) "-" i)
         feat (str "specs/features/" slug ".feature")
         draft (str feat ".draft")
         sibling (str "specs/features/" slug "-other.feature")
-        shape (if (< i (count forced-shapes))
-                (nth forced-shapes i)
-                (nth forced-shapes (mod i (count forced-shapes))))]    (swap! reached update shape (fnil inc 0))
-    (case shape
-      :missing
-      (assert! "missing feature refuses and names path"
-               (refuses-naming? root (ticket feat) feat))
-
-      :draft-shadow
-      (do (spit (str (fs/path root draft)) "Feature: d\n")
-          (assert! "draft-shadow refuses naming feature and draft"
-                   (and (refuses-naming? root (ticket feat) feat)
-                        (refuses-naming? root (ticket feat) draft))))
-
-      :draft-ptr
-      (do (spit (str (fs/path root draft)) "Feature: d\n")
-          (assert! "draft pointer refuses as not executable"
-                   (and (refuses-naming? root (ticket draft) draft)
-                        (refuses-naming? root (ticket draft) "not executable"))))
-
-      :sibling
-      (do (spit (str (fs/path root sibling)) "Feature: decoy\n")
-          (assert! "sibling decoy does not rescue dangling pointer"
-                   (refuses-naming? root (ticket feat) feat)))
-
-      :ok-feat
-      (do (spit (str (fs/path root feat)) "Feature: ok\n")
-          (assert! "resolving feature allows"
-                   (allows? root (ticket feat))))
-
-      :prose
-      (assert! "prose acceptance allows"
-               (allows? root (str (ticket nil) "acceptance: |\n  prose only\n"))))))
+        shape (shape-for i)]
+    (swap! reached update shape (fnil inc 0))
+    (assert-shape! shape root feat draft sibling)))
 
 (assert! "generator reached every shape"
          (every? pos? (vals @reached)))

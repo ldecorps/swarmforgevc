@@ -23,13 +23,11 @@ const POINTER = {
 const PRESENT = {
   'only its draft': (ctx) => {
     const draftPath = `${ctx.pointer}.draft`;
-    fs.mkdirSync(path.dirname(path.join(ctx.root, draftPath)), { recursive: true });
-    fs.writeFileSync(path.join(ctx.root, draftPath), 'Feature: draft only\n');
+    writeRel(ctx.root, draftPath, 'Feature: draft only\n');
     ctx.presentDraft = draftPath;
   },
   'that draft': (ctx) => {
-    fs.mkdirSync(path.dirname(path.join(ctx.root, ctx.pointer)), { recursive: true });
-    fs.writeFileSync(path.join(ctx.root, ctx.pointer), 'Feature: parked draft\n');
+    writeRel(ctx.root, ctx.pointer, 'Feature: parked draft\n');
     ctx.presentDraft = ctx.pointer;
   },
   'no matching file': () => {},
@@ -48,6 +46,12 @@ const NAMED = {
     assert.ok(out.includes(ctx.pointer), out);
   },
 };
+
+function writeRel(root, rel, body) {
+  const abs = path.join(root, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, body);
+}
 
 function ensure(ctx) {
   if (!ctx.bl626) {
@@ -93,12 +97,26 @@ function writeCandidate(ctx, acceptanceLine) {
   return file;
 }
 
-function evaluate(ctx) {
-  const st = ensure(ctx);
-  return spawnSync('bb', [GATES_CLI, 'evaluate', st.root, st.candidate, 'false', '5'], {
+function runGatesCli(args) {
+  return spawnSync('bb', [GATES_CLI, ...args], {
     encoding: 'utf8',
     env: { PATH: process.env.PATH, HOME: process.env.HOME },
   });
+}
+
+function recordResult(st, result) {
+  st.result = {
+    status: result.status,
+    out: `${result.stdout || ''}${result.stderr || ''}`,
+  };
+}
+
+function withCleanup(ctx, fn) {
+  try {
+    fn(ensure(ctx));
+  } finally {
+    cleanup(ctx);
+  }
 }
 
 function registerSteps(registry) {
@@ -128,7 +146,7 @@ function registerSteps(registry) {
   scoped(/^the candidate's acceptance names a feature file that exists$/, (ctx) => {
     const st = ensure(ctx);
     st.pointer = `specs/features/${st.id}-ok.feature`;
-    fs.writeFileSync(path.join(st.root, st.pointer), 'Feature: ok\n');
+    writeRel(st.root, st.pointer, 'Feature: ok\n');
     writeCandidate(ctx, `acceptance: ${st.pointer}`);
   });
 
@@ -145,7 +163,7 @@ function registerSteps(registry) {
   scoped(/^a different feature file sharing the candidate's ticket id prefix$/, (ctx) => {
     const st = ensure(ctx);
     const sibling = `specs/features/${st.id}-other.feature`;
-    fs.writeFileSync(path.join(st.root, sibling), 'Feature: decoy sibling\n');
+    writeRel(st.root, sibling, 'Feature: decoy sibling\n');
     st.sibling = sibling;
   });
 
@@ -166,23 +184,12 @@ function registerSteps(registry) {
 
   scoped(/^the coordinator promotes the next eligible ticket$/, (ctx) => {
     const st = ensure(ctx);
-    const result = evaluate(ctx);
-    st.result = {
-      status: result.status,
-      out: `${result.stdout || ''}${result.stderr || ''}`,
-    };
+    recordResult(st, runGatesCli(['evaluate', st.root, st.candidate, 'false', '5']));
   });
 
   scoped(/^the backfill audit runs$/, (ctx) => {
     const st = ensure(ctx);
-    const result = spawnSync('bb', [GATES_CLI, 'audit-acceptance', st.root], {
-      encoding: 'utf8',
-      env: { PATH: process.env.PATH, HOME: process.env.HOME },
-    });
-    st.result = {
-      status: result.status,
-      out: `${result.stdout || ''}${result.stderr || ''}`,
-    };
+    recordResult(st, runGatesCli(['audit-acceptance', st.root]));
   });
 
   scoped(/^the promotion is refused$/, (ctx) => {
@@ -192,24 +199,18 @@ function registerSteps(registry) {
   });
 
   scoped(/^the refusal names (.+)$/, (ctx, named) => {
-    const st = ensure(ctx);
-    const check = NAMED[named.trim()];
-    assert.ok(check, `unknown named cell: ${named}`);
-    try {
+    withCleanup(ctx, (st) => {
+      const check = NAMED[named.trim()];
+      assert.ok(check, `unknown named cell: ${named}`);
       check(st, st.result.out);
-    } finally {
-      cleanup(ctx);
-    }
+    });
   });
 
   scoped(/^the candidate is promoted$/, (ctx) => {
-    const st = ensure(ctx);
-    try {
+    withCleanup(ctx, (st) => {
       assert.equal(st.result.status, 0, `expected ALLOW, got:\n${st.result.out}`);
       assert.match(st.result.out, /^ALLOW$/m);
-    } finally {
-      cleanup(ctx);
-    }
+    });
   });
 
   scoped(/^no feature file is demanded of it$/, (ctx) => {
@@ -218,17 +219,14 @@ function registerSteps(registry) {
   });
 
   scoped(/^every one of those tickets is listed with the path that failed to resolve$/, (ctx) => {
-    const st = ensure(ctx);
-    try {
+    withCleanup(ctx, (st) => {
       assert.notEqual(st.result.status, 0, `expected audit findings, got:\n${st.result.out}`);
       for (const p of st.auditMissing) {
         assert.ok(st.result.out.includes(p), `missing ${p} in:\n${st.result.out}`);
       }
       assert.ok(st.result.out.includes('BL-9626A'), st.result.out);
       assert.ok(st.result.out.includes('BL-9626B'), st.result.out);
-    } finally {
-      cleanup(ctx);
-    }
+    });
   });
 }
 

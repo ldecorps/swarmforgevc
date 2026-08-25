@@ -326,6 +326,18 @@
 (defn- path-exists-under? [root rel]
   (fs/exists? (fs/path root rel)))
 
+(defn- acceptance-refusal [reason]
+  {:gate "acceptance" :reason reason})
+
+(defn- missing-feature-refusal
+  "Names the missing .feature; when a sibling .draft is present, names that too."
+  [root raw]
+  (let [draft (str raw ".draft")]
+    (acceptance-refusal
+     (if (path-exists-under? root draft)
+       (format "missing feature file %s (draft present: %s)" raw draft)
+       (format "missing feature file %s" raw)))))
+
 (defn acceptance-executable-refusal
   "nil when the gate does not apply or the pointer resolves to a live
    .feature; otherwise {:gate \"acceptance\" :reason ...} naming the
@@ -336,23 +348,18 @@
     (when (specs-features-pointer? raw)
       (cond
         (nil? root)
-        {:gate "acceptance"
-         :reason (format "cannot verify acceptance path %s without project root" raw)}
+        (acceptance-refusal
+         (format "cannot verify acceptance path %s without project root" raw))
 
         (draft-pointer? raw)
-        {:gate "acceptance"
-         :reason (format "acceptance names draft %s as not executable" raw)}
+        (acceptance-refusal
+         (format "acceptance names draft %s as not executable" raw))
 
         (path-exists-under? root raw)
         nil
 
         :else
-        (let [draft (str raw ".draft")]
-          (if (path-exists-under? root draft)
-            {:gate "acceptance"
-             :reason (format "missing feature file %s (draft present: %s)" raw draft)}
-            {:gate "acceptance"
-             :reason (format "missing feature file %s" raw)}))))))
+        (missing-feature-refusal root raw)))))
 
 ;; ── the chokepoint ────────────────────────────────────────────────────────
 
