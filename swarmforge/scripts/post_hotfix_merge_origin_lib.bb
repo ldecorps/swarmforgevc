@@ -55,21 +55,17 @@
 (def ^:private refuse-rematch-line
   "BL-1130: absorb refused — rematch tip onto origin/main (no editor)")
 
-(defn- print-refuse-rematch! []
-  (binding [*out* *err*]
-    (println refuse-rematch-line)))
-
-(defn- surface-refuse-rematch
-  [rev-counts! message]
+(defn- surface-absorb-failure
+  [rev-counts! outcome message]
   (binding [*out* *err*] (println message))
-  {:ok? false :exit 1 :outcome :refuse-rematch
+  {:ok? false :exit 1 :outcome outcome
    :mid-merge? false
    :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))})
 
-(defn- finish-refuse-rematch
-  "BL-1141: refuse-rematch recovers by rematching onto origin/main when
-   rematch! is provided — never print+exit alone as the standing path."
-  [daemon-dir rev-counts! mid-merge? rematch!]
+(defn- finish-rematch-recovery
+  "Shared rematch-or-surface path for refuse-rematch and rematch-bookkeeping."
+  [daemon-dir rev-counts! mid-merge? rematch!
+   {:keys [success-outcome fail-outcome fail-message no-rematch-message]}]
   (cond
     (mid-merge?)
     {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
@@ -77,13 +73,21 @@
     rematch!
     (let [r (rematch!)]
       (if (:success r)
-        (finish-ok daemon-dir rev-counts! :rematched-refuse)
-        (surface-refuse-rematch
-         rev-counts!
-         "BL-1141: rematch after refuse failed — will retry (no operator merge)")))
+        (finish-ok daemon-dir rev-counts! success-outcome)
+        (surface-absorb-failure rev-counts! fail-outcome fail-message)))
 
     :else
-    (surface-refuse-rematch rev-counts! refuse-rematch-line)))
+    (surface-absorb-failure rev-counts! fail-outcome no-rematch-message)))
+
+(defn- finish-refuse-rematch
+  "BL-1141: refuse-rematch recovers by rematching onto origin/main when
+   rematch! is provided — never print+exit alone as the standing path."
+  [daemon-dir rev-counts! mid-merge? rematch!]
+  (finish-rematch-recovery daemon-dir rev-counts! mid-merge? rematch!
+                           {:success-outcome :rematched-refuse
+                            :fail-outcome :refuse-rematch
+                            :fail-message "BL-1141: rematch after refuse failed — will retry (no operator merge)"
+                            :no-rematch-message refuse-rematch-line}))
 
 (defn- finish-conflict
   [abort! status-porcelain! mid-merge? merge-res daemon-dir rev-counts! rematch!]
@@ -99,33 +103,15 @@
     (cond-> result
       (seq paths) (assoc :conflicted-paths paths))))
 
-(defn- surface-rematch-bookkeeping
-  [rev-counts! message]
-  (binding [*out* *err*] (println message))
-  {:ok? false :exit 1 :outcome :rematch-bookkeeping
-   :mid-merge? false
-   :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))})
-
 (defn- finish-replay-bookkeeping
   "BL-1131/1138: colliding local-ahead → rematch onto origin/main when
    rematch! is provided; otherwise surface rematch-bookkeeping (no operator)."
   [daemon-dir rev-counts! mid-merge? rematch!]
-  (cond
-    (mid-merge?)
-    {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
-
-    rematch!
-    (let [r (rematch!)]
-      (if (:success r)
-        (finish-ok daemon-dir rev-counts! :rematched-bookkeeping)
-        (surface-rematch-bookkeeping
-         rev-counts!
-         "BL-1138: rematch bookkeeping failed — will retry (no operator merge)")))
-
-    :else
-    (surface-rematch-bookkeeping
-     rev-counts!
-     "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)")))
+  (finish-rematch-recovery daemon-dir rev-counts! mid-merge? rematch!
+                           {:success-outcome :rematched-bookkeeping
+                            :fail-outcome :rematch-bookkeeping
+                            :fail-message "BL-1138: rematch bookkeeping failed — will retry (no operator merge)"
+                            :no-rematch-message "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)"}))
 
 (defn run-post-hotfix-merge!
   "Fetch origin/main; absorb when behind under BL-1131 rematch-then-FF.
