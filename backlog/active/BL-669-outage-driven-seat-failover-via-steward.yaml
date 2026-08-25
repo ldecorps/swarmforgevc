@@ -7,8 +7,8 @@ epic: swarm-intelligence-layer
 severity: medium
 priority: 105
 direction: human-requested
-depends_on: []
-assigned_to: specifier
+depends_on: [BL-525, BL-547]
+assigned_to: coder
 mutation_cost: medium
 human_approval: approved
 approval_context: >
@@ -21,11 +21,16 @@ approval_context: >
   the Operator topic (seat, from->to, incident, revert condition);
   attended hours it PROPOSES and you confirm. Reject the auto-apply half
   if you want propose-only everywhere.
+acceptance: specs/features/BL-669-outage-driven-seat-failover-via-steward.feature
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::outage-driven-seat-failover!::sustained outage consults steward and applies at idle boundary"
+  - "swarmforge/scripts/model_factory_lib.bb::cold-apply!::outage failover uses certified substitute apply path"
+  - "specs/pipeline/steps/index.js::bl669OutageDrivenSeatFailoverViaStewardSteps::acceptance handler registered"
 invariants:
   - "Only steward-certified-eligible substitutes are ever applied; the certification gate is never bypassed on this path (--override-uncertified is forbidden here)."
   - "A swap happens only after sustained signature evidence and only at an idle/turn boundary — never a respawn into a live turn; and it always auto-reverts to the pack's canonical model when the outage record closes."
   - "Every swap and revert is announced and logged as a COST experiment-log annotation — never a silent seat drift."
-
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 source: |
   .swarmforge/operator/INTAKE-outage-driven-seat-failover-via-steward.md
   (operator session 2026-07-26, filed DURING the Opus 5 elevated-errors
@@ -36,7 +41,6 @@ source: |
   role-matrix/eligible (BL-547), ModelFactory assign/cold-apply (BL-525),
   BL-563 launch-path wiring, plus the documented mono-router live
   model-change (patch launch settings + respawn).
-
 description: |
   ## The missing piece is one wire and one registry row
 
@@ -63,3 +67,16 @@ description: |
   bounded, certified, announced, reversible — and the filing-day incident
   provides the complete acceptance fixture: detection record, affected
   seat, candidate substitute, and the reversion trigger.
+qa_e2e_procedure: >
+  (1) Fixture sustained outage + affected seat → steward consulted after
+  threshold; swap at idle only. (2) endedAtUtc → auto-revert at idle.
+  (3) Uncertified never applied; override forbidden. (4) Announcement +
+  COST log on swap/revert. (5) opus-4-8 registered certified fallback.
+out_of_scope: |
+  - Hot-swap without full restart (ModelFactory Slice 2 / BL-525 draft).
+  - Building outage detection from scratch (BL-650/BL-840 own records).
+  - Per-hop factory call on every mono-router rotate.
+notes: |
+  - [2026-08-25T21:08Z] specifier (coord Work 001900): filled acceptance
+    feature (6 scenarios); depends_on BL-525+BL-547; invariants unchanged
+    at 3. Forwarded to coder.

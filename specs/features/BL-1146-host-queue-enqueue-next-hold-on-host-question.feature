@@ -1,3 +1,6 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T21:08:12.984136495Z","feature_name":"Host queue enqueue-next pin with hold on host question","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1146-host-queue-enqueue-next-hold-on-host-question.feature","background_hash":"72ea461256ac29d4edd9fd43bdb75a02b12a19907b37637d4eb35d0648544519","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
 Feature: Host queue enqueue-next pin with hold on host question
   While the Host bridge is busy, queued questions wait for a post-idle pick
   poll. The human wants to pre-pin which queued item auto-starts when idle
