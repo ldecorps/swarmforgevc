@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-786: host-resolved Stryker mutation
+concurrency — every `extension/package.json` mutation npm script runs through
+`scripts/mutation-concurrency.js` → `resolve-mutation-concurrency.ts`, which
+calls `recommendMutationConcurrency` with the BL-427 declared per-worker peak
+(`mutationConcurrencyConstants.ts`); `MUTATION_CONCURRENCY` or `--pin`
+overrides; launch prints concurrency + inputs. Acceptance:
+`specs/features/BL-786-mutation-concurrency-host-resolved.feature`.
+How-to: `docs/how-to/BL-786-mutation-concurrency-host-resolved.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1146: host queue enqueue-next pin
 while busy; idle auto-start when host reply is not a question; hold pin when
 host reply is a question. `enqueueNextPromptId` on bridge persisted state;
