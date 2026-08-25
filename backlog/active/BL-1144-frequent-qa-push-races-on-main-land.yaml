@@ -67,5 +67,4 @@ notes: |
     locked late rematch-at-publish + land/close serialize. Feature armed.
 
   - "[2026-08-25T20:55Z] coder: publish-time rematch + land/close lock in master_main_reconcile_lib; land_main_publish.sh; QA.prompt land discipline; how-to; APS 3/3; unit green. Tip-pure onto origin/main."
-
 assigned_to: coder

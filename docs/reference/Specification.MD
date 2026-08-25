@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1145: open-slot nudge skips
+type: epic trackers — `promotion_gates_lib/evaluate` gains structured
+`epic-type-refusal` + `blocked-status-refusal` after hold so open-slot
+candidacy and promote share one BL-663 chain; epic trackers never accrue
+nudge count. Acceptance:
+`specs/features/BL-1145-open-slot-nudge-skips-epic-trackers.feature`.
+How-to: `docs/how-to/BL-1145-open-slot-nudge-skips-epic-trackers.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1143: authorized cold-swap of live
 day-shift onto `./start-swarm-ollama-qwen.sh` / `ollama-qwen3-mono-router`;
 verify/execute/rollback how-to; refuses qwen-forge substitute; does not
