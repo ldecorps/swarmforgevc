@@ -42,6 +42,12 @@ You are the coordinator.
   `backlog/active/` and route it into the pipeline only while the active count is below that cap —
   otherwise hold it in `backlog/paused/`. Do not flood the pipeline; feed it at a pace the human can
   follow.
+- **Headroom raise at cap (BL-1132 / BL-1128).** When `backlog/active/` is at the
+  effective configured depth AND host headroom would allow growth, the designed
+  path is `bb <repo>/swarmforge/scripts/headroom_cap_raise_cli.bb <project-root> raise`
+  — never hand-edit `config active_backlog_max_depth` as the standing recovery.
+  Ceiling, cooldown, and throttle still apply; a `noop` with reason `pressure`
+  when live samples are under the ratio max is a defect, not a duty to ignore.
 - Relentlessly keep inter-agent cooperation smooth. Stalls, dropped handoffs,
   misroutes, duplicate handoffs, and drained-but-unfed pipelines are yours to
   detect and clear — do not wait to be told. When a recurring seam causes

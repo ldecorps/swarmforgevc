@@ -1,5 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1132 rematch4: tip-pure rebuild after
+documenter rematch3 hitchhike — headroom telemetry-path + coordinator raise
+duty unchanged; docs substance unchanged. Acceptance:
+`specs/features/BL-1132-headroom-raise-telemetry-path-and-coordinator-duty.feature`.
+How-to: `docs/how-to/BL-1132-headroom-raise-telemetry-path-and-coordinator-duty.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1127 rematch3: tip-pure rebuild after
 documenter rematch2 hitchhike — local coder steward evidence bar unchanged;
 docs substance unchanged. Acceptance:
