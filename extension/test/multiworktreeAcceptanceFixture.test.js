@@ -29,6 +29,15 @@ test('isLifecycleTeardownTicket is false for ordinary feature tickets', () => {
   assert.equal(isLifecycleTeardownTicket('specs/features/BL-702-bubble.feature', undefined), false);
 });
 
+test('isLifecycleTeardownTicket is false when required_wiring names lifecycle but not a swarmforge script path', () => {
+  assert.equal(
+    isLifecycleTeardownTicket('specs/features/fixture.feature', [
+      'extension/src/tools/pilotAcceptanceGate.ts::landPilotedTicket::lifecycle teardown',
+    ]),
+    false
+  );
+});
+
 test('assessMultiworktreeFixture requires at least two worktrees and a sibling handoffd', () => {
   const pilot = '/repo/main';
   const sibling = '/repo/coder';
@@ -48,6 +57,18 @@ test('extractHandoffdRootsFromPs ignores supervisor lines and collects sibling r
     'bb /repo/main/swarmforge/scripts/handoffd.bb /repo/main',
   ].join('\n');
   assert.deepEqual(extractHandoffdRootsFromPs(ps).sort(), ['/repo/coder', '/repo/main'].sort());
+});
+
+test('extractHandoffdRootsFromPs requires handoffd.bb token boundary (not supervisor substring)', () => {
+  const ps = 'bb /repo/main/swarmforge/scripts/handoffd_supervisor.bb /repo/main';
+  assert.deepEqual(extractHandoffdRootsFromPs(ps), []);
+});
+
+test('assessMultiworktreeFixture excludes the pilot root from siblingHandoffdRoots', () => {
+  const pilot = '/repo/main';
+  const assessment = assessMultiworktreeFixture(pilot, [pilot, '/repo/coder'], [pilot]);
+  assert.equal(assessment.satisfied, false);
+  assert.deepEqual(assessment.metadata.siblingHandoffdRoots, []);
 });
 
 test('MULTIWORKTREE_REQUIRED_REFUSAL names single-worktree-only insufficiency', () => {
