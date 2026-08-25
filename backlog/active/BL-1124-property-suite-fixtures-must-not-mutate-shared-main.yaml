@@ -8,7 +8,7 @@ severity: high
 # commits until reflog recovery. Recurred across BL-570 land and BL-579 QA.
 # Not critical only because coordinator recovered from reflog; class is
 # pipeline-integrity / near swarm-down.
-status: paused
+status: active
 epic: swarm-reliability
 priority: 8
 direction: human-requested
@@ -78,6 +78,7 @@ source: |
   Operator intake INTAKE-BL-570-property-suite-fixture-mutated-shared-main.md;
   BL-570 land + BL-579 QA recurrences 2026-08-24.
 notes:
+  - "[2026-08-25T19:00Z] coder: rematch — APS scenario 02 + shell runner 05 failed under SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 (agent commit env). Unset override in canary spawn paths; acceptance 4/4 + property_suite_shared_repo_guard_test_runner ALL PASS."
   - "[2026-08-25T11:55Z] coder: architect bounce — rematch BL-1124-only onto current origin/main."
   - "[2026-08-25T11:50Z] coder: QA D1 hitchhike bounce — rematch BL-1124-only onto origin/main."
   - "[2026-08-25T11:13Z] coordinator: specifier mint+docer-rename ack; approved high; active still 3/3 (BL-1118/1120/1123) — promote+route on next open slot (Art 3.2.4 ahead of BL-1128/565/568)."
