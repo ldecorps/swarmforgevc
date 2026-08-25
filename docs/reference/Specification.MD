@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1118: after a Cursor/operator batch
+**Last Updated:** August 25, 2026 (BL-1123: master-checkout integrity guard
+heals `core.bare=true` and refuses collapsed tip trees below a tip-floor;
+`master_checkout_integrity_lib.bb` + CLI; handoffd sweep alongside drift.
+Acceptance: `specs/features/BL-1123-guard-master-checkout-against-bare-and-collapsed-tip.feature`.
+How-to: `docs/how-to/BL-1123-guard-master-checkout-against-bare-and-collapsed-tip.md`.
+Complements BL-839. Diagram note: `docs/diagrams/architecture.mmd`. No new
+extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1118: after a Cursor/operator batch
 advances local `main`, run `bb swarmforge/scripts/post_hotfix_merge_origin.bb`
 to fetch+merge `origin/main` under BL-891 invariants — abort on conflict,
 print conflicted paths, never leave mid-merge; honesty refresh so a clean
