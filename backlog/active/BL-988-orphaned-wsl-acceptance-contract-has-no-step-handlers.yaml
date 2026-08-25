@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 severity: medium
 status: active
-assigned_to: hardender
+assigned_to: coder
 epic: code-quality-gates
 human_approval: approved
 priority: 30
@@ -87,6 +87,38 @@ notes: >
   git history for the contract and its original implementation is the source
   of truth for the restore-vs-retire decision.
 
+  - "[2026-08-25T18:40Z] coder: RESTORE. Behaviour still ships
+    (bounceLib buildWindowsKillOldCommands + headlessMarkerDecision;
+    start-extension-dev WSL kill-old). Handlers present in
+    bl578DevhostBounceWslWindowLeakSteps.js and registered in index.js.
+    Acceptance 7/7 green. Deliberate break (empty kill-old cmds) turned the
+    Windows-target scenarios red; restore returned green. Binding regression
+    in specs/pipeline/test/bl988Bl578ContractBinding.property.test.js."
+
+abandoned_commits:
+  - 5067a7b50
+  - efd488cb1
+  - 72cda8631b
+  - 5caa26dfc3
+  - e103314cb8
+  - 0a0314456e
+  - 3cf1f6b383
+  - bd7523ca8d
+  - e864112810
+  - 8fe1ce0462
+  - 1ba588ff06
+  - 41d63fd5f8
+  - 502be7157a
+  - f0cf701e7b
+  - b49c41b9de
+  - 0c41f334a2
+  - 8cae122fd1
+  - 1af39c1d71
+  - 93c60bf740
+  - 5dd5d54892
+  - dd03c420f9
+  - d61b3f7f03
+  - 5f3d33eb8b
 qa_e2e_procedure: >
   1. Run the contract:
      `node specs/pipeline/cli.js
@@ -111,10 +143,12 @@ approval_context: >
 
   Flag if you already know the behaviour was withdrawn; that collapses this
   to a small retirement and I will amend.
-bounce_count: 5
+bounce_count: 7
 bounce_history:
   - { at: 2026-08-25, by: QA, blamed: hardender, class: behavior, commit: 6aba034ed5, evidence: backlog/evidence/BL-988-qa-bounce4-20260825.md }
   - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: f0b8a37a1a, evidence: backlog/evidence/BL-988-qa-bounce5-20260825.md }
   - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: a1d8b368e6, evidence: backlog/evidence/BL-988-qa-bounce6-20260825.md }
   - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: ddcb675e05, evidence: backlog/evidence/BL-988-qa-bounce7-20260825.md }
   - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: cfc54ec340, evidence: backlog/evidence/BL-988-qa-bounce8-20260825.md }
+  - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: 29b4bcb8fc, evidence: backlog/evidence/BL-988-qa-bounce9-20260825.md }
+  - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: 69b5835170, evidence: backlog/evidence/BL-988-qa-bounce10-20260825.md }
