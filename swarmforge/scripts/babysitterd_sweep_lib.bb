@@ -285,10 +285,15 @@
 ;; ── check 9: rotate-not-honored ───────────────────────────────────────────────
 
 (defn check-rotate-not-honored
+  "CRIT when a completed rotate note was not reflected in mono-router-active-role.
+   BL-1129: standing packs never rotate — empty active-role is expected; suppress."
   [{:keys [note-name note-target note-age-min grace-min
-           note-mtime-ms active-role-file-mtime-ms active-role paused?]
+           note-mtime-ms active-role-file-mtime-ms active-role paused?
+           rotation-router?]
     :as note}]
   (when (and note (not paused?)
+             ;; Same gate as check-resident-stranded (BL-804 topology).
+             rotation-router?
              note-age-min grace-min (> (long note-age-min) (long grace-min))
              note-mtime-ms active-role-file-mtime-ms
              (> (long note-mtime-ms) (long active-role-file-mtime-ms))
@@ -607,7 +612,9 @@
         stuck-findings (check-stuck-in-process stuck-parcels)
         memory-finding (check-memory-floor {:available-mb available-mb :floor-mb mem-floor-mb})
         claim-findings (map check-claim-risk (or claim-risks []))
-        rotate-finding (check-rotate-not-honored (when rotate-note (assoc rotate-note :paused? paused?)))
+        rotate-finding (check-rotate-not-honored
+                        (when rotate-note
+                          (assoc rotate-note :paused? paused? :rotation-router? rotation-router?)))
         {starved-finding :finding new-streak :new-streak}
         (check-swarm-starved {:active-ticket-count active-ticket-count
                               :any-pane-busy? any-pane-busy?
