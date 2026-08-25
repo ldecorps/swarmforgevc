@@ -313,18 +313,21 @@
 (defn- candidate-tie-key [c] [(:priority c) (:id c)])
 
 ;; ── P1: evaluate refuses iff a BLOCKING gate fails, naming the FIRST by
-;;        fixed precedence (held -> human_approval -> depth). BL-854:
-;;        orthogonality is no longer in this chain at all - see P7 below for
-;;        its own invariant (it never refuses, whatever the epic overlap) ──
+;;        fixed precedence (held -> epic -> blocked -> human_approval ->
+;;        depth). BL-854: orthogonality is no longer in this chain at all -
+;;        see P7 below for its own invariant (it never refuses, whatever
+;;        the epic overlap). BL-1145 adds epic/blocked after hold. ─────────
 
 (check-all "P1 evaluate composition: refuses iff a blocking gate fails, names the first one"
   gen-context
   (fn [{:keys [content held? active-count max-depth] :as ctx}]
     (let [result (promotion-gates-lib/evaluate ctx)
           hold (promotion-gates-lib/hold-refusal held?)
+          epic (promotion-gates-lib/epic-type-refusal content)
+          blocked (promotion-gates-lib/blocked-status-refusal content)
           approval (promotion-gates-lib/human-approval-refusal content)
           depth (promotion-gates-lib/depth-refusal active-count max-depth)
-          expected (:gate (or hold approval depth))]
+          expected (:gate (or hold epic blocked approval depth))]
       (cond
         (and (nil? expected) (not (:ok result)))
         (str "no blocking gate fails but evaluate refused: " (pr-str result))

@@ -64,6 +64,7 @@
 
 (defn read-id [content] (read-field content "id"))
 (defn read-type [content] (read-field content "type"))
+(defn read-status [content] (read-field content "status"))
 (defn read-severity [content] (read-field content "severity"))
 (defn read-epic [content] (read-field content "epic"))
 (defn read-assigned-to [content] (read-field content "assigned_to"))
@@ -91,6 +92,27 @@
     (when (and v (not= "approved" v))
       {:gate "human_approval"
        :reason (format "human_approval is %s, not approved" v)})))
+
+;; ── gate: type epic / status blocked (BL-1145) ────────────────────────────
+;; promote_and_route_next already refuses these before auto-pick / by-name.
+;; Open-slot nudge (BL-798/BL-963) only saw evaluate — after BL-1100 removed
+;; prose parks, type: epic trackers (e.g. BL-545) won the nudge forever.
+;; Put the same structured refusals on evaluate so every consumer inherits
+;; one chain (BL-663); do not invent a nudge-only filter.
+
+(defn epic-type-refusal
+  "nil unless content declares type: epic; then {:gate \"epic\" :reason ...}."
+  [content]
+  (when (= "epic" (read-type content))
+    {:gate "epic"
+     :reason "type: epic trackers are never promotion candidates"}))
+
+(defn blocked-status-refusal
+  "nil unless content declares status: blocked; then {:gate \"blocked\" :reason ...}."
+  [content]
+  (when (= "blocked" (read-status content))
+    {:gate "blocked"
+     :reason "status: blocked is never auto-promoted"}))
 
 ;; ── gate: depends_on (BL-957) ─────────────────────────────────────────────
 ;; read-field is unusable here by its own documented design: it returns nil
@@ -368,22 +390,27 @@
 
 (defn evaluate
   "{:ok true} (optionally carrying :advisory) or {:ok false :gate .. :reason
-   ..} for ONE candidate against every BLOCKING gate (human_approval,
-   acceptance (BL-626), depends_on (BL-957), active_backlog_max_depth, hold
-   marker - assignee/spec-stage is not a promotion blocker; see route-target
-   above). First failing gate wins, in a fixed order, so the refusal is
-   deterministic even when more than one gate would fire. held? is checked
-   first: a held ticket's other fields are irrelevant, it is not a promotion
-   candidate at all. BL-854 invariant 1: orthogonality is never in this
-   refusal chain - once every blocking gate passes, the result is always
-   :ok true, optionally carrying an orthogonality :advisory (never instead
-   of :ok true). Optional :root enables the BL-626 acceptance existence
-   check against the working tree."
+   ..} for ONE candidate against every BLOCKING gate (hold, type: epic /
+   status: blocked (BL-1145), human_approval, acceptance (BL-626),
+   depends_on (BL-957), active_backlog_max_depth - assignee/spec-stage is
+   not a promotion blocker; see route-target above). First failing gate
+   wins, in a fixed order, so the refusal is deterministic even when more
+   than one gate would fire. held? is checked first: a held ticket's other
+   fields are irrelevant, it is not a promotion candidate at all. Epic and
+   blocked sit next so open-slot nudge and promote share one structured
+   exclusion (BL-1145 / BL-663). BL-854 invariant 1: orthogonality is never
+   in this refusal chain - once every blocking gate passes, the result is
+   always :ok true, optionally carrying an orthogonality :advisory (never
+   instead of :ok true). Optional :root enables the BL-626 acceptance
+   existence check against the working tree."
   [{:keys [content held? active-count max-depth active-epics done-ids root]}]
   ;; BL-626: acceptance sits after human_approval and before depends_on — a
   ;; ticket-property refusal beats a transient global one. BL-957 depends_on
-  ;; keeps the same relative place vs depth.
+  ;; keeps the same relative place vs depth. BL-1145: epic/blocked after
+  ;; hold, before approval — structural non-candidates, not human signals.
   (or (some->> (hold-refusal held?) (merge {:ok false}))
+      (some->> (epic-type-refusal content) (merge {:ok false}))
+      (some->> (blocked-status-refusal content) (merge {:ok false}))
       (some->> (human-approval-refusal content) (merge {:ok false}))
       (some->> (acceptance-executable-refusal content root) (merge {:ok false}))
       (some->> (depends-on-refusal content done-ids) (merge {:ok false}))
