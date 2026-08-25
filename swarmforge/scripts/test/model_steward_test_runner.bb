@@ -309,6 +309,60 @@
       ranks (get-in updated [:role_matrix "coder"])]
   (assert= "bl1127: fail score is 0.0 (ineligible)" 0.0 (:score (first ranks))))
 
+;; ── BL-1140 revoked human-priority + bake-off + pack align ────────────────
+(assert= "BL-1140: revoked human-priority is worst authority tier"
+         2
+         (model-steward-lib/ranking-authority-tier
+          {:evidence "human-operator-priority:ollama-local-qwen-20260825"}))
+(assert= "BL-1140: battery evidence is best authority tier"
+         0
+         (model-steward-lib/ranking-authority-tier {:evidence "battery:pass.md"}))
+
+(let [reg (-> model-steward-lib/empty-registry
+              (model-steward-lib/register-model "ollama" "qwen-human" {:status "certified"})
+              (model-steward-lib/register-model "ollama" "qwen-other" {:status "certified"})
+              (model-steward-lib/add-role-ranking "coder" "ollama" "qwen-human" 0.99
+                "human-operator-priority:ollama-local-qwen-20260825")
+              (model-steward-lib/add-role-ranking "coder" "ollama" "qwen-other" 0.1
+                "steering-note:legacy"))
+      ranked (model-steward-lib/role-recommendations reg "coder")]
+  (assert= "BL-1140: revoked loses to non-battery other evidence by tier"
+           "qwen-other" (:model (first ranked))))
+
+(let [reg (-> model-steward-lib/empty-registry
+              (model-steward-lib/register-model "ollama" "qwen-human" {:status "certified"})
+              (model-steward-lib/register-model "ollama" "qwen-battery" {:status "certified"})
+              (model-steward-lib/add-role-ranking "coder" "ollama" "qwen-human" 0.99
+                "human-operator-priority:ollama-local-qwen-20260825")
+              (model-steward-lib/add-role-ranking "coder" "ollama" "qwen-battery" 0.5
+                "battery:ev/qwen-battery-pass.md"))
+      ranked (model-steward-lib/role-recommendations reg "coder")]
+  (assert= "BL-1140: battery outranks revoked human-priority"
+           "qwen-battery" (:model (first ranked)))
+  (assert-true "BL-1140: top evidence is battery"
+               (model-steward-lib/battery-or-scorecard-evidence? (:evidence (first ranked)))))
+
+(let [reg (-> model-steward-lib/empty-registry
+              (model-steward-lib/register-model "ollama" "a" {:status "certified"})
+              (model-steward-lib/register-model "ollama" "b" {:status "certified"})
+              (model-steward-lib/apply-local-bakeoff-results "coder"
+                [{:provider "ollama" :model "a" :result "pass" :path "battery:a.md"}
+                 {:provider "ollama" :model "b" :result "fail" :path "battery:b.md"}]))
+      top (model-steward-lib/top-local-recommendation reg "coder")]
+  (assert= "BL-1140: bake-off top is pass candidate" "a" (:model top))
+  (assert= "BL-1140: bake-off cites battery path" "battery:a.md" (:evidence top)))
+
+(let [reg (-> model-steward-lib/empty-registry
+              (model-steward-lib/register-model "ollama" "qwen2.5-coder" {:status "certified"})
+              (model-steward-lib/add-role-ranking "coder" "ollama" "qwen2.5-coder" 1.0 "battery:x.md"))
+      pack "window coder aider coder --model openai/qwen2.5-coder --openai-api-base http://x\n"
+      out (model-steward-lib/local-pack-align-outcome reg "coder" pack)]
+  (assert= "BL-1140: pack aligned" :aligned (:outcome out)))
+
+(let [reg model-steward-lib/empty-registry
+      out (model-steward-lib/local-pack-align-outcome reg "coder" "window coder --model openai/x\n")]
+  (assert= "BL-1140: no winner yet" :no-winner-yet (:outcome out)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")
