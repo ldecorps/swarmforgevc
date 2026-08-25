@@ -23,6 +23,10 @@ if ! command -v aider >/dev/null 2>&1; then
 fi
 
 bash "$SCRIPT_DIR/swarmforge/scripts/local_coder_battery_staffing_gate.sh" "$SCRIPT_DIR"
+# BL-1142: durable decision is mono-router depth 1 — refuse uncapped /
+# qwen-forge substitutes before staffing.
+bash "$SCRIPT_DIR/swarmforge/scripts/local_ollama_pack_shape_gate.sh" \
+  "$SCRIPT_DIR" ollama-qwen3-mono-router
 
 export SWARMFORGE_PACK=ollama-qwen3-mono-router
 exec "$SCRIPT_DIR/start-swarm.sh" "$@"

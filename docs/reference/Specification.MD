@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1142: durable local Ollama pack shape on
+this WSL/CPU host is **mono-router depth 1** (`ollama-qwen3-mono-router`);
+`start-swarm-ollama-qwen.sh` runs pack-shape gate refusing uncapped multi-seat
+and qwen-forge / Token Plan full-forge substitutes. Decision from BL-1127
+battery + host headroom — not cloud forge defaults. Acceptance:
+`specs/features/BL-1142-local-ollama-mono-vs-forge-cpu.feature`.
+How-to: `docs/how-to/BL-1142-local-ollama-mono-vs-forge-cpu.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-988: restore BL-578 WSL bounce acceptance
 binding — handlers already ship; `index.js` registration + every feature step
 must resolve. Property regression
