@@ -14,7 +14,7 @@ How-to from architect; Spec Last Updated prepend; index link after BL-1143;
 QA.prompt land discipline.
 
 ## Abandoned
-`4a86f69538`, `e6ad05e8be`, `d6ae31366c`, `6efa7d9125`
+`4a86f69538`, `e6ad05e8be`, `d6ae31366c`, `6efa7d9125`, `47214d079e`
 
 ## Review inventory (Article 4.4)
 NONE.
