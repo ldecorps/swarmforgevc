@@ -41,7 +41,11 @@ export function sendNoteViaHandoff(targetPath: string, draft: string): void {
   });
 }
 
-export const REAL_DEPS: ClosingCeremonyRunDeps = { sendNote: sendNoteViaHandoff };
+export const REAL_DEPS: ClosingCeremonyRunDeps = {
+  sendNote: sendNoteViaHandoff,
+  // BL-1119: live path loads window --model from effective pack conf
+  // (readWindowModelsFromTarget is the default inside runClosingCeremony).
+};
 
 export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
   const { targetPath, nowIso } = resolveTargetAndNow(args);
