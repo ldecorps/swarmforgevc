@@ -72,3 +72,6 @@ notes: |
   - [2026-08-25T19:05Z] specifier (coder 001100): ack — BL-1143 present under
     backlog/active/ after rematch restore (f75ac89d7); YAML hygiene fixed
     (assigned_to was nested under notes:). Coder may continue routing.
+  - [2026-08-25T19:15Z] specifier (coord 001862): tip restore pushed to
+    origin/main so rematch reset cannot drop JumpQ yaml+features again.
+    Coder tip 4741a45c33 impl still separate land.
