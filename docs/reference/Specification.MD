@@ -11,7 +11,7 @@ How-to: Process B in `docs/how-to/BL-891-master-main-reconcile-sweep.md` and
 checklist in `docs/how-to/BL-848-certify-an-operator-hotfix.md`. Diagram note:
 `docs/diagrams/architecture.mmd`. No new extension command or setting.)
 Prior entry —
-**Last Updated:** August 25, 2026 (BL-1126: Local Agent Telegram turns stay
+August 25, 2026 (BL-1126: Local Agent Telegram turns stay
 live under Ollama latency — fast-path probes skip Ollama; real turns stream
 progress; empty completions recover; turn/idle/socket deadlines abort wedges.
 Scripts under `swarmforge/scripts/local_agent/`. Acceptance:
