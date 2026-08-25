@@ -76,7 +76,7 @@ export BL1144_REMATCHED_EDGE="$REMATCHED_EDGE"
 export BL1144_LOCK_FREE="$LOCK_FREE"
 export BL1144_LIB="$SCRIPT_DIR/master_main_reconcile_lib.bb"
 
-bb <<'EOF'
+bb -e "$(cat <<'BB'
 (require '[clojure.string :as str])
 (load-file (System/getenv "BL1144_LIB"))
 (defn- env-bool [k] (= "true" (System/getenv k)))
@@ -105,4 +105,5 @@ bb <<'EOF'
         :next next
         :tip-purity-required (master-main-reconcile-lib/tip-purity-required?)
         :max-attempts master-main-reconcile-lib/publish-rematch-max-attempts}))
-EOF
+BB
+)"
