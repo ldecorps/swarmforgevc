@@ -172,6 +172,13 @@ notes: >
   stands. What changed is the QA procedure, which had been left naming only
   the first file after the scope widened to three.
 
+  - "[2026-08-25T18:45Z] coder: replaced GNU PCRE grep flag with
+    printf '^%s\\t' tab anchors in test_role_lifecycle_cli.sh (both
+    predicates), test_backlog_depth_pack_override.sh, and
+    test_coordinator_provider_configurable.sh. Sweep clean.
+    Property test bl989PortableGrepTabAnchor. All three shell suites green;
+    BL-343 acceptance run with this parcel."
+
   Rule candidate, blocked on budget: engineering.prompt already carries
   "target stock macOS /bin/bash 3.2, not Homebrew bash" for shell syntax. The
   same discipline for GNU-only TOOL FLAGS (grep -P, sed -i semantics, date
@@ -180,6 +187,12 @@ notes: >
   prefix budget (BL-859 gate), so any addition must be paid for by a
   relocation in the same commit - and see BL-986 for what a careless
   relocation can silently break.
+
+abandoned_commits:
+  - ce6e7fdd3
+  - 4c6291921
+  - e8706ec9c
+  - 6931617460
 
 qa_e2e_procedure: >
   1. Run ALL THREE shell suites on stock macOS - not only the originally
