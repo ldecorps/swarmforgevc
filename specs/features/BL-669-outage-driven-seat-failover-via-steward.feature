@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T21:20:21.575685113Z","feature_name":"outage-driven seat failover consults the Model Steward for certified substitutes","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-669-outage-driven-seat-failover-via-steward.feature","background_hash":"f23315ad172069934ad4ef2f0cc47143fa48941321797f3b5bae3b4cef23ba9e","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: outage-driven seat failover consults the Model Steward for certified substitutes
   BL-669 (epic BL-545). Four fifths shipped: signature-backed outage records,
   Model Steward eligible gate, ModelFactory cold-apply, BL-563 launch wiring.
