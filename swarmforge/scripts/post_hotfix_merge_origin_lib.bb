@@ -50,28 +50,54 @@
       (master-main-reconcile-lib/clear-deadlock! daemon-dir))
     {:ok? true :exit 0 :outcome outcome :ahead ahead :behind behind}))
 
+(def ^:private refuse-rematch-line
+  "BL-1130: absorb refused — rematch tip onto origin/main (no editor)")
+
+(defn- print-refuse-rematch! []
+  (binding [*out* *err*]
+    (println refuse-rematch-line)))
+
 (defn- finish-conflict
   [abort! status-porcelain! mid-merge? merge-res]
   (abort!)
+  ;; BL-1130: designed recovery is rematch/refuse — never leave mid-merge.
+  (when (mid-merge?)
+    (abort!))
   (let [paths (or (:conflicted-paths merge-res)
-                  (conflicted-paths-from-status (status-porcelain!)))]
+                  (conflicted-paths-from-status (status-porcelain!)))
+        still-mid? (boolean (mid-merge?))]
     (binding [*out* *err*]
       (println "CONFLICTED:" (str/join " " paths)))
-    {:ok? false :exit 1 :outcome :conflict-abort
+    (print-refuse-rematch!)
+    {:ok? false :exit 1 :outcome :refuse-rematch
      :conflicted-paths paths
-     :mid-merge? (boolean (mid-merge?))}))
+     :mid-merge? still-mid?}))
 
 (defn run-post-hotfix-merge!
-  "Fetch origin/main; merge when behind. On conflict abort + print paths.
-   Never reset/stash. Clears deadlock when behind becomes 0."
+  "Fetch origin/main; merge when behind. On predicted or real conflict:
+   refuse-rematch without leaving MERGE_HEAD (BL-1130). Never reset/stash."
   [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! abort!
-           status-porcelain! mid-merge?]}]
+           status-porcelain! mid-merge? would-conflict! tip-contains-origin!]}]
   (fetch!)
   (refresh-honest-surfaced! daemon-dir (set (or (dirty-paths!) #{})))
   (let [{:keys [behind]} (rev-counts!)
-        plan (post-merge-plan behind)]
-    (if (= plan :noop)
-      (finish-ok daemon-dir rev-counts! :noop)
+        tip-ok? (boolean (when tip-contains-origin! (tip-contains-origin!)))
+        conflict? (boolean (when would-conflict! (would-conflict!)))
+        plan (master-main-reconcile-lib/automated-absorb-plan
+              {:merge-head-present? (boolean (mid-merge?))
+               :behind behind
+               :would-conflict? conflict?
+               :tip-contains-origin? tip-ok?})]
+    (case plan
+      :noop (finish-ok daemon-dir rev-counts! :noop)
+      :skip-human-merge-in-progress
+      {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
+      :refuse-rematch
+      (do
+        (print-refuse-rematch!)
+        {:ok? false :exit 1 :outcome :refuse-rematch :mid-merge? (boolean (mid-merge?))
+         :ahead (:ahead (rev-counts!)) :behind behind})
+      :run-merge
       (let [merge-res (merge!)]
         (if (:success merge-res)
           (finish-ok daemon-dir rev-counts! :merged)

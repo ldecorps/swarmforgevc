@@ -109,8 +109,31 @@
   (assert-true "surface-message: stays within the 80-char note limit" (<= (count msg) 80)))
 
 (let [msg (master-main-reconcile-lib/surface-message {:behind 3 :reason :conflict})]
-  (assert-true "surface-message: conflict reason mentions conflict" (clojure.string/includes? msg "conflict"))
+  (assert-true "surface-message: conflict reason names rematch/refuse"
+               (master-main-reconcile-lib/absorb-outcome-names-rematch-or-refuse? msg))
   (assert-true "surface-message: stays within the 80-char note limit" (<= (count msg) 80)))
+
+(let [msg (master-main-reconcile-lib/surface-message {:behind 5 :reason :refuse-rematch})]
+  (assert-true "surface-message: refuse-rematch names rematch"
+               (clojure.string/includes? msg "rematch"))
+  (assert-true "surface-message: refuse-rematch stays within 80 chars" (<= (count msg) 80)))
+
+(assert= "automated-absorb-plan: conflict foresight refuses"
+         :refuse-rematch
+         (master-main-reconcile-lib/automated-absorb-plan
+          {:merge-head-present? false :behind 2 :would-conflict? true :tip-contains-origin? false}))
+(assert= "automated-absorb-plan: tip contains origin -> noop"
+         :noop
+         (master-main-reconcile-lib/automated-absorb-plan
+          {:merge-head-present? false :behind 0 :would-conflict? false :tip-contains-origin? true}))
+(assert= "automated-absorb-plan: clean behind -> run-merge"
+         :run-merge
+         (master-main-reconcile-lib/automated-absorb-plan
+          {:merge-head-present? false :behind 2 :would-conflict? false :tip-contains-origin? false}))
+(assert-true "post-absorb-clean: no MERGE_HEAD and no unmerged"
+             (master-main-reconcile-lib/post-absorb-clean? false 0))
+(assert-true "post-absorb-clean: MERGE_HEAD is dirty"
+             (not (master-main-reconcile-lib/post-absorb-clean? true 0)))
 
 (assert= "surface-draft-lines: a note to the coordinator, priority 00"
          ["type: note" "to: coordinator" "priority: 00" "message: hello"]
@@ -218,8 +241,9 @@
       (mk-adapters {:ahead 0 :behind 22 :merge-result {:success false :error "CONFLICT"}})]
   (master-main-reconcile-lib/sweep! dir default-threshold adapters)
   (assert= "sweep!: a failed reconcile surfaces exactly once" 1 (:surface! @calls))
-  (assert-true "sweep!: a failed reconcile's surfaced message names 'conflict'"
-               (clojure.string/includes? (first @surfaced) "conflict")))
+  (assert-true "sweep!: a failed reconcile's surfaced message names rematch/refuse"
+               (master-main-reconcile-lib/absorb-outcome-names-rematch-or-refuse?
+                (first @surfaced))))
 
 ;; idempotent re-run (ticket's own QA procedure (c)): once reconciled,
 ;; a SECOND tick against the now-up-to-date counts changes nothing further
