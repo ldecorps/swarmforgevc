@@ -319,6 +319,28 @@
          "effect while its ticket sits closed.\n"
          (str/join "\n" (keep drift-line (remove (fn [[_ v]] (= v :no-drift)) per-file))))))
 
+;; BL-1122: mid-commit mute for false :staged-for-reversion WARNs.
+(defn commit-in-flight?
+  "Read-only: true when `.git/index.lock` exists (git add/commit holding the index)."
+  [project-root]
+  (fs/exists? (fs/path project-root ".git" "index.lock")))
+
+(defn should-alarm-on-result?
+  "Emit MASTER CHECKOUT DRIFT WARN unless the only drift is
+   :staged-for-reversion while a commit is in flight (BL-1122). Durable
+   staged reversion with no in-flight signal still alarms (BL-839)."
+  [{:keys [overall per-file]} in-flight?]
+  (cond
+    (= overall :no-drift) false
+    (not in-flight?) true
+    (= overall :unknown) true
+    :else (boolean (some #{:unknown :uncommitted-edit} (vals per-file)))))
+
+(defn- maybe-emit-alarm!
+  [emit-alarm! result in-flight?]
+  (when (and emit-alarm! (should-alarm-on-result? result in-flight?))
+    (emit-alarm! (format-alarm-text result))))
+
 ;; ── impure: real git/filesystem IO (read-only) ──────────────────────────────
 
 (defn- run-git
@@ -353,15 +375,18 @@
    above; tests inject fakes (a plain map lookup) so the unit-test runner
    stays instant and the property runner can additionally exercise the real
    IO path against real fixture git repos."
-  [{:keys [project-root scripts-subdir entrypoints emit-alarm! run-git* read-disk*]
+  [{:keys [project-root scripts-subdir entrypoints emit-alarm! run-git* read-disk*
+           commit-in-flight?*]
     :or {scripts-subdir default-scripts-subdir
          entrypoints default-entrypoints
          run-git* run-git
-         read-disk* read-disk}}]
-  (let [main-ok? (:ok? (run-git* project-root ["rev-parse" "--verify" "main"]))]
+         read-disk* read-disk
+         commit-in-flight?* commit-in-flight?}}]
+  (let [main-ok? (:ok? (run-git* project-root ["rev-parse" "--verify" "main"]))
+        in-flight? (boolean (commit-in-flight?* project-root))]
     (if-not main-ok?
       (let [result {:overall :unknown :per-file {}}]
-        (when emit-alarm! (emit-alarm! (format-alarm-text result)))
+        (maybe-emit-alarm! emit-alarm! result in-flight?)
         result)
       (let [read-file (fn [bare-name]
                          (let [r (read-disk* project-root scripts-subdir bare-name)]
@@ -380,6 +405,5 @@
                                   :worktree-content (:content disk) :worktree-ok? (:ok? disk)})])))
             overall (aggregate-verdict per-file)
             result {:overall overall :per-file per-file}]
-        (when (and emit-alarm! (not= overall :no-drift))
-          (emit-alarm! (format-alarm-text result)))
+        (maybe-emit-alarm! emit-alarm! result in-flight?)
         result))))
