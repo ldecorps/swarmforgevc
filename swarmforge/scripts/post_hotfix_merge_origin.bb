@@ -36,19 +36,33 @@
 (defn- mid-merge? [root]
   (fs/exists? (fs/path root ".git" "MERGE_HEAD")))
 
+(defn- tip-contains-origin? [root]
+  (zero? (:exit (sh root "git" "merge-base" "--is-ancestor" "origin/main" "HEAD"))))
+
+(defn- would-conflict? [root]
+  (let [base (sh root "git" "merge-base" "HEAD" "origin/main")]
+    (if (not (zero? (:exit base)))
+      true
+      (let [tree (sh root "git" "merge-tree" (str/trim (:out base)) "HEAD" "origin/main")]
+        (master-main-reconcile-lib/merge-tree-reports-conflict? (:out tree))))))
+
+(defn- merge-origin! [root]
+  (let [r (sh root "git" "merge" "--no-edit" "origin/main")]
+    (if (zero? (:exit r))
+      {:success true}
+      {:success false
+       :conflicted-paths
+       (post-hotfix-merge-origin-lib/conflicted-paths-from-status
+        (:out (sh root "git" "status" "--porcelain=v1")))})))
+
 (defn- real-adapters [root daemon-dir]
   {:daemon-dir daemon-dir
    :fetch! (fn [] (sh root "git" "fetch" "origin" "main"))
    :rev-counts! (fn [] (rev-counts! root))
    :dirty-paths! (fn [] (dirty-paths! root))
-   :merge! (fn []
-             (let [r (sh root "git" "merge" "--no-edit" "origin/main")]
-               (if (zero? (:exit r))
-                 {:success true}
-                 {:success false
-                  :conflicted-paths
-                  (post-hotfix-merge-origin-lib/conflicted-paths-from-status
-                   (:out (sh root "git" "status" "--porcelain=v1")))})))
+   :tip-contains-origin! (fn [] (tip-contains-origin? root))
+   :would-conflict! (fn [] (would-conflict? root))
+   :merge! (fn [] (merge-origin! root))
    :abort! (fn [] (sh root "git" "merge" "--abort"))
    :status-porcelain! (fn [] (:out (sh root "git" "status" "--porcelain=v1")))
    :mid-merge? (fn [] (mid-merge? root))})

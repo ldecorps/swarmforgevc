@@ -3025,20 +3025,42 @@
   (zero? (:exit (daemon-cycle-guard-lib/sh! ["git" "rev-parse" "-q" "--verify" "MERGE_HEAD"]
                                             {:dir (str project-root)}))))
 
+(defn- master-main-origin-is-ancestor? []
+  (zero? (:exit (daemon-cycle-guard-lib/sh! ["git" "merge-base" "--is-ancestor" "origin/main" "HEAD"]
+                                            {:dir (str project-root)}))))
+
+(defn- master-main-merge-would-conflict? []
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "merge-base" "HEAD" "origin/main"]
+                                                       {:dir (str project-root)})]
+    (if (not (zero? exit))
+      true
+      (let [base (str/trim out)
+            tree (daemon-cycle-guard-lib/sh! ["git" "merge-tree" base "HEAD" "origin/main"]
+                                             {:dir (str project-root)})]
+        (master-main-reconcile-lib/merge-tree-reports-conflict? (:out tree))))))
+
 (defn- master-main-reconcile-merge! []
-  (if (= :skip-human-merge-in-progress
-         (master-main-reconcile-lib/merge-attempt-plan (master-main-merge-head-present?)))
-    {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
-    (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["git" "merge" "--no-edit" "origin/main"]
-                                                         {:dir (str project-root)})]
-      (if (zero? exit)
-        {:success true}
-        (do
-          ;; This tick started the merge (MERGE_HEAD was absent above), so
-          ;; abort is allowed (BL-1120 invariant 2).
-          (when (master-main-reconcile-lib/may-abort-failed-merge? true)
-            (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)}))
-          {:success false :error (str/trim (or err "")) :outcome :conflict})))))
+  (let [plan (master-main-reconcile-lib/automated-absorb-plan
+              {:merge-head-present? (master-main-merge-head-present?)
+               :behind (let [{:keys [behind]} (push-sweep-rev-counts!)] behind)
+               :would-conflict? (master-main-merge-would-conflict?)
+               :tip-contains-origin? (master-main-origin-is-ancestor?)})]
+    (case plan
+      :skip-human-merge-in-progress
+      {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
+      :noop
+      {:success true :outcome :noop}
+      :refuse-rematch
+      {:success false :error "refuse-rematch" :outcome :refuse-rematch}
+      :run-merge
+      (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["git" "merge" "--no-edit" "origin/main"]
+                                                           {:dir (str project-root)})]
+        (if (zero? exit)
+          {:success true}
+          (do
+            (when (master-main-reconcile-lib/may-abort-failed-merge? true)
+              (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)}))
+            {:success false :error (str/trim (or err "")) :outcome :refuse-rematch}))))))
 
 ;; Same outbound path as auto-route!/nudge-coordinator-unassigned! above:
 ;; a `note` shelled through swarm_handoff.bb (SWARMFORGE_ROLE=coordinator)

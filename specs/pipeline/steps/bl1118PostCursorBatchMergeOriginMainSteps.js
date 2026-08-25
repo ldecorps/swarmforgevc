@@ -59,13 +59,12 @@ function registerSteps(registry) {
   scoped(/^the post_hotfix_merge_origin helper runs$/, (ctx) => {
     const st = ensure(ctx);
     const conflict = st.mergeability === 'path-conflicting';
-    const mid = conflict;
     const script = `
 (require '[babashka.fs :as fs])
 (load-file "${LIB}")
 (load-file "${path.join(REPO_ROOT, 'swarmforge', 'scripts', 'master_main_reconcile_lib.bb')}")
 (def behind-atom (atom ${st.behind}))
-(def mid? (atom ${mid ? 'true' : 'false'}))
+(def mid? (atom false))
 (def daemon "${st.tmp}/daemon")
 (fs/create-dirs daemon)
 ${st.dirtyReason ? '(master-main-reconcile-lib/write-state! daemon {:surfaced "dirty" :escalated true})' : ''}
@@ -78,7 +77,8 @@ ${st.dirtyReason ? '(master-main-reconcile-lib/write-deadlock! daemon {:active t
     :dirty-paths! (fn [] [])
     :merge! (fn []
               (if ${conflict ? 'true' : 'false'}
-                {:success false :conflicted-paths ["conflicted.bb"]}
+                (do (reset! mid? true)
+                    {:success false :conflicted-paths ["conflicted.bb"]})
                 (do (reset! behind-atom 0) {:success true})))
     :abort! (fn [] (reset! mid? false))
     :status-porcelain! (fn [] "UU conflicted.bb\\n")
@@ -99,7 +99,7 @@ ${st.dirtyReason ? '(master-main-reconcile-lib/write-deadlock! daemon {:active t
     }
     if (outcome === 'aborts the merge, prints conflicted paths, not mid-merge') {
       assert.match(raw, /conflicted\.bb|CONFLICTED/);
-      assert.match(raw, /:mid-merge\? false|:outcome :conflict-abort/);
+      assert.match(raw, /:mid-merge\? false|:outcome :refuse-rematch|:outcome :conflict-abort/);
       return;
     }
     assert.fail(`unknown or mutated helper outcome prose: ${JSON.stringify(outcome)}`);

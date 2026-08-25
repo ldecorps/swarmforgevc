@@ -671,6 +671,7 @@ const DOMAINS = [
   require('./bl1100PromotionProseNeverBlocksSteps'),
   require('./bl1128RaiseActiveCapOnHostHeadroomSteps'),
   require('./bl1118PostCursorBatchMergeOriginMainSteps'),
+  require('./bl1130LandOnMainWithoutExternalConflictResolutionSteps'),
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
   require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
