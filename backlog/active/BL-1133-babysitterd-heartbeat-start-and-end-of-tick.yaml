@@ -26,6 +26,10 @@ abandoned_commits:
   - 2381663fee
   - e1b3fa77f7
   - be3419c28e
+  - d0ee74430d
+  - f4a6e44063
+  - 7356bfbe09
+  - 8d108edcc0
 approval_context: >
   Human (Cursor) 2026-08-25: recurring
   `FRESHNESS_VIOLATION escalate swarm=primary daemon=babysitterd
