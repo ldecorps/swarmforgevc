@@ -137,10 +137,12 @@ function isWslPlatform({ platform, env }) {
 
 // Pure: PowerShell Stop-Process for Code.exe mains whose command line carries
 // --extensionDevelopmentPath=<extensionPath> (no --type= helpers).
+function powershellSingleQuoted(value) {
+  return String(value || '').replace(/'/g, "''");
+}
+
 function buildWindowsKillOldCommands(extensionPath) {
-  const path = String(extensionPath || '');
-  // Single-quote for PowerShell literal; double any embedded single quotes.
-  const psPath = path.replace(/'/g, "''");
+  const psPath = powershellSingleQuoted(extensionPath);
   const script =
     "$p='" + psPath + "';" +
     "Get-CimInstance Win32_Process |" +
