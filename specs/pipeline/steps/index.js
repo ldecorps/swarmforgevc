@@ -681,6 +681,7 @@ const DOMAINS = [
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
   require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
   require('./bl833HostAgentActivityFeedSteps'),
+  require('./bl534ThinMainCrapVisibleCliGateSteps'),
   require('./bl1121ReconcileImportSkipsPropertySuiteGuardSteps'),
   require('./bl533SpecCommitAndRuntimeWiringExitGatesSteps'),
   require('./bl1115MainSyncStatusCliStampOffSteps'),
