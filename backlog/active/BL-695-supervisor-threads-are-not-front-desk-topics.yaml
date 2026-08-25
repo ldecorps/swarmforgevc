@@ -17,6 +17,13 @@ abandoned_commits:
   - 40225d920a
   - 3462ee56bd
   - 561c2b1b15
+  - 0fe57a153
+  - 1fc587ff1
+  - 919d93c59
+  - ebdb353a9
+  - 15e394c8f
+  - a6552a410
+  - 876046712
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 # ^ Certified 2026-07-27: FULL chain. The classification predicate is a new
