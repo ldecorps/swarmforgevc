@@ -219,12 +219,18 @@
 (defn probe-liveness [project-root]
   (if-let [f (System/getenv "EXPEDITE_PROBE_FILE")]
     (json/parse-string (slurp f) true)
-    {:tmux-servers-answering (tmux-servers-answering project-root)
-     :handoffd (seq (pids-matching "handoffd.bb"))
-     :handoffd-supervisor (seq (pids-matching "handoffd_supervisor.bb"))
-     :babysitterd (seq (pids-matching "babysitterd.sh"))
-     :operator (seq (pids-matching "--remote-control Operator"))
-     :role-agents (count (pids-matching (str project-root "/.swarmforge/launch/")))}))
+    (let [root (str project-root)]
+      {:tmux-servers-answering (tmux-servers-answering project-root)
+       ;; Root-scoped needles only — bare script names match every swarm on the
+       ;; host (BL-782). "handoffd.bb " (trailing space) avoids the supervisor
+       ;; script name, which still contains the substring "handoffd.bb".
+       :handoffd (seq (pids-matching (str "handoffd.bb " root)))
+       :handoffd-supervisor (seq (pids-matching (str "handoffd_supervisor.bb " root)))
+       :babysitterd (seq (pids-matching (str "babysitterd.sh " root)))
+       ;; --remote-control Operator has no project root in argv; scope via the
+       ;; prompt path launch_operator.sh always passes for this root.
+       :operator (seq (pids-matching (str root "/swarmforge/roles/operator.prompt")))
+       :role-agents (count (pids-matching (str root "/.swarmforge/launch/")))})))
 
 ;; NOTE: tmux-servers-answering shells `tmux`, which expedite_lib's own
 ;; forbidden-command? would flag. That is correct and intended: PROBING whether
