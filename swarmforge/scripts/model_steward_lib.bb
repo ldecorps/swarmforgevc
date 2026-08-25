@@ -74,17 +74,43 @@
   (update-in registry [:role_matrix role] (fnil conj [])
              {:provider provider :model model :score score :evidence evidence}))
 
+;; BL-1140: revoked standing human pick — must never outrank battery/scorecard.
+(def revoked-human-priority-tag "human-operator-priority:ollama-local-qwen-20260825")
+
+(defn revoked-human-priority-evidence?
+  [evidence]
+  (and (string? evidence) (str/includes? (str evidence) revoked-human-priority-tag)))
+
+(defn battery-or-scorecard-evidence?
+  "Evidence strings that cite battery / scorecard / bake-off artifacts."
+  [evidence]
+  (let [ev (str evidence)]
+    (or (str/includes? ev "battery")
+        (str/includes? ev "scorecard")
+        (str/includes? ev "bake-off")
+        (str/includes? ev "bakeoff"))))
+
+(defn ranking-authority-tier
+  "Lower wins: 0 = battery/scorecard, 1 = other, 2 = revoked human-operator-priority."
+  [entry]
+  (let [ev (:evidence entry)]
+    (cond
+      (revoked-human-priority-evidence? ev) 2
+      (battery-or-scorecard-evidence? ev) 0
+      :else 1)))
+
 (defn role-recommendations
-  "Ranked entries for a role, highest score first. Excludes any model that
-   is not certified unless :include-uncertified? is set — a non-certified
-   model must never lead (or appear in) a production role recommendation
-   (certification-gate-05)."
+  "Ranked entries for a role. Certified filter unchanged (certification-gate-05).
+   BL-1140: sort by authority tier then score so revoked human-operator-priority
+   evidence never outranks a battery/scorecard citation."
   [registry role & [{:keys [include-uncertified?]}]]
   (let [entries (get-in registry [:role_matrix role] [])
         eligible (if include-uncertified?
                    entries
                    (filter #(certified? registry (:provider %) (:model %)) entries))]
-    (vec (sort-by :score > eligible))))
+    (->> eligible
+         (sort-by (fn [e] [(ranking-authority-tier e) (- (double (:score e 0)))]))
+         vec)))
 
 ;; ── Prompt Adapter catalogue ─────────────────────────────────────────────
 (defn set-adapter-entry [registry provider model adapter]
@@ -301,3 +327,62 @@
                       (or model "unknown")
                       (if eligible? 1.0 0.0)
                       (or evidence_path ""))))
+
+;; ── BL-1140 steward-driven local bake-off + pack alignment ────────────────
+
+(defn local-provider?
+  [provider]
+  (contains? #{"ollama" "local"} (str/lower-case (str provider))))
+
+(defn apply-local-bakeoff-results
+  "Pure: ingest per-candidate battery results into role_matrix for role.
+   Each result is {:provider :model :result \"pass\"|\"fail\" :path}.
+   Pass entries score 1.0 and cite the evidence path (steward-native)."
+  [registry role results]
+  (reduce
+   (fn [reg r]
+     (let [ev (parse-coder-battery-evidence r)
+           score (if (:pass? ev) 1.0 0.0)
+           path (or (:path ev) (str "bake-off:" (:provider r) "/" (:model r)))]
+       (add-role-ranking reg role
+                         (or (:provider r) "ollama")
+                         (or (:model r) "unknown")
+                         score
+                         path)))
+   registry
+   results))
+
+(defn top-local-recommendation
+  "First certified role recommendation whose provider is local/ollama, or nil."
+  [registry role]
+  (first (filter #(local-provider? (:provider %))
+                 (role-recommendations registry role))))
+
+(defn pack-window-model-id
+  "Extract the first --model <id> from a pack conf body, or nil."
+  [pack-body]
+  (when-let [m (re-find #"--model\s+(\S+)" (str pack-body))]
+    (second m)))
+
+(defn steward-model-id
+  "provider/model id as used on pack window lines (openai/<name> for ollama)."
+  [entry]
+  (when entry
+    (let [p (str (:provider entry))
+          m (str (:model entry))]
+      (if (= "ollama" (str/lower-case p))
+        (str "openai/" m)
+        (model-key p m)))))
+
+(defn local-pack-align-outcome
+  "BL-1140 scenario 03: :aligned | :no-winner-yet | :mismatch.
+   Never implies rewriting cursor-forge — caller inspects only."
+  [registry role pack-body]
+  (let [top (top-local-recommendation registry role)
+        pack-id (pack-window-model-id pack-body)]
+    (cond
+      (nil? top) {:outcome :no-winner-yet :pack-model pack-id :steward-model nil}
+      (nil? pack-id) {:outcome :no-winner-yet :pack-model nil :steward-model (steward-model-id top)}
+      (= pack-id (steward-model-id top))
+      {:outcome :aligned :pack-model pack-id :steward-model (steward-model-id top)}
+      :else {:outcome :mismatch :pack-model pack-id :steward-model (steward-model-id top)})))
