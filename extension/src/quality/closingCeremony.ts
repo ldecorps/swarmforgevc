@@ -288,6 +288,29 @@ export function isAutoWindowModel(model: string | undefined | null): boolean {
   return m === 'auto' || m.endsWith('/auto');
 }
 
+/** Lean ledger field names the dial may cite (BL-819/820 only — invariant 2). */
+export const KNOWN_QUALITY_CITED_FIELDS = ['stalls', 'bounce.blamedRole', 'stage_transition'] as const;
+
+/**
+ * Parse pack conf `window <role> … --model <id>` lines into role → model.
+ * Lines without `--model` are omitted (caller treats missing as non-auto).
+ */
+export function parseWindowModelsFromConf(confContent: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of confContent.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line.startsWith('window ')) {
+      continue;
+    }
+    const role = line.split(/\s+/)[1];
+    const modelMatch = line.match(/--model(?:=|\s+)(\S+)/);
+    if (role && modelMatch) {
+      out[role] = modelMatch[1];
+    }
+  }
+  return out;
+}
+
 function dialForRole(
   role: string,
   reworkFields: Set<string> | undefined,
@@ -303,26 +326,56 @@ function dialForRole(
   return { role, dial: 'lower', citedFields: ['stage_transition'], disposition: 'recommended' };
 }
 
+/** Accumulate rework cites + active roles from lean events (keeps dial CC low). */
+function collectReworkAndActive(events: LeanLedgerEvent[]): {
+  rework: Map<string, Set<string>>;
+  activeRoles: Set<string>;
+} {
+  const rework = new Map<string, Set<string>>();
+  const activeRoles = new Set<string>();
+  for (const e of events) {
+    noteReworkEvent(rework, activeRoles, e);
+  }
+  return { rework, activeRoles };
+}
+
+function noteStallCite(rework: Map<string, Set<string>>, e: LeanLedgerEvent): void {
+  if (e.type === 'stall' && e.role) {
+    addCited(rework, e.role, 'stalls');
+  }
+}
+
+function noteBounceCite(rework: Map<string, Set<string>>, e: LeanLedgerEvent): void {
+  const blamed = bounceBlamedRole(e);
+  if (blamed) {
+    addCited(rework, blamed, 'bounce.blamedRole');
+  }
+}
+
+function noteActiveRole(activeRoles: Set<string>, e: LeanLedgerEvent): void {
+  if (!e.role) {
+    return;
+  }
+  if (e.type === 'stage_transition' || e.type === 'close') {
+    activeRoles.add(e.role);
+  }
+}
+
+function noteReworkEvent(
+  rework: Map<string, Set<string>>,
+  activeRoles: Set<string>,
+  e: LeanLedgerEvent
+): void {
+  noteStallCite(rework, e);
+  noteBounceCite(rework, e);
+  noteActiveRole(activeRoles, e);
+}
+
 function computeQualityRecommendations(
   events: LeanLedgerEvent[],
   windowModels: Record<string, string> = {}
 ): CeremonyQualityRecommendation[] {
-  const rework = new Map<string, Set<string>>();
-  const activeRoles = new Set<string>();
-
-  for (const e of events) {
-    if (e.type === 'stall' && e.role) {
-      addCited(rework, e.role, 'stalls');
-    }
-    const blamed = bounceBlamedRole(e);
-    if (blamed) {
-      addCited(rework, blamed, 'bounce.blamedRole');
-    }
-    if ((e.type === 'stage_transition' || e.type === 'close') && e.role) {
-      activeRoles.add(e.role);
-    }
-  }
-
+  const { rework, activeRoles } = collectReworkAndActive(events);
   const roles = new Set<string>([...rework.keys(), ...activeRoles]);
   // Auto seats with only lean signal still get a hold row when they appear in rework/active.
   const out: CeremonyQualityRecommendation[] = [];

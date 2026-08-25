@@ -9,6 +9,12 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits:
+  - 2da6498ac3
+  - 57a70662e4
+  - 15344e198f
+  - 7a16fffd04
+  - b82979e57e
 human_approval: approved
 approval_context: >
   Slice 1 only: ceremony packet gains per-role quality up/down/hold
@@ -99,6 +105,3 @@ notes:
   - "[2026-08-25T10:26Z] coordinator: re-paused to free cap for dedicated BL-626 architect handoff."
   - "[2026-08-25T10:19Z] coordinator: coder reported Work completed without code — --force re-dispatched."
   - "[2026-08-25T09:53Z] coordinator: ready notice ack; hold — human_approval pending and/or active at cap 3/3 (BL-534, BL-658, BL-695)."
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-25, by: architect, blamed: coder, class: behavior, commit: 7a16fffd04, evidence: backlog/evidence/BL-1119-architect-bounce-20260825.md }
