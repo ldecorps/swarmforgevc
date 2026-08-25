@@ -674,6 +674,7 @@ const DOMAINS = [
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
   require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
+  require('./bl683HandoffDepthWarningCountsNonTicketsSteps')
 ];
 
 function registerSteps(registry) {
