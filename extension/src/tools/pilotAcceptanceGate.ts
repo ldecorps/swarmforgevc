@@ -39,11 +39,30 @@ import {
   MultiworktreeFixtureMetadata,
   MULTIWORKTREE_REQUIRED_REFUSAL,
 } from './multiworktreeAcceptanceFixture';
+import {
+  assessProducerCrosscheck,
+  isPatternTicket,
+  PRODUCER_CROSSCHECK_REQUIRED_REFUSAL,
+  ProducerCrosscheckMetadata,
+} from './producerCrosscheckAcceptance';
+
+export {
+  assessProducerCrosscheck,
+  DISPLAY_NAME_FOR_ROLE_PRODUCER,
+  enumerateDisplayNameForRoleOutputs,
+  isPatternTicket,
+  PRODUCER_CROSSCHECK_ENV,
+  PRODUCER_CROSSCHECK_REQUIRED_REFUSAL,
+  ProducerCrosscheckMetadata,
+  readConfiguredRoleNames,
+  recordProducerCrosscheck,
+} from './producerCrosscheckAcceptance';
 
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
+  producerCrosscheck?: ProducerCrosscheckMetadata;
 }
 
 export interface AcceptanceReceipt {
@@ -54,6 +73,7 @@ export interface AcceptanceReceipt {
   landedAt: string;
   commitClaimsChecked: number;
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
+  producerCrosscheck?: ProducerCrosscheckMetadata;
 }
 
 export interface UnsupportedCommitClaim {
@@ -72,6 +92,7 @@ export type CommitClaimsCheckOutcome =
 
 export interface PilotAcceptanceGateDeps {
   readAcceptanceDeclaration: (ticketId: string) => string | undefined;
+  readRequiredWiring?: (ticketId: string) => string[] | undefined;
   resolveFeatureFilePath: (acceptanceDeclaration: string) => string | undefined;
   isLifecycleTeardownTicket: (ticketId: string) => boolean;
   assessMultiworktreeFixture: () => MultiworktreeFixtureAssessment;
@@ -92,7 +113,13 @@ export interface PilotLandSuccess {
 
 export interface PilotLandRefusal {
   landed: false;
-  reasonKind: 'no-contract' | 'multiworktree-required' | 'contract-failed' | 'claim-unsupported' | 'move-failed';
+  reasonKind:
+    | 'no-contract'
+    | 'multiworktree-required'
+    | 'contract-failed'
+    | 'producer-crosscheck-required'
+    | 'claim-unsupported'
+    | 'move-failed';
   reason: string;
   unmatchedStep?: string;
   failingScenario?: string;
@@ -217,6 +244,30 @@ function checkClaims(deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal
   return { claimsCheck };
 }
 
+// Step 3b: pattern/regex tickets must carry exhaustive producer crosscheck
+// metadata from the acceptance pipeline — repro-only coverage cannot land.
+function requireProducerCrosscheck(
+  ticketId: string,
+  acceptance: string,
+  requiredWiring: string[] | undefined,
+  runResult: AcceptanceRunResult
+): { refusal: PilotLandRefusal } | { crosscheck?: ProducerCrosscheckMetadata } {
+  if (!isPatternTicket(acceptance, requiredWiring)) {
+    return { crosscheck: runResult.producerCrosscheck };
+  }
+  const assessment = assessProducerCrosscheck(runResult.producerCrosscheck);
+  if (!assessment.satisfied) {
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'producer-crosscheck-required',
+        reason: `${ticketId} refuses land: ${PRODUCER_CROSSCHECK_REQUIRED_REFUSAL}`,
+      },
+    };
+  }
+  return { crosscheck: assessment.metadata };
+}
+
 // Step 4: a green contract with every claim supported (or unreadable
 // history) has only the move itself left to fail - versus the landed
 // outcome with its written receipt.
@@ -225,7 +276,8 @@ function moveAndRecordReceipt(
   declaration: string,
   deps: PilotAcceptanceGateDeps,
   claimsCheck: CommitClaimsCheckOutcome,
-  multiWorktreeFixture?: MultiworktreeFixtureMetadata
+  multiWorktreeFixture?: MultiworktreeFixtureMetadata,
+  producerCrosscheck?: ProducerCrosscheckMetadata
 ): PilotLandOutcome {
   // Captured before the move: if getLandedCommit() itself fails (e.g. no
   // HEAD yet), nothing has moved or been written yet either.
@@ -250,6 +302,9 @@ function moveAndRecordReceipt(
   };
   if (multiWorktreeFixture) {
     receipt.multiWorktreeFixture = multiWorktreeFixture;
+  }
+  if (producerCrosscheck) {
+    receipt.producerCrosscheck = producerCrosscheck;
   }
   deps.writeReceipt(ticketId, receipt);
 
@@ -276,6 +331,17 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return contractRun.refusal;
   }
 
+  const requiredWiring = deps.readRequiredWiring?.(ticketId);
+  const producerGate = requireProducerCrosscheck(
+    ticketId,
+    contract.declaration,
+    requiredWiring,
+    contractRun.runResult
+  );
+  if ('refusal' in producerGate) {
+    return producerGate.refusal;
+  }
+
   const claims = checkClaims(deps);
   if ('refusal' in claims) {
     return claims.refusal;
@@ -286,7 +352,14 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
       ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
       : undefined;
 
-  return moveAndRecordReceipt(ticketId, contract.declaration, deps, claims.claimsCheck, fixtureMetadata);
+  return moveAndRecordReceipt(
+    ticketId,
+    contract.declaration,
+    deps,
+    claims.claimsCheck,
+    fixtureMetadata,
+    producerGate.crosscheck
+  );
 }
 
 // Pure, fs-based: an acceptance declaration is executable only when it
