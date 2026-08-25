@@ -49,13 +49,15 @@ function registerSteps(registry) {
     write(st.root, feat, 'Feature: fixture\n');
     write(st.root, 'backlog/paused/BL-533-fixture.yaml',
       `id: BL-533\ntitle: t\ntype: feature\nepic: e\nmilestone: M8\nacceptance: ${feat}\npriority: 1\n`);
-    if (st.tracking.includes('tracked by git')) {
+    // Exact Examples cells — soft case mutants of tracking must not set up.
+    if (st.tracking === 'tracked by git ls-files') {
       git(st.root, ['add', feat, 'backlog/paused/BL-533-fixture.yaml']);
       git(st.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'track']);
-    } else {
-      git(st.root, ['add', 'backlog/paused/BL-533-fixture.yaml']);
-      git(st.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'ticket-only']);
+      return;
     }
+    assert.equal(st.tracking, 'present on disk but not ls-files');
+    git(st.root, ['add', 'backlog/paused/BL-533-fixture.yaml']);
+    git(st.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'ticket-only']);
   });
 
   scoped(/^specifier_backlog_hygiene_gate runs on that ticket$/, (ctx) => {
@@ -80,14 +82,16 @@ function registerSteps(registry) {
   scoped(/^the commit-tracking result for that acceptance path is (.+)$/, (ctx, result) => {
     const want = String(result || '').trim();
     const raw = ensure(ctx).raw;
-    if (want.startsWith('fail')) {
+    // Exact Examples cells — soft case/punctuation mutants must not pass.
+    if (want === 'fail naming the untracked acceptance path') {
       assert.match(raw, /EXIT=1/);
       assert.match(raw, /UNTRACKED-ACCEPTANCE/);
-    } else {
-      assert.match(raw, /EXIT=0/);
-      assert.match(raw, /PASS_TRACKING/);
-      assert.doesNotMatch(raw, /UNTRACKED-ACCEPTANCE/);
+      return;
     }
+    assert.equal(want, 'pass');
+    assert.match(raw, /EXIT=0/);
+    assert.match(raw, /PASS_TRACKING/);
+    assert.doesNotMatch(raw, /UNTRACKED-ACCEPTANCE/);
   });
 
   scoped(/^an epic tracker with at least two decomposes_into children$/, (ctx) => {
@@ -127,12 +131,14 @@ function registerSteps(registry) {
   scoped(/^the checklist (.+)$/, (ctx, outcome) => {
     const want = String(outcome || '').trim();
     const raw = ensure(ctx).raw;
-    if (want.startsWith('fails')) {
+    // Exact Examples cells — soft case mutants of outcome must die.
+    if (want === 'fails saying a runtime-wiring declaration is missing') {
       assert.match(raw, /OK=false/);
       assert.match(raw, /runtime-wiring declaration is missing|EPIC-WIRING-MISSING/);
-    } else {
-      assert.match(raw, /OK=true/);
+      return;
     }
+    assert.equal(want, 'passes');
+    assert.match(raw, /OK=true/);
   });
 }
 
