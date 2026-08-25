@@ -28,12 +28,18 @@ TICK_ONCE=0
 
 mkdir -p "$DIR"
 
-tick() {
-  bash "$SCRIPT_DIR/babysitter_check.sh" "$ROOT" --nudge >> "$LOG" 2>&1
-  # Content-free pulse, independent of the sweep's own OK/finding lines, so
-  # the cron-side freshness checker (daemon_log_freshness_check.sh) never
-  # confuses a quiet-but-alive sweep with a wedged loop.
+# Content-free pulse for daemon_log_freshness_check.sh. Same shape as
+# handoffd's BL-789 start+end pulse: a long mid-tick gather (pipeline-code-
+# on-main cache miss after tip move) must not look identical to a wedged
+# loop until the whole tick finishes.
+pulse_heartbeat() {
   printf '%s heartbeat\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$LOG"
+}
+
+tick() {
+  pulse_heartbeat
+  bash "$SCRIPT_DIR/babysitter_check.sh" "$ROOT" --nudge >> "$LOG" 2>&1
+  pulse_heartbeat
   local lines
   lines="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
   if [[ "$lines" -gt 4000 ]]; then
@@ -61,6 +67,10 @@ trap 'recorded=$(tr -d "[:space:]" < "$PIDFILE" 2>/dev/null || true)
       if [ "$recorded" = "$$" ]; then rm -f "$PIDFILE"; fi' EXIT
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) babysitterd start pid=$$ interval=${INTERVAL_S}s" >> "$LOG"
+# Pulse before the first tick so a cold start during a heavy gather cannot
+# age past the 600s freshness threshold on the previous generation's last
+# heartbeat (or after host suspend while the prior sleep held).
+pulse_heartbeat
 while true; do
   tick
   sleep "$INTERVAL_S"
