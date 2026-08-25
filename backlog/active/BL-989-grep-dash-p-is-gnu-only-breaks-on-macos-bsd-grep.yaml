@@ -3,7 +3,8 @@ title: "three shell test helpers use GNU-only `grep -P`, which stock macOS BSD g
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: active
+assigned_to: coder
 epic: code-quality-gates
 human_approval: approved
 priority: 30
