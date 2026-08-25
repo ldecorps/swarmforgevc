@@ -3059,6 +3059,9 @@
       {:success true :outcome :noop}
 
       :replay-bookkeeping
+      ;; BL-1135: live path must surface rematch-bookkeeping (not conflict /
+      ;; needs-a-human absorb). Sweep maps this outcome to rematch-owner
+      ;; recovery without Operator escalate.
       {:success false :error "rematch-bookkeeping" :outcome :rematch-bookkeeping}
 
       :refuse-rematch

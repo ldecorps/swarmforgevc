@@ -274,7 +274,8 @@
 ;;    form rather than truncating a path into something misleading. ────────
 (defn surface-message
   [{:keys [behind reason overlapping-paths]}]
-  (let [refuse-absorb (str "BL-1130: absorb refused — rematch onto origin/main, " behind " behind")]
+  (let [refuse-absorb (str "BL-1130: absorb refused — rematch onto origin/main, " behind " behind")
+        rematch-bk (str "BL-1135: rematch bookkeeping onto origin/main, " behind " behind")]
     (case reason
       :dirty
       (let [paths (vec (or overlapping-paths []))
@@ -288,6 +289,8 @@
         (if (<= (count named) 80) named (str base suffix)))
       :conflict refuse-absorb
       :refuse-rematch refuse-absorb
+      :rematch-bookkeeping
+      (if (<= (count rematch-bk) 80) rematch-bk "BL-1135: rematch bookkeeping onto origin/main")
       :human-merge-in-progress
       (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
         (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted")))))
@@ -358,23 +361,45 @@
   [state threshold]
   (and (>= (:ticks state 0) threshold) (not (:escalated state))))
 
+(defn merge-failure-reason
+  "Map merge! outcome to persisted block reason. BL-1135: rematch outcomes
+   stay distinct from conflict (Operator needs-a-human absorb paging)."
+  [outcome]
+  (case (or outcome :conflict)
+    :human-merge-in-progress "human-merge-in-progress"
+    :refuse-rematch "refuse-rematch"
+    :rematch-bookkeeping "rematch-bookkeeping"
+    "conflict"))
+
+(defn rematch-owner-recovery?
+  "True when the block reason is designed rematch recovery (not absorb)."
+  [reason]
+  (contains? #{"rematch-bookkeeping" "refuse-rematch"} (name reason)))
+
 (defn escalation-reason
   "Standing evidence text for the escalation email body / log - same role
    as chase-sweep-lib/open-slot-escalation-reason."
   [reason behind ticks]
-  (str "BL-920: master-main-reconcile has been " (name reason) "-blocked for "
-       ticks " consecutive sweep ticks (local main " behind
-       " behind origin/main) with no coordinator action able to resolve it. "
-       "The coordinator's first-tick note has already fired; this is the "
-       "escalation past that, because the block has persisted. A human "
-       "needs to look at the master checkout directly."))
+  (if (rematch-owner-recovery? reason)
+    (str "BL-1135: master-main-reconcile " (name reason) " for " ticks
+         " ticks (local main " behind " behind origin/main). Designed recovery "
+         "is rematch lander/bookkeeping owner — not operator absorb merge.")
+    (str "BL-920: master-main-reconcile has been " (name reason) "-blocked for "
+         ticks " consecutive sweep ticks (local main " behind
+         " behind origin/main) with no coordinator action able to resolve it. "
+         "The coordinator's first-tick note has already fired; this is the "
+         "escalation past that, because the block has persisted. A human "
+         "needs to look at the master checkout directly.")))
 
 (defn escalation-telegram-text
   "Standing Operator-topic text (telegram-reply-outbox.jsonl threadId
    OPERATOR) - same role as chase-sweep-lib/open-slot-escalation-telegram-text."
   [reason behind ticks]
-  (str "⚠️ master main reconcile still " (name reason) "-blocked after "
-       ticks " ticks, " behind " behind origin - needs a human."))
+  (if (rematch-owner-recovery? reason)
+    (str "master main reconcile " (name reason) " after " ticks
+         " ticks, " behind " behind — rematch owner (not absorb merge)")
+    (str "⚠️ master main reconcile still " (name reason) "-blocked after "
+         ticks " ticks, " behind " behind origin - needs a human.")))
 
 (defn escalation-email-subject
   [reason]
@@ -501,6 +526,30 @@
 ;;                                   tick.
 ;;           :log!                  (fn [& parts])}
 ;;
+(defn- merge-failure-log-tail
+  "Log suffix for a failed merge! — reason token, plus error except for
+   human-merge-in-progress (no merge error string)."
+  [outcome error]
+  (let [reason (merge-failure-reason outcome)]
+    (cond-> [reason]
+      (not= reason "human-merge-in-progress") (conj (str error)))))
+
+(defn- handle-merge-failure!
+  [daemon-dir state adapters behind handle-blocked! result]
+  (let [outcome (or (:outcome result) :conflict)
+        reason (merge-failure-reason outcome)
+        surface-msg (surface-message {:behind behind :reason (keyword reason)})]
+    (apply (:log! adapters)
+           (into ["master-main-reconcile"]
+                 (merge-failure-log-tail outcome (:error result))))
+    (if (rematch-owner-recovery? reason)
+      (let [first-tick? (not= (:surfaced state) reason)
+            next-state (next-block-state state reason)]
+        (when first-tick?
+          ((:surface! adapters) surface-msg))
+        (write-state! daemon-dir next-state))
+      (handle-blocked! reason surface-msg))))
+
 ;; Self-healing across transitions, mirroring push_sweep_lib.bb's own
 ;; sweep!: reaching :up-to-date or a successful :should-reconcile always
 ;; clears persisted state (surfaced reason, tick count, AND escalated flag),
@@ -552,18 +601,4 @@
             (do
               ((:log! adapters) "master-main-reconcile" "reconciled")
               (write-state! daemon-dir {}))
-            (let [outcome (or (:outcome result) :conflict)
-                  reason (case outcome
-                           :human-merge-in-progress "human-merge-in-progress"
-                           :refuse-rematch "refuse-rematch"
-                           "conflict")
-                  log-args (case outcome
-                             :human-merge-in-progress
-                             ["master-main-reconcile" "human-merge-in-progress"]
-                             :refuse-rematch
-                             ["master-main-reconcile" "refuse-rematch" (str (:error result))]
-                             ["master-main-reconcile" "conflict" (str (:error result))])]
-              (apply (:log! adapters) log-args)
-              (handle-blocked! reason
-                               (surface-message {:behind behind
-                                                 :reason (keyword reason)})))))))))
+            (handle-merge-failure! daemon-dir state adapters behind handle-blocked! result)))))))

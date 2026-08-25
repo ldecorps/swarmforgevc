@@ -680,6 +680,7 @@ const DOMAINS = [
   require('./bl1118PostCursorBatchMergeOriginMainSteps'),
   require('./bl1130LandOnMainWithoutExternalConflictResolutionSteps'),
   require('./bl1131TicketLandWithoutOperatorAbsorbMergeSteps'),
+  require('./bl1135Bl1131ResidualLiveLandNoOperatorAbsorbSteps'),
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
   require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
   require('./bl833HostAgentActivityFeedSteps'),
