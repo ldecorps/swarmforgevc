@@ -10,7 +10,7 @@ read the fact instead of guessing it from text.
 
 This is a spike, and it is falsifiable — see `approval_context` and
 `qa_e2e_procedure` on
-`backlog/paused/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.yaml`
+`backlog/active/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.yaml`
 for the verdict criteria. What is documented here is what is built: the
 snapshot file, the deterministic-layer read side, the provider-table
 dimension, the pane-host CLI, and the production launcher wiring that puts
@@ -31,6 +31,11 @@ that is answered per-seat by whether a snapshot file exists (below).
 Cursor is deliberately absent from this table: BL-1078 found `cursor-agent`
 is terminal-native and needs no ACP host to staff a seat, so it is a
 different question from this ticket's.
+
+Acceptance scenario 05 freezes the pre-ACP wake style for every agent the
+table knows (including `local-model` → `chat-message`) so adding the `:acp`
+dimension cannot silently fork or change wake routing.
+
 
 ## The snapshot file
 
@@ -132,4 +137,4 @@ model".
 ## See also
 
 - [Non-Pipeline Agents — Reference Table (BL-643)](BL-643-non-pipeline-agents-reference-table.md) — the wider agent/launcher landscape this table sits beside.
-- `backlog/paused/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.yaml` — the ticket, its falsifiable criteria, and the acceptance scenarios.
+- `backlog/active/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.yaml` — the ticket, its falsifiable criteria, and the acceptance scenarios.
