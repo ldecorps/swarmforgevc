@@ -8,7 +8,7 @@ mutate shared `main` / role refs or flip `core.bare`. Pre-commit canary in
 How-to: `docs/how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md`.
 Complements BL-570 / BL-1123. No new extension command or setting.)
 Prior entry —
-**Last Updated:** August 25, 2026 (BL-1126: Local Agent Telegram turns stay
+August 25, 2026 (BL-1126: Local Agent Telegram turns stay
 live under Ollama latency — fast-path probes skip Ollama; real turns stream
 progress; empty completions recover; turn/idle/socket deadlines abort wedges.
 Scripts under `swarmforge/scripts/local_agent/`. Acceptance:

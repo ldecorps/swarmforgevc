@@ -48,3 +48,21 @@ heal), not discard ahead commits.
 ### Acceptance
 
 `specs/features/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.feature`
+
+## Bare origin/main rematch
+
+QA bounced hitchhiked tips whose `origin/main...HEAD` carried sibling
+rematch actives. Downstream must **recreate** on current `origin/main`
+(`git checkout -B … origin/main`) and land **BL-1124 paths only** — never
+merge into hitchhiked ancestry. Hitchhike gate:
+
+```bash
+git diff --name-only origin/main...HEAD \
+  | rg 'acpHostClient|hotfix-ledger|^backlog/INTAKE-|done/M8' \
+  && echo FAIL || echo CLEAN
+```
+
+Also keep `origin/main...HEAD` to BL-1124 product/docs/evidence (guard
+scripts, APS, how-to, ticket YAML). Hitchhiked tips belong under
+`abandoned_commits`.
+
