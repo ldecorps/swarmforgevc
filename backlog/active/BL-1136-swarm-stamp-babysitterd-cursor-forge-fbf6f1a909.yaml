@@ -15,6 +15,10 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1136-swarm-stamp-babysitterd-cursor-forge-fbf6f1a909.feature
 human_approval: approved
+abandoned_commits:
+  - 5b5af9787b
+  - cad2b50dbc
+  - ab7ceea8e6
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit fbf6f1a909. Babysitterd
   half dual-cites active BL-1133 (product acceptance already authored —

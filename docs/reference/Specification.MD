@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1136 rematch3: tip-pure stamp-off of
+hotfix `fbf6f1a909` — babysitterd pulse dual-cite BL-1133 + cursor-forge pack
+parse; hardener rematch2 hitchhike cleared; ledger still pending human
+(BL-848). Acceptance:
+`specs/features/BL-1136-swarm-stamp-babysitterd-cursor-forge-fbf6f1a909.feature`.
+How-to: `docs/how-to/BL-1136-swarm-stamp-babysitterd-cursor-forge-fbf6f1a909.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1134: master-checkout drift mute covers
 the post-`git add` window — `commit-in-flight?` is true for `.git/index.lock`
 **or** a live `git add`/`git commit` argv naming this root; durable staged
