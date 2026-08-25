@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-833: host-agent activity feed —
+tee of existing SDK progress lines into a bounded per-session buffer
+(`hostActivityFeed.ts`, bound 128). Catch-up `GET /host-activity` and live
+`event: host-activity` on authenticated `/events`; quiet when no session.
+Telegram reporter unchanged (tee, not re-route). Feed write failures never
+damage the turn. Screen is BL-834. Acceptance:
+`specs/features/BL-833-host-agent-activity-feed.feature`.
+How-to: `docs/how-to/BL-833-host-agent-activity-feed.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1130: automated `origin/main`
 absorb — handoffd reconcile and Process B `post_hotfix_merge_origin` —
 either completes conflict-free or clean-refuses (`:refuse-rematch` + abort).
