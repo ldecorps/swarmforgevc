@@ -314,6 +314,7 @@ const DOMAINS = [
   require('./bl614RotateHomeCoordinatorExclusionSteps'),
   require('./bl546PromptEngineSteps'),
   require('./bl547ModelStewardSteps'),
+  require('./bl669OutageDrivenSeatFailoverViaStewardSteps'),
   require('./bl557ModelStewardSlice3Steps'),
   require('./bl551LlmCostLedgerSteps'),
   require('./bl525ModelFactorySteps'),
