@@ -42,5 +42,9 @@ property test + APS feature; manufacturing a vacuous test would add no signal.
 | `dependency-gate.js` on BL-782 extension/spec paths | PASSED |
 | `co-change-report.js` on expedite_cli + step handler | no coupling flagged |
 | `npm run test:properties -- --test-name-pattern=BL-782` | 2/2 pass |
+| `test_expedite_cli.sh` | ALL PASS (live-swarm host) |
+| `test_lifecycle_script_scope.sh` | 15/15 PASS |
+| `expedite_lib_test_runner.bb` | ALL PASS |
+| Tip deletes | 0 |
 
 By architect.
