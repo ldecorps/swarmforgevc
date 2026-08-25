@@ -6,7 +6,7 @@ severity: high
 # high: every QA land grows behind while local bookkeeping tip is ahead;
 # coordinator cannot close/promote (BL-568 measured stuck ~43m+). Not critical:
 # recoverable by human rematch; no silent data loss if noticed.
-status: active
+status: done
 epic: swarm-reliability
 priority: 0
 direction: queue-jump
