@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-999: burndown CLI test budgets are
+justified by measurement — shared `renderBriefingBurndownCli.budgets.js`
+table enforces `budgetMs >= ceil(worstMs * 1.6)`; identical derive+render
+siblings share budgets; suite-default is an explicit recorded margin.
+Closes the BL-969 presence-only gap. Acceptance:
+`specs/features/BL-999-a-test-budget-is-justified-not-merely-present.feature`.
+How-to: `docs/how-to/BL-999-a-test-budget-is-justified-not-merely-present.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-988: restore BL-578 WSL bounce acceptance
 binding — handlers already ship; `index.js` registration + every feature step
 must resolve. Property regression

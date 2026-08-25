@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T18:58:05.788816451Z","feature_name":"A test budget is justified, not merely present","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-999-a-test-budget-is-justified-not-merely-present.feature","background_hash":"39847d6d65d914458c6fdafab79d3a0ed0cabf1f30b5a99f166aecd60347c476","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: A test budget is justified, not merely present
 
   BL-969 gave one heavy test a measured budget and left a standing guard
