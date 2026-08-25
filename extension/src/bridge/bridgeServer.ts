@@ -445,7 +445,7 @@ function isResidentSpyPath(url: string): boolean {
 
 // BL-522: JSON pane feed polled by the Mini App with ?token=.
 function isResidentPanePath(url: string): boolean {
-  return url === '/resident-pane' || url.startsWith('/resident-pane?');
+  return url === '/resident-pane' || url.startsWith('/resident-pane?') || url.startsWith('/resident-pane/');
 }
 
 // BL-526: console landing menu (two portrait buttons).
@@ -1597,6 +1597,7 @@ function tryServeSideloadApk(
 function queryToken(url: string): string | undefined {
   return parseQueryCredential(url);
 }
+
 
 // BL-788: applicationId the shipped Bubble build installs under. Single
 // source of truth for the pairing page's intent:// link -

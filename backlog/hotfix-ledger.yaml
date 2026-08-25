@@ -125,3 +125,38 @@
   stamp_ticket: BL-1117
   human_decision: null
   decided_at: null
+- commit: b81334b107
+  subject: "Support resident-pane path credentials when proxies drop query strings."
+  detected_at: 2026-08-24
+  state: pending
+  stamp_ticket: BL-1116
+  human_decision: null
+  decided_at: null
+- commit: 4d5375fdad
+  subject: "Skip duplicate approval asks when a live-topic ask is already recorded."
+  detected_at: 2026-08-24
+  state: pending
+  stamp_ticket: BL-1116
+  human_decision: null
+  decided_at: null
+- commit: ae983877c4
+  subject: "Route Let's Talk by provider; bridge can run ancillary front desk."
+  detected_at: 2026-08-24
+  state: pending
+  stamp_ticket: BL-1116
+  human_decision: null
+  decided_at: null
+- commit: d6214efe6f
+  subject: "Read seat models from launch scripts for non-Claude agents."
+  detected_at: 2026-08-24
+  state: pending
+  stamp_ticket: BL-1116
+  human_decision: null
+  decided_at: null
+- commit: f88913a3df
+  subject: "Add ACP host client state machine for structured seat driving (BL-1081)."
+  detected_at: 2026-08-24
+  state: pending
+  stamp_ticket: BL-1116
+  human_decision: null
+  decided_at: null
