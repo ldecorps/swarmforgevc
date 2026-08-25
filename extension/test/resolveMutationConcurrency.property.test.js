@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   resolveMutationConcurrency,
+  readConcurrencyPinFromEnv,
   withStrykerConcurrencyFlag,
   formatMutationConcurrencyReport,
 } = require('../out/tools/resolve-mutation-concurrency');
@@ -49,6 +50,11 @@ test('withStrykerConcurrencyFlag appends or replaces --concurrency', () => {
   assert.deepEqual(withStrykerConcurrencyFlag(['run', '--concurrency', '1'], 10), ['run', '--concurrency', '10']);
 });
 
+test('readConcurrencyPinFromEnv reads MUTATION_CONCURRENCY pin', () => {
+  assert.equal(readConcurrencyPinFromEnv({ MUTATION_CONCURRENCY: '3' }), 3);
+  assert.equal(readConcurrencyPinFromEnv({ MUTATION_CONCURRENCY: '' }), undefined);
+  assert.equal(readConcurrencyPinFromEnv({}), undefined);
+});
 test('formatMutationConcurrencyReport includes computed source and inputs', () => {
   const report = formatMutationConcurrencyReport({
     concurrency: 10,

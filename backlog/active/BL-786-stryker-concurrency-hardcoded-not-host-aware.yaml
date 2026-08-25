@@ -9,6 +9,13 @@ priority: 166
 direction: aligned
 depends_on: []
 assigned_to: coder
+
+abandoned_commits:
+  - ce0455216e
+  - 9388907643
+  - b60dd1671
+  - 47992e48af
+  - 799d9c0df4
 mutation_cost: medium
 human_approval: approved
 invariants:
