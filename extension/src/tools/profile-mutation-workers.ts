@@ -19,9 +19,10 @@ import * as os from 'os';
 import { execFileSync, spawn } from 'child_process';
 import { sampleProcessStats } from '../metrics/resourceTelemetry';
 import { RssSample, computePeakRssPerWorker, recommendMutationConcurrency } from '../metrics/mutationWorkerRss';
+import { DEFAULT_RESERVE_MB } from '../metrics/mutationConcurrencyConstants';
 import { printJsonToStdout, runCliMain } from './swarm-metrics';
 
-export const DEFAULT_RESERVE_MB = 2048;
+export { DEFAULT_RESERVE_MB };
 const DEFAULT_INTERVAL_MS = 5000;
 
 export interface SpawnedProcess {

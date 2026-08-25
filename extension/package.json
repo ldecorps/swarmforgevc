@@ -271,14 +271,14 @@
     "test": "npm run compile && node scripts/recordTestDuration.js",
     "test:properties": "npm run compile && vitest run --config vitest.properties.config.mjs",
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
-    "mutation": "npm run compile && node scripts/ensureStrykerSandboxSiblings.js && stryker run",
+    "mutation": "npm run compile && node scripts/ensureStrykerSandboxSiblings.js && node scripts/mutation-concurrency.js run -- stryker run",
     "dry": "jscpd --config .jscpd.json src",
     "coverage": "npm run compile && vitest run --coverage",
     "coverage:lets-talk-cursor-bridge": "npm run compile && vitest run --coverage letsTalk cursorBridge telegramCursorBridge startBridgeHeadless bridgeAuth telegramCursorBridgeCli && node scripts/letsTalkCursorBridgeCoverage.js",
     "crap": "npm run coverage && node scripts/crapReport.js",
     "thin-main-gate": "npm run compile && node out/tools/thin-main-gate.js",
     "crap:lets-talk-cursor-bridge": "npm run coverage:lets-talk-cursor-bridge && node scripts/crapReport.js src/bridge/letsTalkCore.ts src/bridge/letsTalkRoutes.ts src/bridge/letsTalkAudio.ts src/bridge/letsTalkLocalAudio.ts src/bridge/letsTalkUiHtml.ts src/bridge/cursorBridgeAgentSession.ts src/bridge/cursorBridgeTelegramHtml.ts src/tools/telegramCursorBridgeCore.ts src/tools/telegramCursorBridgeLive.ts src/tools/telegramCursorBridgePilot.ts src/tools/telegram-cursor-bridge.ts src/tools/start-bridge-headless.ts",
-    "mutation:lets-talk-cursor-bridge": "npm run compile && node scripts/ensureStrykerSandboxSiblings.js && stryker run stryker.letsTalkCursorBridge.config.json"
+    "mutation:lets-talk-cursor-bridge": "npm run compile && node scripts/ensureStrykerSandboxSiblings.js && node scripts/mutation-concurrency.js run -- stryker run stryker.letsTalkCursorBridge.config.json"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",
