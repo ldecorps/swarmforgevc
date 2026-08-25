@@ -40,6 +40,11 @@ function baseDeps(ctx) {
   return {
     readAcceptanceDeclaration: () => 'specs/features/bl729-fixture.feature',
     resolveFeatureFilePath: () => '/repo/specs/features/bl729-fixture.feature',
+    isLifecycleTeardownTicket: () => false,
+    assessMultiworktreeFixture: () => ({
+      satisfied: true,
+      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
+    }),
     runAcceptance: async () => ({ success: true, output: 'ok' }),
     checkCommitClaims: () =>
       ctx.commitsResolvable ? { checked: true, ...evaluateCommitClaims(ctx.runCommits) } : { checked: false },
