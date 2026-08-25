@@ -40,6 +40,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_main_reconcile_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_drift_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_integrity_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
@@ -2209,6 +2210,12 @@
   (master-checkout-drift-lib/check-master-checkout-drift!
    {:project-root (str project-root)
     :emit-alarm! flow-watchdog-emit-alarm!}))
+;; BL-1123: bare=true / collapsed-tip guard — heal bare, alarm on tiny HEAD.
+(defn master-checkout-integrity-sweep! []
+  (master-checkout-integrity-lib/run-master-checkout-integrity!
+   {:project-root (str project-root)
+    :emit-alarm! flow-watchdog-emit-alarm!}))
+
 
 
 ;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
@@ -3645,6 +3652,9 @@
                     ;; state, not go quiet alongside it.
                     (run-sweep! "master-checkout-drift-sweep"
                         #(master-checkout-drift-sweep!))
+                    ;; BL-1123: bare=true / tip-floor — unconditional like drift.
+                    (run-sweep! "master-checkout-integrity-sweep"
+                        #(master-checkout-integrity-sweep!))
                     ;; BL-679: ambulance auto-exit sweep shares the same
                     ;; cadence, runs UNCONDITIONALLY for the same reason
                     ;; flow-watchdog-sweep!/master-checkout-drift-sweep!
