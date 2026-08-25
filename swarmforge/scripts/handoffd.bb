@@ -3040,21 +3040,34 @@
         (master-main-reconcile-lib/merge-tree-reports-conflict? (:out tree))))))
 
 (defn- master-main-reconcile-merge! []
-  (let [plan (master-main-reconcile-lib/automated-absorb-plan
-              {:merge-head-present? (master-main-merge-head-present?)
-               :behind (let [{:keys [behind]} (push-sweep-rev-counts!)] behind)
-               :would-conflict? (master-main-merge-would-conflict?)
-               :tip-contains-origin? (master-main-origin-is-ancestor?)})]
+  (let [{:keys [ahead behind]} (push-sweep-rev-counts!)
+        tip-ok? (master-main-origin-is-ancestor?)
+        conflict? (master-main-merge-would-conflict?)
+        mid? (master-main-merge-head-present?)
+        plan (master-main-reconcile-lib/absorb-dispatch-plan
+              {:merge-head-present? mid?
+               :behind behind
+               :ahead ahead
+               :tip-contains-origin? tip-ok?
+               :would-conflict? conflict?
+               :absorb-would-conflict? conflict?})]
     (case plan
       :skip-human-merge-in-progress
       {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
+
       :noop
       {:success true :outcome :noop}
+
+      :replay-bookkeeping
+      {:success false :error "rematch-bookkeeping" :outcome :rematch-bookkeeping}
+
       :refuse-rematch
       {:success false :error "refuse-rematch" :outcome :refuse-rematch}
-      :run-merge
-      (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["git" "merge" "--no-edit" "origin/main"]
-                                                           {:dir (str project-root)})]
+
+      ;; :ff-absorb — rematch-prepared lands only.
+      (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
+                                ["git" "merge" "--ff-only" "--no-edit" "origin/main"]
+                                {:dir (str project-root)})]
         (if (zero? exit)
           {:success true}
           (do

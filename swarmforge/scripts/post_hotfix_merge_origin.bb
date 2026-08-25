@@ -47,7 +47,9 @@
         (master-main-reconcile-lib/merge-tree-reports-conflict? (:out tree))))))
 
 (defn- merge-origin! [root]
-  (let [r (sh root "git" "merge" "--no-edit" "origin/main")]
+  ;; BL-1131: FF-only absorb after rematch-prepared lands — never open a
+  ;; content-conflict merge for an operator to finish.
+  (let [r (sh root "git" "merge" "--ff-only" "--no-edit" "origin/main")]
     (if (zero? (:exit r))
       {:success true}
       {:success false
