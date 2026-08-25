@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-888: `kill_pipeline_swarm.sh` Copilot
+kill is root-scoped — argv must name this `$ROOT`; sibling roots' agents
+are never signaled. Replaces unscoped `pkill -f 'copilot.*SwarmForge'`.
+Acceptance:
+`specs/features/BL-888-teardown-copilot-kill-scope.feature`.
+How-to: `docs/how-to/BL-888-teardown-copilot-kill-scope.md` (cross-link
+from BL-637 lifecycle scope). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-695: supervisor / unbound Telegram
 threads never write git-tracked `backlog/topics/*.json`. Classification in
 `topicThreadKind.ts`; fail-closed for unrecognised kinds; supervisor icon

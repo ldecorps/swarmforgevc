@@ -18,6 +18,13 @@ the full keep-vs-kill table.
 `kill_all_swarm.sh` is a **legacy alias** for `kill_pipeline_swarm.sh`. It prints a
 one-line pointer and does **not** mean “kill all of SwarmForge”.
 
+## Root-scoped Copilot kill (BL-888)
+
+Pipeline teardown's Copilot kill step signals only agents whose argv names
+**this** project root. Sibling roots' Copilot agents are never signaled.
+Details and the expected log lines:
+[BL-888 teardown copilot kill scope](BL-888-teardown-copilot-kill-scope.md).
+
 ## Verified full-stack stop
 
 After ancillaries + pipeline teardown, `./stop-swarm.sh` scans live processes
