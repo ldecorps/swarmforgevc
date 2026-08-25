@@ -9,7 +9,7 @@ severity: high
 # false count, and each orphaned paused/ copy is a live re-promotion candidate
 # for a ticket that is already active. Not critical: no work is lost, both
 # copies are byte-identical, and the pipeline keeps moving.
-status: paused
+status: done
 epic: swarm-reliability
 assigned_to: coder
 priority: 12
