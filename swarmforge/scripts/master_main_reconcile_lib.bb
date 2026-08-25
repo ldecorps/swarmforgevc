@@ -449,7 +449,9 @@
 
 (defn deadlock-trip-due?
   "True when behind>0, (ahead>0 or reconcile dirty/conflict escalated),
-   coordinator holds aged in_process, threshold crossed, and not yet active."
+   coordinator holds aged in_process, threshold crossed, and not yet active.
+   BL-1138: rematch-owner recovery must never durable-trip — rematch/replay
+   is the designed path, not deadlock-tripped waiting for Cursor."
   [{:keys [ahead behind reconcile-surfaced reconcile-escalated
            coordinator-in-process-aged? blocked-ticks deadlock-state
            threshold-ticks]}]
@@ -457,6 +459,7 @@
         behind (or behind 0)
         ticks (or blocked-ticks 0)
         threshold (or threshold-ticks deadlock-default-threshold-ticks)
+        rematch-recovery? (rematch-owner-recovery? (str reconcile-surfaced))
         blocked-shape?
         (and (pos? behind)
              (or (pos? ahead)
@@ -464,14 +467,33 @@
                  (#{"dirty" "conflict"} (str reconcile-surfaced))))]
     (boolean
      (and blocked-shape?
+          (not rematch-recovery?)
           coordinator-in-process-aged?
           (>= ticks threshold)
           (not (deadlock-active? deadlock-state))))))
+
 
 (defn deadlock-clear?
   "Clear when origin is absorbed."
   [behind]
   (zero? (or behind 0)))
+
+(defn after-successful-rematch-status
+  "BL-1138: status after rematch/replay brought behind to 0."
+  [{:keys [ahead behind deadlock-was-active?]}]
+  (let [behind (or behind 0)
+        action (sync-action {:ahead (or ahead 0) :behind behind
+                             :deadlock-active? false})]
+    {:behind behind
+     :sync-action action
+     :clear-deadlock? (boolean (or deadlock-was-active? (deadlock-clear? behind)))
+     :ok? (and (zero? behind) (#{:proceed :ff-only} action))}))
+
+(defn designed-end-state-is-deadlock-tripped?
+  "BL-1138: rematch-owner reasons must not end as durable deadlock-tripped."
+  [reason]
+  (and (not (rematch-owner-recovery? reason))
+       (#{"dirty" "conflict" "diverged"} (name (or reason "")))))
 
 (defn deadlock-alert-subject []
   "SwarmForge: main-sync deadlock — bookkeeping halted")

@@ -117,6 +117,38 @@
                (not (master-main-reconcile-lib/designed-recovery-is-operator-absorb?
                      (:outcome result)))))
 
+;; BL-1138: rematch! executes and clears behind/deadlock
+(let [daemon (str (fs/create-temp-dir {:prefix "bl1138-rematch-"}))
+      _ (master-main-reconcile-lib/write-deadlock! daemon
+                                                   {:active true :reason "rematch-bookkeeping"})
+      counts (atom {:ahead 1 :behind 2})
+      calls (atom [])
+      adapters {:daemon-dir daemon
+                :fetch! (fn [] (swap! calls conj :fetch))
+                :rev-counts! (fn [] @counts)
+                :dirty-paths! (fn [] [])
+                :would-conflict! (fn [] true)
+                :tip-contains-origin! (fn [] false)
+                :rematch! (fn []
+                            (swap! calls conj :rematch)
+                            (reset! counts {:ahead 0 :behind 0})
+                            {:success true})
+                :merge! (fn [] (swap! calls conj :merge) {:success true})
+                :abort! (fn [] (swap! calls conj :abort))
+                :status-porcelain! (fn [] "")
+                :mid-merge? (fn [] false)}
+      result (post-hotfix-merge-origin-lib/run-post-hotfix-merge! adapters)
+      after (master-main-reconcile-lib/after-successful-rematch-status
+             {:ahead (:ahead result) :behind (:behind result)
+              :deadlock-was-active? true})
+      dl (master-main-reconcile-lib/read-deadlock daemon)]
+  (assert= "BL-1138 rematch called" [:fetch :rematch] @calls)
+  (assert= "BL-1138 outcome rematched" :rematched-bookkeeping (:outcome result))
+  (assert= "BL-1138 behind 0" 0 (:behind result))
+  (assert-true "BL-1138 ok" (:ok? result))
+  (assert= "BL-1138 sync proceed" :proceed (:sync-action after))
+  (assert-true "BL-1138 deadlock cleared" (not (master-main-reconcile-lib/deadlock-active? dl))))
+
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1118-honest-"}))
       _ (master-main-reconcile-lib/write-state! daemon {:surfaced "dirty" :escalated true})
       adapters {:daemon-dir daemon
