@@ -19,7 +19,6 @@ source: |
   backlog/INTAKE-prioritize-local-ollama-remaining-20260825.md.
 
 notes: |
-  - [2026-08-25T19:14Z] specifier: re-link decomposes_into after rematch drops.
   UMBRELLA / tracking item (type: epic), NOT directly promotable — coordinator
   promotes CHILD slices. Children carry epic: local-llm-swarm.
 

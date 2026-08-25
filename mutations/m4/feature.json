@@ -1,0 +1,96 @@
+{
+  "name" : "false-alarm rate trend makes observability noise measurable",
+  "scenarios" : [ {
+    "name" : "each emitted alert logs a verdict the sweep already computed",
+    "steps" : [ {
+      "keyword" : "When",
+      "text" : "<alert> fires and the operator sweep classifies it as <verdict>",
+      "parameters" : [ "alert", "verdict" ]
+    }, {
+      "keyword" : "Then",
+      "text" : "exactly one record is appended to the alerts log"
+    }, {
+      "keyword" : "And",
+      "text" : "the record carries alert-type <alert-type>"
+    }, {
+      "keyword" : "And",
+      "text" : "the record carries verdict <verdict>",
+      "parameters" : [ "verdict" ]
+    }, {
+      "keyword" : "And",
+      "text" : "the record carries when it fired"
+    } ],
+    "examples" : [ {
+      "alert" : "an AGENT_EXITED mono-router false positive",
+      "alert-type" : "AGENT_EXITED",
+      "verdict" : "false-positive"
+    }, {
+      "alert" : "an actiVe-backlog-depth steady-state warn",
+      "alert-type" : "active-backlog-depth",
+      "verdict" : "false-positive"
+    }, {
+      "alert" : "a self-cancelling NO-OP within one sweep",
+      "alert-type" : "operator-no-op",
+      "verdict" : "false-positive"
+    }, {
+      "alert" : "an alert the operator acts on",
+      "alert-type" : "operator-actionable",
+      "verdict" : "actionable"
+    } ]
+  }, {
+    "name" : "a pure aggregator yields per-type false-positive rate over a window",
+    "steps" : [ {
+      "keyword" : "Given",
+      "text" : "a log of alert records spanning more than one window"
+    }, {
+      "keyword" : "And",
+      "text" : "some records are false-positive and some are actionable"
+    }, {
+      "keyword" : "When",
+      "text" : "each alert-type series is aggregated"
+    }, {
+      "keyword" : "Then",
+      "text" : "each window reports that type's false-positive rate"
+    }, {
+      "keyword" : "And",
+      "text" : "the aggregation reads no files of its own"
+    } ],
+    "examples" : [ ]
+  }, {
+    "name" : "the alerts log is append-only and excluded from version control",
+    "steps" : [ {
+      "keyword" : "Given",
+      "text" : "the alerts log already holds earlier records"
+    }, {
+      "keyword" : "When",
+      "text" : "a further alert record is emitted"
+    }, {
+      "keyword" : "Then",
+      "text" : "the earlier records are still present unchanged"
+    }, {
+      "keyword" : "And",
+      "text" : "the log is excluded from version control"
+    } ],
+    "examples" : [ ]
+  }, {
+    "name" : "a telemetry write failure does not change alert emission",
+    "steps" : [ {
+      "keyword" : "Given",
+      "text" : "the alerts log cannot be written"
+    }, {
+      "keyword" : "When",
+      "text" : "an alert that would normally fire is evaluated"
+    }, {
+      "keyword" : "Then",
+      "text" : "the alert still fires or suppresses exactly as before"
+    }, {
+      "keyword" : "And",
+      "text" : "the operator sweep is not left waiting on the log"
+    } ],
+    "examples" : [ ]
+  } ],
+  "background" : [ {
+    "keyword" : "Given",
+    "text" : "alert telemetry emits to the alerts log"
+  } ]
+}
