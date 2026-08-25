@@ -21,6 +21,16 @@ acceptance: specs/features/BL-1122-master-checkout-drift-mutes-warn-while-commit
 required_wiring:
   - "swarmforge/scripts/master_checkout_drift_lib.bb::commit-in-flight::the mid-commit mute must live in the same lib that classifies staged-for-reversion — a parallel mute in handoffd alone would drift from the CLI/property suite"
   - "specs/pipeline/steps/index.js::bl1122MasterCheckoutDriftMutesWarnWhileCommitInFlightSteps::acceptance step handler registered"
+abandoned_commits:
+  - 8911da440
+  - 8be16565f
+  - 9734c4f3e
+  - 0668a3be2
+  - a07052a77
+  - 6b06538aa
+  - b73887ea0
+  - 0253b50fb
+
 invariants:
   - "A durable staged reversion with no commit in flight still reports :staged-for-reversion and still alarms — this mute never swallows the BL-839 incident shape."
   - "The check still never writes: detecting an in-flight commit is read-only (lock file / process observation), never git add/reset/checkout."

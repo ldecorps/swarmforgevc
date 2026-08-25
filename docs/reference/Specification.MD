@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1122: master-checkout drift
+mutes `:staged-for-reversion` WARN while `.git/index.lock` shows a commit
+in flight — durable staged reversion with no lock still alarms (BL-839);
+mute is read-only and not sticky. Acceptance:
+`specs/features/BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.feature`.
+How-to: `docs/how-to/BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.md`
+and BL-839. No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1080: operators can choose a Cursor
 seat — pack `swarmforge/packs/cursor-mono-router.conf` names `cursor` on
 window lines; how-to `docs/how-to/BL-1080-choose-a-cursor-seat.md` states
