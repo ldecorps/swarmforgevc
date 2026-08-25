@@ -129,6 +129,7 @@ const WAKE_STYLE_BEFORE_ACP = {
   cursor: 'chat-message',
   gemini: 'chat-message',
   grok: 'chat-message',
+  'local-model': 'chat-message',
   mock: 'mock',
   vibe: 'chat-message',
 };
