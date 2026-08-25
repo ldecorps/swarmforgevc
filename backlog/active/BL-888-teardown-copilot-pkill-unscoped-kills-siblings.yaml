@@ -8,7 +8,7 @@ epic: swarm-reliability
 priority: 130
 direction: aligned
 depends_on: []
-assigned_to: unassigned
+assigned_to: coder
 mutation_cost: low
 human_approval: approved
 approval_context: >
@@ -68,7 +68,11 @@ description: |
 invariants:
   - "A teardown kill step signals only processes belonging to the root being torn down — a process of any other root, or of the operator's own tooling, is never signaled."
 
-acceptance: specs/features/BL-888-teardown-copilot-kill-scope.feature.draft
+acceptance: specs/features/BL-888-teardown-copilot-kill-scope.feature
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl888TeardownCopilotKillScopeSteps::acceptance handler registered"
+  - "swarmforge/scripts/kill_pipeline_swarm.sh::copilot_pids_for_root::teardown copilot kill must be root-scoped"
+  - "swarmforge/scripts/test/bl888_copilot_kill_scope_property_runner.sh::copilot_argv_matches_root::declared kill-scope invariant encoded"
 
 qa_e2e_procedure: |
   1. Spawn a harmless long-lived fixture process whose argv contains
