@@ -1,0 +1,50 @@
+# Property-suite fixtures must not mutate shared main (BL-1124)
+
+## Incident class
+
+Property fixtures under `npm run test:properties` (and the pre-commit
+`check_property_suite_drift.sh` lane) have run against the **live** repo and:
+
+1. Renamed a role branch (e.g. `swarmforge-coder` / `swarmforge-documenter`) to `main`
+2. Advanced shared `main` with synthetic promote/close commits
+3. Left `core.bare=true` on the master checkout
+
+A follow-on “recovery” that `git reset --hard origin/main` while local was
+ahead discarded legitimate swarm bookkeeping (reflog restore required).
+Companion post-damage heal: BL-1123.
+
+## What changed
+
+| Piece | Role |
+| --- | --- |
+| `property_suite_shared_repo_guard.sh` | Snapshot + assert `core.bare` / HEAD ref / SHA |
+| `check_property_suite_drift.sh` | Canary before/after `test:properties`; fail if changed |
+| `main_recovery_refuse_when_ahead.sh` | Refuse reset-to-origin when local is ahead |
+| `expedite_fixture.sh` | Refuse dest that is a live swarmforge checkout; `git init -b main` (no `branch -M`) |
+
+## Operator runbook
+
+### After a property-lane scare
+
+1. Confirm bare and tip: `git config --bool core.bare` and
+   `git symbolic-ref HEAD` / `git rev-parse HEAD`.
+2. **Do not** `git reset --hard origin/main` if you are ahead of `origin/main`.
+3. Probe the policy helper:
+
+```bash
+bash swarmforge/scripts/main_recovery_refuse_when_ahead.sh
+```
+
+Exit non-zero means restore the pre-incident tip from reflog (or BL-1123
+heal), not discard ahead commits.
+
+### Writing fixtures
+
+- Use only temp / isolated git dirs for ref and commit operations.
+- Never point `GIT_DIR` at a live role or master worktree.
+- Seeding via `expedite_fixture.sh` into a path that contains
+  `swarmforge/scripts/handoffd.bb` is refused.
+
+### Acceptance
+
+`specs/features/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.feature`
