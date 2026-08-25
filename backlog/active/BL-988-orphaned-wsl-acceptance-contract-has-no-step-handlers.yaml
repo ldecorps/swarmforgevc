@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 severity: medium
 status: active
-assigned_to: hardender
+assigned_to: coder
 epic: code-quality-gates
 human_approval: approved
 priority: 30
@@ -87,6 +87,38 @@ notes: >
   git history for the contract and its original implementation is the source
   of truth for the restore-vs-retire decision.
 
+  - "[2026-08-25T18:40Z] coder: RESTORE. Behaviour still ships
+    (bounceLib buildWindowsKillOldCommands + headlessMarkerDecision;
+    start-extension-dev WSL kill-old). Handlers present in
+    bl578DevhostBounceWslWindowLeakSteps.js and registered in index.js.
+    Acceptance 7/7 green. Deliberate break (empty kill-old cmds) turned the
+    Windows-target scenarios red; restore returned green. Binding regression
+    in specs/pipeline/test/bl988Bl578ContractBinding.property.test.js."
+
+abandoned_commits:
+  - 5067a7b50
+  - efd488cb1
+  - 72cda8631b
+  - 5caa26dfc3
+  - e103314cb8
+  - 0a0314456e
+  - 3cf1f6b383
+  - bd7523ca8d
+  - e864112810
+  - 8fe1ce0462
+  - 1ba588ff06
+  - 41d63fd5f8
+  - 502be7157a
+  - f0cf701e7b
+  - b49c41b9de
+  - 0c41f334a2
+  - 8cae122fd1
+  - 1af39c1d71
+  - 93c60bf740
+  - 5dd5d54892
+  - dd03c420f9
+  - d61b3f7f03
+  - 5f3d33eb8b
 qa_e2e_procedure: >
   1. Run the contract:
      `node specs/pipeline/cli.js
