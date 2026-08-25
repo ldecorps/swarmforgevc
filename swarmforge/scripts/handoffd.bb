@@ -45,6 +45,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_outage_evidence_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "outage_failover_cli.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_attribution_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 
@@ -2188,6 +2189,17 @@
     :emit-alarm! flow-watchdog-emit-alarm!
     :provider-outage-evidence-for (fn [role] (flow-watchdog-provider-outage-evidence-for roles role))}))
 
+(defn role-info-by-name [roles seat]
+  (some #(when (= (:role %) seat) %) roles))
+
+(defn outage-driven-seat-failover-sweep! [roles socket]
+  "BL-669: sustained outage -> steward consult -> certified substitute at idle."
+  (outage-failover-cli/outage-driven-seat-failover!
+   project-root roles socket
+   :seat-idle-fn #(let [ri (role-info-by-name roles %)]
+                     (if ri (role-mailbox-idle? ri) true))
+   :attended? (= "1" (System/getenv "OUTAGE_FAILOVER_ATTENDED"))))
+
 
 ;; ── BL-679 piece 3: ambulance auto-exit sweep - shares the chase-sweep
 ;;    cadence, runs UNCONDITIONALLY (same rationale as flow-watchdog-sweep!/
@@ -3750,6 +3762,9 @@
                     ;; go quiet alongside the wake suppression.
                     (run-sweep! "flow-watchdog-sweep"
                         #(flow-watchdog-sweep! (load-roles) socket))
+                    ;; BL-669: outage failover — certified substitute at idle only.
+                    (run-sweep! "outage-driven-seat-failover"
+                        #(outage-driven-seat-failover-sweep! (load-roles) socket))
                     ;; BL-839: master-checkout-drift sweep shares the same
                     ;; cadence, runs UNCONDITIONALLY for the same reason
                     ;; flow-watchdog-sweep! above does - a read-only alarm
