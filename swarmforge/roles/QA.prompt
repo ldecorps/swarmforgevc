@@ -114,13 +114,18 @@ You are QA.
     `BL-042 QA-approved a1b2c3d4 — merge your branch up to QA's`.
   - **Land it on `main` yourself** (BL-247; operator ruling 2026-07-10 — QA is
     the integration point, not the coordinator). Your approved commit already is
-    the verified, integrated result, so land it with
-    `git push origin HEAD:main` in the same session (never force-push).
-    On push rejection: fetch, integrate, push again; never force-push.
+    the verified, integrated result. Land via BL-1144 discipline (never
+    force-push): acquire `.swarmforge/land-main.publish.lock`, run
+    `swarmforge/scripts/land_main_publish.sh <root> --decide-only`, rematch
+    tip-pure onto current `origin/main` when advised, then
+    `git push origin HEAD:main`, then release the lock. On push rejection:
+    fetch, rematch once (bounded), wait on the lock — never force-push and
+    never unbounded tip-purity bounce loops mid-gate.
     - You CANNOT check out or merge into `main` from `.worktrees/QA`: `main`
       is checked out in the master worktree, and git refuses to update a
-      branch checked out elsewhere. `git push origin HEAD:main` is the whole
-      of your landing step — do not try to work around the refusal.
+      branch checked out elsewhere. `git push origin HEAD:main` (after the
+      publish-time rematch + lock) is the whole of your landing step — do not
+      try to work around the refusal.
     - Know what that leaves behind: it advances `origin/main` only. The LOCAL
       `main` ref keeps whatever it had, so the master checkout (coordinator +
       specifier) does not see your landed code until someone reconciles it.
