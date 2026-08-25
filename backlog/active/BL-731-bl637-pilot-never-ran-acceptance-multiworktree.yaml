@@ -60,4 +60,5 @@ notes: |
   - Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
 
   - [2026-08-25T21:14Z] specifier (coord Work 001904): filled acceptance
-    feature (4 scenarios); depends_on BL-727; invariants ≤3. Forwarded to coder.
+    feature (4 scenarios); depends_on BL-727; invariants ≤3. Forwarded to coder
+    (da222cb28f).
