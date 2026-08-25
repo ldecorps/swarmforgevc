@@ -166,7 +166,16 @@ function registerSteps(registry) {
 
   registry.define(/^it contains no raw log transcript$/, (ctx) => {
     const actualKeys = Object.keys(ctx.packet).sort();
-    const closedKeys = ['bounceClasses', 'dwellHotspots', 'hypotheses', 'pathTaken', 'shiftKey', 'skipReasons', 'stalls'].sort();
+    const closedKeys = [
+      'bounceClasses',
+      'dwellHotspots',
+      'hypotheses',
+      'pathTaken',
+      'qualityRecommendations',
+      'shiftKey',
+      'skipReasons',
+      'stalls',
+    ].sort();
     if (JSON.stringify(actualKeys) !== JSON.stringify(closedKeys)) {
       throw new Error(`expected the packet's own closed field shape, got keys: ${JSON.stringify(actualKeys)}`);
     }
