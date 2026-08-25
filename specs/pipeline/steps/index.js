@@ -462,6 +462,7 @@ const DOMAINS = [
   require('./bl721ApprovalsQjumpLabelAndTelegramVerbSteps'),
   require('./bl763BubbleTunnelHandFixesSwarmStampSteps'),
   require('./bl730PipelineTeardownSurvivorScopeSteps'),
+  require('./bl888TeardownCopilotKillScopeSteps'),
   require('./bl881ResidentPaneLiveCaptureTtlCacheSteps'),
   require('./bl767QueuedBridgeQuestionsAnswerInOriginTopicSteps'),
   require('./bl866CompanionManifestPackageCatalogSteps'),

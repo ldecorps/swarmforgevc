@@ -242,8 +242,42 @@ while IFS= read -r line; do
   log "reaped handoffd pid=$pid"
 done < <(pgrep -fl "handoffd\.bb.*$ROOT" 2>/dev/null | grep -v handoffd_supervisor || true)
 
-# 5. SwarmForge copilot agents.
-if pkill -f 'copilot.*SwarmForge' 2>/dev/null; then
+# 5. SwarmForge copilot agents — ROOT-scoped (BL-888).
+# Unscoped pkill of copilot+SwarmForge would signal sibling roots' agents.
+# Match via ps argv: must contain copilot + SwarmForge + this $ROOT path
+# (launch_body puts `-C '<worktree under ROOT>'` before `--name 'SwarmForge …'`).
+# Optional SWARMFORGE_COPILOT_PS_FILE seam for fixture snapshots (tests).
+copilot_pids_for_root() {
+  local root="$1"
+  local ps_out line pid rest
+  if [[ -n "${SWARMFORGE_COPILOT_PS_FILE:-}" && -f "$SWARMFORGE_COPILOT_PS_FILE" ]]; then
+    ps_out="$(cat "$SWARMFORGE_COPILOT_PS_FILE")"
+  else
+    ps_out="$(ps -eo pid=,args= 2>/dev/null || true)"
+  fi
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    pid="$(printf '%s\n' "$line" | awk '{print $1}')"
+    rest="$(printf '%s\n' "$line" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*//')"
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    [[ "$rest" == *copilot* ]] || continue
+    [[ "$rest" == *SwarmForge* ]] || continue
+    [[ "$rest" == *"$root"* ]] || continue
+    printf '%s\n' "$pid"
+  done <<< "$ps_out"
+}
+
+signaled_copilot=0
+while IFS= read -r pid; do
+  [[ -n "$pid" ]] || continue
+  if kill -TERM "$pid" 2>/dev/null; then
+    signaled_copilot=1
+    sleep 0.2
+    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+    log "reaped copilot pid=$pid"
+  fi
+done < <(copilot_pids_for_root "$ROOT")
+if [[ "$signaled_copilot" -eq 1 ]]; then
   log "signaled SwarmForge copilot processes"
 else
   log "no SwarmForge copilot processes"
