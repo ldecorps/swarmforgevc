@@ -38,12 +38,12 @@ push-sweep, flow watchdog, master-checkout drift). Each tick:
    touch the checkout — it sends a `note` (priority `00`) naming the
    offending path(s) to the coordinator and stops. Uncertainty always fails
    closed to blocked, never to reconciling.
-5. If the merge itself hits a conflict (only possible once step 3 has
-   already decided there's no known dirty-path overlap), it aborts
-   immediately and surfaces the same way — **but only when this tick
-   started the merge** (BL-1120). If `MERGE_HEAD` already existed, the
-   tick skips entirely and surfaces `human-merge-in-progress` without
-   `git merge --abort`.
+5. **(BL-1130)** Before starting a merge, merge-tree foresight refuses a
+   known content conflict with `:refuse-rematch` (clean worktree — no
+   `MERGE_HEAD`). If a merge this tick started still conflicts, it aborts
+   immediately and surfaces rematch/refuse — never "finish in an editor".
+   **(BL-1120)** If `MERGE_HEAD` already existed, the tick skips entirely
+   and surfaces `human-merge-in-progress` without `git merge --abort`.
 
 **(BL-925)** Step 3's merge used to be refused for a reason that had
 nothing to do with a real conflict: `origin/main`'s incoming tip routinely
@@ -70,7 +70,7 @@ genuine content conflict still aborts exactly as before.
 | up to date | Local `main` already has everything `origin/main` has. Nothing emitted. |
 | reconciled | Local `main` was behind and no dirty path overlapped a path the merge would change (clean tree, or dirty-but-non-overlapping) — merged forward automatically. Nothing emitted; check `git log` if you want to see it happen. |
 | dirty overlap, not reconciled | Local `main` is behind and a dirty (or untracked) path collides with a path the incoming merge would write to — the one case a plain `git merge` would itself refuse. The sweep leaves the checkout exactly as it found it and surfaces a `note` naming the offending path(s) (a count, past the first, if naming them all would blow the note's 80-char budget) to the coordinator. |
-| merge conflict, aborted | The merge itself hit a conflict **on a merge this tick started**. Aborted immediately (`git merge --abort`) so the checkout is never left mid-conflict — surfaced to the coordinator the same way. |
+| merge conflict / refuse-rematch (BL-1130) | Predicted or real conflict on the **automated** path. Aborted (or never started); checkout has no `MERGE_HEAD` / unmerged paths; surface says rematch/refuse — rematch the tip onto `origin/main`, do not finish a daemon merge in an editor. |
 | human merge in progress (BL-1120) | `MERGE_HEAD` was already set when the tick ran. The sweep does **not** merge and does **not** abort — a human (or other agent) owns the join. Surfaces a note; finish or abort the merge yourself. |
 
 Both surfaced cases send **one** note and then go quiet for that same reason
@@ -96,9 +96,10 @@ push-sweep's own alarm flags use).
    reconciles automatically — there is no manual merge command to run. Any
    *other* dirty path in the tree, overlapping or not, is irrelevant to
    this decision.
-4. For a conflict: the abort already happened, so the checkout is safe to
-   leave as-is while you investigate; resolve by hand (e.g. merge
-   `origin/main` yourself and fix the conflict) once you're ready.
+4. For an automated conflict refuse (BL-1130): the checkout is already
+   clean — rematch the landing tip onto current `origin/main` and re-land.
+   Do not open an editor to finish a merge the daemon refused. Human-owned
+   mid-merges still follow BL-1120.
 
 ## What it does not do
 
@@ -107,8 +108,8 @@ push-sweep's own alarm flags use).
   partially updated (this is BL-891's own two declared invariants).
 - Never pushes anything — that direction is push-sweep's job (BL-356); this
   sweep only ever merges `origin/main` **forward into** local `main`.
-- Does not resolve a merge conflict on your behalf. It aborts and surfaces;
-  a human resolves it.
+- Does not resolve conflicted file contents. Automated path aborts/refuses
+  and surfaces rematch (BL-1130); it never leaves mid-merge for an editor.
 - Does not block on dirt that the incoming merge would never touch (BL-919)
   — only an actual path overlap, or an uncertain overlap computation, blocks.
 - Re-running the sweep on an already-reconciled tree is a no-op by
@@ -135,9 +136,11 @@ bb swarmforge/scripts/post_hotfix_merge_origin.bb <project-root>
 ```
 
 3. Exit `0` means fetch+merge succeeded (or already up to date). Exit `1`
-   means the merge conflicted: the helper aborted (`git merge --abort`),
-   printed `CONFLICTED: <paths>`, and left the worktree **not** mid-merge.
-   Resolve by hand; never `reset --hard` / `stash` as the reconcile path.
+   with `:refuse-rematch` (BL-1130) means conflict foresight or a real
+   conflict: the helper aborted if needed, printed rematch/refuse (and
+   conflicted paths), and left the worktree **not** mid-merge. Rematch the
+   tip onto `origin/main`; never `reset --hard` / `stash` as the reconcile
+   path, and never finish a refused absorb in an editor.
 4. A clean tip that is still behind must not stay stuck on a stale dirty
    deadlock/sync reason — the helper refreshes that honesty seam (see
    `post_hotfix_merge_origin_lib.bb`).

@@ -71,16 +71,21 @@ function registerSteps(registry) {
   scoped(/^the worktree has no MERGE_HEAD$/, (ctx) => {
     const raw = ensure(ctx).raw;
     assert.match(raw, /:mid-merge\? false|CLEAN_MERGE_HEAD=yes/);
+    assert.match(raw, /POST_ABSORB_CLEAN=true/);
+    assert.match(raw, /DIRTY_CLEAN_PROBE=false/);
   });
 
   scoped(/^there are no unmerged paths$/, (ctx) => {
     const raw = ensure(ctx).raw;
     assert.match(raw, /UNMERGED=0|CLEAN_UNMERGED=yes/);
+    assert.match(raw, /POST_ABSORB_CLEAN=true/);
   });
 
   scoped(/^the outcome names rematch or refuse \(not finish-this-merge-in-an-editor\)$/, (ctx) => {
     const raw = ensure(ctx).raw;
     assert.match(raw, /refuse-rematch|rematch/);
+    assert.match(raw, /NAMES_REMATCH=true/);
+    assert.match(raw, /EDITOR_PHRASE_REJECTED=true/);
     assert.doesNotMatch(raw, /finish this merge in an editor/i);
     cleanup(ctx);
   });
@@ -125,19 +130,24 @@ function runAbsorb(ctx) {
     :abort! (fn [] (reset! mid? false))
     :status-porcelain! (fn [] (if @mid? "UU landing/ticket.yaml\\n" ""))
     :mid-merge? (fn [] @mid?)}))
-(def clean? (master-main-reconcile-lib/post-absorb-clean? (:mid-merge? result)
-              (count (or (:conflicted-paths result) []))))
+(def unmerged (count (or (:conflicted-paths result) [])))
+(def clean? (master-main-reconcile-lib/post-absorb-clean? (:mid-merge? result) unmerged))
+(def names-ok?
+  (master-main-reconcile-lib/absorb-outcome-names-rematch-or-refuse?
+   (str (:outcome result))))
+(def editor-ok?
+  (master-main-reconcile-lib/absorb-outcome-names-rematch-or-refuse?
+   "finish this merge in an editor"))
 (println (pr-str result))
 (println (str "BEHIND=" (:behind result)))
-(println (str "UNMERGED=" (count (or (:conflicted-paths result) []))))
+(println (str "UNMERGED=" unmerged))
 (println (str "CLEAN_MERGE_HEAD=" (if (:mid-merge? result) "no" "yes")))
-(println (str "CLEAN_UNMERGED=" (if (and (not (:mid-merge? result))
-                                         (or (:ok? result)
-                                             (empty? (or (:conflicted-paths result) []))))
-                                  "yes" "no")))
-(println (str "NAMES_REMATCH="
-              (master-main-reconcile-lib/absorb-outcome-names-rematch-or-refuse?
-               (str (:outcome result)))))
+(println (str "CLEAN_UNMERGED=" (if clean? "yes" "no")))
+(println (str "POST_ABSORB_CLEAN=" clean?))
+(println (str "DIRTY_CLEAN_PROBE="
+              (master-main-reconcile-lib/post-absorb-clean? true 1)))
+(println (str "NAMES_REMATCH=" names-ok?))
+(println (str "EDITOR_PHRASE_REJECTED=" (not editor-ok?)))
 `;
   const r = runBb(script);
   assert.equal(r.status, 0, r.stderr || r.stdout);
