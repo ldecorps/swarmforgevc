@@ -21,6 +21,10 @@ invariants:
 required_wiring:
   - "extension/src/tools/telegramCursorBridgeLive.ts::recordHostActivity::the progress reporter must actually tee into the feed; a feed nothing writes to stays dark however green its unit tests are (the BL-419 shape)"
   - "extension/src/bridge/bridgeServer.ts::host-activity::the feed's read route must actually be served, not merely implemented"
+abandoned_commits:
+  - a3bf5309f
+  - fdaba90b9
+
 
 description: |
   ## What
