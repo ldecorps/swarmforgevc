@@ -62,4 +62,9 @@ fi
 grep -q 'copilot_pids_for_root' "$KILL_SH" || fail "05: matcher missing from kill script"
 pass "05: kill script uses copilot_pids_for_root (no unscoped pkill)"
 
+# 06: property runner encodes the declared kill-scope invariant
+bash "$SCRIPT_DIR/bl888_copilot_kill_scope_property_runner.sh" \
+  || fail "06: bl888_copilot_kill_scope_property_runner.sh red"
+pass "06: kill-scope invariant property holds"
+
 echo "ALL PASS"

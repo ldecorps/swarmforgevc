@@ -72,6 +72,7 @@ acceptance: specs/features/BL-888-teardown-copilot-kill-scope.feature
 required_wiring:
   - "specs/pipeline/steps/index.js::bl888TeardownCopilotKillScopeSteps::acceptance handler registered"
   - "swarmforge/scripts/kill_pipeline_swarm.sh::copilot_pids_for_root::teardown copilot kill must be root-scoped"
+  - "swarmforge/scripts/test/bl888_copilot_kill_scope_property_runner.sh::copilot_argv_matches_root::declared kill-scope invariant encoded"
 
 qa_e2e_procedure: |
   1. Spawn a harmless long-lived fixture process whose argv contains
@@ -104,3 +105,6 @@ notes: |
   Related standing lesson: "Scope pkill to your worktree, never a bare tool
   name" — this is that lesson's own codebase violating it in the teardown
   path.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-25, by: architect, blamed: coder, class: invariant-unencoded, commit: b91011afa5, evidence: backlog/evidence/BL-888-architect-bounce-20260825.md }
