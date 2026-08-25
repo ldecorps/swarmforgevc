@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T10:46:14.477189561Z","feature_name":"BL-1126 Local Agent Telegram turns stay live under Ollama latency","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1126-local-agent-telegram-turn-reliability.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1126 Local Agent Telegram turns stay live under Ollama latency
   # Real Qwen turns on CPU take tens of seconds to minutes — that is expected.
   # Silent hangs, empty finals, and front-desk wedges are not. Progress must
