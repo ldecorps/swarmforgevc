@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1122: master-checkout drift
+**Last Updated:** August 25, 2026 (BL-1121: property-suite pre-commit
+guard skips mid-merge imports when every suite-trigger path is
+byte-identical to the incoming parent (`skip-reconcile-import`);
+`SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` stays recovery-only. Ordinary
+`extension/src` edits still run the suite. Shared
+`incoming_merge_parent_lib.sh` with pipeline-on-main (BL-925 lineage).
+Acceptance:
+`specs/features/BL-1121-reconcile-import-skips-property-suite-guard.feature`.
+How-to: `docs/how-to/BL-1121-reconcile-import-skips-property-suite-guard.md`
+and BL-570. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1122: master-checkout drift
 mutes `:staged-for-reversion` WARN while `.git/index.lock` shows a commit
 in flight — durable staged reversion with no lock still alarms (BL-839);
 mute is read-only and not sticky. Acceptance:

@@ -19,6 +19,10 @@ approval_context: >
 acceptance: specs/features/BL-1121-reconcile-import-skips-property-suite-guard.feature
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1121ReconcileImportSkipsPropertySuiteGuardSteps::acceptance handler registered"
+abandoned_commits:
+  - 264813fe6
+  - a876f3c63
+
 invariants:
   - "SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 remains recovery-only — this ticket never makes it the standing recipe."
   - "A non-reconcile commit that stages extension/src still runs the property-suite guard."
