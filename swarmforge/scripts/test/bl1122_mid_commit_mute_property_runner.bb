@@ -30,9 +30,10 @@
       :else a-main)
     :else nil))
 
-(defn- run-check [{:keys [in-flight? staged?]}]
+(defn- run-check [{:keys [in-flight? staged? worktree]}]
   (let [alarms (atom [])
         a-index* (if staged? a-index a-main)
+        a-work* (or worktree a-main)
         result
         (master-checkout-drift-lib/check-master-checkout-drift!
          {:project-root "/tmp/bl1122-prop-unused"
@@ -49,7 +50,7 @@
           :read-disk* (fn [_ _ bare]
                         (cond
                           (= bare "handoffd.bb") {:ok? true :content handoffd-src}
-                          (= bare "a.bb") {:ok? true :content a-main}
+                          (= bare "a.bb") {:ok? true :content a-work*}
                           :else {:ok? false :content nil}))})]
     {:result result :alarms @alarms}))
 
@@ -75,25 +76,10 @@
 
 ;; Uncommitted-edit must still alarm while in-flight (mute scoped to staged-only).
 ;; classify-drift: index==main and worktree!=main → :uncommitted-edit.
-(let [alarms (atom [])]
-  (master-checkout-drift-lib/check-master-checkout-drift!
-   {:project-root "/tmp/bl1122-prop-uncommitted"
-    :entrypoints #{"handoffd.bb"}
-    :emit-alarm! (fn [t] (swap! alarms conj t))
-    :commit-in-flight?* (fn [_] true)
-    :run-git* (fn [_root args]
-                (cond
-                  (= args ["rev-parse" "--verify" "main"]) {:ok? true :content "ok"}
-                  (= (first args) "show")
-                  (let [c (content-for (second args) a-main)]
-                    (if c {:ok? true :content c} {:ok? false :content nil}))
-                  :else {:ok? false :content nil}))
-    :read-disk* (fn [_ _ bare]
-                  (cond
-                    (= bare "handoffd.bb") {:ok? true :content handoffd-src}
-                    (= bare "a.bb") {:ok? true :content "(defn foo [] :work)\n"}
-                    :else {:ok? false :content nil}))})
-  (when (empty? @alarms)
+(let [{:keys [alarms]} (run-check {:in-flight? true
+                                   :staged? false
+                                   :worktree "(defn foo [] :work)\n"})]
+  (when (empty? alarms)
     (fail! "uncommitted-edit must still alarm while in-flight")))
 
 ;; I2: commit-in-flight? is read-only — observes lock only; no leftover files.
