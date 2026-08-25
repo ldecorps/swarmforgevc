@@ -50,6 +50,13 @@
       (master-main-reconcile-lib/clear-deadlock! daemon-dir))
     {:ok? true :exit 0 :outcome outcome :ahead ahead :behind behind}))
 
+(def ^:private refuse-rematch-line
+  "BL-1130: absorb refused — rematch tip onto origin/main (no editor)")
+
+(defn- print-refuse-rematch! []
+  (binding [*out* *err*]
+    (println refuse-rematch-line)))
+
 (defn- finish-conflict
   [abort! status-porcelain! mid-merge? merge-res]
   (abort!)
@@ -60,8 +67,8 @@
                   (conflicted-paths-from-status (status-porcelain!)))
         still-mid? (boolean (mid-merge?))]
     (binding [*out* *err*]
-      (println "CONFLICTED:" (str/join " " paths))
-      (println "BL-1130: absorb refused — rematch tip onto origin/main (no editor)"))
+      (println "CONFLICTED:" (str/join " " paths)))
+    (print-refuse-rematch!)
     {:ok? false :exit 1 :outcome :refuse-rematch
      :conflicted-paths paths
      :mid-merge? still-mid?}))
@@ -87,8 +94,7 @@
       {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
       :refuse-rematch
       (do
-        (binding [*out* *err*]
-          (println "BL-1130: absorb refused — rematch tip onto origin/main (no editor)"))
+        (print-refuse-rematch!)
         {:ok? false :exit 1 :outcome :refuse-rematch :mid-merge? (boolean (mid-merge?))
          :ahead (:ahead (rev-counts!)) :behind behind})
       :run-merge

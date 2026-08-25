@@ -186,22 +186,23 @@
 ;;    form rather than truncating a path into something misleading. ────────
 (defn surface-message
   [{:keys [behind reason overlapping-paths]}]
-  (case reason
-    :dirty
-    (let [paths (vec (or overlapping-paths []))
-          base (str "BL-891: master main " behind " behind origin, dirty overlap")
-          suffix " - not reconciled"
-          detail (case (count paths)
-                   0 ""
-                   1 (str ": " (first paths))
-                   (str ": " (count paths) " paths"))
-          named (str base detail suffix)]
-      (if (<= (count named) 80) named (str base suffix)))
-    :conflict (str "BL-1130: absorb refused — rematch onto origin/main, " behind " behind")
-    :refuse-rematch (str "BL-1130: absorb refused — rematch onto origin/main, " behind " behind")
-    :human-merge-in-progress
-    (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
-      (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted"))))
+  (let [refuse-absorb (str "BL-1130: absorb refused — rematch onto origin/main, " behind " behind")]
+    (case reason
+      :dirty
+      (let [paths (vec (or overlapping-paths []))
+            base (str "BL-891: master main " behind " behind origin, dirty overlap")
+            suffix " - not reconciled"
+            detail (case (count paths)
+                     0 ""
+                     1 (str ": " (first paths))
+                     (str ": " (count paths) " paths"))
+            named (str base detail suffix)]
+        (if (<= (count named) 80) named (str base suffix)))
+      :conflict refuse-absorb
+      :refuse-rematch refuse-absorb
+      :human-merge-in-progress
+      (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
+        (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted")))))
 
 (defn surface-draft-lines
   "A `note` to the coordinator only - reconciling the master checkout's own
