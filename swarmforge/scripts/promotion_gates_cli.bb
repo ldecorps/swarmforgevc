@@ -60,7 +60,7 @@
 
 (defn- usage! []
   (binding [*out* *err*]
-    (println "Usage: promotion_gates_cli.bb locate|evaluate|select|route-target|gate-promotion ..."))
+    (println "Usage: promotion_gates_cli.bb locate|evaluate|select|route-target|gate-promotion|audit-acceptance ..."))
   (System/exit 1))
 
 (defn- find-in [dir bl-id]
@@ -89,6 +89,7 @@
         result (promotion-gates-lib/evaluate
                 {:content content
                  :held? held?
+                 :root root
                  :active-count (promotion-gates-lib/active-count root)
                  :max-depth max-depth
                  :active-epics (promotion-gates-lib/active-epics root)
@@ -145,6 +146,7 @@
     (let [result (promotion-gates-lib/evaluate
                   {:content (slurp file)
                    :held? (some? held-file)
+                   :root root
                    :active-count (promotion-gates-lib/active-count root)
                    :max-depth (resolve-max-depth root)
                    :active-epics (promotion-gates-lib/active-epics root)
@@ -164,7 +166,7 @@
         eligible (keep (fn [f]
                           (let [content (slurp f)
                                 result (promotion-gates-lib/evaluate
-                                        {:content content :held? false
+                                        {:content content :held? false :root root
                                          :active-count active-count :max-depth max-depth
                                          :active-epics active-epics
                                          :done-ids done-id-set})]
@@ -185,6 +187,16 @@
     (println (str route-to " " (if rewrite-assigned-to? "REWRITE" "NOREWRITE")))
     (System/exit 0)))
 
+(defn- cmd-audit-acceptance [[root]]
+  (when (nil? root) (usage!))
+  (let [hits (promotion-gates-lib/acceptance-audit-findings root)]
+    (doseq [{:keys [id path feature-path reason]} hits]
+      (println (str "DANGLING-ACCEPTANCE " id "  " path
+                    "  (acceptance: pointer \"" feature-path "\")  " reason)))
+    (if (seq hits)
+      (System/exit 2)
+      (do (println "ok") (System/exit 0)))))
+
 (defn -main [& args]
   (let [[cmd & rest-args] args]
     (case cmd
@@ -193,6 +205,7 @@
       "select" (cmd-select rest-args)
       "route-target" (cmd-route-target rest-args)
       "gate-promotion" (cmd-gate-promotion rest-args)
+      "audit-acceptance" (cmd-audit-acceptance rest-args)
       (usage!))))
 
 (apply -main *command-line-args*)

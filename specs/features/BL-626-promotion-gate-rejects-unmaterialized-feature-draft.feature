@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=36659cefe7c0e6903c2893779bce4b4e8ccfdaa094610436d2bdafb78627d20f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T09:32:09.037204336Z","feature_name":"promotion refuses a ticket whose acceptance names no executable feature","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature","background_hash":"abb2b78ad94f467adc510df1989e8f16838d8c93e526338691a2b91860f92840","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a candidate with no executable acceptance is refused by name","scenario_hash":"5619da30e08eb68cdec55f853947610f9ad8234d361fb9e5f115aadbe768fb46","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-25T09:32:09.037204336Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: promotion refuses a ticket whose acceptance names no executable feature
 
   A ticket's acceptance field advertises a contract the coder runs and QA
