@@ -10,6 +10,10 @@ depends_on: [BL-1126]
 assigned_to: coder
 mutation_cost: medium
 human_approval: approved
+abandoned_commits:
+  - b3a810aa9f
+  - e9d03fa60c
+  - de10fe1c01
 approval_context: >
   Human focus 2026-08-25 — best swarm model via local LLM; promote only
   what survives a coder-role battery. Accept slow; reject flaky tool use.
@@ -50,7 +54,8 @@ notes:
     paused→active (depth was full 5/5) and route to coder. BL-1126 already done."
   - "[2026-08-25T11:06Z] coordinator: mint ack; approved; depends_on BL-1126; active cap full (3/3) — promote after BL-1126 / when cap allows. Epic BL-1125 never promoted."
   - "[2026-08-25T10:48Z] specifier: minted under epic BL-1125; feature armed; depends_on BL-1126."
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-08-25, by: QA, blamed: cleaner, class: behavior, commit: eb4bef96fd, evidence: backlog/evidence/BL-1127-qa-bounce-20260825.md }
   - { at: 2026-08-25, by: QA, blamed: hardender, class: behavior, commit: 9390aab8e8, evidence: backlog/evidence/BL-1127-qa-bounce-rematch-20260825.md }
+  - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: 12884b0e71, evidence: backlog/evidence/BL-1127-qa-bounce-rematch2-20260825.md }
