@@ -11,7 +11,7 @@ severity: high
 # 3x8 shifts, so the load condition is the normal state, not an edge case.
 # Not critical: nothing is lost or corrupted and a re-run on a quiet host
 # passes.
-status: paused
+status: done
 assigned_to: coder
 epic: code-quality-gates
 priority: 15
