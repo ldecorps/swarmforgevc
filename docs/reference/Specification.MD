@@ -1,12 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1138: rematch-bookkeeping recovery
-**executes** onto `origin/main` to `behind=0`; successful recovery clears
-`main-sync-deadlock`; rematch-owner reasons are never designed to end as
-durable `deadlock-tripped` waiting for Cursor (BL-1135 residual). Acceptance:
-`specs/features/BL-1138-bl1135-residual-rematch-bookkeeping-deadlock.feature`.
-How-to: `docs/how-to/BL-1138-bl1135-residual-rematch-bookkeeping-deadlock.md`
-(updates BL-1135). No new extension command or setting.)
+**Last Updated:** August 25, 2026 (BL-578: under WSL, extension-dev bounce
+kill-old terminates Windows-side `Code.exe` hosts for this
+`extensionDevelopmentPath`; `.swarmforge/headless-swarm` refuses bounce
+unless `--force` — restores the exactly-one-dev-host contract. Acceptance:
+`specs/features/BL-578-devhost-bounce-wsl-window-leak.feature`.
+How-to: `docs/how-to/BL-578-devhost-bounce-wsl-window-leak.md`.
+No new extension command or setting.)
 Prior entry —
 **Last Updated:** August 25, 2026 (BL-778: `test_rule_proposal.sh` asserts the
 real `HANDOFF QUEUED (mailbox only, no tmux inject):` success grammar and pins
