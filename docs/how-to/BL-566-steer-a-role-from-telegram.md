@@ -32,9 +32,11 @@ Two guards apply, in this order:
 |---|---|---|
 | `✓ steered <role>` | The nudge was typed into that role's pane and confirmed submitted | Nothing — the agent has it |
 | `⚠ <role> has no live pane - not delivered` | No tmux pane exists for that role | See below — usually expected |
+| `⚠ <role> is menu_blocked — see live poll …` (or `… — answer the live menu poll in this topic`) | Pane is blocked on a Claude Code menu; ordinary steers are suppressed so they cannot type into the menu (BL-568) | Answer the live menu poll in this topic — see [Answering a menu-blocked pane](BL-568-menu-blocked-pane-questions-as-mapped-polls.md) |
 | `⚠ not delivered to <role>: <reason>` | A pane exists but the verified send did not land | Real fault; check the pane and the bot's stderr |
 
-The middle case is deliberately worded differently from the third, because on a
+The no-live-pane case is deliberately worded differently from a verified-send
+fault, because on a
 **mono-router pack it is the normal state for six of the eight roles**. Only
 `swarmforge-coordinator` and `swarmforge-coder` hold live panes; specifier,
 cleaner, architect, hardender, documenter and QA are dormant rotation targets
@@ -82,3 +84,5 @@ Use those when you need the detail behind a `⚠` receipt.
   steer went nowhere; it does not queue it for later.
 - It does **not** wait for a safe point. A redirect interrupts the agent
   mid-turn by design.
+- It does **not** inject while the pane is menu-blocked (BL-568). Use the
+  auto-surfaced poll in the same topic instead of a plain steer.
