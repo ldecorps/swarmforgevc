@@ -162,12 +162,17 @@ function registerSteps(registry) {
   });
 
   // ── absorbed-origin-proceed-02 ───────────────────────────────────────
-  scoped(/^local main is (\d+) ahead and (\d+) behind origin\/main$/, (ctx, ahead, behind) => {
-    ctx.ahead = Number(ahead);
-    ctx.behind = Number(behind);
+  // Capture freely then refuse negatives/NaN so soft Example mutants die here.
+  scoped(/^local main is (-?\d+) ahead and (-?\d+) behind origin\/main$/, (ctx, ahead, behind) => {
+    const a = Number(ahead);
+    const b = Number(behind);
+    assert.ok(Number.isInteger(a) && a >= 0, `ahead must be a non-negative integer, got ${ahead}`);
+    assert.ok(Number.isInteger(b) && b >= 0, `behind must be a non-negative integer, got ${behind}`);
+    ctx.ahead = a;
+    ctx.behind = b;
   });
 
-  scoped(/^the deadlock marker is (clear|active)$/, (ctx, deadlock) => {
+  scoped(/^the deadlock marker is (\S+)$/, (ctx, deadlock) => {
     assert.ok(KNOWN_DEADLOCK.has(deadlock), `unknown deadlock ${deadlock}`);
     ctx.deadlock = deadlock;
   });
@@ -176,18 +181,33 @@ function registerSteps(registry) {
     const { base, work } = makeAheadBehindFixture(ctx.ahead, ctx.behind);
     ctx.fixtureBase = base;
     writeDeadlock(work, ctx.deadlock === 'active');
+    // Self-check fixture geometry before trusting the CLI (kills soft Example flips).
+    const counts = git(work, [
+      'rev-list',
+      '--left-right',
+      '--count',
+      'origin/main...main',
+    ])
+      .trim()
+      .split(/\s+/);
+    assert.equal(Number(counts[0]), ctx.behind, 'fixture behind must match Given');
+    assert.equal(Number(counts[1]), ctx.ahead, 'fixture ahead must match Given');
     ctx.report = runCli(work);
     ctx.reportedAhead = ctx.report.ahead;
     ctx.reportedBehind = ctx.report.behind;
     ctx.action = ctx.report.action;
   });
 
-  scoped(/^the reported behind is (\d+)$/, (ctx, behind) => {
-    assert.equal(ctx.reportedBehind, Number(behind));
+  scoped(/^the reported behind is (-?\d+)$/, (ctx, behind) => {
+    const b = Number(behind);
+    assert.ok(Number.isInteger(b) && b >= 0, `reported behind example must be >= 0, got ${behind}`);
+    assert.equal(ctx.reportedBehind, b);
   });
 
-  scoped(/^the reported ahead is (\d+)$/, (ctx, ahead) => {
-    assert.equal(ctx.reportedAhead, Number(ahead));
+  scoped(/^the reported ahead is (-?\d+)$/, (ctx, ahead) => {
+    const a = Number(ahead);
+    assert.ok(Number.isInteger(a) && a >= 0, `reported ahead example must be >= 0, got ${ahead}`);
+    assert.equal(ctx.reportedAhead, a);
   });
 
   scoped(/^the action is (\S+)$/, (ctx, action) => {
