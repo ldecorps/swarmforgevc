@@ -62,3 +62,6 @@ notes: |
   - [2026-08-25T21:14Z] specifier (coord Work 001904): filled acceptance
     feature (4 scenarios); depends_on BL-727; invariants ≤3. Forwarded to coder
     (da222cb28f).
+
+abandoned_commits:
+  - 3869c4a821
