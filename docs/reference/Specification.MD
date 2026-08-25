@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1080: operators can choose a Cursor
+seat — pack `swarmforge/packs/cursor-mono-router.conf` names `cursor` on
+window lines; how-to `docs/how-to/BL-1080-choose-a-cursor-seat.md` states
+when Cursor vs `/pilot` vs Claude; every unsupported-agent refusal in
+`swarmforge.sh` (validate_agent + launch builder) appends that how-to path.
+Acceptance:
+`specs/features/BL-1080-a-pack-can-name-cursor-on-a-window-line.feature`.
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1129: babysitter
 `check-rotate-not-honored` gated on BL-804 `rotation-router?` — standing
 packs never emit that CRIT (empty `mono-router-active-role` is expected);
