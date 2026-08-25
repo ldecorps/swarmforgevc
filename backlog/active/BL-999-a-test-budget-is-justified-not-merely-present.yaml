@@ -176,7 +176,8 @@ approval_context: >
   than a silent wrong result. Push back to `low` if a flaky budget in one
   test file reads as cosmetic to you, though I would note the coder lost
   four attempted verification runs to it during a different ticket.
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: 525ca791a0, evidence: backlog/evidence/BL-999-qa-bounce2-20260825.md }
   - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: 37e811797e, evidence: backlog/evidence/BL-999-qa-bounce3-20260825.md }
+  - { at: 2026-08-25, by: QA, blamed: documenter, class: behavior, commit: 6d7b100e22, evidence: backlog/evidence/BL-999-qa-bounce4-20260825.md }
