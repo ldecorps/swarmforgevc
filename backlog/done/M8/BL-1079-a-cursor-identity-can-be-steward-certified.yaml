@@ -2,7 +2,7 @@ id: BL-1079
 title: "A Cursor identity can be steward-certified for production routing: without register, compliance battery and certify, ModelFactory must not silently route ordinary packs to Cursor"
 milestone: M8
 type: feature
-status: todo
+status: paused
 epic: swarm-intelligence-layer
 priority: 1
 direction: queue-jump

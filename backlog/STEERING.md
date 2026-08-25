@@ -49,6 +49,27 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human preference (2026-08-25 evening) — finish local Ollama / Qwen epic
+
+**Human directive (Cursor session, 2026-08-25 ~19:31 BST):** prioritize the
+**remaining** BL-1125 (`local-llm-swarm`) slices now that BL-1126, BL-1127,
+and BL-1140 are done.
+
+**Effect (pull order, not a Direction-lane theme):**
+
+- Minted children of the remaining slices land as `direction: queue-jump`
+  with JumpQ-tier priority and `human_approval: approved` — see
+  `backlog/INTAKE-prioritize-local-ollama-remaining-20260825.md`.
+- Pull those ahead of ordinary paused work and ahead of pipeline-note
+  actives when a slot opens (or free a slot for them). Do not starve
+  behind Bubble / pipeline-note inertia.
+- Cold-swap day-shift to `ollama-qwen3-mono-router` is **explicitly
+  authorized** once the cold-swap child is specified; do not thrash to
+  `qwen-forge` without a separate ask.
+- Model Steward: keep investing in the local Ollama path; **do not** treat
+  `human-operator-priority:ollama-local-qwen-20260825` as an authoritative
+  outrank (revoked by BL-1140 — battery/scorecard evidence wins).
+
 ## Standing human freeze (2026-07-30) — one Bubble over Telegram / PWA clients
 
 **Naming note (same day):** **messaging** and **host agent** are the architecture

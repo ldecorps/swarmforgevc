@@ -490,24 +490,17 @@ class OverlayService : Service() {
             longPressTimeoutMs = ViewConfiguration.getLongPressTimeout().toLong(),
             doubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
         )
-        val longPressRunnable = Runnable {
+        fun timerRunnable(kind: BubbleGestureDecider.TimerKind) = Runnable {
             val result = BubbleGestureDecider.onTimer(
                 gesture,
-                BubbleGestureDecider.TimerKind.LONG_PRESS,
+                kind,
                 SystemClock.uptimeMillis()
             )
             gesture = result.state
             performGestureEffects(view, params, result.effects)
         }
-        val doubleTapRunnable = Runnable {
-            val result = BubbleGestureDecider.onTimer(
-                gesture,
-                BubbleGestureDecider.TimerKind.DOUBLE_TAP_WINDOW,
-                SystemClock.uptimeMillis()
-            )
-            gesture = result.state
-            performGestureEffects(view, params, result.effects)
-        }
+        val longPressRunnable = timerRunnable(BubbleGestureDecider.TimerKind.LONG_PRESS)
+        val doubleTapRunnable = timerRunnable(BubbleGestureDecider.TimerKind.DOUBLE_TAP_WINDOW)
         view.setOnTouchListener { v, event ->
             val kind = pointerKind(event) ?: return@setOnTouchListener false
             val overRemove = isOverRemoveZone(params, v)

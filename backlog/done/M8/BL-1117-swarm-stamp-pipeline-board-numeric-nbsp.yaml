@@ -6,7 +6,7 @@ severity: medium
 # medium: QA-exclusive pipelineBoard path landed outside swarmforge-QA;
 # babysitter Article 4.2 / BL-631 CRIT. Not high — board still posts; the
 # defect is literal "&nbsp;" on some clients until numeric entity is stamped.
-status: todo
+status: paused
 epic: swarm-reliability
 priority: 18
 direction: human-requested

@@ -202,10 +202,9 @@ object BubbleGestureDecider {
                 timers
             )
         }
-        if (phase == TalkPhase.RECORDING) {
-            val deadline = nowMs + config.doubleTapTimeoutMs
-            timers += TimerAction.Arm(TimerKind.DOUBLE_TAP_WINDOW, deadline)
-            return Result(
+        val deadline = armDoubleTapWindow(timers, nowMs, config)
+        return if (phase == TalkPhase.RECORDING) {
+            Result(
                 state.copy(
                     expandCandidate = false,
                     pendingIdleTapDeadlineMs = null,
@@ -214,18 +213,27 @@ object BubbleGestureDecider {
                 listOf(Effect.HideRemoveZone, Effect.Send),
                 timers
             )
+        } else {
+            Result(
+                state.copy(
+                    expandCandidate = false,
+                    pendingIdleTapDeadlineMs = deadline,
+                    expandWindowDeadlineMs = null
+                ),
+                listOf(Effect.HideRemoveZone),
+                timers
+            )
         }
+    }
+
+    private fun armDoubleTapWindow(
+        timers: MutableList<TimerAction>,
+        nowMs: Long,
+        config: Config
+    ): Long {
         val deadline = nowMs + config.doubleTapTimeoutMs
         timers += TimerAction.Arm(TimerKind.DOUBLE_TAP_WINDOW, deadline)
-        return Result(
-            state.copy(
-                expandCandidate = false,
-                pendingIdleTapDeadlineMs = deadline,
-                expandWindowDeadlineMs = null
-            ),
-            listOf(Effect.HideRemoveZone),
-            timers
-        )
+        return deadline
     }
 
     private fun onCancel(state: State): Result = Result(

@@ -253,3 +253,13 @@ notes: |
   2026-08-07 human: keep paused — do not promote; swarm is attacking BL-818 (lean-aware coordinator) instead of Bubble gesture/speech WIP.
   - "[2026-08-25T18:30Z] coder: BubbleGestureDecider pure arbitration + OverlayService wiring through onRecordClicked; mic-fail toast from collapsed bubble; JVM unit + property tests; APS KNOWN_VALUES steps. How-to one-liner updated. Hardener note: .kt-only parcel — degraded unit-test-gap fallback (no Kotlin mutation/CRAP/DRY tool pinned)."
 
+abandoned_commits:
+  - 8ef108d81e
+  - e0e3567b3a
+  - 13d8fbb539
+  - 814aec567f
+  - e4cab1369f
+  - a81af77cfe
+  - b10a4c0578
+  - 93e539fae6
+

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=404e331fa47ca1171998a2535cfab68377f366d397ebb330a940282a5f49adcd
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-25T18:36:35.168877775Z","feature_name":"The collapsed Bubble arbitrates its own gestures","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-828-bubble-collapsed-gesture-model.feature","background_hash":"c23bd1348caf861a59da975037237b60841e59bddd56bf51d813886c8fc1feae","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the gesture decider's arbitration is covered by the JVM unit suite","scenario_hash":"175cfcb455d9ad82088b4d37c930f7c062aef961d2d222055556684ef1e7c114","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-25T18:36:35.168877775Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The collapsed Bubble arbitrates its own gestures
 
   Today one inline touch listener in OverlayService.attachDrag resolves a tap
