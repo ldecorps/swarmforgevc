@@ -128,6 +128,59 @@ function buildDevHostLaunchCommand(binary, extensionDir, workspacePath) {
   return { command: binary, args: [`--extensionDevelopmentPath=${extensionDir}`, workspacePath] };
 }
 
+
+// BL-578: WSL vs native — interop kill path only on WSL (WSL_DISTRO_NAME / WSLEnv).
+function isWslPlatform({ platform, env }) {
+  const e = env || {};
+  return platform === 'linux' && Boolean(e.WSL_DISTRO_NAME || e.WSL_INTEROP || e.WSLENV);
+}
+
+// Pure: PowerShell Stop-Process for Code.exe mains whose command line carries
+// --extensionDevelopmentPath=<extensionPath> (no --type= helpers).
+function buildWindowsKillOldCommands(extensionPath) {
+  const path = String(extensionPath || '');
+  // Single-quote for PowerShell literal; double any embedded single quotes.
+  const psPath = path.replace(/'/g, "''");
+  const script =
+    "$p='" + psPath + "';" +
+    "Get-CimInstance Win32_Process |" +
+    " Where-Object {" +
+    " $_.Name -match '^(Code|Code - Insiders)\.exe$' -and" +
+    " $_.CommandLine -like ('*--extensionDevelopmentPath=' + $p + '*') -and" +
+    " $_.CommandLine -notlike '*--type=*'" +
+    " } |" +
+    " ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
+  return [
+    {
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-NonInteractive', '-Command', script],
+    },
+  ];
+}
+
+// BL-578: refuse bounce when headless marker present unless --force.
+function headlessMarkerDecision({ markerPresent, force }) {
+  if (!markerPresent) {
+    return { action: 'proceed' };
+  }
+  if (force) {
+    return {
+      action: 'warn-and-proceed',
+      message: 'BOUNCE WARNING: .swarmforge/headless-swarm present; --force overrides refusal',
+    };
+  }
+  return {
+    action: 'refuse',
+    message: 'BOUNCE FAILED [stage: headless-swarm] .swarmforge/headless-swarm is present; pass --force to override',
+  };
+}
+
+// Accounting for consecutive bounce kill+launch cycles (scenario 02).
+function recordBounceHostCount(priorLiveCount, terminatedCount, launchedCount) {
+  const afterKill = Math.max(0, (priorLiveCount || 0) - (terminatedCount || 0));
+  return afterKill + (launchedCount || 0);
+}
+
 module.exports = {
   parseMarker,
   isMarkerFresh,
@@ -135,4 +188,8 @@ module.exports = {
   decideNextStep,
   resolveVsCodeBinary,
   buildDevHostLaunchCommand,
+  isWslPlatform,
+  buildWindowsKillOldCommands,
+  headlessMarkerDecision,
+  recordBounceHostCount,
 };

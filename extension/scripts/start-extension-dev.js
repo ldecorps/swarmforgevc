@@ -26,6 +26,10 @@ const {
   decideNextStep,
   resolveVsCodeBinary,
   buildDevHostLaunchCommand,
+  isWslPlatform,
+  buildWindowsKillOldCommands,
+  headlessMarkerDecision,
+  recordBounceHostCount,
 } = require('./bounceLib');
 
 const EXT_DIR = path.resolve(__dirname, '..');
@@ -183,17 +187,55 @@ function launchAndVerify(vscodeBinary) {
   }
 }
 
-function main() {
+function repoRoot() {
+  return path.resolve(EXT_DIR, '..');
+}
+
+function headlessMarkerPath() {
+  return path.join(repoRoot(), '.swarmforge', 'headless-swarm');
+}
+
+function parseForceFlag(argv) {
+  return (argv || []).includes('--force');
+}
+
+function terminateWindowsDevHosts() {
+  if (!isWslPlatform({ platform: process.platform, env: process.env })) {
+    return;
+  }
+  const cmds = buildWindowsKillOldCommands(EXT_DIR);
+  for (const { command, args } of cmds) {
+    console.log(`bounce: WSL interop kill-old via ${command}`);
+    spawnSync(command, args, { stdio: 'ignore' });
+  }
+}
+
+function main(argv = process.argv.slice(2)) {
+  const force = parseForceFlag(argv);
+  const markerPresent = fs.existsSync(headlessMarkerPath());
+  const guard = headlessMarkerDecision({ markerPresent, force });
+  if (guard.action === 'refuse') {
+    console.error(guard.message);
+    process.exit(1);
+  }
+  if (guard.action === 'warn-and-proceed') {
+    console.warn(guard.message);
+  }
+
   compile();
   const vscodeBinary = checkPrerequisites();
+  const prior = devHostPids().length;
   terminateOldDevHosts();
+  terminateWindowsDevHosts();
+  const afterKill = devHostPids().length;
   launchAndVerify(vscodeBinary);
 
   const pids = devHostPids();
-  if (pids.length !== 1) {
+  const live = recordBounceHostCount(prior, Math.max(0, prior - afterKill), pids.length > 0 ? 1 : 0);
+  if (pids.length !== 1 || live !== 1) {
     fail(
       'dev-host-count',
-      `Expected exactly one dev host after the bounce, found ${pids.length} (${pids.join(', ') || 'none'}).`
+      `Expected exactly one dev host after the bounce, found ${pids.length} (accounting=${live}; ${pids.join(', ') || 'none'}).`
     );
   }
   console.log(`bounce: SUCCESS — verified fresh activation, dev host pid ${pids[0]}.`);
