@@ -257,6 +257,76 @@
   [prepublish-plan]
   (contains? #{:already-contains-origin :rematch-clean} prepublish-plan))
 
+;; ── BL-1144: publish-time rematch + land/close publisher serialize ─────
+;; Gate-time tip purity is advisory. Authoritative purity is immediately
+;; before the land push. Concurrent land/close publishers take a lock edge
+;; so a peer push does not spawn unbounded mid-gate tip-purity bounce loops.
+;; Residual race recovery stays rematch lander/bookkeeping (BL-1130/1131) —
+;; never human absorb, never force-push, never impure land.
+
+(def publish-rematch-max-attempts
+  "Initial publish-time rematch plus one residual retry (invariant: at most
+   one rematch per publish attempt after the first; never unbounded)."
+  2)
+
+(defn origin-advanced-since-gate?
+  "True when origin/main SHA at publish differs from the SHA recorded at
+   gate start (nil either side → treat as not advanced / unknown)."
+  [gate-origin-sha publish-origin-sha]
+  (boolean (and gate-origin-sha publish-origin-sha
+                (not= gate-origin-sha publish-origin-sha))))
+
+(defn- rematch-attempt-exhausted? [attempt max-attempts]
+  (>= (or attempt 0) (or max-attempts publish-rematch-max-attempts)))
+
+(defn publish-time-purity-action
+  "Decision immediately before land push (BL-1144 scenario 01).
+   :push | :rematch-then-push | :retry-rematch | :wait-land-lock |
+   :refuse-rematch-lander. Peer lock → wait (serialize) rather than bounce."
+  [{:keys [tip-contains-origin-now? rematch-would-conflict?
+           attempt max-attempts peer-holds-land-lock?]}]
+  (cond
+    peer-holds-land-lock? :wait-land-lock
+    tip-contains-origin-now? :push
+    rematch-would-conflict? :refuse-rematch-lander
+    (rematch-attempt-exhausted? attempt max-attempts) :wait-land-lock
+    (pos? (or attempt 0)) :retry-rematch
+    :else :rematch-then-push))
+
+(defn land-close-publisher-admission
+  "Lock-edge admission for concurrent land/close publishers (scenario 02).
+   :admit | :wait-lock | :rematch-once-at-edge. Second writer never starts a
+   mid-gate unbounded rematch storm — at most one rematch at the lock edge."
+  [{:keys [lock-available? already-rematched-at-edge?]}]
+  (cond
+    lock-available? :admit
+    already-rematched-at-edge? :wait-lock
+    :else :rematch-once-at-edge))
+
+(defn contention-publish-next
+  "Compose purity + lock admission into one next step. Never returns an
+   unbounded-bounce action."
+  [{:keys [purity-action lock-admission]}]
+  (case lock-admission
+    :wait-lock :wait-land-lock
+    :rematch-once-at-edge :rematch-once-at-edge
+    ;; :admit — purity decides
+    (case purity-action
+      (:push :rematch-then-push :retry-rematch :wait-land-lock :refuse-rematch-lander)
+      purity-action
+      :wait-land-lock)))
+
+(defn residual-race-recovery-ok?
+  "After controls, residual recovery is rematch lander/bookkeeping or none —
+   never operator absorb (scenario 03 / BL-1130 posture)."
+  [recovery]
+  (contains? #{:none :rematch-lander :rematch-bookkeeping-owner} recovery))
+
+(defn tip-purity-required?
+  "Landed tips must remain tip-pure vs origin/main — impure lands forbidden."
+  []
+  true)
+
 ;; ── observable drift report (scenario 04: "the drift check runs" and
 ;;    reports both counts) - trivial, but gives the ahead/behind numbers
 ;;    their own directly-testable unit distinct from the full sweep. ───────
