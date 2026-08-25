@@ -669,10 +669,10 @@ const DOMAINS = [
   require('./bl1111ReplyRelayTerminatedOutageSteps'),
   require('./bl1091ExpeditePromotionCommitSteps'),
   require('./bl1100PromotionProseNeverBlocksSteps'),
-  require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps'),
   require('./bl1128RaiseActiveCapOnHostHeadroomSteps'),
   require('./bl1118PostCursorBatchMergeOriginMainSteps'),
-  require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps')
+  require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
+  require('./bl1124PropertySuiteFixturesMustNotMutateSharedMainSteps')
 ];
 
 function registerSteps(registry) {

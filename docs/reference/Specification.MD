@@ -1,6 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 25, 2026 (BL-1123: master-checkout integrity guard
+**Last Updated:** August 25, 2026 (BL-1124: property-suite fixtures must not
+mutate shared `main` / role refs or flip `core.bare`. Pre-commit canary in
+`check_property_suite_drift.sh`; recovery refuses reset-to-origin when ahead;
+`expedite_fixture.sh` refuses live checkout dests. Acceptance:
+`specs/features/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.feature`.
+How-to: `docs/how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md`.
+Complements BL-570 / BL-1123. No new extension command or setting.)
+Prior entry —
+August 25, 2026 (BL-1123: master-checkout integrity guard
 heals `core.bare=true` and refuses collapsed tip trees below a tip-floor;
 `master_checkout_integrity_lib.bb` + CLI; handoffd sweep alongside drift.
 Acceptance: `specs/features/BL-1123-guard-master-checkout-against-bare-and-collapsed-tip.feature`.
