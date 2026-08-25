@@ -105,6 +105,12 @@ import {
   isActiveRunInFlight,
   recordActiveRunProgress,
 } from '../bridge/cursorBridgeRunTracker';
+import {
+  beginHostActivitySession,
+  endHostActivitySession,
+  recordHostActivityLine,
+} from '../bridge/hostActivityFeed';
+import { randomUUID } from 'crypto';
 import { collectUpdateSnapshot, formatUpdateMessage } from './telegramCursorBridgeUpdate';
 import {
   formatExpediteFailureMessage,
@@ -694,6 +700,11 @@ async function handleSimpleInboundAction(
   return ctx.busy;
 }
 
+export function recordHostActivity(line: string): void {
+  // BL-833 required_wiring: progress reporter must tee into the feed.
+  recordHostActivityLine(line);
+}
+
 export function previewPromptForActiveRun(prompt: string | SDKUserMessage): string {
   if (typeof prompt === 'string') {
     return prompt;
@@ -755,11 +766,13 @@ async function handlePromptInboundAction(
   }
   const promptMessage = resolved.message;
   const localeSource = typeof promptMessage === 'string' ? promptMessage : promptMessage.text;
+  const hostSessionId = randomUUID();
+  beginHostActivitySession(hostSessionId);
   beginActiveRun(
     previewPromptForActiveRun(promptMessage),
     detectProgressLocale(localeSource)
   );
-  const reportProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, async (line) => {
+  const telegramProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, async (line) => {
     if (line.startsWith(PLAN_AWAITING_PROGRESS_PREFIX)) {
       const plan = line.slice(PLAN_AWAITING_PROGRESS_PREFIX.length);
       writePendingPlanConfirm(ctx.repoRoot, { plan, postedAtMs: Date.now() });
@@ -783,6 +796,10 @@ async function handlePromptInboundAction(
     recordActiveRunProgress(line);
     return postInboundReply(ctx, topicId, line, undefined);
   });
+  const reportProgress = (line: string) => {
+    recordHostActivity(line);
+    return telegramProgress(line);
+  };
   void (async () => {
     try {
       const started =
@@ -797,6 +814,7 @@ async function handlePromptInboundAction(
       await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
     } finally {
       endActiveRun();
+      endHostActivitySession();
       await continueOperatorBatchAfterPrompt(ctx, topicId, resetAgent);
       // Reload queue from disk and present the selection poll immediately on
       // idle — do not wait for the next inbound update, and do not trust
