@@ -334,17 +334,6 @@
    prefixes; require start, whitespace, or `/` immediately before `git`."
   #"(?:^|[\s/])git(?:\s+-C\s+\S+)*\s+(?:add|commit)\b")
 
-(defn git-add-or-commit-argv-for-root?
-  "Pure read-only classifier: true when argv looks like `git add` or
-   `git commit` (optionally `git -C <path> …`) whose command line mentions
-   this project root. Never mutates anything. (BL-1134; kept for argv-only
-   call sites — prefer git-add-or-commit-process-for-root? for cwd-aware.)"
-  [argv project-root]
-  (let [a (str argv)
-        root (str project-root)]
-    (boolean (and (str/includes? a root)
-                  (re-find git-add-or-commit-argv-re a)))))
-
 (defn- normalize-process-snapshot
   "Accept a cmdline string (BL-1134 tests) or {:cmdline :cwd} map (BL-1137)."
   [process]
@@ -354,12 +343,17 @@
     {:cmdline (str process) :cwd nil}))
 
 (defn- cwd-under-root?
+  "True when cwd is exactly root or a path under root/ (not a sibling prefix)."
   [cwd project-root]
   (let [c (str cwd)
         root (str project-root)]
     (boolean (and (not (str/blank? c))
                   (or (= c root)
                       (str/starts-with? c (str root "/")))))))
+
+(defn- git-add-or-commit-cmdline?
+  [cmdline]
+  (boolean (re-find git-add-or-commit-argv-re (str cmdline))))
 
 (defn git-add-or-commit-process-for-root?
   "Pure read-only: true when process is a live `git add`/`git commit` scoped
@@ -369,9 +363,17 @@
   (let [{:keys [cmdline cwd]} (normalize-process-snapshot process)
         root (str project-root)]
     (boolean
-     (and (re-find git-add-or-commit-argv-re cmdline)
+     (and (git-add-or-commit-cmdline? cmdline)
           (or (str/includes? cmdline root)
               (cwd-under-root? cwd root))))))
+
+(defn git-add-or-commit-argv-for-root?
+  "Pure read-only classifier: true when argv looks like `git add` or
+   `git commit` (optionally `git -C <path> …`) whose command line mentions
+   this project root. Never mutates anything. (BL-1134; delegates to the
+   cwd-aware process classifier with nil cwd.)"
+  [argv project-root]
+  (git-add-or-commit-process-for-root? argv project-root))
 
 (defn- list-process-snapshots!
   "Read-only snapshots of live processes. For candidates that look like
@@ -379,10 +381,10 @@
    cannot be enumerated."
   []
   (mapv (fn [{:keys [pid cmdline]}]
-          (let [cmd (str cmdline)
-                needs-cwd? (boolean (re-find git-add-or-commit-argv-re cmd))]
+          (let [cmd (str cmdline)]
             {:cmdline cmd
-             :cwd (when needs-cwd? (process-table-lib/cwd! pid))}))
+             :cwd (when (git-add-or-commit-cmdline? cmd)
+                    (process-table-lib/cwd! pid))}))
         (or (process-table-lib/list-processes!) [])))
 
 (defn index-lock-present?
