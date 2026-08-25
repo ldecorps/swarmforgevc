@@ -429,7 +429,7 @@
                       {:note-name "000741_rotate" :note-target "architect"
                        :note-age-min 15 :grace-min 10
                        :note-mtime-ms 2000 :active-role-file-mtime-ms 1000
-                       :active-role "coder" :paused? false})]
+                       :active-role "coder" :paused? false :rotation-router? true})]
                (and f (= "CRIT" (:severity f))
                     (str/includes? (:message f) "000741_rotate")
                     (str/includes? (:message f) "architect")
@@ -439,13 +439,13 @@
              {:note-name "000741_rotate" :note-target "architect"
               :note-age-min 15 :grace-min 10
               :note-mtime-ms 1000 :active-role-file-mtime-ms 2000
-              :active-role "architect" :paused? false}))
+              :active-role "architect" :paused? false :rotation-router? true}))
 (assert-nil "note within grace period produces no finding yet"
             (sw/check-rotate-not-honored
              {:note-name "000741_rotate" :note-target "architect"
               :note-age-min 5 :grace-min 10
               :note-mtime-ms 2000 :active-role-file-mtime-ms 1000
-              :active-role "coder" :paused? false}))
+              :active-role "coder" :paused? false :rotation-router? true}))
 (assert-nil "no rotate note at all produces no finding"
             (sw/check-rotate-not-honored nil))
 (assert-nil "planned pause suppresses rotate-not-honored even past grace"
@@ -453,7 +453,13 @@
              {:note-name "000741_rotate" :note-target "architect"
               :note-age-min 999 :grace-min 10
               :note-mtime-ms 2000 :active-role-file-mtime-ms 1000
-              :active-role "coder" :paused? true}))
+              :active-role "coder" :paused? true :rotation-router? true}))
+(assert-nil "BL-1129: standing pack suppresses rotate-not-honored even when unhonored"
+            (sw/check-rotate-not-honored
+             {:note-name "000741_rotate" :note-target "architect"
+              :note-age-min 15 :grace-min 10
+              :note-mtime-ms 2000 :active-role-file-mtime-ms 1000
+              :active-role "coder" :paused? false :rotation-router? false}))
 
 ;; ── check 10: swarm-starved (streak + abandoned/stale filtering) ────────────
 (let [base {:active-ticket-count 2 :any-pane-busy? false :paused? false}]

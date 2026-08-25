@@ -144,7 +144,8 @@
                :note-mtime-ms note-mtime-ms
                :active-role-file-mtime-ms active-role-file-mtime-ms
                :active-role (if honored? "architect" "coder")
-               :paused? false})}))
+               :paused? false
+               :rotation-router? true})}))
 
 (dotimes [_ 200]
   (let [{:keys [honored? result]} (gen-rotate-case)]
