@@ -2,6 +2,8 @@
   "models": [
     { "provider": "anthropic", "model": "claude-sonnet-5", "status": "certified", "context_window": 200000, "cost_class": "medium",
       "known_limitations": ["Prefer structured tool use over free-form shell when both work"] },
+    { "provider": "anthropic", "model": "claude-opus-4-8", "status": "certified", "context_window": 200000, "cost_class": "high",
+      "known_limitations": ["Same-provider fallback for opus-class outages (BL-669)"] },
     { "provider": "openai", "model": "gpt-5.3-codex", "status": "certified", "context_window": 128000, "cost_class": "medium",
       "known_limitations": ["Codex-leaning; weaker on long multi-role planning without a scorecard"] },
     { "provider": "cerebras", "model": "llama-3.3-70b", "status": "candidate", "context_window": 32000, "cost_class": "low",
@@ -21,6 +23,13 @@
       "tool_usage": { "score": 0.93 },
       "autonomy": { "score": 0.9 },
       "cost_latency": { "score": 0.7 }
+    },
+    "anthropic/claude-opus-4-8": {
+      "coding_quality": { "score": 0.93 },
+      "protocol_compliance": { "score": 0.95 },
+      "tool_usage": { "score": 0.91 },
+      "autonomy": { "score": 0.9 },
+      "cost_latency": { "score": 0.55 }
     },
     "openai/gpt-5.3-codex": {
       "coding_quality": { "score": 0.92 },
@@ -48,6 +57,7 @@
   "role_matrix": {
     "architect": [
       { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.95, "evidence": "recruiter-scorecard:seed-architect-01" },
+      { "provider": "anthropic", "model": "claude-opus-4-8", "score": 0.94, "evidence": "BL-669:incumbent-architect-fallback" },
       { "provider": "openai", "model": "gpt-5.3-codex", "score": 0.9, "evidence": "recruiter-scorecard:seed-architect-02" }
     ],
     "coder": [
@@ -75,6 +85,7 @@
 
   "adapters": {
     "anthropic/claude-sonnet-5": { "adapter_id": "generic", "production_default": true },
+    "anthropic/claude-opus-4-8": { "adapter_id": "generic", "production_default": true },
     "openai/gpt-5.3-codex": { "adapter_id": "generic", "production_default": true },
     "cerebras/llama-3.3-70b": { "adapter_id": "generic", "production_default": false },
     "cursor/auto": { "adapter_id": "generic", "production_default": false }

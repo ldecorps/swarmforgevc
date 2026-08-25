@@ -24,7 +24,7 @@ approval_context: >
 acceptance: specs/features/BL-669-outage-driven-seat-failover-via-steward.feature
 required_wiring:
   - "swarmforge/scripts/handoffd.bb::outage-driven-seat-failover!::sustained outage consults steward and applies at idle boundary"
-  - "swarmforge/scripts/model_factory_lib.bb::cold-apply!::outage failover uses certified substitute apply path"
+  - "swarmforge/scripts/outage_failover_cli.bb::apply-seat-swap!::outage failover writes certified overlay via model-factory-store"
   - "specs/pipeline/steps/index.js::bl669OutageDrivenSeatFailoverViaStewardSteps::acceptance handler registered"
 invariants:
   - "Only steward-certified-eligible substitutes are ever applied; the certification gate is never bypassed on this path (--override-uncertified is forbidden here)."
@@ -80,3 +80,10 @@ notes: |
   - [2026-08-25T21:08Z] specifier (coord Work 001900): filled acceptance
     feature (6 scenarios); depends_on BL-525+BL-547; invariants unchanged
     at 3. Forwarded to coder.
+
+abandoned_commits:
+  - 46d76ef425
+  - 2d79a9c68e
+  - 1e0024820
+  - 0cf37f8851
+  - ac0678fe00
