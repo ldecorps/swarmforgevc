@@ -2221,14 +2221,30 @@
 ;; (see master_checkout_drift_lib.bb's own header for the incident this
 ;; guards against). Reuses flow-watchdog-emit-alarm! - the same durable
 ;; Telegram OPERATOR-topic outbox every other unsuppressable alarm in this
-;; sweep block writes to - so this needs no new alerting channel. Report
-;; only: never repairs the drift (see the ticket's approval_context for why
-;; auto-restore would itself be a "surfaced, not swept" violation).
+;; sweep block writes to - so this needs no new alerting channel.
+;; BL-1139: durable drift auto-repairs via repair-master-checkout-drift!
+;; (check-master-checkout-drift! stays write-free).
+
+(defn- defer-handoffd-bounce-after-drift-repair! []
+  ;; BL-1139: bounce after this sweep tick finishes (deferred).
+  (let [launcher (str (fs/path (fs/parent (fs/canonicalize *file*)) "start_handoff_daemon.sh"))
+        root (str project-root)]
+    (.start
+     (Thread.
+      (fn []
+        (try
+          (Thread/sleep 2000)
+          (daemon-cycle-guard-lib/sh! ["bash" launcher root])
+          (catch Exception e
+            (log! "master-checkout-drift-bounce-error" (.getMessage e)))))))))
 
 (defn master-checkout-drift-sweep! []
-  (master-checkout-drift-lib/check-master-checkout-drift!
+  ;; BL-1139: repair durable daemon-script drift (check stays write-free).
+  (master-checkout-drift-lib/repair-master-checkout-drift!
    {:project-root (str project-root)
-    :emit-alarm! flow-watchdog-emit-alarm!}))
+    :emit-alarm! flow-watchdog-emit-alarm!
+    :emit-restored! flow-watchdog-emit-alarm!
+    :bounce-handoffd! defer-handoffd-bounce-after-drift-repair!}))
 ;; BL-1123: bare=true / collapsed-tip guard — heal bare, alarm on tiny HEAD.
 (defn master-checkout-integrity-sweep! []
   (master-checkout-integrity-lib/run-master-checkout-integrity!

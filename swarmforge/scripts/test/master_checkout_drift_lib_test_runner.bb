@@ -514,6 +514,103 @@
                    "/proj/root"
                    [{:cmdline "git commit -m foo" :cwd "/other/project"}])))
 
+
+;; ── BL-1139: repair plan + candidate filter + restored note ───────────────
+(assert= "bl1139: in-flight skips repair"
+         :skip-in-flight
+         (:action (master-checkout-drift-lib/repair-plan
+                   {:overall :drift :per-file {"swarmforge/scripts/a.bb" :uncommitted-edit}}
+                   true)))
+(assert= "bl1139: no-drift is noop"
+         :noop
+         (:action (master-checkout-drift-lib/repair-plan
+                   {:overall :no-drift :per-file {}} false)))
+(assert= "bl1139: drift plans repair of durable paths"
+         ["swarmforge/scripts/a.bb"]
+         (:paths (master-checkout-drift-lib/repair-plan
+                  {:overall :drift
+                   :per-file {"swarmforge/scripts/a.bb" :uncommitted-edit
+                              "swarmforge/scripts/b.bb" :unknown}}
+                  false)))
+(assert= "bl1139: filter keeps only daemon closure"
+         ["swarmforge/scripts/a.bb"]
+         (master-checkout-drift-lib/filter-repair-candidates
+          ["swarmforge/scripts/a.bb" "docs/foo.md"]
+          #{"swarmforge/scripts/a.bb" "swarmforge/scripts/b.bb"}))
+(assert-true "bl1139: restored note names path"
+             (clojure.string/includes?
+              (master-checkout-drift-lib/format-restored-note ["swarmforge/scripts/a.bb"])
+              "MASTER CHECKOUT DRIFT RESTORED"))
+
+(let [alarms (atom [])
+      restored-notes (atom [])
+      bounced (atom false)
+      checkouts (atom [])
+      disk (atom {"a.bb" "DIRTY"})
+      main-content "CLEAN"
+      result
+      (master-checkout-drift-lib/repair-master-checkout-drift!
+       {:project-root "/tmp/x"
+        :scripts-subdir "swarmforge/scripts"
+        :entrypoints #{"a.bb"}
+        :emit-alarm! (fn [t] (swap! alarms conj t))
+        :emit-restored! (fn [t] (swap! restored-notes conj t))
+        :bounce-handoffd! (fn [] (reset! bounced true))
+        :commit-in-flight?* (fn [_] false)
+        :resolve-paths* (fn [] ["swarmforge/scripts/a.bb"])
+        :run-git* (fn [_root args]
+                    (cond
+                      (= args ["rev-parse" "--verify" "main"]) {:ok? true :content ""}
+                      (= (first args) "show") {:ok? true :content main-content}
+                      :else {:ok? false :content nil}))
+        :read-disk* (fn [_root _sub bare]
+                      {:ok? true :content (get @disk bare)})
+        :checkout! (fn [_root repo-rel]
+                     (swap! checkouts conj repo-rel)
+                     (reset! disk {"a.bb" main-content})
+                     {:ok? true})})]
+  (assert= "bl1139: restore succeeds" :restored (:action result))
+  (assert= "bl1139: checkout invoked" ["swarmforge/scripts/a.bb"] @checkouts)
+  (assert-true "bl1139: restored note emitted" (seq @restored-notes))
+  (assert-true "bl1139: bounce deferred hook called" @bounced)
+  (assert-true "bl1139: no WARN after successful restore" (empty? @alarms)))
+
+(let [checkouts (atom [])
+      result
+      (master-checkout-drift-lib/repair-master-checkout-drift!
+       {:project-root "/tmp/x"
+        :scripts-subdir "swarmforge/scripts"
+        :entrypoints #{"a.bb"}
+        :emit-alarm! (fn [_])
+        :commit-in-flight?* (fn [_] true)
+        :resolve-paths* (fn [] ["swarmforge/scripts/a.bb"])
+        :run-git* (fn [_root args]
+                    (if (= args ["rev-parse" "--verify" "main"])
+                      {:ok? true :content ""}
+                      {:ok? true :content "MAIN"}))
+        :read-disk* (fn [_ _ _] {:ok? true :content "DIRTY"})
+        :checkout! (fn [_ p] (swap! checkouts conj p) {:ok? true})})]
+  (assert= "bl1139: in-flight skips" :skip-in-flight (:action result))
+  (assert-true "bl1139: in-flight never checkouts" (empty? @checkouts)))
+
+(let [alarms (atom [])
+      result
+      (master-checkout-drift-lib/repair-master-checkout-drift!
+       {:project-root "/tmp/x"
+        :scripts-subdir "swarmforge/scripts"
+        :entrypoints #{"a.bb"}
+        :emit-alarm! (fn [t] (swap! alarms conj t))
+        :commit-in-flight?* (fn [_] false)
+        :resolve-paths* (fn [] ["swarmforge/scripts/a.bb"])
+        :run-git* (fn [_root args]
+                    (if (= args ["rev-parse" "--verify" "main"])
+                      {:ok? true :content ""}
+                      {:ok? true :content "MAIN"}))
+        :read-disk* (fn [_ _ _] {:ok? true :content "DIRTY"})
+        :checkout! (fn [_ _] {:ok? false :err "fail"})})]
+  (assert= "bl1139: failed restore warns" :warn (:action result))
+  (assert-true "bl1139: WARN still emitted on failure" (seq @alarms)))
+
 (if (empty? @failures)
   (println "master_checkout_drift_lib (BL-839): ALL TESTS PASSED")
   (do (println (str "master_checkout_drift_lib (BL-839): " (count @failures) " FAILURE(S):"))

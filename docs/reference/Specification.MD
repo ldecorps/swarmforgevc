@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-1139: durable master-checkout drift on
+daemon-executed scripts auto-repairs via `repair-master-checkout-drift!` —
+restore from `main` when not commit-in-flight, one-shot
+`MASTER CHECKOUT DRIFT RESTORED` Operator note, deferred handoffd bounce;
+`check-master-checkout-drift!` stays write-free; repair ⊆ daemon-executed
+closure. Acceptance:
+`specs/features/BL-1139-master-checkout-drift-auto-repair.feature`.
+How-to: `docs/how-to/BL-1139-master-checkout-drift-auto-repair.md`
+(updates BL-839). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-612: APS step handlers for the existing
 BL-528 claim-without-progress feature —
 `bl612ClaimProgressAcceptanceStepHandlersSteps.js` drives

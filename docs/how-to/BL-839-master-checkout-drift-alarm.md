@@ -9,16 +9,21 @@ merge that didn't take), the daemons keep running the drifted code and
 nothing else notices: a QA-approved fix can sit closed in `backlog/done/`
 while the running system quietly executes the pre-fix behavior.
 
-This is the detector for that gap. It is **report-only** — see "What it does
-not do" below.
+This is the detector for that gap. The **check** itself is still
+**report-only / write-free**. Durable daemon-script drift is now
+auto-repaired by a separate verb ([BL-1139](BL-1139-master-checkout-drift-auto-repair.md))
+when not commit-in-flight — see that how-to for RESTORED notes and
+handoffd bounce.
 
-**(BL-1122 / BL-1134)** While a commit is observably in flight for this
-root — `.git/index.lock` **or** a live `git add` / `git commit` argv naming
-the project — the sweep mutes the false `:staged-for-reversion` WARN that
-the add→commit window would otherwise trigger. Durable staged reversion
-with no in-flight signal still alarms. See
-[BL-1122](BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.md)
-and [BL-1134](BL-1134-master-checkout-drift-mute-covers-post-add-window.md).
+**(BL-1122 / BL-1134 / BL-1137)** While a commit is observably in flight for this
+root — `.git/index.lock`, a live `git add` / `git commit` argv naming
+the project, or cwd-scoped git under this root — the sweep mutes the false
+`:staged-for-reversion` WARN that the add→commit window would otherwise
+trigger. Durable staged reversion with no in-flight signal still alarms
+(and BL-1139 may restore). See
+[BL-1122](BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.md),
+[BL-1134](BL-1134-master-checkout-drift-mute-covers-post-add-window.md), and
+[BL-1137](BL-1137-master-checkout-drift-mute-covers-cwd-scoped-git.md).
 
 ## What it watches
 
@@ -77,21 +82,21 @@ any pause/wake-suppression state.
 
 ## What it does not do
 
-This check never writes: every git call is read-only plumbing (`show`,
-`rev-parse --verify`), every filesystem call is a read. It does **not**
-auto-restore the master checkout to match `main` — an auto-repair would
-discard a human's or another role's uncommitted work without asking, which
-is exactly the "surfaced, not swept" failure the constitution's handoff
-discipline exists to prevent. If the drift is real, a human resolves it by
-hand per the workflow above.
+`check-master-checkout-drift!` never writes: every git call is read-only
+plumbing (`show`, `rev-parse --verify`), every filesystem call is a read.
+**Auto-restore of durable daemon-executed drift** is a separate verb
+([BL-1139](BL-1139-master-checkout-drift-auto-repair.md)) — it never runs
+while commit-in-flight, never touches non-daemon paths, and never
+auto-commits onto `main`.
 
 Also out of scope, deliberately: cleaning up any specific past reversion
-incident (a one-off operator action, not this ticket's job), and moving the
-daemons off the working tree onto a committed ref (a much larger change to
-how the swarm boots).
+incident as a one-off operator ceremony, and moving the daemons off the
+working tree onto a committed ref (a much larger change to how the swarm
+boots).
 
 ## See also
 
+- [Auto-repair durable daemon-script drift (BL-1139)](BL-1139-master-checkout-drift-auto-repair.md)
 - [Flow Watchdog](../reference/Specification.MD) — the alarm channel this
   check reuses (`flow-watchdog-emit-alarm!`, the same Telegram Operator
   outbox).

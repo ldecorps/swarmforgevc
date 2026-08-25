@@ -490,3 +490,115 @@
             result {:overall overall :per-file per-file}]
         (maybe-emit-alarm! emit-alarm! result in-flight?)
         result))))
+
+
+;; ── BL-1139: repair verb (separate from read-only check) ───────────────────
+
+(defn repairable-drift-paths
+  "Repo-relative paths whose verdict is durable drift (not :unknown)."
+  [per-file]
+  (->> per-file
+       (filter (fn [[_ v]] (#{:staged-for-reversion :uncommitted-edit} v)))
+       (map first)
+       vec))
+
+(defn filter-repair-candidates
+  "Keep only paths inside the daemon-executed closure (repo-relative)."
+  [paths daemon-repo-rels]
+  (let [allowed (set daemon-repo-rels)]
+    (filterv #(contains? allowed %) paths)))
+
+(defn format-restored-note
+  [paths]
+  (str "MASTER CHECKOUT DRIFT RESTORED: " (str/join ", " (sort paths))))
+
+(defn repair-plan
+  "Pure: :skip-in-flight | :noop | :repair with candidate paths."
+  [{:keys [overall per-file]} in-flight?]
+  (cond
+    in-flight? {:action :skip-in-flight :paths []}
+    (not= overall :drift) {:action :noop :paths []}
+    :else {:action :repair :paths (repairable-drift-paths per-file)}))
+
+(defn- restore-paths!
+  [project-root paths checkout!]
+  (into []
+        (keep (fn [repo-rel]
+                (when (:ok? (checkout! project-root repo-rel))
+                  repo-rel)))
+        paths))
+
+(defn- git-checkout-main!
+  "Mutating: restore one repo-relative path from main."
+  [project-root repo-rel]
+  (try
+    (let [res (daemon-cycle-guard-lib/sh!
+               ["git" "-C" (str project-root) "checkout" "main" "--" repo-rel])]
+      {:ok? (zero? (:exit res)) :err (:err res)})
+    (catch Exception e
+      {:ok? false :err (.getMessage e)})))
+
+(defn- daemon-closure-repo-rels
+  [project-root scripts-subdir entrypoints read-disk* resolve-paths*]
+  (if resolve-paths*
+    (vec (resolve-paths*))
+    (let [read-file (fn [bare]
+                      (let [r (read-disk* project-root scripts-subdir bare)]
+                        (when (:ok? r) (:content r))))]
+      (mapv #(str scripts-subdir "/" %)
+            (resolve-daemon-executed-paths
+             {:entrypoints entrypoints :read-file read-file})))))
+
+(defn- finish-successful-restore!
+  [emit-restored! bounce-handoffd! restored after]
+  (when emit-restored! (emit-restored! (format-restored-note restored)))
+  (when bounce-handoffd! (bounce-handoffd!))
+  {:action :restored :restored restored :result after :bounced? (boolean bounce-handoffd!)})
+
+(defn- finish-failed-restore!
+  [emit-alarm! silent after restored]
+  (maybe-emit-alarm! emit-alarm! (if (seq (:per-file after)) after silent) false)
+  {:action :warn :restored restored :result after :bounced? false})
+
+(defn- run-repair-attempt!
+  [check-opts emit-alarm! emit-restored! bounce-handoffd! checkout!
+   project-root candidates silent]
+  (let [restored (restore-paths! project-root candidates checkout!)
+        after (check-master-checkout-drift! (assoc check-opts :emit-alarm! nil))]
+    (if (and (seq restored) (= :no-drift (:overall after)))
+      (finish-successful-restore! emit-restored! bounce-handoffd! restored after)
+      (finish-failed-restore! emit-alarm! silent after restored))))
+
+(defn repair-master-checkout-drift!
+  "BL-1139: when durable drift and not commit-in-flight, restore daemon-executed
+   paths from main, re-check, emit RESTORED or WARN, optionally bounce handoffd.
+   check-master-checkout-drift! stays write-free — this is the only writer."
+  [{:keys [project-root scripts-subdir entrypoints emit-alarm! emit-restored!
+           bounce-handoffd! run-git* read-disk* commit-in-flight?* checkout!
+           resolve-paths*]
+    :or {scripts-subdir default-scripts-subdir
+         entrypoints default-entrypoints
+         run-git* run-git
+         read-disk* read-disk
+         commit-in-flight?* commit-in-flight?
+         checkout! git-checkout-main!}}]
+  (let [in-flight? (boolean (commit-in-flight?* project-root))
+        check-opts {:project-root project-root
+                    :scripts-subdir scripts-subdir
+                    :entrypoints entrypoints
+                    :run-git* run-git*
+                    :read-disk* read-disk*
+                    :commit-in-flight?* (constantly in-flight?)}]
+    (if in-flight?
+      {:action :skip-in-flight :restored [] :bounced? false
+       :result (check-master-checkout-drift! (assoc check-opts :emit-alarm! emit-alarm!))}
+      (let [silent (check-master-checkout-drift! (assoc check-opts :emit-alarm! nil))
+            plan (repair-plan silent false)
+            closure (daemon-closure-repo-rels project-root scripts-subdir entrypoints
+                                              read-disk* resolve-paths*)
+            candidates (filter-repair-candidates (:paths plan) closure)]
+        (if (not= :repair (:action plan))
+          (do (maybe-emit-alarm! emit-alarm! silent false)
+              {:action (:action plan) :restored [] :result silent :bounced? false})
+          (run-repair-attempt! check-opts emit-alarm! emit-restored! bounce-handoffd!
+                               checkout! project-root candidates silent))))))

@@ -16,7 +16,9 @@
 %% alarms (never force-pushes) on divergence or exhausted retries, so the
 %% swarm's own work reaches origin without a human remembering to push.
 %% BL-839 added a master-checkout-vs-main drift sweep to the same handoffd.bb
-%% cadence (report-only, same alarm channel as the flow watchdog). BL-819
+%% cadence (check write-free; BL-1139 repair restores durable daemon-script
+%% drift from main when not commit-in-flight, RESTORED note + deferred
+%% handoffd bounce). BL-819
 %% added a coordinator-owned ticket lifecycle ledger (.swarmforge/lean/),
 %% shelled from the pane at the two points a parcel already changes hands:
 %% handoff completion and the close-commit path. BL-855 added a sibling
