@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-828: collapsed Bubble gesture model —
+idle single tap defers one platform double-tap window then opens the mic
+(panel stays collapsed); double-tap expands Let's Talk and cancels the held
+mic start; tap while RECORDING sends immediately; drag / long-press /
+drag-to-X unchanged. Pure `BubbleGestureDecider`; mic-fail toast from the
+collapsed bubble. Acceptance:
+`specs/features/BL-828-bubble-collapsed-gesture-model.feature`.
+How-to: `docs/how-to/BL-828-bubble-collapsed-gesture-model.md`
+(updates BL-707). No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1141: `:refuse-rematch` executes
 rematch onto `origin/main` on live handoffd reconcile and Process B
 `post_hotfix_merge_origin` — same recovery class as BL-1138

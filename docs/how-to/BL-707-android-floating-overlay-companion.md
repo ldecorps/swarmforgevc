@@ -12,7 +12,7 @@ talk panel (and on the pairing screen status line if you still see it). The
 ## What you get
 
 - Movable floating bubble over other apps (phase shown by bubble color)
-- Tap to expand a Let's Talk panel; long-press the bubble to pause / resume all
+- Tap to talk / tap again to send; double-tap to expand; long-press to pause / resume
 - Voice and typed turns to the existing Let's Talk bridge (same console bearer)
 - Hands-free listening that continues while collapsed to the bubble
 - Settings: hold music, mute, hold-music volume (default 55%; reply voice follows phone volume)
@@ -79,7 +79,12 @@ token later: open **Settings** on the talk panel → **Edit pairing**.
 
 ## Talk
 
-Tap the bubble. You get a **Let's Talk**-style panel:
+**Collapsed bubble (BL-828):** tap to talk / tap again to send; double-tap to
+expand; long-press to pause / resume. See
+[collapsed-bubble gestures](BL-828-bubble-collapsed-gesture-model.md).
+
+**Expanded panel:** Record / Stop and the controls below — same Let's Talk
+paths as before:
 
 - **Record** — hold/tap to capture a voice turn (same `/lets-talk/turn` audio path)
 - **Hands-free** — auto-listen after the reply finishes (keeps listening
@@ -130,7 +135,10 @@ all three looked identical to the user — "the bubble is frozen":
 - The Talk panel no longer closes itself the instant it opens (the
   overlay's own finger-up was being read as an outside tap).
 
-This does not change the gesture model — expand is still a single tap.
+This does not change *how* cold-start expand is allowed — it still trampolines
+through the launcher. **(BL-828)** Expand itself is now **double-tap**; a
+single idle tap opens the mic after one double-tap window. See
+[collapsed-bubble gestures](BL-828-bubble-collapsed-gesture-model.md).
 
 ## When the bridge host is unreachable (BL-716)
 
