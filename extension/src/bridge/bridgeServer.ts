@@ -73,6 +73,10 @@ import { getLetsTalkBubbleConfig, isLetsTalkBubbleConfigPath } from './letsTalkB
 import { getLetsTalkChiptunesCatalog, isLetsTalkChiptunesPath } from './letsTalkChiptunes';
 import { getLetsTalkUiBundleManifest, isLetsTalkUiBundlePath } from './letsTalkUiBundle';
 import {
+  readHostActivityFeed,
+  subscribeHostActivity,
+} from './hostActivityFeed';
+import {
   isCompanionManifestPath,
   isCompanionPackagePath,
   listCompanionPackages,
@@ -1924,6 +1928,11 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       matches: isLetsTalkUiBundlePath,
       compute: () => getLetsTalkUiBundleManifest(targetPath, process.env),
     },
+    {
+      // BL-833: host-agent activity feed (catch-up read of the same buffer SSE pushes).
+      matches: (url) => url === '/host-activity',
+      compute: () => readHostActivityFeed(),
+    },
   ];
 }
 
@@ -1940,6 +1949,12 @@ export function startBridge(
     const sseClients = new Set<http.ServerResponse>();
     let lastSnapshot: string | undefined;
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
+    const unsubscribeHostActivity = subscribeHostActivity(({ sessionId, line }) => {
+      const payload = JSON.stringify({ sessionId, line });
+      for (const client of sseClients) {
+        client.write(`event: host-activity\ndata: ${payload}\n\n`);
+      }
+    });
 
     // BL-863: transcribeAudio/synthesizeSpeech overrides (test/mock
     // injection, e.g. BL-696's step handlers) are resolved once here, same
@@ -2206,6 +2221,7 @@ export function startBridge(
         getRegistry: () => registry,
         stop: () => {
           clearInterval(poll);
+          unsubscribeHostActivity();
           for (const client of sseClients) {
             client.end();
           }
