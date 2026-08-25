@@ -2,12 +2,12 @@ id: BL-828
 title: "Bubble collapsed-bubble gesture model: double-tap expands, tap opens the mic, tap again sends — the idle tap deferred one double-tap window so expand stays deliberate"
 milestone: M8
 type: feature
-status: blocked
+status: active
 epic: swarmforge-console
 human_approval: approved
 priority: 25
 direction: human-requested
-assigned_to: none
+assigned_to: coder
 depends_on: [BL-769]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
