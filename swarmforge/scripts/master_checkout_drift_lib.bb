@@ -44,6 +44,9 @@
 ;; lib runs inside handoffd's poll cycle (the heavy-bundle drift sweep), and
 ;; its git calls hit the shared, chronically-contended master checkout.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+;; BL-1134: live argv observation for the post-add mute window uses the
+;; shared process table (procfs / ProcessHandle) — never a one-off `ps`.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 
 (def default-entrypoints
   "The daemons this check covers: handoffd.bb (delivery/chase/flow-watchdog/
@@ -319,11 +322,53 @@
          "effect while its ticket sits closed.\n"
          (str/join "\n" (keep drift-line (remove (fn [[_ v]] (= v :no-drift)) per-file))))))
 
-;; BL-1122: mid-commit mute for false :staged-for-reversion WARNs.
-(defn commit-in-flight?
-  "Read-only: true when `.git/index.lock` exists (git add/commit holding the index)."
+;; BL-1122 / BL-1134: mid-commit mute for false :staged-for-reversion WARNs.
+;; BL-1122 covered `.git/index.lock`. BL-1134 widens to the post-add window:
+;; after `git add` the lock is gone while index≠main until `git commit`
+;; finishes — observe live `git add`/`git commit` argv mentioning this root.
+
+(def ^:private git-add-or-commit-argv-re
+  "Matches `git add` / `git commit`, including `git -C <path> …` and
+   absolute `/…/git` forms. Word-boundary alone is not enough for path
+   prefixes; require start, whitespace, or `/` immediately before `git`."
+  #"(?:^|[\s/])git(?:\s+-C\s+\S+)*\s+(?:add|commit)\b")
+
+(defn git-add-or-commit-argv-for-root?
+  "Pure read-only classifier: true when argv looks like `git add` or
+   `git commit` (optionally `git -C <path> …`) whose command line mentions
+   this project root. Never mutates anything."
+  [argv project-root]
+  (let [a (str argv)
+        root (str project-root)]
+    (boolean (and (str/includes? a root)
+                  (re-find git-add-or-commit-argv-re a)))))
+
+(defn- list-process-argvs!
+  "Read-only snapshot of live process command lines via process-table-lib.
+   Empty vector when the table cannot be enumerated (BL-849 nil → no mute)."
+  []
+  (mapv :cmdline (or (process-table-lib/list-processes!) [])))
+
+(defn index-lock-present?
+  "Read-only: true when `.git/index.lock` exists under project-root."
   [project-root]
   (fs/exists? (fs/path project-root ".git" "index.lock")))
+
+(defn- live-git-add-or-commit-for-root?
+  [project-root process-argvs]
+  (boolean (some #(git-add-or-commit-argv-for-root? % project-root)
+                 process-argvs)))
+
+(defn commit-in-flight?
+  "Read-only: true when a commit/add is observably in flight for this root —
+   either `.git/index.lock` is held, or a live `git add`/`git commit` argv
+   mentions this project root (BL-1134 post-add window). Optional second
+   arg injects a process-argv snapshot for tests."
+  ([project-root]
+   (commit-in-flight? project-root (list-process-argvs!)))
+  ([project-root process-argvs]
+   (or (index-lock-present? project-root)
+       (live-git-add-or-commit-for-root? project-root process-argvs))))
 
 (defn should-alarm-on-result?
   "Emit MASTER CHECKOUT DRIFT WARN unless the only drift is

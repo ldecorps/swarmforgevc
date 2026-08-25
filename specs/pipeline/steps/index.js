@@ -420,6 +420,7 @@ const DOMAINS = [
   require('./bl773CoordinatorRoleAskSteps'),
   require('./bl839MasterCheckoutDriftSteps'),
   require('./bl1122MasterCheckoutDriftMutesWarnWhileCommitInFlightSteps'),
+  require('./bl1134MasterCheckoutDriftMuteCoversPostAddWindowSteps'),
   require('./bl822HostLoadAnomalySteps'),
   require('./bl848HotfixCertificationSteps'),
   require('./bl619TokenBurnWarningSteps'),
