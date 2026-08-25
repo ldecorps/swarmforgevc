@@ -4,7 +4,8 @@
 ;; fake). Mirrors push_sweep_lib_test_runner.bb's own assert-battery shape.
 
 (ns master-main-reconcile-lib-test-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "master_main_reconcile_lib.bb")))
 
@@ -461,6 +462,23 @@
                :deadlock-state {} :threshold-ticks 3}))
 (assert-true "deadlock-clear?: behind 0 clears"
              (master-main-reconcile-lib/deadlock-clear? 0))
+
+;; ── BL-1120: never abort a foreign merge ────────────────────────────────
+(assert= "merge-attempt-plan: MERGE_HEAD already present -> skip"
+         :skip-human-merge-in-progress
+         (master-main-reconcile-lib/merge-attempt-plan true))
+(assert= "merge-attempt-plan: clean checkout -> run-merge"
+         :run-merge
+         (master-main-reconcile-lib/merge-attempt-plan false))
+(assert-true "may-abort-failed-merge?: only when this tick started it"
+             (master-main-reconcile-lib/may-abort-failed-merge? true))
+(assert= "may-abort-failed-merge?: foreign MERGE_HEAD must not abort"
+         false
+         (master-main-reconcile-lib/may-abort-failed-merge? false))
+(assert-true "surface-message names human-merge-in-progress"
+             (clojure.string/includes?
+              (master-main-reconcile-lib/surface-message {:behind 3 :reason :human-merge-in-progress})
+              "human-merge-in-progress"))
 
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
