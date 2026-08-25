@@ -192,6 +192,25 @@
       (has-in-subdir? "paused") :paused
       :else nil)))
 
+(defn engage-refusal
+  "nil when ticket may be engaged; else a human-readable refusal. BL-691 D3:
+   engaging a patient that cannot move (anywhere except backlog/active/) is
+   refused — naming the folder — rather than silently deadlocking the pipeline.
+   Missing YAML still refuses (same deadlock rule as ticket-has-file?)."
+  [project-root ticket]
+  (let [loc (ticket-location project-root ticket)]
+    (cond
+      (nil? loc)
+      (str "refusing to engage " ticket
+           " - no YAML file for it anywhere under backlog/ (would hold everything forever)")
+
+      (not= loc :active)
+      (str "refusing to engage " ticket
+           " - ticket sits in " (name loc)
+           "/, not active/; promote it before engaging (ambulance does not auto-promote)")
+
+      :else nil)))
+
 (defn decide-auto-exit
   "Pure: given the ambulance ticket's backlog location (:active :paused :hold
    :done, or nil for vanished), decides whether the auto-exit sweep releases

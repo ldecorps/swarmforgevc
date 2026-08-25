@@ -429,6 +429,18 @@
              (not (mono-router-lib/rotate-home?
                    {:rotation-router? true :role "coder" :home-role "coder"
                     :mailbox-empty? true})))
+
+(assert= "BL-691: busy + ignore-busy? allows rotate for ambulance patient"
+         :rotate
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "coder" :target-role "QA" :resident-busy? true :ignore-busy? true
+           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "BL-691: busy without ignore-busy? still refuses"
+         :busy
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "coder" :target-role "QA" :resident-busy? true :ignore-busy? false
+           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+
 (assert-true "non-home role with mail stays put"
              (not (mono-router-lib/rotate-home?
                    {:rotation-router? true :role "cleaner" :home-role "coder"

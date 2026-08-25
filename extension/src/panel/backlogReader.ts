@@ -481,6 +481,22 @@ export function readBacklogFolders(targetPath: string): BacklogFolders {
   };
 }
 
+
+/** Which backlog folder currently holds this id, or undefined if absent. */
+export function lookupBacklogFolderById(
+  targetPath: string,
+  backlogId: string
+): 'active' | 'paused' | 'hold' | 'done' | undefined {
+  const folders = readBacklogFolders(targetPath);
+  const needle = backlogId.toUpperCase();
+  const hit = (items: BacklogItem[]) => items.some((item) => item.id.toUpperCase() === needle);
+  if (hit(folders.active)) return 'active';
+  if (hit(folders.paused)) return 'paused';
+  if (hit(folders.hold)) return 'hold';
+  if (hit(folders.done)) return 'done';
+  return undefined;
+}
+
 /** Case-insensitive lookup across active, paused, hold, and done backlog folders. */
 export function lookupBacklogItemById(targetPath: string, backlogId: string): BacklogItem | undefined {
   const folders = readBacklogFolders(targetPath);

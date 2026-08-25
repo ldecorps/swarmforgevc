@@ -43,12 +43,10 @@
     (not (re-matches ambulance-lib/ticket-id-pattern ticket))
     (refuse! (str "\"" ticket "\" is not a valid BL-### ticket id"))
 
-    (not (ambulance-lib/ticket-has-file? root ticket))
-    (refuse! (str "refusing to engage " ticket
-                  " - no YAML file for it anywhere under backlog/ (would hold everything forever)"))
-
     :else
-    (println (json/generate-string (ambulance-lib/engage! root ticket "cli")))))
+    (if-let [reason (ambulance-lib/engage-refusal root ticket)]
+      (refuse! reason)
+      (println (json/generate-string (ambulance-lib/engage! root ticket "cli"))))))
 
 (defn -main [& args]
   (let [[project-root subcommand ticket] args]
