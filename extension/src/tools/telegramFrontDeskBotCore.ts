@@ -17,6 +17,11 @@ import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText
 import { unsafeDispatchToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
+import {
+  emitApprovalTap,
+  emitSteeringDelivery,
+  emitPollHealth,
+} from '../metrics/humanLoopReliabilityStore';
 import { ControlEvent, ControlDecision, PendingControlConfirm, PauseState, decideControlEventAction } from './telegramControlCore';
 import { isCursorBridgeTopic } from './telegramCursorBridgeCore';
 import {
@@ -414,6 +419,23 @@ export function decideSteeringAction(
 // EXPECTED state for the six dormant rotation targets, and reporting it as
 // a generic failure would train the human to ignore a message that
 // sometimes means a real delivery fault.
+
+// BL-595: never await; never throw into the front-desk hot path.
+function emitApprovalTapTelemetry(adapters: PollAdapters, outcome: string, reason?: string): void {
+  if (!adapters.humanLoopRoot) return;
+  emitApprovalTap(adapters.humanLoopRoot, outcome, reason);
+}
+
+function emitSteeringTelemetry(adapters: { humanLoopRoot?: string }, outcome: string): void {
+  if (!adapters.humanLoopRoot) return;
+  emitSteeringDelivery(adapters.humanLoopRoot, outcome);
+}
+
+function emitPollTelemetry(root: string | undefined, outcome: string): void {
+  if (!root) return;
+  emitPollHealth(root, outcome);
+}
+
 export type SteerDeliveryResult =
   | { kind: 'delivered' }
   | { kind: 'no-pane' }
@@ -847,6 +869,9 @@ export interface PollAdapters {
   // BL-561: debounced immediate concierge tick after a human approval decision
   // (pipeline board / Approvals roster refresh without waiting for the 30s loop).
   scheduleConciergeTick?: () => void;
+  // BL-595: project root for human-loop reliability telemetry. Optional —
+  // absent means fixtures/tests without a ledger; production always wires it.
+  humanLoopRoot?: string;
   // BL-496: the ask-close retry loop's own injected wait seam - defaults to
   // a real setTimeout wait in production; a test injects one that resolves
   // immediately while recording the requested duration, so the loop's own
@@ -1139,6 +1164,7 @@ function logAskCloseFailure(backlogId: string, result: EditMessageTextResult): v
 // line is keyed '-' and identified by the ticket in its detail instead.
 function emitRepaintFailureDiagnostic(adapters: PollAdapters, backlogId: string, result: EditMessageTextResult): void {
   emitCallbackDiagnostic(adapters, '-', 'repaint-failed', `${backlogId}:${repaintFailureCause(result)}`);
+  emitApprovalTapTelemetry(adapters, 'repaint-failed');
 }
 
 function repaintFailureCause(result: EditMessageTextResult): string {
@@ -1256,6 +1282,7 @@ export async function recordApprovalDecisionAndClose(
     return { changed: false, committed: false };
   }
   const committed = await commitApprovalDecision(adapters, backlogId, verdict.kind);
+  emitApprovalTapTelemetry(adapters, 'recorded');
   await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
   await notifyHumanDecisionRecorded(adapters);
   return { changed: true, committed };
@@ -1843,6 +1870,7 @@ async function deliverAskAnswer(
   const role = roleFromAskThreadId(decision.threadId);
   if (role !== undefined) {
     const result = adapters.redirectToRole ? await adapters.redirectToRole(role, answerLabel) : ({ kind: 'no-pane' } as SteerDeliveryResult);
+    emitSteeringTelemetry(adapters, result.kind);
     await captureRoleAnswer(role, result.kind === 'delivered', answerLabel, adapters.enqueueRoleAnswerNote, adapters.clearRolePendingQuestion);
     await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
     return 'posted';
@@ -1973,6 +2001,7 @@ async function dispatchApproveOrFollowup(
   if (decision.action === 'drop') {
     await adapters.answerCallbackQuery(callbackQuery.id, UNRECOGNIZED_CALLBACK_TOAST_TEXT);
     emitCallbackDiagnostic(adapters, callbackQuery.id, decision.reason);
+    emitApprovalTapTelemetry(adapters, 'silently-dropped', decision.reason);
     return 'dropped';
   }
   if (decision.action === 'approve') {
@@ -2034,6 +2063,7 @@ async function processCallbackQuery(
     // longer unrecorded - this is the branch that made "the human tapped
     // and nothing happened" indistinguishable from "the bot never saw it".
     emitCallbackDiagnostic(adapters, callbackQuery.id, decision.reason);
+    emitApprovalTapTelemetry(adapters, 'silently-dropped', decision.reason);
     return 'dropped';
   }
   return dispatchRecognizedCallbackDecision(callbackQuery, decision, updateId, adapters);
@@ -2123,7 +2153,8 @@ async function processSteeringUpdate(
   getRolePendingQuestion?: (role: string) => Promise<boolean>,
   clearRolePendingQuestion?: (role: string) => Promise<void>,
   enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>,
-  roleMenuBlocked?: (role: string) => Promise<{ blocked: boolean; pollHint?: string } | undefined>
+  roleMenuBlocked?: (role: string) => Promise<{ blocked: boolean; pollHint?: string } | undefined>,
+  humanLoopRoot?: string
 ): Promise<UpdateDeliveryOutcome | undefined> {
   const decision = decideSteeringAction(update, principalUserId, chatId, roleTopicMap);
   if (decision.kind === 'ignore') {
@@ -2143,6 +2174,7 @@ async function processSteeringUpdate(
     menuBlock?.blocked === true
       ? { kind: 'menu-blocked', pollHint: menuBlock.pollHint }
       : await redirectToRole(decision.role, forwardedText);
+  emitSteeringTelemetry({ humanLoopRoot }, result.kind);
   // BL-607: when this role has a clarifying question pending, this reply
   // IS the answer (Leg 1 reuses redirectToRole — live pane). A dormant
   // pane queues a note into the role's own inbox (Leg 2). Marker clears
@@ -2183,7 +2215,8 @@ async function attemptSteeringDelivery(
     adapters.getRolePendingQuestion,
     adapters.clearRolePendingQuestion,
     adapters.enqueueRoleAnswerNote,
-    adapters.roleMenuBlocked
+    adapters.roleMenuBlocked,
+    adapters.humanLoopRoot
   );
 }
 
@@ -3031,7 +3064,8 @@ export async function applyPollCycleResult(
   writeWarning: (message: string) => void,
   wait: (ms: number) => Promise<void>,
   escalate: (message: string) => Promise<void> = async () => {},
-  recordHeartbeat: () => void = () => {}
+  recordHeartbeat: () => void = () => {},
+  humanLoopRoot?: string
 ): Promise<void> {
   recordHeartbeat();
   if (cycle.degradedWarning) {
@@ -3040,6 +3074,8 @@ export async function applyPollCycleResult(
         (cycle.conflictWindow ? ` (${cycle.conflictWindow})` : '') +
         `\n`
     );
+    const pollOutcome = cycle.errorMessage && cycle.errorMessage.includes('409') ? 'conflict-409' : 'degraded';
+    emitPollTelemetry(humanLoopRoot, pollOutcome);
   }
   // BL-1036 (invariant 2): close it. Before this the log only ever opened
   // degradations, so an operator could not tell a blip from an outage.
