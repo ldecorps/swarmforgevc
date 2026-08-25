@@ -90,7 +90,6 @@ notes:
   - [2026-08-25T12:40Z] coordinator: specifier ready ack — --force routed Work to coder.
 
 abandoned_commits:
-  - sha: "3e1d0b6c9b"
-    reason: "pre-QA stranded on swarmforge-architect (documenter tip purity)"
-  - sha: "bda85faeec"
-    reason: "pre-QA stranded on swarmforge-architect (documenter tip purity)"
+  - 3e1d0b6c9b
+  - bda85faeec
+  - c596b96fc9
