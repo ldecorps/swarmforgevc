@@ -17,6 +17,7 @@ import {
   ceremonyRunState,
   isValidCeremonyOutcome,
   isValidCeremonyAdjustment,
+  markQualityRecommendationsRefused,
 } from '../quality/closingCeremony';
 
 export function ceremonyDir(targetPath: string): string {
@@ -94,7 +95,11 @@ export function recordCeremonyOutcome(targetPath: string, shiftKey: string, outc
   if (!isValidCeremonyOutcome(outcome)) {
     throw new Error(`closingCeremonyStore: refusing to record an outcome with invalid shape: ${JSON.stringify(outcome)}`);
   }
-  const updated: CeremonyRun = { ...run, outcome };
+  // BL-1119: no_change is how the specifier refuses/holds dial advice —
+  // mark recommendations refused; never rewrite pack conf.
+  const packet =
+    outcome.type === 'no_change' ? markQualityRecommendationsRefused(run.packet) : run.packet;
+  const updated: CeremonyRun = { ...run, packet, outcome };
   writeCeremonyRun(targetPath, updated);
   return updated;
 }
