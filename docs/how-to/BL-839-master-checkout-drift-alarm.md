@@ -12,6 +12,11 @@ while the running system quietly executes the pre-fix behavior.
 This is the detector for that gap. It is **report-only** — see "What it does
 not do" below.
 
+**(BL-1122)** While `.git/index.lock` shows a commit in flight, the sweep
+mutes the false `:staged-for-reversion` WARN that a live `git add`/`git commit`
+would otherwise trigger. Durable staged reversion with no lock still alarms.
+See [BL-1122](BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.md).
+
 ## What it watches
 
 The daemon-executed script set is **derived, not hand-listed**: starting from
