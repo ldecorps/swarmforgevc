@@ -40,6 +40,7 @@ expects them, and are not migrated or rewritten here.
 - [One unified pipeline grid across swarms](how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md) — one kanban; caption `s1`/`s2` badges when multi-swarm; remote held-by-role never guessed (BL-1009).
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Steering a swarm role from Telegram, and reading the receipt](how-to/BL-566-steer-a-role-from-telegram.md) — per-role topic nudge + delivery receipt (BL-566); `menu_blocked` when a pane menu is live (BL-568).
+- [Reading front-desk human-loop reliability trends](how-to/BL-595-trend-human-loop-reliability.md) — approval-tap / steer / poll-health / tick-duration on `.swarmforge/telemetry/human-loop-YYYY-MM.jsonl` (BL-595; measures only).
 - [Answering a menu-blocked pane from its Telegram steering topic](how-to/BL-568-menu-blocked-pane-questions-as-mapped-polls.md) — AskUserQuestion chrome → mapped poll in the role topic; vote drives the menu; steers suppressed while blocked (BL-568).
 - [Answering the Swarm Offline](how-to/BL-441-answering-offline-runbook.md)
 - [Bringing Up the FES Second Swarm (mono-rotate, own Telegram identity)](how-to/BL-439-fes-second-swarm-bringup.md)

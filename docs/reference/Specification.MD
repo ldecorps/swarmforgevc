@@ -1,5 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-595: front-desk human-loop reliability
+telemetry — four series on one append-only ledger
+`.swarmforge/telemetry/human-loop-<YYYY-MM>.jsonl`: approval-tap,
+steering-delivery, poll-health, and tick-duration. Emit is fire-and-forget
+async (never awaits on the hot path); outcomes are those the emitting code
+already computed; an unwritable log never fails the front desk. Aggregation
+is pure over in-memory records via `trend.ts`. Measures only — does not fix
+tap/steer failures (BL-582 / BL-566). Acceptance:
+`specs/features/BL-595-human-loop-reliability-trend.feature`.
+How-to: `docs/how-to/BL-595-trend-human-loop-reliability.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-652: `done_with_current.sh` / family
 refuse any argv via `dispatch-lib/refuse-unexpected-args!` — non-zero exit,
 usage text, zero completion side effects in task and batch modes; `--help`
@@ -6687,6 +6699,79 @@ BL-650's `evaluate-effective-age`, in the Flow Watchdog section below.
   subtracts these ledger intervals, plus provider-outage intervals (BL-840),
   from a waiting parcel's effective age. See "Effective Age and Provider-Outage
   Evidence (BL-650/BL-840)" below.
+
+## Human-Loop Reliability Ledger (BL-595)
+
+The Telegram front desk previously emitted **no** reliability trend for the
+human↔swarm channel — the blind spot that hid silently failing approval taps
+(BL-582) until a human noticed a stuck button. BL-595 adds four series on one
+append-only ledger so falling tap success or rising 409 counts become visible
+as leading indicators. **This ticket only measures** — fixing tap or steer
+failures remains BL-582 / BL-566.
+
+### Storage
+
+`.swarmforge/telemetry/human-loop-<YYYY-MM>.jsonl` — append-only, one JSON
+object per line, monthly files (same posture as the availability ledger and
+`context-events.jsonl`). Covered by the top-level `.swarmforge/` gitignore.
+
+Outcome records (series 1–3):
+
+```json
+{"at":"2026-08-25T16:40:00.000Z","series":"approval-tap","outcome":"recorded"}
+{"at":"2026-08-25T16:40:01.000Z","series":"approval-tap","outcome":"silently-dropped","reason":"not-principal"}
+{"at":"2026-08-25T16:40:02.000Z","series":"steering-delivery","outcome":"delivered"}
+{"at":"2026-08-25T16:40:03.000Z","series":"poll-health","outcome":"conflict-409"}
+```
+
+Duration records (series 4):
+
+```json
+{"at":"2026-08-25T16:40:04.000Z","series":"tick-duration","durationMs":42}
+```
+
+### Series
+
+| Series | Outcomes / value | Emit sites |
+|--------|------------------|------------|
+| `approval-tap` | `recorded` / `silently-dropped` / `repaint-failed`; drops carry `reason` (`not-my-chat` / `not-principal` / `unrecognized-data`) | `telegramFrontDeskBotCore.ts` — record / drop / repaint paths |
+| `steering-delivery` | `delivered` / `no-pane` / `undelivered` / `menu-blocked` (BL-566 / BL-568 `SteerDeliveryResult`) | steer redirect + ask-answer delivery |
+| `poll-health` | `degraded` / `conflict-409` | `applyPollCycleResult` when a degraded warning fires |
+| `tick-duration` | wall-clock `durationMs` per concierge tick | `runOneConciergeTick` after `runConciergeTick` |
+
+Every outcome string is one the emitting code **already computed** — no
+aggregator invents a classification.
+
+### Emit posture (measuring must not worsen what it measures)
+
+`humanLoopReliabilityStore.ts` appends **fire-and-forget async** (chained
+promises; production callers never `await`). Write failures are swallowed so
+an unwritable or non-directory ledger path never fails, blocks, or slows the
+tap, steer, poll, or tick being recorded. A naive synchronous append on every
+concierge tick is explicitly the wrong shape for series 4 (that tick already
+does large sync `readFileSync`/`JSON.parse` work on the same event loop as
+`getUpdates`).
+
+Production wires `PollAdapters.humanLoopRoot` (and the concierge tick root)
+to the project path; fixtures may omit it and emit nothing.
+
+### Aggregation
+
+`humanLoopReliability.ts` folds an **in-memory** record list into
+`trend.ts` series points — file-free aggregation:
+
+- Outcome series → per-window **success rate** (`recorded` / `delivered` count
+  as success).
+- Tick-duration → per-window **mean** `durationMs`.
+
+### See Also
+
+- **BL-582** — approval-tap observability / diagnostics (fixes the silent tap;
+  this ledger trends the outcomes).
+- **BL-566** / **BL-568** — steer delivery receipts and `menu-blocked`.
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
+- **BL-823** — availability ledger (sibling monthly JSONL under
+  `.swarmforge/telemetry/`).
 
 ## Flow Watchdog (BL-577)
 
