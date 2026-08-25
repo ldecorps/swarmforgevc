@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 25, 2026 (BL-683: handoff depth warning counts
+ticket YAML only — same family as handoffd open-slot/status counters;
+`.gitkeep` no longer inflates `active=` (product BL-808; APS armed).
+Acceptance:
+`specs/features/BL-683-handoff-depth-warning-counts-non-tickets.feature`.
+How-to: `docs/how-to/BL-683-handoff-depth-warning-counts-non-tickets.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 25, 2026 (BL-1119: closing ceremony packet gains
 per-role quality dial recommendations (raise/lower/hold) from BL-819/820
 lean signals only; never rewrites pack conf; auto window models → hold
