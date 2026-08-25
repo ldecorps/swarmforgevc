@@ -55,3 +55,11 @@ notes: |
   - [2026-08-25T20:58Z] specifier (coord Work 001895): filled acceptance
     feature (4 scenarios); invariants ≤3; acceptance pointer fixed. Forwarded
     to coder.
+
+abandoned_commits:
+  - ea9609ee6e
+  - 0e1bdb13ce
+  - 40a478a38
+  - 47992e48af
+  - c35cb07b6c
+  - 29a39bf2e5
