@@ -1,5 +1,6 @@
 package com.swarmforge.floatcompanion
 
+import android.Manifest
 import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationChannel
@@ -8,6 +9,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -15,6 +17,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -27,7 +30,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.swarmforge.floatcompanion.databinding.OverlayBubbleBinding
 import com.swarmforge.floatcompanion.databinding.OverlayRemoveZoneBinding
-import kotlin.math.abs
 
 /**
  * BL-707: bubble overlay + owns [TalkEngine] so mic/hands-free survive panel collapse.
@@ -236,9 +238,9 @@ class OverlayService : Service() {
                 y = 240
             }
             bubbleParams = params
-            attachDrag(binding.root, params) {
-                openTalkPanel()
-            }
+            // BL-828: collapsed taps route through BubbleGestureDecider —
+            // single tap starts/sends via TalkEngine; double-tap expands.
+            attachDrag(binding.root, params)
             windowManager.addView(binding.root, params)
             applyBubbleAppearance(TalkEngine.Phase.READY, paused = false)
         } catch (e: Exception) {
@@ -475,100 +477,210 @@ class OverlayService : Service() {
         ).show()
     }
 
-    private fun attachDrag(
-        view: View,
-        params: WindowManager.LayoutParams,
-        onTap: () -> Unit
-    ) {
-        var downX = 0
-        var downY = 0
-        var startX = 0
-        var startY = 0
-        var moved = false
-        var longPressFired = false
+    /**
+     * BL-828: device edge for collapsed-bubble gestures. Converts MotionEvent
+     * into [BubbleGestureDecider] inputs, posts its timers on [mainHandler],
+     * and performs returned effects against the window / TalkEngine / panel.
+     */
+    private fun attachDrag(view: View, params: WindowManager.LayoutParams) {
+        var gesture = BubbleGestureDecider.State()
         // Finger tremor often exceeds 8px and cancels long-press — use system slop * 2.
-        val touchSlop = ViewConfiguration.get(view.context).scaledTouchSlop * 2
-        val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+        val config = BubbleGestureDecider.Config(
+            touchSlopPx = ViewConfiguration.get(view.context).scaledTouchSlop * 2,
+            longPressTimeoutMs = ViewConfiguration.getLongPressTimeout().toLong(),
+            doubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
+        )
         val longPressRunnable = Runnable {
-            if (!moved && !longPressFired) {
-                longPressFired = true
-                view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                toggleBubblePause()
-            }
+            val result = BubbleGestureDecider.onTimer(
+                gesture,
+                BubbleGestureDecider.TimerKind.LONG_PRESS,
+                SystemClock.uptimeMillis()
+            )
+            gesture = result.state
+            performGestureEffects(view, params, result.effects)
+        }
+        val doubleTapRunnable = Runnable {
+            val result = BubbleGestureDecider.onTimer(
+                gesture,
+                BubbleGestureDecider.TimerKind.DOUBLE_TAP_WINDOW,
+                SystemClock.uptimeMillis()
+            )
+            gesture = result.state
+            performGestureEffects(view, params, result.effects)
         }
         view.setOnTouchListener { v, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    moved = false
-                    longPressFired = false
-                    downX = event.rawX.toInt()
-                    downY = event.rawY.toInt()
-                    startX = params.x
-                    startY = params.y
-                    setBubbleFocusable(true)
-                    mainHandler.removeCallbacks(longPressRunnable)
-                    mainHandler.postDelayed(longPressRunnable, longPressTimeout)
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX.toInt() - downX
-                    val dy = event.rawY.toInt() - downY
-                    if (!moved && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
-                        // Long-press already acted — keep this gesture as pause/resume only.
-                        if (longPressFired) {
-                            return@setOnTouchListener true
-                        }
+            val kind = pointerKind(event) ?: return@setOnTouchListener false
+            val overRemove = isOverRemoveZone(params, v)
+            val result = BubbleGestureDecider.onPointer(
+                gesture,
+                config,
+                collapsedTalkPhase(),
+                BubbleGestureDecider.PointerEvent(
+                    kind = kind,
+                    x = event.rawX.toInt(),
+                    y = event.rawY.toInt(),
+                    timestampMs = event.eventTime,
+                    bubbleX = params.x,
+                    bubbleY = params.y
+                ),
+                overRemove
+            )
+            gesture = result.state
+            applyGestureTimers(result.timers, longPressRunnable, doubleTapRunnable)
+            performGestureEffects(v, params, result.effects)
+            true
+        }
+    }
+
+    private fun pointerKind(event: MotionEvent): BubbleGestureDecider.PointerKind? =
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> BubbleGestureDecider.PointerKind.DOWN
+            MotionEvent.ACTION_MOVE -> BubbleGestureDecider.PointerKind.MOVE
+            MotionEvent.ACTION_UP -> BubbleGestureDecider.PointerKind.UP
+            MotionEvent.ACTION_CANCEL -> BubbleGestureDecider.PointerKind.CANCEL
+            else -> null
+        }
+
+    private fun collapsedTalkPhase(): BubbleGestureDecider.TalkPhase =
+        if (talkEngine?.snapshot()?.phase == TalkEngine.Phase.RECORDING) {
+            BubbleGestureDecider.TalkPhase.RECORDING
+        } else {
+            BubbleGestureDecider.TalkPhase.IDLE
+        }
+
+    private fun applyGestureTimers(
+        timers: List<BubbleGestureDecider.TimerAction>,
+        longPressRunnable: Runnable,
+        doubleTapRunnable: Runnable
+    ) {
+        val now = SystemClock.uptimeMillis()
+        for (action in timers) {
+            when (action) {
+                is BubbleGestureDecider.TimerAction.Cancel -> when (action.kind) {
+                    BubbleGestureDecider.TimerKind.LONG_PRESS ->
                         mainHandler.removeCallbacks(longPressRunnable)
-                        moved = true
-                        showRemoveZone()
-                    }
-                    if (moved) {
-                        params.x = startX + dx
-                        params.y = startY + dy
-                        try {
-                            windowManager.updateViewLayout(v, params)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "drag update failed", e)
-                        }
-                        setRemoveHot(isOverRemoveZone(params, v))
-                    }
-                    true
+                    BubbleGestureDecider.TimerKind.DOUBLE_TAP_WINDOW ->
+                        mainHandler.removeCallbacks(doubleTapRunnable)
                 }
-                MotionEvent.ACTION_UP -> {
-                    mainHandler.removeCallbacks(longPressRunnable)
-                    when {
-                        longPressFired -> {
-                            hideRemoveZone()
-                            setBubbleFocusable(false)
+                is BubbleGestureDecider.TimerAction.Arm -> {
+                    val delay = (action.fireAtMs - now).coerceAtLeast(0L)
+                    when (action.kind) {
+                        BubbleGestureDecider.TimerKind.LONG_PRESS -> {
+                            mainHandler.removeCallbacks(longPressRunnable)
+                            mainHandler.postDelayed(longPressRunnable, delay)
                         }
-                        !moved -> {
-                            hideRemoveZone()
-                            onTap()
-                        }
-                        isOverRemoveZone(params, v) -> {
-                            setBubbleFocusable(false)
-                            hideRemoveZone()
-                            Toast.makeText(this, R.string.bubble_closed, Toast.LENGTH_SHORT).show()
-                            stopSelf()
-                        }
-                        else -> {
-                            hideRemoveZone()
-                            magnetEdge(params, v)
-                            setBubbleFocusable(false)
+                        BubbleGestureDecider.TimerKind.DOUBLE_TAP_WINDOW -> {
+                            mainHandler.removeCallbacks(doubleTapRunnable)
+                            mainHandler.postDelayed(doubleTapRunnable, delay)
                         }
                     }
-                    true
                 }
-                MotionEvent.ACTION_CANCEL -> {
-                    mainHandler.removeCallbacks(longPressRunnable)
-                    hideRemoveZone()
-                    setBubbleFocusable(false)
-                    true
-                }
-                else -> false
             }
         }
     }
+
+    private fun performGestureEffects(
+        view: View,
+        params: WindowManager.LayoutParams,
+        effects: List<BubbleGestureDecider.Effect>
+    ) {
+        for (effect in effects) {
+            performOneGestureEffect(view, params, effect)
+        }
+    }
+
+    private fun performOneGestureEffect(
+        view: View,
+        params: WindowManager.LayoutParams,
+        effect: BubbleGestureDecider.Effect
+    ) {
+        if (applyWindowGestureEffect(view, params, effect)) return
+        if (applyTalkGestureEffect(effect)) return
+        applyLifecycleGestureEffect(view, params, effect)
+    }
+
+    private fun applyWindowGestureEffect(
+        view: View,
+        params: WindowManager.LayoutParams,
+        effect: BubbleGestureDecider.Effect
+    ): Boolean = when (effect) {
+        BubbleGestureDecider.Effect.SetFocusable -> {
+            setBubbleFocusable(true); true
+        }
+        BubbleGestureDecider.Effect.ClearFocusable -> {
+            setBubbleFocusable(false); true
+        }
+        BubbleGestureDecider.Effect.ShowRemoveZone -> {
+            showRemoveZone(); true
+        }
+        BubbleGestureDecider.Effect.HideRemoveZone -> {
+            hideRemoveZone(); true
+        }
+        is BubbleGestureDecider.Effect.MoveBubble -> {
+            params.x = effect.x
+            params.y = effect.y
+            try {
+                windowManager.updateViewLayout(view, params)
+            } catch (e: Exception) {
+                Log.w(TAG, "drag update failed", e)
+            }
+            true
+        }
+        is BubbleGestureDecider.Effect.SetRemoveHot -> {
+            setRemoveHot(effect.hot); true
+        }
+        else -> false
+    }
+
+    private fun applyTalkGestureEffect(effect: BubbleGestureDecider.Effect): Boolean = when (effect) {
+        BubbleGestureDecider.Effect.Expand -> {
+            openTalkPanel(); true
+        }
+        BubbleGestureDecider.Effect.StartMic -> {
+            onCollapsedMicOrSend(startMic = true); true
+        }
+        BubbleGestureDecider.Effect.Send -> {
+            onCollapsedMicOrSend(startMic = false); true
+        }
+        BubbleGestureDecider.Effect.TogglePause -> {
+            toggleBubblePause(); true
+        }
+        else -> false
+    }
+
+    private fun applyLifecycleGestureEffect(
+        view: View,
+        params: WindowManager.LayoutParams,
+        effect: BubbleGestureDecider.Effect
+    ) {
+        when (effect) {
+            BubbleGestureDecider.Effect.LongPressHaptic ->
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            BubbleGestureDecider.Effect.MagnetEdge -> magnetEdge(params, view)
+            BubbleGestureDecider.Effect.Teardown -> {
+                Toast.makeText(this, R.string.bubble_closed, Toast.LENGTH_SHORT).show()
+                stopSelf()
+            }
+            else -> Unit
+        }
+    }
+
+    /** Routes the bubble's resolved mic/send action through [TalkEngine.onRecordClicked]. */
+    private fun onCollapsedMicOrSend(startMic: Boolean) {
+        val eng = talkEngine ?: return
+        if (startMic && !hasMicPermission()) {
+            Toast.makeText(this, R.string.need_mic_permission, Toast.LENGTH_LONG).show()
+            return
+        }
+        eng.onRecordClicked()
+        if (startMic && eng.snapshot().phase != TalkEngine.Phase.RECORDING) {
+            Toast.makeText(this, R.string.no_audio, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun hasMicPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
 
     private fun magnetEdge(params: WindowManager.LayoutParams, view: View) {
         val dm = resources.displayMetrics

@@ -12,7 +12,7 @@ talk panel (and on the pairing screen status line if you still see it). The
 ## What you get
 
 - Movable floating bubble over other apps (phase shown by bubble color)
-- Tap to expand a Let's Talk panel; long-press the bubble to pause / resume all
+- Tap to talk / tap again to send; double-tap to expand; long-press to pause / resume
 - Voice and typed turns to the existing Let's Talk bridge (same console bearer)
 - Hands-free listening that continues while collapsed to the bubble
 - Settings: hold music, mute, hold-music volume (default 55%; reply voice follows phone volume)
