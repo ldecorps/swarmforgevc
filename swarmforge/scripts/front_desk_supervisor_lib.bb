@@ -88,6 +88,14 @@
   {:pid pid :attempts (inc (:attempts entry)) :status "running" :crashed-at-ms nil :started-at-ms now-ms
    :gave-up-at-ms nil :build-stale-since-ms nil})
 
+;; BL-1154: a voluntary build-stale roll onto a fresh Node build is NOT a
+;; crash - it must not consume the crash give-up attempt budget. Keeps
+;; :attempts unchanged and never feeds this path into decide-restart-action's
+;; :escalate branch (check-one!'s own "stale-build" clause below).
+(defn- voluntary-build-stale-started-entry [entry now-ms pid]
+  {:pid pid :attempts (:attempts entry) :status "running" :crashed-at-ms nil :started-at-ms now-ms
+   :gave-up-at-ms nil :build-stale-since-ms nil})
+
 ;; BL-370: mirrors telegramFrontDeskBotCore.ts's own isPollCycleStale
 ;; independently (same "small deliberate duplication over cross-language
 ;; coupling" convention this project already uses for its other dual TS/bb
@@ -282,7 +290,18 @@
          :else
          {:entry entry :event nil}))
 
-     ("waiting" "stalled" "stale-build")
+     "stale-build"
+     ;; BL-1154: voluntary build-stale restarts share backoff spacing with
+     ;; crash recovery but never burn or read the crash give-up budget.
+     (let [backoff-attempt (max 1 (:attempts entry))
+           due-ms (+ (:crashed-at-ms entry) (compute-backoff-ms backoff-attempt restart-config))]
+       (if (< now-ms due-ms)
+         {:entry entry :event nil}
+         (do
+           (when (:pid entry) (kill-pid! (:pid entry)))
+           {:entry (voluntary-build-stale-started-entry entry now-ms (spawn!)) :event :started})))
+
+     ("waiting" "stalled")
      (let [due-ms (+ (:crashed-at-ms entry) (compute-backoff-ms (:attempts entry) restart-config))]
        (if (< now-ms due-ms)
          {:entry entry :event nil}
