@@ -101,7 +101,9 @@ silently break it.
 
 ```bash
 bb swarmforge/scripts/test/swarm_shift_lib_test_runner.bb
+bb swarmforge/scripts/test/bl660_swarm_shift_property_runner.bb
 bash swarmforge/scripts/test/test_shift_schedule_applier.sh
+cd extension && npm test -- --run swarmShiftCore.test.js swarmShiftCore.property.test.js
 bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-660-three-shift-packs-conf-selectable.feature
 ```
