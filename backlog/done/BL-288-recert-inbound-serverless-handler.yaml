@@ -1,0 +1,89 @@
+id: BL-288
+title: "Recert email inbound is DARK: build the serverless handler wrapping BL-217's core (deploy/Resend route = operator go-live)"
+milestone: M8
+status: todo
+priority: 10
+direction: aligned
+assigned_to: coder
+depends_on: []
+source: ".swarmforge/operator/INTAKE-recert-email-inbound-dark.md — human command via operator -> coordinator 2026-07-11 (attended RC): a phone recert emailed cert silently no-op'd; backlog/recert-inbox/ never exists, zero 'Recert proposal:' commits ever. Specifier confirmed the missing piece."
+
+description: |
+  The recert-via-email INBOUND path is dark: the phone recert view offers Confirm/
+  Update/Delete via a mailto: to recert@tolokarooo.resend.app, but no proposal ever
+  lands (backlog/recert-inbox/ never created, zero "Recert proposal:" commits). Same
+  shape as the Cost & Health dark-card: code built, last-mile go-live never done.
+
+  SCOPING CONFIRMED (verified 2026-07-11, answering the intake's key question): the
+  BL-217 core exists but its thin platform handler was NEVER built. There is NO api/
+  dir, NO vercel.json, and nothing in the repo imports handleInboundEmailWebhook except
+  the core's own test + pipeline step files. So the serverless wrapper IS a BUILD task
+  (not merely a deploy). The gap = missing wrapper + never-run ops go-live.
+
+  BUILD scope (this ticket, swarm): a thin Vercel serverless handler (Node runtime, per
+  the BL-223 runbook's chosen platform) that wraps the BL-217 core end-to-end:
+    - Adapt the platform request to the core's InboundWebhookRequest
+      {headers: SvixHeaders, rawBody: string}: extract the svix-id/svix-timestamp/
+      svix-signature headers and the RAW request body. CRITICAL: read the raw body bytes
+      (disable the platform's automatic JSON body parsing) — Svix signature verification
+      (svixSignature.ts) checks the exact bytes, so a parsed/re-serialized body silently
+      breaks every verification. This is the #1 serverless-Svix pitfall.
+    - Assemble the core's HandleInboundEmailWebhookDeps from the ENV (deployment-agnostic,
+      same posture BL-217/248 designed for): `secret` (the Resend/Svix signing secret),
+      `nowIso` (current time), `senderAllowlist` (parse the BL-248 allowlist from an env
+      var; FAIL CLOSED — empty/missing rejects everyone), `commitProposal` (wire
+      recertProposalRepoCommit.ts commitRecertProposalToRepo with a real PutFn + repo
+      config/GitHub token from env), and `log`.
+    - Call handleInboundEmailWebhook and map its InboundWebhookResponse {status, body}
+      onto the platform HTTP response.
+    - Commit deploy SCAFFOLDING (the api function file + vercel.json / build config) —
+      CONFIG ONLY, never secrets. Reference how the extension core is compiled/imported
+      (extension/tsconfig.json) so the function can consume the built core.
+
+  OUT OF SCOPE — OPERATOR/HUMAN GO-LIVE (needs Resend + Vercel access; per
+  docs/runbooks/BL-223-recert-inbound-address-golive.md): deploy the function to its
+  HTTPS endpoint; set the signing secret + sender allowlist + GitHub token in the
+  serverless env; confirm tolokarooo.resend.app active under Receiving; configure the
+  Resend Inbound route to POST that endpoint; run the real end-to-end email verify. This
+  ticket does NOT deploy or touch secrets — it delivers the deployable wrapper + config
+  and leaves the gated go-live to the operator. (Coordinator: flag the go-live as an
+  operator task once this lands.)
+
+  Wanted behavior (see the feature file):
+    - A signed inbound webhook POST from an allowed sender is turned by the handler into
+      a committed recert proposal (backlog/recert-inbox/<scenarioId>-<stamp>.json,
+      "Recert proposal: <outcome> <scenarioId>") with a success response.
+    - A POST with no valid signature commits nothing and is rejected (BL-217/248 posture
+      survives the wrapper).
+    - Verification runs against the EXACT raw body bytes, not a re-serialized parse.
+    - With no signing secret in the env the handler commits nothing (fail closed).
+    - The core's {status, body} become the HTTP response.
+
+  Constraints / testability:
+    - Keep the platform handler a THIN wrapper over exported pure helpers (engineering
+      "CLI main() must be a thin wrapper" applies to serverless handlers too): factor a
+      pure toWebhookRequest(rawBody, headers), a pure deps-from-env assembler, and a
+      pure applyResponse(result) so the wrapper's adaptation is unit-tested with fake
+      req/res + fixture env + a fake commitProposal/PutFn — NO real Vercel runtime, NO
+      real network, NO real GitHub write in tests. The core itself is already covered
+      (BL-217/248); these tests prove the WIRING (raw body, header extraction, env deps,
+      commit adapter, response mapping).
+    - Raw-body correctness gets an explicit test: a validly-signed fixture verifies via
+      the wrapper, and a body that was JSON-reparsed/re-serialized FAILS — guarding the
+      pitfall as a regression.
+    - All secrets come from the serverless env, never committed. Only config/scaffolding
+      is committed. Never seed a fixture timestamp from the real clock while the code
+      reads its own clock (de0991e).
+
+  QA e2e procedure (fake req/res + fixture env + fake commitProposal/PutFn; no network):
+    - Feed a validly-signed Resend inbound fixture from an allowlisted sender; assert
+      commitProposal is called with the parsed RecertProposal and the response is
+      success.
+    - Feed an unsigned/invalid-signature POST; assert commitProposal is NOT called and
+      the response is a rejection.
+    - Assert the raw bytes reach verification unchanged (reparse the body and assert it
+      fails); assert an empty env secret => no commit.
+    - Assert the response status/body equal the core's returned status/body.
+
+acceptance: specs/features/BL-288-recert-inbound-serverless-handler.feature
+mutation_cost: medium

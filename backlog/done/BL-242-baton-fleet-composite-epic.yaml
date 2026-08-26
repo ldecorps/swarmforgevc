@@ -1,0 +1,63 @@
+id: BL-242
+title: "EPIC — Baton fleet composite: swarms + fleet render through one composite interface (do not promote directly; tracks children)"
+milestone: M7
+status: todo
+type: epic
+priority: 00
+depends_on: []
+decomposes_into: [BL-243, BL-244, BL-245, BL-246, BL-247]
+source: "operator upload 2026-07-10 'Baton — Fleet Composite Spec (Gherkin)'; specifier questions answered same day."
+
+notes: |
+  UMBRELLA/tracking item, not a directly-promotable slice — the actionable work is
+  its children. Baton = the fleet layer: an agent is a leaf, a swarm (coordinator +
+  pack) is a composite, a fleet is a composite of swarms, and every node answers the
+  SAME four calls: identity() / status() / health() / children(). A fleet of one and
+  a fleet of fifty must render through the identical interface — that uniformity IS
+  the acceptance bar.
+
+  OPERATOR DECISIONS (2026-07-10, via specifier questions):
+    1. Coordinator model: SPEC THE CHANGE — coordinator out of swarmforge.conf;
+       ./swarm always provisions it; naming it in the conf is rejected as reserved.
+       (BL-243.) This changes the maintained fork's launch path -> drift-watch.
+    2. Fleet transport: CLARIFY LATER — spec the composite interface + rollup now;
+       leave the concrete transport binding (reuse the bridge BL-065 vs a Pi relay)
+       OPEN, pending the swarm-status publish-format decision. Steps are
+       transport-agnostic by design.
+    3. Framing: a new milestone (M7) / epic of SwarmForge VC — spec as epic +
+       children, all paused; coordinator sequences.
+
+  SEQUENCE (dependency order):
+    1. BL-243 — coordinator is provisioned infrastructure (foundational).
+    2. BL-244 — a swarm is a composite node (rollup). depends_on BL-243.
+    3. BL-245 — graceful degradation when the coordinator dies. depends_on BL-243.
+    4. BL-246 — the fleet console (composite of swarms). depends_on BL-244.
+    5. BL-247 — integration-role redesign: QA lands approved work on main, the
+       coordinator does bookkeeping only (operator ruling 2026-07-10). depends_on
+       BL-243. Resolves BL-243 scenario 03.
+
+  DEFERRED — needs a human/agent brainstorm before speccing (operator: "i need more
+  brainstorming, maybe a chat with an agent"): (a) swarm-status publish format —
+  what a coordinator writes to the console; this also settles decision #2's
+  transport binding and how a swarm is NAMED (no swarm_name field exists today);
+  (b) disconnected human<->coordinator protocol (offline compose, git sync on
+  reconnect); (c) swarm contract / onboarding ceremony (specifier drafts -> human
+  ratifies -> intent.contract.md). Do NOT spec these yet.
+
+  REALITY RECONCILIATIONS to flag on human review: coordinator IS a conf window
+  today (line 54) — BL-243 changes that; and BL-243 scenario 03 ("no integration
+  branch") diverges from the current coordinator, which integrates QA-approved work
+  on main from the shared master checkout — reconcile whether Baton's coordinator
+  keeps or sheds the integration role.
+
+description: |
+  Baton makes swarms and fleets first-class composite nodes over the existing
+  SwarmForge machinery. The console talks to COORDINATORS, never directly to agents
+  (layering: fleet -> coordinator -> agents); each coordinator rolls up its own
+  pack. This epic sequences the four child slices (see notes); no two are built
+  concurrently out of dependency order. See each child ticket for its own scoped
+  description, seams, and acceptance. Documentation-grade until promoted; the
+  provided Gherkin has been converted to lint-clean APS feature files.
+
+acceptance: specs/features/BL-242-baton-fleet-composite-epic.feature
+mutation_cost: low

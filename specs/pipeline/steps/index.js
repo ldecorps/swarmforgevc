@@ -402,7 +402,6 @@ const DOMAINS = [
   require('./bl1150OutageFailoverCliLoadFileSafeSteps'),
   require('./bl764FrontDeskEatsHostBridgeUpdatesSteps'),
   require('./bl729CommitClaimCheckSteps'),
-  require('./bl728HandoffdDeliverParenVerificationSteps'),
   require('./bl680ConsolidationAuthoritySteps'),
   require('./bl681ConsolidationNeverDropsHumanSentenceSteps'),
   require('./bl574PromptEngineFragmentsAdaptersSteps'),

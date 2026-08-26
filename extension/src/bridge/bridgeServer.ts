@@ -65,7 +65,6 @@ import {
   createLetsTalkWriteRoutes,
   isLetsTalkPath,
 } from './letsTalkRoutes';
-import { createWebUiFontSizeRoutes, isWebUiFontSizePath } from './webUiFontSizeRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
 import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
 import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
@@ -1727,7 +1726,6 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isPausedPagerStatePath,
   isEpicReorderStatePath,
   isContextBudgetStatePath,
-  isWebUiFontSizePath,
 ];
 
 function isAuthorizedForRead(authHeader: string | undefined, url: string, registry: DeviceRegistry): boolean {
@@ -2027,11 +2025,6 @@ export function startBridge(
       requireLetsTalkControlAuth,
       respondJson
     );
-    const webUiFontSizeRoutes = createWebUiFontSizeRoutes(
-      requireControlAuth,
-      respondJson,
-      (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
-    );
 
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
@@ -2126,7 +2119,6 @@ export function startBridge(
         ...letsTalkWriteRoutes,
         ...letsTalkAudioEngineRoutes,
         ...letsTalkMetaRoutes,
-        ...webUiFontSizeRoutes,
       ].find((route) => route.matches(req, url));
       if (writeRoute) {
         writeRoute.handle(req, res, targetPath, registry);

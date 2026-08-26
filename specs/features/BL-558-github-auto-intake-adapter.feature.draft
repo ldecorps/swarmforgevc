@@ -1,0 +1,119 @@
+Feature: GitHub issues auto-enter the backlog root and the swarm notices undrained intakes
+
+  # BL-558 — infrastructure adapters only. Specifier drains; coordinator promotes.
+  # Complements BL-114 (issue loop closing) and the existing label-triggered
+  # swarm-intake.yml workflow. Does NOT assign GitHub scanning to the coordinator LLM.
+
+  # ── Slice 1: scheduled GitHub auto-intake ──────────────────────────────────
+
+  # BL-558 scan-01
+  Scenario: an open issue without a backlog file is intaked on the next scan
+    Given an open GitHub issue with number N and no swarm-intake label
+    And no file matching backlog/GH-N-*.yaml exists on main
+    When the scheduled auto-intake workflow runs
+    Then a file backlog/GH-N-<slug>.yaml is committed on main
+    And the file's id is GH-N and source is the issue URL
+    And the issue receives a queued-for-swarm comment naming that path
+    And the issue is labeled swarm-intake
+
+  # BL-558 scan-02
+  Scenario: an issue that already has a GH-N backlog file is skipped
+    Given an open GitHub issue with number N
+    And backlog/GH-N-existing.yaml already exists on main
+    When the scheduled auto-intake workflow runs
+    Then no second GH-N file is created
+    And the workflow exits successfully
+
+  # BL-558 scan-03
+  Scenario: an issue already labeled swarm-specced is not re-intaked
+    Given a closed or open issue with label swarm-specced
+    When the scheduled auto-intake workflow runs
+    Then no new backlog/GH-<n>-*.yaml is created for that issue
+
+  # BL-558 scan-04
+  Scenario: parallel intakes both land on main
+    Given two distinct open issues N and M without backlog files
+    When two auto-intake workflow runs commit in parallel
+    Then both backlog/GH-N-*.yaml and backlog/GH-M-*.yaml exist on main
+    And neither workflow fails its push step
+
+  # BL-558 scan-05
+  Scenario: the manual label-triggered intake path still works
+    Given the existing swarm-intake.yml label workflow
+    When a human adds the swarm-intake label to an issue
+    Then the same GH-N yaml shape is written as the scheduled scan
+
+  # ── Slice 2: handoffd root-intake nudge ────────────────────────────────────
+
+  # BL-558 nudge-01
+  Scenario: undrained GH yaml at backlog root triggers a coordinator nudge
+    Given backlog/GH-22-example.yaml exists at the backlog root
+    And no root-intake nudge note is pending for the coordinator
+    And the root-intake nudge cooldown has elapsed
+    When the handoffd root-intake nudge sweep runs
+    Then a note is delivered to the coordinator
+    And the note's message includes a fixed root-intake nudge phrase
+
+  # BL-558 nudge-02
+  Scenario: no nudge when backlog root has no intake yaml
+    Given backlog root has no GH- INTAKE- or BL- yaml files
+    When the handoffd root-intake nudge sweep runs
+    Then no root-intake nudge is sent
+
+  # BL-558 nudge-03
+  Scenario: pending root-intake nudge is not duplicated
+    Given a coordinator inbox already contains the root-intake nudge phrase
+    When the handoffd root-intake nudge sweep runs
+    Then no additional root-intake nudge is sent
+
+  # BL-558 nudge-04
+  Scenario: root-intake nudge respects cooldown
+    Given a root-intake nudge was sent recently within the cooldown window
+    And no pending root-intake nudge remains
+    When the handoffd root-intake nudge sweep runs
+    Then no new root-intake nudge is sent
+
+  # BL-558 nudge-05
+  Scenario: the daemon never drains or promotes from a root-intake nudge
+    Given the root-intake nudge sweep fires
+    When its side effects are inspected
+    Then no file is moved from backlog root to paused or active
+    And no git commit is made by the daemon
+
+  # ── Slice 3: second-swarm wake on backlog root ─────────────────────────────
+
+  # BL-558 wake-01
+  Scenario: a push that only adds backlog/GH-N-slug.yaml wakes the primary swarm
+    Given a push to main that adds backlog/GH-99-new-intake.yaml
+    When the second-swarm wake-up workflow evaluates changed paths
+    Then the primary swarm is eligible for a remote wake nudge
+    And a push that only touches backlog/active or backlog/paused behavior is unchanged
+
+  # ── Slice 4: pipeline board lists YAML root intakes ────────────────────────
+
+  # BL-558 board-01
+  Scenario: ROOT INTAKE includes a GH yaml at backlog root
+    Given backlog/GH-23-console-mini-app.yaml at the backlog root with title in yaml
+    When the pipeline board root-intake list is built
+    Then an entry with id GH-23 appears in the ROOT INTAKE section
+
+  # BL-558 board-02
+  Scenario: ROOT INTAKE still includes markdown intakes
+    Given backlog/INTAKE-20260722-example.md at the backlog root
+    When the pipeline board root-intake list is built
+    Then that markdown intake still appears unchanged
+
+# Non-behavioral gates:
+#  - Slice 1 workflow: no ${{ }} inside run: bodies (BL-227 posture); secrets from
+#    GITHUB_TOKEN only; slug/title/body env-routed.
+#  - Slice 1 push: git pull --rebase (or equivalent retry) before push; same bot identity
+#    as swarm-intake.yml.
+#  - Slice 2 pure decision functions live in chase_sweep_lib.bb with tests in
+#    dispatch_gap_test_runner.bb (mirror open-slot-nudge tests).
+#  - Slice 2 nudge target: coordinator on mono-router packs; specifier on multi-role
+#    swarms — document the branch in handoffd or chase_sweep_lib.
+#  - Slice 3: extend remote_wakeup_lib / workflow path filters; unit-test path classification.
+#  - Slice 4: readRootIntakeFiles in telegram-front-desk-bot.ts; exclude README.md/STEERING.md.
+#  - Coordinator and specifier prompts: no new GitHub polling instructions; optional one-line
+#    cross-reference that daemon root-intake nudges exist (do not duplicate mono-router text).
+#  - BL-114 issue_specced.sh / issue_done.sh unchanged.

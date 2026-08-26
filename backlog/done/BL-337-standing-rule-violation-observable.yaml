@@ -1,0 +1,65 @@
+id: BL-337
+title: "Count and surface violations of standing engineering rules — an unmeasured rule silently stops holding"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 6
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-quality-gate-violation-counter.md — the HUMAN, verbatim, 2026-07-12T02:18Z: 'How many times were 252 and 255 violated since they were introduced (add thid.observable to email)'. Went unread for two days (BL-333/BL-334)."
+
+notes: |
+  HE IS ASKING TWO THINGS, AND THE SECOND IS THE DURABLE ONE:
+    1. A NUMBER, NOW — how often have the BL-252 / BL-255 rules actually been breached since they
+       landed?
+    2. AN OBSERVABLE, FOREVER — put that count in the daily briefing email, so a rule that is
+       quietly being violated SHOWS UP rather than rotting unnoticed.
+  Both are in scope. Answering (1) without building (2) misses the point; building (2) without
+  answering (1) leaves his actual question unanswered.
+
+  WHY IT MATTERS — THIS IS THE PROJECT'S OWN RECURRING BUG, TURNED ON ITSELF. It is the same
+  instinct that produced the whole "green tests, dead path" family here: A RULE THAT NOBODY
+  MEASURES IS A RULE THAT SILENTLY STOPS HOLDING. A gate whose violation count is never surfaced
+  is INDISTINGUISHABLE from a gate that is never triggered. Today we cannot tell those apart for
+  any rule in the constitution.
+
+  SCOPE:
+    1. DERIVE THE COUNT FROM HISTORY — DO NOT ADD NEW BOOKKEEPING. Each rule landed at a known
+       commit, and violations already leave durable traces: bounces, evidence commits,
+       rule_proposals. Prefer deriving from git + backlog evidence over instrumenting new
+       counters. A new counter only measures the future; the human asked about the past.
+    2. GENERALISE — DO NOT HARDCODE TWO TICKET IDS. He named 252 and 255 because those are the
+       ones he noticed. The useful shape is "violations of ANY standing engineering rule, counted
+       and surfaced". A rule added tomorrow must be counted too, with no code change. This is the
+       single most important design constraint in the ticket: a two-id implementation satisfies
+       the letter of his request and none of its value.
+    3. SURFACE IT ON THE BRIEFING EMAIL — the surface he explicitly asked for. Reuse the existing
+       briefing pipeline. If a diagram is rendered, NOTE BL-286: email images MUST be cid inline
+       attachments, NOT data-URIs, or they will not render in Gmail (this exact bug has already
+       shipped once and been reported by the human).
+    4. ANSWER HIS QUESTION EXPLICITLY, in the handoff: the historical violation count for BL-252
+       and BL-255. He asked a direct question and is owed a direct number.
+
+  TRAP — "ZERO VIOLATIONS" IS THE ANSWER YOU MUST NOT ASSUME. If the derived count comes out zero,
+  that is a claim requiring evidence, not a default. Zero could mean the rule holds perfectly, or
+  that the derivation finds nothing because it is looking in the wrong place. Validate the
+  derivation against at least one KNOWN violation before trusting a low number — this project has
+  a documented ~58% bounce rate, so a rule-violation count of zero across all rules is more likely
+  to be a broken query than a clean record. Prove the mechanism can detect a violation it is shown.
+
+  E2E QA PROCEDURE: assert against the REAL briefing artifact the human receives, not a fixture
+  render (see BL-335: this project has already closed three "done" tickets the human could not
+  see). Independently verify the derivation catches a violation known to have occurred.
+
+acceptance:
+  feature: specs/features/BL-337-standing-rule-violation-observable.feature
+  steps:
+    - "A standing rule's violations since it landed are counted from history"
+    - "A rule added later is counted with no code change"
+    - "The violation count appears on the briefing the human receives"
+    - "A violation that is known to have happened is detected by the mechanism"
+
+human_approval: pending
+
+mutation_cost: medium

@@ -1,0 +1,41 @@
+id: BL-404
+title: "launch_front_desk.sh must refuse to launch while front-desk-PARKED.md exists"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-launch-front-desk-must-honor-parked-flag.md — human-requested via Claude Code session, 2026-07-15. Observed: an operator/coordinator deliberately parked the front desk (killed the trio, wrote front-desk-PARKED.md 'DO NOT RESTART'); after the host slept and an unknown caller re-ran start_handoff_daemon, launch_front_desk.sh relaunched the trio AND deleted the park flag, silently overriding a human decision."
+
+notes: |
+  `launch_front_desk.sh` currently decides whether to launch based only on
+  its own supervisor pid-alive check and the `front-desk-supervisor.stop`
+  file, and it `rm -f`s the `.stop` file on every launch. It never consults
+  `.swarmforge/operator/front-desk-PARKED.md`.
+
+  FIX: add the same idempotent early-return posture the script already uses
+  for "already running" — if `front-desk-PARKED.md` exists, log a clear
+  "front desk is PARKED; not launching" line and exit 0 without touching the
+  `.stop` file or spawning anything. A park is an explicit human decision and
+  must survive host sleep and daemon restarts until a human removes the flag.
+
+  Also add an explicit un-park path: a script (or a documented `rm` of the
+  flag) so operators have a clear, auditable way to bring the front desk back
+  — this closes the loop the intake doc flagged as missing.
+
+  Independent from BL-394 (epic-progress change-gate, already shipped) — this
+  is about park DURABILITY across relaunches, not the spam cause BL-394 fixed.
+
+acceptance:
+  feature: specs/features/BL-404-launch-front-desk-honors-parked-flag.feature
+  steps:
+    - "Launch is refused while the park flag exists"
+    - "The park flag is left untouched by a refused launch attempt"
+    - "Launch proceeds normally once the park flag is removed"
+    - "An explicit unpark script removes the flag"
+
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
+
+mutation_cost: low

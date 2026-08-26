@@ -1,0 +1,159 @@
+id: BL-324
+title: "Per-role lifecycle: actually park the roles a ticket does not need, and bring them back when it does (routing epic slice 3)"
+milestone: M8
+status: todo
+type: feature
+severity: high
+priority: 20
+direction: non-aligned
+depends_on: [BL-317, BL-323]
+source: "Raised by the human 2026-07-13 ('we have to reduce costs') via .swarmforge/operator/INTAKE-per-role-lifecycle-park-unneeded-roles.md; drained per BL-311's convention. Coordinator routed it as non-aligned, depends_on BL-323."
+
+notes: |
+  WHY IT IS ITS OWN TICKET. The dynamic-per-ticket-agent-routing epic has four slices:
+  (1) auto-hibernate on drain — BL-307 shipped, but BL-318 says it can never fire;
+  (2) routing manifest `roles:` field — BL-317, active; (3) per-role lifecycle — THIS,
+  previously not ticketed at all, existing only as a sentence inside BL-317's notes;
+  (4) warm-core/break-even tuning — still not ticketed.
+
+  BL-317 records which roles a ticket needs and DELIBERATELY brings nothing up or down.
+  So when BL-317 lands, nothing changes operationally — no agent parked, no token saved.
+  The manifest is INERT without this slice. That is precisely this project's own
+  "a foundation slice needs its wiring slice TRACKED, not assumed" rule
+  (epic-runtime-wiring-slice-rule; the rule that kept the BL-295 epic dark until BL-300
+  wired it). Slice 3 living as prose inside another ticket's notes is the same trap.
+
+  WHAT IT MUST DO. On promote, read the ticket's `roles:` manifest (BL-317) and bring the
+  swarm to exactly that shape: start the roles the ticket needs, park the ones it does
+  not. Park = remove the role from `.swarmforge/roles.tsv` and kill its pane. This is the
+  Operator's proven mechanism, not a new one: an absent roster entry means
+  `dead-agent-events` does not fire AGENT_EXITED, so there is no respawn fight, and a
+  role's absence from the roster is already handled everywhere (BL-307's `roster-idle?`,
+  BL-316's roster-driven clear). Parking is a first-class state.
+
+  REUSE, DO NOT REINVENT: `operator_lib.bb`'s `role-idle?` (empty inbox/new, nothing
+  in_process); BL-307's `hibernate-swarm!` — this is its PER-ROLE SIBLING, not a second
+  mechanism; `.swarmforge/roles.tsv` as the single source of truth for who is expected
+  to be alive.
+
+  HARD DEPENDENCY — DO NOT BUILD BEFORE BL-323 LANDS. This slice systematically creates
+  the exact stall BL-323 fixes. Parking roles on a schedule means killing
+  claimed-but-unfinished parcels AS A MATTER OF ROUTINE; without resume-on-start, that
+  converts a rare accident (a real 4-hour silent stall on this repo, 2026-07-12) into a
+  DESIGNED-IN failure mode. `depends_on: [BL-323]` is a build gate, not a preference.
+  Mitigations required regardless of BL-323:
+    - NEVER park a role that is not `role-idle?`. A role holding an in-process task is
+      off-limits, full stop. Evaluate freshness and idleness together at sweep time;
+      never infer one from the other (the posture BL-316 took).
+    - DRAIN BEFORE PARK: a role must finish or hand off its current parcel before its
+      pane is killed.
+    - THE IDLE CHECK MUST BE PER-KILL, NOT PER-BATCH (added 2026-07-13 after the
+      architect's review of the first build). `role_lifecycle_cli.bb`'s `run-shape!`
+      snapshots every role's idleness ONCE (`current-roster`), then `park-role!` does
+      `remove-role-row!` -> `kill-role-session!` with NO re-check. The window between the
+      snapshot and a given kill spans manifest validation plus a slurp of every paused
+      ticket YAML, and the kill order is sorted, so the last role parked has the widest
+      window — easily seconds. A role that is idle at survey time can claim a parcel in
+      that window and be killed mid-task. "Off-limits, full stop" means an idleness check
+      that still HOLDS at the moment of the kill, not one that held earlier in the pass.
+      Re-check `role-idle?` immediately before each `kill-role-session!`; if the role is no
+      longer idle, ABORT that role's park and restore its roster row, leaving it alive.
+      WHY THIS IS WORSE THAN AN ORDINARY INTERRUPT — and why BL-323 does NOT cover it: a
+      parcel claimed in that window ends up in a PARKED role's `in_process`. BL-323's
+      resume-on-start only fires when a role RELAUNCHES, and a parked role never does. So
+      the parcel is not merely interrupted, it is STRANDED — invisibly, with the ticket
+      still sitting in `backlog/active/` and no agent alive to work it. That is exactly the
+      silent-stall class BL-323 was written to eliminate, re-introduced by this slice. It is
+      precisely the "converts a rare accident into a designed-in failure mode" hazard this
+      ticket's own HARD DEPENDENCY section warns about.
+      THE INVARIANT THAT ACTUALLY MATTERS (assert this, not just the check): after a shape
+      pass, NO parked role holds a claimed parcel. A re-check narrows the race; the
+      invariant is what proves the race was closed. If a role cannot be parked without
+      stranding work, it must be left ALIVE — parking is always the sacrificable half.
+      NOTE FOR THE CODER: scenarios `per-role-lifecycle-07` and `-08` were added to the
+      feature file for this; their step handlers must be wired in the same parcel, or the
+      acceptance runner hard-fails and blocks the hardener's gate (BL-233).
+
+  THE TRAP THAT MAKES NAIVE IMPLEMENTATIONS LOSE MONEY. Bringing a role back up is NOT
+  free — a cold role re-reads its whole system prompt + constitution + role prompt on
+  boot, while an idle agent's marginal cost is only the pokes it receives. Park/unpark
+  churn can cost MORE than leaving a role warm. So:
+    - HYSTERESIS / LOOKAHEAD: never park a role the NEXT QUEUED ticket's manifest already
+      needs. Check the queue, not just the current ticket.
+    - WARM CORE: the coordinator is the dispatcher and the most-woken role; parking it is
+      almost certainly never right (it is also the one role no pack can move off Claude
+      today — BL-319).
+    - THE WARM CORE IS COORDINATOR **AND SPECIFIER** (corrected 2026-07-13 after the
+      hardener's review of the first build; my original spec named only the coordinator and
+      that was WRONG). `warm-core-roles` is `#{"coordinator"}`, but the specifier IS a member
+      of routing_manifest_lib's standard-chain, so a narrow manifest (`roles: [coder, QA]`)
+      makes an idle specifier parkable — confirmed empirically by the hardener.
+      WHY THIS IS A DEADLOCK, NOT MERELY A STALL. Unparking fires only when a LATER TICKET'S
+      MANIFEST NAMES the role. But every one of the specifier's real duties happens BEFORE a
+      ticket exists: draining the backlog root, draining `.swarmforge/operator/INTAKE-*.md`,
+      reviewing `rule_proposal`s from any role, and writing the specs for tickets not yet
+      written. NONE of that is expressible in a `roles:` manifest, because a manifest can only
+      name the roles needed to BUILD a ticket that already exists — and the specifier's job is
+      to bring tickets INTO existence. So: park the specifier -> no new ticket is written -> no
+      manifest ever names the specifier -> it is never unparked. The swarm silently loses its
+      ability to take in ANY new work, review any rule proposal, or drain any operator
+      directive, while every health surface reads green. This is the same circularity family
+      as BL-318 (hibernate-vs-self-generate), and unlike an interrupted parcel, BL-323's
+      resume-on-start cannot rescue it — a parked role never relaunches.
+      THE GENERAL RULE, not the special case: a role belongs to the warm core when its duties
+      are CONTINUOUS and TICKET-INDEPENDENT — i.e. not expressible in any ticket's manifest,
+      and therefore unreachable by the manifest-driven unpark path. Parking such a role is a
+      ONE-WAY DOOR. Never park a role whose only route back is a trigger its own work can
+      never produce. The other chain roles (cleaner, architect, hardener, documenter) are
+      genuinely per-ticket and remain parkable; coder and QA are always required by BL-317's
+      validator anyway.
+      NOTE FOR THE CODER: scenarios `per-role-lifecycle-09` and `-10` were added to the feature
+      file for this; their step handlers must be wired in the same parcel (BL-233). Add
+      `specifier` to `warm-core-roles`, and update that def's docstring — its current wording
+      claims warm-core roles can "never appear in a ticket's declared roles: manifest", which
+      is true of the coordinator (BL-243) but FALSE of the specifier, which is a standard-chain
+      member. A manifest may legitimately name the specifier; that must keep it alive, never
+      park it.
+    - MEASURE, DO NOT ASSUME: use the BL-273 burn-rate meter to compare a warm-idle
+      role's real token draw against a cold start, and let that number set the policy.
+      Do NOT ship a guessed timeout as if it were a finding. If a park cycle's measured
+      delta is NEGATIVE (churn cost more than it saved), REPORT THAT rather than shipping
+      a loss. Slice 4 (break-even tuning) exists because the threshold is an empirical
+      question.
+
+  COST CONTEXT. Agent COUNT is the dominant cost lever — ahead of run-time and well ahead
+  of model tier. A full 8-role pack keeps 7 work agents alive for a ticket that may
+  genuinely need 3; each is re-poked on handoffs and chasers, and each poke re-reads that
+  agent's accumulated history (prompt caching discounts the static prefix, NOT the growing
+  history — which is what BL-316 attacks from the other side). BL-316 makes each agent
+  cheaper; this slice makes there be FEWER of them. They compose.
+
+  DIRECTION NOTE: classified `non-aligned` honestly — the active STEERING direction is
+  `reliability-first` (through 2026-07-20), whose target is QA first-pass rate and open-bug
+  count. This is a cost/efficiency slice. It is the human's stated priority ("we have to
+  reduce costs") and HIGH on cost severity, but the coordinator should promote it through
+  STEERING's direction lane, and its BL-323 gate must hold regardless.
+
+  E2E QA PROCEDURE: (a) a ticket whose manifest names 3 roles -> assert exactly those 3
+  plus the warm core are alive and the rest are parked and NOT respawned; (b) a later
+  ticket naming a parked role -> assert it comes back up and picks up work; (c) a role
+  holding a REAL claimed parcel -> assert it is NEVER parked (assert against a real
+  claimed parcel, not a fixture — that is exactly the case that broke on 2026-07-12);
+  (d) park and unpark across a ticket boundary -> assert NO work is lost (the parcel is
+  finished, handed off, or requeued, never orphaned); (e) a ticket with no `roles:`
+  manifest -> assert the FULL chain stays alive, never a narrowed one; (f) report the
+  measured token delta of a park cycle vs leaving the role warm.
+
+acceptance:
+  feature: specs/features/BL-324-per-role-lifecycle-park-unneeded-roles.feature
+  steps:
+    - "A ticket's manifest shapes the swarm to exactly the roles it needs"
+    - "A parked role comes back when a later ticket needs it"
+    - "A role holding an in-process parcel is never parked"
+    - "A role needed by the next queued ticket is not parked and re-woken"
+    - "A ticket with no manifest keeps the full chain alive"
+    - "A park cycle reports its measured token cost, even when it is a loss"
+
+human_approval: approved
+
+mutation_cost: medium

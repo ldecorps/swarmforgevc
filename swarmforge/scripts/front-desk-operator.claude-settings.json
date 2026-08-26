@@ -1,0 +1,7 @@
+{
+  "model": "claude-opus-4-8",
+  "effortLevel": "high",
+  "permissions": {
+    "defaultMode": "default"
+  }
+}

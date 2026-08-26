@@ -1,0 +1,79 @@
+id: BL-271
+title: "Add the BL-266 Listen (TTS) control to the phone app's recert view (read the shown scenario's name + Gherkin text)"
+milestone: M2
+status: todo
+priority: 10
+direction: reliability
+assigned_to: coder
+source: "human command via operator -> coordinator 2026-07-11 (INTAKE-listen-control-on-recertify-view.md). Specifier confirmed the read payload with the human 2026-07-11: read the currently-shown recert scenario's NAME + Gherkin TEXT (the direct BL-266 analog)."
+
+description: |
+  Add the BL-266 "Listen" control (client-side, on-device text-to-speech) to the
+  phone app's RECERT view, so a recert scenario can be listened to on the phone
+  the same way a pending ticket already can.
+
+  Surface (settled): the STATIC PWA (pwa/app.js), NOT the holistic UI. The
+  Listen control is client-side TTS over already-projected recert-batch.json
+  data — no bridge/auth/write path — so it belongs on the git-projection surface,
+  consistent with BL-266 (local-engineering.prompt two-surface rule).
+
+  Read payload (human-confirmed 2026-07-11): read the CURRENTLY-SHOWN recert
+  scenario's NAME followed by its Gherkin TEXT. The recert view renders one
+  scenario at a time (recertBatch.batch[0], rendered as an <h4> name + a
+  <pre class="gherkin"> text in renderRecertContent). This is the direct analog
+  of BL-266 reading a pending ticket's description + acceptance.
+
+  Live integration seams (verified against pwa/app.js 2026-07-11 — reuse these):
+    - renderListenControl(container, ticket) (~L407) already renders the toggle
+      button, handles the browser speechSynthesis boundary, the
+      start/stopListening aria-labels on EVERY state transition (the BL-238/BL-266
+      a11y fix), and the graceful listenUnavailable note. REUSE it — do NOT write
+      a second TTS implementation.
+    - assembleSpokenText(ticket) (~L…) builds the spoken string from
+      ticket.description + each ticket.scenarios[].text. For a recert scenario
+      (fields .name + .text), feed the control an equivalent spoken source:
+      either adapt the recert scenario into the shape assembleSpokenText expects
+      ({ description: scenario.name, scenarios: [{ text: scenario.text }] }) or
+      generalize assembleSpokenText into a small pure "parts assembler" both call
+      sites share. Keep the assembly PURE and testable (this is the unit/
+      acceptance-testable seam; speechSynthesis itself is the untested browser
+      boundary).
+    - renderRecertContent() (~L…) renders recertBatch.batch[0]'s name + text +
+      the Confirm/Update/Delete actions. Place the Listen control here, shown
+      only when a scenario is present (batch[0] exists); omit it when
+      recertNoneNeeded (nothing to read).
+    - Localization: reuse the existing locales.js keys
+      (startListening/stopListening/listenUnavailable) — already translated
+      (en + fr). No new TTS strings needed; do not hardcode labels.
+
+  Wanted behavior:
+  - When the recert view shows a scenario, a Listen control (the BL-266 control)
+    is present; activating it reads the shown scenario's name then its Gherkin
+    text aloud, and toggles to Stop while speaking.
+  - The control keeps its accessible label in sync with its Listen/Stop state on
+    every transition (inherited from BL-266's control — do not fork it).
+  - When TTS is unavailable, the graceful listenUnavailable note shows instead of
+    the button (inherited).
+  - When no scenario needs recertification, no Listen control is offered.
+
+  Constraints:
+  - REUSE BL-266's control + localization; a second TTS implementation is a
+    bounce. Reuse is what preserves the a11y + i18n for free.
+  - No localStorage/sessionStorage/browser storage (webview storage restriction
+    does not apply to the static PWA, but keep TTS on-device only: no network).
+  - PWA-lane serialization: this edits pwa/app.js; sequence against any other
+    in-flight pwa/app.js ticket (none active at spec time).
+  - Keep the unit/acceptance suite fast and deterministic; the spoken-text
+    assembly is the testable seam (drive it directly, not through real
+    speechSynthesis).
+
+  QA e2e procedure:
+  - Load the PWA recert view against a recert-batch.json with a scenario; confirm
+    a Listen control appears, activating it speaks the scenario name + Gherkin
+    text, the button toggles Listen<->Stop and its aria-label tracks the state.
+  - Load a recert-batch.json with an empty/absent batch; confirm no Listen
+    control is shown (recertNoneNeeded).
+  - Confirm the pending-ticket Listen (BL-266) still works unchanged (regression).
+
+acceptance: specs/features/BL-271-recert-view-listen-control.feature
+mutation_cost: low

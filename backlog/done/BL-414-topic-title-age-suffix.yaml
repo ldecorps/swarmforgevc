@@ -1,0 +1,84 @@
+id: BL-414
+title: "Topic title shows a coarse 'last updated N ago' age suffix (change-gated)"
+milestone: M8
+type: feature
+status: todo
+severity: low
+priority: 6
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784107405288.md — operator-relayed Telegram request 2026-07-15T09:23Z. Human clarified (specifier Q, 2026-07-15): a colour gradient is not achievable and the topic icon is already taken by ticket STATE (BL-342), so the age rides the topic TITLE as a coarse suffix."
+
+notes: |
+  WHAT: append a coarse, glanceable staleness suffix to each concierge-managed
+  topic's title reflecting how long ago that topic was last updated — e.g.
+  "BL-999 do a thing · 3h ago" / "· 2d ago". The human accepted a title suffix
+  over the (infeasible) colour gradient.
+
+  BUCKETED + CHANGE-GATED (this is the crux — do NOT rename every tick):
+  Telegram rate-limits editForumTopic and a rename posts visible churn, so the
+  age is a COARSE bucket and the title is edited ONLY when the bucket changes,
+  exactly like BL-342's icon change-gate and BL-394's announce-on-transition.
+  Persist the last-announced bucket per topic (alongside/like the icon's
+  emittedKey state) and skip the edit when the bucket is unchanged. Suggested
+  buckets (coder may retune): fresh (<1h, no suffix or "· just now"),
+  hours (1-24h, "· Nh ago"), day (1-3d, "· Nd ago"), stale (>3d, "· 3d+ ago").
+
+  RESET ON ACTIVITY: when the topic gets new activity its "last updated" time
+  resets, so the next tick moves it back to the freshest bucket and re-edits the
+  title accordingly. "Last updated" = the topic's last-activity timestamp; source
+  it from the existing per-topic record (blTopicStore) rather than inventing a
+  new store — confirm at build time which field records last activity.
+
+  BASE-TITLE SAFETY: the suffix is idempotent — appending/replacing it must
+  preserve the underlying ticket title and never accumulate multiple suffixes
+  (parse off any existing "· ... ago" tail before re-appending). The base title
+  is looked up the same way conciergeTick already does (titleForBacklogId over
+  the folders snapshot).
+
+  HOST: conciergeTick.ts — the SAME per-tick loop BL-342 already rides for icon
+  sync (extension/src/concierge/conciergeTick.ts), editing via
+  telegramClient.ts's editForumTopic({ name }) (extension/src/notify/
+  telegramClient.ts:334). Follow BL-342's "never touch a topic the swarm did not
+  create/own" ownership posture — only re-title concierge-owned topics, and
+  never a crash over a cosmetic rename (conciergeTick already treats topic
+  cosmetics as non-fatal).
+
+  TESTABILITY: the decision is a PURE function — given (base title, last-update
+  ms, now ms, last-announced bucket) return {new-title-or-none, next-bucket} —
+  unit-tested with fixtures and an injected clock (no real timer, per the
+  no-real-timers rule; thread the existing nowMs seam). The tick is the thin
+  wiring slice that reads last-activity, calls the pure fn, and edits only on a
+  change.
+
+  DRY note (feature file): the APS IR-DRY checker flags 17 medium findings — all
+  are the Scenario-Outline placeholder step (bucket "<now>") matched against its
+  literal-valued twin in the concrete scenarios; that is ONE parameterized step
+  handler serving many scenarios (intended APS reuse), not accidental
+  duplication. Reviewed and kept.
+
+  OUT OF SCOPE: the topic ICON (BL-342 owns state->icon); any non-concierge
+  topics; sub-hour precision (coarse buckets only, by design).
+
+acceptance:
+  feature: specs/features/BL-414-topic-title-age-suffix.feature
+  steps:
+    - "Crossing into a staler bucket re-titles the topic once with that bucket's age suffix; an unchanged bucket does not re-edit"
+    - "New activity resets the suffix to the freshest bucket on the next tick"
+    - "The base ticket title is preserved and carries exactly one age suffix (never an accumulation)"
+
+qa_e2e: |
+  1. Unit: drive the pure title fn over fixtures with an injected clock across
+     bucket boundaries and a same-bucket case; assert the edited title / no-edit
+     and next-bucket. Add a case where the input title already carries a stale
+     suffix and assert the base title is preserved with exactly one suffix.
+  2. Wiring: run a concierge tick over a fixture topic store whose last-activity
+     puts a topic in a new bucket; assert editForumTopic is called once with the
+     expected name; a second tick at the same time asserts no edit.
+  3. Live: against the real forum group, let a topic age past a bucket boundary
+     and confirm its title gains the suffix once (no repeated renames on
+     subsequent ticks), and that posting to it resets the suffix.
+
+human_approval: approved  # human via Operator relay (OPERATOR thread), 2026-07-15T12:43Z: "Approved all" to the 5-ticket list (BL-411 413 414 415 418)
+
+mutation_cost: low

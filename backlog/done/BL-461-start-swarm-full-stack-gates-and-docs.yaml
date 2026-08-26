@@ -1,0 +1,88 @@
+id: BL-461
+title: "`./start-swarm.sh` / `./swarm ensure` must bring up the full stack (agents + handoffd + operator + Telegram front desk), pass the swarm gates, and be documented"
+milestone: M8
+type: chore
+severity: medium
+status: todo
+epic: ""
+priority: 3
+direction: human-requested
+depends_on: []
+source: "human (ldecorps) via Cursor chat 2026-07-16 — after a WSL reboot killed the 5-day swarm at ~/swarmforgevc: extend start-swarm.sh + ./swarm ensure so one command restores everything, then 'file a ticket for the swarm so that it has a pass through it'. Drained from backlog/BL-461-start-swarm-full-stack-gates-and-docs.yaml (raw root intake) by the specifier 2026-07-16."
+
+description: |
+  One command must restore the FULL swarm on a headless / WSL host after a reboot: agent sessions, the
+  handoff daemon, the operator runtime, and — when Telegram is configured — the front-desk supervisor
+  (the Telegram bridge + Front Desk Bot). This EXTENDS BL-145's ./swarm ensure (idempotent repair), not
+  a parallel ensure story, and adds a cold-start path via this host's operator entry point
+  ./start-swarm.sh (the headless wrapper around ./swarm — NOT bare ./swarm from a /mnt/c checkout).
+
+  Context (live host: /home/carillon/swarmforgevc):
+    - WSL rebooted 2026-07-16; tmux + handoffd + operator + front desk all died. Worktrees and
+      .swarmforge/launch/*.sh survived.
+    - A Cursor-side patch already sits on this tree (treat as UNGATED, not done):
+        * swarmforge/scripts/swarm_ensure.bb — ensure also covers operator + front desk (when TELEGRAM_*
+          set or a prior front-desk pid exists); per-component HEALTHY / FIXED (naming the repair) / FAILED.
+        * swarmforge/scripts/swarmforge.sh — start_ancillary_services during a cold launch (best-effort;
+          honors skip flags; never aborts agent launch on an ancillary failure).
+        * start-swarm.sh — after sessions are ready, runs ./swarm ensure so ancillaries are started/repaired.
+        * swarmforge/scripts/test/test_swarm_ensure.sh — scenarios 05a/05b/05c/06 (Cursor-run green, which
+          is NOT a swarm gate pass).
+    - Front desk still requires TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID / TELEGRAM_PRINCIPAL_USER_ID in the
+      launching shell env.
+
+  What this ticket must force through the swarm:
+    1. Coder/cleaner/architect/hardener/QA: land (or re-land) the Cursor patch so the swarm's OWN hard
+       gates pass for the touched scripts — Cursor-green is insufficient. Keep the component start commands
+       injectable via the existing env seams (SWARM_ENSURE_OPERATOR_CMD / SWARM_ENSURE_FRONT_DESK_CMD) so
+       the shell harness never spawns a real bridge/credentialed subprocess (engineering: a guard-fires test
+       must env -u the creds; never launch live against real creds).
+    2. Documenter: operator-facing docs name ./start-swarm.sh as the one restart command on WSL/headless
+       hosts and ./swarm ensure as the repair command; document the Telegram env requirements and the skip
+       flags. Prefer docs/GettingStarted.md and/or README; deep detail may link Specification.MD. No
+       invented commands — every named command/script must exist in the repo.
+
+  Constraints:
+    - Extend BL-145; do NOT fork a parallel ensure implementation.
+    - The cold-launch ancillary start is BEST-EFFORT: an ancillary that fails to start is reported FAILED
+      but must NEVER abort the agent launch.
+    - The front desk is checked ONLY when Telegram is configured OR a prior front-desk pid file exists;
+      otherwise it is omitted (not reported FAILED).
+    - Shell/bb gate discipline: reach fixtures via env seams, not chdir/HOME overlay; env -u any creds a
+      guard-fires test asserts on so a developer's real exported TELEGRAM_* never defeats the guard or
+      spawns a live bridge (engineering rules).
+
+  Related: BL-145 (original ensure), BL-336 G1/G2 (front desk not in the boot path), BL-372
+  (start-swarm.sh detach). A prior Cursor-only intake BL-394 may exist on a Windows-mounted checkout the
+  swarm does not read — THIS ticket is the live-backlog intake.
+
+  E2E QA PROCEDURE: on a host with Telegram env set, run ./start-swarm.sh and assert agent sessions +
+  handoffd + operator runtime + front-desk supervisor come up (or a failing one is reported without
+  aborting the agents); kill the operator runtime and run ./swarm ensure, asserting it reports the
+  operator FIXED and re-checks it HEALTHY on a second run (idempotent); unset the Telegram env with no
+  prior front-desk pid and assert ensure OMITS the front-desk component (does not report it FAILED); set a
+  component skip flag and assert that component is skipped while the others still come up; confirm the
+  swarm's own gate (test_swarm_ensure.sh + the touched-script gates) passes; and confirm Getting Started
+  / README name both commands with their Telegram env + skip flags and that every named script exists.
+
+acceptance:
+  feature: specs/features/BL-461-start-swarm-ensure-full-stack.feature
+  steps:
+    - "A cold start via start-swarm.sh brings up agents and every ancillary"
+    - "ensure repairs the full stack idempotently and reports each component"
+    - "The front desk is checked only when Telegram is configured or a prior front-desk pid exists"
+    - "A skip flag omits its component without aborting the rest"
+    - "The touched scripts pass the swarm's own gates"
+    - "The docs name the restart and repair commands with their env and skip flags"
+
+human_approval: >
+  Human-requested via Cursor chat 2026-07-16 (ldecorps), explicitly asking for a single restore command
+  after a WSL reboot AND for a ticket so the change gets a real pass through the swarm. Firm contract:
+  ./start-swarm.sh restores the full stack on a headless/WSL host; ./swarm ensure idempotently repairs it
+  (extending BL-145) and covers operator + front desk when configured; the touched scripts pass the
+  swarm's own hard gates (Cursor-green is not enough); the docs name both commands with their Telegram env
+  and skip flags. Build-time details NOT gating promotion: exact component report wording, exact skip-flag
+  names, and which doc file (Getting Started vs README) carries the detail — as long as every named
+  command/script exists.
+
+mutation_cost: medium

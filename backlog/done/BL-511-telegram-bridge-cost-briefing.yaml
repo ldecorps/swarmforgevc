@@ -1,0 +1,130 @@
+id: BL-511
+title: "Daily briefing: estimate the Telegram front-desk bridge's cost per day (exact per-call figure, front-desk operator only)"
+milestone: M8
+type: feature
+epic: ""
+priority: 6
+direction: human-requested
+depends_on: []
+source: "Root intake backlog/INTAKE-operator-question-1784315781560.md (Operator relayed a Telegram question it could not answer, 2026-07-17): estimate how much extra is spent on the Telegram bridge and add a per-day estimate to the daily briefing. Specifier asked the human 2026-07-17 and CONFIRMED three decisions before speccing: (1) basis = the EXACT total_cost_usd each front-desk/Operator `claude -p` invocation already reports (not a count x average); (2) scope = front-desk concierge calls AND the incremental Telegram share of the always-on Operator's wakeups; (3) surface = the daily-briefing EMAIL."
+
+notes: |
+  AMENDMENT (in-flight, 2026-07-18 — specifier): SCOPE NARROWED TO FRONT-DESK-ONLY.
+  The coder shipped BL-511 front-desk-only (commit 12de48dd) and asked the specifier to
+  open a follow-up ticket for the Operator side. When the specifier surfaced the choice,
+  the human decided: capture the front desk exactly and DOCUMENT the Operator's Telegram
+  share as a known limitation — do NOT build Operator capture. Reason it is not
+  buildable exactly: the always-on Operator runs as an INTERACTIVE `claude --remote-control`
+  session (launch_operator.sh), not a headless `claude -p --output-format json` call, so
+  it emits NO per-wakeup total_cost_usd on disk (cost lives server-side on claude.ai).
+  Estimating it (count x average) would violate the human's exact-cost basis and the
+  codebase's honest-null discipline, so it is reported nowhere. Consequences for the
+  in-flight parcel (bounces to the coder to rebuild front-desk-only):
+    * Retired acceptance scenarios 02 (capture-operator-event-breakdown) and 04
+      (operator-prorated-by-share) and the Operator dimension of scenario 05. Scenario 02
+      was UNHANDLED, which the acceptance runner throws on (runtime.js:24) — it would have
+      bounced BL-511 regardless; this amendment pre-empts that.
+    * computeTelegramBridgeCostForDay + formatTelegramBridgeCostLine become front-desk-only:
+      REMOVE the operator branch and the "Operator $X attributed" line term. Left in, the
+      line renders "Operator $0.00 attributed" every day — falsely reporting an UNMEASURED
+      share as a measured zero, the exact honesty violation scenario 06 forbids.
+    * Add a one-line comment at the capture/compute site recording WHY the Operator is not
+      attributed (the "document" deliverable). No separate Operator-capture ticket exists —
+      the human declined to build it.
+  Everything below this block is the ORIGINAL front-desk+Operator spec, retained for
+  lineage; where it describes Operator capture/proration it is SUPERSEDED by this block.
+
+  WHAT / WHY: the human wants a daily, honest figure for "how much extra am I paying for the
+  Telegram front-desk bridge." Today that number is uncomputable from the outside AND is
+  literally thrown away: each front-desk/Operator `claude -p --output-format json` invocation
+  reports its own exact total_cost_usd + usage, but the result file is read only for its reply
+  text and then deleted (reap-finished-front-desk-operator!, operator_runtime.bb ~L1350). This
+  ticket captures that exact figure at reap time and surfaces a per-day total in the briefing email.
+
+  VERIFIED LIVE LAYER (scope to the paths that actually run; grep before trusting a file):
+    - Capture (Babashka, .bb — thin append only):
+      * Front-desk: reap-finished-front-desk-operator! (operator_runtime.bb) holds the result file
+        (total_cost_usd, usage, model) and the claimed batch just before deleting the result.
+        front-desk-reply-text (operator_lib.bb ~L401) currently reads only is_error/result.
+      * Operator: the always-on Operator's batch reap/done path (events.inflight.jsonl ->
+        events-done). Its batches MIX TELEGRAM_TOPIC_MESSAGE with SWARM_CHECK_TIMER/other events.
+      Append ONE record per invocation to a durable, append-only, machine-local log
+      (.swarmforge/operator/ — gitignored runtime state, NOT committed, NOT in backlog.json):
+      { ts, kind: front-desk|operator, model, total_cost_usd (or null), telegram_events,
+        total_events }.  JSONL; keep the .bb side thin.
+    - Attribution + render (TypeScript, the mutation-gated gate — heavy logic lives here):
+      * new pure module (e.g. extension/src/metrics/telegramBridgeCost.ts):
+        computeTelegramBridgeCostForDay(records, dayKey) — front-desk = 100% of its cost;
+        Operator = cost x (telegram_events / total_events), a purely-timer batch contributing 0;
+        an invocation with null/unpriced cost is UNKNOWN and EXCLUDED from the total, never $0
+        (mirror estimateCostUsd's honest-null discipline in metrics/pricingTable.ts).
+      * new CLI extension/src/tools/telegram-bridge-cost-line.ts -> compiled
+        out/tools/telegram-bridge-cost-line.js. main() is a THIN wrapper over the exported pure
+        fns (computeTelegramBridgeCostForDay + formatTelegramBridgeCostLine); the log path and the
+        day-key are INJECTED args (missing-seam + no-real-clock-day-bucketing; keeps the Stryker
+        sandbox off the repo-root .swarmforge/ sibling). Exercise main() IN-PROCESS (stub
+        process.cwd/argv, await main()), plus a subprocess smoke test as the wiring lock only.
+    - Wire into the email: add a key to optional-section-adapter-keys (briefing_email_lib.bb) and a
+      *-briefing-line fn in handoffd.bb (~L816-968) that shells the new CLI, exactly as the
+      existing suite-duration / qa-bounce / not-done-count lines do. append-content-block already
+      skips a blank/nil block, so a no-activity day (or a missing/unreadable log) OMITS the line
+      without error — do NOT add a bespoke crash path.
+
+  ATTRIBUTION RULE (pinned in the feature; front-desk-full is firm, Operator-proration is the
+  specifier's call flagged for approval): front-desk operator is DEDICATED to Telegram => 100% of
+  its cost is bridge cost. The Operator is SHARED => attribute its Telegram share of the batch
+  (cost x telegram/total). Alternative the human may prefer: count an Operator wakeup's FULL cost
+  whenever its batch held any Telegram event (an upper bound) — easy to flip; see approval_context.
+
+  SURFACE BOUNDARY (local-engineering rule 5): this is machine-local/live data, so it belongs on
+  the host-side briefing email, NOT the static PWA/backlog.json projection. Do not commit the log
+  or push the figure into backlog.json. (The existing cost-health SIDECAR is a separate, committed
+  daily aggregate for the PWA; this line is deliberately email-only per the human's choice.)
+
+  ORTHOGONALITY: touches operator_runtime.bb, operator_lib.bb, handoffd.bb, briefing_email_lib.bb
+  and new extension/src/metrics + tools files. NOT orthogonal to any in-flight front-desk/Operator
+  or briefing-email ticket that edits those same files (this project has repeatedly been bitten by
+  two roles editing operator_runtime.bb / handoffd.bb at once) — coordinator to sequence, not run
+  concurrently, against whatever holds those files. Orthogonal to the pipelineBoard.ts board work
+  (BL-505/506/507/508).
+
+acceptance:
+  # Observable contract: at reap time each front-desk/Operator invocation's EXACT reported cost is
+  # captured (before the result file is deleted) with its Telegram/total event counts; the day's
+  # bridge cost = full front-desk cost + Operator cost prorated by Telegram event share, excluding
+  # unknown-cost invocations rather than zeroing them; the briefing email shows one line with the
+  # day's total plus a front-desk-count / Operator-share breakdown, and OMITS the line without
+  # error on a no-activity, absent, or unreadable log.
+  feature: specs/features/BL-511-telegram-bridge-cost-briefing.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm) — FRONT-DESK-ONLY:
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. Seed a fixture bridge-cost log with two front-desk records (one priced, one unpriced/null).
+#      Run the CLI in-process against that fixture + a fixed day-key; assert the total = the priced
+#      front-desk cost only, the unpriced front-desk record is excluded (reported unknown, NOT $0),
+#      and the rendered line reports the front-desk call count with NO "Operator ... attributed" term.
+#   3. Compose the briefing email over that fixture and confirm the line renders; then over an empty
+#      / absent / unreadable log and confirm the line is omitted and the rest of the email is intact.
+#   4. Grep the shipped module/capture site: confirm there is NO operator-kind record writer and a
+#      comment records WHY the Operator share is not attributed (interactive --remote-control session
+#      emits no per-call total_cost_usd). Confirm no acceptance scenario asserts Operator attribution.
+#   5. Live smoke: trigger a real Telegram message to the front desk, let the reap run, and confirm a
+#      record with a real total_cost_usd landed in .swarmforge/operator/ before the result file was
+#      deleted, and that tomorrow's briefing would count it.
+
+human_approval: pending
+approval_context: >
+  AMENDED to front-desk-only per your 2026-07-18 decision. You chose to capture the front desk
+  exactly and DOCUMENT the Operator's Telegram share as a known limitation rather than build or
+  estimate it — because the always-on Operator is an interactive claude --remote-control session that
+  emits no per-wakeup total_cost_usd (its cost is only server-side on claude.ai), so an exact figure
+  isn't obtainable and a count x average estimate would break both your exact-cost basis and our
+  honest-null discipline. This amendment retires the two Operator acceptance scenarios and strips the
+  Operator term from the compute + briefing line (left in, it renders "Operator $0.00 attributed"
+  daily — a false measured-zero). The line now reports the exact front-desk (dedicated bridge) cost
+  plus the front-desk call count; an unpriced/unknown front-desk call is excluded, never counted as
+  $0. No separate Operator-capture ticket is being opened. Sign-off needed on: narrowing BL-511 to
+  front-desk-only and reporting the Operator share nowhere (documented in code). If you'd instead
+  prefer a labelled Operator estimate on the line, say so and I'll re-open that scope.
+
+mutation_cost: medium

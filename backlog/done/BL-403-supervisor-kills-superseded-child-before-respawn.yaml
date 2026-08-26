@@ -1,0 +1,46 @@
+id: BL-403
+title: "Front-desk supervisor must kill a presumed-unhealthy bot child before spawning its replacement"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-front-desk-supervisor-orphans-superseded-bot.md — human-requested via Claude Code session, 2026-07-15. Concrete instance 2026-07-15T07:39Z: supervisor 1881207 left orphan bot pid 1881442 (attempt-1) alive after judging it unhealthy and spawning attempt-2 (pid 1881899); both long-polled Telegram getUpdates on the same bot token."
+
+notes: |
+  Telegram allows exactly one getUpdates long-poller per bot token; a second
+  poller gets HTTP 409 and the two bots fight over the offset, producing
+  unreliable/duplicated/dropped delivery. This is the same "stray orphaned
+  attempt-2 instance" noted in the 2026-07-14 front-desk park incident,
+  recurring on ordinary launch, not just park/unpark.
+
+  Scope: `swarmforge/scripts/front_desk_supervisor_lib.bb`'s
+  `decide-restart-action` (and whatever caller acts on that decision in
+  `front_desk_supervisor.bb`). The existing code comment "a live pid is not
+  proof it is still [healthy]" covers the forward direction (a live pid may
+  be unhealthy); this ticket is the inverse gap: judging a child unhealthy
+  does not by itself make its pid dead, and nothing today confirms it before
+  spawning the replacement.
+
+  FIX: when the supervisor decides to restart a child, it must terminate the
+  prior child pid (SIGTERM, then SIGKILL after a bounded grace timeout) and
+  confirm the pid is no longer alive BEFORE spawning the replacement.
+  Reconcile the recorded pid in status.json so exactly one bot process (and
+  one bridge process) is ever alive per supervisor at a time.
+
+  Out of scope: the Telegram front-desk redelivery/offset bug (BL-369/389)
+  and the epic-progress spam fix (BL-394) — this ticket is about process
+  lifecycle only, not message delivery semantics.
+
+acceptance:
+  feature: specs/features/BL-403-supervisor-kills-superseded-child.feature
+  steps:
+    - "Restarting an unhealthy bot terminates the prior pid before spawning the replacement"
+    - "The replacement is not spawned while the prior pid is confirmed still alive"
+    - "status.json reflects exactly one live bot pid after a forced restart"
+
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
+
+mutation_cost: low

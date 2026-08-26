@@ -1,0 +1,68 @@
+id: BL-494
+title: "One-time reconcile tool to CLOSE the legacy per-ticket Telegram topics (closeForumTopic), honoring a 429's retry_after; never touch epic/Backlog/standing topics; idempotent on re-run"
+milestone: M8
+type: feature
+severity: low
+epic: topic-consolidation
+priority: 7
+direction: human-requested
+depends_on: [BL-493]
+source: "Child of BL-491 (topic-consolidation epic), from Operator intake INTAKE-operator-question-1784277729691.md. Human decision D2: the hundreds of existing per-ticket topics in the live group are CLOSED once (read-only, history preserved), not deleted and not left open."
+
+acceptance:
+  feature: specs/features/BL-494-close-legacy-per-ticket-topics.feature
+  steps:
+    - "Running the tool closes each legacy per-ticket topic"
+    - "A 429 is honored by waiting its retry_after before continuing"
+    - "Epic topics, the Backlog topic, and standing topics are never closed"
+    - "Re-running the tool is idempotent"
+
+notes: |
+  MIGRATION SLICE of the BL-491 epic (human decision D2 = one-time CLOSE). depends_on BL-493 — only
+  close the legacy per-ticket topics once the new epic/Backlog routing is live, so nothing is still
+  writing to a topic being closed.
+
+  SCOPE (verified live 2026-07-17):
+    - A one-time reconcile CLI (e.g. extension/src/tools/close-legacy-ticket-topics.ts) that reads the
+      existing per-ticket topic ids from backlog-topic-map.json (readBacklogTopicMap,
+      backlogTopicMapStore.ts — currently keyed by BOTH ticket id AND epic id → topicId) and calls
+      `closeForumTopic` (telegramClient.ts:488) on each PER-TICKET topic. closeForumTopic collapses the
+      topic to read-only and PRESERVES its history (distinct from deleteForumTopic, which destroys it —
+      do NOT delete).
+    - MUST honor a 429's own told-you-so `retry_after` exactly as backfill-topic-icons.ts already does
+      (wait exactly retry_after seconds, then continue; never fan out unthrottled) — this is a mass
+      edit over a rate-limited surface at first-run volume (potentially hundreds of topics), the exact
+      backfill-storm the engineering.prompt rate-limit rule and the operator memory
+      "icon-backfill-vs-stale-tick" exist to prevent. Reuse the backfill tool's retry_after mechanism;
+      do not write a second throttle.
+    - Close ONLY per-ticket topics. Never close an EPIC topic, the standing Backlog topic (BL-492), or
+      any other standing/STEERING topic. The map mixes per-ticket keys (`BL-###`) with epic keys and,
+      after BL-492/493, the reserved BACKLOG key — the tool must select per-ticket keys ONLY (an
+      explicit `BL-###`-shaped key check, never a blanket "close everything in the map").
+    - Idempotent: a topic already closed (or whose key was already dropped) is skipped, and re-running
+      the tool is a safe no-op — a 429 mid-run must be resumable without double-closing or erroring.
+      After closing a per-ticket topic, drop its key from the map (dropBacklogTopicMapping) so a re-run
+      naturally skips it.
+    - main() is a THIN wrapper over exported testable helpers (engineering.prompt thin-main rule):
+      the per-ticket-key SELECTION (which map keys are legacy per-ticket topics) and the close/skip
+      DECISION are pure unit-testable functions; the closeForumTopic and the retry_after sleep stay in
+      the thin I/O layer. main() itself is called in-process by a test against a fixture (stub the
+      accessors; never process.chdir under the Stryker worker-thread pool).
+
+  E2E QA PROCEDURE: point the tool at a fixture backlog-topic-map.json holding a mix of per-ticket
+  (BL-###), epic, and BACKLOG keys with a fake closeForumTopic that returns a 429-then-ok on one call.
+  Run it: every per-ticket topic id is passed to closeForumTopic, the 429 is honored by waiting its
+  retry_after and then retrying, and the epic/BACKLOG keys are never closed. Re-run: no topic is
+  closed again (all per-ticket keys already dropped) and it exits cleanly.
+
+human_approval: approved
+approval_context: >
+  Migration slice implementing your decision D2 (one-time CLOSE of the legacy per-ticket topics —
+  read-only, history preserved, never deleted). FIRM: close (not delete), 429-safe via the backfill
+  tool's retry_after, per-ticket topics only (never epic/Backlog/standing), idempotent re-run. OPEN
+  for your call (also flagged on the BL-491 epic): I specced this as a HAND-RUN operator CLI you invoke
+  once at a moment of your choosing, rather than an automatic sweep that fires when BL-493 ships —
+  safer, since a mass close over a live group should not run unattended. Say if you would rather it run
+  automatically on first tick after BL-493.
+
+mutation_cost: medium

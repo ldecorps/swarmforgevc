@@ -1,0 +1,58 @@
+id: BL-298
+title: "Concierge slice 3 — a human reply in a BL-### Telegram topic routes to the Operator as context for that BL-### task (SUP-### topic replies unchanged)"
+milestone: M8
+status: todo
+type: feature
+priority: 20
+depends_on: [BL-297]
+part_of: BL-295
+source: ".swarmforge/operator/INTAKE-telegram-concierge-bl-topics.md (human Concierge prompt) -> BL-295 epic slice 3; coordinator spec request 2026-07-11 note 000235 (BL-297 landed c04148441e). Specifier verified the live inbound path before scoping."
+
+notes: |
+  SLICE 3 of the BL-295 Concierge epic (ADDITIVE, see [[bl295-concierge-bl-topics-epic]]).
+  BL-296 (typed event stream) + BL-297 (BL-### <-> topic map + outbound routing) landed.
+  This slice adds the INBOUND direction for BL-### topics: a principal's reply inside a
+  BL-###'s topic is that task's context and must reach the Operator tagged with the
+  backlog id — NOT appended to a SUP-### support thread.
+
+  VERIFIED LIVE INTEGRATION LAYER (2026-07-11) before scoping:
+    - extension/src/concierge/topicRouter.ts (BL-297): BacklogTopicMap = Record<string,
+      number> keys backlogId -> topicId (OUTBOUND). This slice needs the INVERSE
+      topicId -> backlogId lookup; it does not exist yet -> NET-NEW.
+    - extension/src/tools/telegramFrontDeskBotCore.ts (BL-281/294): isFromPrincipal,
+      topicIdOf (message_thread_id), subjectForTopic(topicMap, topicId) -> SUP-###
+      subject, decideUpdateAction. The bot's inbound decision resolves a topic to a
+      SUP-### subject ONLY; it has no BL-### topic branch -> extend the decision.
+    - extension/src/bridge/bridgeServer.ts /telegram-inbound: appends {subjectId,
+      channel, text} to the SUP-### thread (readThread/appendMessage/writeThread). This
+      is the SUP-### path; it stays exactly as-is for SUP-### topics.
+    - The Operator-context ingest is the existing operator-event path (operator_runtime.bb
+      appendOperatorEvent); this slice carries the backlogId distinctly on that path. The
+      Operator's downstream handling of that context is the Operator's own behavior —
+      OUT OF SCOPE here.
+
+  SCOPE (pure routing DECISION over injected adapters/fakes; no live Telegram, no network):
+    1. topicRouter.ts: add the inverse lookup backlogForTopic(topicMap, topicId) ->
+       backlogId | undefined (net-new; mirror of the existing forward map).
+    2. Extend the bot's inbound routing so a PRINCIPAL reply whose topic maps to a BL-###
+       routes to the Operator as context tagged with that backlogId, and is NOT appended
+       to any SUP-### thread.
+    3. A principal reply whose topic maps to a SUP-### subject keeps the current behavior
+       exactly (appended to that subject's thread) — no regression.
+    4. Non-principal replies are dropped (reach neither the Operator nor a thread) —
+       existing isFromPrincipal gating preserved.
+    5. CLI/main() thin-wrapper rule holds: any decision logic is a named pure export,
+       not inline in a runtime/main body. No Telegram send here (inbound only).
+
+  OUT OF SCOPE: the Operator's downstream action on the routed context (its own behavior);
+  outbound topic posting (BL-297, done); completion summary/close (BL-299); live Telegram
+  wiring / long-poll (BL-292/294 runtime, already landed).
+
+acceptance:
+  feature: specs/features/BL-298-concierge-bl-topic-reply-to-operator.feature
+  steps:
+    - "A principal reply in a topic mapping to a backlog item reaches the Operator as context for that item and touches no support thread"
+    - "A principal reply in a topic mapping to a support subject still appends to that subject's support thread (no regression)"
+    - "A reply from a non-principal is dropped, reaching neither the Operator nor any thread"
+
+mutation_cost: low

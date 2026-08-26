@@ -1,0 +1,139 @@
+id: BL-909
+title: "Bottleneck naming ranks on queue wait plus processing, so a dormant stage that waited in the mailbox is named the bottleneck ahead of the stage actually doing the slow work"
+milestone: M8
+type: defect
+severity: medium
+epic: swarm-behaviour-trends
+human_approval: approved
+priority: 30
+direction: human-intake
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "Queue wait can never make a stage the named bottleneck: for any set of stages, the named role and its multiple are a function of processing medians alone."
+  - "Every number the bottleneck summary reports is named for what it measures — no field named for total dwell carries a processing-only value, and no consumer reading it silently changes meaning."
+
+approval_context: >
+  The human filed this with the ruling and both decisions already locked
+  ("Rank on processing time", "do not fix it by excluding specifier"). The two
+  open choices were explicitly delegated ("defaults welcome") and are answered
+  in `description:`. Nothing further is asked.
+
+source: |
+  Raw intake `backlog/INTAKE-bottleneck-rank-on-processing-not-queue.md` (human
+  via Cursor, 2026-08-16 ~08:23 CEST), drained by the specifier 2026-08-16 and
+  removed from the backlog root in the same pass.
+
+  Human words carried verbatim (Article 5.3):
+
+  - "Bottleneck: specifier (1.3x the next slowest stage) This looks wrong. Use
+    the processing time to derive the bottleneck. Specifier is super fast, it
+    can't be the bottleneck."
+
+  Locked human decisions, verbatim:
+
+  1. "Rank on processing time. Specifier is not a capacity bottleneck."
+  2. "Do not 'fix' it by excluding specifier. The formula is wrong for every
+     dormant role."
+
+  Human's live evidence, `node extension/out/tools/stage-dwell-report.js
+  --hours 24` at 2026-08-16 ~08:24 CEST:
+
+  | role | parcels | wait median | processing median |
+  |---|---|---|---|
+  | specifier | 14 | 1h 51m | 1m |
+  | documenter | 14 | 1h 28m | 1m |
+  | architect | 16 | 52m | 7m |
+  | QA | 9 | 43m | 14m |
+  | cleaner | 17 | 39m | 9m |
+  | hardender | 15 | 38m | 25m |
+  | coder | 20 | 3m | 6m |
+
+  Reported bottleneck: specifier (1.3x) — that is queue+processing, specifier
+  ~112m vs documenter ~89m. Processing-only ranking names hardender (~25m,
+  ~1.8x QA). The human's diagnosis, verbatim: "The wait is mailbox time while
+  the mono-router resident is elsewhere — not specifier capacity. Same lie
+  would hit documenter."
+
+  Probed against `main` 2026-08-16, confirming the intake exactly:
+  `nameBottleneck` (`extension/src/metrics/stageDwell.ts:208`) ranks on
+  `stageTotalDwellMs` = `queueWait.medianMs ?? 0` + `processing.medianMs`, and
+  reports it as `totalDwellMs` with a `multipleOverNext` from the same figure.
+  Both surfaces read one implementation: the briefing's `:stage-dwell-section`
+  shells out to the same compiled CLI (`handoffd.bb:2062`), so a single fix
+  reaches the CLI and the morning briefing together.
+
+description: |
+  ## The defect
+
+  The "Bottleneck:" line names the stage with the largest queue-wait plus
+  processing median. On a mono-router pack, queue wait is mailbox time while the
+  single resident is playing some other role — it measures dormancy, not
+  capacity. A stage that waited two hours and worked for a minute therefore
+  outranks the stage that is genuinely slow, and the operator is pointed at the
+  wrong place: on 2026-08-16 the line said specifier (1m of work) while hardener
+  (25m of work) went unnamed.
+
+  ## The fix
+
+  The bottleneck role, and the "Nx the next slowest stage" multiple beside it,
+  are derived from **median processing time only**. Queue wait keeps its place on
+  the per-stage line — it is real and worth seeing — but it no longer picks the
+  bottleneck. As the human ruled, the fix is the formula, not an exclusion list:
+  every dormant role is mis-ranked by the current one, so excluding specifier
+  would only move the lie.
+
+  ## The two delegated choices, answered (defaults, per "defaults welcome")
+
+  - **Field naming.** Keep `totalDwellMs` meaning what its name says, and report
+    the ranked figure as its own field alongside it. Renaming a field's meaning
+    in place would leave every existing reader silently reading a different
+    number — the second invariant exists to forbid exactly that.
+  - **Trend.** Leave the trend on total dwell, unsplit. The delegated condition
+    was "unless it would keep lying in the briefing bottleneck sentence" —
+    probed: the trend renders on the per-stage line (`formatStageLine`), never
+    inside the bottleneck sentence, so it cannot mislead there and needs no
+    split. If a later slice moves trend into that sentence, it splits then.
+
+  ## Not in scope (the human's own boundary)
+
+  - "Recomputing how queue-wait / processing are measured from headers." The
+    inputs are trusted as-is; only the ranking over them changes.
+  - "Coordinator (already excluded from the forward-chain report)."
+
+acceptance: specs/features/BL-909-bottleneck-ranks-on-processing-time.feature
+
+qa_e2e_procedure: |
+  On the live repo, with the swarm having processed parcels in the last 24h:
+
+  1. Run `node extension/out/tools/stage-dwell-report.js --hours 24` — expect the
+     Bottleneck line to name the stage with the largest PROCESSING median in the
+     table printed directly above it, and no other.
+  2. Read the multiple on that line — expect it to equal that stage's processing
+     median divided by the next-largest processing median in the same table.
+  3. Confirm a stage with a large wait and a tiny processing median (specifier or
+     documenter, on a mono-router pack) is NOT named, while its own per-stage
+     line still shows both its wait and its processing medians.
+  4. Run with `--json` — expect the bottleneck object to carry the ranked
+     processing figure under a field named for processing, and any
+     `totalDwellMs` it still carries to equal wait + processing as before.
+  5. Trigger or wait for a morning briefing and read its stage-dwell section —
+     expect the same Bottleneck sentence as step 1, since both read this CLI.
+  6. On a window where no stage processed anything (`--hours 1` on a quiet hour),
+     expect the existing "no stage processed a parcel this window" answer,
+     unchanged.
+
+notes: |
+  Severity `medium`, chosen deliberately: this is a decision-support line that
+  misdirects tuning effort, not a fault that degrades the swarm's operation —
+  real and contained. The human already spotted and corrected for it manually,
+  which is how this ticket exists. It is deliberately NOT `high`: the expedite
+  lane is for faults that are hurting the run, and the human has separately asked
+  for BL-907/BL-908 to take the fast-track.
+
+  The first invariant is a property over all stage sets, not an example — a
+  property test that generates stage tables where wait and processing disagree is
+  a better fit than more rows in the Examples table.

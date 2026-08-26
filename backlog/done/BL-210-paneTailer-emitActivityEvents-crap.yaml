@@ -1,0 +1,47 @@
+id: BL-210
+title: "Reduce paneTailer.ts emitActivityEvents CRAP (93.91) by extracting a pure, covered activity-state decision"
+milestone: M2
+status: todo
+priority: 10
+direction: aligned
+assigned_to: coder
+source: "hardender rule_proposal (scope project, filed as ticket) 2026-07-09, found while hardening BL-131."
+
+description: |
+  HARDENER (2026-07-09): extension/src/panel/paneTailer.ts's private
+  emitActivityEvents (around line 314) measures CRAP=93.91 (cyclomatic
+  complexity 12, ~17% covered) — far beyond the hardening gate (CRAP < 5). It is
+  pre-existing debt, untouched by BL-131/BL-142/BL-148, and too large for a
+  routine hardening pass, so it needs its own coverage+split ticket.
+
+  Root cause of the low coverage: the per-role working-state TRANSITION logic
+  (dead-role handling, isAgentActivelyWorking + WORKING_INDICATOR_MS recency,
+  wasWorking vs working diffing, event emission) is inlined in a private method
+  that reads six instance fields (roles, deadRoles, workingRoles, lastChangedAt,
+  lastRawText, lastPaneCommand) and calls Date.now() directly — so it is only
+  reachable by constructing the full timer-driven PaneTailer, which is why it is
+  hard to cover.
+
+  Wanted (behavior-preserving refactor, the codebase's established pattern —
+  cf. decideItemAction/decideStuckAction pure functions):
+  - Extract the per-role decision into a PURE function: given a role's command,
+    raw pane text, last-changed time, current time (passed in, not Date.now()),
+    and prior working state, return whether the role is working now and whether
+    a working-state change event should be emitted.
+  - Reduce emitActivityEvents to a thin loop that calls the pure function and
+    collects events; no behavior change.
+  - Unit-test the pure function to full coverage of its branches (no class, no
+    real clock), bringing its CRAP under the gate.
+
+  Constraints:
+  - Behavior-preserving refactor: the emitted ActivityEvent stream (role,
+    working, order) is identical to today for the same pane updates.
+  - Injected/fake clock in tests; no real timers.
+  - Scope is emitActivityEvents and its extracted decision only; do not
+    restructure the rest of PaneTailer in this ticket.
+
+  Note: overlaps active BL-131 (which touches paneTailer test files for
+  real-timer removal) — sequence, do not run concurrently (orthogonality).
+
+acceptance: specs/features/BL-210-paneTailer-emitActivityEvents-crap.feature
+mutation_cost: low

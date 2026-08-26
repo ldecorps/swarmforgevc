@@ -1,0 +1,74 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T17:42:36.836818655Z","feature_name":"One standing Approvals topic indexes every pending approval and is where the human acts","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-434-approvals-standing-topic.feature","background_hash":"b548618ab8c1439a021954037f7dee41c1fe7e5d4a74aabaa58991494e456ceb","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
+Feature: One standing Approvals topic indexes every pending approval and is where the human acts
+
+# BL-434 (feature, human-requested via Operator/Telegram 2026-07-15): approvals are scattered - each
+# ticket's approval ask lives in that ticket's own BL topic, so the human hunts across topics to see the
+# whole pending-approval queue. Create a single dedicated standing "Approvals" topic that BOTH (a) indexes
+# every ticket currently awaiting approval as one maintained live roster message, AND (b) lets the human
+# APPROVE/REJECT right there. This is the human's chosen shape at the design fork (AskUserQuestion:
+# 1 = index only, 2 = act only, 3 = BOTH -> the human chose 3, then confirmed via Operator relay
+# 2026-07-15 20:50Z). An earlier self-unblock had baked the narrower "act only" (option 2); the delta this
+# spec adds is the live INDEX/roster. The concierge already computes the full set (conciergeTick.ts
+# pendingApprovalFor: active+paused items with humanApproval == 'pending') and already manages standing
+# topics (the Operator topic) and per-ticket BL topics.
+#
+# The one genuinely new act mechanism: because ONE topic now carries MANY tickets, a reply must NAME the
+# ticket it acts on ("approve BL-433" / "reject BL-433 <reason>") - today's routing infers the ticket
+# from WHICH topic the reply landed in (backlogForTopic(topicId)), which no longer identifies a single
+# ticket in the shared Approvals topic. A reply naming an id that is not currently pending must be
+# surfaced, never silently applied (memory: front-desk-operator-fabricates-backlog-state).
+#
+# The live index: ONE maintained roster message in the Approvals topic listing the current
+# pendingApprovalFor set, refreshed via the existing conciergeTick diff machinery only when the set
+# changes (not re-posted every tick), edited in place - a single-message edit, not a per-topic fan-out.
+#
+# Scope (verify at build time): extension/src/concierge/conciergeTick.ts (route the pending-approval ask
+# to the standing Approvals topic instead of the per-ticket BL topic, and maintain the live roster) and
+# extension/src/tools/telegramFrontDeskBotCore.ts (parse the ticket id from an Approvals-topic reply and
+# route via recordApprovalReply(backlogId)/recordRejectionReply(backlogId, reason)). The Approvals topic
+# is created once as a standing topic (sibling of the Operator topic).
+
+Background:
+  Given a standing Approvals topic exists
+
+# BL-434 approvals-standing-topic-01
+Scenario: A newly pending ticket's approval ask is posted into the Approvals topic and names the ticket
+  Given a ticket transitions to awaiting human approval
+  When the concierge tick runs for the Approvals topic
+  Then the ticket's approval ask is posted in the Approvals topic
+  And the ask is not posted in the ticket's own BL topic
+  And the ask names the ticket id so a reply can target it
+
+# BL-434 approvals-standing-topic-02
+Scenario Outline: A reply in the Approvals topic naming a pending ticket records that verb for that ticket
+  Given ticket "<id>" is pending approval in the Approvals topic
+  When the human replies "<reply>" in the Approvals topic
+  Then the "<verb>" is recorded against ticket "<id>"
+
+  Examples:
+    | id     | reply                 | verb    |
+    | BL-433 | approve BL-433        | approve |
+    | BL-433 | reject BL-433 no good | reject  |
+
+# BL-434 approvals-standing-topic-03
+Scenario: A reply naming a ticket that is not currently pending is surfaced, not applied
+  Given no ticket "BL-999" is pending approval
+  When the human replies "approve BL-999" in the Approvals topic
+  Then no approval is recorded for "BL-999"
+  And the reply is surfaced back as not acted on
+
+# BL-434 approvals-standing-topic-04
+Scenario: The Approvals topic maintains a live roster of every currently-pending ticket
+  Given ticket "BL-440" is pending approval in the Approvals topic
+  And ticket "BL-433" is pending approval in the Approvals topic
+  When the concierge tick runs for the Approvals topic
+  Then the Approvals topic roster lists both pending tickets
+
+# BL-434 approvals-standing-topic-05
+Scenario: Once acted on, a ticket is removed from the Approvals topic roster
+  Given ticket "BL-433" is pending approval in the Approvals topic
+  When the human approves "BL-433" in the Approvals topic
+  Then "BL-433" is no longer in the Approvals topic roster

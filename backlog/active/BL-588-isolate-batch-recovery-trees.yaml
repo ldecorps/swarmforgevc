@@ -147,3 +147,6 @@ approval_context: |
     whether landing must always be a merge of a tree that was verified whole.
   - Whether the latency measurement should gate the build — i.e. build only if
     clean tickets are demonstrably waiting long enough to matter.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: architect, blamed: coder, class: behavior, commit: 13a1e46627, evidence: backlog/evidence/BL-588-architect-bounce-20260826.md }

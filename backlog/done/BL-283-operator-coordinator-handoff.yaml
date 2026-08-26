@@ -1,0 +1,88 @@
+id: BL-283
+title: "Operator coordinator handoff: an actionable thread files an intake + links a BL-###, and the BL-###'s status flows back into the topic (Talk slice 5a)"
+milestone: M8
+status: todo
+priority: 10
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-281, BL-284]
+parent_epic: BL-274
+source: "BL-274 front-desk framing (.swarmforge/operator/INTAKE-telegram-front-desk-bl274.md), COORDINATOR-HANDOFF slice (slice 5a) - the LAST unbuilt front-desk slice. Human push via operator -> coordinator 2026-07-11 to finish BL-274. Specced by specifier 2026-07-11 against the LANDED BL-281/BL-284/BL-276."
+
+description: |
+  Final slice of the refocused BL-274 front desk: the bridge between a subject thread
+  (SUP-###) and the swarm's build pipeline (BL-###). When a topic discussion becomes
+  actionable, the Operator hands it to the coordinator (files an intake + links the
+  resulting BL-###); thereafter the linked BL-###'s status flows back into that
+  subject's topic. Closes the loop the whole epic was built for.
+
+  Live layer verified 2026-07-11 (BL-281/BL-284/BL-276 all LANDED - real seams):
+    - FILE INTAKE (reuse the operator's existing path): the Operator files an intake to
+      the coordinator the same way today's intakes arrive - write
+      .swarmforge/operator/INTAKE-<slug>.md referencing the SUP-###, plus a coordinator
+      `type:note` (the coordinator inbox freshness wakes it, operator_runtime.bb
+      coordinator-inbox-has-fresh?). The Operator PROPOSES only - it never specs,
+      promotes, creates, or closes the BL-### (operator.prompt: "the coordinator owns
+      promote/close/dispatch"; support.prompt: "you NEVER fabricate a design, promote,
+      or approve"). The coordinator's resulting BL-### carries `source: SUP-###` so the
+      two are connected.
+    - LINK (net-new, small): the SUP-### thread model
+      ({:id :status :messages}, support_lib.bb) has NO linked-ticket field today. Add a
+      linked-BL-### association as a PURE thread transition in support_lib.bb (mirror
+      resolve-thread) + a `link` op on support_thread.bb (mirror run-resolve!), so a
+      thread records the ticket(s) it spawned.
+    - STATUS BACK (reuse BL-284's built notice pipe): BL-284 shipped
+      proactive-notice-decision [thread status-change] + proactive-notice-text in
+      support_lib.bb, driving a notice into the subject's topic via the reply-outbox ->
+      SSE -> bot egress. Feed it a status-change descriptor {:changed? :summary} derived
+      from the linked BL-###'s CURRENT backlog status (backlog folders / backlog.json
+      projection) vs the last status reported on the thread. NET-NEW = deriving that
+      descriptor (a PURE compare of current-vs-last-reported status), not a new notice
+      path.
+
+  Wanted behavior (see the feature file):
+    - An actionable thread files an intake to the coordinator referencing the subject,
+      and the thread records the linked ticket.
+    - The handoff PROPOSES the work - the Operator does not create, spec, or promote the
+      ticket itself (anti-fabrication; the coordinator owns that).
+    - When the linked ticket's status moves on, the Operator posts the new status into
+      that subject's topic; when it is unchanged, it stays quiet (no spurious notices,
+      same posture as BL-284).
+    - A linked-ticket status notice goes only to the linked subject's topic (a thread
+      with no linked ticket gets none).
+
+  Constraints / testability:
+    - The link transition, the intake-content build, and the status-change derivation
+      (current-vs-last-reported -> {:changed? :summary}) are PURE functions over provided
+      inputs, unit-tested with fixture threads + a fixture backlog status - no live swarm,
+      no network, no real coordinator. The intake write + note + the topic notice go
+      through fake adapters (reuse BL-284's notice seam + the operator intake path),
+      never a real handoff/Telegram call. NO real timers; never seed a fixture timestamp
+      from the real clock while the code reads its own clock (de0991e).
+    - Anti-fabrication is a hard contract: a test asserts the handoff produces an intake
+      + a coordinator note ONLY, and never writes a backlog/ ticket, never promotes, and
+      never closes the SUP-### (the human/coordinator own those).
+    - Reuse BL-284's proactive-notice-decision for the status notice - do NOT define a
+      second notice path or a second "changed" signal.
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+    - Thread link state stays machine-local (gitignored) like the rest of the SUP-###
+      store; the intake file lives under .swarmforge/operator/ (operator domain).
+
+  Scope boundary: this slice is FILE-INTAKE + LINK + STATUS-BACK. It does NOT promote or
+  build the BL-### (coordinator/swarm own that), does not close the SUP-### on ship
+  (BL-276 lifecycle: human confirms close), and adds no new Telegram or notice path
+  (reuse BL-281/BL-284). With this slice the BL-274 front-desk epic (Talk/Status/Decide/
+  Notify + lifecycle + handoff) is complete.
+
+  QA e2e procedure (fixture thread + fixture backlog status + fake adapters; no live swarm):
+    - Mark a thread actionable and hand it off; assert an intake file is written
+      referencing the SUP-### AND a coordinator note is sent, the thread records the link,
+      and NO backlog ticket is created/promoted by the Operator.
+    - Link a thread to a ticket; feed a changed backlog status; assert one status notice
+      is posted into that subject's topic. Feed an unchanged status; assert none.
+    - With two subjects and a ticket linked to only the first, assert only the first
+      subject's topic receives the status.
+
+acceptance: specs/features/BL-283-operator-coordinator-handoff.feature
+mutation_cost: medium

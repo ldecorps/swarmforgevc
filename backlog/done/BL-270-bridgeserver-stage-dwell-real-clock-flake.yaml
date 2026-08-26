@@ -1,0 +1,65 @@
+id: BL-270
+title: "bridgeServer.test.js stage-dwell test seeds fixtures from real new Date(), flaking ~1/6 (no-real-timers violation)"
+milestone: M2
+status: todo
+priority: 04
+direction: reliability
+assigned_to: coder
+source: "QA rule_proposal (engineering scope) 2026-07-11 while verifying BL-265: isolated vitest run of extension/test/bridgeServer.test.js failed ~1/6 on the stage-dwell bottleneck assertion, passed on retry. Rule refinement accepted (de0991e added the real-clock-fixture bullet to Test Speed And Isolation)."
+
+description: |
+  extension/test/bridgeServer.test.js's test "serves the stage-dwell endpoint
+  with per-stage dwell and a bottleneck for an authorized request" builds its
+  completed-handoff fixture from real `new Date()` (dequeued_at = now - 10min,
+  completed_at = now) while the live /stage-dwell route evaluates those records
+  against the SERVER's own `Date.now()` at request time. The two independent
+  wall-clock reads are unsynchronized, so the fixture's completed_at can straddle
+  the route's window/upper-bound comparison
+  (readRoleStageDwellRecords filters `completedAtMs < latestMs`, latestMs =
+  server now), intermittently dropping the parcel from the window and failing
+  `parcelsProcessed === 1` / `bottleneck.role === 'coder'`. ~1/6 flake in
+  isolation, pre-existing, unrelated to any current ticket.
+
+  Root cause is a real-clock dependency, not a genuine dwell bug — see the
+  engineering "Never seed a test fixture from the real clock when the code under
+  test reads the real clock too" rule (de0991e).
+
+  Wanted behavior:
+  - The stage-dwell test is deterministic: identical inputs always produce the
+    same result, with no dependence on the real wall clock; it cannot flake.
+  - The stage-dwell endpoint/report still behaves identically in production
+    (default to the real clock when no instant is injected) — this is a test-
+    determinism fix, not a behavior change.
+
+  Implementation latitude (coder chooses the mechanism):
+  - The injectable seam already exists in the pure layer:
+    computeStageDwellReportForRoles(roles, nowMs = Date.now(), windowHours) and
+    buildStageDwellState(targetPath, nowMs?) both accept an optional nowMs. The
+    gap is only that the bridge /stage-dwell route (extension/src/bridge/
+    bridgeServer.ts, `compute: () => buildStageDwellState(targetPath)`) never
+    threads an injected instant, so the test cannot pin server-side `now`.
+  - Thread an injectable clock/now from the bridge route to buildStageDwellState
+    for tests (e.g. via startBridge/withBridge options — the test already passes
+    an options object `withBridge(target, {}, ...)`), then in the test build the
+    fixture timestamps from the SAME fixed constant instant and inject it. Pin
+    both sides to one instant; do not rely on a wall-clock margin.
+  - Prefer the smallest change that removes the real-clock dependency end-to-end;
+    keep production behavior (real clock by default) unchanged. Do not weaken the
+    assertions to paper over the flake.
+
+  Constraints:
+  - No real timers / no waiting on the real clock in the fixed test (engineering
+    article). The fixed instant must be a constant, not `new Date()`/`Date.now()`.
+  - Keep the pure/testable split intact; any new seam stays a thin injection, not
+    new logic.
+  - Do not edit mutation manifests by hand.
+
+  QA e2e procedure:
+  - Run the stage-dwell test in isolation many times
+    (e.g. `vitest run test/bridgeServer.test.js` repeated ~20x, or its `--repeat`
+    equivalent); confirm it passes every time with zero intermittent failures.
+  - Confirm the production /stage-dwell route is unchanged when no instant is
+    injected (still uses the real clock).
+
+acceptance: specs/features/BL-270-bridgeserver-stage-dwell-real-clock-flake.feature
+mutation_cost: low

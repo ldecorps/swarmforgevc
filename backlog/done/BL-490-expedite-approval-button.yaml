@@ -1,0 +1,119 @@
+id: BL-490
+title: "Add an Expedite button to the Telegram approval ask: approve + force-promote paused->active + dispatch to build NOW, bypassing the coordinator's orthogonality/sequencing triage"
+milestone: M8
+type: feature
+severity: medium
+epic: ""
+priority: 4
+direction: human-requested
+depends_on: [BL-484, BL-483, BL-496]
+source: "Human (ldecorps) 2026-07-17, via Operator intake backlog/INTAKE-operator-question-1784276630098.md: 'Add a fourth button to the Telegram approval ask: Expedite. It must not only approve the ticket but place it straight onto the swarm to be built immediately, regardless of orthogonality/sequencing triage - approve + jump the queue + dispatch now.' This session the human had to send the coordinator a manual promote + build-next note to achieve by hand exactly what this button would automate."
+
+notes: |
+  THE REQUEST. Today the BL-410 approval ask renders three inline buttons - Approve / Amend / Reject
+  (topicRouter.ts approvalRequestedButtons, callback_data approve:<id> / amend:<id> / reject:<id>,
+  dispatched in telegramFrontDeskBotCore.ts). A plain Approve tap ONLY flips the ticket's
+  human_approval to approved on disk (recordApprovalReply in pendingApprovalReply.ts: a raw
+  fs.writeFileSync on the ticket YAML - no move, no commit, no dispatch); the ticket then waits in
+  paused/ until the coordinator promotes it during normal sequencing. The human wants a fourth verb,
+  Expedite = "approve + jump the queue + dispatch now": record approval, force-promote paused->active,
+  and inject a routing handoff so the build starts immediately, bypassing the coordinator's
+  orthogonality/sequencing step.
+
+  WHAT TO BUILD (observable contract; mechanism is the architect's call where noted):
+    1. A fourth inline button "Expedite" on the ApprovalRequested ask, callback_data expedite:<id>,
+       routed through the SAME BL-410 callback round-trip the other three verbs use - never a second
+       callback path. (Overlaps BL-483's button-layout work; sequence behind it.)
+    2. The expedite EFFECT is three ordered steps, and step (a) must reuse the EXISTING approval writer,
+       never a divergent second approval path:
+         (a) APPROVE - route through the same recordApprovalReply effect a typed reply / Approve tap
+             already uses (pendingApprovalReply.ts). human_approval flips to approved; that stays the
+             single source of decision truth.
+         (b) PROMOTE - if the ticket is in paused/, move it to active/. NO paused->active mover exists
+             anywhere today (verified: the only backlog folder mover is backlogWriter.markDone's
+             active->done fs.rename; promotion is otherwise the coordinator's exclusive manual duty).
+             This is NEW surface - a small promotion mover mirroring markDone's fs.rename pattern. If
+             the ticket is ALREADY active, skip promotion (scenario 05).
+         (c) DISPATCH - inject a routing handoff so the swarm starts building immediately, bypassing
+             the coordinator's orthogonality/sequencing triage. A working injector exists
+             (swarm_handoff.bb; route_backlog_to_coder.sh shells to it as coordinator) but the Node bot
+             process NEVER calls it today - so this is NEW wiring: a bot->handoff bridge (shell out to
+             swarm_handoff.bb, or write the outbox draft the daemon delivers). Reuse the injector; do
+             not build a second dispatcher, and do not hand-write inbox/new/ files.
+    3. Fold into BL-484's closing routine: an Expedite tap is a DECISION too, so it must close the ask
+       the same way - strip the inline keyboard and append "-- Expedited <UTC>" (BL-484's one closing
+       routine, never a second edit path). This is why BL-490 depends_on BL-484.
+    4. Stale-ask guard (shared with BL-484 scenario 03 / BL-483 scenario 04): a tap on an
+       already-decided ask answers the callback with an "already decided" toast and performs NO
+       approve/promote/dispatch side effect.
+
+  SPECIFIER SAFETY CALL (human-approvable; see approval_context). The human explicitly opts into
+  jumping the queue "regardless of orthogonality/sequencing". I am speccing the forced dispatch to
+  still SERIALISE AT THE FILE LEVEL: if a build is already in flight editing the same files as the
+  expedited ticket, the ticket is approved and QUEUED right behind that build (never preempted) and the
+  human is shown a clear "forced dispatch unsafe - queued behind in-flight same-file work" toast; only
+  when no same-file build is mid-flight does it dispatch with no wait. Rationale: "an in-flight coder
+  task cannot be preempted; same-file tickets must be serialised" (operator memory, repeated
+  precedent) - forcing a build into a mid-flight same-file task guarantees merge conflict/rework, not a
+  faster ship. The human can override to "truly force past everything" by amending this ticket; that is
+  exactly what human_approval: pending gates.
+
+  DESIGN HAZARDS FOR THE ARCHITECT (their mechanism call, not the spec's):
+    - DURABILITY/COMMIT: the bot writes the WORKING TREE only (recordApprovalReply does an
+      uncommitted fs.writeFileSync; the promotion mover would too). An uncommitted paused->active MOVE
+      + approved flip is fragile: the phantom-revert sync (sync_worktree_scripts, BL-373) and any
+      coordinator git op in the shared master checkout can clobber or diverge from it, and the pipeline
+      board reads committed state. Decide WHO commits the expedite mutation (the bot, a sweep, the
+      coordinator on next tick) so it survives and the board/coordinator see it - do not leave it as a
+      dangling working-tree edit.
+    - FILE-LEVEL SAFETY DETECTION: how the effect learns a "same-file build is in flight" (read active
+      tickets' scope + in-flight handoff trail) is the architect's to design; keep the detection in a
+      testable host-side module, Telegram I/O in the thin client.
+    - ACCESS/GUARD: Expedite is a stronger action than Approve; it inherits the same trusted-principal
+      gate the existing buttons already enforce (principalUserId) - no new auth model, just confirm the
+      guard covers the new verb.
+
+  ONE-PARCEL SCOPE. Build the button + expedite verb dispatch + promotion mover + dispatch bridge in
+  one parcel; every scenario below has its step handler landed in the same parcel (BL-233: the
+  acceptance runner throws on an unhandled scenario). depends_on BL-484 (closing routine, functional
+  dependency) and BL-483 (button-layout overlap - both edit topicRouter.ts button rendering and the
+  callback dispatch, so serialise, do not run concurrently).
+
+  E2E QA PROCEDURE. Flip a PAUSED test ticket to human_approval: pending so its ask posts with four
+  buttons. Tap Expedite: within one tick the ticket's YAML reads approved, the file has moved from
+  backlog/paused/ to backlog/active/, a routing handoff for it appears in the coder's mail trail, and
+  the ask message loses its buttons and gains an "-- Expedited <UTC>" line. Repeat with an ALREADY
+  ACTIVE test ticket: verify approve + dispatch fire but NO promotion is attempted. Stand up an
+  in-flight build touching file X, then Expedite a ticket that also edits X: verify the "unsafe -
+  queued behind" toast and that the in-flight build is not preempted. Finally tap Expedite a second
+  time on the now-decided ask: verify the "already decided" toast and zero side effect.
+
+acceptance:
+  feature: specs/features/BL-490-expedite-approval-button.feature
+  steps:
+    - "The approval ask offers Expedite alongside Approve, Amend, and Reject"
+    - "Tapping Expedite records approval through the same effect as a plain Approve"
+    - "Expediting a paused ticket force-promotes it into the active set"
+    - "Expediting dispatches the ticket to build immediately, bypassing sequencing triage"
+    - "An already-active ticket is expedited without a redundant promotion"
+    - "A forced dispatch that collides with an in-flight same-file build warns the human"
+    - "An expedited ask closes itself like any other decided ask"
+    - "A tap on an already-decided ask performs no expedite side effect"
+
+human_approval: approved
+approval_context: >
+  Approving greenlights the Expedite verb contract above. FIRM (from the human, via Operator intake):
+  a fourth Expedite button that approves + force-promotes paused->active + dispatches to build NOW,
+  bypassing the coordinator's orthogonality/sequencing triage; its approve half reuses the SAME
+  recordApprovalReply effect; it folds into BL-484's one closing routine ("-- Expedited <UTC>").
+  THE ONE OPEN PRODUCT DECISION for your sign-off: the safety posture when a forced dispatch would
+  collide with an in-flight SAME-FILE build. I have specced it to still serialise at the file level -
+  approve + queue right behind the in-flight build (never preempt) + show a clear "unsafe, queued
+  behind" toast - because an in-flight task cannot be preempted and same-file tickets must be
+  serialised (repeated precedent). If you instead want Expedite to TRULY force past everything
+  including a mid-flight same-file build (accepting the merge-conflict/rework risk), reply to amend and
+  I will drop scenario 06's serialise-and-warn for an unconditional immediate dispatch. Firm also: the
+  architect owns the durability/commit mechanism (the bot writes the working tree uncommitted today)
+  and the same-file-detection mechanism; those are noted as hazards, not decided here.
+
+mutation_cost: medium

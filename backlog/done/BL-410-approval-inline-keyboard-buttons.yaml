@@ -1,0 +1,72 @@
+id: BL-410
+title: "Add Approve/Amend/Reject inline-keyboard buttons to the ApprovalRequested Telegram message"
+milestone: M8
+type: feature
+status: todo
+severity: low
+priority: 3
+direction: human-requested
+depends_on: ["BL-408", "BL-409"]
+source: "backlog/INTAKE-operator-question-1784108659505.md — Slice 3 of the 3-slice approve-from-Telegram plan appended by a prior Claude Code session's root-cause analysis. Human confirmed 2026-07-15: queue this in now rather than waiting."
+
+notes: |
+  UX polish on top of BL-408 (approve works) and BL-409 (reject/amend
+  verbs): add a Telegram inline keyboard (Approve / Amend / Reject buttons)
+  to the ApprovalRequested message itself, so the human can tap instead of
+  typing a reply. Typed replies (BL-408/BL-409) must keep working
+  unchanged — this is an additional input path, not a replacement.
+
+  IMPLEMENTATION SHAPE. Telegram inline keyboards are delivered via
+  `reply_markup.inline_keyboard` on the sendMessage call that posts
+  ApprovalRequested, and tapped buttons arrive as a `callback_query` update
+  (distinct from an ordinary message update) in the same long-poll
+  `getUpdates` stream `telegramFrontDeskBotCore.ts`'s `pollAndForward`
+  already processes. Extend the poll cycle to recognize a `callback_query`
+  update alongside its existing message-update handling, and route
+  Approve/Amend/Reject taps to the SAME effects BL-408/BL-409 already
+  implement (`recordApprovalReply` / the reject and amend handlers) rather
+  than duplicating that logic behind a second code path — the button is
+  another way to trigger the existing verb, not a new verb.
+
+  An Amend tap needs a follow-up text prompt (there is no note to attach
+  from a bare button tap) — on Amend, prompt the human to reply with the
+  amendment text in the same topic, then process that reply exactly as
+  BL-409's typed "amend <note>" path does. Do not silently drop the amend
+  intent if no follow-up text arrives; leave the ticket pending as-is
+  (a no-op is safe here, unlike the amend case in BL-409 which always has
+  its note in hand).
+
+  ANSWER THE CALLBACK. Telegram requires an `answerCallbackQuery` response
+  to clear the tap's loading spinner on the button; do this for every
+  callback_query the bot receives that matches one of these buttons, even
+  the no-op cases (unknown/stale callback data), so the human's UI never
+  hangs on a spinner.
+
+  DEPENDS ON BL-408 AND BL-409: the buttons are a second entry point into
+  verbs those tickets implement — do not reimplement the approve/reject/
+  amend effects here.
+
+  E2E QA PROCEDURE: post an ApprovalRequested message for a pending-review
+  ticket and confirm it carries the three buttons; tap Approve and confirm
+  the ticket flips to approved (same effect as typed "approve"); tap
+  Reject and confirm it prompts/records a reason the same way BL-409's
+  typed reject does; tap Amend, reply with a note, and confirm it is
+  recorded as operator context with the ticket still pending. Confirm each
+  tap clears its Telegram loading spinner.
+
+acceptance:
+  feature: specs/features/BL-410-approval-inline-keyboard-buttons.feature
+  steps:
+    - "An ApprovalRequested message carries Approve, Amend, and Reject buttons"
+    - "Tapping Approve flips the ticket the same way a typed approve reply does"
+    - "Tapping Reject records a reason the same way a typed reject reply does"
+    # "Tapping Amend prompts for a note and records it without changing approval state"
+    # RETIRED by BL-509 (2026-07-17): tapping Amend now flips the ticket to 'amending' and
+    # closes the ask. The durable amend-tap contract lives in
+    # specs/features/BL-509-amend-button-steers-ticket.feature.
+    - "Typed replies still work unchanged alongside the buttons"
+    - "Every button tap clears its Telegram loading spinner"
+
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
+
+mutation_cost: medium

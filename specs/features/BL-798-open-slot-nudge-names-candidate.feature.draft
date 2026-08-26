@@ -1,0 +1,36 @@
+Feature: Open-slot nudges name their candidate and promotion inaction escalates
+
+  handoffd's open-slot sweep nudges the coordinator when active is under cap
+  and eligible paused work exists. On 2026-08-03 the ticketless generic nudge
+  was cleared repeatedly as noise while approved queue-jump work starved
+  ~2.5h (intake SUP-1). These scenarios pin the candidate-naming nudge and
+  the promotion-inaction escalation. Drivable offline against the real
+  chase_sweep_lib.bb / handoffd.bb over temp fixtures.
+
+  Background:
+    Given a backlog with an open active slot under the depth cap
+
+  # BL-798 open-slot-nudge-names-candidate-01
+  Scenario: The nudge names the expedited defect ahead of a higher-priority feature
+    Given backlog/paused/ holds an approved high-severity defect and an approved feature of better ticket priority
+    When the open-slot nudge sweep fires
+    Then the delivered nudge names the defect's ticket id as the top candidate
+
+  # BL-798 open-slot-nudge-names-candidate-02
+  Scenario: With no expedited defects the nudge names the best-priority approved candidate
+    Given backlog/paused/ holds only non-expedited approved tickets
+    When the open-slot nudge sweep fires
+    Then the delivered nudge names the best-priority candidate's ticket id
+
+  # BL-798 open-slot-nudge-names-candidate-03
+  Scenario: A candidate awaiting human approval is named as blocked on approval
+    Given the only eligible paused candidate has human_approval pending
+    When the open-slot nudge sweep fires
+    Then the delivered nudge names the candidate as awaiting approval
+
+  # BL-798 open-slot-nudge-names-candidate-04
+  Scenario: Repeated unacted nudges escalate as promotion inaction
+    Given the same candidate has been nudged past the escalation threshold without a promotion
+    When the open-slot nudge sweep fires
+    Then a promotion-inaction escalation reaches the operator channel
+    And no further identical nudge is sent silently

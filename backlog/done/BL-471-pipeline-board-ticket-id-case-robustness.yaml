@@ -1,0 +1,95 @@
+id: BL-471
+title: "Pipeline-board stage map: canonicalize ticket-id casing so a differently-cased id in a note/task header can't silently drop an active ticket"
+milestone: M8
+type: bug
+severity: low
+epic: ""
+priority: 1
+direction: swarm-proposed
+depends_on: []
+source: "coordinator note to the specifier 2026-07-16 ('BL-464 stage map: case-mismatch (task bl-447 vs id BL-447) drops active tickets'). The specific LIVE claim did NOT reproduce (see below); the specifier verified and found a real but LATENT case-sensitivity gap instead."
+
+description: |
+  DEFENSIVE HARDENING of BL-464's authoritative ticket->stage source. LATENT gap, not a live incident —
+  read the correction below before treating it as urgent.
+
+  THE LATENT GAP (verified in code 2026-07-16): the board's active rows are joined by EXACT-CASE ticket
+  id. In swarmforge/scripts/pipeline_stage_cli.bb, active-ticket-ids reads the canonical `id:` field of
+  each backlog/active/*.yaml (always upper-case, e.g. BL-447), while role-ticket-pairs-for extracts the
+  id from each in_process handoff's `task:`/`message:` header via
+  pipeline_stage_lib.bb `extract-ticket-id` (regex ^([A-Za-z]+-\d+)), which PRESERVES whatever case the
+  header used. filter-active then drops any id not in the active set by a case-SENSITIVE
+  `(contains? active-ids ticket-id)`. So a handoff header that ever leads with a differently-cased id —
+  e.g. a human/agent-authored NOTE whose `message:` begins "bl-447 ..." (the message header IS a board
+  id source now, via ticket-id-from-headers) — extracts `bl-447`, fails the upper-case membership test,
+  and the actively-held ticket VANISHES from the board with no error. reconcile-stage-map would also
+  treat `bl-447` and `BL-447` as two different tickets. The `[A-Za-z]+` regex explicitly invites mixed
+  case, and freeform note text is exactly the external-influence surface the engineering article's
+  "treat external text as when-not-if" posture (BL-409) covers.
+
+  CORRECTION OF THE REPORTING PREMISE (so nobody chases a phantom): the coordinator's concrete example
+  ("task bl-447 drops BL-447 right now") did NOT reproduce. As of 2026-07-16: every real `task:`/
+  `message:` header in the whole handoff tree uses upper-case `BL-`; there is NO lower-case `bl-447`
+  anywhere except inside the coordinator's own note text; the live store
+  .swarmforge/board/ticket-stage-map.json read {"BL-423":"coder"}; and BL-447 was simply NOT held
+  in_process by ANY role at the time (only the specifier held notes), so its absence from the board was
+  CORRECT behaviour, not a case-mismatch drop. This ticket fixes the latent code gap, not the (false)
+  live incident — set LOW severity accordingly.
+
+  Scope (grep-confirm at build):
+    - swarmforge/scripts/pipeline_stage_lib.bb: make the ticket-id join case-insensitive. active-ids come
+      from the canonical `id:` (upper-case), so the natural single-point fix is to CANONICALIZE the
+      extracted header id to upper-case in extract-ticket-id (or ticket-id-from-headers) so
+      reconcile-stage-map and filter-active both key on the canonical form — pick the seam at build, but
+      the OBSERVABLE contract is: a handoff header leading with a differently-cased id resolves to the
+      same active ticket and appears on the board at its stage. Keep it pure/side-effect-free (the file's
+      existing posture) so every branch stays unit-testable with no filesystem.
+    - The store key casing becomes canonical upper-case as a result — confirm no reader depends on a
+      lower-case key (readTicketStageMap / invertTicketStageToRoleHeldTickets consume it opaquely; the
+      board renders whatever id the map carries, and BL-464's active-id join is upper-case, so canonical
+      upper-case is consistent end to end).
+
+  Constraints:
+    - Do NOT reopen the wider BL-464 behaviour (note-vs-task coverage, one-row-per-ticket reconcile) —
+      those ship correctly; this is only the id-casing robustness of the same join.
+    - INHERITED from BL-464: READ-ONLY board; the exact canonicalization seam is a build detail, the
+      case-insensitive JOIN is the gate.
+
+  E2E QA PROCEDURE: unit-drive pipeline_stage_lib.bb with a role-ticket pair whose header id is
+  lower/mixed case (e.g. bl-447 / Bl-447) against an active set containing BL-447 and assert it survives
+  filter-active and reconciles to ONE ticket at its stage (not dropped, not double-counted). On the real
+  surface, this is hard to trigger deliberately (all real headers are already upper-case) — the
+  regression guard is the unit/acceptance case, so verify there rather than fabricating a lower-case
+  handoff on the live swarm.
+
+acceptance:
+  feature: specs/features/BL-464-pipeline-board-authoritative-stage-source.feature
+  steps:
+    - "A ticket the coder works after a note-based promotion appears at the coder stage"
+    - "Each active ticket appears on exactly one row"
+    - "A ticket that has moved to a new stage shows at the new stage only"
+    - "The board's active rows come from the authoritative parcel-location source, not an in_process scrape"
+    - "A handoff header that leads with a differently-cased ticket id still resolves to its active ticket"
+
+  # PROPOSED new scenario to ADD to specs/features/BL-464-pipeline-board-authoritative-stage-source.feature
+  # in this parcel (its step handler lands in the same parcel — BL-233; do NOT commit it to the live
+  # .feature ahead of the handler or the acceptance runner hard-fails on the unhandled scenario):
+  #
+  #   # BL-471 board-authoritative-stage-05
+  #   Scenario: A handoff header that leads with a differently-cased ticket id still resolves to its active ticket
+  #     Given an active ticket "BL-447"
+  #     And a role holds a handoff whose header leads with the id "bl-447"
+  #     When the pipeline board is rendered
+  #     Then the ticket appears on the board at that role's stage
+  #     And it appears on exactly one row
+
+human_approval: >
+  Swarm-proposed defensive hardening arising from a coordinator note whose specific LIVE claim did NOT
+  reproduce (verified by the specifier 2026-07-16: no lower-case header exists in real state, BL-447 was
+  merely unheld). No human sign-off required to promote — it is a low-severity robustness fix to BL-464's
+  ticket-id join, not a new human-requested feature. The case-insensitive JOIN is the firm contract; the
+  exact canonicalization seam and store key casing are build details. Serialize against any in-flight
+  ticket touching pipeline_stage_lib.bb / the BL-464 feature file or its steps; otherwise freely
+  schedulable as a light bug.
+
+mutation_cost: low

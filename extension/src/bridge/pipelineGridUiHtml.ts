@@ -1,8 +1,6 @@
 // BL-526: Telegram Mini App shell for the pipeline STATUS GRID (no below-grid
 // links). Polls GET /pipeline-board?token=... on the same origin.
 
-import { webUiFontSizeMiniAppScript } from './webUiFontSizeMiniAppScript';
-
 export function getPipelineGridUiHtml(): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -109,16 +107,38 @@ export function getPipelineGridUiHtml(): string {
   var dotEl = document.getElementById('dot');
   var lastOk = 0;
 
-${webUiFontSizeMiniAppScript({
-    surface: 'pipeline-grid',
-    cssVar: '--pg-font-px',
-    min: 12,
-    max: 26,
-    defaultPx: 15,
-    step: 2,
-    decId: 'font-dec',
-    incId: 'font-inc',
-  })}
+  var FONT_KEY = 'swarmforge-pipeline-grid-font-px';
+  var FONT_MIN = 12;
+  var FONT_MAX = 26;
+  var FONT_DEFAULT = 15;
+  var FONT_STEP = 2;
+
+  function currentFontPx() {
+    var raw = document.documentElement.style.getPropertyValue('--pg-font-px');
+    var parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : FONT_DEFAULT;
+  }
+
+  function applyFont(px) {
+    var clamped = Math.min(FONT_MAX, Math.max(FONT_MIN, px));
+    document.documentElement.style.setProperty('--pg-font-px', clamped + 'px');
+    try { localStorage.setItem(FONT_KEY, String(clamped)); } catch (_) {}
+    document.getElementById('font-dec').disabled = clamped <= FONT_MIN;
+    document.getElementById('font-inc').disabled = clamped >= FONT_MAX;
+  }
+
+  function loadFont() {
+    var stored = parseInt(localStorage.getItem(FONT_KEY), 10);
+    applyFont(Number.isFinite(stored) ? stored : FONT_DEFAULT);
+  }
+
+  document.getElementById('font-dec').onclick = function () {
+    applyFont(currentFontPx() - FONT_STEP);
+  };
+  document.getElementById('font-inc').onclick = function () {
+    applyFont(currentFontPx() + FONT_STEP);
+  };
+  loadFont();
 
   function setStatus(kind, text) {
     dotEl.className = 'dot' + (kind === 'ok' ? '' : ' ' + kind);

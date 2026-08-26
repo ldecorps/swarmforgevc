@@ -1,0 +1,40 @@
+id: BL-704
+title: "Cursor Remote operator surface slice 3 — shifts, holidays, oncall, docs"
+milestone: M8
+type: feature
+severity: medium
+status: done
+epic: swarmforge-console
+human_approval: approved
+priority: 04
+direction: human-requested
+depends_on: [BL-702]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: QA
+
+invariants:
+  - "Holiday refuse for pilot/expedite/autopilot/land/hydrate/mint offers Run anyway (BL-698 Q2)."
+  - "Shift/holiday/oncall durable state lives only under .swarmforge/operator/."
+  - "Documenter ships how-to + Mermaid diagrams required by BL-698."
+
+approval_context: >
+  Slice 3 of 3 from BL-698 (Q5 pin 2026-07-29). Depends on BL-702; may
+  overlap late with BL-703.
+
+description: |
+  ## What
+
+  Operator policy overlay: `/shift` `/holiday` `/oncall`, holiday Run
+  anyway confirm, plus the BL-698 how-to and Mermaid diagrams, with
+  cross-links from BL-696 docs.
+
+  ## Out of scope
+
+  - BL-660 three-shift cron packs
+  - Mini App console page (BL-517 later)
+
+acceptance: specs/features/BL-704-operator-shifts-holidays-docs.feature
+
+source: |
+  BL-698 clarifications Q1–Q5 pinned 2026-07-29. Slice 3 of 3.
