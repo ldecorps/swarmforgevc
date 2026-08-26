@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T11:48:18.954959516Z","feature_name":"Healthy build-stale restarts do not burn the front-desk crash give-up budget","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1154-build-stale-restarts-not-crash-giveup-budget.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Healthy build-stale restarts do not burn the front-desk crash give-up budget
   Live logs around the recurring give-up email spam showed heavy build-stale
   detect/restart churn on otherwise healthy children. If voluntary

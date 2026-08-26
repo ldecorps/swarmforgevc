@@ -850,6 +850,7 @@
                            (assert= "bl1154: voluntary restart lands running" "running" (:status entry))
                            (assert= "bl1154: voluntary restart emits :started" :started event)
                            (assert= "bl1154: attempts unchanged after voluntary restart" 0 (:attempts entry))
+                           (assert= "bl1154: voluntary restart clears crashed-at-ms" nil (:crashed-at-ms entry))
                            entry)))
       entry (reduce (fn [e i] (simulate-cycle e (+ 1000000 (* i 500000))))
                     {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
@@ -864,6 +865,32 @@
                               waiting 999999 dead? fixed-pid! bl1154-cfg giveup-cfg)]
   (assert= "bl1154: a crash at the attempt cap still gives up" "gave-up" (:status entry))
   (assert= "bl1154: give-up event is reported" :gave-up event))
+
+;; stale-build backoff uses (max 1 attempts), not raw 0 — half backoff must not restart early.
+(let [running {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+               :gave-up-at-ms nil :build-stale-since-ms nil}
+      cycle-now 2000000
+      detected (front-desk-supervisor-lib/check-one!
+                 running cycle-now alive? fixed-pid! bl1154-cfg giveup-cfg
+                 false (fn [_] nil) true true)
+      queued (:entry detected)
+      past-grace (+ cycle-now 300001)
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              queued past-grace alive? fixed-pid! bl1154-cfg giveup-cfg
+                              false (fn [_] nil) true true)
+      stale-at (:crashed-at-ms entry)
+      half-backoff (+ stale-at (front-desk-supervisor-lib/compute-backoff-ms 0 bl1154-cfg))
+      full-backoff (+ stale-at (front-desk-supervisor-lib/compute-backoff-ms 1 bl1154-cfg))
+      too-early (front-desk-supervisor-lib/check-one!
+                  entry half-backoff alive? fixed-pid! bl1154-cfg giveup-cfg)
+      on-time (front-desk-supervisor-lib/check-one!
+                entry full-backoff alive? fixed-pid! bl1154-cfg giveup-cfg)]
+  (assert= "bl1154: build-stale enters stale-build queue" :build-stale event)
+  (assert= "bl1154: stale-build queue status" "stale-build" (:status entry))
+  (assert= "bl1154: half backoff must not restart yet" "stale-build" (:status (:entry too-early)))
+  (assert= "bl1154: half backoff emits no event" nil (:event too-early))
+  (assert= "bl1154: full backoff restarts voluntarily" "running" (:status (:entry on-time)))
+  (assert= "bl1154: full backoff emits :started" :started (:event on-time)))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

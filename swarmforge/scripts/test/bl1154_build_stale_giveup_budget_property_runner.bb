@@ -33,6 +33,7 @@
       (assert= "P1: voluntary restart returns to running" "running" (:status entry))
       (assert= "P1: voluntary restart emits :started" :started event)
       (assert= "P1: attempts unchanged after voluntary restart" 0 (:attempts entry))
+      (assert= "P1: voluntary restart clears crashed-at-ms" nil (:crashed-at-ms entry))
       entry)))
 
 ;; Invariant 1: many voluntary build-stale rolls, budget never exhausted.
