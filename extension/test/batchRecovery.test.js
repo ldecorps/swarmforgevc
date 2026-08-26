@@ -89,3 +89,42 @@ test('validateCleanSiblingLandIsolation rejects merging the defective recovery t
   });
   assert.equal(result.ok, false);
 });
+
+test('validateCleanSiblingLandIsolation requires the verified commit in the landing merge', () => {
+  const result = validateCleanSiblingLandIsolation({
+    landedTicket: 'BL-B',
+    landedCommit: VERIFIED,
+    defectiveRecoveryTip: 'rework000001',
+    mergeIncludesCommit: () => false,
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /verified whole tree/i);
+});
+
+test('validateWholeTreeLand refuses merge when no verified commit is named', () => {
+  const result = validateWholeTreeLand({ landingOperation: 'merge', verifiedCommit: '' });
+  assert.equal(result.refused, true);
+});
+
+test('validateMergeUpBroadcast refuses when verified commit is absent', () => {
+  const result = validateMergeUpBroadcast({
+    ticket: 'BL-B',
+    verifiedCommit: '',
+    landedCommit: 'land00000001',
+    isAncestor: () => true,
+  });
+  assert.equal(result.ok, false);
+});
+
+test('planDefectiveRework rejects when the ancestor equals the contaminated tip', () => {
+  assert.throws(
+    () => planDefectiveRework({ ticket: 'BL-A', batchCommit: BATCH, lastCleanAncestor: BATCH }),
+    /precede the contaminated batch tip/
+  );
+});
+
+test('refuseNonWholeTreeLanding refuses unsupported landing operations', () => {
+  const result = refuseNonWholeTreeLanding('squash-merge');
+  assert.equal(result.refused, true);
+  assert.match(result.reason, /unsupported landing operation/i);
+});
