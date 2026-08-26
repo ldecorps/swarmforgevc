@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-784: six long-running `*_supervisor.bb`
+loops now emit per-tick `heartbeat` lines via `daemon_log_freshness_pulse_lib.bb`
+and have rows in `daemon_log_freshness.conf` with thresholds derived from each
+daemon's loop interval; `daemon_log_freshness_registry_guard.sh` fails closed
+when a required daemon or unclassified supervisor script lacks a conf row.
+Checker invokes the guard before violation checks. Depends on BL-783 cron for
+live observability. How-to:
+`docs/how-to/BL-784-supervisor-freshness-heartbeats-and-registry-guard.md`;
+extends `docs/how-to/BL-675-daemon-log-freshness-watchdog.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-779: during a live control pause
 (`.swarmforge/operator/control-pause.json`), flow-watchdog stall alarms keep
 firing but header adds `(swarm paused)` and the action suffix names pause
