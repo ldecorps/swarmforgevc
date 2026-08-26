@@ -1195,7 +1195,9 @@
                         role-repairs)]
             (write-repair-state! new-repair-state)))))
     (if (empty? findings)
-      (println (str ts " OK all checks green"))
+      (println (str ts " " (babysitterd-sweep-lib/format-all-clear-line
+                            {:pause-active? (:active? pause)
+                             :pause-until-ms (:until-ms pause)})))
       (doseq [f findings]
         (println (babysitterd-sweep-lib/format-finding-line f ts))))
     (when nudge?
