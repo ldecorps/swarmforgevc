@@ -285,6 +285,7 @@ function ticketSummariesFor(active: BacklogFolderItem[], paused: BacklogFolderIt
       notes: item.notes,
       firstAcceptanceStep: item.firstAcceptanceStep,
       approvalContext: item.approvalContext,
+      rulingOptions: item.rulingOptions,
     };
   }
   return summaries;
@@ -508,16 +509,10 @@ function buildTicketMetaLookup(
 function recentlyClosedItems(
   folders: BacklogFoldersSnapshot,
   doneClosedAtMs: Record<string, number>
-): { id: string; title?: string; filename: string; closedAtMs?: number }[] {
+): { id: string; title?: string; filename: string }[] {
   return folders.done
     .filter((item): item is BacklogFolderItem & { filename: string } => item.filename !== undefined)
-    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity))
-    .map((item) => ({
-      id: item.id,
-      title: item.title,
-      filename: item.filename,
-      ...(doneClosedAtMs[item.id] !== undefined ? { closedAtMs: doneClosedAtMs[item.id] } : {}),
-    }));
+    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity));
 }
 
 // BL-465 bounce: stamps this tick's OWN observed instant onto every ticket
