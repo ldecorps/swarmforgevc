@@ -404,7 +404,10 @@ run, and no gate ever noticed.
   grammar would need to be re-measured against merge-commit-heavy live
   history before assuming it transfers.
 - No retro-check of already-landed commits: `backlog/done/` is not
-  re-swept, and BL-636's own `deliver!` discrepancy is owned by BL-728.
+  re-swept. BL-636's `deliver!` discrepancy was verified and closed by
+  BL-728 (2026-08-26): fixed on `main` via `536c16ffb` lineage, not
+  `6a2e4aaf6`; see
+  [BL-728 how-to](BL-728-handoffd-one-shot-flags-parse-verification.md).
 - BL-731's fixture gate is `/pilot`-only, same as BL-727/BL-729. The
   ordinary live pipeline's pre-QA gate does not yet enforce multi-worktree
   fixture metadata — lifecycle tickets there still depend on the host
