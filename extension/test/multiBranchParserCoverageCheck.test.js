@@ -85,6 +85,24 @@ test('extractCondParsers finds ≥3 string-bodied cond arms', () => {
   assert.ok(parsers[0].arms.length >= 3);
 });
 
+test('exactly three distinct arms meet MIN_PARSER_ARMS (threshold is >= not >)', () => {
+  const condSrc = '(defn p [x] (cond (= x 1) "arm-a" (= x 2) "arm-b" :else "arm-c"))';
+  const condParsers = extractCondParsers(condSrc, 'p.bb');
+  assert.equal(condParsers.length, 1, 'cond with exactly 3 arms must be classified');
+  assert.equal(condParsers[0].arms.length, 3);
+
+  const tsSrc = `
+function p(s) {
+  if (s === 'a') return 'arm-a';
+  else if (s === 'b') return 'arm-b';
+  else return 'arm-c';
+}
+`;
+  const tsParsers = extractTsMultiArmParsers(tsSrc, 'p.ts');
+  assert.equal(tsParsers.length, 1, 'TS with exactly 3 return arms must be classified');
+  assert.equal(tsParsers[0].arms.length, 3);
+});
+
 test('assessMultiBranchParserCoverage refuses when an arm is untested', () => {
   const result = assessMultiBranchParserCoverage({
     parsers: [THREE_ARM],
@@ -105,6 +123,34 @@ test('assessMultiBranchParserCoverage passes when every arm is exercised', () =>
 
 test('assessMultiBranchParserCoverage is a no-op with no multi-arm parsers', () => {
   const result = assessMultiBranchParserCoverage({ parsers: [], testTexts: [] });
+  assert.deepEqual(result, { checked: true, parsersScanned: 0 });
+});
+
+test('assessMultiBranchParserCoverage fails open when parsers or testTexts are undefined', () => {
+  assert.deepEqual(
+    assessMultiBranchParserCoverage({ parsers: undefined, testTexts: [] }),
+    { checked: false }
+  );
+  assert.deepEqual(
+    assessMultiBranchParserCoverage({ parsers: [], testTexts: undefined }),
+    { checked: false }
+  );
+});
+
+test('assessMultiBranchParserCoverage filters out parsers below MIN_PARSER_ARMS', () => {
+  const result = assessMultiBranchParserCoverage({
+    parsers: [
+      {
+        functionName: 'two-arm',
+        sourcePath: 'x.ts',
+        arms: [
+          { label: 'a', marker: 'a' },
+          { label: 'b', marker: 'b' },
+        ],
+      },
+    ],
+    testTexts: [],
+  });
   assert.deepEqual(result, { checked: true, parsersScanned: 0 });
 });
 
