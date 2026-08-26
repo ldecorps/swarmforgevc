@@ -30,6 +30,9 @@
  * 3. A refused land is inert for every refusal reason, not only the
  *    acceptance-contract one BL-727 already covers (shared with invariant 3
  *    above - one behavior, not two).
+ *
+ * BL-737 adds a cross-file duplication refusal on the same path: identical
+ * normalized text in more than two files the run's own commits touched.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -52,6 +55,10 @@ import {
   isRevertRelandTicket,
   RELAND_NOTES_REQUIRED_REFUSAL,
 } from './pilotAcceptanceExecution';
+import {
+  CROSS_FILE_DUPLICATION_REFUSAL,
+  CrossFileDuplicationCheckOutcome,
+} from './crossFileDuplicationCheck';
 
 export {
   assessProducerCrosscheck,
@@ -64,6 +71,14 @@ export {
   readConfiguredRoleNames,
   recordProducerCrosscheck,
 } from './producerCrosscheckAcceptance';
+
+export {
+  CROSS_FILE_DUPLICATION_REFUSAL,
+  findCrossFileDuplication,
+  MIN_DUPLICATION_BLOCK_LINES,
+  CrossFileDuplicationCheckOutcome,
+  CrossFileDuplicationHit,
+} from './crossFileDuplicationCheck';
 
 export interface AcceptanceRunResult {
   success: boolean;
@@ -79,6 +94,7 @@ export interface AcceptanceReceipt {
   result: 'passed';
   landedAt: string;
   commitClaimsChecked: number;
+  crossFileDuplicationFilesScanned?: number;
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
   producerCrosscheck?: ProducerCrosscheckMetadata;
 }
@@ -109,6 +125,7 @@ export interface PilotAcceptanceGateDeps {
   recordAcceptanceExecution?: (featureFilePath: string) => void;
   readAcceptanceExecution?: () => string | undefined;
   checkCommitClaims: () => CommitClaimsCheckOutcome;
+  checkCrossFileDuplication: () => CrossFileDuplicationCheckOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
   getLandedCommit: () => string;
@@ -132,6 +149,7 @@ export interface PilotLandRefusal {
     | 'contract-failed'
     | 'producer-crosscheck-required'
     | 'claim-unsupported'
+    | 'cross-file-duplication'
     | 'move-failed';
   reason: string;
   unmatchedStep?: string;
@@ -139,6 +157,8 @@ export interface PilotLandRefusal {
   claimCommit?: string;
   claimIdentifier?: string;
   claimSentence?: string;
+  duplicationFingerprint?: string;
+  duplicationPaths?: string[];
 }
 
 export type PilotLandOutcome = PilotLandSuccess | PilotLandRefusal;
@@ -258,6 +278,29 @@ function checkClaims(deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal
   return { claimsCheck };
 }
 
+// Step 3c: identical normalized blocks shared by more than two files the
+// run itself touched refuse the land (BL-737 / BL-637 threshold). Unreadable
+// touched-file history fails OPEN with a warning, mirroring BL-729.
+function checkDuplication(
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { duplicationCheck: CrossFileDuplicationCheckOutcome } {
+  const duplicationCheck = deps.checkCrossFileDuplication();
+  if (duplicationCheck.checked && duplicationCheck.duplication) {
+    const { fingerprint, paths } = duplicationCheck.duplication;
+    const named = paths.slice(0, 2).join(', ');
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'cross-file-duplication',
+        reason: `${CROSS_FILE_DUPLICATION_REFUSAL} (fingerprint length ${fingerprint.length}; e.g. ${named})`,
+        duplicationFingerprint: fingerprint,
+        duplicationPaths: paths,
+      },
+    };
+  }
+  return { duplicationCheck };
+}
+
 // Step 2b: revert-then-reland tickets must carry visible yaml notes before
 // a second done move — the BL-559 double-land hygiene gap.
 function requireRelandNotes(ticketId: string, deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal } | { ok: true } {
@@ -329,6 +372,7 @@ function moveAndRecordReceipt(
   declaration: string,
   deps: PilotAcceptanceGateDeps,
   claimsCheck: CommitClaimsCheckOutcome,
+  duplicationCheck: CrossFileDuplicationCheckOutcome,
   multiWorktreeFixture?: MultiworktreeFixtureMetadata,
   producerCrosscheck?: ProducerCrosscheckMetadata
 ): PilotLandOutcome {
@@ -353,6 +397,9 @@ function moveAndRecordReceipt(
     landedAt: deps.now(),
     commitClaimsChecked: claimsCheck.checked ? claimsCheck.commitsChecked : 0,
   };
+  if (duplicationCheck.checked) {
+    receipt.crossFileDuplicationFilesScanned = duplicationCheck.filesScanned;
+  }
   if (multiWorktreeFixture) {
     receipt.multiWorktreeFixture = multiWorktreeFixture;
   }
@@ -361,9 +408,18 @@ function moveAndRecordReceipt(
   }
   deps.writeReceipt(ticketId, receipt);
 
-  const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
+  const warnings: string[] = [];
   if (!claimsCheck.checked) {
-    outcome.warnings = ['commit claims were not checked: the run\'s own commit history could not be resolved'];
+    warnings.push("commit claims were not checked: the run's own commit history could not be resolved");
+  }
+  if (!duplicationCheck.checked) {
+    warnings.push(
+      'cross-file duplication was not checked: the run\'s touched-file history could not be resolved'
+    );
+  }
+  const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
+  if (warnings.length > 0) {
+    outcome.warnings = warnings;
   }
   return outcome;
 }
@@ -410,6 +466,11 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return claims.refusal;
   }
 
+  const duplication = checkDuplication(deps);
+  if ('refusal' in duplication) {
+    return duplication.refusal;
+  }
+
   const fixtureMetadata =
     deps.isLifecycleTeardownTicket(ticketId) && fixtureGate.fixture.satisfied
       ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
@@ -420,6 +481,7 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     contract.declaration,
     deps,
     claims.claimsCheck,
+    duplication.duplicationCheck,
     fixtureMetadata,
     producerGate.crosscheck
   );

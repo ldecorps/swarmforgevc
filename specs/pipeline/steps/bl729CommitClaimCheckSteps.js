@@ -53,6 +53,7 @@ function baseDeps(ctx) {
     readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () =>
       ctx.commitsResolvable ? { checked: true, ...evaluateCommitClaims(ctx.runCommits) } : { checked: false },
+    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       return { moved: true, destination: `/repo/backlog/done/${ctx.ticketId}-fixture.yaml` };
