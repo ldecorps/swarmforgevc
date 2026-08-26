@@ -2297,6 +2297,43 @@ test('BL-607: resolveAskOptions still resolves a real SUP-### thread from the gl
   assert.deepEqual(resolveAskOptions(root, 'SUP-1'), [{ label: 'staging' }]);
 });
 
+// ── BL-1152: concurrent hotfix stamp asks read hotfix-stamp-asks.json ─────
+function writeHotfixStampAsksFixture(root, contents) {
+  const p = path.join(root, '.swarmforge', 'operator', 'hotfix-stamp-asks.json');
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, contents);
+}
+
+test('BL-1152: resolveAskOptions reads options from hotfix-stamp-asks.json without awaiting-answer.json match', () => {
+  const root = mkTmpRoot();
+  const threadId = 'hotfix-7380d80686';
+  const options = [{ label: 'Yes — certify' }, { label: 'No — waive' }];
+  writeHotfixStampAsksFixture(root, JSON.stringify({ [threadId]: { options } }));
+  writeAwaitingAnswerFixture(
+    root,
+    JSON.stringify({ question: 'other', thread_id: 'SUP-99', options: [{ label: 'wrong' }] })
+  );
+  assert.deepEqual(resolveAskOptions(root, threadId), options);
+});
+
+test('BL-1152: resolveAskOptions returns undefined for unknown hotfix- thread without stamp entry', () => {
+  const root = mkTmpRoot();
+  assert.equal(resolveAskOptions(root, 'hotfix-deadbeef'), undefined);
+});
+
+test('BL-1152: resolveAskOptions hotfix branch does not disturb ordinary SUP thread resolution', () => {
+  const root = mkTmpRoot();
+  writeHotfixStampAsksFixture(
+    root,
+    JSON.stringify({ 'hotfix-abc1234567': { options: [{ label: 'Yes' }] } })
+  );
+  writeAwaitingAnswerFixture(
+    root,
+    JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', options: [{ label: 'staging' }] })
+  );
+  assert.deepEqual(resolveAskOptions(root, 'SUP-1'), [{ label: 'staging' }]);
+});
+
 // ── BL-607: roleTopicIdFor - the forward (role -> topic id) sibling of
 // roleTopicMapStore.ts's own roleForTopic (topic id -> role). ────────────
 
