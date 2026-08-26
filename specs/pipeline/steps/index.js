@@ -400,6 +400,7 @@ const DOMAINS = [
   require('./bl747PilotShellTestDrivesNamedEntryPointSteps'),
   require('./bl749PilotGuardrailGapRequiresCallSiteTraceSteps'),
   require('./bl753PilotUnreachableStepHandlerUntestedBehaviorSteps'),
+  require('./bl741PilotCrapGateSteps'),
   require('./bl755PilotMultiBranchParserNeedsPerArmTestsSteps'),
   require('./bl758PilotInjectRolePromptsPerHatSteps'),
   require('./bl1147ProbeLegacyTopicAdoptionSteps'),

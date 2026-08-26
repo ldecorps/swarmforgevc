@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-741: `/pilot` land gate always runs
+scoped CRAP on touched `extension/*.ts` via `pilotScopedCrapCheck.ts` /
+`pilotAcceptanceGate.ts` `checkCrap` — `mutation_cost: low` exempts mutation
+testing only, never CRAP; refused land writes nothing durable. Pipeline
+hardener guidance in `swarmforge/roles/hardender.prompt`. Acceptance:
+`specs/features/BL-741-bl627-pilot-missed-crap-gate.feature`. Documented in
+`docs/how-to/BL-727-pilot-acceptance-contract-gate.md` scoped CRAP section.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-668: after QA lands on `origin/main`,
 `handoffd` runs `post-qa-branch-sweep-sweep!` to fast-forward clean pipeline
 role branches in their `roles.tsv` worktrees to the landed SHA; dirty worktrees,

@@ -68,6 +68,7 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, cro
             duplication: { fingerprint: 'x'.repeat(40), paths: ['a.sh', 'b.sh', 'c.sh'] },
           }
         : { checked: true, filesScanned: 0 },
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkShellEntryPointDrive: () =>
       shellDriveMiss
         ? {
