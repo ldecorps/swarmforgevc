@@ -26,8 +26,8 @@ invariants:
   - "After a successful start-swarm.sh for root R, every swarmforge cron kind this root needs while running is present in the user crontab — freshness at minimum, plus active shift schedule lines when scheduling is on."
 
 required_wiring:
-  - 'stop-swarm.sh::uninstall_freshness_cron.sh::stop must remove every registered swarmforge cron line for this root, not only freshness'
-  - 'swarmforge/scripts/start_ancillary_services.sh::install_freshness_cron.sh::start must ensure all required cron lines after successful bring-up'
+  - 'stop-swarm.sh::uninstall_swarmforge_crons.sh::stop must remove every registered swarmforge cron line for this root, not only freshness'
+  - 'swarmforge/scripts/start_ancillary_services.sh::install_swarmforge_crons.sh::start must ensure all required cron lines after successful bring-up'
   - 'specs/pipeline/steps/index.js::bl1162StartStopSwarmCronLifecycleSymmetrySteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
