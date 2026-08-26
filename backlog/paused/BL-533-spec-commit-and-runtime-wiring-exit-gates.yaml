@@ -20,6 +20,7 @@ notes: |
   wiring checklist for multi-slice epics before close.
   - [2026-08-26T12:55Z] coordinator: open-slot nudge blocked — awaiting human
     approval (`human_approval` not set to approved; handoffd candidate BL-533).
+  - [2026-08-26T13:01Z] coordinator: repeat open-slot nudge — same block holds.
 
 acceptance: |
   Feature: claimed deliverables are tracked and wired before close
