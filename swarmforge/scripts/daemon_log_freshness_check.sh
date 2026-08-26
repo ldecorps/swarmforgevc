@@ -78,6 +78,9 @@ RESTART_GRACE=${FRESHNESS_RESTART_GRACE:-300}
 IN_SWEEP_BUDGET_MS=${FRESHNESS_IN_SWEEP_BUDGET_MS:-225000}
 INCIDENT_FILE=${FRESHNESS_INCIDENT_FILE:-"$ROOT/.swarmforge/daemon/freshness-incidents.log"}
 
+# BL-784: every long-running supervisor must be registered before we check logs.
+FRESHNESS_CONF="$CONF" /bin/sh "$SCRIPT_DIR/daemon_log_freshness_registry_guard.sh"
+
 mkdir -p "$(dirname -- "$INCIDENT_FILE")"
 
 # Parse ISO-8601 / ISO_INSTANT prefix (...Z) to unix epoch. Busybox/GNU date.
@@ -346,6 +349,17 @@ process_daemon() {
   log_path="$ROOT/$log_rel"
   pid_path="$ROOT/$pid_rel"
   start_script="$SCRIPT_DIR/$start_name"
+
+  # BL-784: conditional supervisors that were never started have no pidfile —
+  # skip only those, not handoffd/babysitterd where a missing log with a
+  # recent restart record is the grace-window scenario BL-1012 tests.
+  case "$name" in
+    *_supervisor)
+      if [ ! -f "$pid_path" ]; then
+        return 0
+      fi
+      ;;
+  esac
 
   # BL-1011: "<age> <reason>". `age` keeps its old numeric meaning (sentinel
   # included) so every comparison below is unchanged; `reason` is what a human
