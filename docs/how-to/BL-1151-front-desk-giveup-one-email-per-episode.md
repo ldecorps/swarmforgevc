@@ -39,7 +39,8 @@ Persisted state: `.swarmforge/operator/front-desk-escalation-alarm.json`
 
 1. Check `front-desk-supervisor.log` under `.swarmforge/operator/`.
 2. Fix the underlying bridge/bot failure (build stale, token conflict, crash loop —
-   sibling **BL-1154** if build-stale is burning the attempt budget).
+   see sibling [BL-1154](BL-1154-build-stale-restarts-not-crash-giveup-budget.md)
+   if build-stale is burning the attempt budget).
 3. Restart the supervisor or the failed child by hand if needed.
 
 You should receive **at most one escalation email per continuous episode**. If
@@ -51,7 +52,8 @@ mail repeats on the same outage after this fix lands, treat it as a regression.
   idle alarm (separate path).
 - Spec BL-370 — give-up must reach a human loudly; delivery-based arming.
 - Spec BL-621 — sustained poll/relay outage, once per episode (bot-side).
-- Sibling **BL-1154** — build-stale vs crash attempt accounting.
+- Sibling [BL-1154](BL-1154-build-stale-restarts-not-crash-giveup-budget.md) —
+  build-stale vs crash attempt accounting.
 
 Acceptance:
 `specs/features/BL-1151-front-desk-giveup-one-email-per-episode.feature`
