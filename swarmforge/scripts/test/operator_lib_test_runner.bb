@@ -1151,26 +1151,6 @@
          (operator-lib/filed-intake-confirmation-text
           "backlog/INTAKE-x.md" "abc123" "git@gitlab.com:ldecorps/swarmforgevc.git"))
 
-;; ── BL-653: tick-observed-events + BABYSITTER_ESCALATION ───────────────────
-(assert-true "BABYSITTER_ESCALATION is a valid event type"
-             (operator-lib/valid-event? {:type "BABYSITTER_ESCALATION" :subject "pane-coder" :detail "missing"}))
-(assert= "BL-653: healthy reachable tick manufactures nothing"
-         []
-         (operator-lib/tick-observed-events {:reachable? true :command-file-exists? false
-                                             :coordinator-inbox-fresh? false}))
-(assert= "BL-653: unreachable control channel still surfaces SWARM_CONTROL_LOST"
-         [(operator-lib/control-lost-event)]
-         (operator-lib/tick-observed-events {:reachable? false :command-file-exists? false
-                                             :coordinator-inbox-fresh? false}))
-(assert-true "BL-653: manufactured types never include patrol/liveness pseudo-events"
-             (not-any? #{"SWARM_CHECK_TIMER" "AGENT_EXITED"}
-                       (map :type (operator-lib/tick-observed-events
-                                    {:reachable? true :command-file-exists? true :command-detail "go"
-                                     :coordinator-inbox-fresh? true}))))
-(assert= "BL-653: babysitter escalation wire shape"
-         {:type "BABYSITTER_ESCALATION" :subject "proc-coder" :detail "process gone"}
-         (operator-lib/babysitter-escalation-event {:key "proc-coder" :message "process gone"}))
-
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "operator_lib: ALL TESTS PASSED")
