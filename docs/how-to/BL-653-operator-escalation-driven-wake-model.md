@@ -24,6 +24,10 @@ Everything else that used to wake the operator on a timer — especially
 payload-free `SWARM_CHECK_TIMER` patrols and per-tick `AGENT_EXITED` from
 `dead-agent-events` — no longer launches the LLM.
 
+Each runtime tick calls `operator-lib/tick-observed-events`, which may enqueue
+only `HUMAN_COMMAND`, `TASK_ARRIVED`, or `SWARM_CONTROL_LOST` — never patrol
+timers or liveness diffs.
+
 ## Babysitter: nudge vs escalation
 
 The babysitter still owns deterministic health checks ([BL-611 runbook](BL-611-babysitterd-runbook.md)).
