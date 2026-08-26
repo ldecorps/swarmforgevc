@@ -4,27 +4,36 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-behaviour-trends
+human_approval: approved
 severity: medium
 priority: 36
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "walker lib and series output; no batch dedup surface"
+  architect: "taxonomy and TrendedNumber shape settled in-ticket"
+  hardender: "TS walker outside mutate scope; fixture transcript tests"
+  documenter: "briefing sidecar self-describing; epic BL-594 docs cover trend framework"
+acceptance: specs/features/BL-664-deterministic-turn-profiler-transcript-walker.feature
+
+approval_context: >
+  Operator intake deterministic-git-choreography-assist + Let's Talk 2026-07-30:
+  profile agents first to size transit optimizations. Prototype inverted naive
+  framing — turn overhead dominates trivial git (~2s merge vs ~10min turn).
+
 invariants:
   - "The profiler is read-only on transcripts — they are forensic evidence; no walker output path writes, moves, or truncates a transcript."
   - "Absent data renders as absent: the profiler states its coverage window and never extrapolates outside it (BL-635's honesty rule)."
+  - "ONE walker lib serves turnProfile, BL-665 context telemetry, and BL-666 burn meter — no duplicate parsers."
 
-source: |
-  .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md
-  (operator session 2026-07-26, on the human's ask "si tu n'as pas assez de
-  data, profile les agents pour optimiser cet aspect"; archived on drain).
-  The operator's 30-minute prototype on the coder's 22MB transcript (9.2h,
-  6,698 events) already INVERTED the naive framing: raw git commands are
-  ~4% of coder seat time; the real tax is TURN OVERHEAD wrapping trivial
-  mechanical turns (a 2-second merge costs a 10-minute turn; a 15-min,
-  57k-token cleaner boot processed an EMPTY stale batch). Addendum 2: 529
-  retry storms must be their own category or a provider bad hour reads as
-  "the architect got slow" downstream.
+required_wiring:
+  - 'extension/src/metrics/transcriptWalker.ts or equivalent::classify intervals::git-mechanical test-run file-read thinking-writing turn-overhead provider-outage'
+  - 'extension/src/metrics/trend.ts::turnProfile TrendedNumber series::mechanical and turn-overhead shares per stage for briefing and charts'
+  - 'extension/src/metrics/transcriptWalker.ts::handoff trail attribution::per-turn stage and ticket id when parcel active'
+  - 'specs/pipeline/steps/index.js::bl664TurnProfilerTranscriptWalkerSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
   ## What
@@ -60,8 +69,29 @@ description: |
   (transit-heavy roles will differ); regex-level extraction needs replacing
   with real JSONL parsing.
 
+qa_e2e_procedure: >
+  (1) Fixture transcripts — walker classifies six taxonomy categories. (2) Transcript
+  bytes unchanged after run. (3) Bounded window stated; no extrapolation. (4) turnProfile
+  per stage with mechanical and turn-overhead shares. (5) Handoff trail attributes ticket
+  and stage. (6) Historical transcripts backfill on first run. Live: run walker on host
+  transcripts; briefing sidecar shows turnProfile series.
+
+source: |
+  .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md
+  (operator session 2026-07-26). Operator prototype: git ~4% coder seat time;
+  turn overhead dominates; provider retry storms need separate category.
+
+specifier_decisions: |
+  Minted 2026-08-26 per coordinator route. Six scenarios cover taxonomy, read-only,
+  coverage honesty, turnProfile output, handoff attribution, retroactive history.
+  Provider-outage uses signature-backed windows per BL-650 effective-time. Walker lib
+  is shared substrate for BL-665/BL-666 — do not fork parsers. JSONL parsing not regex.
+
 notes: |
   Human via Let's Talk 2026-07-30 evening: prioritize this. Raised priority
-  06 → 1. Keep paused under WIP depth 1 while BL-723 (priority 0 queue-jump)
-  finishes; pull next after that review lands. Do not invent a second intake —
-  this ticket already owns ceremony-vs-effective-work measurement.
+  06 → 1. Sequences before BL-667 transit-assist children (BL-668 etc.).
+
+out_of_scope: |
+  - Implementing BL-667 transit assists (sized by this measurement).
+  - BL-665 producer wiring (uses this lib after BL-664 lands).
+  - Modifying or deleting transcripts.
