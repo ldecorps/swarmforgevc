@@ -11,6 +11,18 @@ restarts wedged sweep daemons from outside bb/node/the swarm.
 |---|---|---|---|
 | handoffd | `.swarmforge/daemon/handoffd.log` | 120s | `start_handoff_daemon.sh` |
 | babysitterd | `.swarmforge/babysitterd/babysitterd.log` | 600s | `start_babysitterd.sh` |
+| cursor_bridge_supervisor | `.swarmforge/operator/cursor-bridge-supervisor.log` | 30s (2s loop) | `start_cursor_bridge.sh` |
+| handoffd_supervisor | `.swarmforge/daemon/handoffd-supervisor.log` | 180s (10s loop) | `start_handoff_daemon.sh` |
+| front_desk_supervisor | `.swarmforge/operator/front-desk-supervisor.log` | 30s (2s loop) | `launch_front_desk.sh` |
+| negotiation_relay_supervisor | `.swarmforge/operator/negotiation-relay-supervisor.log` | 30s (2s loop) | `launch_negotiation_relay.sh` |
+| onboarder_supervisor | `.swarmforge/operator/onboarder-supervisor.log` | 30s (2s loop) | `launch_onboarder.sh` |
+| bridge_headless_supervisor | `.swarmforge/operator/bridge-headless-supervisor.log` | 30s (2s loop) | `start_bridge_headless.sh` |
+| operator_runtime_supervisor | `.swarmforge/operator/operator-runtime-supervisor.log` | 300s (15s loop) | `launch_operator_runtime_supervisor.sh` |
+
+(BL-784 added the six supervisor rows and per-tick heartbeats — see
+[supervisor freshness heartbeats and registry guard](BL-784-supervisor-freshness-heartbeats-and-registry-guard.md).
+Thresholds for supervisors are derived from each daemon's loop interval and
+documented inline in the conf file.)
 
 (BL-611 ported babysitterd into the tracked repo and moved its state from
 `.swarmforge/babysitter/` to `.swarmforge/babysitterd/` — see
@@ -23,7 +35,10 @@ thresholds — see "Contention-relative threshold" below for how the
 loaded host.
 
 Both daemons emit a timestamped, content-free `heartbeat` line so a healthy
-quiet period (cooldown pause, no work) never looks dead.
+quiet period (cooldown pause, no work) never looks dead. Since BL-784, every
+registered `*_supervisor.bb` loop uses the same shape via
+`daemon_log_freshness_pulse_lib.bb` — a conf row without that heartbeat would
+restart a healthy supervisor for being quiet.
 `handoffd` writes it **twice per cycle — at the start AND the end** (BL-789):
 observed Mac cycles run 140-232s, close to/past the 120s threshold, so a
 start-of-cycle pulse is what keeps a merely-slow cycle from looking
