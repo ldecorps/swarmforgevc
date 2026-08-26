@@ -727,6 +727,22 @@
       (str hours "h" minutes "m")
       (str minutes "m"))))
 
+(defn- flow-stall-tier-prefix
+  "BL-779: tier label plus optional pause marker before the parcel clause."
+  [tier pause-active?]
+  (str (if (= tier :escalate) "🚨 ESCALATE" "⚠️ WARN")
+       " flow-stall"
+       (when pause-active? " (swarm paused)")
+       ": "))
+
+(defn- flow-stall-action-suffix
+  "BL-779: during a live pause, name the pause instead of a verb the daemon
+   cannot deliver."
+  [{:keys [pause-active? pause-until-ms verb]}]
+  (if pause-active?
+    (str (backlog-depth-lib/format-pause-until-text pause-until-ms) ".")
+    (str (name verb) ".")))
+
 (defn format-alarm-text
   "Payload: parcel id, from->to, type, humanized age, holding mailbox (role +
    new|in_process), and the prescribed unblock verb - so the human or
@@ -745,13 +761,21 @@
    BL-827 gap 1 additions, same optional/no-op-when-absent posture:
    - threshold-ms: the fired tier's own threshold - now variable per route,
      so an alarm that does not state it cannot be judged at 3am.
-   - resolved-via: which spec key produced it (or \"global\")."
+   - resolved-via: which spec key produced it (or \"global\").
+   BL-779 additions, same optional posture:
+   - pause-active?: when true, header names swarm paused and the action
+     suffix is pause timing instead of rotate/nudge/investigate.
+   - pause-until-ms: timed pause end for format-pause-until-text; absent
+     during pause → operator-resume wording."
   [{:keys [id from to type age-ms wall-age-ms role mailbox verb tier
-           outage-intervals unreconstructable? threshold-ms resolved-via]}]
-  (str (if (= tier :escalate) "🚨 ESCALATE" "⚠️ WARN")
-       " flow-stall: parcel " id " (" from "->" to ", " type ") aged "
+           outage-intervals unreconstructable? threshold-ms resolved-via
+           pause-active? pause-until-ms]}]
+  (str (flow-stall-tier-prefix tier pause-active?)
+       "parcel " id " (" from "->" to ", " type ") aged "
        (humanize-age-ms age-ms) " in " role " " (name mailbox)
-       " - " (name verb) "."
+       " - " (flow-stall-action-suffix {:pause-active? pause-active?
+                                        :pause-until-ms pause-until-ms
+                                        :verb verb})
        (when (and threshold-ms resolved-via)
          (str " Threshold " (humanize-age-ms threshold-ms) " via " resolved-via "."))
        (when (and wall-age-ms (not= (long wall-age-ms) (long (or age-ms 0))))
@@ -908,6 +932,9 @@
                                (fn [role]
                                  (try (handoff-lib/stage-seat-worked-task-sets role project-root)
                                       (catch Exception _ []))))
+        pause-state (backlog-depth-lib/read-pause-state project-root)
+        pause-active? (backlog-depth-lib/pause-active? pause-state now-ms)
+        pause-until-ms (when pause-active? (:until-ms pause-state))
         parcels (vec (mapcat
                       (fn [{:keys [role new-dir in-process-dir]}]
                         (concat
@@ -949,6 +976,8 @@
                                     ;; tier's threshold and its source.
                                     :threshold-ms (if (= tier :escalate) escalate-ms warn-ms)
                                     :resolved-via resolved-via
+                                    :pause-active? pause-active?
+                                    :pause-until-ms pause-until-ms
                                     :verb verb :tier tier))
                        confirmed? (try
                                     (boolean ((:emit-alarm! adapters) text))
