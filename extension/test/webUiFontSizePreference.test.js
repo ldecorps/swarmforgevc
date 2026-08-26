@@ -18,6 +18,13 @@ test('readWebUiFontSizePreference: no file yet reports none', () => {
   assert.deepEqual(readWebUiFontSizePreference(root, 'live-screen'), { kind: 'none' });
 });
 
+test('resolveWebUiFontSizePx: empty store returns each surface default exactly', () => {
+  const root = mkRoot();
+  assert.equal(resolveWebUiFontSizePx(root, 'live-screen'), 13);
+  assert.equal(resolveWebUiFontSizePx(root, 'pipeline-grid'), 15);
+  assert.equal(resolveWebUiFontSizePx(root, 'paused-pager'), 15);
+});
+
 test('writeWebUiFontSizePreference then read: round-trips per surface', () => {
   const root = mkRoot();
   const write = writeWebUiFontSizePreference(root, 'pipeline-grid', 18);
@@ -32,10 +39,16 @@ test('writeWebUiFontSizePreference: clamps live-screen to its bounds', () => {
   assert.deepEqual(writeWebUiFontSizePreference(root, 'live-screen', 5), { ok: true, fontSizePx: 9 });
 });
 
+test('writeWebUiFontSizePreference: clamps pipeline-grid to its bounds', () => {
+  const root = mkRoot();
+  assert.deepEqual(writeWebUiFontSizePreference(root, 'pipeline-grid', 99), { ok: true, fontSizePx: 26 });
+});
+
 test('resolveWebUiFontSizePx: corrupt JSON falls back to surface default', () => {
   const root = mkRoot();
   fs.mkdirSync(path.dirname(webUiFontSizePreferencePath(root)), { recursive: true });
   fs.writeFileSync(webUiFontSizePreferencePath(root), '{bad', 'utf8');
+  assert.deepEqual(readWebUiFontSizePreference(root, 'live-screen'), { kind: 'unreadable' });
   assert.equal(resolveWebUiFontSizePx(root, 'live-screen'), 13);
   assert.equal(resolveWebUiFontSizePx(root, 'pipeline-grid'), 15);
 });
