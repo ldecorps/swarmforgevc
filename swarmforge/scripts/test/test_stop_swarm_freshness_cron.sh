@@ -76,8 +76,8 @@ STORE3="$FAKE_CRON/crontab3.txt"
 PATH="$FAKE_CRON:$PATH" CRONTAB_STORE="$STORE3" "$BASH_BIN" "$INSTALLER" "$ROOT_D" >/dev/null
 check "03: cron installed before stop" 'grep -qF "FRESHNESS_ROOT=$ROOT_D " "$STORE3"'
 
-EMPTY_PS="$(mktemp)"
-register_tmp_dir "$(dirname "$EMPTY_PS")"
+EMPTY_PS_DIR="$(make_root)"
+EMPTY_PS="$EMPTY_PS_DIR/empty.ps"
 : > "$EMPTY_PS"
 PATH="$FAKE_CRON:$PATH" CRONTAB_STORE="$STORE3" SWARMFORGE_SURVIVOR_PS_FILE="$EMPTY_PS" \
   "$BASH_BIN" "$STOP_SWARM" "$ROOT_D" >/dev/null
