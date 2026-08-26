@@ -40,6 +40,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_log_freshness_pulse_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -559,6 +560,7 @@
 ;; ── one health check ─────────────────────────────────────────────────────────
 
 (defn check! []
+  (daemon-log-freshness-pulse-lib/append-log-heartbeat! supervisor-log)
   (if (fs/exists? stop-file)
     (log! "skip" "stop file present; swarm shutting down")
     (let [status (or (read-status) {})
