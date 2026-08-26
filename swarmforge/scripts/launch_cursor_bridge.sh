@@ -3,13 +3,10 @@
 set -euo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  cat <<'EOF'
-launch_cursor_bridge.sh — lifecycle start entry point.
-
-Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
-
-Usage: see header comments above.
-EOF
+  _lh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck disable=SC1091
+  source "$_lh_dir/lifecycle_help_lib.sh"
+  print_lifecycle_help "launch_cursor_bridge.sh" "lifecycle start entry point."
   exit 0
 fi
 

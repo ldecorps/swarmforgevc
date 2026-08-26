@@ -1,0 +1,5 @@
+start_babysitterd.sh — idempotent start of babysitterd (BL-611).
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh
+
+Usage: start_babysitterd.sh <project-root>
