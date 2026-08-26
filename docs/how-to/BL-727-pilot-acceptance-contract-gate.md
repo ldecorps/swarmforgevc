@@ -152,6 +152,34 @@ gate now checks files touched by the run's own non-merge commits (same
 companion remaining-work BL-736 for the BL-637 `--help` bodies) and re-run
 the gate — do not silent-bypass.
 
+## Shell entry-point drive (BL-747)
+
+BL-637's lifecycle shell suite claimed to verify `stop-swarm.sh` but
+`source`d `stack_survivor_scan.sh` and re-derived refuse/success branching
+inline (different success wording; missing `kill_rc` refuse). BL-746 fixed
+that remaining work; this gate stops the anti-pattern from landing again.
+
+Between a green contract (and the other land gates) and the yaml move:
+
+1. Collect touched `swarmforge/scripts/test/*.sh` files from the run's
+   non-merge commits (same ancestry scope as BL-729 / BL-737).
+2. Collect non-test `.sh` basenames named in the ticket YAML (`description`,
+   `required_wiring`, `acceptance` prose) — exclude paths under
+   `scripts/test/`.
+3. If either set is empty → **no-op** (land proceeds).
+4. If both non-empty: every named basename must appear as an **invocation**
+   in at least one touched shell test (`bash …/name` or `./name`). `source`
+   of a helper alone does not satisfy.
+5. Refuse (`reasonKind: 'parallel-shell-reimplementation'`) naming the
+   entry-point and a touched test path. A refused land is inert.
+6. Unreadable ticket YAML or touched-file history fails **OPEN** with a
+   warning that shell entry-point drive was not checked.
+7. On a clean check, record `shellEntryPointDrive` (`shellTestsScanned`,
+   `entryPointsNamed`) on the acceptance receipt.
+
+**Remediation when refused:** drive the real entry-point script from the
+shell test (see companion BL-746) — do not silent-bypass.
+
 ## Why
 
 A live pipeline run has two independent places that execute a ticket's
@@ -220,6 +248,17 @@ run, and no gate ever noticed.
   `extension/test/crossFileDuplicationCheck.property.test.js`
 - Cross-file duplication acceptance:
   `specs/features/BL-737-pilot-cross-file-duplication-gate.feature`
+- Shell entry-point drive (BL-747), pure extract/invoke helpers:
+  `extension/src/tools/shellEntryPointDriveCheck.ts`
+- Shell entry-point drive git + YAML deps:
+  `extension/src/tools/commitClaimGitReader.ts` → `checkShellEntryPointDrive`
+- Shell entry-point drive step handlers:
+  `specs/pipeline/steps/bl747PilotShellTestDrivesNamedEntryPointSteps.js`
+- Shell entry-point drive tests:
+  `extension/test/shellEntryPointDriveCheck.test.js`,
+  `extension/test/shellEntryPointDriveCheck.property.test.js`
+- Shell entry-point drive acceptance:
+  `specs/features/BL-747-pilot-shell-test-drives-named-entry-point.feature`
 
 ## Out of scope
 

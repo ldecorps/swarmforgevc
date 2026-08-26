@@ -38,7 +38,7 @@ const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 
 const DECL_KINDS = ['absent', 'inline', 'missingPath', 'existingFile'];
 
-function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, crossFileDup = false) {
+function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, crossFileDup = false, shellDriveMiss = false) {
   let executedFeaturePath;
   return {
     readAcceptanceDeclaration: () => (declKind === 'absent' ? undefined : 'specs/features/fixture.feature'),
@@ -68,6 +68,15 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, cro
             duplication: { fingerprint: 'x'.repeat(40), paths: ['a.sh', 'b.sh', 'c.sh'] },
           }
         : { checked: true, filesScanned: 0 },
+    checkShellEntryPointDrive: () =>
+      shellDriveMiss
+        ? {
+            checked: true,
+            shellTestsScanned: 1,
+            entryPointsNamed: 1,
+            miss: { entryPoint: 'stop-swarm.sh', testPath: 'swarmforge/scripts/test/t.sh' },
+          }
+        : { checked: true, shellTestsScanned: 0, entryPointsNamed: 0 },
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-PROP-fixture.yaml' };
@@ -102,30 +111,23 @@ test('property: invariant 1 - lands iff the declared contract resolves to a real
   );
 });
 
-test('property: invariant 3 - a refused land never moves the yaml or writes a receipt, for EVERY refusal reason (no-contract, contract-failed, claim-unsupported, or BL-737 cross-file-duplication)', async () => {
+test('property: invariant 3 - a refused land never moves the yaml or writes a receipt, for EVERY refusal reason (including BL-747 parallel-shell-reimplementation)', async () => {
   await fc.assert(
     fc.asyncProperty(
       fc.constantFrom(...DECL_KINDS),
       fc.boolean(),
       fc.boolean(),
       fc.boolean(),
-      async (declKind, contractGreen, claimUnsupported, crossFileDup) => {
+      fc.boolean(),
+      async (declKind, contractGreen, claimUnsupported, crossFileDup, shellDriveMiss) => {
         const calls = { move: 0, receipt: 0, commit: 0 };
         const outcome = await landPilotedTicket(
           'BL-PROP',
-          buildDeps(declKind, contractGreen, calls, claimUnsupported, crossFileDup)
+          buildDeps(declKind, contractGreen, calls, claimUnsupported, crossFileDup, shellDriveMiss)
         );
         if (!outcome.landed) {
-          assert.equal(
-            calls.move,
-            0,
-            `refused land (declKind=${declKind}, contractGreen=${contractGreen}, claimUnsupported=${claimUnsupported}, crossFileDup=${crossFileDup}, reasonKind=${outcome.reasonKind}) called moveTicketToDone`
-          );
-          assert.equal(
-            calls.receipt,
-            0,
-            `refused land (declKind=${declKind}, contractGreen=${contractGreen}, claimUnsupported=${claimUnsupported}, crossFileDup=${crossFileDup}, reasonKind=${outcome.reasonKind}) called writeReceipt`
-          );
+          assert.equal(calls.move, 0);
+          assert.equal(calls.receipt, 0);
         }
         if (declKind === 'existingFile' && contractGreen && claimUnsupported) {
           assert.equal(outcome.landed, false);
@@ -134,6 +136,16 @@ test('property: invariant 3 - a refused land never moves the yaml or writes a re
         if (declKind === 'existingFile' && contractGreen && !claimUnsupported && crossFileDup) {
           assert.equal(outcome.landed, false);
           assert.equal(outcome.reasonKind, 'cross-file-duplication');
+        }
+        if (
+          declKind === 'existingFile' &&
+          contractGreen &&
+          !claimUnsupported &&
+          !crossFileDup &&
+          shellDriveMiss
+        ) {
+          assert.equal(outcome.landed, false);
+          assert.equal(outcome.reasonKind, 'parallel-shell-reimplementation');
         }
       }
     ),

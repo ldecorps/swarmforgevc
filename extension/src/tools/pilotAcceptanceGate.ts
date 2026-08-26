@@ -59,6 +59,10 @@ import {
   CROSS_FILE_DUPLICATION_REFUSAL,
   CrossFileDuplicationCheckOutcome,
 } from './crossFileDuplicationCheck';
+import {
+  PARALLEL_SHELL_REIMPLEMENTATION_REFUSAL,
+  ShellEntryPointDriveCheckOutcome,
+} from './shellEntryPointDriveCheck';
 
 export {
   assessProducerCrosscheck,
@@ -80,6 +84,15 @@ export {
   CrossFileDuplicationHit,
 } from './crossFileDuplicationCheck';
 
+export {
+  PARALLEL_SHELL_REIMPLEMENTATION_REFUSAL,
+  assessShellEntryPointDrive,
+  extractNamedEntryPoints,
+  testInvokesEntryPoint,
+  ShellEntryPointDriveCheckOutcome,
+  ShellEntryPointDriveMiss,
+} from './shellEntryPointDriveCheck';
+
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
@@ -95,6 +108,7 @@ export interface AcceptanceReceipt {
   landedAt: string;
   commitClaimsChecked: number;
   crossFileDuplicationFilesScanned?: number;
+  shellEntryPointDrive?: { shellTestsScanned: number; entryPointsNamed: number };
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
   producerCrosscheck?: ProducerCrosscheckMetadata;
 }
@@ -126,6 +140,7 @@ export interface PilotAcceptanceGateDeps {
   readAcceptanceExecution?: () => string | undefined;
   checkCommitClaims: () => CommitClaimsCheckOutcome;
   checkCrossFileDuplication: () => CrossFileDuplicationCheckOutcome;
+  checkShellEntryPointDrive: (ticketId: string) => ShellEntryPointDriveCheckOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
   getLandedCommit: () => string;
@@ -150,6 +165,7 @@ export interface PilotLandRefusal {
     | 'producer-crosscheck-required'
     | 'claim-unsupported'
     | 'cross-file-duplication'
+    | 'parallel-shell-reimplementation'
     | 'move-failed';
   reason: string;
   unmatchedStep?: string;
@@ -159,6 +175,8 @@ export interface PilotLandRefusal {
   claimSentence?: string;
   duplicationFingerprint?: string;
   duplicationPaths?: string[];
+  shellEntryPoint?: string;
+  shellTestPath?: string;
 }
 
 export type PilotLandOutcome = PilotLandSuccess | PilotLandRefusal;
@@ -301,6 +319,29 @@ function checkDuplication(
   return { duplicationCheck };
 }
 
+// Step 3d: when the run touches shell tests and the ticket names a non-test
+// .sh entry-point, every named basename must be invoked in a touched test
+// (BL-747 / BL-637 parallel-reimplementation gap). Unreadable inputs fail OPEN.
+function checkShellDrive(
+  ticketId: string,
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { shellDriveCheck: ShellEntryPointDriveCheckOutcome } {
+  const shellDriveCheck = deps.checkShellEntryPointDrive(ticketId);
+  if (shellDriveCheck.checked && shellDriveCheck.miss) {
+    const { entryPoint, testPath } = shellDriveCheck.miss;
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'parallel-shell-reimplementation',
+        reason: `${PARALLEL_SHELL_REIMPLEMENTATION_REFUSAL} (entry-point ${entryPoint}; test ${testPath})`,
+        shellEntryPoint: entryPoint,
+        shellTestPath: testPath,
+      },
+    };
+  }
+  return { shellDriveCheck };
+}
+
 // Step 2b: revert-then-reland tickets must carry visible yaml notes before
 // a second done move — the BL-559 double-land hygiene gap.
 function requireRelandNotes(ticketId: string, deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal } | { ok: true } {
@@ -373,6 +414,7 @@ function moveAndRecordReceipt(
   deps: PilotAcceptanceGateDeps,
   claimsCheck: CommitClaimsCheckOutcome,
   duplicationCheck: CrossFileDuplicationCheckOutcome,
+  shellDriveCheck: ShellEntryPointDriveCheckOutcome,
   multiWorktreeFixture?: MultiworktreeFixtureMetadata,
   producerCrosscheck?: ProducerCrosscheckMetadata
 ): PilotLandOutcome {
@@ -400,6 +442,12 @@ function moveAndRecordReceipt(
   if (duplicationCheck.checked) {
     receipt.crossFileDuplicationFilesScanned = duplicationCheck.filesScanned;
   }
+  if (shellDriveCheck.checked) {
+    receipt.shellEntryPointDrive = {
+      shellTestsScanned: shellDriveCheck.shellTestsScanned,
+      entryPointsNamed: shellDriveCheck.entryPointsNamed,
+    };
+  }
   if (multiWorktreeFixture) {
     receipt.multiWorktreeFixture = multiWorktreeFixture;
   }
@@ -415,6 +463,11 @@ function moveAndRecordReceipt(
   if (!duplicationCheck.checked) {
     warnings.push(
       'cross-file duplication was not checked: the run\'s touched-file history could not be resolved'
+    );
+  }
+  if (!shellDriveCheck.checked) {
+    warnings.push(
+      'shell entry-point drive was not checked: the ticket yaml or touched-file history could not be resolved'
     );
   }
   const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
@@ -471,6 +524,11 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return duplication.refusal;
   }
 
+  const shellDrive = checkShellDrive(ticketId, deps);
+  if ('refusal' in shellDrive) {
+    return shellDrive.refusal;
+  }
+
   const fixtureMetadata =
     deps.isLifecycleTeardownTicket(ticketId) && fixtureGate.fixture.satisfied
       ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
@@ -482,6 +540,7 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     deps,
     claims.claimsCheck,
     duplication.duplicationCheck,
+    shellDrive.shellDriveCheck,
     fixtureMetadata,
     producerGate.crosscheck
   );
