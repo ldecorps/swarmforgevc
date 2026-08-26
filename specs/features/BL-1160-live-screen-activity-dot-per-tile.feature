@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a672df8a42a3e85170daf96926ad7619ab6612b3ee403310f249643f6fac0b5e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T14:53:19.594014026Z","feature_name":"each Live Screen role tile owns its own activity status dot","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1160-live-screen-activity-dot-per-tile.feature","background_hash":"53cb4989c657d63600bb7e301c7f1736d3bb3233d5d3eab849111ee3ab912531","implementation_hash":"unknown","scenarios":[{"index":1,"name":"each tile dot uses the existing ok stale err palette","scenario_hash":"b6ffa57c42aba2ade89656443450546448d28efa947b4343b44c0fbfe6f8be56","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-26T14:53:19.594014026Z"},{"index":0,"name":"the grid overview shows one activity dot per role tile","scenario_hash":"8bca612fec26579de7bfa52ea1153c6a810ce908b5a05657029c6035a9243764","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-26T14:52:46.023263345Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: each Live Screen role tile owns its own activity status dot
 
   # BL-1160: the Live Screen grid (BL-994) today drives one viewport-fixed

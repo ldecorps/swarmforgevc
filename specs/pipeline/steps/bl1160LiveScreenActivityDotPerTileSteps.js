@@ -9,6 +9,14 @@ const EXTENSION_NODE_MODULES = path.join(REPO_ROOT, 'extension', 'node_modules')
 
 const FEATURE = 'each Live Screen role tile owns its own activity status dot';
 
+const PANE_COUNTS = new Set([4, 8]);
+
+const SIGNAL_CASES = {
+  coder: { signal: 'ok', colour: 'green' },
+  architect: { signal: 'stale', colour: 'amber' },
+  qa: { signal: 'err', colour: 'red' },
+};
+
 function extractInlineScript(html) {
   const match = html.match(/<script>([\s\S]*?)<\/script>/);
   if (!match) {
@@ -101,7 +109,11 @@ function registerSteps(registry) {
   scoped(/^the grid renders one tile per role pane$/, () => {});
 
   scoped(/^the grid is rendering "(\d+)" role panes$/, (ctx, count) => {
-    ctx.bl1160PaneCount = Number(count);
+    const n = Number(count);
+    if (!PANE_COUNTS.has(n)) {
+      throw new Error(`unknown pane count in Examples: ${count}`);
+    }
+    ctx.bl1160PaneCount = n;
     ctx.bl1160SignalPanes = null;
     ctx.bl1160OfflinePanes = null;
   });
@@ -141,6 +153,13 @@ function registerSteps(registry) {
   });
 
   scoped(/^the "([^"]+)" tile's freshness signal is "([^"]+)"$/, (ctx, role, signal) => {
+    const expected = SIGNAL_CASES[role];
+    if (!expected) {
+      throw new Error(`unknown role tile in Examples: ${role}`);
+    }
+    if (expected.signal !== signal) {
+      throw new Error(`unknown signal in Examples for ${role}: ${signal}`);
+    }
     const id = role.toLowerCase();
     const panes = [
       { id: 'coder', label: 'Coder', pane: { available: true, activitySignal: 'ok' } },
@@ -155,10 +174,16 @@ function registerSteps(registry) {
   });
 
   scoped(/^the "([^"]+)" tile's activity dot has colour "([^"]+)"$/, (ctx, role, colour) => {
-    const tile = ctx.bl1160Render.tileDots.find((t) => t.id === role.toLowerCase());
-    const want = colour.toLowerCase();
-    if (!tile || tile.colour !== want) {
-      throw new Error(`expected ${role} dot colour ${want}, got ${tile ? tile.colour : 'missing'}`);
+    const expected = SIGNAL_CASES[role];
+    if (!expected || expected.colour !== colour) {
+      throw new Error(`unknown dot colour in Examples for ${role}: ${colour}`);
+    }
+    const id = role.toLowerCase();
+    const tile = ctx.bl1160Render.tileDots.find((t) => t.id === id);
+    if (!tile || tile.colour !== expected.colour) {
+      throw new Error(
+        `expected ${role} dot colour ${expected.colour}, got ${tile ? tile.colour : 'missing'}`
+      );
     }
   });
 
