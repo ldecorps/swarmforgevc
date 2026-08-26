@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=98f208ebe19dc6d333b35fa84d240efdcf8f83d45a3c13b5aef92cd1bca43d59
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T12:23:02.005256203Z","feature_name":"handoffd deliver! paren fix verified independently of BL-636 commit-message claims","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-728-handoffd-deliver-paren-verification.feature","background_hash":"2dc349480109f7e1efec3f36bdd97afc97bfa685e8cde14d90e64cb868182099","implementation_hash":"unknown","scenarios":[{"index":1,"name":"one-shot handoffd flags run to their done log line","scenario_hash":"8aed5f3dd5228e6e3e439e4033326326e589e1b960c2b85cfdee00c9d797f223","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-26T12:23:02.005256203Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: handoffd deliver! paren fix verified independently of BL-636 commit-message claims
   BL-636's landing commit (6a2e4aaf6) claimed it restored a deliver! close
   paren dropped by BL-611 that blocked one-shot handoffd flags under streaming
