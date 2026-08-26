@@ -2436,6 +2436,16 @@ test('Approvals More: decideCallbackQueryAction resolves a More tap', () => {
   assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'more', backlogId: 'BL-525' });
 });
 
+test('BL-589: decideCallbackQueryAction resolves a ruling-option tap by index', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'rule:BL-589:2' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'rule', backlogId: 'BL-589', optionIndex: 2 });
+});
+
+test('BL-589: decideCallbackQueryAction drops rule callback whose tail is not a numeric index', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'rule:BL-589:label-not-index' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'unrecognized-data' });
+});
+
 test('BL-410: decideCallbackQueryAction drops a tap from a foreign chat as not-my-chat', () => {
   const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', chatId: 2 }).callback_query;
   assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'not-my-chat' });

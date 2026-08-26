@@ -32,6 +32,9 @@ notes: |
   independent of the coder's already-filed correctness bug (BL-730/731) —
   the code duplicated here is real production shell, not test scaffolding.
   Linked pilot-process defect: BL-737.
+  - [2026-08-26T21:46Z] coordinator: open-slot nudge — cannot promote;
+    `human_approval` not approved (handoffd candidate BL-736).
+  - [2026-08-26T21:51Z] coordinator: repeat open-slot nudge — same block holds.
 
 description: |
   ## What

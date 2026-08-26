@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-589: approval asks with `ruling_options:`
+in ticket YAML render one inline button per choice on the Approvals ask (index
+`rule:<id>:<n>` callback_data); tap records durable `human_ruling` and repaints
+with Ruled footer — default five-button keyboard unchanged when options absent.
+Modules: `topicRouter.ts`, `pendingApprovalReply.ts`, `backlogReader.ts`,
+`telegramFrontDeskBotCore.ts`. Acceptance:
+`specs/features/BL-589-approval-ask-carries-ruling-options.feature`. How-to:
+`docs/how-to/BL-589-approval-ask-carries-ruling-options.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1155: Pipeline Board stage header stays one
 line on phone — `PIPELINE_BOARD_STAGE_CELL_WIDTH` (2) and
 `PIPELINE_BOARD_GRID_MAX_WIDTH` (30) budget the composed eight-stage header so

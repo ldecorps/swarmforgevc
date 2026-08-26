@@ -1330,6 +1330,24 @@ run_agent_bootstrap() {
   ) &!
 }
 
+# BL-1001: --seat-tier is pack routing metadata only — strip before passing
+# extra_cli to agent CLIs that do not understand it (cursor-agent, etc.).
+swarm_only_strip_seat_tier() {
+  local extra="$1"
+  [[ -z "$extra" ]] && return
+  local -a parts=(${=extra}) out=()
+  integer pi=1
+  while (( pi <= ${#parts[@]} )); do
+    if [[ "${parts[pi]}" == "--seat-tier" ]]; then
+      (( pi += 2 ))
+      continue
+    fi
+    out+=("${parts[pi]}")
+    (( pi += 1 ))
+  done
+  echo "${out[*]}"
+}
+
 claude_settings_and_flags_from_extra_cli() {
   local extra_cli="$1"
   local -a parts cli_flags
@@ -1359,6 +1377,10 @@ claude_settings_and_flags_from_extra_cli() {
         ;;
       --allow-dangerously-skip-permissions)
         (( i++ ))
+        ;;
+      --seat-tier)
+        # BL-1001: pack-only routing metadata — never a Claude CLI flag.
+        (( i += 2 ))
         ;;
       --remote-control)
         if [[ -n "${parts[i+1]:-}" && "${parts[i+1]}" != --* ]]; then
@@ -1718,7 +1740,8 @@ RESUMECHECK
       if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
         cursor_dirs=" --add-dir '$WORKING_DIR'"
       fi
-      launch_body="cursor-agent${extra_cli:+ $extra_cli} --force --trust --workspace '$role_worktree'${cursor_dirs} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
+      local cursor_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
+      launch_body="cursor-agent${cursor_cli:+ $cursor_cli} --force --trust --workspace '$role_worktree'${cursor_dirs} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     gemini)
       # Google Gemini CLI (`npm i -g @google/gemini-cli` or similar). -y/--yolo
