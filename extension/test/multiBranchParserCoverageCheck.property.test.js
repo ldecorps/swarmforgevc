@@ -49,6 +49,7 @@ function mkDeps(multiBranchOutcome) {
       checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
       checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
       checkMultiBranchParserCoverage: () => multiBranchOutcome,
+      checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
       moveTicketToDone: () => {
         calls.move += 1;
         return { moved: true, destination: '/repo/backlog/done/x.yaml' };

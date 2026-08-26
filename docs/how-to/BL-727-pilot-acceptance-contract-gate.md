@@ -341,6 +341,8 @@ run, and no gate ever noticed.
   `specs/features/BL-755-pilot-multi-branch-parser-needs-per-arm-tests.feature`
 - Multi-branch parser how-to:
   [BL-755](BL-755-pilot-multi-branch-parser-needs-per-arm-tests.md)
+- Per-hat role prompt reinject (BL-758):
+  [BL-758](BL-758-pilot-inject-role-prompts-per-hat.md)
 
 ## Out of scope
 
