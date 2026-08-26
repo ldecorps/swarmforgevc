@@ -1,3 +1,4 @@
+const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -78,6 +79,12 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'related fixture babysitter / bridge processes under `/tmp/tmp.*` spawned for',
       'the run. Do NOT kill the host Cursor Remote bridge, Operator, or live-window',
       'host processes. Do not rely solely on the host orphan janitor (~2h reap).',
+      '',
+      'REVIEW HATS (cleaner / hardener / architect during /pilot) — BL-749:',
+      "A gap against the ticket's OWN explicit guardrail claim is never a",
+      'non-blocking nit until you have read the CALL SITE (not only the',
+      'function in isolation) and confirmed whether the guardrail is actually',
+      'upheld downstream. Call-site tracing before nit-downgrade is mandatory.',
       '',
       'Isolation (same as BL-567):',
       '- Work only in `.worktrees/expedite-BL-702` on branch `expedite/BL-702`.',
@@ -205,6 +212,20 @@ test('composePilotExpeditorPrompt requires stage-boundary orphan cleanup (BL-701
   assert.match(text, /\/tmp\/tmp\.\*/);
   assert.match(text, /Do NOT kill the host Cursor Remote bridge/);
   assert.match(text, /Do not rely solely on the host orphan janitor/);
+});
+
+test('composePilotExpeditorPrompt requires call-site tracing before nit-downgrade (BL-749)', () => {
+  const text = composePilotExpeditorPrompt('BL-749');
+  assert.match(text, /REVIEW HATS/);
+  assert.match(text, /call-site tracing before nit-downgrade/i);
+  assert.match(text, /CALL SITE/);
+  assert.match(text, /not only the\s+function in isolation/);
+  assert.match(text, /guardrail claim/);
+  // Polarity + obligation: never→always / mandatory→optional must not survive (BL-749).
+  assert.match(text, /is never a\s+non-blocking nit/);
+  assert.doesNotMatch(text, /is always a\s+non-blocking nit/);
+  assert.match(text, /Call-site tracing before nit-downgrade is mandatory/);
+  assert.doesNotMatch(text, /Call-site tracing before nit-downgrade is optional/);
 });
 
 test('formatPilotStartMessage identifies Cursor-piloted mode', () => {
