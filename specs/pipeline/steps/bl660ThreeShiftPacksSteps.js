@@ -21,14 +21,33 @@ const BB_TEST = path.join(SCRIPTS, 'test', 'swarm_shift_lib_test_runner.bb');
 const BB_PROPERTY = path.join(SCRIPTS, 'test', 'bl660_swarm_shift_property_runner.bb');
 const SHELL_SMOKE = path.join(SCRIPTS, 'test', 'test_shift_schedule_applier.sh');
 
-const {
-  resolveShiftSchedule,
-  longestStoppedGapMinutes,
-  formatLocalTime,
-  parseSwarmShift,
-} = require(path.join(EXT, 'out', 'tools', 'swarmShiftCore'));
 const { parseCooldownConfig } = require(path.join(EXT, 'out', 'tools', 'cooldownWindowCore'));
-const { resolveClosureSchedule } = require(path.join(EXT, 'out', 'quality', 'nightClosingCeremony'));
+
+const OUT_MODULES = [
+  path.join(EXT, 'out', 'tools', 'swarmShiftCore'),
+  path.join(EXT, 'out', 'tools', 'cooldownWindowCore'),
+  path.join(EXT, 'out', 'quality', 'nightClosingCeremony'),
+];
+
+function loadBl660ExtensionModules() {
+  for (const mod of OUT_MODULES) {
+    delete require.cache[require.resolve(mod)];
+  }
+  return {
+    ...require(path.join(EXT, 'out', 'tools', 'swarmShiftCore')),
+    parseCooldownConfig: require(path.join(EXT, 'out', 'tools', 'cooldownWindowCore')).parseCooldownConfig,
+    resolveClosureSchedule: require(path.join(EXT, 'out', 'quality', 'nightClosingCeremony')).resolveClosureSchedule,
+  };
+}
+
+function ensureBl660ExtensionCompiled() {
+  const probe = parseCooldownConfig('config swarm_shift night\n');
+  if (probe.config?.enabled === true) {
+    return loadBl660ExtensionModules();
+  }
+  execFileSync('npm', ['run', 'compile'], { cwd: EXT, stdio: 'pipe', timeout: 120000 });
+  return loadBl660ExtensionModules();
+}
 
 function bbEval(code) {
   return execFileSync('bb', ['-e', code], { encoding: 'utf8', cwd: REPO_ROOT, timeout: 30000 }).trim();
@@ -76,11 +95,18 @@ function confText(st) {
   return st.confLines.join('\n') + '\n';
 }
 
-function resolveSchedule(st) {
+function resolveSchedule(st, ext) {
   execFileSync('bb', [BB_TEST], { encoding: 'utf8', cwd: REPO_ROOT, timeout: 30000 });
   execFileSync('bb', [BB_PROPERTY], { encoding: 'utf8', cwd: REPO_ROOT, timeout: 30000 });
-  st.schedule = resolveShiftSchedule(confText(st));
+  st.schedule = ext.resolveShiftSchedule(confText(st));
   return st.schedule;
+}
+
+function extTools(ctx) {
+  if (!ctx.bl660Ext) {
+    ctx.bl660Ext = ensureBl660ExtensionCompiled();
+  }
+  return ctx.bl660Ext;
 }
 
 function registerSteps(registry) {
@@ -88,6 +114,7 @@ function registerSteps(registry) {
 
   scoped(/^a fixture swarm root with shift schedule seams and controllable clocks$/, (ctx) => {
     ensure(ctx);
+    extTools(ctx);
   });
 
   scoped(/^swarmforge conf has config swarm_shift (\w+) for fixture root R$/, (ctx, shift) => {
@@ -113,37 +140,40 @@ function registerSteps(registry) {
   });
 
   scoped(/^the shift schedule is resolved for root R$/, (ctx) => {
-    resolveSchedule(ensure(ctx));
+    resolveSchedule(ensure(ctx), extTools(ctx));
   });
 
   scoped(/^shift resolution runs for fixture root R$/, (ctx) => {
-    resolveSchedule(ensure(ctx));
+    resolveSchedule(ensure(ctx), extTools(ctx));
   });
 
   scoped(
     /^scheduled start is at (\d{2}:\d{2}) local and scheduled stop at (\d{2}:\d{2}) local$/,
     (ctx, start, stop) => {
+      const ext = extTools(ctx);
       const st = ensure(ctx);
-      const s = st.schedule ?? resolveShiftSchedule(confText(st));
-      assert.equal(formatLocalTime(s.startLocal), start);
-      assert.equal(formatLocalTime(s.stopLocal), stop);
+      const s = st.schedule ?? ext.resolveShiftSchedule(confText(st));
+      assert.equal(ext.formatLocalTime(s.startLocal), start);
+      assert.equal(ext.formatLocalTime(s.stopLocal), stop);
     },
   );
 
   scoped(/^BL-617 cooldown pause covers (\d{2}:\d{2}) through (\d{2}:\d{2}) local$/, (ctx, start, end) => {
+    const ext = extTools(ctx);
     const st = ensure(ctx);
-    const cooldown = parseCooldownConfig(confText(st));
+    const cooldown = ext.parseCooldownConfig(confText(st));
     assert.equal(cooldown.config?.enabled, true);
-    assert.equal(formatLocalTime(cooldown.config.startLocal), start);
-    assert.equal(formatLocalTime(cooldown.config.endLocal), end);
+    assert.equal(ext.formatLocalTime(cooldown.config.startLocal), start);
+    assert.equal(ext.formatLocalTime(cooldown.config.endLocal), end);
   });
 
   scoped(/^closure_stop_local equals the shift end$/, (ctx) => {
+    const ext = extTools(ctx);
     const st = ensure(ctx);
-    const s = st.schedule ?? resolveShiftSchedule(confText(st));
-    const closure = resolveClosureSchedule(confText(st));
+    const s = st.schedule ?? ext.resolveShiftSchedule(confText(st));
+    const closure = ext.resolveClosureSchedule(confText(st));
     assert.equal(closure.state, 'ok');
-    assert.equal(formatLocalTime(closure.closure), formatLocalTime(s.stopLocal));
+    assert.equal(ext.formatLocalTime(closure.closure), ext.formatLocalTime(s.stopLocal));
   });
 
   scoped(
@@ -193,12 +223,13 @@ function registerSteps(registry) {
   scoped(
     /^scheduling behaves byte-identically to today's disabled cooldown window$/,
     (ctx) => {
+      const ext = extTools(ctx);
       const st = ensure(ctx);
-      assert.equal(parseSwarmShift(confText(st)), null);
-      const cooldown = parseCooldownConfig(confText(st));
+      assert.equal(ext.parseSwarmShift(confText(st)), null);
+      const cooldown = ext.parseCooldownConfig(confText(st));
       assert.equal(cooldown.config?.enabled, false);
       assert.equal(cooldown.malformed, false);
-      const closure = resolveClosureSchedule(confText(st));
+      const closure = ext.resolveClosureSchedule(confText(st));
       assert.equal(closure.state, 'absent');
       const out = runApplier(st);
       assert.equal(out.applied, false);
@@ -266,7 +297,7 @@ function registerSteps(registry) {
 
   scoped(/^the stopped gap between shift end and next shift start is computed$/, (ctx) => {
     const st = ensure(ctx);
-    ctx.bl660GapMinutes = longestStoppedGapMinutes(st.activeShift);
+    ctx.bl660GapMinutes = extTools(ctx).longestStoppedGapMinutes(st.activeShift);
   });
 
   scoped(/^the gap duration is strictly less than twenty-four hours$/, (ctx) => {
