@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-733: `/pilot` acceptance gate refuses
+pattern/regex tickets without an exhaustive producer output-space crosscheck
+against `display_name_for_role` — `reasonKind: producer-crosscheck-required`;
+receipt records `producerCrosscheck`. Acceptance:
+`specs/features/BL-733-bl642-pilot-missed-multiword-role-crosscheck.feature`.
+How-to: `docs/how-to/BL-727-pilot-acceptance-contract-gate.md` (producer
+crosscheck section).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1147: read-only `probe-legacy-topic-adoption`
 CLI classifies legacy per-ticket topic keys, cursor Host routing
 (`bridge` | `operator-re-adopt` | `unbound`), and map-scrub candidates without
