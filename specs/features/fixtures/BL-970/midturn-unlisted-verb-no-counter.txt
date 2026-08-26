@@ -1,8 +1,0 @@
-⏺ Scanning the mailbox tree for stranded parcels.
-
-✢ Fermenting… (12s)
-────────────────────────────────────────────── SwarmForge Architect ─
-❯
-
-─────────────────────────────────────────────────────────────────────
-  ⏵⏵ bypass permissions on (shift+tab to cycle)
