@@ -174,3 +174,66 @@ test('resolveReporterConfig defaults surface to a function when omitted, and use
   const overriddenConfig = resolveReporterConfig({ surface }, {}, '/repo');
   assert.equal(overriddenConfig.surface, surface);
 });
+
+// ── BL-593: durable completion telemetry ─────────────────────────────────
+
+function telemetryDeps(overrides = {}) {
+  const progressWrites = [];
+  const telemetryAppends = [];
+  return {
+    progressWrites,
+    telemetryAppends,
+    deps: {
+      now: () => START + 60_000,
+      role: 'hardender',
+      filePath: '/fake/hardender.json',
+      write: (filePath, record) => progressWrites.push({ filePath, record }),
+      telemetryPath: '/fake/mutation-runs.jsonl',
+      appendTelemetry: (filePath, record) => telemetryAppends.push({ filePath, record }),
+      runMeta: {
+        role: 'hardender',
+        scope: 'out/foo.js',
+        incremental: true,
+        concurrency: 8,
+        buildSha: 'abc123',
+      },
+      mutateFile: 'out/foo.js',
+      ...overrides,
+    },
+  };
+}
+
+test('onMutationTestReportReady appends exactly one durable telemetry record', () => {
+  const { deps, progressWrites, telemetryAppends } = telemetryDeps();
+  const reporter = new MutationProgressReporter(deps);
+  reporter.onMutationTestingPlanReady(planReadyEvent(2));
+  reporter.onMutantTested({ status: 'Killed' });
+  reporter.onMutationTestReportReady();
+  assert.equal(progressWrites.length, 3);
+  assert.equal(telemetryAppends.length, 1);
+  assert.equal(telemetryAppends[0].filePath, '/fake/mutation-runs.jsonl');
+  assert.equal(telemetryAppends[0].record.aborted, undefined);
+  assert.equal(telemetryAppends[0].record.total, 2);
+});
+
+test('wrapUp after an abnormal end appends aborted telemetry, never a completed full-run record', () => {
+  const { deps, telemetryAppends } = telemetryDeps();
+  const reporter = new MutationProgressReporter(deps);
+  reporter.onMutationTestingPlanReady(planReadyEvent(5));
+  reporter.onMutantTested({ status: 'Killed' });
+  reporter.wrapUp();
+  assert.equal(telemetryAppends.length, 1);
+  assert.equal(telemetryAppends[0].record.aborted, true);
+  assert.equal(telemetryAppends[0].record.killed, 1);
+});
+
+test('normal completion does not double-append when wrapUp follows report ready', () => {
+  const { deps, telemetryAppends } = telemetryDeps();
+  const reporter = new MutationProgressReporter(deps);
+  reporter.onMutationTestingPlanReady(planReadyEvent(1));
+  reporter.onMutantTested({ status: 'Killed' });
+  reporter.onMutationTestReportReady();
+  reporter.wrapUp();
+  assert.equal(telemetryAppends.length, 1);
+  assert.equal(telemetryAppends[0].record.aborted, undefined);
+});

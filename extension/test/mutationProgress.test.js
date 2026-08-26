@@ -7,9 +7,18 @@ const {
 
 const START = new Date('2026-07-09T12:00:00Z').getTime();
 
-test('initMutationProgressState starts at zero tested/killed/survived/timedOut', () => {
+test('initMutationProgressState starts at zero tested/killed/survived/timedOut/noCoverage/ignored', () => {
   const state = initMutationProgressState(10, START);
-  assert.deepEqual(state, { total: 10, tested: 0, killed: 0, survived: 0, timedOut: 0, startedAtMs: START });
+  assert.deepEqual(state, {
+    total: 10,
+    tested: 0,
+    killed: 0,
+    survived: 0,
+    timedOut: 0,
+    noCoverage: 0,
+    ignored: 0,
+    startedAtMs: START,
+  });
 });
 
 test('recordMutantTested increments tested and survived for a Survived result', () => {
@@ -28,6 +37,16 @@ test('recordMutantTested increments tested and timedOut for a Timeout result', (
   assert.equal(next.killed, 0);
   assert.equal(next.survived, 0);
   assert.equal(next.timedOut, 1);
+  assert.equal(next.noCoverage, 0);
+  assert.equal(next.ignored, 0);
+});
+
+test('recordMutantTested increments noCoverage and ignored for their statuses', () => {
+  let state = initMutationProgressState(10, START);
+  state = recordMutantTested(state, 'NoCoverage');
+  state = recordMutantTested(state, 'Ignored');
+  assert.equal(state.noCoverage, 1);
+  assert.equal(state.ignored, 1);
 });
 
 // BL-446: killed is the mutation gate's own health signal (mutationGateHealth.ts) - a Killed
