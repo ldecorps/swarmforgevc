@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-753: `/pilot` acceptance gate refuses
+land when a run-touched `specs/pipeline/steps/*.js` registers a pattern that
+matches no rendered step of the ticket's acceptance feature —
+`reasonKind: unreachable-step-handler`; review hats + `composePilotExpeditorPrompt`
+treat unreachable handlers as untested-behavior flags, not cosmetic nits.
+Acceptance:
+`specs/features/BL-753-pilot-unreachable-step-handler-untested-behavior.feature`.
+How-to: `docs/how-to/BL-753-pilot-unreachable-step-handler-untested-behavior.md`
+(+ BL-727 gate section).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-749: cleaner/hardener role prompts and
 `/pilot` `composePilotExpeditorPrompt` require call-site tracing before
 downgrading a ticket's own guardrail gap to a non-blocking nit — function-in-

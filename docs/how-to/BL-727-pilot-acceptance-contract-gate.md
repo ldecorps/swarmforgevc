@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-747)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-747, BL-753)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -180,6 +180,32 @@ Between a green contract (and the other land gates) and the yaml move:
 **Remediation when refused:** drive the real entry-point script from the
 shell test (see companion BL-746) — do not silent-bypass.
 
+## Unreachable step handlers (BL-753)
+
+BL-694 registered a step handler that never matched any rendered feature
+step. Review hats treated it as a cosmetic dead-code nit instead of asking
+what untested behavior claim that handler was meant to prove (companion
+remaining-work BL-752).
+
+Between a green contract (and the other land gates) and the yaml move:
+
+1. Collect `specs/pipeline/steps/*.js` files touched by the run's non-merge
+   commits (same ancestry scope as BL-729 / BL-737 / BL-747).
+2. Pair them with the ticket's acceptance feature. If no step files were
+   touched → **no-op**.
+3. Every registered pattern (`registry.define` / regex) in those files must
+   match at least one rendered step of the feature.
+4. Refuse (`reasonKind: 'unreachable-step-handler'`) when a pattern matches
+   none. A refused land is inert.
+5. Unreadable feature or step files fail **OPEN** with a warning.
+6. Review hats (`composePilotExpeditorPrompt` + cleaner/hardener/architect
+   prompts) must treat unreachable handlers as untested-behavior flags until
+   the claim question is answered — see
+   [BL-753 how-to](BL-753-pilot-unreachable-step-handler-untested-behavior.md).
+
+**Remediation when refused:** wire the missing scenario/Examples row (or
+delete the dead registration intentionally) — do not silent-bypass.
+
 ## Why
 
 A live pipeline run has two independent places that execute a ticket's
@@ -261,6 +287,15 @@ run, and no gate ever noticed.
   `specs/features/BL-747-pilot-shell-test-drives-named-entry-point.feature`
 - Unreachable step-handler gate (BL-753), pure assess helpers:
   `extension/src/tools/unreachableStepHandlerCheck.ts`
+- Unreachable step-handler git + feature deps:
+  `extension/src/tools/commitClaimGitReader.ts` → `checkUnreachableStepHandlers`
+- Unreachable step-handler step handlers:
+  `specs/pipeline/steps/bl753PilotUnreachableStepHandlerUntestedBehaviorSteps.js`
+- Unreachable step-handler tests:
+  `extension/test/unreachableStepHandlerCheck.test.js`,
+  `extension/test/unreachableStepHandlerCheck.property.test.js`
+- Unreachable step-handler acceptance:
+  `specs/features/BL-753-pilot-unreachable-step-handler-untested-behavior.feature`
 - Unreachable step-handler how-to:
   [BL-753](BL-753-pilot-unreachable-step-handler-untested-behavior.md)
 
@@ -302,3 +337,5 @@ run, and no gate ever noticed.
   (companion remaining-work BL-736)
 - BL-747 — refuse land when touched shell tests do not invoke ticket-named
   entry-point scripts (companion remaining-work BL-746 landed)
+- BL-753 — refuse land for registered APS patterns that match no rendered
+  feature step (companion remaining-work BL-752)
