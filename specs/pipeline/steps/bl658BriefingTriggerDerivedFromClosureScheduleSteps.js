@@ -121,13 +121,15 @@ function registerSteps(registry) {
 
   scoped(/^the fixture's closure schedule is replaced with "([^"]+)"$/, (ctx, state) => {
     const st = ensure(ctx);
-    if (state === 'absent') {
-      st.scheduleOverride = { state: 'absent', surfaced: 'nothing' };
-    } else if (state === 'ambiguous') {
-      st.scheduleOverride = { state: 'ambiguous', surfaced: 'closure-schedule-ambiguous' };
-    } else {
+    const overrides = {
+      absent: { state: 'absent', surfaced: 'nothing' },
+      ambiguous: { state: 'ambiguous', surfaced: 'closure-schedule-ambiguous' },
+    };
+    const next = overrides[state];
+    if (!next) {
       throw new Error(`unknown scheduleState ${state}`);
     }
+    st.scheduleOverride = next;
   });
 
   scoped(/^the closing ceremony runs$/, (ctx) => {

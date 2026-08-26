@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { test } = require('node:test');
 const {
   collectClosureStopLocals,
   resolveClosureSchedule,
@@ -11,6 +12,19 @@ const {
   shouldConsultFixedMorningTrigger,
   fixedMorningTriggerFires,
 } = require('../out/quality/nightClosingCeremony');
+
+function okFixture(overrides = {}) {
+  return {
+    schedule: { state: 'ok', closure: { hour: 6, minute: 0 }, surfaced: 'nothing' },
+    budgets: defaultBudgets(),
+    hardDeadline: { hour: 6, minute: 0 },
+    inFlight: null,
+    heldParcelIds: [],
+    briefingAlreadySent: false,
+    briefingNeverCommits: false,
+    ...overrides,
+  };
+}
 
 test('resolver: absent / ok / ambiguous from conf lines', () => {
   assert.equal(resolveClosureSchedule('').state, 'absent');
@@ -35,15 +49,9 @@ test('ceremony begin = closure − (drain + briefing)', () => {
 });
 
 test('nominal night: drain coder, rotate, briefing, send, stop', () => {
-  const r = runClosingCeremony({
-    schedule: { state: 'ok', closure: { hour: 6, minute: 0 }, surfaced: 'nothing' },
-    budgets: defaultBudgets(),
-    hardDeadline: { hour: 6, minute: 0 },
-    inFlight: { role: 'coder', drainOutcome: 'completes' },
-    heldParcelIds: [],
-    briefingAlreadySent: false,
-    briefingNeverCommits: false,
-  });
+  const r = runClosingCeremony(
+    okFixture({ inFlight: { role: 'coder', drainOutcome: 'completes' } })
+  );
   assert.deepEqual(r.sequence, [
     'freeze-promotion',
     'parcel-drained',
@@ -59,15 +67,9 @@ test('nominal night: drain coder, rotate, briefing, send, stop', () => {
 });
 
 test('happy-days: documenter drain chains without rotation', () => {
-  const r = runClosingCeremony({
-    schedule: { state: 'ok', closure: { hour: 6, minute: 0 }, surfaced: 'nothing' },
-    budgets: defaultBudgets(),
-    hardDeadline: { hour: 6, minute: 0 },
-    inFlight: { role: 'documenter', drainOutcome: 'completes' },
-    heldParcelIds: [],
-    briefingAlreadySent: false,
-    briefingNeverCommits: false,
-  });
+  const r = runClosingCeremony(
+    okFixture({ inFlight: { role: 'documenter', drainOutcome: 'completes' } })
+  );
   assert.deepEqual(r.sequence, [
     'freeze-promotion',
     'parcel-drained',
@@ -79,15 +81,9 @@ test('happy-days: documenter drain chains without rotation', () => {
 });
 
 test('drain overrun parks claim and still ends on time', () => {
-  const r = runClosingCeremony({
-    schedule: { state: 'ok', closure: { hour: 6, minute: 0 }, surfaced: 'nothing' },
-    budgets: defaultBudgets(),
-    hardDeadline: { hour: 6, minute: 0 },
-    inFlight: { role: 'coder', drainOutcome: 'running' },
-    heldParcelIds: [],
-    briefingAlreadySent: false,
-    briefingNeverCommits: false,
-  });
+  const r = runClosingCeremony(
+    okFixture({ inFlight: { role: 'coder', drainOutcome: 'running' } })
+  );
   assert.ok(r.sequence.includes('parcel-parked'));
   assert.equal(r.parkedClaimIntact, true);
   assert.ok(r.loudSurfaces.includes('closing-drain-deadline-exceeded'));
@@ -95,15 +91,7 @@ test('drain overrun parks claim and still ends on time', () => {
 });
 
 test('missing briefing surfaces loudly; no send', () => {
-  const r = runClosingCeremony({
-    schedule: { state: 'ok', closure: { hour: 6, minute: 0 }, surfaced: 'nothing' },
-    budgets: defaultBudgets(),
-    hardDeadline: { hour: 6, minute: 0 },
-    inFlight: null,
-    heldParcelIds: [],
-    briefingAlreadySent: false,
-    briefingNeverCommits: true,
-  });
+  const r = runClosingCeremony(okFixture({ briefingNeverCommits: true }));
   assert.deepEqual(r.sequence, [
     'freeze-promotion',
     'rotate-documenter',
@@ -115,15 +103,7 @@ test('missing briefing surfaces loudly; no send', () => {
 });
 
 test('already-sent night never double-sends or rotates', () => {
-  const r = runClosingCeremony({
-    schedule: { state: 'ok', closure: { hour: 6, minute: 0 }, surfaced: 'nothing' },
-    budgets: defaultBudgets(),
-    hardDeadline: { hour: 6, minute: 0 },
-    inFlight: null,
-    heldParcelIds: [],
-    briefingAlreadySent: true,
-    briefingNeverCommits: false,
-  });
+  const r = runClosingCeremony(okFixture({ briefingAlreadySent: true }));
   assert.deepEqual(r.sequence, [
     'freeze-promotion',
     'briefing-already-sent',
@@ -134,15 +114,12 @@ test('already-sent night never double-sends or rotates', () => {
 });
 
 test('held parcels recorded in could-not-process window', () => {
-  const r = runClosingCeremony({
-    schedule: { state: 'ok', closure: { hour: 6, minute: 0 }, surfaced: 'nothing' },
-    budgets: defaultBudgets(),
-    hardDeadline: { hour: 6, minute: 0 },
-    inFlight: { role: 'coder', drainOutcome: 'completes' },
-    heldParcelIds: ['held-1'],
-    briefingAlreadySent: false,
-    briefingNeverCommits: false,
-  });
+  const r = runClosingCeremony(
+    okFixture({
+      inFlight: { role: 'coder', drainOutcome: 'completes' },
+      heldParcelIds: ['held-1'],
+    })
+  );
   assert.ok(r.couldNotProcess);
   assert.equal(r.couldNotProcess.spanningCeremony, true);
   assert.deepEqual(r.couldNotProcess.heldParcelIds, ['held-1']);
@@ -153,15 +130,7 @@ test('unusable schedule keeps fixed-time trigger; no ceremony', () => {
     { state: 'absent', surfaced: 'nothing' },
     { state: 'ambiguous', surfaced: 'closure-schedule-ambiguous' },
   ]) {
-    const r = runClosingCeremony({
-      schedule,
-      budgets: defaultBudgets(),
-      hardDeadline: { hour: 6, minute: 0 },
-      inFlight: null,
-      heldParcelIds: [],
-      briefingAlreadySent: false,
-      briefingNeverCommits: false,
-    });
+    const r = runClosingCeremony(okFixture({ schedule }));
     assert.deepEqual(r.sequence, []);
     assert.equal(shouldConsultFixedMorningTrigger(schedule), true);
     assert.equal(fixedMorningTriggerFires(schedule), true);
