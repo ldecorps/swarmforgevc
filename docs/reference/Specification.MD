@@ -13,6 +13,15 @@ them. Core: `extension/src/quality/batchRecovery.ts`. Acceptance:
 `docs/how-to/BL-588-isolate-batch-recovery-trees.md`. Diagram note:
 `docs/diagrams/swarm-flow.mmd`.)
 Prior entry —
+**Last Updated:** August 26, 2026 (BL-1160: Live Screen phone grid — each role
+tile owns an activity status dot inside `.pane-head` (`[data-status-indicator]`);
+`resolvePaneStatusKind` prefers per-pane `activitySignal`, falls back to
+aggregate poll freshness for available panes only; never-polled panes hide or
+non-ok; fullscreen `#fs-dot` retained. Sibling to BL-1046 held-ticket strip.
+Module: `extension/src/bridge/residentSpyUiHtml.ts`. Acceptance:
+`specs/features/BL-1160-live-screen-activity-dot-per-tile.feature`. How-to:
+`docs/how-to/BL-1160-live-screen-activity-dot-per-tile.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1159: front-desk bridge child crash give-up
 loop after bind — `stop_bridge_headless.sh` defers when `front-desk-supervisor.pid`
 is live; `recover_miniapp_bridge.sh` re-arms via front desk or falls back to
