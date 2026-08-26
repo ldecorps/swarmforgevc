@@ -73,6 +73,7 @@ function baseDeps(ctx) {
     checkShellEntryPointDrive: () => shellDriveOutcome(ctx),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       ctx.yamlMoved = true;
