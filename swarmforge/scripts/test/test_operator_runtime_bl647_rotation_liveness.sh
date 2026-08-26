@@ -92,42 +92,27 @@ check "BL-647-wire-01: no SWARM_CONTROL_LOST misfire either (the socket IS reach
 tmux -S "$SOCK1" kill-server 2>/dev/null || true
 rm -rf "$SOCK1_DIR" "$F1"
 
-# ── 2. non-vacuity: kill the ACTUAL resident session (the pane running
-#    "cleaner" this tick per the active-role marker) — exactly one
-#    AGENT_EXITED, naming "cleaner", not "coder" (the row the physical
-#    session happens to be named after) and not any of the other five
-#    dormant roles. A fix that always returns [] passes test 1 and fails
-#    this one. ─────────────────────────────────────────────────────────────
+# ── 2. BL-653: operator tick no longer wires dead-agent-events — resident
+#    death is escalated by babysitter_check.bb instead. Pure BL-647 logic
+#    remains covered by operator_lib_test_runner.bb. ───────────────────────
 F2="$(make_fixture)"
 write_router_roles_tsv "$F2"
 write_router_identity "$F2"
 printf 'cleaner\n' > "$F2/.swarmforge/mono-router-active-role"
-echo "/nonexistent/bl647-dead.sock" > "$F2/.swarmforge/tmux-socket"
-# A reachable-but-empty tmux control channel: point at a REAL socket with no
-# sessions on it at all, so control IS reachable (unlike scenario control-lost)
-# and every role reads simply "not live".
 SOCK2_DIR="$(mktemp -d)"; register_tmp_dir "$SOCK2_DIR"
 SOCK2="$SOCK2_DIR/bl647.sock"
-tmux -S "$SOCK2" new-session -d -s placeholder -n agent 2>/dev/null
-tmux -S "$SOCK2" kill-session -t placeholder 2>/dev/null || true
-# tmux removes the server entirely once the last session is gone, so start a
-# session and keep the COORDINATOR alive but never create swarmforge-coder.
 tmux -S "$SOCK2" new-session -d -s swarmforge-coordinator -n agent 2>/dev/null
 echo "$SOCK2" > "$F2/.swarmforge/tmux-socket"
 tick "$F2" >/dev/null
-check "BL-647-wire-02: dead resident session fires exactly one AGENT_EXITED" \
-  '[[ "$(events_text "$F2" | grep -c AGENT_EXITED)" -eq 1 ]]'
-check "BL-647-wire-02: it names the ACTIVE role (cleaner), not the home role (coder)" \
-  '[[ "$(events_text "$F2")" == *'"'"'"AGENT_EXITED","subject":"cleaner"'"'"'* ]]'
-check "BL-647-wire-02: it does NOT name coder" \
-  '[[ "$(events_text "$F2")" != *'"'"'"AGENT_EXITED","subject":"coder"'"'"'* ]]'
-check "BL-647-wire-02: no dormant role (e.g. QA) is reported exited" \
-  '[[ "$(events_text "$F2")" != *'"'"'"AGENT_EXITED","subject":"QA"'"'"'* ]]'
+check "BL-653/BL-647-wire-02: operator tick emits zero AGENT_EXITED when resident is absent" \
+  '[[ "$(events_text "$F2" | grep -c AGENT_EXITED)" -eq 0 ]]'
+check "BL-653/BL-647-wire-02: no SWARM_CHECK_TIMER either" \
+  '[[ "$(events_text "$F2")" != *"SWARM_CHECK_TIMER"* ]]'
 tmux -S "$SOCK2" kill-server 2>/dev/null || true
 rm -rf "$SOCK2_DIR" "$F2"
 
-# ── 3. coordinator death under a rotation pack — one event; the coordinator
-#    is never a rotation target and is always expected. ─────────────────────
+# ── 3. coordinator death under a rotation pack — operator tick stays quiet;
+#    babysitter owns liveness escalation (BL-653). ─────────────────────────
 F3="$(make_fixture)"
 write_router_roles_tsv "$F3"
 write_router_identity "$F3"
@@ -137,29 +122,23 @@ SOCK3="$SOCK3_DIR/bl647.sock"
 tmux -S "$SOCK3" new-session -d -s swarmforge-coder -n agent 2>/dev/null
 echo "$SOCK3" > "$F3/.swarmforge/tmux-socket"
 tick "$F3" >/dev/null
-check "BL-647-wire-03: coordinator death under rotation-router fires exactly one AGENT_EXITED" \
-  '[[ "$(events_text "$F3" | grep -c AGENT_EXITED)" -eq 1 ]]'
-check "BL-647-wire-03: it names the coordinator" \
-  '[[ "$(events_text "$F3")" == *'"'"'"AGENT_EXITED","subject":"coordinator"'"'"'* ]]'
+check "BL-653/BL-647-wire-03: coordinator death does not manufacture AGENT_EXITED from operator tick" \
+  '[[ "$(events_text "$F3" | grep -c AGENT_EXITED)" -eq 0 ]]'
 tmux -S "$SOCK3" kill-server 2>/dev/null || true
 rm -rf "$SOCK3_DIR" "$F3"
 
-# ── 4. non-rotation (full-forge) pack is untouched — no launch_pack, no
-#    mono-router.conf, so conf-rotation-mode resolves nil and every
-#    expected-but-absent role fires exactly as before this ticket, even
-#    though only 2 sessions happen to be live (proves rotation-mode comes
-#    from the conf, never inferred from the live-session count). ───────────
+# ── 4. non-rotation pack — operator tick stays quiet (BL-653); pure
+#    dead-agent-events for full-forge remains in operator_lib tests. ───────
 F4="$(make_fixture)"
 write_router_roles_tsv "$F4"
-# deliberately NOT write_router_identity — this is the plain full-forge case
 SOCK4_DIR="$(mktemp -d)"; register_tmp_dir "$SOCK4_DIR"
 SOCK4="$SOCK4_DIR/bl647.sock"
 tmux -S "$SOCK4" new-session -d -s swarmforge-coder -n agent 2>/dev/null
 tmux -S "$SOCK4" new-session -d -s swarmforge-coordinator -n agent 2>/dev/null
 echo "$SOCK4" > "$F4/.swarmforge/tmux-socket"
 tick "$F4" >/dev/null
-check "BL-647-wire-04: full-forge with only 2 live sessions still fires all six absent roles (not treated as router)" \
-  '[[ "$(events_text "$F4" | grep -c AGENT_EXITED)" -eq 6 ]]'
+check "BL-653/BL-647-wire-04: full-forge operator tick emits zero AGENT_EXITED" \
+  '[[ "$(events_text "$F4" | grep -c AGENT_EXITED)" -eq 0 ]]'
 tmux -S "$SOCK4" kill-server 2>/dev/null || true
 rm -rf "$SOCK4_DIR" "$F4"
 
