@@ -86,3 +86,6 @@ notes: |
   Orthogonal file scopes — BL-651 touches `mono_router_lib.bb` /
   `handoffd.bb` `role-mail-row`; this one touches `flow_watchdog_lib.bb`'s
   alarm text plus whatever the operator idle verdict reads.
+
+abandoned_commits:
+  - f1dbe653a7
