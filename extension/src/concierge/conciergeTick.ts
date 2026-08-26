@@ -40,8 +40,6 @@ export interface BacklogFolderItem {
   // backlogReader.ts parses from `approval_context` (BL-479) - never a
   // second parse.
   approvalContext?: string;
-  // BL-589: read straight off BacklogItem.rulingOptions (ruling_options yaml).
-  rulingOptions?: string[];
   // BL-357: read straight off the SAME BacklogItem.humanApproval field
   // backfill-human-approval.ts seeded and backlogReader.ts already parses -
   // never a second approval-state derivation.
@@ -285,7 +283,6 @@ function ticketSummariesFor(active: BacklogFolderItem[], paused: BacklogFolderIt
       notes: item.notes,
       firstAcceptanceStep: item.firstAcceptanceStep,
       approvalContext: item.approvalContext,
-      rulingOptions: item.rulingOptions,
     };
   }
   return summaries;
@@ -509,10 +506,16 @@ function buildTicketMetaLookup(
 function recentlyClosedItems(
   folders: BacklogFoldersSnapshot,
   doneClosedAtMs: Record<string, number>
-): { id: string; title?: string; filename: string }[] {
+): { id: string; title?: string; filename: string; closedAtMs?: number }[] {
   return folders.done
     .filter((item): item is BacklogFolderItem & { filename: string } => item.filename !== undefined)
-    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity));
+    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity))
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      filename: item.filename,
+      ...(doneClosedAtMs[item.id] !== undefined ? { closedAtMs: doneClosedAtMs[item.id] } : {}),
+    }));
 }
 
 // BL-465 bounce: stamps this tick's OWN observed instant onto every ticket

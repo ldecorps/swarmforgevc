@@ -20,6 +20,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "bridge_supervisor_env_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_log_freshness_pulse_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -127,6 +128,7 @@
     nil))
 
 (defn tick! []
+  (daemon-log-freshness-pulse-lib/append-log-heartbeat! supervisor-log-file)
   (let [prior (read-state)
         now (now-ms)
         next-state (into {}
