@@ -36,16 +36,6 @@ bb swarmforge/scripts/expedite_cli.bb <project-root> <BL-id> [options]
 | `--bounce-bound` | integer | `3` | Bounces allowed per (stage, ticket) before the run stops. A value above the default is announced as `RAISED explicitly` and recorded. |
 | `--stage-timeout-ms` | integer | `5400000` (90 min) | Per-stage wall-clock budget. On overrun the stage's whole process group is killed. |
 
-Diagnostic (not a full expedite run — separate argv shape):
-
-```
-bb swarmforge/scripts/expedite_cli.bb --probe-liveness <project-root>
-```
-
-Prints the live `probe-liveness` JSON for that root and exits `0`. Refuses
-(`exit 1`) when `EXPEDITE_PROBE_FILE` is set, so the call always exercises the
-real process-table path (BL-782).
-
 Unknown flags are ignored rather than rejected. A value-taking flag with a missing
 value yields `nil` for that option and does **not** consume the following flag.
 
@@ -226,25 +216,6 @@ tmux-server   role-agents   handoffd   handoffd-supervisor   babysitterd   opera
 `SUCCESS — clean slate` left both running, and either can wake or relaunch agents
 mid-run (BL-637).
 
-### Root-scoped process needles (BL-782)
-
-Process-table matches for `handoffd`, `handoffd-supervisor`, `babysitterd`, and
-`operator` include the audited project root in the needle — a neighbour
-worktree's swarm (or the operator's standing babysitterd prototype) is never
-counted as a survivor of *this* root. Bare script-name needles matched every
-swarm on the host and made `test_expedite_cli.sh` false-fail whenever a live
-swarm was up.
-
-- `handoffd.bb <root>` / `handoffd_supervisor.bb <root>` / `babysitterd.sh <root>`
-  — trailing space after `handoffd.bb` avoids matching the supervisor script.
-- `operator` — `--remote-control Operator` carries no root in argv; the probe
-  scopes via `<root>/swarmforge/roles/operator.prompt` (the path
-  `launch_operator.sh` always passes for that root).
-- `:role-agents` was already root-scoped via `<root>/.swarmforge/launch/`.
-
-Green on a quiet host proves nothing for this class of defect. The behavioural
-bar is a decoy process from a *different* root alive throughout the run.
-
 ## Order of operations
 
 1. Probe liveness.
@@ -311,7 +282,7 @@ model. Each is a seam, never a way to bypass a gate:
 
 | variable | effect |
 |---|---|
-| `EXPEDITE_PROBE_FILE` | JSON probe result instead of probing live processes. A **test seam**, never a way to claim the live-swarm bar (BL-782): unpinned cases must pass with a neighbour-root decoy and this unset. |
+| `EXPEDITE_PROBE_FILE` | JSON probe result instead of probing live processes |
 | `EXPEDITE_STAGE_RUNNER` | a script called per stage instead of spawning `claude -p` |
 | `EXPEDITE_NOW_MS` | pins the clock |
 
@@ -412,7 +383,6 @@ schedule, if it runs at all.
 | `bash swarmforge/scripts/test/expedite_mutation_sweep.sh` | Hand-authored mutants over `expedite_lib.bb` (Stryker/Gherkin cannot see `.bb`). **BL-1101:** a skipped anchor (fragment absent) fails the run and names the labels — never `ALL MUTANTS KILLED` / exit 0 without evidence. |
 | `bb swarmforge/scripts/test/bounded_run_lib_test_runner.bb` | **BL-1103:** shared `bounded_run_lib.bb` (`run-bounded!`) — setsid/group-kill and no-deref-after-timeout; also used by babysitter ensure. |
 | `bash swarmforge/scripts/test/test_expedite_cli.sh` | end to end against a real fixture |
-| `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-782-liveness-probes-scan-whole-process-table.feature <out> specs/pipeline/steps/index.js` | BL-782: root-scoped liveness probes (neighbour decoys ignored; genuine root survivors still detected) |
 | `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-567-*.feature <out> specs/pipeline/steps/expeditorOfflineSingleTicketPipelineSteps.js` | 21 scenarios |
 | `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.feature <out> specs/pipeline/steps/bl1023ExpediteBookkeepSteps.js` | BL-1023: 6 scenarios |
 | `bash swarmforge/scripts/test/test_expedite_qa_verdict_store.sh` | BL-1025: the run writes its QA-hat verdict; `--dry-run` writes none |

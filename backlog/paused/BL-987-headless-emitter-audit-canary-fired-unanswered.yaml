@@ -159,14 +159,6 @@ notes: >
   matters more, since the tempting number (1022) is not merely
   whatever-the-system-does, it is whatever-a-dead-archive-did.
 
-  - "[2026-08-25T18:36Z] coder: branch answered = headless caller was added
-    (BL-350 handoffd resource-sample-sweep). Fixed audit pointer to derive
-    chaser-<YYYY-MM> at run time (exported monthlyTelemetryFile +
-    liveChaserTelemetryPath); re-recorded H1 as RUNS HEADLESS against live
-    current-month file; evidence 20260825; audit-04 requires samples > 0
-    (not zero, not literal 1022). Property tests for path month-roll.
-    Acceptance BL-336 8/8 green."
-
 qa_e2e_procedure: >
   1. Run the contract and assert all 8 scenarios green:
      `node specs/pipeline/cli.js

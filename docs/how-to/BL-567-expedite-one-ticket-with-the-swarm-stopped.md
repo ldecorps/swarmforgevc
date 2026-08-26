@@ -38,9 +38,7 @@ whether the teardown would reach a clean slate — without moving a file.
 It probes liveness, stops the full stack if anything is up, then **re-probes and
 verifies**. It does not trust the stop command's exit code, because that code lies:
 `./stop-swarm.sh` has been observed printing `SUCCESS — clean slate` with
-`babysitterd` and the Operator agent still running. Process matches are scoped to
-the audited project root (BL-782), so a neighbour worktree's swarm does not
-look like a survivor of this root.
+`babysitterd` and the Operator agent still running.
 
 **Run-ticket bookkeeping is decided here** (BL-1023), before siblings are
 parked and before any stage spends. If the run ticket is already in
