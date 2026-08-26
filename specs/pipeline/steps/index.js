@@ -740,6 +740,7 @@ const DOMAINS = [
   require('./bl1153StickyWebFontSizeChoiceSteps'),
   require('./bl1154BuildStaleNotCrashGiveupBudgetSteps'),
   require('./bl1159BridgeChildSurvivesWithoutCrashGiveupLoopSteps'),
+  require('./bl1160LiveScreenActivityDotPerTileSteps'),
   require('./bl1121ReconcileImportSkipsPropertySuiteGuardSteps'),
   require('./bl533SpecCommitAndRuntimeWiringExitGatesSteps'),
   require('./bl1115MainSyncStatusCliStampOffSteps'),
