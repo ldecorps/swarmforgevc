@@ -233,3 +233,5 @@ description: |
      Then, in a scratch clone, `git mv` one `backlog/done/<milestone>/`
      directory to a new name, commit, and re-run. The mean must be identical.
      Before the fix it moves; that difference is the whole defect.
+
+assigned_to: coder
