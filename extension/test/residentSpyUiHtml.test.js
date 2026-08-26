@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
 const { JSDOM } = require('jsdom');
 const { getResidentSpyUiHtml } = require('../out/bridge/residentSpyUiHtml');
 
