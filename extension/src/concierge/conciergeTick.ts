@@ -130,6 +130,8 @@ export interface TickState {
   // TickState file, treated as "no roster posted yet" (the first tick after
   // this ships creates the standing topic and posts the first roster).
   approvalsRoster?: ApprovalsRosterState;
+  // BL-649: pending-set identity gate for swarm-start doorbell announcements.
+  approvalsAnnouncementMarker?: { pendingSetIdentity: string; lastAnnouncedAtMs: number };
   // BL-450: the Recert topic's own durable "last rendered/posted" marker -
   // same posture as approvalsRoster above. Absent on an old/fresh TickState
   // file, treated as "no scenario posted yet".

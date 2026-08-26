@@ -364,6 +364,7 @@ const DOMAINS = [
   require('./bl660ThreeShiftPacksSteps'),
   require('./bl572EpicReorderConsoleSteps'),
   require('./bl648RelaunchResumeOrphanClaimsSteps'),
+  require('./bl649SwarmStartApprovalsAnnouncementSteps'),
   require('./bl672EpicMakeTopPrioritySteps'),
   require('./bl673TopicMakeTopPrioritySteps'),
   require('./bl674EpicDrilldownUiSteps'),
