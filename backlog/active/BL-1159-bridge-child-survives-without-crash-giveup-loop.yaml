@@ -24,8 +24,16 @@ invariants:
   - "A :crashed event reflects a true child exit, never a voluntary build-stale roll misclassified as crash."
 required_wiring:
   - "swarmforge/scripts/front_desk_supervisor_lib.bb::check-one!::crash vs build-stale classification must reach the fixed path"
-  - "extension/out/tools/start-bridge-headless.js::BRIDGE_LISTENING::bridge must stay alive after bind"
+  - "extension/src/tools/start-bridge-headless.ts::BRIDGE_LISTENING::bridge must stay alive after bind"
   - "specs/pipeline/steps/index.js::bl1159BridgeChildSurvivesWithoutCrashGiveupLoopSteps::acceptance handler registered so the runner executes every scenario"
+abandoned_commits:
+  - 43da3844ec
+  - 8dda021084
+  - 4834764d84
+  - 94ef72ac79
+  - 1514ede0c5
+  - 8e4ee51beb
+  - 44474edb41
 
 description: |
   ## What
@@ -106,3 +114,7 @@ source: |
   .swarmforge/operator/INTAKE-front-desk-bridge-build-stale-giveup-after-bl1158.md.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: 4834764d8, evidence: backlog/evidence/BL-1159-qa-bounce-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: coder, class: behavior, commit: 8e4ee51beb, evidence: backlog/evidence/BL-1159-qa-bounce-rematch2-20260826.md }
