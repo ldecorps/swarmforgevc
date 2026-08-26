@@ -72,6 +72,8 @@ expects them, and are not migrated or rewritten here.
 - [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).
 - [Malformed stage_skip_reasons is surfaced, never silently truncated](how-to/BL-754-stage-skip-reasons-never-silently-loses-a-stage.md) — unquoted comma → `skip_reasons_malformed=`; handoff still delivers (BL-754 / BL-661).
 - [Freshness shell tests pin a fixture conf, not the live ops file](how-to/BL-1000-freshness-tests-read-a-pinned-fixture.md) — `daemon_log_freshness.fixture.conf`; ops raise of live threshold cannot redden suite (BL-1000).
+- [Daemon log-freshness watchdog](how-to/BL-675-daemon-log-freshness-watchdog.md) — cron-side stale-heartbeat checker for long-running daemons (BL-675).
+- [Supervisor freshness heartbeats and registry guard](how-to/BL-784-supervisor-freshness-heartbeats-and-registry-guard.md) — per-tick supervisor heartbeats, conf rows, fail-closed registry guard (BL-784).
 - [Difficulty-aware coder seat routing](how-to/BL-1001-difficulty-aware-coder-seat-routing.md) — `mutation_cost` vs declared `--seat-tier`; hard work never spills to easy-only (BL-1001).
 - [Unit-lane budgets scale with recorded contention](how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md) — load-relative Vitest timeouts with a finite ceiling; quiet host keeps base (BL-1007).
 - [Bounded fs.watch deadline follows recorded contention](how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md) — BL-933 helper scales 10s base with BL-1007 factor; stays under test budget (BL-1008).
