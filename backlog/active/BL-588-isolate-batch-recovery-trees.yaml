@@ -118,21 +118,7 @@ specifier_decisions: |
   yet contain enough measurements to open the gate. If they do not, this ticket
   waits on data, not on a specifier turn.
 
-acceptance: |
-  Not yet written — deliberately.
-
-  The acceptance feature file (`specs/features/BL-588-*.feature`) is written
-  only AFTER the human picks an approach, because each approach has a different
-  observable contract and a feature file pinning an unchosen one would be a
-  false contract. This ticket stays `needs_design` / `assigned_to: specifier`
-  until then; it must not be promoted to `backlog/active/` before the specifier
-  has replaced this field with a feature-file path (BL-233: a promoted ticket
-  whose scenarios outrun its handlers hard-fails the acceptance runner).
-
-  Measurement to take BEFORE building, whichever approach is chosen: how long,
-  across the 2026-07-17 batch and any later one, a clean ticket waited behind a
-  sibling's rework. If that number is small, approach 4 is the answer and this
-  ticket closes without code.
+acceptance: specs/features/BL-588-isolate-batch-recovery-trees.feature
 
 docs: |
   documenter (once an approach is chosen):
@@ -161,3 +147,6 @@ approval_context: |
     whether landing must always be a merge of a tree that was verified whole.
   - Whether the latency measurement should gate the build — i.e. build only if
     clean tickets are demonstrably waiting long enough to matter.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: architect, blamed: coder, class: behavior, commit: 13a1e46627, evidence: backlog/evidence/BL-588-architect-bounce-20260826.md }
