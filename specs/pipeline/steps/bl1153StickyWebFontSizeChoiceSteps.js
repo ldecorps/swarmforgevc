@@ -110,6 +110,35 @@ function closeDom(dom) {
   }
 }
 
+const GRID_SURFACE = {
+  label: 'Pipeline Board',
+  storeKey: 'pipeline-grid',
+  cssVar: '--pg-font-px',
+  expected: '19px',
+  reload: driveGridReload,
+  domField: 'gridDom',
+};
+
+const PAUSED_SURFACE = {
+  label: 'Paused pager',
+  storeKey: 'paused-pager',
+  cssVar: '--pp-font-px',
+  expected: '19px',
+  reload: drivePausedReload,
+  domField: 'pausedDom',
+};
+
+const SURFACE_BY_LABEL = new Map([
+  [GRID_SURFACE.label, GRID_SURFACE],
+  [PAUSED_SURFACE.label, PAUSED_SURFACE],
+]);
+
+function surfaceConfigForLabel(label) {
+  const config = SURFACE_BY_LABEL.get(label);
+  assert.ok(config, `unknown surface label in Examples: ${label}`);
+  return config;
+}
+
 function registerSteps(registry) {
   registry.define(/^the operator can open the Live Screen Mini App$/, () => {});
   registry.define(/^the operator can open the Pipeline Board Mini App$/, () => {});
@@ -143,39 +172,33 @@ function registerSteps(registry) {
     closeDom(ctx.bl1153.liveDom);
   });
 
-  registry.define(/^the "([^"]+)" text size is set to a non-default value within its clamp$/, (ctx, surface) => {
+  registry.define(/^the "([^"]+)" text size is set to a non-default value within its clamp$/, (ctx, surfaceLabel) => {
     ctx.bl1153 = ctx.bl1153 || {};
     ctx.bl1153.store = ctx.bl1153.store || {};
-    if (surface === 'Pipeline Board') {
-      ctx.bl1153.store['pipeline-grid'] = 19;
-      ctx.bl1153.surfaceKey = 'pipeline-grid';
-      ctx.bl1153.cssVar = '--pg-font-px';
-      ctx.bl1153.expected = '19px';
-    } else {
-      ctx.bl1153.store['paused-pager'] = 19;
-      ctx.bl1153.surfaceKey = 'paused-pager';
-      ctx.bl1153.cssVar = '--pp-font-px';
-      ctx.bl1153.expected = '19px';
-    }
+    const config = surfaceConfigForLabel(surfaceLabel);
+    ctx.bl1153.surfaceConfig = config;
+    ctx.bl1153.store[config.storeKey] = 19;
   });
 
   registry.define(/^that page is fully reloaded$/, async (ctx) => {
-    if (ctx.bl1153.surfaceKey === 'pipeline-grid') {
-      if (ctx.bl1153.gridDom) ctx.bl1153.gridDom.window.close();
-      ctx.bl1153.gridDom = await driveGridReload(ctx.bl1153.store);
-      ctx.bl1153.activeDom = ctx.bl1153.gridDom;
-    } else {
-      if (ctx.bl1153.pausedDom) ctx.bl1153.pausedDom.window.close();
-      ctx.bl1153.pausedDom = await drivePausedReload(ctx.bl1153.store);
-      ctx.bl1153.activeDom = ctx.bl1153.pausedDom;
+    const config = ctx.bl1153.surfaceConfig;
+    assert.ok(config, 'surface Examples row must be set before reload');
+    const prior = ctx.bl1153[config.domField];
+    if (prior) {
+      prior.window.close();
     }
+    const dom = await config.reload(ctx.bl1153.store);
+    ctx.bl1153[config.domField] = dom;
+    ctx.bl1153.activeDom = dom;
   });
 
   registry.define(/^the text renders at that chosen size$/, (ctx) => {
+    const config = ctx.bl1153.surfaceConfig;
+    assert.ok(config, 'surface Examples row must be set before assertion');
     const px = ctx.bl1153.activeDom.window.document.documentElement.style
-      .getPropertyValue(ctx.bl1153.cssVar)
+      .getPropertyValue(config.cssVar)
       .trim();
-    assert.equal(px, ctx.bl1153.expected);
+    assert.equal(px, config.expected);
     closeDom(ctx.bl1153.activeDom);
   });
 

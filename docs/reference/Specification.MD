@@ -1,5 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1153: Mini App font-size choices stick
+across reload on Live Screen, Pipeline Board, and Paused pager via extension-host
+persistence in `.swarmforge/operator/web-ui-font-size-preferences.json` and
+authenticated bridge routes `GET`/`PUT /web-ui-font-size` — no webview
+`localStorage`/`sessionStorage` (Architecture Rule 3). PWA dashboard A-/A+
+unchanged on its purge-exempt preferences Cache. Per-surface clamps unchanged
+(Live Screen 9–20px default 13px; Pipeline/Paused 12–26px default 15px).
+Modules: `webUiFontSizePreference.ts`, `webUiFontSizeRoutes.ts`,
+`webUiFontSizeMiniAppScript.ts`. Supersedes BL-609's session-only persistence
+contract only. Acceptance:
+`specs/features/BL-1153-sticky-web-font-size-choice.feature`. How-to:
+`docs/how-to/BL-1153-sticky-web-font-size-choice.md`. Diagram note:
+`docs/diagrams/architecture.mmd`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1154: voluntary front-desk build-stale
 restarts no longer consume the crash give-up attempt budget — healthy children
 rolled onto a fresh Node build use a separate `"stale-build"` path in
