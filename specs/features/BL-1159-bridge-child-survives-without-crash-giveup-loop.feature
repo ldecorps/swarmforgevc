@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T15:03:39.859309628Z","feature_name":"the front-desk bridge child stays up after cold start without a crash give-up loop","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1159-bridge-child-survives-without-crash-giveup-loop.feature","background_hash":"156a821ff1bd8fe46b3f6833b49cbce2b35968ebd213b8ce8c0fbc16ed2e6fe6","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: the front-desk bridge child stays up after cold start without a crash give-up loop
 
   # BL-1159: after BL-1158/1154/1151, the bridge child still exits 4–6 seconds
