@@ -15,7 +15,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.feature
-human_approval: pending
+human_approval: approved
 abandoned_commits: []
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 7380d80686. Confirm or
@@ -71,3 +71,5 @@ source: |
   Operator intake
   .swarmforge/operator/INTAKE-stamp-off-hotfix-7380d80686-approvals-concurrent.md
   (2026-08-26); babysitter health sweep; BL-848 stamp-off posture.
+
+assigned_to: coder

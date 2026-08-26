@@ -9,7 +9,7 @@ severity: medium
 priority: 95
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "Every schedule-derived clock reads the single active shift definition — no start/stop/window/briefing constant exists outside it to drift."
@@ -106,25 +106,34 @@ description: |
     with the known one-hour anomaly twice a year accepted rather than
     engineered around.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+acceptance: specs/features/BL-660-three-shift-packs-conf-selectable.feature
 
-  1. `swarm_shift night` active: swarm starts at 01:00, ceremony/stop at
-     09:00, BL-617 pause covers 09:00->01:00 — from ONE conf line, nothing
-     else edited.
-  2. Switching day->evening in conf: next scheduled cycle runs 17:00-01:00;
-     no stale start/stop from the old shift fires.
-  3. `swarm_shift` absent: 24/7 semantics byte-identical to the disabled-
-     window behaviour of today.
-  4. The spans-midnight shift (evening) starts and stops on the correct
-     calendar days — the classic off-by-one-day cron trap, pinned.
-  5. A human manual start outside the shift is not paused, not killed, and
-     not re-scheduled by the machinery; the next scheduled boundary applies
-     normally afterwards.
-  6. The offline-approvals property: with any single shift active, the
-     stopped gap stays < 24h (Telegram getUpdates retention), asserted.
-  7. The applier is idempotent and never clobbers a crontab line it did not
-     render (surfaced instead).
+qa_e2e_procedure: >
+  (1) Set swarm_shift night in a fixture conf — run the shift applier and
+  assert crontab start 01:00, stop 09:00, derived cooldown 09:00-01:00, and
+  closure_stop_local 09:00 from that one line only. (2) Flip day→evening
+  while stopped — reconcile and assert next cycle 17:00-01:00 with no stale
+  day lines armed. (3) Remove swarm_shift — assert 24/7 behaviour matches
+  today's disabled-window baseline byte-for-byte on cooldown and closure
+  resolution. (4) Evening shift fixture across midnight boundary — assert
+  start/stop land on correct calendar days. (5) Manual start at 20:00 under
+  day shift — swarm stays up, next boundary resumes normal schedule. (6) For
+  each of day/evening/night compute max stopped gap — assert < 24h. (7) Run
+  applier twice unchanged — crontab stable; inject a human-only cron line —
+  assert surfaced not overwritten. (8) Signature-backed outage during night
+  shift — close extends within cap and Operator topic announces; swarm crash
+  interval credits nothing. Use controllable clocks and fixture crontab —
+  never a live overnight wait in CI.
+
+specifier_decisions: |
+  Acceptance feature written 2026-08-26. Ten scenarios cover the ticket's
+  seven minimum behaviours (01–07) plus running-boundary shift change (08),
+  outage credit with cap/announce (09), and swarm-downtime no-credit (10).
+  BL-617 independent cooldown keys become derived when swarm_shift is set —
+  scenario 01 and 03 pin that; BL-658 closure_stop_local derivation is named
+  in 01. Evening midnight calendar-day trap is scenario 04 outline. DST
+  accepted-as-is per ticket — stated in feature header, no dedicated scenario
+  (not gateable without a full TZ fixture and out of slice envelope).
 
 out_of_scope: |
   - Running TWO shifts (16h) or shift composition/rotation calendars. One
@@ -141,3 +150,9 @@ notes: |
   schedule" stops being a possible bug class for every clock that derives.
   The operator's current artisanal 00:00-06:00 has run two nights and
   midwifed five defect tickets; the 3x8 conf is its industrialisation.
+abandoned_commits:
+  - 62c8239133
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: specifier, blamed: coder, class: spec-gap, commit: df8d054fd, evidence: backlog/evidence/BL-660-bounce-20260826.md }
+  - [2026-08-26T15:47Z] coordinator: drop alert — no parcel at coder; re-routed (feature on main).

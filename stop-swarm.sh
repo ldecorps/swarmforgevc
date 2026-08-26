@@ -7,7 +7,8 @@
 # Idempotent. After teardown, VERIFIES known supervised processes are gone
 # (BL-637) and refuses to report a clean slate while any survive.
 # Also removes this root's BL-675 freshness cron (BL-785) so the checker
-# cannot resurrect stopped daemons on the next tick.
+# cannot resurrect stopped daemons on the next tick. BL-1162: also removes every
+# other root-scoped swarmforge cron (schedule start/stop/bedtime lines).
 #
 # Usage:
 #   ./stop-swarm.sh [options] [target-path]   # defaults to this repo's root
@@ -24,7 +25,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KILL_PIPELINE="$SCRIPT_DIR/swarmforge/scripts/kill_pipeline_swarm.sh"
 STOP_ANCILLARY="$SCRIPT_DIR/swarmforge/scripts/stop_ancillary_services.sh"
-UNINSTALL_CRON="$SCRIPT_DIR/swarmforge/scripts/uninstall_freshness_cron.sh"
+UNINSTALL_CRON="$SCRIPT_DIR/swarmforge/scripts/uninstall_swarmforge_crons.sh"
 # shellcheck source=swarmforge/scripts/stack_survivor_scan.sh
 source "$SCRIPT_DIR/swarmforge/scripts/stack_survivor_scan.sh"
 
@@ -43,7 +44,7 @@ stop-swarm.sh — stop the full SwarmForge stack for this repo.
 Scope: full stack
 Stops: babysitterd, operator runtime, Telegram front desk, onboarder,
        remote tunnels, then swarm agent sessions and handoffd.
-Removes this repo's daemon freshness cron line (if installed).
+Removes every swarmforge cron line for this repo (freshness + schedule).
 Then verifies no babysitterd / Operator agent process survived.
 
 Usage:
@@ -98,7 +99,7 @@ if [[ "$kill_rc" -ne 0 ]]; then
 fi
 
 if ! bash "$UNINSTALL_CRON" "$TARGET"; then
-  echo "WARN: freshness cron uninstall failed for $TARGET — daemons stay marked stopped, but the cron line may still fire; run: bash $UNINSTALL_CRON $TARGET" >&2
+  echo "WARN: swarmforge cron uninstall failed for $TARGET — schedule/freshness lines may still fire; run: bash $UNINSTALL_CRON $TARGET" >&2
 fi
 
 echo "full stack SUCCESS — no known survivors"
