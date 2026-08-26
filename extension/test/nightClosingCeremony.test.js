@@ -111,6 +111,8 @@ test('already-sent night never double-sends or rotates', () => {
   ]);
   assert.equal(r.rotationRequested, false);
   assert.equal(r.sendConfirmations, 1);
+  // Send confirmation must come from .sent.json state, never file-exists (BL-658).
+  assert.equal(r.sendSource, 'sent-state');
 });
 
 test('held parcels recorded in could-not-process window', () => {
