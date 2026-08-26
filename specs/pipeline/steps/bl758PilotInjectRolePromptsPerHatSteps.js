@@ -107,6 +107,24 @@ function completeVerdict(role) {
   };
 }
 
+function incompleteVerdict(role, fields) {
+  return {
+    verdictPath: `.swarmforge/expedite/BL-758/01-${role}/verdict.json`,
+    role,
+    ...fields,
+  };
+}
+
+function readLiveRolePrompt(role) {
+  return fs.readFileSync(path.join(REPO_ROOT, 'swarmforge', 'roles', `${role}.prompt`), 'utf8');
+}
+
+function composeStageForRole(ctx, ticket, role) {
+  const body = readLiveRolePrompt(role);
+  ctx.stagePrompt = composePilotStagePrompt(ticket, role, { readRolePrompt: () => body });
+  ctx.rolePromptBody = body;
+}
+
 function registerSteps(registry) {
   scoped(registry, /^the pilot expeditor prompt composer is available$/, () => {});
 
@@ -114,10 +132,7 @@ function registerSteps(registry) {
     registry,
     /^a pilot stage prompt is composed for ticket "([^"]+)" and role "([^"]+)"$/,
     (ctx, ticket, role) => {
-      const rolePath = path.join(REPO_ROOT, 'swarmforge', 'roles', `${role}.prompt`);
-      const body = fs.readFileSync(rolePath, 'utf8');
-      ctx.stagePrompt = composePilotStagePrompt(ticket, role, { readRolePrompt: () => body });
-      ctx.rolePromptBody = body;
+      composeStageForRole(ctx, ticket, role);
     }
   );
 
@@ -125,9 +140,7 @@ function registerSteps(registry) {
     registry,
     /^the composed prompt includes the contents of swarmforge\/roles\/([^/\s]+)\.prompt$/,
     (ctx, roleFile) => {
-      const body =
-        ctx.rolePromptBody ||
-        fs.readFileSync(path.join(REPO_ROOT, 'swarmforge', 'roles', `${roleFile}.prompt`), 'utf8');
+      const body = ctx.rolePromptBody || readLiveRolePrompt(roleFile);
       const snippet = body.trim().slice(0, 80);
       if (!ctx.stagePrompt || !ctx.stagePrompt.includes(snippet)) {
         throw new Error(`stage prompt missing contents of ${roleFile}.prompt`);
@@ -166,17 +179,12 @@ function registerSteps(registry) {
 
   scoped(registry, /^the run has a completed stage verdict for role "([^"]+)"$/, (ctx, role) => {
     ensureCtx(ctx);
-    ctx.verdicts = [
-      {
-        verdictPath: `.swarmforge/expedite/BL-758/01-${role}/verdict.json`,
-        role,
-      },
-    ];
+    ctx.verdicts = [incompleteVerdict(role)];
   });
 
   scoped(registry, /^that verdict omits role_prompt_path or role_prompt_sha256$/, (ctx) => {
     ensureCtx(ctx);
-    // already omitted
+    // already omitted via incompleteVerdict
   });
 
   scoped(
@@ -200,11 +208,9 @@ function registerSteps(registry) {
   scoped(registry, /^a completed stage verdict lacks role_prompt_path or role_prompt_sha256$/, (ctx) => {
     ensureCtx(ctx);
     ctx.verdicts = [
-      {
-        verdictPath: '.swarmforge/expedite/BL-758/01-coder/verdict.json',
-        role: 'coder',
+      incompleteVerdict('coder', {
         role_prompt_path: 'swarmforge/roles/coder.prompt',
-      },
+      }),
     ];
   });
 
@@ -215,10 +221,7 @@ function registerSteps(registry) {
 
   scoped(registry, /^the next stage prompt is composed for that bounce-back$/, (ctx) => {
     ensureCtx(ctx);
-    const role = ctx.bounceRole || 'specifier';
-    const body = fs.readFileSync(path.join(REPO_ROOT, 'swarmforge', 'roles', `${role}.prompt`), 'utf8');
-    ctx.stagePrompt = composePilotStagePrompt('BL-758', role, { readRolePrompt: () => body });
-    ctx.rolePromptBody = body;
+    composeStageForRole(ctx, 'BL-758', ctx.bounceRole || 'specifier');
   });
 
   scoped(registry, /^the pilot runs the landing gate$/, async (ctx) => {
