@@ -707,12 +707,14 @@
   (assert= "bl582: the restart is reported under its own event, distinct from a crash" :build-stale event)
   (assert= "bl582: the restart clock starts now, feeding the shared backoff clause" 311000 (:crashed-at-ms entry)))
 
-;; the stale-build status restarts through the SAME bounded-backoff clause
+;; the stale-build status restarts through the bounded-backoff clause but
+;; BL-1154: without burning the crash give-up attempt budget
 (let [stale-entry {:pid 4242 :attempts 1 :status "stale-build" :crashed-at-ms 311000 :started-at-ms 1000 :gave-up-at-ms nil}
       {:keys [entry event]} (front-desk-supervisor-lib/check-one!
                               stale-entry 999999 alive? fixed-pid! build-cfg giveup-cfg)]
-  (assert= "bl582: a stale-build entry respawns exactly like a crashed one" "running" (:status entry))
+  (assert= "bl582: a stale-build entry respawns onto a fresh build" "running" (:status entry))
   (assert= "bl582: the respawn emits :started" :started event)
+  (assert= "bl1154: a voluntary build-stale respawn does NOT increment attempts" 1 (:attempts entry))
   (assert= "bl582: the respawned entry's stale-grace stamp is cleared" nil (:build-stale-since-ms entry)))
 
 ;; a build that goes fresh again before the grace elapses forgets the grace
@@ -824,6 +826,44 @@
   (assert= "healthy-reset-vs-build-stale: attempts is reset to 0, not left untouched by a stale-build branch" 0 (:attempts entry))
   (assert= "healthy-reset-vs-build-stale: the grace stamp is untouched - the freshness clause never ran this tick" 100000 (:build-stale-since-ms entry))
   (assert= "healthy-reset-vs-build-stale emits :healthy-reset, never :build-stale" :healthy-reset event))
+
+;; ── BL-1154: build-stale must not burn the crash give-up budget ──────────
+
+(def bl1154-cfg (assoc build-cfg :max-attempts 3))
+
+;; Many voluntary build-stale cycles must never alone reach give-up.
+(let [simulate-cycle (fn [entry cycle-now]
+                       (let [detected (front-desk-supervisor-lib/check-one!
+                                        entry cycle-now alive? fixed-pid! bl1154-cfg giveup-cfg
+                                        false (fn [_] nil) true true)
+                             entry (:entry detected)
+                             past-grace (+ cycle-now 300001)
+                             {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                                                     entry past-grace alive? fixed-pid! bl1154-cfg giveup-cfg
+                                                     false (fn [_] nil) true true)]
+                         (assert= "bl1154: build-stale transition fires" :build-stale event)
+                         (assert= "bl1154: build-stale leaves attempts untouched entering restart queue"
+                                  0 (:attempts entry))
+                         (let [backoff (+ past-grace (front-desk-supervisor-lib/compute-backoff-ms 1 bl1154-cfg))
+                               {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                                                       entry backoff alive? fixed-pid! bl1154-cfg giveup-cfg)]
+                           (assert= "bl1154: voluntary restart lands running" "running" (:status entry))
+                           (assert= "bl1154: voluntary restart emits :started" :started event)
+                           (assert= "bl1154: attempts unchanged after voluntary restart" 0 (:attempts entry))
+                           entry)))
+      entry (reduce (fn [e i] (simulate-cycle e (+ 1000000 (* i 500000))))
+                    {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms nil}
+                    (range 10))]
+  (assert= "bl1154: ten voluntary build-stale cycles never reach gave-up" "running" (:status entry))
+  (assert= "bl1154: crash attempt budget untouched after many build-stale rolls" 0 (:attempts entry)))
+
+;; A true crash loop still reaches give-up at the configured cap.
+(let [waiting {:pid nil :attempts 3 :status "waiting" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              waiting 999999 dead? fixed-pid! bl1154-cfg giveup-cfg)]
+  (assert= "bl1154: a crash at the attempt cap still gives up" "gave-up" (:status entry))
+  (assert= "bl1154: give-up event is reported" :gave-up event))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
