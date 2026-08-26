@@ -89,6 +89,7 @@ function baseDeps(ctx) {
     readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
     checkCrossFileDuplication: () => duplicationOutcome(ctx),
+    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       ctx.yamlMoved = true;

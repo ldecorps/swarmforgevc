@@ -16,7 +16,13 @@ import {
   CrossFileDuplicationCheckOutcome,
   findCrossFileDuplication,
 } from './crossFileDuplicationCheck';
+import {
+  ShellEntryPointDriveCheckOutcome,
+  assessShellEntryPointDrive,
+  isShellTestPath,
+} from './shellEntryPointDriveCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
+import { findBacklogFilePath } from '../panel/backlogWriter';
 
 // The run's own commits are judged against `main`, never HEAD alone (BL-729
 // invariant 1 - a commit's verdict must not depend on what a sibling branch
@@ -155,4 +161,30 @@ export function checkCrossFileDuplication(repoRoot: string): CrossFileDuplicatio
     return { checked: false };
   }
   return findCrossFileDuplication(readTouchedFileTexts(repoRoot, touched));
+}
+
+/** Git + backlog YAML-backed BL-747 check for shell entry-point drive. */
+export function checkShellEntryPointDrive(
+  repoRoot: string,
+  ticketId: string
+): ShellEntryPointDriveCheckOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  const yamlPath = findBacklogFilePath(repoRoot, ticketId);
+  if (!yamlPath) {
+    return { checked: false };
+  }
+  let ticketYaml: string;
+  try {
+    ticketYaml = fs.readFileSync(yamlPath, 'utf8');
+  } catch {
+    return { checked: false };
+  }
+  const shellTests = readTouchedFileTexts(
+    repoRoot,
+    touched.filter((p) => isShellTestPath(p))
+  );
+  return assessShellEntryPointDrive({ ticketYaml, shellTests });
 }

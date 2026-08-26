@@ -35,6 +35,7 @@ function mkDeps(overrides) {
     readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => ({ checked: true, commitsChecked: 1 }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-737-fixture.yaml' };
@@ -105,6 +106,7 @@ test('landPilotedTicket refuses cross-file duplication and writes nothing durabl
       filesScanned: 3,
       duplication: { fingerprint: block, paths: ['a.sh', 'b.sh', 'c.sh'] },
     }),
+    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
   });
   const outcome = await landPilotedTicket('BL-737', deps);
   assert.equal(outcome.landed, false);
@@ -121,6 +123,7 @@ test('landPilotedTicket lands with a warning when touched-file history is unread
   let receipt;
   const { deps, calls } = mkDeps({
     checkCrossFileDuplication: () => ({ checked: false }),
+    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     writeReceipt: (_id, r) => {
       calls.writeReceipt += 1;
       receipt = r;
@@ -136,6 +139,7 @@ test('landPilotedTicket records filesScanned on the receipt when duplication was
   let receipt;
   const { deps } = mkDeps({
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 4 }),
+    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     writeReceipt: (_id, r) => {
       receipt = r;
     },

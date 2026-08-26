@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-747: `/pilot` acceptance gate refuses
+land when a run touches `swarmforge/scripts/test/*.sh` and the ticket YAML
+names a non-test `.sh` entry-point that is never *invoked* in those tests
+(`source` alone fails) — `reasonKind: parallel-shell-reimplementation`;
+receipt records `shellEntryPointDrive`. No-op when either set is empty;
+unreadable history fails open. Acceptance:
+`specs/features/BL-747-pilot-shell-test-drives-named-entry-point.feature`.
+How-to: `docs/how-to/BL-727-pilot-acceptance-contract-gate.md` (shell
+entry-point drive section).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1150: `outage_failover_cli.bb` is
 load-file safe — `-main` runs only when `*file*` equals `babashka.file`, so
 `handoffd` `(load-file …)` cannot `System/exit` on usage; entrypoint
