@@ -96,6 +96,8 @@ export function gatePilotAgainstExpediteLock(repoRoot: string): PilotGateResult 
  * bounce-back (with reason); keep progress.json / SDK status secondary.
  * BL-701: at stage boundaries and run end, tear down orphan acceptance /
  * Stryker / disposable-tmp ancillaries from this expedition only.
+ * BL-749: cleaner/hardener/architect hats must trace CALL SITES before
+ * downgrading a ticket's own guardrail gap to a non-blocking nit.
  */
 export function composePilotExpeditorPrompt(ticket: string): string {
   const normalized = normalizeExpediteTicket(ticket) ?? ticket.toUpperCase();
@@ -137,6 +139,12 @@ export function composePilotExpeditorPrompt(ticket: string): string {
     'related fixture babysitter / bridge processes under `/tmp/tmp.*` spawned for',
     'the run. Do NOT kill the host Cursor Remote bridge, Operator, or live-window',
     'host processes. Do not rely solely on the host orphan janitor (~2h reap).',
+    '',
+    'REVIEW HATS (cleaner / hardener / architect during /pilot) — BL-749:',
+    'A gap against the ticket\'s OWN explicit guardrail claim is never a',
+    'non-blocking nit until you have read the CALL SITE (not only the',
+    'function in isolation) and confirmed whether the guardrail is actually',
+    'upheld downstream. Call-site tracing before nit-downgrade is mandatory.',
     '',
     'Isolation (same as BL-567):',
     '- Work only in `.worktrees/expedite-' + normalized + '` on branch `expedite/' + normalized + '`.',

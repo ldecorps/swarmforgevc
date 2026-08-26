@@ -798,7 +798,9 @@ has no try/catch despite the ticket's own "a record-write failure must not
 block the send" guardrail, judging it a nit — see the hardener note below
 for why that traces to a real defect.
 
-**Filed defects:** BL-748 (remaining work), BL-749 (pilot process)
+**Filed defects:** BL-748 (remaining work), BL-749 (pilot process).
+See [BL-749](BL-749-pilot-guardrail-gap-requires-call-site-trace.md): a
+ticket's own guardrail gap is not a nit until the **call site** is read.
 
 **Hardener note:** not-on-par — traced `log-routing-skip!`'s call site in
 `swarm_handoff.bb`'s `-main`: it is bound in the same `let` as, and
