@@ -75,3 +75,7 @@ notes: |
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-26, by: architect, blamed: coder, class: invariant-unencoded, commit: 71bcff8e9a, evidence: backlog/evidence/BL-753-architect-bounce-20260826.md }
+
+abandoned_commits:
+  - 175e84c2b2
+  - 7a61bc2a5f

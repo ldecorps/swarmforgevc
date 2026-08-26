@@ -11,7 +11,9 @@ Spec Last Updated; BL-727 how-to section + siblings/index currency; dedicated
 BL-753 how-to already on tip — verified current.
 
 ## Abandoned
-`af903555bb`
+`175e84c2b2`, `7a61bc2a5f` (post-handoff rematch restoring `node:test` import;
+superseded — tip product already has the import on `af903555bb`; rematch merge
+duplicated the require)
 
 ## Review inventory (Article 4.4)
 NONE.
