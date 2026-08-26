@@ -1,5 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-658: night closing ceremony — when
+`closure_stop_local` is a usable schedule, morning briefing is the ceremony's
+last act before stop, not an independent `briefing_morning_time_utc` fire.
+Ceremony begin = stop − (`closing_drain_budget_minutes` +
+`closing_briefing_budget_minutes`). `handoffd` consults
+`night-closing-ceremony-gate` / `night-closing-ceremony-run` before the fixed
+morning trigger; absent/ambiguous schedule keeps today's fixed-time path.
+Acceptance:
+`specs/features/BL-658-briefing-trigger-derived-from-closure-schedule.feature`.
+How-to: `docs/how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-758: `/pilot` reinjects each live
 `swarmforge/roles/<role>.prompt` at hat change via `composePilotStagePrompt`
 (thin isolation wrapper + full role bytes); stage verdicts must record
