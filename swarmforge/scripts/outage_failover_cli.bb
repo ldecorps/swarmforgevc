@@ -203,4 +203,7 @@
       "register-opus-fallback" (run-register-opus-fallback rest-args)
       (usage))))
 
-(-main)
+;; BL-1150 / BL-669: only invoke as bb entrypoint — never when load-file'd
+;; from handoffd (bare (-main) printed usage and System/exit 1, killing the daemon).
+(when (= *file* (System/getProperty "babashka.file"))
+  (-main))

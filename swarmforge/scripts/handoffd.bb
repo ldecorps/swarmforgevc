@@ -2192,14 +2192,6 @@
 (defn role-info-by-name [roles seat]
   (some #(when (= (:role %) seat) %) roles))
 
-(defn outage-driven-seat-failover-sweep! [roles socket]
-  "BL-669: sustained outage -> steward consult -> certified substitute at idle."
-  (outage-failover-cli/outage-driven-seat-failover!
-   project-root roles socket
-   :seat-idle-fn #(let [ri (role-info-by-name roles %)]
-                     (if ri (role-mailbox-idle? ri) true))
-   :attended? (= "1" (System/getenv "OUTAGE_FAILOVER_ATTENDED"))))
-
 
 ;; ── BL-679 piece 3: ambulance auto-exit sweep - shares the chase-sweep
 ;;    cadence, runs UNCONDITIONALLY (same rationale as flow-watchdog-sweep!/
@@ -3525,6 +3517,17 @@
   (operator-lib/role-idle?
    {:inbox-new-count (count (chase-sweep-lib/scan-inbox-new (handoff-lib/mailbox-dir role-info :new)))
     :in-process-count (count (chase-sweep-lib/scan-in-process (handoff-lib/mailbox-dir role-info :in_process)))}))
+
+;; Defined AFTER role-mailbox-idle? so babashka/SCI analysis does not abort
+;; load before pid claim (hotfix ca45facb4 / BL-1150).
+(defn outage-driven-seat-failover-sweep!
+  "BL-669: sustained outage -> steward consult -> certified substitute at idle."
+  [roles socket]
+  (outage-failover-cli/outage-driven-seat-failover!
+   project-root roles socket
+   :seat-idle-fn #(let [ri (role-info-by-name roles %)]
+                     (if ri (role-mailbox-idle? ri) true))
+   :attended? (= "1" (System/getenv "OUTAGE_FAILOVER_ATTENDED"))))
 
 ;; Shared by every context-clear sweep below (coordinator and per-role,
 ;; BL-316): both inject via the same agent-runtime-inject/notify-agent!
