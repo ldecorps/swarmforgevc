@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a5ee3406dba4114e290dec3e8e9a8239113139cd3853ae5c18130bb014ad71fe
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T10:17:09.984565826Z","feature_name":"The closing ceremony ends the night with the briefing, and the briefing ends the night","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-658-briefing-trigger-derived-from-closure-schedule.feature","background_hash":"9804a24507b7cc159b669a460d9ec1605ac7b718d066fb8af75d0cb6d168780d","implementation_hash":"unknown","scenarios":[{"index":4,"name":"Moving the closure schedule moves the ceremony, with no second clock to edit","scenario_hash":"97e24cbd21b772ae352ed4bf3a6f2a6a49ac4a5ccce9dc81f9fe3d6895f44589","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-26T10:17:09.984565826Z"},{"index":5,"name":"A swarm with no usable closure schedule keeps today's fixed-time briefing trigger","scenario_hash":"a3cd5c65597cc03e3f2e1938c0468e6fc56e1cbab71f292252ca8e66e3173121","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-26T10:17:09.984565826Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The closing ceremony ends the night with the briefing, and the briefing ends the night
 
   Background:
