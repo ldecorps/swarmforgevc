@@ -95,6 +95,44 @@ test('assessPerHatRolePromptEvidence passes complete verdicts', () => {
   assert.deepEqual(result, { checked: true, verdictsScanned: 1 });
 });
 
+test('assessPerHatRolePromptEvidence fails open when verdicts are undefined', () => {
+  assert.deepEqual(assessPerHatRolePromptEvidence({ verdicts: undefined }), { checked: false });
+});
+
+test('assessPerHatRolePromptEvidence no-ops on empty verdict list', () => {
+  assert.deepEqual(assessPerHatRolePromptEvidence({ verdicts: [] }), {
+    checked: true,
+    verdictsScanned: 0,
+  });
+});
+
+test('verdictHasRolePromptEvidence rejects empty path and non-64-hex hash', () => {
+  assert.equal(
+    verdictHasRolePromptEvidence({
+      verdictPath: 'v.json',
+      role_prompt_path: '   ',
+      role_prompt_sha256: HASH,
+    }),
+    false
+  );
+  assert.equal(
+    verdictHasRolePromptEvidence({
+      verdictPath: 'v.json',
+      role_prompt_path: 'swarmforge/roles/coder.prompt',
+      role_prompt_sha256: 'abc',
+    }),
+    false
+  );
+  assert.equal(
+    verdictHasRolePromptEvidence({
+      verdictPath: 'v.json',
+      role_prompt_path: 'swarmforge/roles/coder.prompt',
+      role_prompt_sha256: 'g'.repeat(64),
+    }),
+    false
+  );
+});
+
 test('landPilotedTicket refuses pilot-hat-prompt-missing inertly', async () => {
   const { deps, calls } = mkDeps({
     checkPerHatRolePromptEvidence: () => ({
