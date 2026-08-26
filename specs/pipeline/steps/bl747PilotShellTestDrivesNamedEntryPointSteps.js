@@ -72,6 +72,7 @@ function baseDeps(ctx) {
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => shellDriveOutcome(ctx),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
+    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       ctx.yamlMoved = true;

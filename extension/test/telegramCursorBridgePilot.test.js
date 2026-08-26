@@ -92,6 +92,11 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'was this step meant to verify, and is that claim tested any other way?',
       'Do not dismiss it as cosmetic dead code.',
       '',
+      'REVIEW HATS (hardener during /pilot) — BL-755:',
+      'A multi-branch parser (cond / case / if-else with ≥3 arms) needs one',
+      'distinct test per arm before pass — not only the branch the ticket',
+      'narrates. Untested arms are untested-parser-branch defects.',
+      '',
       'Isolation (same as BL-567):',
       '- Work only in `.worktrees/expedite-BL-702` on branch `expedite/BL-702`.',
       '- Do not use handoffd, mailboxes, tmux, rotate_to_role, ready_for_next, or the coordinator.',
@@ -240,6 +245,14 @@ test('composePilotExpeditorPrompt treats unreachable step handlers as untested-b
   assert.match(text, /untested-behavior flag/);
   assert.match(text, /cosmetic dead code/);
   assert.match(text, /what claim/);
+});
+
+test('composePilotExpeditorPrompt requires per-arm tests for multi-branch parsers (BL-755)', () => {
+  const text = composePilotExpeditorPrompt('BL-755');
+  assert.match(text, /BL-755/);
+  assert.match(text, /distinct test per arm/);
+  assert.match(text, /multi-branch parser/);
+  assert.match(text, /untested-parser-branch/);
 });
 
 test('formatPilotStartMessage identifies Cursor-piloted mode', () => {
