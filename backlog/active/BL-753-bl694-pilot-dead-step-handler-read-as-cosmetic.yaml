@@ -72,4 +72,6 @@ source: |
 
 notes: |
   - [2026-08-26T03:11Z] coordinator: drop nudge — awaiting human_approval; not routed to coder.
- 
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: architect, blamed: coder, class: invariant-unencoded, commit: 71bcff8e9a, evidence: backlog/evidence/BL-753-architect-bounce-20260826.md }
