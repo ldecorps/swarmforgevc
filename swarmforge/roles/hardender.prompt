@@ -487,6 +487,19 @@ You are the hardender.
 - Do not perform final acceptance verification — QA owns that.
 - Do not implement, run, or maintain the specifier's end-to-end QA suite.
 
+## A ticket's own guardrail claim is never a nit until the call site is read (BL-749)
+- When you notice a missing error-handling or other guard that the ticket's OWN
+  text explicitly promises (a guardrail claim — e.g. "a record-write failure
+  must not block the send"), do **not** downgrade it to a non-blocking nit until
+  you have read the CALL SITE (not only the function in isolation) and confirmed
+  whether the guardrail is actually upheld downstream.
+- A gap against an explicit ticket guardrail is a defect candidate until
+  call-site consequence is ruled out. BL-623's `log-routing-skip!` looked like
+  a nit in isolation; at the `-main` call site it sat before `try-sync-deliver!`
+  in the same `let` and blocked real-time delivery on write failure (BL-748).
+  That upgrade from nit to defect is the hardener-lens work this rule exists to
+  make mandatory, not optional.
+
 ## Recording A Send-Back (BL-635)
 - You do not bounce as a matter of course — your normal path is always forward
   to the documenter. But if you ever DO send a parcel back (e.g. per the
