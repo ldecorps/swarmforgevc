@@ -469,15 +469,6 @@
    (or (= "CRIT" severity)
        (and (= "WARN" severity) (str/starts-with? (str key) "stuck-")))))
 
-;; ── BL-653 escalation eligibility (scenario 04 vs 03/05) ─────────────────────
-
-(defn escalation-eligible?
-  "CRIT findings summon LLM judgement via BABYSITTER_ESCALATION. WARN
-   stuck-* nudges the coordinator but stays below the operator escalation
-   bar (BL-653 scenario 04)."
-  [{:keys [severity]}]
-  (= "CRIT" severity))
-
 ;; ── decide-nudges: pure dedup + cooldown decision (scenario 11) ─────────────
 
 (def default-nudge-cooldown-ms (* 30 60 1000))
@@ -509,23 +500,6 @@
   (str "babysitter health sweep: "
        (str/join " ; " (map :message findings))
        " — investigate and take the minimal correct action (or tell the human)."))
-
-(defn decide-escalations
-  "BL-653: same dedup/cooldown shape as decide-nudges, but only
-   escalation-eligible? findings become operator BABYSITTER_ESCALATION
-   events."
-  [findings {:keys [last-escalated-ms-by-key now-ms cooldown-ms]
-             :or {last-escalated-ms-by-key {} cooldown-ms default-nudge-cooldown-ms}}]
-  (let [eligible (filter escalation-eligible? findings)
-        due? (fn [{:keys [key]}]
-               (let [last-ms (get last-escalated-ms-by-key key)]
-                 (or (nil? last-ms)
-                     (>= (- (long now-ms) (long last-ms)) (long cooldown-ms)))))
-        to-escalate (vec (filter due? eligible))]
-    {:to-escalate to-escalate
-     :new-escalation-dedup-state (reduce (fn [m {:keys [key]}] (assoc m key now-ms))
-                                         last-escalated-ms-by-key
-                                         to-escalate)}))
 
 ;; ── check: control-plane-missing (BL-958 ownership) ─────────────────────────
 ;; babysitterd owns the response (:recover via ./swarm ensure when launch
