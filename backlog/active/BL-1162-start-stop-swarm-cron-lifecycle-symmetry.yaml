@@ -114,3 +114,6 @@ source: |
   (human via Cursor, 2026-08-26)
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: e3d316fb4, evidence: backlog/evidence/BL-1162-qa-bounce-20260826.md }
