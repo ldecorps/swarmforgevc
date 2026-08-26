@@ -14,14 +14,6 @@ const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const EXT = path.join(REPO_ROOT, 'extension');
 const FEATURE = 'Three named shift packs — one active shift drives every schedule-derived clock';
 
-const EVENING_ANCHOR_CASES = {
-  'Monday 16:30': { startDay: 'Monday', stopDay: 'Tuesday' },
-  'Monday 23:00': { startDay: 'Monday', stopDay: 'Tuesday' },
-  'Tuesday 00:30': { startDay: 'Monday', stopDay: 'Tuesday' },
-};
-
-const SHIFT_NAMES = new Set(['day', 'evening', 'night']);
-
 const SHIFT_LIB = path.join(SCRIPTS, 'swarm_shift_lib.bb');
 const APPLIER_LIB = path.join(SCRIPTS, 'shift_schedule_applier_lib.bb');
 const APPLY_CLI = path.join(SCRIPTS, 'apply_shift_schedule.bb');
@@ -98,9 +90,6 @@ function registerSteps(registry) {
   });
 
   scoped(/^swarm_shift is set to "([^"]+)"$/, (ctx, shift) => {
-    if (!SHIFT_NAMES.has(shift)) {
-      throw new Error(`unknown shift name in Examples: ${shift}`);
-    }
     const st = ensure(ctx);
     st.confLines = st.confLines.filter((l) => !l.startsWith('config swarm_shift '));
     st.confLines.push(`config swarm_shift ${shift}`);
@@ -227,15 +216,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^the shift schedule is resolved for local time "([^"]+)"$/, (ctx, anchor) => {
-    if (!EVENING_ANCHOR_CASES[anchor]) {
-      throw new Error(`unknown anchor in Examples: ${anchor}`);
-    }
     ctx.bl660Anchor = anchor;
-    ctx.bl660ExpectedDays = EVENING_ANCHOR_CASES[anchor];
   });
 
   scoped(/^the scheduled swarm start calendar day is "([^"]+)"$/, (ctx, day) => {
-    assert.equal(day, ctx.bl660ExpectedDays.startDay);
     const anchor = ctx.bl660Anchor;
     const got = bbEval(
       `(load-file "${loadBb('', SHIFT_LIB)}")
@@ -245,7 +229,6 @@ function registerSteps(registry) {
   });
 
   scoped(/^the scheduled swarm stop calendar day is "([^"]+)"$/, (ctx, day) => {
-    assert.equal(day, ctx.bl660ExpectedDays.stopDay);
     const anchor = ctx.bl660Anchor;
     const got = bbEval(
       `(load-file "${loadBb('', SHIFT_LIB)}")
