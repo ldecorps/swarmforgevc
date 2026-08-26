@@ -208,6 +208,8 @@ notes: |
   ports both scripts into `swarmforge/scripts/` with tests, lifecycle wiring and a
   runbook. Nothing further needed; recorded here so the flag is visibly closed
   rather than dropped.
+  - [2026-08-26T13:58Z] coordinator: drop alert — no parcel in flight at coder;
+    acceptance feature absent from main HEAD; nudged specifier to re-spec.
 abandoned_commits:
   - 1296f07b05
 bounce_count: 1
