@@ -60,7 +60,6 @@
 (load-file (str (fs/path script-dir "front_desk_supervisor_lib.bb")))
 (load-file (str (fs/path script-dir "operator_runtime_watch_lib.bb")))
 (load-file (str (fs/path script-dir "operator_telegram_lib.bb")))
-(load-file (str (fs/path script-dir "daemon_log_freshness_pulse_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -186,7 +185,6 @@
 ;; ── one check cycle ──────────────────────────────────────────────────────
 
 (defn check! []
-  (daemon-log-freshness-pulse-lib/append-log-heartbeat! log-file)
   (if (fs/exists? stop-file)
     (log! "skip" "stop file present; watch shutting down")
     (let [now (now-ms)

@@ -66,17 +66,13 @@ description: |
   Deliberately NOT in this ticket: changing what a pause freezes. BL-617's
   suppression list and BL-577's unconditional watchdog both stay as they are.
 
-acceptance: |
-  Specifier writes the Gherkin when this is approved and promoted. Minimum
-  behaviour:
+acceptance: specs/features/BL-779-pause-blind-flow-watchdog-alarm.feature
 
-  1. Parcel ages past warn while a pause with an `untilMs` is active → the
-     alarm names the pause and its end time, and carries no rotate/nudge verb.
-  2. Same parcel, no pause active → today's alarm text is unchanged, verb
-     included (non-vacuity).
-  3. An "until I resume" pause (`untilMs` absent) → the alarm says paused
-     with no end time rather than fabricating one.
-  4. The alarm still fires during a pause — pause is never a mute.
+required_wiring:
+  - 'swarmforge/scripts/backlog_depth_lib.bb::format-pause-until-text::timed pause end or operator-resume wording for alarm and sweep suffixes'
+  - 'swarmforge/scripts/flow_watchdog_lib.bb::format-alarm-text::pause-active? injects (swarm paused) header and drops rotate/nudge verb during live pause'
+  - 'swarmforge/scripts/babysitterd_sweep_lib.bb::format-all-clear-line::green sweep names control pause instead of bare idle-correct line'
+  - 'specs/pipeline/steps/index.js::bl779PauseBlindFlowWatchdogAlarmSteps::acceptance handler registered so the runner executes every scenario'
 
 out_of_scope: |
   - Changing which sweeps a pause freezes (BL-617).
@@ -90,3 +86,7 @@ notes: |
   Orthogonal file scopes — BL-651 touches `mono_router_lib.bb` /
   `handoffd.bb` `role-mail-row`; this one touches `flow_watchdog_lib.bb`'s
   alarm text plus whatever the operator idle verdict reads.
+
+abandoned_commits:
+  - f1dbe653a7
+  - 20999b11cd
