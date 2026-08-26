@@ -1,5 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-588: batch recovery approach 3 — when a
+batch commit partially fails, clean siblings re-forward unchanged on their
+original commit for whole-tree re-verification while the defective ticket
+reworks from the last clean ancestor on an isolated branch; QA lands only
+verified whole trees via merge — cherry-pick, rebase-to-land, and partial-subset
+operations refused. CLI: `extension/out/tools/batch-recovery.js`
+(`prepare-re-forward`, `prepare-rework`, `validate-land`, `validate-merge-up`,
+`validate-land-isolation`). Consumes BL-532 deferral records; does not redefine
+them. Core: `extension/src/quality/batchRecovery.ts`. Acceptance:
+`specs/features/BL-588-isolate-batch-recovery-trees.feature`. How-to:
+`docs/how-to/BL-588-isolate-batch-recovery-trees.md`. Diagram note:
+`docs/diagrams/swarm-flow.mmd`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1160: Live Screen phone grid — each role
 tile owns an activity status dot inside `.pane-head` (`[data-status-indicator]`);
 `resolvePaneStatusKind` prefers per-pane `activitySignal`, falls back to
@@ -18,19 +31,6 @@ single owner, BL-1151 email policy. Acceptance:
 `specs/features/BL-1159-bridge-child-survives-without-crash-giveup-loop.feature`.
 How-to:
 `docs/how-to/BL-1159-bridge-child-survives-without-crash-giveup-loop.md`.)
-Prior entry —
-**Last Updated:** August 26, 2026 (BL-588: batch recovery approach 3 — when a
-batch commit partially fails, clean siblings re-forward unchanged on their
-original commit for whole-tree re-verification while the defective ticket
-reworks from the last clean ancestor on an isolated branch; QA lands only
-verified whole trees via merge — cherry-pick, rebase-to-land, and partial-subset
-operations refused. CLI: `extension/out/tools/batch-recovery.js`
-(`prepare-re-forward`, `prepare-rework`, `validate-land`, `validate-merge-up`,
-`validate-land-isolation`). Consumes BL-532 deferral records; does not redefine
-them. Core: `extension/src/quality/batchRecovery.ts`. Acceptance:
-`specs/features/BL-588-isolate-batch-recovery-trees.feature`. How-to:
-`docs/how-to/BL-588-isolate-batch-recovery-trees.md`. Diagram note:
-`docs/diagrams/swarm-flow.mmd`.)
 Prior entry —
 **Last Updated:** August 26, 2026 (BL-660: three named shift packs — `config
 swarm_shift day|evening|night` selects exactly one 8h shift; when active it is
