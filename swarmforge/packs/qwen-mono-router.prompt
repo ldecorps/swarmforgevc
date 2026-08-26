@@ -8,7 +8,9 @@ OpenAI-compatible API — `QWEN_API_KEY` / mapped `OPENAI_API_KEY`, not Claude).
 
 | Role | Qwen model |
 |------|------------|
-| coder / specifier / cleaner / architect / hardender / documenter / QA | `qwen3.7-max` |
+| specifier / architect | `qwen3.8-max` |
+| cleaner / hardender / documenter / QA | `qwen3.7-max` |
+| coder | `qwen3.7-plus` |
 | coordinator (separate process) | `qwen3.6-flash` |
 
 API host: `https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`

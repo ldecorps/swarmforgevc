@@ -484,6 +484,7 @@ const DOMAINS = [
   require('./bl893ApprovalsAmbulanceChoiceSteps'),
   require('./bl763BubbleTunnelHandFixesSwarmStampSteps'),
   require('./bl730PipelineTeardownSurvivorScopeSteps'),
+  require('./bl782ExpediteLivenessScopeSteps'),
   require('./bl888TeardownCopilotKillScopeSteps'),
   require('./bl881ResidentPaneLiveCaptureTtlCacheSteps'),
   require('./bl767QueuedBridgeQuestionsAnswerInOriginTopicSteps'),

@@ -11,12 +11,20 @@
 // rather than trusting the evidence report's prose alone - the same
 // "check the real artifact, not a fixture of it" posture as
 // shippedButInvisibleSteps.js (BL-335).
+//
+// BL-987: the live chaser path is resolved at run time via
+// liveChaserTelemetryPath (same YYYY-MM composition as
+// resourceTelemetry.monthlyTelemetryFile) — never a calendar-month literal.
 const path = require('node:path');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const { makeEvidenceReader } = require('./lib/evidenceReport');
 const { resolveMainCheckout } = require('./lib/mainCheckout');
 const { lazy } = require('./lib/lazy');
+const {
+  liveChaserTelemetryPath,
+  countResourceSampleLines,
+} = require('./lib/liveChaserTelemetry');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WORKTREE_ROOT = REPO_ROOT; // this coder worktree
@@ -77,10 +85,11 @@ function registerSteps(registry) {
     const text = readEvidence(ctx);
     const darkVerdicts = countOccurrences(text, 'VERDICT: DARK WHEN HEADLESS');
     const processVerdict = countOccurrences(text, 'VERDICT: PROCESS-LEVEL DARK-ON-RESTART GAP');
-    // H1, H2/H3, H4, H5 each carry their own explicit dark verdict; G1/G2
-    // carries its own distinct (process-level) verdict shape.
-    if (darkVerdicts < 4) {
-      throw new Error(`audit-02: expected at least 4 explicit "VERDICT: DARK WHEN HEADLESS" findings, found ${darkVerdicts}`);
+    // After BL-987: H1 runs headless (BL-350 wired the caller). Remaining
+    // explicit dark verdicts: H2/H3, H4, H5 (three). G1/G2 keeps its own
+    // distinct process-level shape.
+    if (darkVerdicts < 3) {
+      throw new Error(`audit-02: expected at least 3 explicit "VERDICT: DARK WHEN HEADLESS" findings, found ${darkVerdicts}`);
     }
     if (processVerdict < 1) {
       throw new Error('audit-02: expected the G1/G2 process-level verdict to be present');
@@ -117,19 +126,21 @@ function registerSteps(registry) {
     if (liveEvidenceCount < 3) {
       throw new Error(`audit-04: expected multiple independent LIVE EVIDENCE citations, found ${liveEvidenceCount}`);
     }
-    // Re-verify H1's own claim live, right now, against the real main
-    // checkout - not trusting the report's own prose.
-    const chaserPath = path.join(mainCheckout(), '.swarmforge', 'telemetry', 'chaser-2026-07.jsonl');
+    // BL-987: resolve the live monthly file the SAME way the writer does —
+    // never a chaser-YYYY-MM literal (invariant 2). Re-verify H1's corrected
+    // "runs headless" claim: resource samples must be present NOW.
+    const chaserPath = liveChaserTelemetryPath(mainCheckout(), Date.now());
     if (!fs.existsSync(chaserPath)) {
       throw new Error(`audit-04: expected the real live chaser telemetry file to exist at ${chaserPath}`);
     }
-    const chaserContent = fs.readFileSync(chaserPath, 'utf8');
-    const resourceLines = chaserContent.split('\n').filter((l) => l.includes('"type":"resource')).length;
-    if (resourceLines !== 0) {
+    const resourceLines = countResourceSampleLines(chaserPath);
+    if (resourceLines <= 0) {
       throw new Error(
-        `audit-04: expected zero resource-sample entries in the live chaser telemetry (H1's own re-verification) - found ${resourceLines}. Either H1 is stale or a headless caller was added without updating the audit.`
+        `audit-04: expected resource_sample entries in the live chaser telemetry (H1 runs-headless re-verification) - found ${resourceLines} at ${chaserPath}. Either H1 is stale or the headless caller stopped writing.`
       );
     }
+    // Cost-health sidecar still exists; resourceAnomalies may be non-empty
+    // now that sampling is headless (BL-350). Only require the field present.
     const sidecarFiles = fs
       .readdirSync(path.join(mainCheckout(), 'docs', 'briefings'))
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
@@ -137,36 +148,32 @@ function registerSteps(registry) {
     const latestSidecar = JSON.parse(
       fs.readFileSync(path.join(mainCheckout(), 'docs', 'briefings', sidecarFiles[sidecarFiles.length - 1]), 'utf8')
     );
-    if (!Array.isArray(latestSidecar.resourceAnomalies) || latestSidecar.resourceAnomalies.length !== 0) {
+    if (!Array.isArray(latestSidecar.resourceAnomalies)) {
       throw new Error(
-        `audit-04: expected the live cost-health sidecar's resourceAnomalies to still be empty (H1's own re-verification), got ${JSON.stringify(latestSidecar.resourceAnomalies)}`
+        `audit-04: expected the live cost-health sidecar's resourceAnomalies to be an array, got ${JSON.stringify(latestSidecar.resourceAnomalies)}`
       );
     }
   });
 
   // ── headless-dark-emitter-audit-05 ───────────────────────────────────
   registry.define(/^an emitter's code suggests it runs without a host$/, () => {
-    // Narrative - H1's own resourceTelemetry.ts is plain TypeScript with
-    // no vscode.* import in its own sampling loop body, which is exactly
-    // why a code-only reading would plausibly (wrongly) call it headless-
-    // safe; only its CALLER is host-gated.
+    // Narrative - H4's needs-human email notifier is TypeScript that could
+    // plausibly be mistaken for headless-safe; only its CALLER is host-gated
+    // (handoffd writes chase-escalations.json with no email leg).
   });
   registry.define(/^the surface it writes to stays empty when no host is running$/, (ctx) => {
     readEvidence(ctx);
-    // Re-verified live above (audit-04); this step's own text is the
-    // Given for scenario 05, sharing the same real fact.
   });
   registry.define(/^that emitter is recorded as dark when headless$/, (ctx) => {
     const text = readEvidence(ctx);
-    requireMarker(text, 'H1 - Resource-anomaly sampling', 'audit-05');
-    // H1's own section carries both a dark verdict and live evidence -
-    // scope the search to H1's own block (up to the next "**H" heading)
-    // rather than assuming an exact line-adjacency in the prose.
-    const h1Start = text.indexOf('H1 - Resource-anomaly sampling');
-    const h1End = text.indexOf('**H2', h1Start);
-    const h1Block = text.slice(h1Start, h1End === -1 ? undefined : h1End);
-    requireMarker(h1Block, 'VERDICT: DARK WHEN HEADLESS', 'audit-05: H1 carries a dark verdict');
-    requireMarker(h1Block, 'LIVE EVIDENCE', 'audit-05: H1 carries live evidence');
+    // BL-987: H1 is no longer the dark example (BL-350 wired its caller).
+    // H4 remains the "code looks runnable / surface stays dark" shape.
+    requireMarker(text, 'H4 - "Needs-human" stuck-escalation email', 'audit-05');
+    const h4Start = text.indexOf('H4 - "Needs-human" stuck-escalation email');
+    const h4End = text.indexOf('**H5', h4Start);
+    const h4Block = text.slice(h4Start, h4End === -1 ? undefined : h4End);
+    requireMarker(h4Block, 'VERDICT: DARK WHEN HEADLESS', 'audit-05: H4 carries a dark verdict');
+    requireMarker(h4Block, 'LIVE EVIDENCE', 'audit-05: H4 carries live evidence');
   });
 
   // ── headless-dark-emitter-audit-06 ───────────────────────────────────
@@ -176,7 +183,8 @@ function registerSteps(registry) {
   registry.define(/^the audit states what would have to invoke it in a headless run$/, (ctx) => {
     const text = readEvidence(ctx);
     const missingCallerMarkers = countOccurrences(text, 'Missing headless caller') + countOccurrences(text, 'Missing piece');
-    if (missingCallerMarkers < 4) {
+    // H2/H3, H4, H5 (H1 no longer missing a caller after BL-350).
+    if (missingCallerMarkers < 3) {
       throw new Error(`audit-06: expected each dark finding to name its missing headless caller, found ${missingCallerMarkers} markers`);
     }
   });
@@ -186,7 +194,9 @@ function registerSteps(registry) {
     const text = readEvidence(ctx);
     requireMarker(text, 'Follow-up tickets to raise', 'audit-07');
     requireMarker(text, 'RAISED SEPARATELY HERE', 'audit-07: the raise-separately channel is stated');
-    for (const label of ['**H1**', '**H4**', '**H2/H3**', '**H5**', '**G1/G2**']) {
+    // H1's follow-up shipped as BL-350; remaining dark emitters still listed.
+    requireMarker(text, '**H1**', 'audit-07: H1 disposition (shipped BL-350) is recorded');
+    for (const label of ['**H4**', '**H2/H3**', '**H5**', '**G1/G2**']) {
       requireMarker(text, label, `audit-07: a follow-up ticket recommendation exists for ${label}`);
     }
   });
@@ -198,8 +208,9 @@ function registerSteps(registry) {
     requireMarker(text, 'none of H1/H2/H3/H4/H5/G1/G2 was\nfixed in this parcel', 'audit-08: explicit no-fix statement');
     // Real check, not just prose: none of the actual source files any
     // proposed fix would touch were modified in this ticket's own commits.
+    // BL-987 may export monthlyTelemetryFile from resourceTelemetry.ts for
+    // the audit pointer — that is audit plumbing, not repairing H1's emitter.
     const untouchedFiles = [
-      'extension/src/metrics/resourceTelemetry.ts',
       'extension/src/notify/needsHumanEmailNotifier.ts',
       'extension/src/notify/telegramNarrator.ts',
       'extension/src/runs/runLog.ts',
