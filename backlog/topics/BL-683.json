@@ -1,1 +1,0 @@
-{"id":"BL-683","messages":[{"seq":0,"ts":1787657977206,"author":"swarm","type":"outbound","text":"BL-683 🎵 in progress — swarm_handoff.bb's depth warning counts directory entries, not tickets: .gitkeep is reported as an active ticket, so every handoff in the swarm overstates the active count by one"}]}

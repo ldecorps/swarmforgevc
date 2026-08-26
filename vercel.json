@@ -1,6 +1,0 @@
-{
-  "buildCommand": "cd extension && npm install && npm run compile",
-  "functions": {
-    "api/recert-webhook.js": {}
-  }
-}

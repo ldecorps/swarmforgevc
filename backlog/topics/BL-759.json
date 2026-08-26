@@ -1,1 +1,0 @@
-{"id":"BL-759","messages":[{"seq":0,"ts":1787658734135,"author":"swarm","type":"outbound","text":"BL-759 🎵 in progress — The Cursor-operator modules import back out of the front-desk bot, so the dependency gate's acyclic rule fails repo-wide"}]}

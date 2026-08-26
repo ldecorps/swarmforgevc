@@ -1,7 +1,0 @@
-{
-  "pattern": "**/*.ts",
-  "reporters": ["console"],
-  "minLines": 5,
-  "minTokens": 50,
-  "gitignore": true
-}

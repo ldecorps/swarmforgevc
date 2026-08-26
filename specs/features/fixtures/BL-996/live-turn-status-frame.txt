@@ -1,8 +1,0 @@
-⏺ Running the acceptance lanes for the parcel now — property lane last.
-
-✳ Hatching… (2m 10s · ↓ 5.2k tokens · esc to interrupt)
-───────────────────────────────────────────────── SwarmForge Coder ─
-❯
-
-─────────────────────────────────────────────────────────────────────
-  ⏵⏵ bypass permissions on (shift+tab to cycle)
