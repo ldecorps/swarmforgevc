@@ -29,6 +29,7 @@ function mkDeps(overrides) {
       readAcceptanceExecution: () => executedFeaturePath,
       checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
       checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
       checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
       checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
       checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),

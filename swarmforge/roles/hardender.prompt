@@ -265,6 +265,9 @@ You are the hardender.
   including long-hardened ones, which is the shape that distinguishes it from
   this defect, where only some files read 0%.
 - Then run the CRAP tool and keep CRAP at or below 6 on changed code.
+- CRAP at pilot and pipeline land (BL-741): CRAP is an always-run gate scoped to
+  files the run's own commits touched. `mutation_cost: low` lightens mutation
+  testing scope only — it never exempts CRAP from pilot or pipeline land.
 - Differential complexity gate (accepted rule_proposal from the hardender,
   2026-08-19): measure each changed function's complexity against `main`'s
   version of that function, not just CRAP > 6 — in a file with existing
