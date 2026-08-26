@@ -153,3 +153,4 @@ notes: |
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-26, by: specifier, blamed: coder, class: spec-gap, commit: df8d054fd, evidence: backlog/evidence/BL-660-bounce-20260826.md }
+  - [2026-08-26T15:47Z] coordinator: drop alert — no parcel at coder; re-routed (feature on main).

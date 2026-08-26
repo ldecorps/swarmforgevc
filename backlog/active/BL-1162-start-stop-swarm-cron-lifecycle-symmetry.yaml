@@ -1,0 +1,116 @@
+id: BL-1162
+title: "start-swarm installs every root-scoped swarmforge cron; stop-swarm removes them all — schedule lines included"
+milestone: M8
+type: defect
+severity: high
+# high: schedule crons fire after deliberate stop — repeated Mac host incident two days running.
+status: paused
+epic: swarm-reliability
+priority: 5
+direction: aligned
+depends_on: [BL-785]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.feature
+human_approval: approved
+approval_context: >
+  Human directive 2026-08-26 (INTAKE-start-swarm-stop-swarm-cron-lifecycle.md, verbatim):
+  "start-swarm should ensure necessary cron jobs are in place. Conversely, and that's
+  very important, stop-swarm should ensure they are disabled." BL-785 fixed freshness
+  only; schedule start/stop under .swarmforge/operator still armed after stop — bit the
+  operator on Mac two days running. Approve = ship symmetric install/remove for every
+  swarmforge line scoped to this root; Amend if you want stop-only first or BL-660 to
+  land before schedule install wiring.
+invariants:
+  - "After a successful stop-swarm.sh for root R, no crontab line whose marker or path is scoped to R can invoke any swarmforge start, stop, bedtime, or freshness script for R."
+  - "After a successful start-swarm.sh for root R, every swarmforge cron kind this root needs while running is present in the user crontab — freshness at minimum, plus active shift schedule lines when scheduling is on."
+
+required_wiring:
+  - 'stop-swarm.sh::uninstall_freshness_cron.sh::stop must remove every registered swarmforge cron line for this root, not only freshness'
+  - 'swarmforge/scripts/start_ancillary_services.sh::install_freshness_cron.sh::start must ensure all required cron lines after successful bring-up'
+  - 'specs/pipeline/steps/index.js::bl1162StartStopSwarmCronLifecycleSymmetrySteps::acceptance handler registered so the runner executes every scenario'
+
+description: |
+  ## What
+
+  Swarm lifecycle is asymmetric at the `./start-swarm.sh` / `./stop-swarm.sh` boundary.
+  Freshness cron (BL-675/783/785) installs on start and uninstalls on stop. Schedule
+  start/stop lines under `.swarmforge/operator/` (`night-start.sh`, `night-stop.sh`,
+  `day-shift-start.sh`, `day-shift-bedtime.sh`) are hand-maintained and **not** removed
+  on stop — so `./stop-swarm.sh` does not durably quiet the host.
+
+  ## Why
+
+  Human incident: for the second day in a row, swarm was started on the Mac host while
+  cron jobs were still active, causing schedule wake/stop scripts and/or the freshness
+  watchdog to fight a deliberate manual start/stop.
+
+  Human directive (verbatim):
+
+  > start-swarm should ensure necessary cron jobs are in place.
+  > Conversely, and that's very important, stop-swarm should ensure they are disabled.
+
+  ## How (direction, not mandate)
+
+  1. **Single registry** — one place lists all swarmforge cron line kinds for a root;
+     install/uninstall helpers share BL-783's root-scoped bracket marker pattern.
+  2. **Start path** — after ancillaries succeed, ensure required lines (freshness minimum;
+     plus active shift schedule when BL-660 / operator conf says scheduling is on).
+     Respect existing `SWARMFORGE_SKIP_*` skips for freshness.
+  3. **Stop path** — remove/disable **every** registered line for this root, not only
+     freshness. Stop must win even if teardown fails partway (specifier leaves ordering
+     to implementer — document choice in how-to).
+  4. **BL-660 alignment** — when shift crons are conf-rendered, start/stop become thin
+     wrappers around the applier's ensure/remove modes. Until BL-660 lands, still
+     remove/install operator's currently configured schedule lines so Mac/WSL handoffs
+     do not leave ghosts.
+  5. **Mac PATH baking** (BL-789/796) applies to every installed line.
+  6. **Observable** — start/stop logs name what was installed/removed; `crontab -l`
+     shows expected state without reading source.
+
+  In-scope cron inventory (confirm completeness at implement time):
+
+  - `night-start.sh` / `night-stop.sh`
+  - `day-shift-start.sh` / `day-shift-bedtime.sh`
+  - Freshness via `install_freshness_cron.sh` / `daemon_log_freshness_check.sh`
+  - Any line referencing `$ROOT`, `.swarmforge/operator/*-start.sh`, `*-stop.sh`,
+    `*-bedtime.sh`, or the BL-675 freshness marker for this root
+
+  Reference snapshots (not authoritative): `.swarmforge/operator/crontab.day-only`,
+  `crontab.night-standing`.
+
+qa_e2e_procedure: >
+  (1) Seed crontab with freshness + day-shift lines for fixture root R — run
+  stop-swarm.sh — assert zero swarmforge-scoped lines remain for R. (2) Empty crontab
+  for R — run start-swarm.sh with scheduling on — assert freshness + schedule lines
+  present. (3) After successful stop, wait 2+ minutes and next schedule boundary —
+  assert handoffd/babysitterd still down and start-swarm not invoked. (4) Multi-root
+  fixture: stop R1 leaves R2 lines intact. Extend BL-785 shell tests into broader battery.
+
+specifier_decisions: |
+  Minted 2026-08-26 from backlog/INTAKE-start-swarm-stop-swarm-cron-lifecycle.md.
+  Four intake Gherkin scenarios map 1:1 to feature 01–04. Extends BL-785 (freshness
+  only) — depends_on pins BL-785 landed. BL-660 coordination: do not rewrite shift-pack
+  semantics; wire start/stop as ensure/remove wrappers when applier exists. Until then,
+  hand-maintained operator schedule lines still participate in symmetric remove.
+
+out_of_scope: |
+  - Rewriting BL-660 shift-pack semantics (coordinate, do not duplicate)
+  - Changing what night-start.sh / day-shift-start.sh do internally beyond cron wiring
+  - Disabling non-swarmforge user crons on the host
+
+notes: |
+  Human directive verbatim:
+  "start-swarm should ensure necessary cron jobs are in place. Conversely, and that's
+  very important, stop-swarm should ensure they are disabled."
+
+  Related: BL-785 (done, freshness on stop), BL-783 (freshness on start), BL-675
+  (mechanism), BL-660 (active, conf-rendered shift crons), BL-658 (closure schedule),
+  BL-653 (night-start pid-hold). Tests: test_stop_swarm_freshness_cron.sh,
+  test_start_ancillary_services_freshness_cron.sh.
+
+source: |
+  backlog/INTAKE-start-swarm-stop-swarm-cron-lifecycle.md
+  (human via Cursor, 2026-08-26)
+
+assigned_to: coder
