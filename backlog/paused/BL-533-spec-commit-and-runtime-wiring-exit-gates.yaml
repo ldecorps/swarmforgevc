@@ -8,6 +8,7 @@ assigned_to: specifier
 priority: 97
 mutation_cost: medium
 direction: human-requested
+human_approval: approved
 depends_on: []
 source: "BL-512 audit BL-FIX-006. Evidence: rule_proposals L8–L9; BL-256 coverage-never-built bounce subject."
 
@@ -27,6 +28,8 @@ notes: |
   - [2026-08-26T19:39Z] coordinator: open-slot nudge — cannot promote;
     `human_approval` not approved. Active cap still full (5/5); BL-660 now at
     cleaner but slot not yet open.
+  - [2026-08-26T19:50Z] operator: human_approval approved (exit gates for
+    spec-ready/complete).
 
 acceptance: |
   Feature: claimed deliverables are tracked and wired before close
