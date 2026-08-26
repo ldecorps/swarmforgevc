@@ -8,21 +8,31 @@ severity: medium
 priority: 104
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "sweep hook and lib; no batch dedup surface"
+  architect: "chokepoint and skip predicates settled in-ticket"
+  hardender: "bb/shell outside mutate scope; fixture sweep tests cover acceptance"
+acceptance: specs/features/BL-668-post-qa-deterministic-branch-sweep.feature
+
+approval_context: >
+  Operator intake proposal 2 (deterministic-git-choreography-assist, session
+  2026-07-26): script the ~5 mechanical QA merge-up turns that are almost always
+  clean fast-forwards (~2s git vs ~10min LLM turn per BL-664 measurement).
+
 invariants:
   - "The sweep fast-forwards only: a branch that cannot fast-forward, or a worktree that is dirty or holds in_process work, is surfaced to its role untouched — the sweep never merges, resets, rebases, or stashes."
   - "All worktree state moves via git in the worktree's own checkout resolved from roles.tsv — never file copies, never a cd into a hardcoded path."
+  - "Every sweep action and every skip (with its reason) is logged so the merge-up broadcast story stays reconstructable."
 
-source: |
-  .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md,
-  proposal 2 (operator session 2026-07-26; archived on drain). Evidence:
-  BL-629 landed 2026-07-25 21:29; the five role merge-ups trickled in at
-  22:07, 22:56, 01:48, 04:34 — each a rotation + full LLM turn whose
-  payload was one `git merge <sha>` that is almost always a clean
-  fast-forward. Turn-overhead measurement (BL-664 prototype): a 2-second
-  merge costs a ~10-minute turn; this slice kills ~5 such turns per landed
-  ticket.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb or post-land chokepoint::post-QA branch sweep invoked after QA lands on main'
+  - 'swarmforge/scripts/post_qa_branch_sweep.sh or *_lib.bb::fast-forward clean role branches to landed commit'
+  - 'swarmforge/scripts/post_qa_branch_sweep_lib.bb::skip predicates::dirty worktree in_process parcel non-ff branch fail safe to surface'
+  - '.swarmforge/roles.tsv::worktree paths::each role checkout resolved from roles.tsv never hardcoded paths'
+  - 'specs/pipeline/steps/index.js::bl668PostQaBranchSweepSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
   ## What
@@ -49,6 +59,31 @@ description: |
     built one — the swarm-workflow diagram included if it depicts the
     broadcast.
 
-  Acceptance signal: on a fixture repo with five role branches — three
-  clean/ff-able, one dirty, one divergent — the sweep settles exactly the
-  three, logs two surfaced skips with reasons, and a re-run is a no-op.
+qa_e2e_procedure: >
+  Fixture with five role branches — three clean/ff-able, one dirty, one
+  divergent: sweep settles exactly three, logs two surfaced skips with reasons,
+  re-run is no-op. Live: after QA lands, verify clean role worktrees ff without
+  LLM merge-up turn; dirty/divergent/in_process roles still receive broadcast note.
+
+source: |
+  .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md,
+  proposal 2 (operator session 2026-07-26; archived on drain). Evidence:
+  BL-629 landed 2026-07-25 21:29; five role merge-ups trickled over hours —
+  each a rotation + full LLM turn whose payload was almost always one clean
+  fast-forward. BL-664 prototype: ~2s merge vs ~10min turn.
+
+specifier_decisions: |
+  Minted 2026-08-26 per coordinator route. Five scenarios materialize the
+  description acceptance signal plus in_process skip and fast-forward-only guards.
+  Documenter pass required in same parcel for merge-up protocol / diagram alignment.
+  Related BL-891 (master main ref) is separate; reuse skip/surface helpers when
+  BL-891 lands — do not block BL-668 on BL-891.
+
+notes: |
+  Child of epic BL-667 deterministic-transit-assist. Kills ~5 LLM merge-up turns
+  per landed ticket when branches are clean.
+
+out_of_scope: |
+  - Changing QA's integration role or merge-up broadcast format for surfaced roles.
+  - Merging rebasing or stashing to force settlement.
+  - BL-891 master-checkout main ref advance (separate ticket; share helpers later).
