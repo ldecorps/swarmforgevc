@@ -28,6 +28,9 @@ Expand read the same signal path (`resolvePaneStatusKind`, `updatePaneStatusDot`
 ## What changed (and what did not)
 
 - **Grid:** one `[data-status-indicator]` dot per `.pane-col`, inside `.pane-head`.
+- **Refresh:** `renderPane` repaints dots from `lastAggregateStatus` via
+  `updatePaneStatusDot`; visibility uses explicit `hidden` attribute toggling in
+  `applyDotState` / `hideDot` (not CSS-only hide).
 - **Signal:** prefers optional per-pane `activitySignal` when present; otherwise
   falls back to aggregate poll freshness for available panes only.
 - **Sibling:** complements [BL-1046 held-ticket strip](BL-1046-console-tile-names-the-ticket-a-seat-holds.md)
