@@ -330,6 +330,7 @@ const DOMAINS = [
   require('./bl636RotatePreferenceParcelPrioritySteps'),
   require('./bl728HandoffdDeliverParenVerificationSteps'),
   require('./bl637LifecycleScriptScopeSteps'),
+  require('./bl736Bl637HelpBlockDuplicatedAcross16LifecycleScriptsSteps'),
   require('./bl641PagesDeploySteps'),
   require('./bl532SiblingBounceIsolationSteps'),
   require('./bl531PreQaDurabilityWiringGateSteps'),

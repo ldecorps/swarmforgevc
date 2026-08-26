@@ -9,13 +9,10 @@
 set -euo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  cat <<'EOF'
-start_operator_runtime.sh — lifecycle start entry point.
-
-Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
-
-Usage: see header comments above.
-EOF
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/lifecycle_help_lib.sh"
+  print_lifecycle_help "start_operator_runtime.sh" "lifecycle start entry point."
   exit 0
 fi
 
