@@ -1,5 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-779: during a live control pause
+(`.swarmforge/operator/control-pause.json`), flow-watchdog stall alarms keep
+firing but header adds `(swarm paused)` and the action suffix names pause
+timing (`format-pause-until-text`) instead of rotate/nudge/investigate verbs
+the paused daemon cannot deliver; tier decision unchanged. Babysitter
+all-clear (`format-all-clear-line`) names `control pause active …` instead of
+bare `OK all checks green`. Does not change BL-617 pause freezes or BL-577
+unconditional watchdog. Modules: `flow_watchdog_lib.bb`, `backlog_depth_lib.bb`,
+`babysitterd_sweep_lib.bb`, `babysitter_check.bb`. Acceptance:
+`specs/features/BL-779-pause-blind-flow-watchdog-alarm.feature`. How-to:
+`docs/how-to/BL-779-pause-blind-flow-watchdog-alarm.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-589: approval asks with `ruling_options:`
 in ticket YAML render one inline button per choice on the Approvals ask (index
 `rule:<id>:<n>` callback_data); tap records durable `human_ruling` and repaints
