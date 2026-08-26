@@ -55,6 +55,7 @@ function mkGateDeps(unreachableOutcome) {
       checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
       checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
+    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
       checkShellEntryPointDrive: () => ({
         checked: true,
         shellTestsScanned: 0,
