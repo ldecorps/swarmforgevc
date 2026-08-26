@@ -653,6 +653,7 @@ const DOMAINS = [
   require('./bl1023ExpediteBookkeepSteps'),
   require('./bl984SweepStaleFixturesSteps'),
   require('./bl979PipelineBoardTicketRowsSteps'),
+  require('./bl980RecentlyClosedElapsedTimeSteps'),
   require('./bl990BounceAttributionCorrectableSteps'),
   require('./bl998ShellFixtureDispatchIsolationSteps'),
   require('./bl1026StageBudgetStatedOnceSteps'),
