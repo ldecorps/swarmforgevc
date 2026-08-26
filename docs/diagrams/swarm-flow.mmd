@@ -35,11 +35,6 @@
 %% — it runs no git merge or push. QA is the integration point: after
 %% broadcasting merge-up to every worktree role, QA itself lands the
 %% approved commit on main and pushes origin (BL-247).
-%% BL-588 (2026-08-26): on partial batch failure, approach 3 — clean siblings
-%% re-forward unchanged on their batch commit for whole-tree re-verification;
-%% defective ticket reworks from last clean ancestor on an isolated branch;
-%% QA lands verified whole trees only (no cherry-pick/rebase-to-land). See
-%% docs/how-to/BL-588-isolate-batch-recovery-trees.md; BL-532 deferrals are input.
 flowchart LR
   ROOT["backlog/ root\n(human raw intake)"]
   COORD(("coordinator\n(master, intake/routing +\nbacklog bookkeeping only,\nnever commits code,\nno git merge/push)"))
