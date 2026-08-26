@@ -223,7 +223,6 @@
 (def telegram-console-status-file (fs/path op-dir "telegram-console.status.json"))
 (def miniapp-watchdog-state-file (fs/path op-dir "miniapp-watchdog.json"))
 (def bounce-bridge-headless-script (fs/path script-dir "bounce_bridge_headless.sh"))
-(def recover-miniapp-bridge-script (fs/path script-dir "recover_miniapp_bridge.sh"))
 ;; BL-763: Cursor Remote supervisor liveness + heartbeat-freshness watchdog.
 ;; cursor_bridge_supervisor.bb already restarts its OWN child (the bridge
 ;; process) on a stale heartbeat internally - this sweep is a defense-in-
@@ -936,7 +935,7 @@
 
 (defn miniapp-bounce-bridge! []
   (process/sh {:continue true}
-              "bash" (str recover-miniapp-bridge-script) project-root (str miniapp-watchdog-port)))
+              "bash" (str bounce-bridge-headless-script) project-root (str miniapp-watchdog-port)))
 
 (defn miniapp-watchdog-sweep! [now]
   (when miniapp-watchdog-enabled?
@@ -2222,13 +2221,8 @@
             (enqueue-observed! [{:type "PROVIDER_AVAILABLE"}])
             (log! "provider" "available (cooldown cleared)"))))
 
-    ;; observe events: dead agents, swarm-check timer, human command, new tasks
-    ;; BL-368: dead-agent-events is only ever computed from a CONFIRMED-
-    ;; reachable session list - an unreachable control channel produces the
-    ;; single control-lost-event instead, never N x AGENT_EXITED derived
-    ;; from whatever empty/stale session list an unreachable tmux left
-    ;; behind. These are different facts about the world and must never be
-    ;; inferred from one another.
+    ;; BL-653: tick may enqueue human command, fresh coordinator task, or
+    ;; SWARM_CONTROL_LOST only — never dead-agent liveness diff or patrol timer.
     (when-not (:reachable? control)
       ;; BL-368 (scenario 04): logged UNCONDITIONALLY, independent of the
       ;; disposable LLM Operator ever launching or noticing - "surfaced
@@ -2236,18 +2230,12 @@
       ;; misdiagnosis/relaunch guards above. runtime.log is the swarm's own
       ;; durable, human-checkable audit trail (log! above).
       (log! "SWARM_CONTROL_LOST" "tmux control channel unreachable - NOT agent death, human attention needed"))
-    (let [observed (cond-> (if (:reachable? control)
-                              (operator-lib/dead-agent-events roles live-sessions rotation-opts)
-                              [(operator-lib/control-lost-event)])
-                     (operator-lib/timer-due? (last-swarm-check-ms) now swarm-check-ms)
-                     (conj {:type "SWARM_CHECK_TIMER"})
-                     (fs/exists? command-file)
-                     (conj {:type "HUMAN_COMMAND"
-                            :detail (str/trim (slurp (str command-file)))})
-                     (coordinator-inbox-has-fresh?)
-                     (conj {:type "TASK_ARRIVED"}))]
-      (when (operator-lib/timer-due? (last-swarm-check-ms) now swarm-check-ms)
-        (record-swarm-check! now))
+    (let [observed (operator-lib/tick-observed-events
+                     {:reachable? (:reachable? control)
+                      :command-file-exists? (fs/exists? command-file)
+                      :command-detail (when (fs/exists? command-file)
+                                        (str/trim (slurp (str command-file))))
+                      :coordinator-inbox-fresh? (coordinator-inbox-has-fresh?)})]
       (enqueue-observed! observed))
 
     ;; BL-281 (reshaped): TELEGRAM_TOPIC_MESSAGE events now arrive here
