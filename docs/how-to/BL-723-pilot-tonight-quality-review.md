@@ -677,7 +677,10 @@ touches that file; that fix exists only on an unmerged sibling commit. The
 paren is closed on `main` today only incidentally, via a later, unrelated
 BL-611 commit.
 
-**Filed defects:** BL-728 (remaining work), BL-729 (pilot process)
+**Filed defects:** BL-728 (remaining work — **closed 2026-08-26**: verified
+fixed on `main`, regression locked; see
+[BL-728 how-to](BL-728-handoffd-one-shot-flags-parse-verification.md)),
+BL-729 (pilot process — closed: commit-claim gate in BL-727)
 
 ### BL-637
 
