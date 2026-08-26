@@ -1531,6 +1531,31 @@
            true
            (clojure.string/includes? (first @alarms) "via global")))
 
+;; ── BL-779: pause-aware alarm text ─────────────────────────────────────────
+
+(def bl779-timed-until-ms (.toEpochMilli (java.time.Instant/parse "2026-08-02T08:00:00Z")))
+(def bl779-base {:id "p" :from "hardener" :to "documenter" :type "git_handoff"
+                 :age-ms (* 60 60 1000) :role "documenter" :mailbox :new :verb :rotate :tier :warn})
+
+(let [text (flow-watchdog-lib/format-alarm-text
+            (assoc bl779-base :pause-active? true :pause-until-ms bl779-timed-until-ms))]
+  (assert= "BL-779: timed pause names pause end and drops verb"
+           true
+           (and (clojure.string/includes? text "(swarm paused)")
+                (clojure.string/includes? text "paused until 2026-08-02T08:00:00Z")
+                (not (clojure.string/includes? text "rotate")))))
+
+(let [text (flow-watchdog-lib/format-alarm-text
+            (assoc bl779-base :pause-active? true :pause-until-ms nil))]
+  (assert= "BL-779: until-I-resume pause has no fabricated end time"
+           true
+           (and (clojure.string/includes? text "paused until operator resumes")
+                (not (re-find #"paused until 20" text)))))
+
+(assert= "BL-779: no pause keeps byte-identical alarm with verb"
+         "⚠️ WARN flow-stall: parcel p (hardener->documenter, git_handoff) aged 1h0m in documenter new - rotate."
+         (flow-watchdog-lib/format-alarm-text bl779-base))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
