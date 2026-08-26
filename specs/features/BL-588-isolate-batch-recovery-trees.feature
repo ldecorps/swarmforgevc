@@ -1,8 +1,3 @@
-# mutation-stamp: sha256=3ba6c61ff181e2c8c47b883e4b30d45b62b6cf68905eb1c7784c0557be5c3409
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-26T13:00:53.658140716Z","feature_name":"batch recovery trees are isolated so a clean sibling can land while a defective sibling reworks","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-588-isolate-batch-recovery-trees.feature","background_hash":"437c0b9467f6f396f00ac268aedd59d2c3c8af77b7fc27d25296d3ef4a75b99c","implementation_hash":"unknown","scenarios":[{"index":3,"name":"QA landing refuses history-rewriting operations for a batch sibling","scenario_hash":"c518d59d55c5db6449df42d39a96400bb904bb5c8fcda2434290ba70f86b486e","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-26T13:00:53.658140716Z"}]}
-# acceptance-mutation-manifest-end
-
 Feature: batch recovery trees are isolated so a clean sibling can land while a defective sibling reworks
 
   # BL-588 (approach 3, human_ruling 2026-07-23): BL-532 defers a clean sibling and stops

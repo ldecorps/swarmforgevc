@@ -570,6 +570,17 @@
                                                            {:last-nudged-ms-by-key {} :now-ms 100000 :cooldown-ms 1800000})]
                  (empty? to-nudge))))
 
+;; ── BL-653 escalation eligibility + decide-escalations ───────────────────────
+(assert-true "CRIT is escalation-eligible" (sw/escalation-eligible? {:key "proc-coder" :severity "CRIT"}))
+(assert-true "stuck-* WARN is below the operator escalation bar"
+             (not (sw/escalation-eligible? {:key "stuck-000123" :severity "WARN"})))
+(let [crit {:key "proc-coder" :severity "CRIT" :message "gone"}
+      stuck {:key "stuck-000123" :severity "WARN" :message "stale parcel"}]
+  (assert-true "decide-escalations includes CRIT only"
+               (let [{:keys [to-escalate]} (sw/decide-escalations [crit stuck]
+                                                                   {:last-escalated-ms-by-key {} :now-ms 100000 :cooldown-ms 1800000})]
+                 (= [crit] to-escalate))))
+
 ;; ── format helpers ────────────────────────────────────────────────────────
 (assert-true "format-finding-line includes timestamp, severity, key, message"
              (let [line (sw/format-finding-line {:key "memory" :severity "CRIT" :message "low mem"} "2026-08-01T00:00:00Z")]

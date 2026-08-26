@@ -100,7 +100,6 @@ expects them, and are not migrated or rewritten here.
 - [Sticky web UI font-size choice](how-to/BL-1153-sticky-web-font-size-choice.md) — Live Screen, Pipeline Board, and Paused pager restore size after reload via extension-host JSON; PWA Cache unchanged (BL-1153).
 - [Live Screen grid tiles name the ticket a seat holds](how-to/BL-1046-console-tile-names-the-ticket-a-seat-holds.md) — ticket id, slug, compact claim age, batch +N on phone grid; same payload as Expand (BL-1046).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
-- [Isolating batch recovery trees](how-to/BL-588-isolate-batch-recovery-trees.md) — approach 3: clean siblings re-forward unchanged and land while a defective batch sibling reworks on an isolated branch; QA merges verified whole trees only (BL-588).
 - [Dev-host bounce under WSL: exactly one window](how-to/BL-578-devhost-bounce-wsl-window-leak.md) — Windows-side kill-old + headless-swarm refuse/`--force` (BL-578).
 - [Keep BL-578 acceptance bound](how-to/BL-988-orphaned-wsl-acceptance-contract-binding.md) — restore orphaned step binding; property regression against re-orphan (BL-988).
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
