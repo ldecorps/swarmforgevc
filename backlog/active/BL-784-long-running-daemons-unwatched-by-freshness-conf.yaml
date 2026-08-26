@@ -94,22 +94,14 @@ description: |
   Do not extend the conf's field format. It is `name|threshold_secs|
   log_relpath|pid_relpath|start_script`, and every daemon here fits it.
 
-acceptance: |
-  Feature: supervisor freshness heartbeats and registry guard
-    Scenario: idle supervisor tick writes heartbeat
-      Given a supervisor loop tick with no work
-      When the tick completes
-      Then its log receives a timestamped heartbeat line
-    Scenario: registry guard fails on missing conf row
-      Given a required daemon without a conf row
-      When the freshness checker runs
-      Then the registry guard fails and names the daemon
+acceptance: specs/features/BL-784-long-running-daemons-unwatched-by-freshness-conf.feature
 
 required_wiring:
   - 'swarmforge/scripts/daemon_log_freshness_pulse_lib.bb::append-log-heartbeat!::heartbeat'
   - 'swarmforge/scripts/daemon_log_freshness.conf::cursor_bridge_supervisor|30::BL-784: supervisor rows'
   - 'swarmforge/scripts/daemon_log_freshness_registry_guard.sh::FRESHNESS_REGISTRY_GUARD::fail closed'
   - 'swarmforge/scripts/daemon_log_freshness_check.sh::daemon_log_freshness_registry_guard.sh::every long-running supervisor must be registered'
+  - 'specs/pipeline/steps/index.js::bl784LongRunningDaemonsUnwatchedByFreshnessConfSteps::acceptance handler registered so the runner executes every scenario'
 
 abandoned_commits:
   - bf1bbc0b07
