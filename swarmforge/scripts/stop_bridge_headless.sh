@@ -10,6 +10,7 @@ set -euo pipefail
 ROOT="$(cd "${1:-.}" && pwd)"
 OP_DIR="$ROOT/.swarmforge/operator"
 SUPERVISOR_PID_FILE="$OP_DIR/bridge-headless-supervisor.pid"
+FD_PID_FILE="$OP_DIR/front-desk-supervisor.pid"
 STOP_FILE="$OP_DIR/bridge-headless-supervisor.stop"
 ENTRYPOINT_BASENAME="start-bridge-headless.js"
 
@@ -24,6 +25,17 @@ signal_pid() {
 if [[ "${BRIDGE_HEADLESS_STOP_DRYRUN:-}" == "1" ]]; then
   printf 'DRYRUN stop_bridge_headless supervisor_pid=%s root=%s\n' "$SUPERVISOR_PID_FILE" "$ROOT"
   exit 0
+fi
+
+# Front desk owns start-bridge-headless on this port. Killing every matching
+# orphan here is what made operator_runtime's miniapp watchdog SIGTERM the
+# bridge child 4–6s after BRIDGE_LISTENING (BL-1159).
+if [[ -f "$FD_PID_FILE" ]]; then
+  fd_pid="$(tr -d '[:space:]' < "$FD_PID_FILE" 2>/dev/null || true)"
+  if [[ "$fd_pid" =~ ^[0-9]+$ ]] && kill -0 "$fd_pid" 2>/dev/null; then
+    echo "stop_bridge_headless: front-desk-supervisor (pid $fd_pid) owns this stack; refusing to kill bridge children" >&2
+    exit 0
+  fi
 fi
 
 stopped=0
