@@ -95,6 +95,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_log_freshness_pulse_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
@@ -595,6 +596,7 @@
     (write-escalation-state! next)))
 
 (defn tick! []
+  (daemon-log-freshness-pulse-lib/append-log-heartbeat! log-file)
   (let [prior (read-state)
         now (now-ms)
         next-state (into {}
