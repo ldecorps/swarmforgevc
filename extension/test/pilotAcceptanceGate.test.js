@@ -28,6 +28,7 @@ function mkDeps(overrides) {
     },
     readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => ({ checked: true, commitsChecked: 3 }),
+    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-FIX-fixture.yaml' };
@@ -242,6 +243,7 @@ test('landPilotedTicket refuses a land whose commit claims an unsupported change
       commitsChecked: 2,
       unsupported: { commit: '6a2e4aaf6d', identifier: 'deliver!', sentence: 'restore the deliver! close paren' },
     }),
+    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
   assert.equal(outcome.landed, false);
@@ -266,6 +268,7 @@ test('landPilotedTicket checks claims only after a green contract, never before'
       claimsCheckCalled = true;
       return { checked: true, commitsChecked: 1 };
     },
+    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
   assert.equal(outcome.landed, false);
@@ -276,6 +279,7 @@ test('landPilotedTicket checks claims only after a green contract, never before'
 test('landPilotedTicket lands with a warning and records zero commits checked when the run history cannot be resolved (fails open)', async () => {
   const { deps, calls } = mkDeps({
     checkCommitClaims: () => ({ checked: false }),
+    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
   });
   let receipt;
   deps.writeReceipt = (ticketId, r) => {
@@ -292,6 +296,7 @@ test('landPilotedTicket lands with a warning and records zero commits checked wh
 test('landPilotedTicket lands with no warnings field when every commit claim was checked and supported', async () => {
   const { deps } = mkDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 5 }),
+    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
   assert.equal(outcome.landed, true);
@@ -305,6 +310,7 @@ test('landPilotedTicket never moves or writes a receipt when the commit-claim ch
       commitsChecked: 1,
       unsupported: { commit: 'abc1234567', identifier: 'frobnicate!', sentence: 'restore the frobnicate! guard' },
     }),
+    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
   });
   await landPilotedTicket('BL-FIX', deps);
   assert.equal(calls.move, 0);
