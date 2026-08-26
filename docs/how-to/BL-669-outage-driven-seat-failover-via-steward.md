@@ -18,6 +18,30 @@ outage `endedAtUtc` closes.
 Invariants: only `assignment-eligible?` substitutes (no `--override-uncertified`);
 never apply mid-turn; every swap/revert announced + logged.
 
+## Load-file safety (BL-1150)
+
+`handoffd.bb` `(load-file …/outage_failover_cli.bb)`. A bare `(-main)` at
+the bottom of the CLI printed usage and called `System/exit 1`, so a restored
+handoffd could not start. The CLI now guards `-main` the same way as
+`post_hotfix_merge_origin.bb`:
+
+```clojure
+(when (= *file* (System/getProperty "babashka.file"))
+  (-main))
+```
+
+`load-file` therefore defines the namespace and returns; running
+`bb outage_failover_cli.bb …` still reaches `-main`. Regression:
+
+```bash
+bb swarmforge/scripts/test/test_outage_failover_cli_load_file_safe.bb
+```
+
+Hotfix `ca45facb4` (same guard + failover sweep defined after
+`role-mailbox-idle?`) is the ops land this ticket certifies through the
+pipeline; ledger stamp-off still waits on a human Approvals decision
+([BL-848](BL-848-certify-an-operator-hotfix.md)).
+
 ## Operator notes
 
 **Evaluate** what the sweep would do for a seat:
