@@ -4,10 +4,16 @@
 // audited root. Drives the REAL expedite_cli.bb --probe-liveness path (no
 // EXPEDITE_PROBE_FILE) and the REAL shell suites test_expedite_cli.sh /
 // test_lifecycle_script_scope.sh — never a JS reimplementation of ps matching.
+//
+// QA bounce 20260826 (D1): each acceptance scenario gets a fresh ctx, so
+// ctx-scoped reapDecoys cannot see decoys from prior outline rows. Track
+// decoys at module scope, unref them so Node does not wait on open handles,
+// and reap in afterEach as well as at scenario boundaries.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'expedite_cli.bb');
@@ -24,6 +30,9 @@ const KNOWN_PROBES = {
   operator: 'operator',
 };
 
+/** @type {Set<import('node:child_process').ChildProcess>} */
+const liveDecoys = new Set();
+
 function knownProbe(value) {
   if (!Object.prototype.hasOwnProperty.call(KNOWN_PROBES, value)) {
     throw new Error(`bl782: unrecognized <probe> example value "${value}"`);
@@ -31,22 +40,58 @@ function knownProbe(value) {
   return KNOWN_PROBES[value];
 }
 
-function reapDecoys(ctx) {
-  for (const child of ctx.decoys || []) {
-    try {
-      child.kill('SIGKILL');
-    } catch {
-      /* already gone */
-    }
+function killChild(child) {
+  if (!child || child.killed) {
+    return;
   }
-  ctx.decoys = [];
+  try {
+    if (child.pid) {
+      try {
+        process.kill(child.pid, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }
+    child.kill('SIGKILL');
+  } catch {
+    /* already gone */
+  }
 }
+
+function reapDecoys(ctx) {
+  for (const child of liveDecoys) {
+    killChild(child);
+  }
+  liveDecoys.clear();
+  if (ctx) {
+    ctx.decoys = [];
+  }
+}
+
+afterEach(() => {
+  reapDecoys(null);
+});
 
 function spawnDecoy(argv) {
   const child = spawn('bash', ['-c', `exec -a ${JSON.stringify(argv)} sleep 600`], {
     stdio: 'ignore',
   });
+  // Keep the handle for explicit kill, but do not pin the event loop open
+  // waiting for sleep 600 to exit (QA D1 hang).
+  child.unref();
+  liveDecoys.add(child);
+  child.once('exit', () => {
+    liveDecoys.delete(child);
+  });
   return child;
+}
+
+function spawnNeighbourDecoys(ctx, prefix, argvList) {
+  reapDecoys(ctx);
+  const neighbourRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  ctx.neighbourRoot = neighbourRoot;
+  ctx.decoys = argvList.map((argv) => spawnDecoy(argv.replace(/\{root\}/g, neighbourRoot)));
+  spawnSync('sleep', ['0.2']);
 }
 
 function probeLiveness(root) {
@@ -104,10 +149,14 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^that process is not counted as alive for "([^"]+)"$/,
     (ctx, probe) => {
-      if (probeCountsAsAlive(ctx.probeResult, probe)) {
-        throw new Error(
-          `expected probe "${probe}" to read stopped with neighbour decoy alive, got: ${JSON.stringify(ctx.probeResult)}`,
-        );
+      try {
+        if (probeCountsAsAlive(ctx.probeResult, probe)) {
+          throw new Error(
+            `expected probe "${probe}" to read stopped with neighbour decoy alive, got: ${JSON.stringify(ctx.probeResult)}`,
+          );
+        }
+      } finally {
+        reapDecoys(ctx);
       }
     },
     FEATURE_NAME,
@@ -116,10 +165,14 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^that process is counted as alive for "([^"]+)"$/,
     (ctx, probe) => {
-      if (!probeCountsAsAlive(ctx.probeResult, probe)) {
-        throw new Error(
-          `expected probe "${probe}" to read alive for audited root, got: ${JSON.stringify(ctx.probeResult)}`,
-        );
+      try {
+        if (!probeCountsAsAlive(ctx.probeResult, probe)) {
+          throw new Error(
+            `expected probe "${probe}" to read alive for audited root, got: ${JSON.stringify(ctx.probeResult)}`,
+          );
+        }
+      } finally {
+        reapDecoys(ctx);
       }
     },
     FEATURE_NAME,
@@ -128,15 +181,11 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^real handoffd\.bb handoffd_supervisor\.bb and babysitterd\.sh processes for a different project root are alive throughout the run$/,
     (ctx) => {
-      reapDecoys(ctx);
-      const beta = fs.mkdtempSync(path.join(os.tmpdir(), 'bl782-beta-'));
-      ctx.neighbourRoot = beta;
-      ctx.decoys = [
-        spawnDecoy(`bb ${beta}/swarmforge/scripts/handoffd.bb ${beta}`),
-        spawnDecoy(`bb ${beta}/swarmforge/scripts/handoffd_supervisor.bb ${beta}`),
-        spawnDecoy(`${beta}/.swarmforge/operator/babysitterd.sh`),
-      ];
-      spawnSync('sleep', ['0.2']);
+      spawnNeighbourDecoys(ctx, 'bl782-beta-', [
+        'bb {root}/swarmforge/scripts/handoffd.bb {root}',
+        'bb {root}/swarmforge/scripts/handoffd_supervisor.bb {root}',
+        '{root}/.swarmforge/operator/babysitterd.sh',
+      ]);
     },
     FEATURE_NAME,
   );
@@ -167,9 +216,13 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^every unpinned case that should pass exits zero$/,
     (ctx) => {
-      const { status, out } = ctx.expediteSuite || {};
-      if (status !== 0 || !out.includes('test_expedite_cli: ALL PASS')) {
-        throw new Error(`expected test_expedite_cli ALL PASS with neighbour decoys, got status ${status}:\n${out}`);
+      try {
+        const { status, out } = ctx.expediteSuite || {};
+        if (status !== 0 || !out.includes('test_expedite_cli: ALL PASS')) {
+          throw new Error(`expected test_expedite_cli ALL PASS with neighbour decoys, got status ${status}:\n${out}`);
+        }
+      } finally {
+        reapDecoys(ctx);
       }
     },
     FEATURE_NAME,
@@ -178,11 +231,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a real handoffd\.bb for a different project root is alive throughout the run$/,
     (ctx) => {
-      reapDecoys(ctx);
-      const beta = fs.mkdtempSync(path.join(os.tmpdir(), 'bl782-neighbour-'));
-      ctx.neighbourRoot = beta;
-      ctx.decoys = [spawnDecoy(`bb ${beta}/swarmforge/scripts/handoffd.bb ${beta}`)];
-      spawnSync('sleep', ['0.2']);
+      spawnNeighbourDecoys(ctx, 'bl782-neighbour-', ['bb {root}/swarmforge/scripts/handoffd.bb {root}']);
     },
     FEATURE_NAME,
   );
@@ -202,9 +251,13 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the suite exits zero$/,
     (ctx) => {
-      const { status, out } = ctx.lifecycleSuite || {};
-      if (status !== 0) {
-        throw new Error(`expected test_lifecycle_script_scope exit 0 with neighbour handoffd, got ${status}:\n${out}`);
+      try {
+        const { status, out } = ctx.lifecycleSuite || {};
+        if (status !== 0) {
+          throw new Error(`expected test_lifecycle_script_scope exit 0 with neighbour handoffd, got ${status}:\n${out}`);
+        }
+      } finally {
+        reapDecoys(ctx);
       }
     },
     FEATURE_NAME,
@@ -214,7 +267,6 @@ function registerSteps(registry) {
     /^expedite_cli probes the operator liveness signal$/,
     (ctx) => {
       ctx.operatorSource = fs.readFileSync(CLI, 'utf8');
-      ctx.operatorProbe = probeLiveness(ctx.auditRoot || '/repos/alpha');
     },
     FEATURE_NAME,
   );
@@ -246,7 +298,8 @@ function registerSteps(registry) {
           );
         }
       } finally {
-        alienChild.kill('SIGKILL');
+        killChild(alienChild);
+        liveDecoys.delete(alienChild);
         fs.rmSync(alien, { recursive: true, force: true });
       }
     },
@@ -256,18 +309,22 @@ function registerSteps(registry) {
   registry.define(
     /^Or the code documents why "--remote-control Operator" cannot be root-scoped by pattern alone$/,
     (ctx) => {
-      if (!ctx.operatorScopeFailed) return;
-      const src = ctx.operatorSource || fs.readFileSync(CLI, 'utf8');
-      if (
-        !src.includes('--remote-control Operator has no project root in argv') ||
-        !src.includes('operator.prompt')
-      ) {
-        throw new Error(
-          'operator probe is not root-scoped and source lacks documentation of why',
-        );
+      try {
+        if (!ctx.operatorScopeFailed) return;
+        const src = ctx.operatorSource || fs.readFileSync(CLI, 'utf8');
+        if (
+          !src.includes('--remote-control Operator has no project root in argv') ||
+          !src.includes('operator.prompt')
+        ) {
+          throw new Error(
+            'operator probe is not root-scoped and source lacks documentation of why',
+          );
+        }
+      } finally {
+        reapDecoys(ctx);
       }
     },
   );
 }
 
-module.exports = { registerSteps };
+module.exports = { registerSteps, reapDecoys, spawnDecoy, liveDecoys };
