@@ -105,7 +105,7 @@ expects them, and are not migrated or rewritten here.
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
-- [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md) — BL-727 contract execution, BL-729 commit-claim check, BL-731 multi-worktree fixture for lifecycle/teardown tickets
+- [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md) — BL-727 contract execution, BL-729 commit-claim check, BL-731 multi-worktree fixture, BL-737 cross-file duplication gate
 - [Probe legacy topic adoption paths](how-to/BL-1147-probe-legacy-topic-adoption.md) — BL-1147 read-only probe for BL-294 auto-open, cursor Host re-adopt, and map scrub candidates
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)
 - [Breaking the front-desk ↔ Cursor-operator import cycle](how-to/BL-759-cursor-operator-front-desk-bot-import-cycle.md) — drain helpers in leaf modules; full-repo dependency gate green (BL-759).

@@ -4,9 +4,18 @@
  * evaluateCommitClaims (commitClaimCheck.ts). Split out of
  * pilot-acceptance-gate.ts so that file's CLI/deps wiring for the BL-727
  * landing path stays free of this feature's git-resolution details.
+ *
+ * BL-737: also resolves the run's touched-file set (same ancestry scope) and
+ * feeds file contents into the pure findCrossFileDuplication checker.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { evaluateCommitClaims } from './commitClaimCheck';
+import {
+  CrossFileDuplicationCheckOutcome,
+  findCrossFileDuplication,
+} from './crossFileDuplicationCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
 
 // The run's own commits are judged against `main`, never HEAD alone (BL-729
@@ -90,4 +99,60 @@ export function checkCommitClaims(repoRoot: string): CommitClaimsCheckOutcome {
     return { checked: false };
   }
   return { checked: true, ...evaluateCommitClaims(commits) };
+}
+
+function listPathsForCommit(repoRoot: string, sha: string): string[] {
+  const changedPaths = execFileSync(
+    'git',
+    ['diff-tree', '--no-commit-id', '--name-only', '-r', sha],
+    { cwd: repoRoot, encoding: 'utf8', stdio: GIT_CLAIM_CHECK_STDIO }
+  );
+  return changedPaths
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** Files touched by the run's own non-merge commits (BL-737 ancestry scope). */
+export function resolveTouchedFiles(repoRoot: string): string[] | undefined {
+  const commits = resolveRunCommits(repoRoot);
+  if (!commits) {
+    return undefined;
+  }
+  const paths = new Set<string>();
+  try {
+    for (const commit of commits) {
+      for (const filePath of listPathsForCommit(repoRoot, commit.sha)) {
+        paths.add(filePath);
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return [...paths].sort();
+}
+
+function readTouchedFileTexts(
+  repoRoot: string,
+  relativePaths: string[]
+): Array<{ path: string; text: string }> {
+  const files: Array<{ path: string; text: string }> = [];
+  for (const relativePath of relativePaths) {
+    try {
+      const absolute = path.join(repoRoot, relativePath);
+      files.push({ path: relativePath, text: fs.readFileSync(absolute, 'utf8') });
+    } catch {
+      // Skip unreadable paths; history was resolved, so we still check what we can.
+    }
+  }
+  return files;
+}
+
+/** Git-backed BL-737 check wired into PilotAcceptanceGateDeps.checkCrossFileDuplication. */
+export function checkCrossFileDuplication(repoRoot: string): CrossFileDuplicationCheckOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  return findCrossFileDuplication(readTouchedFileTexts(repoRoot, touched));
 }

@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-737)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -87,6 +87,33 @@ now checks the host fixture:
 Non-lifecycle tickets are unchanged: the fixture gate is skipped and the
 receipt omits `multiWorktreeFixture`.
 
+## Cross-file duplication (BL-737)
+
+BL-637's landing commit pasted the same twelve-line `--help` block into 16
+lifecycle scripts in one sitting. Nothing on `/pilot`'s land path checked for
+that mechanical multi-file duplication before `backlog/done/`.
+
+Between a green contract (and the other land gates) and the yaml move, the
+gate now checks files touched by the run's own non-merge commits (same
+`main`…`HEAD` ancestry scope as BL-729):
+
+1. Collect touched paths from those commits only — never the whole repo and
+   never files outside the run's range.
+2. Find identical **normalized** consecutive-line blocks of at least 12 lines
+   shared by **more than two** of those files (trailing whitespace stripped
+   per line). Two-file duplication does **not** refuse.
+3. Refuse (`reasonKind: 'cross-file-duplication'`) naming a block fingerprint
+   and at least two paths. A refused land is inert.
+4. If touched-file history cannot be resolved, fail **OPEN**: land with a
+   warning that cross-file duplication was not checked (same posture as
+   BL-729 unreadable history).
+5. On a clean check, record `crossFileDuplicationFilesScanned` on the
+   acceptance receipt.
+
+**Remediation when refused:** factor the shared block into one helper (see
+companion remaining-work BL-736 for the BL-637 `--help` bodies) and re-run
+the gate — do not silent-bypass.
+
 ## Why
 
 A live pipeline run has two independent places that execute a ticket's
@@ -130,6 +157,16 @@ run, and no gate ever noticed.
 - Multi-worktree tests: `extension/test/multiworktreeAcceptanceFixture.test.js`
 - Multi-worktree acceptance:
   `specs/features/BL-731-bl637-pilot-never-ran-acceptance-multiworktree.feature`
+- Cross-file duplication (BL-737), pure block fingerprinting:
+  `extension/src/tools/crossFileDuplicationCheck.ts`
+- Cross-file duplication git-backed deps (touched paths + file reads):
+  `extension/src/tools/commitClaimGitReader.ts` → `checkCrossFileDuplication`
+- Cross-file duplication step handlers:
+  `specs/pipeline/steps/bl737PilotCrossFileDuplicationGateSteps.js`
+- Cross-file duplication tests: `extension/test/crossFileDuplicationCheck.test.js`,
+  `extension/test/crossFileDuplicationCheck.property.test.js`
+- Cross-file duplication acceptance:
+  `specs/features/BL-737-pilot-cross-file-duplication-gate.feature`
 
 ## Out of scope
 
