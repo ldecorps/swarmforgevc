@@ -3,20 +3,18 @@ title: "BL-694 added a step handler for the non-stage-basename-collision case wi
 milestone: M8
 type: defect
 severity: medium
-status: paused
+status: todo
 epic: swarm-reliability
-assigned_to: specifier
+human_approval: approved
 priority: 82
 direction: normal
 depends_on: []
+assigned_to: coordinator
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+stage_skip_reasons: {}
 acceptance: specs/features/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.feature
 
-invariants:
-  - "No step handler registered by bl694ResidualAllowlistSteps.js is unreachable: every registered pattern matches at least one step the BL-694 feature renders."
-
-human_approval: approved
 approval_context: >
   No open design decision - this is a confirmation that the acceptance
   contract is the right one. The claim under test was re-verified live:
@@ -28,62 +26,14 @@ approval_context: >
   exemption the allowlist exists for. What is deliberately OUT of scope: a
   repo-wide unreachable-step-handler gate - scenario 03 is scoped to this
   one handler file, and the general gate is separate work.
-source: |
-  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
-  pass, 2026-07-30/31. `specs/pipeline/steps/bl694ResidualAllowlistSteps.js:75`
-  registers a step handler for
-  `/^a different file with the same basename at (?:at )?a non-stage path
-  under the backlog$/`, but
-  `specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature`'s
-  Scenario Outline 04 only has two `Examples:` rows ("outside the
-  backlog", "elsewhere in the tree") — no "a non-stage path under the
-  backlog" row exists. The step regex is registered but never matched or
-  executed by any scenario.
 
-  This is dead test code hiding an untested behavior claim: that a
-  basename match under a non-stage `backlog/` path (e.g.
-  `backlog/topics/BL-624-....yaml`, which shares a basename with a
-  grandfathered ticket file but lives under `backlog/topics/`, not
-  `backlog/active|paused|hold/`) is correctly NOT excused by
-  `BACKLOG_STAGE_RE`/the basename allowlist. Checked
-  `onboarderResidualAllowlist.js`'s own `isAllowlisted` (its
-  `BACKLOG_STAGE_RE` requires `^backlog/(active|paused|hold)/`, so a
-  `backlog/topics/...` path should correctly fail the regex and fall
-  through to the exact-path check) and the BL-684 residual-word rename
-  guard's own test suite — neither has any test coverage for this
-  specific case either. The
-  underlying regex logic looks correct by inspection, but the specific
-  scenario meant to prove it (this ticket's own review-04 handler) is
-  provably unreachable, so the claim rides on inspection alone, not on
-  any executed test.
+invariants:
+  - "No step handler registered by bl694ResidualAllowlistSteps.js is unreachable: every registered pattern matches at least one step the BL-694 feature renders."
 
-notes: |
-  BL-723 hardener verdict on BL-694: not-on-par (independent finding; the
-  three prior seats read the acceptance suite as exercising "the real
-  scanUnexpected/isAllowlisted functions across all 5 scenarios" and
-  found only a "minor dead-code nit" — an unexercised step registration —
-  but did not connect that dead code to an actual UNTESTED behavior claim
-  worth a defect, treating it as cosmetic).
-  Linked pilot-process defect: BL-753.
-
-notes: |
-  2026-08-22, specifier: re-verified LIVE at HEAD and given an acceptance
-  contract. bl694ResidualAllowlistSteps.js:75 still registers the "non-stage
-  path under the backlog" pattern, and Outline 04 in
-  specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature
-  still has only the "outside the backlog" and "elsewhere in the tree" rows.
-  The handler is still unreachable. Confirmed as filed.
-
-  Scope note: scenario 03 closes the hole for THIS handler file only. A
-  repo-wide "no unreachable step handler" gate is real and separate work and
-  is deliberately not scoped here — the runner throws only on a step with no
-  handler, never on a handler with no step, so nothing catches this class
-  anywhere else either.
-
-  IR-DRY: the checker flags "the scan reports no unexpected match" and "the
-  scan reports the different file as an unexpected match" as possible
-  synonyms. Reviewed and deliberately kept — they are opposite assertions,
-  and both texts already exist verbatim in BL-694's own feature file.
+required_wiring:
+  - 'specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature::Outline 04 non-stage row::exercises bl694ResidualAllowlistSteps non-stage handler'
+  - 'specs/pipeline/steps/bl752ResidualAllowlistNonStageSteps.js::BL-752 acceptance::pins non-stage backlog/topics basename collision'
+  - 'specs/pipeline/steps/index.js::bl752ResidualAllowlistNonStageSteps::handler registered'
 
 description: |
   ## What
@@ -125,3 +75,28 @@ qa_e2e_procedure: |
   6. Scenario 03 must fail if a handler is added to
      bl694ResidualAllowlistSteps.js with no matching rendered step - add a
      throwaway one, confirm red, remove it.
+
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. `specs/pipeline/steps/bl694ResidualAllowlistSteps.js:75`
+  registers a step handler for the non-stage basename collision case; BL-694
+  Outline 04 originally lacked the matching Examples row.
+
+specifier_decisions: |
+  Re-verified 2026-08-26 per coordinator route: NO new spec work. Acceptance
+  feature minted 2026-08-22; implementation already on main — BL-694 Outline 04
+  includes "a non-stage path under the backlog" row; bl752ResidualAllowlistNonStageSteps
+  wired; QA pass inventory 20260824 (ce14d2de6 lineage). Routed to coordinator
+  for bookkeep/move to done.
+
+notes: |
+  BL-723 hardender verdict on BL-694: not-on-par. Linked pilot-process defect: BL-753.
+
+  2026-08-22 specifier: re-verified LIVE; acceptance contract minted; handler unreachable.
+
+  2026-08-24: full pipeline pass (coder through QA); evidence under backlog/evidence/BL-752-*.
+
+  2026-08-26 specifier: coordinator re-route — confirmed landed on main; bookkeep only.
+
+out_of_scope: |
+  - Repo-wide unreachable step-handler gate (BL-753 scope).
