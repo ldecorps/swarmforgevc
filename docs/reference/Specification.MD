@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-668: after QA lands on `origin/main`,
+`handoffd` runs `post-qa-branch-sweep-sweep!` to fast-forward clean pipeline
+role branches in their `roles.tsv` worktrees to the landed SHA; dirty worktrees,
+`in_process` parcels, and non-ff branches are surfaced with logged skip reasons
+— never merge/rebase/stash/reset. State:
+`.swarmforge/daemon/post-qa-branch-sweep-state.json`. Modules:
+`post_qa_branch_sweep_lib.bb`, `post_qa_branch_sweep.bb`, `handoffd.bb`.
+Acceptance: `specs/features/BL-668-post-qa-deterministic-branch-sweep.feature`.
+How-to: `docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-784: six long-running `*_supervisor.bb`
 loops now emit per-tick `heartbeat` lines via `daemon_log_freshness_pulse_lib.bb`
 and have rows in `daemon_log_freshness.conf` with thresholds derived from each

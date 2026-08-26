@@ -90,6 +90,7 @@ mailbox_intake_dedup_test_runner.bb	standing
 markdown_to_html_test_runner.bb	standing		
 master_checkout_drift_lib_test_runner.bb	standing		
 master_main_reconcile_lib_test_runner.bb	standing		
+post_qa_branch_sweep_lib_test_runner.bb	standing		
 migrate_gherkin_test_runner.bb	standing		
 model_factory_test_runner.bb	standing		
 model_steward_test_runner.bb	standing		

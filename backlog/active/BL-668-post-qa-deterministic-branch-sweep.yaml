@@ -28,10 +28,10 @@ invariants:
   - "Every sweep action and every skip (with its reason) is logged so the merge-up broadcast story stays reconstructable."
 
 required_wiring:
-  - 'swarmforge/scripts/handoffd.bb or post-land chokepoint::post-QA branch sweep invoked after QA lands on main'
-  - 'swarmforge/scripts/post_qa_branch_sweep.sh or *_lib.bb::fast-forward clean role branches to landed commit'
-  - 'swarmforge/scripts/post_qa_branch_sweep_lib.bb::skip predicates::dirty worktree in_process parcel non-ff branch fail safe to surface'
-  - '.swarmforge/roles.tsv::worktree paths::each role checkout resolved from roles.tsv never hardcoded paths'
+  - 'swarmforge/scripts/handoffd.bb::post-qa-branch-sweep-sweep!::post-QA branch sweep invoked after QA lands on main'
+  - 'swarmforge/scripts/post_qa_branch_sweep_lib.bb::sweep!::fast-forward clean role branches to landed commit'
+  - 'swarmforge/scripts/post_qa_branch_sweep_lib.bb::decide-role::dirty worktree in_process parcel non-ff branch fail safe to surface'
+  - 'swarmforge/scripts/handoffd.bb::roles-file::roles.tsv'
   - 'specs/pipeline/steps/index.js::bl668PostQaBranchSweepSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |

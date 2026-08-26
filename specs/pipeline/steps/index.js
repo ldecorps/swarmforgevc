@@ -732,6 +732,7 @@ const DOMAINS = [
   require('./bl1131TicketLandWithoutOperatorAbsorbMergeSteps'),
   require('./bl1144FrequentQaPushRacesOnMainLandSteps'),
   require('./bl1135Bl1131ResidualLiveLandNoOperatorAbsorbSteps'),
+  require('./bl668PostQaBranchSweepSteps'),
   require('./bl1138Bl1135ResidualRematchBookkeepingDeadlockSteps'),
   require('./bl1141Bl1138ResidualRefuseRematchNotExecutedSteps'),
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
