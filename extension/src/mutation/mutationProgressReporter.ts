@@ -16,6 +16,13 @@ import {
 } from './mutationProgress';
 import { defaultProgressFilePath, writeProgressRecord } from './mutationProgressFile';
 import { buildMutationGateHealthVerdict, formatMutationGateHealthVerdict } from './mutationGateHealth';
+import {
+  MutationRunRecord,
+  MutationRunRecordMeta,
+  buildMutationRunRecord,
+  resolveMutationRunMeta,
+} from './mutationRunTelemetry';
+import { appendMutationRunRecord, defaultMutationRunsLogPath } from './mutationRunTelemetryStore';
 
 const RUN_PLAN = 'Run';
 
@@ -29,6 +36,10 @@ export interface MutationProgressReporterDeps {
   // Injectable so tests never touch the real process.stderr; defaults to it
   // in production (defaultSurfaceGateHealth below).
   surface?: (message: string) => void;
+  // BL-593: durable completion telemetry — append-only jsonl, injectable in tests.
+  telemetryPath?: string;
+  appendTelemetry?: (filePath: string, record: MutationRunRecord) => void;
+  runMeta?: MutationRunRecordMeta;
 }
 
 // role has its own two-hop fallback (explicit dep, then env var, then a
@@ -46,6 +57,9 @@ export interface ResolvedReporterConfig {
   write: (filePath: string, record: ReturnType<typeof buildProgressRecord>) => void;
   mutateFile: string | undefined;
   surface: (message: string) => void;
+  telemetryPath: string;
+  appendTelemetry: (filePath: string, record: MutationRunRecord) => void;
+  runMeta: MutationRunRecordMeta;
 }
 
 // BL-446: default surfacing writes to stderr (visible in a live `stryker
@@ -73,16 +87,23 @@ export function resolveReporterConfig(
     write: deps.write ?? writeProgressRecord,
     mutateFile: deps.mutateFile ?? env.STRYKER_MUTATE_FILE,
     surface: deps.surface ?? defaultSurfaceGateHealth,
+    telemetryPath: deps.telemetryPath ?? defaultMutationRunsLogPath(repoRoot),
+    appendTelemetry: deps.appendTelemetry ?? appendMutationRunRecord,
+    runMeta: deps.runMeta ?? resolveMutationRunMeta(env, role),
   };
 }
 
 export class MutationProgressReporter implements Reporter {
   private state: MutationProgressState | undefined;
+  private telemetryAppended = false;
   private readonly now: () => number;
   private readonly filePath: string;
   private readonly write: (filePath: string, record: ReturnType<typeof buildProgressRecord>) => void;
   private readonly mutateFile: string | undefined;
   private readonly surface: (message: string) => void;
+  private readonly telemetryPath: string;
+  private readonly appendTelemetry: (filePath: string, record: MutationRunRecord) => void;
+  private readonly runMeta: MutationRunRecordMeta;
 
   constructor(deps: MutationProgressReporterDeps = {}) {
     // Compiled to out/mutation/mutationProgressReporter.js: out -> extension -> repo root.
@@ -93,6 +114,9 @@ export class MutationProgressReporter implements Reporter {
     this.write = config.write;
     this.mutateFile = config.mutateFile;
     this.surface = config.surface;
+    this.telemetryPath = config.telemetryPath;
+    this.appendTelemetry = config.appendTelemetry;
+    this.runMeta = config.runMeta;
   }
 
   public onMutationTestingPlanReady(event: MutationTestingPlanReadyEvent): void {
@@ -114,6 +138,7 @@ export class MutationProgressReporter implements Reporter {
       return;
     }
     this.flush(this.state, 'done');
+    this.appendRunTelemetry(this.state, false);
     // BL-446: surface a non-healthy gate (zero-kill-suspect or no-mutants) at
     // completion - a healthy run stays quiet, since Stryker's own clear-text
     // reporter already reports the normal killed/survived counts and a
@@ -122,6 +147,30 @@ export class MutationProgressReporter implements Reporter {
     if (verdict.health !== 'healthy') {
       this.surface(formatMutationGateHealthVerdict(verdict));
     }
+  }
+
+  public wrapUp(): void {
+    if (!this.state || this.telemetryAppended) {
+      return;
+    }
+    // BL-593: killed/aborted before onMutationTestReportReady — never a false
+    // completed full-run line; partial stats with aborted:true only.
+    this.appendRunTelemetry(this.state, true);
+  }
+
+  private appendRunTelemetry(state: MutationProgressState, aborted: boolean): void {
+    if (this.telemetryAppended) {
+      return;
+    }
+    const scope = this.mutateFile ?? this.runMeta.scope;
+    const record = buildMutationRunRecord(
+      state,
+      this.now(),
+      { ...this.runMeta, scope },
+      aborted ? { aborted: true } : {}
+    );
+    this.appendTelemetry(this.telemetryPath, record);
+    this.telemetryAppended = true;
   }
 
   // Takes the already-narrowed state as an explicit parameter rather than

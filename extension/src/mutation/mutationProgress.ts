@@ -16,6 +16,8 @@ export interface MutationProgressState {
   killed: number;
   survived: number;
   timedOut: number;
+  noCoverage: number;
+  ignored: number;
   startedAtMs: number;
 }
 
@@ -38,7 +40,7 @@ export interface MutationProgressRecord {
 }
 
 export function initMutationProgressState(total: number, startedAtMs: number): MutationProgressState {
-  return { total, tested: 0, killed: 0, survived: 0, timedOut: 0, startedAtMs };
+  return { total, tested: 0, killed: 0, survived: 0, timedOut: 0, noCoverage: 0, ignored: 0, startedAtMs };
 }
 
 export function recordMutantTested(state: MutationProgressState, status: string): MutationProgressState {
@@ -48,6 +50,8 @@ export function recordMutantTested(state: MutationProgressState, status: string)
     killed: state.killed + (status === 'Killed' ? 1 : 0),
     survived: state.survived + (status === 'Survived' ? 1 : 0),
     timedOut: state.timedOut + (status === 'Timeout' ? 1 : 0),
+    noCoverage: state.noCoverage + (status === 'NoCoverage' ? 1 : 0),
+    ignored: state.ignored + (status === 'Ignored' ? 1 : 0),
   };
 }
 

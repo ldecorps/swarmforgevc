@@ -611,6 +611,7 @@ const DOMAINS = [
   require('./bl598TrendFalseAlarmRateSteps'),
   require('./bl965HealWrapperTempCleanupSteps'),
   require('./bl591EpicEtaSteps'),
+  require('./bl593MutationRunDurationTelemetrySteps'),
   require('./bl971PropertyLaneTimeoutGreenSteps'),
   require('./bl978TrailIndexSteps'),
   require('./bl977SupervisorProgressSteps'),
