@@ -9,7 +9,7 @@ severity: low
 priority: 178
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 source: |
   Human, 2026-07-23, after asking "how long did the last few mutation testings
