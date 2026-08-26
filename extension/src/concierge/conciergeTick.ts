@@ -506,10 +506,16 @@ function buildTicketMetaLookup(
 function recentlyClosedItems(
   folders: BacklogFoldersSnapshot,
   doneClosedAtMs: Record<string, number>
-): { id: string; title?: string; filename: string }[] {
+): { id: string; title?: string; filename: string; closedAtMs?: number }[] {
   return folders.done
     .filter((item): item is BacklogFolderItem & { filename: string } => item.filename !== undefined)
-    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity));
+    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity))
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      filename: item.filename,
+      ...(doneClosedAtMs[item.id] !== undefined ? { closedAtMs: doneClosedAtMs[item.id] } : {}),
+    }));
 }
 
 // BL-465 bounce: stamps this tick's OWN observed instant onto every ticket
