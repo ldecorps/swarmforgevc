@@ -162,6 +162,7 @@ import {
   writeLastStaleApprovalEmailMs,
 } from '../notify/staleApprovalEscalation';
 import { sendResendEmail } from '../notify/resendClient';
+import { runPendingApprovalAnnouncementHook } from '../concierge/pendingApprovalsAnnouncementHook';
 import { ConciergeTickScheduler, DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS } from '../concierge/conciergeTickScheduler';
 import { consumeConciergeTickRequest } from '../concierge/conciergeTickRequest';
 import {
@@ -3450,6 +3451,21 @@ export async function main(): Promise<void> {
   // above (an inbound reply must never reach an unbound Approvals topic
   // and be misrouted as an ordinary support-thread post).
   await ensureApprovalsTopic(targetPath, botToken, chatId);
+
+  // BL-649: pending approval announcement — POST doorbell after Approvals topic bind.
+  await runPendingApprovalAnnouncementHook(
+    targetPath,
+    {
+      ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId),
+      postMessage: async (topicId, text) => {
+        const sent = await sendTelegramMessageWithRateLimitRetry(botToken, chatId, text, undefined, undefined, topicId);
+        return sent.success ? sent.messageId : undefined;
+      },
+    },
+    Date.now(),
+    readTickState,
+    writeTickState
+  );
 
   // BL-450: bind the standing Recert topic BEFORE any loop starts polling
   // too - same ordering rationale as ensureOperatorTopic/ensureApprovalsTopic

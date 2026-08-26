@@ -42,6 +42,7 @@ export interface DashboardTicketSummary {
 export interface NeedsApprovalEntry {
   id: string;
   title: string;
+  approvalContext?: string;
 }
 
 export interface BacklogDashboardData {
@@ -152,13 +153,15 @@ function toDashboardSummary(
   return summary;
 }
 
-// BL-251: live-only (active + paused, never done/) - matches the ticket's
-// own "not applicable" reading of absent/approved, and the constraint that
-// the needs-approval list is exactly the LIVE items still pending review.
-function computeNeedsApproval(active: BacklogItem[], paused: BacklogItem[]): NeedsApprovalEntry[] {
+// BL-251 / BL-649: live-only (active + paused) human_approval: pending tickets.
+export function computeNeedsApproval(active: BacklogItem[], paused: BacklogItem[]): NeedsApprovalEntry[] {
   return [...active, ...paused]
     .filter((item) => item.humanApproval === 'pending')
-    .map((item) => ({ id: item.id, title: item.title }));
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      approvalContext: item.approvalContext,
+    }));
 }
 
 // BL-263 count-excludes-done-01: "not done" = every live ticket - active and
