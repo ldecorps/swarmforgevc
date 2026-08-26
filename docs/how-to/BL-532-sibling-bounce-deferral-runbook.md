@@ -192,6 +192,22 @@ Deferred tickets may sit in the pipeline longer than bounced tickets because:
 
 If a deferred ticket sits for an unusual time, check whether the blocking ticket is actually progressing. If the blocker is stalled, the deferred ticket will remain stalled until the blocker moves.
 
+## Landing clean siblings while a blocker reworks (BL-588)
+
+BL-532 stops re-queues but does not let a clean sibling **land** while a
+defective sibling in the same batch commit reworks. [BL-588](BL-588-isolate-batch-recovery-trees.md)
+implements approach 3:
+
+- Re-forward the clean sibling **unchanged** on its original batch commit
+  (`batch-recovery.js prepare-re-forward`).
+- Rework the defective ticket from the last clean ancestor on an isolated
+  branch (`batch-recovery.js prepare-rework`).
+- QA lands the clean sibling only by merging a verified whole tree — never
+  cherry-pick or rebase-to-land.
+
+Use BL-532 deferral records as input; clear deferrals with `qa-sibling-check.js
+clear` after the clean sibling lands or the blocker closes.
+
 ## Stranded Deferrals (BL-861)
 
 Nothing sweeps the deferral store on its own — no daemon, watchdog, or chase
