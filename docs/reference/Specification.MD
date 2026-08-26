@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1162 rematch: symmetric swarmforge cron
+lifecycle — `./start-swarm.sh` ensures freshness (BL-675/783) plus legacy
+operator schedule lines when `continuous-shifts.json` is configured;
+`reconcile_shift_schedule_crontab.bb` does **not** render BL-660 `swarm_shift`
+until that ticket lands. `./stop-swarm.sh` removes **all** registered lines for
+this root via `swarmforge_cron_lib.sh` / `uninstall_swarmforge_crons.sh`.
+Cron uninstall runs only after successful full-stack stop. Acceptance:
+`specs/features/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.feature`.
+How-to:
+`docs/how-to/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-588: batch recovery approach 3 — when a
 batch commit partially fails, clean siblings re-forward unchanged on their
 original commit for whole-tree re-verification while the defective ticket
