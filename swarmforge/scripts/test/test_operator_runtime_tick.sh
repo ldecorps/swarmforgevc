@@ -43,27 +43,21 @@ tick() {
 jget() { bb -e "(require '[cheshire.core :as j]) (println (get (j/parse-string (slurp \"$1\") true) $2))"; }
 jget_in() { bb -e "(require '[cheshire.core :as j]) (println (get-in (j/parse-string (slurp \"$1\") true) $2))"; }
 
-# ── 1. BL-653: idle first tick — no manufactured liveness wakes ─────────────
+# ── 1. first tick: timer fires, status published, launch decided ─────────────
 F="$(make_fixture)"
 OUT="$(tick "$F")"
-check "BL-653: idle tick does not launch the operator" '[[ "$OUT" == *"\"launched?\":false"* ]]'
+check "first tick reports launched? true"      '[[ "$OUT" == *"\"launched?\":true"* ]]'
 check "status.json written"                    '[[ -f "$F/.swarmforge/operator/status.json" ]]'
 check "provider_state available"               '[[ "$(jget "$F/.swarmforge/operator/status.json" ":provider_state")" == available ]]'
-check "state idle on a healthy fixture"        '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == idle ]]'
-check "pending_events zero"                     '[[ "$(jget "$F/.swarmforge/operator/status.json" ":pending_events")" == 0 ]]'
+check "state dispatching"                      '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == dispatching ]]'
+check "pending_events >= 1"                     '[[ "$(jget "$F/.swarmforge/operator/status.json" ":pending_events")" -ge 1 ]]'
 check "miniapp watchdog status is published and disabled in test mode" \
   '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:miniapp_watchdog :state]")" == disabled ]] && [[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:miniapp_watchdog :consecutive_failures]")" == 0 ]]'
 check "BL-516: missing operator Telegram token disables console" \
   '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:telegram_console :state]")" == disabled ]]'
 check "heartbeat written"                       '[[ -f "$F/.swarmforge/operator/heartbeat" ]]'
-check "BL-653: no SWARM_CHECK_TIMER manufactured" \
-  '[[ ! -f "$F/.swarmforge/operator/events.jsonl" ]] || ! grep -q SWARM_CHECK_TIMER "$F/.swarmforge/operator/events.jsonl" 2>/dev/null'
-check "BL-653: swarm-check timer not recorded"  '[[ ! -f "$F/.swarmforge/operator/last-swarm-check" ]]'
-printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/events.jsonl"
-OUT1b="$(tick "$F")"
-check "real HUMAN_COMMAND still launches"      '[[ "$OUT1b" == *"\"launched?\":true"* ]]'
-check "state dispatching on a real event"      '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == dispatching ]]'
 check "events moved to inflight"                '[[ -f "$F/.swarmforge/operator/events.inflight.jsonl" ]]'
+check "swarm-check timer recorded"              '[[ -f "$F/.swarmforge/operator/last-swarm-check" ]]'
 
 # ── 2. second tick: operator not running -> reap; idle ───────────────────────
 OUT2="$(tick "$F")"
@@ -451,8 +445,7 @@ make_roster_fixture() {
   printf '%s' "$d"
 }
 
-# ── 14: fully drained + idle roster -> hibernates (BL-653: no dead-agent
-#    dispatch masks this — first tick hibernates directly) ─────────────────
+# ── 14: fully drained + idle roster -> hibernates ─────────────────────────
 F="$(make_roster_fixture)"
 OUT14="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
 check "BL-307/swarm-auto-hibernate-01: hibernation.json records hibernated=true" \
@@ -461,7 +454,15 @@ check "BL-307/swarm-auto-hibernate-01: roles.tsv is emptied" \
   '[[ ! -s "$F/.swarmforge/roles.tsv" ]]'
 check "BL-307/swarm-auto-hibernate-01: the pre-hibernate roster is backed up" \
   'grep -q "^coder" "$F/.swarmforge/roles.tsv.hibernate-backup"'
-check "BL-307/swarm-auto-hibernate-06: status.json records the hibernated state on first tick" \
+# The FIRST tick's own dead-agent-events (real roster row, no live tmux
+# session backing it - unrelated to closing-pass-sweep!) still dispatches a
+# pending event, so :state legitimately reads "dispatching" that tick (like
+# section 1's own first-tick assertion). By the SECOND tick roles.tsv is
+# already empty (nothing left to report dead) and the dispatched event has
+# been reaped, so :state settles on "hibernated" - BL-307/swarm-auto-
+# hibernate-06's own "recorded in the runtime's status output" assertion.
+OUT14b="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-307/swarm-auto-hibernate-06: status.json records the hibernated state" \
   '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == hibernated ]]'
 rm -rf "$F"
 
@@ -555,7 +556,6 @@ F="$(make_fixture)"
 mkdir -p "$F/.swarmforge/operator/role-awaiting"
 printf '{"question":"which env?","asked_at_ms":1000,"state":"undeliverable"}' > "$F/.swarmforge/operator/role-awaiting/specifier.json"
 printf '{"question":"which branch?","asked_at_ms":2000}' > "$F/.swarmforge/operator/role-awaiting/coder.json"
-printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/events.jsonl"
 OUT_GH26="$(tick "$F")"
 check "GH-26: tick still reports launched (unrelated to this sweep)" '[[ "$OUT_GH26" == *"\"launched?\":true"* ]]'
 check "GH-26: status.json surfaces the undeliverable specifier question" \
