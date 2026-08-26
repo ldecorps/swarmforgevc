@@ -431,3 +431,26 @@ test('property (BL-1009): swarmDisplayBadge is total over arbitrary wire names',
     { numRuns: 100 }
   );
 });
+
+// BL-1155: the phone header must stay one line with intact QA for every
+// realistic id gutter width — not only the 3-digit hand-picked fixture.
+test('property (BL-1155): stage header is one line with intact QA for any gutter 3-6', () => {
+  fc.assert(
+    fc.property(fc.integer({ min: 3, max: 6 }), (gutter) => {
+      const id = `BL-${10 ** (gutter - 1)}`;
+      const data = computePipelineBoard(
+        { QA: [id] },
+        [],
+        { [id]: { title: 't', filename: `${id}.yaml`, location: 'active' } },
+        { activeIds: [id] }
+      );
+      const header = renderPipelineBoardGridOnly(data).split('\n')[0];
+      assert.ok(!header.includes('\n'), 'header must be one line');
+      assert.ok(header.includes('QA'), 'header must contain intact QA');
+      assert.ok(!header.endsWith('Q'), 'QA must not split with trailing Q');
+      assert.equal(header.length, computePipelineBoardGridLineWidth(gutter));
+      assert.ok(header.length <= PIPELINE_BOARD_GRID_MAX_WIDTH);
+    }),
+    { numRuns: 100 }
+  );
+});
