@@ -33,7 +33,6 @@ expects them, and are not migrated or rewritten here.
 - [Stuck-Role Escalation Email — Understanding the Alert](how-to/BL-349-stuck-role-escalation-email.md)
 - [Front-desk give-up escalation: one email per episode](how-to/BL-1151-front-desk-giveup-one-email-per-episode.md) — BL-1151: arming survives cooldown re-arm until healthy grace; no ~15min repeat mail
 - [Front-desk build-stale restarts must not burn the crash give-up budget](how-to/BL-1154-build-stale-restarts-not-crash-giveup-budget.md) — BL-1154: voluntary stale-build rolls preserve `:attempts`; true crash loops unchanged
-- [Front-desk bridge child survives without a crash give-up loop](how-to/BL-1159-bridge-child-survives-without-crash-giveup-loop.md) — BL-1159: stop defers when front desk owns the stack; miniapp recovery re-arms instead of SIGTERM after bind (BL-1158/1154/1151 preserved)
 - [Driving one ticket through every gate with the swarm stopped (the expeditor)](how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md)
 - [Expeditor adopts (or refuses) a run ticket it cannot close](how-to/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.md) — no silent success with the yaml still in paused/hold (BL-1023).
 - [Ambulance mode — running one ticket exclusively while the swarm stays live](how-to/BL-655-ambulance-mode-the-hold.md)
