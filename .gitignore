@@ -2,6 +2,8 @@
 .env
 .claude/
 .swarmforge/
+# BL-593: append-only machine-local mutation run telemetry (same posture as context-events.jsonl).
+.swarmforge/telemetry/mutation-runs.jsonl
 swarmforge/scripts/.bin/
 .worktrees/
 /tmp/
