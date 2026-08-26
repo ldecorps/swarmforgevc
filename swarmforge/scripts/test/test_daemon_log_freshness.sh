@@ -1047,6 +1047,36 @@ check "BL-1110: cool-off escalates instead of unbounded restart flap" \
   'grep -q "action=escalate" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && { ! test -f "$ROOT/kills.log" || ! grep -q . "$ROOT/kills.log"; }'
 pass "BL-1110: pid-claim/cool-off path does not unbounded-flap"
 
+# ── BL-784: registry guard ───────────────────────────────────────────────────
+GUARD="$SRC/daemon_log_freshness_registry_guard.sh"
+REQUIRED="$SRC/daemon_log_freshness_required.conf"
+
+check "BL-784: registry guard passes on shipped fixture conf" \
+  'FRESHNESS_CONF="$CONF" FRESHNESS_REQUIRED="$REQUIRED" /bin/sh "$GUARD"'
+
+TMP_REQ=$(mktemp)
+printf '%s\n' handoffd babysitterd fixture_unregistered_daemon > "$TMP_REQ"
+GUARD_FAIL_OUT=$(FRESHNESS_CONF="$CONF" FRESHNESS_REQUIRED="$TMP_REQ" /bin/sh "$GUARD" 2>&1 || true)
+rm -f "$TMP_REQ"
+check "BL-784: guard fails when required daemon lacks conf row" \
+  'grep -q "fixture_unregistered_daemon" <<< "$GUARD_FAIL_OUT"'
+
+# ── BL-784: quiet supervisor tick heartbeats, healthy process not restarted ─
+ROOT="$(make_root)"
+NOW=1700000000
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd-supervisor.log"
+sleep 120 &
+FAKE_SUP_PID=$!
+echo "$FAKE_SUP_PID" > "$ROOT/.swarmforge/daemon/handoffd-supervisor.pid"
+run_checker "$ROOT" "$NOW"
+kill "$FAKE_SUP_PID" 2>/dev/null || true
+check "BL-784: fresh handoffd_supervisor heartbeat is not restarted" '[[ ! -f "$ROOT/kills.log" ]]'
+pass "BL-784: healthy quiet supervisor is not restarted by freshness checker"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-675 daemon-log-freshness: ALL CHECKS PASSED"
 else
