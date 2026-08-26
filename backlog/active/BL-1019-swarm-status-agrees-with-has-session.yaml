@@ -89,3 +89,5 @@ notes: |
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-24, by: QA, blamed: coder, class: behavior, commit: d9f305dc2b, evidence: backlog/evidence/BL-1019-qa-bounce-20260824.md }
+
+assigned_to: coder
