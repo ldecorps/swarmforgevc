@@ -95,24 +95,7 @@ description: |
   asked for "a poll" meaning "let me pick an option" rather than "let me vote".
   The specifier should confirm that reading rather than assume it.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum:
-
-  1. A ticket declaring ruling options renders one tappable choice per option
-     in its approval ask, alongside (or replacing) the default verbs.
-  2. Tapping a choice records the chosen option into the ticket durably and
-     machine-readably, and the ask repaints showing WHICH option was chosen -
-     not merely "approved".
-  3. A ticket with NO ruling options renders exactly today's five buttons and
-     behaves byte-identically - the regression guard proving this is additive.
-  4. An option label too long for the 64-byte callback_data budget is handled
-     by index indirection, never truncated into an ambiguous id.
-  5. A stale tap on an already-ruled ask is idempotent and says so, matching
-     the existing `answerIfAskAlreadyClosed` / BL-484 posture.
-
-  QA verifies against the live bot, not fixtures only - and note that until
-  BL-582's second-poller cause is resolved, a tap may be consumed by the
-  competing instance, so a failed live test must be attributed carefully.
+acceptance: specs/features/BL-589-approval-ask-carries-ruling-options.feature
 
 out_of_scope: |
   - Fixing the tap-delivery failure itself (BL-582). This ticket assumes taps
@@ -122,3 +105,14 @@ out_of_scope: |
     typed reply.
   - Changing the Amend/Reject/Expedite verbs or the More expansion.
   - Retrofitting existing tickets with ruling options.
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl589ApprovalAskCarriesRulingOptionsSteps::acceptance handler registered so the runner executes every scenario'
+
+qa_e2e_procedure: >
+  (1) Declare ruling_options on a pending ticket; confirm one button per option
+  above default verbs in Approvals. (2) Tap an option; confirm human_ruling in
+  YAML and Ruled footer on the ask. (3) Ticket without ruling_options — five
+  default buttons unchanged. (4) Long label uses rule:<id>:<index> callback.
+  (5) Stale tap on ruled ask is idempotent. Attribute live tap failures to
+  BL-582 second-poller until resolved.
