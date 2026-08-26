@@ -1,5 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1154: voluntary front-desk build-stale
+restarts no longer consume the crash give-up attempt budget — healthy children
+rolled onto a fresh Node build use a separate `"stale-build"` path in
+`front_desk_supervisor_lib.bb` that preserves `:attempts` via
+`voluntary-build-stale-started-entry`; crash/stall/poll-stale paths unchanged and
+still reach `gave-up` at `FRONT_DESK_MAX_ATTEMPTS`. Complements BL-1151
+(one email per episode). Acceptance:
+`specs/features/BL-1154-build-stale-restarts-not-crash-giveup-budget.feature`.
+How-to:
+`docs/how-to/BL-1154-build-stale-restarts-not-crash-giveup-budget.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1046: Live Screen role grid tiles
 (`/resident-spy`, `residentSpyUiHtml.ts`, Mini App + Bubble Live) again name
 the ticket a seat holds — ticket id, slug, compact claim age, and batch `+N`
