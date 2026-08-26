@@ -36,3 +36,11 @@ Acceptance:
 `specs/features/BL-748-routing-skip-recording-failure-never-withholds-delivery.feature`
 
 Related: `docs/how-to/BL-623-routing-skip-trail-records-actual-hop.md`.
+
+## Review process (BL-749)
+
+The cleaner/hardener prompts and `/pilot`'s `composePilotExpeditorPrompt` now
+require **call-site tracing before nit-downgrade**: a gap against the ticket's
+own explicit guardrail claim is never a non-blocking nit until the CALL SITE
+(not only the function in isolation) has been read. That is how BL-623's
+`log-routing-skip!` "nit" was upgraded to this defect.

@@ -96,6 +96,17 @@ You are the cleaner.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
+## A ticket's own guardrail claim is never a nit until the call site is read (BL-749)
+- When you notice a missing error-handling or other guard that the ticket's OWN
+  text explicitly promises (a guardrail claim — e.g. "a record-write failure
+  must not block the send"), do **not** downgrade it to a non-blocking nit until
+  you have read the CALL SITE (not only the function in isolation) and confirmed
+  whether the guardrail is actually upheld downstream.
+- A gap against an explicit ticket guardrail is a defect candidate until
+  call-site consequence is ruled out. BL-623's `log-routing-skip!` looked like
+  a nit in isolation; at the `-main` call site it sat before `try-sync-deliver!`
+  in the same `let` and blocked real-time delivery on write failure (BL-748).
+
 ## Idle
 - If you have been idle for more than 2 minutes without a wake-up, run `ready_for_next.sh`. It checks in_process FIRST — if you have in_process work it will resume it. Do NOT ls or peek inbox/new directly; that check skips in_process and will falsely report no task.
 
