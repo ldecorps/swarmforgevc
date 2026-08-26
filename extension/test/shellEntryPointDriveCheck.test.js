@@ -89,6 +89,18 @@ test('assessShellEntryPointDrive refuses when named entry-point is never invoked
   assert.equal(result.miss.entryPoint, 'stop-swarm.sh');
 });
 
+test('assessShellEntryPointDrive fails open (checked false) when inputs are unreadable', () => {
+  assert.deepEqual(assessShellEntryPointDrive({ ticketYaml: undefined, shellTests: [] }), {
+    checked: false,
+  });
+  assert.deepEqual(assessShellEntryPointDrive({ ticketYaml: 'description: stop-swarm.sh\n', shellTests: undefined }), {
+    checked: false,
+  });
+  assert.deepEqual(assessShellEntryPointDrive({ ticketYaml: undefined, shellTests: undefined }), {
+    checked: false,
+  });
+});
+
 test('assessShellEntryPointDrive is a no-op when no shell tests touched', () => {
   const result = assessShellEntryPointDrive({
     ticketYaml: 'description: drives stop-swarm.sh\n',
