@@ -259,6 +259,10 @@ run, and no gate ever noticed.
   `extension/test/shellEntryPointDriveCheck.property.test.js`
 - Shell entry-point drive acceptance:
   `specs/features/BL-747-pilot-shell-test-drives-named-entry-point.feature`
+- Unreachable step-handler gate (BL-753), pure assess helpers:
+  `extension/src/tools/unreachableStepHandlerCheck.ts`
+- Unreachable step-handler how-to:
+  [BL-753](BL-753-pilot-unreachable-step-handler-untested-behavior.md)
 
 ## Out of scope
 
