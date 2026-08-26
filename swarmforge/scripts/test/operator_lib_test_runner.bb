@@ -425,6 +425,24 @@
          {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil :gave-up? true}
          (operator-lib/next-starvation-alarm-state :transient-failure {:delivery-attempts 4} retry-cfg 200000))
 
+;; ── give-up-escalation-alarm-when-not-gave-up (BL-1151) ─────────────────────
+
+(assert= "BL-1151: re-arm without healthy grace keeps armed after a delivered email"
+         {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil}
+         (operator-lib/give-up-escalation-alarm-when-not-gave-up
+          {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil}
+          false))
+(assert= "BL-1151: healthy grace after email disarms for a new episode"
+         {:armed? false :delivery-attempts 0 :last-attempt-at-ms nil}
+         (operator-lib/give-up-escalation-alarm-when-not-gave-up
+          {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil}
+          true))
+(assert= "BL-1151: not armed and not gave-up resets (no episode yet)"
+         {:armed? false :delivery-attempts 0 :last-attempt-at-ms nil}
+         (operator-lib/give-up-escalation-alarm-when-not-gave-up
+          {:armed? false :delivery-attempts 2 :last-attempt-at-ms 100000}
+          false))
+
 ;; ── resolve-provider-state (pure) — BL-305 fail-open cooldown ────────────
 ;; A fixed instant, never the real clock (de0991e). now = 6pm local (UTC,
 ;; tz-offset 0) on day 0 = 18*3600000 = 64800000 ms.

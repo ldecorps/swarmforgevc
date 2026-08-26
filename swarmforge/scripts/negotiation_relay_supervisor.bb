@@ -225,7 +225,10 @@
         next-alarm
         (cond
           (not given-up?)
-          {:armed? false :delivery-attempts 0 :last-attempt-at-ms nil}
+          (operator-lib/give-up-escalation-alarm-when-not-gave-up
+           prev-alarm
+           (front-desk-supervisor-lib/healthy-long-enough?
+            (:started-at-ms entry) now restart-config))
 
           (not (operator-lib/starvation-alarm-should-attempt?
                 {:starving? true :armed? (boolean (:armed? prev-alarm))
