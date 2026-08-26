@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { test } = require('node:test');
 const { JSDOM } = require('jsdom');
 const { getResidentSpyUiHtml } = require('../out/bridge/residentSpyUiHtml');
 
@@ -94,11 +95,17 @@ test('BL-929: the top ticket strip is not shown under a standing full pack, even
   await flush();
   const { document } = dom.window;
   assert.equal(document.getElementById('ticket-strip').hidden, true);
-  // BL-1046: held tickets surface on the grid tile from the same payload
-  // fields as fullscreen Expand; BL-929 still forbids the global top strip
-  // under a standing full pack.
+  // BL-994 locked human decision 2 supersedes the tile-level half of this
+  // assertion: grid tiles carry role name + Expand ONLY, so a held ticket
+  // no longer surfaces in the tile head - it surfaces in the tile's
+  // fullscreen Expand instead (spec amendment fabecba4c retargeted BL-929
+  // scenario 03 the same way). The BL-929 concern this test protects - a
+  // standing pack shows no top strip yet the operator can still find the
+  // ticket - is preserved through that Expand path, asserted POSITIVELY
+  // below (bounce D2: the negative half alone left the relocated contract
+  // asserted nowhere in the unit lane).
   const documenterHead = document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head');
-  assert.match(documenterHead.innerHTML, /BL-640/);
+  assert.doesNotMatch(documenterHead.innerHTML, /BL-640/);
   assert.match(documenterHead.innerHTML, /Documenter/);
   document.querySelector('.pane-col[data-pane-id="documenter"]').dispatchEvent(
     new dom.window.MouseEvent('click', { bubbles: true })
@@ -248,83 +255,35 @@ test('BL-609: the HTML shell never references browser storage', () => {
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
 });
 
-test('BL-1046: grid tile shows held ticket id, slug, and compact claim age from payload', async () => {
-  const claimAt = Date.now() - 32 * 60 * 1000;
-  const dom = renderScreen(() =>
-    residentPaneResponse({
-      available: true,
-      monoRouterLayout: false,
-      panes: [
-        {
-          id: 'hardender',
-          label: 'Hardender',
-          pane: pane({
-            roleLabel: 'Hardender',
-            ticketId: 'BL-1035',
-            ticketTitle: 'a respawned front desk bot is declared stalled two seconds after it starts',
-            claimEnteredAtMs: claimAt,
-          }),
-        },
-      ],
-    })
+test('BL-1153: Live Screen pane font size survives a full Mini App reload', async () => {
+  const fontStore = { 'live-screen': 16 };
+  const dom = renderScreen(
+    () =>
+      residentPaneResponse({
+        available: true,
+        monoRouterLayout: true,
+        panes: [{ id: 'resident', label: 'Resident', pane: pane({ paneText: 'hello pane' }) }],
+      }),
+    fontStore
   );
   await flush();
-  const col = dom.window.document.querySelector('.pane-col[data-pane-id="hardender"]');
-  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-1035');
-  assert.match(col.querySelector('.pane-grid-slug')?.textContent ?? '', /respawned front desk/);
-  assert.equal(col.querySelector('.pane-grid-age')?.textContent, '32m');
-  assert.equal(col.querySelector('.pane-kind')?.textContent, 'Hardender');
+  assert.equal(dom.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '16px');
   dom.window.close();
-});
 
-test('BL-1046: a single held parcel does not show a batch +N badge', async () => {
-  const dom = renderScreen(() =>
-    residentPaneResponse({
-      available: true,
-      monoRouterLayout: false,
-      panes: [
-        {
-          id: 'qa',
-          label: 'Qa',
-          pane: pane({
-            roleLabel: 'Qa',
-            ticketId: 'BL-1041',
-            ticketTitle: 'Ticket BL-1041',
-            claimEnteredAtMs: Date.now() - 5 * 60 * 1000,
-            heldParcelCount: 1,
-          }),
-        },
-      ],
-    })
+  const reloaded = renderScreen(
+    () =>
+      residentPaneResponse({
+        available: true,
+        monoRouterLayout: true,
+        panes: [{ id: 'resident', label: 'Resident', pane: pane({ paneText: 'hello pane' }) }],
+      }),
+    fontStore
   );
   await flush();
-  const col = dom.window.document.querySelector('.pane-col[data-pane-id="QA"]');
-  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-1041');
-  assert.equal(col.querySelector('.pane-grid-more'), null);
-  dom.window.close();
-});
-
-test('BL-1046: grid tile omits slug when ticket title is absent', async () => {
-  const dom = renderScreen(() =>
-    residentPaneResponse({
-      available: true,
-      monoRouterLayout: false,
-      panes: [
-        {
-          id: 'coder',
-          label: 'Coder',
-          pane: pane({
-            roleLabel: 'Coder',
-            ticketId: 'BL-999',
-            claimEnteredAtMs: Date.now() - 10 * 60 * 1000,
-          }),
-        },
-      ],
-    })
+  assert.equal(reloaded.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '16px');
+  assert.notEqual(
+    reloaded.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(),
+    '13px'
   );
-  await flush();
-  const col = dom.window.document.querySelector('.pane-col[data-pane-id="coder"]');
-  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-999');
-  assert.equal(col.querySelector('.pane-grid-slug'), null);
-  dom.window.close();
+  reloaded.window.close();
 });
