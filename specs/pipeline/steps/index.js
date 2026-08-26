@@ -393,6 +393,7 @@ const DOMAINS = [
   require('./bl735PilotAcceptanceExecutionSteps'),
   require('./bl737PilotCrossFileDuplicationGateSteps'),
   require('./bl1147ProbeLegacyTopicAdoptionSteps'),
+  require('./bl1150OutageFailoverCliLoadFileSafeSteps'),
   require('./bl764FrontDeskEatsHostBridgeUpdatesSteps'),
   require('./bl729CommitClaimCheckSteps'),
   require('./bl680ConsolidationAuthoritySteps'),
