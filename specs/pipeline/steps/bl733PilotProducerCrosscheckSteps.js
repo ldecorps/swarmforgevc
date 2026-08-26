@@ -58,6 +58,7 @@ function exhaustiveCrosscheckMetadata(repoRoot) {
 
 function baseDeps(ctx) {
   ensureCtx(ctx);
+  let executedFeaturePath;
   return {
     readAcceptanceDeclaration: () => ctx.acceptanceDeclaration,
     readRequiredWiring: () => ctx.requiredWiring,
@@ -79,6 +80,10 @@ function baseDeps(ctx) {
       }
       return result;
     },
+    recordAcceptanceExecution: (featureFilePath) => {
+      executedFeaturePath = featureFilePath;
+    },
+    readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
