@@ -71,6 +71,10 @@ import {
   UNTESTED_PARSER_BRANCH_REFUSAL,
   MultiBranchParserCoverageOutcome,
 } from './multiBranchParserCoverageCheck';
+import {
+  PILOT_HAT_PROMPT_MISSING_REFUSAL,
+  PerHatRolePromptEvidenceOutcome,
+} from './perHatRolePromptEvidenceCheck';
 
 export {
   assessProducerCrosscheck,
@@ -123,6 +127,15 @@ export {
   MultiBranchParser,
 } from './multiBranchParserCoverageCheck';
 
+export {
+  PILOT_HAT_PROMPT_MISSING_REFUSAL,
+  assessPerHatRolePromptEvidence,
+  verdictHasRolePromptEvidence,
+  PerHatRolePromptEvidenceOutcome,
+  PerHatRolePromptMiss,
+  StageVerdictEvidence,
+} from './perHatRolePromptEvidenceCheck';
+
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
@@ -141,6 +154,7 @@ export interface AcceptanceReceipt {
   shellEntryPointDrive?: { shellTestsScanned: number; entryPointsNamed: number };
   unreachableStepHandlers?: { stepFilesScanned: number; patternsChecked: number };
   multiBranchParserCoverage?: { parsersScanned: number };
+  perHatRolePromptEvidence?: { verdictsScanned: number };
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
   producerCrosscheck?: ProducerCrosscheckMetadata;
 }
@@ -175,6 +189,7 @@ export interface PilotAcceptanceGateDeps {
   checkShellEntryPointDrive: (ticketId: string) => ShellEntryPointDriveCheckOutcome;
   checkUnreachableStepHandlers: (ticketId: string) => UnreachableStepHandlerCheckOutcome;
   checkMultiBranchParserCoverage: (ticketId: string) => MultiBranchParserCoverageOutcome;
+  checkPerHatRolePromptEvidence: (ticketId: string) => PerHatRolePromptEvidenceOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
   getLandedCommit: () => string;
@@ -202,6 +217,7 @@ export interface PilotLandRefusal {
     | 'parallel-shell-reimplementation'
     | 'unreachable-step-handler'
     | 'untested-parser-branch'
+    | 'pilot-hat-prompt-missing'
     | 'move-failed';
   reason: string;
   unmatchedStep?: string;
@@ -218,6 +234,8 @@ export interface PilotLandRefusal {
   untestedParserFunction?: string;
   untestedParserArm?: string;
   untestedParserPath?: string;
+  missingHatPromptRole?: string;
+  missingHatPromptVerdict?: string;
 }
 
 export type PilotLandOutcome = PilotLandSuccess | PilotLandRefusal;
@@ -428,6 +446,29 @@ function checkMultiBranchCoverage(
   return { multiBranchCheck };
 }
 
+// Step 3g: every completed expedite stage verdict must record the injected
+// role prompt path + sha256 (BL-758). Unreadable expedite trees fail OPEN.
+function checkPerHatPromptEvidence(
+  ticketId: string,
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { perHatCheck: PerHatRolePromptEvidenceOutcome } {
+  const perHatCheck = deps.checkPerHatRolePromptEvidence(ticketId);
+  if (perHatCheck.checked && perHatCheck.miss) {
+    const { verdictPath, role } = perHatCheck.miss;
+    const named = role || verdictPath;
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'pilot-hat-prompt-missing',
+        reason: `${PILOT_HAT_PROMPT_MISSING_REFUSAL} (${named})`,
+        missingHatPromptRole: role,
+        missingHatPromptVerdict: verdictPath,
+      },
+    };
+  }
+  return { perHatCheck };
+}
+
 // Step 2b: revert-then-reland tickets must carry visible yaml notes before
 // a second done move — the BL-559 double-land hygiene gap.
 function requireRelandNotes(ticketId: string, deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal } | { ok: true } {
@@ -503,6 +544,7 @@ function moveAndRecordReceipt(
   shellDriveCheck: ShellEntryPointDriveCheckOutcome,
   unreachableCheck: UnreachableStepHandlerCheckOutcome,
   multiBranchCheck: MultiBranchParserCoverageOutcome,
+  perHatCheck: PerHatRolePromptEvidenceOutcome,
   multiWorktreeFixture?: MultiworktreeFixtureMetadata,
   producerCrosscheck?: ProducerCrosscheckMetadata
 ): PilotLandOutcome {
@@ -545,6 +587,9 @@ function moveAndRecordReceipt(
   if (multiBranchCheck.checked) {
     receipt.multiBranchParserCoverage = { parsersScanned: multiBranchCheck.parsersScanned };
   }
+  if (perHatCheck.checked) {
+    receipt.perHatRolePromptEvidence = { verdictsScanned: perHatCheck.verdictsScanned };
+  }
   if (multiWorktreeFixture) {
     receipt.multiWorktreeFixture = multiWorktreeFixture;
   }
@@ -575,6 +620,11 @@ function moveAndRecordReceipt(
   if (!multiBranchCheck.checked) {
     warnings.push(
       'multi-branch parser coverage was not checked: the touched-file history could not be resolved'
+    );
+  }
+  if (!perHatCheck.checked) {
+    warnings.push(
+      'per-hat role prompt evidence was not checked: the expedite verdict tree could not be resolved'
     );
   }
   const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
@@ -646,6 +696,11 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return multiBranch.refusal;
   }
 
+  const perHat = checkPerHatPromptEvidence(ticketId, deps);
+  if ('refusal' in perHat) {
+    return perHat.refusal;
+  }
+
   const fixtureMetadata =
     deps.isLifecycleTeardownTicket(ticketId) && fixtureGate.fixture.satisfied
       ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
@@ -660,6 +715,7 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     shellDrive.shellDriveCheck,
     unreachable.unreachableCheck,
     multiBranch.multiBranchCheck,
+    perHat.perHatCheck,
     fixtureMetadata,
     producerGate.crosscheck
   );

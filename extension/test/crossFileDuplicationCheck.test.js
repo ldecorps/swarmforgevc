@@ -38,6 +38,7 @@ function mkDeps(overrides) {
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-737-fixture.yaml' };
@@ -111,6 +112,7 @@ test('landPilotedTicket refuses cross-file duplication and writes nothing durabl
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-737', deps);
   assert.equal(outcome.landed, false);
@@ -130,6 +132,7 @@ test('landPilotedTicket lands with a warning when touched-file history is unread
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     writeReceipt: (_id, r) => {
       calls.writeReceipt += 1;
       receipt = r;
@@ -148,6 +151,7 @@ test('landPilotedTicket records filesScanned on the receipt when duplication was
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     writeReceipt: (_id, r) => {
       receipt = r;
     },

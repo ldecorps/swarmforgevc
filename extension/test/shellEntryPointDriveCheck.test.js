@@ -32,6 +32,7 @@ function mkDeps(overrides) {
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-747-fixture.yaml' };
@@ -141,6 +142,7 @@ test('landPilotedTicket refuses parallel-shell-reimplementation and writes nothi
     }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-747', deps);
   assert.equal(outcome.landed, false);
@@ -158,6 +160,7 @@ test('landPilotedTicket warns when shell drive history is unreadable', async () 
     checkShellEntryPointDrive: () => ({ checked: false }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     writeReceipt: (_id, r) => {
       calls.writeReceipt += 1;
       receipt = r;

@@ -265,6 +265,8 @@ run, and no gate ever noticed.
   [BL-753](BL-753-pilot-unreachable-step-handler-untested-behavior.md)
 - Multi-branch parser per-arm coverage (BL-755):
   [BL-755](BL-755-pilot-multi-branch-parser-needs-per-arm-tests.md)
+- Per-hat role prompt reinject (BL-758):
+  [BL-758](BL-758-pilot-inject-role-prompts-per-hat.md)
 
 ## Out of scope
 
