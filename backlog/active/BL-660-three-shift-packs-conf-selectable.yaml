@@ -167,6 +167,8 @@ abandoned_commits:
   - 48496a6947
   - cbe3674d9c
   - c4f2f8e0ef
-bounce_count: 1
+  - 745b547dbc
+bounce_count: 3
 bounce_history:
   - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: c4f2f8e0ef, evidence: backlog/evidence/BL-660-architect-pass-rematch5-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: hardender, class: acceptance, commit: a2e0d0c09b, evidence: backlog/evidence/BL-660-qa-bounce-rematch-20260826.md }
