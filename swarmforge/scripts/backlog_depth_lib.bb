@@ -281,27 +281,6 @@
         (or (nil? (:until-ms pause-state))
             (< now-ms (:until-ms pause-state))))))
 
-(defn format-pause-until-instant
-  "BL-779: UTC instant string for a timed pause's until-ms. Pure."
-  [until-ms]
-  (str (java.time.Instant/ofEpochMilli (long until-ms))))
-
-(defn format-pause-until-text
-  "BL-779: human-readable pause end for alarms and sweeps. nil until-ms →
-   operator-resume wording with no fabricated end time. Pure."
-  [until-ms]
-  (if until-ms
-    (str "paused until " (format-pause-until-instant until-ms))
-    "paused until operator resumes"))
-
-(defn format-control-pause-active-text
-  "BL-779: babysitter all-clear suffix when control pause is live. Pure."
-  [until-ms]
-  (str "control pause active"
-       (if until-ms
-         (str " until " (format-pause-until-instant until-ms))
-         " until operator resumes")))
-
 (defn read-effective-max-depth
   "The impure end-to-end read: configured cap (read-max-depth) folded with
    the currently-recommended throttle (read-recommended-cap) and a live

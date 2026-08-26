@@ -22,15 +22,6 @@
 ;; fs/tmux/clock read this file's own header disclaims for its business
 ;; logic (chase_sweep_lib.bb is itself a pure classifier, same posture).
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
-
-(defn format-all-clear-line
-  "BL-779: human-facing sweep verdict when findings are empty. Names a live
-   control pause instead of a bare idle-correct green line."
-  [{:keys [pause-active? pause-until-ms]}]
-  (if pause-active?
-    (str "OK all checks green — " (backlog-depth-lib/format-control-pause-active-text pause-until-ms))
-    "OK all checks green"))
 
 ;; ── check 1: live-session-per-role ──────────────────────────────────────────
 
@@ -380,12 +371,11 @@
 (defn check-resume-overdue
   [{:keys [paused? now-ms until-ms overdue-threshold-ms]
     :or {overdue-threshold-ms default-resume-overdue-threshold-ms}}]
-  (let [threshold-ms (long (or overdue-threshold-ms default-resume-overdue-threshold-ms))]
-    (when (and paused? now-ms until-ms
-               (> (- (long now-ms) (long until-ms)) threshold-ms))
-      {:key "resume-overdue" :severity "CRIT"
-       :message (str "pause untilMs expired " (quot (- (long now-ms) (long until-ms)) 60000)
-                     "min ago but control-pause.json still active — auto-resume sweep failed, swarm sleeping past its window")})))
+  (when (and paused? now-ms until-ms
+             (> (- (long now-ms) (long until-ms)) (long overdue-threshold-ms)))
+    {:key "resume-overdue" :severity "CRIT"
+     :message (str "pause untilMs expired " (quot (- (long now-ms) (long until-ms)) 60000)
+                   "min ago but control-pause.json still active — auto-resume sweep failed, swarm sleeping past its window")}))
 
 ;; ── check: resident-stranded (BL-685, Class B) ──────────────────────────────
 ;; A mono-router resident that ended its turn in a NON-HOME role without the

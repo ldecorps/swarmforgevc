@@ -789,17 +789,6 @@
     (assert-true "no rotate-unhonored finding accompanies it (the two checks are additive, scenario 03)"
                  (not-any? #(str/starts-with? (str %) "rotate-unhonored") keys-found))))
 
-(def bl779-timed-until-ms (.toEpochMilli (java.time.Instant/parse "2026-08-02T08:00:00Z")))
-(assert= "BL-779: all-clear line names timed pause"
-         "OK all checks green — control pause active until 2026-08-02T08:00:00Z"
-         (sw/format-all-clear-line {:pause-active? true :pause-until-ms bl779-timed-until-ms}))
-(assert= "BL-779: all-clear line names operator-resume pause"
-         "OK all checks green — control pause active until operator resumes"
-         (sw/format-all-clear-line {:pause-active? true :pause-until-ms nil}))
-(assert= "BL-779: no pause keeps standard all-clear"
-         "OK all checks green"
-         (sw/format-all-clear-line {:pause-active? false :pause-until-ms nil}))
-
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

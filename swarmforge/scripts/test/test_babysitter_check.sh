@@ -54,16 +54,6 @@ grep -q "OK all checks green" <<< "$OUT" || fail "A: expected all-clear line; go
 pass "A: fully green snapshot prints OK all checks green"
 rm -rf "$ROOT"
 
-# ── A-pause: green sweep during live control pause names pause ─────────────
-ROOT="$(make_root)"
-mkdir -p "$ROOT/.swarmforge/operator"
-printf '%s\n' '{"active":true,"untilMs":1796112000000}' > "$ROOT/.swarmforge/operator/control-pause.json"
-OUT="$(run_check "$ROOT")"
-grep -q "OK all checks green — control pause active until 2026-12-01T08:00:00Z" <<< "$OUT" || fail "A-pause: expected pause-named all-clear; got: $OUT"
-grep -q "rotate" <<< "$OUT" && fail "A-pause: all-clear must not include rotate verb; got: $OUT"
-pass "A-pause: green sweep during pause names control pause"
-rm -rf "$ROOT"
-
 # ── B: dead-letter box non-empty — CRIT finding, no nudge ───────────────────
 ROOT="$(make_root)"
 touch "$ROOT/.swarmforge/handoffs/failed/stray.handoff"
