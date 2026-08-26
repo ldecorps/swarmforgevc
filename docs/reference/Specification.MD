@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1147: read-only `probe-legacy-topic-adoption`
+CLI classifies legacy per-ticket topic keys, cursor Host routing
+(`bridge` | `operator-re-adopt` | `unbound`), and map-scrub candidates without
+mutating maps or calling Telegram; cursor Host re-adopt when
+`SWARMFORGE_LETS_TALK_PROVIDER` is not `cursor` is covered by unit/APS tests.
+Acceptance: `specs/features/BL-1147-probe-legacy-topic-adoption.feature`.
+How-to: `docs/how-to/BL-1147-probe-legacy-topic-adoption.md`.
+Operator CLI: `node extension/out/tools/probe-legacy-topic-adoption.js <repo>`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-782: `expedite_cli.bb` liveness probes
 match only processes belonging to the audited project root — neighbour-root
 `handoffd` / supervisor / `babysitterd` never count as survivors; operator
