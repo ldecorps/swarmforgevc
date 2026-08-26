@@ -51,6 +51,9 @@ export interface PipelineBoardRow {
 export interface PipelineBoardListEntry {
   id: string;
   slug: string;
+  // BL-980: relative age suffix for RECENTLY CLOSED lines only - present only
+  // when a durable closure instant was recorded (doneClosedAtMs).
+  closedAge?: string;
 }
 
 export interface PipelineBoardParkedEntry extends PipelineBoardListEntry {
@@ -159,6 +162,9 @@ export interface PipelineBoardListSourceItem {
   id: string;
   title?: string;
   filename: string;
+  // BL-980: durable closure instant from TickState.doneClosedAtMs - absent
+  // means no age suffix rather than a guess from file mtime.
+  closedAtMs?: number;
 }
 
 // BL-465: additional, OPTIONAL inputs this ticket adds - every existing
@@ -410,6 +416,41 @@ function linkPathFor(meta: PipelineBoardTicketMeta | undefined): string | undefi
 
 function listEntryFor(item: PipelineBoardListSourceItem): PipelineBoardListEntry {
   return { id: item.id, slug: deriveListEntryText(item.title) };
+}
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * BL-980: relative elapsed time since closure for RECENTLY CLOSED lines.
+ * A pure function of two injected instants - never a bare Date.now(). Returns
+ * undefined when no durable closure instant was recorded.
+ */
+export function formatRecentlyClosedAgeLabel(closedAtMs: number | undefined, nowMs: number): string | undefined {
+  if (closedAtMs === undefined) {
+    return undefined;
+  }
+  const elapsed = Math.max(0, nowMs - closedAtMs);
+  if (elapsed < MINUTE_MS) {
+    return 'just now';
+  }
+  if (elapsed < HOUR_MS) {
+    return `${Math.floor(elapsed / MINUTE_MS)}min ago`;
+  }
+  if (elapsed < DAY_MS) {
+    return `${Math.floor(elapsed / HOUR_MS)}h ago`;
+  }
+  return `${Math.floor(elapsed / DAY_MS)}d ago`;
+}
+
+function recentlyClosedEntryFor(item: PipelineBoardListSourceItem, nowMs: number): PipelineBoardListEntry {
+  const entry: PipelineBoardListEntry = { id: item.id, slug: deriveListEntryText(item.title) };
+  const closedAge = formatRecentlyClosedAgeLabel(item.closedAtMs, nowMs);
+  if (closedAge !== undefined) {
+    entry.closedAge = closedAge;
+  }
+  return entry;
 }
 
 // BL-464: a ticket id observed under more than one role - the exact
@@ -768,7 +809,9 @@ export function computePipelineBoard(
   // (PIPELINE_BOARD_RECENTLY_CLOSED_MAX's comment: "the caller decides
   // WHICH items count as 'recent'; this only bounds the list length").
   // Slice-then-map only, preserving the caller's order exactly.
-  const recentlyClosed = [...(extras.recentlyClosed ?? [])].slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX).map(listEntryFor);
+  const recentlyClosed = [...(extras.recentlyClosed ?? [])]
+    .slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX)
+    .map((item) => recentlyClosedEntryFor(item, extras.nowMs ?? 0));
   const links = extras.repoBaseUrl ? buildLinks(rows, parked, collapsedEpics, extras, ticketMeta) : [];
 
   return {
@@ -953,10 +996,6 @@ function renderGridLines(rows: PipelineBoardRow[]): string[] {
 // twelve-day ticket this feature exists for is never the one hidden.
 export const PIPELINE_BOARD_HELD_MAX = 8;
 
-const MINUTE_MS = 60 * 1000;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
-
 /**
  * BL-1045: how long a ticket has been held, in the coarsest unit that still
  * separates "yesterday" from "twelve days ago" at a glance. A pure function
@@ -1092,6 +1131,11 @@ function renderParkedSection(
   return lines;
 }
 
+function formatListEntryLine(entry: PipelineBoardListEntry): string {
+  const base = `  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd();
+  return entry.closedAge ? `${base} (${entry.closedAge})` : base;
+}
+
 // BL-465: renders one below-grid section (awaiting-approval/root-
 // intake/recently-closed) - omitted entirely when empty (BL-455's own
 // "every active ticket lands in exactly one place" convention, extended
@@ -1104,7 +1148,7 @@ function renderListSection(header: string, entries: PipelineBoardListEntry[], ov
   }
   const lines: string[] = ['', header];
   for (const entry of entries) {
-    lines.push(`  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd());
+    lines.push(formatListEntryLine(entry));
   }
   if (overflowLine) {
     lines.push(`  ${overflowLine}`);
@@ -1241,11 +1285,13 @@ function formatBoardListLineHtml(
   id: string,
   slug: string,
   path: string | undefined,
-  repoBaseUrl: string | undefined
+  repoBaseUrl: string | undefined,
+  closedAge?: string
 ): string {
   const idHtml = formatTicketIdHtml(id, path, repoBaseUrl);
   const slugPart = slug ? ` ${escapeHtml(slug)}` : '';
-  return `  ${idHtml}${slugPart}`.trimEnd();
+  const agePart = closedAge ? ` (${escapeHtml(closedAge)})` : '';
+  return `  ${idHtml}${slugPart}${agePart}`.trimEnd();
 }
 
 function formatCollapsedEpicLineHtml(
@@ -1297,7 +1343,7 @@ function renderParkedSectionHtml(
   for (const entry of plainParked) {
     const path =
       linkedIds !== undefined && !linkedIds.has(entry.id) ? undefined : pathById.get(entry.id);
-    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl));
+    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl, entry.closedAge));
   }
   if (overflowLine) {
     lines.push(`  ${escapeHtml(overflowLine)}`);
@@ -1320,7 +1366,7 @@ function renderListSectionHtml(
   for (const entry of entries) {
     const path =
       linkedIds !== undefined && !linkedIds.has(entry.id) ? undefined : pathById.get(entry.id);
-    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl));
+    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl, entry.closedAge));
   }
   if (overflowLine) {
     lines.push(`  ${escapeHtml(overflowLine)}`);
