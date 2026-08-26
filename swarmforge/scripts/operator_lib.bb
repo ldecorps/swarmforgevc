@@ -49,13 +49,17 @@
                                ; to one wake (event-key dedup), but a
                                ; DIFFERENT thread's message must survive as
                                ; its own distinct pending event.
-    "TELEGRAM_BL_TOPIC_MESSAGE"}) ; BL-325: an inbound reply typed into a
+    "TELEGRAM_BL_TOPIC_MESSAGE"  ; BL-325: an inbound reply typed into a
                                ; BL-### backlog item's OWN topic (BL-298's
                                ; producer) - consumed deterministically by
                                ; operator_runtime.bb's bl-topic-approval-
                                ; sweep! every tick (see partition-bl-topic-
                                ; events below), never dispatched to the LLM
                                ; Operator's own reasoning.
+    "BABYSITTER_ESCALATION"}) ; BL-653: deterministic babysitter finding
+                               ; that needs LLM judgement — written to the
+                               ; queue by babysitter_check.bb, never
+                               ; manufactured by operator_runtime.bb's tick.
 
 (def coalescing-types
   "Event types where a second pending copy adds nothing — the LLM will
@@ -656,6 +660,29 @@
 (defn control-lost-event []
   {:type "SWARM_CONTROL_LOST"
    :detail "tmux control channel unreachable - this is NOT proof any agent died; do not relaunch based on this alone"})
+
+(defn tick-observed-events
+  "BL-653: events operator_runtime.bb may manufacture from its own tick
+   sweep. Excludes dead-agent-events and SWARM_CHECK_TIMER — liveness and
+   periodic patrol belong to the deterministic babysitter; the LLM Operator
+   is summoned, never scheduled. BABYSITTER_ESCALATION arrives via the
+   queue from babysitter_check.bb, not from this function."
+  [{:keys [reachable? command-file-exists? command-detail coordinator-inbox-fresh?]}]
+  (cond-> []
+    (not reachable?) (conj (control-lost-event))
+    command-file-exists? (conj {:type "HUMAN_COMMAND" :detail command-detail})
+    coordinator-inbox-fresh? (conj {:type "TASK_ARRIVED"})))
+
+(def manufactured-tick-event-types
+  "The set of :type values tick-observed-events may ever return — used by
+   BL-653 property tests to prove patrol/liveness pseudo-events never
+   re-enter via the tick path."
+  #{"SWARM_CONTROL_LOST" "HUMAN_COMMAND" "TASK_ARRIVED"})
+
+(defn babysitter-escalation-event
+  "BL-653: the wire shape babysitter_check.bb appends to events.jsonl."
+  [{:keys [key message]}]
+  {:type "BABYSITTER_ESCALATION" :subject key :detail message})
 
 ;; ── status document (v2 schema) ───────────────────────────────────────────────
 
