@@ -50,10 +50,15 @@ Pure policy lives in `front_desk_supervisor_lib.bb` → `check-one!` /
    across `:build-stale` cycles in the log.
 4. For repeat give-up email on the same outage, see
    [BL-1151 give-up one email per episode](BL-1151-front-desk-giveup-one-email-per-episode.md).
+5. If the child `:crashed` seconds after `BRIDGE_LISTENING` with build-stale rolls
+   ruled out, see
+   [BL-1159 bridge child crash give-up loop](BL-1159-bridge-child-survives-without-crash-giveup-loop.md)
+   — stop must defer when front desk owns the stack.
 
 ## Related
 
 - [BL-1151 — give-up one email per episode](BL-1151-front-desk-giveup-one-email-per-episode.md)
+- [BL-1159 — bridge child crash give-up after bind](BL-1159-bridge-child-survives-without-crash-giveup-loop.md)
 - Spec BL-582 — build-freshness watchdog and voluntary stale-build rolls.
 - Spec BL-1037 — defer restart until the child has served the build it landed on.
 - Spec BL-370 — bounded restart then give-up for true outages.
