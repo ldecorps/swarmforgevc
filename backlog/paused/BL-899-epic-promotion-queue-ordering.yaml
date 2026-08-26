@@ -4,7 +4,7 @@ milestone: M8
 type: epic
 status: todo
 epic: promotion-queue-ordering
-priority: 12
+priority: 13
 direction: human-requested
 depends_on: []
 mutation_cost: low

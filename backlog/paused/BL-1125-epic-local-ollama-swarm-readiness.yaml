@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: local-llm-swarm
-priority: 10
+priority: 11
 depends_on: []
 decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143]
 remaining_slices: []
