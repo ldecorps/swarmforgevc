@@ -7,8 +7,8 @@ severity: high
 # keeps the desk cycling into give-up.
 status: paused
 epic: swarm-reliability
-priority: 6
-direction: human-requested
+priority: 0
+direction: queue-jump
 depends_on: [BL-1151]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -64,6 +64,12 @@ out_of_scope: |
 notes:
   - [2026-08-26T10:30Z] specifier: split from
     INTAKE-front-desk-bridge-giveup-email-spam.md; email → BL-1151.
+  - [2026-08-26T10:53Z] human (Cursor): still flooded by front-desk bot
+    give-up emails (~53 in thread); /qjump BL-1154 — pull ahead of ordinary
+    actives. BL-1151 landed same morning; if mail repeats after supervisor
+    restart, treat as BL-1151 regression separately.
 source: |
   backlog/INTAKE-front-desk-bridge-giveup-email-spam.md; cites BL-582,
   BL-1088, BL-1151.
+
+assigned_to: coder
