@@ -27,9 +27,13 @@ result_file="$(mktemp)"
 trap 'rm -f "$result_file"' EXIT
 printf '%s' "$result" > "$result_file"
 
-scheduling="$(python3 -c "import json; print(json.load(open('$result_file')).get('scheduling?', False))")"
-changed="$(python3 -c "import json; print(json.load(open('$result_file')).get('changed?', False))")"
-mode="$(python3 -c "import json; print(json.load(open('$result_file')).get('mode', 'none'))")"
+read -r scheduling changed mode < <(
+  python3 - "$result_file" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(d.get("scheduling?", False), d.get("changed?", False), d.get("mode", "none"))
+PY
+)
 
 if [[ "$scheduling" != "True" && "$scheduling" != "true" ]]; then
   echo "No shift schedule configured for $ROOT — skipping schedule cron install"
@@ -41,7 +45,11 @@ if [[ "$changed" != "True" && "$changed" != "true" ]]; then
   exit 0
 fi
 
-new_lines="$(python3 -c "import json; print('\\n'.join(json.load(open('$result_file'))['lines']))")"
+new_lines="$(python3 - "$result_file" <<'PY'
+import json, sys
+print("\n".join(json.load(open(sys.argv[1])).get("lines", [])))
+PY
+)"
 if [[ -z "${new_lines//[[:space:]]/}" ]]; then
   crontab -r 2>/dev/null || true
 else

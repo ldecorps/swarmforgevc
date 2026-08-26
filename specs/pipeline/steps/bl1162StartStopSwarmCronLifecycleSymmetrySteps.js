@@ -41,9 +41,9 @@ function runPropertySuite(ctx) {
   return runSuite(ctx, 'bl1162PropertyOutput', 'bl1162PropertyExit', PROPERTY_TEST);
 }
 
-function expectLine(output, fragment, label) {
-  if (!output.includes(fragment)) {
-    throw new Error(`expected "${fragment}" (${label}) in BL-1162 suite output, got:\n${output}`);
+function assertPassMarker(out, marker, label) {
+  if (!out.includes(marker)) {
+    throw new Error(`expected ${label} (${marker}) in:\n${out}`);
   }
 }
 
@@ -76,9 +76,12 @@ function registerSteps(registry) {
 
   scoped(/^crontab -l contains no line with a swarmforge marker or path scoped to root R$/, (ctx) => {
     const output = runMainSuite(ctx);
-    expectLine(output, 'PASS: 01: stop-swarm leaves no swarmforge cron lines scoped to root R', '01');
+    assertPassMarker(output, 'PASS: 01: stop-swarm leaves no swarmforge cron lines scoped to root R', '01');
     runPropertySuite(ctx);
-    expectLine(
+    if (ctx.bl1162PropertyExit !== 0) {
+      throw new Error(`BL-1162 property suite exited ${ctx.bl1162PropertyExit}:\n${ctx.bl1162PropertyOutput}`);
+    }
+    assertPassMarker(
       ctx.bl1162PropertyOutput,
       'BL-1162 swarmforge-cron property: ALL CHECKS PASSED',
       'prop-stop',
@@ -89,7 +92,7 @@ function registerSteps(registry) {
     /^no scheduled script under root R \.swarmforge operator can fire for root R$/,
     (ctx) => {
       const output = runMainSuite(ctx);
-      expectLine(output, 'ok   - 01: stop removed root paths', '01-paths');
+      assertPassMarker(output, 'ok   - 01: stop removed root paths', '01-paths');
     },
     FEATURE_NAME,
   );
@@ -108,14 +111,14 @@ function registerSteps(registry) {
 
   scoped(/^crontab -l contains the freshness line for root R$/, (ctx) => {
     const output = runMainSuite(ctx);
-    expectLine(output, 'ok   - 02: start installed freshness', '02-fresh');
+    assertPassMarker(output, 'ok   - 02: start installed freshness', '02-fresh');
   });
 
   scoped(/^crontab -l contains the rendered start and stop schedule lines for root R$/, (ctx) => {
     const output = runMainSuite(ctx);
-    expectLine(output, 'ok   - 02: start installed schedule start', '02-start');
-    expectLine(output, 'ok   - 02: start installed schedule stop', '02-stop');
-    expectLine(output, 'PASS: 02: start-swarm ensures required swarmforge cron lines for root R', '02');
+    assertPassMarker(output, 'ok   - 02: start installed schedule start', '02-start');
+    assertPassMarker(output, 'ok   - 02: start installed schedule stop', '02-stop');
+    assertPassMarker(output, 'PASS: 02: start-swarm ensures required swarmforge cron lines for root R', '02');
   });
 
   scoped(/^stop-swarm\.sh for root R completed successfully$/, (ctx) => {
@@ -132,13 +135,13 @@ function registerSteps(registry) {
 
   scoped(/^handoffd and babysitterd for root R are still down$/, (ctx) => {
     const output = runMainSuite(ctx);
-    expectLine(output, 'ok   - 03: deliberate stop marker present', '03-down');
+    assertPassMarker(output, 'ok   - 03: deliberate stop marker present', '03-down');
   });
 
   scoped(/^nothing has invoked start-swarm\.sh for root R$/, (ctx) => {
     const output = runMainSuite(ctx);
-    expectLine(output, 'ok   - 03: schedule scripts did not fire', '03-no-start');
-    expectLine(
+    assertPassMarker(output, 'ok   - 03: schedule scripts did not fire', '03-no-start');
+    assertPassMarker(
       output,
       'PASS: 03: deliberate stop survives freshness and schedule cron ticks',
       '03',
@@ -155,19 +158,19 @@ function registerSteps(registry) {
 
   scoped(/^crontab -l still contains every swarmforge line scoped to root R2$/, (ctx) => {
     const output = runMainSuite(ctx);
-    expectLine(output, 'ok   - 04: R2 freshness remains', '04-r2');
-    expectLine(output, 'ok   - 04: R2 schedule remains', '04-r2-sched');
+    assertPassMarker(output, 'ok   - 04: R2 freshness remains', '04-r2');
+    assertPassMarker(output, 'ok   - 04: R2 schedule remains', '04-r2-sched');
   });
 
   scoped(/^crontab -l contains no swarmforge line scoped to root R1$/, (ctx) => {
     const output = runMainSuite(ctx);
-    expectLine(output, 'ok   - 04: R1 lines gone', '04-r1');
-    expectLine(
+    assertPassMarker(output, 'ok   - 04: R1 lines gone', '04-r1');
+    assertPassMarker(
       output,
       'PASS: 04: stop-swarm for one root leaves sibling root cron lines unchanged',
       '04',
     );
-    expectLine(output, 'BL-1162 start-stop-swarm-cron-lifecycle: ALL CHECKS PASSED', 'suite');
+    assertPassMarker(output, 'BL-1162 start-stop-swarm-cron-lifecycle: ALL CHECKS PASSED', 'suite');
   });
 }
 
