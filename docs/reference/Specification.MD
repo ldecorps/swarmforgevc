@@ -13,40 +13,15 @@ them. Core: `extension/src/quality/batchRecovery.ts`. Acceptance:
 `docs/how-to/BL-588-isolate-batch-recovery-trees.md`. Diagram note:
 `docs/diagrams/swarm-flow.mmd`.)
 Prior entry —
-**Last Updated:** August 26, 2026 (BL-660: three named shift packs — `config
-swarm_shift day|evening|night` selects exactly one 8h shift; when active it is
-the sole schedule source for start/stop crontab (`apply_shift_schedule.bb`),
-BL-617 cooldown inverse, BL-658 `closure_stop_local`, and briefing timing.
-Absent/blank → 24/7 semantics identical to disabled cooldown window.
-Applier is idempotent and surfaces human crontab edits it did not render.
-Signature-backed provider outages may extend close (cap 2h, never swarm-caused).
-Modules: `swarm_shift_lib.bb`, `shift_schedule_applier_lib.bb`,
-`swarmShiftCore.ts`. Acceptance:
-`specs/features/BL-660-three-shift-packs-conf-selectable.feature`. How-to:
-`docs/how-to/BL-660-three-shift-packs-conf-selectable.md`.)
-Prior entry —
-**Last Updated:** August 26, 2026 (BL-653: escalation-driven operator — the LLM
-Operator wakes only on inbound human traffic, `BABYSITTER_ESCALATION` from CRIT
-babysitter findings, or `SWARM_CONTROL_LOST`; retires per-tick
-`dead-agent-events` and payload-free `SWARM_CHECK_TIMER` patrol wakes;
-`operator_enqueue_event.bb` wires CRIT findings into `events.jsonl`; WARN
-`stuck-*` still nudges coordinator only; `night-start.sh` operator pid-hold
-retired. Front-desk restricted operator unchanged (BL-334). Acceptance:
-`specs/features/BL-653-operator-wakes-only-on-real-events-escalation-driven.feature`.
-How-to: `docs/how-to/BL-653-operator-escalation-driven-wake-model.md`.)
-Prior entry —
-**Last Updated:** August 26, 2026 (BL-588: batch recovery approach 3 — when a
-batch commit partially fails, clean siblings re-forward unchanged on their
-original commit for whole-tree re-verification while the defective ticket
-reworks from the last clean ancestor on an isolated branch; QA lands only
-verified whole trees via merge — cherry-pick, rebase-to-land, and partial-subset
-operations refused. CLI: `extension/out/tools/batch-recovery.js`
-(`prepare-re-forward`, `prepare-rework`, `validate-land`, `validate-merge-up`,
-`validate-land-isolation`). Consumes BL-532 deferral records; does not redefine
-them. Core: `extension/src/quality/batchRecovery.ts`. Acceptance:
-`specs/features/BL-588-isolate-batch-recovery-trees.feature`. How-to:
-`docs/how-to/BL-588-isolate-batch-recovery-trees.md`. Diagram note:
-`docs/diagrams/swarm-flow.mmd`.)
+**Last Updated:** August 26, 2026 (BL-1159: front-desk bridge child crash give-up
+loop after bind — `stop_bridge_headless.sh` defers when `front-desk-supervisor.pid`
+is live; `recover_miniapp_bridge.sh` re-arms via front desk or falls back to
+bridge-only bounce; `operator_runtime.bb` miniapp watchdog calls recover, not
+direct stop/kill. Preserves BL-1154 build-stale vs crash classification, BL-1158
+single owner, BL-1151 email policy. Acceptance:
+`specs/features/BL-1159-bridge-child-survives-without-crash-giveup-loop.feature`.
+How-to:
+`docs/how-to/BL-1159-bridge-child-survives-without-crash-giveup-loop.md`.)
 Prior entry —
 **Last Updated:** August 26, 2026 (BL-660: three named shift packs — `config
 swarm_shift day|evening|night` selects exactly one 8h shift; when active it is
