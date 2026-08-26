@@ -203,4 +203,6 @@
       "register-opus-fallback" (run-register-opus-fallback rest-args)
       (usage))))
 
-(-main)
+;; BL-669: only invoke as bb entrypoint — never when load-file'd from handoffd.
+(when (= *file* (System/getProperty "babashka.file"))
+  (apply -main *command-line-args*))
