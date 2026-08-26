@@ -38,6 +38,7 @@ import {
   StageVerdictEvidence,
 } from './perHatRolePromptEvidenceCheck';
 import { PilotScopedCrapCheckOutcome, assessPilotScopedCrap } from './pilotScopedCrapCheck';
+import { PilotMkdtempConventionCheckOutcome, assessPilotMkdtempConvention } from './pilotMkdtempConventionCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
 import { findBacklogFilePath } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
@@ -171,6 +172,15 @@ function readTouchedFileTexts(
     }
   }
   return files;
+}
+
+/** Git-backed BL-743 mkTmpDir convention check wired into PilotAcceptanceGateDeps.checkMkdtempConvention. */
+export function checkMkdtempConvention(repoRoot: string): PilotMkdtempConventionCheckOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  return assessPilotMkdtempConvention(repoRoot, touched);
 }
 
 /** Git-backed BL-741 scoped CRAP check wired into PilotAcceptanceGateDeps.checkScopedCrap. */
