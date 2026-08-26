@@ -71,4 +71,11 @@ if [[ -f "$LOG_FILE" ]] && grep -q "briefing-generation-nudge-sent" "$LOG_FILE";
   fail "ceremony mode must not fire fixed morning nudge; log=$(grep briefing-generation "$LOG_FILE" || true)"
 fi
 pass "handoffd skipped fixed morning trigger under closure_stop_local"
+
+if [[ -f "$LOG_FILE" ]] && grep -q "closing-ceremony-run" "$LOG_FILE"; then
+  pass "handoffd invoked night-closing-ceremony-run under ceremony mode"
+else
+  fail "ceremony mode must shell night-closing-ceremony-run.js (architect D1); log=$(grep closing-ceremony "$LOG_FILE" 2>/dev/null || true)"
+fi
+
 echo "test_handoffd_closing_ceremony_gate_wiring: ALL CHECKS PASSED"

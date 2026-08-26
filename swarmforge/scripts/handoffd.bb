@@ -3491,13 +3491,29 @@
       (log! "closing-ceremony-gate-error" (.getMessage e))
       nil)))
 
+(defn night-closing-ceremony-run! []
+  (try
+    (let [cli-path (str (fs/path script-dir ".." ".." "extension" "out" "tools"
+                                 "night-closing-ceremony-run.js"))
+          conf-arg (when (fs/exists? conf-file) ["--conf" (str conf-file)])
+          target-arg ["--target" (str project-root)]
+          {:keys [exit out err]} (daemon-cycle-guard-lib/sh!
+                                  (into ["node" cli-path] (concat (or conf-arg []) target-arg))
+                                  {:dir (str (fs/canonicalize (fs/path script-dir ".." "..")))})]
+      (if (zero? exit)
+        (log! "closing-ceremony-run" (str/trim out))
+        (log! "closing-ceremony-run-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (catch Exception e
+      (log! "closing-ceremony-run-error" (.getMessage e)))))
+
 (defn briefing-generation-sweep! [roles socket]
   (let [gate (night-closing-ceremony-gate)
         ceremony-mode? (= "ceremony" (str (:mode gate)))]
-    (when (and ceremony-mode? (:ceremonyDue gate))
-      (log! "closing-ceremony-due"
-            (str "begin=" (:ceremonyBeginLocal gate)
-                 " stop=" (:closureStopLocal gate))))
+    ;; BL-658 architect bounce D1: when the gate says ceremony mode, drive
+    ;; the live sequence (freeze/drain/rotate/brief/send/stop) — logging
+    ;; closing-ceremony-due alone is not the ticket.
+    (when ceremony-mode?
+      (night-closing-ceremony-run!))
     (when (and gate (= "ambiguous" (str (:scheduleState gate))))
       (log! "closing-ceremony-schedule-ambiguous" (str (:surfaced gate))))
     ;; Fixed morning trigger only when the gate says so (or gate failed open
