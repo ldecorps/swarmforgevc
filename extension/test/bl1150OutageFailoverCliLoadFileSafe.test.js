@@ -3,7 +3,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { test } = require('node:test');
 const { spawnSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');

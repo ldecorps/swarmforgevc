@@ -3520,8 +3520,9 @@
 
 ;; Defined AFTER role-mailbox-idle? so babashka/SCI analysis does not abort
 ;; load before pid claim (hotfix ca45facb4 / BL-1150).
-(defn outage-driven-seat-failover-sweep! [roles socket]
+(defn outage-driven-seat-failover-sweep!
   "BL-669: sustained outage -> steward consult -> certified substitute at idle."
+  [roles socket]
   (outage-failover-cli/outage-driven-seat-failover!
    project-root roles socket
    :seat-idle-fn #(let [ri (role-info-by-name roles %)]
