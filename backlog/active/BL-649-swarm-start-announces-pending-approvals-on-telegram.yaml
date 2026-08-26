@@ -31,9 +31,9 @@ invariants:
   - "Approval replies use the existing pendingApprovalReply path — no duplicate write path."
 
 required_wiring:
-  - 'extension bridge or concierge start hook::pending approval announcement::POST new Approvals topic message when set non-empty at bot up'
+  - 'extension/src/tools/telegram-front-desk-bot.ts::pending approval announcement::POST new Approvals topic message when set non-empty at bot up'
   - 'extension/src/metrics/backlogDashboard.ts::computeNeedsApproval::enumerate active and paused human_approval pending tickets'
-  - 'extension approvals announcement marker::pending-set identity gate::suppress duplicate posts on unchanged restarts'
+  - 'extension/src/concierge/pendingApprovalsAnnouncementMarker.ts::pending-set identity gate::suppress duplicate posts on unchanged restarts'
   - 'extension/src/concierge/pendingApprovalReply.ts::existing reply path::approve/reject unchanged no second writer'
   - 'specs/pipeline/steps/index.js::bl649SwarmStartApprovalsAnnouncementSteps::acceptance handler registered so the runner executes every scenario'
 
