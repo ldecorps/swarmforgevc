@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-747)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -296,3 +296,5 @@ run, and no gate ever noticed.
   revert-then-reland notes required (companion remaining-work BL-734)
 - BL-737 — refuse land on identical ≥12-line blocks in >2 touched files
   (companion remaining-work BL-736)
+- BL-747 — refuse land when touched shell tests do not invoke ticket-named
+  entry-point scripts (companion remaining-work BL-746 landed)
