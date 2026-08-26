@@ -1,3 +1,9 @@
+# ARCHIVED — drained by specifier 2026-08-26
+
+Disposition: minted backlog/paused/BL-1155-pipeline-board-grid-header-one-line.yaml
+
+---
+
 # INTAKE — Pipeline Board grid header must stay one line (QA must not wrap)
 
 **Source:** human via Cursor / Telegram Pipeline Board screenshot, 2026-08-26 ~11:25 BST  
