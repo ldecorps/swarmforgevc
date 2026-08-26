@@ -55,7 +55,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "fleet_telegram_creds_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_log_freshness_pulse_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -200,7 +199,6 @@
     nil))
 
 (defn tick! []
-  (daemon-log-freshness-pulse-lib/append-log-heartbeat! log-file)
   (let [prior (read-state)
         now (now-ms)
         next-state (into {}
