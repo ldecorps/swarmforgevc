@@ -5,7 +5,7 @@ type: feature
 severity: low
 status: todo
 epic: swarmforge-console
-assigned_to: none
+assigned_to: coder
 priority: 30
 direction: human-requested
 depends_on: []
