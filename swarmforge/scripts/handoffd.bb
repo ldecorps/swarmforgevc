@@ -38,6 +38,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_ahead_range_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_main_reconcile_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "post_qa_branch_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_drift_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_integrity_lib.bb")))
@@ -3195,6 +3196,63 @@
     (catch Exception e
       (log! "master-main-reconcile-sweep-error" (.getMessage e)))))
 
+(defn- git-rev-parse-in [dir ref]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "rev-parse" ref] {:dir dir})]
+    (when (zero? exit) (str/trim out))))
+
+(defn- git-is-ancestor? [dir ancestor descendant]
+  (zero? (:exit (daemon-cycle-guard-lib/sh!
+                  ["git" "merge-base" "--is-ancestor" ancestor descendant]
+                  {:dir dir}))))
+
+(defn- post-qa-branch-sweep-role-dirty? [worktree-path]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "status" "--porcelain"]
+                                        {:dir worktree-path})]
+    (and (zero? exit) (not (str/blank? (str/trim out)))))
+
+(defn- post-qa-branch-sweep-role-in-process? [role-info]
+  (let [dir (handoff-lib/mailbox-dir role-info :in_process)]
+    (and (fs/directory? dir)
+         (boolean
+          (some #(str/ends-with? (str (fs/file-name %)) ".handoff")
+                (fs/list-dir dir)))))
+
+(defn- post-qa-branch-sweep-role-facts! [role-name]
+  (when-let [ri (handoff-lib/load-role-info role-name (str project-root))]
+    (let [wt (:worktree-path ri)
+          head (git-rev-parse-in wt "HEAD")
+          landed (git-rev-parse "origin/main")]
+      {:head-sha head
+       :dirty? (post-qa-branch-sweep-role-dirty? wt)
+       :in-process? (post-qa-branch-sweep-role-in-process? ri)
+       :can-ff? (and head landed (git-is-ancestor? wt head landed))
+       :worktree-path wt})))
+
+(defn- post-qa-branch-sweep-ff! [_role-name facts]
+  (let [wt (:worktree-path facts)
+        {:keys [exit err]} (daemon-cycle-guard-lib/sh!
+                            ["git" "merge" "--ff-only" "--no-edit" "origin/main"]
+                            {:dir wt})]
+    (if (zero? exit)
+      {:success true}
+      {:success false :error (str/trim (or err ""))})))
+
+(defn post-qa-branch-sweep-sweep! []
+  (try
+    (git-fetch-origin-main!)
+    (let [landed (git-rev-parse "origin/main")
+          roles (->> (handoff-lib/load-all-roles (str project-root))
+                     (filter post-qa-branch-sweep-lib/sweep-eligible-role?)
+                     (map :role))]
+      (when landed
+        (post-qa-branch-sweep-lib/sweep!
+         (str daemon-dir) landed roles
+         {:role-facts! post-qa-branch-sweep-role-facts!
+          :fast-forward! post-qa-branch-sweep-ff!
+          :log! (fn [& parts] (apply log! parts))})))
+    (catch Exception e
+      (log! "post-qa-branch-sweep-error" (.getMessage e)))))
+
 (defn- coordinator-in-process-aged?
   "True when coordinator inbox/in_process holds a *.handoff older than 15 min."
   []
@@ -3903,6 +3961,11 @@
                     ;; this cadence block is.
                     (run-sweep! "master-main-reconcile-sweep"
                         #(master-main-reconcile-sweep!))
+                    ;; BL-668: post-QA role-branch sweep shares the same cadence
+                    ;; as master-main-reconcile immediately above — fast-forward
+                    ;; clean pipeline role branches after origin/main advances.
+                    (run-sweep! "post-qa-branch-sweep"
+                        #(post-qa-branch-sweep-sweep!))
                     (run-sweep! "main-sync-deadlock-sweep"
                         #(main-sync-deadlock-sweep!))
                     ;; BL-437: fleet-status sweep shares the same cadence -
