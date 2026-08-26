@@ -38,7 +38,8 @@ const ROLE_LABELS = {
 };
 
 function rolePaneId(role) {
-  return role.toLowerCase() === 'qa' ? 'QA' : role.toLowerCase();
+  const canonical = requireCanonicalRole(role);
+  return canonical === 'qa' ? 'QA' : canonical;
 }
 
 function extractInlineScript(html) {
@@ -54,12 +55,12 @@ function flush() {
 }
 
 function defaultPane(role, overrides = {}) {
-  const id = rolePaneId(role);
+  const canonical = requireCanonicalRole(role);
   return {
     available: true,
-    roleLabel: ROLE_LABELS[role.toLowerCase()] ?? role,
+    roleLabel: ROLE_LABELS[canonical] ?? role,
     modelLabel: 'Sonnet 5',
-    paneText: `${ROLE_LABELS[role.toLowerCase()] ?? role} live output`,
+    paneText: `${ROLE_LABELS[canonical] ?? role} live output`,
     ...overrides,
   };
 }
@@ -67,7 +68,7 @@ function defaultPane(role, overrides = {}) {
 function buildPanesFromCtx(ctx) {
   const seats = ctx.seats ?? {};
   return GRID_ROLES.map((role) => {
-    const seat = seats[role.toLowerCase()] ?? {};
+    const seat = seats[role] ?? {};
     const paneOverrides = { ...seat.pane };
     if (seat.unreachable) {
       paneOverrides.available = false;
@@ -94,7 +95,7 @@ function buildPanesFromCtx(ctx) {
     }
     return {
       id: rolePaneId(role),
-      label: ROLE_LABELS[role.toLowerCase()] ?? role,
+      label: ROLE_LABELS[role] ?? role,
       pane: defaultPane(role, paneOverrides),
     };
   });
@@ -155,10 +156,10 @@ async function renderGrid(ctx, { expandRole } = {}) {
       const paneId = rolePaneId(role);
       const col = dom.window.document.querySelector(`.pane-col[data-pane-id="${paneId}"]`);
       if (!col) {
-        tiles[role.toLowerCase()] = { missing: true };
+        tiles[role] = { missing: true };
         continue;
       }
-      tiles[role.toLowerCase()] = {
+      tiles[role] = {
         roleNameText: col.querySelector('.pane-kind')?.textContent ?? null,
         ticketIdText: col.querySelector('.pane-grid-ticket-id')?.textContent ?? null,
         slugText: col.querySelector('.pane-grid-slug')?.textContent ?? null,
@@ -176,12 +177,42 @@ async function renderGrid(ctx, { expandRole } = {}) {
   }
 }
 
+function requireCanonicalRole(role) {
+  if (!GRID_ROLES.includes(role)) {
+    throw new Error(
+      `unknown role "${role}" — expected exact id from ${GRID_ROLES.join(', ')}`
+    );
+  }
+  return role;
+}
+
+function roleKey(role) {
+  return requireCanonicalRole(role);
+}
+
+function patchSeat(ctx, role, patch) {
+  ctx.seats = ctx.seats ?? {};
+  const key = roleKey(role);
+  ctx.seats[key] = { ...(ctx.seats[key] ?? {}), ...patch };
+}
+
+function parseCssClampMax(ruleBody) {
+  return Number((ruleBody.match(/clamp\([^,]+,\s*[^,]+,\s*(\d+)px\)/) ?? [])[1]);
+}
+
 function tile(ctx, role) {
-  const t = ctx.render?.tiles?.[role.toLowerCase()];
+  const t = ctx.render?.tiles?.[roleKey(role)];
   if (!t || t.missing) {
     throw new Error(`no rendered tile for role "${role}"`);
   }
   return t;
+}
+
+function assertTileText(ctx, role, field, expected) {
+  const t = tile(ctx, role);
+  if (t[field] !== expected) {
+    throw new Error(`expected ${role} tile ${field} "${expected}", got "${t[field]}"`);
+  }
 }
 
 function registerSteps(registry) {
@@ -197,8 +228,7 @@ function registerSteps(registry) {
   scoped(
     /^the "([^"]+)" seat holds ticket "([^"]+)" titled "([^"]+)"$/,
     (ctx, role, ticketId, title) => {
-      ctx.seats = ctx.seats ?? {};
-      ctx.seats[role.toLowerCase()] = { ...(ctx.seats[role.toLowerCase()] ?? {}), ticketId, ticketTitle: title };
+      patchSeat(ctx, role, { ticketId, ticketTitle: title });
     }
   );
 
@@ -207,41 +237,34 @@ function registerSteps(registry) {
     if (!lastRole) {
       throw new Error('no seat configured before claim age step');
     }
+    requireCanonicalRole(lastRole);
     ctx.seats[lastRole].claimMinutesAgo = Number(minutes);
   });
 
   scoped(
     /^the "([^"]+)" seat holds ticket "([^"]+)" and entered the claim "(\d+)" minutes ago$/,
     (ctx, role, ticketId, minutes) => {
-      ctx.seats = ctx.seats ?? {};
-      ctx.seats[role.toLowerCase()] = {
-        ...(ctx.seats[role.toLowerCase()] ?? {}),
+      patchSeat(ctx, role, {
         ticketId,
         ticketTitle: `Ticket ${ticketId}`,
         claimMinutesAgo: Number(minutes),
-      };
+      });
     }
   );
 
   scoped(/^the "([^"]+)" seat holds ticket "([^"]+)"$/, (ctx, role, ticketId) => {
-    ctx.seats = ctx.seats ?? {};
-    ctx.seats[role.toLowerCase()] = {
-      ...(ctx.seats[role.toLowerCase()] ?? {}),
-      ticketId,
-      ticketTitle: `Ticket ${ticketId}`,
-    };
+    patchSeat(ctx, role, { ticketId, ticketTitle: `Ticket ${ticketId}` });
   });
 
   scoped(
     /^the "([^"]+)" seat holds tickets "([^"]+)", "([^"]+)" and "([^"]+)"$/,
     (ctx, role, t1, t2, t3) => {
-      ctx.seats = ctx.seats ?? {};
-      ctx.seats[role.toLowerCase()] = {
+      patchSeat(ctx, role, {
         ticketId: t1,
         ticketTitle: `Ticket ${t1}`,
         heldParcelCount: 3,
         batchTickets: [t1, t2, t3],
-      };
+      });
     }
   );
 
@@ -255,13 +278,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^the "([^"]+)" seat holds no parcel$/, (ctx, role) => {
-    ctx.seats = ctx.seats ?? {};
-    ctx.seats[role.toLowerCase()] = { holdsNothing: true };
+    patchSeat(ctx, role, { holdsNothing: true });
   });
 
   scoped(/^the "([^"]+)" pane is not reachable$/, (ctx, role) => {
-    ctx.seats = ctx.seats ?? {};
-    ctx.seats[role.toLowerCase()] = { unreachable: true };
+    patchSeat(ctx, role, { unreachable: true });
   });
 
   scoped(/^the role grid can render holding seats with ticket ids$/, () => {});
@@ -275,14 +296,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^the "([^"]+)" tile shows the ticket id "([^"]+)"$/, (ctx, role, ticketId) => {
-    const t = tile(ctx, role);
-    if (t.ticketIdText !== ticketId) {
-      throw new Error(`expected ${role} tile ticket id "${ticketId}", got "${t.ticketIdText}"`);
-    }
+    assertTileText(ctx, role, 'ticketIdText', ticketId);
   });
 
   scoped(/^the "([^"]+)" tile shows a slug derived from the ticket title$/, (ctx, role) => {
-    const seat = ctx.seats?.[role.toLowerCase()];
+    const seat = ctx.seats?.[roleKey(role)];
     const t = tile(ctx, role);
     if (!seat?.ticketTitle) {
       throw new Error(`no ticket title configured for ${role}`);
@@ -294,27 +312,15 @@ function registerSteps(registry) {
   });
 
   scoped(/^the "([^"]+)" tile shows a claim age of "(\d+)" minutes$/, (ctx, role, minutes) => {
-    const t = tile(ctx, role);
-    const expected = `${minutes}m`;
-    if (t.ageText !== expected) {
-      throw new Error(`expected ${role} claim age "${expected}", got "${t.ageText}"`);
-    }
+    assertTileText(ctx, role, 'ageText', `${minutes}m`);
   });
 
   scoped(/^the "([^"]+)" tile shows the role name$/, (ctx, role) => {
-    const t = tile(ctx, role);
-    const expected = ROLE_LABELS[role.toLowerCase()] ?? role;
-    if (t.roleNameText !== expected) {
-      throw new Error(`expected ${role} role name "${expected}", got "${t.roleNameText}"`);
-    }
+    assertTileText(ctx, role, 'roleNameText', ROLE_LABELS[roleKey(role)] ?? role);
   });
 
   scoped(/^the "([^"]+)" tile shows that "(\d+)" further parcels are held$/, (ctx, role, count) => {
-    const t = tile(ctx, role);
-    const expected = `+${count}`;
-    if (t.moreText !== expected) {
-      throw new Error(`expected ${role} batch marker "${expected}", got "${t.moreText}"`);
-    }
+    assertTileText(ctx, role, 'moreText', `+${count}`);
   });
 
   scoped(/^the "([^"]+)" tile shows no held ticket$/, (ctx, role) => {
@@ -352,8 +358,8 @@ function registerSteps(registry) {
       if (!kindRule || !idRule) {
         throw new Error('expected .pane-kind and .pane-grid-ticket-id CSS rules');
       }
-      const kindMax = Number((kindRule[1].match(/clamp\([^,]+,\s*[^,]+,\s*(\d+)px\)/) ?? [])[1]);
-      const idMax = Number((idRule[1].match(/clamp\([^,]+,\s*[^,]+,\s*(\d+)px\)/) ?? [])[1]);
+      const kindMax = parseCssClampMax(kindRule[1]);
+      const idMax = parseCssClampMax(idRule[1]);
       if (!(idMax < kindMax)) {
         throw new Error(`expected ticket id max font (${idMax}px) < role name max (${kindMax}px)`);
       }

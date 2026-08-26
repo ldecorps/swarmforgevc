@@ -1,5 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1046: Live Screen role grid tiles
+(`/resident-spy`, `residentSpyUiHtml.ts`, Mini App + Bubble Live) again name
+the ticket a seat holds — ticket id, slug, compact claim age, and batch `+N`
+when `heldParcelCount > 1` — in type clearly smaller than the role name;
+idle tiles show role + Expand only. Grid reads the same `PaneLiveSnapshot`
+fields fullscreen Expand already uses (`buildGridTileHeadHtml` /
+`resolveResidentHeldTicketMetaForRoles` in `residentPaneSpy.ts`; per-seat
+`inbox/in_process/` resolution, not the board stage fold). Reverses BL-994's
+grid-only-role-name decision per operator request. Phone-width approval mock:
+`extension/scripts/render-console-tile-mock.js` →
+`backlog/evidence/BL-1046-console-tile-mock-20260826.html`. Acceptance:
+`specs/features/BL-1046-the-console-tile-names-the-ticket-a-seat-holds.feature`.
+How-to:
+`docs/how-to/BL-1046-console-tile-names-the-ticket-a-seat-holds.md`.
+Not-held / last-acted-on form stays BL-1044 terminal title bars only.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1151: front-desk give-up escalation
 emails at most once per unbroken outage episode — escalation arming survives
 cooldown re-arm until `FRONT_DESK_HEALTHY_RESET_MS` healthy grace clears it;

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=979d1e33f0206bd893aeac117258431c343781b3a4507a79c873b621f72fd59e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T11:35:00.611185618Z","feature_name":"The fleet console's role tiles name the ticket each seat holds and how long it has held it","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1046-the-console-tile-names-the-ticket-a-seat-holds.feature","background_hash":"b86124456fadd68619ad368e96af50f6eb0960cf2170f3915ffd4c12c51ad332","implementation_hash":"unknown","scenarios":[{"index":1,"name":"The claim age is shown for every role, not only the coder and resident seats","scenario_hash":"f9b1ba261d1849b591445685a8932172c75ea9448ec1604a1460c5977020a730","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-26T11:35:00.611185618Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The fleet console's role tiles name the ticket each seat holds and how long it has held it
 
   The live console's role grid (the eight tiles at e.musicalsifu.com) renders

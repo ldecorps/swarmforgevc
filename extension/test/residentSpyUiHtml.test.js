@@ -308,3 +308,55 @@ test('BL-1046: grid tile shows held ticket id, slug, and compact claim age from 
   assert.equal(col.querySelector('.pane-kind')?.textContent, 'Hardender');
   dom.window.close();
 });
+
+test('BL-1046: a single held parcel does not show a batch +N badge', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        {
+          id: 'qa',
+          label: 'Qa',
+          pane: pane({
+            roleLabel: 'Qa',
+            ticketId: 'BL-1041',
+            ticketTitle: 'Ticket BL-1041',
+            claimEnteredAtMs: Date.now() - 5 * 60 * 1000,
+            heldParcelCount: 1,
+          }),
+        },
+      ],
+    })
+  );
+  await flush();
+  const col = dom.window.document.querySelector('.pane-col[data-pane-id="QA"]');
+  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-1041');
+  assert.equal(col.querySelector('.pane-grid-more'), null);
+  dom.window.close();
+});
+
+test('BL-1046: grid tile omits slug when ticket title is absent', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        {
+          id: 'coder',
+          label: 'Coder',
+          pane: pane({
+            roleLabel: 'Coder',
+            ticketId: 'BL-999',
+            claimEnteredAtMs: Date.now() - 10 * 60 * 1000,
+          }),
+        },
+      ],
+    })
+  );
+  await flush();
+  const col = dom.window.document.querySelector('.pane-col[data-pane-id="coder"]');
+  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-999');
+  assert.equal(col.querySelector('.pane-grid-slug'), null);
+  dom.window.close();
+});
