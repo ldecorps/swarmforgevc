@@ -356,7 +356,7 @@ export function getResidentSpyUiHtml(): string {
   var fsFontDecEl = document.getElementById('fs-font-dec');
   var fsFontIncEl = document.getElementById('fs-font-inc');
   var fsFontCtrlEl = document.getElementById('fs-font-ctrl');
-  // BL-1153: host-persisted via GET/PUT /web-ui-font-size (Rule 3 — no browser storage).
+  // BL-609: in-memory only — Architecture Rule 3 forbids browser storage here.
   var paneFontSizePx = ${PANE_FONT_DEFAULT_PX};
   var PANE_FONT_MIN = ${PANE_FONT_MIN_PX};
   var PANE_FONT_MAX = ${PANE_FONT_MAX_PX};
@@ -387,27 +387,7 @@ export function getResidentSpyUiHtml(): string {
     return clampPaneFontSizePx(clampPaneFontSizePx(current) + direction * PANE_FONT_STEP);
   }
 
-  function fontControlAuthHeaders() {
-    if (!token) {
-      return { 'content-type': 'application/json' };
-    }
-    return {
-      'content-type': 'application/json',
-      authorization: 'Bearer ' + token,
-      'x-control-token': token,
-    };
-  }
-
-  function persistPaneFontSize() {
-    if (!token) return;
-    fetch('/web-ui-font-size?bearer=' + encodeURIComponent(token), {
-      method: 'PUT',
-      headers: fontControlAuthHeaders(),
-      body: JSON.stringify({ surface: 'live-screen', fontSizePx: paneFontSizePx }),
-    }).catch(function () {});
-  }
-
-  function applyPaneFontSize(persist) {
+  function applyPaneFontSize() {
     paneFontSizePx = clampPaneFontSizePx(paneFontSizePx);
     document.documentElement.style.setProperty('--pane-font-size', paneFontSizePx + 'px');
     var atMin = paneFontSizePx <= PANE_FONT_MIN;
@@ -416,27 +396,6 @@ export function getResidentSpyUiHtml(): string {
     fsFontIncEl.disabled = atMax;
     fsFontDecEl.classList.toggle('is-unavailable', atMin);
     fsFontIncEl.classList.toggle('is-unavailable', atMax);
-    if (persist) {
-      persistPaneFontSize();
-    }
-  }
-
-  function loadPaneFontSize() {
-    if (!token) {
-      applyPaneFontSize(false);
-      return;
-    }
-    fetch('/web-ui-font-size?surface=live-screen&bearer=' + encodeURIComponent(token), {
-      cache: 'no-store',
-    })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) {
-        if (data && data.success && typeof data.fontSizePx === 'number') {
-          paneFontSizePx = data.fontSizePx;
-        }
-        applyPaneFontSize(false);
-      })
-      .catch(function () { applyPaneFontSize(false); });
   }
 
   function inTelegram() {
@@ -725,12 +684,12 @@ export function getResidentSpyUiHtml(): string {
     var target = e.target;
     if (target === fsFontIncEl) {
       paneFontSizePx = stepPaneFontSizePx(paneFontSizePx, 1);
-      applyPaneFontSize(true);
+      applyPaneFontSize();
       return;
     }
     if (target === fsFontDecEl) {
       paneFontSizePx = stepPaneFontSizePx(paneFontSizePx, -1);
-      applyPaneFontSize(true);
+      applyPaneFontSize();
     }
   });
 
@@ -926,7 +885,7 @@ export function getResidentSpyUiHtml(): string {
       });
   }
 
-  loadPaneFontSize();
+  applyPaneFontSize();
   refresh();
   // BL-881: paired with RESIDENT_PANE_CACHE_TTL_MS (residentPaneLive.ts) —
   // polling faster than the walk can finish piled overlapping captures onto

@@ -1,5 +1,3 @@
-import { webUiFontSizeMiniAppScript } from './webUiFontSizeMiniAppScript';
-
 /// BL-538: Telegram Mini App shell for the console PAUSED TICKET PAGER.
 /// Shows paused backlog tickets (id + title, YAML details) with Prev/Next
 /// navigation and Expedite / Approve actions (confirm -> priority 0 + promotion to
@@ -163,16 +161,38 @@ export function getPausedPagerUiHtml(): string {
   var lastData = null;
   var loading = false;
 
-${webUiFontSizeMiniAppScript({
-    surface: 'paused-pager',
-    cssVar: '--pp-font-px',
-    min: 12,
-    max: 26,
-    defaultPx: 15,
-    step: 2,
-    decId: 'font-dec',
-    incId: 'font-inc',
-  })}
+  var FONT_KEY = 'swarmforge-paused-pager-font-px';
+  var FONT_MIN = 12;
+  var FONT_MAX = 26;
+  var FONT_DEFAULT = 15;
+  var FONT_STEP = 2;
+
+  function currentFontPx() {
+    var raw = document.documentElement.style.getPropertyValue('--pp-font-px');
+    var parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : FONT_DEFAULT;
+  }
+
+  function applyFont(px) {
+    var clamped = Math.min(FONT_MAX, Math.max(FONT_MIN, px));
+    document.documentElement.style.setProperty('--pp-font-px', clamped + 'px');
+    try { localStorage.setItem(FONT_KEY, String(clamped)); } catch (_) {}
+    document.getElementById('font-dec').disabled = clamped <= FONT_MIN;
+    document.getElementById('font-inc').disabled = clamped >= FONT_MAX;
+  }
+
+  function loadFont() {
+    var stored = parseInt(localStorage.getItem(FONT_KEY), 10);
+    applyFont(Number.isFinite(stored) ? stored : FONT_DEFAULT);
+  }
+
+  document.getElementById('font-dec').onclick = function () {
+    applyFont(currentFontPx() - FONT_STEP);
+  };
+  document.getElementById('font-inc').onclick = function () {
+    applyFont(currentFontPx() + FONT_STEP);
+  };
+  loadFont();
 
   function controlAuthHeaders() {
     if (!token) {
