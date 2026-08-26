@@ -1,4 +1,4 @@
-// BL-357: the "genuinely new half" the ticket calls out - when the human
+// BL-649: existing reply path for approve/reject — unchanged; no second writer.
 // replies in a ticket's own topic to approve it, this module RECORDS that
 // approval against the ticket by flipping its structured `human_approval`
 // field from pending to approved. Mirrors backfill-human-approval.ts's own
