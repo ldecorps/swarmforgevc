@@ -205,5 +205,6 @@
 
 ;; BL-1150 / BL-669: only invoke as bb entrypoint — never when load-file'd
 ;; from handoffd (bare (-main) printed usage and System/exit 1, killing the daemon).
+;; Call 0-arity -main (reads cli-args); do not apply *command-line-args*.
 (when (= *file* (System/getProperty "babashka.file"))
   (-main))

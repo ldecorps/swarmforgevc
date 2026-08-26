@@ -42,3 +42,5 @@ description: |
   a ticket's own description as "the thing this verifies" is actually
   invoked (not just `source`d for one helper function) somewhere in that
   ticket's test file.
+notes: |
+  - [2026-08-26T02:01Z] coordinator: open-slot nudge — awaiting human_approval; not promoted.
