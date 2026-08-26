@@ -29,9 +29,9 @@ invariants:
   - "A refused CRAP land writes nothing durable (no backlog/done move, no acceptance receipt)."
 
 required_wiring:
-  - 'extension/src/tools/landPilotedTicket or BL-727 land gate::CRAP check::runs scoped crapReport on touched files even when mutation_cost is low'
-  - 'swarmforge/roles/hardender.prompt::CRAP guidance::states CRAP is separate from mutation_cost low exemption'
-  - 'extension/scripts/crapReport.js::scoped run::pilot land invokes against touched paths only'
+  - 'extension/src/tools/pilotAcceptanceGate.ts::checkCrap::scoped CRAP'
+  - 'swarmforge/roles/hardender.prompt::BL-741::CRAP is an always-run gate scoped to'
+  - 'extension/scripts/crapReport.js::CRAP_THRESHOLD::CRAP metric report'
   - 'specs/pipeline/steps/index.js::bl741PilotCrapGateSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
