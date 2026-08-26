@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1159: front-desk bridge child crash give-up
+loop after bind — `stop_bridge_headless.sh` defers when `front-desk-supervisor.pid`
+is live; `recover_miniapp_bridge.sh` re-arms via front desk or falls back to
+bridge-only bounce; `operator_runtime.bb` miniapp watchdog calls recover, not
+direct stop/kill. Preserves BL-1154 build-stale vs crash classification, BL-1158
+single owner, BL-1151 email policy. Acceptance:
+`specs/features/BL-1159-bridge-child-survives-without-crash-giveup-loop.feature`.
+How-to:
+`docs/how-to/BL-1159-bridge-child-survives-without-crash-giveup-loop.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1153: Mini App font-size choices stick
 across reload on Live Screen, Pipeline Board, and Paused pager via extension-host
 persistence in `.swarmforge/operator/web-ui-font-size-preferences.json` and
