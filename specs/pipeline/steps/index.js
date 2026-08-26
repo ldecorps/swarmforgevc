@@ -294,6 +294,7 @@ const DOMAINS = [
   require('./bl504TsMetricsTicketIdSteps'),
   require('./bl503TicketIdExtractorHyphenOptionalSteps'),
   require('./bl490ExpediteApprovalButtonSteps'),
+  require('./bl589ApprovalAskCarriesRulingOptionsSteps'),
   require('./bl494CloseLegacyPerTicketTopicsSteps'),
   require('./bl495TopicRecreationEpicAwareSteps'),
   require('./bl505PipelineBoardNarrowerGridAndListsSteps'),

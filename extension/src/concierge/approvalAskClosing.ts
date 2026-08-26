@@ -22,7 +22,12 @@
 // three, it is not a final resolution (the specifier flips it back to
 // pending on re-present, slice 3), but it still closes the posted ask the
 // same way (the ticket leaves the Approvals topic while being revised).
-export type ApprovalDecisionVerdict = { kind: 'approved' } | { kind: 'rejected'; reason: string } | { kind: 'expedited' } | { kind: 'amending' };
+export type ApprovalDecisionVerdict =
+  | { kind: 'approved' }
+  | { kind: 'rejected'; reason: string }
+  | { kind: 'expedited' }
+  | { kind: 'amending' }
+  | { kind: 'ruled'; label: string };
 
 // A build-time/cosmetic detail (exact wording), not a promotion gate - the
 // ticket's own examples: "-- Approved 2026-07-17 03:07 UTC" /
@@ -44,6 +49,9 @@ export function decisionLineFor(verdict: ApprovalDecisionVerdict, nowMs: number)
   if (verdict.kind === 'amending') {
     return `-- Amending ${formatUtcStamp(nowMs)}`;
   }
+  if (verdict.kind === 'ruled') {
+    return `-- Ruled: ${verdict.label} ${formatUtcStamp(nowMs)}`;
+  }
   return `-- Rejected: ${verdict.reason}`;
 }
 
@@ -57,7 +65,7 @@ export function composeDecidedAskText(originalText: string, verdict: ApprovalDec
 // True when the stored ask text already carries a BL-484 decision footer —
 // used by the decided-ask close reconcile sweep to skip asks Telegram already
 // closed (or that were persisted after a successful edit).
-export const DECIDED_ASK_LINE_PATTERN = /^-- (Approved |Rejected:|Expedited |Q jumped |Amending )/m;
+export const DECIDED_ASK_LINE_PATTERN = /^-- (Approved |Rejected:|Expedited |Q jumped |Amending |Ruled: )/m;
 
 export function approvalAskTextShowsDecidedVerdict(text: string): boolean {
   return DECIDED_ASK_LINE_PATTERN.test(text);
@@ -67,4 +75,8 @@ export function approvalAskTextShowsDecidedVerdict(text: string): boolean {
 // longer pending gets this instead of any decision side effect.
 export function alreadyDecidedToastText(verdict: 'approved' | 'rejected'): string {
   return `Already decided: ${verdict}`;
+}
+
+export function alreadyRuledToastText(label: string): string {
+  return `Already ruled: ${label}`;
 }

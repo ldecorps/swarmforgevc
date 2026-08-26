@@ -13,7 +13,7 @@ import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 // second copy of the same arithmetic.
 import { formatDurationMs } from '../metrics/swarmMetrics';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
-import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
+import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText, alreadyRuledToastText } from '../concierge/approvalAskClosing';
 import { unsafeDispatchToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
@@ -704,6 +704,9 @@ export interface PollAdapters {
   // two siblings - only the amend-steer directive/emitted-state effects
   // below are new-capability-optional.
   recordAmendReply: (backlogId: string) => Promise<boolean>;
+  recordRulingReply?: (backlogId: string, rulingLabel: string) => Promise<boolean>;
+  resolveRulingOptions?: (backlogId: string) => Promise<string[] | undefined>;
+  readRecordedRuling?: (backlogId: string) => Promise<string | undefined>;
   // BL-509: queues the distinct amend-steer directive (ticket id + the
   // human's steer text) for slice 2's daemon to route to the specifier -
   // deliberately a SEPARATE event from postOperatorContext's own
@@ -1295,6 +1298,30 @@ export async function recordApprovalDecisionAndClose(
   return { changed: true, committed };
 }
 
+export async function recordRulingDecisionAndClose(
+  adapters: PollAdapters,
+  backlogId: string,
+  rulingLabel: string,
+  nowMs: number = Date.now(),
+  onDecisionRecorded?: (changed: boolean) => Promise<void>
+): Promise<{ changed: boolean; committed: boolean }> {
+  const recordRuling = adapters.recordRulingReply;
+  if (!recordRuling) {
+    return { changed: false, committed: false };
+  }
+  const changed = await recordRuling(backlogId, rulingLabel);
+  await onDecisionRecorded?.(changed);
+  if (!changed) {
+    return { changed: false, committed: false };
+  }
+  const committed = await commitApprovalDecision(adapters, backlogId, 'approved');
+  const verdict: ApprovalDecisionVerdict = { kind: 'ruled', label: rulingLabel };
+  emitApprovalTapTelemetry(adapters, 'recorded');
+  await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
+  await notifyHumanDecisionRecorded(adapters);
+  return { changed: true, committed };
+}
+
 // BL-509: the Amend verb's own decision-and-close routine - a sibling of
 // recordApprovalDecisionAndClose above, not a branch inside it, because
 // amend's effect needs the steer text (for the amend-steer directive) and a
@@ -1650,6 +1677,7 @@ export type CallbackButtonDecision =
   | { action: 'expedite'; backlogId: string }
   | { action: 'more'; backlogId: string }
   | { action: 'ambulance'; backlogId: string }
+  | { action: 'rule'; backlogId: string; optionIndex: number }
   | { action: 'await-followup'; backlogId: string; kind: 'reject' | 'amend' }
   | { action: 'answer-ask'; threadId: string; optionIndex: number }
   | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'unrecognized-data' };
@@ -1667,6 +1695,7 @@ const CALLBACK_DATA_PATTERN = /^(approve|reject|amend|expedite|more|ambulance):(
 // colon - support_lib.bb's own SUP-<n> id shape), so the trailing `:<digits>`
 // unambiguously anchors the option index even if a future id shape changed.
 const ASK_CALLBACK_DATA_PATTERN = /^ask:([^:]+):(\d+)$/;
+const RULE_CALLBACK_DATA_PATTERN = /^rule:([^:]+):(\d+)$/;
 
 // The callback_query twins of isFromMyChat/isFromPrincipal above - same
 // checks, read off TelegramCallbackQuery's own from/message.chat fields
@@ -1703,6 +1732,11 @@ export function decideCallbackQueryAction(
   if (askMatch) {
     const [, threadId, optionIndexText] = askMatch;
     return { action: 'answer-ask', threadId, optionIndex: Number(optionIndexText) };
+  }
+  const ruleMatch = callbackQuery.data?.match(RULE_CALLBACK_DATA_PATTERN);
+  if (ruleMatch) {
+    const [, backlogId, optionIndexText] = ruleMatch;
+    return { action: 'rule', backlogId, optionIndex: Number(optionIndexText) };
   }
   const match = callbackQuery.data?.match(CALLBACK_DATA_PATTERN);
   if (!match) {
@@ -1789,6 +1823,13 @@ async function answerIfAlreadyDecided(callbackQuery: TelegramCallbackQuery, deci
   // More is read-only — still useful after a verdict (re-read the spec).
   if (decision.action === 'drop' || decision.action === 'answer-ask' || decision.action === 'more') {
     return false;
+  }
+  if (decision.action === 'rule') {
+    const recordedRuling = await adapters.readRecordedRuling?.(decision.backlogId);
+    if (recordedRuling) {
+      await adapters.answerCallbackQuery(callbackQuery.id, alreadyRuledToastText(recordedRuling));
+      return true;
+    }
   }
   const recordedVerdict = await adapters.readRecordedApprovalVerdict?.(decision.backlogId);
   if (!recordedVerdict) {
@@ -1973,7 +2014,7 @@ async function dispatchAmbulanceCallback(
 // type-safe over exactly the variants it can actually receive.
 type RecognizedApprovalDecision = Exclude<
   CallbackButtonDecision,
-  { action: 'answer-ask' } | { action: 'expedite' } | { action: 'more' } | { action: 'ambulance' }
+  { action: 'answer-ask' } | { action: 'expedite' } | { action: 'more' } | { action: 'ambulance' } | { action: 'rule' }
 >;
 
 // Hardener 2026-07-17: split out of dispatchRecognizedCallbackDecision below
@@ -2041,6 +2082,24 @@ async function dispatchApproveCallback(
   return result.changed ? 'posted' : 'dropped';
 }
 
+async function dispatchRuleCallback(
+  callbackQuery: TelegramCallbackQuery,
+  decision: { action: 'rule'; backlogId: string; optionIndex: number },
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  const options = await adapters.resolveRulingOptions?.(decision.backlogId);
+  const label = options?.[decision.optionIndex];
+  if (!label) {
+    await adapters.answerCallbackQuery(callbackQuery.id, UNRECOGNIZED_CALLBACK_TOAST_TEXT);
+    emitCallbackDiagnostic(adapters, callbackQuery.id, 'unrecognized-data', decision.backlogId);
+    return 'dropped';
+  }
+  const result = await recordRulingDecisionAndClose(adapters, decision.backlogId, label, Date.now(), (changed) =>
+    answerApproveTap(callbackQuery, decision.backlogId, changed, adapters)
+  );
+  return result.changed ? 'posted' : 'dropped';
+}
+
 async function dispatchApproveOrFollowup(
   callbackQuery: TelegramCallbackQuery,
   decision: RecognizedApprovalDecision,
@@ -2082,6 +2141,9 @@ async function dispatchRecognizedCallbackDecision(
   }
   if (await answerIfAlreadyDecided(callbackQuery, decision, adapters)) {
     return 'dropped';
+  }
+  if (decision.action === 'rule') {
+    return dispatchRuleCallback(callbackQuery, decision, adapters);
   }
   if (decision.action === 'expedite') {
     return dispatchExpediteCallback(callbackQuery, decision, adapters);
