@@ -26,7 +26,7 @@ const STAGE_CELL_WIDTH = 2;
 function gridLine(gutterText, gutterWidth, cells) {
   return (
     gutterText.padStart(gutterWidth, NBSP) +
-    cells.map((c) => NBSP + c.padStart(STAGE_CELL_WIDTH, NBSP)).join('')
+    cells.map((c) => c.padStart(STAGE_CELL_WIDTH, NBSP)).join(NBSP)
   );
 }
 
@@ -206,7 +206,7 @@ test('BL-979 sc05 / invariant 2: 3-, 4- and 5-digit ids never drop a row, and st
     assert.ok(!lines.some((l) => l.includes('more active')), `no row dropped at ${idWidth}-digit ids`);
     const gridLines = lines.filter((l) => l.includes(NBSP));
     const widest = Math.max(...gridLines.map((l) => l.length));
-    assert.equal(widest, idWidth + STAGE_GLYPHS.length * (1 + STAGE_CELL_WIDTH), `${idWidth}-digit grid width`);
+    assert.equal(widest, idWidth + STAGE_GLYPHS.length * STAGE_CELL_WIDTH + (STAGE_GLYPHS.length - 1), `${idWidth}-digit grid width`);
     assert.ok(widest <= PIPELINE_BOARD_GRID_MAX_WIDTH, `${idWidth}-digit ids fit the ${PIPELINE_BOARD_GRID_MAX_WIDTH}-char budget`);
   }
 });
