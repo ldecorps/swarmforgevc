@@ -61,6 +61,7 @@ function mkGateDeps(unreachableOutcome) {
       }),
       checkUnreachableStepHandlers: () => unreachableOutcome,
       checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
       moveTicketToDone: () => {
         calls.move += 1;
         return { moved: true, destination: '/repo/backlog/done/BL-753-prop.yaml' };

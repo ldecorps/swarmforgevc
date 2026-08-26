@@ -32,6 +32,7 @@ function mkDeps(overrides) {
       checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
       checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
       checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
       moveTicketToDone: () => {
         calls.move += 1;
         return { moved: true, destination: '/repo/backlog/done/BL-755.yaml' };
@@ -157,6 +158,7 @@ test('assessMultiBranchParserCoverage filters out parsers below MIN_PARSER_ARMS'
 test('landPilotedTicket refuses untested-parser-branch inertly', async () => {
   const { deps, calls } = mkDeps({
     checkMultiBranchParserCoverage: () => ({
+    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
       checked: true,
       parsersScanned: 1,
       miss: {
