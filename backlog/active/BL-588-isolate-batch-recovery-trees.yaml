@@ -168,6 +168,7 @@ abandoned_commits:
   - c28ceddf3e
   - a2c324b584
   - 9a2ece2878
+  - eb3f7e42b9
 bounce_count: 5
 bounce_history:
   - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: 3403f29b1, evidence: backlog/evidence/BL-588-qa-bounce-20260826.md }
