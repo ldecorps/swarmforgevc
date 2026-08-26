@@ -60,18 +60,27 @@ export function getResidentSpyUiHtml(): string {
     min-height: 0;
   }
   .dot {
-    position: fixed;
-    bottom: max(6px, env(safe-area-inset-bottom));
-    left: max(6px, env(safe-area-inset-left));
-    z-index: 40;
     width: 8px;
     height: 8px;
     border-radius: 50%;
     background: #3fb950;
     pointer-events: none;
+    flex: 0 0 auto;
   }
   .dot.stale { background: #d29922; }
   .dot.err { background: #f85149; }
+  .pane-status-dot {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    z-index: 2;
+  }
+  #fs-dot {
+    position: fixed;
+    bottom: max(6px, env(safe-area-inset-bottom));
+    left: max(6px, env(safe-area-inset-left));
+    z-index: 40;
+  }
   .split-view {
     flex: 1 1 auto;
     min-height: 0;
@@ -198,9 +207,40 @@ export function getResidentSpyUiHtml(): string {
     word-break: normal;
     overflow-wrap: normal;
   }
-  /* Grid tiles: role name + Expand only; transcript lives in fullscreen. */
+  /* Grid tiles: role name + held ticket strip + Expand; transcript in fullscreen. */
   .split .pane-col > pre {
     display: none;
+  }
+  .pane-grid-ticket {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.25;
+  }
+  .pane-grid-ticket-id {
+    font-size: clamp(9px, 3.2vw, 11px);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--tg-theme-text-color, #e6edf3);
+  }
+  .pane-grid-slug {
+    font-size: clamp(8px, 2.8vw, 10px);
+    font-weight: 500;
+    color: color-mix(in srgb, var(--tg-theme-text-color, #e6edf3) 82%, var(--tg-theme-hint-color, #8b949e));
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .pane-grid-age,
+  .pane-grid-more {
+    font-size: clamp(8px, 2.8vw, 10px);
+    font-weight: 600;
+    color: var(--tg-theme-hint-color, #8b949e);
+  }
+  .pane-grid-more {
+    color: color-mix(in srgb, var(--tg-theme-link-color, #58a6ff) 88%, #fff);
   }
   .pane-title {
     font-size: 12px;
@@ -316,7 +356,6 @@ export function getResidentSpyUiHtml(): string {
 </style>
 </head>
 <body>
-<span id="dot" class="dot" hidden></span>
 <div class="split-view" id="split-view">
   <div id="ticket-strip" class="ticket-strip" hidden>
     <div class="ticket-strip-line"><span class="ticket-strip-id" id="ticket-strip-id"></span> - <span class="ticket-strip-title" id="ticket-strip-title"></span></div>
@@ -326,6 +365,7 @@ export function getResidentSpyUiHtml(): string {
   <div class="split" id="pane-split"></div>
 </div>
 <div id="pane-fullscreen" class="pane-fullscreen" hidden>
+  <span id="fs-dot" class="dot" hidden></span>
   <div class="fs-top" id="fs-top">
     <div class="fs-top-row">
       <div id="fs-head"></div>
@@ -343,7 +383,7 @@ export function getResidentSpyUiHtml(): string {
   var params = new URLSearchParams(location.search);
   var token = params.get('bearer') || params.get('token') || '';
   var splitEl = document.getElementById('pane-split');
-  var dotEl = document.getElementById('dot');
+  var fsDotEl = document.getElementById('fs-dot');
   var ticketStripEl = document.getElementById('ticket-strip');
   var ticketStripIdEl = document.getElementById('ticket-strip-id');
   var ticketStripTitleEl = document.getElementById('ticket-strip-title');
@@ -370,6 +410,7 @@ export function getResidentSpyUiHtml(): string {
   var fsTitleBase = '';
   var lastPanes = [];
   var lastFetchAvailable = false;
+  var lastAggregateStatus = null;
   // BL-929: false until a snapshot says otherwise, so a standing full pack
   // never shows the top ticket strip even on the very first paint (fails
   // closed toward the layout that has no strip, not toward the one that
@@ -653,6 +694,7 @@ export function getResidentSpyUiHtml(): string {
     paneFullscreenEl.hidden = !active;
     if (active) {
       syncFullscreenContent();
+      syncFullscreenStatusDot();
       enterImmersiveFullscreen();
       applyViewportHeight();
       if (tg && typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
@@ -667,7 +709,7 @@ export function getResidentSpyUiHtml(): string {
     var entry = paneEntryById(focusPane);
     if (!entry) return;
     var pane = entry.pane;
-    var showClaim = entry.id === 'resident' || entry.id === 'coder';
+    var showClaim = true;
     fsHeadEl.innerHTML = buildFullscreenHeadHtml(pane, entry.label, entry.id, showClaim);
     if (pane && pane.claimEnteredAtMs) {
       fsClaimEnteredAtMs = pane.claimEnteredAtMs;
@@ -734,9 +776,75 @@ export function getResidentSpyUiHtml(): string {
     }
   });
 
-  function setStatus(kind) {
+  function dotClassName(kind, isPaneTile) {
+    var base = isPaneTile ? 'dot pane-status-dot' : 'dot';
+    return base + (kind === 'ok' ? '' : ' ' + kind);
+  }
+
+  function applyDotState(dotEl, kind) {
+    if (!dotEl) return;
+    dotEl.removeAttribute('hidden');
     dotEl.hidden = false;
-    dotEl.className = 'dot' + (kind === 'ok' ? '' : ' ' + kind);
+    dotEl.className = dotClassName(kind, dotEl.hasAttribute('data-status-indicator'));
+  }
+
+  function hideDot(dotEl) {
+    if (!dotEl) return;
+    dotEl.hidden = true;
+    dotEl.setAttribute('hidden', '');
+    dotEl.className = dotEl.hasAttribute('data-status-indicator') ? 'dot pane-status-dot' : 'dot';
+  }
+
+  function resolvePaneStatusKind(pane, aggregateKind) {
+    if (pane && pane.activitySignal) {
+      return pane.activitySignal;
+    }
+    if (!pane || pane.available === false) {
+      return null;
+    }
+    return aggregateKind;
+  }
+
+  function updatePaneStatusDot(headEl, pane, aggregateKind) {
+    var dotEl = headEl.querySelector('[data-status-indicator]');
+    if (!dotEl) return;
+    var kind = resolvePaneStatusKind(pane, aggregateKind);
+    if (!kind) {
+      hideDot(dotEl);
+      return;
+    }
+    applyDotState(dotEl, kind);
+  }
+
+  function updateAllPaneStatusDots(aggregateKind) {
+    var cols = splitEl.querySelectorAll('.pane-col');
+    for (var i = 0; i < lastPanes.length; i++) {
+      var col = cols[i];
+      if (!col) continue;
+      var headEl = col.querySelector('.pane-head');
+      if (!headEl) continue;
+      updatePaneStatusDot(headEl, lastPanes[i].pane, aggregateKind);
+    }
+  }
+
+  function syncFullscreenStatusDot() {
+    if (!focusPane || paneFullscreenEl.hidden) {
+      hideDot(fsDotEl);
+      return;
+    }
+    var entry = paneEntryById(focusPane);
+    var kind = resolvePaneStatusKind(entry && entry.pane, lastAggregateStatus);
+    if (!kind) {
+      hideDot(fsDotEl);
+      return;
+    }
+    applyDotState(fsDotEl, kind);
+  }
+
+  function setStatus(kind) {
+    lastAggregateStatus = kind;
+    updateAllPaneStatusDots(kind);
+    syncFullscreenStatusDot();
   }
 
   function tickAge() {
@@ -753,6 +861,16 @@ export function getResidentSpyUiHtml(): string {
     var elapsedHr = Math.floor(elapsedMin / 60);
     if (elapsedHr < 48) return 'entered ' + elapsedHr + 'h ago';
     return 'entered ' + Math.floor(elapsedHr / 24) + 'd ago';
+  }
+
+  function formatClaimAgeCompact(claimEnteredAtMs) {
+    var elapsedSec = Math.max(0, Math.floor((Date.now() - claimEnteredAtMs) / 1000));
+    if (elapsedSec < 60) return elapsedSec + 's';
+    var elapsedMin = Math.floor(elapsedSec / 60);
+    if (elapsedMin < 60) return elapsedMin + 'm';
+    var elapsedHr = Math.floor(elapsedMin / 60);
+    if (elapsedHr < 48) return elapsedHr + 'h';
+    return Math.floor(elapsedHr / 24) + 'd';
   }
 
   function escapeHtml(text) {
@@ -853,12 +971,36 @@ export function getResidentSpyUiHtml(): string {
     }
   }
 
-  function renderPane(pane, headEl, paneEl, label, paneId, showClaimEntered) {
-    // Grid: role name + Expand only. Full metadata/transcript stay in fullscreen Expand.
-    headEl.innerHTML =
-      '<div class="pane-head-main"><div class="pane-kind">' + escapeHtml(label) + '</div></div>' +
-      '<span class="pane-expand-hint">Expand</span>';
-    if (showClaimEntered && pane && pane.claimEnteredAtMs) {
+  function buildGridTileHeadHtml(pane, label) {
+    var html = '<div class="pane-head-main"><div class="pane-kind">' + escapeHtml(label) + '</div>';
+    if (pane && pane.available !== false && pane.ticketId) {
+      html += '<div class="pane-grid-ticket">';
+      html += '<span class="pane-grid-ticket-id">' + escapeHtml(pane.ticketId) + '</span>';
+      if (pane.ticketTitle) {
+        html += '<span class="pane-grid-slug">' + escapeHtml(pane.ticketTitle) + '</span>';
+      }
+      if (pane.claimEnteredAtMs) {
+        html += '<span class="pane-grid-age">' + escapeHtml(formatClaimAgeCompact(pane.claimEnteredAtMs)) + '</span>';
+      }
+      if (pane.heldParcelCount && pane.heldParcelCount > 1) {
+        html += '<span class="pane-grid-more">+' + (pane.heldParcelCount - 1) + '</span>';
+      }
+      html += '</div>';
+    }
+    html += '</div><span class="pane-expand-hint">Expand</span>';
+    html += '<span class="dot pane-status-dot" data-status-indicator hidden aria-hidden="true"></span>';
+    return html;
+  }
+
+  function renderPane(pane, headEl, paneEl, label, paneId) {
+    // BL-1046: grid tile reads the same payload fields as fullscreen Expand.
+    headEl.innerHTML = buildGridTileHeadHtml(pane, label);
+    if (pane && pane.activitySignal) {
+      updatePaneStatusDot(headEl, pane, 'ok');
+    } else if (lastAggregateStatus) {
+      updatePaneStatusDot(headEl, pane, lastAggregateStatus);
+    }
+    if (pane && pane.claimEnteredAtMs) {
       claimEnteredByPaneId[paneId] = pane.claimEnteredAtMs;
     } else {
       delete claimEnteredByPaneId[paneId];
@@ -881,18 +1023,19 @@ export function getResidentSpyUiHtml(): string {
     for (var i = 0; i < panes.length; i++) {
       var col = cols[i];
       if (!col) continue;
-      var showClaim = panes[i].id === 'resident' || panes[i].id === 'coder';
       renderPane(
         panes[i].pane,
         col.querySelector('.pane-head'),
         col.querySelector('pre'),
         panes[i].label,
-        panes[i].id,
-        showClaim
+        panes[i].id
       );
     }
     updateTicketStrip(panes);
     updateOfflineBanner(panes, lastFetchAvailable);
+    if (lastAggregateStatus) {
+      updateAllPaneStatusDots(lastAggregateStatus);
+    }
     if (focusPane) {
       syncFullscreenContent();
     }
@@ -942,6 +1085,10 @@ export function getResidentSpyUiHtml(): string {
         if (titleEl) {
           var base = titleEl.textContent.replace(/ · entered .*$/, '');
           titleEl.textContent = base + ' · ' + formatClaimEnteredAgo(claimEnteredByPaneId[paneId]);
+        }
+        var gridAgeEl = col.querySelector('.pane-grid-age');
+        if (gridAgeEl) {
+          gridAgeEl.textContent = formatClaimAgeCompact(claimEnteredByPaneId[paneId]);
         }
       }
       if (focusPane === paneId && fsClaimEnteredAtMs) {

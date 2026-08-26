@@ -68,6 +68,7 @@ when `RESEND_API_KEY` and the operator inbox are configured — reuse
   — grid and fullscreen share `--pane-font-size`; sticky persistence via
   [BL-1153](BL-1153-sticky-web-font-size-choice.md); ticket strip type sizes are
   independent clamps.
+- [BL-1160 — per-tile activity dots on the grid](BL-1160-live-screen-activity-dot-per-tile.md)
 - BL-1044 — terminal title bars (sibling surface; not-held form stays there).
 
 Acceptance:
