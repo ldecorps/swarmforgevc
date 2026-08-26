@@ -42,7 +42,8 @@ At `6a2e4aaf6` and `79c5d09b8` the same invocation reaches analysis/runtime
 **The bug IS fixed on current main.** It is **NOT** fixed by BL-636's own
 commit (`6a2e4aaf6`): that commit's `handoffd.bb` diff only adds mono-router
 priority ranking (`role-mail-row` / `preferred-mono-rotate-role`); the token
-`deliver!` does not appear in its patch. BL-636's commit message claim is false.
+`deliver!` does not appear in its patch and the paren fix is absent from that
+diff. BL-636's commit message claim is false.
 
 **What actually closed the bug (in order):**
 

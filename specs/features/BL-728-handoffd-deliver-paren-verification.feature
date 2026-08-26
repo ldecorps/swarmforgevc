@@ -42,7 +42,7 @@ Feature: handoffd deliver! paren fix verified independently of BL-636 commit-mes
     When the evidence file for this ticket is written
     Then it states whether the one-shot flag bug is fixed on main today
     And it names the commit that actually balanced deliver! with commit references
-    And it records that 6a2e4aaf6's own patch did not touch handoffd.bb
+    And it records that 6a2e4aaf6's own patch did not restore deliver! or change its closing parens
 
   # BL-728 live-defect-only-if-broken-05
   Scenario: a still-broken one-shot path is fixed in this parcel instead of only documented
