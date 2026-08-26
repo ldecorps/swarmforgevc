@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1155: Pipeline Board stage header stays one
+line on phone — `PIPELINE_BOARD_STAGE_CELL_WIDTH` (2) and
+`PIPELINE_BOARD_GRID_MAX_WIDTH` (30) budget the composed eight-stage header so
+QA never soft-wraps mid-label; no per-cell leading NBSP (follow-on to BL-1117
+numeric `&#160;`, which alone did not prevent wrap). Module:
+`extension/src/concierge/pipelineBoard.ts`. Acceptance:
+`specs/features/BL-1155-pipeline-board-grid-header-one-line.feature`. How-to:
+`docs/how-to/BL-1155-pipeline-board-grid-header-one-line.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-660: three named shift packs — `config
 swarm_shift day|evening|night` selects exactly one 8h shift; when active it is
 the sole schedule source for start/stop crontab (`apply_shift_schedule.bb`),
