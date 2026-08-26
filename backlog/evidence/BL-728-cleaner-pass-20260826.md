@@ -8,4 +8,11 @@
 - Verified: `test_handoffd_one_shot_flags_parse.sh` ALL PASS; BL-728
   acceptance feature 7/7 green.
 
+## QA bounce D1 cleared (20260826)
+
+- Removed out-of-scope BL-1153 font-reload block from
+  `extension/test/residentSpyUiHtml.test.js` per
+  `backlog/evidence/BL-728-qa-bounce-20260826.md` D1.
+- Verified: `npx vitest run test/residentSpyUiHtml.test.js` — 12/12 PASS.
+
 By cleaner.
