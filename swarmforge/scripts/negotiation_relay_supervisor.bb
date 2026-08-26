@@ -57,7 +57,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_log_freshness_pulse_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -251,7 +250,6 @@
     (write-escalation-state! {:relay next-alarm})))
 
 (defn tick! []
-  (daemon-log-freshness-pulse-lib/append-log-heartbeat! log-file)
   (let [prior (read-state)
         now (now-ms)
         next-state (into {}

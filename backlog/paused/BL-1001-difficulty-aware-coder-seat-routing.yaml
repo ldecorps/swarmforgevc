@@ -5,7 +5,7 @@ type: feature
 status: paused
 epic: multi-seat-stages
 human_approval: approved
-priority: 25
+priority: 26
 direction: operator-directed
 depends_on: [BL-983]
 mutation_cost: medium
