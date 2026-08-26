@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-735: `/pilot` acceptance gate refuses
+land when an acceptance feature was declared but not executed for this attempt
+(`reasonKind: acceptance-not-executed`); revert-then-reland tickets also need
+yaml notes explaining both the revert and why the reland is warranted
+(`reasonKind: reland-notes-required`). Acceptance:
+`specs/features/BL-735-bl559-pilot-double-landed-without-running-acceptance.feature`.
+How-to: `docs/how-to/BL-727-pilot-acceptance-contract-gate.md` (acceptance
+execution section).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-733: `/pilot` acceptance gate refuses
 pattern/regex tickets without an exhaustive producer output-space crosscheck
 against `display_name_for_role` — `reasonKind: producer-crosscheck-required`;
