@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: tool-miss-auto-heal
-priority: 12
+priority: 15
 depends_on: []
 decomposes_into: [BL-913, BL-934, BL-960, BL-965]
 

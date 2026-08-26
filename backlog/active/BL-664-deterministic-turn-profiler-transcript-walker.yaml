@@ -1,0 +1,97 @@
+id: BL-664
+title: "Deterministic turn profiler: a read-only transcript walker classifies every role turn (mechanical git / tests / thinking / turn-overhead / provider-outage) into a trended series — the measurement that sizes every transit optimization"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: medium
+priority: 36
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "walker lib and series output; no batch dedup surface"
+  architect: "taxonomy and TrendedNumber shape settled in-ticket"
+  hardender: "TS walker outside mutate scope; fixture transcript tests"
+  documenter: "briefing sidecar self-describing; epic BL-594 docs cover trend framework"
+acceptance: specs/features/BL-664-deterministic-turn-profiler-transcript-walker.feature
+
+approval_context: >
+  Operator intake deterministic-git-choreography-assist + Let's Talk 2026-07-30:
+  profile agents first to size transit optimizations. Prototype inverted naive
+  framing — turn overhead dominates trivial git (~2s merge vs ~10min turn).
+
+invariants:
+  - "The profiler is read-only on transcripts — they are forensic evidence; no walker output path writes, moves, or truncates a transcript."
+  - "Absent data renders as absent: the profiler states its coverage window and never extrapolates outside it (BL-635's honesty rule)."
+  - "ONE walker lib serves turnProfile, BL-665 context telemetry, and BL-666 burn meter — no duplicate parsers."
+
+required_wiring:
+  - 'extension/src/metrics/transcriptWalker.ts or equivalent::classify intervals::git-mechanical test-run file-read thinking-writing turn-overhead provider-outage'
+  - 'extension/src/metrics/trend.ts::turnProfile TrendedNumber series::mechanical and turn-overhead shares per stage for briefing and charts'
+  - 'extension/src/metrics/transcriptWalker.ts::handoff trail attribution::per-turn stage and ticket id when parcel active'
+  - 'specs/pipeline/steps/index.js::bl664TurnProfilerTranscriptWalkerSteps::acceptance handler registered so the runner executes every scenario'
+
+description: |
+  ## What
+
+  A deterministic walker over role transcripts
+  (~/.claude/projects/*--worktrees-<role>/*.jsonl and master-resident
+  equivalents) that classifies each tool-call interval — git-mechanical /
+  test-run / file-read / thinking-writing / TURN OVERHEAD (boot to first
+  productive action) / PROVIDER-OUTAGE retry windows (signature-backed,
+  per-provider, feeding BL-650's effective-time definition) — and
+  attributes per turn, per stage, per ticket via the handoff trail.
+  Retroactive: weeks of history are measurable before any assist ships.
+
+  Output: a `turnProfile` series (TrendedNumber shape, briefing sidecar) —
+  mechanical share and turn-overhead share per stage, trended. Feeds the
+  BL-659 flow-efficiency chart (mechanical split), the COST experiment log
+  (before/after for BL-667's assists), and is the shared substrate the
+  context-telemetry producer (BL-665) and shift governor's burn meter
+  (BL-666) reuse — ONE walker lib, several outputs; do not build three
+  parsers.
+
+  ## Sequencing (the point of this ticket)
+
+  Profile FIRST, cheap and retrospective; let measured mechanical share and
+  turn-overhead size the BL-667 transit-assist slices — the falsifiability
+  discipline BL-635 established, applied to an optimization. The prototype
+  suggests the yield model is TURNS ELIMINATED x (boot+read overhead), not
+  seconds shaved off commands; the real profiler must measure that
+  boot-to-first-productive-action split the prototype could not see.
+
+  Caveats to engineer around, from the prototype: transcripts
+  rotate/compact (state the coverage window); single-seat data so far
+  (transit-heavy roles will differ); regex-level extraction needs replacing
+  with real JSONL parsing.
+
+qa_e2e_procedure: >
+  (1) Fixture transcripts — walker classifies six taxonomy categories. (2) Transcript
+  bytes unchanged after run. (3) Bounded window stated; no extrapolation. (4) turnProfile
+  per stage with mechanical and turn-overhead shares. (5) Handoff trail attributes ticket
+  and stage. (6) Historical transcripts backfill on first run. Live: run walker on host
+  transcripts; briefing sidecar shows turnProfile series.
+
+source: |
+  .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md
+  (operator session 2026-07-26). Operator prototype: git ~4% coder seat time;
+  turn overhead dominates; provider retry storms need separate category.
+
+specifier_decisions: |
+  Minted 2026-08-26 per coordinator route. Six scenarios cover taxonomy, read-only,
+  coverage honesty, turnProfile output, handoff attribution, retroactive history.
+  Provider-outage uses signature-backed windows per BL-650 effective-time. Walker lib
+  is shared substrate for BL-665/BL-666 — do not fork parsers. JSONL parsing not regex.
+
+notes: |
+  Human via Let's Talk 2026-07-30 evening: prioritize this. Raised priority
+  06 → 1. Sequences before BL-667 transit-assist children (BL-668 etc.).
+
+out_of_scope: |
+  - Implementing BL-667 transit assists (sized by this measurement).
+  - BL-665 producer wiring (uses this lib after BL-664 lands).
+  - Modifying or deleting transcripts.

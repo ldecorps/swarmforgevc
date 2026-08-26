@@ -5,19 +5,34 @@ type: defect
 severity: low
 status: todo
 epic: cost-intelligence
-assigned_to: specifier
+human_approval: approved
 priority: 17
 direction: queue-jump
 depends_on: []
+assigned_to: coder
 mutation_cost: low
-source: |
-  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
-  pass, 2026-07-30. Companion remaining-work ticket: BL-742.
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "pilot land gate and prompt edits; no batch dedup surface"
+  architect: "mechanical mkdtemp scan settled in-ticket scoped to touched test files"
+  documenter: "hardener.prompt carries convention; BL-420 docs already exist"
+acceptance: specs/features/BL-743-bl627-pilot-missed-mkdtemp-convention.feature
 
-notes: |
-  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
+approval_context: >
+  Human 2026-07-31 Let's Talk: queue-jump for live shift — pilot-process hardening.
+  BL-627 pricingTable.test.js used raw mkdtempSync breaking tmpDirMigrationGuard
+  (companion BL-742 fixes the test file).
 
-  Pilot-process half of the BL-742 hardener-lens shortfall on BL-627.
+invariants:
+  - "Raw mkdtempSync outside extension/test/helpers/tmpDir.js in a touched test file refuses pilot land — not caught only by a later unrelated sweep."
+  - "The mkdtemp convention check scopes to test files the run's commits touched."
+  - "A refused mkdtemp-convention land writes nothing durable."
+
+required_wiring:
+  - 'extension landPilotedTicket or BL-727 land gate::mkdtemp convention check::scans touched extension/test files for raw mkdtempSync outside helpers/tmpDir.js'
+  - 'swarmforge/roles/hardender.prompt::mkTmpDir convention::new touched tests must use shared helper before land'
+  - 'extension/test/tmpDirMigrationGuard.test.js::detector alignment::pilot land check matches repo-wide gate semantics'
+  - 'specs/pipeline/steps/index.js::bl743PilotMkdtempConventionSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
   ## What
@@ -42,3 +57,29 @@ description: |
   other shared-helper conventions the repo already has a mechanical
   detector for, before landing — not just after, when the detector
   happens to be run by an unrelated later pass.
+
+qa_e2e_procedure: >
+  (1) Pilot fixture with touched test using raw mkdtemp — land refused, file named.
+  (2) Fixture using mkTmpDir only — convention check passes. (3) hardener.prompt
+  requires pre-land convention check. (4) Refused land — yaml unmoved, no receipt.
+  Live: /pilot on ticket adding extension/test file runs mkdtemp scan on touched paths.
+
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30. Companion remaining-work ticket: BL-742.
+
+specifier_decisions: |
+  Restored 2026-08-26 after main advanced without 2d39b32ce (duplicate coordinator
+  route). Five scenarios: pre-land mkdtemp scan on touched test files; answer yes —
+  mechanical grep at pilot land; hardener prompt; not later sweep alone. Code fix: BL-742.
+
+notes: |
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process
+  hardening before more /pilot safe volume.
+
+  Pilot-process half of the BL-742 hardener-lens shortfall on BL-627.
+
+out_of_scope: |
+  - Fixing pricingTable.test.js raw mkdtemp (BL-742).
+  - Repo-wide migration of all legacy mkdtemp call sites outside this ticket's touch set.
+  - Changing mkTmpDir helper implementation (BL-420/BL-714).
