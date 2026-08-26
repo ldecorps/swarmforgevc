@@ -84,3 +84,5 @@ notes:
 source: |
   backlog/INTAKE-sticky-web-font-size-choice.md (human via Cursor, 2026-08-26);
   cites BL-609, BL-220/BL-249 PWA preferences Cache.
+
+assigned_to: coder
