@@ -995,7 +995,9 @@ export function getResidentSpyUiHtml(): string {
   function renderPane(pane, headEl, paneEl, label, paneId) {
     // BL-1046: grid tile reads the same payload fields as fullscreen Expand.
     headEl.innerHTML = buildGridTileHeadHtml(pane, label);
-    if (lastAggregateStatus) {
+    if (pane && pane.activitySignal) {
+      updatePaneStatusDot(headEl, pane, 'ok');
+    } else if (lastAggregateStatus) {
       updatePaneStatusDot(headEl, pane, lastAggregateStatus);
     }
     if (pane && pane.claimEnteredAtMs) {
