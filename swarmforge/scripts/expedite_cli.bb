@@ -676,4 +676,17 @@
       ;; nothing at all.
       (exit! (:exit-code result)))))
 
+;; BL-782 acceptance / diagnostics: probe liveness without running a full
+;; expedite traverse. Refuses EXPEDITE_PROBE_FILE so callers exercise the real
+;; process-table path the defect hid behind.
+(when (and (= 2 (count *command-line-args*))
+           (= "--probe-liveness" (first *command-line-args*)))
+  (when (System/getenv "EXPEDITE_PROBE_FILE")
+    (binding [*out* *err*]
+      (println "REFUSE --probe-liveness requires EXPEDITE_PROBE_FILE to be unset"))
+    (exit! 1))
+  (println (json/generate-string (probe-liveness (second *command-line-args*))))
+  (flush)
+  (exit! 0))
+
 (apply -main *command-line-args*)
