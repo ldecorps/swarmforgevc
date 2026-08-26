@@ -209,3 +209,5 @@ notes: |
     the queue to the Cursor-seat chain.
   - `approvalAskReconcile.ts` has unit tests but no `.feature`. This ticket
     adds the first executable acceptance contract over that module.
+
+assigned_to: coder

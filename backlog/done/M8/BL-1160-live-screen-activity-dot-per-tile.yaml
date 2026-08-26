@@ -86,5 +86,7 @@ notes: |
 source: |
   backlog/INTAKE-live-screen-activity-dot-per-tile.md
   (human via Cursor 2026-08-26 ~09:21 BST, re-filed ~15:20 BST at operator request)
+  - [2026-08-26T18:49Z] coordinator: STARVED sweep — QA commit f5e11920ee on main;
+    active reopened by reconcile; awaiting QA git_handoff close (not coder re-route).
 
 assigned_to: coder
