@@ -14,6 +14,8 @@ const {
   PIPELINE_BOARD_GRID_MAX_ROWS,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
+  PIPELINE_BOARD_STAGE_CELL_WIDTH,
+  computePipelineBoardGridLineWidth,
   swarmDisplayBadge,
 } = require('../out/concierge/pipelineBoard');
 const { ALL_SWARM_ROLES } = require('../out/concierge/roleTopicMapStore');
@@ -298,7 +300,10 @@ test('property (BL-979 invariants 1 and 2): every active ticket is a captioned r
 
       // ── Invariant 2: width is a property of the stage set ──────────────
       const gutter = Math.max(3, spec.idWidth);
-      const expectedWidth = gutter + PIPELINE_BOARD_COLUMN_ORDER.length * 3;
+      const expectedWidth =
+        gutter +
+        PIPELINE_BOARD_COLUMN_ORDER.length * PIPELINE_BOARD_STAGE_CELL_WIDTH +
+        (PIPELINE_BOARD_COLUMN_ORDER.length - 1);
       for (const line of [board.header, ...board.rows]) {
         assert.equal(line.length, expectedWidth, `grid line "${line}" is not the stage-set width`);
         assert.ok(line.length <= PIPELINE_BOARD_GRID_MAX_WIDTH, `"${line}" exceeds the ${PIPELINE_BOARD_GRID_MAX_WIDTH}-char budget`);
@@ -422,6 +427,29 @@ test('property (BL-1009): swarmDisplayBadge is total over arbitrary wire names',
       assert.ok(badge.length > 0);
       if (name === 'primary') assert.equal(badge, 's1');
       if (name === 'second') assert.equal(badge, 's2');
+    }),
+    { numRuns: 100 }
+  );
+});
+
+// BL-1155: the phone header must stay one line with intact QA for every
+// realistic id gutter width — not only the 3-digit hand-picked fixture.
+test('property (BL-1155): stage header is one line with intact QA for any gutter 3-6', () => {
+  fc.assert(
+    fc.property(fc.integer({ min: 3, max: 6 }), (gutter) => {
+      const id = `BL-${10 ** (gutter - 1)}`;
+      const data = computePipelineBoard(
+        { QA: [id] },
+        [],
+        { [id]: { title: 't', filename: `${id}.yaml`, location: 'active' } },
+        { activeIds: [id] }
+      );
+      const header = renderPipelineBoardGridOnly(data).split('\n')[0];
+      assert.ok(!header.includes('\n'), 'header must be one line');
+      assert.ok(header.includes('QA'), 'header must contain intact QA');
+      assert.ok(!header.endsWith('Q'), 'QA must not split with trailing Q');
+      assert.equal(header.length, computePipelineBoardGridLineWidth(gutter));
+      assert.ok(header.length <= PIPELINE_BOARD_GRID_MAX_WIDTH);
     }),
     { numRuns: 100 }
   );
