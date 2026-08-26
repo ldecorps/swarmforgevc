@@ -363,6 +363,7 @@ const DOMAINS = [
   require('./bl647RotationRouterLivenessSteps'),
   require('./bl572EpicReorderConsoleSteps'),
   require('./bl648RelaunchResumeOrphanClaimsSteps'),
+  require('./bl649SwarmStartApprovalsAnnouncementSteps'),
   require('./bl672EpicMakeTopPrioritySteps'),
   require('./bl673TopicMakeTopPrioritySteps'),
   require('./bl674EpicDrilldownUiSteps'),
