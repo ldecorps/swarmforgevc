@@ -67,6 +67,10 @@ import {
   UNREACHABLE_STEP_HANDLER_REFUSAL,
   UnreachableStepHandlerCheckOutcome,
 } from './unreachableStepHandlerCheck';
+import {
+  UNTESTED_PARSER_BRANCH_REFUSAL,
+  MultiBranchParserCoverageOutcome,
+} from './multiBranchParserCoverageCheck';
 
 export {
   assessProducerCrosscheck,
@@ -108,6 +112,17 @@ export {
   UnreachableStepHandlerMiss,
 } from './unreachableStepHandlerCheck';
 
+export {
+  UNTESTED_PARSER_BRANCH_REFUSAL,
+  assessMultiBranchParserCoverage,
+  extractMultiBranchParsers,
+  armExercisedByTests,
+  MIN_PARSER_ARMS,
+  MultiBranchParserCoverageOutcome,
+  UntestedParserBranchMiss,
+  MultiBranchParser,
+} from './multiBranchParserCoverageCheck';
+
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
@@ -125,6 +140,7 @@ export interface AcceptanceReceipt {
   crossFileDuplicationFilesScanned?: number;
   shellEntryPointDrive?: { shellTestsScanned: number; entryPointsNamed: number };
   unreachableStepHandlers?: { stepFilesScanned: number; patternsChecked: number };
+  multiBranchParserCoverage?: { parsersScanned: number };
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
   producerCrosscheck?: ProducerCrosscheckMetadata;
 }
@@ -158,6 +174,7 @@ export interface PilotAcceptanceGateDeps {
   checkCrossFileDuplication: () => CrossFileDuplicationCheckOutcome;
   checkShellEntryPointDrive: (ticketId: string) => ShellEntryPointDriveCheckOutcome;
   checkUnreachableStepHandlers: (ticketId: string) => UnreachableStepHandlerCheckOutcome;
+  checkMultiBranchParserCoverage: (ticketId: string) => MultiBranchParserCoverageOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
   getLandedCommit: () => string;
@@ -184,6 +201,7 @@ export interface PilotLandRefusal {
     | 'cross-file-duplication'
     | 'parallel-shell-reimplementation'
     | 'unreachable-step-handler'
+    | 'untested-parser-branch'
     | 'move-failed';
   reason: string;
   unmatchedStep?: string;
@@ -197,6 +215,9 @@ export interface PilotLandRefusal {
   shellTestPath?: string;
   unreachablePattern?: string;
   unreachableStepFile?: string;
+  untestedParserFunction?: string;
+  untestedParserArm?: string;
+  untestedParserPath?: string;
 }
 
 export type PilotLandOutcome = PilotLandSuccess | PilotLandRefusal;
@@ -384,6 +405,29 @@ function checkUnreachableHandlers(
   return { unreachableCheck };
 }
 
+// Step 3f: run-touched multi-arm parsers (≥3 cond/case/if-else arms) need a
+// distinct exercising test per arm (BL-755). Unreadable inputs fail OPEN.
+function checkMultiBranchCoverage(
+  ticketId: string,
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { multiBranchCheck: MultiBranchParserCoverageOutcome } {
+  const multiBranchCheck = deps.checkMultiBranchParserCoverage(ticketId);
+  if (multiBranchCheck.checked && multiBranchCheck.miss) {
+    const { functionName, sourcePath, armLabel } = multiBranchCheck.miss;
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'untested-parser-branch',
+        reason: `${UNTESTED_PARSER_BRANCH_REFUSAL} (function ${functionName}; arm ${armLabel}; file ${sourcePath})`,
+        untestedParserFunction: functionName,
+        untestedParserArm: armLabel,
+        untestedParserPath: sourcePath,
+      },
+    };
+  }
+  return { multiBranchCheck };
+}
+
 // Step 2b: revert-then-reland tickets must carry visible yaml notes before
 // a second done move — the BL-559 double-land hygiene gap.
 function requireRelandNotes(ticketId: string, deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal } | { ok: true } {
@@ -458,6 +502,7 @@ function moveAndRecordReceipt(
   duplicationCheck: CrossFileDuplicationCheckOutcome,
   shellDriveCheck: ShellEntryPointDriveCheckOutcome,
   unreachableCheck: UnreachableStepHandlerCheckOutcome,
+  multiBranchCheck: MultiBranchParserCoverageOutcome,
   multiWorktreeFixture?: MultiworktreeFixtureMetadata,
   producerCrosscheck?: ProducerCrosscheckMetadata
 ): PilotLandOutcome {
@@ -497,6 +542,9 @@ function moveAndRecordReceipt(
       patternsChecked: unreachableCheck.patternsChecked,
     };
   }
+  if (multiBranchCheck.checked) {
+    receipt.multiBranchParserCoverage = { parsersScanned: multiBranchCheck.parsersScanned };
+  }
   if (multiWorktreeFixture) {
     receipt.multiWorktreeFixture = multiWorktreeFixture;
   }
@@ -522,6 +570,11 @@ function moveAndRecordReceipt(
   if (!unreachableCheck.checked) {
     warnings.push(
       'unreachable step handlers were not checked: the feature IR or touched-file history could not be resolved'
+    );
+  }
+  if (!multiBranchCheck.checked) {
+    warnings.push(
+      'multi-branch parser coverage was not checked: the touched-file history could not be resolved'
     );
   }
   const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
@@ -588,6 +641,11 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return unreachable.refusal;
   }
 
+  const multiBranch = checkMultiBranchCoverage(ticketId, deps);
+  if ('refusal' in multiBranch) {
+    return multiBranch.refusal;
+  }
+
   const fixtureMetadata =
     deps.isLifecycleTeardownTicket(ticketId) && fixtureGate.fixture.satisfied
       ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
@@ -601,6 +659,7 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     duplication.duplicationCheck,
     shellDrive.shellDriveCheck,
     unreachable.unreachableCheck,
+    multiBranch.multiBranchCheck,
     fixtureMetadata,
     producerGate.crosscheck
   );

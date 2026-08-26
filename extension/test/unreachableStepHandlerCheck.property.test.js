@@ -60,6 +60,7 @@ function mkGateDeps(unreachableOutcome) {
         entryPointsNamed: 0,
       }),
       checkUnreachableStepHandlers: () => unreachableOutcome,
+      checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
       moveTicketToDone: () => {
         calls.move += 1;
         return { moved: true, destination: '/repo/backlog/done/BL-753-prop.yaml' };
