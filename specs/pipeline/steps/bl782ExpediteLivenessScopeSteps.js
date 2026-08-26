@@ -46,12 +46,12 @@ function killChild(child) {
   }
   try {
     if (child.pid) {
-      try {
-        process.kill(child.pid, 'SIGKILL');
-      } catch {
-        /* already gone */
-      }
+      process.kill(child.pid, 'SIGKILL');
     }
+  } catch {
+    /* already gone */
+  }
+  try {
     child.kill('SIGKILL');
   } catch {
     /* already gone */
@@ -117,6 +117,24 @@ function probeCountsAsAlive(result, probeName) {
   return Boolean(val);
 }
 
+function assertProbeAliveState(ctx, probe, expectAlive) {
+  try {
+    const alive = probeCountsAsAlive(ctx.probeResult, probe);
+    if (expectAlive && !alive) {
+      throw new Error(
+        `expected probe "${probe}" to read alive for audited root, got: ${JSON.stringify(ctx.probeResult)}`,
+      );
+    }
+    if (!expectAlive && alive) {
+      throw new Error(
+        `expected probe "${probe}" to read stopped with neighbour decoy alive, got: ${JSON.stringify(ctx.probeResult)}`,
+      );
+    }
+  } finally {
+    reapDecoys(ctx);
+  }
+}
+
 function registerSteps(registry) {
   registry.defineScoped(
     /^expedite_cli is auditing project root "([^"]+)"$/,
@@ -149,15 +167,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^that process is not counted as alive for "([^"]+)"$/,
     (ctx, probe) => {
-      try {
-        if (probeCountsAsAlive(ctx.probeResult, probe)) {
-          throw new Error(
-            `expected probe "${probe}" to read stopped with neighbour decoy alive, got: ${JSON.stringify(ctx.probeResult)}`,
-          );
-        }
-      } finally {
-        reapDecoys(ctx);
-      }
+      assertProbeAliveState(ctx, probe, false);
     },
     FEATURE_NAME,
   );
@@ -165,15 +175,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^that process is counted as alive for "([^"]+)"$/,
     (ctx, probe) => {
-      try {
-        if (!probeCountsAsAlive(ctx.probeResult, probe)) {
-          throw new Error(
-            `expected probe "${probe}" to read alive for audited root, got: ${JSON.stringify(ctx.probeResult)}`,
-          );
-        }
-      } finally {
-        reapDecoys(ctx);
-      }
+      assertProbeAliveState(ctx, probe, true);
     },
     FEATURE_NAME,
   );

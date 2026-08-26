@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-782 rematch: restore root-scoped
+`expedite_cli.bb` liveness docs after QA bounce rematch — neighbour-root
+survivors ignored; `--probe-liveness` refuses `EXPEDITE_PROBE_FILE`; decoy
+reap fixed so APS exits. Acceptance:
+`specs/features/BL-782-liveness-probes-scan-whole-process-table.feature`.
+Reference: `docs/reference/BL-567-expeditor-manual.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-737: `/pilot` acceptance gate refuses
 land when identical normalized ≥12-line blocks appear in more than two files
 touched by the run's own non-merge commits — `reasonKind: cross-file-duplication`;
