@@ -813,6 +813,16 @@
         {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil :gave-up? true}
         {:armed? false :delivery-attempts next-attempts :last-attempt-at-ms now-ms :gave-up? false}))))
 
+(defn give-up-escalation-alarm-when-not-gave-up
+  "BL-1151: when a supervised child leaves gave-up (e.g. cooldown re-arm),
+   compute the next persisted escalation alarm. Keeps :armed? true across
+   re-arms until healthy-reset? clears the episode so the same unbroken
+   outage emails at most once."
+  [prev-alarm healthy-reset?]
+  (if (and (:armed? prev-alarm) (not healthy-reset?))
+    (select-keys prev-alarm [:armed? :delivery-attempts :last-attempt-at-ms])
+    {:armed? false :delivery-attempts 0 :last-attempt-at-ms nil}))
+
 ;; ── BL-307: auto-hibernate on drain + mandatory closing pass ────────────────
 ;; The whole-swarm park/relaunch transition a human has done by hand (see
 ;; memory swarm-profiles-full-forge-concierge-banked): back up + empty
