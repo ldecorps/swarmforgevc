@@ -1,0 +1,77 @@
+id: BL-268
+title: "co-change-report scopes git history to the invoker's cwd, silently hiding all cross-directory coupling (the tool's whole purpose)"
+milestone: M2
+status: todo
+priority: 03
+direction: reliability
+assigned_to: coder
+source: "architect rule_proposal (engineering scope) 2026-07-11 during BL-263 review, accepted by specifier (ce3bd8f added the engineering-article Guardrail). Verified empirically: from extension/ the tool reports 0 cross-dir co-changers; the same query with a :/ pathspec surfaces 880 cross-dir name-status lines."
+
+description: |
+  BL-255's co-change coupling tool (extension/src/tools/co-change-report.ts)
+  runs `const history = runGitLog(process.cwd(), '.')`. runGitLog shells
+  `git -C <targetPath> log --name-status -M --reverse -- <pathspec>`, and git
+  FILTERS each commit's --name-status listing to paths matching the pathspec.
+  So with targetPath=cwd and pathspec='.', run from a subdirectory (e.g.
+  extension/) the history only ever lists files under that subtree — every
+  co-changed file in pwa/, swarmforge/, specs/, docs/, etc. is silently dropped.
+  The tool then reports zero (or badly undercounted) co-changers, which is
+  exactly the cross-directory logical coupling it exists to surface.
+
+  Confirmed by the architect during BL-263 review and reproduced by the
+  specifier: for extension/src/metrics/backlogDashboard.ts the tool reported
+  ZERO co-changers when run from extension/, but pwa/app.js x6 and
+  briefing_email_lib.bb x2 when run from the repo root. Empirically,
+  `git -C extension log --name-status -- .` yields 0 lines under
+  pwa/|swarmforge/|docs/; the same with `-- :/` yields ~880.
+
+  Scope — this bug is ISOLATED to co-change-report.ts. Every other runGitLog
+  caller (backlogDashboard.ts, deliveryMetrics.ts, bridgeState.ts,
+  briefing-digest-line.ts, docsTree.ts, costHealthSidecar.ts) passes an explicit
+  project root as targetPath and a deliberate `backlog` pathspec — intentional
+  scoping, not this bug. Do NOT change those.
+
+  Wanted behavior:
+  - The co-change report analyzes the WHOLE repo history regardless of the
+    directory it is invoked from: cross-directory co-changers are reported
+    identically whether run from the repo root or any subdirectory.
+  - Changed-file arguments are normalized to repo-relative paths so they match
+    repo-relative history paths regardless of the invoker's cwd (a path given
+    relative to the current directory still resolves to the right history file).
+  - No behavior change to the pure computeCoChangeReport logic or to the other
+    runGitLog callers; INFORM-only, still never auto-bounces.
+
+  Implementation latitude (coder chooses the mechanism):
+  - Two equivalent fixes for the history scope: (a) resolve the repo top-level
+    (`git -C <cwd> rev-parse --show-toplevel`) and pass THAT as targetPath with
+    pathspec '.', or (b) keep targetPath but use the top-of-tree pathspec ':/'
+    so --name-status is not subtree-filtered. Either makes the query
+    cwd-independent; prefer whichever is simplest and keeps runGitLog's existing
+    signature/semantics intact (do not special-case runGitLog for this one
+    caller if a call-site change suffices).
+  - Normalize each changedFiles arg: resolve it against cwd, then make it
+    relative to the repo top, before handing it to computeCoChangeReport (whose
+    matching is exact-string against repo-relative history paths).
+  - Keep the pure/testable split this CLI already has (parseArgs pure; a thin
+    main). Put any new repo-root/path-normalization logic in a pure, exported
+    helper so it is not coverage-invisible behind a subprocess-only test.
+
+  Constraints:
+  - Keep the unit suite fast, deterministic, and isolated (engineering article).
+    A fixture temp git repo (git init + a couple of commits touching files in
+    two different top-level dirs, then run the tool from a subdirectory) is an
+    acceptable deterministic fixture — no network, no real timers, no waiting on
+    real time. A green run from the repo ROOT is NOT proof; the whole bug is
+    that results are cwd-dependent, so the test MUST exercise a subdirectory cwd.
+  - Do not edit mutation manifests by hand.
+
+  QA e2e procedure (live swarm):
+  - From the repo root: `node extension/out/tools/co-change-report.js
+    extension/src/metrics/backlogDashboard.ts` — confirm it lists cross-dir
+    co-changers (e.g. pwa/app.js, briefing_email_lib.bb).
+  - From extension/: `cd extension && node out/tools/co-change-report.js
+    src/metrics/backlogDashboard.ts` (or the repo-relative path) — confirm it
+    now lists the SAME cross-directory co-changers, not zero.
+
+acceptance: specs/features/BL-268-co-change-report-cwd-scoped-history.feature
+mutation_cost: low

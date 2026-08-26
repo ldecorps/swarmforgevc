@@ -1,0 +1,46 @@
+id: BL-701
+title: "Cursor /pilot: orphan acceptance / Stryker cleanup at stage boundaries"
+milestone: M8
+type: feature
+severity: medium
+status: done
+epic: swarmforge-console
+human_approval: approved
+priority: 04
+direction: human-requested
+mutation_cost: low
+depends_on:
+  - BL-699
+invariants:
+  - "/pilot remains distinct from /expedite; gate against expedite lock unchanged."
+  - "Stage-boundary cleanup targets this expedition's leftovers only — never host Cursor Remote bridge / Operator / live-window hosts."
+  - "Prompt requires cleanup; does not weaken host orphan-janitor live-window protections."
+acceptance: specs/features/BL-701-pilot-orphan-cleanup-stage-boundaries.feature
+
+approval_context: >
+  Operator via Let's Talk 2026-07-29: proceed with BL-699 siblings. Source
+  intake: .swarmforge/operator/INTAKE-pilot-orphan-cleanup-stage-boundaries.md.
+  Slice 3 of 3 — prompt checklist for stage-boundary / run-end cleanup.
+
+description: |
+  ## What
+
+  After and between `/pilot` stages, tear down long-lived leftovers from
+  this expedition before declaring a stage done or going long-idle:
+  hung acceptance runners, leftover Stryker/mutation jobs, and related
+  `/tmp/tmp.*` fixture babysitter/bridge ancillaries. Prompt checklist is
+  the minimum; do not rely solely on the host orphan janitor (~2h).
+
+  ## Source
+
+  `.swarmforge/operator/INTAKE-pilot-orphan-cleanup-stage-boundaries.md`
+
+  ## Scope
+
+  - `composePilotExpeditorPrompt` stage-boundary cleanup contract
+  - Unit tests + Gherkin feature + how-to
+
+  Out of scope: Telegram status matrix (BL-700), changing host orphan
+  janitor live-window guards, automated `/expedite`.
+
+assigned_to: QA

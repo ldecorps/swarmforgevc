@@ -1,0 +1,78 @@
+id: BL-487
+title: "Pipeline board freshness must not depend on the coordinator remembering to run sync: recompute role-held stage from live in_process mailboxes on the concierge tick"
+milestone: M8
+type: defect
+severity: medium
+epic: ""
+priority: 6
+direction: human-requested
+depends_on: []
+source: "BL-474 unknown-stage root-cause audit (backlog/evidence/BL-474-unknown-stage-root-cause-audit-20260717.md), follow-up F-1 (finding #1, ranked highest leverage). Filed per BL-474's mandate by the coordinator's note 'BL-474: read audit evidence 20260717; spec follow-ups F-1 F-2 F-3 as tickets'. Root human directive (ldecorps 2026-07-16): 'if their position in the swarm is not known, it's a bug to fix.'"
+
+notes: |
+  ORIGIN — BL-474 audit finding #1, THE architectural answer to the fragile board (BL-473 was the
+  render-anyway visibility patch; this is the freshness fix). Verified live 2026-07-17 ~07:59 UTC: with 6
+  tickets in backlog/active/, .swarmforge/board/ticket-stage-map.json held only 2, so 4 role-held tickets
+  could have read as not-started for an unbounded time.
+
+  THE DEFECT (grep-confirmed against live code):
+    - The board's stage source is .swarmforge/board/ticket-stage-map.json, a lazily-invalidated CACHE whose
+      ONLY invalidator is the coordinator LLM remembering to run `pipeline_stage_cli.bb sync` after "every
+      moment your knowledge of parcel location changes" (coordinator.prompt L220). No daemon/cron/tick
+      recomputes it, and the prompt also forbids self-scheduled polling (L244) — so refresh is strictly
+      event-driven, best-effort, LLM-dependent.
+    - extension/src/concierge/conciergeTick.ts syncBoardIfWired reads the file each ~30s tick and NEVER
+      recomputes. A skipped / crashed / cooldown'd / forgotten sync leaves a genuinely-held ticket
+      mis-staged (or absent) until the next time the coordinator happens to sync.
+
+  THE FIX (behaviour pinned in the feature; approach is the architect's call):
+    - Make the concierge tick's board computation derive role-held stage from the LIVE in_process mailboxes
+      instead of trusting the coordinator-written cache. pipeline_stage_cli.bb already exposes a
+      side-effect-free `report` subcommand (prints the same stage-map JSON `sync` would write, computed from
+      live mailboxes + backlog/active/) — confirmed at pipeline_stage_cli.bb L115.
+    - TWO candidate approaches, ARCHITECT DECIDES (a real tradeoff, do not pre-bake):
+        (a) concierge tick shells out to `pipeline_stage_cli.bb <root> report` each tick and feeds its JSON
+            to computePipelineBoard — reuses the one canonical bb computation (no logic drift) at the cost
+            of a subprocess per ~30s tick;
+        (b) reimplement the invert in TS over the live mailboxes (swarmState.readInProcessTicketIds already
+            reads them) — no subprocess, but duplicates the id-resolution logic in a second language
+            (this is audit finding #5's drift risk; if chosen, the two must be kept in lockstep or the TS
+            reader made note-aware to match the bb path, which today it is NOT).
+    - Either way the coordinator's `sync` becomes an optimization/cache-warm, not the source of truth; a
+      stale or missing cache can never durably mis-stage a held ticket.
+
+  SCOPE (verify at build; the live path is TS concierge, the computation is the bb report):
+    - extension/src/concierge/conciergeTick.ts (syncBoardIfWired), extension/src/concierge/pipelineBoard.ts
+      (computePipelineBoard), extension/src/swarm/swarmState.ts (readTicketStageMap /
+      invertTicketStageToRoleHeldTickets / readInProcessTicketIds) — the TS board path.
+    - swarmforge/scripts/pipeline_stage_cli.bb `report` — READ/INVOKED only, not modified (unless approach
+      (a) needs a stdout contract tweak). Do NOT change what `sync` writes.
+
+  COLLAPSES: most of audit finding #6 too (a corrupt/empty cache is recomputed rather than emptying the
+  grid). Findings #5 (triplicated id-regex / divergent readers) and the deeper #6 guard are a separate
+  future consolidation pass, out of scope here.
+
+  ORTHOGONALITY: this parcel edits the TS concierge path; BL-488/BL-489 edit the bb pipeline_stage_*
+  files. Approach (a) keeps them orthogonal (report is read-only here). If the architect picks approach
+  (b), coordinate with BL-488/BL-489 since all three then touch id-resolution — sequence, don't run
+  concurrently.
+
+acceptance:
+  # The observable freshness contract — a role-held ticket shows its correct stage on the tick even when
+  # the coordinator never synced (cache miss), and a stale cached stage is overridden by the live mailbox
+  # truth — is pinned as the executable Gherkin feature. The implementation approach (shell-to-report vs
+  # TS-reimplement) is deliberately NOT pinned; the scenarios hold either way.
+  feature: specs/features/BL-487-board-freshness-without-coordinator-sync.feature
+
+human_approval: approved
+approval_context: >
+  ARCHITECTURAL change to a core surface (who owns pipeline-board freshness), so flagging for review. FIRM:
+  board freshness must recompute from live in_process mailboxes on the concierge tick, so a skipped/stale
+  coordinator `sync` can never durably mis-stage a held ticket; `sync` becomes a cache-warm, not the source
+  of truth. OPEN (architect's call, not the human's unless you want to steer it): approach (a) concierge
+  shells to the side-effect-free `pipeline_stage_cli.bb report` each tick (one canonical computation,
+  subprocess-per-tick cost) vs approach (b) reimplement the invert in TS (no subprocess, but duplicates
+  id-resolution across two languages — audit finding #5 drift risk). Highest-leverage of the three BL-474
+  follow-ups. Priority 6.
+
+mutation_cost: medium

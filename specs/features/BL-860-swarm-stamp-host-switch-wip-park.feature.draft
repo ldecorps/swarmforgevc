@@ -1,0 +1,48 @@
+Feature: The host-switch WIP park commit is certified, path by path
+
+  # BL-860: f175bc56d1 ("Park local WIP for host switch", 2026-08-01,
+  # swarm-intake[bot] / Cursor co-author) landed 4052 insertions across 11
+  # files straight on main, outside the pipeline. BL-848's ledger has it as
+  # `state: pending` with no stamp ticket. This is a BL-849-shaped review:
+  # confirm or refute each path's disposition against the repo as it stands,
+  # do not re-implement anything. The verdict this produces is what the human
+  # certifies or waives in the ledger.
+
+  Background:
+    Given the park commit f175bc56d1
+
+  # BL-860 path-dispositions-01
+  Scenario Outline: every functional path the park commit touched has a recorded owner
+    When the path "<path>" is dispositioned
+    Then its recorded owner is "<owner>"
+
+    Examples:
+      | path                                         | owner             |
+      | extension/src/tools/pilotSafeDefects.ts      | BL-722            |
+      | extension/test/pilotSafeDefects.test.js      | BL-722            |
+      | extension/src/bridge/letsTalkBubbleConfig.ts | BL-765            |
+      | extension/src/bridge/letsTalkChiptunes.ts    | BL-765            |
+      | extension/src/bridge/letsTalkChiptunes.json  | BL-765            |
+      | swarmforge/packs/mono-router.conf            | superseded        |
+      | .cursor/rules/bugfix-process-tdd.mdc         | host-agent-config |
+
+  # BL-860 no-unaccounted-path-02
+  Scenario: the disposition table covers the commit completely
+    When the functional paths in the park commit are listed
+    Then every one of them appears in the disposition table
+
+  # BL-860 intake-freeze-not-live-03
+  Scenario: the intake freeze the park commit introduced is no longer in effect
+    When the mono-router pack's active_backlog_max_depth is read
+    Then it is not the freeze value 0
+
+  # BL-860 adopt-candidates-already-claimed-04
+  Scenario: the bridge modules owe no separate review because their ticket already claims them
+    When the BL-765 ticket is read
+    Then it names each letsTalk module the park commit landed as an adopt candidate
+    And it declares the wiring each module is still missing
+
+  # BL-860 authorized-work-reached-done-05
+  Scenario: the pilot-safe defects module was authorized before it landed
+    When the BL-722 ticket is located
+    Then it is in the done backlog

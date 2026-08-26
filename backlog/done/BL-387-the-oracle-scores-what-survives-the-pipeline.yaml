@@ -1,0 +1,61 @@
+id: BL-387
+title: "The benchmark scores a model's FIRST diff, so it cannot see rework — the thing that actually separates models"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: role-benchmarking
+priority: 5
+direction: human-requested
+depends_on: [BL-386]
+source: "backlog/INTAKE-benchmark-scoring-cannot-discriminate.md (critique 2, the oracle depth) — the human, 2026-07-14 in SUP-3: 'A coder's value isn't its first diff, it's the diff that survives cleaner -> architect -> hardener -> QA. First-pass benchmarks can't see rework.' Depth settled with the human 2026-07-14: the FULL pipeline in the loop, not a proxy. Slice 3 of BL-384."
+
+notes: |
+  THE DEFECT. `runTrial` / `runBenchmark` (`extension/src/benchmark/`) execute the provider CLI once
+  against a fresh fixture copy and score the resulting diff immediately. Nothing routes it through
+  cleaner -> architect -> hardener -> QA. The harness is therefore structurally incapable of seeing
+  rework cost — and rework is not a detail: BL-338 already notes a ~58% bounce rate, so it is
+  plausibly where the entire real cost difference between models lives. A model that produces a
+  cheap first diff which then bounces four times is not a cheap model.
+
+  DECIDED WITH THE HUMAN (2026-07-14): the FULL pipeline in the loop. The alternatives offered were a
+  cheaper proxy (score the diff against the hardener's existing mutation/CRAP/coverage gate) and an
+  honest first-pass admission in the report. He chose the deep oracle: run the diff through the real
+  review chain and score what SURVIVES, counting bounces as rework. Accept the cost — it is the whole
+  point of the epic, and a cheaper proxy would re-open the same credibility question this epic exists
+  to close. Do not quietly substitute the proxy because a trial got slow.
+
+  WHY THIS DEPENDS ON BL-386. Measuring rework on a trivial task yields zero rework for every model
+  and re-creates the exact saturation this epic is fixing, one axis over. The deep oracle only tells
+  you anything once the battery can actually make a model stumble. Land the difficulty ceiling first.
+
+  THIS SLICE RECORDS THE SIGNAL; IT DOES NOT YET RANK ON IT. Per the epic's wiring rule, the score,
+  the report and the leaderboard consuming survival + rework is BL-388. Keep that boundary honest:
+  when this slice lands, the benchmark will MEASURE rework and still RANK on first-pass test counts.
+  That is expected and is not a bug — it is why BL-388 exists and why the epic is not complete
+  without it.
+
+  SCOPE, AND THE OBVIOUS TRAP. `runTrial.ts` / `runBenchmark.ts` plus a new oracle that drives the
+  review stages. The trap: this must NOT stand up a real swarm, real tmux, or real agents inside a
+  unit test — the engineering article's test-isolation rules are absolute here (no real timers, no
+  real daemons, no waiting on the wall clock). Put the pipeline behind an injectable seam and drive
+  it with a test double that can be told to bounce N times (scenario 03) or never accept (scenario
+  04). A run against the real pipeline belongs in the E2E procedure below, never in the suite.
+
+  E2E QA PROCEDURE: run one model against a battery task that is hard enough to bounce (from BL-386).
+  Assert the diff is actually put through the review stages and that the trial records what the
+  pipeline ACCEPTED, not what the model first emitted. Assert the bounce count is recorded. Force a
+  task the model cannot solve and assert the trial records that the diff did not survive rather than
+  crediting it. Confirm the unit suite still runs in seconds and stands up no real swarm.
+
+acceptance:
+  feature: specs/features/BL-387-the-oracle-scores-what-survives-the-pipeline.feature
+  steps:
+    - "The diff is put through the pipeline rather than scored where it lands"
+    - "What survives the pipeline is what counts"
+    - "Every bounce is counted as rework"
+    - "A diff the pipeline never accepts is recorded as not surviving"
+
+human_approval: approved
+
+mutation_cost: high

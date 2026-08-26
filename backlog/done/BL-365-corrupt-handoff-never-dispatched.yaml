@@ -1,0 +1,86 @@
+id: BL-365
+title: "A handoff was emitted as a zero-byte file and dispatched as a contentless task — the parcel was silently lost"
+milestone: M8
+type: defect
+severity: high
+status: todo
+priority: 2
+direction: expedite
+depends_on: []
+source: "rule_proposal from the cleaner, 2026-07-14 (engineering scope). Live incident, verified on disk by the specifier before accepting."
+
+notes: |
+  WHAT HAPPENED, VERIFIED ON DISK (not a report taken at face value — I looked).
+  `.worktrees/coder/.swarmforge/handoffs/sent/50_20260713T165246Z_000238_from_coder_to_cleaner.handoff`
+  is **0 bytes**, written 2026-07-13 17:52. Its siblings from the same mailbox — 000235, 000236,
+  000237, 000241 — are 278-286 bytes each. So exactly one `git_handoff` was emitted empty.
+
+  THE DAMAGE. The empty file was copied onward and dequeued by the cleaner as a task with no `from`,
+  no `type`, no `task` name and no `commit` — nothing to act on. BL-355's coder commit was silently
+  LOST; recovering it required cross-referencing the coder's git log by timestamp. And nothing
+  alerted: the stuck/chase sweeps look for mail that has NOT moved, and this mail moved perfectly.
+  The parcel was lost in the one way the swarm's own recovery machinery is blind to.
+
+  ROOT-CAUSE HYPOTHESIS — for the coder to CONFIRM, not to assume. `swarm_handoff.bb:375-376` is:
+      (spit (str tmp-file) ...)      ; write into outbox/tmp/<name>.tmp
+      (fs/move tmp-file outbox-file) ; rename into outbox/
+  That is the documented tmp→rename install, and it is atomic in ORDERING — but `spit` does not
+  fsync, and a `rename` without one is NOT atomic in DURABILITY. The directory entry can reach disk
+  while the file's contents never do, so a crash/power/WSL-restart event leaves exactly what we
+  found: a correctly-named, zero-length file that was "written atomically". This host is WSL, and the
+  daemons show a restart consistent with the window. That is the leading hypothesis and it fits every
+  observation — but CONFIRM it before fixing. Rule out the alternatives (an exception swallowed
+  between spit and move; ENOSPC; a killed process mid-write) rather than assuming, and check whether
+  a hardened atomic-write helper already exists in this codebase to REUSE (`atomic-spit!` in
+  `operator_runtime.bb`) instead of writing a second one.
+
+  THE FIX HAS TWO HALVES, AND BOTH ARE REQUIRED.
+    1. DURABILITY — make the install actually atomic: `write` → `fsync` → `rename`. Fixing only this
+       would still leave the swarm dispatching any corrupt file that arises another way.
+    2. AN INTEGRITY FLOOR AT EVERY HOP THAT CAN SEE THE CORRUPTION — because this failure is SILENT,
+       one guard is not enough:
+         - `swarm_handoff` must not install an empty/incomplete file into `outbox/`;
+         - `handoffd` must move a corrupt file to `failed/` with a diagnostic instead of copying it
+           into an inbox (the handoff protocol ALREADY requires this: "move malformed or undeliverable
+           files to failed/ with useful diagnostics" — it evidently does not catch a zero-byte file);
+         - the `ready_for_next` helpers must refuse to promote it into `in_process/`.
+    3. VISIBILITY — a quarantined parcel must be SURFACED as needing a human, never just moved to a
+       directory nobody reads. A silently-lost parcel that is now a silently-quarantined parcel is
+       barely better. Reuse the existing dead-letter/escalation path rather than inventing one.
+
+  NOT A SEMANTIC RE-VALIDATION. The handoff protocol deliberately declines "a second full validation
+  pass on outbox files" in the daemon, and this ticket does NOT reverse that: the decision is about
+  not re-checking SEMANTICS the sender already validated. "Is this file non-empty and parseable?" is
+  a cheap corruption check, categorically different, and the protocol already asks the daemon for it.
+  Say so in the code comment so a later cleaner does not "simplify" the check away.
+
+  SCOPE. `swarmforge/scripts/swarm_handoff.bb` (the atomic install), `swarmforge/scripts/handoffd.bb`
+  (delivery + `failed/` quarantine), `swarmforge/scripts/ready_for_next_task.bb` /
+  `ready_for_next_batch.bb` (the dequeue guard). Out of scope: redesigning the handoff protocol or
+  the mailbox layout.
+
+  TESTING NOTE. Per the engineering rules: do not simulate the crash with filesystem permission bits,
+  and do not use real timers/sleeps. Force the corrupt-file cases deterministically by CONSTRUCTING
+  the bad file (zero-byte, truncated, header-only) in a fixture mailbox and driving the consumer over
+  it — that is a fixture, not a race. The durability half (scenario 04) cannot be proven by actually
+  cutting power: assert the write path fsyncs before it renames (inject the sync seam and assert the
+  ORDER), which is the honest mechanical proof.
+
+  E2E QA PROCEDURE: place a zero-byte `.handoff` in a role's outbox and run the daemon; assert it
+  lands in `failed/` with a diagnostic and reaches NO inbox. Place one directly in an inbox `new/`
+  and run `ready_for_next.sh`; assert the role is NOT handed it as a task and that it is quarantined.
+  Assert both events surface to a human. Then send a normal handoff and assert it still delivers and
+  dequeues unchanged — the guard must not break the happy path.
+
+acceptance:
+  feature: specs/features/BL-365-corrupt-handoff-never-dispatched.feature
+  steps:
+    - "A corrupt handoff is never dispatched to a role as work"
+    - "A corrupt handoff is not delivered onward to a recipient's inbox"
+    - "A sender cannot install an empty handoff into its outbox"
+    - "A handoff that survives a crash still has its contents"
+    - "A lost parcel is visible, not silent"
+
+human_approval: pending
+
+mutation_cost: medium

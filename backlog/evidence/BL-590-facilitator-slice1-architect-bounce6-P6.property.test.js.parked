@@ -1,0 +1,59 @@
+// BL-590 architect SEND BACK #6 — PARKED property P6.
+//
+// Append this to extension/test/onboardingFacilitator.property.test.js as
+// part of the fix (the same way P4 and P5/P5b were adopted). It is the
+// invariant that ENDS the resume-identity family that has now bounced four
+// times (#1 in-flight resume, #4 prerequisites-ready resume, #5 slug
+// injectivity, #6 this one): the two layers must agree on what "the same
+// target" means.
+//
+// The store decides target identity by slugifyTargetRepoUrl - a NORMALIZING
+// function, so aliases of one repo deliberately share one state file (P5b).
+// handleOnboardingMessage decides it by raw string equality
+// (findStateForTarget). Wherever those two disagree, the handler mints a
+// fresh state and the store writes it over the existing one: verified
+// prerequisites are destroyed, permanently.
+//
+// P6 states the agreement directly, with no reference to which normalization
+// is "right": the handler must RESUME exactly when the store would REUSE the
+// file. Fix the two to share one identity function and P6 holds by
+// construction, whatever that function normalizes.
+//
+// Verified against the bounced commit c336270e05: FAILS, shrinking to the
+// pair ("https://github.com/a/b", "https://github.com/a/b.git").
+
+// The alias forms a human plausibly pastes for one repo. Includes the
+// combination the current normalization mishandles (".git" stripped BEFORE
+// the trailing slash, so "repo.git/" keeps its ".git"); once the strip order
+// is fixed and identity is shared, every form below both resumes AND shares
+// one file, and P6 passes for all nine pairs of them.
+const aliasFormArb = fc.constantFrom(
+  (core) => `http://${core}`,
+  (core) => `https://${core}`,
+  (core) => `https://${core}.git`,
+  (core) => `https://${core}/`,
+  (core) => `https://${core}.git/`
+);
+
+test('P6: the handler resumes a target exactly when the store would reuse its state file', () => {
+  fc.assert(
+    fc.property(repoCoreArb, aliasFormArb, aliasFormArb, (core, formA, formB) => {
+      const a = formA(core);
+      const b = formB(core);
+      const existing = createOnboardingState(a, () => 1);
+      const outcome = handleOnboardingMessage([existing], b, () => 2);
+
+      const sameFile = slugifyTargetRepoUrl(a) === slugifyTargetRepoUrl(b);
+      const resumed = outcome.kind === 'resumed';
+
+      assert.equal(
+        resumed,
+        sameFile,
+        sameFile
+          ? `"${b}" writes ${a}'s state file but was NOT resumed - a fresh state overwrites it and destroys every verified prerequisite`
+          : `"${b}" was resumed as "${a}" but keys a DIFFERENT state file - the resumed state is written somewhere it will not be found again`
+      );
+    }),
+    { numRuns: 1000 }
+  );
+});

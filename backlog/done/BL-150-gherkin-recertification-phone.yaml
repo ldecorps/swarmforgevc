@@ -1,0 +1,58 @@
+id: BL-150
+title: "Periodic human recertification of Gherkin scenarios via the phone PWA"
+milestone: M3
+status: todo
+priority: 06
+direction: feature
+assigned_to: coder
+source: "Raw intake from operator via coordinator 2026-07-06, drained from backlog root by specifier."
+
+description: |
+  Problem: Gherkin scenarios (once BL-111's living feature files exist) are
+  the durable acceptance contract, but nothing ever asks a human to confirm
+  a scenario still reflects intended behavior. Scenarios can go stale
+  silently as the product evolves around them.
+
+  Wanted:
+  - Track, per Gherkin scenario, a "last reviewed by human" timestamp, held
+    in a small separate durable store (not committed inside the .feature
+    file itself), e.g. under .swarmforge/.
+  - Pull-based recertification: the human opens the phone app (the BL-117
+    docs drill-down view, which already goes down to Gherkin scenario
+    level) and is drip-fed scenarios one (or a small batch) at a time —
+    never a wall of text.
+  - Selection order: always surface the scenario(s) with the oldest
+    last-reviewed timestamp first, so nothing is reviewed twice while
+    others are neglected.
+  - Reviewing a scenario has three possible outcomes: CONFIRM (no content
+    change), UPDATE (edit the scenario text in place because it no longer
+    matches intended behavior), or DELETE (the scenario is obsolete/wrong
+    and leaves the acceptance contract entirely). Any of the three updates
+    the last-reviewed timestamp; confirm/update move the scenario to the
+    back of the queue, delete removes it from the queue.
+  - Write path: the phone app composes and sends an email (scenario id +
+    outcome + new text if updating) using BL-073's deferred inbound-email
+    phase — a Resend Inbound webhook on the extension host receives it.
+  - Because update/delete are real changes to the acceptance contract
+    normally owned exclusively by the specifier, the extension host does
+    NOT apply them directly. It writes them into the same proposal queue
+    mechanism the constitution/prompt rule_proposal handoff already uses
+    (durable, one-per-change, awaiting specifier review/accept/reject) —
+    the specifier reviews and applies (or rejects) each recertification
+    change the same way it reviews a rule_proposal.
+  - Delete requires an explicit in-app confirmation step before the phone
+    app sends the delete email at all, on top of the specifier's own
+    review — a deliberate double-gate since delete removes acceptance
+    coverage outright with no other undo.
+
+  Depends on / builds on:
+  - BL-111 (APS realignment stage 1: living feature files) — needs real
+    .feature files to track review state against.
+  - BL-117 (PWA docs drill-down explorer) — recertification is a mode
+    within that same view, not a separate app.
+  - BL-097 (backlog dashboard PWA) — shared serverless PWA infrastructure.
+  - BL-073 (email notifier) — reuses its previously-deferred inbound-email
+    phase for the write path.
+
+acceptance: specs/features/BL-150-gherkin-recertification-phone.feature
+mutation_cost: low

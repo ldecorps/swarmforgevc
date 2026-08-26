@@ -1,0 +1,100 @@
+id: BL-366
+title: "The generated systemd units cannot start, and the crash-burst guard they claim is silently inert"
+milestone: M8
+type: defect
+severity: high
+status: todo
+priority: 2
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-systemd-units-cannot-start.md — found 2026-07-14 while installing the operator + front-desk units on the primary host. Both defects re-verified in the generator by the specifier before speccing."
+
+notes: |
+  WHY THIS IS EXPEDITE. These units are the supervision layer. Because they had never been installed
+  here — and, as it turns out, COULD NOT have worked if they had been — the whole operator layer sat
+  dead for ~9h on 2026-07-13 and Telegram went silent. BL-359 (always-on Operator presence) is
+  blocked on this: its entire deliverable is "install and supervise these units", which is
+  meaningless while the units cannot start. Both defects are mechanical and provable with
+  `systemd-analyze verify` — no judgement call.
+
+  DEFECT A — `ExecStart` is not an absolute path, so the operator unit never starts. VERIFIED:
+  `swarmforge/deploy/generate_systemd_units.sh:131` renders
+      ExecStart=bb $PROJECT_ROOT/swarmforge/scripts/operator_runtime.bb $PROJECT_ROOT
+  systemd does NOT search `PATH` for `ExecStart`; it requires an absolute path. `systemd-analyze
+  verify` says so outright: "Command bb is not executable: No such file or directory". On this host
+  `bb` is at `/home/carillon/.local/bin/bb`.
+
+  DEFECT A' — the same root cause, one layer down. The front-desk unit's own `ExecStart` IS absolute
+  (`:157`, `launch_front_desk.sh`) so it passes `verify` — but it is not fixed either: systemd hands
+  units a minimal PATH (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin`) which excludes
+  `~/.local/bin`, and that script shells out to `bb`. A unit that starts and then dies on
+  `bb: command not found` is no better than one that refuses to start. Both need an explicit
+  `Environment=PATH=…` covering the interpreter dir (or absolute paths throughout).
+
+  DEFECT B — the crash-burst guard is decorative. `StartLimitIntervalSec=0` is rendered into the
+  `[Service]` section (`:137`, `:163`). systemd moved that key to `[Unit]` at v230+; in `[Service]`
+  it is DISCARDED with a warning ("Unknown key name 'StartLimitIntervalSec' in section 'Service',
+  ignoring"). So the units keep systemd's DEFAULT start limit (5 starts / 10s → the unit enters
+  `failed` and STAYS there). The generator's own comment claims this key makes a crash burst
+  survivable — "the exact analogue of the BL-303 sticky-give-up defect fixed at the front-desk-
+  supervisor layer". It does not. BL-303's sticky-give-up defect is REINTRODUCED one layer up, in the
+  very code whose comment claims to have fixed it, with `Restart=always` giving false assurance.
+
+  ⚠ THIRD OCCURRENCE OF A NAMED DEFECT CLASS: A GUARD WHOSE RESULT IS DISCARDED, SO THE PROTECTION IS
+  DECORATIVE. BL-215 (supervisor swallowed `send-configured-email!`'s result), then BL-345 (the
+  starvation alarm armed BEFORE the send and discarded its result — "the alarm for a silent failure
+  failed silently"), now this (a systemd key written into a section where it is ignored). The
+  engineering article already carries the rule for the first two. This one is the same shape in a
+  different medium: the protection was WRITTEN but never took EFFECT, and nothing checked. If the
+  coder or architect sees a fourth, propose generalizing the rule beyond "consult the sender's
+  result" to "prove the guard is in force, never assume it from its presence in the source".
+
+  THE ACTUAL FIX — and it is not the three bullets above.
+    `systemd-analyze verify` must RUN IN THE TEST SUITE against every rendered unit. Both defects are
+    caught by it in one second. Nothing in the suite runs it today, which is the whole reason units
+    that cannot start shipped and sat unnoticed for weeks. Ship that gate FIRST, let it fail, then fix
+    what it catches:
+      - `ExecStart` uses an absolute interpreter path (resolve `bb`/`node` at generate time, or
+        require them passed in — never assume a login PATH);
+      - units carry an explicit `Environment=PATH=` including the interpreter dir, so the scripts they
+        launch can find `bb`/`node`/`claude` too;
+      - `StartLimitIntervalSec=0` moves to `[Unit]`.
+    Treat the three fixes as the gate's first catches, not as the deliverable. A fix without the gate
+    leaves the next generator edit free to reintroduce exactly this.
+
+  ALL THREE UNIT TYPES. The generator also renders a `swarm` unit (`--unit=swarm`, `:110`) which was
+  never exercised. Its `ExecStart` is absolute, but it shares the `[Service]`-section
+  `StartLimitIntervalSec` bug and the same minimal-PATH assumption. The acceptance scenarios cover
+  swarm / operator / front-desk deliberately — do not fix only the two that bit us.
+
+  REFERENCE UNITS. Hand-corrected units that DO pass `systemd-analyze verify` clean were written for
+  the primary host (operator + front-desk: absolute `bb`, `StartLimitIntervalSec` in `[Unit]`). Use
+  them as the reference for what the generator should EMIT. They are a one-host stopgap — the
+  generator itself is still emitting the broken form, and as of this writing NO unit is installed on
+  this host (re-verified: `/etc/systemd/system` carries none).
+
+  SCOPE. `swarmforge/deploy/generate_systemd_units.sh` (all three `--unit=` branches) and the test
+  suite that must gate it. Out of scope: INSTALLING the units on this host (that is BL-359's
+  deliverable, which this ticket unblocks) and the front-desk unit's missing installer.
+
+  IMPLEMENTATION NOTE. Scenario outlines here are keyed on `<unit>`. Per the engineering rule, that
+  column must be LOAD-BEARING: validate against an explicit KNOWN_VALUES lookup (swarm, operator,
+  front-desk) and throw on anything else — never a binary `===`/ternary with an `else` catch-all, or
+  gherkin-mutator's mutant survives to the hardener.
+
+  E2E QA PROCEDURE: render each of the three units and run `systemd-analyze verify` on each; assert a
+  clean pass with NO "Unknown key name" warnings. Grep each rendered unit for an absolute `ExecStart`
+  and an `Environment=PATH=` that contains the interpreter's directory. Then, on a host where the
+  units are installed, stop the operator unit, corrupt its target so it crash-loops, and assert it
+  keeps being restarted rather than parking permanently in `failed`.
+
+acceptance:
+  feature: specs/features/BL-366-systemd-units-can-actually-start.feature
+  steps:
+    - "Every rendered unit is valid systemd"
+    - "A unit can find its interpreter under systemd's own minimal PATH"
+    - "A crash burst never permanently stops a unit"
+
+human_approval: pending
+
+mutation_cost: low

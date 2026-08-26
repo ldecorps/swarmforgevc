@@ -1,0 +1,59 @@
+id: BL-441
+title: "Docs: an 'answering offline' runbook — where the human reads pending questions and how to compose ANSWER files"
+milestone: M8
+type: docs
+status: todo
+severity: low
+epic: ""
+priority: 42
+direction: human-requested
+depends_on: [BL-440]
+source: "INTAKE-offline-answer-files-git-return-path.md (suggested slice 3). The offline read surfaces already exist (BL-329 committed topics, PWA); this slice documents them plus the ANSWER-*.md compose convention BL-440 introduces."
+
+notes: |
+  BL-440 has landed and this ticket was promoted; the .feature.draft scenarios have been MATERIALIZED into
+  the live specs/features/BL-441-answering-offline-runbook.feature (specifier, 2026-07-16) after QA bounced
+  the parcel for a missing acceptance file (evidence: backlog/evidence/BL-441-answering-offline-runbook-bounce-20260716.md).
+
+  SPEC CORRECTION at materialization (scenario/step 2): the original draft named the PWA dashboard as an
+  offline read surface for pending questions. Verified in pwa/app.js that the static PWA fetches only
+  backlog.json / docs-tree.json / recert-batch.json — it never reads backlog/topics/*.json, so it
+  structurally CANNOT surface pending questions (local-engineering two-surfaces rule: the static PWA is a
+  git-SHA projection of backlog.json only). The built runbook (docs/runbooks/BL-441-answering-offline-runbook.md)
+  already documents this truthfully. Scenario/step 2 now asserts the runbook points to the committed BL
+  topics as the offline read surface AND notes the PWA does not surface pending questions. Making the PWA
+  surface pending questions would be a separate code ticket, out of BL-441's docs-only scope.
+
+  WHAT IT DOCUMENTS. A short, text-based runbook under docs/runbooks/: (1) where the human READS pending
+  questions when away from Telegram — the git-committed BL topics / backlog/topics/*.json, readable from a
+  plain checkout (the PWA does NOT carry this); (2) how to COMPOSE an answer — an ANSWER-*.md at the
+  backlog root referencing a BL id / topic / ask id plus the human's words, commit, push; (3) the
+  stale-premise caveat — a late answer may be reported "arrived late, not executed" if the referenced
+  premise has moved on.
+
+  Scope: a runbook under docs/runbooks/ (documenter-owned). The 3 acceptance scenarios still need their
+  step handlers wired in specs/pipeline/steps/ — that is coder work; drive TDD from the live .feature
+  against the built runbook doc. No production code. Keep it short; the mechanism is BL-440's.
+
+acceptance:
+  feature: specs/features/BL-441-answering-offline-runbook.feature
+  steps:
+    - "The runbook explains composing an ANSWER-*.md that references an ask"
+    - "The runbook points to the committed BL topics as the offline read surface and notes the PWA does not surface pending questions"
+    - "The runbook states the stale-premise (arrived-late) behaviour"
+
+e2e_qa_procedure: |
+  QA runs the mandatory acceptance gate against the live feature file:
+    ./specs/pipeline/scripts/run_acceptance.sh specs/features/BL-441-answering-offline-runbook.feature
+  All three scenarios must pass, driven by step handlers in specs/pipeline/steps/ that read
+  docs/runbooks/BL-441-answering-offline-runbook.md and assert: (01) it explains composing an
+  ANSWER-*.md at the backlog root referencing a BL id/topic/ask id; (02) it names the committed BL
+  topics (backlog/topics/*.json) as the offline read surface and warns the PWA does not surface pending
+  questions; (03) it states a late answer may be reported "arrived late, not executed" when the premise
+  has moved on. The gate fails if the .feature is absent or any scenario lacks a step handler (BL-233).
+
+human_approval: >
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). A docs slice of
+  the human-settled BL-440 work. Still held on depends_on: [BL-440] until that lands.
+
+mutation_cost: low

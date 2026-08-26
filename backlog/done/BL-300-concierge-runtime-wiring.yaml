@@ -1,0 +1,94 @@
+id: BL-300
+title: "Concierge slice 5 (RUNTIME WIRING) — an outbound tick in the front-desk bot derives TaskStarted/TaskCompleted from the live backlog and routes each via routeEvent, WRITING backlog-topic-map.json (the missing writer); durable, restart-safe dedup"
+milestone: M8
+status: todo
+type: feature
+priority: 20
+depends_on: [BL-296, BL-297, BL-298, BL-299]
+part_of: BL-295
+source: "BL-295 Concierge epic slice 5 (runtime wiring), registered 2026-07-11 after accepting the hardener/QA dark-feature rules; coordinator spec request 2026-07-11 ('All Concierge slices done; spec BL-300: runtime wiring + topic-map writer'). Specifier mapped every integration seam with an Explore pass before scoping."
+
+notes: |
+  SLICE 5 of the BL-295 Concierge epic (see [[bl295-concierge-bl-topics-epic]]). This is
+  the WIRING slice the accepted engineering + specifier rules require: BL-296 (derive),
+  BL-297 (route), BL-299 (complete/close) are pure, TESTED, and DARK — nothing calls them
+  and nothing writes backlog-topic-map.json. BL-300 turns them on and supplies the writer.
+
+  UNBLOCKS BL-298 (per the accepted specifier rule): the already-built inbound reader
+  `readBacklogTopicMap` in `telegram-front-desk-bot.ts` reads
+  `.swarmforge/operator/backlog-topic-map.json`, which today has NO writer. BL-300's
+  `recordTopicId` adapter is that writer — until it lands, BL-298's BL-### topic-reply
+  branch can never fire live.
+
+  VERIFIED LIVE INTEGRATION LAYER (2026-07-11, Explore pass with file:line evidence):
+    - HOST = the TS front-desk bot process (`extension/src/tools/telegram-front-desk-bot.ts`,
+      `main()` ~L212, `runCliMain(main)` ~L233). It already runs two forever loops under
+      `Promise.all` (~L226): `pollLoop` (Telegram long-poll, inbound) + `subscribeReplies`
+      (bridge SSE). It owns the bot token + chat id (env, ~L220-221), the topic-map path,
+      and imports the Telegram client. ADD a THIRD, outbound loop here — mirror the
+      `buildPollAdapters`/`pollLoop` thin-wrapper shape (~L159-181).
+      REJECTED alternative: the Babashka operator runtime (`operator_runtime.bb` `tick!`)
+      already has a wall-clock timer, but it is Babashka and never shells to a TS CLI;
+      routing through it would mean reimplementing the tested TS modules or adding a shim.
+      Keep all logic in the tested TS modules -> the bot is the correct host.
+    - deriveSwarmEvents(prev, curr, alreadyEmitted) in
+      `extension/src/events/swarmEventStream.ts` (~L88). curr = EventStreamSnapshot
+      {backlog{active,paused,done: id[]}, gates[], roleTicket}. For THIS slice the snapshot
+      is built from BACKLOG FOLDERS ONLY via `readBacklogFolders(targetPath)`
+      (`extension/src/panel/backlogReader.ts` ~L310) — active/done drive
+      TaskStarted/TaskCompleted; `gates`/`roleTicket` stay empty here, so NeedsApproval is
+      simply not emitted yet (its wiring is BL-301, below — a different, tmux-pane-capture
+      integration surface).
+    - routeEvent(event, title, adapters) in `extension/src/concierge/topicRouter.ts` (~L110)
+      is the SINGLE entrypoint: it internally dispatches TaskCompleted -> summary+close and
+      everything else -> create/reuse+post. The tick calls it once per derived event. It
+      needs a per-event `title` (SwarmEvent lacks one) — look it up from the folders
+      snapshot (`readBacklogFolders` returns each item's title).
+    - RouteAdapters wired to real seams: getTopicMap = `readBacklogTopicMap`;
+      createTopic = `createForumTopic`; sendMessage = `sendTelegramMessage(..., messageThreadId)`;
+      closeTopic = `closeForumTopic` (all in `extension/src/notify/telegramClient.ts`, token/
+      chatId already in scope in main()); recordTopicId = a NEW writer of
+      backlog-topic-map.json modelled on the sibling `writeTopicMap` (~L79-82).
+
+  SCOPE:
+    1. New outbound tick loop added to the bot's `Promise.all`, on a configurable interval
+       with a sensible default (this is the process's FIRST wall-clock loop; both existing
+       loops are long-poll/SSE-driven). Extract the tick body as a named pure-ish function
+       over injected adapters (CLI main() thin-wrapper rule); keep main() a thin wire-up.
+    2. A live-state snapshot builder (backlog folders only) -> deriveSwarmEvents(prev, curr,
+       alreadyEmitted) -> routeEvent per event, title looked up from the snapshot.
+    3. recordTopicId: WRITE `.swarmforge/operator/backlog-topic-map.json` (backlogId->topicId)
+       on topic creation — the missing writer, symmetric with `writeTopicMap`.
+    4. DURABLE, restart-safe idempotency: persist the prior snapshot + the alreadyEmitted
+       set (a durable store under `.swarmforge/operator/`) so an event routed before a
+       restart is not routed again after it. (BL-296 only deduped in-memory; persisting it
+       is this slice's new behavior.)
+    5. NEVER-MAIN-CHAT stays structural (adapters only ever take a concrete topicId).
+
+  ARCHITECT-REVIEW ITEMS (surface for confirmation; feature file not final until human
+  review per role): (a) host = TS bot vs operator runtime — recommend TS bot with the
+  evidence above; (b) exact durable-store file layout for prev-snapshot + alreadyEmitted;
+  (c) tick interval default. These are design refinements, not open product forks.
+
+  E2E QA PROCEDURE: with a scratch target repo, run the tick over a snapshot where an item
+  moved backlog/active -> creates a topic (fake createTopic) and assert
+  `.swarmforge/operator/backlog-topic-map.json` now contains its backlogId->topicId; move
+  the item to backlog/done and re-tick -> assert a completion summary send + a close on
+  that topicId; re-tick with no change and after a simulated restart (reload the durable
+  store) -> assert NO event is re-routed.
+
+  OUT OF SCOPE (-> BL-301, registered on the epic): NeedsApproval routing, which needs the
+  gate snapshot (`computeRoleGateStatesLive`, tmux-pane capture) + the roleTicket inversion
+  of `computeCurrentHolders` (ticketId->role) into role->ticketId, with a role/ticket
+  collision rule. A genuinely different, live-tmux integration surface — kept separate so
+  BL-300's snapshot stays pure-filesystem and small. Also out: richer event payload;
+  deleting topics.
+
+acceptance:
+  feature: specs/features/BL-300-concierge-runtime-wiring.feature
+  steps:
+    - "A backlog item that newly started being worked: the tick creates its topic, posts its opening message, and persists its backlogId->topicId mapping to backlog-topic-map.json for later reads"
+    - "A backlog item that newly completed: the tick posts a completion summary into its topic and closes the topic"
+    - "An event already routed before a runtime restart is not routed a second time after the restart (durable dedup)"
+
+mutation_cost: medium

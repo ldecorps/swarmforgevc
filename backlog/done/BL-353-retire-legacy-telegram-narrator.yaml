@@ -1,0 +1,70 @@
+id: BL-353
+title: "Retire the legacy single-chat Telegram narrator and inbound relay — porting any signal the front desk does not already carry"
+milestone: M8
+type: chore
+status: todo
+severity: medium
+priority: 6
+direction: human-requested
+depends_on: []
+source: "backlog/evidence/BL-336-headless-dark-emitter-audit-20260713.md, findings H2/H3 — BL-336's audit. The coder correctly refused to decide this one ('needs a human/specifier call, not an engineering one') and ranked it LAST, because it needed a product decision before any engineering was well-scoped. Decision taken by the HUMAN 2026-07-13: RETIRE, porting anything not already covered."
+
+notes: |
+  THE SITUATION. There are TWO Telegram systems in this repo:
+    - The CONCIERGE FRONT DESK (BL-274+/BL-295+): forum topics, runs HEADLESS, confirmed live via
+      `ps aux`. This is the real one.
+    - The LEGACY SINGLE-CHAT NARRATOR + INBOUND RELAY:
+      `extension/src/notify/telegramNarrator.ts:TelegramNarrator.sweep` (stage-transition,
+      gate-needs-you, dead-letter and PR-link narration) and
+      `extension/src/notify/telegramInboundRelay.ts:TelegramInboundRelay.handleUpdate` (the human's
+      Telegram reply answering a role's blocking question). Its ONLY trigger is
+      `extension.ts:startOrRestartTelegramAdapter`, a `setInterval` started from `activate()`.
+      This is LIVE CODE, not orphaned — extension.ts:256,722,1142,1251,1289 all still call it — but
+      it is `vscode.*`-gated, so it has not fired AT ALL today while the swarm ran fully headless.
+
+  THE HUMAN'S DECISION (2026-07-13), and the reason it is not just "delete it". Asked to choose
+  between retiring the legacy pair, porting it headless, or deleting it outright, he chose: RETIRE,
+  BUT PORT ANYTHING THE FRONT DESK DOES NOT ALREADY CARRY. The distinction is the whole ticket.
+  Deleting first and checking later would silently drop an alert — which is the EXACT failure class
+  the BL-336 audit exists to find. Retiring a channel is only safe once you have proven the signals
+  it carried still arrive.
+
+  THE PART NOBODY HAS CHECKED YET — DO THIS FIRST. The narrator emits FOUR signals. The Concierge
+  demonstrably covers gate-needs-you and the gate-answer path (BL-325's human-in-the-loop gates +
+  `bl-topic-approval-sweep!`). It is NOT established that it covers DEAD-LETTER or PR-LINK
+  narration. Establish it from code before removing anything. Any signal that turns out to be
+  uncovered must be carried by the front desk BEFORE the legacy pair is removed — in this same
+  parcel, not a later one. If it turns out all four are covered, say so with the evidence and the
+  ticket becomes a clean deletion.
+
+  SCOPE:
+    1. Determine, from code, which of the legacy narrator's four signals (stage-transition,
+       gate-needs-you, dead-letter, PR-link) the headless front desk already carries. State the
+       finding explicitly — this is the load-bearing step.
+    2. Port any signal it does NOT carry onto the front desk, headless.
+    3. Only then remove the legacy narrator, the legacy inbound relay, and their
+       `startOrRestartTelegramAdapter` wiring from `extension.ts`.
+    4. The human's answer to a role's blocking question must still reach the role that asked — this
+       is the relay's real job and it must not regress.
+    5. No double-notification: a signal both systems could have sent must reach the human ONCE.
+    6. OUT OF SCOPE: the Concierge/front-desk system's own behavior beyond carrying any ported
+       signal; the other four BL-336 findings (BL-349/350/351/352).
+
+  E2E QA PROCEDURE: with a REAL headless swarm and NO editor attached, drive each of the four
+  signals and assert the human is told about each one — that is the acceptance, and a fixture cannot
+  give it to you, because "it still arrives" is the only claim that matters. Drive a role to block on
+  a question, answer it from real Telegram, and assert the ROLE receives the answer. Then confirm
+  the legacy narrator and relay no longer run at all, and that nothing arrives twice.
+
+acceptance:
+  feature: specs/features/BL-353-retire-legacy-telegram-narrator.feature
+  steps:
+    - "Every signal the legacy narrator sent still reaches the human"
+    - "A signal the surviving system did not already carry is carried now"
+    - "The human's answer to a blocking question still reaches the role that asked"
+    - "The retired system no longer runs"
+    - "The human is not told the same thing twice"
+
+human_approval: pending
+
+mutation_cost: medium

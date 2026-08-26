@@ -1,0 +1,86 @@
+id: BL-515
+title: "Gherkin lint gate: fail loudly on a silently-dropped wrapped step line (2nd line + its params)"
+milestone: M8
+type: bug
+epic: ""
+priority: 4
+direction: swarm-surfaced
+depends_on: []
+source: "Coder note 2026-07-17 (BL-511): 'Gherkin step text wraps 2 lines silently drop 2nd line + its params.' Specifier reproduced 2026-07-18."
+
+notes: |
+  WHAT / WHY: a Gherkin step whose text wraps onto a second physical line has that line —
+  and any <parameters> on it — SILENTLY DROPPED by the vendored APS gherkin-parser, while
+  swarmforge/scripts/gherkin_lint_gate.sh reports "parses cleanly" (exit 0). This is a
+  silent correctness hole in the acceptance gate: the step handler ends up matching only the
+  truncated first line, the dropped <param> never reaches the handler, and the now-orphaned
+  Examples column can be mutated by gherkin-mutator with no scenario able to kill it.
+
+  REPRODUCED (2026-07-18, specifier):
+    Given a record with <telegram> Telegram
+      events out of <total> total events
+  parses to step text "a record with <telegram> Telegram", parameters ["telegram"] — the
+  second line and the <total> parameter are gone, yet the Examples table still carries a
+  `total` column. The lint gate exits 0. (This is the exact shape that let BL-511's
+  scenario-04 <total> column silently drop.)
+
+  FIX BOUNDARY:
+    - The APS gherkin-parser is VENDORED and PINNED (engineering.prompt: do NOT modify or
+      reimplement APS commands). The fix lives in OUR layer — gherkin_lint_gate.sh plus a
+      small testable helper — which must FAIL LOUDLY instead of passing the silent drop
+      through. This matches the codebase's fail-loud / never-silently-drop discipline
+      (corrupt-handoff quarantine, honest-null). Standard Gherkin steps are single-line;
+      the gate enforces that (the fix is to reject the wrap, not to teach the parser
+      multi-line steps).
+    - Detect BOTH signatures and fail naming the offender:
+      (1) a bare continuation line inside a scenario body — a non-blank line that is not a
+          step keyword line (Given/When/Then/And/But/*), a table row (|...), a tag (@...),
+          a comment (#...), a docstring delimiter/content, or a section header
+          (Feature/Background/Scenario/Scenario Outline/Examples/Rule);
+      (2) an Examples column referenced by no step <parameter> (the param-loss signature;
+          this also enforces the specifier's existing prune-unreferenced-columns rule).
+    - TESTABILITY: put the detection in a PURE helper that takes the feature text + the
+      parser's JSON IR and returns findings (never inline bash logic); unit-test it directly
+      under swarmforge/scripts/test/ with fixtures for: a param-wrapped step, a param-less
+      wrapped step, a phantom Examples column, and clean features that use Examples/data
+      tables (no false positive on table rows). `.bb` scripts are gated by their own unit
+      suite only (engineering.prompt), so cover the helper thoroughly there.
+    - NO FALSE POSITIVES: a well-formed feature (single-line steps, Scenario Outline with a
+      fully-referenced Examples table, tags, comments) must still pass cleanly. Verify the
+      gate still passes every existing specs/features/*.feature after the change.
+
+  ORTHOGONALITY: touches swarmforge/scripts/gherkin_lint_gate.sh (+ a new helper) and
+  swarmforge/scripts/test/. Orthogonal to BL-511 and to the console epic; not orthogonal to
+  any other in-flight change to the lint gate or the APS wrapper scripts.
+
+acceptance:
+  # Observable contract: given a feature file whose step text wraps onto a bare second line,
+  # OR whose Examples table has a column no step references, the lint gate FAILS and names
+  # the offending line/column instead of reporting "parses cleanly"; a well-formed
+  # single-line-step feature (including a fully-referenced Examples table) still passes.
+  feature: specs/features/BL-515-gherkin-lint-rejects-wrapped-step.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Craft a fixture feature with a step wrapped across two lines carrying a <param> on the
+#      2nd line; run swarmforge/scripts/gherkin_lint_gate.sh on it and confirm it now EXITS
+#      NONZERO with a FAIL line naming the dropped continuation line (today it exits 0/OK).
+#   2. Craft a fixture whose Examples table has a column referenced by no step; run the gate
+#      and confirm it fails naming the unreferenced column.
+#   3. Run the gate on a well-formed fixture (single-line steps + a fully-referenced Examples
+#      table + tags/comments) and on every existing specs/features/*.feature; confirm all pass.
+#   4. Run the helper's unit suite (swarmforge/scripts/test/) and confirm the param-wrapped,
+#      param-less-wrapped, phantom-column, and clean-table cases are each covered.
+
+human_approval: approved
+approval_context: >
+  A swarm-surfaced tooling bug the coder hit while building BL-511: a Gherkin step whose text
+  wraps onto a second line has that line and any <params> on it SILENTLY dropped by the
+  vendored APS parser, and our lint gate says "parses cleanly" — so the acceptance contract
+  quietly differs from what's written, and a dropped Examples column becomes un-killable by
+  mutation. I reproduced it. The fix makes OUR lint gate fail loudly on the wrap (the vendored
+  parser is pinned and off-limits), forcing single-line steps (standard Gherkin) and rejecting
+  orphaned Examples columns. Sign-off needed on: treating a wrapped step as a hard lint failure
+  (vs. a warning), and rejecting any Examples column no step references (this also enforces the
+  existing prune-unreferenced-columns rule). Say the word if you'd rather it warn than fail.
+
+mutation_cost: low

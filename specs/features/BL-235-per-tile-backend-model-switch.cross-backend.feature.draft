@@ -1,0 +1,21 @@
+# PARKED DRAFT — NOT an executable acceptance contract (.feature.draft, so no
+# *.feature glob or the acceptance runner picks it up). This is BL-235's DEFERRED
+# cross-BACKEND switch slice: swapping a role between an external CLI backend and
+# the in-process vscode.lm runtime (LanguageModelRoleRuntime), which have
+# different process lifecycles than a same-backend model swap. When that slice is
+# built, MOVE this scenario into the live acceptance file
+# specs/features/BL-235-per-tile-backend-model-switch.feature (add the row back to
+# the switch-respawns-that-role-01 Examples) and re-lint / IR-DRY there.
+# Background (verbatim from the live file):
+#   Given a running swarm with a tiled agent panel, each tile bound to one role's agent
+
+# BL-235 switch-respawns-that-role-01 (cross-backend example, deferred)
+Scenario Outline: switching a tile's backend respawns only that role on the new backend
+  Given the tile for a role whose agent runs on "<from>"
+  When the operator picks "<to>" from that tile's backend/model dropdown
+  Then that role's agent is respawned on "<to>" in its existing worktree
+  And no other role's agent is respawned
+
+  Examples:
+    | from            | to                   |
+    | Claude Code CLI | in-process vscode.lm |

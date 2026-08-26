@@ -1,0 +1,79 @@
+id: BL-301
+title: "Concierge slice 6 — extend the tick's snapshot with live gate state + role->ticket mapping so a NeedsApproval event routes into the gated item's BL-### topic (untagged gates drop; failed posts retry)"
+milestone: M8
+status: todo
+type: feature
+priority: 20
+depends_on: [BL-300]
+part_of: BL-295
+source: "BL-295 Concierge epic slice 6, registered 2026-07-11 during BL-300 scoping (split out to keep BL-300's snapshot pure-filesystem); coordinator spec request 2026-07-11 ('BL-300 live; spec BL-301: route NeedsApproval into the BL-### topic'). Specifier verified the extension point + both live data sources before scoping."
+
+notes: |
+  FINAL slice of the BL-295 Concierge epic (see [[bl295-concierge-bl-topics-epic]]).
+  BL-300 wired the tick but built its snapshot from BACKLOG FOLDERS ONLY, hardcoding
+  gates:[] and roleTicket:{} (conciergeTick.ts toEventStreamSnapshot, with a comment
+  deferring exactly this to BL-301). deriveSwarmEvents + routeEvent ALREADY handle
+  NeedsApproval end-to-end — this slice only needs to POPULATE those two snapshot fields
+  from live state, and NeedsApproval starts flowing.
+
+  VERIFIED LIVE INTEGRATION LAYER (2026-07-11):
+    - EXTENSION POINT: extension/src/concierge/conciergeTick.ts. `toEventStreamSnapshot`
+      (~L42) is the one place gates/roleTicket are stubbed empty. Extend it (and the
+      `ConciergeTickAdapters` surface) to take live gate + holder data via NEW adapters,
+      wired in the bot (telegram-front-desk-bot.ts) exactly as BL-300 wired readFolders.
+    - GATES: `computeRoleGateStatesLive(targetPath, roles)` in
+      extension/src/bridge/gateSnapshot.ts (~L66) -> RoleGateState[] {role, gated, snippet?},
+      structurally the snapshot's GateSignal {role, gated}. Uses tmux-pane capture; if no
+      tmux socket it returns all-not-gated (graceful degrade) — the bot process has
+      targetPath, so this is reachable, and safe when the swarm isn't running.
+    - ROLE->TICKET: invert `computeCurrentHolders(windowsByRole)` (Map<ticketId, role>,
+      holisticProjections.ts ~L78) into roleTicket (role->ticketId). Source data:
+      resolveRoleWorktrees(targetPath) (bridgeState.ts ~L86, currently file-local — export
+      or a small live wrapper mirroring computeRoleGateStatesLive) + readRoleHoldingWindows
+      (ticketHoldingWindows.ts). A holding window with endMs===null is the role's CURRENT
+      ticket. Roles list is shared with the gate capture (one resolve per tick).
+    - deriveSwarmEvents' diffNeedsApproval emits NeedsApproval for a role NEWLY gated,
+      tagged with roleTicket[role]; it SILENTLY DROPS a gated role that has no roleTicket
+      entry. routeEvent then create/reuse-routes it into that BL-###'s topic (same path as
+      any event). No change to swarmEventStream.ts or topicRouter.ts.
+
+  DESIGN DECISIONS (no human fork — safe defaults):
+    - roleTicket collision: a role holds exactly one ticket at a time (one open holding
+      window) in normal operation, so the inversion is 1:1. An anomalous multi-hold picks
+      one; a gated role with no held ticket is DROPPED (diffNeedsApproval's existing
+      behavior) — never mis-tagged to a wrong BL-###.
+    - The posted message is the generic "NeedsApproval: BL-###" line (messageTextForEvent),
+      NOT the gate's question snippet — enriching it needs a richer SwarmEvent payload
+      (BL-296 shipped payload {}, closed). OUT OF SCOPE, same limit as BL-299's summary.
+
+  SCOPE:
+    1. Extend ConciergeTickAdapters + toEventStreamSnapshot so the tick's snapshot carries
+       real `gates` (from computeRoleGateStatesLive) and `roleTicket` (inverted holders),
+       wired in the bot from targetPath. Keep conciergeTick.ts Telegram-agnostic in its
+       own imports (it composes RouteAdapters, as today).
+    2. RETRY SYMMETRY: extend `withRetryableTransitionsHeldBack` (conciergeTick.ts ~L77) so
+       a FAILED NeedsApproval post also holds its gate transition back out of the persisted
+       snapshot (keep that role's prior gate state so the next tick still sees the
+       transition as new) — otherwise a transient send failure permanently drops the gate,
+       exactly the class of bug cleaner fixed for TaskStarted/TaskCompleted in BL-300.
+    3. A gated role with no held ticket raises no NeedsApproval (drop, not mis-route).
+    4. NEVER-MAIN-CHAT stays structural (routeEvent unchanged).
+
+  E2E QA PROCEDURE: with a scratch target, run the tick with a fake gate source reporting a
+  role newly gated while a fake holder map ties that role to BL-XXX -> assert a
+  NeedsApproval send into BL-XXX's topic (topic created/reused, mapping persisted). Re-run
+  with the role still gated -> assert NO second post (durable dedup). Run with a gated role
+  whose holder map is empty -> assert NO post. Make the send fail once -> assert the next
+  tick retries it rather than dropping it.
+
+  OUT OF SCOPE: question-snippet enrichment (payload {}); PRCreated/other event types;
+  changing swarmEventStream.ts or topicRouter.ts (both already route NeedsApproval).
+
+acceptance:
+  feature: specs/features/BL-301-concierge-needs-approval-routing.feature
+  steps:
+    - "A role newly awaiting a human decision while holding a backlog item posts a NeedsApproval message into that item's BL-### topic"
+    - "A newly-gated role holding no backlog item posts no NeedsApproval anywhere (untagged gate dropped, not mis-routed)"
+    - "A NeedsApproval whose post fails while the role stays gated is routed again on the next tick rather than dropped for good"
+
+mutation_cost: medium

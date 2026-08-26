@@ -1,0 +1,31 @@
+---
+description: Never modify swarm code unless the user explicitly asks — file intakes instead
+alwaysApply: true
+---
+
+# Swarm code: explicit request only
+
+Do **not** modify swarm code unless the user **explicitly** asks you to implement a change.
+
+Swarm code includes (non-exhaustive):
+
+- `swarmforge/` — prompts, scripts, constitution, packs, pipeline docs
+- `extension/` — bridge, concierge, front-desk bot, and other swarm runtime wiring
+- `backlog/` ticket YAML and spec/feature files driven by the swarm pipeline
+
+## Default when the user describes a problem or improvement
+
+1. **File an intake** at `.swarmforge/operator/INTAKE-<slug>.md` (local disk only — no git commit/push for intakes).
+2. Optionally notify the coordinator with a priority-00 note if urgency is stated.
+3. **Do not** edit prompts, scripts, backlog tickets, or extension code to "fix" or "normalize" the ask yourself.
+
+## When implementation is allowed
+
+Only after a clear, explicit request such as:
+
+- "implement this"
+- "fix this in code"
+- "make the change"
+- "commit this"
+
+Questions, reviews, diagnoses, and "consider normalizing X" are **not** implementation requests — treat them as intake/spec work unless the user says otherwise.

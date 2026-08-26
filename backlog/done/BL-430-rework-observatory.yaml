@@ -1,0 +1,63 @@
+id: BL-430
+title: "OBSERVE — the rework observatory: compute a rolling QA-bounce/rework rate from existing signals, attributed per role and per ticket-class, against a trailing baseline, and persist it"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: swarm-self-optimization
+priority: 40
+direction: human-requested
+depends_on: []
+source: "Slice 1 of BL-429. The human, 2026-07-15: 'the swarm has to be capable of observing where it's suboptimal', first signal chosen = QA bounce / rework rate (AskUserQuestion)."
+
+description: |
+  The swarm already records the raw ingredients of a rework rate — per-ticket retry/bounce counts
+  (`computeRetries`, swarmMetrics.ts), chaser telemetry (`.swarmforge/telemetry/chaser-*.jsonl`), and
+  QA bounce evidence (`backlog/evidence/<TICKET-ID>-*.md`) — but never composes them into a single
+  observable "how much is the pipeline reworking" signal. This slice adds ONLY that observation layer.
+
+  It computes, over a trailing window, the QA-bounce / rework rate and attributes it two ways: per
+  ROLE (which stage the parcel bounced back FROM/TO) and per TICKET-CLASS (e.g. `mutation_cost`), plus
+  a trailing BASELINE so a later slice can ask "is this meaningfully above trend?" (Article 3.5's exact
+  test). It persists a machine-readable signal file the diagnosis slice (BL-431) will read, and exposes
+  a read-only CLI that prints it for a human. It changes no promotion behaviour and moves no knob —
+  pure compute over data that already exists.
+
+  Constraints:
+    - Pure/testable: no VS Code API, no webview, no live tmux, no network. Read fixtures/real files,
+      compute, write one JSON file. Follows the swarmMetrics.ts module boundary.
+    - Additive schema: the signal file must carry a version/kind so later signals (bottleneck dwell,
+      idle waste) join without a rewrite — mirror swarmMetrics' additive chaser-telemetry discipline.
+    - Zero-sample safety: with no tickets/bounces in the window, report the NO_SAMPLE placeholder, never
+      a divide-by-zero or a fabricated 0%/100%.
+    - Read bounce evidence from the `main` ref, not a worktree checkout (BL-340): evidence files are
+      committed to `main` and are absent from a role's own worktree; a filesystem-only read undercounts.
+
+  Scope (verify at build time): a new metrics module beside `extension/src/metrics/swarmMetrics.ts`
+  (reuse its `computeRetries` / `extractTicketId` / handoff-header readers rather than re-parsing), a
+  read-only CLI under `extension/src/tools/` in the `swarm-metrics.ts` style, and the persisted signal
+  file under `.swarmforge/telemetry/`. Names are indicative; confirm the live readers before wiring.
+
+  E2E QA PROCEDURE: seed a target with a handful of tickets, some of which carry recorded QA bounces
+  (retry headers + `backlog/evidence/*` on main); run the observatory CLI; assert it prints a bounce
+  rate, a trailing baseline, and the top role and top ticket-class where rework concentrates; then run
+  it against a window with zero tickets and assert it prints NO_SAMPLE rather than crashing or inventing
+  a rate.
+
+acceptance:
+  feature: specs/features/BL-430-rework-observatory.feature
+  steps:
+    - "The observatory reports the rework rate over the window"
+    - "Rework is attributed to the dimension (role, ticket-class) it concentrates in"
+    - "A trailing baseline is reported alongside the current rate"
+    - "An empty window reports no sample instead of dividing by zero"
+    - "Bounce evidence is read from main, not the worktree"
+
+human_approval: >
+  approved 2026-07-15 (coordinator session, AskUserQuestion confirmation). Scope (first signal = QA
+  bounce/rework, observe-only, no knob moved) was confirmed by the human via AskUserQuestion in the
+  specifier session 2026-07-15; the human then approved promotion as-is in the coordinator session
+  the same day, accepting the exact signal-file schema, trailing-window length, and baseline
+  definition be resolved during build rather than blocking promotion.
+
+mutation_cost: medium

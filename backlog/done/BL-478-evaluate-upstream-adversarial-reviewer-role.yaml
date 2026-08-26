@@ -1,0 +1,74 @@
+id: BL-478
+title: "Evaluate adopting the adversarial-reviewer role from unclebob/swarm-forge's `adversaries` branch — the one genuinely novel upstream element the 2026-07-17 survey found"
+milestone: M8
+type: chore
+severity: low
+epic: ""
+priority: 7
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784248453318.md — human (ldecorps) 2026-07-17: 'check uncle bob's upstream repo and see if there are new elements worth including in our swarm ... file a ticket if there is anything worth adding.' This ticket IS that 'file a ticket if worth adding' outcome. (The missing drift-check MECHANISM the same intake surfaced is BL-477; this ticket is the one-time CONTENT finding.)"
+
+notes: |
+  SURVEY RESULT (specifier, 2026-07-17) — what upstream has that we might not:
+
+  Method: added unclebob/swarm-forge as a read-only remote and compared. KEY FACT — our fork
+  (ldecorps/swarmforgevc) has NO common git ancestor with unclebob/swarm-forge
+  (git merge-base HEAD ub/main = none). This is a re-rooted, heavily-diverged fork, so NOTHING upstream
+  can be merged or cherry-picked; any adoption is a manual, deliberate REIMPLEMENTATION, reviewed by a
+  human (local-engineering.prompt rule 2).
+
+  Scanned unclebob/swarm-forge `adversaries` branch (7aa2f3a2) vs upstream main (9acd54d2):
+    - MOST of the branch's ~30 commits are things our fork ALREADY has independently: the daemon-backed
+      handoff protocol, the constitution-articles directory refactor, shared engineering/workflow/handoff
+      articles, "prefer Babashka APS tools", stable handoff-request procedure. Nothing to adopt there.
+    - The ONE genuinely novel element: a dedicated ADVERSARIAL REVIEWER role. New file
+      swarmforge/roles/reviewer.prompt (+44) plus commits "Add adversarial coder reviewer workflow",
+      "Add adversary review phases", "Expand adversarial review scope", "Constrain adversarial reviewer
+      verification", "Clarify adversary review recommendations", "Sequence reviewer recommendation
+      files". Concept: a role that adversarially red-teams the coder's work and files sequenced
+      recommendation files into the pipeline.
+    - APS side: our APS install pin (accaa33d) already EQUALS APS main HEAD, so main has nothing to bump.
+      The only non-main APS branch, codex/bb-tools-equivalence (3a1d7b06), is NOT merged to APS main and
+      is not adoptable via a pin bump — noted, not adopted.
+
+  THE QUESTION FOR THIS SPIKE (do NOT pre-decide — be inquisitive, then recommend):
+    Does a dedicated adversarial-reviewer stage add value to OUR pipeline, or is its intent already
+    covered by our existing review roles (architect design review, hardener mutation/CRAP gate, QA final
+    gate, and the rule_proposal loop)? Our pipeline already has three review stages upstream's simpler
+    pack lacked when the adversaries branch was written — so the honest answer may well be "already
+    covered, skip." Consider: what would an adversarial reviewer catch that architect+hardener+QA
+    structurally cannot, and where in specifier -> ... -> QA would it even sit?
+
+  DELIVERABLE (spike; specifier/architect-owned — NOT coder work yet):
+    - A written recommendation recorded in docs/upstream-deviations.md (created by BL-477; if BL-477 has
+      not landed, record it in this ticket's evidence and migrate it later): ADOPT, ADAPT, or SKIP, with
+      the reasoning, so this deliberate divergence is documented and not re-litigated on the next drift
+      review.
+    - If ADOPT/ADAPT: a concrete follow-up ticket with its OWN design (role prompt, worktree, pipeline
+      position, receive mode, handoff wiring) and its own Gherkin acceptance — a new pipeline role is a
+      large architectural change and must be scoped deliberately, and the human should decide before it is
+      built. Do NOT port the upstream prompt verbatim (no common ancestor; our roles/constitution have
+      diverged).
+    - If SKIP: record the "already covered by architect/hardener/QA" finding and close. A negative result
+      is a valid, valuable outcome here.
+
+  Sequencing: read-only evaluation; naturally pairs with BL-477 (the drift-watch mechanism whose review
+  log this recommendation belongs in), but does not hard-depend on it. Orthogonal to all in-flight code.
+
+acceptance:
+  # Investigation/spike — the deliverable is a documented adopt/adapt/skip recommendation, not a code
+  # behaviour. Outcome-style acceptance per the BL-474 spike precedent; no Gherkin feature file until (and
+  # unless) a concrete "adopt" follow-up ticket is scoped.
+  outcome: "A written ADOPT/ADAPT/SKIP recommendation on the upstream adversarial-reviewer role exists, with reasoning against our existing architect/hardener/QA review stages, recorded in docs/upstream-deviations.md (or this ticket's evidence). If ADOPT/ADAPT, a concrete follow-up ticket with its own design + Gherkin exists; if SKIP, the 'already covered' finding is recorded."
+
+human_approval: approved
+approval_context: >
+  Human asked to survey upstream and 'file a ticket if there is anything worth adding' (2026-07-17). The
+  survey found exactly one novel element (a dedicated adversarial-reviewer role on the `adversaries`
+  branch); everything else upstream is already independently present in our fork, and our fork has no
+  common ancestor so nothing is mergeable. This is filed as an EVALUATION spike, not a build ticket — the
+  human decides whether a new pipeline role is worth adopting after the recommendation. FIRM: this ticket
+  produces a documented adopt/adapt/skip recommendation; it does NOT itself add a role.
+
+mutation_cost: none

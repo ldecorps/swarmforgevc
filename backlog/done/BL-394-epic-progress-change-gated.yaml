@@ -1,0 +1,79 @@
+id: BL-394
+title: "Epic-progress Telegram announcements have no change-gate — they re-flood a topic on every tick/restart"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 1
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-epic-progress-announcer-unthrottled.md — the coordinator, 2026-07-14T23:09Z, from a live production incident (the human's screenshot of the BL-384 'EPIC' Telegram topic flooded with a repeated, unchanging '3 of 6 ticketed slice(s) complete.'). Front desk is PARKED until this lands."
+
+notes: |
+  LIVE INCIDENT, FRONT DESK PARKED. The epic 'EPIC — role benchmark' (BL-384) Telegram topic was
+  flooded with the SAME 'N of M ticketed slice(s) complete.' message, once per concierge tick,
+  indefinitely, the count never changing. No git commits are minted (BL-390's churn guard holds),
+  so this is pure messaging-side spam — distinct from the BL-389 offset/commit loop (both shipped and
+  NOT reproducing). Do not restart the front desk until this lands; a restart resumes the spam because
+  the announcer is unconditional.
+
+  THE LIVE CALL SITE — VERIFIED, NOT ASSUMED (specifier's own rule). The announcer is NOT the
+  Babashka support_lib.bb; it is TypeScript: `postEpicUpdateIfApplicable` in
+  `extension/src/concierge/conciergeTick.ts` (line ~277), which builds text via
+  `epicUpdateText` -> `epicProgressText`/`epicOpeningText` in `extension/src/concierge/epicProgress.ts`
+  and posts through `decideEpicTopicAction`/`postEpicAction`. Its own comment (line ~272) says it is
+  "deliberately NOT part of the ... dedupe" mechanism and "not a new SwarmEventType of its own to
+  diff/dedupe". THAT is the defect: it is a best-effort SIDE EFFECT layered on each ticket's
+  TaskStarted/TaskCompleted event (conciergeTick.ts:384), and unlike `routeEvent` (which checks and
+  writes `alreadyEmitted`/emittedKeys, lines 378-379) it NEVER consults or records an emitted-key of
+  its own. So it has no "already told the human this" memory: whenever its host ticket event is
+  re-derived — a held-back retry after a failed post (withRetryableTransitionsHeldBack), or a
+  snapshot re-derivation across a relaunch — the epic post re-fires with the same unchanged aggregate.
+  Confirmed by the intake's evidence: `concierge-tick-state.json`'s `emittedKeys` holds
+  `TaskCompleted:BL-305` etc. for dozens of tickets but ZERO epic-shaped entries.
+
+  THE FIX. Give the epic announcement its OWN durable, restart-safe dedup, recorded in the SAME tick
+  state (`emittedKeys`) the other three event types use, and gated on an actual CHANGE in what would
+  be announced. Concretely: derive a content-based key per epic announcement — the safest key is over
+  the FULL announced text (epicId + the exact message), so ANY change (3/6 -> 4/6, opening line,
+  remaining-slice list) is a new key that announces once, while an UNCHANGED announcement is deduped
+  forever. Check `alreadyEmitted` before posting and add the key only after a SUCCESSFUL post, exactly
+  mirroring `routeEvent`'s contract (lines 378-379). This is robust to WHATEVER re-triggers the host
+  event, which is why it is a content/emitted-key gate rather than a narrower "only fire on
+  TaskCompleted" tweak.
+
+  PRESERVE BL-341'S BEHAVIOUR. The opening line still posts ONCE on an epic's first appearance;
+  `epicProgressText` must still never claim completion while an untracked remaining slice exists;
+  a ticket declaring no epic stays a no-op. The change-gate covers the opening line too (scenario 04):
+  a re-derived TaskStarted for an already-opened epic must not re-announce the opener.
+
+  ON THE IR-DRY FINDINGS (5, all possible-synonym). They are the four deliberately-distinct SETUP
+  states — progress-already-announced (01), already-announced-AND-durably-recorded i.e. the restart
+  case (03), opening-line-already-announced (04), and progress-advanced (02) — plus the restart When.
+  Each distinction is load-bearing (restart-safety and opening-vs-progress are the whole point), not
+  accidental drift, so they stay. Register value-aware handlers; do not collapse the setups.
+
+  E2E QA PROCEDURE (mirror BL-389's restart-against-poisoned-state shape). With an epic whose progress
+  is already announced and recorded, run the concierge tick again against unchanged progress and assert
+  ZERO epic messages sent. RESTART the front desk against that same unchanged, durably-recorded state
+  and assert ZERO messages (the incident's exact reproduction). Then advance the epic's ticketed-slice
+  count by one and assert EXACTLY ONE new message carrying the new count, and that a subsequent
+  unchanged tick again sends zero. Prove against the real concierge tick with an injected send adapter,
+  no live Telegram.
+
+  ADJACENT, DO NOT DUPLICATE. BL-389 (dropped-message offset park) and BL-390 (churn rewrite mints no
+  commit) are the OTHER two mechanisms of the front-desk spam family — both shipped and correctly not
+  reproducing; this is the third, message-only mechanism the BL-389 bounce addendum flagged and left
+  open. BL-341 introduced the announcer and is its home.
+
+acceptance:
+  feature: specs/features/BL-394-epic-progress-change-gated.feature
+  steps:
+    - "An unchanged epic progress is announced only once (no re-send on repeated ticks)"
+    - "A real progress change is announced exactly once and recorded as announced"
+    - "A restart against unchanged, durably-recorded progress announces nothing"
+    - "A repeated opening for an already-opened epic announces nothing"
+
+human_approval: approved
+
+mutation_cost: low

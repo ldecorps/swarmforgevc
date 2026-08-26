@@ -1,0 +1,68 @@
+id: BL-459
+title: "Shell and babashka test harnesses must clean up their temp dirs (the BL-420 prevention gap)"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 1
+direction: human-requested
+expedite: true  # Operator directive (ldecorps relay) 2026-07-16 — the prevention half BL-420 didn't cover; promote ahead of paused queue
+depends_on: []
+source: ".swarmforge/operator/INTAKE-tmp-dir-accumulation-expedite-bl413.md — URGENT Operator directive relayed by ldecorps 2026-07-16. /tmp held ~377k stale sfvc-*/aps-* mkdtemp dirs (~5.3M inodes). Companion to the BL-413 expedite; this closes the FLOW gap BL-420 left."
+
+notes: |
+  EXPEDITE (Operator directive, 2026-07-16): a real, tracked bug — promote ahead
+  of the paused queue. Do NOT "fix" it by a silent rm of the 377k dirs; the
+  BL-413 sweep clears the STOCK, this ticket stops the shell/bb FLOW at source.
+
+  WHY: BL-420 (done) made the EXTENSION Vitest suite self-clean via a shared
+  helper (extension/test/helpers/tmpDir.js mkTmpDir + tmpDirSetup.js afterEach
+  sweep) with a raw-mkdtemp regression guard (rawMkdtempGuard.js) — but it was
+  EXTENSION-ONLY. The shell and babashka harnesses still create temp roots with
+  NO cleanup trap, so every run keeps feeding the /tmp accumulation.
+
+  REMAINING PREVENTION GAPS (verify against the tree; suggestion, not mandate):
+    - swarmforge/scripts/test/*.sh — many `mktemp -d` roots with NO
+      `trap 'rm -rf "$ROOT"' EXIT`.
+    - *_test_runner.bb (e.g. handoff_lib_test_runner.bb ~L23 sfvc-handoff-lib-,
+      backlog_depth_test_runner.bb ~L79, stuck_escalation_email_lib_test_runner.bb
+      ~L72) — `fs/create-temp-dir` with no `try/finally (fs/delete-tree ...)`.
+    - vendored aps generator: swarmforge/vendor/aps/bb/test/aps/mutation_test.clj
+      ~L21.
+
+  SHAPE: add a cleanup trap that removes the temp root on exit — shell
+  `trap 'rm -rf "$ROOT"' EXIT` (fires on clean AND failing/error exit), bb
+  `try ... finally (fs/delete-tree root)` (fires when a test assertion throws).
+  Mirror BL-420's discipline on the shell/bb side; a static guard that fails if a
+  harness creates a temp root without a trap (the shell/bb analogue of
+  rawMkdtempGuard.js) is the durable regression lock.
+
+  BOUNDARY: a trap CANNOT catch SIGKILL/OOM (BL-422 documents Vitest workers
+  OOM-killed, skipping afterEach) — that residue is the BL-413 periodic sweep's
+  job, OUT OF SCOPE here. This ticket bounds the ordinary-exit flow only.
+
+  METADATA NIT (reconciled in this same specifier commit, per the intake): the
+  BL-420 file sits in backlog/done/ but its YAML status read `todo`; corrected to
+  `done` so the field matches its folder.
+
+acceptance:
+  feature: specs/features/BL-459-shell-bb-tempdir-cleanup-trap.feature
+  steps:
+    - "A shell or babashka test harness removes its temp root on BOTH a clean exit and a failing exit"
+    - "Every shell/bb harness under swarmforge/scripts that creates a temp root registers a cleanup trap (static regression guard)"
+
+qa_e2e: |
+  1. Break-then-fix per harness kind: run a shell test harness and a bb test
+     runner that create a temp root, force a mid-run failure, and assert the temp
+     root is GONE afterward (the trap fired); confirm it is also gone on a clean
+     pass.
+  2. Guard: add a test that inspects the shell/bb harnesses under
+     swarmforge/scripts and FAILS if any harness creates a mktemp/create-temp-dir
+     root without registering a cleanup trap — then prove it is load-bearing by
+     removing a trap and watching the guard go red, and restoring it.
+  3. Confirm SIGKILL is explicitly documented as out of scope (BL-413 backstop),
+     not silently assumed handled.
+
+human_approval: pending  # new feature file — needs human review of the Gherkin (BL-251). Work is Operator-authorized URGENT; approval gates the acceptance contract, not the go-ahead.
+
+mutation_cost: low
