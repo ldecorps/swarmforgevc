@@ -2,7 +2,7 @@ id: BL-653
 title: "Escalation-driven operator: the LLM Operator wakes ONLY on an inbound human message or a deterministic-layer escalation — the runtime stops fabricating liveness pseudo-events every tick"
 milestone: M8
 type: feature
-status: todo
+status: in_progress
 epic: swarm-reliability
 human_approval: approved
 severity: medium
