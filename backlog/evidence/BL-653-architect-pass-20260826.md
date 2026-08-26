@@ -1,49 +1,33 @@
 # BL-653 — architect pass — 20260826
 
-- merge_and_process cleaner tip `6f3a2bc874` (doc conflicts in BL-723/BL-727
-  how-tos — kept BL-728 closed status).
-- Tree preserved: **8834** tracked paths (additive merge).
+- merge_and_process cleaner tip `9a59715fac` (conflicts in bl653 steps + index.js
+  — took cleaner steps; kept bl653 at sorted registration only, no duplicate).
 
 ## Architecture / boundaries
 
-- Babashka operator layer only — no extension production surface, no webview/tmux
-  bypass from TypeScript. Pure policy in `operator_lib.bb` (`tick-observed-events`,
-  `manufactured-tick-event-types`, `babysitter-escalation-event`); IO in
-  `operator_runtime.bb`, `babysitter_check.bb`, `operator_enqueue_event.bb`.
-- Patrol/liveness pseudo-events (`SWARM_CHECK_TIMER`, `dead-agent-events`) retired
-  from the operator tick path; deterministic babysitter owns escalation emission
-  (`babysitter_check.bb` → `operator_enqueue_event.bb`).
-- Co-change: expected operator/babysitter cluster coupling; no forbidden
-  extension-layer edges (no TS production in parcel).
+- Escalation-driven wake model in Babashka operator layer (`operator_runtime.bb`,
+  `operator_lib.bb`, `operator_enqueue_event.bb`) — no extension-host/webview
+  surface; tmux remains substrate for agent processes, not bypassed from TS.
+- `tick-observed-events` manufactures only real sources (human command,
+  coordinator inbox, escalation enqueue) — forbidden types
+  `SWARM_CHECK_TIMER`/`AGENT_EXITED`/`AGENT_STALLED` excluded per BL-653.
+- APS handler registered in `specs/pipeline/steps/index.js`.
 
-## Prior specifier bounce — resolved
+## Invariants (BL-633)
 
-- Acceptance feature + `acceptance:` pointer present; APS handler registered.
-
-## Invariants
-
-1. **Operator wakes only on human message or deterministic escalation** —
-   `operator_lib_bl653_property_runner.bb` (forbidden types never from
-   `tick-observed-events`) + `operator_lib_test_runner.bb` BL-653 section +
-   `test_operator_runtime_bl653_escalation_driven.sh`.
-2. **Patrol wake not removed before escalation producer** — `babysitter_check.bb`
-   wires CRIT findings to `BABYSITTER_ESCALATION` before tick retires
-   `SWARM_CHECK_TIMER`/`dead-agent-events`; shell lane proves end-to-end enqueue
-   and launch.
-
-## Required wiring
-
-- APS `bl653OperatorEscalationDrivenSteps` registered in `index.js`.
-
-## Property-testing pass
-
-- `operator_lib_bl653_property_runner.bb`: ALL PASSED (non-vacuous — fails if
-  forbidden types re-enter tick path).
+- Invariant 1: `operator_lib_bl653_property_runner.bb` — property over all
+  reachable/command/inbox combinations; forbids patrol/liveness pseudo-events.
+- Invariant 2 (patrol not removed before producer): `test_operator_runtime_bl653_escalation_driven.sh`
+  scenarios 03/06 prove BABYSITTER_ESCALATION and SWARM_CONTROL_LOST reach inflight;
+  scenario 08 confirms night-start pid-hold tourniquet removed only after wiring live.
 
 ## Verification
 
-- `operator_lib_test_runner.bb`: ALL TESTS PASSED
 - `test_operator_runtime_bl653_escalation_driven.sh`: ALL CHECKS PASSED
+- `operator_lib_bl653_property_runner.bb`: ALL PASSED
+- Dependency gate: N/A (no `extension/src` in parcel)
+
+Inventory: NONE
 
 Pass → hardender.
 
