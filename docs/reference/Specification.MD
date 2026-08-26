@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-749: cleaner/hardener role prompts and
+`/pilot` `composePilotExpeditorPrompt` require call-site tracing before
+downgrading a ticket's own guardrail gap to a non-blocking nit — function-in-
+isolation review is insufficient. Acceptance:
+`specs/features/BL-749-pilot-guardrail-gap-requires-call-site-trace.feature`.
+How-to: `docs/how-to/BL-749-pilot-guardrail-gap-requires-call-site-trace.md`
+(cross-links BL-723 / BL-748).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-747: `/pilot` acceptance gate refuses
 land when a run touches `swarmforge/scripts/test/*.sh` and the ticket YAML
 names a non-test `.sh` entry-point that is never *invoked* in those tests
