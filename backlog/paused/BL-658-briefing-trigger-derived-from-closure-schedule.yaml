@@ -183,7 +183,6 @@ notes: |
   minimal slice; rejected c (sibling clock) and deferred b (publish timing).
   READY TO PROMOTE — coder builds the resolver against conf; crontab
   install/regen may split to a sibling if scope blows up.
-bounce_count: 2
+bounce_count: 1
 bounce_history:
-  - { at: 2026-08-26, by: architect, blamed: coder, class: behavior, commit: fddc4d3a1e, evidence: backlog/evidence/BL-658-architect-bounce-20260826.md }
   - { at: 2026-08-26, by: architect, blamed: coder, class: behavior, commit: dfed8a184f, evidence: backlog/evidence/BL-658-architect-bounce-20260826.md }
