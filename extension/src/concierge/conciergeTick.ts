@@ -285,7 +285,6 @@ function ticketSummariesFor(active: BacklogFolderItem[], paused: BacklogFolderIt
       notes: item.notes,
       firstAcceptanceStep: item.firstAcceptanceStep,
       approvalContext: item.approvalContext,
-      rulingOptions: item.rulingOptions,
     };
   }
   return summaries;

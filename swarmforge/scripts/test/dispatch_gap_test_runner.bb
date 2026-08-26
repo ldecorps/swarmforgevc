@@ -430,7 +430,7 @@
 ;; BL-798 open-slot-nudge-names-candidate-01: expedited defect beats a
 ;; higher-priority-number feature regardless of the priority field.
 (assert= "open-slot-candidate-01: expedited defect outranks better-priority feature"
-         {:id "BL-10" :approved? true}
+         {:id "BL-10" :approved? true :approval-awaiting? false}
          (chase-sweep-lib/top-open-slot-candidate
           [{:content "id: BL-10\ntype: defect\nseverity: high\npriority: 50\nhuman_approval: approved\n"}
            {:content "id: BL-11\ntype: feature\npriority: 5\nhuman_approval: approved\n"}]))
@@ -438,7 +438,7 @@
 ;; BL-798 open-slot-nudge-names-candidate-02: no expedited defects — best
 ;; ticket priority (lower number) wins among approved candidates.
 (assert= "open-slot-candidate-02: best-priority candidate wins with no expedited defects"
-         {:id "BL-21" :approved? true}
+         {:id "BL-21" :approved? true :approval-awaiting? false}
          (chase-sweep-lib/top-open-slot-candidate
           [{:content "id: BL-20\ntype: feature\npriority: 30\nhuman_approval: approved\n"}
            {:content "id: BL-21\ntype: feature\npriority: 5\nhuman_approval: approved\n"}]))
@@ -447,9 +447,14 @@
 ;; still named as top candidate even though human_approval is pending —
 ;; approval state is reported, never used to filter it out.
 (assert= "open-slot-candidate-03: sole pending-approval candidate is still named, flagged"
-         {:id "BL-30" :approved? false}
+         {:id "BL-30" :approved? false :approval-awaiting? true}
          (chase-sweep-lib/top-open-slot-candidate
           [{:content "id: BL-30\ntype: feature\npriority: 10\nhuman_approval: pending\n"}]))
+
+(assert= "open-slot-candidate-03b: absent human_approval is not flagged awaiting"
+         {:id "BL-31" :approved? false :approval-awaiting? false}
+         (chase-sweep-lib/top-open-slot-candidate
+          [{:content "id: BL-31\ntype: feature\npriority: 10\n"}]))
 
 (assert= "open-slot-candidate: empty candidates yields nil (no ticketless silent poke)"
          nil
@@ -461,14 +466,14 @@
 ;; assertions - a candidate that only wins once its epic's priority is
 ;; considered.
 (assert= "open-slot-candidate-04 (BL-900): a more urgent epic wins even against a numerically better own priority"
-         {:id "BL-A" :approved? true}
+         {:id "BL-A" :approved? true :approval-awaiting? false}
          (chase-sweep-lib/top-open-slot-candidate
           [{:content "id: BL-A\nepic: e1\npriority: 90\nhuman_approval: approved\n"}
            {:content "id: BL-B\nepic: e2\npriority: 1\nhuman_approval: approved\n"}]
           {"e1" 5 "e2" 40}))
 
 (assert= "open-slot-candidate-05 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged"
-         {:id "BL-B" :approved? true}
+         {:id "BL-B" :approved? true :approval-awaiting? false}
          (chase-sweep-lib/top-open-slot-candidate
           [{:content "id: BL-A\nepic: e1\npriority: 90\nhuman_approval: approved\n"}
            {:content "id: BL-B\nepic: e2\npriority: 1\nhuman_approval: approved\n"}]))
@@ -480,7 +485,7 @@
   (write-paused-ticket! paused-dir "BL-40" "defect" "critical" "80" "approved")
   (write-paused-ticket! paused-dir "BL-41" "feature" nil "1" "approved")
   (assert= "read-paused-candidates + top-open-slot-candidate: expedited wins from real files"
-           {:id "BL-40" :approved? true}
+           {:id "BL-40" :approved? true :approval-awaiting? false}
            (chase-sweep-lib/top-open-slot-candidate
             (chase-sweep-lib/read-paused-candidates paused-dir))))
 
@@ -553,7 +558,11 @@
 
 (assert= "open-slot-nudge-message flags a pending-approval candidate"
          "open slot + paused work - promote+route: BL-5 awaiting approval"
-         (chase-sweep-lib/open-slot-nudge-message {:id "BL-5" :approved? false}))
+         (chase-sweep-lib/open-slot-nudge-message {:id "BL-5" :approval-awaiting? true}))
+
+(assert= "open-slot-nudge-message: absent human_approval has no awaiting suffix"
+         "open slot + paused work - promote+route: BL-6"
+         (chase-sweep-lib/open-slot-nudge-message {:id "BL-6" :approval-awaiting? false}))
 
 (assert= "open-slot-nudge-message falls back to the ticketless phrase for a nil candidate"
          "open slot + paused work - promote+route"
@@ -561,13 +570,13 @@
 
 (assert= "open-slot-nudge-message(candidate) stays within the 80-char handoff limit"
          true
-         (<= (count (chase-sweep-lib/open-slot-nudge-message {:id "BL-99999" :approved? false}))
+         (<= (count (chase-sweep-lib/open-slot-nudge-message {:id "BL-99999" :approval-awaiting? true}))
              chase-sweep-lib/dispatch-gap-note-max-length))
 
 (assert= "open-slot-nudge-draft-lines(candidate) names the candidate in the message"
          ["type: note" "to: coordinator" "priority: 00"
           "message: open slot + paused work - promote+route: BL-7 awaiting approval"]
-         (chase-sweep-lib/open-slot-nudge-draft-lines {:id "BL-7" :approved? false}))
+         (chase-sweep-lib/open-slot-nudge-draft-lines {:id "BL-7" :approval-awaiting? true}))
 
 (assert= "open-slot-nudge-draft-lines() with no arg is unchanged (backward compatible)"
          ["type: note" "to: coordinator" "priority: 00"
