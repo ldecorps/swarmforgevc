@@ -1,3 +1,10 @@
+# ARCHIVED — drained by specifier 2026-08-26
+
+Disposition: split into BL-1151 (one email per episode) +
+BL-1154 (build-stale vs crash give-up budget).
+
+---
+
 # INTAKE — Stop recurring "front desk bridge has given up restarting" emails
 
 **Source:** human via Cursor / Gmail screenshot, 2026-08-26 ~09:37 BST  

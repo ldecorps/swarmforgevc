@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1151: front-desk give-up escalation
+emails at most once per unbroken outage episode — escalation arming survives
+cooldown re-arm until `FRONT_DESK_HEALTHY_RESET_MS` healthy grace clears it;
+`operator_lib.bb` → `give-up-escalation-alarm-when-not-gave-up`; state in
+`.swarmforge/operator/front-desk-escalation-alarm.json`. Sibling BL-1154:
+build-stale attempt budget. Acceptance:
+`specs/features/BL-1151-front-desk-giveup-one-email-per-episode.feature`.
+How-to: `docs/how-to/BL-1151-front-desk-giveup-one-email-per-episode.md`.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-658: night closing ceremony — when
 `closure_stop_local` is a usable schedule, morning briefing is the ceremony's
 last act before stop, not an independent `briefing_morning_time_utc` fire.

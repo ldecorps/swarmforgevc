@@ -1,3 +1,9 @@
+# ARCHIVED — drained by specifier 2026-08-26
+
+Disposition: Minted backlog/paused/BL-1153-sticky-web-font-size-choice.yaml (+ feature).
+
+---
+
 # INTAKE — Sticky font-size choice across the various web pages
 
 **Source:** human via Cursor, 2026-08-26 ~09:45 BST  

@@ -1,3 +1,9 @@
+# ARCHIVED — drained by specifier 2026-08-26
+
+Disposition: Already drained: BL-1142 + BL-1143 done; epic BL-1125 remaining_slices empty — no remint.
+
+---
+
 # INTAKE — Prioritize remaining local Ollama / Qwen epic slices (queue-jump)
 
 **Source:** human via Cursor, 2026-08-25 ~19:31 BST  
