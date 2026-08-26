@@ -1,9 +1,6 @@
-# Disposition (specifier 2026-08-25T20:42Z)
+# ARCHIVED — drained by specifier 2026-08-26
 
-**Outcome:** minted as **BL-1146**
-(`backlog/active/BL-1146-host-queue-enqueue-next-hold-on-host-question.yaml`).
-JumpQ — `direction: queue-jump`, `priority: 0`, `human_approval: approved`,
-promoted active, forwarded to coder. Feature armed.
+Disposition: Already shipped as backlog/done/M8/BL-1146-host-queue-enqueue-next-hold-on-host-question.yaml — no remint.
 
 ---
 

@@ -15,15 +15,15 @@ acceptance: specs/features/BL-1046-the-console-tile-names-the-ticket-a-seat-hold
 human_approval: approved
 
 approval_context: >
-  Two calls are mine and worth your veto. (1) I scoped this to the HELD form
-  only. BL-1044's not-held form ("the last ticket this pane acted on", read
-  from completed/) needs a resolver nobody has built yet, in a language that
-  may not be reusable here - see notes. Say so if you want the idle form on
-  the console in this same slice and I will fold it in. (2) Scenario 03
-  surfaces a held COUNT for the batch seats (cleaner, hardender), which needs
-  a small server-side addition; without it a cleaner holding three parcels
-  silently advertises one, the BL-068 regression. Drop it if you would rather
-  ship the pure view change.
+  2026-08-26 human amendment (INTAKE-console-tile-ticket-numbers-small-font.md):
+  (1) ticket id on holding tiles in a SMALLER font than the role name so the
+  phone grid stays readable; (2) email a phone-width mock of the eight-tile
+  screen to the operator inbox as part of this approval — Approve should see
+  the mock, not a blind tap. Evidence screenshot of the empty tiles:
+  backlog/evidence/BL-1046-console-tiles-no-ticket-ids-20260826.jpg
+
+  Prior calls still open for veto: (a) HELD form only this slice; (b) batch
+  seat "+N" count (scenario 03). Drop either if you prefer a thinner ship.
 
 invariants:
   - "A tile names a ticket only when THAT seat's own mailbox resolution produced one: never a ticket resolved for a different seat, and never the board's stage-level fold, which deliberately collapses two seats of one stage onto one column and would make them title each other."
@@ -122,7 +122,15 @@ description: |
   already exists but yields `entered 32m ago`, which is long for a tile in a
   two-column phone grid; a compact sibling next to it is the implementer's
   call. Exact strip layout, slug budget, and the "+N" marker are likewise the
-  implementer's.
+  implementer's. Ticket id (and any slug/age strip) MUST use a clearly
+  smaller type size than the role name so the eight-tile phone grid stays
+  readable (scenario 07).
+
+  Before treating UI approval as done, generate a phone-width mock of the
+  eight-tile grid with sample ticket ids on holding seats and deliver it to
+  the configured operator email (reuse daemon-alarm / briefing-style send —
+  do not mint a second mailer); prefer attaching/linking that mock in the
+  Approvals ask so Approve is informed by the mock (scenario 08).
 
   Explicitly not wanted, as in BL-1044: `ticketColors.ts` (BL-139) and its
   per-ticket palette. The operator's own pointer on BL-1044 was *"it even has
@@ -164,7 +172,17 @@ qa_e2e_procedure: >
   7. Confirm an idle role's tile names no held ticket, still shows its role,
      and still expands.
 
+  8. Confirm the ticket id (and any slug/age strip) renders in a clearly
+     smaller type size than the role name on a phone-width viewport.
+
+  9. Confirm a phone-width mock of the eight-tile grid (sample ticket ids on
+     holding seats) was emailed to the operator inbox / attached to Approvals
+     before treating UI approval as done; evidence under backlog/evidence/.
+
 notes: |
+  - [2026-08-26T10:30Z] specifier: unparked debt→paused; human amendment
+    INTAKE-console-tile-ticket-numbers-small-font.md — small-font + email
+    mock (scenarios 07/08). Intake archived.
   - Source: operator request 2026-08-22, with a screenshot of the eight-tile
     role grid at e.musicalsifu.com, asking for BL-1044's terminal-title change
     ported to that page.

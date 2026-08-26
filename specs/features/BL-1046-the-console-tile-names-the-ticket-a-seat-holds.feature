@@ -69,3 +69,18 @@ Feature: The fleet console's role tiles name the ticket each seat holds and how 
     When the role grid renders
     And the "qa" tile is expanded
     Then the ticket id shown on the grid tile and in the fullscreen view are the same
+
+  # BL-1046 console-tile-holds-ticket-07
+  Scenario: The ticket id on a holding tile uses a smaller type size than the role name
+    Given the "hardender" seat holds ticket "BL-1035"
+    When the role grid renders
+    Then the "hardender" tile shows the ticket id "BL-1035"
+    And the ticket id's rendered font size is smaller than the role name's font size
+
+  # BL-1046 console-tile-holds-ticket-08
+  Scenario: A phone-width mock of the eight-tile grid is delivered to the operator email before UI approval is treated as done
+    Given the role grid can render holding seats with ticket ids
+    When the UI approval package for this slice is prepared
+    Then a phone-width mock of the eight-tile grid with sample ticket ids on holding seats is generated
+    And that mock is delivered to the configured operator email inbox (or linked from the Approvals ask)
+    And evidence of the mock is recorded under backlog/evidence/
