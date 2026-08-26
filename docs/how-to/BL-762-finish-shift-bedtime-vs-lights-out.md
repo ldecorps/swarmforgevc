@@ -39,6 +39,11 @@ Before it stops anything, `./finish-shift` also runs the
 ledger into a packet for the specifier. A missing compile or a non-zero exit
 there is a loud skip, logged and continued past — it never blocks bedtime.
 
+Separately, scheduled nights use BL-658's
+[night closing ceremony](BL-658-briefing-trigger-derived-from-closure-schedule.md)
+so the morning briefing is the last act before stop (not an independent
+morning clock that can fire after the swarm is already down).
+
 ## Usage
 
 ```sh
