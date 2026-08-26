@@ -205,5 +205,6 @@ notes: |
   ports both scripts into `swarmforge/scripts/` with tests, lifecycle wiring and a
   runbook. Nothing further needed; recorded here so the flag is visibly closed
   rather than dropped.
+  - [2026-08-26T18:36Z] coordinator: drop alert — re-routed to specifier (assigned_to: specifier; coder inbox empty).
   - [2026-08-26T13:58Z] coordinator: drop alert — no parcel in flight at coder;
     acceptance feature absent from main HEAD; nudged specifier to re-spec.
