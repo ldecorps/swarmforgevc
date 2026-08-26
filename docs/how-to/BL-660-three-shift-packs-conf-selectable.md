@@ -58,6 +58,11 @@ bb swarmforge/scripts/apply_shift_schedule.bb <project-root> --crontab-file /pat
 Managed lines sit between `# swarmforge-shift-schedule-begin` and
 `# swarmforge-shift-schedule-end`. Re-running with unchanged conf is a no-op.
 
+`./start-swarm.sh` ensures these lines (plus freshness) via
+`install_swarmforge_crons.sh`; `./stop-swarm.sh` removes them with every other
+root-scoped swarmforge cron — see
+[BL-1162](BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md).
+
 ## Operator workflows
 
 ### Switch shift while stopped

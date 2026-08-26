@@ -1,5 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1162: symmetric swarmforge cron lifecycle —
+`./start-swarm.sh` ensures every root-scoped cron line this install needs
+(freshness via BL-675/783 plus active shift schedule when configured);
+`./stop-swarm.sh` removes **all** registered lines for this root — freshness,
+operator schedule markers, BL-660 shift-schedule blocks, and legacy
+`.swarmforge/operator/*` paths — via `swarmforge_cron_lib.sh` and
+`uninstall_swarmforge_crons.sh`. Install path:
+`install_swarmforge_crons.sh` (respects `SWARMFORGE_SKIP_FRESHNESS_CRON` /
+`SWARMFORGE_SKIP_SCHEDULE_CRON`). Cron uninstall runs only after a successful
+full-stack stop (REFUSE paths leave lines armed). Acceptance:
+`specs/features/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.feature`.
+How-to:
+`docs/how-to/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-588: batch recovery approach 3 — when a
 batch commit partially fails, clean siblings re-forward unchanged on their
 original commit for whole-tree re-verification while the defective ticket
@@ -21,6 +35,16 @@ non-ok; fullscreen `#fs-dot` retained. Sibling to BL-1046 held-ticket strip.
 Module: `extension/src/bridge/residentSpyUiHtml.ts`. Acceptance:
 `specs/features/BL-1160-live-screen-activity-dot-per-tile.feature`. How-to:
 `docs/how-to/BL-1160-live-screen-activity-dot-per-tile.md`.)
+Prior entry —
+**Last Updated:** August 26, 2026 (BL-653: escalation-driven operator — the LLM
+Operator wakes only on inbound human traffic, `BABYSITTER_ESCALATION` from CRIT
+babysitter findings, or `SWARM_CONTROL_LOST`; retires per-tick
+`dead-agent-events` and payload-free `SWARM_CHECK_TIMER` patrol wakes;
+`operator_enqueue_event.bb` wires CRIT findings into `events.jsonl`; WARN
+`stuck-*` still nudges coordinator only; `night-start.sh` operator pid-hold
+retired. Front-desk restricted operator unchanged (BL-334). Acceptance:
+`specs/features/BL-653-operator-wakes-only-on-real-events-escalation-driven.feature`.
+How-to: `docs/how-to/BL-653-operator-escalation-driven-wake-model.md`.)
 Prior entry —
 **Last Updated:** August 26, 2026 (BL-1159: front-desk bridge child crash give-up
 loop after bind — `stop_bridge_headless.sh` defers when `front-desk-supervisor.pid`
