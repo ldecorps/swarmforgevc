@@ -5,36 +5,35 @@ type: defect
 severity: low
 status: todo
 epic: swarm-reliability
-assigned_to: specifier
+human_approval: pending
 priority: 197
 direction: normal
 depends_on: []
+assigned_to: coder
 mutation_cost: low
-source: |
-  Found during BL-723 (pilot-tonight quality review), cleaner viewpoint
-  pass, 2026-07-30. BL-637's own landing commit (97147316d5) added the
-  identical 12-line `-h`/`--help` heredoc block (differing only in the
-  script's own name inside the text) to 16 files in one commit:
-  swarmforge/scripts/launch_babysitter.sh, launch_cursor_bridge.sh,
-  launch_front_desk.sh, launch_front_desk_operator.sh,
-  launch_negotiation_relay.sh, launch_onboarder.sh, launch_operator.sh,
-  launch_resident_spy_tunnel.sh, launch_support.sh,
-  start_ancillary_services.sh, start_babysitter.sh,
-  start_bridge_headless.sh, start_cursor_bridge.sh,
-  start_handoff_daemon.sh, start_operator_runtime.sh (plus
-  kill_pipeline_swarm.sh's own copy). This is exactly the "hand-maintained,
-  unsynced list" shape BL-671 was filed and fixed elsewhere in this same
-  review batch (operator_runtime_sandbox.sh's shared cp-list helper) — just
-  not caught here, in a commit that landed in the same session.
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "dedup refactor is the deliverable; no separate cleaner batch"
+  architect: "shape settled in-ticket: one sourced print_lifecycle_help helper"
+  hardender: "shell scripts outside mutate scope; lifecycle test suite is gate"
+  documenter: "help text unchanged; no doc surface change"
+acceptance: specs/features/BL-736-bl637-help-block-duplicated-across-16-lifecycle-scripts.feature
 
-notes: |
-  BL-723 cleaner verdict on BL-637: this is a new, cleaner-lens shortfall
-  independent of the coder's already-filed correctness bug (BL-730/731) —
-  the code duplicated here is real production shell, not test scaffolding.
-  Linked pilot-process defect: BL-737.
-  - [2026-08-26T21:46Z] coordinator: open-slot nudge — cannot promote;
-    `human_approval` not approved (handoffd candidate BL-736).
-  - [2026-08-26T21:51Z] coordinator: repeat open-slot nudge — same block holds.
+approval_context: >
+  BL-723 cleaner verdict on BL-637: identical 12-line --help heredoc in 16+
+  lifecycle scripts (97147316d5). Factor to one sourced helper; --help output
+  byte-identical per script. Linked pilot-process defect BL-737 gates future
+  lands; this ticket removes existing debt. No product fork — mechanical extraction.
+
+invariants:
+  - "Each affected script's --help output stays byte-identical to its pre-refactor output — refactor is extraction only, not wording changes."
+  - "No affected script retains an embedded duplicate help heredoc after the change."
+  - "test_lifecycle_script_scope.sh and sibling lifecycle shell tests pass without behavior change."
+
+required_wiring:
+  - 'swarmforge/scripts/lifecycle_help_lib.sh::print_lifecycle_help::shared sourced helper parameterized by script name and scope line'
+  - 'swarmforge/scripts/launch_*.sh and start_*.sh and kill_pipeline_swarm.sh::--help handler::source helper instead of local heredoc'
+  - 'specs/pipeline/steps/index.js::bl736LifecycleHelpHelperSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
   ## What
@@ -46,13 +45,31 @@ description: |
   by the one line of text that actually varies per script. Update all 16+
   call sites to source and call it instead of embedding the heredoc.
 
-  ## Acceptance
+qa_e2e_procedure: >
+  (1) grep scan — no duplicate help heredoc bodies in affected scripts.
+  (2) Run --help on each affected script; diff output against pre-refactor
+  captures. (3) test_lifecycle_script_scope.sh and siblings green. (4) Confirm
+  each script sources shared helper with name + scope line args.
 
-  - `grep -rn "cat <<'EOF'" swarmforge/scripts/*.sh` (or equivalent) shows
-    no duplicate --help heredoc bodies remaining across the affected
-    scripts.
-  - Each script's `-h`/`--help` output is unchanged (same scope wording per
-    script) after the refactor — verified by re-running each script with
-    `--help` and diffing against its current output.
-  - Existing lifecycle/teardown shell tests (test_lifecycle_script_scope.sh
-    and siblings) continue to pass unmodified in behavior.
+source: |
+  Found during BL-723 (pilot-tonight quality review), cleaner viewpoint
+  pass, 2026-07-30. BL-637's own landing commit (97147316d5) added the
+  identical 12-line `-h`/`--help` heredoc block to 16 files in one commit.
+
+specifier_decisions: |
+  Minted 2026-08-26 per coordinator route. Four scenarios cover inline acceptance
+  plus explicit helper-sourcing guard. human_approval pending — coordinator blocked
+  promotion until human signs off on mechanical extraction approach. Helper name
+  print_lifecycle_help in lifecycle_help_lib.sh (or existing lib if cleaner fits).
+
+notes: |
+  BL-723 cleaner verdict on BL-637: independent of coder BL-730/731. Linked
+  pilot-process defect BL-737. Same unsynced-list shape BL-671 fixed elsewhere.
+  - [2026-08-26T21:46Z] coordinator: open-slot nudge — cannot promote;
+    human_approval not approved (handoffd candidate BL-736).
+  - [2026-08-26T21:51Z] coordinator: repeat open-slot nudge — same block holds.
+
+out_of_scope: |
+  - Changing help wording or scope lines per script (output must match today).
+  - Extending BL-737 pilot gate (already landed separately).
+  - Scripts outside the BL-637 duplicated set unless they share the same block.
