@@ -24,16 +24,20 @@ import {
   AcceptanceReceipt,
 } from './pilotAcceptanceGate';
 import {
+  parseProducerCrosscheckFromEnv,
+  PRODUCER_CROSSCHECK_ENV,
+} from './producerCrosscheckAcceptance';
+import {
   assessMultiworktreeFixture,
   extractHandoffdRootsFromPs,
   isLifecycleTeardownTicket,
 } from './multiworktreeAcceptanceFixture';
-import { resolveRunCommits, checkCommitClaims, RunCommit } from './commitClaimGitReader';
+import { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, RunCommit } from './commitClaimGitReader';
 import { findBacklogFilePath, markDone, BacklogMoveResult } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
-export { resolveRunCommits, checkCommitClaims, RunCommit };
+export { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, RunCommit };
 
 // Exported (like this codebase's other tools/ CLIs) so it runs in-process
 // under coverage instead of only via the compiled CLI's subprocess.
@@ -57,6 +61,25 @@ export function readAcceptanceDeclaration(repoRoot: string, ticketId: string): s
   const content = fs.readFileSync(filePath, 'utf8');
   const item = parseBacklogYaml(content);
   return item?.acceptance;
+}
+
+export function readTicketNotes(repoRoot: string, ticketId: string): string | undefined {
+  const filePath = findBacklogFilePath(repoRoot, ticketId);
+  if (!filePath) {
+    return undefined;
+  }
+  const content = fs.readFileSync(filePath, 'utf8');
+  const item = parseBacklogYaml(content);
+  return item?.notes;
+}
+
+export function acceptanceReceiptExists(repoRoot: string, ticketId: string): boolean {
+  const receiptPath = path.join(repoRoot, '.swarmforge', 'expedite', ticketId, 'acceptance-receipt.json');
+  try {
+    return fs.statSync(receiptPath).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function readRequiredWiring(repoRoot: string, ticketId: string): string[] | undefined {
@@ -102,6 +125,8 @@ export async function runAcceptance(
   const outDir = path.join(repoRoot, 'specs', 'pipeline', 'generated');
   const stepsModulePath = path.join(repoRoot, 'specs', 'pipeline', 'steps', 'index.js');
   const prevFixture = process.env.SWARMFORGE_MULTIWORKTREE_FIXTURE;
+  const prevCrosscheck = process.env[PRODUCER_CROSSCHECK_ENV];
+  delete process.env[PRODUCER_CROSSCHECK_ENV];
   if (fixtureAssessment?.satisfied) {
     process.env.SWARMFORGE_MULTIWORKTREE_FIXTURE = JSON.stringify(fixtureAssessment.metadata);
   } else {
@@ -113,8 +138,17 @@ export async function runAcceptance(
     if (fixtureAssessment?.satisfied) {
       result.multiWorktreeFixture = fixtureAssessment.metadata;
     }
+    const crosscheck = parseProducerCrosscheckFromEnv(process.env[PRODUCER_CROSSCHECK_ENV]);
+    if (crosscheck) {
+      result.producerCrosscheck = crosscheck;
+    }
     return result;
   } finally {
+    if (prevCrosscheck === undefined) {
+      delete process.env[PRODUCER_CROSSCHECK_ENV];
+    } else {
+      process.env[PRODUCER_CROSSCHECK_ENV] = prevCrosscheck;
+    }
     if (prevFixture === undefined) {
       delete process.env.SWARMFORGE_MULTIWORKTREE_FIXTURE;
     } else {
@@ -139,14 +173,23 @@ export function getLandedCommit(repoRoot: string): string {
 
 export function buildDeps(repoRoot: string): PilotAcceptanceGateDeps {
   let cachedFixture = assessMultiworktreeFixture(repoRoot, listLinkedWorktreePaths(repoRoot), probeHandoffdRootsFromPs());
+  let executedFeaturePath: string | undefined;
   return {
     readAcceptanceDeclaration: (ticketId) => readAcceptanceDeclaration(repoRoot, ticketId),
+    readRequiredWiring: (ticketId) => readRequiredWiring(repoRoot, ticketId),
+    readTicketNotes: (ticketId) => readTicketNotes(repoRoot, ticketId),
+    acceptanceReceiptExists: (ticketId) => acceptanceReceiptExists(repoRoot, ticketId),
     resolveFeatureFilePath: (declaration) => resolveFeatureFilePath(repoRoot, declaration),
     isLifecycleTeardownTicket: (ticketId) =>
       isLifecycleTeardownTicket(readAcceptanceDeclaration(repoRoot, ticketId), readRequiredWiring(repoRoot, ticketId)),
     assessMultiworktreeFixture: () => cachedFixture,
     runAcceptance: (featureFilePath) => runAcceptance(repoRoot, featureFilePath, cachedFixture),
+    recordAcceptanceExecution: (featureFilePath) => {
+      executedFeaturePath = featureFilePath;
+    },
+    readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => checkCommitClaims(repoRoot),
+    checkCrossFileDuplication: () => checkCrossFileDuplication(repoRoot),
     moveTicketToDone: (ticketId) => moveTicketToDone(repoRoot, ticketId),
     writeReceipt: (ticketId, receipt) => writeReceipt(repoRoot, ticketId, receipt),
     getLandedCommit: () => getLandedCommit(repoRoot),

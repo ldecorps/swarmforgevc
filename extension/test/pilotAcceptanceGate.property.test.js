@@ -38,7 +38,8 @@ const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 
 const DECL_KINDS = ['absent', 'inline', 'missingPath', 'existingFile'];
 
-function buildDeps(declKind, contractGreen, calls, claimUnsupported = false) {
+function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, crossFileDup = false) {
+  let executedFeaturePath;
   return {
     readAcceptanceDeclaration: () => (declKind === 'absent' ? undefined : 'specs/features/fixture.feature'),
     resolveFeatureFilePath: () => (declKind === 'existingFile' ? '/repo/specs/features/fixture.feature' : undefined),
@@ -51,10 +52,22 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false) {
       contractGreen
         ? { success: true, output: 'ok' }
         : { success: false, output: 'Scenario "S": no step handler matched "Given x"' },
+    recordAcceptanceExecution: (featureFilePath) => {
+      executedFeaturePath = featureFilePath;
+    },
+    readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () =>
       claimUnsupported
         ? { checked: true, commitsChecked: 1, unsupported: { commit: 'a'.repeat(10), identifier: 'x!', sentence: 'restore x!' } }
         : { checked: true, commitsChecked: 1 },
+    checkCrossFileDuplication: () =>
+      crossFileDup
+        ? {
+            checked: true,
+            filesScanned: 3,
+            duplication: { fingerprint: 'x'.repeat(40), paths: ['a.sh', 'b.sh', 'c.sh'] },
+          }
+        : { checked: true, filesScanned: 0 },
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-PROP-fixture.yaml' };
@@ -89,32 +102,38 @@ test('property: invariant 1 - lands iff the declared contract resolves to a real
   );
 });
 
-test('property: invariant 3 - a refused land never moves the yaml or writes a receipt, for EVERY refusal reason (no-contract, contract-failed, or BL-729 claim-unsupported)', async () => {
+test('property: invariant 3 - a refused land never moves the yaml or writes a receipt, for EVERY refusal reason (no-contract, contract-failed, claim-unsupported, or BL-737 cross-file-duplication)', async () => {
   await fc.assert(
     fc.asyncProperty(
       fc.constantFrom(...DECL_KINDS),
       fc.boolean(),
       fc.boolean(),
-      async (declKind, contractGreen, claimUnsupported) => {
+      fc.boolean(),
+      async (declKind, contractGreen, claimUnsupported, crossFileDup) => {
         const calls = { move: 0, receipt: 0, commit: 0 };
-        const outcome = await landPilotedTicket('BL-PROP', buildDeps(declKind, contractGreen, calls, claimUnsupported));
+        const outcome = await landPilotedTicket(
+          'BL-PROP',
+          buildDeps(declKind, contractGreen, calls, claimUnsupported, crossFileDup)
+        );
         if (!outcome.landed) {
           assert.equal(
             calls.move,
             0,
-            `refused land (declKind=${declKind}, contractGreen=${contractGreen}, claimUnsupported=${claimUnsupported}, reasonKind=${outcome.reasonKind}) called moveTicketToDone`
+            `refused land (declKind=${declKind}, contractGreen=${contractGreen}, claimUnsupported=${claimUnsupported}, crossFileDup=${crossFileDup}, reasonKind=${outcome.reasonKind}) called moveTicketToDone`
           );
           assert.equal(
             calls.receipt,
             0,
-            `refused land (declKind=${declKind}, contractGreen=${contractGreen}, claimUnsupported=${claimUnsupported}, reasonKind=${outcome.reasonKind}) called writeReceipt`
+            `refused land (declKind=${declKind}, contractGreen=${contractGreen}, claimUnsupported=${claimUnsupported}, crossFileDup=${crossFileDup}, reasonKind=${outcome.reasonKind}) called writeReceipt`
           );
         }
-        // A green contract with an unsupported claim must ALWAYS refuse -
-        // claimUnsupported is never silently absorbed into a landed outcome.
         if (declKind === 'existingFile' && contractGreen && claimUnsupported) {
           assert.equal(outcome.landed, false);
           assert.equal(outcome.reasonKind, 'claim-unsupported');
+        }
+        if (declKind === 'existingFile' && contractGreen && !claimUnsupported && crossFileDup) {
+          assert.equal(outcome.landed, false);
+          assert.equal(outcome.reasonKind, 'cross-file-duplication');
         }
       }
     ),
