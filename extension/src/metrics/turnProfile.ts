@@ -1,6 +1,6 @@
 import { computeTrend, TrendSeriesPoint } from './trend';
 import type { TrendedNumber } from '../notify/costHealthSidecar';
-import type { CoverageWindow, ClassifiedInterval, IntervalCategory } from '../tools/transcriptWalker';
+import type { CoverageWindow, ClassifiedInterval, IntervalCategory } from './transcriptWalker';
 
 export interface TurnProfileStageEntry {
   stage: string;

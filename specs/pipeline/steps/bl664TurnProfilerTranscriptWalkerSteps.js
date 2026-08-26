@@ -9,7 +9,7 @@ const {
   walkTranscriptFiles,
   snapshotTranscriptFiles,
   transcriptsUnchanged,
-} = require('../../../extension/out/tools/transcriptWalker');
+} = require('../../../extension/out/metrics/transcriptWalker');
 const { buildTurnProfileSeries } = require('../../../extension/out/metrics/turnProfile');
 
 const FEATURE = 'deterministic turn profiler classifies transcript intervals into a trended series';
