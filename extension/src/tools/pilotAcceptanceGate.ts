@@ -79,6 +79,10 @@ import {
   PILOT_CRAP_VIOLATION_REFUSAL,
   PilotScopedCrapCheckOutcome,
 } from './pilotScopedCrapCheck';
+import {
+  PILOT_RAW_MKDTEMP_REFUSAL,
+  PilotMkdtempConventionCheckOutcome,
+} from './pilotMkdtempConventionCheck';
 
 export {
   assessProducerCrosscheck,
@@ -147,6 +151,13 @@ export {
   isExtensionTsPath,
 } from './pilotScopedCrapCheck';
 
+export {
+  PILOT_RAW_MKDTEMP_REFUSAL,
+  PilotMkdtempConventionCheckOutcome,
+  assessPilotMkdtempConvention,
+  isExtensionTestJsPath,
+} from './pilotMkdtempConventionCheck';
+
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
@@ -167,6 +178,7 @@ export interface AcceptanceReceipt {
   multiBranchParserCoverage?: { parsersScanned: number };
   perHatRolePromptEvidence?: { verdictsScanned: number };
   scopedCrap?: { tsFilesScanned: number };
+  mkdtempConvention?: { testFilesScanned: number };
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
   producerCrosscheck?: ProducerCrosscheckMetadata;
 }
@@ -199,6 +211,7 @@ export interface PilotAcceptanceGateDeps {
   checkCommitClaims: () => CommitClaimsCheckOutcome;
   checkCrossFileDuplication: () => CrossFileDuplicationCheckOutcome;
   checkScopedCrap: () => PilotScopedCrapCheckOutcome;
+  checkMkdtempConvention: () => PilotMkdtempConventionCheckOutcome;
   checkShellEntryPointDrive: (ticketId: string) => ShellEntryPointDriveCheckOutcome;
   checkUnreachableStepHandlers: (ticketId: string) => UnreachableStepHandlerCheckOutcome;
   checkMultiBranchParserCoverage: (ticketId: string) => MultiBranchParserCoverageOutcome;
@@ -228,6 +241,7 @@ export interface PilotLandRefusal {
     | 'claim-unsupported'
     | 'cross-file-duplication'
     | 'crap-violation'
+    | 'raw-mkdtemp-outside-helper'
     | 'parallel-shell-reimplementation'
     | 'unreachable-step-handler'
     | 'untested-parser-branch'
@@ -243,6 +257,8 @@ export interface PilotLandRefusal {
   duplicationPaths?: string[];
   crapFile?: string;
   crapFunction?: string;
+  mkdtempFile?: string;
+  mkdtempLine?: number;
   shellEntryPoint?: string;
   shellTestPath?: string;
   unreachablePattern?: string;
@@ -416,6 +432,27 @@ function checkCrap(
   return { crapCheck };
 }
 
+// Step 3c¾: touched extension/test/*.js must use mkTmpDir, not raw mkdtempSync
+// outside helpers/tmpDir.js (BL-743). Unreadable touched-file history fails OPEN.
+function checkMkdtemp(
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { mkdtempCheck: PilotMkdtempConventionCheckOutcome } {
+  const mkdtempCheck = deps.checkMkdtempConvention();
+  if (mkdtempCheck.checked && mkdtempCheck.violations.length > 0) {
+    const hit = mkdtempCheck.violations[0];
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'raw-mkdtemp-outside-helper',
+        reason: `${PILOT_RAW_MKDTEMP_REFUSAL} (file ${hit.file}; line ${hit.line})`,
+        mkdtempFile: hit.file,
+        mkdtempLine: hit.line,
+      },
+    };
+  }
+  return { mkdtempCheck };
+}
+
 // Step 3d: when the run touches shell tests and the ticket names a non-test
 // .sh entry-point, every named basename must be invoked in a touched test
 // (BL-747 / BL-637 parallel-reimplementation gap). Unreadable inputs fail OPEN.
@@ -580,6 +617,7 @@ function moveAndRecordReceipt(
   claimsCheck: CommitClaimsCheckOutcome,
   duplicationCheck: CrossFileDuplicationCheckOutcome,
   crapCheck: PilotScopedCrapCheckOutcome,
+  mkdtempCheck: PilotMkdtempConventionCheckOutcome,
   shellDriveCheck: ShellEntryPointDriveCheckOutcome,
   unreachableCheck: UnreachableStepHandlerCheckOutcome,
   multiBranchCheck: MultiBranchParserCoverageOutcome,
@@ -613,6 +651,9 @@ function moveAndRecordReceipt(
   }
   if (crapCheck.checked) {
     receipt.scopedCrap = { tsFilesScanned: crapCheck.tsFilesScanned };
+  }
+  if (mkdtempCheck.checked) {
+    receipt.mkdtempConvention = { testFilesScanned: mkdtempCheck.testFilesScanned };
   }
   if (shellDriveCheck.checked) {
     receipt.shellEntryPointDrive = {
@@ -652,6 +693,11 @@ function moveAndRecordReceipt(
   if (!crapCheck.checked) {
     warnings.push(
       'scoped CRAP was not checked: the run\'s touched-file history or coverage report could not be resolved'
+    );
+  }
+  if (!mkdtempCheck.checked) {
+    warnings.push(
+      'mkdtemp convention was not checked: the run\'s touched-file history could not be resolved'
     );
   }
   if (!shellDriveCheck.checked) {
@@ -733,6 +779,11 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return crap.refusal;
   }
 
+  const mkdtemp = checkMkdtemp(deps);
+  if ('refusal' in mkdtemp) {
+    return mkdtemp.refusal;
+  }
+
   const shellDrive = checkShellDrive(ticketId, deps);
   if ('refusal' in shellDrive) {
     return shellDrive.refusal;
@@ -765,6 +816,7 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     claims.claimsCheck,
     duplication.duplicationCheck,
     crap.crapCheck,
+    mkdtemp.mkdtempCheck,
     shellDrive.shellDriveCheck,
     unreachable.unreachableCheck,
     multiBranch.multiBranchCheck,
