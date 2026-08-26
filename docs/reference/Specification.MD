@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-755: `/pilot` acceptance gate refuses
+land when a run-touched function is a `cond` / `case` / if-else chain with
+≥3 arms and any arm lacks a distinct exercising test —
+`reasonKind: untested-parser-branch`; hardener prompt +
+`composePilotExpeditorPrompt` require one distinct test per arm. No-op when
+no multi-arm parser is touched; unreadable history fails open. Acceptance:
+`specs/features/BL-755-pilot-multi-branch-parser-needs-per-arm-tests.feature`.
+How-to: `docs/how-to/BL-755-pilot-multi-branch-parser-needs-per-arm-tests.md`
+(+ BL-727 gate section).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-753: `/pilot` acceptance gate refuses
 land when a run-touched `specs/pipeline/steps/*.js` registers a pattern that
 matches no rendered step of the ticket's acceptance feature —
