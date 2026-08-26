@@ -395,6 +395,7 @@ const DOMAINS = [
   require('./bl747PilotShellTestDrivesNamedEntryPointSteps'),
   require('./bl749PilotGuardrailGapRequiresCallSiteTraceSteps'),
   require('./bl753PilotUnreachableStepHandlerUntestedBehaviorSteps'),
+  require('./bl755PilotMultiBranchParserNeedsPerArmTestsSteps'),
   require('./bl1147ProbeLegacyTopicAdoptionSteps'),
   require('./bl1150OutageFailoverCliLoadFileSafeSteps'),
   require('./bl764FrontDeskEatsHostBridgeUpdatesSteps'),

@@ -510,6 +510,15 @@ You are the hardender.
   That upgrade from nit to defect is the hardener-lens work this rule exists to
   make mandatory, not optional.
 
+## A multi-branch parser needs one distinct test per branch (BL-755)
+- When the parcel adds or changes a function whose body is a multi-arm `cond` /
+  `case` / if-else chain (≥3 distinct arms), enumerate every arm and require at
+  least one dedicated test (unit or acceptance scenario) that exercises that arm
+  before you pass. Covering only the "parsing hazard the ticket names" while
+  other arms stay dark is how BL-661 landed: three seats praised the
+  double-quoted tests and never noticed two of three `take-flow-reason`
+  branches had zero coverage (BL-754).
+
 ## Recording A Send-Back (BL-635)
 - You do not bounce as a matter of course — your normal path is always forward
   to the documenter. But if you ever DO send a parcel back (e.g. per the
