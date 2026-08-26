@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-747, BL-753, BL-755)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-747, BL-753, BL-755, BL-758)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -236,6 +236,38 @@ Between a green contract (and the other land gates) and the yaml move:
 arm (or shrink the parser) — do not silent-bypass. Covering only the
 narrated hazard is not enough.
 
+## Per-hat role prompt reinject (BL-758)
+
+`/pilot` used to start with one `composePilotExpeditorPrompt` mega-brief that
+said "wear every pipeline hat" without loading `swarmforge/roles/<role>.prompt`
+when the casquette changed. BL-723 showed that shape skips gates a role
+wearing its own prompt would treat as mandatory. Evidence gates catch silent
+skips; they do not restore hat-faithful judgment.
+
+At each hat change and bounce-back:
+
+1. `resetAgent` (or equivalent session boundary), then inject
+   `composePilotStagePrompt(ticket, role)` — thin pilot isolation wrapper
+   **plus** the full live role prompt bytes (QA → `QA.prompt`), plus pack
+   overlay when configured.
+2. Do **not** wear every hat from one mega-brief alone; do not merely remind
+   the agent of the role name.
+3. Every completed stage verdict under
+   `.swarmforge/expedite/<ticket>/NN-<role>/verdict.json` must record
+   `role_prompt_path` (repo-relative under `swarmforge/roles/`) and
+   `role_prompt_sha256` (64-hex of the injected bytes).
+4. Land gate `checkPerHatRolePromptEvidence` refuses
+   (`reasonKind: 'pilot-hat-prompt-missing'`) when either field is absent.
+   A refused land is inert. Telegram hat status (BL-700) is not sufficient
+   evidence alone.
+5. Unreadable expedite tree fails **OPEN** with a warning.
+6. On a clean check, record `perHatRolePromptEvidence` (`verdictsScanned`) on
+   the acceptance receipt — see
+   [BL-758 how-to](BL-758-pilot-inject-role-prompts-per-hat.md).
+
+**Remediation when refused:** reinject the live role prompt and record path +
+hash on the stage verdict — do not silent-bypass.
+
 ## Why
 
 A live pipeline run has two independent places that execute a ticket's
@@ -341,6 +373,20 @@ run, and no gate ever noticed.
   `specs/features/BL-755-pilot-multi-branch-parser-needs-per-arm-tests.feature`
 - Multi-branch parser how-to:
   [BL-755](BL-755-pilot-multi-branch-parser-needs-per-arm-tests.md)
+- Per-hat role prompt evidence (BL-758), pure assess helpers:
+  `extension/src/tools/perHatRolePromptEvidenceCheck.ts`
+- Per-hat role prompt expedite deps:
+  `extension/src/tools/commitClaimGitReader.ts` → `checkPerHatRolePromptEvidence`
+- Stage composer: `telegramCursorBridgePilot.ts` → `composePilotStagePrompt`
+- Per-hat role prompt step handlers:
+  `specs/pipeline/steps/bl758PilotInjectRolePromptsPerHatSteps.js`
+- Per-hat role prompt tests:
+  `extension/test/perHatRolePromptEvidenceCheck.test.js`,
+  `extension/test/perHatRolePromptEvidenceCheck.property.test.js`
+- Per-hat role prompt acceptance:
+  `specs/features/BL-758-pilot-inject-role-prompts-per-hat.feature`
+- Per-hat role prompt how-to:
+  [BL-758](BL-758-pilot-inject-role-prompts-per-hat.md)
 
 ## Out of scope
 
@@ -384,3 +430,5 @@ run, and no gate ever noticed.
   feature step (companion remaining-work BL-752)
 - BL-755 — refuse land when a run-touched ≥3-arm parser has an untested arm
   (companion remaining-work BL-754)
+- BL-758 — reinject live role prompts at each hat; refuse land when stage
+  verdicts omit `role_prompt_path` / `role_prompt_sha256`

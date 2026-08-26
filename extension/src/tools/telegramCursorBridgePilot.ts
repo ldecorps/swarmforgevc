@@ -10,6 +10,9 @@
 // green.
 
 import { normalizeExpediteTicket, readExpediteLock } from './telegramCursorBridgeExpedite';
+import * as fs from 'fs';
+import * as path from 'path';
+import { createHash } from 'crypto';
 
 /** Parse `/pilot` or `/pilot BL-696` (case-insensitive). */
 export function parsePilotTicket(text: string, defaultTicket = 'BL-696'): string | undefined {
@@ -100,14 +103,82 @@ export function gatePilotAgainstExpediteLock(repoRoot: string): PilotGateResult 
  * downgrading a ticket's own guardrail gap to a non-blocking nit.
  * BL-753: an unreachable acceptance step handler is an untested-behavior
  * flag until the claim question is answered — never a cosmetic dead-code nit.
+ * BL-758: per-hat reinject of live swarmforge/roles/<role>.prompt — not a
+ * mega-brief that only says "wear every hat".
  */
+export function rolePromptRelativePath(role: string): string {
+  const normalized = role.trim().toLowerCase();
+  const basename = normalized === 'qa' ? 'QA.prompt' : `${normalized}.prompt`;
+  return path.join('swarmforge', 'roles', basename);
+}
+
+export function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+export type ComposePilotStagePromptDeps = {
+  readRolePrompt?: (role: string) => string | undefined;
+  packOverlayFragment?: string;
+};
+
+function defaultReadRolePrompt(role: string, repoRoot: string): string | undefined {
+  const rel = rolePromptRelativePath(role);
+  const abs = path.join(repoRoot, rel);
+  try {
+    return fs.readFileSync(abs, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+function thinPilotIsolationWrapper(ticket: string): string {
+  const normalized = normalizeExpediteTicket(ticket) ?? ticket.toUpperCase();
+  return [
+    `PILOT STAGE WRAPPER for ${normalized} (thin isolation — does not replace role duties):`,
+    `- Work only in \`.worktrees/expedite-${normalized}\` on branch \`expedite/${normalized}\`.`,
+    '- Do not use handoffd, mailboxes, tmux, rotate_to_role, ready_for_next, or the coordinator.',
+    '- Telegram status posts on ticket / hat / bounce-back remain mandatory (BL-700).',
+    '- Stage-boundary cleanup of this expedition\'s orphans remains mandatory (BL-701).',
+    `- Land only via \`node extension/out/tools/pilot-acceptance-gate.js ${normalized}\`.`,
+    '- On hat change and bounce-back: resetAgent (or equivalent) then reinject composePilotStagePrompt for the new role — never rely on the start mega-brief alone.',
+  ].join('\n');
+}
+
+/**
+ * BL-758: compose the active system context for one pilot hat — thin isolation
+ * wrapper + full live role prompt bytes (+ optional pack overlay).
+ */
+export function composePilotStagePrompt(
+  ticket: string,
+  role: string,
+  deps: ComposePilotStagePromptDeps = {},
+  repoRoot: string = process.cwd()
+): string {
+  const roleBody =
+    deps.readRolePrompt?.(role) ?? defaultReadRolePrompt(role, repoRoot) ?? `(missing role prompt for ${role})`;
+  const overlay = (deps.packOverlayFragment || '').trim();
+  const parts = [thinPilotIsolationWrapper(ticket), '', `=== LIVE ROLE PROMPT (${rolePromptRelativePath(role)}) ===`, roleBody];
+  if (overlay) {
+    parts.push('', '=== PACK / PROFILE OVERLAY ===', overlay);
+  }
+  return parts.join('\n');
+}
+
 export function composePilotExpeditorPrompt(ticket: string): string {
   const normalized = normalizeExpediteTicket(ticket) ?? ticket.toUpperCase();
   return [
     `You are staffing an OFFLINE EXPEDITION for ${normalized} (command: /pilot).`,
     '',
-    'Mode: Cursor-as-expeditor. YOU wear every pipeline hat in turn. Do NOT spawn',
-    '`expedite_cli.bb`, `expedite_with_progress.sh`, or `claude -p` stage runners.',
+    'Mode: Cursor-as-expeditor. Do NOT spawn `expedite_cli.bb`,',
+    '`expedite_with_progress.sh`, or `claude -p` stage runners.',
+    '',
+    'PER-HAT REINJECT (BL-758 — mandatory): at each hat change and bounce-back,',
+    'resetAgent (or equivalent session boundary) then inject',
+    '`composePilotStagePrompt(ticket, role)` — the thin pilot isolation wrapper',
+    'PLUS the full live `swarmforge/roles/<role>.prompt` bytes (QA → QA.prompt),',
+    'plus pack overlay when configured. Do NOT wear every pipeline hat from one',
+    'mega-brief alone. Do NOT merely remind yourself of the role name or ask',
+    'yourself to "read" the prompt file without reinjecting its contents.',
     '',
     'Quality over speed: prefer correctness, evidence, and gate discipline over',
     'finishing quickly. Output quality beats delivery speed.',
@@ -165,8 +236,10 @@ export function composePilotExpeditorPrompt(ticket: string): string {
     '- You MAY stop/start the swarm stack and park sibling active tickets to backlog/hold/.',
     '',
     'Stages (in order, skip any already done with evidence): specifier → coder →',
-    'cleaner → architect → hardener → documenter → QA. For each stage: do the work,',
-    'leave a verdict under `.swarmforge/expedite/' + normalized + '/NN-<role>/verdict.json`,',
+    'cleaner → architect → hardener → documenter → QA. For each stage: reinject',
+    'that role\'s live prompt via composePilotStagePrompt, do the work, leave a',
+    'verdict under `.swarmforge/expedite/' + normalized + '/NN-<role>/verdict.json`',
+    '(include `role_prompt_path` + `role_prompt_sha256` of the injected bytes),',
     'and refresh `.swarmforge/expedite/' + normalized + '/progress.json` (include',
     '`"mode":"cursor-as-expeditor"`).',
     '',
@@ -178,7 +251,8 @@ export function composePilotExpeditorPrompt(ticket: string): string {
     'yaml directly. Then write run.json.',
     'Restart of the swarm is optional and non-blocking — ask before restarting.',
     '',
-    `Begin now with ${normalized}. Read the ticket YAML and current expedite artifacts first.`,
+    `Begin now with ${normalized}: composePilotStagePrompt for the first required`,
+    'hat (usually specifier), reinject, then read the ticket YAML and expedite artifacts.',
   ].join('\n');
 }
 

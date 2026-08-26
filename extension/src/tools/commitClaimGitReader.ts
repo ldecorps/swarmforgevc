@@ -32,6 +32,11 @@ import {
   assessMultiBranchParserCoverage,
   extractMultiBranchParsers,
 } from './multiBranchParserCoverageCheck';
+import {
+  PerHatRolePromptEvidenceOutcome,
+  assessPerHatRolePromptEvidence,
+  StageVerdictEvidence,
+} from './perHatRolePromptEvidenceCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
 import { findBacklogFilePath } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
@@ -289,4 +294,58 @@ export function checkMultiBranchParserCoverage(
     parsers: extractMultiBranchParsers(sources),
     testTexts: tests.map((t) => t.text),
   });
+}
+
+function readExpediteVerdicts(repoRoot: string, ticketId: string): StageVerdictEvidence[] | undefined {
+  const root = path.join(repoRoot, '.swarmforge', 'expedite', ticketId);
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return undefined;
+  }
+  const verdicts: StageVerdictEvidence[] = [];
+  for (const entry of entries) {
+    if (!/^\d{2}-/.test(entry)) {
+      continue;
+    }
+    const verdictPath = path.join(root, entry, 'verdict.json');
+    let raw: string;
+    try {
+      raw = fs.readFileSync(verdictPath, 'utf8');
+    } catch {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(raw) as {
+        role?: string;
+        role_prompt_path?: string;
+        role_prompt_sha256?: string;
+      };
+      verdicts.push({
+        verdictPath: path.relative(repoRoot, verdictPath).replace(/\\/g, '/'),
+        role: parsed.role || entry.replace(/^\d{2}-/, ''),
+        role_prompt_path: parsed.role_prompt_path,
+        role_prompt_sha256: parsed.role_prompt_sha256,
+      });
+    } catch {
+      verdicts.push({
+        verdictPath: path.relative(repoRoot, verdictPath).replace(/\\/g, '/'),
+        role: entry.replace(/^\d{2}-/, ''),
+      });
+    }
+  }
+  return verdicts;
+}
+
+/** Filesystem-backed BL-758 per-hat role-prompt evidence check. */
+export function checkPerHatRolePromptEvidence(
+  repoRoot: string,
+  ticketId: string
+): PerHatRolePromptEvidenceOutcome {
+  const verdicts = readExpediteVerdicts(repoRoot, ticketId);
+  if (verdicts === undefined) {
+    return { checked: false };
+  }
+  return assessPerHatRolePromptEvidence({ verdicts });
 }

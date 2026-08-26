@@ -6,6 +6,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   parsePilotTicket,
   composePilotExpeditorPrompt,
+  composePilotStagePrompt,
   formatPilotStartMessage,
   formatPilotBlockedByExpediteMessage,
   formatPilotTicketChangeStatus,
@@ -44,8 +45,16 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
     [
       'You are staffing an OFFLINE EXPEDITION for BL-702 (command: /pilot).',
       '',
-      'Mode: Cursor-as-expeditor. YOU wear every pipeline hat in turn. Do NOT spawn',
-      '`expedite_cli.bb`, `expedite_with_progress.sh`, or `claude -p` stage runners.',
+      'Mode: Cursor-as-expeditor. Do NOT spawn `expedite_cli.bb`,',
+      '`expedite_with_progress.sh`, or `claude -p` stage runners.',
+      '',
+      'PER-HAT REINJECT (BL-758 — mandatory): at each hat change and bounce-back,',
+      'resetAgent (or equivalent session boundary) then inject',
+      '`composePilotStagePrompt(ticket, role)` — the thin pilot isolation wrapper',
+      'PLUS the full live `swarmforge/roles/<role>.prompt` bytes (QA → QA.prompt),',
+      'plus pack overlay when configured. Do NOT wear every pipeline hat from one',
+      'mega-brief alone. Do NOT merely remind yourself of the role name or ask',
+      'yourself to "read" the prompt file without reinjecting its contents.',
       '',
       'Quality over speed: prefer correctness, evidence, and gate discipline over',
       'finishing quickly. Output quality beats delivery speed.',
@@ -103,8 +112,10 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       '- You MAY stop/start the swarm stack and park sibling active tickets to backlog/hold/.',
       '',
       'Stages (in order, skip any already done with evidence): specifier → coder →',
-      'cleaner → architect → hardener → documenter → QA. For each stage: do the work,',
-      'leave a verdict under `.swarmforge/expedite/BL-702/NN-<role>/verdict.json`,',
+      'cleaner → architect → hardener → documenter → QA. For each stage: reinject',
+      "that role's live prompt via composePilotStagePrompt, do the work, leave a",
+      'verdict under `.swarmforge/expedite/BL-702/NN-<role>/verdict.json`',
+      '(include `role_prompt_path` + `role_prompt_sha256` of the injected bytes),',
       'and refresh `.swarmforge/expedite/BL-702/progress.json` (include',
       '`"mode":"cursor-as-expeditor"`).',
       '',
@@ -116,7 +127,8 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'yaml directly. Then write run.json.',
       'Restart of the swarm is optional and non-blocking — ask before restarting.',
       '',
-      'Begin now with BL-702. Read the ticket YAML and current expedite artifacts first.',
+      'Begin now with BL-702: composePilotStagePrompt for the first required',
+      'hat (usually specifier), reinject, then read the ticket YAML and expedite artifacts.',
     ].join('\n')
   );
   // Invalid ticket still uppercases via fallback (kills ?? → && and toUpperCase → toLowerCase)
@@ -253,6 +265,24 @@ test('composePilotExpeditorPrompt requires per-arm tests for multi-branch parser
   assert.match(text, /distinct test per arm/);
   assert.match(text, /multi-branch parser/);
   assert.match(text, /untested-parser-branch/);
+});
+
+test('composePilotStagePrompt includes live role prompt and thin wrapper (BL-758)', () => {
+  const text = composePilotStagePrompt('BL-758', 'coder', {
+    readRolePrompt: () => 'CODER_ROLE_PROMPT_BODY_UNIQUE',
+  });
+  assert.match(text, /CODER_ROLE_PROMPT_BODY_UNIQUE/);
+  assert.match(text, /PILOT STAGE WRAPPER/);
+  assert.match(text, /swarmforge\/roles\/coder\.prompt/);
+  assert.match(text, /reinject composePilotStagePrompt/);
+});
+
+test('composePilotExpeditorPrompt requires per-hat reinject not mega-brief-alone (BL-758)', () => {
+  const text = composePilotExpeditorPrompt('BL-758');
+  assert.match(text, /PER-HAT REINJECT/);
+  assert.match(text, /composePilotStagePrompt/);
+  assert.match(text, /mega-brief alone/);
+  assert.doesNotMatch(text, /YOU wear every pipeline hat in turn/);
 });
 
 test('formatPilotStartMessage identifies Cursor-piloted mode', () => {

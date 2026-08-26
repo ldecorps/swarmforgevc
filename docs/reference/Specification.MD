@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-758: `/pilot` reinjects each live
+`swarmforge/roles/<role>.prompt` at hat change via `composePilotStagePrompt`
+(thin isolation wrapper + full role bytes); stage verdicts must record
+`role_prompt_path` + `role_prompt_sha256`; land refuses
+`reasonKind: pilot-hat-prompt-missing` when either is absent. Unreadable
+expedite tree fails open. Acceptance:
+`specs/features/BL-758-pilot-inject-role-prompts-per-hat.feature`.
+How-to: `docs/how-to/BL-758-pilot-inject-role-prompts-per-hat.md`
+(+ BL-727 gate section).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-755: `/pilot` acceptance gate refuses
 land when a run-touched function is a `cond` / `case` / if-else chain with
 ≥3 arms and any arm lacks a distinct exercising test —
