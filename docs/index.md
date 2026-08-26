@@ -204,7 +204,7 @@ expects them, and are not migrated or rewritten here.
 - [BL-011 Spec: Watchdog](reference/specs/BL-011-spec.md)
 - [BL-012 Spec: Chase and Dead-Letter Escalation](reference/specs/BL-012-spec.md)
 - [M2 Specification — Reliability Layer](reference/specs/m2-spec.md)
-- [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver.
+- [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver; BL-782 root-scoped liveness probes and `--probe-liveness`.
 - [Build Freshness QA Approval Gate (BL-629)](reference/BL-629-build-freshness-qa-approval-gate.md) — the deploy-time gate preventing sync of pre-QA code to daemons.
 - [Commit-Time Guard Refuses Pipeline Code on Main (BL-632)](reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md) — the pre-commit/pre-merge-commit hooks that stop a non-QA role from putting pipeline code on `main` in the first place.
 - [Ticket Lifecycle Ledger (BL-819)](reference/BL-819-ticket-lifecycle-ledger.md) — the coordinator-owned, append-only per-ticket lifecycle record: event/snapshot schema, storage, idempotency, write points, and its boundary vs the coordinator's other duties.
