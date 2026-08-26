@@ -15,6 +15,19 @@ const SWEEP_LIB = path.join(SCRIPTS, 'babysitterd_sweep_lib.bb');
 
 const FEATURE = 'the operator LLM wakes only on inbound human traffic or deterministic escalation';
 
+const ACTIVE_ROLES = new Set(['coder', 'architect']);
+
+const OPERATOR_OUTCOMES = {
+  'exactly one BABYSITTER_ESCALATION reaches the operator within one sweep': (ctx) => {
+    if (!ctx.bl653ExpectEscalation) throw new Error('expected escalation for active resident death');
+  },
+  'the operator LLM launch count is unchanged': (ctx) => {
+    if (ctx.bl653BelowBar === false && ctx.bl653ExpectEscalation !== false) {
+      throw new Error('expected operator launch count unchanged');
+    }
+  },
+};
+
 function runShellTest() {
   return execFileSync('bash', [BL653_SHELL], { encoding: 'utf8', cwd: REPO_ROOT, timeout: 120000 });
 }
@@ -28,7 +41,7 @@ function runBbEval(code) {
 }
 
 function registerSteps(registry) {
-  const scoped = (pattern, fn) => registry.defineScoped(FEATURE, pattern, fn);
+  const scoped = (pattern, fn) => registry.defineScoped(pattern, fn, FEATURE);
 
   scoped(/^the swarm is healthy with no inbound human traffic$/, () => {});
   scoped(/^the babysitter reports no escalation-worthy findings$/, () => {});
@@ -98,9 +111,8 @@ function registerSteps(registry) {
   });
 
   scoped(/^the operator LLM launch count is unchanged$/, (ctx) => {
-    if (ctx.bl653BelowBar === false && ctx.bl653ExpectEscalation !== false) {
-      throw new Error('expected operator launch count unchanged');
-    }
+    const handler = OPERATOR_OUTCOMES['the operator LLM launch count is unchanged'];
+    handler(ctx);
   });
 
   scoped(/^a SWARM_CONTROL_LOST event is enqueued$/, (ctx) => {
@@ -138,7 +150,11 @@ function registerSteps(registry) {
 
   // Scenario outline 05 — pure rotation/escalation bar checks (babysitter sweep integration in shell tests).
   scoped(/^the pack is a rotation router with active role (.*)$/, (ctx, role) => {
-    ctx.bl653ActiveRole = role;
+    const trimmed = role.trim();
+    if (!ACTIVE_ROLES.has(trimmed)) {
+      throw new Error(`unknown active role in Examples: ${trimmed}`);
+    }
+    ctx.bl653ActiveRole = trimmed;
   });
 
   scoped(/^the active resident process is killed$/, (ctx) => {
@@ -156,7 +172,10 @@ function registerSteps(registry) {
   scoped(/^the babysitter completes one sweep period$/, () => {});
 
   scoped(/^exactly one BABYSITTER_ESCALATION reaches the operator within one sweep$/, (ctx) => {
-    if (!ctx.bl653ExpectEscalation) throw new Error('expected escalation for active resident death');
+    const handler = OPERATOR_OUTCOMES[
+      'exactly one BABYSITTER_ESCALATION reaches the operator within one sweep'
+    ];
+    handler(ctx);
   });
 }
 
