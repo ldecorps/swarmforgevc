@@ -85,3 +85,5 @@ notes: |
   considered were restatements of it rather than independent properties. Per the
   BL-633 guidance an empty or short invariants list is a legitimate outcome and
   padding it would be noise.
+
+assigned_to: coder
