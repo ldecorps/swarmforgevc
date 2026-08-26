@@ -6,6 +6,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "mono_router_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "flow_watchdog_lib.bb")))
 
 (def failures (atom []))
 
@@ -566,9 +567,45 @@
          mono-router-lib/default-note-actionable-after-ms
          (mono-router-lib/parse-note-actionable-after-ms
           "config note_actionable_after_ms -1\n"))
-(assert= "default is 20 minutes"
-         1200000
+(assert= "default is 10 minutes (BL-780: below flow_watchdog_warn_ms)"
+         600000
          mono-router-lib/default-note-actionable-after-ms)
+
+;; ── BL-780: rotation-actionability vs flow-watchdog warn ordering ─────────
+
+(assert= "sound defaults produce no ordering warnings"
+         []
+         (mono-router-lib/rotation-actionability-ordering-warnings
+          {:note-actionable-after-ms mono-router-lib/default-note-actionable-after-ms
+           :rotation-starve-after-ms mono-router-lib/default-rotation-starve-after-ms
+           :flow-watchdog-warn-ms flow-watchdog-lib/default-warn-ms}))
+
+(let [warned (mono-router-lib/rotation-actionability-ordering-warnings
+              {:note-actionable-after-ms 1200000
+               :rotation-starve-after-ms mono-router-lib/default-rotation-starve-after-ms
+               :flow-watchdog-warn-ms 900000})]
+  (assert= "inverted note_actionable_after_ms yields exactly one warning"
+           1 (count warned))
+  (assert-true "warning names note_actionable_after_ms"
+               (re-find #"note_actionable_after_ms=1200000" (first warned)))
+  (assert-true "warning names flow_watchdog_warn_ms"
+               (re-find #"flow_watchdog_warn_ms=900000" (first warned))))
+
+(let [warned (mono-router-lib/rotation-actionability-ordering-warnings
+              {:note-actionable-after-ms mono-router-lib/default-note-actionable-after-ms
+               :rotation-starve-after-ms 1200000
+               :flow-watchdog-warn-ms 900000})]
+  (assert= "inverted rotation_starve_after_ms yields exactly one warning"
+           1 (count warned))
+  (assert-true "warning names rotation_starve_after_ms"
+               (re-find #"rotation_starve_after_ms=1200000" (first warned))))
+
+(assert= "rotation_starve_after_ms :off is skipped (no starve warning)"
+         []
+         (mono-router-lib/rotation-actionability-ordering-warnings
+          {:note-actionable-after-ms mono-router-lib/default-note-actionable-after-ms
+           :rotation-starve-after-ms :off
+           :flow-watchdog-warn-ms 900000}))
 
 (let [now-ms (.toEpochMilli (java.time.Instant/parse "2026-07-23T12:00:00Z"))
       threshold mono-router-lib/default-note-actionable-after-ms]
@@ -600,11 +637,11 @@
   ;; threshold-ms - a >= -> > mutant survived. Pin both sides of the boundary.
   (assert-true "exactly at the threshold counts as aged (>= boundary)"
                (mono-router-lib/note-aged?
-                {:enqueued-at "2026-07-23T11:40:00Z" :created-at "2026-07-23T11:40:00Z"
+                {:enqueued-at "2026-07-23T11:50:00Z" :created-at "2026-07-23T11:50:00Z"
                  :now-ms now-ms :threshold-ms threshold}))
   (assert-true "one second short of the threshold is not aged"
                (not (mono-router-lib/note-aged?
-                     {:enqueued-at "2026-07-23T11:40:01Z" :created-at "2026-07-23T11:40:01Z"
+                     {:enqueued-at "2026-07-23T11:50:01Z" :created-at "2026-07-23T11:50:01Z"
                       :now-ms now-ms :threshold-ms threshold}))))
 
 (assert-true "aged note alone makes a role actionable"
