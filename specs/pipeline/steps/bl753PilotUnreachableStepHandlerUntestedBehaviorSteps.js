@@ -10,18 +10,14 @@ const EXT_DIR = path.join(REPO_ROOT, 'extension');
 const {
   landPilotedTicket,
   resolveFeatureFilePath,
-} = require(path.join(EXT_DIR, 'out', 'tools', 'pilotAcceptanceGate'));
-const {
   assessUnreachableStepHandlers,
-  composePilotExpeditorPrompt,
-} = (() => {
-  const gate = require(path.join(EXT_DIR, 'out', 'tools', 'pilotAcceptanceGate'));
-  const pilot = require(path.join(EXT_DIR, 'out', 'tools', 'telegramCursorBridgePilot'));
-  return {
-    assessUnreachableStepHandlers: gate.assessUnreachableStepHandlers,
-    composePilotExpeditorPrompt: pilot.composePilotExpeditorPrompt,
-  };
-})();
+} = require(path.join(EXT_DIR, 'out', 'tools', 'pilotAcceptanceGate'));
+const { composePilotExpeditorPrompt } = require(path.join(
+  EXT_DIR,
+  'out',
+  'tools',
+  'telegramCursorBridgePilot'
+));
 
 const CLEANER = path.join(REPO_ROOT, 'swarmforge', 'roles', 'cleaner.prompt');
 const HARDENDER = path.join(REPO_ROOT, 'swarmforge', 'roles', 'hardender.prompt');
@@ -126,6 +122,23 @@ function assertUntestedBehaviorQuestion(text, label) {
   }
 }
 
+/** Assert the most recently loaded, not-yet-checked role prompt (cleaner → hardener → architect). */
+function assertNextUnreadRolePrompt(ctx) {
+  const checks = [
+    { key: 'cleanerPrompt', flag: '_cleanerChecked', label: 'cleaner.prompt' },
+    { key: 'hardenderPrompt', flag: '_hardenderChecked', label: 'hardender.prompt' },
+    { key: 'architectPrompt', flag: '_architectChecked', label: 'architect.prompt' },
+  ];
+  for (const { key, flag, label } of checks) {
+    if (ctx[key] && !ctx[flag]) {
+      assertUntestedBehaviorQuestion(ctx[key], label);
+      ctx[flag] = true;
+      return;
+    }
+  }
+  throw new Error('no unread role prompt loaded for unreachable-handler assertion');
+}
+
 function fixtureStepFileText(patternLiteral) {
   // Build fixture source as data — do not embed /.../ regex literals in THIS
   // file or extractRegisteredPatternSources will treat them as live handlers.
@@ -156,21 +169,7 @@ function registerSteps(registry) {
     registry,
     /^it requires asking what claim an unreachable step handler was meant to verify$/,
     (ctx) => {
-      if (ctx.cleanerPrompt && !ctx._cleanerChecked) {
-        assertUntestedBehaviorQuestion(ctx.cleanerPrompt, 'cleaner.prompt');
-        ctx._cleanerChecked = true;
-        return;
-      }
-      if (ctx.hardenderPrompt && !ctx._hardenderChecked) {
-        assertUntestedBehaviorQuestion(ctx.hardenderPrompt, 'hardender.prompt');
-        ctx._hardenderChecked = true;
-        return;
-      }
-      if (ctx.architectPrompt) {
-        assertUntestedBehaviorQuestion(ctx.architectPrompt, 'architect.prompt');
-        return;
-      }
-      throw new Error('no role prompt loaded for unreachable-handler assertion');
+      assertNextUnreadRolePrompt(ctx);
     }
   );
 
