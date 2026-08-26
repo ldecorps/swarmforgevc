@@ -1,5 +1,5 @@
-const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
@@ -227,6 +227,11 @@ test('composePilotExpeditorPrompt requires call-site tracing before nit-downgrad
   assert.match(text, /CALL SITE/);
   assert.match(text, /not only the\s+function in isolation/);
   assert.match(text, /guardrail claim/);
+  // Polarity + obligation: never→always / mandatory→optional must not survive (BL-749).
+  assert.match(text, /is never a\s+non-blocking nit/);
+  assert.doesNotMatch(text, /is always a\s+non-blocking nit/);
+  assert.match(text, /Call-site tracing before nit-downgrade is mandatory/);
+  assert.doesNotMatch(text, /Call-site tracing before nit-downgrade is optional/);
 });
 
 test('composePilotExpeditorPrompt treats unreachable step handlers as untested-behavior (BL-753)', () => {
