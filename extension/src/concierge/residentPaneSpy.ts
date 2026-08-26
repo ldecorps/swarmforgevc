@@ -56,6 +56,24 @@ export function formatClaimEnteredAgo(claimEnteredAtMs: number, nowMs: number = 
   return `entered ${elapsedDay}d ago`;
 }
 
+/** BL-1046: compact claim age for phone grid tiles ("32m", not "entered 32m ago"). */
+export function formatClaimAgeCompact(claimEnteredAtMs: number, nowMs: number = Date.now()): string {
+  const elapsedSec = Math.max(0, Math.floor((nowMs - claimEnteredAtMs) / 1000));
+  if (elapsedSec < 60) {
+    return `${elapsedSec}s`;
+  }
+  const elapsedMin = Math.floor(elapsedSec / 60);
+  if (elapsedMin < 60) {
+    return `${elapsedMin}m`;
+  }
+  const elapsedHr = Math.floor(elapsedMin / 60);
+  if (elapsedHr < 48) {
+    return `${elapsedHr}h`;
+  }
+  const elapsedDay = Math.floor(elapsedHr / 24);
+  return `${elapsedDay}d`;
+}
+
 export function formatResidentSpyHeader(
   snap: Pick<ResidentPaneSpySnapshot, 'roleLabel' | 'modelLabel' | 'sessionTarget' | 'ticketId' | 'ticketTitle'>,
   prefix: string = 'Resident',
@@ -75,6 +93,8 @@ export interface ResidentHeldTicketMeta {
   ticketId?: string;
   ticketTitle?: string;
   claimEnteredAtMs?: number;
+  /** BL-1046: in_process parcels beyond the earliest claim (batch seats). */
+  heldParcelCount?: number;
 }
 
 function readRoleEntry(targetPath: string, modelRole: string) {
@@ -93,21 +113,23 @@ export function extractTicketIdFromHandoffHeaders(headers: Record<string, string
   return headers.message ? findTicketIdInText(headers.message) : null;
 }
 
-function readInProcessClaimForRole(
+function readInProcessClaimsForRole(
   targetPath: string,
   modelRole: string
-): { ticketId: string; claimEnteredAtMs?: number } | undefined {
+): { earliest?: { ticketId: string; claimEnteredAtMs?: number }; heldParcelCount: number } {
   const roleEntry = readRoleEntry(targetPath, modelRole);
   if (!roleEntry) {
-    return undefined;
+    return { heldParcelCount: 0 };
   }
   const inProcessDir = mailboxDir(roleEntry, 'inbox', 'in_process');
   let earliest: { ticketId: string; claimEnteredAtMs?: number } | undefined;
+  let heldParcelCount = 0;
   for (const headers of readHandoffHeaderRecordsWithBatches(inProcessDir)) {
     const ticketId = extractTicketIdFromHandoffHeaders(headers);
     if (!ticketId) {
       continue;
     }
+    heldParcelCount += 1;
     const ms = headers.dequeued_at ? Date.parse(headers.dequeued_at) : NaN;
     const claimEnteredAtMs = Number.isNaN(ms) ? undefined : ms;
     if (!earliest) {
@@ -118,11 +140,11 @@ function readInProcessClaimForRole(
       earliest = { ticketId, claimEnteredAtMs };
     }
   }
-  return earliest;
+  return { earliest, heldParcelCount };
 }
 
 export function resolveResidentHeldTicketMeta(targetPath: string, modelRole: string): ResidentHeldTicketMeta {
-  const claim = readInProcessClaimForRole(targetPath, modelRole);
+  const { earliest: claim, heldParcelCount } = readInProcessClaimsForRole(targetPath, modelRole);
   const ticketId =
     claim?.ticketId ??
     readPipelineStages(targetPath).find((stage) => stage.role === modelRole)?.heldTicketIds[0];
@@ -130,15 +152,21 @@ export function resolveResidentHeldTicketMeta(targetPath: string, modelRole: str
     return {};
   }
   const claimEnteredAtMs = claim?.claimEnteredAtMs;
+  const parcelCount = heldParcelCount > 1 ? heldParcelCount : undefined;
   const item = lookupBacklogItemById(targetPath, ticketId);
   if (item) {
     return {
       ticketId: item.id,
       ticketTitle: item.title,
       ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}),
+      ...(parcelCount !== undefined ? { heldParcelCount: parcelCount } : {}),
     };
   }
-  return { ticketId, ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}) };
+  return {
+    ticketId,
+    ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}),
+    ...(parcelCount !== undefined ? { heldParcelCount: parcelCount } : {}),
+  };
 }
 
 export function resolveResidentHeldTicketMetaForRoles(

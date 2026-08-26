@@ -47,7 +47,19 @@ function renderScreen(fetchImpl) {
     pretendToBeVisual: true,
   });
   const { window } = dom;
-  window.fetch = (url, opts) => fetchImpl(url, opts);
+  window.fetch = (url, opts) => {
+    const href = String(url);
+    if (href.startsWith('/web-ui-font-size')) {
+      if (opts && opts.method === 'PUT') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true, fontSizePx: 13 }),
+      });
+    }
+    return fetchImpl(url, opts);
+  };
   window.eval(extractInlineScript(html));
   return dom;
 }
@@ -84,8 +96,8 @@ test('BL-994: a role name is never stacked one letter per line', async () => {
   assert.equal(kindEl.textContent, 'Coordinator');
 });
 
-// ── grid-tile-carries-role-name-and-expand-only-03 ───────────────────────
-test('BL-994: a grid tile carries the role name and an Expand control and nothing else', async () => {
+// ── grid-tile-carries-role-name-and-expand-03 ───────────────────────
+test('BL-994: a grid tile carries the role name and an Expand control; transcript stays hidden', async () => {
   const dom = renderScreen(() => residentPaneResponse({ available: true, monoRouterLayout: false, panes: panesOf(4) }));
   await flush();
   const { window } = dom;

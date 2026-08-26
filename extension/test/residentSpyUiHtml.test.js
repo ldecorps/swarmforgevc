@@ -63,17 +63,11 @@ test('BL-929: the top ticket strip is not shown under a standing full pack, even
   await flush();
   const { document } = dom.window;
   assert.equal(document.getElementById('ticket-strip').hidden, true);
-  // BL-994 locked human decision 2 supersedes the tile-level half of this
-  // assertion: grid tiles carry role name + Expand ONLY, so a held ticket
-  // no longer surfaces in the tile head - it surfaces in the tile's
-  // fullscreen Expand instead (spec amendment fabecba4c retargeted BL-929
-  // scenario 03 the same way). The BL-929 concern this test protects - a
-  // standing pack shows no top strip yet the operator can still find the
-  // ticket - is preserved through that Expand path, asserted POSITIVELY
-  // below (bounce D2: the negative half alone left the relocated contract
-  // asserted nowhere in the unit lane).
+  // BL-1046: held tickets surface on the grid tile from the same payload
+  // fields as fullscreen Expand; BL-929 still forbids the global top strip
+  // under a standing full pack.
   const documenterHead = document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head');
-  assert.doesNotMatch(documenterHead.innerHTML, /BL-640/);
+  assert.match(documenterHead.innerHTML, /BL-640/);
   assert.match(documenterHead.innerHTML, /Documenter/);
   document.querySelector('.pane-col[data-pane-id="documenter"]').dispatchEvent(
     new dom.window.MouseEvent('click', { bubbles: true })
@@ -221,4 +215,33 @@ test('BL-609: at the maximum bound the increase control is shown unavailable', a
 test('BL-609: the HTML shell never references browser storage', () => {
   const html = getResidentSpyUiHtml();
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
+});
+
+test('BL-1046: grid tile shows held ticket id, slug, and compact claim age from payload', async () => {
+  const claimAt = Date.now() - 32 * 60 * 1000;
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        {
+          id: 'hardender',
+          label: 'Hardender',
+          pane: pane({
+            roleLabel: 'Hardender',
+            ticketId: 'BL-1035',
+            ticketTitle: 'a respawned front desk bot is declared stalled two seconds after it starts',
+            claimEnteredAtMs: claimAt,
+          }),
+        },
+      ],
+    })
+  );
+  await flush();
+  const col = dom.window.document.querySelector('.pane-col[data-pane-id="hardender"]');
+  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-1035');
+  assert.match(col.querySelector('.pane-grid-slug')?.textContent ?? '', /respawned front desk/);
+  assert.equal(col.querySelector('.pane-grid-age')?.textContent, '32m');
+  assert.equal(col.querySelector('.pane-kind')?.textContent, 'Hardender');
+  dom.window.close();
 });
