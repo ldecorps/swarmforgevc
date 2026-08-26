@@ -5,19 +5,34 @@ type: defect
 severity: low
 status: todo
 epic: cost-intelligence
-assigned_to: specifier
+human_approval: approved
 priority: 16
 direction: queue-jump
 depends_on: []
+assigned_to: coder
 mutation_cost: low
-source: |
-  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
-  pass, 2026-07-30. Companion remaining-work ticket: BL-740.
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "pilot land gate and prompt edits; no batch dedup surface"
+  architect: "gate separation settled in-ticket: CRAP always scoped to touched files"
+  documenter: "hardener.prompt change is the doc surface; no separate how-to"
+acceptance: specs/features/BL-741-bl627-pilot-missed-crap-gate.feature
 
-notes: |
-  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
+approval_context: >
+  Human 2026-07-31 Let's Talk: queue-jump for live shift — pilot-process hardening
+  before more /pilot safe volume. BL-627 landed collectReferencedClaudeModels at
+  CRAP=10.89 without any seat running crapReport.js (companion BL-740 fixes code).
 
-  Pilot-process half of the BL-740 hardener-lens shortfall on BL-627.
+invariants:
+  - "mutation_cost low lightens mutation testing scope only — it never exempts the CRAP gate on pilot or pipeline land."
+  - "CRAP at land is always scoped to files the run's own commits touched — cheap regardless of mutation_cost."
+  - "A refused CRAP land writes nothing durable (no backlog/done move, no acceptance receipt)."
+
+required_wiring:
+  - 'extension/src/tools/pilotAcceptanceGate.ts::checkCrap::scoped CRAP'
+  - 'swarmforge/roles/hardender.prompt::BL-741::CRAP is an always-run gate scoped to'
+  - 'extension/scripts/crapReport.js::CRAP_THRESHOLD::CRAP metric report'
+  - 'specs/pipeline/steps/index.js::bl741PilotCrapGateSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
   ## What
@@ -31,7 +46,7 @@ description: |
 
   This is the same gap class BL-723's own required_stages exists to close:
   `mutation_cost: low` on BL-627 likely meant the original pilot skipped
-  or lightly weighted the hardener-equivalent step for this ticket. But
+  or lightly weighted the hardender-equivalent step for this ticket. But
   "low mutation cost" is about the CHANGE's size, not about whether the
   new code's coverage should go unchecked entirely.
 
@@ -41,7 +56,36 @@ description: |
   license to skip the CRAP gate outright, or should CRAP still run — just
   scoped to the actual changed files, which is cheap regardless of
   mutation cost? The pilot missed running that gate here; harden `/pilot`
-  (and this project's own hardener-role guidance) to make explicit that
+  (and this project's own hardender-role guidance) to make explicit that
   CRAP is a separate, always-run gate from mutation testing, never bundled
   under the same low-cost exemption that let this landing's coverage gap
   through uncaught.
+
+qa_e2e_procedure: >
+  (1) Pilot fixture ticket mutation_cost low with touched TS file — land gate
+  runs scoped CRAP. (2) Fixture with CRAP>6 on touched function — land refused,
+  yaml unmoved. (3) hardender.prompt contains CRAP/mutation_cost separation.
+  (4) CRAP pass alone does not force land if other gates fail. Live: /pilot on
+  low-cost ticket runs crapReport on touched paths before backlog/done.
+
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardender viewpoint
+  pass, 2026-07-30. Companion remaining-work ticket: BL-740.
+
+specifier_decisions: |
+  Minted 2026-08-26 per coordinator route. Five scenarios: low mutation_cost still
+  runs scoped CRAP; CRAP violation refuses land; hardener prompt separation;
+  CRAP pass non-blocking alone; refused land writes nothing durable. Answer to
+  ticket question: CRAP always runs scoped to touched files — never skipped for
+  mutation_cost low. Code fix for collectReferencedClaudeModels remains BL-740.
+
+notes: |
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process
+  hardening before more /pilot safe volume.
+
+  Pilot-process half of the BL-740 hardener-lens shortfall on BL-627.
+
+out_of_scope: |
+  - Fixing collectReferencedClaudeModels coverage/CRAP (BL-740).
+  - Changing the CRAP<=6 threshold or crapReport.js measurement itself.
+  - Retroactively re-running CRAP on all past pilot lands.

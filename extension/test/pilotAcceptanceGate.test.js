@@ -29,6 +29,7 @@ function mkDeps(overrides) {
     readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => ({ checked: true, commitsChecked: 3 }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
@@ -248,6 +249,7 @@ test('landPilotedTicket refuses a land whose commit claims an unsupported change
       unsupported: { commit: '6a2e4aaf6d', identifier: 'deliver!', sentence: 'restore the deliver! close paren' },
     }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
@@ -277,6 +279,7 @@ test('landPilotedTicket checks claims only after a green contract, never before'
       return { checked: true, commitsChecked: 1 };
     },
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
@@ -292,6 +295,7 @@ test('landPilotedTicket lands with a warning and records zero commits checked wh
   const { deps, calls } = mkDeps({
     checkCommitClaims: () => ({ checked: false }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
@@ -313,6 +317,7 @@ test('landPilotedTicket lands with no warnings field when every commit claim was
   const { deps } = mkDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 5 }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
@@ -331,6 +336,7 @@ test('landPilotedTicket never moves or writes a receipt when the commit-claim ch
       unsupported: { commit: 'abc1234567', identifier: 'frobnicate!', sentence: 'restore the frobnicate! guard' },
     }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
