@@ -8,7 +8,7 @@ const {
   walkTranscriptFiles,
   transcriptsUnchanged,
   snapshotTranscriptFiles,
-} = require('../out/tools/transcriptWalker');
+} = require('../out/metrics/transcriptWalker');
 const { buildTurnProfileSeries } = require('../out/metrics/turnProfile');
 
 // BL-664: deterministic transcript walker taxonomy and read-only walk.

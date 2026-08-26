@@ -1,9 +1,9 @@
 /**
- * BL-664: read-only transcript walker — classifies tool-call intervals into the
- * turn taxonomy for turnProfile sizing. Shared substrate for BL-665/BL-666.
+ * BL-664: read-only transcript walker — classify intervals into the turn taxonomy
+ * (git-mechanical, test-run, file-read, thinking-writing, turn-overhead, provider-outage).
+ * handoff trail attribution: per-turn stage and ticket id when parcel active.
  */
 import * as fs from 'fs';
-import * as path from 'path';
 
 export type IntervalCategory =
   | 'git-mechanical'
