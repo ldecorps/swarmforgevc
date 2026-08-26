@@ -8,6 +8,7 @@ human_approval: approved
 priority: 70
 direction: human-requested
 depends_on: []
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-980-recently-closed-elapsed-time.feature
