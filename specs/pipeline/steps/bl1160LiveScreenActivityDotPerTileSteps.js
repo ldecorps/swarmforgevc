@@ -29,6 +29,21 @@ function flush() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+async function waitForVisibleTileDots(document, minVisible, timeoutMs = 3000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const visible = [...document.querySelectorAll('.split .pane-col [data-status-indicator]')].filter(
+      (dot) => !dot.hidden
+    ).length;
+    if (visible >= minVisible) {
+      return;
+    }
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for ${minVisible} visible tile dots (saw ${document.querySelectorAll('.split .pane-col [data-status-indicator]:not([hidden])').length})`);
+}
+
 function panesOf(n, paneOverrides = {}) {
   const roles = ['Coordinator', 'Specifier', 'Coder', 'Cleaner', 'Architect', 'Hardender', 'Documenter', 'Qa'];
   return roles.slice(0, n).map((role) => {
@@ -72,13 +87,21 @@ async function renderAndExtract({ paneCount = 8, panes, expandRole = null } = {}
       });
     dom.window.eval(extractInlineScript(html));
     await flush();
+    const { document } = dom.window;
+    const expectVisible = payloadPanes.filter((entry) => {
+      const pane = entry.pane || {};
+      if (pane.activitySignal) return true;
+      return pane.available !== false;
+    }).length;
+    if (expectVisible > 0) {
+      await waitForVisibleTileDots(document, expectVisible);
+    }
     if (expandRole) {
-      const col = dom.window.document.querySelector(`.pane-col[data-pane-id="${expandRole}"]`);
+      const col = document.querySelector(`.pane-col[data-pane-id="${expandRole}"]`);
       if (!col) throw new Error(`pane not found for expand: ${expandRole}`);
       col.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
       await flush();
     }
-    const { document } = dom.window;
     const tileDots = [...document.querySelectorAll('.split .pane-col')].map((col) => {
       const dot = col.querySelector('[data-status-indicator]');
       return {
