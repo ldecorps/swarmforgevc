@@ -29,6 +29,9 @@
 ;;   EXPEDITE_STOP_CMD     stop command (default ./stop-swarm.sh)
 ;;   EXPEDITE_START_CMD    start command (default ./start-swarm.sh)
 ;;   EXPEDITE_NOW_MS       pin the clock
+;;   EXPEDITE_ANNOUNCE_CMD shell command for each milestone (BL-656); default
+;;                         posts to the Operator topic via notify-expedite-milestone.js
+;;                         Line text is passed in EXPEDITE_ANNOUNCE_LINE.
 
 (ns expedite-cli
   (:require [babashka.fs :as fs]
@@ -42,6 +45,7 @@
 (load-file (str (fs/path scripts-dir "expedite_progress_lib.bb")))
 ;; BL-1103: one shared wall-clock-bounded runner (was a private copy here).
 (load-file (str (fs/path scripts-dir "bounded_run_lib.bb")))
+(load-file (str (fs/path scripts-dir "expedite_announce_lib.bb")))
 
 ;; ── args ──────────────────────────────────────────────────────────────────
 
@@ -69,6 +73,27 @@
 
 (defn- log! [& parts]
   (println (str "expedite " (str/join " " (map str parts)))))
+
+(defn- default-announce-cmd [project-root]
+  (str "node extension/out/tools/notify-expedite-milestone.js "
+       (pr-str (str project-root))))
+
+(defn- invoke-announce! [project-root line]
+  (when-not (str/blank? line)
+    (let [cmd (or (System/getenv "EXPEDITE_ANNOUNCE_CMD")
+                  (default-announce-cmd project-root))]
+      (try
+        (let [{:keys [exit err]} (sh {:dir (str project-root)
+                                      :extra-env {"EXPEDITE_ANNOUNCE_LINE" line}}
+                                     "bash" "-lc" cmd)]
+          (when (pos? exit)
+            (log! "WARNING announce delivery failed:" (str/trim (or err "")))))
+        (catch Exception e
+          (log! "WARNING announce delivery failed:" (.getMessage e)))))))
+
+(defn- announce-milestone! [{:keys [project-root ticket]} payload]
+  (when-let [line (expedite-announce-lib/format-milestone (assoc payload :ticket ticket))]
+    (invoke-announce! project-root line)))
 
 (defn- write-json! [path data]
   (fs/create-dirs (fs/parent path))
@@ -334,7 +359,11 @@
             (must-move-ticket!
              project-root t "active" (:destination plan)
              "REFUSE could not park" t "from backlog/active/")))
-        (when-not dry-run? (write-json! (fs/path run-dir "park-record.json") record))))
+        (when-not dry-run? (write-json! (fs/path run-dir "park-record.json") record)))
+      (announce-milestone! {:project-root project-root :ticket ticket}
+                           {:kind :park
+                            :parked (vec (:park plan))
+                            :destination (:destination plan)}))
     ;; BL-1024: registered AFTER the moves, so the register records what was
     ;; actually done rather than what was planned. Everything downstream of
     ;; this line may refuse and exit, and every one of those exits now reports
@@ -395,8 +424,10 @@
     (let [stop-cmd (configured-stop-command)
           stop-check (expedite-lib/stop-invocation-verdict stop-cmd)]
       (when-not (:ok? stop-check)
-        (log! "REFUSE" (expedite-lib/stop-refusal-message stop-check))
-        (exit! 1))
+        (let [msg (expedite-lib/stop-refusal-message stop-check)]
+          (announce-milestone! opts {:kind :initiation-refuse :survivors [] :reason msg})
+          (log! "REFUSE" msg)
+          (exit! 1)))
       ;; One binding, so the line that was CHECKED is the line that RUNS.
       ;; BL-1023: adopt (or refuse) the run ticket BEFORE parking siblings, so
       ;; teardown's active→done move has a source and the operator hears any
@@ -418,12 +449,17 @@
         ;; is worse than not having it: an operator who cannot override reaches for
         ;; something cruder.
         (when-not (or dry-run? override? (:clean? verdict))
+          (announce-milestone! opts {:kind :initiation-refuse
+                                     :survivors (:alive verdict)
+                                     :reason "teardown did not reach a clean slate"})
           (log! "REFUSE teardown did not reach a clean slate:" (str/join "," (:alive verdict)))
           (log! "remedy: stop the named processes by hand, or pass --override")
           (exit! 1))
         (when (and override? (not (:clean? verdict)))
           (log! "WARNING override in force; proceeding with these alive:"
                 (str/join "," (:alive verdict))))
+        (announce-milestone! opts {:kind :initiation-ok
+                                   :was-live? (not (:stopped? live0))})
         {:gate {:override-used? (boolean (and override? (not (:clean? verdict))))
                 :was-live? (not (:stopped? live0))
                 :alive-before (:alive live0)}
@@ -536,7 +572,20 @@
                         (when-let [b (seq (get @bounces stage))]
                           (str " This is a rework after " (count b) " bounce(s): "
                                (str/join "; " (map :reason b)))))
-              res (run-stage! opts worktree stage task stage-dir)]
+              _ (announce-milestone! opts {:kind :stage-entered
+                                          :stage stage
+                                          :idx (inc idx)
+                                          :total (count stages)})
+              res (run-stage! opts worktree stage task stage-dir)
+              prior-bounces (get @bounces stage [])
+              bounce-round (when (= :bounce (expedite-lib/classify-verdict (:verdict res)))
+                             (inc (count prior-bounces)))]
+          (announce-milestone! opts {:kind :stage-verdict
+                                     :stage stage
+                                     :verdict (:verdict res)
+                                     :round bounce-round
+                                     :reason (or (:reason res) (:class res))
+                                     :evidence-path (:evidence-path res)})
           (write-progress! run-dir ticket stage
                            (case (expedite-lib/classify-verdict (:verdict res))
                              :advance :passed
@@ -632,6 +681,8 @@
              true))
           _ (note-ticket-moved! ticket-moved?)
           restart (restart-stack! opts)
+          _ (announce-milestone! opts {:kind :final-verdict :outcome (:ticket staged)})
+          _ (announce-milestone! opts {:kind :restart :outcome (:outcome restart)})
           _ (when (not (:dry-run? opts))
               (write-progress! run-dir ticket :done
                                (if (= :done (:ticket staged)) :passed :failed)
