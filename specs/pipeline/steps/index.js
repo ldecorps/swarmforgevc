@@ -327,6 +327,7 @@ const DOMAINS = [
   require('./bl568MenuBlockedPaneQuestionsAsMappedPollsSteps'),
   require('./bl576AgedNoteActionabilitySteps'),
   require('./bl636RotatePreferenceParcelPrioritySteps'),
+  require('./bl728HandoffdDeliverParenVerificationSteps'),
   require('./bl637LifecycleScriptScopeSteps'),
   require('./bl641PagesDeploySteps'),
   require('./bl532SiblingBounceIsolationSteps'),
