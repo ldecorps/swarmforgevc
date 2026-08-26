@@ -443,6 +443,7 @@ const DOMAINS = [
   require('./bl823AvailabilityIntervalLedgerSteps'),
   require('./bl835FlowWatchdogFlooredPercentileFalseAlarmsSteps'),
   require('./bl650FlowWatchdogActiveTimeClockSteps'),
+  require('./bl779PauseBlindFlowWatchdogAlarmSteps'),
   require('./bl722PilotSafeDefectsSteps'),
   require('./bl852ChaseSweepRespectsAmbulanceHoldSteps'),
   require('./bl847ResourceSamplerMeasuresAgentSteps'),
