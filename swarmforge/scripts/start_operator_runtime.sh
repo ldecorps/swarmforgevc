@@ -34,6 +34,11 @@ fi
 
 mkdir -p "$OP_DIR"
 
+if [[ -f "$ROOT/.swarmforge/swarm.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT/.swarmforge/swarm.env"
+fi
+
 # Stop a prior runtime cleanly.
 if [[ -f "$OP_DIR/runtime.pid" ]]; then
   pid="$(< "$OP_DIR/runtime.pid")"

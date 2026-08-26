@@ -106,25 +106,19 @@ description: |
     with the known one-hour anomaly twice a year accepted rather than
     engineered around.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+acceptance: specs/features/BL-660-three-shift-packs-conf-selectable.feature
 
-  1. `swarm_shift night` active: swarm starts at 01:00, ceremony/stop at
-     09:00, BL-617 pause covers 09:00->01:00 — from ONE conf line, nothing
-     else edited.
-  2. Switching day->evening in conf: next scheduled cycle runs 17:00-01:00;
-     no stale start/stop from the old shift fires.
-  3. `swarm_shift` absent: 24/7 semantics byte-identical to the disabled-
-     window behaviour of today.
-  4. The spans-midnight shift (evening) starts and stops on the correct
-     calendar days — the classic off-by-one-day cron trap, pinned.
-  5. A human manual start outside the shift is not paused, not killed, and
-     not re-scheduled by the machinery; the next scheduled boundary applies
-     normally afterwards.
-  6. The offline-approvals property: with any single shift active, the
-     stopped gap stays < 24h (Telegram getUpdates retention), asserted.
-  7. The applier is idempotent and never clobbers a crontab line it did not
-     render (surfaced instead).
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl660ThreeShiftPacksSteps::acceptance handler registered so the runner executes every scenario"
+
+qa_e2e_procedure: >
+  (1) Set config swarm_shift night — assert start 01:00, stop 09:00, cooldown
+  inverse 09:00->01:00 from one conf line. (2) Switch day->evening while stopped;
+  applier renders 17:00-01:00 only. (3) Absent swarm_shift — 24/7 matches
+  disabled-window today. (4) Evening shift midnight span — correct calendar
+  days. (5) Manual start outside shift — not paused/killed/re-scheduled. (6)
+  Stopped gap < 24h for each shift. (7) Applier idempotent; surfaces human
+  crontab lines. Run acceptance feature green after compile.
 
 out_of_scope: |
   - Running TWO shifts (16h) or shift composition/rotation calendars. One
