@@ -54,6 +54,9 @@ function runHandoffd(root, flag) {
   const res = spawnSync('bb', [HANDOFFD, root, flag], {
     encoding: 'utf8',
     env: { ...process.env, SWARMFORGE_ALLOW_TMP_DAEMON: '1' },
+    // Unknown flags fall through to the daemon loop and hang; cap wall time so
+    // Gherkin mutants on flag spelling fail fast instead of stalling the lane.
+    timeout: 15000,
   });
   const logFile = path.join(root, '.swarmforge', 'daemon', 'handoffd.log');
   const logText = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
