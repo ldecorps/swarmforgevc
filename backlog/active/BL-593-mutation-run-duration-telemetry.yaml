@@ -19,6 +19,10 @@ stage_skip_reasons:
   documenter: "telemetry posture matches context-events.jsonl docs"
 acceptance: specs/features/BL-593-mutation-run-duration-telemetry.feature
 
+abandoned_commits:
+  - 28ea08cab5  # coder tip on BL-980 parent; superseded by origin/main re-cut 010bbdbbd
+  - 9b79745733  # cleaner cherry-pick; superseded by re-cut
+
 approval_context: >
   Human 2026-07-23 after asking how long recent mutation runs took and being
   told it is not recorded cleanly: "yes file this extra bit of telemetry,
