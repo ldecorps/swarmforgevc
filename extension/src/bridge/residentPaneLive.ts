@@ -34,6 +34,7 @@ export interface PaneLiveSnapshot {
   ticketTitle?: string;
   claimEnteredAtMs?: number;
   claimEnteredAgo?: string;
+  heldParcelCount?: number;
   header?: string;
 }
 

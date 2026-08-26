@@ -108,6 +108,13 @@ test('formatClaimEnteredAgo uses seconds, minutes, and hours', () => {
   assert.equal(formatClaimEnteredAgo(Date.parse('2026-07-22T09:00:00Z'), now), 'entered 3h ago');
 });
 
+test('formatClaimAgeCompact uses compact units for grid tiles (BL-1046)', () => {
+  const now = Date.parse('2026-08-26T12:00:00Z');
+  const { formatClaimAgeCompact } = require('../out/concierge/residentPaneSpy');
+  assert.equal(formatClaimAgeCompact(Date.parse('2026-08-26T11:28:00Z'), now), '32m');
+  assert.equal(formatClaimAgeCompact(Date.parse('2026-08-26T11:59:40Z'), now), '20s');
+});
+
 test('resolveResidentHeldTicketMeta reads the in_process claim and backlog title', () => {
   const fs = require('node:fs');
   const path = require('node:path');
@@ -212,6 +219,43 @@ test('resolveResidentHeldTicketMetaForRoles falls back to the home role mailbox'
     resolveResidentHeldTicketMetaForRoles(tmp, ['hardender', 'architect', 'coder']).ticketId,
     'BL-529'
   );
+});
+
+test('resolveResidentHeldTicketMeta counts batch held parcels (BL-1046)', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { mkTmpDir } = require('./helpers/tmpDir');
+  const tmp = mkTmpDir('sfvc-resident-held-count-');
+  const worktree = path.join(tmp, 'cleaner-wt');
+  const inProcess = path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+  fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
+  fs.mkdirSync(inProcess, { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'roles.tsv'),
+    `cleaner\tcleaner-wt\t${worktree}\tswarmforge-cleaner\tCleaner\tclaude\n`
+  );
+  fs.writeFileSync(
+    path.join(inProcess, '00_a.handoff'),
+    'task: BL-1010-first\ndequeued_at: 2026-08-26T10:00:00Z\n\nbody\n'
+  );
+  fs.writeFileSync(
+    path.join(inProcess, '01_b.handoff'),
+    'task: BL-1011-second\ndequeued_at: 2026-08-26T10:05:00Z\n\nbody\n'
+  );
+  fs.writeFileSync(
+    path.join(inProcess, '02_c.handoff'),
+    'task: BL-1014-third\ndequeued_at: 2026-08-26T10:10:00Z\n\nbody\n'
+  );
+  for (const id of ['BL-1010', 'BL-1011', 'BL-1014']) {
+    fs.writeFileSync(path.join(tmp, 'backlog', 'active', `${id}-slug.yaml`), `id: ${id}\ntitle: "${id} title"\n`);
+  }
+  assert.deepEqual(resolveResidentHeldTicketMeta(tmp, 'cleaner'), {
+    ticketId: 'BL-1010',
+    ticketTitle: 'BL-1010 title',
+    claimEnteredAtMs: Date.parse('2026-08-26T10:00:00Z'),
+    heldParcelCount: 3,
+  });
 });
 
 test('renderResidentPaneSpyBody puts header above pane text', () => {
