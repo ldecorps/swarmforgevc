@@ -25,7 +25,30 @@ function pane(overrides = {}) {
   return { available: true, roleLabel: 'Documenter', modelLabel: 'Sonnet 5', ...overrides };
 }
 
-function renderScreen(fetchImpl) {
+function makeFontFetch(store = {}) {
+  return (url, opts) => {
+    const href = String(url);
+    if (href.startsWith('/web-ui-font-size') && (!opts || opts.method !== 'PUT')) {
+      const surface = new URL(href, 'https://example.test').searchParams.get('surface');
+      const fontSizePx = store[surface];
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true, surface, fontSizePx }),
+      });
+    }
+    if (href.startsWith('/web-ui-font-size') && opts && opts.method === 'PUT') {
+      const body = JSON.parse(opts.body);
+      store[body.surface] = body.fontSizePx;
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true, surface: body.surface, fontSizePx: body.fontSizePx }),
+      });
+    }
+    return Promise.reject(new Error('unexpected fetch: ' + href));
+  };
+}
+
+function renderScreen(fetchImpl, fontStore = {}) {
   const html = getResidentSpyUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',
@@ -33,8 +56,16 @@ function renderScreen(fetchImpl) {
     pretendToBeVisual: true,
   });
   const { window } = dom;
-  window.fetch = (url, opts) => fetchImpl(url, opts);
+  const fontFetch = makeFontFetch(fontStore);
+  window.fetch = (url, opts) => {
+    const href = String(url);
+    if (href.startsWith('/web-ui-font-size')) {
+      return fontFetch(url, opts);
+    }
+    return fetchImpl(url, opts);
+  };
   window.eval(extractInlineScript(html));
+  dom.fontStore = fontStore;
   return dom;
 }
 
@@ -221,4 +252,36 @@ test('BL-609: at the maximum bound the increase control is shown unavailable', a
 test('BL-609: the HTML shell never references browser storage', () => {
   const html = getResidentSpyUiHtml();
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
+});
+
+test('BL-1153: Live Screen pane font size survives a full Mini App reload', async () => {
+  const fontStore = { 'live-screen': 16 };
+  const dom = renderScreen(
+    () =>
+      residentPaneResponse({
+        available: true,
+        monoRouterLayout: true,
+        panes: [{ id: 'resident', label: 'Resident', pane: pane({ paneText: 'hello pane' }) }],
+      }),
+    fontStore
+  );
+  await flush();
+  assert.equal(dom.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '16px');
+  dom.window.close();
+
+  const reloaded = renderScreen(
+    () =>
+      residentPaneResponse({
+        available: true,
+        monoRouterLayout: true,
+        panes: [{ id: 'resident', label: 'Resident', pane: pane({ paneText: 'hello pane' }) }],
+      }),
+    fontStore
+  );
+  await flush();
+  assert.equal(reloaded.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '16px');
+  assert.notEqual(
+    reloaded.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(),
+    '13px'
+  );
 });
