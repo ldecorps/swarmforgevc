@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-737)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -87,6 +87,44 @@ now checks the host fixture:
 Non-lifecycle tickets are unchanged: the fixture gate is skipped and the
 receipt omits `multiWorktreeFixture`.
 
+## Producer output-space crosscheck (BL-733)
+
+BL-642's chrome regex was tested against its own repro text and a few
+negatives, but never against `swarmforge.sh`'s `display_name_for_role()` —
+the real generator of multi-word and `@`-seat pane titles. Pattern/regex
+tickets that recognize producer output can now land only after an exhaustive
+crosscheck of that enumerable output space.
+
+Before the yaml move (after the other land gates), for tickets classified as
+pattern/regex (acceptance path or `required_wiring` naming pattern/regex/
+producer/chrome/pane-title):
+
+1. **Require** producer crosscheck metadata from the acceptance run
+   (`SWARMFORGE_PRODUCER_CROSSCHECK` / receipt `producerCrosscheck`).
+2. **Refuse** (`reasonKind: producer-crosscheck-required`) when the metadata is
+   missing or not exhaustive. Refusal names `missing producer output-space
+   crosscheck is insufficient for pattern/regex tickets`. Inert refuse.
+3. **Record** `producerCrosscheck` (`producer`, `outputSpaceSize`,
+   `valuesChecked`, `exhaustive`) on the acceptance receipt when land succeeds.
+
+Non-pattern tickets skip this gate.
+
+## Acceptance execution (BL-735)
+
+BL-559 double-landed (paused→done, revert, re-land) without ever executing its
+named Gherkin feature. Declaration alone is no longer enough.
+
+After a green contract run:
+
+1. **Refuse** (`reasonKind: acceptance-not-executed`) when the ticket's
+   acceptance feature exists but was not executed for this landing attempt
+   (refusal: `acceptance was declared but not executed for this landing
+   attempt`).
+2. **Revert-then-reland** tickets (yaml notes mention revert and re-land /
+   second land) must also explain *why* the revert and *why* the reland is
+   warranted — otherwise refuse (`reasonKind: reland-notes-required`).
+3. Both refusals are inert.
+
 ## Cross-file duplication (BL-737)
 
 BL-637's landing commit pasted the same twelve-line `--help` block into 16
@@ -157,6 +195,21 @@ run, and no gate ever noticed.
 - Multi-worktree tests: `extension/test/multiworktreeAcceptanceFixture.test.js`
 - Multi-worktree acceptance:
   `specs/features/BL-731-bl637-pilot-never-ran-acceptance-multiworktree.feature`
+- Producer crosscheck (BL-733), pure classification + assessment:
+  `extension/src/tools/producerCrosscheckAcceptance.ts`
+- Producer crosscheck tests: `extension/test/bl733ProducerCrosscheck.property.test.js`
+- Producer crosscheck step handlers:
+  `specs/pipeline/steps/bl733PilotProducerCrosscheckSteps.js`
+- Producer crosscheck acceptance:
+  `specs/features/BL-733-bl642-pilot-missed-multiword-role-crosscheck.feature`
+- Acceptance execution (BL-735), pure helpers:
+  `extension/src/tools/pilotAcceptanceExecution.ts`
+- Acceptance execution tests:
+  `extension/test/bl735PilotAcceptanceExecution.property.test.js`
+- Acceptance execution step handlers:
+  `specs/pipeline/steps/bl735PilotAcceptanceExecutionSteps.js`
+- Acceptance execution acceptance:
+  `specs/features/BL-735-bl559-pilot-double-landed-without-running-acceptance.feature`
 - Cross-file duplication (BL-737), pure block fingerprinting:
   `extension/src/tools/crossFileDuplicationCheck.ts`
 - Cross-file duplication git-backed deps (touched paths + file reads):
@@ -198,3 +251,9 @@ run, and no gate ever noticed.
 - BL-731 — lifecycle/teardown tickets require multi-worktree acceptance
   fixture before `/pilot` land (companion BL-730 remaining-work on unscoped
   survivor pgrep)
+- BL-733 — pattern/regex tickets require producer output-space crosscheck
+  (companion remaining-work BL-732)
+- BL-735 — refuse land when acceptance was declared but not executed;
+  revert-then-reland notes required (companion remaining-work BL-734)
+- BL-737 — refuse land on identical ≥12-line blocks in >2 touched files
+  (companion remaining-work BL-736)
