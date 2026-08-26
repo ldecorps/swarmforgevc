@@ -33,6 +33,10 @@ Expand read the same signal path (`resolvePaneStatusKind`, `updatePaneStatusDot`
   `applyDotState` / `hideDot` (not CSS-only hide).
 - **Signal:** prefers optional per-pane `activitySignal` when present; otherwise
   falls back to aggregate poll freshness for available panes only.
+- **Render:** when a pane carries `activitySignal`, `renderPane` paints that tile's
+  dot immediately (does not wait for the next aggregate poll tick).
+- **Acceptance:** APS steps wait for visible dots after grid render (async flush)
+  so palette scenarios match the unit-test refresh path.
 - **Sibling:** complements [BL-1046 held-ticket strip](BL-1046-console-tile-names-the-ticket-a-seat-holds.md)
   on the same tile — role name, ticket strip, Expand, dot.
 - **Out of scope:** new status meanings, Bubble Live port, per-pane heartbeat
