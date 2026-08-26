@@ -13,7 +13,7 @@ mutation_cost: low
 human_approval: approved
 acceptance: specs/features/BL-782-liveness-probes-scan-whole-process-table.feature
 required_wiring:
-  - "swarmforge/scripts/expedite_cli.bb::pids-matching::root-scoped needles at call sites"
+  - "swarmforge/scripts/expedite_cli.bb::live-probe-or-pids-matching::root-scoped needles at call sites"
   - "specs/pipeline/steps/index.js::bl782ExpediteLivenessScopeSteps::acceptance handler registered"
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 invariants:
@@ -213,3 +213,6 @@ notes: |
   concurrently (Concurrent Work Orthogonality). BL-1068 is adjacent, not
   duplicate: this ticket scopes which processes the reap MATCHES, BL-1068
   fixes what the reap READS once matched. Neither subsumes the other.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: coder, class: acceptance, commit: 81e2f4ac6b, evidence: backlog/evidence/BL-782-qa-bounce-20260826.md }
