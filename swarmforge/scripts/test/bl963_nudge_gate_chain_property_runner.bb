@@ -21,7 +21,7 @@
 ;;   Invariant 2: "A candidate whose only refusal is human_approval remains
 ;;   nudge-eligible and is named flagged awaiting approval." Draws where the
 ;;   best eligible candidate is approval-pending assert it survives the
-;;   filter, is named with :approved? false, and the nudge message carries
+;;   filter, is named with :approval-awaiting? true, and the nudge message carries
 ;;   the awaiting-approval flag (BL-798 scenario 03 preserved).
 ;;
 ;; Non-vacuity proven at authoring time (2026-08-20), each break restored:
@@ -153,7 +153,7 @@
                        ;; whose candidate set carries the pending+dep-blocked
                        ;; shape, whatever arm drew it
                        (some (fn [c] (= :overlap (:kind c))) candidates) (update :overlap inc)
-                       (and named (not (:approved? named))) (update :approval-named inc)))
+                       (and named (:approval-awaiting? named)) (update :approval-named inc)))
     (cond
       ;; invariant 1, surface 1: refused candidates never in the eligible set
       (some eligible-files (map :file refused))
@@ -182,7 +182,7 @@
 
       ;; invariant 2, surface 2: an approval-pending candidate that ranks
       ;; best among the eligible is named, unapproved, and message-flagged
-      (and named (not (:approved? named))
+      (and named (:approval-awaiting? named)
            (not (str/includes? (chase-sweep-lib/open-slot-nudge-message named) "awaiting approval")))
       (str "an approval-pending named candidate lost its awaiting-approval flag: " (pr-str named))
 

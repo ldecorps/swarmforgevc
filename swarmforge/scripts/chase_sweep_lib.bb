@@ -1063,6 +1063,13 @@
   "Default 5 minutes between open-slot nudges when no pending note remains."
   (* 5 60 1000))
 
+(defn human-approval-awaiting?
+  "True only when human_approval is PRESENT and not the literal approved.
+   Absent means not applicable (passes the gate) and must NOT read as awaiting."
+  [content]
+  (let [v (promotion-gates-lib/read-human-approval content)]
+    (boolean (and v (not= "approved" v)))))
+
 (defn open-slot-nudge-message
   "0-arg: the old fixed, ticketless phrase (kept for callers with no
    candidate yet known — the trail/cooldown dedup keys off this phrase as a
@@ -1079,7 +1086,7 @@
    (if (nil? candidate)
      open-slot-nudge-phrase
      (let [msg (str open-slot-nudge-phrase ": " (:id candidate)
-                    (when-not (:approved? candidate) " awaiting approval"))]
+                    (when (:approval-awaiting? candidate) " awaiting approval"))]
        (if (<= (count msg) dispatch-gap-note-max-length)
          msg
          (subs msg 0 dispatch-gap-note-max-length))))))
@@ -1210,10 +1217,13 @@
 
 (defn top-open-slot-candidate
   "The single Article-3.2.4-best candidate among the given candidates —
-   {:id .. :approved? bool}, or nil when candidates is empty. Approval state
-   is reported, never used to filter: a sole pending-approval candidate is
-   still named as the top candidate, flagged awaiting approval rather than
-   silently skipped (BL-798 scenario 03). BL-900/BL-963: epic-index,
+   {:id .. :approved? bool :approval-awaiting? bool}, or nil when candidates
+   is empty. :approved? is true only when human_approval reads approved;
+   :approval-awaiting? is true only when human_approval is present and not
+   approved (absent is neither — promotion passes and the nudge must not
+   say awaiting approval). A sole pending-approval candidate is still named
+   as the top candidate, flagged awaiting approval rather than silently
+   skipped (BL-798 scenario 03). BL-900/BL-963: epic-index,
    defaulted to {} when omitted (mirrors promotion-gates-lib/rank-candidates'
    own default - a candidate with no epic: field, or whose epic has no
    tracker, ranks by its own priority exactly as before BL-900), is threaded
@@ -1223,9 +1233,11 @@
   ([candidates] (top-open-slot-candidate candidates {}))
   ([candidates epic-index]
    (when-let [winner (promotion-gates-lib/rank-candidates candidates epic-index)]
-     (let [content (:content winner)]
+     (let [content (:content winner)
+           ha (promotion-gates-lib/read-human-approval content)]
        {:id (or (promotion-gates-lib/read-id content) (fs/file-name (:file winner)))
-        :approved? (= "approved" (promotion-gates-lib/read-human-approval content))}))))
+        :approved? (= "approved" ha)
+        :approval-awaiting? (human-approval-awaiting? content)}))))
 
 (defn top-expedited-paused-candidate
   "BL-679: the id of the single Article-3.2.4-best EXPEDITED (defect/bug,

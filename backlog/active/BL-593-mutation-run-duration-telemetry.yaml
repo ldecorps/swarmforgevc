@@ -9,12 +9,40 @@ severity: low
 priority: 178
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
-source: |
-  Human, 2026-07-23, after asking "how long did the last few mutation testings
-  last" and being told it is not recorded cleanly: "yes file this extra bit of
-  telemetry, can't get enough of them."
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "additive telemetry append; no script boilerplate churn"
+  architect: "shape settled in-ticket: jsonl append on completion, reuse mutationProgress pure split"
+  hardender: "extension TS outside mutate scope; pure builder + fixture tests"
+  documenter: "telemetry posture matches context-events.jsonl docs"
+acceptance: specs/features/BL-593-mutation-run-duration-telemetry.feature
+
+abandoned_commits:
+  - 28ea08cab5
+  - 9b79745733
+  - b920154885
+  - 749908205e
+  - 9624f914d5
+  - efa00ce100
+  - 7e07b43a80
+
+approval_context: >
+  Human 2026-07-23 after asking how long recent mutation runs took and being
+  told it is not recorded cleanly: "yes file this extra bit of telemetry,
+  can't get enough of them."
+
+invariants:
+  - "Per-mutant live snapshot writes to mutation-progress/<role>.json remain unchanged — completion telemetry is an additional append, not a replacement."
+  - "A duration record is meaningless without scope, mutant total, and incremental flag; those fields are load-bearing, not optional nice-to-haves."
+  - "mutation-runs.jsonl is append-only gitignored machine-local data — never committed, never a checkout seed."
+
+required_wiring:
+  - 'extension/src/mutation/mutationProgressReporter.ts::onMutationTestReportReady::completion hook also appends one mutation-runs.jsonl record'
+  - 'extension/src/mutation/mutationRunTelemetry.ts::buildMutationRunRecord::pure record builder over state timestamps and scope meta unit-tested without fs'
+  - '.gitignore::.swarmforge/telemetry/mutation-runs.jsonl::gitignored append-only log same posture as context-events.jsonl'
+  - 'specs/pipeline/steps/index.js::bl593MutationRunDurationTelemetrySteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
   ## Problem
