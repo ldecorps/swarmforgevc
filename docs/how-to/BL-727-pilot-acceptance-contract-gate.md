@@ -298,6 +298,8 @@ run, and no gate ever noticed.
   `specs/features/BL-753-pilot-unreachable-step-handler-untested-behavior.feature`
 - Unreachable step-handler how-to:
   [BL-753](BL-753-pilot-unreachable-step-handler-untested-behavior.md)
+- Multi-branch parser per-arm coverage (BL-755):
+  [BL-755](BL-755-pilot-multi-branch-parser-needs-per-arm-tests.md)
 
 ## Out of scope
 
