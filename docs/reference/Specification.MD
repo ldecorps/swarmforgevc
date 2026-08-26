@@ -1,5 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1152: stamp-off of hotfix `7380d80686` —
+concurrent Approvals Yes/No for hotfix certification. `resolveAskOptions`
+reads `.swarmforge/operator/hotfix-stamp-asks.json` for `hotfix-<commit>`
+thread ids without requiring the single `awaiting-answer.json` slot;
+`postToBridgeOrHotfixStamp` routes those subjects to
+`applyHotfixStampAnswer` → `hotfix_ledger_update.bb --decide` instead of the
+bridge ask path. Ordinary asks unchanged. Stamp-off confirms landed commit only;
+ledger `certified`/`waived` still requires human decision (BL-848). Module:
+`extension/src/tools/telegram-front-desk-bot.ts`. Acceptance:
+`specs/features/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.feature`.
+How-to:
+`docs/how-to/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-1162: symmetric swarmforge cron lifecycle —
 `./start-swarm.sh` ensures every root-scoped cron line this install needs
 (freshness via BL-675/783 plus active shift schedule when configured);
