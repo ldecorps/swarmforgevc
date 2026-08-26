@@ -9,7 +9,7 @@ severity: medium
 priority: 95
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "Every schedule-derived clock reads the single active shift definition — no start/stop/window/briefing constant exists outside it to drift."
