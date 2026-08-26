@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=bf18e36d8e179206fb9f667158ccb1ebfbf59f8e4cc501f85bf7814b3bdb2920
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T01:35:41.554584659Z","feature_name":"Probe legacy topic adoption paths on disk without mutating maps or calling Telegram","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1147-probe-legacy-topic-adoption.feature","background_hash":"7ad1cbc7857e4ddcb628138751519424b41f0b8f13114705c72ed6a30e53e53b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"The probe classifies cursor Host topic routing from provider and bindings","scenario_hash":"462a5b5dcd154f03ac0dd4b9c862c9d9288293f17cd7591ba4282c3b31f2b73e","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-26T01:35:41.554584659Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Probe legacy topic adoption paths on disk without mutating maps or calling Telegram
 
   Background:
@@ -12,17 +17,18 @@ Feature: Probe legacy topic adoption paths on disk without mutating maps or call
 
   # BL-1147 probe-legacy-02
   Scenario Outline: The probe classifies cursor Host topic routing from provider and bindings
-    Given cursor-bridge state binds Host topic <topicId>
+    Given cursor-bridge state binds Host topic 8435
     And SWARMFORGE_LETS_TALK_PROVIDER is <provider>
     When the legacy topic adoption probe runs
     Then the probe report classifies cursor Host routing as <expectedRouting>
+    And the probe report cursor Host topic id is 8435
 
     Examples:
-      | topicId | provider | expectedRouting    |
-      | 8435    | cursor   | bridge             |
-      | 8435    | local    | operator-re-adopt  |
-      | 8435    |          | bridge             |
-      | 8435    | openai   | operator-re-adopt  |
+      | provider | expectedRouting    |
+      | cursor   | bridge             |
+      | local    | operator-re-adopt  |
+      |          | bridge             |
+      | openai   | operator-re-adopt  |
 
   # BL-1147 probe-legacy-03
   Scenario: The probe flags stale front-desk bindings on the cursor topic as scrub candidates

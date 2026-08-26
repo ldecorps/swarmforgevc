@@ -194,9 +194,10 @@ function registerSteps(registry) {
   );
 
   scoped(registry, /^the run records producer crosscheck metadata on the receipt path$/, (ctx) => {
-    const meta = ctx.outcome?.landed === true ? ctx.writtenReceipt?.producerCrosscheck : ctx.outcome?.receipt?.producerCrosscheck;
-    const source = ctx.writtenReceipt?.producerCrosscheck || ctx.lastAcceptanceRun?.producerCrosscheck;
-    const recorded = meta || source;
+    const recorded =
+      ctx.writtenReceipt?.producerCrosscheck ||
+      ctx.outcome?.receipt?.producerCrosscheck ||
+      ctx.lastAcceptanceRun?.producerCrosscheck;
     if (!recorded?.exhaustive) {
       throw new Error(`expected producer crosscheck metadata on receipt path, got: ${JSON.stringify(recorded)}`);
     }

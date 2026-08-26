@@ -77,7 +77,9 @@ function registerSteps(registry) {
 
   scoped(registry, /^SWARMFORGE_LETS_TALK_PROVIDER is (.*)$/, (ctx, provider) => {
     ensureCtx(ctx);
-    writeSwarmEnv(ctx.fixtureRoot, provider === '' ? '' : provider);
+    const value = provider === '' ? '' : provider;
+    ctx.expectedProvider = value;
+    writeSwarmEnv(ctx.fixtureRoot, value);
   });
 
   scoped(registry, /^the front-desk topic map binds topic (\d+) to (.+)$/, (ctx, topicId, subjectId) => {
@@ -120,9 +122,30 @@ function registerSteps(registry) {
     }
   });
 
+  scoped(registry, /^the probe report cursor Host topic id is (\d+)$/, (ctx, topicId) => {
+    const expected = Number(topicId);
+    if (ctx.probeReport.cursorHostTopicId !== expected) {
+      throw new Error(`expected cursorHostTopicId ${expected}, got ${ctx.probeReport.cursorHostTopicId}`);
+    }
+  });
+
   scoped(registry, /^the probe report classifies cursor Host routing as (.+)$/, (ctx, expectedRouting) => {
+    const allowedProviders = new Set(['', 'cursor', 'local', 'openai']);
+    if (!allowedProviders.has(ctx.expectedProvider ?? '')) {
+      throw new Error(`non-canonical provider literal: ${JSON.stringify(ctx.expectedProvider)}`);
+    }
     if (ctx.probeReport.cursorHostRouting !== expectedRouting) {
       throw new Error(`expected routing ${expectedRouting}, got ${ctx.probeReport.cursorHostRouting}`);
+    }
+    if (ctx.cursorTopicId !== undefined && ctx.probeReport.cursorHostTopicId !== ctx.cursorTopicId) {
+      throw new Error(
+        `expected cursorHostTopicId ${ctx.cursorTopicId}, got ${ctx.probeReport.cursorHostTopicId}`
+      );
+    }
+    if (ctx.expectedProvider !== undefined && ctx.probeReport.letsTalkProvider !== ctx.expectedProvider) {
+      throw new Error(
+        `expected letsTalkProvider ${JSON.stringify(ctx.expectedProvider)}, got ${JSON.stringify(ctx.probeReport.letsTalkProvider)}`
+      );
     }
   });
 
