@@ -30,6 +30,7 @@ function mkDeps(overrides) {
     checkCommitClaims: () => ({ checked: true, commitsChecked: 3 }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-FIX-fixture.yaml' };
@@ -246,6 +247,7 @@ test('landPilotedTicket refuses a land whose commit claims an unsupported change
     }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
   assert.equal(outcome.landed, false);
@@ -272,6 +274,7 @@ test('landPilotedTicket checks claims only after a green contract, never before'
     },
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
   assert.equal(outcome.landed, false);
@@ -284,6 +287,7 @@ test('landPilotedTicket lands with a warning and records zero commits checked wh
     checkCommitClaims: () => ({ checked: false }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
   });
   let receipt;
   deps.writeReceipt = (ticketId, r) => {
@@ -302,6 +306,7 @@ test('landPilotedTicket lands with no warnings field when every commit claim was
     checkCommitClaims: () => ({ checked: true, commitsChecked: 5 }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
   assert.equal(outcome.landed, true);
@@ -317,6 +322,7 @@ test('landPilotedTicket never moves or writes a receipt when the commit-claim ch
     }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
   });
   await landPilotedTicket('BL-FIX', deps);
   assert.equal(calls.move, 0);

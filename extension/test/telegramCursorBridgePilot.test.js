@@ -85,6 +85,12 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'function in isolation) and confirmed whether the guardrail is actually',
       'upheld downstream. Call-site tracing before nit-downgrade is mandatory.',
       '',
+      'REVIEW HATS (cleaner / hardener / architect during /pilot) — BL-753:',
+      'A registered acceptance step handler whose pattern matches no rendered',
+      'feature step is an untested-behavior flag until you answer: what claim',
+      'was this step meant to verify, and is that claim tested any other way?',
+      'Do not dismiss it as cosmetic dead code.',
+      '',
       'Isolation (same as BL-567):',
       '- Work only in `.worktrees/expedite-BL-702` on branch `expedite/BL-702`.',
       '- Do not use handoffd, mailboxes, tmux, rotate_to_role, ready_for_next, or the coordinator.',
@@ -220,6 +226,14 @@ test('composePilotExpeditorPrompt requires call-site tracing before nit-downgrad
   assert.match(text, /CALL SITE/);
   assert.match(text, /not only the\s+function in isolation/);
   assert.match(text, /guardrail claim/);
+});
+
+test('composePilotExpeditorPrompt treats unreachable step handlers as untested-behavior (BL-753)', () => {
+  const text = composePilotExpeditorPrompt('BL-753');
+  assert.match(text, /BL-753/);
+  assert.match(text, /untested-behavior flag/);
+  assert.match(text, /cosmetic dead code/);
+  assert.match(text, /what claim/);
 });
 
 test('formatPilotStartMessage identifies Cursor-piloted mode', () => {

@@ -21,8 +21,16 @@ import {
   assessShellEntryPointDrive,
   isShellTestPath,
 } from './shellEntryPointDriveCheck';
+import {
+  UnreachableStepHandlerCheckOutcome,
+  assessUnreachableStepHandlers,
+  isStepHandlerPath,
+  FeatureStepIr,
+} from './unreachableStepHandlerCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
 import { findBacklogFilePath } from '../panel/backlogWriter';
+import { parseBacklogYaml } from '../panel/backlogReader';
+import { resolveFeatureFilePath } from './pilotAcceptanceGate';
 
 // The run's own commits are judged against `main`, never HEAD alone (BL-729
 // invariant 1 - a commit's verdict must not depend on what a sibling branch
@@ -187,4 +195,57 @@ export function checkShellEntryPointDrive(
     touched.filter((p) => isShellTestPath(p))
   );
   return assessShellEntryPointDrive({ ticketYaml, shellTests });
+}
+
+function parseFeatureIr(repoRoot: string, featureFilePath: string): FeatureStepIr | undefined {
+  try {
+    // Lazy require: keep extension/src free of a static edge into specs/pipeline.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseFeatureFile } = require(path.join(repoRoot, 'specs', 'pipeline', 'runnerAdapter.js'));
+    return parseFeatureFile(featureFilePath) as FeatureStepIr;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Git + acceptance feature-backed BL-753 unreachable step-handler check. */
+export function checkUnreachableStepHandlers(
+  repoRoot: string,
+  ticketId: string
+): UnreachableStepHandlerCheckOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  const stepPaths = touched.filter((p) => isStepHandlerPath(p));
+  if (stepPaths.length === 0) {
+    return { checked: true, stepFilesScanned: 0, patternsChecked: 0 };
+  }
+  const yamlPath = findBacklogFilePath(repoRoot, ticketId);
+  if (!yamlPath) {
+    return { checked: false };
+  }
+  let declaration: string | undefined;
+  try {
+    const item = parseBacklogYaml(fs.readFileSync(yamlPath, 'utf8'));
+    declaration = item?.acceptance;
+  } catch {
+    return { checked: false };
+  }
+  if (!declaration) {
+    return { checked: false };
+  }
+  const featureFilePath = resolveFeatureFilePath(repoRoot, declaration);
+  if (!featureFilePath) {
+    return { checked: false };
+  }
+  const feature = parseFeatureIr(repoRoot, featureFilePath);
+  if (!feature) {
+    return { checked: false };
+  }
+  return assessUnreachableStepHandlers({
+    feature,
+    stepFiles: readTouchedFileTexts(repoRoot, stepPaths),
+    ticketId,
+  });
 }
