@@ -1,0 +1,103 @@
+id: BL-1161
+title: "operator_runtime miniapp watchdog SIGTERM-kills front-desk-owned bridge — stop/bounce must defer to front desk"
+milestone: M8
+type: defect
+severity: high
+# high: Bubble / Resident Spy down; recurring miniapp-watchdog bounce + cloudflared 502.
+status: paused
+epic: swarm-reliability
+priority: 0
+direction: queue-jump
+depends_on: [BL-1158]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1161-miniapp-watchdog-defers-to-front-desk-bridge.feature
+human_approval: approved
+approval_context: >
+  Human hotfix ask 2026-08-26 ~14:05 BST (INTAKE-miniapp-watchdog-kills-front-desk-bridge.md):
+  operator_runtime miniapp-watchdog → bounce_bridge_headless → stop_bridge_headless
+  kills every start-bridge-headless.js for this root, including the bridge
+  front_desk_supervisor just spawned. Start path already defers (BL-1158 partial);
+  stop/bounce does not. Ops hotfix: OPERATOR_MINIAPP_WATCHDOG_ENABLED=0. Durable fix:
+  when front desk owns :8765, only front desk may restart/kill the bridge; watchdog
+  recovery must re-arm front desk (not full bounce) or be a no-op. Approve = ship;
+  Amend if you want watchdog disabled-by-default until wiring lands.
+invariants:
+  - "When front-desk-supervisor.pid is alive for a root, no operator_runtime or stop_bridge_headless path may SIGTERM a start-bridge-headless.js child for that root."
+  - "Miniapp watchdog recovery when front desk owns the stack re-arms front desk — it never runs stop_bridge_headless.sh for that root."
+
+required_wiring:
+  - 'swarmforge/scripts/operator_runtime.bb::miniapp-watchdog-sweep!::watchdog must defer recovery when front desk owns the bridge'
+  - 'swarmforge/scripts/stop_bridge_headless.sh::front-desk-supervisor.pid::stop must refuse bridge kill while front desk supervisor is alive'
+  - 'specs/pipeline/steps/index.js::bl1161MiniappWatchdogDefersToFrontDeskBridgeSteps::acceptance handler registered so the runner executes every scenario'
+
+description: |
+  ## What
+
+  `operator_runtime.bb`'s miniapp watchdog probes `http://127.0.0.1:8765/lets-talk`.
+  On threshold failures it calls `bounce_bridge_headless.sh` → `stop_bridge_headless.sh`,
+  which `pgrep`s every `start-bridge-headless.js.*ROOT` and `kill -TERM`s with no check
+  for `front-desk-supervisor.pid`. The start path already defers to front desk when its
+  pid file is alive (BL-1158 partial); **stop/bounce does not**.
+
+  Live 2026-08-26: correlated `miniapp-watchdog bounced` in `runtime.log` with front-desk
+  crash loops; manual bridge test with front desk stopped still received SIGTERM (exit 143)
+  at ~7s while `operator_runtime.bb` remained up.
+
+  ## Why
+
+  Production Bubble path down: recurring gave-up cycles and cloudflared 502 at
+  `bubble.musicalsifu.com/resident-spy`. Distinct from BL-1159 (unknown child exit
+  after bind) — this slice is **external SIGTERM from watchdog/stop paths**.
+
+  ## How (direction, not mandate)
+
+  Human directive (verbatim from intake):
+
+  > When front desk owns the stack, **only front desk** may restart/kill the bridge on `:8765`.
+
+  1. `miniapp-bounce-bridge!` / watchdog recovery must call a front-desk re-arm helper
+     (intake names `recover_miniapp_bridge.sh`; `rearm_front_desk_bridge.sh` exists today)
+     instead of full `bounce_bridge_headless.sh` when `front-desk-supervisor.pid` is alive —
+     or watchdog must be a no-op in that mode.
+  2. `stop_bridge_headless.sh` must refuse to kill bridge children when front-desk
+     supervisor is alive (belt-and-suspenders).
+  3. Acceptance anchor: bridge survives 60s with `operator_runtime` up; no
+     `miniapp-watchdog bounced` while `/lets-talk` is 200; Bubble URL 200.
+
+qa_e2e_procedure: >
+  (1) Re-enable miniapp watchdog (remove OPERATOR_MINIAPP_WATCHDOG_ENABLED=0 hotfix).
+  (2) Cold start with front desk owning bridge — assert lets-talk 200 continuously
+  for 60s with operator_runtime up; runtime.log has no miniapp-watchdog bounced.
+  (3) Simulate probe failures — recovery re-arms front desk without stop_bridge_headless
+  killing the child. (4) bubble.musicalsifu.com/resident-spy returns 200 over same window.
+  Fixture/shell tests use controllable clocks and stubbed pgrep/kill seams.
+
+specifier_decisions: |
+  Minted 2026-08-26 from backlog/INTAKE-miniapp-watchdog-kills-front-desk-bridge.md.
+  Four scenarios map intake goal + acceptance. Sibling to BL-1159 (unknown crash after
+  bind) — do not conflate; both may be active. Ops hotfix documented in notes only;
+  durable fix removes need for watchdog disable env.
+
+out_of_scope: |
+  - BL-1159 unknown child exit after BRIDGE_LISTENING (:crashed classification)
+  - BL-1154 build-stale vs crash budget accounting
+  - BL-1158 dual-supervisor ownership on 8765 (done — start defer only extended here)
+  - Rewriting front_desk_supervisor crash-loop root cause beyond stop-path ownership
+
+notes: |
+  Human asked to **hotfix now** and **notify the swarm** after root-cause dig.
+
+  Ops hotfix applied 2026-08-26: `OPERATOR_MINIAPP_WATCHDOG_ENABLED=0` in
+  `.swarmforge/swarm.env`; `start_operator_runtime.sh` now sources that file;
+  bridge re-armed; tunnel relaunched.
+
+  `stop_bridge_headless.sh` lines 44–48: `pgrep start-bridge-headless.js.*ROOT`
+  → `kill -TERM` with no check for `front-desk-supervisor.pid`.
+
+  Related: BL-763 (miniapp watchdog introduced), BL-1158 (start defer partial),
+  INTAKE-start-swarm-stop-swarm-cron-lifecycle.md (separate ticket BL-1162).
+
+source: |
+  backlog/INTAKE-miniapp-watchdog-kills-front-desk-bridge.md
+  (human via Cursor hotfix, 2026-08-26 ~14:05 BST)
