@@ -3,11 +3,37 @@
 // BL-1153: sticky web UI font-size across Mini Apps and PWA dashboard.
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { JSDOM } = require(path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom'));
-const { getResidentSpyUiHtml } = require('../../../extension/out/bridge/residentSpyUiHtml');
-const { getPipelineGridUiHtml } = require('../../../extension/out/bridge/pipelineGridUiHtml');
-const { getPausedPagerUiHtml } = require('../../../extension/out/bridge/pausedPagerUiHtml');
-const { PANE_FONT_DEFAULT_PX } = require('../../../extension/out/bridge/residentSpyPaneFontSize');
+const FEATURE = 'Sticky web UI font-size choice across phone / Mini App / dashboard pages';
+const REPO_ROOT = path.join(__dirname, '..', '..', '..');
+const EXT = path.join(REPO_ROOT, 'extension');
+const { getResidentSpyUiHtml } = require(path.join(EXT, 'out', 'bridge', 'residentSpyUiHtml'));
+const { getPipelineGridUiHtml } = require(path.join(EXT, 'out', 'bridge', 'pipelineGridUiHtml'));
+const { getPausedPagerUiHtml } = require(path.join(EXT, 'out', 'bridge', 'pausedPagerUiHtml'));
+const { PANE_FONT_DEFAULT_PX } = require(path.join(EXT, 'out', 'bridge', 'residentSpyPaneFontSize'));
+const { JSDOM } = require(path.join(EXT, 'node_modules', 'jsdom'));
+
+const SURFACE_RELOAD = {
+  'Pipeline Board': {
+    storeKey: 'pipeline-grid',
+    cssVar: '--pg-font-px',
+    expected: '19px',
+    domKey: 'gridDom',
+    html: () => getPipelineGridUiHtml(),
+    url: 'https://example.test/pipeline-grid/?bearer=test-token',
+    apiPrefix: '/pipeline-board',
+    apiJson: () => ({ text: 'grid' }),
+  },
+  'Paused pager': {
+    storeKey: 'paused-pager',
+    cssVar: '--pp-font-px',
+    expected: '19px',
+    domKey: 'pausedDom',
+    html: () => getPausedPagerUiHtml(),
+    url: 'https://example.test/paused-pager/?bearer=test-token',
+    apiPrefix: '/paused-pager-state',
+    apiJson: () => ({ items: [], total: 0 }),
+  },
+};
 
 function extractInlineScript(html) {
   const match = html.match(/<script>([\s\S]*?)<\/script>/);
@@ -44,64 +70,40 @@ function makeFontFetch(store) {
   };
 }
 
+async function driveMiniAppReload({ html, url, apiPrefix, apiJson, store }) {
+  const dom = new JSDOM(html(), {
+    runScripts: 'outside-only',
+    url,
+    pretendToBeVisual: true,
+  });
+  dom.window.fetch = (fetchUrl, opts) => {
+    const href = String(fetchUrl);
+    if (href.startsWith(apiPrefix)) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(apiJson()) });
+    }
+    return makeFontFetch(store)(fetchUrl, opts);
+  };
+  dom.window.eval(extractInlineScript(html()));
+  await flush();
+  return dom;
+}
+
 async function driveLiveScreenReload(store) {
-  const html = getResidentSpyUiHtml();
-  const dom = new JSDOM(html, {
-    runScripts: 'outside-only',
+  return driveMiniAppReload({
+    html: getResidentSpyUiHtml,
     url: 'https://example.test/resident-spy/?bearer=test-token',
-    pretendToBeVisual: true,
+    apiPrefix: '/resident-pane',
+    apiJson: () => ({ available: true, monoRouterLayout: true, panes: [] }),
+    store,
   });
-  dom.window.fetch = (url, opts) => {
-    const href = String(url);
-    if (href.startsWith('/resident-pane')) {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ available: true, monoRouterLayout: true, panes: [] }),
-      });
-    }
-    return makeFontFetch(store)(url, opts);
-  };
-  dom.window.eval(extractInlineScript(html));
-  await flush();
-  return dom;
 }
 
-async function driveGridReload(store) {
-  const html = getPipelineGridUiHtml();
-  const dom = new JSDOM(html, {
-    runScripts: 'outside-only',
-    url: 'https://example.test/pipeline-grid/?bearer=test-token',
-    pretendToBeVisual: true,
-  });
-  dom.window.fetch = (url, opts) => {
-    const href = String(url);
-    if (href.startsWith('/pipeline-board')) {
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ text: 'grid' }) });
-    }
-    return makeFontFetch(store)(url, opts);
-  };
-  dom.window.eval(extractInlineScript(html));
-  await flush();
-  return dom;
+function readCssVar(dom, cssVar) {
+  return dom.window.document.documentElement.style.getPropertyValue(cssVar).trim();
 }
 
-async function drivePausedReload(store) {
-  const html = getPausedPagerUiHtml();
-  const dom = new JSDOM(html, {
-    runScripts: 'outside-only',
-    url: 'https://example.test/paused-pager/?bearer=test-token',
-    pretendToBeVisual: true,
-  });
-  dom.window.fetch = (url, opts) => {
-    const href = String(url);
-    if (href.startsWith('/paused-pager-state')) {
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ items: [], total: 0 }) });
-    }
-    return makeFontFetch(store)(url, opts);
-  };
-  dom.window.eval(extractInlineScript(html));
-  await flush();
-  return dom;
+function assertCssVar(dom, cssVar, expected) {
+  assert.equal(readCssVar(dom, cssVar), expected);
 }
 
 function closeDom(dom) {
@@ -129,53 +131,43 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the pane text renders at that chosen size$/, (ctx) => {
-    const px = ctx.bl1153.liveDom.window.document.documentElement.style
-      .getPropertyValue('--pane-font-size')
-      .trim();
-    assert.equal(px, '16px');
+    assertCssVar(ctx.bl1153.liveDom, '--pane-font-size', '16px');
   });
 
   registry.define(/^it does not reset to the BL-609 default of 13px$/, (ctx) => {
-    const px = ctx.bl1153.liveDom.window.document.documentElement.style
-      .getPropertyValue('--pane-font-size')
-      .trim();
-    assert.notEqual(px, `${PANE_FONT_DEFAULT_PX}px`);
+    assert.notEqual(readCssVar(ctx.bl1153.liveDom, '--pane-font-size'), `${PANE_FONT_DEFAULT_PX}px`);
     closeDom(ctx.bl1153.liveDom);
   });
 
   registry.define(/^the "([^"]+)" text size is set to a non-default value within its clamp$/, (ctx, surface) => {
     ctx.bl1153 = ctx.bl1153 || {};
     ctx.bl1153.store = ctx.bl1153.store || {};
-    if (surface === 'Pipeline Board') {
-      ctx.bl1153.store['pipeline-grid'] = 19;
-      ctx.bl1153.surfaceKey = 'pipeline-grid';
-      ctx.bl1153.cssVar = '--pg-font-px';
-      ctx.bl1153.expected = '19px';
-    } else {
-      ctx.bl1153.store['paused-pager'] = 19;
-      ctx.bl1153.surfaceKey = 'paused-pager';
-      ctx.bl1153.cssVar = '--pp-font-px';
-      ctx.bl1153.expected = '19px';
+    const cfg = SURFACE_RELOAD[surface];
+    if (!cfg) {
+      throw new Error(`unknown surface ${surface}`);
     }
+    ctx.bl1153.store[cfg.storeKey] = 19;
+    ctx.bl1153.surfaceCfg = cfg;
   });
 
   registry.define(/^that page is fully reloaded$/, async (ctx) => {
-    if (ctx.bl1153.surfaceKey === 'pipeline-grid') {
-      if (ctx.bl1153.gridDom) ctx.bl1153.gridDom.window.close();
-      ctx.bl1153.gridDom = await driveGridReload(ctx.bl1153.store);
-      ctx.bl1153.activeDom = ctx.bl1153.gridDom;
-    } else {
-      if (ctx.bl1153.pausedDom) ctx.bl1153.pausedDom.window.close();
-      ctx.bl1153.pausedDom = await drivePausedReload(ctx.bl1153.store);
-      ctx.bl1153.activeDom = ctx.bl1153.pausedDom;
+    const cfg = ctx.bl1153.surfaceCfg;
+    if (ctx.bl1153[cfg.domKey]) {
+      closeDom(ctx.bl1153[cfg.domKey]);
     }
+    ctx.bl1153[cfg.domKey] = await driveMiniAppReload({
+      html: cfg.html,
+      url: cfg.url,
+      apiPrefix: cfg.apiPrefix,
+      apiJson: cfg.apiJson,
+      store: ctx.bl1153.store,
+    });
+    ctx.bl1153.activeDom = ctx.bl1153[cfg.domKey];
   });
 
   registry.define(/^the text renders at that chosen size$/, (ctx) => {
-    const px = ctx.bl1153.activeDom.window.document.documentElement.style
-      .getPropertyValue(ctx.bl1153.cssVar)
-      .trim();
-    assert.equal(px, ctx.bl1153.expected);
+    const cfg = ctx.bl1153.surfaceCfg;
+    assertCssVar(ctx.bl1153.activeDom, cfg.cssVar, cfg.expected);
     closeDom(ctx.bl1153.activeDom);
   });
 
@@ -217,10 +209,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it uses that surface's existing default size$/, (ctx) => {
-    const px = ctx.bl1153.liveDom.window.document.documentElement.style
-      .getPropertyValue('--pane-font-size')
-      .trim();
-    assert.equal(px, `${PANE_FONT_DEFAULT_PX}px`);
+    assertCssVar(ctx.bl1153.liveDom, '--pane-font-size', `${PANE_FONT_DEFAULT_PX}px`);
     closeDom(ctx.bl1153.liveDom);
   });
 }
