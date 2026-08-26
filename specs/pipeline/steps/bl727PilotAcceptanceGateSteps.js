@@ -54,6 +54,7 @@ function ensureCtx(ctx) {
 }
 
 function baseDeps(ctx) {
+  let executedFeaturePath;
   return {
     readAcceptanceDeclaration: () => ctx.acceptanceDeclaration,
     resolveFeatureFilePath: (declaration) =>
@@ -64,11 +65,16 @@ function baseDeps(ctx) {
       metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: ctx.repoRootFixture },
     }),
     runAcceptance: async () => ctx.acceptanceRunResult,
+    recordAcceptanceExecution: (featureFilePath) => {
+      executedFeaturePath = featureFilePath;
+    },
+    readAcceptanceExecution: () => executedFeaturePath,
     // BL-729 added a second refusal reason to this same landing path; this
     // feature is about the FIRST one (acceptance-contract execution), so
     // every claim here is unconditionally supported - never the axis under
     // test in bl727PilotAcceptanceGateSteps.js.
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
+    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       return { moved: true, destination: path.join(ctx.repoRootFixture, 'backlog', 'done', `${ctx.ticketId}-fixture.yaml`) };

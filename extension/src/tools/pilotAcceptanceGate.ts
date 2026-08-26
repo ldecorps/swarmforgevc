@@ -30,6 +30,9 @@
  * 3. A refused land is inert for every refusal reason, not only the
  *    acceptance-contract one BL-727 already covers (shared with invariant 3
  *    above - one behavior, not two).
+ *
+ * BL-737 adds a cross-file duplication refusal on the same path: identical
+ * normalized text in more than two files the run's own commits touched.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -39,11 +42,49 @@ import {
   MultiworktreeFixtureMetadata,
   MULTIWORKTREE_REQUIRED_REFUSAL,
 } from './multiworktreeAcceptanceFixture';
+import {
+  assessProducerCrosscheck,
+  isPatternTicket,
+  PRODUCER_CROSSCHECK_REQUIRED_REFUSAL,
+  ProducerCrosscheckMetadata,
+} from './producerCrosscheckAcceptance';
+import {
+  ACCEPTANCE_NOT_EXECUTED_REFUSAL,
+  acceptanceExecutedForFeature,
+  assessRelandNotes,
+  isRevertRelandTicket,
+  RELAND_NOTES_REQUIRED_REFUSAL,
+} from './pilotAcceptanceExecution';
+import {
+  CROSS_FILE_DUPLICATION_REFUSAL,
+  CrossFileDuplicationCheckOutcome,
+} from './crossFileDuplicationCheck';
+
+export {
+  assessProducerCrosscheck,
+  DISPLAY_NAME_FOR_ROLE_PRODUCER,
+  enumerateDisplayNameForRoleOutputs,
+  isPatternTicket,
+  PRODUCER_CROSSCHECK_ENV,
+  PRODUCER_CROSSCHECK_REQUIRED_REFUSAL,
+  ProducerCrosscheckMetadata,
+  readConfiguredRoleNames,
+  recordProducerCrosscheck,
+} from './producerCrosscheckAcceptance';
+
+export {
+  CROSS_FILE_DUPLICATION_REFUSAL,
+  findCrossFileDuplication,
+  MIN_DUPLICATION_BLOCK_LINES,
+  CrossFileDuplicationCheckOutcome,
+  CrossFileDuplicationHit,
+} from './crossFileDuplicationCheck';
 
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
+  producerCrosscheck?: ProducerCrosscheckMetadata;
 }
 
 export interface AcceptanceReceipt {
@@ -53,7 +94,9 @@ export interface AcceptanceReceipt {
   result: 'passed';
   landedAt: string;
   commitClaimsChecked: number;
+  crossFileDuplicationFilesScanned?: number;
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
+  producerCrosscheck?: ProducerCrosscheckMetadata;
 }
 
 export interface UnsupportedCommitClaim {
@@ -72,11 +115,17 @@ export type CommitClaimsCheckOutcome =
 
 export interface PilotAcceptanceGateDeps {
   readAcceptanceDeclaration: (ticketId: string) => string | undefined;
+  readRequiredWiring?: (ticketId: string) => string[] | undefined;
+  readTicketNotes?: (ticketId: string) => string | undefined;
+  acceptanceReceiptExists?: (ticketId: string) => boolean;
   resolveFeatureFilePath: (acceptanceDeclaration: string) => string | undefined;
   isLifecycleTeardownTicket: (ticketId: string) => boolean;
   assessMultiworktreeFixture: () => MultiworktreeFixtureAssessment;
   runAcceptance: (featureFilePath: string) => Promise<AcceptanceRunResult> | AcceptanceRunResult;
+  recordAcceptanceExecution?: (featureFilePath: string) => void;
+  readAcceptanceExecution?: () => string | undefined;
   checkCommitClaims: () => CommitClaimsCheckOutcome;
+  checkCrossFileDuplication: () => CrossFileDuplicationCheckOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
   getLandedCommit: () => string;
@@ -92,13 +141,24 @@ export interface PilotLandSuccess {
 
 export interface PilotLandRefusal {
   landed: false;
-  reasonKind: 'no-contract' | 'multiworktree-required' | 'contract-failed' | 'claim-unsupported' | 'move-failed';
+  reasonKind:
+    | 'no-contract'
+    | 'multiworktree-required'
+    | 'acceptance-not-executed'
+    | 'reland-notes-required'
+    | 'contract-failed'
+    | 'producer-crosscheck-required'
+    | 'claim-unsupported'
+    | 'cross-file-duplication'
+    | 'move-failed';
   reason: string;
   unmatchedStep?: string;
   failingScenario?: string;
   claimCommit?: string;
   claimIdentifier?: string;
   claimSentence?: string;
+  duplicationFingerprint?: string;
+  duplicationPaths?: string[];
 }
 
 export type PilotLandOutcome = PilotLandSuccess | PilotLandRefusal;
@@ -175,6 +235,7 @@ async function runContract(
 ): Promise<{ refusal: PilotLandRefusal } | { runResult: AcceptanceRunResult }> {
   const result = await deps.runAcceptance(featureFilePath);
   if (result.success) {
+    deps.recordAcceptanceExecution?.(featureFilePath);
     return { runResult: result };
   }
   const { failingScenario, unmatchedStep } = describeAcceptanceFailure(result.output);
@@ -217,6 +278,92 @@ function checkClaims(deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal
   return { claimsCheck };
 }
 
+// Step 3c: identical normalized blocks shared by more than two files the
+// run itself touched refuse the land (BL-737 / BL-637 threshold). Unreadable
+// touched-file history fails OPEN with a warning, mirroring BL-729.
+function checkDuplication(
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { duplicationCheck: CrossFileDuplicationCheckOutcome } {
+  const duplicationCheck = deps.checkCrossFileDuplication();
+  if (duplicationCheck.checked && duplicationCheck.duplication) {
+    const { fingerprint, paths } = duplicationCheck.duplication;
+    const named = paths.slice(0, 2).join(', ');
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'cross-file-duplication',
+        reason: `${CROSS_FILE_DUPLICATION_REFUSAL} (fingerprint length ${fingerprint.length}; e.g. ${named})`,
+        duplicationFingerprint: fingerprint,
+        duplicationPaths: paths,
+      },
+    };
+  }
+  return { duplicationCheck };
+}
+
+// Step 2b: revert-then-reland tickets must carry visible yaml notes before
+// a second done move — the BL-559 double-land hygiene gap.
+function requireRelandNotes(ticketId: string, deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal } | { ok: true } {
+  const notes = deps.readTicketNotes?.(ticketId);
+  if (!isRevertRelandTicket(notes)) {
+    return { ok: true };
+  }
+  if (!assessRelandNotes(notes).satisfied) {
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'reland-notes-required',
+        reason: `${ticketId} refuses land: ${RELAND_NOTES_REQUIRED_REFUSAL}`,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+// Step 3a: declaration alone is insufficient — the acceptance pipeline must
+// have executed for this landing attempt before anything moves.
+function requireAcceptanceExecuted(
+  ticketId: string,
+  featureFilePath: string,
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { ok: true } {
+  const executed = deps.readAcceptanceExecution?.();
+  if (acceptanceExecutedForFeature(executed, featureFilePath)) {
+    return { ok: true };
+  }
+  return {
+    refusal: {
+      landed: false,
+      reasonKind: 'acceptance-not-executed',
+      reason: `${ticketId} refuses land: ${ACCEPTANCE_NOT_EXECUTED_REFUSAL}`,
+    },
+  };
+}
+
+// Step 3b: pattern/regex tickets must carry exhaustive producer crosscheck
+// metadata from the acceptance pipeline — repro-only coverage cannot land.
+function requireProducerCrosscheck(
+  ticketId: string,
+  acceptance: string,
+  requiredWiring: string[] | undefined,
+  runResult: AcceptanceRunResult
+): { refusal: PilotLandRefusal } | { crosscheck?: ProducerCrosscheckMetadata } {
+  if (!isPatternTicket(acceptance, requiredWiring)) {
+    return { crosscheck: runResult.producerCrosscheck };
+  }
+  const assessment = assessProducerCrosscheck(runResult.producerCrosscheck);
+  if (!assessment.satisfied) {
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'producer-crosscheck-required',
+        reason: `${ticketId} refuses land: ${PRODUCER_CROSSCHECK_REQUIRED_REFUSAL}`,
+      },
+    };
+  }
+  return { crosscheck: assessment.metadata };
+}
+
 // Step 4: a green contract with every claim supported (or unreadable
 // history) has only the move itself left to fail - versus the landed
 // outcome with its written receipt.
@@ -225,7 +372,9 @@ function moveAndRecordReceipt(
   declaration: string,
   deps: PilotAcceptanceGateDeps,
   claimsCheck: CommitClaimsCheckOutcome,
-  multiWorktreeFixture?: MultiworktreeFixtureMetadata
+  duplicationCheck: CrossFileDuplicationCheckOutcome,
+  multiWorktreeFixture?: MultiworktreeFixtureMetadata,
+  producerCrosscheck?: ProducerCrosscheckMetadata
 ): PilotLandOutcome {
   // Captured before the move: if getLandedCommit() itself fails (e.g. no
   // HEAD yet), nothing has moved or been written yet either.
@@ -248,14 +397,29 @@ function moveAndRecordReceipt(
     landedAt: deps.now(),
     commitClaimsChecked: claimsCheck.checked ? claimsCheck.commitsChecked : 0,
   };
+  if (duplicationCheck.checked) {
+    receipt.crossFileDuplicationFilesScanned = duplicationCheck.filesScanned;
+  }
   if (multiWorktreeFixture) {
     receipt.multiWorktreeFixture = multiWorktreeFixture;
   }
+  if (producerCrosscheck) {
+    receipt.producerCrosscheck = producerCrosscheck;
+  }
   deps.writeReceipt(ticketId, receipt);
 
-  const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
+  const warnings: string[] = [];
   if (!claimsCheck.checked) {
-    outcome.warnings = ['commit claims were not checked: the run\'s own commit history could not be resolved'];
+    warnings.push("commit claims were not checked: the run's own commit history could not be resolved");
+  }
+  if (!duplicationCheck.checked) {
+    warnings.push(
+      'cross-file duplication was not checked: the run\'s touched-file history could not be resolved'
+    );
+  }
+  const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
+  if (warnings.length > 0) {
+    outcome.warnings = warnings;
   }
   return outcome;
 }
@@ -271,9 +435,30 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return fixtureGate.refusal;
   }
 
+  const relandNotes = requireRelandNotes(ticketId, deps);
+  if ('refusal' in relandNotes) {
+    return relandNotes.refusal;
+  }
+
   const contractRun = await runContract(ticketId, contract.featureFilePath, deps);
   if ('refusal' in contractRun) {
     return contractRun.refusal;
+  }
+
+  const executed = requireAcceptanceExecuted(ticketId, contract.featureFilePath, deps);
+  if ('refusal' in executed) {
+    return executed.refusal;
+  }
+
+  const requiredWiring = deps.readRequiredWiring?.(ticketId);
+  const producerGate = requireProducerCrosscheck(
+    ticketId,
+    contract.declaration,
+    requiredWiring,
+    contractRun.runResult
+  );
+  if ('refusal' in producerGate) {
+    return producerGate.refusal;
   }
 
   const claims = checkClaims(deps);
@@ -281,12 +466,25 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return claims.refusal;
   }
 
+  const duplication = checkDuplication(deps);
+  if ('refusal' in duplication) {
+    return duplication.refusal;
+  }
+
   const fixtureMetadata =
     deps.isLifecycleTeardownTicket(ticketId) && fixtureGate.fixture.satisfied
       ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
       : undefined;
 
-  return moveAndRecordReceipt(ticketId, contract.declaration, deps, claims.claimsCheck, fixtureMetadata);
+  return moveAndRecordReceipt(
+    ticketId,
+    contract.declaration,
+    deps,
+    claims.claimsCheck,
+    duplication.duplicationCheck,
+    fixtureMetadata,
+    producerGate.crosscheck
+  );
 }
 
 // Pure, fs-based: an acceptance declaration is executable only when it
