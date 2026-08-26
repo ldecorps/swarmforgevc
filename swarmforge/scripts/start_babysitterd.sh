@@ -13,13 +13,12 @@
 set -euo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  cat <<'EOF'
-start_babysitterd.sh — idempotent start of babysitterd (BL-611).
-
-Stop: stop_ancillary_services.sh / ./stop-swarm.sh
-
-Usage: start_babysitterd.sh <project-root>
-EOF
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/lifecycle_help_lib.sh"
+  print_lifecycle_help "start_babysitterd.sh" "idempotent start of babysitterd (BL-611)." \
+    "Stop: stop_ancillary_services.sh / ./stop-swarm.sh" \
+    "Usage: start_babysitterd.sh <project-root>"
   exit 0
 fi
 

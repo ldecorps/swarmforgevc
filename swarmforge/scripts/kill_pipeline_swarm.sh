@@ -37,17 +37,9 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      cat <<'EOF'
-kill_pipeline_swarm.sh — pipeline-only stop.
-
-Scope: pipeline-only
-Stops: role agents, handoffd (+ supervisor), stale tmux sockets, state markers.
-Does NOT stop: operator runtime, Telegram front desk, onboarder, tunnels,
-               operator-launched babysitterd outside managed paths.
-
-Full stack stop: ./stop-swarm.sh
-Legacy alias: kill_all_swarm.sh
-EOF
+      # shellcheck disable=SC1091
+      source "$SCRIPT_DIR/lifecycle_help_lib.sh"
+      print_kill_pipeline_help
       exit 0
       ;;
     *)

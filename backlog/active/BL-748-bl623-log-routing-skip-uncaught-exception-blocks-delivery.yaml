@@ -147,3 +147,5 @@ notes: |
   to draw. Both When phrasings match BL-623's existing feature file so its step
   handlers carry over. No `required_wiring:` - this guards an existing call
   site rather than building a mechanism that needs one.
+
+assigned_to: coder

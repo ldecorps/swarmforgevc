@@ -21,19 +21,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/tunnel_ownership_lib.sh"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  cat <<'EOF'
-launch_resident_spy_tunnel.sh — lifecycle start entry point.
-
-Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
-
-Named tunnel (fixed URL) — no default ships here, see:
-  swarmforge/config/named-tunnel.env.example
-  docs/how-to/named-tunnel-bubble-musicalsifu.md
-  (SWARMFORGE_NAMED_TUNNEL / SWARMFORGE_NAMED_TUNNEL_HOSTNAME, or
-   .swarmforge/operator/named-tunnel.env from setup_bubble_named_tunnel.sh)
-
-Usage: see header comments above.
-EOF
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/lifecycle_help_lib.sh"
+  print_lifecycle_help "launch_resident_spy_tunnel.sh" "lifecycle start entry point." \
+    "Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)" \
+    "Usage: see header comments above." \
+    $'Named tunnel (fixed URL) — no default ships here, see:\n  swarmforge/config/named-tunnel.env.example\n  docs/how-to/named-tunnel-bubble-musicalsifu.md\n  (SWARMFORGE_NAMED_TUNNEL / SWARMFORGE_NAMED_TUNNEL_HOSTNAME, or\n   .swarmforge/operator/named-tunnel.env from setup_bubble_named_tunnel.sh)'
   exit 0
 fi
 
