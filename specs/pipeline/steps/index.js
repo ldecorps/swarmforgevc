@@ -445,6 +445,7 @@ const DOMAINS = [
   require('./bl650FlowWatchdogActiveTimeClockSteps'),
   require('./bl779PauseBlindFlowWatchdogAlarmSteps'),
   require('./bl784LongRunningDaemonsUnwatchedByFreshnessConfSteps'),
+  require('./bl980RecentlyClosedElapsedTimeSteps'),
   require('./bl722PilotSafeDefectsSteps'),
   require('./bl852ChaseSweepRespectsAmbulanceHoldSteps'),
   require('./bl847ResourceSamplerMeasuresAgentSteps'),
