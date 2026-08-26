@@ -27,6 +27,11 @@ import {
   isStepHandlerPath,
   FeatureStepIr,
 } from './unreachableStepHandlerCheck';
+import {
+  MultiBranchParserCoverageOutcome,
+  assessMultiBranchParserCoverage,
+  extractMultiBranchParsers,
+} from './multiBranchParserCoverageCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
 import { findBacklogFilePath } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
@@ -247,5 +252,41 @@ export function checkUnreachableStepHandlers(
     feature,
     stepFiles: readTouchedFileTexts(repoRoot, stepPaths),
     ticketId,
+  });
+}
+
+function isParserSourcePath(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, '/');
+  return /\.(bb|clj|ts|js|mjs|cjs)$/.test(normalized) && !/\/test\//.test(normalized);
+}
+
+function isTestSourcePath(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, '/');
+  return (
+    /\.(test|spec)\.(ts|js|mjs|cjs)$/.test(normalized) ||
+    /\/test\//.test(normalized) ||
+    /\/scripts\/test\//.test(normalized)
+  );
+}
+
+/** Git-backed BL-755 multi-branch parser coverage check. */
+export function checkMultiBranchParserCoverage(
+  repoRoot: string,
+  _ticketId: string
+): MultiBranchParserCoverageOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  const sourcePaths = touched.filter((p) => isParserSourcePath(p));
+  const testPaths = touched.filter((p) => isTestSourcePath(p));
+  if (sourcePaths.length === 0) {
+    return { checked: true, parsersScanned: 0 };
+  }
+  const sources = readTouchedFileTexts(repoRoot, sourcePaths);
+  const tests = readTouchedFileTexts(repoRoot, testPaths);
+  return assessMultiBranchParserCoverage({
+    parsers: extractMultiBranchParsers(sources),
+    testTexts: tests.map((t) => t.text),
   });
 }

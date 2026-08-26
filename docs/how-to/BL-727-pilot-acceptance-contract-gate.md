@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-747, BL-753)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-747, BL-753, BL-755)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -206,6 +206,36 @@ Between a green contract (and the other land gates) and the yaml move:
 **Remediation when refused:** wire the missing scenario/Examples row (or
 delete the dead registration intentionally) — do not silent-bypass.
 
+## Multi-branch parser per-arm coverage (BL-755)
+
+BL-661's `take-flow-reason` had three parser arms (double-quoted,
+single-quoted, unquoted) but every test hit only the double-quoted branch.
+Review hats praised the covered hazard without noticing the other arms were
+dark (companion remaining-work BL-754).
+
+Between a green contract (and the other land gates) and the yaml move:
+
+1. Collect run-touched `.bb` / `.clj` / `.ts` / `.js` sources and tests
+   (same ancestry scope as BL-729 / BL-737 / BL-747 / BL-753).
+2. Detect functions whose body is a `cond` / `case` / if-else chain with
+   **≥3** distinct arms (lightweight string/keyword markers — not full
+   mutation).
+3. If no such multi-arm parser was touched → **no-op**.
+4. Each arm needs a distinct exercising test (test text includes the arm's
+   marker). Refuse (`reasonKind: 'untested-parser-branch'`) when any arm
+   lacks one. A refused land is inert.
+5. Unreadable touched-file history fails **OPEN** with a warning that
+   multi-branch parser coverage was not checked.
+6. On a clean check, record `multiBranchParserCoverage` (`parsersScanned`)
+   on the acceptance receipt.
+7. Hardener prompt + `composePilotExpeditorPrompt` require one distinct test
+   per arm before pass — see
+   [BL-755 how-to](BL-755-pilot-multi-branch-parser-needs-per-arm-tests.md).
+
+**Remediation when refused:** add a distinct test that exercises the dark
+arm (or shrink the parser) — do not silent-bypass. Covering only the
+narrated hazard is not enough.
+
 ## Why
 
 A live pipeline run has two independent places that execute a ticket's
@@ -298,6 +328,19 @@ run, and no gate ever noticed.
   `specs/features/BL-753-pilot-unreachable-step-handler-untested-behavior.feature`
 - Unreachable step-handler how-to:
   [BL-753](BL-753-pilot-unreachable-step-handler-untested-behavior.md)
+- Multi-branch parser coverage (BL-755), pure assess helpers:
+  `extension/src/tools/multiBranchParserCoverageCheck.ts`
+- Multi-branch parser git + test deps:
+  `extension/src/tools/commitClaimGitReader.ts` → `checkMultiBranchParserCoverage`
+- Multi-branch parser step handlers:
+  `specs/pipeline/steps/bl755PilotMultiBranchParserNeedsPerArmTestsSteps.js`
+- Multi-branch parser tests:
+  `extension/test/multiBranchParserCoverageCheck.test.js`,
+  `extension/test/multiBranchParserCoverageCheck.property.test.js`
+- Multi-branch parser acceptance:
+  `specs/features/BL-755-pilot-multi-branch-parser-needs-per-arm-tests.feature`
+- Multi-branch parser how-to:
+  [BL-755](BL-755-pilot-multi-branch-parser-needs-per-arm-tests.md)
 
 ## Out of scope
 
@@ -339,3 +382,5 @@ run, and no gate ever noticed.
   entry-point scripts (companion remaining-work BL-746 landed)
 - BL-753 — refuse land for registered APS patterns that match no rendered
   feature step (companion remaining-work BL-752)
+- BL-755 — refuse land when a run-touched ≥3-arm parser has an untested arm
+  (companion remaining-work BL-754)

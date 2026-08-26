@@ -31,6 +31,7 @@ function mkDeps(overrides) {
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
+    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-753-fixture.yaml' };
@@ -186,6 +187,7 @@ test('assessUnreachableStepHandlers fails open on unparsable pattern literals (n
 test('landPilotedTicket refuses unreachable-step-handler inertly', async () => {
   const { deps, calls } = mkDeps({
     checkUnreachableStepHandlers: () => ({
+    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
       checked: true,
       stepFilesScanned: 1,
       patternsChecked: 1,
