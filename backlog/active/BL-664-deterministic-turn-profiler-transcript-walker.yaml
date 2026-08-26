@@ -30,7 +30,7 @@ invariants:
   - "ONE walker lib serves turnProfile, BL-665 context telemetry, and BL-666 burn meter — no duplicate parsers."
 
 required_wiring:
-  - 'extension/src/metrics/transcriptWalker.ts or equivalent::classify intervals::git-mechanical test-run file-read thinking-writing turn-overhead provider-outage'
+  - 'extension/src/metrics/transcriptWalker.ts::classify intervals::git-mechanical test-run file-read thinking-writing turn-overhead provider-outage'
   - 'extension/src/metrics/trend.ts::turnProfile TrendedNumber series::mechanical and turn-overhead shares per stage for briefing and charts'
   - 'extension/src/metrics/transcriptWalker.ts::handoff trail attribution::per-turn stage and ticket id when parcel active'
   - 'specs/pipeline/steps/index.js::bl664TurnProfilerTranscriptWalkerSteps::acceptance handler registered so the runner executes every scenario'
