@@ -4,7 +4,7 @@ milestone: M8
 type: epic
 status: todo
 epic: swarm-intelligence-layer
-priority: 0
+priority: 3
 direction: queue-jump
 depends_on: [BL-545]
 decomposes_into: [BL-713, BL-1078, BL-1079, BL-1080, BL-1081]

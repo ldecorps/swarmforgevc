@@ -1,0 +1,106 @@
+id: BL-649
+title: "Swarm start ANNOUNCES pending human approvals on the Telegram Approvals topic — the BL-434 roster is edit-in-place and silent, so a pending ruling can sit unnoticed for days"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: medium
+priority: 70
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "concierge/bridge hook; no batch dedup surface"
+  architect: "doorbell vs roster split settled in-ticket; BL-434 unchanged"
+  hardender: "extension TS outside mutate scope; fixture announcement tests"
+  documenter: "BL-434 docs cover roster; announcement is additive doorbell"
+acceptance: specs/features/BL-649-swarm-start-announces-pending-approvals-on-telegram.feature
+
+approval_context: >
+  Operator 2026-07-25 at keyboard: "lorsque la swarm démarre et trouve des approvals
+  pour moi, il faut les faire remonter sur le topic approvals de telegram". Phone is
+  the ruling channel; pending set must come to the phone.
+
+invariants:
+  - "Start announcements POST new messages — never edit the roster message in place (BL-434 owns edits)."
+  - "Announcement content is rendered from ticket yaml fields only — never from pane or tmux capture."
+  - "An unchanged pending-set across restarts does not re-ping; re-announce only on set change or policy window."
+  - "Approval replies use the existing pendingApprovalReply path — no duplicate write path."
+
+required_wiring:
+  - 'extension bridge or concierge start hook::pending approval announcement::POST new Approvals topic message when set non-empty at bot up'
+  - 'extension/src/metrics/backlogDashboard.ts::computeNeedsApproval::enumerate active and paused human_approval pending tickets'
+  - 'extension approvals announcement marker::pending-set identity gate::suppress duplicate posts on unchanged restarts'
+  - 'extension/src/concierge/pendingApprovalReply.ts::existing reply path::approve/reject unchanged no second writer'
+  - 'specs/pipeline/steps/index.js::bl649SwarmStartApprovalsAnnouncementSteps::acceptance handler registered so the runner executes every scenario'
+
+description: |
+  ## The live case that motivated it
+
+  BL-612 has carried `human_approval: pending` since 2026-07-24. It is the ONLY
+  pending approval in the whole backlog. The operator learned of it not from
+  Telegram but from this session's terminal, twice, a day later.
+
+  ## What already exists — read before building anything
+
+  - **The standing Approvals topic** (BL-434, 📋): exists, wired, with a live
+    roster message computed from active+paused `human_approval: pending`
+    (`extension/src/metrics/backlogDashboard.ts:158 computeNeedsApproval`).
+  - **`approvalsRosterSync.ts`**: posts/EDITS a SINGLE message in place,
+    change-gated on rendered TEXT, sharing `editInPlaceMessageSync.ts` with the
+    pipeline board. By design it never re-notifies: **a Telegram edit does not
+    ping the phone.**
+  - **The reply path** (`pendingApprovalReply.ts`): a reply on the topic already
+    flips the LITERAL `human_approval: pending` line to `approved`. The
+    round-trip exists; only the outbound announcement is missing.
+  - **`conciergeTick`** drives the roster — so nothing at all happens while the
+    tick is down, and the tick's first pass after a start edits silently.
+
+  So the gap is exactly one behaviour: **nothing ever POSTS (a fresh, pinging
+  message) when the swarm comes up and the pending set is non-empty.**
+
+  ## Shape
+
+  At swarm start (bridge/bot up is the natural hook — the announcement is
+  useless before the bot can deliver it), enumerate live tickets with
+  `human_approval: pending` and, if the set is non-empty, POST a NEW message on
+  the standing Approvals topic — not an edit — so the phone notifies:
+
+    - one line per ticket: id, title (truncated), how long it has been pending,
+      and the `approval_context` snippet — the "approve buys X / reject means Y"
+      sentence is the whole point of that field;
+    - the existing roster message stays the live view; the announcement is the
+      doorbell, the roster is the door.
+
+qa_e2e_procedure: >
+  (1) Fixture with BL-612-style pending yaml — one NEW Approvals post listing id,
+  age, approval_context. (2) Zero pending — no post. (3) Two starts same set — one
+  post. (4) Set delta — fresh post names new pending. (5) Reply approve — existing
+  pendingApprovalReply only. (6) Roster edit-in-place unchanged vs BL-434. (7) Lines
+  from yaml not pane. Live: restart swarm with pending ticket — phone notifies.
+
+source: |
+  Operator 2026-07-25: on swarm start, surface pending approvals on Telegram Approvals
+  topic. BL-612 sat pending unnoticed because roster edits silently.
+
+specifier_decisions: |
+  Minted 2026-08-26 per coordinator route. Seven scenarios map inline acceptance 1–7.
+  Pending scope: active+paused only (matches computeNeedsApproval); hold/ out of slice 1.
+  Restart guard: gate on pending-set ids; re-announce on set change OR >24h since last
+  announcement (durable marker same posture as roster). Announcement does not promise
+  paused→active promotion (BL-490).
+
+notes: |
+  Direct consequence for BL-612: first real item this feature should announce.
+  Mid-run new-pending hook is follow-on (out_of_scope).
+
+out_of_scope: |
+  - A paused->active mover on approval (BL-490's recorded gap — separate).
+  - Reworking the roster, the reply path, or topic creation. All shipped.
+  - Non-start-time triggers (a NEW pending appearing mid-run). Real, but the
+    operator asked for the start-time sweep; a mid-run hook is a natural
+    follow-up once this shape is proven.
+  - hold/ tickets in pending sweep (slice 1); BL-590-style parked pending is follow-on.
