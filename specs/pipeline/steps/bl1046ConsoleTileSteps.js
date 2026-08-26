@@ -38,7 +38,8 @@ const ROLE_LABELS = {
 };
 
 function rolePaneId(role) {
-  return role.toLowerCase() === 'qa' ? 'QA' : role.toLowerCase();
+  const canonical = requireCanonicalRole(role);
+  return canonical === 'qa' ? 'QA' : canonical;
 }
 
 function extractInlineScript(html) {
@@ -54,12 +55,12 @@ function flush() {
 }
 
 function defaultPane(role, overrides = {}) {
-  const id = rolePaneId(role);
+  const canonical = requireCanonicalRole(role);
   return {
     available: true,
-    roleLabel: ROLE_LABELS[role.toLowerCase()] ?? role,
+    roleLabel: ROLE_LABELS[canonical] ?? role,
     modelLabel: 'Sonnet 5',
-    paneText: `${ROLE_LABELS[role.toLowerCase()] ?? role} live output`,
+    paneText: `${ROLE_LABELS[canonical] ?? role} live output`,
     ...overrides,
   };
 }
@@ -67,7 +68,7 @@ function defaultPane(role, overrides = {}) {
 function buildPanesFromCtx(ctx) {
   const seats = ctx.seats ?? {};
   return GRID_ROLES.map((role) => {
-    const seat = seats[role.toLowerCase()] ?? {};
+    const seat = seats[role] ?? {};
     const paneOverrides = { ...seat.pane };
     if (seat.unreachable) {
       paneOverrides.available = false;
@@ -94,7 +95,7 @@ function buildPanesFromCtx(ctx) {
     }
     return {
       id: rolePaneId(role),
-      label: ROLE_LABELS[role.toLowerCase()] ?? role,
+      label: ROLE_LABELS[role] ?? role,
       pane: defaultPane(role, paneOverrides),
     };
   });
@@ -155,10 +156,10 @@ async function renderGrid(ctx, { expandRole } = {}) {
       const paneId = rolePaneId(role);
       const col = dom.window.document.querySelector(`.pane-col[data-pane-id="${paneId}"]`);
       if (!col) {
-        tiles[role.toLowerCase()] = { missing: true };
+        tiles[role] = { missing: true };
         continue;
       }
-      tiles[role.toLowerCase()] = {
+      tiles[role] = {
         roleNameText: col.querySelector('.pane-kind')?.textContent ?? null,
         ticketIdText: col.querySelector('.pane-grid-ticket-id')?.textContent ?? null,
         slugText: col.querySelector('.pane-grid-slug')?.textContent ?? null,
@@ -176,8 +177,17 @@ async function renderGrid(ctx, { expandRole } = {}) {
   }
 }
 
+function requireCanonicalRole(role) {
+  if (!GRID_ROLES.includes(role)) {
+    throw new Error(
+      `unknown role "${role}" — expected exact id from ${GRID_ROLES.join(', ')}`
+    );
+  }
+  return role;
+}
+
 function roleKey(role) {
-  return role.toLowerCase();
+  return requireCanonicalRole(role);
 }
 
 function patchSeat(ctx, role, patch) {
@@ -227,6 +237,7 @@ function registerSteps(registry) {
     if (!lastRole) {
       throw new Error('no seat configured before claim age step');
     }
+    requireCanonicalRole(lastRole);
     ctx.seats[lastRole].claimMinutesAgo = Number(minutes);
   });
 
