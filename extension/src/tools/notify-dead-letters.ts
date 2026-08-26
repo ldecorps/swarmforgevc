@@ -58,6 +58,20 @@ async function sendAnnouncement(token: string, chatId: string, text: string, top
   return sendTelegramMessage(token, chatId, text, undefined, undefined, topicId);
 }
 
+/** BL-656: one compact line to the standing Operator topic (BL-346). */
+export async function sendOperatorTopicMessage(projectRoot: string, text: string): Promise<SendMessageResult> {
+  const topicId = topicForSubject(readTopicMap(projectRoot), OPERATOR_SUBJECT_ID);
+  if (topicId === undefined) {
+    return { success: false, error: 'operator-topic-not-yet-created' };
+  }
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) {
+    return { success: false, error: 'missing-telegram-config' };
+  }
+  return sendAnnouncement(token, chatId, text, topicId);
+}
+
 export async function main(): Promise<void> {
   const { mainWorktreePath, projectRoot } = resolveCliMainWorktreeContext();
   const rolesList = resolveLiveRoles(mainWorktreePath).map((r) => r.role);
