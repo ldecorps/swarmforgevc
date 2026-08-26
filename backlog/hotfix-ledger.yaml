@@ -174,3 +174,10 @@
   stamp_ticket: BL-1150
   human_decision: null
   decided_at: null
+- commit: 7380d80686
+  subject: "Allow concurrent hotfix stamp Yes/No asks on Approvals via Telegram."
+  detected_at: 2026-08-26
+  state: pending
+  stamp_ticket: BL-1152
+  human_decision: null
+  decided_at: null
