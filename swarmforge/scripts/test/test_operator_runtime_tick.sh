@@ -74,14 +74,14 @@ rm -rf "$F"
 
 # ── mini app watchdog: a down /lets-talk endpoint triggers a bounded auto-bounce ──
 F="$(make_fixture)"
-cat > "$F/swarmforge/scripts/recover_miniapp_bridge.sh" <<'EOF'
+cat > "$F/swarmforge/scripts/bounce_bridge_headless.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="${1:?root required}"
 mkdir -p "$ROOT/.swarmforge/operator"
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$ROOT/.swarmforge/operator/miniapp-bounced.marker"
 EOF
-chmod +x "$F/swarmforge/scripts/recover_miniapp_bridge.sh"
+chmod +x "$F/swarmforge/scripts/bounce_bridge_headless.sh"
 OPERATOR_SKIP_LAUNCH=1 OPERATOR_MINIAPP_WATCHDOG_ENABLED=1 OPERATOR_MINIAPP_FAILURE_THRESHOLD=1 OPERATOR_MINIAPP_BOUNCE_COOLDOWN_MS=0 \
   BRIDGE_HEADLESS_PORT=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$F/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F/.no-fixture-reap" \
   SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" bb "$F/swarmforge/scripts/operator_runtime.bb" "$F" --tick-once >/dev/null

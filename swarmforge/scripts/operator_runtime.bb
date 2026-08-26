@@ -223,7 +223,6 @@
 (def telegram-console-status-file (fs/path op-dir "telegram-console.status.json"))
 (def miniapp-watchdog-state-file (fs/path op-dir "miniapp-watchdog.json"))
 (def bounce-bridge-headless-script (fs/path script-dir "bounce_bridge_headless.sh"))
-(def recover-miniapp-bridge-script (fs/path script-dir "recover_miniapp_bridge.sh"))
 ;; BL-763: Cursor Remote supervisor liveness + heartbeat-freshness watchdog.
 ;; cursor_bridge_supervisor.bb already restarts its OWN child (the bridge
 ;; process) on a stale heartbeat internally - this sweep is a defense-in-
@@ -936,7 +935,7 @@
 
 (defn miniapp-bounce-bridge! []
   (process/sh {:continue true}
-              "bash" (str recover-miniapp-bridge-script) project-root (str miniapp-watchdog-port)))
+              "bash" (str bounce-bridge-headless-script) project-root (str miniapp-watchdog-port)))
 
 (defn miniapp-watchdog-sweep! [now]
   (when miniapp-watchdog-enabled?
