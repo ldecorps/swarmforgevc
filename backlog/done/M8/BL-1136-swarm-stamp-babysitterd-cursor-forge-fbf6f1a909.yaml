@@ -94,3 +94,5 @@ bounce_count: 1
 bounce_history:
   - { at: 2026-08-25, by: QA, blamed: cleaner, class: behavior, commit: c6f8d131ab, evidence: backlog/evidence/BL-1136-qa-bounce-20260825.md }
 
+
+assigned_to: coder
