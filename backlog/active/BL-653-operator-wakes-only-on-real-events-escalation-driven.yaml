@@ -213,6 +213,6 @@ bounce_history:
   - { at: 2026-08-26, by: specifier, blamed: coder, class: spec-gap, commit: d9682a329, evidence: backlog/evidence/BL-653-bounce-20260826.md }
   - [2026-08-26T13:58Z] coordinator: drop alert — no parcel in flight at coder;
     acceptance feature absent from main HEAD; nudged specifier to re-spec.
+  - [2026-08-26T15:47Z] coordinator: drop alert — re-routed to coder (feature on main).
 abandoned_commits:
   - 1296f07b05
-

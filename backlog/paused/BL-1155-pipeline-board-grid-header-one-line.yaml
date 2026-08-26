@@ -13,7 +13,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1155-pipeline-board-grid-header-one-line.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Human locked (INTAKE-pipeline-board-grid-header-one-line.md): on phone
   Telegram, the Pipeline Board stage header must be exactly one line with
