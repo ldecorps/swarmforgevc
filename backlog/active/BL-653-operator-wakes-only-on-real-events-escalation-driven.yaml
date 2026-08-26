@@ -208,6 +208,8 @@ notes: |
   ports both scripts into `swarmforge/scripts/` with tests, lifecycle wiring and a
   runbook. Nothing further needed; recorded here so the flag is visibly closed
   rather than dropped.
+  - [2026-08-26T13:58Z] coordinator: drop alert — no parcel in flight at coder;
+    acceptance feature absent from main HEAD; nudged specifier to re-spec.
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-26, by: specifier, blamed: coder, class: spec-gap, commit: d9682a329, evidence: backlog/evidence/BL-653-bounce-20260826.md }
