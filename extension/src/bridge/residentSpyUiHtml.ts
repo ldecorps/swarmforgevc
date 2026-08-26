@@ -783,6 +783,7 @@ export function getResidentSpyUiHtml(): string {
 
   function applyDotState(dotEl, kind) {
     if (!dotEl) return;
+    dotEl.removeAttribute('hidden');
     dotEl.hidden = false;
     dotEl.className = dotClassName(kind, dotEl.hasAttribute('data-status-indicator'));
   }
@@ -790,6 +791,7 @@ export function getResidentSpyUiHtml(): string {
   function hideDot(dotEl) {
     if (!dotEl) return;
     dotEl.hidden = true;
+    dotEl.setAttribute('hidden', '');
     dotEl.className = dotEl.hasAttribute('data-status-indicator') ? 'dot pane-status-dot' : 'dot';
   }
 
@@ -993,6 +995,9 @@ export function getResidentSpyUiHtml(): string {
   function renderPane(pane, headEl, paneEl, label, paneId) {
     // BL-1046: grid tile reads the same payload fields as fullscreen Expand.
     headEl.innerHTML = buildGridTileHeadHtml(pane, label);
+    if (lastAggregateStatus) {
+      updatePaneStatusDot(headEl, pane, lastAggregateStatus);
+    }
     if (pane && pane.claimEnteredAtMs) {
       claimEnteredByPaneId[paneId] = pane.claimEnteredAtMs;
     } else {
