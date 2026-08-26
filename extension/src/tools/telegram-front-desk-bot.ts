@@ -52,7 +52,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFile, execFileSync } from 'child_process';
+import { execFile, execFileSync, spawnSync } from 'child_process';
 import { readHeldSinceMsFor } from '../concierge/heldSince';
 import { promisify } from 'util';
 import {
@@ -640,6 +640,49 @@ async function postToBridge(bridgeUrl: string, controlToken: string, subjectId: 
   } catch {
     return false;
   }
+}
+
+// Operator-posted concurrent hotfix stamp asks (threadId hotfix-<10hex>).
+// Yes → ledger approved/certified; No → waived. Never goes to the bridge.
+function applyHotfixStampAnswer(targetPath: string, threadId: string, answerLabel: string): boolean {
+  if (!threadId.startsWith('hotfix-')) {
+    return false;
+  }
+  const commit = threadId.slice('hotfix-'.length);
+  if (!/^[0-9a-f]{7,40}$/i.test(commit)) {
+    return false;
+  }
+  const lower = answerLabel.toLowerCase();
+  let decision: 'approved' | 'waived' | undefined;
+  if (lower.includes('waive') || lower === 'no' || lower.startsWith('no ') || lower.startsWith('n —') || lower.startsWith('n -')) {
+    decision = 'waived';
+  } else if (lower.includes('certify') || lower.includes('approve') || lower === 'yes' || lower.startsWith('yes ') || lower.startsWith('y —') || lower.startsWith('y -')) {
+    decision = 'approved';
+  }
+  if (!decision) {
+    return false;
+  }
+  try {
+    const cli = path.join(targetPath, 'swarmforge', 'scripts', 'hotfix_ledger_update.bb');
+    const result = spawnSync('bb', [cli, targetPath, '--decide', commit, decision], { encoding: 'utf8' });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function postToBridgeOrHotfixStamp(
+  targetPath: string,
+  bridgeUrl: string,
+  controlToken: string,
+  subjectId: string,
+  text: string,
+  updateId: number
+): Promise<boolean> {
+  if (subjectId.startsWith('hotfix-')) {
+    return applyHotfixStampAnswer(targetPath, subjectId, text);
+  }
+  return postToBridge(bridgeUrl, controlToken, subjectId, text, updateId);
 }
 
 // BL-294: allocates a fresh SUP-### via the support store CLI (the
@@ -1339,6 +1382,18 @@ export function resolveAskOptions(targetPath: string, threadId: string): AskOpti
   const role = roleFromAskThreadId(threadId);
   if (role !== undefined) {
     return readRoleAwaitingAnswer(targetPath, role)?.options;
+  }
+  // Concurrent hotfix stamp-off asks (operator-posted y/n per ledger commit).
+  // Ordinary agent asks still use the single awaiting-answer.json slot below.
+  if (threadId.startsWith('hotfix-')) {
+    try {
+      const stampAsks = JSON.parse(
+        fs.readFileSync(path.join(targetPath, '.swarmforge', 'operator', 'hotfix-stamp-asks.json'), 'utf8')
+      ) as Record<string, { options?: AskOption[] }>;
+      return stampAsks[threadId]?.options;
+    } catch {
+      return undefined;
+    }
   }
   const awaiting = readAwaitingAnswer(targetPath);
   return awaiting?.threadId === threadId ? awaiting.options : undefined;
@@ -2206,7 +2261,8 @@ function buildPollAdapters(
       inFlightPoll = new AbortController();
       return getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS, undefined, inFlightPoll.signal);
     },
-    postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
+    postToBridge: (subjectId, text, updateId) =>
+      postToBridgeOrHotfixStamp(targetPath, bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
     cursorBridgeTopicId: () =>
       Promise.resolve(cursorBridgeRoutingEnabled ? readCursorBridgeTopicId(targetPath) : undefined),
