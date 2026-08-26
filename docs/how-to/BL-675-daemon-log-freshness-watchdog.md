@@ -236,6 +236,11 @@ daemons. The pipeline-only stop (`kill_pipeline_swarm.sh` alone, including
 handoffd's own endless-loop circuit breaker) marks only handoffd —
 babysitterd, which that path deliberately leaves running, stays watched.
 
+Since BL-1162, a successful `./stop-swarm.sh` also removes every other
+root-scoped swarmforge cron line (schedule start/stop/bedtime), not only
+freshness — see
+[BL-1162 symmetric cron lifecycle](BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md).
+
 **Re-arming.** Starting a daemon clears its own marker before anything else,
 so a deliberate stop never outlives the next start — the crontab line and
 the watched state stay in sync.

@@ -42,9 +42,10 @@ That helper installs, in order:
 1. **Freshness** — `install_freshness_cron.sh` (BL-675/783), unless
    `SWARMFORGE_SKIP_FRESHNESS_CRON=1`.
 2. **Shift schedule** — `install_shift_schedule_cron.sh`, which reconciles via
-   `reconcile_shift_schedule_crontab.bb` (BL-660 `swarm_shift` conf when
-   present; legacy `continuous-shifts.json` otherwise), unless
-   `SWARMFORGE_SKIP_SCHEDULE_CRON=1`.
+   `reconcile_shift_schedule_crontab.bb` from legacy
+   `continuous-shifts.json` / operator schedule scripts only — **BL-660
+   `swarm_shift` conf rendering is out of scope until that ticket lands**,
+   unless `SWARMFORGE_SKIP_SCHEDULE_CRON=1`.
 
 When no shift is configured, schedule install is a no-op (24/7 semantics
 unchanged). Logs name what was installed or skipped.
@@ -85,15 +86,16 @@ crontab -l | grep -F '/path/to/project-root' || echo 'no lines for this root'
 
 After `./stop-swarm.sh`: expect **no** matching lines.
 
-After `./start-swarm.sh` with scheduling on: expect freshness plus rendered
-start/stop schedule lines (see
-[BL-660 three shift packs](BL-660-three-shift-packs-conf-selectable.md)).
+After `./start-swarm.sh` with legacy scheduling configured: expect freshness
+plus rendered start/stop schedule lines. When BL-660 lands,
+`reconcile_shift_schedule_crontab.bb` will also render `swarm_shift` conf —
+see [BL-660 three shift packs](BL-660-three-shift-packs-conf-selectable.md).
 
 ## Related docs
 
 - [Daemon log freshness watchdog](BL-675-daemon-log-freshness-watchdog.md) —
   freshness marker semantics (BL-785 deliberate-stop path).
 - [Three named shift packs](BL-660-three-shift-packs-conf-selectable.md) —
-  what `reconcile_shift_schedule_crontab.bb` renders.
+  future `swarm_shift` rendering (coordinates with BL-1162 when BL-660 lands).
 - [Bedtime vs lights-out](BL-762-finish-shift-bedtime-vs-lights-out.md) —
   `./finish-shift` vs `./stop-swarm.sh` scope (bedtime does not uninstall crons).

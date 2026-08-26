@@ -114,6 +114,37 @@ source: |
   (human via Cursor, 2026-08-26)
 
 assigned_to: coder
-bounce_count: 1
+abandoned_commits:
+  - e3d316fb4
+  - 764552bcef
+  - ce1836f57
+  - e793ca6f5
+  - 9b0713def
+  - c29411e42
+  - c3c6fa402f
+  - 3ea44d0ec8
+  - 915c6428d
+  - 6e53948aa
+  - 14cebfb64e
+  - 3cbf2d6cb0
+  - 4cea4b083c
+  - 845fee6278
+  - e2a0da8042
+  - 8d84c28839
+  - d40e2ca4af
+  - 916dec8604
+  - 0b30d2a8d6
+  - 79730bcb6e
+  - ef0c2d572a
+  - 2ecf8bda4c
+  - abd715078c
+  - 1c47af8664
+  - 1b685067e2
+  - 3f6b48c782
+  - e4f0bf433c
+bounce_count: 4
 bounce_history:
   - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: e3d316fb4, evidence: backlog/evidence/BL-1162-qa-bounce-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: ce1836f57, evidence: backlog/evidence/BL-1162-qa-bounce-rematch-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: hardender, class: behavior, commit: 3ea44d0ec, evidence: backlog/evidence/BL-1162-qa-bounce-rematch2-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: documenter, class: behavior, commit: 3cbf2d6cb0, evidence: backlog/evidence/BL-1162-qa-bounce-rematch3-20260826.md }
