@@ -2245,7 +2245,7 @@
                      (conj {:type "HUMAN_COMMAND"
                             :detail (str/trim (slurp (str command-file)))})
                      (coordinator-inbox-has-fresh?)
-                     (conj {:type "TASK_ARRIVED"})]
+                     (conj {:type "TASK_ARRIVED"}))]
       (when (operator-lib/timer-due? (last-swarm-check-ms) now swarm-check-ms)
         (record-swarm-check! now))
       (enqueue-observed! observed))
