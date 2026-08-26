@@ -67,3 +67,5 @@ notes:
 source: |
   backlog/INTAKE-front-desk-bridge-giveup-email-spam.md; cites BL-582,
   BL-1088, BL-1151.
+
+assigned_to: coder
