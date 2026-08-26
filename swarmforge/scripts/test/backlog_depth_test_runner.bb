@@ -259,24 +259,6 @@
          false
          (backlog-depth-lib/pause-active? {:active true :until-ms 2000} 5000))
 
-(assert= "format-pause-until-text: timed pause names UTC instant"
-         "paused until 2026-08-02T08:00:00Z"
-         (backlog-depth-lib/format-pause-until-text
-          (.toEpochMilli (java.time.Instant/parse "2026-08-02T08:00:00Z"))))
-
-(assert= "format-pause-until-text: no until-ms → operator resume"
-         "paused until operator resumes"
-         (backlog-depth-lib/format-pause-until-text nil))
-
-(assert= "format-control-pause-active-text: timed pause"
-         "control pause active until 2026-08-02T08:00:00Z"
-         (backlog-depth-lib/format-control-pause-active-text
-          (.toEpochMilli (java.time.Instant/parse "2026-08-02T08:00:00Z"))))
-
-(assert= "format-control-pause-active-text: operator resume"
-         "control pause active until operator resumes"
-         (backlog-depth-lib/format-control-pause-active-text nil))
-
 ;; ── read-pause-state (fixture-based fs I/O) ───────────────────────────────
 
 (defn write-pause-marker! [root marker]

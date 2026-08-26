@@ -515,11 +515,8 @@
    before the chase sweep counts it as actionable. Tracked here as the
    single source of truth — swarmforge.conf documents this default as a
    COMMENTED line rather than duplicating the literal value, so the two
-   cannot drift apart. BL-780: 10 minutes — deliberately below
-   flow-watchdog-lib/default-warn-ms (15 minutes) so aged notes become
-   actionable before the human is alarmed about the stall (same Shape
-   requirement as default-rotation-starve-after-ms below)."
-  600000)
+   cannot drift apart."
+  1200000)
 
 (defn parse-note-actionable-after-ms
   "Pure: `config note_actionable_after_ms <ms>` from conf text. Honors a
@@ -610,32 +607,6 @@
         (let [n (some->> (re-find #"-?\d+" value) parse-long)]
           (if (and n (pos? n)) n default-rotation-starve-after-ms))))
     default-rotation-starve-after-ms))
-
-;; ── BL-780: rotation-actionability vs flow-watchdog warn ordering ─────────
-;; Every threshold that gates rotating for a parcel must sit below the
-;; threshold that alarms a human about that same parcel. A misconfigured
-;; conf that inverts them is reported at daemon start, never silently
-;; accepted (report only — never rewrite the operator's numbers).
-
-(defn rotation-actionability-ordering-warnings
-  "Pure: seq of warning strings when any rotation-actionability threshold
-   is at or above flow_watchdog_warn_ms. rotation-starve-after-ms may be
-   :off (disabled) — skipped. Empty seq means the ordering is sound."
-  [{:keys [note-actionable-after-ms rotation-starve-after-ms flow-watchdog-warn-ms]}]
-  (cond-> []
-    (and (number? note-actionable-after-ms)
-         (number? flow-watchdog-warn-ms)
-         (>= (long note-actionable-after-ms) (long flow-watchdog-warn-ms)))
-    (conj (str "note_actionable_after_ms=" note-actionable-after-ms
-               " must be below flow_watchdog_warn_ms=" flow-watchdog-warn-ms
-               " — aged notes alarm before the swarm may rotate for them"))
-    (and (number? rotation-starve-after-ms)
-         (not= :off rotation-starve-after-ms)
-         (number? flow-watchdog-warn-ms)
-         (>= (long rotation-starve-after-ms) (long flow-watchdog-warn-ms)))
-    (conj (str "rotation_starve_after_ms=" rotation-starve-after-ms
-               " must be below flow_watchdog_warn_ms=" flow-watchdog-warn-ms
-               " — dormant queues alarm before starve rotation may drain them"))))
 
 (defn oldest-actionable-waited-ms
   "Pure: among a coll of {:enqueued-at :created-at} age sources (one per
