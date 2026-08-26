@@ -13,7 +13,7 @@ invariants:
   - "QA lands only by merging a verified whole tree onto main — cherry-pick, rebase-to-land, and partial-subset operations are always refused."
 direction: human-requested
 depends_on: [BL-532]
-assigned_to: specifier
+assigned_to: coder
 
 required_wiring:
   - 'extension/src/quality/batchRecovery.ts::planCleanSiblingReforward::clean sibling re-forward uses original commit unchanged'
