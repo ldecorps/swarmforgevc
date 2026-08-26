@@ -32,12 +32,12 @@ import {
   extractHandoffdRootsFromPs,
   isLifecycleTeardownTicket,
 } from './multiworktreeAcceptanceFixture';
-import { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, RunCommit } from './commitClaimGitReader';
+import { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, checkShellEntryPointDrive, RunCommit } from './commitClaimGitReader';
 import { findBacklogFilePath, markDone, BacklogMoveResult } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
-export { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, RunCommit };
+export { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, checkShellEntryPointDrive, RunCommit };
 
 // Exported (like this codebase's other tools/ CLIs) so it runs in-process
 // under coverage instead of only via the compiled CLI's subprocess.
@@ -190,6 +190,7 @@ export function buildDeps(repoRoot: string): PilotAcceptanceGateDeps {
     readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => checkCommitClaims(repoRoot),
     checkCrossFileDuplication: () => checkCrossFileDuplication(repoRoot),
+    checkShellEntryPointDrive: (ticketId) => checkShellEntryPointDrive(repoRoot, ticketId),
     moveTicketToDone: (ticketId) => moveTicketToDone(repoRoot, ticketId),
     writeReceipt: (ticketId, receipt) => writeReceipt(repoRoot, ticketId, receipt),
     getLandedCommit: () => getLandedCommit(repoRoot),
