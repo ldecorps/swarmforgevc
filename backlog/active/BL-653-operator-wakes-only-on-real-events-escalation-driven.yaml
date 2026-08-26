@@ -9,7 +9,7 @@ severity: medium
 priority: 94
 direction: human-requested
 depends_on: [BL-611]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-653-operator-wakes-only-on-real-events-escalation-driven.feature
