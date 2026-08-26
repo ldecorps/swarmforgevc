@@ -109,7 +109,9 @@ that actually certifies or waives an entry, and it is **only ever written by
 hand or via the helper CLI below** — never by the recurrent check.
 
 Once the stamp ticket has passed QA and the human has answered the Approvals
-prompt (or otherwise told you directly: certify, or waive review):
+prompt (or otherwise told you directly: certify, or waive review). Since
+BL-1152, multiple hotfix stamp asks can be open concurrently on Approvals —
+see [BL-1152 concurrent hotfix stamp asks](BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.md).
 
 ```sh
 # Link a freshly-minted stamp ticket to its ledger entry (do this once the
