@@ -198,40 +198,9 @@ export function getResidentSpyUiHtml(): string {
     word-break: normal;
     overflow-wrap: normal;
   }
-  /* Grid tiles: role name + held ticket strip + Expand; transcript in fullscreen. */
+  /* Grid tiles: role name + Expand only; transcript lives in fullscreen. */
   .split .pane-col > pre {
     display: none;
-  }
-  .pane-grid-ticket {
-    margin-top: 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    line-height: 1.25;
-  }
-  .pane-grid-ticket-id {
-    font-size: clamp(9px, 3.2vw, 11px);
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    color: var(--tg-theme-text-color, #e6edf3);
-  }
-  .pane-grid-slug {
-    font-size: clamp(8px, 2.8vw, 10px);
-    font-weight: 500;
-    color: color-mix(in srgb, var(--tg-theme-text-color, #e6edf3) 82%, var(--tg-theme-hint-color, #8b949e));
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-  .pane-grid-age,
-  .pane-grid-more {
-    font-size: clamp(8px, 2.8vw, 10px);
-    font-weight: 600;
-    color: var(--tg-theme-hint-color, #8b949e);
-  }
-  .pane-grid-more {
-    color: color-mix(in srgb, var(--tg-theme-link-color, #58a6ff) 88%, #fff);
   }
   .pane-title {
     font-size: 12px;
@@ -387,7 +356,7 @@ export function getResidentSpyUiHtml(): string {
   var fsFontDecEl = document.getElementById('fs-font-dec');
   var fsFontIncEl = document.getElementById('fs-font-inc');
   var fsFontCtrlEl = document.getElementById('fs-font-ctrl');
-  // BL-609: in-memory only — Architecture Rule 3 forbids browser storage here.
+  // BL-1153: host-persisted via GET/PUT /web-ui-font-size (Rule 3 — no browser storage).
   var paneFontSizePx = ${PANE_FONT_DEFAULT_PX};
   var PANE_FONT_MIN = ${PANE_FONT_MIN_PX};
   var PANE_FONT_MAX = ${PANE_FONT_MAX_PX};
@@ -418,7 +387,27 @@ export function getResidentSpyUiHtml(): string {
     return clampPaneFontSizePx(clampPaneFontSizePx(current) + direction * PANE_FONT_STEP);
   }
 
-  function applyPaneFontSize() {
+  function fontControlAuthHeaders() {
+    if (!token) {
+      return { 'content-type': 'application/json' };
+    }
+    return {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + token,
+      'x-control-token': token,
+    };
+  }
+
+  function persistPaneFontSize() {
+    if (!token) return;
+    fetch('/web-ui-font-size?bearer=' + encodeURIComponent(token), {
+      method: 'PUT',
+      headers: fontControlAuthHeaders(),
+      body: JSON.stringify({ surface: 'live-screen', fontSizePx: paneFontSizePx }),
+    }).catch(function () {});
+  }
+
+  function applyPaneFontSize(persist) {
     paneFontSizePx = clampPaneFontSizePx(paneFontSizePx);
     document.documentElement.style.setProperty('--pane-font-size', paneFontSizePx + 'px');
     var atMin = paneFontSizePx <= PANE_FONT_MIN;
@@ -427,6 +416,27 @@ export function getResidentSpyUiHtml(): string {
     fsFontIncEl.disabled = atMax;
     fsFontDecEl.classList.toggle('is-unavailable', atMin);
     fsFontIncEl.classList.toggle('is-unavailable', atMax);
+    if (persist) {
+      persistPaneFontSize();
+    }
+  }
+
+  function loadPaneFontSize() {
+    if (!token) {
+      applyPaneFontSize(false);
+      return;
+    }
+    fetch('/web-ui-font-size?surface=live-screen&bearer=' + encodeURIComponent(token), {
+      cache: 'no-store',
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && data.success && typeof data.fontSizePx === 'number') {
+          paneFontSizePx = data.fontSizePx;
+        }
+        applyPaneFontSize(false);
+      })
+      .catch(function () { applyPaneFontSize(false); });
   }
 
   function inTelegram() {
@@ -657,7 +667,7 @@ export function getResidentSpyUiHtml(): string {
     var entry = paneEntryById(focusPane);
     if (!entry) return;
     var pane = entry.pane;
-    var showClaim = true;
+    var showClaim = entry.id === 'resident' || entry.id === 'coder';
     fsHeadEl.innerHTML = buildFullscreenHeadHtml(pane, entry.label, entry.id, showClaim);
     if (pane && pane.claimEnteredAtMs) {
       fsClaimEnteredAtMs = pane.claimEnteredAtMs;
@@ -715,12 +725,12 @@ export function getResidentSpyUiHtml(): string {
     var target = e.target;
     if (target === fsFontIncEl) {
       paneFontSizePx = stepPaneFontSizePx(paneFontSizePx, 1);
-      applyPaneFontSize();
+      applyPaneFontSize(true);
       return;
     }
     if (target === fsFontDecEl) {
       paneFontSizePx = stepPaneFontSizePx(paneFontSizePx, -1);
-      applyPaneFontSize();
+      applyPaneFontSize(true);
     }
   });
 
@@ -743,16 +753,6 @@ export function getResidentSpyUiHtml(): string {
     var elapsedHr = Math.floor(elapsedMin / 60);
     if (elapsedHr < 48) return 'entered ' + elapsedHr + 'h ago';
     return 'entered ' + Math.floor(elapsedHr / 24) + 'd ago';
-  }
-
-  function formatClaimAgeCompact(claimEnteredAtMs) {
-    var elapsedSec = Math.max(0, Math.floor((Date.now() - claimEnteredAtMs) / 1000));
-    if (elapsedSec < 60) return elapsedSec + 's';
-    var elapsedMin = Math.floor(elapsedSec / 60);
-    if (elapsedMin < 60) return elapsedMin + 'm';
-    var elapsedHr = Math.floor(elapsedMin / 60);
-    if (elapsedHr < 48) return elapsedHr + 'h';
-    return Math.floor(elapsedHr / 24) + 'd';
   }
 
   function escapeHtml(text) {
@@ -853,30 +853,12 @@ export function getResidentSpyUiHtml(): string {
     }
   }
 
-  function buildGridTileHeadHtml(pane, label) {
-    var html = '<div class="pane-head-main"><div class="pane-kind">' + escapeHtml(label) + '</div>';
-    if (pane && pane.available !== false && pane.ticketId) {
-      html += '<div class="pane-grid-ticket">';
-      html += '<span class="pane-grid-ticket-id">' + escapeHtml(pane.ticketId) + '</span>';
-      if (pane.ticketTitle) {
-        html += '<span class="pane-grid-slug">' + escapeHtml(pane.ticketTitle) + '</span>';
-      }
-      if (pane.claimEnteredAtMs) {
-        html += '<span class="pane-grid-age">' + escapeHtml(formatClaimAgeCompact(pane.claimEnteredAtMs)) + '</span>';
-      }
-      if (pane.heldParcelCount && pane.heldParcelCount > 1) {
-        html += '<span class="pane-grid-more">+' + (pane.heldParcelCount - 1) + '</span>';
-      }
-      html += '</div>';
-    }
-    html += '</div><span class="pane-expand-hint">Expand</span>';
-    return html;
-  }
-
-  function renderPane(pane, headEl, paneEl, label, paneId) {
-    // BL-1046: grid tile reads the same payload fields as fullscreen Expand.
-    headEl.innerHTML = buildGridTileHeadHtml(pane, label);
-    if (pane && pane.claimEnteredAtMs) {
+  function renderPane(pane, headEl, paneEl, label, paneId, showClaimEntered) {
+    // Grid: role name + Expand only. Full metadata/transcript stay in fullscreen Expand.
+    headEl.innerHTML =
+      '<div class="pane-head-main"><div class="pane-kind">' + escapeHtml(label) + '</div></div>' +
+      '<span class="pane-expand-hint">Expand</span>';
+    if (showClaimEntered && pane && pane.claimEnteredAtMs) {
       claimEnteredByPaneId[paneId] = pane.claimEnteredAtMs;
     } else {
       delete claimEnteredByPaneId[paneId];
@@ -899,12 +881,14 @@ export function getResidentSpyUiHtml(): string {
     for (var i = 0; i < panes.length; i++) {
       var col = cols[i];
       if (!col) continue;
+      var showClaim = panes[i].id === 'resident' || panes[i].id === 'coder';
       renderPane(
         panes[i].pane,
         col.querySelector('.pane-head'),
         col.querySelector('pre'),
         panes[i].label,
-        panes[i].id
+        panes[i].id,
+        showClaim
       );
     }
     updateTicketStrip(panes);
@@ -942,7 +926,7 @@ export function getResidentSpyUiHtml(): string {
       });
   }
 
-  applyPaneFontSize();
+  loadPaneFontSize();
   refresh();
   // BL-881: paired with RESIDENT_PANE_CACHE_TTL_MS (residentPaneLive.ts) —
   // polling faster than the walk can finish piled overlapping captures onto
