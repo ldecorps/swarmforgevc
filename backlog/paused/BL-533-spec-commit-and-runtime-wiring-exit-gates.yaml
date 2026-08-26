@@ -18,6 +18,8 @@ notes: |
 
   OUTCOME: specifier/coder exit gates — git status clean for claimed paths; runtime
   wiring checklist for multi-slice epics before close.
+  - [2026-08-26T12:55Z] coordinator: open-slot nudge blocked — awaiting human
+    approval (`human_approval` not set to approved; handoffd candidate BL-533).
 
 acceptance: |
   Feature: claimed deliverables are tracked and wired before close

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=aae28431d5701358bbee748431425a6fa54716941223159f1e522bde48aabaf2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T12:56:01.163020628Z","feature_name":"Sticky web UI font-size choice across phone / Mini App / dashboard pages","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1153-sticky-web-font-size-choice.feature","background_hash":"782e62c4100b0fcb6ccfe10d67ab6ffd5bae7d4d749bf4f61630f562db4f972a","implementation_hash":"unknown","scenarios":[{"index":1,"name":"Pipeline Board and Paused pager restore size after reload","scenario_hash":"e3fa1aa94ab3af0f76b47123e83b0caab7855b180b6256a458532fe0cf14b666","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-26T12:56:01.163020628Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Sticky web UI font-size choice across phone / Mini App / dashboard pages
   Several web surfaces expose a text-size control, but persistence is
   inconsistent: the PWA dashboard sticks via a purge-exempt preferences

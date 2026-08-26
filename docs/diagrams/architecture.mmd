@@ -316,6 +316,9 @@
 %% mint refuses retired type: bug (RETIRED-TICKET-TYPE).
 %% BL-1070 (2026-08-24): babysitter pane liveness walks descendant tree;
 %% RC check UNAVAILABLE when liveness gate unmet.
+%% BL-653 (2026-08-26): CRIT babysitter findings enqueue BABYSITTER_ESCALATION
+%% via operator_enqueue_event.bb; operator LLM no longer wakes on dead-agent-events
+%% or payload-free SWARM_CHECK_TIMER patrols.
 %% BL-1070 FF-only rematch: hitchhike-clean tip; recreate not merge.
 %% BL-1112 (2026-08-24): listProcessTree uses ps args=; Stryker sandbox
 %% sibling replace unlinks dangling symlink before recreate.
@@ -324,8 +327,11 @@
 %% (check_property_suite_drift.sh); fail-open + override.
 %% BL-579 (2026-08-24): morning briefing allowlist adds handoff-mechanism
 %% (handoff-flow.mmd) alongside architecture and swarm-flow.
-%% BL-609 (2026-08-24): Resident Spy --pane-font-size +/- control (default 13px,
-%% session memory only; crowded grid relative step; outside #fs-head).
+%% BL-609 (2026-08-24): Resident Spy --pane-font-size +/- control (default 13px;
+%% crowded grid relative step; outside #fs-head).
+%% BL-1153 (2026-08-26): Mini App font-size sticky via bridge GET/PUT
+%% /web-ui-font-size -> .swarmforge/operator/web-ui-font-size-preferences.json
+%% (Live Screen, Pipeline Board, Paused pager; PWA Cache unchanged).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
