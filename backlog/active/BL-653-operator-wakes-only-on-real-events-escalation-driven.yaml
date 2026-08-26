@@ -25,9 +25,9 @@ approval_context: >
   structural version that makes the whole class impossible.
 
 required_wiring:
-  - 'swarmforge/scripts/operator_enqueue_event.bb::BABYSITTER_ESCALATION::babysitter CRIT findings enqueue deterministic escalation to operator'
-  - 'swarmforge/scripts/operator_runtime.bb::dead-agent-events::per-tick AGENT_EXITED fabrication must not wake the LLM'
-  - 'swarmforge/scripts/operator_runtime.bb::SWARM_CHECK_TIMER::payload-free timer must not wake LLM when escalation producer is live'
+  - 'swarmforge/scripts/babysitter_check.bb::operator_enqueue_event.bb::CRIT findings enqueue BABYSITTER_ESCALATION to operator events.jsonl'
+  - 'swarmforge/scripts/operator_lib.bb::dead-agent-events::per-tick AGENT_EXITED fabrication excluded from tick-observed-events'
+  - 'swarmforge/scripts/operator_lib.bb::SWARM_CHECK_TIMER::payload-free timer excluded from tick-observed-events when escalation producer is live'
   - 'specs/pipeline/steps/index.js::bl653OperatorEscalationDrivenSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |
@@ -219,3 +219,16 @@ specifier_decisions: |
   launch COUNT not log absence. Invariant 2 gates phased retirement of
   SWARM_CHECK_TIMER LLM patrol. depends_on BL-611 unchanged — emitter ports with
   babysitter productization.
+
+abandoned_commits:
+  - 9be64247ac
+  - c5ef08ab59
+  - a3ea792262
+  - 04d5198d00
+  - b022ead2e6
+  - 9baf1b9e56
+  - 309e11bdef
+  - 5b49c95060
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: 5b49c95060, evidence: backlog/evidence/BL-653-hardener-pass-rematch4-20260826.md }

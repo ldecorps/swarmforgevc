@@ -738,6 +738,7 @@ const DOMAINS = [
   require('./bl1160LiveScreenActivityDotPerTileSteps'),
   require('./bl1152ConcurrentHotfixStampAsksStampOffSteps'),
   require('./bl1162StartStopSwarmCronLifecycleSymmetrySteps'),
+  require('./bl653OperatorEscalationDrivenSteps'),
   require('./bl660ThreeShiftPacksSteps'),
   require('./bl588BatchRecoverySteps'),
   require('./bl1154BuildStaleNotCrashGiveupBudgetSteps'),
