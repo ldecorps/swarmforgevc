@@ -153,5 +153,20 @@ specifier_decisions: |
   signals from inline acceptance map 1:1 to scenarios 01–07. Outage credit,
   shift-change-while-stopped, and DST edges remain in description/invariants
   for implementer — not separate scenarios (INVEST small). Scenario 06 uses
-  Outline for three shift names. BL-1162 legacy path remains until swarm_shift
-  lands; this ticket extends reconcile/applier to own swarm_shift rendering.
+  Outline for three shift names. BL-1162 install/remove wraps the same cron
+  registry; reconcile/applier now renders `swarm_shift` conf.
+
+abandoned_commits:
+  - 04d5198d00
+  - 10a6eab95
+  - a3ea792262
+  - 9be64247ac
+  - f5ca526a1
+  - a135326f8f
+  - 96bff0a7b7
+  - 48496a6947
+  - cbe3674d9c
+  - c4f2f8e0ef
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: c4f2f8e0ef, evidence: backlog/evidence/BL-660-architect-pass-rematch5-20260826.md }
