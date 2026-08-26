@@ -65,7 +65,8 @@ when `RESEND_API_KEY` and the operator inbox are configured — reuse
 ## Related
 
 - [Resident Spy pane font-size control](BL-609-resident-spy-font-size-control.md)
-  — grid and fullscreen share `--pane-font-size`; ticket strip type sizes are
+  — grid and fullscreen share `--pane-font-size`; sticky persistence via
+  [BL-1153](BL-1153-sticky-web-font-size-choice.md); ticket strip type sizes are
   independent clamps.
 - BL-1044 — terminal title bars (sibling surface; not-held form stays there).
 

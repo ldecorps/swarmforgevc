@@ -96,7 +96,8 @@ expects them, and are not migrated or rewritten here.
 - [Morning briefing front-desk mechanism diagram](how-to/BL-580-front-desk-mechanism-briefing-diagram.md) — Telegram in → answer out; allowlist entry `front-desk` (BL-580).
 - [Mean ticket time ends at close, not a later re-file](how-to/BL-1074-post-close-refile-inflates-measured-ticket-duration.md) — duration ignores post-close `done/` moves (BL-1074).
 - [Stale approval-ask email escalation](how-to/BL-584-stale-approval-ask-email-escalation.md) — digest + Telegram deep links when Approvals asks go unanswered (BL-584).
-- [Resident Spy pane font-size control](how-to/BL-609-resident-spy-font-size-control.md) — compact +/- in header; default 13px; no browser storage (BL-609).
+- [Resident Spy pane font-size control](how-to/BL-609-resident-spy-font-size-control.md) — compact +/- in header; default 13px; host-persisted stickiness via BL-1153 (BL-609 UX).
+- [Sticky web UI font-size choice](how-to/BL-1153-sticky-web-font-size-choice.md) — Live Screen, Pipeline Board, and Paused pager restore size after reload via extension-host JSON; PWA Cache unchanged (BL-1153).
 - [Live Screen grid tiles name the ticket a seat holds](how-to/BL-1046-console-tile-names-the-ticket-a-seat-holds.md) — ticket id, slug, compact claim age, batch +N on phone grid; same payload as Expand (BL-1046).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Dev-host bounce under WSL: exactly one window](how-to/BL-578-devhost-bounce-wsl-window-leak.md) — Windows-side kill-old + headless-swarm refuse/`--force` (BL-578).
