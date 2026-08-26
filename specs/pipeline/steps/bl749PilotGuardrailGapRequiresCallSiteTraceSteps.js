@@ -40,6 +40,22 @@ function assertCallSiteBeforeNit(text, label) {
   }
 }
 
+/** Assert the most recently loaded, not-yet-checked role prompt (cleaner then hardener). */
+function assertNextUnreadRolePrompt(ctx) {
+  const checks = [
+    { key: 'cleanerPrompt', flag: '_cleanerChecked', label: 'cleaner.prompt' },
+    { key: 'hardenderPrompt', flag: '_hardenderChecked', label: 'hardender.prompt' },
+  ];
+  for (const { key, flag, label } of checks) {
+    if (ctx[key] && !ctx[flag]) {
+      assertCallSiteBeforeNit(ctx[key], label);
+      ctx[flag] = true;
+      return;
+    }
+  }
+  throw new Error('no unread role prompt loaded for call-site assertion');
+}
+
 function registerSteps(registry) {
   scoped(registry, /^the pilot expeditor prompt composer is available$/, () => {
     if (typeof composePilotExpeditorPrompt !== 'function') {
@@ -59,19 +75,7 @@ function registerSteps(registry) {
     registry,
     /^it requires call-site tracing before downgrading a ticket guardrail gap to a nit$/,
     (ctx) => {
-      if (ctx.hardenderPrompt && !ctx._checkedCleaner) {
-        // After cleaner Then, then hardener When/Then — prefer most recent unread.
-      }
-      if (ctx.cleanerPrompt && !ctx._cleanerChecked) {
-        assertCallSiteBeforeNit(ctx.cleanerPrompt, 'cleaner.prompt');
-        ctx._cleanerChecked = true;
-        return;
-      }
-      if (ctx.hardenderPrompt) {
-        assertCallSiteBeforeNit(ctx.hardenderPrompt, 'hardender.prompt');
-        return;
-      }
-      throw new Error('no role prompt loaded for call-site assertion');
+      assertNextUnreadRolePrompt(ctx);
     }
   );
 
