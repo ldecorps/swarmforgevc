@@ -1,5 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-660: three named shift packs — `config
+swarm_shift day|evening|night` selects exactly one 8h shift; when active it is
+the sole schedule source for start/stop crontab (`apply_shift_schedule.bb`),
+BL-617 cooldown inverse, BL-658 `closure_stop_local`, and briefing timing.
+Absent/blank → 24/7 semantics identical to disabled cooldown window.
+Applier is idempotent and surfaces human crontab edits it did not render.
+Signature-backed provider outages may extend close (cap 2h, never swarm-caused).
+Modules: `swarm_shift_lib.bb`, `shift_schedule_applier_lib.bb`,
+`swarmShiftCore.ts`. Acceptance:
+`specs/features/BL-660-three-shift-packs-conf-selectable.feature`. How-to:
+`docs/how-to/BL-660-three-shift-packs-conf-selectable.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-653: escalation-driven operator — the LLM
 Operator wakes only on inbound human traffic, `BABYSITTER_ESCALATION` from CRIT
 babysitter findings, or `SWARM_CONTROL_LOST`; retires per-tick

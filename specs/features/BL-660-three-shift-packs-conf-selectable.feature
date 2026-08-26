@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=cec6648e1be0797957fea3bce5536cbcc53746b87f5f1b9d587f5b35cbae8682
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-26T13:31:38.058927956Z","feature_name":"Three named shift packs — one active shift drives every schedule-derived clock","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-660-three-shift-packs-conf-selectable.feature","background_hash":"346e218113713fc27a4f191134f8cb65c126b354f1e7b642d82db0c0db38d062","implementation_hash":"unknown","scenarios":[{"index":3,"name":"the evening shift that spans midnight starts and stops on the correct calendar days","scenario_hash":"0c0fc1d9731eb5009ac322278f7e4671d8babe3e2def52c48533b699f9103a6f","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-26T13:31:38.058927956Z"},{"index":5,"name":"any single active shift keeps the stopped gap under Telegram getUpdates retention","scenario_hash":"6874d8487d6665eaa40633f83c8f6be4a1f4d6661d216da0fc0d499b088401f3","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-26T13:30:13.152761584Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Three named shift packs — one active shift drives every schedule-derived clock
 
   # BL-660, operator 2026-07-26: "les 3 huits" — day 09:00-17:00, evening
