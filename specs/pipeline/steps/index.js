@@ -326,6 +326,7 @@ const DOMAINS = [
   require('./bl568MenuBlockedPaneQuestionsAsMappedPollsSteps'),
   require('./bl576AgedNoteActionabilitySteps'),
   require('./bl636RotatePreferenceParcelPrioritySteps'),
+  require('./bl728HandoffdDeliverParenVerificationSteps'),
   require('./bl637LifecycleScriptScopeSteps'),
   require('./bl641PagesDeploySteps'),
   require('./bl532SiblingBounceIsolationSteps'),
@@ -358,6 +359,11 @@ const DOMAINS = [
   require('./bl654InvariantPropertyTestSteps'),
   require('./bl635RecordBounceByRoleSteps'),
   require('./bl647RotationRouterLivenessSteps'),
+<<<<<<< HEAD
+=======
+  require('./bl653OperatorEscalationDrivenSteps'),
+  require('./bl660ThreeShiftPacksSteps'),
+>>>>>>> 3cb71727df
   require('./bl572EpicReorderConsoleSteps'),
   require('./bl648RelaunchResumeOrphanClaimsSteps'),
   require('./bl672EpicMakeTopPrioritySteps'),
