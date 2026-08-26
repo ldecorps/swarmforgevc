@@ -1,5 +1,6 @@
 'use strict';
 
+const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   assessUnreachableStepHandlers,
@@ -144,6 +145,42 @@ test('assessUnreachableStepHandlers no-ops when no step files touched', () => {
     stepFiles: [],
   });
   assert.deepEqual(result, { checked: true, stepFilesScanned: 0, patternsChecked: 0 });
+});
+
+test('assessUnreachableStepHandlers fails open when feature or stepFiles are undefined', () => {
+  assert.deepEqual(
+    assessUnreachableStepHandlers({ feature: undefined, stepFiles: [] }),
+    { checked: false }
+  );
+  assert.deepEqual(
+    assessUnreachableStepHandlers({
+      feature: { name: 'Feat', scenarios: [{ steps: [{ text: 'x' }], examples: [] }] },
+      stepFiles: undefined,
+    }),
+    { checked: false }
+  );
+});
+
+test('assessUnreachableStepHandlers fails open on unparsable pattern literals (no false miss)', () => {
+  const result = assessUnreachableStepHandlers({
+    feature: {
+      name: 'Feat',
+      scenarios: [{ steps: [{ text: 'the land is completed' }], examples: [] }],
+    },
+    ticketId: 'BL-753',
+    stepFiles: [
+      {
+        path: 'specs/pipeline/steps/bl753FixtureSteps.js',
+        text:
+          "const FEATURE = 'Feat';\n" +
+          // Invalid RegExp body — compilePatternLiteral returns undefined → fail open.
+          'scoped(registry, /(?/, () => {});\n',
+      },
+    ],
+  });
+  assert.equal(result.checked, true);
+  assert.equal(result.miss, undefined);
+  assert.equal(result.patternsChecked, 1);
 });
 
 test('landPilotedTicket refuses unreachable-step-handler inertly', async () => {
