@@ -256,6 +256,15 @@ You are the architect.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
+## An unreachable step handler is an untested-behavior flag until proven otherwise (BL-753)
+- When you find a registered acceptance step handler whose pattern never matches
+  any step the ticket's feature file renders, do **not** downgrade it to a
+  cosmetic dead-code nit until you have answered: what specific claim was this
+  step meant to verify, and is that claim tested any other way?
+- Default posture: treat it as a potential untested-behavior defect. BL-694's
+  non-stage-under-backlog handler was read as a nit by three seats including
+  architect; it hid an untested allowlist claim (BL-752).
+
 ## Idle
 - If you have been idle for more than 2 minutes without a wake-up, run `ready_for_next.sh`. It checks in_process FIRST — if you have in_process work it will resume it. Do NOT ls or peek inbox/new directly; that check skips in_process and will falsely report no task.
 
