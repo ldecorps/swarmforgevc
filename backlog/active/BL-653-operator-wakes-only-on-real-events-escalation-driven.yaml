@@ -219,3 +219,16 @@ specifier_decisions: |
   launch COUNT not log absence. Invariant 2 gates phased retirement of
   SWARM_CHECK_TIMER LLM patrol. depends_on BL-611 unchanged — emitter ports with
   babysitter productization.
+
+abandoned_commits:
+  - 9be64247ac
+  - c5ef08ab59
+  - a3ea792262
+  - 04d5198d00
+  - b022ead2e6
+  - 9baf1b9e56
+  - 309e11bdef
+  - 5b49c95060
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: 5b49c95060, evidence: backlog/evidence/BL-653-hardener-pass-rematch4-20260826.md }
