@@ -8,6 +8,7 @@
 // reply" writer, never a blind seed (that stays backfill's job).
 import * as fs from 'fs';
 import type { ApprovalDecisionVerdict } from './approvalAskClosing';
+import { parseBacklogYaml } from '../panel/backlogReader';
 import { forEachLiveTicketFile } from '../util/liveTicketFiles';
 
 // A simple, deliberate keyword match - not NLP. Mirrors
@@ -131,6 +132,34 @@ export function approveHumanApprovalText(rawText: string): { text: string; chang
   return { text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, 'human_approval: approved'), changed: true };
 }
 
+const HUMAN_RULING_BLOCK_PATTERN = /^human_ruling:\s*(?:[|>][+-]?\s*\n(?:[ \t]+.*\n?)*)?/m;
+
+function formatHumanRulingBlock(label: string): string {
+  const sanitized = sanitizeForYamlComment(label);
+  if (!sanitized) {
+    return '';
+  }
+  return `human_ruling: |\n  ${sanitized}\n`;
+}
+
+// BL-589: approve AND record which discrete option was chosen.
+export function rulingHumanApprovalText(rawText: string, rulingLabel: string): { text: string; changed: boolean } {
+  if (!HUMAN_APPROVAL_PENDING_PATTERN.test(rawText)) {
+    return { text: rawText, changed: false };
+  }
+  let text = rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, 'human_approval: approved');
+  const rulingBlock = formatHumanRulingBlock(rulingLabel);
+  if (!rulingBlock) {
+    return { text, changed: true };
+  }
+  if (HUMAN_RULING_BLOCK_PATTERN.test(text)) {
+    text = text.replace(HUMAN_RULING_BLOCK_PATTERN, rulingBlock.trimEnd());
+  } else {
+    text = text.replace(/^human_approval:\s*approved\s*$/m, `human_approval: approved\n${rulingBlock.trimEnd()}`);
+  }
+  return { text, changed: true };
+}
+
 // BL-409 bounce (QA, 2026-07-15): `reason` is raw human Telegram text - an
 // ordinary reply typed across more than one line (a human pressing Enter
 // mid-thought) embeds real `\r`/`\n` bytes. Splicing that verbatim into a
@@ -249,9 +278,50 @@ export function readApprovalCloseVerdict(targetPath: string, backlogId: string):
     return { kind: 'rejected', reason: (rejected[1] ?? '').trim() || 'rejected' };
   }
   if (HUMAN_APPROVAL_APPROVED_PATTERN.test(rawText)) {
+    const ruling = readHumanRulingFromText(rawText);
+    if (ruling) {
+      return { kind: 'ruled', label: ruling };
+    }
     return { kind: 'approved' };
   }
   return undefined;
+}
+
+const HUMAN_RULING_INLINE_PATTERN = /^human_ruling:\s*(.+)$/m;
+const HUMAN_RULING_BLOCK_BODY_PATTERN = /^human_ruling:\s*[|>][+-]?\s*\n((?:[ \t]*\n|[ \t]+.*\n?)*)$/m;
+
+function readHumanRulingFromText(rawText: string): string | undefined {
+  const blockMatch = rawText.match(HUMAN_RULING_BLOCK_BODY_PATTERN);
+  if (blockMatch) {
+    const lines = blockMatch[1]
+      .split('\n')
+      .map((line) => line.replace(/^\s+/, '').trim())
+      .filter((line) => line.length > 0);
+    const joined = lines.join(' ').trim();
+    return joined.length > 0 ? joined : undefined;
+  }
+  const inlineMatch = rawText.match(HUMAN_RULING_INLINE_PATTERN);
+  if (!inlineMatch) {
+    return undefined;
+  }
+  const inline = inlineMatch[1].trim();
+  return inline.length > 0 ? inline : undefined;
+}
+
+export function readRecordedRuling(targetPath: string, backlogId: string): string | undefined {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return undefined;
+  }
+  return readHumanRulingFromText(fs.readFileSync(filePath, 'utf8'));
+}
+
+export function readRulingOptions(targetPath: string, backlogId: string): string[] | undefined {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return undefined;
+  }
+  return parseBacklogYaml(fs.readFileSync(filePath, 'utf8'))?.rulingOptions;
 }
 
 // BL-582: WHY a record changed nothing. recordApprovalReply below returns a
@@ -310,6 +380,19 @@ export function recordApprovalReply(targetPath: string, backlogId: string): bool
   }
   const rawText = fs.readFileSync(filePath, 'utf8');
   const { text, changed } = approveHumanApprovalText(rawText);
+  if (changed) {
+    fs.writeFileSync(filePath, text);
+  }
+  return changed;
+}
+
+export function recordRulingReply(targetPath: string, backlogId: string, rulingLabel: string): boolean {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return false;
+  }
+  const rawText = fs.readFileSync(filePath, 'utf8');
+  const { text, changed } = rulingHumanApprovalText(rawText, rulingLabel);
   if (changed) {
     fs.writeFileSync(filePath, text);
   }
