@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-737: `/pilot` acceptance gate refuses
+land when identical normalized ≥12-line blocks appear in more than two files
+touched by the run's own non-merge commits — `reasonKind: cross-file-duplication`;
+two-file duplication does not refuse; receipt records
+`crossFileDuplicationFilesScanned`. Acceptance:
+`specs/features/BL-737-pilot-cross-file-duplication-gate.feature`.
+How-to: `docs/how-to/BL-727-pilot-acceptance-contract-gate.md` (cross-file
+duplication section).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-735: `/pilot` acceptance gate refuses
 land when an acceptance feature was declared but not executed for this attempt
 (`reasonKind: acceptance-not-executed`); revert-then-reland tickets also need
