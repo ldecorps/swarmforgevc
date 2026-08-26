@@ -1,28 +1,5 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 26, 2026 (BL-653: escalation-driven operator — the LLM
-Operator wakes only on inbound human traffic, `BABYSITTER_ESCALATION` from CRIT
-babysitter findings, or `SWARM_CONTROL_LOST`; retires per-tick
-`dead-agent-events` and payload-free `SWARM_CHECK_TIMER` patrol wakes;
-`operator_enqueue_event.bb` wires CRIT findings into `events.jsonl`; WARN
-`stuck-*` still nudges coordinator only; `night-start.sh` operator pid-hold
-retired. Front-desk restricted operator unchanged (BL-334). Acceptance:
-`specs/features/BL-653-operator-wakes-only-on-real-events-escalation-driven.feature`.
-How-to: `docs/how-to/BL-653-operator-escalation-driven-wake-model.md`.)
-Prior entry —
-**Last Updated:** August 26, 2026 (BL-588: batch recovery approach 3 — when a
-batch commit partially fails, clean siblings re-forward unchanged on their
-original commit for whole-tree re-verification while the defective ticket
-reworks from the last clean ancestor on an isolated branch; QA lands only
-verified whole trees via merge — cherry-pick, rebase-to-land, and partial-subset
-operations refused. CLI: `extension/out/tools/batch-recovery.js`
-(`prepare-re-forward`, `prepare-rework`, `validate-land`, `validate-merge-up`,
-`validate-land-isolation`). Consumes BL-532 deferral records; does not redefine
-them. Core: `extension/src/quality/batchRecovery.ts`. Acceptance:
-`specs/features/BL-588-isolate-batch-recovery-trees.feature`. How-to:
-`docs/how-to/BL-588-isolate-batch-recovery-trees.md`. Diagram note:
-`docs/diagrams/swarm-flow.mmd`.)
-Prior entry —
 **Last Updated:** August 26, 2026 (BL-1153: Mini App font-size choices stick
 across reload on Live Screen, Pipeline Board, and Paused pager via extension-host
 persistence in `.swarmforge/operator/web-ui-font-size-preferences.json` and
