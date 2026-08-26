@@ -79,6 +79,7 @@ function baseDeps(ctx) {
     readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
+    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => unreachableOutcome(ctx),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),

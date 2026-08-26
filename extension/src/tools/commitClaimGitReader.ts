@@ -37,6 +37,7 @@ import {
   assessPerHatRolePromptEvidence,
   StageVerdictEvidence,
 } from './perHatRolePromptEvidenceCheck';
+import { PilotScopedCrapCheckOutcome, assessPilotScopedCrap } from './pilotScopedCrapCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
 import { findBacklogFilePath } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
@@ -170,6 +171,15 @@ function readTouchedFileTexts(
     }
   }
   return files;
+}
+
+/** Git-backed BL-741 scoped CRAP check wired into PilotAcceptanceGateDeps.checkScopedCrap. */
+export function checkScopedCrap(repoRoot: string): PilotScopedCrapCheckOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  return assessPilotScopedCrap(repoRoot, touched);
 }
 
 /** Git-backed BL-737 check wired into PilotAcceptanceGateDeps.checkCrossFileDuplication. */
