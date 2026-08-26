@@ -737,6 +737,7 @@ const DOMAINS = [
   require('./bl1159BridgeChildSurvivesWithoutCrashGiveupLoopSteps'),
   require('./bl1160LiveScreenActivityDotPerTileSteps'),
   require('./bl1152ConcurrentHotfixStampAsksStampOffSteps'),
+  require('./bl1162StartStopSwarmCronLifecycleSymmetrySteps'),
   require('./bl588BatchRecoverySteps'),
   require('./bl1154BuildStaleNotCrashGiveupBudgetSteps'),
   require('./bl1121ReconcileImportSkipsPropertySuiteGuardSteps'),
