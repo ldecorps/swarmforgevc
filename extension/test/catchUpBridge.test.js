@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { startBridge } = require('../out/bridge/bridgeServer');
+const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
 const { catchUpReadStatePath } = require('../out/bridge/catchUpReadState');
 
 const TOKEN = 'test-token-123';
@@ -23,7 +24,11 @@ function writeTopicRecord(targetPath, id, messages) {
 }
 
 function withBridge(targetPath, opts, fn) {
-  return startBridge(targetPath, path.join(targetPath, 'runs.jsonl'), TOKEN, opts).then(async (handle) => {
+  const letsTalk = {
+    agentSession: createMockCursorBridgeAgentSession(targetPath),
+    ...(opts.letsTalk || {}),
+  };
+  return startBridge(targetPath, path.join(targetPath, 'runs.jsonl'), TOKEN, { ...opts, letsTalk }).then(async (handle) => {
     try {
       return await fn(handle);
     } finally {
