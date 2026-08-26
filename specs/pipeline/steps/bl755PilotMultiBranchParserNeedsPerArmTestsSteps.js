@@ -39,6 +39,27 @@ function threeArms() {
   ];
 }
 
+function setThreeArmParser(ctx) {
+  ensureCtx(ctx);
+  ctx.parsers = [
+    {
+      functionName: 'take-flow-reason',
+      sourcePath: 'swarmforge/scripts/lib.bb',
+      arms: threeArms(),
+    },
+  ];
+}
+
+function assertPerArmGuidance(text, label) {
+  const lower = (text || '').toLowerCase();
+  if (!/multi-branch|multi-arm|per (arm|branch)|one distinct test per/.test(lower)) {
+    throw new Error(`${label}: expected per-arm / multi-branch parser language`);
+  }
+  if (!/test/.test(lower)) {
+    throw new Error(`${label}: expected test-per-arm language`);
+  }
+}
+
 function ensureCtx(ctx) {
   ctx.ticketId = ctx.ticketId || 'BL-755-FIXTURE';
   ctx.calls = ctx.calls || { move: 0, receipt: 0 };
@@ -122,13 +143,7 @@ function registerSteps(registry) {
     registry,
     /^it requires at least one distinct test per arm of a multi-branch parser$/,
     (ctx) => {
-      const text = (ctx.hardenderPrompt || ctx.pilotPrompt || '').toLowerCase();
-      if (!/multi-branch|multi-arm|per (arm|branch)/.test(text) && !/one distinct test per/.test(text)) {
-        throw new Error('expected per-arm / multi-branch parser language');
-      }
-      if (!/test/.test(text)) {
-        throw new Error('expected test-per-arm language');
-      }
+      assertPerArmGuidance(ctx.hardenderPrompt || ctx.pilotPrompt, 'hardener/pilot guidance');
     }
   );
 
@@ -137,21 +152,14 @@ function registerSteps(registry) {
   });
 
   scoped(registry, /^the prompt requires at least one distinct test per arm of a multi-branch parser$/, (ctx) => {
-    const text = ctx.pilotPrompt || '';
-    if (!/distinct test per arm/i.test(text) || !/multi-branch parser/i.test(text)) {
-      throw new Error(`expected BL-755 per-arm rule in /pilot prompt:\n${text}`);
+    assertPerArmGuidance(ctx.pilotPrompt, '/pilot prompt');
+    if (!/distinct test per arm/i.test(ctx.pilotPrompt || '')) {
+      throw new Error(`expected BL-755 "distinct test per arm" phrasing:\n${ctx.pilotPrompt}`);
     }
   });
 
   scoped(registry, /^the run's commits touched a function with three cond or case arms$/, (ctx) => {
-    ensureCtx(ctx);
-    ctx.parsers = [
-      {
-        functionName: 'take-flow-reason',
-        sourcePath: 'swarmforge/scripts/lib.bb',
-        arms: threeArms(),
-      },
-    ];
+    setThreeArmParser(ctx);
   });
 
   scoped(registry, /^only one of those arms is exercised by the run's tests$/, (ctx) => {
@@ -165,14 +173,7 @@ function registerSteps(registry) {
   });
 
   scoped(registry, /^the run's commits touched a multi-arm parser with an untested arm$/, (ctx) => {
-    ensureCtx(ctx);
-    ctx.parsers = [
-      {
-        functionName: 'take-flow-reason',
-        sourcePath: 'swarmforge/scripts/lib.bb',
-        arms: threeArms(),
-      },
-    ];
+    setThreeArmParser(ctx);
     ctx.testTexts = ['double-quoted only'];
   });
 
