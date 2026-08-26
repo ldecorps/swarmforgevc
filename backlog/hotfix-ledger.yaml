@@ -167,3 +167,10 @@
   stamp_ticket: BL-1136
   human_decision: null
   decided_at: null
+- commit: ca45facb4
+  subject: "Hotfix: restore handoffd startup (BL-669 load-file + sweep order)."
+  detected_at: 2026-08-26
+  state: pending
+  stamp_ticket: BL-1150
+  human_decision: null
+  decided_at: null

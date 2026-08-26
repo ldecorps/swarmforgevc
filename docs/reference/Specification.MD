@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1150: `outage_failover_cli.bb` is
+load-file safe — `-main` runs only when `*file*` equals `babashka.file`, so
+`handoffd` `(load-file …)` cannot `System/exit` on usage; entrypoint
+`bb outage_failover_cli.bb …` unchanged. Certifies ops hotfix `ca45facb4`.
+Acceptance: `specs/features/BL-1150-outage-failover-cli-load-file-safe.feature`.
+How-to: `docs/how-to/BL-1150-outage-failover-cli-load-file-safe.md`
+(cross-link on BL-669 how-to).
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-782 rematch: restore root-scoped
 `expedite_cli.bb` liveness docs after QA bounce rematch — neighbour-root
 survivors ignored; `--probe-liveness` refuses `EXPEDITE_PROBE_FILE`; decoy
