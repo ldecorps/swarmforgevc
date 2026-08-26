@@ -35,6 +35,12 @@ function runBb(script, ctx, key) {
   return ctx[key];
 }
 
+function assertPassMarker(out, marker, label) {
+  if (!out.includes(marker)) {
+    throw new Error(`expected ${label} (${marker}) in:\n${out}`);
+  }
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -51,10 +57,11 @@ function registerSteps(registry) {
   scoped(/^give-up cooldown elapses and the child re-arms then burns its attempt budget again$/, () => {});
 
   scoped(/^no second escalation email is sent for that same unbroken episode$/, (ctx) => {
-    const out = runScript(EPISODE_TEST, ctx, 'bl1151EpisodeTest');
-    if (!out.includes('bl-1151-01: no second escalation email in the loop')) {
-      throw new Error(`expected bl-1151-01 no-second-email PASS in:\n${out}`);
-    }
+    assertPassMarker(
+      runScript(EPISODE_TEST, ctx, 'bl1151EpisodeTest'),
+      'bl-1151-01: no second escalation email in the loop',
+      'bl-1151-01 no-second-email'
+    );
   });
 
   scoped(/^a prior give-up episode already emailed once$/, (ctx) => {
@@ -66,10 +73,11 @@ function registerSteps(registry) {
   scoped(/^the child later exhausts its restart budget again$/, () => {});
 
   scoped(/^a new escalation email may be sent for the new episode$/, (ctx) => {
-    const out = runScript(EPISODE_TEST, ctx, 'bl1151EpisodeTest');
-    if (!out.includes('bl-1151-02: a new episode after healthy grace may email again')) {
-      throw new Error(`expected bl-1151-02 new-episode-email PASS in:\n${out}`);
-    }
+    assertPassMarker(
+      runScript(EPISODE_TEST, ctx, 'bl1151EpisodeTest'),
+      'bl-1151-02: a new episode after healthy grace may email again',
+      'bl-1151-02 new-episode-email'
+    );
   });
 
   scoped(/^escalation was armed after a delivered give-up email$/, (ctx) => {
@@ -80,10 +88,11 @@ function registerSteps(registry) {
   scoped(/^status leaves gave-up only because of cooldown re-arm \(no healthy grace\)$/, () => {});
 
   scoped(/^escalation arming stays such that the next give-up of the same episode does not email again$/, (ctx) => {
-    const out = runScript(EPISODE_TEST, ctx, 'bl1151EpisodeTest');
-    if (!out.includes('bl-1151-03: re-arm without healthy grace keeps escalation armed')) {
-      throw new Error(`expected bl-1151-03 re-arm-keeps-armed PASS in:\n${out}`);
-    }
+    assertPassMarker(
+      runScript(EPISODE_TEST, ctx, 'bl1151EpisodeTest'),
+      'bl-1151-03: re-arm without healthy grace keeps escalation armed',
+      'bl-1151-03 re-arm-keeps-armed'
+    );
     const prop = runBb(PROPERTY_RUNNER, ctx, 'bl1151Property');
     if (!prop.includes('ALL TESTS PASSED')) {
       throw new Error(`property runner failed:\n${prop}`);
