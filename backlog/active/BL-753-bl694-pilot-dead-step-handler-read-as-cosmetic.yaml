@@ -72,6 +72,7 @@ source: |
 
 notes: |
   - [2026-08-26T03:11Z] coordinator: drop nudge — awaiting human_approval; not routed to coder.
+  - [2026-08-26T10:01Z] human/Cursor unblock: restored wiped BL-753 land (feature/gate/prompts/tests) onto main from tip 98db2c545 after rematch orphan; routed to architect for re-pass of property-encoded invariant.
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-26, by: architect, blamed: coder, class: invariant-unencoded, commit: 71bcff8e9a, evidence: backlog/evidence/BL-753-architect-bounce-20260826.md }

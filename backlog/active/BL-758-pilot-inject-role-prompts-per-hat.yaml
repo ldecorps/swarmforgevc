@@ -10,6 +10,9 @@ priority: 38
 direction: queue-jump
 depends_on: []
 mutation_cost: medium
+human_approval: approved
+approval_context: >
+  Human unblock 2026-08-26 via Cursor: JumpQ pilot-process batch — approve so open slots can promote to specifier.
 source: |
   Human via Let's Talk / Cursor, 2026-07-31 morning. Complements the BL-723
   pilot-process batch (BL-727…BL-757 process half): those tickets harden
