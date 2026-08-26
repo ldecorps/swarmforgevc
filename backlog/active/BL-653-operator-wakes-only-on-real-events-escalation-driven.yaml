@@ -9,7 +9,7 @@ severity: medium
 priority: 94
 direction: human-requested
 depends_on: [BL-611]
-assigned_to: coder
+assigned_to: specifier
 mutation_cost: high
 invariants:
   - "The operator LLM wakes only for an inbound human message or a deterministic-layer escalation; the runtime never manufactures a wake from its own sweep."
