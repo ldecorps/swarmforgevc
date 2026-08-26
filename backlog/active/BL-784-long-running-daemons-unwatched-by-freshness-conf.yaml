@@ -94,26 +94,13 @@ description: |
   Do not extend the conf's field format. It is `name|threshold_secs|
   log_relpath|pid_relpath|start_script`, and every daemon here fits it.
 
-acceptance: |
-  Specifier writes the Gherkin when this is approved and promoted. Minimum
-  behaviour:
+acceptance: swarmforge/scripts/test/test_daemon_log_freshness.sh
 
-  1. Each of the six daemons writes a timestamped heartbeat line to its own log
-     on a loop tick where it does no work at all — the tick that today produces
-     silence.
-  2. Each has a row in `daemon_log_freshness.conf` whose threshold exceeds its
-     own loop interval, and the interval the threshold was derived from is
-     recorded beside it.
-  3. A healthy daemon left running across several thresholds' worth of idle
-     time is never restarted by the checker. This is the scenario that would
-     have caught a row-without-heartbeat and it must be present.
-  4. A daemon whose loop is wedged — process alive, no heartbeat — IS detected
-     and restarted, per BL-675's existing checker behaviour.
-  5. The guard fails when a daemon with a start script and a pidfile has no
-     conf row, and names the daemon. A fixture daemon added without a row makes
-     it fail; adding the row makes it pass.
-  6. The guard fails closed on a daemon it cannot classify, rather than
-     defaulting to watched-or-fine.
+required_wiring:
+  - 'swarmforge/scripts/daemon_log_freshness_pulse_lib.bb::append-log-heartbeat!::idle supervisor loop ticks append ISO heartbeat line to own log'
+  - 'swarmforge/scripts/daemon_log_freshness.conf::six supervisor rows::threshold exceeds each daemon loop interval with derivation comment'
+  - 'swarmforge/scripts/daemon_log_freshness_registry_guard.sh::fail closed::required daemon without conf row or unclassified *_supervisor.bb aborts before checker'
+  - 'swarmforge/scripts/daemon_log_freshness_check.sh::registry guard::invokes daemon_log_freshness_registry_guard.sh before violation checks'
 
 out_of_scope: |
   - Installing the cron — BL-783. Without that this ticket is inert, which is
