@@ -12,12 +12,10 @@ const {
   landPilotedTicket,
   resolveFeatureFilePath,
 } = require(path.join(EXT_DIR, 'out', 'tools', 'pilotAcceptanceGate'));
-const { MIN_DUPLICATION_BLOCK_LINES } = require(path.join(
-  EXT_DIR,
-  'out',
-  'tools',
-  'crossFileDuplicationCheck'
-));
+const {
+  findCrossFileDuplication,
+  MIN_DUPLICATION_BLOCK_LINES,
+} = require(path.join(EXT_DIR, 'out', 'tools', 'crossFileDuplicationCheck'));
 
 const FEATURE =
   'Pilot land gate refuses cross-file mechanical duplication in the run\'s own touched files';
@@ -67,12 +65,6 @@ function duplicationOutcome(ctx) {
   if (!ctx.historyResolvable) {
     return { checked: false };
   }
-  const { findCrossFileDuplication } = require(path.join(
-    EXT_DIR,
-    'out',
-    'tools',
-    'crossFileDuplicationCheck'
-  ));
   return findCrossFileDuplication(ctx.touchedScripts);
 }
 
