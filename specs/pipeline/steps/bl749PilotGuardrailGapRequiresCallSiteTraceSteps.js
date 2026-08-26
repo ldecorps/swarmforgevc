@@ -40,6 +40,23 @@ function assertCallSiteBeforeNit(text, label) {
   }
 }
 
+/** Pilot compose string: lock never/always polarity + mandatory obligation (BL-749). */
+function assertPilotPolarityAndObligation(text) {
+  const lower = text.toLowerCase();
+  if (!/is never a\s+non-blocking nit/.test(lower)) {
+    throw new Error('composePilotExpeditorPrompt: expected "is never a non-blocking nit" polarity');
+  }
+  if (/is always a\s+non-blocking nit/.test(lower)) {
+    throw new Error('composePilotExpeditorPrompt: "always a non-blocking nit" inverts the rule');
+  }
+  if (!/Call-site tracing before nit-downgrade is mandatory/.test(text)) {
+    throw new Error('composePilotExpeditorPrompt: expected mandatory call-site tracing');
+  }
+  if (/Call-site tracing before nit-downgrade is optional/.test(text)) {
+    throw new Error('composePilotExpeditorPrompt: optional inverts mandatory obligation');
+  }
+}
+
 /** Assert the most recently loaded, not-yet-checked role prompt (cleaner then hardener). */
 function assertNextUnreadRolePrompt(ctx) {
   const checks = [
@@ -87,7 +104,9 @@ function registerSteps(registry) {
     registry,
     /^the prompt requires call-site tracing before downgrading a ticket guardrail gap to a nit$/,
     (ctx) => {
-      assertCallSiteBeforeNit(ctx.pilotPrompt || '', 'composePilotExpeditorPrompt');
+      const text = ctx.pilotPrompt || '';
+      assertCallSiteBeforeNit(text, 'composePilotExpeditorPrompt');
+      assertPilotPolarityAndObligation(text);
     }
   );
 
