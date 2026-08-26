@@ -102,6 +102,23 @@ OUT="$(bash "$(STOP_IN "$F")" "$F" 2>&1)"
 check "stop is idempotent when nothing is running" '[[ "$OUT" == *"not running"* ]]'
 rm -rf "$F"
 
+# BL-1159: when front-desk-supervisor owns the stack, stop must not SIGTERM bridge children.
+F="$(make_fixture)"
+sleep 300 &
+FD_PID=$!
+echo "$FD_PID" > "$F/.swarmforge/operator/front-desk-supervisor.pid"
+cat > "$F/extension/out/tools/start-bridge-headless.js" <<'EOF'
+setInterval(() => {}, 600000);
+EOF
+node "$F/extension/out/tools/start-bridge-headless.js" "$F" 8765 &
+BRIDGE_PID=$!
+OUT="$(bash "$(STOP_IN "$F")" "$F" 2>&1)" && rc=0 || rc=$?
+check "stop defers when front-desk-supervisor is live" \
+  '[[ "$rc" -eq 0 && "$OUT" == *"front-desk-supervisor"* && "$OUT" == *"refusing"* ]]'
+check "deferred stop leaves the bridge child alive" 'kill -0 "$BRIDGE_PID" 2>/dev/null'
+kill "$FD_PID" "$BRIDGE_PID" 2>/dev/null || true
+rm -rf "$F"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "start_stop_bridge_headless smoke: ALL CHECKS PASSED"
 else

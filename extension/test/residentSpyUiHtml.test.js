@@ -94,17 +94,11 @@ test('BL-929: the top ticket strip is not shown under a standing full pack, even
   await flush();
   const { document } = dom.window;
   assert.equal(document.getElementById('ticket-strip').hidden, true);
-  // BL-994 locked human decision 2 supersedes the tile-level half of this
-  // assertion: grid tiles carry role name + Expand ONLY, so a held ticket
-  // no longer surfaces in the tile head - it surfaces in the tile's
-  // fullscreen Expand instead (spec amendment fabecba4c retargeted BL-929
-  // scenario 03 the same way). The BL-929 concern this test protects - a
-  // standing pack shows no top strip yet the operator can still find the
-  // ticket - is preserved through that Expand path, asserted POSITIVELY
-  // below (bounce D2: the negative half alone left the relocated contract
-  // asserted nowhere in the unit lane).
+  // BL-1046: held tickets surface on the grid tile from the same payload
+  // fields as fullscreen Expand; BL-929 still forbids the global top strip
+  // under a standing full pack.
   const documenterHead = document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head');
-  assert.doesNotMatch(documenterHead.innerHTML, /BL-640/);
+  assert.match(documenterHead.innerHTML, /BL-640/);
   assert.match(documenterHead.innerHTML, /Documenter/);
   document.querySelector('.pane-col[data-pane-id="documenter"]').dispatchEvent(
     new dom.window.MouseEvent('click', { bubbles: true })
@@ -252,6 +246,194 @@ test('BL-609: at the maximum bound the increase control is shown unavailable', a
 test('BL-609: the HTML shell never references browser storage', () => {
   const html = getResidentSpyUiHtml();
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
+});
+
+test('BL-1046: grid tile shows held ticket id, slug, and compact claim age from payload', async () => {
+  const claimAt = Date.now() - 32 * 60 * 1000;
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        {
+          id: 'hardender',
+          label: 'Hardender',
+          pane: pane({
+            roleLabel: 'Hardender',
+            ticketId: 'BL-1035',
+            ticketTitle: 'a respawned front desk bot is declared stalled two seconds after it starts',
+            claimEnteredAtMs: claimAt,
+          }),
+        },
+      ],
+    })
+  );
+  await flush();
+  const col = dom.window.document.querySelector('.pane-col[data-pane-id="hardender"]');
+  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-1035');
+  assert.match(col.querySelector('.pane-grid-slug')?.textContent ?? '', /respawned front desk/);
+  assert.equal(col.querySelector('.pane-grid-age')?.textContent, '32m');
+  assert.equal(col.querySelector('.pane-kind')?.textContent, 'Hardender');
+  dom.window.close();
+});
+
+test('BL-1046: a single held parcel does not show a batch +N badge', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        {
+          id: 'qa',
+          label: 'Qa',
+          pane: pane({
+            roleLabel: 'Qa',
+            ticketId: 'BL-1041',
+            ticketTitle: 'Ticket BL-1041',
+            claimEnteredAtMs: Date.now() - 5 * 60 * 1000,
+            heldParcelCount: 1,
+          }),
+        },
+      ],
+    })
+  );
+  await flush();
+  const col = dom.window.document.querySelector('.pane-col[data-pane-id="QA"]');
+  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-1041');
+  assert.equal(col.querySelector('.pane-grid-more'), null);
+  dom.window.close();
+});
+
+test('BL-1046: grid tile omits slug when ticket title is absent', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        {
+          id: 'coder',
+          label: 'Coder',
+          pane: pane({
+            roleLabel: 'Coder',
+            ticketId: 'BL-999',
+            claimEnteredAtMs: Date.now() - 10 * 60 * 1000,
+          }),
+        },
+      ],
+    })
+  );
+  await flush();
+  const col = dom.window.document.querySelector('.pane-col[data-pane-id="coder"]');
+  assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-999');
+  assert.equal(col.querySelector('.pane-grid-slug'), null);
+  dom.window.close();
+});
+
+// ── BL-1160: per-tile activity dots ───────────────────────────────────────
+
+function dotColour(dotEl) {
+  if (!dotEl || dotEl.hidden) return 'hidden';
+  if (dotEl.classList.contains('err')) return 'red';
+  if (dotEl.classList.contains('stale')) return 'amber';
+  return 'green';
+}
+
+function panesOf(n, paneOverrides = {}) {
+  const roles = ['Coordinator', 'Specifier', 'Coder', 'Cleaner', 'Architect', 'Hardener', 'Documenter', 'Qa'];
+  return roles.slice(0, n).map((role) => {
+    const id = role.toLowerCase();
+    return {
+      id,
+      label: role,
+      pane: { available: true, roleLabel: role, modelLabel: 'Sonnet 5', paneText: `${role} live`, ...(paneOverrides[id] || {}) },
+    };
+  });
+}
+
+test('BL-1160: grid renders one activity dot per tile', async () => {
+  for (const count of [8, 4]) {
+    const dom = renderScreen(() =>
+      residentPaneResponse({ available: true, monoRouterLayout: false, panes: panesOf(count) })
+    );
+    await flush();
+    const dots = dom.window.document.querySelectorAll('.split .pane-col [data-status-indicator]');
+    assert.equal(dots.length, count);
+    for (const dot of dots) {
+      assert.equal(dot.hidden, false);
+      assert.ok(dot.closest('.pane-head'));
+      assert.ok(dot.classList.contains('pane-status-dot'));
+    }
+    dom.window.close();
+  }
+});
+
+test('BL-1160: tile dots honour optional per-pane activitySignal', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        { id: 'coder', label: 'Coder', pane: { available: true, activitySignal: 'ok' } },
+        { id: 'architect', label: 'Architect', pane: { available: true, activitySignal: 'stale' } },
+        { id: 'qa', label: 'Qa', pane: { available: true, activitySignal: 'err' } },
+      ],
+    })
+  );
+  await flush();
+  const { document } = dom.window;
+  assert.equal(dotColour(document.querySelector('.pane-col[data-pane-id="coder"] [data-status-indicator]')), 'green');
+  assert.equal(dotColour(document.querySelector('.pane-col[data-pane-id="architect"] [data-status-indicator]')), 'amber');
+  assert.equal(dotColour(document.querySelector('.pane-col[data-pane-id="qa"] [data-status-indicator]')), 'red');
+  dom.window.close();
+});
+
+test('BL-1160: unavailable pane dot is hidden instead of misleading green', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        { id: 'coder', label: 'Coder', pane: { available: true, activitySignal: 'ok' } },
+        { id: 'documenter', label: 'Documenter', pane: { available: false } },
+      ],
+    })
+  );
+  await flush();
+  const { document } = dom.window;
+  const documenterDot = document.querySelector('.pane-col[data-pane-id="documenter"] [data-status-indicator]');
+  assert.equal(dotColour(documenterDot), 'hidden');
+  assert.equal(dotColour(document.querySelector('.pane-col[data-pane-id="coder"] [data-status-indicator]')), 'green');
+  dom.window.close();
+});
+
+test('BL-1160: fullscreen Expand keeps a visible status cue', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [{ id: 'coder', label: 'Coder', pane: { available: true, activitySignal: 'ok', paneText: 'live' } }],
+    })
+  );
+  await flush();
+  const { document } = dom.window;
+  document.querySelector('.pane-col[data-pane-id="coder"]').dispatchEvent(
+    new dom.window.MouseEvent('click', { bubbles: true })
+  );
+  const fsDot = document.getElementById('fs-dot');
+  assert.equal(fsDot.hidden, false);
+  assert.equal(dotColour(fsDot), 'green');
+  dom.window.close();
+});
+
+test('BL-1160: markup includes one status indicator node per pane column', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({ available: true, monoRouterLayout: false, panes: panesOf(8) })
+  );
+  await flush();
+  for (const col of dom.window.document.querySelectorAll('.pane-col')) {
+    assert.equal(col.querySelectorAll('[data-status-indicator]').length, 1);
+  }
+  dom.window.close();
 });
 
 test('BL-1153: Live Screen pane font size survives a full Mini App reload', async () => {
