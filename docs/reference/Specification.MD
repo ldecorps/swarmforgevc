@@ -1,16 +1,5 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 26, 2026 (BL-1162 rematch: symmetric swarmforge cron
-lifecycle — `./start-swarm.sh` ensures freshness (BL-675/783) plus legacy
-operator schedule lines when `continuous-shifts.json` is configured;
-`reconcile_shift_schedule_crontab.bb` does **not** render BL-660 `swarm_shift`
-until that ticket lands. `./stop-swarm.sh` removes **all** registered lines for
-this root via `swarmforge_cron_lib.sh` / `uninstall_swarmforge_crons.sh`.
-Cron uninstall runs only after successful full-stack stop. Acceptance:
-`specs/features/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.feature`.
-How-to:
-`docs/how-to/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md`.)
-Prior entry —
 **Last Updated:** August 26, 2026 (BL-1152: stamp-off of hotfix `7380d80686` —
 concurrent Approvals Yes/No for hotfix certification. `resolveAskOptions`
 reads `.swarmforge/operator/hotfix-stamp-asks.json` for `hotfix-<commit>`
@@ -23,6 +12,17 @@ ledger `certified`/`waived` still requires human decision (BL-848). Module:
 `specs/features/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.feature`.
 How-to:
 `docs/how-to/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.md`.)
+Prior entry —
+**Last Updated:** August 26, 2026 (BL-1162 rematch: symmetric swarmforge cron
+lifecycle — `./start-swarm.sh` ensures freshness (BL-675/783) plus legacy
+operator schedule lines when `continuous-shifts.json` is configured;
+`reconcile_shift_schedule_crontab.bb` does **not** render BL-660 `swarm_shift`
+until that ticket lands. `./stop-swarm.sh` removes **all** registered lines for
+this root via `swarmforge_cron_lib.sh` / `uninstall_swarmforge_crons.sh`.
+Cron uninstall runs only after successful full-stack stop. Acceptance:
+`specs/features/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.feature`.
+How-to:
+`docs/how-to/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md`.)
 Prior entry —
 **Last Updated:** August 26, 2026 (BL-588: batch recovery approach 3 — when a
 batch commit partially fails, clean siblings re-forward unchanged on their
