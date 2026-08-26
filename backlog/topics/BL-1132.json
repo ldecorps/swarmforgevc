@@ -1,1 +1,0 @@
-{"id":"BL-1132","messages":[{"seq":0,"ts":1787662494728,"author":"swarm","type":"outbound","text":"BL-1132 🎵 in progress — BL-1128 residual: headroom raise always noops — broken telemetry-path + coordinator never calls raise"}]}
