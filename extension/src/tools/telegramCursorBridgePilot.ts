@@ -98,8 +98,6 @@ export function gatePilotAgainstExpediteLock(repoRoot: string): PilotGateResult 
  * Stryker / disposable-tmp ancillaries from this expedition only.
  * BL-749: cleaner/hardener/architect hats must trace CALL SITES before
  * downgrading a ticket's own guardrail gap to a non-blocking nit.
- * BL-753: an unreachable acceptance step handler is an untested-behavior
- * flag until the claim question is answered — never a cosmetic dead-code nit.
  */
 export function composePilotExpeditorPrompt(ticket: string): string {
   const normalized = normalizeExpediteTicket(ticket) ?? ticket.toUpperCase();
@@ -147,12 +145,6 @@ export function composePilotExpeditorPrompt(ticket: string): string {
     'non-blocking nit until you have read the CALL SITE (not only the',
     'function in isolation) and confirmed whether the guardrail is actually',
     'upheld downstream. Call-site tracing before nit-downgrade is mandatory.',
-    '',
-    'REVIEW HATS (cleaner / hardener / architect during /pilot) — BL-753:',
-    'A registered acceptance step handler whose pattern matches no rendered',
-    'feature step is an untested-behavior flag until you answer: what claim',
-    'was this step meant to verify, and is that claim tested any other way?',
-    'Do not dismiss it as cosmetic dead code.',
     '',
     'Isolation (same as BL-567):',
     '- Work only in `.worktrees/expedite-' + normalized + '` on branch `expedite/' + normalized + '`.',

@@ -71,7 +71,6 @@ function baseDeps(ctx) {
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkShellEntryPointDrive: () => shellDriveOutcome(ctx),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       ctx.yamlMoved = true;

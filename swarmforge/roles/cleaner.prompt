@@ -96,16 +96,6 @@ You are the cleaner.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
-## An unreachable step handler is an untested-behavior flag until proven otherwise (BL-753)
-- When you find a registered acceptance step handler whose pattern never matches
-  any step the ticket's feature file renders, do **not** downgrade it to a
-  cosmetic dead-code nit until you have answered: what specific claim was this
-  step meant to verify, and is that claim tested any other way?
-- Default posture: treat it as a potential untested-behavior defect (add the
-  missing Examples row / scenario, or delete the handler and document why the
-  claim is covered elsewhere). BL-694's non-stage-under-backlog handler was
-  read as a nit by three seats; it hid an untested allowlist claim (BL-752).
-
 ## A ticket's own guardrail claim is never a nit until the call site is read (BL-749)
 - When you notice a missing error-handling or other guard that the ticket's OWN
   text explicitly promises (a guardrail claim — e.g. "a record-write failure

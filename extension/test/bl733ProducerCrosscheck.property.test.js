@@ -28,7 +28,6 @@ function patternDeps(overrides = {}) {
       checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
       checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
       checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
       moveTicketToDone: () => {
         calls.move += 1;
         return { moved: true, destination: '/repo/backlog/done/BL-733-fixture.yaml' };

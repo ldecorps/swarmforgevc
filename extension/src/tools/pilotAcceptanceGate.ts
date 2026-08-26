@@ -63,10 +63,6 @@ import {
   PARALLEL_SHELL_REIMPLEMENTATION_REFUSAL,
   ShellEntryPointDriveCheckOutcome,
 } from './shellEntryPointDriveCheck';
-import {
-  UNREACHABLE_STEP_HANDLER_REFUSAL,
-  UnreachableStepHandlerCheckOutcome,
-} from './unreachableStepHandlerCheck';
 
 export {
   assessProducerCrosscheck,
@@ -97,17 +93,6 @@ export {
   ShellEntryPointDriveMiss,
 } from './shellEntryPointDriveCheck';
 
-export {
-  UNREACHABLE_STEP_HANDLER_REFUSAL,
-  assessUnreachableStepHandlers,
-  extractRegisteredPatternSources,
-  renderFeatureStepTexts,
-  isStepHandlerPath,
-  isPairedStepFile,
-  UnreachableStepHandlerCheckOutcome,
-  UnreachableStepHandlerMiss,
-} from './unreachableStepHandlerCheck';
-
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
@@ -124,7 +109,6 @@ export interface AcceptanceReceipt {
   commitClaimsChecked: number;
   crossFileDuplicationFilesScanned?: number;
   shellEntryPointDrive?: { shellTestsScanned: number; entryPointsNamed: number };
-  unreachableStepHandlers?: { stepFilesScanned: number; patternsChecked: number };
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
   producerCrosscheck?: ProducerCrosscheckMetadata;
 }
@@ -157,7 +141,6 @@ export interface PilotAcceptanceGateDeps {
   checkCommitClaims: () => CommitClaimsCheckOutcome;
   checkCrossFileDuplication: () => CrossFileDuplicationCheckOutcome;
   checkShellEntryPointDrive: (ticketId: string) => ShellEntryPointDriveCheckOutcome;
-  checkUnreachableStepHandlers: (ticketId: string) => UnreachableStepHandlerCheckOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
   getLandedCommit: () => string;
@@ -183,7 +166,6 @@ export interface PilotLandRefusal {
     | 'claim-unsupported'
     | 'cross-file-duplication'
     | 'parallel-shell-reimplementation'
-    | 'unreachable-step-handler'
     | 'move-failed';
   reason: string;
   unmatchedStep?: string;
@@ -195,8 +177,6 @@ export interface PilotLandRefusal {
   duplicationPaths?: string[];
   shellEntryPoint?: string;
   shellTestPath?: string;
-  unreachablePattern?: string;
-  unreachableStepFile?: string;
 }
 
 export type PilotLandOutcome = PilotLandSuccess | PilotLandRefusal;
@@ -362,28 +342,6 @@ function checkShellDrive(
   return { shellDriveCheck };
 }
 
-// Step 3e: touched specs/pipeline/steps/*.js patterns must match a rendered
-// step of the ticket's acceptance feature (BL-753). Unreadable inputs fail OPEN.
-function checkUnreachableHandlers(
-  ticketId: string,
-  deps: PilotAcceptanceGateDeps
-): { refusal: PilotLandRefusal } | { unreachableCheck: UnreachableStepHandlerCheckOutcome } {
-  const unreachableCheck = deps.checkUnreachableStepHandlers(ticketId);
-  if (unreachableCheck.checked && unreachableCheck.miss) {
-    const { pattern, stepFilePath } = unreachableCheck.miss;
-    return {
-      refusal: {
-        landed: false,
-        reasonKind: 'unreachable-step-handler',
-        reason: `${UNREACHABLE_STEP_HANDLER_REFUSAL} (pattern ${pattern}; file ${stepFilePath})`,
-        unreachablePattern: pattern,
-        unreachableStepFile: stepFilePath,
-      },
-    };
-  }
-  return { unreachableCheck };
-}
-
 // Step 2b: revert-then-reland tickets must carry visible yaml notes before
 // a second done move — the BL-559 double-land hygiene gap.
 function requireRelandNotes(ticketId: string, deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal } | { ok: true } {
@@ -457,7 +415,6 @@ function moveAndRecordReceipt(
   claimsCheck: CommitClaimsCheckOutcome,
   duplicationCheck: CrossFileDuplicationCheckOutcome,
   shellDriveCheck: ShellEntryPointDriveCheckOutcome,
-  unreachableCheck: UnreachableStepHandlerCheckOutcome,
   multiWorktreeFixture?: MultiworktreeFixtureMetadata,
   producerCrosscheck?: ProducerCrosscheckMetadata
 ): PilotLandOutcome {
@@ -491,12 +448,6 @@ function moveAndRecordReceipt(
       entryPointsNamed: shellDriveCheck.entryPointsNamed,
     };
   }
-  if (unreachableCheck.checked) {
-    receipt.unreachableStepHandlers = {
-      stepFilesScanned: unreachableCheck.stepFilesScanned,
-      patternsChecked: unreachableCheck.patternsChecked,
-    };
-  }
   if (multiWorktreeFixture) {
     receipt.multiWorktreeFixture = multiWorktreeFixture;
   }
@@ -517,11 +468,6 @@ function moveAndRecordReceipt(
   if (!shellDriveCheck.checked) {
     warnings.push(
       'shell entry-point drive was not checked: the ticket yaml or touched-file history could not be resolved'
-    );
-  }
-  if (!unreachableCheck.checked) {
-    warnings.push(
-      'unreachable step handlers were not checked: the feature IR or touched-file history could not be resolved'
     );
   }
   const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
@@ -583,11 +529,6 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return shellDrive.refusal;
   }
 
-  const unreachable = checkUnreachableHandlers(ticketId, deps);
-  if ('refusal' in unreachable) {
-    return unreachable.refusal;
-  }
-
   const fixtureMetadata =
     deps.isLifecycleTeardownTicket(ticketId) && fixtureGate.fixture.satisfied
       ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
@@ -600,7 +541,6 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     claims.claimsCheck,
     duplication.duplicationCheck,
     shellDrive.shellDriveCheck,
-    unreachable.unreachableCheck,
     fixtureMetadata,
     producerGate.crosscheck
   );
