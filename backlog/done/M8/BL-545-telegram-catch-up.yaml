@@ -31,4 +31,8 @@ notes: |
     POST /catch-up/mark-read (control-scoped). Read markers in
     .swarmforge/catch-up-read-state.json.
 
+  - [2026-08-26T20:51Z] operator: intentional PR #18 merge (d6d612) outside QA —
+    post-hoc approve and advance swarmforge-QA. Coordinator routed QA note
+    002203.
+
 acceptance: specs/features/BL-545-telegram-catch-up.feature
