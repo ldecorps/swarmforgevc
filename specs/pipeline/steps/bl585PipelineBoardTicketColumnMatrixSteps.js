@@ -41,7 +41,7 @@ function parseHolder(token) {
 }
 
 function matrixLine(gutter, cells, cellWidth) {
-  return gutter + cells.map((c) => NBSP + c.padStart(cellWidth, NBSP)).join('');
+  return gutter + cells.map((c) => c.padStart(cellWidth, NBSP)).join(NBSP);
 }
 
 // BL-979: one ticket line - the display id right-aligned in the gutter,

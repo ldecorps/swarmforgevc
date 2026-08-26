@@ -51,6 +51,9 @@ import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
 import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
+import { getCatchUpUiHtml } from './catchUpUiHtml';
+import { computeCatchUpStateLive } from './catchUpLive';
+import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
 import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
@@ -117,6 +120,8 @@ const TELEGRAM_INBOUND_MAX_BODY_BYTES = 16 * 1024;
 const REPLY_ACK_MAX_BODY_BYTES = 4 * 1024;
 // BL-538: Expedite/approve body ({id}) from the /paused-pager Mini App.
 const PAUSED_PAGER_CONTROL_MAX_BODY_BYTES = 4 * 1024;
+// BL-545: mark-read body ({topicId, seq}) from the /catch-up Mini App.
+const CATCH_UP_MARK_READ_MAX_BODY_BYTES = 4 * 1024;
 // BL-572: move body ({id, direction}) from the /epic-reorder Mini App.
 const EPIC_REORDER_MOVE_MAX_BODY_BYTES = 4 * 1024;
 // BL-672: make-top body ({id}) from the same Mini App.
@@ -472,6 +477,16 @@ function isPausedPagerPath(url: string): boolean {
 // BL-538: JSON state for the paused-ticket pager Mini App.
 function isPausedPagerStatePath(url: string): boolean {
   return url === '/paused-pager-state' || url.startsWith('/paused-pager-state?');
+}
+
+// BL-545: catch-up pager Mini App shell.
+function isCatchUpPath(url: string): boolean {
+  return url === '/catch-up' || url.startsWith('/catch-up?');
+}
+
+// BL-545: JSON state for the catch-up pager Mini App.
+function isCatchUpStatePath(url: string): boolean {
+  return url === '/catch-up-state' || url.startsWith('/catch-up-state?');
 }
 
 // BL-572: epic priority reorder Mini App shell.
@@ -889,6 +904,52 @@ function handlePausedPagerApproveRoute(
     }
   });
 }
+
+// BL-545: Catch-up mark-read request shape and route.
+function isCatchUpMarkReadRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/catch-up/mark-read' || url.startsWith('/catch-up/mark-read?'));
+}
+
+function isCatchUpMarkReadRequestShape(value: unknown): value is { topicId: string; seq: number } {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>).topicId === 'string' &&
+    typeof (value as Record<string, unknown>).seq === 'number'
+  );
+}
+
+function handleCatchUpMarkReadRoute(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+  registry: DeviceRegistry
+): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(
+    req,
+    res,
+    CATCH_UP_MARK_READ_MAX_BODY_BYTES,
+    isCatchUpMarkReadRequestShape,
+    'expected a JSON body of {topicId, seq}'
+  ).then((value) => {
+    if (!value) {
+      return;
+    }
+    try {
+      markMessageRead(targetPath, value.topicId, value.seq);
+      respondJson(res, 200, { success: true, topicId: value.topicId, seq: value.seq });
+    } catch (err) {
+      respondJson(res, 500, {
+        success: false,
+        reason: err instanceof Error ? err.message : 'unknown error',
+      });
+    }
+  });
+}
+
 
 // BL-572: paused `type: epic` tickets, normalized to a required numeric
 // priority and sorted. The reorder screen itself (and the move neighbour
@@ -1458,6 +1519,8 @@ const writeRoutes: WriteRoute[] = [
   // BL-538: paused-pager control routes, control-scoped.
   { matches: isPausedPagerExpediteRoute, handle: handlePausedPagerExpediteRoute },
   { matches: isPausedPagerApproveRoute, handle: handlePausedPagerApproveRoute },
+  // BL-545: catch-up mark-read route, control-scoped.
+  { matches: isCatchUpMarkReadRoute, handle: handleCatchUpMarkReadRoute },
   // BL-572: epic reorder move route, control-scoped.
   { matches: isEpicReorderMoveRoute, handle: handleEpicReorderMoveRoute },
   // BL-672: epic make-top-priority route, control-scoped.
@@ -1725,6 +1788,7 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isResidentPanePath,
   isPipelineBoardPath,
   isPausedPagerStatePath,
+  isCatchUpStatePath,
   isEpicReorderStatePath,
   isContextBudgetStatePath,
   isWebUiFontSizePath,
@@ -1900,6 +1964,11 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       compute: () => computePausedPagerState(targetPath),
     },
     {
+      // BL-545: catch-up pager JSON feed for the Mini App.
+      matches: isCatchUpStatePath,
+      compute: () => computeCatchUpStateLive(targetPath, readCatchUpReadState(targetPath), nowMs),
+    },
+    {
       // BL-572: epic priority reorder JSON feed for the Mini App.
       matches: isEpicReorderStatePath,
       compute: () => computeEpicReorderState(targetPath),
@@ -2060,6 +2129,10 @@ export function startBridge(
       }
       if (isPausedPagerPath(url)) {
         serveMiniAppHtml(res, getPausedPagerUiHtml());
+        return;
+      }
+      if (isCatchUpPath(url)) {
+        serveMiniAppHtml(res, getCatchUpUiHtml());
         return;
       }
       if (isEpicReorderPath(url)) {

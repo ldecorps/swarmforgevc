@@ -14,6 +14,8 @@ const {
   PIPELINE_BOARD_GRID_MAX_ROWS,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
+  PIPELINE_BOARD_STAGE_CELL_WIDTH,
+  computePipelineBoardGridLineWidth,
   swarmDisplayBadge,
 } = require('../out/concierge/pipelineBoard');
 const { ALL_SWARM_ROLES } = require('../out/concierge/roleTopicMapStore');
@@ -298,7 +300,10 @@ test('property (BL-979 invariants 1 and 2): every active ticket is a captioned r
 
       // ── Invariant 2: width is a property of the stage set ──────────────
       const gutter = Math.max(3, spec.idWidth);
-      const expectedWidth = gutter + PIPELINE_BOARD_COLUMN_ORDER.length * 3;
+      const expectedWidth =
+        gutter +
+        PIPELINE_BOARD_COLUMN_ORDER.length * PIPELINE_BOARD_STAGE_CELL_WIDTH +
+        (PIPELINE_BOARD_COLUMN_ORDER.length - 1);
       for (const line of [board.header, ...board.rows]) {
         assert.equal(line.length, expectedWidth, `grid line "${line}" is not the stage-set width`);
         assert.ok(line.length <= PIPELINE_BOARD_GRID_MAX_WIDTH, `"${line}" exceeds the ${PIPELINE_BOARD_GRID_MAX_WIDTH}-char budget`);
