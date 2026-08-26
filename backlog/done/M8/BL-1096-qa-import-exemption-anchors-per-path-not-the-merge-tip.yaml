@@ -9,7 +9,7 @@ human_approval: approved
 priority: 25
 direction: aligned
 depends_on: [BL-925]
-assigned_to: unassigned
+assigned_to: coder
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1096-qa-import-exemption-anchors-per-path-not-the-merge-tip.feature
