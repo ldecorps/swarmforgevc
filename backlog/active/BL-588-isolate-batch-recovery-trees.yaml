@@ -7,11 +7,26 @@ epic: swarm-reliability
 human_approval: approved
 priority: 85
 mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 invariants:
   - "Under whatever isolation approach is chosen, a ticket verified clean is never blocked from landing by a sibling ticket's rework."
+  - "QA lands only by merging a verified whole tree onto main — cherry-pick, rebase-to-land, and partial-subset operations are always refused."
 direction: human-requested
 depends_on: [BL-532]
-assigned_to: specifier
+assigned_to: coder
+
+required_wiring:
+  - 'extension/src/quality/batchRecovery.ts::planCleanSiblingReforward::clean sibling re-forward uses original commit unchanged'
+  - 'extension/src/tools/batch-recovery.ts::prepare-rework::defective ticket reworks from last clean ancestor not contaminated tip'
+  - 'specs/pipeline/steps/index.js::bl588BatchRecoverySteps::acceptance handler registered so the runner executes every scenario'
+
+qa_e2e_procedure: >
+  (1) Batch commit satisfies tickets A and B; bounce A — assert B re-forwards on
+  its original commit as separate git_handoff. (2) A recovery branch excludes
+  contaminated batch tip. (3) B passes all gates as whole tree — QA merges verified
+  tree to main while A still on isolated branch. (4) cherry-pick / rebase-to-land /
+  partial-subset refused. (5) merge-up names B's verified commit. CLI:
+  extension/out/tools/batch-recovery.js. Property lane + unit suite green.
 source: "Second half of BL-532's OUTCOME line ('isolate bounce recovery trees'), split out because it changes how batch roles commit and forward. Evidence: backlog/evidence/BL-477-upstream-drift-watch-mechanism-bounce-20260717-b.md; backlog/evidence/BL-465-recently-closed-not-sorted-by-recency-bounce-20260717-b.md."
 
 description: |
@@ -114,9 +129,10 @@ specifier_decisions: |
   reading - that approach 3 is the smallest change and approach 2 the most
   dangerous - agreed with the ruling on both points.
 
-  FIRST ACTION is not design: it is to check whether BL-532's deferral records
-  yet contain enough measurements to open the gate. If they do not, this ticket
-  waits on data, not on a specifier turn.
+  Gherkin contract and approach-3 implementation already on main (feature file,
+  batchRecovery.ts, APS steps). 2026-08-26 coordinator route: YAML hygiene only
+  (required_wiring, qa_e2e, second invariant). Active bounces are implementation
+  re-cut (hitchhiker scrub deleting BL-653/660 slices) — not spec-gap.
 
 acceptance: specs/features/BL-588-isolate-batch-recovery-trees.feature
 
@@ -154,18 +170,6 @@ abandoned_commits:
   - b1c241d4c2
   - 1296f07b05
   - d7e3f121ad
-  - 0979868484
-  - e783d96c19
-  - e831498dc2
-  - 65fcd6e10b
-  - 9fd76778a0
-  - 3a00ff6154
-  - 88fb52d86c
-  - 2fa68e5476
-  - 8b67d7c563
-  - 93e67d1603
-  - cac0d71b75
-  - c28ceddf3e
 bounce_count: 5
 bounce_history:
   - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: 3403f29b1, evidence: backlog/evidence/BL-588-qa-bounce-20260826.md }

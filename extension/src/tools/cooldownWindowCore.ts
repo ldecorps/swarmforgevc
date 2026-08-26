@@ -14,7 +14,6 @@
 // may span midnight.
 
 import { parseConfigValue } from '../util/swarmforgeConfig';
-import { resolveShiftSchedule } from './swarmShiftCore';
 import type { PauseState } from './telegramControlCore';
 
 export type LocalTime = { hour: number; minute: number };
@@ -61,18 +60,6 @@ export function parseLocalTime(value: string | undefined): LocalTime | null {
 }
 
 export function parseCooldownConfig(confContent: string): ParsedCooldownConfig {
-  const shift = resolveShiftSchedule(confContent);
-  if (shift) {
-    return {
-      config: {
-        enabled: true,
-        startLocal: shift.cooldownStartLocal,
-        endLocal: shift.cooldownEndLocal,
-      },
-      malformed: false,
-    };
-  }
-
   const enabledRaw = parseConfigValue(confContent, 'cooldown_window_enabled');
   const enabled = enabledRaw === 'true';
   if (!enabled) {

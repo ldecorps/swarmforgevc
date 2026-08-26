@@ -35,7 +35,6 @@ abandoned_commits:
   - 8e4ee51beb
   - 44474edb41
 
-
 description: |
   ## What
 
@@ -110,13 +109,14 @@ notes: |
   INTAKE-front-desk-bridge-giveup-email-spam.md.
 
 source: |
-  backlog/INTAKE-front-desk-bridge-child-crash-loop-after-bl1158.md
+  backlog/  INTAKE-front-desk-bridge-child-crash-loop-after-bl1158.md
   (human via Cursor, 2026-08-26 ~13:17 BST). Supersedes
   .swarmforge/operator/INTAKE-front-desk-bridge-build-stale-giveup-after-bl1158.md.
+  - [2026-08-26T18:49Z] coordinator: STARVED sweep — QA commit 571de455be on main;
+    active reopened by reconcile; awaiting QA git_handoff close (not coder re-route).
 
 assigned_to: coder
 bounce_count: 2
 bounce_history:
   - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: 4834764d8, evidence: backlog/evidence/BL-1159-qa-bounce-20260826.md }
   - { at: 2026-08-26, by: QA, blamed: coder, class: behavior, commit: 8e4ee51beb, evidence: backlog/evidence/BL-1159-qa-bounce-rematch2-20260826.md }
-

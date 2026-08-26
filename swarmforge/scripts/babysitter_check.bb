@@ -37,7 +37,6 @@
 ;; BL-1081: the deterministic layer's view of an ACP-hosted seat.
 (load-file (str (fs/path script-dir "acp_session_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_nudge_lib.bb")))
-(load-file (str (fs/path script-dir "operator_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
 ;; BL-958: shared control-plane classify / response-policy — babysitterd is
 ;; the owning daemon for :recover via ./swarm ensure.
@@ -67,7 +66,6 @@
 (def babysitterd-dir (fs/path state-dir "babysitterd"))
 (def streak-file (fs/path babysitterd-dir "streak"))
 (def dedup-file (fs/path babysitterd-dir "nudge-dedup.json"))
-(def escalation-dedup-file (fs/path babysitterd-dir "escalation-dedup.json"))
 ;; BL-1017: {role -> {"attempts" n "last-ms" ms}} — what bounds session
 ;; repair across sweeps. Without persistence the cooldown would reset on
 ;; every sweep and invariant 2 ("no respawn storm") would be unenforceable,
@@ -897,21 +895,6 @@
   (fs/create-dirs babysitterd-dir)
   (spit (str dedup-file) (json/generate-string m)))
 
-(defn read-escalation-dedup-state []
-  (if (fs/exists? escalation-dedup-file)
-    (try (json/parse-string (slurp (str escalation-dedup-file))) (catch Exception _ {}))
-    {}))
-
-(defn write-escalation-dedup-state! [m]
-  (fs/create-dirs babysitterd-dir)
-  (spit (str escalation-dedup-file) (json/generate-string m)))
-
-(defn enqueue-operator-escalation! [finding]
-  (let [event (operator-lib/babysitter-escalation-event finding)
-        script (fs/path script-dir "operator_enqueue_event.bb")]
-    (process/shell {:dir (str project-root) :extra-env {"OPERATOR_EVENTS_LOCK_MAX_WAIT_MS" "5000"}}
-                     "bb" (str script) (str project-root) (json/generate-string event))))
-
 ;; ── BL-1017: bounded session-repair state + execution ─────────────────────
 
 ;; BL-631's warning applies here verbatim: NEVER keywordize on the way back
@@ -1201,24 +1184,11 @@
     (when nudge?
       (when (seq findings)
         (let [dedup-state (read-dedup-state)
-              escalation-dedup (read-escalation-dedup-state)
-              now (now-ms)
-              nudge-opts {:last-nudged-ms-by-key dedup-state :now-ms now :cooldown-ms nudge-cooldown-ms}
               {:keys [to-nudge new-dedup-state]}
-              (babysitterd-sweep-lib/decide-nudges findings nudge-opts)
-              {:keys [to-escalate new-escalation-dedup-state]}
-              (babysitterd-sweep-lib/decide-escalations findings
-                                                         {:last-escalated-ms-by-key escalation-dedup
-                                                          :now-ms now
-                                                          :cooldown-ms nudge-cooldown-ms})]
-          (doseq [f to-escalate]
-            (try
-              (enqueue-operator-escalation! f)
-              (println (str ts " ESCALATED operator: [" (:key f) "] " (:message f)))
-              (catch Exception e
-                (println (str ts " ESCALATE-FAILED [" (:key f) "] " (.getMessage e))))))
-          (when (seq to-escalate)
-            (write-escalation-dedup-state! new-escalation-dedup-state))
+              (babysitterd-sweep-lib/decide-nudges findings
+                                                   {:last-nudged-ms-by-key dedup-state
+                                                    :now-ms (now-ms)
+                                                    :cooldown-ms nudge-cooldown-ms})]
           (when (seq to-nudge)
             (let [message (babysitterd-sweep-lib/format-nudge-message to-nudge)
                   result (babysitter-nudge-lib/nudge-resident! project-root "coordinator" message)]
@@ -1227,7 +1197,7 @@
                             (println (str ts " NUDGED coordinator: " (count to-nudge) " finding(s)")))
                 :skip-busy (println (str ts " NUDGE-SKIP coordinator busy — " (:detail result)))
                 :no-target (println (str ts " NUDGE-SKIP " (:detail result)))
-                (println (str ts " NUDGE-FAILED " (:detail result))))))))
+                (println (str ts " NUDGE-FAILED " (:detail result)))))))))
     (System/exit 0)))
 
 ;; Run only when invoked as the script itself - load-file from a test runner

@@ -16,7 +16,6 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.feature
 human_approval: approved
-abandoned_commits: []
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 7380d80686. Confirm or
   refute only — do not reimplement. Human certifies or waives via Approvals /
@@ -73,3 +72,30 @@ source: |
   (2026-08-26); babysitter health sweep; BL-848 stamp-off posture.
 
 assigned_to: coder
+abandoned_commits:
+  - 076e8fb6c4
+  - 6b560afb6
+  - 537116c2fc
+  - 98777d55b
+  - 7108b6735
+  - f095fbeea6
+  - d9cf1ce8b
+  - 38c6836d8
+  - f7ea521326
+  - fb68024dc
+  - 81ba52f34
+  - 9f358ce79
+  - 72cab36d4
+  - 375047095
+  - 8cc0d7322
+  - 80de53933
+  - be7406d60
+  - 73a7a98af5
+  - 2145551ce6
+  - 85dfc17a97
+bounce_count: 4
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: 076e8fb6c4, evidence: backlog/evidence/BL-1152-qa-bounce-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: 98777d55b, evidence: backlog/evidence/BL-1152-qa-bounce-rematch-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: d9cf1ce8b, evidence: backlog/evidence/BL-1152-qa-bounce-rematch2-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: hardener, class: behavior, commit: e3d7e80cf, evidence: backlog/evidence/BL-1152-qa-bounce-rematch3-20260826.md }

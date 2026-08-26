@@ -2334,6 +2334,27 @@ test('BL-1152: resolveAskOptions hotfix branch does not disturb ordinary SUP thr
   assert.deepEqual(resolveAskOptions(root, 'SUP-1'), [{ label: 'staging' }]);
 });
 
+test('BL-1152: applyHotfixStampAnswer maps waive/no labels to waived and certify/yes to approved', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'tools', 'telegram-front-desk-bot.ts'),
+    'utf8'
+  );
+  const fn = src.match(/function applyHotfixStampAnswer[\s\S]*?^}/m)?.[0] || '';
+  assert.match(fn, /includes\('waive'\)[\s\S]*decision = 'waived'/);
+  assert.match(fn, /includes\('certify'\)[\s\S]*decision = 'approved'/);
+});
+
+test('BL-1152: postToBridgeOrHotfixStamp routes hotfix- subjects to applyHotfixStampAnswer not postToBridge', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'tools', 'telegram-front-desk-bot.ts'),
+    'utf8'
+  );
+  const fn = src.match(/async function postToBridgeOrHotfixStamp[\s\S]*?^}/m)?.[0] || '';
+  const hotfixBranch = fn.match(/if \(subjectId\.startsWith\('hotfix-'\)\)\s*\{[\s\S]*?\}/)?.[0] || '';
+  assert.match(hotfixBranch, /return applyHotfixStampAnswer/);
+  assert.doesNotMatch(hotfixBranch, /postToBridge/);
+});
+
 // ── BL-607: roleTopicIdFor - the forward (role -> topic id) sibling of
 // roleTopicMapStore.ts's own roleForTopic (topic id -> role). ────────────
 

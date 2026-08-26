@@ -86,17 +86,7 @@ notes: |
 source: |
   backlog/INTAKE-live-screen-activity-dot-per-tile.md
   (human via Cursor 2026-08-26 ~09:21 BST, re-filed ~15:20 BST at operator request)
-
-abandoned_commits:
-  - 0630be50c9
-  - ed8afcd0c3
-  - 3f998cd104
-  - 8dc2ef1255
-  - 9c4ed376ac
-  - da46c63d75
-  - 2d7b89582b
-  - 0357b90a08
-  - e4c58c7ff6
+  - [2026-08-26T18:49Z] coordinator: STARVED sweep — QA commit f5e11920ee on main;
+    active reopened by reconcile; awaiting QA git_handoff close (not coder re-route).
 
 assigned_to: coder
-

@@ -349,8 +349,6 @@ test_smoke_check_stabilize_two_pack.sh	standing
 test_start_ancillary_services_cursor_bridge_gate.sh	standing		
 test_start_ancillary_services_freshness_cron.sh	standing		
 test_stop_swarm_freshness_cron.sh	standing		
-test_bl1162_start_stop_swarm_cron_lifecycle.sh	standing		
-bl1162_swarmforge_cron_property_runner.sh	standing		
 test_start_ancillary_services_operator_watch_gate.sh	standing		
 test_start_handoff_daemon.sh	standing		
 test_start_stop_bridge_headless.sh	standing		

@@ -86,7 +86,7 @@
 - commit: f6b6aef25e
   subject: "Land Cursor hotfix: babysitter auto-heal for control-plane-missing on WSL."
   detected_at: 2026-08-22
-  state: awaiting-human
+  state: stamp-open
   stamp_ticket: BL-1071
   human_decision: null
   decided_at: null
@@ -107,84 +107,77 @@
 - commit: 27273f2b0a
   subject: "Land Cursor hotfix: main-sync deadlock breaker, cursor-forge, board UX, plan confirm."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1113
   human_decision: null
   decided_at: null
 - commit: a3bf11b533
   subject: "Fix main_sync_status_cli ahead/behind swap (match handoffd rev-list)."
   detected_at: 2026-08-25
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1115
   human_decision: null
   decided_at: null
 - commit: 646ffe85d
   subject: "Fix Pipeline Board: emit &#160; so Telegram renders NBSP as a space."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1117
   human_decision: null
   decided_at: null
 - commit: b81334b107
   subject: "Support resident-pane path credentials when proxies drop query strings."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1116
   human_decision: null
   decided_at: null
 - commit: 4d5375fdad
   subject: "Skip duplicate approval asks when a live-topic ask is already recorded."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1116
   human_decision: null
   decided_at: null
 - commit: ae983877c4
   subject: "Route Let's Talk by provider; bridge can run ancillary front desk."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1116
   human_decision: null
   decided_at: null
 - commit: d6214efe6f
   subject: "Read seat models from launch scripts for non-Claude agents."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1116
   human_decision: null
   decided_at: null
 - commit: f88913a3df
   subject: "Add ACP host client state machine for structured seat driving (BL-1081)."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1116
   human_decision: null
   decided_at: null
 - commit: fbf6f1a909
   subject: "Land Cursor hotfix: babysitterd start/end heartbeat + cursor-forge pack parse."
   detected_at: 2026-08-25
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1136
   human_decision: null
   decided_at: null
 - commit: ca45facb4
   subject: "Hotfix: restore handoffd startup (BL-669 load-file + sweep order)."
   detected_at: 2026-08-26
-  state: awaiting-human
+  state: pending
   stamp_ticket: BL-1150
   human_decision: null
   decided_at: null
 - commit: 7380d80686
   subject: "Allow concurrent hotfix stamp Yes/No asks on Approvals via Telegram."
   detected_at: 2026-08-26
-  state: stamp-open
-  stamp_ticket: BL-1152
-  human_decision: null
-  decided_at: null
-- commit: 24b229373c
-  subject: "Front desk ops hotfix: rearm bridge script + source swarm.env at runtime start."
-  detected_at: 2026-08-26
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1152
   human_decision: null
   decided_at: null

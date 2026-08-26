@@ -63,20 +63,6 @@ not every sweep. If the coordinator pane/process is down, the daemon logs
 `NUDGE-SKIP` — it never nudges into a dead pane and never falls back to acting
 on the swarm itself.
 
-## CRIT escalations to the operator (BL-653)
-
-Since BL-653, **CRIT** findings also enqueue a `BABYSITTER_ESCALATION` event for
-the LLM Operator via `operator_enqueue_event.bb` — the finding text rides in
-the event so the operator wakes with context, not a payload-free timer.
-
-**WARN** findings (including `stuck-*`) still nudge the coordinator pane only;
-they stay **below** the operator escalation bar. See
-[BL-653 how-to](BL-653-operator-escalation-driven-wake-model.md) for the full
-wake model and what retired (`dead-agent-events`, `SWARM_CHECK_TIMER` patrols).
-
-Dedup/cooldown for escalations mirrors nudges (`decide-escalations` in
-`babysitterd_sweep_lib.bb`).
-
 **Dedup was silently broken for every check until BL-631.**
 `read-dedup-state!` parsed `nudge-dedup.json` with Cheshire's
 `keywordize-keys` flag on, turning every finding's plain string `:key` into a
