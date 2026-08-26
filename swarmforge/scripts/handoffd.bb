@@ -3462,21 +3462,61 @@
                   :daemon-health-lines (banked-daemon-health-lines day-key)})]
     (spit (str (fs/path briefings-dir (str day-key ".md"))) content)))
 
+;; BL-658: consult the night-closing-ceremony gate before the fixed morning
+;; trigger. When closure_stop_local is usable, the independent 04:30 clock
+;; must not fire — briefing is the ceremony's last act. Absent/ambiguous
+;; schedules keep today's fixed-time path (byte-identical for 24/7 swarms).
+(defn night-closing-ceremony-gate []
+  (try
+    ;; Resolve the CLI from the handoffd checkout (same tree as conf-file),
+    ;; not project-root — wiring fixtures use a throwaway root without
+    ;; extension/out, but conf is already script-dir-relative.
+    (let [cli-path (str (fs/path script-dir ".." ".." "extension" "out" "tools"
+                                 "night-closing-ceremony-gate.js"))
+          conf-arg (when (fs/exists? conf-file) ["--conf" (str conf-file)])
+          {:keys [exit out err]} (daemon-cycle-guard-lib/sh!
+                                  (into ["node" cli-path] (or conf-arg []))
+                                  ;; Checkout root (has .git) — not the fixture
+                                  ;; project-root. resolveCliMainWorktreeContext
+                                  ;; needs a git repo even when --conf is set.
+                                  {:dir (str (fs/canonicalize (fs/path script-dir ".." "..")))})]
+      (if (zero? exit)
+        (try (json/parse-string (str/trim out) true)
+             (catch Exception e
+               (log! "closing-ceremony-gate-parse-error" (.getMessage e))
+               nil))
+        (do (log! "closing-ceremony-gate-error" (str "exit=" exit " " (str/trim (or err ""))))
+            nil)))
+    (catch Exception e
+      (log! "closing-ceremony-gate-error" (.getMessage e))
+      nil)))
+
 (defn briefing-generation-sweep! [roles socket]
-  (let [[hour minute] (configured-morning-time)]
-    (briefing-generation-schedule-lib/generate-briefing-if-due!
-     (System/currentTimeMillis) hour minute (str briefings-dir) (swarm-hibernated?)
-     {:notify! (fn [instruction-text]
-                 (if (tmux-inject-disabled?)
-                   (log! "briefing-generation-skip-mailbox-only")
-                   (when-let [coordinator (get roles "coordinator")]
-                     (agent-runtime-inject/notify-agent!
-                      socket (:session coordinator) (or (:agent coordinator) "claude")
-                      :log-fn (fn [tag sess detail] (log! tag sess detail))
-                      :text instruction-text))))
-      :compose-headless! compose-and-write-banked-briefing!
-      :emit-sidecar! emit-cost-health-sidecar!
-      :log! (fn [& parts] (apply log! parts))})))
+  (let [gate (night-closing-ceremony-gate)
+        ceremony-mode? (= "ceremony" (str (:mode gate)))]
+    (when (and ceremony-mode? (:ceremonyDue gate))
+      (log! "closing-ceremony-due"
+            (str "begin=" (:ceremonyBeginLocal gate)
+                 " stop=" (:closureStopLocal gate))))
+    (when (and gate (= "ambiguous" (str (:scheduleState gate))))
+      (log! "closing-ceremony-schedule-ambiguous" (str (:surfaced gate))))
+    ;; Fixed morning trigger only when the gate says so (or gate failed open
+    ;; to today's behaviour — nil gate keeps legacy fire).
+    (when (or (nil? gate) (true? (:consultFixedMorningTrigger gate)))
+      (let [[hour minute] (configured-morning-time)]
+        (briefing-generation-schedule-lib/generate-briefing-if-due!
+         (System/currentTimeMillis) hour minute (str briefings-dir) (swarm-hibernated?)
+         {:notify! (fn [instruction-text]
+                     (if (tmux-inject-disabled?)
+                       (log! "briefing-generation-skip-mailbox-only")
+                       (when-let [coordinator (get roles "coordinator")]
+                         (agent-runtime-inject/notify-agent!
+                          socket (:session coordinator) (or (:agent coordinator) "claude")
+                          :log-fn (fn [tag sess detail] (log! tag sess detail))
+                          :text instruction-text))))
+          :compose-headless! compose-and-write-banked-briefing!
+          :emit-sidecar! emit-cost-health-sidecar!
+          :log! (fn [& parts] (apply log! parts))})))))
 
 ;; ── BL-309: coordinator context-clear at the safe idle boundary after a
 ;;    ticket's bookkeeping close ────────────────────────────────────────────
