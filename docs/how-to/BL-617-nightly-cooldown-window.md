@@ -24,6 +24,13 @@ Since BL-823, `writeControlPauseState` also appends a `pause-start`/`pause-end` 
 
 ## Configuration
 
+**BL-660 shift packs.** When `config swarm_shift day|evening|night` is set in
+`swarmforge/swarmforge.conf`, the cooldown window is **derived automatically**
+as the inverse of the active shift — do not hand-edit `cooldown_start_local` /
+`cooldown_end_local` alongside an active shift. See
+[BL-660 how-to](BL-660-three-shift-packs-conf-selectable.md). When `swarm_shift`
+is absent, the independent keys below apply unchanged (24/7 semantics).
+
 Set in `swarmforge/swarmforge.conf` (read fresh on every sweep tick - no restart needed to pick up a change):
 
 ```

@@ -13,6 +13,25 @@ them. Core: `extension/src/quality/batchRecovery.ts`. Acceptance:
 `docs/how-to/BL-588-isolate-batch-recovery-trees.md`. Diagram note:
 `docs/diagrams/swarm-flow.mmd`.)
 Prior entry —
+**Last Updated:** August 26, 2026 (BL-1160: Live Screen phone grid — each role
+tile owns an activity status dot inside `.pane-head` (`[data-status-indicator]`);
+`resolvePaneStatusKind` prefers per-pane `activitySignal`, falls back to
+aggregate poll freshness for available panes only; never-polled panes hide or
+non-ok; fullscreen `#fs-dot` retained. Sibling to BL-1046 held-ticket strip.
+Module: `extension/src/bridge/residentSpyUiHtml.ts`. Acceptance:
+`specs/features/BL-1160-live-screen-activity-dot-per-tile.feature`. How-to:
+`docs/how-to/BL-1160-live-screen-activity-dot-per-tile.md`.)
+Prior entry —
+**Last Updated:** August 26, 2026 (BL-1159: front-desk bridge child crash give-up
+loop after bind — `stop_bridge_headless.sh` defers when `front-desk-supervisor.pid`
+is live; `recover_miniapp_bridge.sh` re-arms via front desk or falls back to
+bridge-only bounce; `operator_runtime.bb` miniapp watchdog calls recover, not
+direct stop/kill. Preserves BL-1154 build-stale vs crash classification, BL-1158
+single owner, BL-1151 email policy. Acceptance:
+`specs/features/BL-1159-bridge-child-survives-without-crash-giveup-loop.feature`.
+How-to:
+`docs/how-to/BL-1159-bridge-child-survives-without-crash-giveup-loop.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-660: three named shift packs — `config
 swarm_shift day|evening|night` selects exactly one 8h shift; when active it is
 the sole schedule source for start/stop crontab (`apply_shift_schedule.bb`),
@@ -34,6 +53,7 @@ babysitter findings, or `SWARM_CONTROL_LOST`; retires per-tick
 retired. Front-desk restricted operator unchanged (BL-334). Acceptance:
 `specs/features/BL-653-operator-wakes-only-on-real-events-escalation-driven.feature`.
 How-to: `docs/how-to/BL-653-operator-escalation-driven-wake-model.md`.)
+
 Prior entry —
 **Last Updated:** August 26, 2026 (BL-1153: Mini App font-size choices stick
 across reload on Live Screen, Pipeline Board, and Paused pager via extension-host

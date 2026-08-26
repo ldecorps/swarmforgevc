@@ -2,18 +2,41 @@ id: BL-653
 title: "Escalation-driven operator: the LLM Operator wakes ONLY on an inbound human message or a deterministic-layer escalation — the runtime stops fabricating liveness pseudo-events every tick"
 milestone: M8
 type: feature
-status: todo
+status: in_progress
 epic: swarm-reliability
 human_approval: approved
 severity: medium
 priority: 94
 direction: human-requested
 depends_on: [BL-611]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: high
 invariants:
   - "The operator LLM wakes only for an inbound human message or a deterministic-layer escalation; the runtime never manufactures a wake from its own sweep."
   - "The patrol wake is never removed before a live producer of escalations exists. At every commit in this ticket's history, at least one of the two is true: the payload-free timer still wakes the operator, or a real emitter is wired and proven to reach it end to end. Removing the old wake while the new one is unpopulated does not degrade supervision, it deletes it — silently, and precisely on the nights nobody is watching."
+acceptance: specs/features/BL-653-operator-wakes-only-on-real-events-escalation-driven.feature
+
+qa_e2e_procedure: >
+  (1) Fixture a healthy rotation-router night with no Telegram traffic and green
+  babysitter sweeps — assert operator LLM launch count stays zero (not log
+  absence). (2) Inject one TELEGRAM_TOPIC_MESSAGE — exactly one run, event
+  present. (3) Enqueue BABYSITTER_ESCALATION with finding text — exactly one
+  run, text in batch; a sub-bar finding nudges coordinator only. (4) Kill the
+  active resident — escalation within one babysitter sweep; dormant role never
+  wakes operator. (5) SWARM_CONTROL_LOST still wakes directly. (6) Diff
+  front-desk restricted operator lifecycle against baseline — byte-identical.
+  (7) Confirm night-start.sh pid-hold removed. Use fakes/fixtures — never a
+  live overnight wait in CI.
+
+specifier_decisions: |
+  Acceptance feature written 2026-08-26. Seven headline behaviours from the
+  ticket's numbered list map 1:1 to scenarios 01–08 (04 splits coordinator
+  nudge from escalation). BL-611 is landed in backlog/done — depends_on satisfied.
+  BABYSITTER_ESCALATION wire is scoped as consumer in operator_runtime; emitter
+  lives in ported babysitter scripts (BL-611 product). Patrol wake removal is
+  gated by invariant 2 — implement emitter before retiring SWARM_CHECK_TIMER /
+  dead-agent-events wakes. Measured 2026-07-26 fixture (six stuck parcels, four
+  payload-free SWARM_CHECK_TIMER wakes) is the scenario-01 non-vacuity anchor.
 
 approval_context: >
   Operator, 2026-07-25 23:55, designing the unattended-nights wake model:
@@ -88,26 +111,6 @@ description: |
 
   Event-type model tiering ([[operator-model-event-type-tiering]]) survives
   intact: fewer wake classes, same per-class model choice.
-
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. A healthy swarm, no inbound traffic, no babysitter finding: ZERO
-     operator LLM launches over a full simulated night. This is the headline
-     scenario and must be asserted on launch COUNT, not on log absence.
-  2. A Telegram topic message wakes exactly one operator run carrying that
-     event; its reply path is unchanged.
-  3. A babysitter escalation wakes exactly one run whose inflight batch
-     contains the finding text; the coordinator nudge path still works for
-     findings below the escalation bar (the babysitter chooses per finding).
-  4. A REAL resident death (kill the active resident) reaches the operator —
-     via the babysitter's escalation — within one sweep period, and a
-     dormant role under the rotation pack NEVER does. (Non-vacuity pair.)
-  5. SWARM_CONTROL_LOST still wakes directly, unchanged from BL-368.
-  6. The front-desk restricted operator lifecycle (BL-334) is byte-identical.
-  7. With this landed, night-start.sh's conditional pid-hold block is
-     REMOVED (it must not silently fight the new model), and an unattended
-     night's operator cost is proportional to real events only.
 
 out_of_scope: |
   - BL-647's fix. It lands first and stays valid: liveness producers must be
@@ -205,5 +208,11 @@ notes: |
   ports both scripts into `swarmforge/scripts/` with tests, lifecycle wiring and a
   runbook. Nothing further needed; recorded here so the flag is visibly closed
   rather than dropped.
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-26, by: specifier, blamed: coder, class: spec-gap, commit: d9682a329, evidence: backlog/evidence/BL-653-bounce-20260826.md }
   - [2026-08-26T13:58Z] coordinator: drop alert — no parcel in flight at coder;
     acceptance feature absent from main HEAD; nudged specifier to re-spec.
+  - [2026-08-26T15:47Z] coordinator: drop alert — re-routed to coder (feature on main).
+abandoned_commits:
+  - 1296f07b05

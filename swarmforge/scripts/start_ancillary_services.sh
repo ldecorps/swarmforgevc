@@ -118,12 +118,17 @@ else
   fi
 fi
 
-if [[ "${SWARMFORGE_SKIP_FRESHNESS_CRON:-}" == "1" ]]; then
-  echo "Skipping freshness cron install (SWARMFORGE_SKIP_FRESHNESS_CRON=1)."
+if [[ "${SWARMFORGE_SKIP_FRESHNESS_CRON:-}" == "1" && "${SWARMFORGE_SKIP_SCHEDULE_CRON:-}" == "1" ]]; then
+  echo "Skipping swarmforge cron install (SWARMFORGE_SKIP_FRESHNESS_CRON=1 and SWARMFORGE_SKIP_SCHEDULE_CRON=1)."
+elif [[ "${SWARMFORGE_SKIP_FRESHNESS_CRON:-}" == "1" ]]; then
+  echo "Installing schedule cron only (SWARMFORGE_SKIP_FRESHNESS_CRON=1)..."
+  if ! bash "$SCRIPT_DIR/install_shift_schedule_cron.sh" "$ROOT"; then
+    echo "WARN: schedule cron install failed for $ROOT" >&2
+  fi
 else
-  echo "Installing freshness cron..."
-  if ! bash "$SCRIPT_DIR/install_freshness_cron.sh" "$ROOT"; then
-    echo "WARN: freshness cron install failed; the daemon-log freshness watchdog (handoffd/babysitterd staleness) will NOT be watched until this is fixed — run: bash $SCRIPT_DIR/install_freshness_cron.sh $ROOT" >&2
+  echo "Installing swarmforge crons (freshness + schedule when configured)..."
+  if ! bash "$SCRIPT_DIR/install_swarmforge_crons.sh" "$ROOT"; then
+    echo "WARN: swarmforge cron install failed; freshness/schedule may be unwatched until fixed — run: bash $SCRIPT_DIR/install_swarmforge_crons.sh $ROOT" >&2
   fi
 fi
 
