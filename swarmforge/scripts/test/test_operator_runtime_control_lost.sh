@@ -74,8 +74,8 @@ write_roles_tsv "$F2"
 tick "$F2" >/dev/null
 check "control-lost-02: no socket pointer at all is the ordinary empty-sessions case, never control-lost" \
   '[[ "$(events_text "$F2")" != *"SWARM_CONTROL_LOST"* ]]'
-check "control-lost-02: dead-agent-events still runs normally (both expected roles reported exited)" \
-  '[[ "$(events_text "$F2" | grep -c AGENT_EXITED)" -eq 2 ]]'
+check "BL-653: dead-agent-events no longer runs from operator tick (babysitter owns liveness)" \
+  '[[ "$(events_text "$F2" | grep -c AGENT_EXITED)" -eq 0 ]]'
 rm -rf "$F2"
 
 # ── 3. THE REAL DETECTION MUST SURVIVE THE FIX: a genuinely reachable socket
@@ -93,10 +93,8 @@ tmux -S "$SOCK" kill-session -t swarmforge-QA 2>/dev/null
 tick "$F3" >/dev/null
 check "control-lost-03: a genuinely reachable socket produces NO SWARM_CONTROL_LOST" \
   '[[ "$(events_text "$F3")" != *"SWARM_CONTROL_LOST"* ]]'
-check "control-lost-03: the genuinely-dead role (QA) IS reported AGENT_EXITED" \
-  '[[ "$(events_text "$F3")" == *'"'"'"AGENT_EXITED","subject":"QA"'"'"'* ]]'
-check "control-lost-03: the genuinely-alive role (coder) is NOT reported exited" \
-  '[[ "$(events_text "$F3")" != *'"'"'"AGENT_EXITED","subject":"coder"'"'"'* ]]'
+check "BL-653: operator tick no longer manufactures AGENT_EXITED (babysitter escalates instead)" \
+  '[[ "$(events_text "$F3" | grep -c AGENT_EXITED)" -eq 0 ]]'
 tmux -S "$SOCK" kill-server 2>/dev/null || true
 rm -rf "$SOCK_DIR" "$F3"
 
