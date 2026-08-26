@@ -4,7 +4,6 @@
 // the resolver + sequence decisions; IO lives behind adapters.
 
 import { parseLocalTime, type LocalTime } from '../tools/cooldownWindowCore';
-import { resolveShiftSchedule } from '../tools/swarmShiftCore';
 
 export type ClosureScheduleState = 'ok' | 'absent' | 'ambiguous';
 
@@ -63,11 +62,6 @@ export function collectClosureStopLocals(confContent: string): string[] {
 }
 
 export function resolveClosureSchedule(confContent: string): ClosureScheduleResolution {
-  const shift = resolveShiftSchedule(confContent);
-  if (shift) {
-    return { state: 'ok', closure: shift.closureStopLocal, surfaced: 'nothing' };
-  }
-
   const raw = collectClosureStopLocals(confContent);
   if (raw.length === 0) {
     return { state: 'absent', surfaced: 'nothing' };
