@@ -114,3 +114,7 @@ source: |
   .swarmforge/operator/INTAKE-front-desk-bridge-build-stale-giveup-after-bl1158.md.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: 4834764d8, evidence: backlog/evidence/BL-1159-qa-bounce-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: coder, class: behavior, commit: 8e4ee51beb, evidence: backlog/evidence/BL-1159-qa-bounce-rematch2-20260826.md }
