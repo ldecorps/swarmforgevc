@@ -13,7 +13,6 @@ const FEATURE = 'BL-1152 stamp-off of Cursor hotfix 7380d80686';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const HOTFIX = '7380d80686';
 const BOT_SRC = 'extension/src/tools/telegram-front-desk-bot.ts';
-const CLI_TEST = path.join(REPO_ROOT, 'extension', 'test', 'telegramFrontDeskBotCli.test.js');
 
 function gitShow(rev, file) {
   return execFileSync('git', ['show', `${rev}:${file}`], {
@@ -38,6 +37,33 @@ function loadBotSrc(ctx) {
     { cwd: REPO_ROOT }
   );
   return ctx.botSrc;
+}
+
+function removeFixture(ctx) {
+  if (!ctx.fixtureRoot) {
+    return;
+  }
+  try {
+    fs.rmSync(ctx.fixtureRoot, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+  ctx.fixtureRoot = undefined;
+}
+
+function postToBridgeOrHotfixStampBody(src) {
+  return src.match(/async function postToBridgeOrHotfixStamp[\s\S]*?^}/m)?.[0] || '';
+}
+
+function assertHotfixLedgerRouting(src) {
+  assert.match(src, /function applyHotfixStampAnswer/);
+  assert.match(src, /hotfix_ledger_update\.bb/);
+  assert.match(src, /--decide/);
+  assert.match(src, /spawnSync\('bb'/);
+  assert.match(src, /function postToBridgeOrHotfixStamp/);
+  assert.match(src, /subjectId\.startsWith\('hotfix-'\)/);
+  assert.match(src, /return applyHotfixStampAnswer/);
+  assert.doesNotMatch(postToBridgeOrHotfixStampBody(src), /postToBridge\([\s\S]*hotfix-/);
 }
 
 function runBl1152UnitTests() {
@@ -93,7 +119,13 @@ function registerSteps(registry) {
   });
 
   scoped(/^resolveAskOptions is called with that threadId$/, (ctx) => {
-    const { resolveAskOptions } = require(path.join(REPO_ROOT, 'extension', 'out', 'tools', 'telegram-front-desk-bot'));
+    const { resolveAskOptions } = require(path.join(
+      REPO_ROOT,
+      'extension',
+      'out',
+      'tools',
+      'telegram-front-desk-bot'
+    ));
     ctx.resolvedOptions = resolveAskOptions(ctx.fixtureRoot, ctx.hotfixThread);
     runBl1152UnitTests();
   });
@@ -103,60 +135,57 @@ function registerSteps(registry) {
   });
 
   scoped(/^it does not require awaiting-answer\.json to match the threadId$/, (ctx) => {
-    const src = loadBotSrc(ctx);
-    assert.match(src, /hotfix-stamp-asks\.json/);
-    assert.match(src, /threadId\.startsWith\('hotfix-'\)/);
-    const awaiting = JSON.parse(
-      fs.readFileSync(path.join(ctx.fixtureRoot, '.swarmforge', 'operator', 'awaiting-answer.json'), 'utf8')
-    );
-    assert.notEqual(awaiting.thread_id, ctx.hotfixThread);
-    assert.deepEqual(ctx.resolvedOptions, ctx.hotfixOptions);
     try {
-      fs.rmSync(ctx.fixtureRoot, { recursive: true, force: true });
-    } catch {
-      /* ignore */
+      const src = loadBotSrc(ctx);
+      assert.match(src, /hotfix-stamp-asks\.json/);
+      assert.match(src, /threadId\.startsWith\('hotfix-'\)/);
+      const awaiting = JSON.parse(
+        fs.readFileSync(
+          path.join(ctx.fixtureRoot, '.swarmforge', 'operator', 'awaiting-answer.json'),
+          'utf8'
+        )
+      );
+      assert.notEqual(awaiting.thread_id, ctx.hotfixThread);
+      assert.deepEqual(ctx.resolvedOptions, ctx.hotfixOptions);
+    } finally {
+      removeFixture(ctx);
     }
-    ctx.fixtureRoot = undefined;
   });
 
-  scoped(/^a poll answer is posted for subjectId "hotfix-<commit>" with label Yes or No$/, (ctx) => {
-    const src = loadBotSrc(ctx);
-    ctx.botSrc = src;
-  });
+  scoped(/^a poll answer is posted for subjectId "hotfix-<commit>" with label Yes or No$/, () => {});
 
   scoped(/^applyHotfixStampAnswer runs hotfix_ledger_update --decide for that commit$/, (ctx) => {
-    const src = loadBotSrc(ctx);
-    assert.match(src, /function applyHotfixStampAnswer/);
-    assert.match(src, /hotfix_ledger_update\.bb/);
-    assert.match(src, /--decide/);
-    assert.match(src, /spawnSync\('bb'/);
+    assertHotfixLedgerRouting(loadBotSrc(ctx));
   });
 
   scoped(/^the answer is not forwarded to the bridge as an ordinary ask reply$/, (ctx) => {
-    const src = loadBotSrc(ctx);
-    assert.match(src, /function postToBridgeOrHotfixStamp/);
-    assert.match(src, /subjectId\.startsWith\('hotfix-'\)/);
-    assert.match(src, /return applyHotfixStampAnswer/);
-    assert.doesNotMatch(
-      src.match(/async function postToBridgeOrHotfixStamp[\s\S]*?^}/m)?.[0] || '',
-      /postToBridge\([\s\S]*hotfix-/
-    );
+    assertHotfixLedgerRouting(loadBotSrc(ctx));
   });
 
   scoped(/^resolveAskOptions is called with a non-hotfix threadId$/, (ctx) => {
     ctx.fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1152-ordinary-'));
-    const operatorDir = path.join(ctx.fixtureRoot, '.swarmforge', 'operator');
-    fs.mkdirSync(operatorDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(operatorDir, 'awaiting-answer.json'),
-      JSON.stringify({
-        question: 'which env?',
-        thread_id: 'SUP-1',
-        options: [{ label: 'staging' }, { label: 'prod' }],
-      })
-    );
-    const { resolveAskOptions } = require(path.join(REPO_ROOT, 'extension', 'out', 'tools', 'telegram-front-desk-bot'));
-    ctx.ordinaryOptions = resolveAskOptions(ctx.fixtureRoot, 'SUP-1');
+    try {
+      const operatorDir = path.join(ctx.fixtureRoot, '.swarmforge', 'operator');
+      fs.mkdirSync(operatorDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(operatorDir, 'awaiting-answer.json'),
+        JSON.stringify({
+          question: 'which env?',
+          thread_id: 'SUP-1',
+          options: [{ label: 'staging' }, { label: 'prod' }],
+        })
+      );
+      const { resolveAskOptions } = require(path.join(
+        REPO_ROOT,
+        'extension',
+        'out',
+        'tools',
+        'telegram-front-desk-bot'
+      ));
+      ctx.ordinaryOptions = resolveAskOptions(ctx.fixtureRoot, 'SUP-1');
+    } finally {
+      removeFixture(ctx);
+    }
   });
 
   scoped(
@@ -167,16 +196,8 @@ function registerSteps(registry) {
   );
 
   scoped(/^postToBridge is used for non-hotfix subject ids$/, (ctx) => {
-    const src = loadBotSrc(ctx);
-    const helper = src.match(/async function postToBridgeOrHotfixStamp[\s\S]*?^}/m)?.[0] || '';
+    const helper = postToBridgeOrHotfixStampBody(loadBotSrc(ctx));
     assert.match(helper, /return postToBridge\(/);
-    try {
-      if (ctx.fixtureRoot) {
-        fs.rmSync(ctx.fixtureRoot, { recursive: true, force: true });
-      }
-    } catch {
-      /* ignore */
-    }
   });
 }
 
