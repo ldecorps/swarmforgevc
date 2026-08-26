@@ -1227,7 +1227,7 @@
                             (println (str ts " NUDGED coordinator: " (count to-nudge) " finding(s)")))
                 :skip-busy (println (str ts " NUDGE-SKIP coordinator busy — " (:detail result)))
                 :no-target (println (str ts " NUDGE-SKIP " (:detail result)))
-                (println (str ts " NUDGE-FAILED " (:detail result))))))))
+                (println (str ts " NUDGE-FAILED " (:detail result)))))))))
     (System/exit 0)))
 
 ;; Run only when invoked as the script itself - load-file from a test runner
