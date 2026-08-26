@@ -47,6 +47,11 @@ trap cleanup EXIT
 
 sed -i 's/^config briefing_morning_time_utc .*/config briefing_morning_time_utc 00:00/' "$REAL_CONF"
 grep -q '^config briefing_morning_time_utc 00:00$' "$REAL_CONF" || fail "setup: failed to override briefing_morning_time_utc for the test"
+# BL-658: this test owns the fixed-time path — strip the closure schedule so
+# the ceremony gate does not suppress the independent morning trigger.
+sed -i '/^config closure_stop_local /d' "$REAL_CONF"
+sed -i '/^config closing_drain_budget_minutes /d' "$REAL_CONF"
+sed -i '/^config closing_briefing_budget_minutes /d' "$REAL_CONF"
 
 SOCK="$ROOT/fake.sock"
 touch "$SOCK"
