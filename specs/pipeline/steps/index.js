@@ -738,6 +738,7 @@ const DOMAINS = [
   require('./bl658BriefingTriggerDerivedFromClosureScheduleSteps'),
   require('./bl1151FrontDeskGiveupOneEmailPerEpisodeSteps'),
   require('./bl1153StickyWebFontSizeChoiceSteps'),
+  require('./bl1159BridgeChildSurvivesWithoutCrashGiveupLoopSteps'),
   require('./bl1154BuildStaleNotCrashGiveupBudgetSteps'),
   require('./bl1159BridgeChildSurvivesWithoutCrashGiveupLoopSteps'),
   require('./bl1160LiveScreenActivityDotPerTileSteps'),

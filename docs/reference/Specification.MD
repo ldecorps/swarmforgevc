@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 26, 2026 (BL-1159: front-desk bridge child crash give-up
+loop after bind — `stop_bridge_headless.sh` defers when `front-desk-supervisor.pid`
+is live; `recover_miniapp_bridge.sh` re-arms via front desk or falls back to
+bridge-only bounce; `operator_runtime.bb` miniapp watchdog calls recover, not
+direct stop/kill. Preserves BL-1154 build-stale vs crash classification, BL-1158
+single owner, BL-1151 email policy. Acceptance:
+`specs/features/BL-1159-bridge-child-survives-without-crash-giveup-loop.feature`.
+How-to:
+`docs/how-to/BL-1159-bridge-child-survives-without-crash-giveup-loop.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-653: escalation-driven operator — the LLM
 Operator wakes only on inbound human traffic, `BABYSITTER_ESCALATION` from CRIT
 babysitter findings, or `SWARM_CONTROL_LOST`; retires per-tick
@@ -22,6 +32,7 @@ them. Core: `extension/src/quality/batchRecovery.ts`. Acceptance:
 `specs/features/BL-588-isolate-batch-recovery-trees.feature`. How-to:
 `docs/how-to/BL-588-isolate-batch-recovery-trees.md`. Diagram note:
 `docs/diagrams/swarm-flow.mmd`.)
+
 Prior entry —
 **Last Updated:** August 26, 2026 (BL-1153: Mini App font-size choices stick
 across reload on Live Screen, Pipeline Board, and Paused pager via extension-host
