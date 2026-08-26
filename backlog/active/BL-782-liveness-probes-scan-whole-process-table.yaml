@@ -13,7 +13,7 @@ mutation_cost: low
 human_approval: approved
 acceptance: specs/features/BL-782-liveness-probes-scan-whole-process-table.feature
 required_wiring:
-  - "swarmforge/scripts/expedite_cli.bb::live-probe-or-pids-matching::root-scoped needles at call sites"
+  - "swarmforge/scripts/expedite_cli.bb::pids-matching::root-scoped needles at call sites"
   - "specs/pipeline/steps/index.js::bl782ExpediteLivenessScopeSteps::acceptance handler registered"
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 invariants:
