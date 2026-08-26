@@ -22,6 +22,8 @@ notes: |
     approval (`human_approval` not set to approved; handoffd candidate BL-533).
   - [2026-08-26T13:01Z] coordinator: repeat open-slot nudge — same block holds.
   - [2026-08-26T13:07Z] coordinator: repeat open-slot nudge — same block holds.
+  - [2026-08-26T18:52Z] coordinator: open-slot nudge — still awaiting human
+    approval; active cap full (5/5: BL-588, BL-653, BL-660, BL-1090, BL-1118).
 
 acceptance: |
   Feature: claimed deliverables are tracked and wired before close
