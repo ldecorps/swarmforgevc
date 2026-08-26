@@ -17,6 +17,7 @@ In `residentSpyUiHtml.ts` / `residentSpyPaneFontSize.ts`:
 | Range | 9–20px, 1px steps; bound button shows unavailable |
 | Storage | Session memory only — no `localStorage` / `sessionStorage` (Architecture Rule 3) |
 | Header | Ticket id/title, role, model, entered-ago, RESIDENT badge remain (BL-564) |
+| Grid tiles | Held ticket id/slug/age on the tile head in smaller type (BL-1046); see [BL-1046 how-to](BL-1046-console-tile-names-the-ticket-a-seat-holds.md) |
 
 ## Operator note
 

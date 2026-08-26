@@ -679,6 +679,7 @@ const DOMAINS = [
   require('./bl777BargeInDetectorSteps'),
   require('./bl844HandsFreeSessionSteps'),
   require('./bl845OfflineWakeSteps'),
+  require('./bl1046ConsoleTileSteps'),
   require('./bl1045HeldTicketsOnBoardSteps'),
   require('./bl1043StartupGraceSteps'),
   require('./bl1076BatchClaimVisibleWorkSteps'),
