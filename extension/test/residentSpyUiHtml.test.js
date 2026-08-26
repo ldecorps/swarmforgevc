@@ -247,6 +247,37 @@ test('BL-609: the HTML shell never references browser storage', () => {
   const html = getResidentSpyUiHtml();
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
 });
+test('BL-1153: Live Screen pane font size survives a full Mini App reload', async () => {
+  const fontStore = { 'live-screen': 16 };
+  const dom = renderScreen(
+    () =>
+      residentPaneResponse({
+        available: true,
+        monoRouterLayout: true,
+        panes: [{ id: 'resident', label: 'Resident', pane: pane({ paneText: 'hello pane' }) }],
+      }),
+    fontStore
+  );
+  await flush();
+  assert.equal(dom.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '16px');
+  dom.window.close();
+
+  const reloaded = renderScreen(
+    () =>
+      residentPaneResponse({
+        available: true,
+        monoRouterLayout: true,
+        panes: [{ id: 'resident', label: 'Resident', pane: pane({ paneText: 'hello pane' }) }],
+      }),
+    fontStore
+  );
+  await flush();
+  assert.equal(reloaded.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(), '16px');
+  assert.notEqual(
+    reloaded.window.document.documentElement.style.getPropertyValue('--pane-font-size').trim(),
+    '13px'
+  );
+});
 
 test('BL-1046: grid tile shows held ticket id, slug, and compact claim age from payload', async () => {
   const claimAt = Date.now() - 32 * 60 * 1000;
