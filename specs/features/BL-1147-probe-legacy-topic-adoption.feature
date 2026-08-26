@@ -12,17 +12,18 @@ Feature: Probe legacy topic adoption paths on disk without mutating maps or call
 
   # BL-1147 probe-legacy-02
   Scenario Outline: The probe classifies cursor Host topic routing from provider and bindings
-    Given cursor-bridge state binds Host topic <topicId>
+    Given cursor-bridge state binds Host topic 8435
     And SWARMFORGE_LETS_TALK_PROVIDER is <provider>
     When the legacy topic adoption probe runs
     Then the probe report classifies cursor Host routing as <expectedRouting>
+    And the probe report cursor Host topic id is 8435
 
     Examples:
-      | topicId | provider | expectedRouting    |
-      | 8435    | cursor   | bridge             |
-      | 8435    | local    | operator-re-adopt  |
-      | 8435    |          | bridge             |
-      | 8435    | openai   | operator-re-adopt  |
+      | provider | expectedRouting    |
+      | cursor   | bridge             |
+      | local    | operator-re-adopt  |
+      |          | bridge             |
+      | openai   | operator-re-adopt  |
 
   # BL-1147 probe-legacy-03
   Scenario: The probe flags stale front-desk bindings on the cursor topic as scrub candidates
