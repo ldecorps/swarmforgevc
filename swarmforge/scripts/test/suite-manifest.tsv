@@ -400,3 +400,4 @@ test_bl1162_start_stop_swarm_cron_lifecycle.sh	standing
 bl1162_swarmforge_cron_property_runner.sh	standing		
 test_bl780_rotation_actionability_ordering.sh	standing		
 bl780_rotation_actionability_ordering_property_runner.bb	standing		
+BL-1167	bl1167_same_model_seat_mutation_sweep	bl1167_same_model_seat_mutation_sweep.sh	mutation

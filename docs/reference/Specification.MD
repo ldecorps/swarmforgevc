@@ -1,5 +1,69 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1166: Bubble Operator docs remote page —
+`operator-docs` in BL-829 ui-bundle manifest (`letsTalkRoutes.operatorDocs`,
+order 6); bridge serves read-only HTML from git `docs/` via
+`docs/index.md` Divio sections; phone viewport layout; bridge token
+required; honest unavailable when corpus unreachable. First slice of
+BL-1165. Acceptance:
+`specs/features/BL-1166-bubble-authored-docs-index-and-first-pages.feature`.
+How-to: `docs/how-to/BL-1166-bubble-authored-docs-index-and-first-pages.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-726: BL-718 Bubble talk mirror
+acceptance is wired — `bl718BubbleTalkMirrorSteps.js` registered from
+`specs/pipeline/steps/index.js`, handlers drive
+`mirrorLetsTalkTurnToBubble` / `splitTelegramChunks`; pipeline CLI no longer
+fails with "no step handler matched". Acceptance:
+`specs/features/BL-726-bl718-acceptance-feature-has-no-step-handlers.feature`.
+How-to: `docs/how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-600: human-decision latency trend —
+ask (ApprovalRequested) to verdict per gate via
+`humanDecisionLatency.ts`; pending asks contribute open age only; median +
+outliers via `stageDwell.splitOutliers`; `computeTrend` inward import (no
+`trend.ts` re-export — acyclic). Measurement only. Acceptance:
+`specs/features/BL-600-trend-human-decision-latency.feature`. How-to:
+`docs/how-to/BL-600-trend-human-decision-latency.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-1164: QA changed-path unit test gate —
+Article 4.5 requires QA to run mapped unit/wiring/`suite-manifest.tsv` tests
+for each production path in `origin/main...HEAD` (narrowest command per
+path); bounce to coder with `failureClass: unit` when no mapped test exists;
+record each command RUN or BLOCKED BY in the Article 4.4 inventory.
+Whole-suite unit green remains required (additional gate, not a substitute).
+Worked example: `handoffd.bb` → `test_handoffd_one_shot_flags_parse.sh`.
+Acceptance: `specs/features/BL-1164-qa-changed-path-unit-test-gate.feature`.
+How-to: `docs/how-to/BL-1164-qa-changed-path-unit-test-gate.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-601: context-compaction cadence trend —
+structured `compaction:true` context-events only (never pane spinner text);
+derive `{role, model, tokens-at-compaction, ts}` to
+`.swarmforge/telemetry/compaction-<YYYY-MM>.jsonl`; pure aggregator yields
+compactions/hr + token distribution per role via `compactionCadence.ts` →
+`computeTrend` (inward import; `trend.ts` must not re-export
+`compactionCadence` — keeps the metrics graph acyclic); undetectable roles
+read NA, never a fabricated zero. Measurement only. Acceptance:
+`specs/features/BL-601-trend-compaction-cadence.feature`. How-to:
+`docs/how-to/BL-601-trend-compaction-cadence.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-599: intake-balance trend —
+filed/closed/net per window via `deriveIntakeBalanceEvents` /
+`computeIntakeBalance` on the existing deliveryMetrics git-history adapter;
+epic trackers excluded; root `INTAKE-*.md` counted; exposed on
+`computeDeliveryMetrics.intakeBalance` through `trend.ts`. Acceptance:
+`specs/features/BL-599-trend-intake-balance.feature`. How-to:
+`docs/how-to/BL-599-trend-intake-balance.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-597: self-heal events trend —
+structured `{type, subject, reason, at}` records appended at existing
+recovery log sites to `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl`
+(gitignored); pure `aggregateSelfHealCounts` → `computeTrend` per type;
+failed append never blocks or alters recovery. Types:
+`stale-build-recompile`, `supervisor-respawn`, `kill-all-swarm`,
+`rotation-respawn`, `claim-heal`. Measurement only. Acceptance:
+`specs/features/BL-597-trend-self-heal-events.feature`. How-to:
+`docs/how-to/BL-597-trend-self-heal-events.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-980: Pipeline Board RECENTLY CLOSED
 lines append a relative closure-age suffix from durable `doneClosedAtMs`
 (`formatRecentlyClosedAgeLabel` in `pipelineBoard.ts`; stamped once in

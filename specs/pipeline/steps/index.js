@@ -383,6 +383,7 @@ const DOMAINS = [
   require('./bl1001DifficultyAwareSeatRoutingSteps'),
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
   require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl711InterfaceVsIncarnationGlossarySteps'),
   require('./bl1164QaChangedPathUnitTestGateSteps'),
   require('./bl1007ContentionBudgetSteps'),
   require('./bl1008BoundedWatchDeadlineSteps'),
@@ -787,13 +788,6 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
-  require('./bl1185WorkNoteMissingTaskHeaderSteps')
-  require('./bl1167SameModelSeatRoutingSteps')
-  require('./bl1175PropertySuiteStandingRedsSteps')
-  require('./bl718BubbleTalkMirrorSteps'),
-  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps')
-  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
-  require('./bl1166OperatorDocsSteps')
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
 ];
