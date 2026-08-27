@@ -1,13 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 27, 2026 (BL-1167: when every seat of a stage
-declares the same effective pack `--model`, BL-1001 `--seat-tier` filtering
-is bypassed — BL-983 idle-first among those seats; either seat may claim any
-`mutation_cost`. When models diverge, BL-1001 tier discipline returns
-unchanged. `seat_difficulty_lib.bb` `parse-seat-models` /
-`stage-models-uniform?`. Acceptance:
-`specs/features/BL-1167-same-model-coder-seats-bypass-tier-routing.feature`.
-How-to: `docs/how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md`.)
+**Last Updated:** August 27, 2026 (BL-1175: standing property-suite reds
+are explicitly allowlisted in
+`swarmforge/scripts/property_suite_standing_allowlist.tsv` so
+`check_property_suite_drift.sh` allows unrelated green commits; non-
+allowlisted reds still refuse. `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1`
+remains recovery-only (BL-1121). Acceptance:
+`specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature`.
+How-to: `docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`.)
 Prior entry —
 **Last Updated:** August 27, 2026 (BL-600: human-decision latency trend —
 ask (ApprovalRequested) to verdict per gate via
@@ -9023,28 +9023,35 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 - Extension marketplace publication (internal use first)
 - Native Windows (tmux has no native Windows port; a Windows-hosted swarm runs via WSL2 instead — BL-091)
 
-## Same-Model Seat Tier Bypass (BL-1167)
+## Standing Property-Suite Allowlist (BL-1175)
 
-BL-1001 filters multi-seat claims by ticket `mutation_cost` vs declared
-`--seat-tier`. When every seat of a stage shares the same effective pack
-`--model` (e.g. `cursor-forge` `coder` and `coder@cursor2` both `--model
-auto`), tier filtering would starve the easy-tier seat of medium/high work
-without reducing bounce risk — seats are model-equivalent.
+The BL-570 pre-commit property-suite drift guard refused commits whenever
+`npm run test:properties` reported any failure — including long-standing
+reds unrelated to the staged parcel. That blocked landing an otherwise
+green BL-605 tip without `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` (forbidden
+as a standing recipe by BL-1121).
 
-### Rule
+### Fix
 
-| Stage seat models | Claim filtering |
-|-------------------|-----------------|
-| All declared seats share one effective `--model` | Bypass BL-1001 tiers; BL-983 idle-first among seats (any `mutation_cost`) |
-| Seats declare distinct effective models | BL-1001 tier filtering unchanged |
+`property_suite_standing_allowlist.tsv` names each standing red with an
+`allowlist` or `fix` disposition and rationale.
+`check_property_suite_drift.sh` (via `property_suite_standing_allowlist_lib.sh`)
+allows the commit when **every** failing file is allowlisted; any
+non-allowlisted failure still refuses and names the files.
 
-Detection is pack-conf only (`parse-seat-models` / `stage-models-uniform?` in
-`seat_difficulty_lib.bb`) — not runtime agent state. Stage-addressed
-coordinator routing is unchanged.
+| Suite outcome | Guard |
+|---------------|-------|
+| All green | Allow |
+| Red, all failures allowlisted | Allow (`allowlisted-standing-reds`) |
+| Red, any non-allowlisted failure | Refuse |
+| `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` | Allow (recovery only — never standing recipe) |
+
+Stock suite runs must not trip the BL-1124 shared-repo canary.
 
 ### See Also
 
-- **BL-1001** — difficulty-aware coder seat routing (when models differ).
-- **BL-983** — multi-seat idle-first claim.
-- How-to: `docs/how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md`.
+- **BL-570** — property-suite drift guard.
+- **BL-1121** — reconcile-import skip (standing recipe vs env override).
+- **BL-1124** — fixtures must not mutate shared main.
+- How-to: `docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`.
 

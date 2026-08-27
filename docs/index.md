@@ -80,7 +80,6 @@ expects them, and are not migrated or rewritten here.
 - [Daemon log-freshness watchdog](how-to/BL-675-daemon-log-freshness-watchdog.md) — cron-side stale-heartbeat checker for long-running daemons (BL-675).
 - [Supervisor freshness heartbeats and registry guard](how-to/BL-784-supervisor-freshness-heartbeats-and-registry-guard.md) — per-tick supervisor heartbeats, conf rows, fail-closed registry guard (BL-784).
 - [Difficulty-aware coder seat routing](how-to/BL-1001-difficulty-aware-coder-seat-routing.md) — `mutation_cost` vs declared `--seat-tier`; hard work never spills to easy-only (BL-1001).
-- [Same-model seats bypass tier routing](how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md) — shared `--model` → either seat may claim any `mutation_cost`; tier rules return when models differ (BL-1167).
 - [Unit-lane budgets scale with recorded contention](how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md) — load-relative Vitest timeouts with a finite ceiling; quiet host keeps base (BL-1007).
 - [Bounded fs.watch deadline follows recorded contention](how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md) — BL-933 helper scales 10s base with BL-1007 factor; stays under test budget (BL-1008).
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
@@ -96,7 +95,8 @@ expects them, and are not migrated or rewritten here.
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).
 - [Host-resolved Stryker mutation concurrency](how-to/BL-786-mutation-concurrency-host-resolved.md) — `mutation-concurrency.js` sizes workers from free RAM + BL-427 peak; `MUTATION_CONCURRENCY` pin wins (BL-786).
 - [Supervisor threads are not front-desk topics](how-to/BL-695-supervisor-threads-are-not-front-desk-topics.md) — SUP/unbound never write tracked topic JSON; icons stay durable off-git (BL-695).
-- [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
+- [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override; standing-red allowlist (BL-570 / BL-1175).
+- [Standing property reds do not block unrelated green commits](how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md) — explicit allowlist TSV; SKIP stays recovery-only (BL-1175).
 - [Thin-main CRAP-visible CLI gate](how-to/BL-534-thin-main-crap-visible-cli-gate.md) — tools `main()` must be exported and CC≤2; parcel never allowlists (BL-534).
 - [Reconcile import skips the property-suite guard](how-to/BL-1121-reconcile-import-skips-property-suite-guard.md) — byte-identical mid-merge import → `skip-reconcile-import`; env override stays recovery-only (BL-1121).
 - [Property-suite fixtures must not mutate shared main](how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md) — canary bare/HEAD around the property lane; refuse reset-to-origin when ahead (BL-1124).
