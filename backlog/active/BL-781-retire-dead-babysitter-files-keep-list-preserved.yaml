@@ -33,14 +33,11 @@ source: |
 acceptance: specs/features/BL-781-retire-dead-babysitter-files-keep-list-preserved.feature
 # Tip-pure rematch 20260827 atop origin/main (QA bounce entangled tip).
 abandoned_commits:
-<<<<<<< HEAD
   - 7b4737ee64
   - cb20459d4a
-=======
   - efbc2d8558
   - 0b352a2fc3
   - 88360ae238
->>>>>>> 1bba7bf89 (fix(BL-781): tip-pure rematch 4 — wake-runtime retirement without hitchhikers.)
   - b91c0bfb5c
   - c0ffa84591
   - 9276c08354
