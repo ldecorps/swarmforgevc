@@ -1,5 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1169: babysitter half-launch and
+swarm-starved queue bounded auto-repair — `proc-*` half-launch CRIT
+`assoc`s `:ensure-session` when standing+allowed; swarm-starved streak ≥3
+queues `:ensure-control-plane` / `./swarm ensure` alongside CRIT; never
+swallows alerts. Acceptance:
+`specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature`.
+How-to: `docs/how-to/BL-611-babysitterd-runbook.md` BL-1169 section.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-738: chunking property reaches the split
+boundary — shared `chunkingPropertyProbe` passes explicit `maxLen=50` with
+generator `minLength: 51` so `splitTelegramChunks` multi-chunk reassembly is
+exercised and falsifiable; not vacuous against TELEGRAM_MESSAGE_MAX_LENGTH.
+Acceptance: `specs/features/BL-738-chunking-property-reaches-the-split-boundary.feature`.
+How-to: `docs/how-to/BL-738-chunking-property-reaches-the-split-boundary.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1174: `/deprecate` soft verbs —
 `deprecate.js` dry ranks orphan conf flags; confirm retires one (or refuses /
 human-asks) writing `docs/deprecated/` + `## Deprecated` index link; `check`
