@@ -61,6 +61,3 @@ notes: |
   - [2026-08-27] specifier: feature file minted from coordinator Work note;
     ask_ts from topic outbound ApprovalRequested (approvalAskPostedAtMs pattern);
     verdict_ts from human_approval flip / ruling commit; reuse stageDwell outlier split.
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: 6036352f61, evidence: backlog/evidence/BL-600-architect-bounce-20260827.md }
