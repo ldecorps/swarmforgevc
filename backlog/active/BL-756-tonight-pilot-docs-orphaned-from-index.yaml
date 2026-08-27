@@ -6,6 +6,7 @@ severity: low
 status: in_progress
 epic: code-quality-gates
 assigned_to: coder
+acceptance: specs/features/BL-756-tonight-pilot-docs-orphaned-from-index.feature
 priority: 26
 direction: queue-jump
 depends_on: []
