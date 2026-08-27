@@ -42,3 +42,10 @@ export function computeTrend(series: TrendSeriesPoint[]): TrendResult {
 // compactionCadence imports computeTrend; a re-export creates an acyclic cycle
 // (architect bounce 88c606593c). Callers import from ./compactionCadence.
 // BL-605 global token series: callers import from ./globalTokenConsumption (acyclic — no re-export).
+
+// BL-602 handoff-latency series: plotted via shared TrendedNumber framework.
+export {
+  deriveHandoffLatency,
+  aggregateHandoffLatencyByRole,
+  gatherRoleHandoffLatencyRecords,
+} from './handoffLatency';
