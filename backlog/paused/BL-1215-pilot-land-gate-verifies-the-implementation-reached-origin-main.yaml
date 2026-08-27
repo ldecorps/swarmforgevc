@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1215-pilot-land-gate-verifies-the-implementation-reached-origin-main.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted from the explicitly OPTIONAL follow-on clause of the operator intake
   .swarmforge/operator/INTAKE-bl1191-pilot-cleanup-gate-before-restart.md
