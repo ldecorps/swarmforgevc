@@ -2133,6 +2133,7 @@ export function startBridge(
       respondJson,
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
     );
+    // BL-790: POST /agent-notes — authenticated note queue (agentNotesRoutes).
     const agentNotesRoutes = createAgentNotesRoutes(
       requireControlAuth,
       respondJson,
