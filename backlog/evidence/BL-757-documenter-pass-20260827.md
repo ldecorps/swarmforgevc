@@ -12,6 +12,7 @@ Extended BL-727 how-to with real-tree docs orphan gate section (suite +
 `/pilot` land). Architecture diagram note added.
 
 Acceptance + step handler landed upstream; ticket `acceptance:` already set.
+Docs: `docs/how-to/BL-727-pilot-acceptance-contract-gate.md` (BL-757 section).
 
 ## Pre-QA
 
