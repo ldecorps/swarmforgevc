@@ -1,0 +1,53 @@
+id: BL-1171
+title: "Disaster-class correlation emits one structured escalation with failure_class and playbook actions"
+milestone: M8
+type: feature
+status: todo
+epic: disaster-recovery-loop
+priority: 5
+direction: human-requested
+depends_on: [BL-653, BL-958]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1171-disaster-class-correlation-structured-escalation.feature
+
+required_wiring:
+  - "swarmforge/scripts/babysitterd_sweep_lib.bb::disaster-class::correlation rollup when multiple checks fire together"
+  - "swarmforge/scripts/chase_sweep_lib.bb::BABYSITTER_ESCALATION::failure_class and suggested_actions fields when class matches playbook"
+  - "specs/pipeline/steps/index.js::bl1171DisasterClassCorrelationStructuredEscalationSteps::acceptance handler registered"
+
+invariants:
+  - "One disaster-class escalation replaces N duplicate symptom lines for the same incident window — not N copies of the same class."
+  - "Unrecoverable classes (e.g. parse error) emit diagnose-only escalations — no repair storm."
+
+human_approval: approved
+approval_context: >
+  Detect+Diagnose slice from INTAKE-disaster-recovery-detect-diagnose-repair-learn.md
+  (2026-08-27). Pairs with BL-1169 repair and BL-1170 learn; BL-1170 playbook
+  consumed here once written.
+
+description: |
+  ## What
+
+  When multiple checks fire together (handoffd down + proc-* + swarm-starved),
+  classify as one `failure_class` and emit a single structured escalation with
+  `likely_causes`, `suggested_actions` (owner: babysitterd | operator | human),
+  and `evidence_paths` — instead of N undifferentiated CRIT symptom lines.
+
+  Policy matrix direction in source intake; unrecoverable → diagnose only.
+
+qa_e2e_procedure: >
+  (1) Inject ≥3 half-launch + handoffd down + starved → one disaster-class
+  escalation with playbook fields. (2) Unrecoverable parse error → no repair storm,
+  names log path. (3) BL-653 queue receives JSON detail operator prompt can parse.
+
+out_of_scope: |
+  - Half-launch repair execution (BL-1169).
+  - /postmortem verb (BL-1170).
+
+source: |
+  backlog/INTAKE-disaster-recovery-detect-diagnose-repair-learn.md (human Laurent,
+  2026-08-27). Detect/Diagnose child of epic BL-1168.
+
+notes: |
+  - [2026-08-27] specifier: minted from root intake drain.
