@@ -10,6 +10,26 @@ direction: aligned
 depends_on: []
 assigned_to: coder
 mutation_cost: low
+abandoned_commits:
+  - e0e02daa34
+  - 74de51055d
+  - a3b53c22f3
+  - 84c4f12ac2
+  - b15ddf55d0
+  - 823576ac63
+  - 8fd94aece0
+  - b400bc6dee
+  - c0823b549d
+  - 0896667ba5
+  - 53c7fbaf2b
+  - 7c0e7426dd
+  - 0013f00ee5
+  - 070a82f998
+  - 18b717bc79
+  - d6e2dfa165
+  - fbc5ee89c3
+  - 9b674ecfb0
+  - b7eac60793
 required_stages: [coder, architect, qa]
 stage_skip_reasons:
   cleaner: "default constant and startup log only — no style surface"
@@ -110,6 +130,7 @@ notes: |
   after BL-651 lands. BL-651 is in backlog/done/ as of 2026-08-26.
   [2026-08-27] specifier: feature file minted; option (a) applied per BL-651
   Shape; coordinator may route to coder.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 53c7fbaf2b, evidence: backlog/evidence/BL-780-qa-bounce-rematch-20260827.md }
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 9b674ecfb0, evidence: backlog/evidence/BL-780-qa-bounce-rematch3-20260827.md }
