@@ -71,6 +71,7 @@ test('landPilotedTicket writes scopedCrap evidence naming src paths on successfu
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => ({ moved: true, destination: '/repo/backlog/done/BL-745.yaml' }),
     writeReceipt: (_ticketId, r) => {
@@ -117,6 +118,7 @@ test('landPilotedTicket refuses missing CRAP evidence when extension/src was in 
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
@@ -163,6 +165,7 @@ test('landPilotedTicket lands without scopedCrap evidence when only non-src exte
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => ({ moved: true, destination: '/repo/backlog/done/BL-745.yaml' }),
     writeReceipt: (_ticketId, r) => {
@@ -204,6 +207,7 @@ test('landPilotedTicket refuses crap-violation before move', async () => {
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
