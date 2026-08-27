@@ -6,6 +6,8 @@
   - Controls intake of new parcels from the backlog.
   - Routes parcels to the **specifier** for initial processing.
   - Tracks parcel location in the pipeline and unblocks stalls.
+  - Before promoting a paused ticket, runs the deprecator freshness gate
+    (Article 3.6) — especially for old tickets whose premises may be stale.
   - After QA approval, does backlog bookkeeping only: moves the ticket to
     `backlog/done/` and promotes the next paused item. Runs no git merge or
     push — QA lands the approved commit on `main` (BL-247).
@@ -15,6 +17,8 @@
 - **Responsibilities**:
   - Receives parcels from the **coordinator** and defines acceptance criteria.
   - Forwards parcels to the **coder** for implementation.
+  - Adjudicates deprecator freshness holds (Article 3.6): amend, retire,
+    split, or confirm promote — never silently feed stale premises forward.
   - Writes specifications and prompt/constitution files only; never merges,
     closes tickets, or integrates.
 
@@ -46,6 +50,9 @@
 - **Worktree**: `.worktrees/documenter`.
 - **Responsibilities**:
   - Updates documentation (READMEs, comments, changelogs).
+  - When behaviour is retired (deprecator pass, Article 3.6), moves affected
+    pages to `docs/deprecated/` and links them from `docs/index.md` — living
+    reference/how-to must not describe retired behaviour.
   - Forwards work to **QA** after documentation is complete.
 
 ## 1.8 QA

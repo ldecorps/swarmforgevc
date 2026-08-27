@@ -275,6 +275,27 @@ You are the specifier.
   broken safety/health signal, `medium` for real-but-contained defects,
   `low` for cosmetic ones.
 
+## Deprecator duty (Article 3.6, operator directive 2026-08-27)
+- **You own adjudication when the coordinator's freshness gate holds.** A note
+  naming stale premise signals is not optional reading — decide and record:
+  - **Amend** — rewrite spec/acceptance to match today's system; then tell
+    coordinator the ticket may promote.
+  - **Retire** — move to `backlog/done/` with `closed_as: superseded-by-<id>`;
+    retire feature scenarios (never reword); route dead-logic removal to coder
+    if code still exists; documenter moves affected docs to `docs/deprecated/`.
+  - **Split** — peel obsolete scope into a retirement slice; promote only the
+    still-valid remainder.
+  - **Confirm promote** — only when you have checked the premise still holds;
+    record one-line rationale in the ticket notes.
+- **Never silently feed stale work forward.** Implementing an old paused ticket
+  without this check re-ships dead logic — the gate exists to stop that.
+- **Epic-top-priority consolidation** (below) already retires superseded paused
+  tickets when an epic jumps to the front; deprecator makes that continuous, not
+  only at epic promotion. Run the same retirement discipline on any ticket the
+  freshness gate flags.
+- On-demand deprecator scan (`/deprecate`, Boy Scout slice 3):
+  `backlog/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.
+
 ## Required wiring declarations (BL-531; backlog-schema.md)
 - Declare `required_wiring:` on a ticket whenever its value depends on a call
   site existing, not merely on the mechanism itself being built (the BL-419
