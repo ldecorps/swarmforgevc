@@ -34,6 +34,12 @@ source: |
 
 # Tip-pure rematch 6 (union).
 abandoned_commits:
+  - 2ceb9960e8
+  - 7cdbb957c1
+  - c2d2945ec6
+  - 57860c32e9
+  - 6ba1bcaf94
+  - 4cfb903e97
   - 9d45e93638
   - 801bab8ab2
   - 6c1847ba4c
