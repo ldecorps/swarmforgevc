@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a05f50e45b049612c683aa932e8710a386b3e3146cd30571e83fb680cd4d8975
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T10:03:22.988570515Z","feature_name":"BL-718 acceptance feature runs with real step handlers","feature_path":"/tmp/sf-hardender-bl726-3888499/specs/features/BL-726-bl718-acceptance-feature-has-no-step-handlers.feature","background_hash":"5d2f92fb373283417b1694e61dcf04ab00b9a08dd510fc00f13c63b4c9be1ef7","implementation_hash":"unknown","scenarios":[{"index":2,"name":"mirror scenarios for short and long replies pass against real behaviour","scenario_hash":"c7132abc51771c8c0e8e8dee137be230c9e00dbaa7f79351c3a5bc211d8d1841","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-27T10:03:22.988570515Z"},{"index":3,"name":"mirror failure and poll scenarios pass against real behaviour","scenario_hash":"8dbdd08f84f19f92dfc22a3749287e230ccba88a2754ae6eba81ae1c0863af00","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-27T10:03:22.988570515Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-718 acceptance feature runs with real step handlers
 
   # BL-726: BL-718's feature file has never executed — every scenario fails
