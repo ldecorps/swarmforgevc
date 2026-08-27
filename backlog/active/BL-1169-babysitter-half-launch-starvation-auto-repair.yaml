@@ -11,6 +11,11 @@ depends_on: [BL-1017, BL-1018]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature
+# Tip-pure documenter 20260827 atop origin/main; superseded tips abandoned.
+abandoned_commits:
+  - 6f9e1dea48
+  - 1d4da9a955
+  - 1dee3fc68f
 
 required_wiring:
   - "swarmforge/scripts/babysitterd_sweep_lib.bb::check-live-session::half-launch repair decision when proc CRIT and session-repair-allowed"
