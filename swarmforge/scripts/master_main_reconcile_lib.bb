@@ -661,6 +661,44 @@
         (write-state! daemon-dir next-state))
       (handle-blocked! reason surface-msg))))
 
+;; ── BL-1198: push-before-reset ───────────────────────────────────────────
+;; A reset (`git reset --hard origin/main`) is only safe to the extent that
+;; nothing on the branch it discards was worth keeping - but "local main is
+;; ahead and collides with origin" and "these ahead commits are disposable
+;; bookkeeping" are two different facts, and none of the three call sites
+;; that reset onto origin/main (handoffd.bb, swarm_heal.bb,
+;; post_hotfix_merge_origin.bb) ever checked the second before acting on
+;; the first. Attempting a push FIRST converts the common case (no real
+;; divergence, just a race with whatever normally keeps origin caught up)
+;; into a plain, loss-free fast-forward: when the push succeeds, ahead
+;; becomes 0 by construction and nothing needs discarding at all. Only a
+;; REJECTED push (genuine divergence - the case reset actually exists for)
+;; falls through to the unchanged reset recovery. Shared here, one home,
+;; rather than three independent copies (this project's own "a
+;; behavior/constant mirrored by hand across sites needs one shared
+;; implementation" guardrail) - each of the three call sites already
+;; load-files this lib.
+(defn rematch-with-push-first!
+  "Orchestrates push-then-reset-if-rejected. adapters:
+     :push!  (fn [] -> {:success bool :error str?}) - a single `git push
+             origin main` attempt, no retry loop (bounded - a rejected
+             push IS the genuine-divergence signal, not a transient
+             failure to retry past; this project's own already-wired
+             periodic push-sweep, BL-356, is what retries on a backoff
+             curve, not this one-shot pre-reset attempt).
+     :reset! (fn [] -> map) - the EXISTING reset-to-origin recovery,
+             called only when the push above did not succeed; its return
+             value is passed through completely unchanged, so no caller-
+             visible contract changes on the genuine-divergence path.
+   Returns {:success true :outcome :pushed} when the push alone already
+   resolved everything (no reset needed), else reset!'s own result,
+   verbatim."
+  [{:keys [push! reset!]}]
+  (let [push-result (push!)]
+    (if (:success push-result)
+      {:success true :outcome :pushed}
+      (reset!))))
+
 ;; Self-healing across transitions, mirroring push_sweep_lib.bb's own
 ;; sweep!: reaching :up-to-date or a successful :should-reconcile always
 ;; clears persisted state (surfaced reason, tick count, AND escalated flag),

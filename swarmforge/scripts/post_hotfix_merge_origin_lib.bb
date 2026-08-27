@@ -1,7 +1,15 @@
 ;; BL-1118: after a Cursor/operator batch advances local main, immediately
-;; fetch+merge origin/main under BL-891 invariants (no reset/stash; abort on
+;; fetch+merge origin/main under BL-891 invariants (never stash; abort on
 ;; conflict; print conflicted paths). Honesty refresh: a clean behind tip
 ;; must not stay stuck on a stale dirty sync reason.
+;;
+;; BL-1198: the colliding-local-ahead / conflict recovery paths below DO
+;; reset onto origin/main via the injected rematch! adapter (never a
+;; conflicted absorb an operator would have to finish by hand) - the
+;; adapter itself now attempts a push first (see
+;; master_main_reconcile_lib.bb's rematch-with-push-first!) so a genuine,
+;; not-yet-published local commit is never silently discarded by that
+;; reset when a plain fast-forward push would have sufficed instead.
 ;;
 ;;   (load-file ".../post_hotfix_merge_origin_lib.bb")
 ;;   post-hotfix-merge-origin-lib/foo
@@ -117,8 +125,9 @@
   "Fetch origin/main; absorb when behind under BL-1131 rematch-then-FF.
    FF-only / noop when clean; colliding local-ahead → rematch! onto origin/main (BL-1138),
    else surface rematch-bookkeeping. Predicted or real conflict → rematch! when wired
-   (BL-1141), else refuse-rematch without MERGE_HEAD (BL-1130). Never reset/stash;
-   never pages operator absorb."
+   (BL-1141), else refuse-rematch without MERGE_HEAD (BL-1130). Never stash;
+   never pages operator absorb. rematch! itself attempts a push before any
+   reset (BL-1198) - this function has no visibility into that, by design."
   [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! abort!
            status-porcelain! mid-merge? would-conflict! tip-contains-origin!
            rematch!]}]
