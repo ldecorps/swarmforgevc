@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: deprecator
-assigned_to: specifier
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: []
@@ -69,3 +69,5 @@ notes: |
     (`ambulance_cli.bb engage BL-1173`). Sibling BL-1174 stays paused — only
     one ambulance patient; engage it after this slice lands. Epic BL-1172 is
     not promotable.
+  - [2026-08-27] specifier: confirmed feature (5 scenarios) + wiring; routed to
+    coder. git_handoff 26453cffdc already on HEAD (topic text only — no merge).
