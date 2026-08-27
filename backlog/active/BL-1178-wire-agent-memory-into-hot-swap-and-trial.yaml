@@ -2,8 +2,9 @@ id: BL-1178
 title: "Wire agent-memory transfer into seat relaunch, hot-swap, and trial start/end"
 milestone: M8
 type: feature
-status: todo
+status: in_progress
 epic: agent-memory-transfer
+assigned_to: coder
 priority: 4
 direction: human-requested
 depends_on: [BL-1177]
@@ -42,3 +43,5 @@ source: |
 
 notes: |
   - [2026-08-27] specifier: minted from operator intake drain.
+
+assigned_to: coder
