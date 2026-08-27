@@ -795,6 +795,7 @@ const DOMAINS = [
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
   require('./bl1166OperatorDocsSteps')
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
+  require('./bl710OneClearTelegramRedeployPathSteps'),
 ];
 
 function registerSteps(registry) {
