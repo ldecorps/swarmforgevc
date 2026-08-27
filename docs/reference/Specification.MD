@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-980: Pipeline Board RECENTLY CLOSED
+lines append a relative closure-age suffix from durable `doneClosedAtMs`
+(`formatRecentlyClosedAgeLabel` in `pipelineBoard.ts`; stamped once in
+`conciergeTick.ts`). Ladder: `just now` / `Nmin ago` / `Nh ago` / `Nd ago`.
+No suffix when no closure instant; plain-text and HTML paths agree; other
+sections unchanged. Acceptance:
+`specs/features/BL-980-recently-closed-elapsed-time.feature`. How-to:
+`docs/how-to/BL-980-recently-closed-elapsed-time.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1169: babysitter half-launch and
 swarm-starved queue bounded auto-repair — `proc-*` half-launch CRIT
 `assoc`s `:ensure-session` when standing+allowed; swarm-starved streak ≥3
