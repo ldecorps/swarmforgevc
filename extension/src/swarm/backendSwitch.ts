@@ -22,6 +22,10 @@ import * as path from 'path';
 import { PRICING_TABLE } from '../metrics/pricingTable';
 import { RespawnResult } from './tmuxClient';
 import { readClaudeSettingsField, writeClaudeSettingsFieldAndRespawn } from './claudeSettingsFile';
+import {
+  attemptSameRoleModelSwitch,
+  buildOutgoingCaptureState,
+} from '../tools/agentMemoryHotSwap';
 
 // The dropdown's available-models list is the SAME versioned catalog cost
 // estimation already uses - one list, not a second copy that could drift.
@@ -117,5 +121,10 @@ export function switchRoleModel(targetPath: string, role: string, model: string)
   if (!AVAILABLE_CLAUDE_MODELS.includes(model)) {
     return { success: false, message: `Unknown model "${model}" - expected one of: ${AVAILABLE_CLAUDE_MODELS.join(', ')}` };
   }
-  return writeClaudeSettingsFieldAndRespawn(targetPath, role, 'model', model);
+  const outgoingState = buildOutgoingCaptureState(targetPath, role);
+  return attemptSameRoleModelSwitch({
+    role,
+    outgoingState,
+    performSwap: () => writeClaudeSettingsFieldAndRespawn(targetPath, role, 'model', model),
+  });
 }
