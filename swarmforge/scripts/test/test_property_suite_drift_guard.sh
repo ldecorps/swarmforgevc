@@ -112,6 +112,8 @@ rm -rf "$ROOT/extension"
 # ── 07: pre-commit wiring invokes the new guard (script must exist) ───────
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
+cp "$SCRIPT_DIR/../property_suite_standing_allowlist_lib.sh" "$ROOT/swarmforge/scripts/property_suite_standing_allowlist_lib.sh"
+cp "$SCRIPT_DIR/../property_suite_standing_allowlist.tsv" "$ROOT/swarmforge/scripts/property_suite_standing_allowlist.tsv"
 cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$ROOT/swarmforge/scripts/property_suite_shared_repo_guard.sh"
 cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$ROOT/swarmforge/scripts/incoming_merge_parent_lib.sh"
 cp "$SCRIPT_DIR/../check_commit_size.sh" "$ROOT/swarmforge/scripts/check_commit_size.sh"
@@ -198,5 +200,62 @@ echo "$OUT10" | grep -qi 'overridden' \
 echo "$OUT10" | grep -q 'skip-reconcile-import' \
   && fail "10: override must not print skip-reconcile-import"
 pass "10: SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD remains recovery-only (distinct marker)"
+
+# ── 11: BL-1175 all-allowlisted standing reds allow without SKIP ─────────
+stage extension/src/pipelineBoard.ts
+ALLOWLISTED_RED=(bash -c 'printf "%s\n" " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > x" >&2; exit 1')
+set +e
+OUT11="$(cd "$ROOT" && bash "$GUARD" "${ALLOWLISTED_RED[@]}" 2>&1)"
+ST11=$?
+set -e
+[[ "$ST11" -eq 0 ]] || fail "11: all-allowlisted reds must allow, got $ST11: $OUT11"
+echo "$OUT11" | grep -q 'allowlisted-standing-reds' \
+  || fail "11: expected allowlisted-standing-reds marker, got: $OUT11"
+echo "$OUT11" | grep -qi 'overridden' \
+  && fail "11: must not use SKIP override for allowlisted standing reds"
+pass "11: all-allowlisted standing reds allow commit without SKIP"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension"
+
+# ── 12: BL-1175 non-allowlisted red still blocks ─────────────────────────
+stage extension/src/pipelineBoard.ts
+MIXED_RED=(bash -c 'printf "%s\n" " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > x" " FAIL  test/pipelineBoard.property.test.js > y" >&2; exit 1')
+set +e
+OUT12="$(cd "$ROOT" && bash "$GUARD" "${MIXED_RED[@]}" 2>&1)"
+ST12=$?
+set -e
+[[ "$ST12" -ne 0 ]] || fail "12: mixed allowlisted + non-allowlisted must block"
+echo "$OUT12" | grep -q 'pipelineBoard.property.test.js' \
+  || fail "12: must name non-allowlisted file, got: $OUT12"
+echo "$OUT12" | grep -q 'non-allowlisted' \
+  || fail "12: expected non-allowlisted rejection marker, got: $OUT12"
+pass "12: non-allowlisted failure still blocks the commit"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension"
+
+# ── 13: BL-1175 green parcel path — ordinary run still enforced ──────────
+stage extension/src/pipelineBoard.ts
+set +e
+OUT13="$(cd "$ROOT" && bash "$GUARD" "${RED[@]}" 2>&1)"
+ST13=$?
+set -e
+[[ "$ST13" -ne 0 ]] || fail "13: unallowlisted red must still block"
+echo "$OUT13" | grep -q 'pipelineBoard.property.test.js' \
+  || fail "13: must name failing property file, got: $OUT13"
+pass "13: guard still refuses silent unallowlisted reds"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension"
+
+# ── 14: BL-1175 extension/test/ FAIL path normalizes to allowlist key ─────
+stage extension/src/pipelineBoard.ts
+EXT_ALLOWLISTED_RED=(bash -c 'printf "%s\n" " FAIL  extension/test/bl632CommitTimeGuardInvariants.property.test.js > x" >&2; exit 1')
+set +e
+OUT14="$(cd "$ROOT" && bash "$GUARD" "${EXT_ALLOWLISTED_RED[@]}" 2>&1)"
+ST14=$?
+set -e
+[[ "$ST14" -eq 0 ]] || fail "14: extension/test/ allowlisted FAIL must allow, got $ST14: $OUT14"
+echo "$OUT14" | grep -q 'allowlisted-standing-reds' \
+  || fail "14: expected allowlisted-standing-reds after normalize, got: $OUT14"
+pass "14: extension/test/ FAIL path normalizes onto allowlist key"
 
 echo "ALL PASS"
