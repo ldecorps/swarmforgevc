@@ -17,6 +17,11 @@ test('detectFooterLineCount includes a permission/status line above the prompt',
   assert.equal(detectFooterLineCount(text), 2);
 });
 
+test('detectFooterLineCount skips short marker lines that are not part of the footer band', () => {
+  const text = 'real output\n- bullet in content\n❯ ';
+  assert.equal(detectFooterLineCount(text), 1);
+});
+
 // ── findOverlap ───────────────────────────────────────────────────────────
 
 test('findOverlap detects a full shift-by-two window', () => {
