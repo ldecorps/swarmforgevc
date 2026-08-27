@@ -10,7 +10,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "No live identifier, env var, filename, or how-to command is renamed by this ticket — closing it must require zero changes outside prose."
