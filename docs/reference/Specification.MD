@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1164: QA changed-path unit test gate —
+Article 4.5 requires QA to run mapped unit/wiring/`suite-manifest.tsv` tests
+for each production path in `origin/main...HEAD` (narrowest command per
+path); bounce to coder with `failureClass: unit` when no mapped test exists;
+record each command RUN or BLOCKED BY in the Article 4.4 inventory.
+Whole-suite unit green remains required (additional gate, not a substitute).
+Worked example: `handoffd.bb` → `test_handoffd_one_shot_flags_parse.sh`.
+Acceptance: `specs/features/BL-1164-qa-changed-path-unit-test-gate.feature`.
+How-to: `docs/how-to/BL-1164-qa-changed-path-unit-test-gate.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-601: context-compaction cadence trend —
 structured `compaction:true` context-events only (never pane spinner text);
 derive `{role, model, tokens-at-compaction, ts}` to
