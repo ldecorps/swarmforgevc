@@ -319,6 +319,14 @@
          true
          (chase-sweep-lib/decide-open-slot-nudge? 1 3 5 {}))
 
+(assert= "open-slot-07: no-limit cap (-1) still nudges when paused work exists"
+         true
+         (chase-sweep-lib/decide-open-slot-nudge? 5 -1 3 {}))
+
+(assert= "open-slot-08: no-limit cap (-1) at zero active still nudges"
+         true
+         (chase-sweep-lib/decide-open-slot-nudge? 0 -1 1 {}))
+
 ;; ── BL-679 ambulance-perimeter-04: the promotion freeze suppresses the nudge ──
 
 (assert= "ambulance-perimeter-04: an otherwise-eligible open slot fires no nudge while ambulance is engaged"
