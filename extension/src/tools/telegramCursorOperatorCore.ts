@@ -19,6 +19,7 @@ const SOFT_VERBS = new Set([
   '/pull',
   '/quiet',
   '/redeploy',
+  '/deprecate',
 ]);
 
 const HARD_VERBS = new Set([
@@ -69,6 +70,10 @@ export function operatorDangerTier(verb: string): OperatorDangerTier | undefined
   const rest = parts.slice(1).join(' ');
   // BL-703: dry variants list only — no confirm.
   if ((base === '/autopilot' || base === '/land') && rest.startsWith('dry')) {
+    return 'read';
+  }
+  // BL-1174: /deprecate dry|check are read; bare /deprecate stays soft.
+  if (base === '/deprecate' && (rest.startsWith('dry') || rest.startsWith('check'))) {
     return 'read';
   }
   if (READ_VERBS.has(base)) {
