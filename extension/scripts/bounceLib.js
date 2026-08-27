@@ -75,6 +75,78 @@ function decideNextStep(state) {
   return { action: 'wait' };
 }
 
+// Parses role session names from a roles.tsv file (column 4).
+function parseRoleSessionsFromTsv(content) {
+  if (typeof content !== 'string') {
+    return [];
+  }
+  return content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => line.split('\t')[3])
+    .filter((session) => typeof session === 'string' && session.length > 0);
+}
+
+// Parses `tmux list-sessions -F '#{session_name}'` output into session names.
+function parseTmuxSessionNames(listSessionsOutput) {
+  return (listSessionsOutput || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+// Pure readiness probe: every configured role session is present on the socket.
+function isSwarmReady({
+  socketExists,
+  tmuxListExitCode,
+  roleSessions,
+  listedSessionNames,
+}) {
+  if (!socketExists || tmuxListExitCode !== 0) {
+    return false;
+  }
+  if (roleSessions.length === 0) {
+    return false;
+  }
+  const listed = new Set(listedSessionNames);
+  return roleSessions.every((session) => listed.has(session));
+}
+
+function readTargetPathFromSettings(content) {
+  if (typeof content !== 'string') {
+    return undefined;
+  }
+  try {
+    const settings = JSON.parse(content);
+    const target = settings?.['swarmforge.targetPath'];
+    if (typeof target === 'string' && target.trim().length > 0) {
+      return target.trim();
+    }
+  } catch {
+    // ignore malformed settings
+  }
+  return undefined;
+}
+
+// Resolves the target repo for --autostart: explicit path arg, env var, then
+// extension/.vscode/settings.json (swarmforge.targetPath).
+function resolveAutostartTarget({ argv, env, settingsContent }) {
+  const flagIdx = argv.indexOf('--autostart');
+  if (flagIdx === -1) {
+    return null;
+  }
+  const nextArg = argv[flagIdx + 1];
+  if (nextArg && !nextArg.startsWith('-')) {
+    return nextArg;
+  }
+  const fromEnv = env.SWARMFORGE_TARGET_PATH?.trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+  return readTargetPathFromSettings(settingsContent) ?? null;
+}
+
 // Ordered platform-specific default install locations to try before falling
 // back to a bare "code" resolved from PATH.
 function platformVsCodeCandidates(platform) {
@@ -88,14 +160,6 @@ function platformVsCodeCandidates(platform) {
 }
 
 // Resolves which VS Code CLI binary to launch the dev host with (BL-361).
-// `env.VSCODE_BIN` names an explicit operator override and is authoritative:
-// it is checked alone and never silently replaced by a platform default.
-// Otherwise tries platform-specific default install locations, then a bare
-// "code" (PATH lookup), stopping at the first candidate `isExecutable`
-// confirms can actually run ON THIS HOST. A candidate merely resolving to a
-// path is not enough - the WSL cross-arch trap is a binary that resolves
-// (it is ON PATH) but cannot execute (missing binfmt interop), so
-// `isExecutable` must be an actual execution probe, not a PATH/stat check.
 function resolveVsCodeBinary({ platform, env, isExecutable }) {
   const override = env && env.VSCODE_BIN;
   if (override) {
@@ -119,24 +183,15 @@ function resolveVsCodeBinary({ platform, env, isExecutable }) {
   };
 }
 
-// Builds the dev-host launch invocation: the editor's own command line, no
-// GUI automation. `code --extensionDevelopmentPath=<extensionDir>
-// <workspacePath>` opens a new Extension Development Host window running
-// the extension in development mode - the same effect as pressing F5 in the
-// editor's own UI, on every supported platform.
 function buildDevHostLaunchCommand(binary, extensionDir, workspacePath) {
   return { command: binary, args: [`--extensionDevelopmentPath=${extensionDir}`, workspacePath] };
 }
 
-
-// BL-578: WSL vs native — interop kill path only on WSL (WSL_DISTRO_NAME / WSLEnv).
 function isWslPlatform({ platform, env }) {
   const e = env || {};
   return platform === 'linux' && Boolean(e.WSL_DISTRO_NAME || e.WSL_INTEROP || e.WSLENV);
 }
 
-// Pure: PowerShell Stop-Process for Code.exe mains whose command line carries
-// --extensionDevelopmentPath=<extensionPath> (no --type= helpers).
 function powershellSingleQuoted(value) {
   return String(value || '').replace(/'/g, "''");
 }
@@ -147,7 +202,7 @@ function buildWindowsKillOldCommands(extensionPath) {
     "$p='" + psPath + "';" +
     "Get-CimInstance Win32_Process |" +
     " Where-Object {" +
-    " $_.Name -match '^(Code|Code - Insiders)\.exe$' -and" +
+    " $_.Name -match '^(Code|Code - Insiders)\\.exe$' -and" +
     " $_.CommandLine -like ('*--extensionDevelopmentPath=' + $p + '*') -and" +
     " $_.CommandLine -notlike '*--type=*'" +
     " } |" +
@@ -160,7 +215,6 @@ function buildWindowsKillOldCommands(extensionPath) {
   ];
 }
 
-// BL-578: refuse bounce when headless marker present unless --force.
 function headlessMarkerDecision({ markerPresent, force }) {
   if (!markerPresent) {
     return { action: 'proceed' };
@@ -177,7 +231,6 @@ function headlessMarkerDecision({ markerPresent, force }) {
   };
 }
 
-// Accounting for consecutive bounce kill+launch cycles (scenario 02).
 function recordBounceHostCount(priorLiveCount, terminatedCount, launchedCount) {
   const afterKill = Math.max(0, (priorLiveCount || 0) - (terminatedCount || 0));
   return afterKill + (launchedCount || 0);
@@ -188,6 +241,11 @@ module.exports = {
   isMarkerFresh,
   filterDevHostPids,
   decideNextStep,
+  parseRoleSessionsFromTsv,
+  parseTmuxSessionNames,
+  isSwarmReady,
+  readTargetPathFromSettings,
+  resolveAutostartTarget,
   resolveVsCodeBinary,
   buildDevHostLaunchCommand,
   isWslPlatform,
