@@ -736,6 +736,7 @@ const DOMAINS = [
   require('./bl668PostQaBranchSweepSteps'),
   require('./bl1163HandoffdParseErrorBl668ParenHotfixSteps'),
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
+  require('./bl781RetireDeadBabysitterFilesKeepListPreservedSteps'),
   require('./bl1138Bl1135ResidualRematchBookkeepingDeadlockSteps'),
   require('./bl1141Bl1138ResidualRefuseRematchNotExecutedSteps'),
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
