@@ -28,6 +28,24 @@ import {
 } from './letsTalkCore';
 import type { SynthesizeSpeech, TranscribeAudio, LetsTalkAudioResolution } from './letsTalkAudio';
 import type { CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
+import type { LetsTalkUiBundlePage, LetsTalkUiBundleManifest } from './letsTalkUiBundle';
+
+export const operatorDocs: LetsTalkUiBundlePage = {
+  id: 'operator-docs',
+  title: 'Operator docs',
+  entryPath: 'operator-docs',
+  order: 6,
+};
+
+export function mergeOperatorDocsIntoUiBundleManifest(manifest: LetsTalkUiBundleManifest): LetsTalkUiBundleManifest {
+  if (manifest.pages.some((page) => page.id === operatorDocs.id)) {
+    return manifest;
+  }
+  return {
+    ...manifest,
+    pages: [...manifest.pages, operatorDocs].sort((a, b) => a.order - b.order),
+  };
+}
 
 export const LETS_TALK_TURN_MAX_BODY_BYTES = 8 * 1024 * 1024;
 
