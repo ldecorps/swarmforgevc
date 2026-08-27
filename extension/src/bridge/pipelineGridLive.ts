@@ -6,7 +6,7 @@
 
 import { execFileSync } from 'child_process';
 import * as path from 'path';
-import { readBacklogFolders } from '../panel/backlogReader';
+import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
 import {
   computePipelineBoard,
   renderPipelineBoardGridOnly,
@@ -50,27 +50,27 @@ function resolveRoleHeld(targetPath: string): Record<string, string[]> {
   }
 }
 
+function addTicketMeta(
+  ticketMeta: Record<string, PipelineBoardTicketMeta>,
+  items: BacklogItem[],
+  location: PipelineBoardTicketMeta['location']
+): void {
+  for (const item of items) {
+    ticketMeta[item.id] = {
+      epic: item.epic,
+      type: item.type,
+      title: item.title,
+      filename: item.filename,
+      location,
+    };
+  }
+}
+
 export function capturePipelineGridLive(targetPath: string, nowMs: number = Date.now()): PipelineGridLiveSnapshot {
   const folders = readBacklogFolders(targetPath);
   const ticketMeta: Record<string, PipelineBoardTicketMeta> = {};
-  for (const item of folders.active) {
-    ticketMeta[item.id] = {
-      epic: item.epic,
-      type: item.type,
-      title: item.title,
-      filename: item.filename,
-      location: 'active',
-    };
-  }
-  for (const item of folders.paused) {
-    ticketMeta[item.id] = {
-      epic: item.epic,
-      type: item.type,
-      title: item.title,
-      filename: item.filename,
-      location: 'paused',
-    };
-  }
+  addTicketMeta(ticketMeta, folders.active, 'active');
+  addTicketMeta(ticketMeta, folders.paused, 'paused');
   const paused: PipelineBoardPausedItem[] = folders.paused.map((item) => ({
     id: item.id,
     humanApproval: item.humanApproval === 'pending' || item.humanApproval === 'approved'
