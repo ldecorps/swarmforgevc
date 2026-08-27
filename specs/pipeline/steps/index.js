@@ -784,7 +784,8 @@ const DOMAINS = [
   require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl1175PropertySuiteStandingRedsSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
-  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps')
+  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
+  require('./bl1166OperatorDocsSteps')
 ];
 
 function registerSteps(registry) {

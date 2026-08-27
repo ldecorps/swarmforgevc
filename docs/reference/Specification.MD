@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1166: Bubble Operator docs remote page —
+`operator-docs` in BL-829 ui-bundle manifest (`letsTalkRoutes.operatorDocs`,
+order 6); bridge serves read-only HTML from git `docs/` via
+`docs/index.md` Divio sections; phone viewport layout; bridge token
+required; honest unavailable when corpus unreachable. First slice of
+BL-1165. Acceptance:
+`specs/features/BL-1166-bubble-authored-docs-index-and-first-pages.feature`.
+How-to: `docs/how-to/BL-1166-bubble-authored-docs-index-and-first-pages.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-726: BL-718 Bubble talk mirror
 acceptance is wired — `bl718BubbleTalkMirrorSteps.js` registered from
 `specs/pipeline/steps/index.js`, handlers drive
@@ -9262,5 +9271,42 @@ prompt-text assertions). The module is required from
 - **BL-718** — Bubble talk mirror chunks and fails loudly.
 - How-to: `docs/how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md`,
   `docs/how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md`.
+
+## Bubble Operator Docs (BL-1166)
+
+First slice of epic BL-1165: browse the documenter corpus on a phone from
+the expanded Bubble pager without a laptop browser. A remote HTML page
+**Operator docs** (`id: operator-docs`, `entryPath: operator-docs`, manifest
+order 6) is merged into the BL-829 ui-bundle via
+`letsTalkRoutes.mergeOperatorDocsIntoUiBundleManifest`.
+
+### Behaviour
+
+1. Open **Operator docs** from the expanded Bubble pager (Talk stays native).
+2. Index lists the four Divio sections parsed from `docs/index.md`
+   (tutorials, how-to, reference, explanation) — no rival taxonomy.
+3. Drill into a section list, then open a how-to or reference page; markdown
+   renders as phone-readable HTML (headings, lists, code blocks scaled).
+4. **Read-only** — routes never accept backlog/git/operator-store writes.
+5. Bridge token required (Live Screen class) — unauthenticated requests get
+   401/403 with no body.
+6. When the bridge cannot reach the docs corpus, show an honest unavailable
+   state naming bridge reachability — never an empty corpus as if synced.
+
+### Where it lives
+
+| Piece | Location |
+|-------|----------|
+| Manifest page | `letsTalkRoutes.ts` → `operatorDocs` |
+| Index + HTML shell | `operatorDocsHtml.ts` |
+| Pure parse/render | `operatorDocsCore.ts` |
+| Bridge routes | `/operator-docs`, `/operator-docs-index`, `/operator-docs-page` |
+
+### See Also
+
+- **BL-829** — Bubble remote page pager host.
+- **BL-908** — on-device backlog/docs panels (offline cache; different surface).
+- **BL-1165** — epic (search deep links deferred).
+- How-to: `docs/how-to/BL-1166-bubble-authored-docs-index-and-first-pages.md`.
 
 
