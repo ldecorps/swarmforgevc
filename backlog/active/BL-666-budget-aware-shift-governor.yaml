@@ -2,7 +2,7 @@ id: BL-666
 title: "Budget-aware shift governor: anchor-calibrated burn projection decides each shift's verdict (full / short / cheap / skip) so the token tank reaches the weekly replenish"
 milestone: M8
 type: feature
-status: todo
+status: in_progress
 epic: quota-budget-manager
 severity: medium
 priority: 119
