@@ -10,6 +10,16 @@ direction: aligned
 depends_on: []
 assigned_to: coder
 mutation_cost: low
+abandoned_commits:
+  - a3b53c22f3
+  - b400bc6dee
+  - 823576ac63
+  - 8fd94aece0
+  - 8105061b02
+  - 893302e1c2
+  - 7d69627835
+  - ae5b287dc6
+  - 50be3c579e
 required_stages: [coder, architect, qa]
 stage_skip_reasons:
   cleaner: "default constant and startup log only — no style surface"
