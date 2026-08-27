@@ -48,13 +48,13 @@ function seedRegistry(stewardDir, roleModels) {
   );
 }
 
-function bb(ctx, args) {
+function bb(st, args) {
   return execFileSync('bb', [BOB_CLI, ...args], {
     encoding: 'utf8',
     env: {
       ...process.env,
-      MODEL_STEWARD_STATE_DIR: ctx.stewardStateDir,
-      MODEL_FACTORY_STATE_DIR: ctx.factoryStateDir,
+      MODEL_STEWARD_STATE_DIR: st.stewardStateDir,
+      MODEL_FACTORY_STATE_DIR: st.factoryStateDir,
     },
   }).trim();
 }
@@ -75,7 +75,7 @@ function registerSteps(registry) {
       documenter: { provider: 'anthropic', model: 'claude-sonnet-5' },
       specifier: { provider: 'openai', model: 'gpt-5.3-codex' },
     });
-    st.cast = JSON.parse(bb(ctx, ['export']));
+    st.cast = JSON.parse(bb(st, ['export']));
   });
 
   scoped(registry, /^the cast names exactly one provider and model per role$/, (ctx) => {
@@ -102,7 +102,7 @@ function registerSteps(registry) {
       coder: { provider: 'anthropic', model: 'claude-sonnet-5' },
       architect: { provider: 'openai', model: 'gpt-5.3-codex' },
     });
-    st.cast = JSON.parse(bb(ctx, ['export']));
+    st.cast = JSON.parse(bb(st, ['export']));
   });
 
   scoped(registry, /^the cast is applied$/, (ctx) => {
@@ -121,7 +121,7 @@ function registerSteps(registry) {
       });
       return;
     }
-    st.applyResult = JSON.parse(bb(ctx, ['apply']));
+    st.applyResult = JSON.parse(bb(st, ['apply']));
   });
 
   scoped(registry, /^assignment goes through ModelFactory or pack model apply$/, (ctx) => {
