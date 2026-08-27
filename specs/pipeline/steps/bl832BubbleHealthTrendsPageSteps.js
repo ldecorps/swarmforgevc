@@ -12,6 +12,22 @@ const TOKEN = 'bl832-token';
 const NOW = Date.parse('2026-02-01T12:00:00Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Outline fixture pins — kill Gherkin example-cell mutants (BL-908). */
+const KNOWN_VALUES = Object.freeze({
+  'traverse time': 'traverse time',
+  'rework rate': 'rework rate',
+  'bottleneck stage': 'bottleneck stage',
+  velocity: 'velocity',
+});
+
+function pinReadout(name) {
+  const pin = KNOWN_VALUES[name];
+  if (!pin) {
+    throw new Error(`BL-832: unknown Outline readout fixture ${JSON.stringify(name)}`);
+  }
+  return pin;
+}
+
 function loadOut() {
   return {
     startBridge: require(path.join(EXT, 'out', 'bridge', 'bridgeServer')).startBridge,
@@ -104,13 +120,20 @@ function renderHealth(ctx) {
 async function withBridge(ctx, fn) {
   const st = ensure(ctx);
   const { startBridge } = loadOut();
-  const handle = await startBridge(st.root, path.join(st.root, 'runs.jsonl'), TOKEN, { nowMs: st.nowMs });
-  st.handle = handle;
+  const prevKey = process.env.CURSOR_API_KEY;
+  process.env.CURSOR_API_KEY = 'test-key';
+  let handle;
   try {
+    handle = await startBridge(st.root, path.join(st.root, 'runs.jsonl'), TOKEN, { nowMs: st.nowMs });
+    st.handle = handle;
     return await fn(handle);
   } finally {
-    handle.stop();
-    st.handle = null;
+    if (handle) {
+      handle.stop();
+      st.handle = null;
+    }
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 }
 
@@ -152,9 +175,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^its (.+) equals what the existing computation returns for the same inputs$/, (ctx, readoutName) => {
+    const readout = pinReadout(readoutName);
     const { readoutByFeatureName } = loadOut();
-    const page = readoutByFeatureName(ctx.bl832.health, readoutName);
-    const source = sourceReadoutFor(ctx.bl832, readoutName);
+    const page = readoutByFeatureName(ctx.bl832.health, readout);
+    const source = sourceReadoutFor(ctx.bl832, readout);
     assert.equal(page.displayValue, source.displayValue);
     assert.equal(page.windowLabel, source.windowLabel);
     assert.equal(page.hasObservations, source.hasObservations);
