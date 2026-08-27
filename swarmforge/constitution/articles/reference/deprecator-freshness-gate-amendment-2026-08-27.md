@@ -78,3 +78,12 @@ the onboarding contract gate (BL-262) and **before** expedited-defect ordering
 - Big-bang retirement of all stale paused tickets without per-item human/specifier
   adjudication.
 - Changing quality gates or active-slot caps.
+
+## 7. Model capability lock (operator 2026-08-27 ~07:28 BST)
+
+Human: deprecator must be executed only by a model that can reason across
+multiple documents very well — a must-have.
+
+Binding form: Article 3.6 "Model capability"; `mutation_cost: high` on
+deprecator tickets (BL-1172/1173/1174); specifier + operator refuse
+judgment on easy/weak seats.
