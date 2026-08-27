@@ -57,8 +57,7 @@ On a rotation-router night with:
 - no CRIT findings,
 
 the operator LLM launch count stays **zero**. This replaces the
-`night-start.sh` operator pid-hold tourniquet — that hold is retired once
-BL-653 is landed.
+`night-start.sh` operator pid-hold tourniquet — retired under BL-653.
 
 If launches appear on a quiet night, check for:
 

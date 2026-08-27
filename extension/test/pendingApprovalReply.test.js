@@ -6,7 +6,11 @@ const path = require('node:path');
 const {
   isApprovalReplyText,
   approveHumanApprovalText,
+  rulingHumanApprovalText,
   recordApprovalReply,
+  recordRulingReply,
+  readRecordedRuling,
+  readRulingOptions,
   classifyApprovalReplyAction,
   rejectHumanApprovalText,
   recordRejectionReply,
@@ -75,6 +79,14 @@ test('only the human_approval line changes - every other line is preserved verba
   const raw = 'id: BL-900\ntitle: t\nhuman_approval: pending\nmutation_cost: medium\n';
   const result = approveHumanApprovalText(raw);
   assert.equal(result.text, 'id: BL-900\ntitle: t\nhuman_approval: approved\nmutation_cost: medium\n');
+});
+
+test('BL-589: rulingHumanApprovalText approves and records human_ruling', () => {
+  const raw = 'id: BL-589\ntitle: t\nhuman_approval: pending\n';
+  const result = rulingHumanApprovalText(raw, 'approach one');
+  assert.equal(result.changed, true);
+  assert.match(result.text, /human_approval: approved/);
+  assert.match(result.text, /human_ruling: \|\n  approach one/);
 });
 
 // ── recordApprovalReply (impure, real fs) ─────────────────────────────────

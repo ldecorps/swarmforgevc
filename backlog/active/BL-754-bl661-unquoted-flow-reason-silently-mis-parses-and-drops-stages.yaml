@@ -16,14 +16,6 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-754-stage-skip-reasons-never-silently-loses-a-stage.feature
-# Rematch 2026-08-27: duplicate coder/cleaner tips superseded by architect
-# cherry-pick line (b6f92083b on documenter tip); content byte-identical.
-abandoned_commits:
-  - 2c26e8f9eb
-  - de1cf460c6
-  - fccf03f5b5
-  - 325b816efc
-  - 42da59b42e
 
 invariants:
   - "A present-but-malformed stage_skip_reasons declaration is never read as if it were well-formed - a partial parse is always surfaced, never returned in silence."
