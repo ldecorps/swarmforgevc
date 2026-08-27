@@ -44,10 +44,22 @@ function writeConf(root, { hardTier = 'hard', easyTier = 'easy' } = {}) {
   );
 }
 
+function gitEnv() {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  return env;
+}
+
 function mkFixture(ctx) {
   const root = mkSocketFixtureRoot('bl1001-acc-');
   ctx.root = root;
-  const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  const git = (args) =>
+    execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      env: gitEnv(),
+    });
   git(['init', '-q', '.']);
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
@@ -65,14 +77,15 @@ function mkFixture(ctx) {
   fs.chmodSync(path.join(root, 'bin', 'tmux'), 0o755);
   fs.writeFileSync(path.join(root, 'fake.sock'), '');
   fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), path.join(root, 'fake.sock'));
-  git(['add', '-A']);
-  git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'seed']);
+  git(['-c', 'core.hooksPath=/dev/null', 'add', '-A']);
+  git(['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', 'seed']);
   ctx.commit = git(['rev-parse', '--short=10', 'HEAD']).trim();
   ctx.tiers = { hard: 'hard', easy: 'easy' };
 }
 
 function fixtureEnv(root, role) {
   return {
+    ...gitEnv(),
     PATH: `${path.join(root, 'bin')}:${process.env.PATH}`,
     HOME: process.env.HOME,
     SWARMFORGE_ROLE: role,
