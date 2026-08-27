@@ -518,15 +518,6 @@ function isContextBudgetStatePath(url: string): boolean {
   return url === '/context-budget-state' || url.startsWith('/context-budget-state?');
 }
 
-// BL-1166: Operator docs Mini App shell and JSON feeds.
-function isOperatorDocsIndexFeedPath(url: string): boolean {
-  return isOperatorDocsIndexPath(url);
-}
-
-function isOperatorDocsPageFeedPath(url: string): boolean {
-  return isOperatorDocsPagePath(url);
-}
-
 // BL-551 (bridge-08): JSON top-expensive-invocations/rollup feed over the
 // unified LLM cost ledger.
 function isCostRankPath(url: string): boolean {
@@ -1810,8 +1801,8 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isEpicReorderStatePath,
   isContextBudgetStatePath,
   isWebUiFontSizePath,
-  isOperatorDocsIndexFeedPath,
-  isOperatorDocsPageFeedPath,
+  isOperatorDocsIndexPath,
+  isOperatorDocsPagePath,
 ];
 
 function isAuthorizedForRead(authHeader: string | undefined, url: string, registry: DeviceRegistry): boolean {
@@ -2023,12 +2014,12 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
     },
     {
       // BL-1166: Operator docs index derived from docs/index.md.
-      matches: isOperatorDocsIndexFeedPath,
+      matches: isOperatorDocsIndexPath,
       compute: () => buildOperatorDocsIndexState(targetPath),
     },
     {
       // BL-1166: one authored markdown page rendered as HTML JSON.
-      matches: isOperatorDocsPageFeedPath,
+      matches: isOperatorDocsPagePath,
       compute: (url) => buildOperatorDocsPageState(targetPath, url),
     },
     {
