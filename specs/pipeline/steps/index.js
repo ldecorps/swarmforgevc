@@ -526,6 +526,7 @@ const DOMAINS = [
   require('./bl697LetsTalkHandsFreeSteps'),
   require('./bl689BounceCarriesDefectInventorySteps'),
   require('./bl628AutonomousHostBootstrapSteps'),
+  require('./bl790BridgeQueuesNoteForRoleSteps'),
   require('./bl711InterfaceVsIncarnationGlossarySteps'),
   require('./bl895SpecificationMdBl607DuplicateSteps'),
   require('./bl768BounceKeyPairGeneratorCoverageSteps'),
