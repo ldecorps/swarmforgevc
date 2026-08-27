@@ -29,3 +29,8 @@ Cursor Remote, and it must not silently drop long replies or failed sends.
 
 Hold music / TTS / silent-return (BL-717), barge-in, merging Bubble with Cursor
 Remote.
+
+The live property that encodes length-independent reassembly must exercise the multi-chunk branch. See [BL-738](BL-738-chunking-property-reaches-the-split-boundary.md) — probe `maxLen` + generator floor, not hand-synced 4096 inputs.
+- APS steps: `specs/pipeline/steps/bl718BubbleTalkMirrorSteps.js` (wired by
+  BL-726 — see [BL-726](BL-726-bl718-acceptance-feature-has-no-step-handlers.md))
+

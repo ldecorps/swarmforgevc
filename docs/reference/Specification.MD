@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-726: BL-718 Bubble talk mirror
+acceptance is wired — `bl718BubbleTalkMirrorSteps.js` registered from
+`specs/pipeline/steps/index.js`, handlers drive
+`mirrorLetsTalkTurnToBubble` / `splitTelegramChunks`; pipeline CLI no longer
+fails with "no step handler matched". Acceptance:
+`specs/features/BL-726-bl718-acceptance-feature-has-no-step-handlers.feature`.
+How-to: `docs/how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1175: standing property-suite reds
 are explicitly allowlisted in
 `swarmforge/scripts/property_suite_standing_allowlist.tsv` so
