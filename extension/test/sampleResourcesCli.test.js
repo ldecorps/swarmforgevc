@@ -7,7 +7,9 @@ const { execFileSync } = require('node:child_process');
 const { formatSampleResult, main } = require('../out/tools/sample-resources');
 const { installFakeTmux, installInProcessTmux } = require('./helpers/fakeTmux');
 const { spawnFakeAgentTree } = require('./helpers/fakeAgentTree');
-const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
+const { copySeededRepoInto, resetForTest } = require('./helpers/sharedRepoFixture');
+
+resetForTest();
 
 // ── formatSampleResult (pure) ────────────────────────────────────────────
 
@@ -29,8 +31,15 @@ function mkTmp() {
   return fs.realpathSync(mkTmpDir('sfvc-sample-resources-cli-'));
 }
 
+function isolatedEnv() {
+  const env = { ...process.env, SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD: '1' };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  return env;
+}
+
 function git(cwd, args) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' });
+  return execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd, encoding: 'utf8', env: isolatedEnv() });
 }
 
 function initFixture() {
@@ -73,7 +82,8 @@ function readTelemetryLines(root) {
 }
 
 function runCliSubprocess(root) {
-  return execFileSync('node', [CLI], { cwd: root, encoding: 'utf8' });
+  const env = isolatedEnv();
+  return execFileSync('node', [CLI], { cwd: root, encoding: 'utf8', env });
 }
 
 // Runs the REAL main() in-process, so in-process coverage and mutation
@@ -90,6 +100,10 @@ function runCliSubprocess(root) {
 // process.stdout.write, which Vitest does not route console output through.
 function runCli(root) {
   const originalCwd = process.cwd;
+  const savedGitDir = process.env.GIT_DIR;
+  const savedGitWorkTree = process.env.GIT_WORK_TREE;
+  delete process.env.GIT_DIR;
+  delete process.env.GIT_WORK_TREE;
   const logs = [];
   const originalLog = console.log;
   console.log = (...args) => logs.push(args.join(' '));
@@ -99,6 +113,10 @@ function runCli(root) {
   } finally {
     console.log = originalLog;
     process.cwd = originalCwd;
+    if (savedGitDir !== undefined) process.env.GIT_DIR = savedGitDir;
+    else delete process.env.GIT_DIR;
+    if (savedGitWorkTree !== undefined) process.env.GIT_WORK_TREE = savedGitWorkTree;
+    else delete process.env.GIT_WORK_TREE;
   }
   return logs.join('\n');
 }

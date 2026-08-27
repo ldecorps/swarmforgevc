@@ -31,14 +31,45 @@ let templateDir = null;
 let seedings = 0;
 
 function gitIn(dir, args) {
-  execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'] });
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], env });
 }
 
 /**
  * The template, seeded at most once per process. Callers never touch it - they
  * only ever receive copies - so it can be reused for the whole run.
  */
+function templateIsHealthy(dir) {
+  if (!fs.existsSync(dir)) {
+    return false;
+  }
+  try {
+    const worktree = execFileSync('git', ['config', 'core.worktree'], {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    if (worktree) {
+      return false;
+    }
+    const tracked = execFileSync('git', ['ls-files'], {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    return tracked.length === 0;
+  } catch {
+    return false;
+  }
+}
+
 function seedTemplateOnce() {
+  if (templateDir && !templateIsHealthy(templateDir)) {
+    templateDir = null;
+    seedings = 0;
+  }
   if (templateDir && fs.existsSync(templateDir)) return templateDir;
   // mkProcessTmpDir, not mkTmpDir: BL-420's helper sweeps per TEST and its
   // shared sibling per FILE, and the template must outlive both or the saving
@@ -92,6 +123,14 @@ function checkoutSeededRepo(prefix = 'bl1039-repo-', register = null) {
 function copySeededRepoInto(dir) {
   const template = seedTemplateOnce();
   fs.cpSync(template, dir, { recursive: true });
+  // BL-1124/BL-1175 property runs can pollute the shared template with
+  // core.worktree pointing at a foreign tmp dir; copies then look empty and
+  // `git add` fails on paths from the foreign index (e.g. backlog/ submodule).
+  try {
+    gitIn(dir, ['config', '--unset', 'core.worktree']);
+  } catch {
+    // no worktree key — healthy copy
+  }
   return dir;
 }
 

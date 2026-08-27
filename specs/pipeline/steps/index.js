@@ -668,7 +668,6 @@ const DOMAINS = [
   require('./bl586PipelineBoardTopicIdentitySteps'),
   require('./bl1017BabysitterdRecreatesVanishedStandingSessionSteps'),
   require('./bl1169BabysitterHalfLaunchStarvationAutoRepairSteps'),
-  require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
   require('./bl1187BabysitterdMainSyncDeadlockOperatorHintSteps'),
   require('./bl1163HandoffdParseErrorBl668ParenHotfixSteps'),
   require('./bl1164QaChangedPathUnitTestGateSteps'),
@@ -803,10 +802,10 @@ const DOMAINS = [
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl1170PostmortemOperatorVerbFailureClassLearnSteps'),
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
-  require('./bl1167SameModelSeatRoutingSteps'),
-  require('./bl1175PropertySuiteStandingRedsSteps'),
+  require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps')
 ];
