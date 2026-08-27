@@ -13,6 +13,14 @@ assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-597-trend-self-heal-events.feature
+# Tip-pure rematch 2026-08-27 after invariant-unencoded bounce; first-lineage
+# tips superseded by cleaner/hardener rematch tip.
+abandoned_commits:
+  - 906e0bec66
+  - cbe34d1040
+  - 70c81c0ed3
+  - ce0a144ea9
+  - 4ea7b0ca2f
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl597TrendSelfHealEventsSteps::acceptance handler registered"
