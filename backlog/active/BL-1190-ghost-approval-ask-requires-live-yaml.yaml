@@ -4,6 +4,7 @@ milestone: M8
 type: defect
 severity: high
 status: todo
+assigned_to: coder
 epic: concierge
 priority: 0
 direction: queue-jump
