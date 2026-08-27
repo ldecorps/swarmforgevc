@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1167: when every seat of a stage
+declares the same effective pack `--model`, BL-1001 `--seat-tier` filtering
+is bypassed — BL-983 idle-first among those seats; either seat may claim any
+`mutation_cost`. When models diverge, BL-1001 tier discipline returns
+unchanged. `seat_difficulty_lib.bb` `parse-seat-models` /
+`stage-models-uniform?`. Acceptance:
+`specs/features/BL-1167-same-model-coder-seats-bypass-tier-routing.feature`.
+How-to: `docs/how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1185: Work notes attribute
 `mutation_cost` for seat difficulty from the `Work BL-…` message when
 `task:` is absent — same `supersede_lib/task-name-from-content` path

@@ -776,7 +776,8 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
-  require('./bl1185WorkNoteMissingTaskHeaderSteps')
+  require('./bl1185WorkNoteMissingTaskHeaderSteps'),
+  require('./bl1167SameModelSeatRoutingSteps')
 ];
 
 function registerSteps(registry) {
