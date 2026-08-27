@@ -35,3 +35,10 @@ Feature: deprecate operator verbs scan and retire stale rules with docs
     When the operator runs deprecate
     Then the verb refuses with a reason
     And nothing is retired
+
+  # BL-1174 weak-seat-refuses-05
+  Scenario: deprecate refuses on an easy or weak seat
+    Given the executing seat is easy-tier or otherwise weak at multi-document reasoning
+    When the operator runs deprecate or deprecate dry
+    Then the verb refuses naming needs hard-tier multi-document reasoner
+    And no scan mutation or retirement occurs
