@@ -11,7 +11,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1178-wire-agent-memory-into-hot-swap-and-trial.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Second slice of agent-memory-transfer epic. Reuse BL-235 / ModelFactory /
   steward failover paths — do not invent a third assignment path.
