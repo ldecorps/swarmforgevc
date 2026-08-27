@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-600: human-decision latency trend —
+ask (ApprovalRequested) to verdict per gate via
+`humanDecisionLatency.ts`; pending asks contribute open age only; median +
+outliers via `stageDwell.splitOutliers`; `computeTrend` inward import (no
+`trend.ts` re-export — acyclic). Measurement only. Acceptance:
+`specs/features/BL-600-trend-human-decision-latency.feature`. How-to:
+`docs/how-to/BL-600-trend-human-decision-latency.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1164: QA changed-path unit test gate —
 Article 4.5 requires QA to run mapped unit/wiring/`suite-manifest.tsv` tests
 for each production path in `origin/main...HEAD` (narrowest command per
@@ -7388,6 +7396,43 @@ back-edge was the standing architect bounce (cycle) this rematch closed.
   `computeTrend` posture).
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 - **BL-594** — swarm-behaviour-trends epic.
+
+## Human-Decision Latency (BL-600)
+
+Some tickets wait on the swarm; some wait on the human. BL-600 pairs each
+ApprovalRequested ask with its verdict and trends **ask→verdict latency**
+per gate (`approve` / `amend`) so approval-queue wait is visible separately
+from swarm velocity. **Measurement only** — never nudges, blocks, or alters
+asks or human verdict recording.
+
+### Derivation
+
+`humanDecisionLatency.ts` is pure over paired timestamps:
+
+| Input | Output |
+|-------|--------|
+| Ask + verdict (`verdictAtMs >= askAtMs`) | Decided `latencyMs` for that gate |
+| Ask still pending | `openAgeMs` only — never folded into decided median/outliers |
+
+Ask times come from existing stores (`approvalAskPostedAtMs` /
+`telegram-approval-ask-messages.json` pairing). Aggregation reuses
+`stageDwell.splitOutliers` for median + outlier honesty, then feeds
+`computeTrend` (current / prior / delta / direction).
+
+### Dependency direction (acyclic)
+
+`humanDecisionLatency` imports `computeTrend` from `./trend` and
+`splitOutliers` from `./stageDwell`. `trend.ts` must **not** re-export
+decision-latency helpers — that back-edge was the standing acyclic bounce
+this rematch closed.
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-591** — ETA already treats blocked-on-human as non-velocity; this
+  quantifies the human side.
+- **BL-595** — human-loop reliability ledger (sibling `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
 
 ## Flow Watchdog (BL-577)
 
