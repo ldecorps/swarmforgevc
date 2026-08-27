@@ -9,8 +9,23 @@ severity: low
 priority: 182
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-600-trend-human-decision-latency.feature
+
+required_wiring:
+  - "extension/src/notify/staleApprovalEscalation.ts::approvalAskPostedAtMs::ask timestamp from topic outbound ApprovalRequested"
+  - "extension/src/tools/telegram-front-desk-bot.ts::readApprovalAskMessages::pairs ask to backlog id via telegram-approval-ask-messages.json"
+  - "extension/src/metrics/stageDwell.ts::splitOutliers::median + outlier honesty reused for decision-latency aggregation"
+  - "extension/src/metrics/trend.ts::decision-latency series::plotted via shared TrendedNumber framework"
+  - "specs/pipeline/steps/index.js::bl600TrendHumanDecisionLatencySteps::acceptance handler registered"
+
+invariants:
+  - "Still-pending asks contribute OPEN age only — never fabricated as a fast completed decision."
+  - "Aggregation is a pure function over paired ask/verdict events — unit-testable without live Telegram or git."
+  - "Measuring never nudges, blocks, or alters approval asks or human verdict recording."
+
 source: |
   Human, 2026-07-23, epic BL-594. Some tickets wait on the swarm; some wait on
   the human. Nothing distinguishes them, so "why is this epic slow" cannot tell
@@ -32,13 +47,17 @@ description: |
   exactly the kind of thing BL-591's ETA must account for (a blocked-on-human
   ticket has no velocity ETA - BL-591 already says so; this quantifies the
   human side).
-acceptance: |
-  Specifier writes scenarios. Minimum:
-  1. Each decided ticket yields one latency = verdict_ts - ask_ts.
-  2. A pure aggregator produces a median + outlier decision-latency series over
-     a window, unit-tested with fixtures.
-  3. A still-pending ask contributes an OPEN age (currently-waiting), not a
-     fabricated completion — never counted as a fast decision.
+qa_e2e_procedure: >
+  (1) Fixture topic record + yaml verdict → latency = verdict_ts - ask_ts per gate.
+  (2) Pure aggregator unit tests: median + outlier split without fs. (3) Pending
+  ask → open age excluded from decided stats. (4) trend.ts current/prior/delta on
+  median series.
+
 out_of_scope: |
   - Nudging the human to decide faster. Measurement only.
   - Swarm-side stage latency (stageDwell owns that).
+
+notes: |
+  - [2026-08-27] specifier: feature file minted from coordinator Work note;
+    ask_ts from topic outbound ApprovalRequested (approvalAskPostedAtMs pattern);
+    verdict_ts from human_approval flip / ruling commit; reuse stageDwell outlier split.
