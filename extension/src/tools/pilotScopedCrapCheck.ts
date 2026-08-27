@@ -8,6 +8,9 @@ import * as path from 'path';
 
 export const PILOT_CRAP_VIOLATION_REFUSAL = 'touched function exceeds CRAP threshold';
 
+export const PILOT_CRAP_EVIDENCE_MISSING_REFUSAL =
+  'touched extension/src TypeScript requires durable scoped CRAP evidence on the acceptance receipt';
+
 export const PILOT_CRAP_THRESHOLD = 6;
 
 export type CrapViolation = {
@@ -17,10 +20,17 @@ export type CrapViolation = {
 };
 
 export type PilotScopedCrapCheckOutcome =
-  | { checked: true; tsFilesScanned: number; violations: CrapViolation[] }
-  | { checked: false };
+  | {
+      checked: true;
+      tsFilesScanned: number;
+      violations: CrapViolation[];
+      scannedPaths: string[];
+      srcPathsInScope?: string[];
+    }
+  | { checked: false; srcPathsInScope?: string[] };
 
 const EXT_TS_RE = /^extension\/.*\.ts$/;
+const EXT_SRC_TS_RE = /^extension\/src\/.*\.ts$/;
 
 type CrapFunction = {
   name: string;
@@ -46,6 +56,15 @@ type CrapLib = {
 export function isExtensionTsPath(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, '/');
   return EXT_TS_RE.test(normalized) && !normalized.endsWith('.d.ts');
+}
+
+export function isExtensionSrcTsPath(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, '/');
+  return EXT_SRC_TS_RE.test(normalized) && !normalized.endsWith('.d.ts');
+}
+
+function existingSrcPaths(repoRoot: string, touchedRelativePaths: string[]): string[] {
+  return touchedRelativePaths.filter(isExtensionSrcTsPath).filter((rel) => fs.existsSync(path.join(repoRoot, rel)));
 }
 
 function loadCrapLib(extensionDir: string): CrapLib {
@@ -94,19 +113,21 @@ export function assessPilotScopedCrap(
   coveragePath?: string
 ): PilotScopedCrapCheckOutcome {
   const extensionDir = path.join(repoRoot, 'extension');
+  const srcPathsInScope = existingSrcPaths(repoRoot, touchedRelativePaths);
   const targets = touchedRelativePaths
     .filter(isExtensionTsPath)
     .map((rel) => path.join(repoRoot, rel))
     .filter((abs) => fs.existsSync(abs));
   if (targets.length === 0) {
-    return { checked: true, tsFilesScanned: 0, violations: [] };
+    return { checked: true, tsFilesScanned: 0, violations: [], scannedPaths: [] };
   }
   const covPath = coveragePath ?? defaultCoveragePath(extensionDir);
   if (!fs.existsSync(covPath)) {
-    return { checked: false };
+    return srcPathsInScope.length > 0 ? { checked: false, srcPathsInScope } : { checked: false };
   }
   const coverage = JSON.parse(fs.readFileSync(covPath, 'utf8')) as Record<string, unknown>;
   const crapLib = loadCrapLib(extensionDir);
+  const scannedPaths = targets.map((abs) => path.relative(repoRoot, abs).replace(/\\/g, '/'));
   const violations = targets.flatMap((abs) => violationsForFile(abs, repoRoot, coverage, crapLib));
-  return { checked: true, tsFilesScanned: targets.length, violations };
+  return { checked: true, tsFilesScanned: targets.length, violations, scannedPaths };
 }

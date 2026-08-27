@@ -61,7 +61,7 @@ function crapOutcome(ctx) {
     return ctx.forcedCrapOutcome;
   }
   if (ctx.touchedTsPaths.length === 0) {
-    return { checked: true, tsFilesScanned: 0, violations: [] };
+    return { checked: true, tsFilesScanned: 0, violations: [], scannedPaths: [] };
   }
   return assessPilotScopedCrap(ctx.repoRootFixture, ctx.touchedTsPaths);
 }
@@ -154,7 +154,7 @@ function registerSteps(registry) {
       fs.mkdirSync(path.dirname(abs), { recursive: true });
       fs.writeFileSync(abs, 'export function lowCrapHelper(): number {\n  return 1;\n}\n', 'utf8');
       ctx.touchedTsPaths = [rel];
-      ctx.forcedCrapOutcome = { checked: true, tsFilesScanned: 1, violations: [] };
+      ctx.forcedCrapOutcome = { checked: true, tsFilesScanned: 1, violations: [], scannedPaths: [rel] };
     }
   );
 
@@ -173,6 +173,7 @@ function registerSteps(registry) {
             crap: 10.89,
           },
         ],
+        scannedPaths: ['extension/src/bl741HighCrap.ts'],
       };
       ctx.touchedTsPaths = ['extension/src/bl741HighCrap.ts'];
     }
@@ -183,8 +184,12 @@ function registerSteps(registry) {
     /^the run's commits touched files whose functions are all at CRAP six or below$/,
     (ctx) => {
       ensureCtx(ctx);
-      ctx.forcedCrapOutcome = { checked: true, tsFilesScanned: 1, violations: [] };
-      ctx.touchedTsPaths = ['extension/src/bl741LowCrap.ts'];
+      ctx.forcedCrapOutcome = {
+        checked: true,
+        tsFilesScanned: 1,
+        violations: [],
+        scannedPaths: ['extension/src/bl741LowCrap.ts'],
+      };
     }
   );
 
@@ -196,6 +201,7 @@ function registerSteps(registry) {
       violations: [
         { file: 'extension/src/bl741Violating.ts', function: 'flaggedFn', crap: 8.5 },
       ],
+      scannedPaths: ['extension/src/bl741Violating.ts'],
     };
     ctx.touchedTsPaths = ['extension/src/bl741Violating.ts'];
   });
