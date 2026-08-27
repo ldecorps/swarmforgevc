@@ -13,9 +13,13 @@
 #   never the standing recipe — see BL-1121).
 #
 # Exit 0: path skip, reconcile-import skip (BL-1121), override, green suite,
-#         or toolchain unavailable.
-# Exit 1: genuine property regression (suite red) OR BL-1124 shared-repo
-#         canary failure (core.bare flipped / live refs rewritten).
+#         allowlisted standing reds only (BL-1175), or toolchain unavailable.
+# Exit 1: genuine property regression (suite red with a non-allowlisted file)
+#         OR BL-1124 shared-repo canary failure (core.bare flipped / live refs
+#         rewritten).
+#
+# BL-1175 property suite gate: green or allowlisted standing reds; unrelated
+# green commits not refused (property_suite_standing_allowlist.tsv).
 
 set -euo pipefail
 
@@ -24,6 +28,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/property_suite_shared_repo_guard.sh"
 # shellcheck source=incoming_merge_parent_lib.sh
 source "$SCRIPT_DIR/incoming_merge_parent_lib.sh"
+
+ALLOWLIST_TSV=""
+if [[ -f "$SCRIPT_DIR/property_suite_standing_allowlist_lib.sh" ]]; then
+  # shellcheck source=property_suite_standing_allowlist_lib.sh
+  source "$SCRIPT_DIR/property_suite_standing_allowlist_lib.sh"
+  ALLOWLIST_TSV="$(ps_allowlist_tsv_path "$SCRIPT_DIR")"
+fi
 
 warn_override() {
   echo "property-suite-guard: overridden" >&2
@@ -142,7 +153,24 @@ fi
 
 if (( STATUS != 0 )); then
   echo "$OUT" >&2
-  echo "Commit rejected: property suite failed. Fix the red property or set SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 to override." >&2
+  set +e
+  ALLOWLIST_OK=1
+  UNLISTED=""
+  if [[ -n "$ALLOWLIST_TSV" && -f "$ALLOWLIST_TSV" ]]; then
+    UNLISTED="$(ps_suite_failures_all_allowlisted "$ALLOWLIST_TSV" "$OUT")"
+    ALLOWLIST_OK=$?
+  fi
+  set -e
+  if (( ALLOWLIST_OK == 0 )); then
+    echo "property-suite-guard: allowlisted-standing-reds; unrelated green commits not refused (BL-1175)" >&2
+    exit 0
+  fi
+  if [[ -n "$UNLISTED" ]]; then
+    echo "Commit rejected: property suite failed with non-allowlisted files:" >&2
+    echo "$UNLISTED" >&2
+  else
+    echo "Commit rejected: property suite failed. Fix the red property or set SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 to override." >&2
+  fi
   exit 1
 fi
 

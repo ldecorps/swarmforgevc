@@ -781,7 +781,8 @@ const DOMAINS = [
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
-  require('./bl1167SameModelSeatRoutingSteps')
+  require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl1175PropertySuiteStandingRedsSteps')
 ];
 
 function registerSteps(registry) {
