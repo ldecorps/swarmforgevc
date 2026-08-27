@@ -131,8 +131,11 @@ function cliAgents(ctx) {
 }
 
 async function fetchDashboard(ctx, agent) {
-  const handle = await startBridge(ctx.fixtureRoot, path.join(ctx.fixtureRoot, 'runs.jsonl'), TOKEN, {});
+  const prevKey = process.env.CURSOR_API_KEY;
+  process.env.CURSOR_API_KEY = prevKey || 'bl665-test-key';
+  let handle;
   try {
+    handle = await startBridge(ctx.fixtureRoot, path.join(ctx.fixtureRoot, 'runs.jsonl'), TOKEN, {});
     const base = `http://127.0.0.1:${handle.port}`;
     const htmlRes = await fetch(`${base}/context-budget`);
     ctx.html = await htmlRes.text();
@@ -141,7 +144,14 @@ async function fetchDashboard(ctx, agent) {
     ctx.stateStatus = stateRes.status;
     ctx.state = stateRes.status === 200 ? await stateRes.json() : null;
   } finally {
-    handle.stop();
+    if (handle) {
+      handle.stop();
+    }
+    if (prevKey === undefined) {
+      delete process.env.CURSOR_API_KEY;
+    } else {
+      process.env.CURSOR_API_KEY = prevKey;
+    }
   }
 }
 
