@@ -4,8 +4,9 @@
 payload when swapping the model on the same role — without vendor-opaque blobs.*
 
 Epic BL-1176 slice 1. Outgoing seat **captures** continuity; incoming seat
-**injects** before live work. Hot-swap wiring is BL-1178; this ticket is the
-pure API and payload contract.
+**injects** before live work. Consumer wiring for hot-swap and trial boundaries
+is [BL-1178](BL-1178-wire-agent-memory-into-hot-swap-and-trial.md); this
+ticket is the pure API and payload contract.
 
 ## Payload shape
 
@@ -32,11 +33,13 @@ Inject never sets `pretendedContinuity: true` — bad payloads return
 
 ## Operator check
 
-When debugging a same-role swap (before BL-1178 lands end-to-end):
+When debugging a same-role swap:
 
 1. Capture from fixture or outgoing state — confirm `schemaVersion` and parcel ids.
 2. Inject into target role — confirm `continuitySummary` and `openParcelContext` round-trip.
 3. Feed `null` or malformed JSON — inject must refuse with a clear signal.
+4. For end-to-end hot-swap, confirm `switchRoleModel` / `attemptSameRoleModelSwitch`
+   capture→inject before respawn (BL-1178).
 
 ## Verify
 
@@ -46,5 +49,5 @@ bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-1177-portable-agent-memory-payload-capture-inject.feature
 ```
 
-Related: epic BL-1176; consumer wiring BL-1178 (hot-swap/trial); per-role
+Related: epic BL-1176; [BL-1178 hot-swap/trial wiring](BL-1178-wire-agent-memory-into-hot-swap-and-trial.md); per-role
 model swap BL-235 in Specification.
