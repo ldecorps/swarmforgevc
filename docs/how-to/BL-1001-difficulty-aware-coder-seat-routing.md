@@ -53,6 +53,7 @@ Acceptance:
 `specs/features/BL-1001-difficulty-aware-coder-seat-routing.feature`
 
 Related: Spec BL-983 multi-seat claim; `docs/how-to/BL-1004-cross-seat-rework-claim-deferral.md`.
+
 Work route notes (`type: note`, `message: Work BL-…`) often omit `task:` on
 purpose — see [BL-1185](BL-1185-work-note-missing-task-header-defers-hard-seat.md)
 for how `mutation_cost` is still attributed for this filter.

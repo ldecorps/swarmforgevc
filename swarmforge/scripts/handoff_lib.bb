@@ -992,11 +992,6 @@
                 (rotation-telemetry-lib/append-rotation-event!
                  (target-root)
                  {:from from-role :to target-role :reason emit-reason})
-                (self-heal-telemetry-lib/append-self-heal-event!
-                 (target-root)
-                 {:type "rotation-respawn"
-                  :subject "mono-router-resident"
-                  :reason "persona swap"})
                 {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
                                      (str "tmux-exit-" (:exit result)))}))))))

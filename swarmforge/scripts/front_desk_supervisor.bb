@@ -101,7 +101,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "fleet_telegram_creds_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -286,10 +285,6 @@
 (defn- ensure-current-build! []
   (when (node-build-stale?)
     (log! "stale-build-detected" "recompiling before respawn")
-    (self-heal-telemetry-lib/append-self-heal-event!
-     project-root {:type "stale-build-recompile"
-                    :subject "front-desk-supervisor"
-                    :reason "recompiling before respawn"})
     (let [{:keys [exit err]} (process/sh {:continue true :dir (str (fs/path project-root "extension"))} "npm" "run" "compile")]
       (when-not (zero? exit)
         (str "npm run compile failed: " err)))))
@@ -468,12 +463,7 @@
 ;; that decision itself never performs.
 (defn log-event! [spec-key event entry]
   (case event
-    :started (do
-               (log! "started" (name spec-key) "pid=" (str (:pid entry)) "attempt=" (str (:attempts entry)))
-               (self-heal-telemetry-lib/append-self-heal-event!
-                project-root {:type "supervisor-respawn"
-                               :subject "front-desk-supervisor"
-                               :reason "bounded restart"}))
+    :started (log! "started" (name spec-key) "pid=" (str (:pid entry)) "attempt=" (str (:attempts entry)))
     :crashed (log! "crashed" (name spec-key) "attempt=" (str (:attempts entry)))
     ;; BL-370: distinct from :crashed - the pid never died, the poll
     ;; heartbeat just went stale. Logged separately so a human grepping

@@ -1,22 +1,20 @@
-# Documenter evidence — BL-726 (tip-pure hardener rematch)
+# Documenter evidence — BL-726 (tip-pure rematch)
 
 ## Ticket
 BL-726-bl718-acceptance-feature-has-no-step-handlers
 
 ## Hardener tip
-7e529d06c3
+ba26bb810a
 
 ## Review inventory (Article 4.4)
 NONE.
 
 ## Docs impact
-- Tip-pure base: reset to hardener tip `7e529d06c3` (no merge of polluted
-  documenter branch).
-- Spec / index / architecture overlaid from `origin/main`, then BL-726 stack
-  restored (Last Updated + BL-718 acceptance wiring section, how-to, index
-  link, architecture note; BL-718 how-to cross-link refreshed).
-- `abandoned_commits` extended for stranded architect/cleaner/hardender tips
-  on the rematch lineage.
+- Tip-pure base: reset to hardener tip (no merge of polluted documenter branch).
+- Spec / index / architecture overlaid from `origin/main`, then BL-726
+  Last Updated + BL-718 Acceptance Step Wiring section + how-to + index links
+  + architecture note; BL-718 how-to points at wired APS steps.
+- `abandoned_commits` for superseded first-lineage / parallel-branch tips.
 
 ## Acceptance cross-check
 Aligned with

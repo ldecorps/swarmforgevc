@@ -41,5 +41,3 @@ Acceptance:
 `specs/features/BL-570-property-suite-drift-guard.feature`
 
 Related: commit-size guard (`docs/how-to/BL-105-history-strip.md`).
-Standing-red allowlist detail:
-`docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`.

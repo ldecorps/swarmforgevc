@@ -1,0 +1,86 @@
+id: BL-1175
+title: "Standing property-suite reds block unrelated green commits (BL-605 handoff stuck)"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+assigned_to: coder
+priority: 1
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+abandoned_commits:
+  - 9da06e6b92
+  - dd51ceb1c3
+  - 01783f0479
+  - d77a7b2dba
+  - 926319ccb2
+  - 3e081e5f83
+  - 0b0bca0f6d
+  - 595e3edb93
+  - 007154cb2b
+  - 2952154273
+  - 1eb963f497
+  - 00ea48311d
+  - abef89c58b
+=======
+>>>>>>> c9ff163c32
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature
+
+human_approval: approved
+approval_context: >
+  Operator intake 2026-08-27: BL-605 fully implemented and staged in coder
+  worktree; commit refused by check_property_suite_drift.sh on ~22 pre-existing
+  property failures (not caused by BL-605). Coordinator urgency — unblock
+  handoff. Prefer restore green / allowlist over SKIP as standing recipe.
+
+invariants:
+  - "SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 remains recovery-only — never the standing recipe for landing green parcels (BL-1121)."
+  - "Every standing property failure is either fixed green or explicitly allowlisted with rationale — never a silent red that blocks unrelated commits."
+  - "A stock property suite run that does not mutate shared main must not trip the BL-1124 shared-repo canary."
+
+required_wiring:
+  - "swarmforge/scripts/check_property_suite_drift.sh::property suite gate::green or allowlisted standing reds; unrelated green commits not refused"
+  - "extension/ npm run test:properties::standing inventory restored or allowlisted"
+  - "specs/pipeline/steps/index.js::bl1175PropertySuiteStandingRedsSteps::acceptance handler registered"
+
+description: |
+  ## What
+
+  Restore a commitable property lane: either make `npm run test:properties`
+  green on the coder worktree tip, or replace silent standing reds with an
+  explicit allowlist so an unrelated green parcel (BL-605) can commit without
+  `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1`.
+
+  ## Evidence (2026-08-27)
+
+  - BL-605 acceptance 4/4 + its property tests green after vitest-globals fix
+  - Full suite: 604 tests, 594 pass, 10 fail, ~22 files failed
+  - Pre-commit: `Commit rejected: property suite failed...`
+  - Intermittent BL-1124 canary when suite mutates HEAD during hook
+
+  ## How (direction, not mandate)
+
+  Inventory the failing files; fix or allowlist each. Do not weaken the guard
+  for ordinary extension/src commits. Ops expedite with stack stopped is out
+  of band — this ticket restores the standing path.
+
+qa_e2e_procedure: >
+  (1) Inventory standing reds with disposition. (2) Commit fixture staging only
+  green BL-605-shaped paths without SKIP — guard allows. (3) SKIP still
+  recovery-only. (4) Stock suite does not trip BL-1124 canary / bare flip.
+
+out_of_scope: |
+  - Implementing BL-605 product behaviour (already staged; this unblocks commit).
+  - Making SKIP the standing recipe (forbidden by BL-1121).
+  - One-off ops bounce with stack stopped (temporary unblock only).
+
+source: |
+  .swarmforge/operator/INTAKE-property-suite-blocks-coder-bl605-commit.md
+  (2026-08-27; coordinator urgency — BL-605 active, coder cannot hand off).
+
+notes: |
+  - [2026-08-27] specifier: minted from operator intake drain; high severity
+    because it blocks live pipeline handoff of approved BL-605.
