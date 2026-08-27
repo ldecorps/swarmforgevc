@@ -148,6 +148,18 @@ import {
   readMiniAppRedeployLock,
   startMiniAppRedeployRun,
 } from './telegramCursorBridgeMiniAppRedeploy';
+import {
+  formatFrontDeskRedeployFailureMessage,
+  formatFrontDeskRedeployStartMessage,
+  readFrontDeskRedeployLock,
+  startFrontDeskRedeployRun,
+} from './telegramCursorBridgeFrontDeskRedeploy';
+import {
+  formatAllRedeployFailureMessage,
+  formatAllRedeployStartMessage,
+  readAllRedeployLock,
+  startAllRedeployRun,
+} from './telegramCursorBridgeAllRedeploy';
 import { formatLogTelegramMessage } from './telegramCursorBridgeLogs';
 
 export const TELEGRAM_PROGRESS_MIN_INTERVAL_MS = 12_000;
@@ -933,6 +945,14 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
     const miniAppRedeployLock = readMiniAppRedeployLock(ctx.repoRoot);
     if (miniAppRedeployLock) {
       text += `\nMini app redeploy: running (pid ${miniAppRedeployLock.pid})`;
+    }
+    const frontDeskRedeployLock = readFrontDeskRedeployLock(ctx.repoRoot);
+    if (frontDeskRedeployLock) {
+      text += `\nFront desk redeploy: running (pid ${frontDeskRedeployLock.pid})`;
+    }
+    const allRedeployLock = readAllRedeployLock(ctx.repoRoot);
+    if (allRedeployLock) {
+      text += `\nAll Telegram redeploy: running (pid ${allRedeployLock.pid})`;
     }
     return handleSimpleInboundAction(ctx, topicId, text, replyTo);
   },
