@@ -3226,14 +3226,14 @@
 (defn- post-qa-branch-sweep-role-dirty? [worktree-path]
   (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "status" "--porcelain"]
                                         {:dir worktree-path})]
-    (and (zero? exit) (not (str/blank? (str/trim out)))))
+    (and (zero? exit) (not (str/blank? (str/trim out))))))
 
 (defn- post-qa-branch-sweep-role-in-process? [role-info]
   (let [dir (handoff-lib/mailbox-dir role-info :in_process)]
     (and (fs/directory? dir)
          (boolean
           (some #(str/ends-with? (str (fs/file-name %)) ".handoff")
-                (fs/list-dir dir)))))
+                (fs/list-dir dir))))))
 
 (defn- post-qa-branch-sweep-role-facts! [role-name]
   (when-let [ri (handoff-lib/load-role-info role-name (str project-root))]
