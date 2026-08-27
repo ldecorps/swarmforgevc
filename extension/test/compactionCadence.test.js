@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   deriveCompactionRecordFromContextEvent,
   deriveCompactionRecords,
@@ -8,6 +10,22 @@ const {
   queryCompactionCadenceForRole,
   trendForCompactionCadencePerHour,
 } = require('../out/metrics/compactionCadence');
+
+// BL-601 architect bounce: trend.ts must not re-export from compactionCadence
+// (compactionCadence already imports computeTrend — that pair is a cycle).
+test('trend.ts does not re-export trendForCompactionCadencePerHour from compactionCadence', () => {
+  const trendSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'metrics', 'trend.ts'),
+    'utf8'
+  );
+  assert.equal(
+    /export\s*\{[^}]*trendForCompactionCadencePerHour[^}]*\}\s*from\s*['"]\.\/compactionCadence['"]/.test(
+      trendSrc
+    ),
+    false,
+    'trend.ts must not re-export from ./compactionCadence (acyclic)'
+  );
+});
 
 test('deriveCompactionRecordFromContextEvent emits role model tokens and timestamp', () => {
   const record = deriveCompactionRecordFromContextEvent({
