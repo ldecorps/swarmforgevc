@@ -126,6 +126,7 @@ expects them, and are not migrated or rewritten here.
 - [Let's Talk — Discrete Audio Turns in the Mini App Console](how-to/BL-696-miniapp-lets-talk-cursor-audio.md)
 - [Telegram Cursor Remote operator commands](how-to/BL-698-telegram-cursor-operator-commands.md) — phone-first slash verbs on the Cursor Remote topic, danger tiers, and (BL-1113) CreatePlan **Confirm plan** / **Reject plan** progress buttons.
 - [Host-agent activity feed](how-to/BL-833-host-agent-activity-feed.md) — bounded tee of host progress lines; `GET /host-activity` + SSE `host-activity` (BL-833; screen BL-834).
+- [Bubble Host thinking page on phone](how-to/BL-834-bubble-host-thinking-page.md) — watch host activity live from BL-833 feed; working / quiet / unreachable states (BL-834).
 - [Reordering Epic Priority in the Mini App Console](how-to/BL-572-console-epic-priority-reorder.md)
 - [Relaunch Resume and the Orphan-Claim Sweep](how-to/BL-648-relaunch-resume-orphan-claims.md)
 - [Stale mono-router-active-role is not topology on standing packs](how-to/BL-1020-stale-mono-router-marker-is-not-topology.md) — marker honoured only on rotation-router packs; leftovers on full-forge are ignored and reported `BL-1020 STALE` (BL-1020).

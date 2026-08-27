@@ -52,6 +52,7 @@ import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
 import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
+import { getBubbleHostUiHtml, isBubbleHostPath } from './bubbleHostUiHtml';
 import { getCatchUpUiHtml } from './catchUpUiHtml';
 import {
   buildOperatorDocsIndexState,
@@ -81,6 +82,7 @@ import { getLetsTalkUiHtml } from './letsTalkUiHtml';
 import {
   createLetsTalkWriteRoutes,
   isLetsTalkPath,
+  mergeBubbleHostIntoUiBundleManifest,
   mergeOperatorDocsIntoUiBundleManifest,
   mergeBubbleHealthIntoUiBundleManifest,
 } from './letsTalkRoutes';
@@ -2039,8 +2041,10 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // decide fresh/cached/stale/bare from what this route actually serves.
       matches: isLetsTalkUiBundlePath,
       compute: () =>
-        mergeBubbleHealthIntoUiBundleManifest(
-          mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+        mergeBubbleHostIntoUiBundleManifest(
+          mergeBubbleHealthIntoUiBundleManifest(
+            mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+          )
         ),
     },
     {
@@ -2079,6 +2083,7 @@ export function startBridge(
     const sseClients = new Set<http.ServerResponse>();
     let lastSnapshot: string | undefined;
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
+    // hostActivityStream — live push channel for BL-834 Host page (SSE /events).
     const unsubscribeHostActivity = subscribeHostActivity(({ sessionId, line }) => {
       const payload = JSON.stringify({ sessionId, line });
       for (const client of sseClients) {
@@ -2212,6 +2217,10 @@ export function startBridge(
       }
       if (isBubbleHealthPath(url)) {
         serveMiniAppHtml(res, getBubbleHealthUiHtml());
+        return;
+      }
+      if (isBubbleHostPath(url)) {
+        serveMiniAppHtml(res, getBubbleHostUiHtml());
         return;
       }
       if (url === '/lets-talk/manifest.json' || url.startsWith('/lets-talk/manifest.json?')) {

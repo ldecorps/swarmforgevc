@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=1e1f0bb4536217d1e0e37d424aa4c48233465e40b50653d2fece9721273e6661
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T12:42:31.157988413Z","feature_name":"Bubble's Host page is a window onto the host agent working, and never a spinner","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-834-bubble-host-thinking-page.feature","background_hash":"f91394f1db8393d5abd4b1a2d0c99b9f5de47b10ddefe417d2edae1cc33949bc","implementation_hash":"unknown","scenarios":[{"index":2,"name":"each condition has its own honest rendering","scenario_hash":"fd58252b7d4d68350e34fc7a7e9865587746341626e5c379346ee4b376e22a6a","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-27T12:42:31.157988413Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble's Host page is a window onto the host agent working, and never a spinner
 
   The human can watch a tmux pane on the laptop and has no equivalent on the

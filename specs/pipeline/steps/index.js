@@ -320,6 +320,7 @@ const DOMAINS = [
   require('./bl547ModelStewardSteps'),
   require('./bl669OutageDrivenSeatFailoverViaStewardSteps'),
   require('./bl557ModelStewardSlice3Steps'),
+  require('./bl559PipelineboardPropertyTestPrefixSubstringBugSteps'),
   require('./bl551LlmCostLedgerSteps'),
   require('./bl525ModelFactorySteps'),
   require('./gh22ContextTelemetrySteps'),
@@ -587,6 +588,7 @@ const DOMAINS = [
   require('./bl941CursorGoneAgentClassifierBoundariesSteps'),
   require('./bl1166OperatorDocsSteps'),
   require('./bl832BubbleHealthTrendsPageSteps'),
+  require('./bl834BubbleHostThinkingPageSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
   require('./bl938AgedNoteRotateFixtureRotationRouterSteps'),
   require('./bl923DwellCountsOccupiedTimeSteps'),
@@ -795,6 +797,7 @@ const DOMAINS = [
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
   require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl1175PropertySuiteStandingRedsSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
 ];
 

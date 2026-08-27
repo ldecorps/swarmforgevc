@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-834: Bubble **Host** remote page —
+manifest page `host` (order 5) in BL-829 ui-bundle; `/host` HTML shell
+seeds from `GET /host-activity` then attaches to SSE `hostActivityStream`
+on `/events`; three honest states (working / quiet / unreachable); watch-only
+— never steers the host session. Depends on BL-833 feed. Acceptance:
+`specs/features/BL-834-bubble-host-thinking-page.feature`.
+How-to: `docs/how-to/BL-834-bubble-host-thinking-page.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-832: Bubble **Health** remote page —
 manifest page `health` (order 3) in BL-829 ui-bundle; `/health` HTML shell and
 `/health-trends` JSON read traverse time, rework (by bouncing role),
