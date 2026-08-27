@@ -25,6 +25,7 @@ aps_equivalence_cli_test_runner.bb	standing
 aps_equivalence_lib_test_runner.bb	standing		
 availability_ledger_lib_test_runner.bb	standing		
 babysitter_assess_lib_test_runner.bb	standing		
+babysitter_lib_test_runner.bb	standing		
 babysitter_nudge_lib_test_runner.bb	standing		
 babysitterd_freshness_lib_test_runner.bb	standing		
 babysitterd_sweep_lib_test_runner.bb	standing		

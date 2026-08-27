@@ -75,6 +75,13 @@ You are the specifier.
   `backlog/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.
 - **Constitution:** `articles/03_backlog.md` §3.6;
   `articles/reference/deprecator-freshness-gate-amendment-2026-08-27.md`.
+- **Model capability (must-have).** Deprecator judgment — freshness
+  adjudication, `/deprecate` decisions, amend/retire/split/confirm — MUST be
+  done by a model that reasons well **across many documents at once**. If your
+  current seat is easy-tier, local-only, or otherwise weak at multi-document
+  reasoning: **do not guess**. Refuse, note "needs hard-tier multi-document
+  reasoner," and escalate to a hard seat or the human. Deprecator build and
+  run tickets carry `mutation_cost: high` so BL-1001 keeps them off easy seats.
 
 ## Acceptance Scenarios (Gherkin)
 - Express each work item's acceptance criteria as Gherkin scenarios
