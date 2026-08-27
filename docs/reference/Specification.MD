@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1175: standing property-suite reds
+are explicitly allowlisted in
+`swarmforge/scripts/property_suite_standing_allowlist.tsv` so
+`check_property_suite_drift.sh` allows unrelated green commits; non-
+allowlisted reds still refuse. `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1`
+remains recovery-only (BL-1121). Acceptance:
+`specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature`.
+How-to: `docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1167: when every seat of a stage
 declares the same effective pack `--model`, BL-1001 `--seat-tier` filtering
 is bypassed — BL-983 idle-first among those seats; either seat may claim any
