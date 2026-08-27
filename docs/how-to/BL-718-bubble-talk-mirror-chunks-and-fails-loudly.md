@@ -29,3 +29,7 @@ Cursor Remote, and it must not silently drop long replies or failed sends.
 
 Hold music / TTS / silent-return (BL-717), barge-in, merging Bubble with Cursor
 Remote.
+
+## Property rigor (BL-738)
+
+The live property that encodes length-independent reassembly must exercise the multi-chunk branch. See [BL-738](BL-738-chunking-property-reaches-the-split-boundary.md) — probe `maxLen` + generator floor, not hand-synced 4096 inputs.
