@@ -84,6 +84,15 @@ function registerSteps(registry) {
     const st = ensure(ctx);
     const ev = event.trim();
     const p = filePath.trim();
+    if (ev === 'root intake doc') {
+      assert.match(p, /^backlog\/INTAKE-[^/]+\.md$/, 'root intake paths must use a lowercase backlog/INTAKE- prefix');
+    } else if (ev === 'epic tracker') {
+      assert.match(p, /\/BL-\d+-epic-swarm-/, 'epic tracker slug segment is case-sensitive in fixtures');
+    } else if (ev === 'ticket close') {
+      assert.match(p, /^backlog\/done\//, 'done paths must use a lowercase backlog/done/ prefix');
+    } else if (ev === 'ticket arrival') {
+      assert.match(p, /^backlog\/(active|paused)\//, 'ticket arrival paths must use lowercase backlog/active|paused/');
+    }
     let changes;
     if (ev === 'ticket arrival' || ev === 'root intake doc' || ev === 'epic tracker') {
       changes = [{ status: 'A', path: p }];

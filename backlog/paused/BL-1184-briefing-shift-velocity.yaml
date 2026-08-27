@@ -61,5 +61,3 @@ source: |
 notes: |
   - [2026-08-27] specifier: minted; default aggregation = max rolling 8h landed
     count per calendar day for a single briefing series definition.
-
-assigned_to: coder
