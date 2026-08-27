@@ -63,3 +63,6 @@ notes: |
   - [2026-08-27] specifier: feature file minted from coordinator Work note;
     pairs enqueued_at/dequeued_at already on handoff headers; worktree mailbox
     coverage per BL-577/BL-1109 gather posture; pairs with BL-596 stranding.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: architect, blamed: coder, class: invariant-unencoded, commit: 732ca2276a, evidence: backlog/evidence/BL-602-architect-bounce-20260827.md }
