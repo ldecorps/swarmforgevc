@@ -9,8 +9,24 @@ severity: medium
 priority: 106
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-634-slice-size-envelope-at-promotion.feature
+
+invariants:
+  - "size_envelope is a sibling of mutation_cost: normal | large | xlarge; omit or normal adds no promotion friction."
+  - "large/xlarge without size_justification refuses via promotion_gates_lib evaluate — same chain as BL-626 — never a parallel path."
+  - "A recorded size_justification (including human-requested oversized) allows promote; the gate does not overrule it."
+  - "Threshold defaults track the 2026-07-25 measured p90 (~500) / p99 (~1500) and are configurable."
+  - "QA records size_actual {insertions, files} on the ticket for calibration."
+
+required_wiring:
+  - "swarmforge/backlog-schema.md::size_envelope + size_justification + size_actual fields"
+  - "swarmforge/scripts/promotion_gates_lib.bb::size-envelope gate in evaluate chain"
+  - "swarmforge/scripts/promotion_gates_cli.bb::REFUSE|size_envelope|… contract"
+  - "extension or QA land path::size_actual insertions+files written at QA time"
+  - "specs/pipeline/steps/index.js::bl634SizeEnvelopeSteps::acceptance handler registered"
 
 approval_context: >
   Operator ruling 2026-07-25. The operator's read — "it seems to me the
@@ -121,20 +137,6 @@ description: |
   why raising this ticket's `priority:` would do nothing. Whether that absoluteness is
   right is a genuine question about the lane, not about this ticket.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. A ticket declaring a top-band envelope is not promoted without a recorded
-     split-or-justify decision.
-  2. A ticket in the normal band promotes exactly as it does today — no added
-     friction on the common path, which runs many times a day.
-  3. The threshold values are configurable, not hard-coded, and the default
-     traces back to the measured distribution.
-  4. Actual size (insertions, files) is recorded on the ticket at QA time.
-  5. Regression fixture: BL-590's slice 1 shape (1929 insertions / 18 files)
-     trips the gate; a median-shaped slice (~65 insertions) does not.
-  6. Shares BL-626's promotion gate rather than introducing a parallel one.
-
 out_of_scope: |
   - Blocking a HUMAN-requested oversized slice. A human who wants it big gets it
     big; the gate makes the size visible and the decision explicit, it does not
@@ -153,3 +155,13 @@ notes: |
   BL-633 states the property, this caps the surface, BL-635 measures whether
   either worked. Not priced above BL-629/630/631/632 (`severity: high` broken
   safety gates).
+
+  [2026-08-27] specifier design pins (feature landed; assigned_to coder):
+  - Sibling field size_envelope: normal|large|xlarge — do NOT overload
+    mutation_cost (that field stays sequencing-only).
+  - Omit or normal => no new friction. large/xlarge need size_justification.
+  - Refuse without justification; never hard-block a justified (incl. human)
+    oversized slice.
+  - Calibration kept in-scope: QA writes size_actual {insertions, files}.
+  - Thresholds configurable; defaults from 2026-07-25 p90/p99 sample.
+  - Gate lives in promotion_gates_lib evaluate beside BL-626.
