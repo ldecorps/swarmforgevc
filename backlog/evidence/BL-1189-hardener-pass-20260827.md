@@ -127,3 +127,51 @@ severe instance of the BL-1124 class, not a routine unrelated-red report.
 `git_handoff` to `documenter`, priority `00`, task `BL-1189-dedupePrimaryWorkingTicket-missing-plus-leaked-fixture-dir`.
 
 By hardender.
+
+## Post-forward: coordinator flagged resurfaced bounced content (HOLD)
+
+After forwarding (commit `33753c853`), received a coordinator note: "BL-1189
+hold - forwarded content has resurfaced bounced files." Investigated
+independently rather than dismissing it.
+
+Found: `backlog/evidence/BL-1189-recovery-silently-undid-the-bounce-revert-20260827.md`
+(specifier, committed by coordinator at `acdd3677c`) — the earlier 13-file
+tree-recovery (`0bf05774a`, which I myself merged much earlier today for
+BL-1200) accidentally restored TWO files that a legitimate bounce-revert
+(`1fcd4c167`, "revert bounced coder content out of architect branch
+BL-490/BL-495") had deliberately removed:
+`bl1189LiveScreenOnePrimaryWorkingTicketInvariants.property.test.js` and
+`bl1189LiveScreenOnePrimaryWorkingTicketSteps.js`. The specifier confirmed
+this via byte-diff against the pre-revert content.
+
+**Independently re-verified on my own tree** (`1fcd4c167` IS an ancestor of
+my HEAD): the property test file is byte-IDENTICAL to the pre-revert
+(bounced) content — confirmed via direct diff. The step handler file is
+NOT identical (257 lines now vs 234 pre-revert) — it carries coder's
+genuine `739ca994e` re-fix (the `cleanupFixture`/`finally` D1 fix), which I
+already spot-verified earlier in this same pass.
+
+Checked coder's `739ca994e` diff directly: it does NOT touch the property
+test file at all (only `residentPaneLive.ts`, `residentPaneSpy.ts`, both
+`.test.js` siblings, and the step handler — 5 files). This means the
+property test file's return via the botched recovery was never something
+coder's genuine re-fix needed to address — the file's CONTENT was never the
+subject of either bounce's D-items (D1 = leaked fixture dir in the step
+handler; D-NEW = missing dedup function in the src files). My own earlier
+independent run confirmed it currently passes 4/4 against the CORRECT,
+re-fixed implementation.
+
+This may be functionally harmless (unlike BL-1188's record-bounce false
+positive, this is the specifier's own direct finding, not a tool
+false-positive) — but it is a genuine PROCESS/provenance violation
+(BL-490/BL-495: reverted content must not silently re-enter without going
+through the pipeline again), not mine to unilaterally dismiss or fix, since
+it involves reconciling bounce history across the architect's, coder's, and
+my own branch. Specifier has already minted BL-1211 for the general defect
+class ("the recovery undid a bounce revert, and the lift check cannot see
+it"). Sent HOLD notes to documenter/coordinator/specifier; awaiting
+disposition before this ticket proceeds further. Not retracting my own
+hardening work (the CRAP extraction and new tests are correct and
+independent of this provenance question) — just not treating BL-1189 as
+cleared to move to QA until the specifier resolves BL-1211's disposition
+for this ticket specifically.
