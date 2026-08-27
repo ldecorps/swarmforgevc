@@ -1102,7 +1102,7 @@
                                            :or {pending-nudge? false within-cooldown? false ambulance-active? false}}]
   (and (number? active-count)
        (number? cap)
-       (< active-count cap)
+       (backlog-depth-lib/under-depth-cap? active-count cap)
        (pos? (long (or paused-eligible-count 0)))
        (not pending-nudge?)
        (not within-cooldown?)

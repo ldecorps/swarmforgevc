@@ -102,7 +102,6 @@ expects them, and are not migrated or rewritten here.
 - [Resident Spy pane font-size control](how-to/BL-609-resident-spy-font-size-control.md) — compact +/- in header; default 13px; host-persisted stickiness via BL-1153 (BL-609 UX).
 - [Sticky web UI font-size choice](how-to/BL-1153-sticky-web-font-size-choice.md) — Live Screen, Pipeline Board, and Paused pager restore size after reload via extension-host JSON; PWA Cache unchanged (BL-1153).
 - [Live Screen grid tiles name the ticket a seat holds](how-to/BL-1046-console-tile-names-the-ticket-a-seat-holds.md) — ticket id, slug, compact claim age, batch +N on phone grid; same payload as Expand (BL-1046).
-- [Live Screen per-tile activity dots](how-to/BL-1160-live-screen-activity-dot-per-tile.md) — one status dot inside each grid tile; ok/stale/err palette unchanged; Expand keeps status cue (BL-1160).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Isolating batch recovery trees](how-to/BL-588-isolate-batch-recovery-trees.md) — approach 3: clean siblings re-forward unchanged and land while a defective batch sibling reworks on an isolated branch; QA merges verified whole trees only (BL-588).
 - [Dev-host bounce under WSL: exactly one window](how-to/BL-578-devhost-bounce-wsl-window-leak.md) — Windows-side kill-old + headless-swarm refuse/`--force` (BL-578).
@@ -145,6 +144,7 @@ expects them, and are not migrated or rewritten here.
 - [Email escalation for unanswered role questions](how-to/GH-25-email-escalation-for-unanswered-role-questions.md) — one-shot GitHub `@ldecorps` mention past threshold; `status.json` pending/escalated (GH-25).
 - [`/pilot safe` — auto-pick a low-blast defect for offline pilot](how-to/BL-722-pilot-safe-defects.md) — the safe-pool filter (approved, low-mutation, specced defect, not needs_design), its ranking, and the empty-pool refusal.
 - [Certifying an operator hotfix](how-to/BL-848-certify-an-operator-hotfix.md) — declaring a hand-landed hotfix with the `Hotfix-Certification: pending` trailer, the ledger state machine, and why no hotfix becomes an official swarm deal on green tests alone.
+- [Concurrent hotfix stamp asks on Approvals](how-to/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.md) — stamp-off of hotfix `7380d80686`; `hotfix-stamp-asks.json` + ledger `--decide` bypass the single awaiting-answer slot (BL-1152).
 - [Master-Checkout Drift Alarm — Understanding the Alert](how-to/BL-839-master-checkout-drift-alarm.md) — what to do when the master checkout's daemon-executed scripts no longer match `main`.
 - [Auto-repair durable master-checkout daemon-script drift](how-to/BL-1139-master-checkout-drift-auto-repair.md) — restore from `main` when not in-flight; RESTORED note + handoffd bounce (BL-1139; updates BL-839).
 - [Master-checkout drift mutes WARN while a commit is in flight](how-to/BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.md) — mid-commit mute; durable reversion still alarms (BL-1122); post-add window closed by BL-1134.

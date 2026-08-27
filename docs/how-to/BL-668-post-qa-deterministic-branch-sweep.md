@@ -75,3 +75,4 @@ bash specs/pipeline/scripts/run_acceptance.sh \
 
 - BL-664 — turn-profiler measurement motivating deterministic transit assist
 - BL-667 epic — deterministic transit assist umbrella
+- Pipeline diagram: `docs/diagrams/swarm-flow.mmd` (post-land sweep + surfaced merge-up notes)

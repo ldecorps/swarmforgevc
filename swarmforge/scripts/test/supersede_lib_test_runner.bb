@@ -1,6 +1,5 @@
 #!/usr/bin/env bb
-;; Unit tests for supersede_lib.bb (BL-1084). Invariant encoding also in
-;; bl1084_supersede_property_runner.bb (coder-authored, BL-654).
+;; Unit tests for supersede_lib.bb (BL-1084).
 
 (require '[babashka.fs :as fs]
          '[clojure.string :as str])

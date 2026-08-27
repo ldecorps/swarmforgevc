@@ -51,9 +51,6 @@ export interface PipelineBoardRow {
 export interface PipelineBoardListEntry {
   id: string;
   slug: string;
-  // BL-980: relative age suffix for RECENTLY CLOSED lines only - present only
-  // when a durable closure instant was recorded (doneClosedAtMs).
-  closedAge?: string;
 }
 
 export interface PipelineBoardParkedEntry extends PipelineBoardListEntry {
@@ -162,9 +159,6 @@ export interface PipelineBoardListSourceItem {
   id: string;
   title?: string;
   filename: string;
-  // BL-980: durable closure instant from TickState.doneClosedAtMs - absent
-  // means no age suffix rather than a guess from file mtime.
-  closedAtMs?: number;
 }
 
 // BL-465: additional, OPTIONAL inputs this ticket adds - every existing
@@ -289,8 +283,9 @@ export const PIPELINE_BOARD_MESSAGE_MAX_LENGTH = 4000;
 //
 // The arithmetic, so a future id-width change is checked rather than
 // assumed: the id gutter (at least 3, else the widest display id) plus one
-// NBSP separator and one 2-wide cell for each of the 8 stages. That is 27
-// at today's 3-digit ids, 28 at 4 digits and 29 at 5 - all inside 30.
+// 2-wide cell for each of the 8 stages, with one NBSP separator between
+// cells (BL-1155 — no per-cell leading NBSP). That is 26 at today's 3-digit
+// ids, 27 at 4 digits and 28 at 5 - all inside 30.
 // BL-979 scenario 05 and invariant 2 pin exactly this.
 export const PIPELINE_BOARD_GRID_MAX_WIDTH = 30;
 
@@ -307,7 +302,8 @@ export const PIPELINE_BOARD_GRID_MAX_ROWS = 12;
 // Every stage glyph is exactly 2 characters (COLUMN_LABEL above), and a
 // mark is 1 right-aligned into the same width, so the cell width is a
 // constant of the stage set rather than something derived per render.
-const STAGE_CELL_WIDTH = 2;
+export const PIPELINE_BOARD_STAGE_CELL_WIDTH = 2;
+const STAGE_CELL_WIDTH = PIPELINE_BOARD_STAGE_CELL_WIDTH;
 
 // BL-465: the grid's own short kebab slug - 2-3 significant words, lower-
 // cased and hyphenated, mirroring the ticket's own backlog-filename slug
@@ -414,41 +410,6 @@ function linkPathFor(meta: PipelineBoardTicketMeta | undefined): string | undefi
 
 function listEntryFor(item: PipelineBoardListSourceItem): PipelineBoardListEntry {
   return { id: item.id, slug: deriveListEntryText(item.title) };
-}
-
-const MINUTE_MS = 60 * 1000;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
-
-/**
- * BL-980: relative elapsed time since closure for RECENTLY CLOSED lines.
- * A pure function of two injected instants - never a bare Date.now(). Returns
- * undefined when no durable closure instant was recorded.
- */
-export function formatRecentlyClosedAgeLabel(closedAtMs: number | undefined, nowMs: number): string | undefined {
-  if (closedAtMs === undefined) {
-    return undefined;
-  }
-  const elapsed = Math.max(0, nowMs - closedAtMs);
-  if (elapsed < MINUTE_MS) {
-    return 'just now';
-  }
-  if (elapsed < HOUR_MS) {
-    return `${Math.floor(elapsed / MINUTE_MS)}min ago`;
-  }
-  if (elapsed < DAY_MS) {
-    return `${Math.floor(elapsed / HOUR_MS)}h ago`;
-  }
-  return `${Math.floor(elapsed / DAY_MS)}d ago`;
-}
-
-function recentlyClosedEntryFor(item: PipelineBoardListSourceItem, nowMs: number): PipelineBoardListEntry {
-  const entry: PipelineBoardListEntry = { id: item.id, slug: deriveListEntryText(item.title) };
-  const closedAge = formatRecentlyClosedAgeLabel(item.closedAtMs, nowMs);
-  if (closedAge !== undefined) {
-    entry.closedAge = closedAge;
-  }
-  return entry;
 }
 
 // BL-464: a ticket id observed under more than one role - the exact
@@ -807,9 +768,7 @@ export function computePipelineBoard(
   // (PIPELINE_BOARD_RECENTLY_CLOSED_MAX's comment: "the caller decides
   // WHICH items count as 'recent'; this only bounds the list length").
   // Slice-then-map only, preserving the caller's order exactly.
-  const recentlyClosed = [...(extras.recentlyClosed ?? [])]
-    .slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX)
-    .map((item) => recentlyClosedEntryFor(item, extras.nowMs ?? 0));
+  const recentlyClosed = [...(extras.recentlyClosed ?? [])].slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX).map(listEntryFor);
   const links = extras.repoBaseUrl ? buildLinks(rows, parked, collapsedEpics, extras, ticketMeta) : [];
 
   return {
@@ -851,8 +810,13 @@ function gridIdGutterWidth(displayIds: string[]): number {
 // BL-979 invariant 2: the width of every grid line, as a pure function of
 // the stage set and the gutter. Nothing is dropped for width - this exists
 // so the budget can be asserted rather than silently exceeded.
+export function computePipelineBoardGridLineWidth(idGutterWidth: number): number {
+  const stageCount = PIPELINE_BOARD_COLUMN_ORDER.length;
+  return idGutterWidth + stageCount * STAGE_CELL_WIDTH + (stageCount - 1);
+}
+
 function gridLineWidth(idGutterWidth: number): number {
-  return idGutterWidth + PIPELINE_BOARD_COLUMN_ORDER.length * (1 + STAGE_CELL_WIDTH);
+  return computePipelineBoardGridLineWidth(idGutterWidth);
 }
 
 function gridOverflowLine(droppedCount: number): string {
@@ -904,7 +868,7 @@ function captionsNeedSwarmBadges(visibleRows: PipelineBoardRow[]): boolean {
 // gutter, then its mark under each stage.
 function renderGridMatrixLines(visibleRows: PipelineBoardRow[], visibleIds: string[], idGutterWidth: number): string[] {
   const stageCells = (cell: (column: string) => string): string =>
-    PIPELINE_BOARD_COLUMN_ORDER.map((column) => NBSP + padStartNbsp(cell(column), STAGE_CELL_WIDTH)).join('');
+    PIPELINE_BOARD_COLUMN_ORDER.map((column) => padStartNbsp(cell(column), STAGE_CELL_WIDTH)).join(NBSP);
   const lines: string[] = [NBSP.repeat(idGutterWidth) + stageCells((column) => COLUMN_LABEL[column])];
   visibleRows.forEach((row, index) => {
     lines.push(padStartNbsp(visibleIds[index], idGutterWidth) + stageCells((column) => (column === row.column ? 'X' : '.')));
@@ -988,6 +952,10 @@ function renderGridLines(rows: PipelineBoardRow[]): string[] {
 // LONGEST-HELD FIRST, so the cap can only ever drop the newest - the
 // twelve-day ticket this feature exists for is never the one hidden.
 export const PIPELINE_BOARD_HELD_MAX = 8;
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
 
 /**
  * BL-1045: how long a ticket has been held, in the coarsest unit that still
@@ -1124,11 +1092,6 @@ function renderParkedSection(
   return lines;
 }
 
-function formatListEntryLine(entry: PipelineBoardListEntry): string {
-  const base = `  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd();
-  return entry.closedAge ? `${base} (${entry.closedAge})` : base;
-}
-
 // BL-465: renders one below-grid section (awaiting-approval/root-
 // intake/recently-closed) - omitted entirely when empty (BL-455's own
 // "every active ticket lands in exactly one place" convention, extended
@@ -1141,7 +1104,7 @@ function renderListSection(header: string, entries: PipelineBoardListEntry[], ov
   }
   const lines: string[] = ['', header];
   for (const entry of entries) {
-    lines.push(formatListEntryLine(entry));
+    lines.push(`  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd());
   }
   if (overflowLine) {
     lines.push(`  ${overflowLine}`);
@@ -1278,13 +1241,11 @@ function formatBoardListLineHtml(
   id: string,
   slug: string,
   path: string | undefined,
-  repoBaseUrl: string | undefined,
-  closedAge?: string
+  repoBaseUrl: string | undefined
 ): string {
   const idHtml = formatTicketIdHtml(id, path, repoBaseUrl);
   const slugPart = slug ? ` ${escapeHtml(slug)}` : '';
-  const agePart = closedAge ? ` (${escapeHtml(closedAge)})` : '';
-  return `  ${idHtml}${slugPart}${agePart}`.trimEnd();
+  return `  ${idHtml}${slugPart}`.trimEnd();
 }
 
 function formatCollapsedEpicLineHtml(
@@ -1336,7 +1297,7 @@ function renderParkedSectionHtml(
   for (const entry of plainParked) {
     const path =
       linkedIds !== undefined && !linkedIds.has(entry.id) ? undefined : pathById.get(entry.id);
-    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl, entry.closedAge));
+    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl));
   }
   if (overflowLine) {
     lines.push(`  ${escapeHtml(overflowLine)}`);
@@ -1359,7 +1320,7 @@ function renderListSectionHtml(
   for (const entry of entries) {
     const path =
       linkedIds !== undefined && !linkedIds.has(entry.id) ? undefined : pathById.get(entry.id);
-    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl, entry.closedAge));
+    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl));
   }
   if (overflowLine) {
     lines.push(`  ${escapeHtml(overflowLine)}`);
@@ -1572,8 +1533,9 @@ function escapeHtml(text: string): string {
   // Pipeline Board stage header on one phone line. Named &nbsp; is NOT in
   // Telegram's allowed named-entity set (&lt; &gt; &amp; &quot; only) and
   // renders as the literal string "&nbsp;"; numeric entities are supported.
-  // (Raw NBSP alone still soft-wraps before QA on some clients.)
-  // Tip 646ffe85d / BL-1117 stamp-off.
+  // BL-1155: narrower 2-wide stage cells (no per-cell leading NBSP) keep the
+  // composed header inside the phone <pre> width; numeric &#160; still prevents
+  // named-entity literals. Tip 646ffe85d / BL-1117 stamp-off.
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

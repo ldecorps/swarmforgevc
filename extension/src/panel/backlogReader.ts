@@ -51,6 +51,9 @@ export interface BacklogItem {
   // approvalRequestedText) can include it alongside title/notes/
   // firstAcceptanceStep. Absent on tickets that predate BL-479.
   approvalContext?: string;
+  // BL-589: discrete ruling choices beside approval_context - when present,
+  // the Approvals ask renders tappable option buttons (index in callback_data).
+  rulingOptions?: string[];
   // BL-341: which epic (a multi-slice body of work) this slice belongs to,
   // as DATA - never inferred from notes: prose. Absent means no epic;
   // every existing ticket stays valid, unchanged. The epic id namespace is
@@ -220,6 +223,7 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfTruthy(item, 'notes', parseYamlBlockScalar(content, 'notes'));
   assignIfTruthy(item, 'firstAcceptanceStep', parseFirstAcceptanceStep(content));
   assignIfTruthy(item, 'approvalContext', parseYamlBlockScalar(content, 'approval_context'));
+  assignIfTruthy(item, 'rulingOptions', parseYamlFlowOrBlockList(content, 'ruling_options'));
   assignIfTruthy(item, 'epic', parseYamlScalar(content, 'epic'));
   assignIfTruthy(item, 'type', parseYamlScalar(content, 'type'));
   assignIfTruthy(item, 'severity', parseYamlScalar(content, 'severity'));
@@ -342,6 +346,7 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfTruthy(item, 'notes', toTrimmedOptionalString(obj.notes));
   assignIfTruthy(item, 'firstAcceptanceStep', firstAcceptanceStepFromObject(obj));
   assignIfTruthy(item, 'approvalContext', toTrimmedOptionalString(obj.approval_context));
+  assignIfTruthy(item, 'rulingOptions', toOptionalStringList(obj.ruling_options));
   assignIfTruthy(item, 'epic', toOptionalString(obj.epic));
   assignIfTruthy(item, 'type', toOptionalString(obj.type));
   assignIfTruthy(item, 'severity', toOptionalString(obj.severity));

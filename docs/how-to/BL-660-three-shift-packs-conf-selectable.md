@@ -109,4 +109,5 @@ bash specs/pipeline/scripts/run_acceptance.sh \
 ## Siblings
 
 - [Nightly cooldown window](BL-617-nightly-cooldown-window.md) — pause machinery BL-660 derives when a shift is active
+- [Symmetric swarmforge cron on start/stop](BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md) — installs/removes shift schedule crontab lines with the stack (BL-1162)
 - [Cold-swap day shift Ollama pack](BL-1143-cold-swap-day-shift-ollama-qwen.md) — pack selection separate from shift schedule
