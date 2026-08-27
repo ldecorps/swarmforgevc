@@ -24,6 +24,9 @@ abandoned_commits:
   - 1eb963f497
   - 00ea48311d
   - abef89c58b
+  - 6f3de18daf
+  - 0d44ea8b9e
+  - be6585924f
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature
 
@@ -41,7 +44,7 @@ invariants:
 
 required_wiring:
   - "swarmforge/scripts/check_property_suite_drift.sh::property suite gate::green or allowlisted standing reds; unrelated green commits not refused"
-  - "extension/ npm run test:properties::standing inventory restored or allowlisted"
+  - "swarmforge/scripts/property_suite_standing_allowlist.tsv::standing inventory::each failing file allowlisted with rationale"
   - "specs/pipeline/steps/index.js::bl1175PropertySuiteStandingRedsSteps::acceptance handler registered"
 
 description: |
