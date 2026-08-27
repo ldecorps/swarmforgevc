@@ -2,8 +2,9 @@ id: BL-1009
 title: "One pipeline grid across swarm1 and swarm2, each ticket badged with the swarm that owns it - not two grids on one topic"
 milestone: M8
 type: feature
-status: paused
+status: in_progress
 epic: pipeline-board
+assigned_to: coder
 priority: 45
 depends_on: []
 mutation_cost: medium
