@@ -1,0 +1,82 @@
+id: BL-1197
+title: "specifier_backlog_hygiene_gate.bb reports DUPLICATE-ID against itself when the subject path is relative"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 40
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1197-hygiene-gate-duplicate-id-check-must-not-false-flag-its-own-relative-path-subject.feature
+human_approval: pending
+approval_context: >
+  Found in-passing while minting BL-1196: `bash
+  swarmforge/scripts/specifier_backlog_hygiene_gate.sh
+  backlog/paused/BL-1196-...yaml` (a repo-root-relative path — the shape the
+  script's own usage line and this project's specifier prompt both show)
+  failed with `DUPLICATE-ID BL-1196 ... also:
+  /home/carillon/swarmforgevc/backlog/paused/BL-1196-...yaml` — naming the
+  identical file as its own duplicate. Re-running with an absolute path for
+  the same unchanged file passed cleanly. No second BL-1196 file exists
+  anywhere in the tree; verified with `find backlog -iname '*BL-1196*'`
+  before concluding this is the gate, not a real collision.
+
+  Root cause, read from swarmforge/scripts/backlog_hygiene_lib.bb's
+  `other-holders`: it removes the subject's own entry from the local id
+  index via `(remove #(= (:path %) (str subject-path)))` — exact string
+  equality between whatever path string the caller passed on the command
+  line and the path `read-local-id-index` recorded, which is always
+  absolute (`backlog-root` is `fs/canonicalize`d before the scan). A
+  relative subject path can never string-equal its own absolute index
+  entry, so the self-exclusion silently fails and every relative-path
+  invocation reports the subject as a duplicate of itself.
+description: |
+  ## What
+
+  Fix `other-holders` (swarmforge/scripts/backlog_hygiene_lib.bb) to exclude
+  the subject's own entry by comparing canonicalized/absolute paths on both
+  sides (e.g. resolve `subject-path` with `fs/canonicalize` — or the
+  project's existing path-normalization helper, if one already exists in
+  this file — before the equality check), not raw strings. This must not
+  weaken genuine duplicate detection: a real second file with the same id at
+  a different real path must still be reported (scenario 02).
+
+  ## Why
+
+  This is the mint-time duplicate-id refusal BL-1105 built specifically to
+  stop a real collision from silently eating a ticket. A gate that cries
+  wolf on its own most natural invocation shape (relative path, exactly what
+  the script's usage/help text and the specifier prompt both demonstrate)
+  trains whoever runs it to either distrust real DUPLICATE-ID reports or to
+  always remember an undocumented absolute-path workaround — either way the
+  gate stops doing the job BL-1105 shipped it for.
+
+qa_e2e_procedure: >
+  (1) Write a paused ticket YAML with a fresh id, git-add it, run the gate
+  with a repo-root-relative path — must pass clean. (2) Run the same gate
+  invocation with an absolute path for the identical file — must also pass
+  clean (regression: absolute-path invocation must not itself break). (3)
+  Create a second file elsewhere in backlog/ with the SAME id as the
+  subject; confirm the gate still reports DUPLICATE-ID naming that second
+  file's path.
+
+out_of_scope: |
+  - Any other hygiene-gate check (epic/milestone presence, dangling
+    acceptance pointer, untracked acceptance path, retired `type: bug`) —
+    unaffected, not touched.
+  - Changing the gate's CLI usage or invocation contract.
+
+invariants:
+  - "The duplicate-id check never reports a subject as a duplicate of itself, regardless of whether the caller passed its path as relative or absolute."
+
+source: |
+  Discovered by the specifier while minting BL-1196, 2026-08-27 — see
+  approval_context for the exact repro and root-cause read.
+
+notes: |
+  - "[2026-08-27] specifier: minted in-passing; low mutation_cost, single
+    function fix in backlog_hygiene_lib.bb plus a regression test proving
+    scenario 02 still fires."

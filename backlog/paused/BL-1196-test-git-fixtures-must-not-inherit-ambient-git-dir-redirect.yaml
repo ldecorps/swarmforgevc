@@ -1,0 +1,143 @@
+id: BL-1196
+title: "Test-suite git() fixtures must not inherit an ambient GIT_DIR/GIT_WORK_TREE redirect onto a live repo"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 15
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1196-test-git-fixtures-must-not-inherit-ambient-git-dir-redirect.feature
+human_approval: pending
+approval_context: >
+  Discovered 2026-08-27: coder sent a priority-00 note ("New defect: property
+  fixture git() leaks GIT_DIR, corrupts main repo") the same morning the
+  coordinator independently hit the identical failure shape live in its own
+  shell while diagnosing the swarmforge-hardender branch corruption
+  (backlog/evidence/hardener-branch-corruption-20260827.md: "my shell's
+  GIT_DIR/GIT_WORK_TREE were set to the main checkout and silently redirect
+  any `git -C <other-worktree>` command onto main"). Two independent roles
+  hit the same root-cause class on the same day.
+
+  Verified by direct inspection (not guessed): extension/test/helpers/
+  sharedRepoFixture.js's `gitIn` helper already deletes GIT_DIR/GIT_WORK_TREE
+  before every spawn (BL-1039) — but the large majority of test files under
+  extension/test/ (roughly 60, both *.property.test.js and plain *.test.js)
+  define their OWN local, uninstrumented `function git(cwd, args) {
+  execFileSync('git', args, { cwd, ... }) }` with no env override (confirmed
+  e.g. in bl1106PauseVisibleEverywhere.property.test.js). Any one of these
+  silently obeys an inherited GIT_DIR/GIT_WORK_TREE over its own `cwd`, so
+  whichever real repo/branch/worktree those vars name — not the fixture's
+  temp dir — is what actually receives the write. BL-1124 already shipped a
+  detector for the resulting damage (shared-main advanced, core.bare flipped
+  true) but only catches it after the fact; it never stops a spawn that was
+  already redirected by an inherited ambient var, which is why the identical
+  failure shape recurred (this time on a role branch, swarmforge-hardender)
+  after BL-1124 shipped. This ticket is the prevention half BL-1124 did not
+  cover.
+
+  Scope is deliberately structural, not a 60-file mechanical migration: one
+  shared test-setup module strips GIT_DIR/GIT_WORK_TREE from process.env once
+  per test file, before any test in that file runs. Every existing local
+  git() helper — and any future one — becomes safe automatically, because by
+  the time it inherits process.env the redirect is already gone; no per-file
+  edits, no lint gate to keep in sync, nothing to forget. This mirrors the
+  already-established manual pattern in sampleResourcesCli.test.js (save/
+  delete/restore GIT_DIR + GIT_WORK_TREE around a single CLI invocation),
+  generalized to the whole suite instead of hand-rolled per call site.
+description: |
+  ## What
+
+  Add `extension/test/helpers/gitEnvGuardSetup.js`: at module load (top-level
+  code, so it runs before any test in the file it's loaded for), delete
+  `GIT_DIR` and `GIT_WORK_TREE` from `process.env` unconditionally. Export the
+  strip as a named function (e.g. `stripAmbientGitDirRedirect`) so it is unit-
+  testable directly, and call it from the module's own top level so requiring
+  the file is enough to apply it (same "thin call site over an exported,
+  testable helper" shape as this project's CLI main() rule).
+
+  Register the new file in `setupFiles` for BOTH `extension/vitest.config.mjs`
+  and `extension/vitest.properties.config.mjs` (the property lane is where the
+  coder's own note was raised) — those two already share
+  `tmpDirSetup.js`/`envRestoreGuardSetup.js`; add the new entry alongside
+  them.
+
+  ## Why this shape, not a 60-file migration
+
+  A find/replace across every local `git()` helper would fix today's known
+  sites but leaves the same footgun for whichever file #61 copies the old
+  unguarded shape next — the exact way this recurred after BL-1124. Stripping
+  the two redirect variables once, centrally, before any test file's code
+  runs closes the door structurally for every current AND future call site
+  with a single, small, reviewable change. This does not replace BL-1124's
+  detector (still valuable as a second line of defense) — it removes the
+  precondition BL-1124's own HOW direction already named ("forbid GIT_DIR
+  pointing at the live checkout") but never actually enforced.
+
+  ## Constraints
+
+  - Do not touch the ~60 existing per-file `git(cwd, args)` helpers — leave
+    them as-is; the fix must make their current shape safe by construction,
+    not require editing them.
+  - Do not weaken `envRestoreGuardSetup.js` (BL-720) or `tmpDirSetup.js`
+    (BL-420) — this is an additive setup file, registered alongside them, not
+    a replacement.
+  - A test that deliberately manages GIT_DIR/GIT_WORK_TREE itself mid-test
+    (e.g. sampleResourcesCli.test.js's own save/delete/restore around a CLI
+    invocation) must keep working unchanged — the guard only removes an
+    INHERITED ambient value once at file load; it does not prevent a test
+    from setting either var explicitly afterward for its own purposes.
+
+qa_e2e_procedure: >
+  (1) Unit test on the exported strip function: set GIT_DIR/GIT_WORK_TREE,
+  call it, assert both are gone. (2) Integration-shaped test: seed a decoy
+  repo and a target repo in temp dirs, point GIT_DIR at the decoy, run a
+  plain `git rev-parse --show-toplevel` with cwd=target and no explicit env,
+  confirm it reports the target and the decoy gains no commits. (3) Grep both
+  vitest config files for the new setupFiles entry (required_wiring below).
+  (4) Confirm sampleResourcesCli.test.js still passes unmodified.
+
+out_of_scope: |
+  - Migrating any of the ~60 existing per-file git() helpers to a shared
+    module — the env-strip makes their current shape safe without touching
+    them.
+  - BL-1124's post-hoc shared-main/core.bare detector (companion, unaffected).
+  - The immediate swarmforge-hardender branch recovery (separate, pending a
+    direct human decision per hardener-branch-corruption-20260827.md's
+    3-option menu) — this ticket is the root-cause prevention, not that
+    recovery.
+  - Extending the strip to other GIT_* plumbing vars (GIT_INDEX_FILE,
+    GIT_OBJECT_DIRECTORY, GIT_COMMON_DIR, etc.) beyond GIT_DIR/GIT_WORK_TREE —
+    those are the only two vars any existing guard in this codebase
+    (sharedRepoFixture.js, sampleResourcesCli.test.js) has ever needed to
+    clear; widen only if a future incident actually implicates one.
+
+invariants:
+  - "No test file's git() spawn is directed by an inherited ambient GIT_DIR or GIT_WORK_TREE — every fixture git spawn resolves against the cwd it was given, regardless of what the host shell had exported before the test process started."
+
+required_wiring:
+  - "extension/vitest.config.mjs::test/helpers/gitEnvGuardSetup.js::guard registered in the unit lane's setupFiles"
+  - "extension/vitest.properties.config.mjs::test/helpers/gitEnvGuardSetup.js::guard registered in the property lane's setupFiles, where the coder's own note was raised"
+
+source: |
+  Coder priority-00 note, 2026-08-27T18:10:03Z ("New defect: property fixture
+  git() leaks GIT_DIR, corrupts main repo"), corroborated same-day by
+  backlog/evidence/hardener-branch-corruption-20260827.md (coordinator,
+  identical failure shape live in its own shell against
+  .worktrees/hardender). Root cause verified by specifier via direct code
+  inspection (sharedRepoFixture.js is guarded; per-file git() copies are
+  not). Companion: backlog/done/M8/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.yaml
+  (detects the resulting damage; does not prevent the redirect).
+
+notes: |
+  - "[2026-08-27] specifier: minted from coder's defect note plus the
+    coordinator's independent same-day corroboration in
+    hardener-branch-corruption-20260827.md. IR-DRY checker flagged 3
+    medium-confidence possible-synonym pairs (GIT_DIR-vs-GIT_WORK_TREE
+    assertions; decoy-vs-target repo seeding) — reviewed manually: each pair
+    asserts a genuinely distinct variable/repo and merging would lose
+    per-variable/per-repo specificity that matters if the fix only covers
+    one side; not accidental drift, left as separate steps."
