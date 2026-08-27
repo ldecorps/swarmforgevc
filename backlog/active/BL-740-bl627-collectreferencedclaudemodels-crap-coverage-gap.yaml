@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: cost-intelligence
-assigned_to: specifier
+assigned_to: coder
 priority: 76
 direction: normal
 depends_on: []
