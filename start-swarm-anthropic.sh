@@ -3,8 +3,8 @@
 # start-swarm-anthropic.sh — headless mono-router on OpenRouter (Anthropic only).
 #
 # Pack: openrouter-anthropic-mono-router
-#   specifier / coder / architect / QA / hardender → anthropic/claude-sonnet-5
-#   coordinator / cleaner / documenter → anthropic/claude-haiku-4.5
+#   specifier / coder / architect / QA / hardender / documenter → anthropic/claude-sonnet-5
+#   coordinator / cleaner → anthropic/claude-haiku-4.5
 #
 # Thin wrapper around ./start-swarm.sh — sources ~/.zshenv, checks prereqs,
 # then sets SWARMFORGE_PACK and delegates (.swarmforge/openrouter.env is
