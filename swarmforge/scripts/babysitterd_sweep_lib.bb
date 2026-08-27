@@ -88,19 +88,15 @@
   ;; check-* fns) run unconditionally, so topology suppression can never
   ;; skip a check on a session that is actually present.
   ;;
-  ;; BL-1017: the missing-session branch now also carries a bounded :repair
-  ;; intent. Three things about its placement are load-bearing:
-  ;;   - it hangs off the SAME branch the should-stand? suppression already
-  ;;     guards, so invariant 1 (never resurrect a role the topology says
-  ;;     should not stand) holds by construction rather than by a second,
-  ;;     drift-prone predicate;
-  ;;   - it is emitted ALONGSIDE the CRIT, never instead of it. A repair that
-  ;;     silenced the alert would hide a role that keeps vanishing, which is
-  ;;     the opposite of what this ticket is for;
-  ;;   - no other branch can produce it. A pane that EXISTS is never a missing
-  ;;     session, whatever state its process is in, so the half-launch CRIT and
-  ;;     the UNAVAILABLE gather report below stay repair-free — recreating a
-  ;;     session that is already there would kill a live pane.
+  ;; BL-1017 / BL-1169: missing-session AND half-launch (pane up, agent gone)
+  ;; both carry a bounded :repair intent. Placement rules that stay load-bearing:
+  ;;   - missing-session hangs off the SAME branch should-stand? already guards,
+  ;;     so invariant 1 (never resurrect a topology-dormant role) holds by
+  ;;     construction;
+  ;;   - repair is emitted ALONGSIDE the CRIT, never instead of it (BL-1169
+  ;;     invariant 1 / BL-1017 posture);
+  ;;   - process-gather-failed? stays repair-free — that branch is UNAVAILABLE,
+  ;;     not a proven absence (BL-802 cry-wolf guard).
   [{:keys [role pane-exists? has-claude-process? process-gather-failed? should-stand?
            expected-process]
     :as opts
@@ -124,12 +120,16 @@
 
     (not has-claude-process?)
     (let [proc-name (or expected-process "agent")]
-      {:key (str "proc-" role) :severity "CRIT"
-       :message (str "swarmforge-" role ": pane alive but NO " proc-name
-                     " process under it (half-launch/exit)")})
+      (cond-> {:key (str "proc-" role) :severity "CRIT"
+               :message (str "swarmforge-" role ": pane alive but NO " proc-name
+                             " process under it (half-launch/exit)")}
+        ;; Topology still gates repair (BL-804 / BL-1017 inv 1): a present
+        ;; half-launch pane on a should-not-stand role alerts but is not
+        ;; resurrected as if it were standing.
+        (and should-stand? (session-repair-allowed? opts))
+        (assoc :repair {:action :ensure-session :role role})))
 
     :else nil))
-
 ;; ── check 2: remote-control-flag ─────────────────────────────────────────────
 
 (defn check-remote-control
@@ -344,10 +344,17 @@
 
 (def default-pending-max-age-min 120)
 
+;; BL-1169: after this many consecutive idle sweeps, queue ./swarm ensure
+;; alongside the swarm-starved CRIT so recovery is not escalation-only.
+(def default-swarm-starved-ensure-streak 3)
+
 (defn check-swarm-starved
   [{:keys [active-ticket-count any-pane-busy? paused? prev-streak
-           pending-claims in-process-claims pending-max-age-min]
-    :or {pending-max-age-min default-pending-max-age-min}}]
+           pending-claims in-process-claims pending-max-age-min
+           starved-ensure-streak control-plane-repair-allowed?]
+    :or {pending-max-age-min default-pending-max-age-min
+         starved-ensure-streak default-swarm-starved-ensure-streak
+         control-plane-repair-allowed? true}}]
   (let [has-motion-pending? (some #(fresh-pending? % pending-max-age-min) (or pending-claims []))
         has-motion-inprocess? (some motion-in-process? (or in-process-claims []))
         idle-this-sweep? (and (not paused?)
@@ -355,13 +362,16 @@
                               (not any-pane-busy?)
                               (not has-motion-pending?)
                               (not has-motion-inprocess?))
-        new-streak (if idle-this-sweep? (inc (long (or prev-streak 0))) 0)]
-    {:finding (when (>= new-streak 2)
-                {:key "swarm-starved" :severity "CRIT"
-                 :message (swarm-starved-message active-ticket-count new-streak
-                                                 pending-claims in-process-claims)})
+        new-streak (if idle-this-sweep? (inc (long (or prev-streak 0))) 0)
+        finding (when (>= new-streak 2)
+                  (cond-> {:key "swarm-starved" :severity "CRIT"
+                           :message (swarm-starved-message active-ticket-count new-streak
+                                                           pending-claims in-process-claims)}
+                    (and control-plane-repair-allowed?
+                         (>= new-streak (long starved-ensure-streak)))
+                    (assoc :repair {:action :ensure-control-plane})))]
+    {:finding finding
      :new-streak new-streak}))
-
 ;; BL-996: was a private whole-pane substring match (`(str/includes? text
 ;; "esc to interrupt")` or'd with a spinner-glyph+elapsed-time co-occurrence)
 ;; - exactly the false-busy shape BL-970 fixed at the chokepoint (a pane
@@ -620,8 +630,19 @@
                                 ;; nowhere for a human to start.
                                 :control-plane-error control-plane-error
                                 :socket-path socket-path})
-        control-plane-ensure? (= :ensure-control-plane
-                                 (get-in control-plane-finding [:repair :action]))
+        {starved-finding :finding new-streak :new-streak}
+        (check-swarm-starved {:active-ticket-count active-ticket-count
+                              :any-pane-busy? any-pane-busy?
+                              :paused? paused?
+                              :prev-streak prev-streak
+                              :pending-claims pending-claims
+                              :in-process-claims in-process-claims
+                              :pending-max-age-min pending-max-age-min
+                              :control-plane-repair-allowed? control-plane-repair-allowed?})
+        control-plane-ensure? (or (= :ensure-control-plane
+                                     (get-in control-plane-finding [:repair :action]))
+                                  (= :ensure-control-plane
+                                     (get-in starved-finding [:repair :action])))
         role-findings (mapcat (fn [role]
                                  (remove nil?
                                          [(let [f (check-live-session role)]
@@ -652,14 +673,6 @@
         rotate-finding (check-rotate-not-honored
                         (when rotate-note
                           (assoc rotate-note :paused? paused? :rotation-router? rotation-router?)))
-        {starved-finding :finding new-streak :new-streak}
-        (check-swarm-starved {:active-ticket-count active-ticket-count
-                              :any-pane-busy? any-pane-busy?
-                              :paused? paused?
-                              :prev-streak prev-streak
-                              :pending-claims pending-claims
-                              :in-process-claims in-process-claims
-                              :pending-max-age-min pending-max-age-min})
         resume-overdue-finding (check-resume-overdue {:paused? paused?
                                                       :now-ms now-ms
                                                       :until-ms (:until-ms pause)
