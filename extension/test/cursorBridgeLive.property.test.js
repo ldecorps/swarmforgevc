@@ -8,6 +8,7 @@ const {
   loadTopicMap,
 } = require('../out/tools/telegramCursorBridgeLive');
 const { decideInboundAction, gateBusy, splitTelegramChunks } = require('../out/tools/telegramCursorBridgeCore');
+const { runChunkingProperty } = require('./helpers/chunkingPropertyProbe');
 
 test('property: inboundEventOf never invents fields when message is incomplete', () => {
   fc.assert(
@@ -48,12 +49,8 @@ test('property: gateBusy never upgrades ignore to prompt while busy', () => {
   );
 });
 
-test('property: splitTelegramChunks reassembles without loss for short strings', () => {
-  fc.assert(
-    fc.property(fc.string({ maxLength: 200 }), (text) => {
-      const chunks = splitTelegramChunks(text);
-      assert.equal(chunks.join(''), text);
-    }),
-    { numRuns: 80 }
-  );
+test('property: splitTelegramChunks reassembles without loss across chunk boundaries', () => {
+  const result = runChunkingProperty(splitTelegramChunks);
+  assert.equal(result.passed, true);
+  assert.equal(result.sawMultiChunk, true, 'property must exercise the multi-chunk branch');
 });

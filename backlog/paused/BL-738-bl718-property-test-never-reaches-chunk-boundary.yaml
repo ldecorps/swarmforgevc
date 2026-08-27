@@ -12,6 +12,13 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-738-chunking-property-reaches-the-split-boundary.feature
+# Tip-pure documenter 20260827 atop origin/main; superseded tips abandoned.
+abandoned_commits:
+  - fdba8a3e73
+  - 426ef2a8ff
+  - 0f1b31f369
+  - 94b2447a0e
+  - 94c466b9fe
 
 invariants:
   - "A property test carrying a declared invariant must be falsifiable: breaking the code path the invariant names turns that property red."
