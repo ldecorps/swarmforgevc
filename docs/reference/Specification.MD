@@ -1,7 +1,5 @@
 # SwarmForge VS Code Extension — Specification
 
-<<<<<<< HEAD
-=======
 **Last Updated:** August 27, 2026 (BL-599: intake-balance trend —
 filed/closed/net per window via `deriveIntakeBalanceEvents` /
 `computeIntakeBalance` on the existing deliveryMetrics git-history adapter;
@@ -10,7 +8,6 @@ epic trackers excluded; root `INTAKE-*.md` counted; exposed on
 `specs/features/BL-599-trend-intake-balance.feature`. How-to:
 `docs/how-to/BL-599-trend-intake-balance.md`.)
 Prior entry —
->>>>>>> 3656bb2fe (fix(BL-599): tip-pure rematch — intake-balance wiring after entangled tip.)
 **Last Updated:** August 27, 2026 (BL-980: Pipeline Board RECENTLY CLOSED
 lines append a relative closure-age suffix from durable `doneClosedAtMs`
 (`formatRecentlyClosedAgeLabel` in `pipelineBoard.ts`; stamped once in
