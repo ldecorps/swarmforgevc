@@ -116,3 +116,5 @@ notes: |
   the shared-cadence single-thread design that BL-222 onward deliberately
   chose, and is now stated in the mandated comment text rather than left
   as tribal knowledge.
+
+assigned_to: coder
