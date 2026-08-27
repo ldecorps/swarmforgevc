@@ -150,6 +150,17 @@
   (assert-true "control-plane row keeps its detail"
                (str/includes? line "run ./swarm ensure")))
 
+;; ── BL-1199: not-configured renders its own status word, never DOWN ───────
+(let [line (swarm-status-lib/format-component-line
+            {:name "bubble-cloudflared"
+             :status :not-configured
+             :uptime nil
+             :detail nil})]
+  (assert-true "not-configured status word rendered"
+               (str/includes? line "NOT_CONFIGURED"))
+  (assert-true "not-configured is never rendered as DOWN"
+               (not (str/includes? line "DOWN"))))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
