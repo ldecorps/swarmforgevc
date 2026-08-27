@@ -1,3 +1,28 @@
+# PARKED DRAFT — PERMANENTLY NOT an executable acceptance contract
+# (.feature.draft, so no *.feature glob and not the acceptance runner picks it
+# up). Do NOT "materialize" this back into a .feature: that is what produced
+# the QA bounce of 2026-08-27 ("BL-428 acceptance feature: 0 step handlers
+# wired, all 5 scenarios fail").
+#
+# WHY it can never be executable: BL-428's slices are behavior-PRESERVING
+# refactors. The ticket's own qa_e2e says so — "pure refactor — no acceptance
+# scenario changed". Every scenario below therefore asserts about the
+# project's own gates (a CRAP report ran; the pre-existing unit, parity and
+# scroll suites still pass), not about externally visible behavior. Both
+# handlers anyone could write for those are dishonest: one greps for words and
+# goes green whether or not the gate ran, the other reaches into live runtime
+# paths that acceptance handlers may not read.
+#
+# The OPERATIVE contract for every decrap slice is the ticket's `qa_e2e`
+# field: regenerate the CRAP>6 list with extension/scripts/crapReport.js,
+# confirm the slice's targeted functions were on it and now report CRAP<=6,
+# and confirm the module's existing behavior tests pass unchanged.
+#
+# This file is kept, readable and out of the ticket YAML, because that was
+# SG1's actual requirement (an inline block scalar was unreadable at pre-QA,
+# BL-761). SG1 asked for the Gherkin to be READABLE and FILED. It never asked
+# for it to be RUNNABLE.
+
 Feature: paneHistory module decrap slice is behavior-preserving and under CRAP threshold
 
   # BL-428 policy §2 — first module-scoped decrap slice from the standing tracker.
