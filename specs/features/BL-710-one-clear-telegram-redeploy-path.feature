@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=8e9a53cc8a3c3b185560dc2b754aed9b8c7d0bcbc7252179404f46c066c64fc8
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T11:03:21.165169547Z","feature_name":"One redeploy verb family covers every Telegram runtime","feature_path":"/tmp/bl710-hardener-1297109/specs/features/BL-710-one-clear-telegram-redeploy-path.feature","background_hash":"32f0b643f4dd6495f62ad8043ca6820f30fc8351c3f345a10a3adbaa7747ca22","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each redeploy form restarts its own runtime and says so","scenario_hash":"6a4d095e10092caabd54114c596964cc0c36655fe10f47ad47928f1cd7592328","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-27T11:03:21.165169547Z"},{"index":3,"name":"a redeploy from the wrong place does nothing","scenario_hash":"c5b2a1cbdec76f355179918ddc59b7445343b0fd52b1ea62538cdf5bb23d7c17","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-27T11:03:21.165169547Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: One redeploy verb family covers every Telegram runtime
   A change to Telegram-related extension code becomes live through a single
   documented verb family, and the reply names what actually restarted — so a
