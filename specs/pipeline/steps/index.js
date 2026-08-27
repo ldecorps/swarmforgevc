@@ -388,6 +388,7 @@ const DOMAINS = [
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
+  require('./bl711InterfaceVsIncarnationGlossarySteps'),
   require('./bl1166OperatorDocsSteps'),
   require('./bl1164QaChangedPathUnitTestGateSteps'),
   require('./bl1007ContentionBudgetSteps'),
