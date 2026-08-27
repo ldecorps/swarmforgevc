@@ -9,7 +9,8 @@ severity: medium
 priority: 106
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
+acceptance: specs/features/BL-634-slice-size-envelope-at-promotion.feature
 mutation_cost: medium
 
 approval_context: >

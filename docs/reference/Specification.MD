@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-634: promotion `slice_size_envelope`
+gate on declared estimates — shares BL-626 chokepoint; p90 default 514
+insertions (2026-07-25 distribution); high band or over-threshold insertions
+require `size_envelope_decision`; QA records `actual_insertions` /
+`actual_files`. Acceptance:
+`specs/features/BL-634-slice-size-envelope-at-promotion.feature`.
+How-to: `docs/how-to/BL-634-slice-size-envelope-at-promotion.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1171: babysitter disaster-class
 correlation — when handoffd down + ≥3 half-launch + swarm-starved fire
 together, `babysitterd_sweep_lib.bb` rolls to one structured
