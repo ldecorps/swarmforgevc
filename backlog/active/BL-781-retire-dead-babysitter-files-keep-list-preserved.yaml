@@ -31,15 +31,20 @@ source: |
   second dead wake-queue file the coder had not flagged.
 
 
-# Tip-pure rematch 20260827 (union stranded + rematch5).
+
+# Tip-pure rematch 6 (union).
 abandoned_commits:
-  - 909c0e947e
+  - 31ede8f992
+  - b56ca33e92
+  - 2db73873d6
+  - 9e6d5bef50
   - 1bba7bf898
   - eceaf39588
   - 9da97fcb29
   - 0b352a2fc3
   - efbc2d8558
   - 88360ae238
+  - 909c0e947e
   - 7b4737ee64
   - cb20459d4a
   - bbaac767b9
