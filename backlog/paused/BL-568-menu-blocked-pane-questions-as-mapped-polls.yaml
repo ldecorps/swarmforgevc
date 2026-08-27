@@ -118,5 +118,6 @@ notes:
   - "[2026-08-25T15:55Z] coder: implement detect/extract/poll-plan in
     chase_sweep_lib; menu-answer mapping + drive plan + menu_blocked
     steer receipt in telegramClient/front-desk."
-  - "[2026-08-25T11:05Z] coordinator: armed on main ack (specifier f0c700f44); approved+buildable but active cap full (3/3: BL-1118/1120/1123) — promote+route on next open slot. Expedited BL-1124 remains ahead of 565/568 per Art 3.2.4."
+  - "[2026-08-25T11:05Z] coordinator: armed on main ack (specifier f0c700f44); approved+buildable but active cap full (3/3: BL-1118/1120/1123) — promote+route on next open slot. Article 3.2.4 high-severity defect BL-1124 ranks ahead of 565/568 in promotion order."
+  - "[2026-08-27] specifier deprecator adjudication: freshness gate held on false positive — coordinator promotion-order note matched BL-1095 doc token; reworded. depends_on BL-425/466/566 all in done/; chase_sweep + BL-466 poll plumbing still live. Confirm promote."
   - "[2026-08-25T10:42Z] specifier: closed needs_design; armed feature at specs/features/BL-568-….feature. Spec-gap intake archived."
