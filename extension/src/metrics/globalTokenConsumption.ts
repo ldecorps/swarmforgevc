@@ -1,3 +1,4 @@
+// BL-605 pure aggregator: cumulative total and rate summed across roles per bucket.
 import { TranscriptUsageRecord, UsageTotals } from './transcriptUsage';
 import { computeTrend, TrendResult, TrendSeriesPoint } from './trend';
 import type { LlmInvocationRecord } from './llmCostLedger';
