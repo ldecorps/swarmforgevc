@@ -9,7 +9,7 @@ direction: human-requested
 depends_on: [BL-1176]
 decomposes_into: [BL-1181, BL-1182, BL-1183]
 mutation_cost: high
-human_approval: pending
+human_approval: approved
 approval_context: >
   Human Laurent via Cursor 2026-08-27 ~07:57 BST. Medium priority product loop
   on Model Steward. Do not go live on day trials until telemetry + performance
