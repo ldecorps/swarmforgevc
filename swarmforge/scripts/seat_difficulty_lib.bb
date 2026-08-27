@@ -29,67 +29,68 @@
   (let [c (-> (str s) str/trim str/lower-case)]
     (when (contains? cost-rank c) c)))
 
-(defn- window-flag-map
-  "Parse `window <seat> … --flag value` lines into seat-id -> value map.
-   `normalize` returns nil to drop the seat (unknown/blank value)."
-  [conf-text flag-name normalize]
-  (into {}
+(defn- window-line-seat [line]
+  (when (str/starts-with? (str/trim line) "window ")
+    (nth (str/split (str/trim line) #"\s+") 1 nil)))
+
+(defn- seat-stage [seat]
+  (first (str/split (str seat) #"@" 2)))
+
+(defn parse-stage-window-seats
+  "Set of seat ids for stage from pack conf window lines."
+  [conf-text stage]
+  (into #{}
         (keep (fn [line]
-                (let [trimmed (str/trim line)]
-                  (when (str/starts-with? trimmed "window ")
-                    (let [parts (str/split trimmed #"\s+")
-                          seat (nth parts 1 nil)
-                          flag-idx (.indexOf parts flag-name)]
-                      (when (and seat (>= flag-idx 0) (< (inc flag-idx) (count parts)))
-                        (when-let [val (normalize (nth parts (inc flag-idx)))]
-                          [seat val]))))))
+                (let [seat (window-line-seat line)]
+                  (when (and seat (= stage (seat-stage seat)))
+                    seat)))
               (str/split-lines (or conf-text "")))))
 
 (defn parse-seat-tiers
   "Map seat-id -> tier from pack conf window lines carrying --seat-tier.
    Pure over conf text. Unknown flag values are ignored (seat stays undeclared)."
   [conf-text]
-  (window-flag-map conf-text "--seat-tier" normalize-tier))
+  (into {}
+        (keep (fn [line]
+                (let [trimmed (str/trim line)]
+                  (when (str/starts-with? trimmed "window ")
+                    (let [parts (str/split trimmed #"\s+")
+                          seat (nth parts 1 nil)
+                          flag-idx (.indexOf parts "--seat-tier")]
+                      (when (and seat (>= flag-idx 0) (< (inc flag-idx) (count parts)))
+                        (when-let [tier (normalize-tier (nth parts (inc flag-idx)))]
+                          [seat tier]))))))
+              (str/split-lines (or conf-text "")))))
 
-(defn normalize-model
-  "Non-blank --model token, lower-cased. Blank/whitespace -> nil."
-  [s]
+(defn normalize-model [s]
   (let [m (-> (str s) str/trim str/lower-case)]
     (when (seq m) m)))
 
 (defn parse-seat-models
   "Map seat-id -> model from pack conf window lines carrying --model.
-   Pure over conf text. Blank model tokens are ignored."
+   Pure over conf text. Used for BL-1167 same-model tier bypass."
   [conf-text]
-  (window-flag-map conf-text "--model" normalize-model))
-
-(defn parse-window-seats
-  "Seat ids appearing on pack conf `window` lines (any flags)."
-  [conf-text]
-  (into #{}
+  (into {}
         (keep (fn [line]
                 (let [trimmed (str/trim line)]
                   (when (str/starts-with? trimmed "window ")
-                    (nth (str/split trimmed #"\s+") 1 nil))))
+                    (let [parts (str/split trimmed #"\s+")
+                          seat (nth parts 1 nil)
+                          flag-idx (.indexOf parts "--model")]
+                      (when (and seat (>= flag-idx 0) (< (inc flag-idx) (count parts)))
+                        (when-let [model (normalize-model (nth parts (inc flag-idx)))]
+                          [seat model]))))))
               (str/split-lines (or conf-text "")))))
 
-(defn stage-seat-ids
-  "Seat ids in `coll` whose stage prefix equals `stage` (before first @)."
-  [coll stage]
-  (filter (fn [seat] (= stage (first (str/split seat #"@" 2))))
-          coll))
-
-(defn stage-models-uniform?
-  "BL-1167: true when every window seat of `stage` declares a --model and
-   all those models are identical. Fewer than two stage seats → false
-   (nothing to equate; keep BL-1001 / BL-983 as-is).
-   `all-seats` is the full set of window seat ids (parse-window-seats)."
-  [models all-seats stage]
-  (let [seats (vec (stage-seat-ids all-seats stage))
-        vals (mapv #(get models %) seats)]
-    (and (>= (count seats) 2)
-         (every? some? vals)
-         (apply = vals))))
+(defn stage-models-equivalent?
+  "True when every window seat of stage declares --model and all values match
+   (BL-1167: tier routing off for model-equivalent stages)."
+  [models conf-text stage]
+  (let [seats (parse-stage-window-seats conf-text stage)
+        values (into #{} (keep models seats))]
+    (and (pos? (count seats))
+         (= (count seats) (count (filter #(contains? models %) seats)))
+         (= 1 (count values)))))
 
 (defn parse-mutation-cost
   "mutation_cost value from ticket YAML text, or nil when absent/unknown."
@@ -114,7 +115,7 @@
   "True when any seat of stage has a declared tier in the map."
   [tiers stage]
   (boolean (some (fn [[seat _]]
-                   (= stage (first (str/split seat #"@" 2))))
+                   (= stage (seat-stage seat)))
                  tiers)))
 
 (defn- tier-ceil [tier]
@@ -142,13 +143,11 @@
      :defer-better-fit   - an idle sibling with a lower ceiling also accepts
                            (prefer easy for low when both idle)
    When the stage has no declared tiers at all, always :claim (BL-983 path).
-   BL-1167: when every stage seat declares the same --model, tier filtering
-   is bypassed — always :claim (idle-first among seats still via BL-983 race).
-   sibling-states: [{:role :tier :busy?}] — other seats of the same stage.
-   Optional :models map from parse-seat-models."
-  [{:keys [me my-tier cost stage tiers sibling-states models window-seats]}]
+   When every seat shares the same --model, tier rules are off (BL-1167).
+   sibling-states: [{:role :tier :busy?}] — other seats of the same stage."
+  [{:keys [me my-tier cost stage tiers sibling-states models conf-text]}]
   (cond
-    (stage-models-uniform? (or models {}) (or window-seats #{}) stage)
+    (stage-models-equivalent? models conf-text stage)
     :claim
 
     (not (stage-tiers-active? tiers stage))
