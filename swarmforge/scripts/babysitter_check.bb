@@ -52,6 +52,7 @@
 (load-file (str (fs/path script-dir "agent_process_marker_lib.bb")))
 ;; BL-1103: one shared wall-clock-bounded runner (was a hand-copy of expedite's).
 (load-file (str (fs/path script-dir "bounded_run_lib.bb")))
+(load-file (str (fs/path script-dir "master_main_reconcile_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -785,6 +786,38 @@
 (defn available-mem-mb []
   (or (read-proc-meminfo-mb) (read-vm-stat-mb)))
 
+(defn gather-main-sync-deadlock []
+  (let [daemon-dir (fs/path state-dir "daemon")
+        deadlock (master-main-reconcile-lib/read-deadlock (str daemon-dir))]
+    (if (master-main-reconcile-lib/deadlock-active? deadlock)
+      (let [ahead (or (:ahead deadlock) 0)
+            behind (or (:behind deadlock) 0)
+            reason (or (:reason deadlock) "diverged")
+            overlapping-paths
+            (when (= "dirty" (str reason))
+              (try
+                (let [{:keys [exit out]} (sh! {:dir (str project-root)} "git" "status" "--porcelain")
+                      dirty (if (zero? exit)
+                              (master-main-reconcile-lib/porcelain-lines->paths out)
+                              #{master-main-reconcile-lib/unknown-dirty-marker})
+                      merge-changed
+                      (if (pos? behind)
+                        (let [{:keys [exit out]} (sh! {:dir (str project-root)} "git" "merge-base" "HEAD" "origin/main")]
+                          (if (zero? exit)
+                            (let [base (str/trim out)
+                                  {:keys [exit out]} (sh! {:dir (str project-root)}
+                                                           "git" "diff" "--name-only" base "origin/main")]
+                              (if (zero? exit)
+                                (into #{} (remove str/blank?) (str/split-lines out))
+                                #{master-main-reconcile-lib/unknown-dirty-marker}))
+                            #{master-main-reconcile-lib/unknown-dirty-marker}))
+                        #{})]
+                  (vec (master-main-reconcile-lib/overlapping-paths dirty merge-changed)))
+                (catch Exception _ [])))]
+        {:deadlock-active? true :ahead ahead :behind behind :reason reason
+         :overlapping-paths overlapping-paths})
+      {:deadlock-active? false})))
+
 ;; ── pause + rotate-note gathering ─────────────────────────────────────────
 
 (defn read-pause []
@@ -907,8 +940,7 @@
   (spit (str escalation-dedup-file) (json/generate-string m)))
 
 (defn enqueue-operator-escalation! [finding]
-  (let [detail (chase-sweep-lib/format-babysitter-escalation-detail finding)
-        event {:type "BABYSITTER_ESCALATION" :subject (:key finding) :detail detail}
+  (let [event (operator-lib/babysitter-escalation-event finding)
         script (fs/path script-dir "operator_enqueue_event.bb")]
     (process/shell {:dir (str project-root) :extra-env {"OPERATOR_EVENTS_LOCK_MAX_WAIT_MS" "5000"}}
                      "bb" (str script) (str project-root) (json/generate-string event))))
@@ -1062,6 +1094,8 @@
         ;; uncached walk is the defect repeated with extra code.
         pipeline-code-on-main (try (gather-pipeline-code-on-main-cached)
                                     (catch Exception _ {:offending-commits [] :ancestry-unavailable? true}))
+        main-sync-deadlock (try (gather-main-sync-deadlock)
+                                (catch Exception _ {:deadlock-active? false}))
         ;; BL-804: resolve topology ONCE per sweep, then stamp each role's
         ;; :should-stand? — the sweep lib's check-live-session only ever sees
         ;; the resolved boolean, never a role name, so suppression can never
@@ -1146,7 +1180,12 @@
          :resident-active-role-mtime-ms (active-role-marker-mtime-ms)
          :resident-pane-busy? (boolean (get busy-by-role resident-home))
          :resident-mailbox-empty? (resident-mailbox-empty? resident-active-role)
-         :dispatch-note-pending? (dispatch-note-pending? resident-active-role)}
+         :dispatch-note-pending? (dispatch-note-pending? resident-active-role)
+         :deadlock-active? (:deadlock-active? main-sync-deadlock)
+         :ahead (:ahead main-sync-deadlock)
+         :behind (:behind main-sync-deadlock)
+         :reason (:reason main-sync-deadlock)
+         :overlapping-paths (:overlapping-paths main-sync-deadlock)}
         {:keys [findings new-streak repairs]} (babysitterd-sweep-lib/assemble-findings snapshot)
         ts (now-iso)]
     (write-streak! new-streak)
@@ -1157,8 +1196,7 @@
     ;; The CRIT for each repaired role is still printed below, unconditionally
     ;; - a repair never swallows its alert, because a session that keeps
     ;; vanishing is the signal worth keeping (qa_e2e_procedure step 2).
-    (when (and (seq repairs)
-               (not (babysitterd-sweep-lib/diagnose-only-disaster-sweep? findings snapshot)))
+    (when (seq repairs)
       (let [cp-repairs (filter #(= :ensure-control-plane (:action %)) repairs)
             role-repairs (filter #(= :ensure-session (:action %)) repairs)]
         ;; BL-958: whole-plane recovery first (./swarm ensure). Per-role
@@ -1211,11 +1249,10 @@
               {:keys [to-nudge new-dedup-state]}
               (babysitterd-sweep-lib/decide-nudges findings nudge-opts)
               {:keys [to-escalate new-escalation-dedup-state]}
-              (babysitterd-sweep-lib/decide-escalations
-               (babysitterd-sweep-lib/prepare-escalation-findings findings snapshot)
-               {:last-escalated-ms-by-key escalation-dedup
-                :now-ms now
-                :cooldown-ms nudge-cooldown-ms})]
+              (babysitterd-sweep-lib/decide-escalations findings
+                                                         {:last-escalated-ms-by-key escalation-dedup
+                                                          :now-ms now
+                                                          :cooldown-ms nudge-cooldown-ms})]
           (doseq [f to-escalate]
             (try
               (enqueue-operator-escalation! f)

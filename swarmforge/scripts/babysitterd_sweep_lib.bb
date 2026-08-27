@@ -24,6 +24,7 @@
 ;; logic (chase_sweep_lib.bb is itself a pure classifier, same posture).
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_main_reconcile_lib.bb")))
 
 (defn format-all-clear-line
   "BL-779: human-facing sweep verdict when findings are empty. Names a live
@@ -482,13 +483,24 @@
                            sha " \"" subject "\" touches " (str/join ", " paths))})
           (or offending-commits []))))
 
+;; ── check: main-sync-deadlock (BL-1187) ─────────────────────────────────────
+
+(defn check-main-sync-deadlock
+  [{:keys [deadlock-active? ahead behind reason overlapping-paths]}]
+  (when deadlock-active?
+    {:key "main-sync-deadlock" :severity "CRIT"
+     :message (master-main-reconcile-lib/operator-deadlock-hint
+               {:ahead ahead :behind behind :reason reason
+                :overlapping-paths overlapping-paths})}))
+
 ;; ── nudge eligibility (scenario 13) ──────────────────────────────────────────
 
 (defn nudge-eligible?
   [{:keys [key severity]}]
   (boolean
-   (or (= "CRIT" severity)
-       (and (= "WARN" severity) (str/starts-with? (str key) "stuck-")))))
+   (and (not= (str key) "main-sync-deadlock")
+        (or (= "CRIT" severity)
+            (and (= "WARN" severity) (str/starts-with? (str key) "stuck-"))))))
 
 ;; ── BL-653 escalation eligibility (scenario 04 vs 03/05) ─────────────────────
 
@@ -731,6 +743,7 @@
 ;; :offending-commits :ancestry-unavailable? (BL-631, check-pipeline-code-on-main).
 ;; :control-plane-classification :launch-scripts-present?
 ;; :control-plane-repair-allowed? :socket-path (BL-958 babysitter ownership).
+;; :deadlock-active? :ahead :behind :reason :overlapping-paths (BL-1187).
 
 (defn assemble-findings
   [{:keys [roles handoffd-alive? handoffd-supervisor-alive? handoffd-log-age-secs
@@ -743,7 +756,8 @@
            resident-mailbox-empty? dispatch-note-pending?
            resident-stranded-grace-min
            control-plane-classification launch-scripts-present?
-           control-plane-repair-allowed? socket-path control-plane-error]}]
+           control-plane-repair-allowed? socket-path control-plane-error
+           deadlock-active? ahead behind reason overlapping-paths]}]
   (let [paused? (boolean (:active? pause))
         control-plane-finding (check-control-plane
                                {:control-plane-classification control-plane-classification
@@ -819,8 +833,12 @@
                                     :paused? paused?
                                     :now-ms now-ms
                                     :resident-stranded-grace-min (or resident-stranded-grace-min default-resident-stranded-grace-min)})
+        main-sync-deadlock-finding (check-main-sync-deadlock
+                                    {:deadlock-active? deadlock-active?
+                                     :ahead ahead :behind behind :reason reason
+                                     :overlapping-paths overlapping-paths})
         findings (vec (remove nil?
-                              (concat [control-plane-finding]
+                              (concat [control-plane-finding main-sync-deadlock-finding]
                                       role-findings
                                       [handoffd-finding dead-letter-finding]
                                       stuck-findings
