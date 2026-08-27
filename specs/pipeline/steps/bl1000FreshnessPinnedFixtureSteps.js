@@ -31,10 +31,25 @@ const KNOWN_TEST_FILES = new Map([
 ]);
 
 let liveBackup = null;
+let detachedWorktree = null;
 
 afterEach(() => {
   restoreLiveConf();
+  removeDetachedWorktree();
 });
+
+function removeDetachedWorktree() {
+  if (detachedWorktree !== null) {
+    try {
+      execFileSync('git', ['-C', REPO_ROOT, 'worktree', 'remove', '--force', detachedWorktree], {
+        encoding: 'utf8',
+      });
+    } catch {
+      fs.rmSync(detachedWorktree, { recursive: true, force: true });
+    }
+    detachedWorktree = null;
+  }
+}
 
 function restoreLiveConf() {
   if (liveBackup !== null) {
@@ -145,13 +160,17 @@ function registerSteps(registry) {
   });
 
   scoped(/^a checkout containing only files tracked in git$/, (ctx) => {
-    const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1000-clone-'));
-    ctx.cloneDir = clone;
-    execFileSync('git', ['clone', '--quiet', REPO_ROOT, clone], { encoding: 'utf8' });
+    const checkout = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1000-checkout-'));
+    ctx.cloneDir = checkout;
+    detachedWorktree = checkout;
     const tip = execFileSync('git', ['-C', REPO_ROOT, 'rev-parse', 'HEAD'], {
       encoding: 'utf8',
     }).trim();
-    execFileSync('git', ['-C', clone, 'checkout', '--quiet', tip], { encoding: 'utf8' });
+    // Local `git clone` fails when the source repo is an active worktree;
+    // detached worktree add matches the fresh-checkout intent (tracked files only).
+    execFileSync('git', ['-C', REPO_ROOT, 'worktree', 'add', '--detach', checkout, tip], {
+      encoding: 'utf8',
+    });
   });
 
   scoped(/^every conf the tests read is present$/, (ctx) => {
@@ -170,7 +189,7 @@ function registerSteps(registry) {
     assert.equal(tracked.replace(/\\/g, '/'), rel.replace(/\\/g, '/'));
     // Suite must have been able to locate its CONF (even if other clone gaps fail).
     assert.doesNotMatch(ctx.lastRun.out, /No such file|FRESHNESS_CONF|daemon_log_freshness\.fixture\.conf:.*[Nn]o such/);
-    fs.rmSync(ctx.cloneDir, { recursive: true, force: true });
+    removeDetachedWorktree();
     ctx.cloneDir = null;
   });
 }
