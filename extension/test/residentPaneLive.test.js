@@ -5,6 +5,7 @@ const path = require('node:path');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 const {
   captureResidentPaneLive,
+  captureCoordinatorPaneLive,
   captureMonoRouterLiveScreen,
   captureLiveScreenPanes,
   orderLiveScreenRoles,
@@ -103,6 +104,38 @@ test('captureResidentPaneLive includes modelLabel from the role settings file', 
     assert.equal(snap.roleLabel, 'Coder');
     assert.equal(snap.modelLabel, 'Sonnet 5');
     assert.match(snap.sessionTarget, /^swarmforge-coder:/);
+  } finally {
+    fake.restore();
+  }
+});
+
+// tryCaptureRolePane's other real entry point besides the resident/live-
+// screen paths above (BL-1189 added a claimedTicketIds default parameter to
+// it - this call site exercises that default, since captureCoordinatorPaneLive
+// never threads a shared dedup Set of its own).
+test('captureCoordinatorPaneLive captures the coordinator pane by role, unaffected by other tiles', () => {
+  const tmp = mkTmpDir('sfvc-coordinator-pane-live-');
+  const paneText = seedResidentPaneFixture(tmp, { role: 'coordinator', model: 'claude-sonnet-5' });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    const snap = captureCoordinatorPaneLive(tmp);
+    assert.ok(snap);
+    assert.match(snap.sessionTarget, /^swarmforge-coordinator:/);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('captureCoordinatorPaneLive returns undefined when no coordinator role is on the roster', () => {
+  const tmp = mkTmpDir('sfvc-coordinator-pane-live-');
+  seedResidentPaneFixture(tmp, { role: 'coder', model: 'claude-sonnet-5' });
+  const fake = installInProcessTmux([]);
+  try {
+    assert.equal(captureCoordinatorPaneLive(tmp), undefined);
   } finally {
     fake.restore();
   }
