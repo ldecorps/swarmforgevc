@@ -142,31 +142,6 @@ test('approval-ask-content-02: the frozen reply-grammar line and buttons stay by
   ]);
 });
 
-test('BL-589: decideTopicAction attaches ruling-option rows ahead of default approval verbs', () => {
-  const action = decideTopicAction(
-    event({
-      type: 'ApprovalRequested',
-      payload: { title: 'a fine feature', rulingOptions: ['approach one', 'approach two'] },
-    }),
-    {},
-    'a fine feature'
-  );
-  assert.deepEqual(action.buttons, [
-    [{ text: 'approach one', callbackData: 'rule:BL-123:0' }],
-    [{ text: 'approach two', callbackData: 'rule:BL-123:1' }],
-    [
-      { text: 'Approve', callbackData: 'approve:BL-123' },
-      { text: 'Amend', callbackData: 'amend:BL-123' },
-      { text: 'Reject', callbackData: 'reject:BL-123' },
-      { text: 'Q jump', callbackData: 'expedite:BL-123' },
-    ],
-    [
-      { text: 'More', callbackData: 'more:BL-123' },
-      { text: 'Ambulance', callbackData: 'ambulance:BL-123' },
-    ],
-  ]);
-});
-
 test('approval-ask-content-03: an approval_context, when present, is included in the ask', () => {
   const text = messageTextForEvent(
     event({

@@ -25,9 +25,9 @@ approval_context: >
   structural version that makes the whole class impossible.
 
 required_wiring:
-  - 'swarmforge/scripts/babysitter_check.bb::operator_enqueue_event.bb::CRIT findings enqueue BABYSITTER_ESCALATION to operator events.jsonl'
-  - 'swarmforge/scripts/operator_lib.bb::dead-agent-events::per-tick AGENT_EXITED fabrication excluded from tick-observed-events'
-  - 'swarmforge/scripts/operator_lib.bb::SWARM_CHECK_TIMER::payload-free timer excluded from tick-observed-events when escalation producer is live'
+  - 'swarmforge/scripts/operator_enqueue_event.bb::BABYSITTER_ESCALATION::babysitter CRIT findings enqueue deterministic escalation to operator'
+  - 'swarmforge/scripts/operator_runtime.bb::dead-agent-events::per-tick AGENT_EXITED fabrication must not wake the LLM'
+  - 'swarmforge/scripts/operator_runtime.bb::SWARM_CHECK_TIMER::payload-free timer must not wake LLM when escalation producer is live'
   - 'specs/pipeline/steps/index.js::bl653OperatorEscalationDrivenSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |

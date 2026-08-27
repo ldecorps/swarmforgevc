@@ -144,10 +144,7 @@ import {
   recordApprovalReply,
   recordRejectionReply,
   recordAmendReply,
-  recordRulingReply,
   readRecordedVerdict,
-  readRecordedRuling,
-  readRulingOptions,
   readApprovalCloseVerdict,
   explainApprovalRecordNoOp,
 } from '../concierge/pendingApprovalReply';
@@ -2289,9 +2286,6 @@ function buildPollAdapters(
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
     recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
     recordAmendReply: (backlogId) => Promise.resolve(recordAmendReply(targetPath, backlogId)),
-    recordRulingReply: (backlogId, rulingLabel) => Promise.resolve(recordRulingReply(targetPath, backlogId, rulingLabel)),
-    resolveRulingOptions: (backlogId) => Promise.resolve(readRulingOptions(targetPath, backlogId)),
-    readRecordedRuling: (backlogId) => Promise.resolve(readRecordedRuling(targetPath, backlogId)),
     queueAmendSteerDirective: (backlogId, text) => queueAmendSteerDirective(targetPath, backlogId, text),
     resetApprovalAskEmittedState: (backlogId) => resetApprovalAskEmittedState(targetPath, backlogId),
     // BL-490: the Expedite verb's three real effects - promote (backlogWriter's
@@ -2796,7 +2790,6 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
       notes: item.notes,
       firstAcceptanceStep: item.firstAcceptanceStep,
       approvalContext: item.approvalContext,
-      rulingOptions: item.rulingOptions,
       humanApproval: item.humanApproval,
       epic: item.epic,
       type: item.type,

@@ -57,7 +57,7 @@ function requireKnown(table, token, what) {
 }
 
 function matrixLine(gutter, cells, cellWidth) {
-  return gutter + cells.map((c) => c.padStart(cellWidth, NBSP)).join(NBSP);
+  return gutter + cells.map((c) => NBSP + c.padStart(cellWidth, NBSP)).join('');
 }
 
 const stageHeader = (gutterWidth) => matrixLine(NBSP.repeat(gutterWidth), STAGE_GLYPHS, STAGE_CELL_WIDTH);
@@ -276,7 +276,7 @@ function registerSteps(registry) {
     const widest = Math.max(...[ctx.board.header, ...ctx.board.rows].map((l) => l.length));
     // Width is a property of the STAGE SET plus the gutter (invariant 2),
     // so assert the exact arithmetic, not merely that it fits.
-    assert.equal(widest, ctx.idWidth + STAGE_GLYPHS.length * STAGE_CELL_WIDTH + (STAGE_GLYPHS.length - 1));
+    assert.equal(widest, ctx.idWidth + STAGE_GLYPHS.length * (1 + STAGE_CELL_WIDTH));
     assert.ok(widest <= PIPELINE_BOARD_GRID_MAX_WIDTH, `${widest} exceeds ${PIPELINE_BOARD_GRID_MAX_WIDTH}`);
   });
 

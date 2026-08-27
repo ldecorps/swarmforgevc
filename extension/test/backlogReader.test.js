@@ -159,12 +159,6 @@ test('parseBacklogYaml omits remainingSlices when the field is absent', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'remainingSlices'), false);
 });
 
-test('BL-589: parseBacklogYaml parses ruling_options as a list', () => {
-  const yaml = 'id: BL-589\ntitle: t\nruling_options:\n  - approach one\n  - approach two\n';
-  const item = parseBacklogYaml(yaml);
-  assert.deepEqual(item.rulingOptions, ['approach one', 'approach two']);
-});
-
 // BL-341 hardening: type/epic/remainingSlices each need a lenient-fallback
 // test on a strict-unparsable ticket, the same coverage epic/human_approval
 // already got above (a colon-breaking title forces yaml.load to throw and
