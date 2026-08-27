@@ -48,3 +48,31 @@ lost, just unreachable from any ref). Consequently:
 - BL-1184 itself is unaffected: QA's own worktree carried it through the
   pipeline independently of the master-checkout park, and it has been
   bookkept to `backlog/done/` normally.
+
+## Update — 2nd occurrence, ~19:42 BST: the close itself got wiped
+
+The coordinator's own `git mv active/ -> done/` + commit for BL-1184 (sha
+`de9f94966`, done right after the update above) was **itself** dropped by a
+second QA rematch-reset shortly after (during BL-428's land sequence).
+`backlog/active/BL-1184-briefing-shift-velocity.yaml` reappeared with the
+same pre-close content (`git log` on that path shows only `173d224a6` /
+`21d595626`, `de9f94966` is not in its history), while
+`backlog/done/BL-1184-briefing-shift-velocity.yaml` does not exist.
+
+Worse: re-running `commit_integrity_cli.bb`'s close now **fails its own
+authorization gate** — `CLOSE BLOCKED for BL-1184 — no QA git_handoff or
+note to coordinator referencing this ticket` — because the rematch didn't
+just drop the close commit, it also left the coordinator's copy of QA's
+original approval handoff sitting in
+`.swarmforge/handoffs/coordinator/inbox/abandoned/` (consumed by the first,
+now-erased close) rather than somewhere the gate re-reads. The QA-authored
+evidence commit itself (`d523266823`) is still intact and still an ancestor
+of `main` — the approval is real and undisputed, only the live-mailbox
+record of it is gone.
+
+Coordinator did NOT re-close by hand (would require bypassing the gate) and
+did NOT re-park anything. Sent `note` (priority `00`) to QA asking it to
+resend approval for BL-1184 so the gate has something to authorize against.
+Two occurrences of the same class in under 10 minutes on this checkout is
+worth the human's attention beyond BL-1198's existing paused priority —
+flagging severity here rather than reassigning it unilaterally.
