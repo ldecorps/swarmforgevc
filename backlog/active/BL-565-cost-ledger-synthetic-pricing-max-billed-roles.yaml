@@ -2,15 +2,23 @@ id: BL-565
 title: "Cost ledger synthetic pricing — capture tokens and list-price dollar equivalents for Max-billed swarm roles"
 milestone: M8
 type: feature
-status: todo
+status: in_progress
 epic: cost-intelligence
 human_approval: approved
 severity: low
 priority: 107
 direction: human-requested
 depends_on: [BL-551]
-assigned_to: specifier
+assigned_to: documenter
 mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-565-cost-ledger-synthetic-pricing-max-billed-roles.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl565CostLedgerSyntheticPricingSteps::acceptance handler registered"
+  - "extension/src/metrics/syntheticLlmCost.ts::deriveSyntheticCostUsd::list-price synthetic for unbilled records"
+  - "swarmforge/scripts/handoffd.bb::handoff-delivery-llm-invocation-record::token capture at delivery"
+
 source: |
   Human request 2026-07-23, from reviewing the live BL-551 ledger output:
   every swarm-role row in `.swarmforge/telemetry/llm-cost-2026-07.jsonl` has
@@ -56,22 +64,11 @@ description: |
   (CLI columns), bridge /cost-rank (JSON fields), cost & health sidecar +
   BL-511 briefing (labelled estimate line).
 
-acceptance: |
-  Specifier writes executable scenarios; minimum the design must make
-  testable:
-  1. A pipeline-role invocation recorded after this ships carries non-null
-     tokens (input/output at minimum) when usage was observable, and the
-     record degrades to today's null-token shape (never blocks delivery)
-     when it was not.
-  2. A record with tokens and a model in the price table gains
-     syntheticCostUsd; costUsd stays null unless really billed.
-  3. Rollups (CLI, /cost-rank, sidecar) show billed and synthetic totals as
-     separate labelled values — never summed together silently.
-  4. A model missing from the price table yields syntheticCostUsd null plus
-     a counted unknown-price bucket, not a crash or a zero that reads as
-     "free".
-  5. The 7d role rollup that motivated this ticket, re-run on new data,
-     ranks Max-billed roles by synthetic dollars, not just invocation count.
+qa_e2e_procedure: >
+  (1) Unit tests for syntheticLlmCost and llmCostLedger rollups green.
+  (2) Acceptance feature green after compile.
+  (3) On live data, 7d cost-rank shows separate billed and synthetic columns
+  and ranks Max-billed roles by synthetic dollars.
 
 out_of_scope: |
   - Changing any model assignment (that is a decision the data informs).

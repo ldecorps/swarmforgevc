@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-565: Max-billed pipeline
+`llm_invocation` rows capture tokens at delivery when GH-22 / transcript usage
+is observable; `syntheticCostUsd` from committed list prices stays distinct
+from `costUsd`. Rollups and the cost-health sidecar label billed vs synthetic
+separately — never summed silently. Acceptance:
+`specs/features/BL-565-cost-ledger-synthetic-pricing-max-billed-roles.feature`.
+How-to:
+`docs/how-to/BL-565-cost-ledger-synthetic-pricing-max-billed-roles.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1170: `/postmortem` operator verb —
 qualifies cleared disaster incidents, updates failure-class registry and
 operator playbook, mints `INTAKE-disaster-*` stub; idempotent per incident
@@ -9265,6 +9274,35 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 - Auto-merge on green CI (human reviews all PRs)
 - Extension marketplace publication (internal use first)
 - Native Windows (tmux has no native Windows port; a Windows-hosted swarm runs via WSL2 instead — BL-091)
+
+## Synthetic LLM Cost Estimates (BL-565)
+
+BL-551 appends `llm_invocation` records for pipeline handoffs and operator
+paths. Max-subscription seats had no per-call price, so tokens and `costUsd`
+stayed null and rollups ranked those roles by invocation count only.
+
+### Rule
+
+| Record shape | Rollup treatment |
+|--------------|------------------|
+| Provider-billed (`costUsd` set) | Counts toward **billed** totals only |
+| Tokens + model in price table, no bill | `syntheticCostUsd` from list prices → **synthetic estimate** totals |
+| Tokens + model missing from table | `syntheticCostUsd` null; counted in **unknown-price** bucket |
+| Usage unobservable | Null tokens; delivery never blocked |
+
+Billed and synthetic totals are **separate labelled columns** in CLI
+cost-rank, bridge `/cost-rank`, and the BL-213 cost-health sidecar (with
+pricing-table `as_of` on estimate lines). They are never merged silently.
+
+Token capture prefers existing GH-22 context-telemetry / transcript usage;
+no parallel unsupervised collector when that path suffices. Historical lines
+are not backfilled.
+
+### See Also
+
+- **BL-551** — LLM cost ledger foundation.
+- **BL-665 / GH-22** — context-telemetry producer and recorder.
+- How-to: `docs/how-to/BL-565-cost-ledger-synthetic-pricing-max-billed-roles.md`.
 
 ## Work-Note Mutation Cost Attribution (BL-1185)
 

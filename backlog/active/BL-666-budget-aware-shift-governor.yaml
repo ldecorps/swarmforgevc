@@ -60,3 +60,20 @@ description: |
   BL-619 (briefing warning — the governor is the acting counterpart of that
   read-only warning), BL-551 ledger (fed by the same walker), COST
   experiment log (verdicts are annotations).
+
+acceptance: specs/features/BL-666-budget-aware-shift-governor.feature
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_wiring:
+  - 'swarmforge/scripts/shift_applier_lib.bb::budgetShiftGovernorVerdict::shift boundary hosts governor'
+  - 'extension/src/tools/turnProfile.ts::bl664WalkerBurnMeter::burn meter reads transcript walker output'
+  - 'specs/pipeline/steps/index.js::bl666BudgetAwareShiftGovernorSteps::acceptance handler registered'
+
+qa_e2e_procedure: >
+  (1) Relay two anchors via operator verb — calibration labelled. (2) Reproduce
+  founding 71%/2.2d fixture — verdict not full, arithmetic announced. (3) Stale
+  anchor — degraded label. (4) Ladder picks SHORT then CHEAP then SKIP in fixture
+  order. (5) Credits path refuses without opt-in.
+
+notes:
+  - "[2026-08-27] specifier: acceptance feature armed after coder bounce — merge
+    main and re-read ticket before rebuild."
