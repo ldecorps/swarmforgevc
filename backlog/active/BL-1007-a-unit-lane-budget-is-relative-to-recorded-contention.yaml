@@ -119,3 +119,5 @@ notes: >
   No human_approval field: the operator settled the design question on
   2026-08-21 by choosing this shape, so nothing here is waiting on a
   decision and marking it pending would only block promotion.
+
+assigned_to: coder
