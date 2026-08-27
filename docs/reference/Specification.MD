@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1185: Work notes attribute
+`mutation_cost` for seat difficulty from the `Work BL-…` message when
+`task:` is absent — same `supersede_lib/task-name-from-content` path
+`difficulty-allows-claim?` now uses. `task:` stays git_handoff-only; notes
+remain `type: note`. Hard seats no longer `:defer-better-fit` / `NO_TASK`
+an ambulance patient solely because the Work note omitted `task:`.
+Acceptance:
+`specs/features/BL-1185-work-note-missing-task-header-defers-hard-seat.feature`.
+How-to: `docs/how-to/BL-1185-work-note-missing-task-header-defers-hard-seat.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1177: portable agent-memory payload —
 schema-versioned `portable-agent-memory-payload` with continuity summary,
 open parcel ids, optional handoff pack / tool-state pointers; pure
@@ -9119,3 +9129,33 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 - Auto-merge on green CI (human reviews all PRs)
 - Extension marketplace publication (internal use first)
 - Native Windows (tmux has no native Windows port; a Windows-hosted swarm runs via WSL2 instead — BL-091)
+
+## Work-Note Mutation Cost Attribution (BL-1185)
+
+BL-1001 filters multi-seat claims by ticket `mutation_cost` vs declared
+`--seat-tier`. Cost resolution used only the `task:` header. Coordinator
+**Work** route notes are `type: note` with `message: Work BL-…` and **must
+not** carry `task:` (`swarm_handoff` — task is git_handoff-only). Nil task
+→ nil cost → a hard seat `:defer-better-fit` when an easy sibling is idle
+→ `NO_TASK` while an ambulance patient sat in `new/`.
+
+### Fix
+
+`difficulty-allows-claim?` attributes Work notes the same way
+`supersede_lib/task-name-from-content` already does:
+
+| Input | Cost attribution |
+|-------|------------------|
+| `task:` present (git_handoff) | Use that task name → ticket `mutation_cost` |
+| `type: note`, message `Work BL-…`, no `task:` | Parse Work message → ticket `mutation_cost` |
+| Non-Work note, no `task:` | Cost remains unset (legacy defer path unchanged) |
+
+**Do not** stamp `task:` onto notes. Measurement of seat fit only — no
+change to BL-1001 tier ceilings.
+
+### See Also
+
+- **BL-1001** — difficulty-aware coder seat routing.
+- **BL-983** — multi-seat stage claim (idle-first).
+- How-to: `docs/how-to/BL-1185-work-note-missing-task-header-defers-hard-seat.md`.
+
