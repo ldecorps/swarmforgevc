@@ -124,3 +124,6 @@ notes: |
   - [2026-08-27] specifier: minted per coordinator's routing note. The
     coder's stash (.worktrees/coder stash@{0}) is the primary evidence for
     deliverable 1 — whoever picks this up reads it BEFORE it is dropped.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: hardender, blamed: coder, class: behavior, commit: dfd885f9f4, evidence: backlog/evidence/BL-1195-hardener-bounce-20260828.md }

@@ -10,6 +10,7 @@ const {
   computeDocsTree,
   translateDocsTree,
   filterDocsTree,
+  flattenMilestoneTickets,
 } = require('../out/docs/docsTree');
 const { createTranslationSession } = require('../out/i18n/translate');
 const { emptyTranslationCache } = require('../out/i18n/translationCache');
@@ -531,4 +532,18 @@ test('BL-592: cross-milestone epic duplicates under each touched milestone', () 
   const m9 = tree.milestones.find((m) => m.milestone === 'M9');
   assert.deepEqual(m8.epics[0].tickets.map((t) => t.id), ['BL-100']);
   assert.deepEqual(m9.epics[0].tickets.map((t) => t.id), ['BL-101']);
+});
+
+test('BL-592: flattenMilestoneTickets concatenates tickets across every epic under a milestone, in epic order', () => {
+  const items = [
+    item({ id: 'BL-100', milestone: 'M8', epic: 'alpha' }),
+    item({ id: 'BL-101', milestone: 'M8', epic: 'beta' }),
+    item({ id: 'BL-102', milestone: 'M8' }),
+  ];
+  const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
+  const flat = flattenMilestoneTickets(tree.milestones[0]);
+  // Epic nodes are sorted by epicKey ('(no epic)' < 'alpha' < 'beta'); a
+  // flatten that took only the first epic (rather than flatMap-ing all of
+  // them) would drop BL-100/BL-101 entirely.
+  assert.deepEqual(flat.map((t) => t.id), ['BL-102', 'BL-100', 'BL-101']);
 });

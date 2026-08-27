@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=de8af9661acd42a0b78c8cc54e13e58f819d8a71dd12a0fd0cfaaeb33f3627df
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T20:06:51.051887947Z","feature_name":"a shell test fixture writes to its own temp repository, never to whatever repository an ambient redirect names","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1200-shell-test-fixtures-must-not-inherit-ambient-git-dir-redirect.feature","background_hash":"a51415fe572d692f5c23aa8a71e8aa0508dfe947cbbfd356f61526a8890e4afc","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A suite run under the redirect leaves the live repository's ref state alone","scenario_hash":"d53184f9e15ddd2f1d102950f9b63941a3d66f3aeada46661959e1d772221954","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-27T20:06:51.051887947Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a shell test fixture writes to its own temp repository, never to whatever repository an ambient redirect names
 
   # BL-1200 (epic swarm-reliability). 2026-08-27 19:31 BST: the shell half of
