@@ -111,6 +111,17 @@ function captureAllTiles(ctx) {
   return byRole;
 }
 
+// BL-1189 architect bounce D1 (BL-971): ensureFixture's mkdtempSync dir was
+// never removed anywhere in this file. Idempotent - unsets ctx.root after
+// removal so a later ensureFixture call (should one ever run) creates a
+// genuinely fresh dir rather than silently reusing a removed path.
+function cleanupFixture(ctx) {
+  if (ctx.root) {
+    fs.rmSync(ctx.root, { recursive: true, force: true });
+    ctx.root = undefined;
+  }
+}
+
 function registerSteps(registry) {
   registry.defineScoped(/^the Live Screen is authenticated under a standing full pack$/, (ctx) => {
     ensureFixture(ctx);
@@ -167,14 +178,26 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^no other seat holds any of those tickets in_process$/, () => {}, FEATURE);
 
+  // Every scenario's true terminal fixture touch (every Then below reads
+  // only ctx.tiles/ctx.tilesFirst/ctx.tilesSecond from memory) - cleans up
+  // in a finally so it fires whether this step's own body throws or
+  // completes.
   registry.defineScoped(/^the Live Screen capture builds all role tile payloads$/, (ctx) => {
-    ctx.tiles = captureAllTiles(ctx);
+    try {
+      ctx.tiles = captureAllTiles(ctx);
+    } finally {
+      cleanupFixture(ctx);
+    }
   }, FEATURE);
 
   registry.defineScoped(/^the Live Screen capture runs twice within one capture TTL$/, (ctx) => {
-    ctx.tilesFirst = captureAllTiles(ctx);
-    ctx.tilesSecond = captureAllTiles(ctx);
-    ctx.tiles = ctx.tilesSecond;
+    try {
+      ctx.tilesFirst = captureAllTiles(ctx);
+      ctx.tilesSecond = captureAllTiles(ctx);
+      ctx.tiles = ctx.tilesSecond;
+    } finally {
+      cleanupFixture(ctx);
+    }
   }, FEATURE);
 
   registry.defineScoped(/^exactly one tile shows "([^"]+)" as its primary working ticket$/, (ctx, ticketId) => {

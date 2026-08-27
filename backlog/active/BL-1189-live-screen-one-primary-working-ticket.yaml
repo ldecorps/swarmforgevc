@@ -60,6 +60,7 @@ notes: |
   - [2026-08-27] ID BL-1189 — BL-1187 taken by done babysitterd slice.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: 9b86a7810, evidence: backlog/evidence/BL-1189-architect-bounce-20260827.md }
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: fbec368d15, evidence: backlog/evidence/BL-1189-architect-bounce-resend-20260827.md }
