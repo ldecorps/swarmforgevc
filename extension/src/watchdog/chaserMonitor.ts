@@ -5,6 +5,11 @@ import { scanInProcess } from '../swarm/inboxChaser';
 import { recoverDeadLetters, appendRecoveryLog } from '../swarm/handoffRecovery';
 import { parseRolesTsv } from '../swarm/swarmState';
 import type { LivenessState } from './liveness';
+import {
+  computeMailboxFingerprintForRole,
+  loadWakeDedupDecision,
+  recordWakeDedupInjection,
+} from '../swarm/wakeDedup';
 
 export interface ChaserMonitorConfig extends InboxChaserConfig {
   targetPath: string;
@@ -12,6 +17,26 @@ export interface ChaserMonitorConfig extends InboxChaserConfig {
   /** BL-122: bounded retries before a dead letter escalates to needs-human
    * instead of being redelivered forever. */
   maxRecoveryAttempts: number;
+}
+
+/** BL-1191: gate extension-path wakes through the shared dedup sidecar. */
+export function withHandoffWakeDedupCallbacks(
+  targetPath: string,
+  callbacks: ChaserCallbacks
+): ChaserCallbacks {
+  return {
+    ...callbacks,
+    sendWakeUp: (role: string): void => {
+      const nowMs = Date.now();
+      const fingerprint = computeMailboxFingerprintForRole(targetPath, role);
+      const dedup = loadWakeDedupDecision(targetPath, role, fingerprint, nowMs);
+      if (dedup.action === 'suppress') {
+        return;
+      }
+      callbacks.sendWakeUp(role);
+      recordWakeDedupInjection(targetPath, role, dedup.fingerprint, nowMs);
+    },
+  };
 }
 
 export interface ChaserCallbacks {
@@ -88,7 +113,7 @@ export function syncStuckEscalations(
 // runtime behavior is completely unchanged.
 export function startChaserMonitor<H>(
   config: ChaserMonitorConfig,
-  callbacks: ChaserCallbacks,
+  callbacksIn: ChaserCallbacks,
   scheduleTick: (fn: () => void, ms: number) => H
 ): H | null {
   const swarmforgeDir = path.join(config.targetPath, '.swarmforge');
@@ -97,6 +122,7 @@ export function startChaserMonitor<H>(
   }
 
   const roleInboxes: RoleInbox[] = buildRoleInboxes(config.targetPath, config.rolesList);
+  const callbacks = withHandoffWakeDedupCallbacks(config.targetPath, callbacksIn);
 
   // BL-122: the recovery owner is this SAME extension-host timer, not any
   // one pipeline agent — an agent process exiting can tear the swarm down

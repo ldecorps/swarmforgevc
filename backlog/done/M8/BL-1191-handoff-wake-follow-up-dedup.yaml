@@ -27,7 +27,7 @@ invariants:
 
 required_wiring:
   - 'swarmforge/scripts/handoffd.bb::wake-dedup-gate::daemon notify path consults last fingerprint before inject'
-  - 'extension/src/swarm/verifiedInject.ts::sendHandoffWakeVerified::extension path shares dedup sidecar'
+  - 'extension/src/watchdog/chaserMonitor.ts::withHandoffWakeDedupCallbacks::extension chaser path shares dedup sidecar'
   - 'specs/pipeline/steps/index.js::bl1191HandoffWakeFollowUpDedupSteps::acceptance handler registered'
 
 description: |

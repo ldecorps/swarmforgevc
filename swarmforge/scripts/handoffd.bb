@@ -48,6 +48,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_outage_evidence_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "outage_failover_cli.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_attribution_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_dedup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 
 (def poll-ms 1000)
@@ -426,6 +427,8 @@
       :target-role role
       :live-role (handoff-lib/resident-live-role socket resident)})))
 
+(declare handoff-wake-with-dedup!)
+
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
    the inbox file already existed (duplicate delivery), the recipient pane
@@ -460,7 +463,9 @@
 
       :else
       (do (swap! notified-sessions conj wake-sess)
-          (notify! socket session agent)))))
+          (when-let [ri (get roles role)]
+            (handoff-wake-with-dedup! ri wake-attribution-lib/sweep-inbox-item :new
+                                      socket session agent notify!))))))
 
 (defn move-with-collision
   "Moves source into target-dir, uniquifying on a name collision. Returns
@@ -617,7 +622,8 @@
                        (not (recipient-pane-busy? socket roles role)))]
       (log! "startup-notify" role)
       (try
-        (notify! socket (:session role-info) (:agent role-info))
+        (handoff-wake-with-dedup! role-info wake-attribution-lib/sweep-inbox-item :new
+                                    socket (:session role-info) (:agent role-info) notify!)
         (catch Exception e
           (log! "startup-notify-error" role (.getMessage e)))))))
 
@@ -992,6 +998,26 @@
       (spit (str file) (str line "\n") :append true))
     (catch Exception e
       (log! "wake-attribution-error" (:role role-info) (.getMessage e)))))
+
+(defn handoff-wake-with-dedup!
+  "BL-1191: gate HANDOFF_WAKE_MESSAGE injects on mailbox fingerprint + cooldown.
+   Records BL-870 attribution for every inject and skip. Returns true when a
+   wake was delivered."
+  [role-info sweep mailbox-dir-key socket session agent notify-fn!]
+  (let [now-ms (System/currentTimeMillis)
+        dedup (wake-dedup-lib/load-decision (str state-dir) role-info now-ms)]
+    (if (= (:action dedup) :suppress)
+      (do (log! "wake-dedup-skip" (:role role-info) (:skip-reason dedup))
+          (record-wake-attribution! role-info sweep mailbox-dir-key
+                                    wake-attribution-lib/outcome-skipped
+                                    :skip-reason (:skip-reason dedup))
+          false)
+      (do (notify-fn! socket session agent)
+          (wake-dedup-lib/record-injection! (str state-dir) (:role role-info)
+                                              (:fingerprint dedup) now-ms)
+          (record-wake-attribution! role-info sweep mailbox-dir-key
+                                    wake-attribution-lib/outcome-landed)
+          true))))
 
 ;; ── BL-349: stuck-escalation email - the daemon's missing leg ───────────
 ;; write-escalation! (chase_sweep_lib.bb) only ever wrote a file; the only
@@ -1550,10 +1576,8 @@
                 performed)
       :wake (do (when (:resident-budget? plan)
                   (reset! resident-wake-suppressed? true))
-                (notify-fn! socket (:session ri) (:agent ri))
-                (record-wake-attribution! ri sweep mailbox-dir-key
-                                           wake-attribution-lib/outcome-landed)
-                true))))
+                (handoff-wake-with-dedup! ri sweep mailbox-dir-key socket
+                                          (:session ri) (:agent ri) notify-fn!)))))
 
 (defn- head-commit-10
   "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
