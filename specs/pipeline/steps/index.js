@@ -51,7 +51,6 @@ const DOMAINS = [
   require('./bl1143ColdSwapDayShiftOllamaQwenSteps'),
   require('./bl595HumanLoopReliabilityTrendSteps'),
   require('./bl596MonoRouterRotationDynamicsSteps'),
-  require('./bl597TrendSelfHealEventsSteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),
@@ -338,7 +337,6 @@ const DOMAINS = [
   require('./bl531PreQaDurabilityWiringGateSteps'),
   require('./bl972PreQaGateEvidenceNotSubjectSteps'),
   require('./bl606RequiredStagesRoutingSteps'),
-  require('./bl605GlobalTokenConsumptionSteps'),
   require('./bl623RoutingSkipTrailSteps'),
   require('./bl748RoutingSkipRecordingSteps'),
   require('./bl754StageSkipReasonsSteps'),
@@ -384,6 +382,7 @@ const DOMAINS = [
   require('./bl1000FreshnessPinnedFixtureSteps'),
   require('./bl1001DifficultyAwareSeatRoutingSteps'),
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl1007ContentionBudgetSteps'),
   require('./bl1008BoundedWatchDeadlineSteps'),
   require('./bl1009UnifiedPipelineGridAcrossSwarmsSteps'),
@@ -425,6 +424,7 @@ const DOMAINS = [
   require('./bl611BabysitterdLifecycleSteps'),
   require('./bl792UnitSuiteGreenAndProfiledSteps'),
   require('./bl787BubbleNamedTunnelFixedUrlSteps'),
+  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
   require('./bl795MonoRouterStarvationHandFixSteps'),
   require('./bl769AndroidPureLogicJvmUnitSeamSteps'),
   require('./bl828BubbleCollapsedGestureModelSteps'),
@@ -773,7 +773,8 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl602TrendHandoffLatencySteps'),
-  require('./bl683HandoffDepthWarningCountsNonTicketsSteps')
+  require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
+  require('./bl1166OperatorDocsSteps')
 ];
 
 function registerSteps(registry) {
