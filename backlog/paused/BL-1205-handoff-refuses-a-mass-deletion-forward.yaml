@@ -1,0 +1,160 @@
+id: BL-1205
+title: "A git_handoff whose merge would mass-delete the recipient's tracked files is sent without complaint: no hop but the QA edge is gated, and that gate needs a ticket id"
+milestone: M8
+type: defect
+severity: critical
+# critical: data-loss / swarm-down class, and live right now. On 2026-08-27
+# refs/heads/swarmforge-architect stood at 79 tracked paths against main's
+# 9,777. Simulating the very next hop the branch was queued to make
+# (`git merge-tree --write-tree swarmforge-hardender swarmforge-architect`)
+# produced a 93-path tree against the hardener's 9,773: one ordinary forward
+# deletes 9,680 tracked files with no conflict and no marker, and is then four
+# ordinary hops from landing that deletion on main. Not "critical" for the
+# corruption itself (that is BL-1196/BL-1200's lane) but for the total absence
+# of anything that stops it spreading once it exists.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1205-handoff-refuses-a-mass-deletion-forward.feature
+human_approval: pending
+approval_context: >
+  This is the containment half of a defect whose cause and detection halves
+  are already ticketed and paused: BL-1196 and BL-1200 stop test fixtures
+  writing into the live repository, BL-1202 makes the shared-repo canary
+  actually report such a write. All three aim at the moment of corruption.
+  None of them stops a branch that is ALREADY corrupt from spreading its
+  deletions down the pipeline, and BL-1124 shipped an invariant that names
+  role branches while this recurred on one anyway.
+
+  What is worth the human's eye is the fail-open posture in scenario 04. The
+  four gates already in swarm_handoff.bb warn and let the send through when
+  they cannot read what they need, blocking only on a positive finding, and
+  this ticket follows them rather than inventing a second posture in the same
+  file. The opposite choice is defensible for a guard against catastrophic
+  loss, but a mass-deletion gate that fails closed can brick every hop in the
+  swarm on an unrelated git hiccup. If fail-closed is preferred, say so and
+  scenario 04 inverts.
+
+  Two names are fixed by this ticket rather than left to the implementer -
+  the lib file tree_collapse_guard_lib.bb and its refusal-message entry point.
+  That is only so required_wiring can anchor on literals that will exist
+  (BL-874); the mechanism behind them is the implementer's call.
+
+  The threshold is deliberately left as direction, not mandate. A default is
+  suggested below; the right number is a judgement the implementer is better
+  placed to make once the check is written.
+invariants:
+  - "Every git_handoff is evaluated by the guard, whatever role it is addressed to - no hop is exempt, and no ticket id is required for a finding."
+  - "The guard only ever refuses a send; it never alters, rewrites, or reverts the commit it is refusing."
+  - "A guard that cannot read what it needs warns and lets the send through - only a positive finding blocks."
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::tree_collapse_guard_lib.bb::the guard lib must be loaded by the sender-side handoff CLI, not merely written"
+  - "swarmforge/scripts/swarm_handoff.bb::tree-collapse-guard-lib/refusal-message::the finding must reach the refusal chain alongside the four gates already there"
+  - "specs/pipeline/steps/index.js::bl1205HandoffRefusesAMassDeletionForwardSteps::acceptance handler registered"
+description: |
+  ## What
+
+  `swarm_handoff.bb` must refuse a `git_handoff` when merging the cited commit
+  into the recipient role's branch would remove a mass of that branch's
+  tracked paths, and the refusal must say how many.
+
+  ## Why
+
+  On 2026-08-27 `refs/heads/swarmforge-architect` was collapsed to 79 tracked
+  paths by 200 test-fixture commits — subjects `init`, `seed`, `seed fixture`,
+  `fixture: initial`, `promote`, `close`, every one authored `t <t@t>` at the
+  identical second `19:56:03 +0100`, each committing a 1-3 path tree over a
+  real one. Relative to the true tree each is a ~9,700-file deletion, and
+  every later merge from cleaner honoured those deletions the ordinary way:
+  one side deleted, the other untouched, no conflict, no marker. The branch
+  looked like it was healing while merges were simply re-applying the
+  deletion each time.
+
+  The architect caught it only because a ticket it was reviewing (BL-592) had
+  files missing across three delivery rounds, and it correctly declined to
+  bounce a clean coder commit. Nothing in the machinery told it. By then the
+  branch had already merged the coordinator's BL-1200 parcel and was one
+  ordinary forward away from handing the hardener a 93-path tree in place of
+  its 9,773 — then four ordinary hops from landing that on `main`.
+
+  `swarm_handoff.bb` already refuses sends for four separate reasons
+  (`ticket-close-guard-lib`, `duplicate-chain-guard-lib`,
+  `task-commit-coherence-gate-lib`, `review-forward-evidence-gate-lib`) and
+  consults `pre-qa-gate-lib` for a fifth. None of them sees this:
+  `pre_qa_gate_lib/gate-armed?` returns true only when the handoff's `to`
+  includes QA, and the findings it gathers are keyed to a ticket id, so a
+  deletion tied to no ticket crosses the architect -> hardener hop — which
+  has no gate at all — untouched.
+
+  This is the sender-side backstop for the failure mode the engineering
+  article already names twice (BL-571 / BL-954 / BL-958: a merge silently
+  reverting landed work the sender never had). Those incidents produced the
+  human habit of diffing a merge against both parents. This ticket is the
+  machine that does not forget.
+
+  ## How (direction, not mandate)
+
+  The most direct signal is the one that was used to confirm the incident:
+  simulate the merge the recipient is about to perform rather than infer
+  intent from the diff.
+
+      git merge-tree --write-tree <recipient-branch> <cited-commit>
+
+  then compare the path count of the resulting tree against the recipient
+  branch's own. That answers "what will the receiver's tree look like after
+  this merge" directly, with no heuristic about what the sender meant.
+
+  A suggested starting threshold: refuse when the simulated merge removes
+  more than 5% of the recipient branch's tracked paths, or more than 100
+  paths, whichever is the smaller number of paths. The exact figures are the
+  implementer's call — what matters is that today's 9,680 is refused and an
+  ordinary refactor that deletes a directory is not.
+
+  Recipient branches come from the same `roles.tsv` the existing gates
+  already read, so an unreadable roles.tsv or a missing branch is the
+  infrastructure case in scenario 04: warn, do not block.
+
+  ## Out of scope
+
+  Repairing an already-corrupt branch. `swarmforge-architect` needs re-cutting
+  from a known-good ref by the coordinator or a human, and that cannot ride
+  this pipeline (a parcel repairing the architect's branch would have to
+  travel through the architect). Tracked in the evidence file below, not here.
+
+  Stopping fixtures writing to live refs in the first place — BL-1196 and
+  BL-1200. Reporting it when they do — BL-1202. This ticket assumes all three
+  may fail and contains the damage anyway.
+
+notes: >
+  Minted from the architect's priority-00 note "BL-592: impl missing 3x on
+  architect branch, not coder fault - see evidence file". The architect's own
+  two evidence files (BL-592-architect-severe-content-loss-20260827.md and
+  BL-592-architect-worktree-anomaly-20260827.md) are accurate on every point
+  they assert; the specifier's confirmation, the root cause, and the
+  propagation simulation are in
+  backlog/evidence/swarmforge-architect-branch-tree-collapse-20260827.md.
+
+  BL-592 itself is neither a coder defect nor a spec defect. Its
+  implementation commit e5cf2a3af is intact and complete in git. It is
+  blocked purely on branch health and should be re-walked once the branch is
+  re-cut - no re-spec, no rebuild, no bounce.
+
+  IR-DRY: two medium-confidence near-duplicate findings reviewed and left
+  as-is. Both are deliberate contrasts, not accidental drift - "far more
+  than the threshold" against "fewer than the threshold", and the outline's
+  parameterised recipient against the plain send. Neither Given can move to
+  Background without changing what a scenario asserts.
+
+qa_e2e_procedure: >
+  On a scratch clone, cut a branch from main and add a commit that deletes
+  most of the tree (simulating the fixture collapse). Write a git_handoff
+  draft citing that commit, addressed to a role whose branch is intact, and
+  run swarm_handoff.sh: it must refuse and name the path count. Confirm
+  nothing was delivered to the recipient's inbox/new/. Then repeat with a
+  commit deleting a single directory: it must send. Finally, re-run the first
+  case addressed to QA and to the hardener in turn - both must refuse,
+  proving the guard is not the QA-edge gate.

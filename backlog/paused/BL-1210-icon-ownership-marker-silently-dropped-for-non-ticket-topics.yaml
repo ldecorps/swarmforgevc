@@ -1,0 +1,225 @@
+id: BL-1210
+title: "BL-695's tracked-record boundary silently disabled the icon ownership marker for epic, standing and role topics: recordSwarmIconId returns having written nothing, syncTopicIcon reports 'updated' anyway, and 5 tests have been red since 2026-08-25"
+milestone: M8
+type: defect
+severity: medium
+# medium: a two-day-old regression with 5 red tests and an inert mechanism,
+# but no live icon behaviour broken today - every epic/standing/role caller
+# passes isNewTopic=true, which bypasses the ownership check the marker feeds
+# (topicIconSync.ts:60), so icons are still set correctly. What is wrong is
+# that the marker is silently absent for 3 of the 4 topic kinds, every such
+# sync writes a fail-closed line to stderr, and the mechanism is now a trap
+# for any future caller that passes isNewTopic=false.
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1210-icon-ownership-marker-survives-the-tracked-record-boundary.feature
+
+invariants:
+  - "A durable write never returns normally having written nothing: when a store refuses a record, the refusal reaches the CALLER as a value it must handle - a line on stderr is a diagnostic, never the signal, and no caller may report success on a write that did not happen."
+  - "Which store an icon ownership marker lands in may depend on the id's kind; WHETHER it is recorded at all may not. Every id syncTopicIcon accepts has a store, so the marker's availability is uniform across topic kinds even though its location is not."
+
+description: >
+  Severity rationale is in the comment above the field. Root-caused
+  and reproduced at mint.
+
+  What happens. `recordSwarmIconId`
+  (extension/src/concierge/blTopicStore.ts:263) does two jobs that
+  BL-695 treated as one. It serialises a ticket's topic record into
+  the git-tracked `backlog/topics/` directory, and it records the
+  icon OWNERSHIP MARKER - the thing that stops the swarm touching an
+  icon it did not set. The first is legitimately ticket-only. The
+  second was deliberately reused generically: topicIcon.ts:114 and
+  :158 both describe it as "blTopicStore's readSwarmIconId/
+  recordSwarmIconId, reused generically", and epic, standing and role
+  topics all rely on it.
+
+  BL-695 (`35daa5054`, 2026-08-25, "supervisor threads are not
+  front-desk topics") introduced `classifyTopicThread`
+  (extension/src/concierge/topicThreadKind.ts) with
+  `TICKET_ID = /^(?:BL|GH)-\d+$/i` and `SUPERVISOR_ID = /^SUP-\d+$/i`,
+  everything else falling to `'unbound'`. `recordSwarmIconId` now
+  branches: supervisor ids go to their own untracked store
+  (`.swarmforge/supervisor-topic-icons.json`); a non-ticket id calls
+  `maybeReportUnbound` and RETURNS, having written nothing.
+
+  Epic ids (`role-benchmarking`), standing topic ids and role ids
+  (`coder`) are none of those shapes. They classify `'unbound'`, so
+  their markers are silently dropped. Supervisor threads got an
+  escape hatch; these three kinds got no store at all.
+
+  Verified as a regression, not an original gap: at `35daa5054^` the
+  same function wrote unconditionally - `readRecord`, set
+  `swarmIconId`, `atomicWrite` - with no classification step. BL-449
+  (2026-07-16) built the epic backfill against that behaviour and its
+  tests were green for five weeks.
+
+  The failure is silent in both directions. `recordSwarmIconId`
+  returns `void`, so the drop is invisible to its caller;
+  `syncTopicIcon` (topicIconSync.ts:74-75) calls it and then returns
+  `'updated'` unconditionally. The caller is told the icon was set
+  AND owned when only the first half happened. That is why five tests
+  assert `'updated'` successfully on one line and then read the
+  marker back as `undefined` on the next.
+
+  Measured blast radius - exactly 5 failures in 2 files, one root
+  cause. backfillEpicTopicIconsCli.test.js: 3 (finalised icon for the
+  three seeded epics; overrides an existing ownership marker;
+  distinct pool icons across multiple epics).
+  backfillStandingTopicIconsCli.test.js: 2 (Operator bell + support
+  box office; overrides an existing marker). Every failure is the
+  same shape, `undefined` where an icon id was expected.
+  backfillTopicIconsCli.test.js (the BL-### path) passes, and
+  topicThreadKind's own tests pass - BL-695 does exactly what it says
+  it does. This is not a defect in the classifier.
+
+  What is NOT broken, stated so nobody widens the fix: live icon
+  setting still works. Every epic, standing and role call site passes
+  `isNewTopic = true` (conciergeTick.ts:773, :801, :977), and the
+  ownership check at topicIconSync.ts:60 only fires when
+  `!isNewTopic`. So no icon is currently mis-set or skipped. The harm
+  today is the five red tests, a fail-closed stderr line on every
+  such sync, and a mechanism that is now inert for three of the four
+  topic kinds - a trap for the first caller that ever passes
+  `isNewTopic = false` for one of them, which would get
+  `'skipped-not-owned'` forever.
+
+  Fix wanted, in direction only. BL-695's boundary is correct and
+  stays: tracked records in `backlog/topics/` remain ticket-only. The
+  marker, which is not a tracked record, needs a store for the other
+  kinds - the supervisor branch already shows the shape, an untracked
+  file under `.swarmforge/`, and whether the other three kinds share
+  one store or take one each is the coder's call. Separately, and
+  independently of where the marker lands, a write that records
+  nothing must stop being reportable as success (invariant 1) - that
+  is the half that would have made this loud on day one instead of
+  five weeks later.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - BL-695's boundary is CORRECT and is not being reverted. Tracked
+    topic records under backlog/topics/ stay ticket-only, fail
+    closed. Do not widen TICKET_ID, do not add epic/standing/role
+    shapes to it, and do not make classifyTopicThread return
+    'ticket' for anything that is not one. Scenario 01's
+    "is not created" rows exist to pin this.
+  - Do not change which icons are chosen, the pools they come from,
+    or resolveEpicIcon's distinctness logic. This ticket is about
+    whether the marker is recorded, never about its value.
+  - Do not change any call site's isNewTopic argument. The three
+    passing `true` are doing so deliberately (conciergeTick.ts:746-754
+    explains why for standing topics); flipping one to force the
+    ownership check would change live behaviour under cover of a
+    test fix.
+  - Do not fix this by deleting or relaxing the five assertions. They
+    are correct: they assert the marker the design intends. If the
+    marker genuinely should not exist for these kinds, that is a
+    different ticket with a different argument, and it would have to
+    explain what replaces topicIconSync.ts:60's ownership check for
+    them.
+  - Invariant 1's caller-visible refusal must not become a thrown
+    exception on the live tick path - the icon sync is best-effort by
+    design (conciergeTick.ts:958). A returned outcome the caller
+    handles, not a crash.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline: from extension/, `npx vitest run
+     test/backfillEpicTopicIconsCli.test.js
+     test/backfillStandingTopicIconsCli.test.js` - expect exactly 5
+     failures, all `undefined` where an icon id is expected. Record
+     the count; the fix is credited only against this number.
+  2. Confirm the root cause is the one claimed, not a coincidence:
+     `git show 35daa5054^:extension/src/concierge/blTopicStore.ts |
+     grep -A 12 "export function recordSwarmIconId"` shows the
+     unconditional write; the current file shows the classify
+     branch. Both belong in the evidence file.
+  3. Scenario 01, all four rows: for a ticket id, an epic id, a
+     standing topic id and a role id, set the icon and read the
+     marker back - all four return what was set. Then assert the
+     tracked-record half per row: `backlog/topics/<id>.json` exists
+     for the ticket row and is ABSENT for the other three. The
+     absence assertions are the BL-695 regression guard; run them
+     red-first by pointing them at the pre-fix build.
+  4. Scenario 02: drive syncTopicIcon with an id no store accepts and
+     confirm it does NOT return 'updated', and that the caller can
+     tell from the returned value alone - not from stderr. Confirm it
+     does not throw (constraint 5).
+  5. Regression: the full set of files touching the marker green -
+     backfillTopicIconsCli, blTopicStore, conciergeTick,
+     topicIconSync, topicThreadKind and topicThreadKind.property.
+     217 tests passed alongside the 5 failures at mint; that number
+     must not drop.
+  6. Confirm no tracked-record leak: after the full run, `git status
+     --porcelain backlog/topics/` is clean - no epic, standing or
+     role id acquired a tracked record as a side effect of the fix.
+
+notes: >
+  Source: hardender note handoff
+  00_20260827T203802Z_000910_from_hardender_to_specifier_coordinator,
+  verbatim: "4th unrelated red: backfillEpicTopicIcons
+  finalised-icon, unticketed, unchased." Sent to specifier +
+  coordinator at priority 00.
+
+  Specifier verification at mint: ran the named file (3 failures, not
+  the 1 the note implies); traced readSwarmIconId ->
+  classifyTopicThread -> the unbound early return; read
+  syncTopicIcon:74-75 and established that it reports 'updated'
+  after a dropped write; confirmed via `git show 35daa5054^` that
+  recordSwarmIconId wrote unconditionally before BL-695, making this
+  a regression dated 2026-08-25 rather than a never-worked gap;
+  swept every test file touching readSwarmIconId and measured the
+  true blast radius at 5 failures across 2 files with 217 passing;
+  confirmed the classifier's own tests and the BL-### backfill are
+  green; and checked all three non-ticket call sites in
+  conciergeTick.ts to establish that isNewTopic=true means no LIVE
+  icon behaviour is currently broken. That last check corrected an
+  earlier reading of mine that the live tick could never re-icon an
+  epic - it can, because it never takes the !isNewTopic branch.
+
+  The hardener's framing was "4th unrelated red ... unticketed,
+  unchased". The specific red is this ticket. The pattern it names is
+  not, and is not mine to ticket: memory records BL-1063 reported 5
+  times and BL-782 reported 3 times, both already ticketed and
+  approved, both still unpromoted. Those need a promotion slot, not
+  another spec. Raised to the coordinator separately rather than
+  minted here, so this ticket stays one slice.
+
+  Related, none modified here: BL-695 (the boundary, working as
+  specified - this is fallout, not a defect in it), BL-449 (built the
+  epic backfill against the pre-BL-695 write), BL-342/BL-418 (the
+  standing and ticket backfills sharing the same marker).
+
+  Orthogonality for the coordinator: touches
+  extension/src/concierge/blTopicStore.ts,
+  extension/src/concierge/topicThreadKind.ts,
+  extension/src/concierge/topicIconSync.ts and the two red test
+  files. Disjoint from BL-1207, BL-1208 and BL-1209. Safe to
+  co-activate with all three.
+
+approval_context: >
+  One call to say the word on, and one boundary I want confirmed.
+
+  The call: severity medium. Five tests have been red for two days
+  and a mechanism is inert for three of four topic kinds - but no
+  live icon behaviour is currently wrong, because every affected
+  call site passes isNewTopic=true and never reaches the ownership
+  check. I judged that "real but contained". If you read a
+  two-day-old silent regression in the concierge as worse than that,
+  say high and it takes the expedite lane.
+
+  The boundary I want confirmed: I have written this as "BL-695 is
+  right, the marker needs its own home". The opposite reading is
+  available - that the ownership marker should simply not exist for
+  epic, standing and role topics, and the five assertions are stale
+  and should be retired. I did not take it, because topicIconSync's
+  own ownership check still consults the marker for any caller
+  passing isNewTopic=false, so retiring it would leave that check
+  permanently unsatisfiable for three topic kinds rather than merely
+  unused. If you disagree, this becomes a retirement ticket instead
+  and I will rewrite it that way rather than patch around it.

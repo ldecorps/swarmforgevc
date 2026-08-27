@@ -1,0 +1,216 @@
+id: BL-1209
+title: "assessPilotMkdtempConvention requires its own detector from <repoRoot>/extension/test/helpers/, so it throws MODULE_NOT_FOUND against any root but this one - eagerly, even with nothing in scope - and its only real test must aim at the live repo and write into the collected test tree"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and contained, with no production misfire today. The CLI
+# resolves repoRoot from process.cwd(), so in every live invocation it IS the
+# tool repo and the detector is always found. What keeps it above low: the
+# only test that drives the real function has to point at the live repository
+# root and write a scratch file into the collected test tree to work at all,
+# and that file matches the suite's own discovery glob (BL-971's class).
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 35
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1209-mkdtemp-check-resolves-its-detector-from-the-tool-not-the-subject.feature
+
+invariants:
+  - "A check resolves tool-owned artifacts from the TOOL's own location, never from the subject root it was handed: the subject root is used only to read the subject's files, so the same check works against any root."
+  - "A check with nothing in its scope does no work and cannot fail: when no touched path is one the check scans, it returns a successful empty result without loading a detector or touching anything else."
+
+description: >
+  Severity rationale is in the comment above the field. Reproduced at
+  mint, read-only, against a scratch fixture root.
+
+  What happens. `assessPilotMkdtempConvention(repoRoot,
+  touchedRelativePaths)`
+  (extension/src/tools/pilotMkdtempConventionCheck.ts) is handed a
+  root whose touched files it should scan. It uses that root for two
+  unrelated jobs. Reading the subject's files is its actual job.
+  Loading the raw-mkdtemp detector is not: `loadRawMkdtempGuard` does
+  `require(path.join(repoRoot, 'extension', 'test', 'helpers',
+  'rawMkdtempGuard'))`, and that detector is a SwarmForge-VC artifact
+  that exists in exactly one repository - this one.
+
+  So the check runs only against the root that happens to contain the
+  tool. Against anything else it raises MODULE_NOT_FOUND. Reproduced
+  against a scratch root:
+
+    Cannot find module '<fixture>/extension/test/helpers/rawMkdtempGuard'
+
+  And it fails eagerly. `loadRawMkdtempGuard` is called on the first
+  line of the function, before any path is examined, so a call whose
+  touched paths contain nothing the check would ever scan - all
+  src/, all docs, all backlog - throws just as hard as one with real
+  work to do. Both cases were measured: touched `['src/foo.ts',
+  'README.md']` throws identically to touched
+  `['extension/test/a.test.js']`. There is no try/catch anywhere on
+  the path (`checkMkdtempConvention` in
+  extension/src/tools/commitClaimGitReader.ts returns `{checked:
+  false}` only when `resolveTouchedFiles` yields nothing, and calls
+  straight through otherwise), so the throw propagates out of the
+  gate.
+
+  Why nothing has caught it. In production `pilot-acceptance-gate.ts`
+  sets `repoRoot = resolveRepoRoot(process.cwd())`, which is always
+  the tool repo, so the detector is always found - the defect is
+  latent, not live. Every gate-level test stubs
+  `checkMkdtempConvention` with a canned `{checked: true,
+  testFilesScanned: 0, violations: [], scannedPaths: []}`, so the
+  real function is never exercised through the gate at all.
+
+  The cost lands on the one test that does drive it.
+  extension/test/pilotMkdtempConventionCheck.test.js:20 sets `root =
+  path.join(__dirname, '..', '..')` - the LIVE repository root -
+  and writes a scratch file `extension/test/bl743-assess-<pid>.test.js`
+  into the live test tree to give the scan something to find, deleting
+  it in a `finally`. It has to: a fixture root cannot work, because
+  the detector would not be there. That scratch file matches the
+  suite's own discovery glob (vitest.config.mjs keeps Vitest's DEFAULT
+  include and excludes only fixtures, out/, and property tests), and
+  it contains no test at all - so a run killed before the `finally`
+  leaves a file behind that the next run collects as a red with
+  nothing in it. That is exactly the BL-971 pattern: a generated
+  fixture matching the suite's own glob must be swept by prefix
+  BEFORE the run, since nothing traps SIGKILL.
+
+  Fix wanted, in direction only. Resolve the detector from the tool,
+  not from the subject. Two shapes worth weighing, coder's call: the
+  smaller one anchors the require to the tool module's own location
+  rather than `repoRoot`; the larger one moves the pure detector
+  (`RAW_MKDTEMP_PATTERN`, `findRawMkdtempLines`) into `src/` where
+  the tool's own logic lives and has
+  extension/test/helpers/rawMkdtempGuard.js re-export it, which
+  serves the file's stated intent of using "the same detector as
+  tmpDirMigrationGuard.test.js" by making it literally one detector
+  rather than one file two consumers reach for by path. Either way
+  `repoRoot` keeps only its real job, the eager load moves behind the
+  in-scope check (invariant 2), and the test can then use an ordinary
+  fixture root and stop writing into the live tree.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - The detector's SEMANTICS do not change. `RAW_MKDTEMP_PATTERN`,
+    `findRawMkdtempLines`, the `fixtures/` skip and the
+    `SELF_EXEMPT_RELATIVE_PATHS` exemptions are all correct and stay
+    behaviourally identical - tmpDirMigrationGuard's own tests must
+    stay green untouched. This ticket moves where the detector is
+    resolved from, not what it detects.
+  - Do NOT solve it by copying the detector into a second file. Two
+    copies of a pattern across a boundary no import bridges is the
+    drift trap the engineering rules call out; if the logic moves, the
+    old location re-exports rather than duplicates.
+  - Do NOT change `repoRoot = resolveRepoRoot(process.cwd())` in
+    pilot-acceptance-gate.ts. That resolution is correct for the
+    gate's own purposes and is not what this defect is about.
+  - Do NOT widen this into making the whole pilot gate run against
+    arbitrary target repos. That is a much larger question about what
+    the gate means outside this repo, and it is not being asked here.
+    The scope is one check resolving one artifact correctly.
+  - The gate-level stubs stay stubs. Making every pilot gate test
+    drive the real filesystem check is a different and worse design;
+    scenario 01 gets its coverage from the check's own tests.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline: confirm the throw still reproduces and that it
+     happens even with nothing to scan. From extension/,
+     `node -e "const {assessPilotMkdtempConvention}=require('./out/tools/pilotMkdtempConventionCheck');
+     const fs=require('fs'),os=require('os'),p=require('path');
+     const r=fs.mkdtempSync(p.join(os.tmpdir(),'sfvc-pilotroot-'));
+     try{assessPilotMkdtempConvention(r,['src/foo.ts'])}catch(e){console.log(e.code)}"`.
+     Expect MODULE_NOT_FOUND. Repeat with
+     `['extension/test/a.test.js']` and record that both throw.
+  2. Scenario 01 post-fix, both rows: build a fixture root containing
+     NO detector, put a touched test file in it with a raw temp call,
+     and confirm the violation is reported with file and line; then
+     the same with a file using the shared helper, and confirm it is
+     scanned and reported clean. The fixture root must not be the
+     live repo - if the test still needs the live root, the fix is
+     not done.
+  3. Scenario 02: call with touched paths that are all out of scope
+     (src/, docs/, backlog/) against a detector-less fixture root -
+     a successful empty result, no throw, zero files scanned.
+     Non-vacuity: confirm the detector is genuinely not loaded on
+     this path rather than merely not failing.
+  4. Scenario 03: snapshot `extension/test/` before and after running
+     the check's own test suite; the file set must be identical, and
+     in particular no `bl743-assess-*` file may remain. Also confirm
+     the suite no longer writes into that tree at all during the run,
+     not merely that it cleans up afterwards.
+  5. Regression: run tmpDirMigrationGuard.test.js and
+     tmpDirMigrationGuard.property.test.js green, plus
+     pilotAcceptanceGate.test.js and pilotMkdtempConventionCheck.test.js.
+     The detector's own behaviour must be provably unchanged.
+  6. Confirm the live gate still works end to end: run the pilot
+     acceptance gate as normally invoked from the repo root and
+     confirm the mkdtemp convention check still reports into the
+     receipt (`mkdtempConvention.testFilesScanned`) as before.
+
+notes: >
+  Source: hardender note handoff
+  00_20260827T203758Z_000909_from_hardender_to_specifier_coordinator,
+  verbatim: "pilotAcceptanceGateCli resolves rawMkdtempGuard vs
+  fixture root, not tool root." Sent to specifier + coordinator at
+  priority 00.
+
+  Specifier verification at mint, independent of the note: read
+  pilotMkdtempConventionCheck.ts, commitClaimGitReader.ts's
+  checkMkdtempConvention, and the deps wiring at
+  pilot-acceptance-gate.ts:194; reproduced MODULE_NOT_FOUND against a
+  scratch root for BOTH a with-work and a nothing-in-scope touched
+  set, which is what established the eager-load half; confirmed no
+  try/catch on the path; confirmed every gate-level test stubs the
+  check (bl733ProducerCrosscheck, pilotScopedCrapEvidence,
+  shellEntryPointDrive, pilotAcceptanceGate x3) so the real function
+  is never driven through the gate; confirmed the single real test
+  aims at the live repo root and writes into extension/test/; and
+  confirmed vitest.config.mjs keeps the DEFAULT include, so that
+  scratch file is collectible. The hardener's report is correct, and
+  the eager-load and live-tree-write consequences are additions from
+  this verification rather than part of the original note.
+
+  The scratch file the current test writes contains no test case at
+  all, only a raw mkdtempSync call - so if it is ever collected it
+  fails as an empty suite AND leaks a /tmp directory of its own.
+  Both disappear with the fix; neither is worth its own ticket.
+
+  Related, none modified here: BL-743 (the ticket that built this
+  check), BL-420 (the detector and the migration-complete gate it
+  serves), BL-971 (the generated-fixture-matching-the-glob rule this
+  test predates), BL-1207 (a different test-infra defect minted this
+  turn, disjoint files).
+
+  Orthogonality for the coordinator: touches
+  extension/src/tools/pilotMkdtempConventionCheck.ts, possibly
+  extension/test/helpers/rawMkdtempGuard.js and
+  extension/test/pilotMkdtempConventionCheck.test.js, plus this
+  ticket's feature file. Disjoint from BL-1207 (cursor bridge test),
+  BL-1208 (bounce revert check) and BL-1205 (handoff transport).
+  Safe to co-activate with all three.
+
+approval_context: >
+  One call to say the word on: whether the fix moves the detector or
+  just re-anchors the require. The small version keeps the detector
+  in extension/test/helpers/ and points the require at the tool's own
+  location instead of repoRoot - about three lines, no files move.
+  The larger version moves the pure detector into src/ and has the
+  test helper re-export it, which makes "the same detector as
+  tmpDirMigrationGuard" true by construction rather than by two
+  consumers agreeing on a path. I have written it as the coder's
+  call with both shapes named, because either satisfies both
+  invariants and the second is a judgement about where tool logic
+  belongs rather than about this defect. If you have a preference,
+  say so and I will make it firm instead.
+
+  Worth knowing when you weigh severity: nothing misfires in
+  production today. The CLI always passes the tool repo as repoRoot,
+  so the detector is always found. I called it medium rather than low
+  because of what the coupling costs the test - the only test of the
+  real function writes a collectible file into the live test tree to
+  work around it - not because the gate is currently wrong.

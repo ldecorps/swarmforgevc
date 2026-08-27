@@ -1,0 +1,178 @@
+id: BL-1212
+title: "BL-757's real-tree docs gate is a justified live read that never recorded its BL-1038 exemption, so the derivation guard has been red since it landed - the guard's other violation is BL-1209's to clear, not an exemption"
+milestone: M8
+type: defect
+severity: low
+# low: one missing comment line on an otherwise correct, deliberately-built
+# gate. Nothing is mis-gated - BL-757's checker works and BL-1038's guard is
+# right to ask. It is above trivial only because the red is real, has stood two
+# days, and sits in the unit lane where a standing red teaches the swarm to
+# read red as normal.
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 45
+direction: swarm-reported
+depends_on: [BL-1209]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1212-real-tree-docs-gate-records-its-live-read-exemption.feature
+
+invariants:
+  - "A live-repository read in the unit lane is either removed or JUSTIFIED IN WRITING - never silently tolerated and never rubber-stamped: the guard keeps refusing a bare marker, so every exemption added carries a reason a reader can disagree with."
+
+description: >
+  Severity rationale is in the comment above the field.
+
+  `npx vitest run test/liveRepoDerivationGuard.test.js` fails with two
+  violations, both "hands the live repository root to production
+  code":
+
+    docsStructureRealTree.test.js       -> computeDocsStructure
+    pilotMkdtempConventionCheck.test.js -> assessPilotMkdtempConvention
+
+  They have opposite correct answers, which is why this ticket
+  claims only one of them.
+
+  The one this ticket fixes. BL-757 built
+  extension/test/docsStructureRealTree.test.js to run the docs orphan
+  checker against the REAL tree - that is the whole ticket ("pilot
+  orphan checker never run against real tree"), because a docs-orphan
+  gate on a synthetic tree gates nothing. It calls
+  `computeDocsStructure(REPO_ROOT)` deliberately and correctly, and it
+  is careful work: its non-vacuity case builds a fixture tree rather
+  than mutating the live one. It is exactly the case BL-1038's own
+  header provides for - "A file that genuinely must observe the live
+  repository stays, behind an exemption that RECORDS WHY". It just
+  never wrote the marker. Adding `BL-1038-EXEMPT: <reason>` with a
+  real reason is the entire fix, and the reason should say what
+  pricingTable.test.js's says in its own terms: the live read IS the
+  assertion.
+
+  The one this ticket does NOT fix, stated so nobody exempts it by
+  reflex. pilotMkdtempConventionCheck.test.js binds the live root only
+  because `assessPilotMkdtempConvention` requires its own detector
+  through the root it is handed, so a fixture root raises
+  MODULE_NOT_FOUND. That is BL-1209, already specced; its fix lets the
+  test use an ordinary fixture root and the violation disappears with
+  it. Exempting it instead would record a "reason" that is really a
+  defect, which is precisely the decay BL-1038's
+  refuse-a-bare-marker rule exists to prevent.
+
+  Hence `depends_on: [BL-1209]`. Either half alone leaves the guard
+  red, so landing this first would produce a parcel that fixes a red
+  and leaves it red - confusing to review and easy to misread as not
+  working. Sequenced after BL-1209, this ticket's own scenario 03 is
+  a true end state.
+
+  How the red got in, worth recording. The guard landed green on
+  2026-08-22 (0d257c8e2): at that commit
+  pilotMkdtempConventionCheck.test.js had no live-root binding and
+  docsStructureRealTree.test.js did not exist. BL-743 introduced the
+  first violation on 2026-08-26 (39abaaeda) and BL-757 the second on
+  2026-08-27 (2ed133333). Both tickets are closed in backlog/done/.
+  So two full parcels crossed every stage while a unit-lane guard was
+  red, and nobody was stopped. That is not this ticket's to fix, but
+  it is the fifth unowned red the hardener has reported in one shift
+  and it is flagged for the coordinator rather than buried here.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT exempt pilotMkdtempConventionCheck.test.js. Its live-root
+    binding is a symptom of BL-1209's defect and must be removed by
+    fixing that, never annotated away. If BL-1209 is retired or
+    changes shape, come back and re-decide rather than reaching for
+    an exemption.
+  - Do NOT weaken the guard, widen its boundary, or relax the
+    bare-marker refusal to make this pass. The guard's four recorded
+    boundary attempts are in its header; this ticket adds an
+    exemption, it does not renegotiate what counts as a violation.
+  - Do NOT rewrite BL-757's test to use a fixture. Running against
+    the real tree is its reason for existing and the defect its
+    ticket was filed for. Its fixture-based non-vacuity case already
+    exists and stays.
+  - Do NOT add exemptions to any other file opportunistically. Only
+    the one violation this ticket names, so the guard's remaining
+    output stays meaningful.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline: `cd extension && npx vitest run
+     test/liveRepoDerivationGuard.test.js` - expect 1 failed, 18
+     passed, with BOTH violations named. Record the two entries
+     verbatim; if only one appears, BL-1209 has landed in the
+     meantime and the dependency is already satisfied - say so
+     rather than treating the step as failed.
+  2. Scenario 01: the exemption is present on
+     docsStructureRealTree.test.js AND carries a reason. Read the
+     reason and judge it as a reviewer would - it must say why the
+     live read is the assertion, not merely cite this ticket id.
+  3. Scenario 02 non-vacuity, run as a red/green pair: strip the
+     reason from the marker leaving it bare, confirm the guard
+     reports the file as a violation again, then restore it. This is
+     the check that the exemption mechanism still has teeth.
+  4. Scenario 03: with BL-1209 landed, the whole guard test passes -
+     19 passed, 0 failed, no violations. This is the load-bearing
+     one and it cannot pass before its dependency does.
+  5. Regression: BL-757's own suite stays green
+     (`npx vitest run test/docsStructureRealTree.test.js`),
+     including its real-tree assertions and its fixture-based
+     non-vacuity case. Adding a comment must change nothing about
+     what it gates.
+
+notes: >
+  Source: hardender note handoff
+  00_20260827T203802Z_000910... follow-up, verbatim: "5th unrelated
+  red: BL-1038 guard fails on docsStructureRealTree+pilotMkdtemp."
+  Sent to specifier + coordinator at priority 00.
+
+  Specifier verification at mint: ran the guard and captured both
+  violations with their reasons; read the BL-1038 guard helper's
+  header, including its four recorded attempts at placing the
+  boundary and its explicit provision for a reason-carrying
+  exemption; read docsStructureRealTree.test.js in full and
+  confirmed the live read is its purpose rather than an accident,
+  and that its non-vacuity case already uses a fixture; confirmed
+  neither violator carries a marker today while ten other files do;
+  and dated the guard's own landing (0d257c8e2, 2026-08-22) against
+  both violations' introduction (39abaaeda 2026-08-26, 2ed133333
+  2026-08-27) to establish that the guard was green when it shipped
+  and that both offending parcels landed afterwards.
+
+  The hardener's note names two files as one red. They are one red
+  and two defects with opposite fixes - one exemption, one code fix
+  under BL-1209 - which is the reason this ticket exists separately
+  rather than as an amendment to BL-1209: same guard, different
+  files, different subject, and BL-1209's own scope is the mkdtemp
+  check's detector resolution.
+
+  Related: BL-1209 (the dependency; its fix clears the other
+  violation - a cross-reference is recorded in that ticket's notes so
+  its coder is not surprised), BL-757 (built the exempt-worthy test),
+  BL-743 (introduced the other violation), BL-1038 (the guard),
+  BL-999 (the budget layer BL-1038's header cites as the decay this
+  mechanism avoids).
+
+  Orthogonality for the coordinator: touches one comment in
+  extension/test/docsStructureRealTree.test.js plus this ticket's
+  feature file. Disjoint from everything except BL-1209, which it
+  depends on and must not be co-active with - sequence them.
+
+approval_context: >
+  One thing to sanity-check, since it is a judgement rather than a
+  measurement: I concluded BL-757's real-tree gate DESERVES its
+  exemption rather than belonging in another lane. The case for
+  exempting: a docs-orphan gate that runs on a fixture gates nothing,
+  which is the exact defect BL-757 was filed for, and BL-1038's own
+  header provides for this. The case against: its cost does grow with
+  docs/, and BL-1038 exists because that surface absorbed four budget
+  raises in four days - so every exemption granted is a growth term
+  admitted back. I judged one docs-tree scan worth it. If you would
+  rather this gate moved out of the unit lane entirely, say so and
+  this becomes a lane-move ticket instead of a one-line exemption.
+
+  Severity low, deliberately: it is a missing comment on correct
+  work. I did not inflate it for the two-day-old red, because the red
+  is loud and unambiguous once run - the problem there is that
+  nothing ran it, and that is the coordinator's thread, not this
+  ticket's.

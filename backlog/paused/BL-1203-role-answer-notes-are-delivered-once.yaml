@@ -1,0 +1,159 @@
+id: BL-1203
+title: "An answered question is re-delivered to a role forever: 40 replays of one answer batch into the specifier's mailbox in a single day"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1203-role-answer-notes-are-delivered-once.feature
+human_approval: pending
+approval_context: >
+  Filed with the mechanism NOT established, deliberately, because the
+  measurement is unambiguous and the cost is being paid every twenty minutes
+  while it stays unticketed. The counts and timestamps below were read from
+  the mailbox, not inferred.
+
+  The suspect is the front-desk bot replay shape already documented on
+  2026-07-14, when a parked Telegram offset re-ran side effects every poll
+  and put roughly 160 junk commits on origin/main. Same signature: identical
+  content, fixed cadence, side effect repeated without any human action.
+
+  What stops it being a straight re-file of that incident is one fact that
+  does not fit: enqueueRoleAnswerNote writes the pointer file BEFORE it
+  composes the note, and that file has not been written since 2026-08-22,
+  five days before the replays. So the obvious culprit did not run today,
+  and the first acceptance step is to find what did. If the human already
+  knows what re-sends these — a relay, a sweep, a resumed queue — saying so
+  turns this ticket from an investigation into a one-sitting fix.
+
+  Worth the human eye specifically: scenario 01 says an answer is delivered
+  ONCE. If some path deliberately re-sends an unacknowledged answer as a
+  reminder, that is a legitimate design this scenario would forbid, and the
+  scenario should be re-scoped to bound the retries rather than ban them.
+description: |
+  ## What
+
+  A role answer must reach the role's inbox once. Re-processing the same
+  inbound answer must add no further note. And a note that announces an
+  answer by pointing at a file must point at a file holding THAT answer.
+
+  ## The measurement
+
+  Read from `.swarmforge/handoffs/specifier/inbox/completed/` on 2026-08-27
+  at 19:45 BST. 41 notes carrying the text "use staging" have reached the
+  specifier. Exactly one is the original, sent by the hardender on
+  2026-08-01. The other 40 were sent today, all by the coordinator, between
+  11:52Z and 18:58Z, in about twenty bursts of the identical four-message
+  sequence:
+
+      use staging please
+      answer ready: .swarmforge/operator/role-answers/specifier.json
+      use staging
+      answer ready: .swarmforge/operator/role-answers/specifier.json
+
+  Each burst spans about four seconds. Counting the pointer notes, that is
+  roughly eighty priority-00 notes into one role's mailbox in seven hours.
+
+  The coordinator agent is not the author. `enqueueRoleAnswerNote` in
+  `extension/src/tools/telegram-front-desk-bot.ts` shells `swarm_handoff.bb`
+  with `SWARMFORGE_ROLE=coordinator` — the documented impersonation for an
+  automated write owning no pipeline role — so the coordinator's outbox is
+  simply where these surface.
+
+  ## The fact that does not fit, and must not be assumed away
+
+  `enqueueRoleAnswerNote` calls `writeRoleAnswerFileIfNeeded` BEFORE
+  composing the message. If today's replays had gone through it, the pointer
+  file's mtime would be today. It is 2026-08-22T18:01:36Z, and its content
+  is an answer about archiving handoff trails — unrelated to anything the
+  notes announce. So either the replays bypass that function, or the write
+  is conditional in a way that skipped every one of twenty bursts. Establish
+  which before changing behaviour; a fix aimed at the wrong sender will
+  measure as green and change nothing.
+
+  ## Why this is not merely noise
+
+  Every replayed burst lands as priority `00` in a role whose protocol
+  treats `00` as blocking. Several specifier turns today were spent triaging
+  these. One clarifying question was put to the human on the false premise
+  that he had repeated the same three-word directive twenty times, when the
+  record shows he typed it once, on 2026-08-01. A replay that manufactures
+  apparent human insistence is worse than a replay that merely wastes turns:
+  it corrupts what the swarm believes the human asked for.
+
+  ## Constraints
+
+  - Do not fix this by filtering at the receiving end. A role dropping
+    duplicates it recognises leaves the sender free to keep sending, and the
+    next side effect wired to the same path inherits the bug.
+  - Idempotency must key on the identity of the inbound message, not on its
+    text. Two genuinely separate answers with the same words must both be
+    delivered.
+  - The pointer file is a single per-role slot that nothing ever clears.
+    Whatever the fix, a note announcing an answer and the file it names must
+    agree; leaving a five-day-old answer reachable behind a fresh note is
+    itself the defect scenario 02 covers.
+  - Do not silence the delivery path while investigating. An answer that
+    never reaches its role is a worse failure than one that arrives twenty
+    times.
+
+qa_e2e_procedure: >
+  (1) With the bot pointed at a scratch target, deliver one role answer and
+  confirm exactly one note reaches the role's inbox. Re-run the same inbound
+  update through the same path and confirm the inbox count does not change.
+  (2) Deliver two DIFFERENT answers whose text is identical and confirm both
+  arrive — the guard must key on message identity, not content. (3) Deliver
+  an answer long enough to require the pointer form, then read the file the
+  note names and confirm it holds that answer and not an earlier one.
+  (4) Regression on the live symptom: watch
+  .swarmforge/handoffs/specifier/inbox/ for one hour and confirm no burst of
+  the four-message "use staging" sequence appears. Before the fix, that
+  sequence recurred about every twenty minutes, so an hour is three chances
+  to catch it. (5) Confirm a genuine new answer still reaches the specifier
+  within the same window.
+
+out_of_scope: |
+  - What the 2026-08-01 "use staging please" directive actually meant. That
+    is a live clarifying question to the human, already raised via role_ask
+    on 2026-08-27 19:35Z; this ticket is about the message arriving forty
+    times, not about its content.
+  - The 2026-07-14 front-desk commit-loop incident and its BL-369 offset
+    guard. Named here as the matching signature and a place to look, not
+    adopted as the confirmed cause, and not re-opened by this ticket.
+  - Clearing the historical backlog of already-delivered replay notes from
+    the specifier's completed folder. Housekeeping, and evidence for this
+    ticket while it is open.
+  - Any change to how role_ask.bb asks questions or enforces its one-pending
+    slot. The ask path is behaving correctly; the answer path is not.
+
+invariants:
+  - "A role receives at most one note per inbound answer, however many times that answer is re-processed."
+  - "A note that names an answer file names a file whose recorded answer is the one the note announces."
+
+source: |
+  Specifier, 2026-08-27 19:40-19:50 BST, while triaging coordinator notes
+  002878-002881 — the second identical burst inside half an hour. Counts and
+  timestamps read directly from the specifier's completed mailbox and the
+  coordinator's sent folder; sender attribution read from
+  enqueueRoleAnswerNote's own SWARMFORGE_ROLE=coordinator impersonation, not
+  guessed from the filename. The pointer-file mtime and content were read
+  from disk.
+
+  Matching prior signature, filed 2026-07-14 as
+  backlog/INTAKE-front-desk-redelivery-commit-loop.md: a parked Telegram
+  offset re-ran append, reply and commit side effects every poll cycle,
+  producing roughly 160 junk commits pushed to origin/main and 75+ phone
+  messages. That incident's diagnostic rule is what identified this one —
+  identical content on a fixed cadence is machine replay, never a human.
+
+notes: |
+  - "[2026-08-27] specifier: this ticket exists because the replay was
+    mistaken for human insistence. Note 002877 in the same burst window —
+    'Mine - leave it, I will reattach main myself' — is a genuine, distinct
+    human reply and arrived through the same path, so the path is not
+    uniformly broken and must not be disabled wholesale."
