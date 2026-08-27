@@ -588,6 +588,7 @@ const DOMAINS = [
   require('./bl915CursorBridgeGoneAgentSessionResetSteps'),
   require('./bl941CursorGoneAgentClassifierBoundariesSteps'),
   require('./bl1166OperatorDocsSteps'),
+  require('./bl832BubbleHealthTrendsPageSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
   require('./bl938AgedNoteRotateFixtureRotationRouterSteps'),
   require('./bl923DwellCountsOccupiedTimeSteps'),
@@ -793,13 +794,14 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
-  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
-  require('./bl1167SameModelSeatRoutingSteps'),
-  require('./bl832BubbleHealthTrendsPageSteps'),
-  require('./bl718BubbleTalkMirrorSteps'),
-  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
+  require('./bl718BubbleTalkMirrorSteps'),
+  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
+  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
+  require('./bl832BubbleHealthTrendsPageSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl1185WorkNoteMissingTaskHeaderSteps'),
 ];
 
 function registerSteps(registry) {
