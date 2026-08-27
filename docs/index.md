@@ -260,3 +260,4 @@ expects them, and are not migrated or rewritten here.
 - [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.
 - [The Non-Pipeline Agents, As a Class](explanation/BL-643-non-pipeline-agents-as-a-class.md) — what makes an agent non-pipeline, the taxonomy, and what the Onboarder's three shipped slices actually do.
 - [Why Promotion Ranks by Epic Priority Before Ticket Priority](explanation/BL-900-epic-priority-promotion-ranking.md) — the rank-key shape, the epic-priority lookup and its fallbacks, and why expedited defects, queue-jump, and ambulance mode are untouched.
+- [BL-718 acceptance runs with real step handlers](how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md) — wire `bl718BubbleTalkMirrorSteps` so the Gherkin gate actually executes (BL-726).
