@@ -47,3 +47,14 @@ until it comes back. On answer: relay into the `swarmforge-hardender:0`
 tmux pane (socket `.swarmforge/tmux/1523266553.sock`), re-validating the
 menu is still showing the same options before sending keys (menu could have
 timed out/changed).
+
+## Resolution (2026-08-27, later same session)
+Human answered: "Reset to da8ef009a (hardener's recommendation)". Re-validated
+the menu was still showing the identical options before relaying (per
+nudged-agent-can-block-on-interactive-menu discipline); cursor already sat on
+option 1, so a bare Enter was sent via
+`tmux -S .swarmforge/tmux/1523266553.sock send-keys -t swarmforge-hardender:0 Enter`.
+Confirmed relayed: pane echoed "User answered Claude's questions: ... → Reset
+branch to da8ef009a (Recommended)" and returned to active work. Hardener
+separately corroborated the GIT_DIR/GIT_WORK_TREE leak and said it now unsets
+those before every git call in its own recovery.
