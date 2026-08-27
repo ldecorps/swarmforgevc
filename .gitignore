@@ -4,6 +4,8 @@
 .swarmforge/
 # BL-593: append-only machine-local mutation run telemetry (same posture as context-events.jsonl).
 .swarmforge/telemetry/mutation-runs.jsonl
+# BL-596: mono-router rotation dynamics append-only telemetry.
+.swarmforge/telemetry/rotation-*.jsonl
 swarmforge/scripts/.bin/
 .worktrees/
 /tmp/
