@@ -472,6 +472,8 @@ const DOMAINS = [
   require('./bl858BootPrefixCapSteps'),
   require('./bl826HandsFreeSelfListenEchoLoopSteps'),
   require('./bl717SilentReturnAfterHoldMusicSteps'),
+  require('./bl718BubbleTalkMirrorSteps'),
+  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl854OrthogonalityAdvisesInsteadOfBlockingSteps'),
   require('./bl643NonPipelineAgentsSteps'),
   require('./bl861DeferralSurvivesBlockerClosingSteps'),
