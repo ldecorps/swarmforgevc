@@ -153,45 +153,45 @@
 (defn- has-in-process-parcel? []
   (boolean (seq (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
 
-;; BL-1195 D1 (hardener bounce 20260828): coordinator and specifier are both
-;; master-resident (roles.tsv worktree-name "master") - the SAME physical
-;; checkout, not one-worktree-per-role like every other pipeline role. The
-;; exemption above only ever consulted the CURRENTLY INVOKING role's own
-;; in_process mailbox, so the coordinator's own turn - with no in_process
-;; parcel of its own - false-flagged the specifier's routine, uncommitted,
-;; legitimate WIP on `main` (Article 1.2 spec/prompt drafting, no handoff
-;; parcel involved) as unexplained drift and refused every turn
-;; (WORKTREE_DRIFT_DETECTED, exit 2) - a standing regression for the one
-;; role that must never exit (BL-107). The reverse (specifier refused by
-;; coordinator's WIP) is symmetric. Every OTHER pipeline role has its own
-;; dedicated `.worktrees/<role>`, exclusively written by that one role, so
-;; this false-positive shape is structurally impossible there - widening
-;; the exemption to union every master-resident role's in_process mailbox
-;; (via handoff-lib/handoff-files, unfiltered - these files are addressed
-;; to the SIBLING role, not to me, so the recipient-filtered my-handoff-files
-;; above would wrongly see none of them) changes behavior ONLY for the
-;; master-resident pairing; every other role's single-mailbox check above
-;; stays byte-identical and this function is a pure addition, never a
-;; replacement of it.
-(defn- master-resident-sibling-has-in-process-parcel? [root]
-  (let [me (handoff-lib/current-role)
-        all-roles (handoff-lib/load-all-roles root)
-        my-info (some #(when (= (:role %) me) %) all-roles)]
-    (boolean
-     (when (= (:worktree-name my-info) "master")
-       (some (fn [role-info]
-               (seq (handoff-lib/handoff-files (handoff-lib/mailbox-dir role-info :in_process))))
-             (filter #(= (:worktree-name %) "master") all-roles))))))
-
+;; BL-1195 D1 re-bounce (architect, 2026-08-28): the coder's first fix
+;; (unioning every master-resident role's in_process mailbox into the
+;; exemption) only widened WHICH mailbox counts as "has a parcel" - it
+;; still refuses whenever NEITHER master-resident role has a dispatched
+;; parcel at all, which is hardener's own reproduction verbatim (Article
+;; 1.2 spec/prompt drafting has no handoff parcel to check for in the
+;; first place). A wider union is the wrong shape of fix: commit_integrity_
+;; lib.bb's own header names the shared `master` checkout as a genuinely
+;; concurrent, multi-writer surface by DESIGN - "coordinator bookkeeping,
+;; the BL-topic-record writer, QA's fast-forward, the specifier, and
+;; operator_file_question.bb all commit into ONE git index with no
+;; isolation" - not just the coordinator/specifier pair, and several of
+;; those writers (spec/prompt drafting, backlog bookkeeping) have no
+;; handoff parcel to point at even in principle. A per-role "does an
+;; in_process parcel explain this diff?" check cannot distinguish a
+;; legitimate concurrent writer's own WIP from real unexplained drift on
+;; that surface - there is no parcel-shaped signal to widen toward.
+;; Exempting master-resident worktrees from this guard entirely keeps the
+;; ticket's own explicit constraint ("must not false-flag a role's own
+;; legitimate in-progress edits") true by construction, at the cost of not
+;; catching a BL-1195-shaped incident if it recurs specifically inside the
+;; shared master checkout - the same tradeoff the ticket's own architect
+;; review named as option (a) and every other guard in this codebase that
+;; already special-cases master (check_branch_namespace.bb,
+;; post_qa_branch_sweep_lib.bb, pre_qa_gate_gather_lib.bb) already accepts
+;; for the same structural reason. Every OTHER pipeline role's own
+;; dedicated `.worktrees/<role>`, exclusively written by that one role,
+;; keeps this guard's full original detection value - only the
+;; master-resident carve-out changes.
 (defn- enforce-worktree-drift-guard! []
   (let [root (dispatch-lib/git-root)]
     (when root
-      (let [drift (worktree-drift-lib/unexplained-drift
-                   {:modified-paths (modified-tracked-paths root)
-                    :has-in-progress-task? (or (has-in-process-parcel?)
-                                                (master-resident-sibling-has-in-process-parcel? root))})]
-        (when (worktree-drift-lib/drift-detected? drift)
-          (dispatch-lib/exit! 2 (worktree-drift-lib/drift-report drift)))))))
+      (let [role-info (handoff-lib/load-role-info (handoff-lib/current-role) root)]
+        (when-not (= (:worktree-name role-info) "master")
+          (let [drift (worktree-drift-lib/unexplained-drift
+                       {:modified-paths (modified-tracked-paths root)
+                        :has-in-progress-task? (has-in-process-parcel?)})]
+            (when (worktree-drift-lib/drift-detected? drift)
+              (dispatch-lib/exit! 2 (worktree-drift-lib/drift-report drift)))))))))
 
 (enforce-worktree-drift-guard!)
 
