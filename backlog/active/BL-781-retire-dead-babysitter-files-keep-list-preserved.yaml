@@ -30,6 +30,19 @@ source: |
   extended by the specifier's own audit of the full KEEP list, which found a
   second dead wake-queue file the coder had not flagged.
 
+# Tip-pure rematch 5.
+abandoned_commits:
+  - 31ede8f992
+  - b56ca33e92
+  - 2db73873d6
+  - 9e6d5bef50
+  - 1bba7bf898
+  - eceaf39588
+  - 9da97fcb29
+  - 0b352a2fc3
+  - efbc2d8558
+  - 88360ae238
+
 acceptance: specs/features/BL-781-retire-dead-babysitter-files-keep-list-preserved.feature
 
 required_wiring:
