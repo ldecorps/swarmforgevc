@@ -427,6 +427,8 @@
       :target-role role
       :live-role (handoff-lib/resident-live-role socket resident)})))
 
+(declare handoff-wake-with-dedup!)
+
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
    the inbox file already existed (duplicate delivery), the recipient pane
