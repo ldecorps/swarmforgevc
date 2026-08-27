@@ -76,6 +76,53 @@ test('evaluateDeprecatorFreshness holds when depends_on done and RETIRED named',
   assert.match(d.reason, /stale premise/);
 });
 
+test('evaluateDeprecatorFreshness holds on retired surface token without RETIRED word', () => {
+  // Isolates the retiredSurfaceHits branch from the /\bRETIRED\b/ yamlText fallback.
+  const d = evaluateDeprecatorFreshness({
+    ticketId: 'BL-9',
+    yamlText: 'depends_on: [BL-1]\ndescription: still calls legacy-verb from docs\n',
+    pausedPathExists: true,
+    dependsOnIds: ['BL-1'],
+    dependsOnAllDone: true,
+    doneClosureExists: false,
+    retiredSurfaceHits: ['legacy-verb'],
+    specGapBounceCount: 0,
+  });
+  assert.equal(d.decision, 'hold');
+  assert.match(d.reason, /retired surface/);
+  assert.match(d.reason, /legacy-verb/);
+});
+
+test('evaluateDeprecatorFreshness holds on stale claim without done closure', () => {
+  const d = evaluateDeprecatorFreshness({
+    ticketId: 'BL-9',
+    yamlText: 'description: this is superseded by BL-8\n',
+    pausedPathExists: true,
+    dependsOnIds: [],
+    dependsOnAllDone: false,
+    doneClosureExists: false,
+    retiredSurfaceHits: [],
+    specGapBounceCount: 0,
+  });
+  assert.equal(d.decision, 'hold');
+  assert.match(d.reason, /superseded\/retired\/obsolete/);
+});
+
+test('evaluateDeprecatorFreshness holds on repeated spec-gap bounces', () => {
+  const d = evaluateDeprecatorFreshness({
+    ticketId: 'BL-9',
+    yamlText: 'id: BL-9\n',
+    pausedPathExists: true,
+    dependsOnIds: [],
+    dependsOnAllDone: false,
+    doneClosureExists: false,
+    retiredSurfaceHits: [],
+    specGapBounceCount: 2,
+  });
+  assert.equal(d.decision, 'hold');
+  assert.match(d.reason, /spec-gap/);
+});
+
 test('deprecateCheck integration: supersede marker on disk', () => {
   const root = mkTmpDir('deprecate-check-');
   writeTicket(root, 'paused', 'BL-42', 'id: BL-42\ntitle: x\n');
