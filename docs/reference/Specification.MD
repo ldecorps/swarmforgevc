@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-601: context-compaction cadence trend —
+structured `compaction:true` context-events only (never pane spinner text);
+derive `{role, model, tokens-at-compaction, ts}` to
+`.swarmforge/telemetry/compaction-<YYYY-MM>.jsonl`; pure aggregator yields
+compactions/hr + token distribution per role via `compactionCadence.ts` →
+`computeTrend` (inward import; `trend.ts` must not re-export
+`compactionCadence` — keeps the metrics graph acyclic); undetectable roles
+read NA, never a fabricated zero. Measurement only. Acceptance:
+`specs/features/BL-601-trend-compaction-cadence.feature`. How-to:
+`docs/how-to/BL-601-trend-compaction-cadence.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-599: intake-balance trend —
 filed/closed/net per window via `deriveIntakeBalanceEvents` /
 `computeIntakeBalance` on the existing deliveryMetrics git-history adapter;

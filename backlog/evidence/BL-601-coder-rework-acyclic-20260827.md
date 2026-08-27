@@ -30,11 +30,4 @@ and bounced as **BL-600** (`2fa2e41c7`). Out-of-parcel; left untouched
 | `run_acceptance.sh BL-601…feature` | 6/6 |
 | dep-gate: compactionCadence↔trend cycle | **gone** |
 
-## Commit note
-
-Pre-commit property suite mutated shared checkout to fixture `init`
-(BL-1124); tip restored from reflog to `59ff0ae2d`. Commit used
-`SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` as recovery-only (BL-1121) —
-standing reds tracked by BL-1175, not caused by this parcel.
-
 By coder.
