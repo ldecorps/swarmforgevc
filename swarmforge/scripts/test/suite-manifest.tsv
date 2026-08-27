@@ -390,6 +390,7 @@ upstream_drift_check_lib_test_runner.bb	standing
 wake_attribution_lib_test_runner.bb	standing		
 worktree_drift_lib_test_runner.bb	standing		
 test_worktree_drift_guard.sh	standing		
+test_worktree_drift_guard_master_resident_sibling.sh	standing		
 bl1097_router_dispatch_trail_test_runner.bb	standing		
 bl1137_cwd_scoped_mute_property_runner.bb	standing		
 test_local_coder_battery.sh	standing		

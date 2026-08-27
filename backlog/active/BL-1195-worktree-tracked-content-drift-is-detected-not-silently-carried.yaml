@@ -124,6 +124,21 @@ notes: |
   - [2026-08-27] specifier: minted per coordinator's routing note. The
     coder's stash (.worktrees/coder stash@{0}) is the primary evidence for
     deliverable 1 — whoever picks this up reads it BEFORE it is dropped.
+  - "[2026-08-28] coder: fixed D1 (backlog/evidence/BL-1195-hardener-bounce-20260828.md).
+    ready_for_next.bb's has-in-progress-task? exemption only ever consulted
+    the CURRENTLY INVOKING role's own in_process mailbox, so the
+    coordinator's turn false-flagged the specifier's legitimate WIP on the
+    shared `master` checkout (and symmetrically). Widened the exemption
+    (master-resident-sibling-has-in-process-parcel? in ready_for_next.bb) to
+    union every master-resident role's in_process mailbox when the invoking
+    role's own worktree-name is \"master\" — every other role's own
+    dedicated worktree is untouched, byte-identical to before. Reproduced
+    the exact false-positive with a real-git fixture first (TDD), then
+    fixed; regression test added at
+    swarmforge/scripts/test/test_worktree_drift_guard_master_resident_sibling.sh
+    (scenarios 04/05/06, registered in suite-manifest.tsv) plus the
+    existing worktree_drift_lib_test_runner.bb /
+    test_worktree_drift_guard.sh / BL-1195 acceptance suite re-run clean."
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-27, by: hardender, blamed: coder, class: behavior, commit: dfd885f9f4, evidence: backlog/evidence/BL-1195-hardener-bounce-20260828.md }
