@@ -1995,3 +1995,22 @@
        :allows-multiple (boolean (:multi-select? extracted))
        :fingerprint (:fingerprint extracted)
        :free-text-indexes (:free-text-indexes extracted)})))
+
+;; ── BL-1171: structured BABYSITTER_ESCALATION detail ───────────────────────
+
+(defn format-babysitter-escalation-detail
+  "When finding carries :disaster-class, detail is JSON the operator prompt
+   can parse (failure_class, suggested_actions, evidence_paths). Otherwise
+   the plain symptom message (BL-653)."
+  [{:keys [message disaster-class]}]
+  (if disaster-class
+    (json/generate-string (assoc disaster-class :summary (or message "")))
+    (or message "")))
+
+(defn parse-babysitter-escalation-detail
+  "Pure: parse operator-queue detail back to a map when JSON; else nil."
+  [detail]
+  (try
+    (let [parsed (json/parse-string (str detail) true)]
+      (when (map? parsed) parsed))
+    (catch Exception _ nil)))
