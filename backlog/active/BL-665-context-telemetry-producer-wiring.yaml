@@ -60,6 +60,6 @@ description: |
 acceptance: specs/features/BL-665-context-telemetry-producer-wiring.feature
 
 required_wiring:
-  - "extension/src/metrics/contextTelemetryProducer.ts::context_telemetry_cli.bb record::GH-22 write path"
+  - "extension/src/tools/run-context-telemetry-producer.ts::context_telemetry_cli.bb record::GH-22 write path"
   - "swarmforge/scripts/handoffd.bb::context-telemetry-producer-sweep::unattended producer tick"
   - "specs/pipeline/steps/index.js::bl665ContextTelemetryProducerWiringSteps::acceptance handler registered"
