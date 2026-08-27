@@ -497,6 +497,7 @@ const DOMAINS = [
   require('./bl868PropertyLaneIsolationGuardsSteps'),
   require('./bl869MultiTicketCloseGuardSteps'),
   require('./bl870WakeAttributionSteps'),
+  require('./bl1191HandoffWakeFollowUpDedupSteps'),
   require('./bl801TmpCleanupRegistrySteps'),
   require('./gh26RoleQuestionUndeliverableClearsMarkerSteps'),
   require('./bl872TempdirTrapGuardStandingSteps'),
