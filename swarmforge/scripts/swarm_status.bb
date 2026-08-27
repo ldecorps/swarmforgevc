@@ -274,23 +274,6 @@
                                  (when (and live (not pidfile-alive?)) "adopted-live")
                                  (when (and pidfile-pid (not pidfile-alive?)) "stale-pid")]))})))
 
-;; BL-1199: same two config sources named_tunnel_liveness_check.bb's own
-;; CLI wiring reads - an ambient env var wins outright, otherwise
-;; named-tunnel.env's own declared value (a blank/absent value is
-;; unconfigured, matching launch_resident_spy_tunnel.sh's own
-;; `[[ -n "$NAMED_TUNNEL" ]]` gate exactly).
-(defn named-tunnel-configured? [op]
-  (let [ambient (System/getenv "SWARMFORGE_NAMED_TUNNEL")]
-    (if-not (str/blank? ambient)
-      true
-      (let [env-file (fs/path op "named-tunnel.env")]
-        (boolean
-         (when (fs/exists? env-file)
-           (some (fn [line]
-                   (when-let [[_ v] (re-matches #"(?:export\s+)?SWARMFORGE_NAMED_TUNNEL=(.*)" (str/trim line))]
-                     (not (str/blank? (str/replace v #"^[\"']|[\"']$" "")))))
-                 (str/split-lines (slurp (str env-file))))))))))
-
 ;; BL-1199: the Bubble named tunnel's own row, distinct from vscode-tunnel
 ;; below (same pidfile launch_resident_spy_tunnel.sh writes,
 ;; resident-spy-cloudflared.pid, previously observed by NOTHING on this
@@ -300,7 +283,7 @@
 (defn gather-bubble-cloudflared [op]
   (let [pid (read-pid (fs/path op "resident-spy-cloudflared.pid"))
         alive (pid-alive? pid)
-        configured (named-tunnel-configured? op)
+        configured (named-tunnel-liveness-lib/configured? op)
         verdict (named-tunnel-liveness-lib/liveness-verdict
                  {:configured? configured :pid-alive? alive})]
     {:name "bubble-cloudflared"

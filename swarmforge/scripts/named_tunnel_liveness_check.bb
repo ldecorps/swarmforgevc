@@ -29,27 +29,11 @@
      (try (zero? (:exit (process/sh "kill" "-0" (str pid))))
           (catch Exception _ false)))))
 
-;; Same two sources launch_resident_spy_tunnel.sh itself reads: an ambient
-;; env var wins outright; otherwise named-tunnel.env's own declared value
-;; (never any OTHER key in that file, and a blank/absent value is
-;; unconfigured, matching the launcher's own `[[ -n "$NAMED_TUNNEL" ]]`
-;; gate exactly).
-(defn- named-tunnel-configured? [root]
-  (let [ambient (System/getenv "SWARMFORGE_NAMED_TUNNEL")]
-    (if-not (str/blank? ambient)
-      true
-      (let [env-file (fs/path root ".swarmforge" "operator" "named-tunnel.env")]
-        (boolean
-         (when (fs/exists? env-file)
-           (some (fn [line]
-                   (when-let [[_ v] (re-matches #"(?:export\s+)?SWARMFORGE_NAMED_TUNNEL=(.*)" (str/trim line))]
-                     (not (str/blank? (str/replace v #"^[\"']|[\"']$" "")))))
-                 (str/split-lines (slurp (str env-file))))))))))
-
 (defn -main [root]
   (let [root (str (fs/canonicalize root))
-        pid-file (fs/path root ".swarmforge" "operator" "resident-spy-cloudflared.pid")
-        configured? (named-tunnel-configured? root)
+        op (fs/path root ".swarmforge" "operator")
+        pid-file (fs/path op "resident-spy-cloudflared.pid")
+        configured? (named-tunnel-liveness-lib/configured? op)
         alive? (pid-alive? (read-pid pid-file))
         verdict (named-tunnel-liveness-lib/liveness-verdict {:configured? configured? :pid-alive? alive?})]
     (println (case verdict :up "UP" :down "DOWN" :not-configured "NOT_CONFIGURED"))
