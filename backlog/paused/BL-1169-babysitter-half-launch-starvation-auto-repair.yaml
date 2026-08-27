@@ -21,7 +21,7 @@ invariants:
   - "A proc-* half-launch CRIT remains visible when repair is queued — repair must not swallow the alert (BL-1017 posture)."
   - "Standing-pack launch-contract health (cursor-forge BL-530 exemption) remains a regression guard — ensure must succeed when contract is healthy."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   INTAKE-babysitter-half-launch-starvation-auto-recover.md (2026-08-27 morning
   STARVED incident). High severity: recurrence class after hotfix a8741f5ac.
