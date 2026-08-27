@@ -5,11 +5,27 @@ type: defect
 severity: low
 status: todo
 epic: code-quality-gates
-assigned_to: specifier
+assigned_to: coder
 priority: 92
 direction: normal
 depends_on: []
 mutation_cost: low
+required_stages: [coder, cleaner, hardender, qa]
+stage_skip_reasons:
+  architect: "wire APS handlers to an existing feature; no design fork"
+  documenter: "BL-559 done notes provenance line is the doc surface"
+acceptance: specs/features/BL-734-bl559-acceptance-never-wired-no-coder-work.feature
+
+invariants:
+  - "specs/pipeline/cli.js against BL-559's feature never aborts with unmatched step handlers."
+  - "BL-559's wired handlers run the real vitest properties suite for pipelineBoard.property.test.js and assert seven properties pass."
+  - "BL-559's done yaml keeps the feature acceptance pointer and notes the pre-existing-fix provenance."
+
+required_wiring:
+  - "specs/pipeline/steps/bl559PipelineBoardPropertySteps.js::registerSteps::BL-559 feature scenarios"
+  - "specs/pipeline/steps/index.js::bl559PipelineBoardPropertySteps::acceptance handler registered"
+  - "backlog/done/BL-559-pipelineboard-property-test-prefix-substring-bug.yaml::notes::pre-existing fix provenance"
+
 source: |
   Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
   2026-07-30. BL-559's landing commits contain zero code diff — they only
@@ -26,18 +42,18 @@ notes: |
   BL-723 coder verdict on BL-559: not-on-par. Linked pilot-process defect:
   BL-735.
 
+  [2026-08-27] specifier: feature landed; assigned_to coder. Pin: wire
+  handlers (option 1), do not retire the BL-559 feature. BL-735 already
+  owns the pilot land gate and left wiring to this ticket.
+
 description: |
   ## What
 
-  Either wire specs/pipeline/steps/ handlers for BL-559's feature file so it
+  Wire specs/pipeline/steps/ handlers for BL-559's feature file so it
   actually gates (running the real vitest property suite and asserting 7/7
-  pass, matching the fix already on main), or, if the ticket is judged
-  correctly closed as "rode a pre-existing fix," record that explicitly in
-  its notes and retire/simplify its acceptance field rather than leaving a
-  feature file that throws if anyone runs it.
+  pass, matching the fix already on main). Also record on the done BL-559
+  ticket that the oracle fix rode a pre-existing commit.
 
-  ## Acceptance
-
-  node specs/pipeline/cli.js against BL-559's feature file completes with no
-  "no step handler matched" failures, or the ticket's acceptance field is
-  amended to match what was actually verified.
+  Specifier ruling: do **not** retire/simplify the acceptance field away —
+  an unrunnable feature that still points at a contract is worse than
+  wiring it. BL-735 already closed the pilot-process half.
