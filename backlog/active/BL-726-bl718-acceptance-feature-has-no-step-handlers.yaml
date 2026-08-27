@@ -23,6 +23,10 @@ abandoned_commits:
   - d0b7a763e2
   - 6a13a57183
   - c80efa3b1c
+  - d8980b5ee2
+  - b4eaf10a60
+  - 5f0e158ba2
+  - cec7552c5a
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-726-bl718-acceptance-feature-has-no-step-handlers.feature
 
