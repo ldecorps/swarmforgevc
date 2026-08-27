@@ -586,6 +586,7 @@ const DOMAINS = [
   require('./bl937ShellScriptsRunOnStockMacosBash32Steps'),
   require('./bl915CursorBridgeGoneAgentSessionResetSteps'),
   require('./bl1166OperatorDocsSteps'),
+  require('./bl832BubbleHealthTrendsPageSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
   require('./bl938AgedNoteRotateFixtureRotationRouterSteps'),
   require('./bl923DwellCountsOccupiedTimeSteps'),
@@ -793,6 +794,10 @@ const DOMAINS = [
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
+  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
+  require('./bl1185WorkNoteMissingTaskHeaderSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl718BubbleTalkMirrorSteps'),
 ];
 
 function registerSteps(registry) {
