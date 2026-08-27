@@ -1,0 +1,54 @@
+id: BL-1172
+title: "EPIC — Deprecator: Boy Scout for business rules, stale tickets, dead logic, docs; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: deprecator
+priority: 0
+direction: queue-jump
+depends_on: []
+decomposes_into: [BL-1173, BL-1174]
+mutation_cost: high
+human_approval: approved
+approval_context: >
+  Human Laurent via Cursor 2026-08-27 ~07:16 BST: "Qjump this intake" for
+  INTAKE-deprecator-stale-rules-dead-logic-docs.md. Queue-jump = approve +
+  force-promote the critical freshness-gate slice (BL-1173) now; epic tracks
+  children and is not itself promotable.
+description: |
+  ## Why
+
+  Old paused tickets get implemented faithfully and re-ship dead logic because
+  nothing asks "does this still make sense?" before coder starts. Docs scatter
+  RETIRED/superseded inline with no `docs/deprecated/` registry.
+
+  Constitution Article 3.6 already binds the coordinator freshness gate as
+  prompt law (manual checklist). This epic ships the machine gate, on-demand
+  scan/verbs, and doc retirement contract.
+
+  ## Children (minted 2026-08-27)
+
+  | Slice | Ticket | Delivers |
+  | --- | --- | --- |
+  | Freshness gate | BL-1173 | `deprecate-check` CLI + promote-path wire (Q-JUMP) |
+  | On-demand pass | BL-1174 | `/deprecate` verbs + ranked scan + `docs/deprecated/` |
+
+remaining_slices:
+  - "Full-pack coordinator/babysitter wake when undrained backlog/INTAKE-*.md sits at root (gap found same shift)."
+  - "Boy Scout epic slice-3 merge vs sibling epic — leave as optional consolidation."
+
+invariants:
+  - "Never silently delete behaviour — ambiguous retirements ask the human (bucket c)."
+  - "Feature scenarios for retired behaviour are retired, never reworded."
+  - "Epic is not directly promotable — coordinator promotes children only."
+  - "Deprecator execution requires a hard-tier multi-document reasoner (operator 2026-08-27 must-have); children carry mutation_cost high."
+
+source: |
+  backlog/INTAKE-deprecator-stale-rules-dead-logic-docs.md (human Laurent,
+  2026-08-27 ~07:03 BST; Q-jump directive ~07:16 BST).
+
+notes: |
+  - [2026-08-27] Cursor: minted under human Q-jump; Article 3.6 prompts already
+    landed in e55015f00 / a28aae435 — this epic closes the CLI + verb + docs gaps.
+  - [2026-08-27] human: deprecator MUST be executed only by a model that
+    reasons well across many documents — must-have. Locked in Article 3.6.

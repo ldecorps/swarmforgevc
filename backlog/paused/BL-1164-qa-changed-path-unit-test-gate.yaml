@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: code-quality-gates
-assigned_to: documenter
+assigned_to: coder
 priority: 8
 direction: human-requested
 depends_on: []

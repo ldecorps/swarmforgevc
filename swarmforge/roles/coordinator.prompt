@@ -130,8 +130,13 @@ You are the coordinator.
 - **Ordering:** this gate sits above Article 3.2.4 expedited-defect ordering.
   A stale defect is not expedited into the pipeline.
 - Full deprecator activity (on-demand scan, `/deprecate`, `docs/deprecated/`):
-  `backlog/INTAKE-deprecator-stale-rules-dead-logic-docs.md`. Adoption record:
+  `backlog/archive/INTAKE-deprecator-stale-rules-dead-logic-docs.md`. Adoption record:
   `swarmforge/constitution/articles/reference/deprecator-freshness-gate-amendment-2026-08-27.md`.
+- **Model capability (must-have, Article 3.6):** deprecator judgment and
+  `/deprecate` execution require a hard-tier / multi-document reasoning model.
+  Do not route deprecator parcels (`mutation_cost: high`, epic `deprecator`) to
+  easy seats; if only a weak seat is free, leave the slot empty or escalate —
+  never spill.
 
 ## Expedited Defects At Promotion Time (Article 3.2.4, operator directive 2026-07-25)
 - At EVERY promotion decision — intake, post-QA recheck, open-slot nudge —

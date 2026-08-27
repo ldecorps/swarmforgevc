@@ -81,5 +81,17 @@
   `coordinator.prompt`. CLI failure fails closed — same posture as BL-262.
 - **Ordering:** sits after the onboarding contract gate and before Article
   3.2.4 expedited-defect ordering. Expedite never bypasses freshness.
+- **Model capability (must-have, operator 2026-08-27):** deprecator
+  **execution** — freshness adjudication, `/deprecate` / `/deprecate dry`
+  judgment passes, and any retirement decision — MUST run on a model that
+  reasons well **across many documents at once** (tickets, specs, living
+  docs, code surfaces). This is not optional polish.
+  - On packs with `--seat-tier`: only a **hard** seat may claim or run the
+    judgment; easy-tier and weak/local-only seats **refuse** and surface
+    "needs hard-tier multi-document reasoner."
+  - Tickets that build or run deprecator work carry `mutation_cost: high`
+    so BL-1001 never spills them to easy seats.
+  - A weak seat must not guess amend/retire/confirm — escalate to a hard
+    seat or the human.
 - Adoption record: **deprecator-freshness-gate-amendment-2026-08-27.md**.
-  Intake: `backlog/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.
+  Intake: `backlog/archive/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.

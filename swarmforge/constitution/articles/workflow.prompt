@@ -51,7 +51,10 @@
   specifier adjudicates (amend, retire, split, or confirm). **Do not implement
   or forward work you can see assumes retired behaviour** — record a
   `spec-gap` note to specifier and coordinator instead of re-shipping dead
-  logic. Intake: `backlog/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.
+  logic. Intake: `backlog/archive/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.
+- **Model must-have:** deprecator judgment and `/deprecate` run only on a
+  hard-tier model that reasons well across many documents; easy/weak seats
+  refuse (Article 3.6).
 
 ## Worktree Discipline
 - At startup, discover and remember your assigned branch/worktree; work
