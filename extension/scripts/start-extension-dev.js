@@ -14,6 +14,11 @@
 //
 // Stages: compile → vscode-not-found → workspace-not-found →
 //         terminate-old-dev-host → launch-trigger / activation-timeout
+//         [--autostart] autostart → autostart-timeout
+//
+// With --autostart, after the F5-equivalent launch activates the extension host
+// the script writes the remote bounce sentinel (swarm) so agents launch through
+// the SwarmForge tmux socket — never via a standalone tmux session.
 'use strict';
 
 const { spawnSync, execFileSync } = require('node:child_process');
@@ -24,6 +29,10 @@ const {
   isMarkerFresh,
   filterDevHostPids,
   decideNextStep,
+  resolveAutostartTarget,
+  parseRoleSessionsFromTsv,
+  parseTmuxSessionNames,
+  isSwarmReady,
   resolveVsCodeBinary,
   buildDevHostLaunchCommand,
   isWslPlatform,
@@ -35,6 +44,11 @@ const {
 const EXT_DIR = path.resolve(__dirname, '..');
 const WORKSPACE_PATH = path.join(EXT_DIR, 'swarmforge-vc.code-workspace');
 const MARKER_PATH = path.join(EXT_DIR, '.dev-activation.json');
+const SETTINGS_PATH = path.join(EXT_DIR, '.vscode', 'settings.json');
+const REMOTE_BOUNCE = path.join(EXT_DIR, '..', 'swarmforge', 'scripts', 'remote_bounce.sh');
+const AUTOSTART_SETTLE_MS = Number(process.env.SWARM_AUTOSTART_SETTLE_MS || 1000);
+const AUTOSTART_TIMEOUT_MS = Number(process.env.SWARM_AUTOSTART_TIMEOUT_MS || 120000);
+const AUTOSTART_POLL_MS = Number(process.env.SWARM_AUTOSTART_POLL_MS || 2000);
 
 const POLL_INTERVAL_MS = 500;
 const ATTEMPT_TIMEOUT_MS = Number(process.env.BOUNCE_ATTEMPT_TIMEOUT_MS || 15000);
@@ -67,7 +81,6 @@ function devHostPids() {
   return filterDevHostPids(ps.stdout, EXT_DIR);
 }
 
-// ── stage: compile ───────────────────────────────────────────────────────────
 function compile() {
   console.log('bounce: compiling…');
   const result = spawnSync('npm', ['run', 'compile'], { cwd: EXT_DIR, stdio: 'inherit' });
@@ -76,16 +89,11 @@ function compile() {
   }
 }
 
-// An actual execution probe, not a PATH/stat check - on this host's exact
-// WSL trap, a Windows `code` binary resolves on PATH but dies with
-// "Exec format error" (missing WSLInterop binfmt registration), so merely
-// finding the path is not enough to call it usable.
 function isExecutable(binary) {
   const result = spawnSync(binary, ['--version'], { stdio: 'ignore' });
   return !result.error && result.status === 0;
 }
 
-// ── stage: vscode-not-found / workspace-not-found ────────────────────────────
 function checkPrerequisites() {
   const resolved = resolveVsCodeBinary({ platform: process.platform, env: process.env, isExecutable });
   if (resolved.error) {
@@ -97,7 +105,6 @@ function checkPrerequisites() {
   return resolved.binary;
 }
 
-// ── stage: terminate-old-dev-host ────────────────────────────────────────────
 function terminateOldDevHosts() {
   const pids = devHostPids();
   if (pids.length === 0) {
@@ -129,16 +136,12 @@ function terminateOldDevHosts() {
   }
 }
 
-// ── launch trigger ───────────────────────────────────────────────────────────
-// The editor's own command line starts the Extension Development Host
-// directly (BL-361) - no GUI automation, on any platform.
 function triggerLaunch(vscodeBinary) {
   const { command, args } = buildDevHostLaunchCommand(vscodeBinary, EXT_DIR, WORKSPACE_PATH);
   const result = spawnSync(command, args, { stdio: 'ignore' });
   return !result.error && result.status === 0;
 }
 
-// ── stage: launch-trigger / activation-timeout ───────────────────────────────
 function launchAndVerify(vscodeBinary) {
   const baselineMs = Date.now();
   const startMs = baselineMs;
@@ -187,6 +190,82 @@ function launchAndVerify(vscodeBinary) {
   }
 }
 
+function readSettingsContent() {
+  try {
+    return fs.readFileSync(SETTINGS_PATH, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function readSocketPath(targetPath) {
+  const socketFile = path.join(targetPath, '.swarmforge', 'tmux-socket');
+  try {
+    return fs.readFileSync(socketFile, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+function probeSwarmReady(targetPath) {
+  const socketPath = readSocketPath(targetPath);
+  const socketExists = socketPath.length > 0;
+  let rolesContent = '';
+  try {
+    rolesContent = fs.readFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), 'utf8');
+  } catch {
+    // no roles file yet
+  }
+  const tmux = socketExists
+    ? spawnSync('tmux', ['-S', socketPath, 'list-sessions', '-F', '#{session_name}'], {
+        encoding: 'utf8',
+      })
+    : { status: 1, stdout: '' };
+  return isSwarmReady({
+    socketExists,
+    tmuxListExitCode: tmux.status ?? 1,
+    roleSessions: parseRoleSessionsFromTsv(rolesContent),
+    listedSessionNames: parseTmuxSessionNames(tmux.stdout),
+  });
+}
+
+function triggerSwarmAutostart(targetPath) {
+  if (!fs.existsSync(REMOTE_BOUNCE)) {
+    fail('autostart', `remote_bounce.sh not found at: ${REMOTE_BOUNCE}`);
+  }
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    fail('autostart', `target has no .swarmforge directory: ${targetPath}`);
+  }
+
+  console.log(`bounce: autostart — triggering swarm via remote_bounce.sh for ${targetPath}`);
+  console.log(
+    'bounce: autostart — agents must run on the SwarmForge tmux socket, not a standalone tmux session.'
+  );
+
+  const result = spawnSync('bash', [REMOTE_BOUNCE, targetPath, 'swarm'], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || 'unknown error').trim();
+    fail('autostart', `remote_bounce.sh swarm failed: ${detail}`);
+  }
+}
+
+function waitForSwarmAutostart(targetPath) {
+  const deadline = Date.now() + AUTOSTART_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (probeSwarmReady(targetPath)) {
+      console.log('bounce: autostart — swarm is ready on the SwarmForge tmux socket.');
+      return;
+    }
+    sleep(AUTOSTART_POLL_MS);
+  }
+  const launchLog = path.join(targetPath, '.swarmforge', 'last-launch.log');
+  fail(
+    'autostart-timeout',
+    `Swarm did not become ready within ${AUTOSTART_TIMEOUT_MS}ms. Check ${launchLog} and the extension host output.`
+  );
+}
+
 function repoRoot() {
   return path.resolve(EXT_DIR, '..');
 }
@@ -222,6 +301,12 @@ function main(argv = process.argv.slice(2)) {
     console.warn(guard.message);
   }
 
+  const autostartTarget = resolveAutostartTarget({
+    argv,
+    env: process.env,
+    settingsContent: readSettingsContent(),
+  });
+
   compile();
   const vscodeBinary = checkPrerequisites();
   const prior = devHostPids().length;
@@ -239,6 +324,15 @@ function main(argv = process.argv.slice(2)) {
     );
   }
   console.log(`bounce: SUCCESS — verified fresh activation, dev host pid ${pids[0]}.`);
+
+  if (!autostartTarget) {
+    return;
+  }
+
+  sleep(AUTOSTART_SETTLE_MS);
+  triggerSwarmAutostart(autostartTarget);
+  waitForSwarmAutostart(autostartTarget);
+  console.log('bounce: AUTOSTART SUCCESS — extension host and swarm are up.');
 }
 
 main();
