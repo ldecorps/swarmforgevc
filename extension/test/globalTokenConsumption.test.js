@@ -8,7 +8,7 @@ const {
   globalTokenTrendSeries,
   computeGlobalTokenConsumptionFromTranscripts,
 } = require('../out/metrics/globalTokenConsumption');
-const { trendForGlobalTokenConsumption } = require('../out/metrics/trend');
+const { trendForGlobalTokenConsumption } = require('../out/metrics/globalTokenConsumption');
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -111,7 +111,7 @@ test('globalTokenTrendSeries omits incomplete buckets', () => {
   assert.equal(series[0].value, 10);
 });
 
-test('trendForGlobalTokenConsumption is exported from trend.ts', () => {
+test('trendForGlobalTokenConsumption is exported from globalTokenConsumption', () => {
   const trend = trendForGlobalTokenConsumption([
     { bucketStartMs: T0, periodStart: new Date(T0).toISOString(), totalTokens: 10, incomplete: false },
     { bucketStartMs: T0 + DAY, periodStart: new Date(T0 + DAY).toISOString(), totalTokens: 20, incomplete: false },
