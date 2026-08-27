@@ -93,3 +93,7 @@ notes: |
   `docs/how-to/BL-702-operator-confirm-env-reload.md`,
   `swarmforge/scripts/redeploy_cursor_bridge.sh`,
   `swarmforge/scripts/launch_front_desk.sh`.
+
+  [2026-08-27] specifier: coder bounce — feature already on main since
+  a279778a0; acceptance + required_stages present; assigned_to coder. Pull
+  main / refresh worktree if feature missing locally.

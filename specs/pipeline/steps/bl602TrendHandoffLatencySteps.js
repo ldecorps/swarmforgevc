@@ -8,6 +8,20 @@ const path = require('node:path');
 const FEATURE = 'handoff latency trend makes parcel queue wait visible per recipient role';
 const REPO = path.join(__dirname, '..', '..', '..');
 
+/** Fixture vocabulary for Outline rows — pins kill Gherkin example-cell mutants (BL-908). */
+const KNOWN_VALUES = Object.freeze({
+  coder: Object.freeze({
+    enqueued_ts: 1000,
+    dequeued_ts: 61000,
+    latency_ms: 60000,
+  }),
+  cleaner: Object.freeze({
+    enqueued_ts: 5000,
+    dequeued_ts: 905000,
+    latency_ms: 900000,
+  }),
+});
+
 function loadPure() {
   return require(path.join(REPO, 'extension', 'out', 'metrics', 'handoffLatency'));
 }
@@ -15,6 +29,12 @@ function loadPure() {
 function ensure(ctx) {
   if (!ctx.bl602) ctx.bl602 = {};
   return ctx.bl602;
+}
+
+function pinForRole(role) {
+  const pin = KNOWN_VALUES[role];
+  assert.ok(pin, `BL-602: unknown Outline role fixture ${JSON.stringify(role)}`);
+  return pin;
 }
 
 function isoFromExampleTs(tsText) {
@@ -38,16 +58,22 @@ function registerSteps(registry) {
 
   scoped(/^a handoff for recipient "(.+)" enqueued at (.+)$/, (ctx, role, enqueuedTs) => {
     const st = ensure(ctx);
+    const pinned = pinForRole(role.trim());
+    assert.equal(Number(enqueuedTs), pinned.enqueued_ts, 'BL-602 Outline enqueued_ts must match fixture pin');
+    st.pin = pinned;
+    st.role = role.trim();
     st.headers = {
-      to: role,
+      to: st.role,
       type: 'git_handoff',
       enqueued_at: isoFromExampleTs(enqueuedTs),
     };
-    st.role = role;
   });
 
   scoped(/^that handoff was dequeued at (.+)$/, (ctx, dequeuedTs) => {
-    ensure(ctx).headers.dequeued_at = isoFromExampleTs(dequeuedTs);
+    const st = ensure(ctx);
+    assert.ok(st.pin, 'BL-602: role pin must be set before dequeue');
+    assert.equal(Number(dequeuedTs), st.pin.dequeued_ts, 'BL-602 Outline dequeued_ts must match fixture pin');
+    st.headers.dequeued_at = isoFromExampleTs(dequeuedTs);
   });
 
   scoped(/^handoff latency is derived for that parcel$/, (ctx) => {
@@ -56,11 +82,17 @@ function registerSteps(registry) {
   });
 
   scoped(/^the latency is (.+) milliseconds$/, (ctx, latencyMs) => {
-    assert.equal(ensure(ctx).record.latencyMs, Number(latencyMs));
+    const st = ensure(ctx);
+    assert.ok(st.pin, 'BL-602: role pin must be set before latency assert');
+    assert.equal(Number(latencyMs), st.pin.latency_ms, 'BL-602 Outline latency_ms must match fixture pin');
+    assert.equal(st.record.latencyMs, Number(latencyMs));
   });
 
   scoped(/^the record carries recipient "(.+)"$/, (ctx, role) => {
-    assert.equal(ensure(ctx).record.recipient, role);
+    const st = ensure(ctx);
+    assert.ok(KNOWN_VALUES[role.trim()], `BL-602 Outline recipient must be a pinned role (${role})`);
+    assert.equal(st.record.recipient, role.trim());
+    assert.equal(st.record.recipient, st.role);
   });
 
   scoped(

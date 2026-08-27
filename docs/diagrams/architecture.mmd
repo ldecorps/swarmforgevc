@@ -237,6 +237,8 @@
 %% computeTrend (inward); trend.ts must not re-export (acyclic).
 %% BL-600 (2026-08-27): human-decision latency — ask→verdict median/outliers
 %% via humanDecisionLatency → computeTrend (inward; no trend re-export).
+%% BL-602 (2026-08-27): handoff latency — enqueued_at→dequeued_at per recipient
+%% via handoffLatency → computeTrend (inward; master+worktree mailboxes).
 %% BL-732 (2026-08-25): needsHumanDetection pane-title chrome mirrors
 %% display_name_for_role (multi-word + @-seat); closes BL-642 residual.
 %% BL-695 (2026-08-25): supervisor/unbound threads never write
