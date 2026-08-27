@@ -88,3 +88,5 @@ notes: |
   [2026-08-27] specifier: feature file minted; handoff 0196ee0b46 not merged
   (divergent coordinator branch carried unrelated pipeline code); equivalent
   promotion 75000ed42 already on HEAD. Coordinator may route to coder.
+  - [2026-08-27] coordinator: open-slot nudge BL-599 cleared — already in
+    backlog/active/ with dispatch trail to coder; no re-promote (BL-1097).
