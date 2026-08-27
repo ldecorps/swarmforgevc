@@ -24,6 +24,11 @@ abandoned_commits:
   - f22b322fad
   - df14615fe8
   - 369e2dd616
+  - 37a72266b8
+  - 5be7395b8a
+  - fe49be7d8b
+  - 1d1b237676
+  - 89ade67ac9
 
 required_wiring:
   - "extension/src/tools/telegramControlCore.ts::DEPRECATE_PATTERN::register /deprecate in shared operator verb backend"
