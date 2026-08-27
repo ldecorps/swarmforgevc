@@ -1,24 +1,10 @@
 import { Resvg } from '@resvg/resvg-js';
+import { escapeXmlForSvg, niceChartAxisMax } from './briefingChartSvgCommon';
 import { ShiftVelocitySeries } from './shiftVelocity';
 
 // BL-1184: briefing shift-velocity chart — non-linear time axis (recent precision).
 export const SHIFT_VELOCITY_DIAGRAM_NAME = 'shift-velocity';
 export const SHIFT_VELOCITY_RENDER_WIDTH = 1920;
-
-function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function niceMax(value: number): number {
-  if (value <= 0) {
-    return 5;
-  }
-  const padded = value * 1.1;
-  const mag = Math.pow(10, Math.floor(Math.log10(padded)));
-  const norm = padded / mag;
-  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  return nice * mag;
-}
 
 /**
  * Non-linear x: logarithmic age warp — older days cluster left, recent days
@@ -66,7 +52,7 @@ export function buildShiftVelocitySvg(data: ShiftVelocitySeries): string {
   }
   const minMs = points[0].dayMs;
   const maxMs = points[points.length - 1].dayMs;
-  const maxY = niceMax(Math.max(...points.map((p) => p.landedMax), 1));
+  const maxY = niceChartAxisMax(Math.max(...points.map((p) => p.landedMax), 1), 5);
 
   const xy = (dayMs: number, landedMax: number): [number, number] => {
     const x = nonLinearTimeX(dayMs, minMs, maxMs, padL, plotW);
@@ -106,7 +92,7 @@ export function buildShiftVelocitySvg(data: ShiftVelocitySeries): string {
     .sort((a, b) => a - b)
     .map((i) => {
       const [x] = xy(points[i].dayMs, 0);
-      return `<text x="${x.toFixed(1)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#555" font-family="ui-monospace,Menlo,monospace">${escapeXml(points[i].label)}</text>`;
+      return `<text x="${x.toFixed(1)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#555" font-family="ui-monospace,Menlo,monospace">${escapeXmlForSvg(points[i].label)}</text>`;
     })
     .join('\n');
 
@@ -117,7 +103,7 @@ export function buildShiftVelocitySvg(data: ShiftVelocitySeries): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `<rect width="100%" height="100%" fill="#f7f5f0"/>`,
     `<text x="${padL}" y="26" font-size="18" font-weight="700" fill="#1a3a4a" font-family="system-ui,sans-serif">Shift velocity — max tickets landed per ${data.windowHours}h</text>`,
-    `<text x="${padL}" y="44" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXml(subtitle)}</text>`,
+    `<text x="${padL}" y="44" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXmlForSvg(subtitle)}</text>`,
     ...gridLines,
     `<polyline fill="none" stroke="#2a5a4a" stroke-width="2.6" points="${poly}"/>`,
     dots,
