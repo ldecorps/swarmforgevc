@@ -11,7 +11,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1181-bob-starting-cast-cherry-pick-apply.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Quick-start slice of BoB intake: steward cherry-picks one (provider, model)
   per role as the initial permanent lineup. Reuse ModelFactory / pack apply.
