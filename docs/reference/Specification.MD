@@ -1,15 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 27, 2026 (BL-790: bridge `POST /agent-notes` queues a
-priority-00 `type: note` into a declared role's mailbox via `swarm_handoff.bb`
-— message one line / 80 chars with `Bubble: ` operator prefix; slice A only
-(Bubble UI is BL-793). Acceptance:
-`specs/features/BL-790-bridge-queues-a-note-for-a-role.feature`.)
+**Last Updated:** August 27, 2026 (BL-1166: Bubble Operator docs remote page —
+`operator-docs` in BL-829 ui-bundle manifest (`letsTalkRoutes.operatorDocs`,
+order 6); bridge serves read-only HTML from git `docs/` via
+`docs/index.md` Divio sections; phone viewport layout; bridge token
+required; honest unavailable when corpus unreachable. First slice of
+BL-1165. Acceptance:
+`specs/features/BL-1166-bubble-authored-docs-index-and-first-pages.feature`.
+How-to: `docs/how-to/BL-1166-bubble-authored-docs-index-and-first-pages.md`.)
 Prior entry —
-**Last Updated:** August 27, 2026 (BL-711: interface-vs-incarnation vocabulary —
-**messaging** (today: Telegram), **host agent** (today: Cursor), operator phone
-app **Bubble**; architecture prose may use interface words; operator how-tos
-keep incarnation names. Acceptance:
+**Last Updated:** August 27, 2026 (BL-726: BL-718 Bubble talk mirror
 `specs/features/BL-711-interface-vs-incarnation-glossary.feature`.)
 Prior entry —
 **Last Updated:** August 27, 2026 (BL-710: Telegram `/redeploy` verb family
