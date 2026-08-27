@@ -124,6 +124,46 @@ notes: |
   - [2026-08-27] specifier: minted per coordinator's routing note. The
     coder's stash (.worktrees/coder stash@{0}) is the primary evidence for
     deliverable 1 — whoever picks this up reads it BEFORE it is dropped.
-bounce_count: 1
+  - "[2026-08-28] coder: fixed D1 (backlog/evidence/BL-1195-hardener-bounce-20260828.md).
+    ready_for_next.bb's has-in-progress-task? exemption only ever consulted
+    the CURRENTLY INVOKING role's own in_process mailbox, so the
+    coordinator's turn false-flagged the specifier's legitimate WIP on the
+    shared `master` checkout (and symmetrically). Widened the exemption
+    (master-resident-sibling-has-in-process-parcel? in ready_for_next.bb) to
+    union every master-resident role's in_process mailbox when the invoking
+    role's own worktree-name is \"master\" — every other role's own
+    dedicated worktree is untouched, byte-identical to before. Reproduced
+    the exact false-positive with a real-git fixture first (TDD), then
+    fixed; regression test added at
+    swarmforge/scripts/test/test_worktree_drift_guard_master_resident_sibling.sh
+    (scenarios 04/05/06, registered in suite-manifest.tsv) plus the
+    existing worktree_drift_lib_test_runner.bb /
+    test_worktree_drift_guard.sh / BL-1195 acceptance suite re-run clean."
+  - "[2026-08-28] coder: architect bounced the above re-fix
+    (backlog/evidence/BL-1195-architect-bounce-20260828.md) — the sibling
+    union still refused whenever NEITHER master-resident role held a
+    dispatched parcel at all, which is hardener's own reproduction
+    verbatim (Article 1.2 spec/prompt drafting has no parcel to point at
+    in the first place). Replaced the union with a full carve-out:
+    `enforce-worktree-drift-guard!` now skips the check entirely whenever
+    the invoking role's own worktree-name is \"master\" — the shared
+    checkout is a genuinely concurrent, multi-writer surface by design
+    (commit_integrity_lib.bb's own header names coordinator bookkeeping,
+    the BL-topic-record writer, QA's fast-forward, the specifier, and
+    operator_file_question.bb as all committing into one git index with no
+    isolation), so no parcel-shaped signal can ever distinguish a
+    legitimate writer's WIP from real drift there. Deleted the now-dead
+    master-resident-sibling-has-in-process-parcel? function. Renamed the
+    regression test to
+    swarmforge/scripts/test/test_worktree_drift_guard_master_resident_exempt.sh
+    and rewrote it to hardener's own no-parcel-anywhere reproduction
+    (scenarios 04/05) plus a control proving a non-master role keeps full
+    drift detection (scenario 06); suite-manifest.tsv updated for the
+    rename. Trade-off, named explicitly per the architect's own review: a
+    BL-1195-shaped incident recurring specifically inside the shared
+    master checkout would no longer be caught by this guard — every other
+    pipeline role's dedicated worktree keeps full detection unchanged."
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-27, by: hardender, blamed: coder, class: behavior, commit: dfd885f9f4, evidence: backlog/evidence/BL-1195-hardener-bounce-20260828.md }
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: fae547cc21, evidence: backlog/evidence/BL-1195-architect-bounce-20260828.md }
