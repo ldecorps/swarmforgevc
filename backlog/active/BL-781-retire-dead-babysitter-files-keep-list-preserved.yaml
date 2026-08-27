@@ -31,6 +31,28 @@ source: |
   second dead wake-queue file the coder had not flagged.
 
 acceptance: specs/features/BL-781-retire-dead-babysitter-files-keep-list-preserved.feature
+# Tip-pure rematch 20260827 atop origin/main (QA bounce entangled tip).
+abandoned_commits:
+  - efdc056eca
+  - f8505e45e9
+  - dafdc9c713
+  - 9559add8b5
+  - 3132e9dcc4
+  - 800bccf535
+  - 8da797377d
+  - 23aa89ba7b
+  - 87b1ac9538
+  - 9a9780bcae
+  - 85c2de2816
+  - 5ab7691079
+  - 65f50e2fd4
+  - ede899fcbe
+  - 6b5bfa3a1c
+  - 429a9957b0
+  - be2c162fb6
+  - 675d4e99c7
+  - 87ddcaacda
+
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl781RetireDeadBabysitterFilesKeepListPreservedSteps::acceptance handler registered"
