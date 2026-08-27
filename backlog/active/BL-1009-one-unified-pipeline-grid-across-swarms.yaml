@@ -135,3 +135,5 @@ notes: |
   assertion, mixed-swarm vs mono-swarm world. No meaning-preserving Background
   exists: scenario 04 requires a single-swarm world that scenarios 01/02/06
   must not have.
+
+assigned_to: coder
