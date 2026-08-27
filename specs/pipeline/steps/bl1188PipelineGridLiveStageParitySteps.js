@@ -128,6 +128,18 @@ function rowFor(board, ticketId) {
   return row;
 }
 
+// BL-1188 architect bounce D2 (BL-971): ensureFixture's mkdtempSync dir was
+// never removed anywhere in this file. Idempotent (safe to call more than
+// once, or on a ctx that never created one) - unsets ctx.gridRoot after
+// removal so a later ensureFixture call (should one ever run) creates a
+// genuinely fresh dir rather than silently reusing a removed path.
+function cleanupFixture(ctx) {
+  if (ctx.gridRoot) {
+    fs.rmSync(ctx.gridRoot, { recursive: true, force: true });
+    ctx.gridRoot = undefined;
+  }
+}
+
 function registerSteps(registry) {
   registry.defineScoped(/^the pipeline STATUS GRID live capture runs for the target swarm$/, (ctx) => {
     ensureFixture(ctx);
@@ -163,14 +175,19 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the live stage report and Live Screen held-ticket resolution agree ticket "([^"]+)" is at "([^"]+)"$/,
     (ctx, ticketId, role) => {
-      claimInProcess(ctx, ticketId, role);
-      const root = ensureFixture(ctx);
-      const normalized = normalizeRole(role);
-      const liveReport = readLiveRoleHeldTickets(root);
-      const spyMeta = resolveResidentHeldTicketMetaForRoles(root, [normalized]);
-      assert.ok((liveReport[normalized] || []).includes(ticketId), `live report must hold ${ticketId} at ${normalized}`);
-      assert.equal(spyMeta.ticketId, ticketId, `Resident Spy resolution must agree on ${ticketId} at ${normalized}`);
-      ctx.spyRole = normalized;
+      try {
+        claimInProcess(ctx, ticketId, role);
+        const root = ensureFixture(ctx);
+        const normalized = normalizeRole(role);
+        const liveReport = readLiveRoleHeldTickets(root);
+        const spyMeta = resolveResidentHeldTicketMetaForRoles(root, [normalized]);
+        assert.ok((liveReport[normalized] || []).includes(ticketId), `live report must hold ${ticketId} at ${normalized}`);
+        assert.equal(spyMeta.ticketId, ticketId, `Resident Spy resolution must agree on ${ticketId} at ${normalized}`);
+        ctx.spyRole = normalized;
+      } catch (e) {
+        cleanupFixture(ctx);
+        throw e;
+      }
     },
     FEATURE
   );
@@ -207,57 +224,109 @@ function registerSteps(registry) {
     FEATURE
   );
 
+  // Deliberately NOT a cleanup point on the happy path - scenario 03 (spy-
+  // parity-03) still needs ctx.gridRoot alive for its OWN later "the Live
+  // Screen capture builds role tile payloads" step below. Every OTHER
+  // scenario's true terminal touch is a Then step further down (each
+  // guarded with its own cleanup); this step still cleans up on a throw
+  // here (nothing later would run to do it otherwise).
   registry.defineScoped(/^the pipeline STATUS GRID snapshot is captured$/, (ctx) => {
-    const root = ensureFixture(ctx);
-    ctx.snapshot = capturePipelineGridLive(root);
-    ctx.board = buildBoard(root);
-    ctx.cacheOnlyBoard = cacheOnlyBoard(root);
+    try {
+      const root = ensureFixture(ctx);
+      ctx.snapshot = capturePipelineGridLive(root);
+      ctx.board = buildBoard(root);
+      ctx.cacheOnlyBoard = cacheOnlyBoard(root);
+    } catch (e) {
+      cleanupFixture(ctx);
+      throw e;
+    }
   }, FEATURE);
 
+  // freshness-each-tick-05's sole When AND its scenario's true terminal
+  // fixture touch (the later Then only reads ctx.laterBoard from memory) -
+  // cleans up here in a finally so it fires whether this step's own body
+  // throws or completes.
   registry.defineScoped(/^two consecutive pipeline STATUS GRID snapshots are captured$/, (ctx) => {
-    const root = ensureFixture(ctx);
-    ctx.earlierBoard = buildBoard(root);
-    assert.ok(ctx.moveTicketId, 'expected a prior "moves ticket ... between ticks" step');
-    clearClaim(ctx, normalizeRole(ctx.moveFromRole));
-    claimInProcess(ctx, ctx.moveTicketId, ctx.moveToRole);
-    ctx.laterBoard = buildBoard(root);
+    try {
+      const root = ensureFixture(ctx);
+      ctx.earlierBoard = buildBoard(root);
+      assert.ok(ctx.moveTicketId, 'expected a prior "moves ticket ... between ticks" step');
+      clearClaim(ctx, normalizeRole(ctx.moveFromRole));
+      claimInProcess(ctx, ctx.moveTicketId, ctx.moveToRole);
+      ctx.laterBoard = buildBoard(root);
+    } finally {
+      cleanupFixture(ctx);
+    }
   }, FEATURE);
 
+  // spy-parity-03's true terminal fixture touch (both its Then steps below
+  // only read ctx.board/ctx.residentMeta from memory) - cleans up here in a
+  // finally so it fires whether this step's own body throws or completes.
   registry.defineScoped(/^the Live Screen capture builds role tile payloads for the same tick$/, (ctx) => {
-    const root = ensureFixture(ctx);
-    assert.ok(ctx.spyRole, 'expected a prior "live stage report and Live Screen ... agree" step');
-    ctx.residentMeta = resolveResidentHeldTicketMetaForRoles(root, [ctx.spyRole]);
+    try {
+      const root = ensureFixture(ctx);
+      assert.ok(ctx.spyRole, 'expected a prior "live stage report and Live Screen ... agree" step');
+      ctx.residentMeta = resolveResidentHeldTicketMetaForRoles(root, [ctx.spyRole]);
+    } finally {
+      cleanupFixture(ctx);
+    }
   }, FEATURE);
 
+  // Not this scenario's true terminal step in 01/02/03 (a later Then still
+  // runs after it there) - a throw here would otherwise skip past that
+  // later Then's own cleanup, so it guards itself. spy-parity-03's own
+  // fixture is already gone by the time this runs (cleaned at the Live
+  // Screen capture step above), so cleanupFixture is a harmless no-op there.
   registry.defineScoped(/^the grid row for "([^"]+)" shows stage "([^"]+)"$/, (ctx, ticketId, role) => {
-    const row = rowFor(ctx.board, ticketId);
-    assert.equal(row.column, normalizeRole(role), `expected ${ticketId} at ${normalizeRole(role)}, got ${row.column}`);
+    try {
+      const row = rowFor(ctx.board, ticketId);
+      assert.equal(row.column, normalizeRole(role), `expected ${ticketId} at ${normalizeRole(role)}, got ${row.column}`);
+    } catch (e) {
+      cleanupFixture(ctx);
+      throw e;
+    }
   }, FEATURE);
 
+  // freshness-each-tick-05's sole Then, reading ctx.laterBoard from memory
+  // only - the fixture was already removed by the When step above.
   registry.defineScoped(/^the later snapshot row for "([^"]+)" shows stage "([^"]+)"$/, (ctx, ticketId, role) => {
     const row = rowFor(ctx.laterBoard, ticketId);
     assert.equal(row.column, normalizeRole(role), `expected ${ticketId} at ${normalizeRole(role)}, got ${row.column}`);
   }, FEATURE);
 
+  // live-report-not-cache-01's true terminal step - cleans up in a finally
+  // so it fires whether this assertion passes or throws.
   registry.defineScoped(/^the capture did not use the cache as its sole source of truth$/, (ctx) => {
-    // If the render were sourced solely from the cache, it would match
-    // cacheOnlyBoard's rows exactly; the live capture must diverge whenever
-    // live and cache disagree (this scenario's own Background sets them up
-    // to disagree).
-    const liveText = renderPipelineBoardGridOnly(ctx.board);
-    const cacheText = renderPipelineBoardGridOnly(ctx.cacheOnlyBoard);
-    assert.notEqual(liveText, cacheText, 'live capture must not match a cache-only render when live and cache disagree');
+    try {
+      // If the render were sourced solely from the cache, it would match
+      // cacheOnlyBoard's rows exactly; the live capture must diverge whenever
+      // live and cache disagree (this scenario's own Background sets them up
+      // to disagree).
+      const liveText = renderPipelineBoardGridOnly(ctx.board);
+      const cacheText = renderPipelineBoardGridOnly(ctx.cacheOnlyBoard);
+      assert.notEqual(liveText, cacheText, 'live capture must not match a cache-only render when live and cache disagree');
+    } finally {
+      cleanupFixture(ctx);
+    }
   }, FEATURE);
 
+  // claimed-not-co-flood-02's true terminal step - cleans up in a finally
+  // so it fires whether this assertion passes or throws.
   registry.defineScoped(/^fewer than half of active rows show stage "([^"]+)"$/, (ctx, role) => {
-    const normalized = normalizeRole(role);
-    const matching = ctx.board.rows.filter((r) => r.column === normalized).length;
-    assert.ok(
-      matching < ctx.board.rows.length / 2,
-      `expected fewer than half of ${ctx.board.rows.length} rows at ${normalized}, got ${matching}`
-    );
+    try {
+      const normalized = normalizeRole(role);
+      const matching = ctx.board.rows.filter((r) => r.column === normalized).length;
+      assert.ok(
+        matching < ctx.board.rows.length / 2,
+        `expected fewer than half of ${ctx.board.rows.length} rows at ${normalized}, got ${matching}`
+      );
+    } finally {
+      cleanupFixture(ctx);
+    }
   }, FEATURE);
 
+  // spy-parity-03's own fixture is already gone (cleaned at the Live Screen
+  // capture step above) - reads ctx.residentMeta from memory only.
   registry.defineScoped(/^the "coder" Live Screen tile shows "([^"]+)" as its primary working ticket$/, (ctx, ticketId) => {
     assert.equal(ctx.residentMeta && ctx.residentMeta.ticketId, ticketId);
   }, FEATURE);
@@ -271,10 +340,16 @@ function registerSteps(registry) {
   // separate claimed-vs-queued marker to assert on beyond the column
   // itself - PIPELINE_BOARD_NOT_STARTED_COLUMN stays imported/reachable as
   // the explicit contrast this asserts against.
+  // queued-not-claimed-04's sole and true terminal Then - cleans up in a
+  // finally so it fires whether these assertions pass or throw.
   registry.defineScoped(/^the grid row for "([^"]+)" does not show status claimed at "([^"]+)"$/, (ctx, ticketId, role) => {
-    const row = rowFor(ctx.board, ticketId);
-    assert.notEqual(row.column, PIPELINE_BOARD_NOT_STARTED_COLUMN, `expected ${ticketId} positioned at its real target stage, not the not-started default`);
-    assert.equal(row.column, normalizeRole(role), `expected ${ticketId} correctly positioned at ${normalizeRole(role)}, got ${row.column}`);
+    try {
+      const row = rowFor(ctx.board, ticketId);
+      assert.notEqual(row.column, PIPELINE_BOARD_NOT_STARTED_COLUMN, `expected ${ticketId} positioned at its real target stage, not the not-started default`);
+      assert.equal(row.column, normalizeRole(role), `expected ${ticketId} correctly positioned at ${normalizeRole(role)}, got ${row.column}`);
+    } finally {
+      cleanupFixture(ctx);
+    }
   }, FEATURE);
 }
 
