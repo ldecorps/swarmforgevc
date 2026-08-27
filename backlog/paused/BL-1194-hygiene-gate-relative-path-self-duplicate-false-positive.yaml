@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1194-hygiene-gate-relative-path-self-duplicate-false-positive.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Discovered while minting BL-1193 (2026-08-27): running
   `swarmforge/scripts/specifier_backlog_hygiene_gate.sh
