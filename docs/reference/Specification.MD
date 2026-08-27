@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-726: BL-718 Bubble talk mirror
+acceptance is wired — `bl718BubbleTalkMirrorSteps.js` registered from
+`specs/pipeline/steps/index.js`, handlers drive
+`mirrorLetsTalkTurnToBubble` / `splitTelegramChunks`; pipeline CLI no longer
+fails with "no step handler matched". Acceptance:
+`specs/features/BL-726-bl718-acceptance-feature-has-no-step-handlers.feature`.
+How-to: `docs/how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1175: standing property-suite reds
 are explicitly allowlisted in
 `swarmforge/scripts/property_suite_standing_allowlist.tsv` so
@@ -9233,6 +9241,27 @@ Stock suite runs must not trip the BL-1124 shared-repo canary.
 - **BL-1121** — reconcile-import skip (standing recipe vs env override).
 - **BL-1124** — fixtures must not mutate shared main.
 - How-to: `docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`.
+
+## BL-718 Acceptance Step Wiring (BL-726)
+
+BL-718's Bubble talk mirror product code and unit tests landed, but its
+acceptance feature under `specs/features/BL-718-*.feature` had **zero** step
+handlers — every scenario failed `no step handler matched` at
+`specs/pipeline/runtime.js`, so the Gherkin gate never actually ran.
+
+### Fix
+
+`specs/pipeline/steps/bl718BubbleTalkMirrorSteps.js` registers handlers for
+every BL-718 Given/When/Then and drives committed
+`mirrorLetsTalkTurnToBubble` / `splitTelegramChunks` behaviour (not
+prompt-text assertions). The module is required from
+`specs/pipeline/steps/index.js`. Companion pilot-process gap: BL-727 (done).
+
+### See Also
+
+- **BL-718** — Bubble talk mirror chunks and fails loudly.
+- How-to: `docs/how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md`,
+  `docs/how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md`.
 
 
 
