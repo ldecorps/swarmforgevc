@@ -1,6 +1,7 @@
 # SwarmForge VS Code Extension — Specification
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 **Last Updated:** August 27, 2026 (BL-599: intake-balance trend —
 filed/closed/net per window via `deriveIntakeBalanceEvents` /
@@ -11,6 +12,18 @@ epic trackers excluded; root `INTAKE-*.md` counted; exposed on
 `docs/how-to/BL-599-trend-intake-balance.md`.)
 Prior entry —
 >>>>>>> 3656bb2fe (fix(BL-599): tip-pure rematch — intake-balance wiring after entangled tip.)
+=======
+**Last Updated:** August 27, 2026 (BL-597: self-heal events trend —
+structured `{type, subject, reason, at}` records appended at existing
+recovery log sites to `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl`
+(gitignored); pure `aggregateSelfHealCounts` → `computeTrend` per type;
+failed append never blocks or alters recovery. Types:
+`stale-build-recompile`, `supervisor-respawn`, `kill-all-swarm`,
+`rotation-respawn`, `claim-heal`. Measurement only. Acceptance:
+`specs/features/BL-597-trend-self-heal-events.feature`. How-to:
+`docs/how-to/BL-597-trend-self-heal-events.md`.)
+Prior entry —
+>>>>>>> 8f54c24ad0
 **Last Updated:** August 27, 2026 (BL-980: Pipeline Board RECENTLY CLOSED
 lines append a relative closure-age suffix from durable `doneClosedAtMs`
 (`formatRecentlyClosedAgeLabel` in `pipelineBoard.ts`; stamped once in
@@ -7306,6 +7319,58 @@ to the project path; fixtures may omit it and emit nothing.
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 - **BL-823** — availability ledger (sibling monthly JSONL under
   `.swarmforge/telemetry/`).
+- **BL-597** — self-heal events trend (sibling monthly JSONL; same
+  `computeTrend` posture; see section below).
+
+## Self-Heal Events Trend (BL-597)
+
+The swarm heals itself constantly — stale-build recompiles, supervisor
+respawns, `kill_all_swarm`, mono-router rotation respawns, claim-heal —
+but historically counted none of it; a recovery that fixed a live outage
+stayed invisible until grepped by hand. BL-597 structures each existing
+prose log moment as a durable event and trends **per-type counts** over
+time. **Measurement only** — recovery behaviour is unchanged; a failed
+telemetry append must not block or alter whether self-heal runs.
+
+### Storage
+
+`.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl` — append-only, one JSON
+object per line, monthly files. Explicitly listed in `.gitignore` (and
+covered by the top-level `.swarmforge/` ignore). Clojure sites call
+`self-heal-telemetry-lib/append-self-heal-event!` (failures swallowed);
+tests may use `selfHealTelemetryStore.ts` / `self_heal_telemetry_cli.bb`.
+
+Record shape:
+
+```json
+{"type":"stale-build-recompile","subject":"front-desk-supervisor","reason":"recompiling before respawn","at":"2026-08-27T09:00:00.000Z"}
+```
+
+### Event types and emit sites
+
+| Type | Subject (typical) | Emit at existing log site |
+|------|-------------------|---------------------------|
+| `stale-build-recompile` | `front-desk-supervisor` | `front_desk_supervisor.bb` `ensure-current-build!` (with `stale-build-detected`) |
+| `supervisor-respawn` | `front-desk-supervisor` | `front_desk_supervisor.bb` `log-event!` `:started` |
+| `kill-all-swarm` | `lifecycle` | `kill_pipeline_swarm.sh` after SUCCESS (via CLI) |
+| `rotation-respawn` | `mono-router-resident` | `handoff_lib.bb` mono-router persona swap |
+| `claim-heal` | `handoffd` | `handoffd.bb` resume orphaned `in_process` |
+
+Each record is emitted **at the existing prose log site** for that recovery
+action — no parallel detection path.
+
+### Aggregation
+
+`selfHealTelemetry.ts` `aggregateSelfHealCounts` folds an **in-memory**
+event list into per-type `trend.ts` / `computeTrend` series (current /
+prior / delta / direction) — file-free aggregation.
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
+  `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
 
 ## Flow Watchdog (BL-577)
 
