@@ -21,7 +21,7 @@ captures, an available-memory reading) against these checks, in
 
 | # | Check | Fires when |
 |---|---|---|
-| 1 | live-session-per-role | a role pane has no live process matching the **agent token's process marker** from `roles.tsv` **anywhere under that pane's process tree** (via a single `ps -eo pid=,ppid=,args=` snapshot; BL-1070 walks descendants by ppid, not only direct children — wrapper shells put `claude` at depth 2+, and a first-generation-only match false-CRIT'd every healthy pack role). Never matches an agent under a different pane. Portable across GNU and BSD/macOS `ps`; never `pane_current_command`, which lies with a live child. Markers live in one map (`swarmforge/scripts/agent_process_marker_lib.bb`, BL-1108) so babysitter and `./swarm ensure` cannot drift: `claude` → `claude `, `cursor` → `cursor-agent`, `local-model` → `qwen`, unknown tokens fall back to the token itself. Looking only for `claude` false-CRITed healthy Cursor panes as half-launches. If the `ps` gather itself fails outright, this reports `UNAVAILABLE` for that role rather than a false "no process" CRIT. Missing-session CRITs are mono-router topology aware (BL-804, below) — a dormant role's absent session under router mode is not a finding at all. A **vanished tmux session** for a role that should stand also carries a bounded repair intent (BL-1017, below) — the one exception to "the daemon never fixes anything" |
+| 1 | live-session-per-role | a role pane has no live process matching the **agent token's process marker** from `roles.tsv` **anywhere under that pane's process tree** (via a single `ps -eo pid=,ppid=,args=` snapshot; BL-1070 walks descendants by ppid, not only direct children — wrapper shells put `claude` at depth 2+, and a first-generation-only match false-CRIT'd every healthy pack role). Never matches an agent under a different pane. Portable across GNU and BSD/macOS `ps`; never `pane_current_command`, which lies with a live child. Markers live in one map (`swarmforge/scripts/agent_process_marker_lib.bb`, BL-1108) so babysitter and `./swarm ensure` cannot drift: `claude` → `claude `, `cursor` → `cursor-agent`, `local-model` → `qwen`, unknown tokens fall back to the token itself. Looking only for `claude` false-CRITed healthy Cursor panes as half-launches. If the `ps` gather itself fails outright, this reports `UNAVAILABLE` for that role rather than a false "no process" CRIT. Missing-session CRITs are mono-router topology aware (BL-804, below) — a dormant role's absent session under router mode is not a finding at all. A **vanished tmux session** for a role that should stand carries a bounded `:ensure-session` repair (BL-1017). A **half-launch** (pane up, agent gone) does the same when `should-stand?` ∧ `session-repair-allowed?` (BL-1169) — CRIT stays visible alongside the repair. |
 | 2 | remote-control-flag | a live Claude process is missing `--remote-control` (Claude `/rc` only — seats with no RC flag are not degraded here; `./swarm ensure`'s `rc:<role>` is agent-aware: Claude absent-flag → HEALTHY, non-Claude → OFF — BL-514 / BL-1108). When the liveness gate is unmet (no agent under the pane, gather ok), babysitter emits **UNAVAILABLE** naming that the RC check could not run — never silent (BL-1070) |
 | 3 | handoffd-supervisor-fresh | handoffd/its supervisor is down, or `handoffd.log` is older than 5 minutes |
 | 4 | dead-letter-nonempty | `.swarmforge/handoffs/failed/` is non-empty |
@@ -30,7 +30,7 @@ captures, an available-memory reading) against these checks, in
 | 7 | busy-but-frozen | busy footer present but the spinner-stripped content hash is unchanged across 3 consecutive sweeps |
 | 8 | memory-floor | available memory is below the configured floor; reports `UNAVAILABLE` (never a fabricated OK or CRIT) when no memory facility on the host is readable |
 | 9 | rotate-not-honored | On **rotation-router** packs only (BL-1129 / BL-804): the newest completed parcel's rotate instruction is older than a 10-minute grace period, its target differs from `.swarmforge/mono-router-active-role`, and the note is newer than that file's mtime. Standing packs never emit this CRIT (empty active-role is expected). |
-| 10 | swarm-starved | active tickets exist, **no countable motion** in pending/in-process across every mailbox, no pane shows a busy footer, sustained for **2 consecutive sweeps**. A non-abandoned `in_process` claim is motion even when the owning pane is idle this sweep (BL-1109 — Thinking pause / rotate gap must not false-STARVE). Pending never counts abandoned or >120-minute-old parcels. CRIT text never claims "zero … parcels" when claims were gathered.
+| 10 | swarm-starved | active tickets exist, **no countable motion** in pending/in-process across every mailbox, no pane shows a busy footer, sustained for **2 consecutive sweeps** (CRIT). From streak **≥3** (`default-swarm-starved-ensure-streak`), also queue `:ensure-control-plane` / `./swarm ensure` alongside the CRIT so recovery is not escalation-only (BL-1169). A non-abandoned `in_process` claim is motion even when the owning pane is idle this sweep (BL-1109 — Thinking pause / rotate gap must not false-STARVE). Pending never counts abandoned or >120-minute-old parcels. CRIT text never claims "zero … parcels" when claims were gathered.
 | 11 | claim-risk | the salvaged `babysitter_assess_lib.bb` scan (a role heading for bounce/halt with HEAD unchanged) |
 | — | planned-pause awareness | while `.swarmforge/operator/control-pause.json` marks an active pause, checks 9 and 10 are suppressed (planned quiet is not starvation) |
 | 12 | resume-overdue | a pause is still marked active but its `untilMs` expired more than 15 minutes ago (the auto-resume sweep itself failed) |
@@ -40,13 +40,15 @@ Every check is a pure function over a snapshot struct — no tmux/fs/sleep in
 the test path. `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
 and `..._property_runner.bb` drive it with fixtures.
 
-**The daemon does not fix anything — with two bounded exceptions.** No menu
+**The daemon does not fix anything — with bounded exceptions.** No menu
 picks, no parcel moves; apart from typing the nudge line into the
 coordinator's pane it is read-only, *except* that a vanished standing role's
-tmux session can be recreated (BL-1017, below) and a missing tmux control
-plane can be auto-recovered via `./swarm ensure` (BL-958/BL-1071, below) —
-both bounded and never silencing the CRIT that reports them. Everything else
-stays judgment for the coordinator/human.
+tmux session or a half-launch (pane up, agent gone) can queue
+`:ensure-session` (BL-1017 / BL-1169), a sustained swarm-starved streak can
+queue `./swarm ensure` (BL-1169), and a missing tmux control plane can be
+auto-recovered via `./swarm ensure` (BL-958/BL-1071, below) — all bounded and
+never silencing the CRIT that reports them. Everything else stays judgment
+for the coordinator/human.
 
 ## What a nudge looks like
 
@@ -287,6 +289,29 @@ other session was touched, (c) `handoffd` is still alive, and (d)
 
 Acceptance feature:
 [`specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature`](../../specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature).
+
+## Half-launch and swarm-starved also queue bounded repair (BL-1169)
+
+After a morning STARVED incident, half-launch (`proc-<role>` — pane alive,
+agent gone) and sustained swarm-starved stopped at CRIT + operator escalation.
+BL-1169 extends the BL-1017 repair posture:
+
+| Finding | Repair (when allowed) | Still alert? |
+| --- | --- | --- |
+| Half-launch on a standing role | `:ensure-session` for that role | Yes — CRIT stays; repair is `assoc`'d |
+| Swarm-starved streak ≥ 3 | `:ensure-control-plane` (`./swarm ensure`) | Yes — CRIT from streak ≥ 2 |
+
+**Topology / cooldown.** Half-launch repair still requires `should-stand?` and
+`session-repair-allowed?` (same budget as BL-1017). Per-role ensures stay
+suppressed while a control-plane ensure is already queued. Do not default to
+full `./start-swarm.sh`.
+
+**Standing-pack regression.** On cursor-forge with a healthy launch-contract,
+ensure from these repairs must succeed (APS scenario 04) — the BL-530
+exemption must not become a silent refuse.
+
+Acceptance:
+[`specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature`](../../specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature).
 
 ## Control-plane auto-heal, bounded in time (BL-958/BL-1071)
 
