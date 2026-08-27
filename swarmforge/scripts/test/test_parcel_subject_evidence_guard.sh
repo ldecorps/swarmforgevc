@@ -62,7 +62,7 @@ git -C "$ROOT" -c core.hooksPath=/dev/null checkout -q -- docs/reference/Specifi
 
 # ── 4: chore(BL-711): hardener delta + evidence -> allowed ────────────────
 echo "pass evidence" > "$ROOT/backlog/evidence/BL-711-hardener-pass-20260827.md"
-git -C "$ROOT" add backlog/evidence/BL-711-hardener-pass-20260827.md
+git -C "$ROOT" -c core.hooksPath=/dev/null add backlog/evidence/BL-711-hardener-pass-20260827.md
 echo "chore(BL-711): materialize hardener delta + register step handler. By documenter." > "$MSG"
 run_guard "$MSG" || fail "04: chore(BL-711): on evidence must be allowed"
 pass "04: chore(BL-711): subject on evidence is allowed"
@@ -81,8 +81,8 @@ cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$ROOT/swarmforge/scripts/incom
 cp "$COMMIT_MSG_HOOK" "$ROOT/swarmforge/git-hooks/commit-msg"
 cp "$SCRIPT_DIR/../../git-hooks/pre-commit" "$ROOT/swarmforge/git-hooks/pre-commit"
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/"*
-git -C "$ROOT" add -A
-git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "install hooks fixture"
+git -C "$ROOT" -c core.hooksPath=/dev/null add -A
+git -C "$ROOT" -c core.hooksPath=/dev/null -c user.email=test@test -c user.name=test commit -q -m "install hooks fixture"
 git -C "$ROOT" config core.hooksPath swarmforge/git-hooks
 
 git -C "$ROOT" -c core.hooksPath=/dev/null add backlog/evidence/BL-711-documenter-pass-20260827.md
