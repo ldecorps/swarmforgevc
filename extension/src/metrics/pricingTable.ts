@@ -81,22 +81,6 @@ function readIfExists(filePath: string): string | null {
   }
 }
 
-function addClaudeModelsFromDir(dirPath: string, suffix: string, found: Set<string>): void {
-  try {
-    for (const name of fs.readdirSync(dirPath)) {
-      if (!name.endsWith(suffix)) {
-        continue;
-      }
-      const text = readIfExists(path.join(dirPath, name));
-      if (text !== null) {
-        addClaudeModelsFromText(text, found);
-      }
-    }
-  } catch {
-    // absent dir in a fixture is fine
-  }
-}
-
 /**
  * Collect Anthropic-native Claude model ids referenced by the swarm roster
  * sources named in BL-627: swarmforge.conf, packs/*.conf, and
@@ -106,13 +90,33 @@ function addClaudeModelsFromDir(dirPath: string, suffix: string, found: Set<stri
 export function collectReferencedClaudeModels(repoRoot: string): string[] {
   const found = new Set<string>();
 
-  const confText = readIfExists(path.join(repoRoot, 'swarmforge', 'swarmforge.conf'));
+  const confPath = path.join(repoRoot, 'swarmforge', 'swarmforge.conf');
+  const confText = readIfExists(confPath);
   if (confText !== null) {
     addClaudeModelsFromText(confText, found);
   }
 
-  addClaudeModelsFromDir(path.join(repoRoot, 'swarmforge', 'packs'), '.conf', found);
-  addClaudeModelsFromDir(path.join(repoRoot, '.swarmforge', 'launch'), '.claude-settings.json', found);
+  const packsDir = path.join(repoRoot, 'swarmforge', 'packs');
+  try {
+    for (const name of fs.readdirSync(packsDir)) {
+      if (!name.endsWith('.conf')) continue;
+      const text = readIfExists(path.join(packsDir, name));
+      if (text !== null) addClaudeModelsFromText(text, found);
+    }
+  } catch {
+    // packs dir absent in a fixture is fine
+  }
+
+  const launchDir = path.join(repoRoot, '.swarmforge', 'launch');
+  try {
+    for (const name of fs.readdirSync(launchDir)) {
+      if (!name.endsWith('.claude-settings.json')) continue;
+      const text = readIfExists(path.join(launchDir, name));
+      if (text !== null) addClaudeModelsFromText(text, found);
+    }
+  } catch {
+    // launch dir is generated at runtime; empty/absent is fine
+  }
 
   return [...found].sort();
 }

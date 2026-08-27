@@ -106,6 +106,13 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'distinct test per arm before pass — not only the branch the ticket',
       'narrates. Untested arms are untested-parser-branch defects.',
       '',
+      'REVIEW HATS (hardener / architect during /pilot) — BL-751:',
+      'A new arm in an existing multi-branch dispatch (cond / case / severities,',
+      "states, verdicts) must be compared against its siblings' shared guard",
+      'pattern — grace periods, timeouts, head-unchanged gates — before pass.',
+      'If ≥2 siblings share a guard and the new arm omits it, that gating',
+      'asymmetry is a defect unless the ticket explicitly documents the deviation.',
+      '',
       'Isolation (same as BL-567):',
       '- Work only in `.worktrees/expedite-BL-702` on branch `expedite/BL-702`.',
       '- Do not use handoffd, mailboxes, tmux, rotate_to_role, ready_for_next, or the coordinator.',
@@ -265,6 +272,13 @@ test('composePilotExpeditorPrompt requires per-arm tests for multi-branch parser
   assert.match(text, /distinct test per arm/);
   assert.match(text, /multi-branch parser/);
   assert.match(text, /untested-parser-branch/);
+});
+
+test('composePilotExpeditorPrompt requires sibling gating comparison for new multi-branch arms (BL-751)', () => {
+  const text = composePilotExpeditorPrompt('BL-751');
+  assert.match(text, /BL-751/);
+  assert.match(text, /shared guard/);
+  assert.match(text, /asymmetry is a defect/);
 });
 
 test('composePilotStagePrompt includes live role prompt and thin wrapper (BL-758)', () => {

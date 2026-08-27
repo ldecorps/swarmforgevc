@@ -10,7 +10,6 @@ priority: 78
 direction: normal
 depends_on: []
 mutation_cost: low
-acceptance: specs/features/BL-744-bl718-crap-gate-never-run-topic-merge-helpers.feature
 source: |
   Found during BL-723 (pilot-tonight quality review), hardener viewpoint
   pass, 2026-07-30. Coder, cleaner, and architect all reviewed BL-718's

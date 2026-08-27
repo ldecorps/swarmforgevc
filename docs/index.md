@@ -55,7 +55,6 @@ expects them, and are not migrated or rewritten here.
 - [Reading human-decision latency trends](how-to/BL-600-trend-human-decision-latency.md) — ask→verdict median/outliers per gate; pending asks stay open age (BL-600; measures only).
 - [Reading handoff latency trends](how-to/BL-602-trend-handoff-latency.md) — enqueue→dequeue wait per recipient role; open waits never masquerade as fast pickups (BL-602; measures only).
 - [Reading false-alarm rate trends on alerts](how-to/BL-598-trend-false-alarm-rate.md) — per-type false-positive rate on `.swarmforge/telemetry/alerts-YYYY-MM.jsonl` (BL-598; measures only).
-- [Gate snippet shows the question, not terminal chrome](how-to/BL-642-gate-snippet-question-not-chrome.md) — pane title rule + truncated footer dropped from NeedsApproval snippet (BL-642).
 - [Pane-title chrome covers every producible role name](how-to/BL-732-pane-title-chrome-covers-every-producible-role-name.md) — multi-word / `@`-seat SwarmForge titles strip as chrome (BL-732; closes BL-642 residual).
 - [Answering a menu-blocked pane from its Telegram steering topic](how-to/BL-568-menu-blocked-pane-questions-as-mapped-polls.md) — AskUserQuestion chrome → mapped poll in the role topic; vote drives the menu; steers suppressed while blocked (BL-568).
 - [Answering the Swarm Offline](how-to/BL-441-answering-offline-runbook.md)
@@ -71,7 +70,6 @@ expects them, and are not migrated or rewritten here.
 - [Handling Pre-QA Gate Handoff Refusals](how-to/BL-531-handoff-refusal-remedies.md)
 - [Rule-proposal shell test asserts real handoff queue grammar](how-to/BL-778-rule-proposal-test-asserts-stale-queue-grammar.md) — pin mailbox-only; assert full `HANDOFF QUEUED (mailbox only…)` line (BL-778).
 - [Run BL-528 claim-progress acceptance via APS handlers](how-to/BL-612-claim-progress-acceptance-step-handlers.md) — handlers drive `claim_progress_lib.bb`; no behaviour change (BL-612).
-- [Routing skip trail records the hop's actual skips](how-to/BL-623-routing-skip-trail-records-actual-hop.md) — skip record from sender→delivered recipient, not rewrite-only (BL-623).
 - [Routing-skip journal failure never withholds delivery](how-to/BL-748-routing-skip-recording-failure-never-withholds-delivery.md) — `ROUTING-SKIP RECORD FAILED` on stderr; parcel still delivered (BL-748 / BL-623).
 - [Call-site tracing before guardrail-gap nit-downgrade](how-to/BL-749-pilot-guardrail-gap-requires-call-site-trace.md) — BL-749: review hats and /pilot must trace call sites before dismissing a ticket guardrail gap as a nit
 - [Unreachable step handlers are untested-behavior flags](how-to/BL-753-pilot-unreachable-step-handler-untested-behavior.md) — BL-753: registered-but-never-matched APS patterns refuse /pilot land; review hats ask the claim question
@@ -79,7 +77,6 @@ expects them, and are not migrated or rewritten here.
 - [Per-hat role prompt reinject on /pilot](how-to/BL-758-pilot-inject-role-prompts-per-hat.md) — BL-758: composePilotStagePrompt + verdict path/hash evidence; land refuses pilot-hat-prompt-missing
 - [Residual-word allowlist survives backlog stage moves](how-to/BL-694-residual-word-allowlist-survives-stage-moves.md) — basename under active/paused/hold only (BL-694).
 - [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).
-- [stage_skip_reasons flow-style is readable](how-to/BL-661-stage-skip-reasons-flow-style.md) — flow + block parse; malformed comma surfaced (BL-661; see BL-754).
 - [Malformed stage_skip_reasons is surfaced, never silently truncated](how-to/BL-754-stage-skip-reasons-never-silently-loses-a-stage.md) — unquoted comma → `skip_reasons_malformed=`; handoff still delivers (BL-754 / BL-661).
 - [Freshness shell tests pin a fixture conf, not the live ops file](how-to/BL-1000-freshness-tests-read-a-pinned-fixture.md) — `daemon_log_freshness.fixture.conf`; ops raise of live threshold cannot redden suite (BL-1000).
 - [Daemon log-freshness watchdog](how-to/BL-675-daemon-log-freshness-watchdog.md) — cron-side stale-heartbeat checker for long-running daemons (BL-675).
@@ -92,7 +89,6 @@ expects them, and are not migrated or rewritten here.
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
 - [Mint-time hygiene refuses a dangling acceptance pointer](how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md) — `DANGLING-ACCEPTANCE` at specifier hygiene; shared `applicable?` with BL-880 (BL-1027).
 - [Promotion refuses a missing or draft acceptance feature](how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md) — blocking `acceptance` gate + `audit-acceptance`; no sibling-glob rescue (BL-626).
-- [Slice size envelope at promotion](how-to/BL-634-slice-size-envelope-at-promotion.md) — declared estimate over p90 or high band requires split-or-justify before coder starts (BL-634).
 - [Deprecator freshness-gate CLI before promote](how-to/BL-1173-deprecator-freshness-gate-cli.md) — `deprecate-check.js` allow|hold; promote fails closed (BL-1173 / Article 3.6).
 - [Run `/deprecate` soft verbs](how-to/BL-1174-deprecate-operator-verbs-scan-docs.md) — dry ranks orphan conf flags; confirm retires one into `docs/deprecated/` + index link; check wraps BL-1173; hard-tier only (BL-1174).
 - [Portable agent-memory capture and inject](how-to/BL-1177-portable-agent-memory-payload-capture-inject.md) — schema-versioned payload + fail-closed inject for same-role model swap (BL-1177; epic BL-1176).
@@ -127,19 +123,15 @@ expects them, and are not migrated or rewritten here.
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
-- [Paused pager shows server failure reasons](how-to/BL-662-paused-pager-shows-server-failure-reason.md) — JSON `reason` on non-OK for Expedite/Approve (BL-662).
 - [Let's Talk — Discrete Audio Turns in the Mini App Console](how-to/BL-696-miniapp-lets-talk-cursor-audio.md)
-- [Bubble talk mirror chunks and fails loudly](how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md) — Bubble topic mirror via shared chunker; `bubble-talk-mirror-failed` on send failure (BL-718).
 - [Telegram Cursor Remote operator commands](how-to/BL-698-telegram-cursor-operator-commands.md) — phone-first slash verbs on the Cursor Remote topic, danger tiers, and (BL-1113) CreatePlan **Confirm plan** / **Reject plan** progress buttons.
 - [Host-agent activity feed](how-to/BL-833-host-agent-activity-feed.md) — bounded tee of host progress lines; `GET /host-activity` + SSE `host-activity` (BL-833; screen BL-834).
-- [Bubble Host thinking page on phone](how-to/BL-834-bubble-host-thinking-page.md) — watch host activity live from BL-833 feed; working / quiet / unreachable states (BL-834).
 - [Reordering Epic Priority in the Mini App Console](how-to/BL-572-console-epic-priority-reorder.md)
 - [Relaunch Resume and the Orphan-Claim Sweep](how-to/BL-648-relaunch-resume-orphan-claims.md)
 - [Stale mono-router-active-role is not topology on standing packs](how-to/BL-1020-stale-mono-router-marker-is-not-topology.md) — marker honoured only on rotation-router packs; leftovers on full-forge are ignored and reported `BL-1020 STALE` (BL-1020).
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
-- [Pages deploy timeout headroom and workflow action majors](how-to/BL-641-pages-deploy-timeout-and-action-majors.md) — 20m deploy timeout; action version majors pinned (BL-641).
 - [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md) — BL-727 contract execution, BL-729 commit-claim, BL-731 multi-worktree fixture, BL-733 producer crosscheck, BL-735 acceptance-execution, BL-737 cross-file duplication, BL-741 scoped CRAP, BL-747 shell entry-point drive, BL-753 unreachable step-handler gate
 - [QA changed-path unit test inventory](how-to/BL-1164-qa-changed-path-unit-test-gate.md) — Article 4.5: run mapped unit/wiring tests per changed production path; bounce uncovered to coder (BL-1164).
 - [Probe legacy topic adoption paths](how-to/BL-1147-probe-legacy-topic-adoption.md) — BL-1147 read-only probe for BL-294 auto-open, cursor Host re-adopt, and map scrub candidates
@@ -151,7 +143,6 @@ expects them, and are not migrated or rewritten here.
 - [Running Bubble's JVM unit suite](how-to/BL-769-android-jvm-unit-suite.md) — which Kotlin logic is testable on the host JVM, and where the pure-logic/device-surface line falls.
 - [Collapsed-bubble gesture model](how-to/BL-828-bubble-collapsed-gesture-model.md) — tap to talk / tap again to send; double-tap to expand; idle tap deferred one double-tap window (BL-828; updates BL-707).
 - [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks (including per-agent process markers, BL-1108), what a nudge looks like, CRIT escalations to the operator (BL-653), start/stop/ensure, state layout, the flipped env skip, the Operator's tell-never-restart freshness watchdog (down/pidfile-lie/announce-mute/healthy), the bounded vanished-session repair, the bounded control-plane auto-heal (attempt/wall-clock bound, three-outcome REPAIR line), and the detector that tells someone when pipeline code lands on `main` outside QA; half-launch / swarm-starved bounded auto-repair (BL-1169).
-- [Disaster-class correlation and structured escalation](how-to/BL-1171-disaster-class-correlation-structured-escalation.md) — one JSON playbook escalation when handoffd + half-launch + starved correlate; diagnose-only on parse errors (BL-1171).
 - [Escalation-driven operator wake model](how-to/BL-653-operator-escalation-driven-wake-model.md) — operator LLM wakes only on human traffic, babysitter CRIT escalation, or SWARM_CONTROL_LOST; retires fabricated per-tick wakes and night-start pid-hold (BL-653).
 - [Three named shift packs — one active in conf](how-to/BL-660-three-shift-packs-conf-selectable.md) — `config swarm_shift day|evening|night` drives start/stop crontab, cooldown inverse, ceremony stop, and briefing from one source (BL-660).
 - [Babysitter rotate-not-honored skips standing packs](how-to/BL-1129-babysitter-rotate-not-honored-skips-standing.md) — check 9 gated on `rotation-router?`; standing packs never CRIT (BL-1129).
@@ -214,7 +205,6 @@ expects them, and are not migrated or rewritten here.
 - [`done_with_current.sh` refuses every argument](how-to/BL-652-done-with-current-arg-rejection.md) — any argv (incl. `--help`) fails fast with zero completion side effects (BL-652).
 - [Supersede pre-turn guard — stop mid-flight work at every stage](how-to/BL-1084-a-superseded-task-stops-at-every-stage.md) — durable `.swarmforge/superseded/<task>` markers; every role's `ready_for_next` refuses without bouncing (BL-1084).
 - [Clearing Byte-Identical Hot-Synced Copies Before a Worktree Merge](how-to/BL-924-clear-identical-untracked-copies-before-merge.md) — the `clear_identical_untracked_and_merge.bb` script to run instead of a bare `git merge` when untracked, hot-synced script copies block a worktree fast-forward, its all-or-nothing identity proof, and what it deliberately never touches.
-- [Operator runtime test fixture sandbox](how-to/BL-671-operator-runtime-fixture-sandbox.md) — `operator_runtime_sandbox.sh` copy-list for load-file closure (BL-671).
 - [Keeping the operator_runtime.bb JS fixture list honest](how-to/BL-944-operator-runtime-fixture-closure-guard.md) — the source-derived load-file closure guard that replaced a six-times-drifted hand-maintained list, how to add a new dependency without repeating the drift, and how this differs from BL-671's separate shell-fixture sandbox.
 - [The Constitution Doc-Citation Guard](how-to/BL-945-constitution-doc-citation-guard.md) — why a constitution article citing a `docs/...` path now fails the standing extension suite if that path doesn't resolve on `main`, what it deliberately does and doesn't scan, and how it differs from BL-640's worktree-freshness guard.
 - [The Hardening-Debt Ledger](how-to/BL-942-hardening-debt-ledger.md) — why the office-hours mutation/CRAP bypass's "runs later against a quiet host" promise can no longer be kept under continuous 3x8 shifts, how to record a deferral and read outstanding debt, and its dedup/no-row-on-success rules.
@@ -250,7 +240,6 @@ expects them, and are not migrated or rewritten here.
 - [BL-010 Spec: Heartbeat Decorator](reference/specs/BL-010-spec.md)
 - [BL-011 Spec: Watchdog](reference/specs/BL-011-spec.md)
 - [BL-012 Spec: Chase and Dead-Letter Escalation](reference/specs/BL-012-spec.md)
-- [BL-627 — Pricing table correctness and coverage invariant](reference/specs/BL-627-pricing-table-correctness-and-coverage-invariant.md) — list-price table version 2; bare `claude-*` roster coverage check (BL-627).
 - [M2 Specification — Reliability Layer](reference/specs/m2-spec.md)
 - [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver; BL-782 root-scoped liveness probes and `--probe-liveness`.
 - [Build Freshness QA Approval Gate (BL-629)](reference/BL-629-build-freshness-qa-approval-gate.md) — the deploy-time gate preventing sync of pre-QA code to daemons.

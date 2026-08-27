@@ -30,7 +30,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_pointer_gate_lib.bb")))
 ;; BL-1128: depth/cap/throttle prefer predicate — one copy in headroom-cap-raise-lib.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "headroom_cap_raise_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "slice_size_envelope_gate_lib.bb")))
 
 ;; ── ticket field reading ──────────────────────────────────────────────────
 ;; Same "small live-glue duplicated across independent pure libs" idiom as
@@ -387,18 +386,13 @@
         :else
         (missing-feature-refusal root raw)))))
 
-(defn- conf-text-for [root]
-  (when root
-    (try (slurp (str (fs/path root "swarmforge" "swarmforge.conf")))
-         (catch Exception _ ""))))
-
 ;; ── the chokepoint ────────────────────────────────────────────────────────
 
 (defn evaluate
   "{:ok true} (optionally carrying :advisory) or {:ok false :gate .. :reason
    ..} for ONE candidate against every BLOCKING gate (hold, type: epic /
    status: blocked (BL-1145), human_approval, acceptance (BL-626),
-   slice_size_envelope (BL-634), depends_on (BL-957), active_backlog_max_depth - assignee/spec-stage is
+   depends_on (BL-957), active_backlog_max_depth - assignee/spec-stage is
    not a promotion blocker; see route-target above). First failing gate
    wins, in a fixed order, so the refusal is deterministic even when more
    than one gate would fire. held? is checked first: a held ticket's other
@@ -419,8 +413,6 @@
       (some->> (blocked-status-refusal content) (merge {:ok false}))
       (some->> (human-approval-refusal content) (merge {:ok false}))
       (some->> (acceptance-executable-refusal content root) (merge {:ok false}))
-      (some->> (slice-size-envelope-gate-lib/refusal content (conf-text-for root))
-               (merge {:ok false}))
       (some->> (depends-on-refusal content done-ids) (merge {:ok false}))
       (some->> (depth-refusal active-count max-depth) (merge {:ok false}))
       (merge {:ok true}

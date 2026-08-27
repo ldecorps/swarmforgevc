@@ -5,7 +5,6 @@
 - Corrected Anthropic list-price rates in `extension/src/metrics/pricingTable.ts` and bumped `PRICING_TABLE_VERSION` to **2**.
 - Added `claude-opus-5` ($5 / $25 per MTok).
 - Exported `collectReferencedClaudeModels` + `checkPricingCoverage` / `assertPricingCoverage`: every bare `claude-*` id in `swarmforge.conf`, `swarmforge/packs/*.conf`, and `.swarmforge/launch/*.claude-settings.json` must have a `PRICING_TABLE` entry or the check fails naming the model.
-- **BL-740:** `addClaudeModelsFromDir` helper + fixture tests drive every packs/launch scan branch; `collectReferencedClaudeModels` meets CRAP≤6. Tests: `extension/test/pricingTable.test.js` (`BL-740:` cases).
 
 ## Specifier rulings (recorded)
 

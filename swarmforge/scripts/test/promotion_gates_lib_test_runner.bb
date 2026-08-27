@@ -8,7 +8,6 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "promotion_gates_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "slice_size_envelope_gate_lib.bb")))
 
 (def failures (atom []))
 
@@ -465,67 +464,6 @@
                  (boolean (some #(and (= "BL-1" (:id %))
                                       (re-find #"BL-1-missing\.feature" (or (:feature-path %) "")))
                                 hits)))))
-
-;; ── BL-634: slice size envelope at promotion ─────────────────────────────
-
-(defn- bl634-base []
-  "id: BL-6634\nhuman_approval: approved\nepic: solo\n")
-
-(defn- bl634-ticket [& {:keys [insertions band decision mutation-cost]}]
-  (str (bl634-base)
-       (str "mutation_cost: " (or mutation-cost "medium") "\n")
-       (when band (str "slice_size_envelope: " band "\n"))
-       (when insertions (str "size_envelope_insertions: " insertions "\n"))
-       (when decision (str "size_envelope_decision: " decision "\n"))))
-
-(defn- write-conf! [root body]
-  (fs/create-dirs (fs/path root "swarmforge"))
-  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) body))
-
-(let [root (mk-root)]
-  (write-conf! root "config active_backlog_max_depth 5\n")
-  (let [r (promotion-gates-lib/evaluate
-           {:content (bl634-ticket :insertions 1929) :held? false :root root
-            :active-count 0 :max-depth 5 :active-epics {}})]
-    (assert-false "BL-634: BL-590-shaped estimate refused without decision" (:ok r))
-    (assert= "BL-634: gate name" "slice_size_envelope" (:gate r))
-    (assert-true "BL-634: refusal mentions split-or-justify"
-                 (str/includes? (or (:reason r) "") "split-or-justify"))))
-
-(let [root (mk-root)]
-  (write-conf! root "config active_backlog_max_depth 5\n")
-  (assert-true "BL-634: median-shaped estimate promotes"
-               (:ok (promotion-gates-lib/evaluate
-                     {:content (bl634-ticket :insertions 65) :held? false :root root
-                      :active-count 0 :max-depth 5 :active-epics {}}))))
-
-(let [root (mk-root)]
-  (write-conf! root "config active_backlog_max_depth 5\n")
-  (let [r (promotion-gates-lib/evaluate
-           {:content (bl634-ticket :mutation-cost "high") :held? false :root root
-            :active-count 0 :max-depth 5 :active-epics {}})]
-    (assert-false "BL-634: high band refused without decision" (:ok r))))
-
-(let [root (mk-root)]
-  (write-conf! root "config active_backlog_max_depth 5\n")
-  (assert-true "BL-634: high band with decision promotes"
-               (:ok (promotion-gates-lib/evaluate
-                     {:content (bl634-ticket :mutation-cost "high" :decision "justified")
-                      :held? false :root root
-                      :active-count 0 :max-depth 5 :active-epics {}}))))
-
-(let [root (mk-root)]
-  (write-conf! root (str "config active_backlog_max_depth 5\n"
-                         "config slice_size_p90_flag 100\n"))
-  (let [r (promotion-gates-lib/evaluate
-           {:content (bl634-ticket :insertions 120) :held? false :root root
-            :active-count 0 :max-depth 5 :active-epics {}})]
-    (assert-false "BL-634: lowered p90 threshold is honored" (:ok r))))
-
-(assert-true "BL-634: QA actual-size recording format"
-             (str/includes?
-              (slice-size-envelope-gate-lib/format-actual-size-recording 1929 18)
-              "actual_insertions: 1929"))
 
 ;; ── active-count / active-epics (impure readers) ─────────────────────────
 
