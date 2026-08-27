@@ -18,6 +18,9 @@
 #     prints an ADVISORY|orthogonality|... line to stderr instead, naming
 #     every active ticket sharing the candidate's epic — see gates_evaluate
 #     below for why that reaches this script's own stderr unmodified.
+#   - BL-1173 deprecator freshness gate (Article 3.6): after pick, before
+#     git-mv, consults node extension/out/tools/deprecate-check.js; hold or
+#     CLI failure refuses and leaves the ticket in paused (fail-closed).
 #   - assignee/spec-stage routing also goes through promotion_gates:
 #     assigned_to: specifier is never rewritten and routes to the specifier;
 #     every other ticket routes to coder via route_backlog_to_coder.sh
@@ -274,6 +277,70 @@ SRC="$(pick_candidate)" || exit 1
 BASE="$(basename "$SRC")"
 DEST="$ACTIVE_DIR/$BASE"
 ID="$(grep -E '^id:' "$SRC" | head -1 | awk '{print $2}' | tr -d '\r')"
+
+# BL-1173: deprecator freshness gate (Article 3.6). Fail-closed — CLI crash or
+# malformed JSON is hold, never allow. On hold the ticket stays in paused and a
+# priority-00 note reaches the specifier.
+deprecate_check_cli() {
+  local cli=""
+  if [[ -f "$ROOT/extension/out/tools/deprecate-check.js" ]]; then
+    cli="$ROOT/extension/out/tools/deprecate-check.js"
+  elif [[ -f "$SCRIPT_DIR/../../extension/out/tools/deprecate-check.js" ]]; then
+    cli="$(cd "$SCRIPT_DIR/../.." && pwd)/extension/out/tools/deprecate-check.js"
+  fi
+  if [[ -z "$cli" || ! -f "$cli" ]]; then
+    echo '{"decision":"hold","reason":"deprecate-check CLI missing — fail closed"}'
+    return 0
+  fi
+  node "$cli" "$ROOT" "$ID" 2>/dev/null || echo '{"decision":"hold","reason":"deprecate-check CLI failed — fail closed"}'
+}
+
+notify_specifier_freshness_hold() {
+  local reason="$1"
+  local draft
+  draft="$(mktemp)"
+  cat > "$draft" <<EOF
+type: note
+to: specifier
+priority: 00
+task: ${ID}-deprecator-freshness-hold
+
+Deprecator freshness gate HOLD for ${ID} at promote time.
+Reason: ${reason}
+Ticket remains in backlog/paused/. Adjudicate (amend / retire / split / confirm).
+EOF
+  if [[ -x "$SCRIPT_DIR/swarm_handoff.sh" ]]; then
+    "$SCRIPT_DIR/swarm_handoff.sh" "$draft" 2>/dev/null || \
+      echo "promote_and_route_next: freshness HOLD for ${ID}: ${reason} (specifier note send failed — reason printed here)" >&2
+  else
+    echo "promote_and_route_next: freshness HOLD for ${ID}: ${reason}" >&2
+  fi
+  rm -f "$draft"
+}
+
+FRESHNESS_RAW="$(deprecate_check_cli)"
+# Interpret via the same pure fail-closed helper the property tests lock
+# (BL-1173 inv 1) — never re-derive allow/hold in shell.
+FRESHNESS_JSON="$(printf '%s' "$FRESHNESS_RAW" | node -e '
+const { interpretFreshnessCliOutput } = require(process.argv[1]);
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (c) => { raw += c; });
+process.stdin.on("end", () => {
+  process.stdout.write(JSON.stringify(interpretFreshnessCliOutput(raw)));
+});
+' "${ROOT}/extension/out/tools/deprecate-check.js" 2>/dev/null || echo '{"decision":"hold","reason":"interpretFreshnessCliOutput failed — fail closed"}')"
+FRESHNESS_DECISION="$(printf '%s' "$FRESHNESS_JSON" | sed -n 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+FRESHNESS_REASON="$(printf '%s' "$FRESHNESS_JSON" | sed -n 's/.*"reason"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+if [[ -z "$FRESHNESS_DECISION" || "$FRESHNESS_DECISION" == "hold" ]]; then
+  REASON="${FRESHNESS_REASON:-malformed or missing deprecate-check output — fail closed}"
+  if [[ -z "$FRESHNESS_DECISION" ]]; then
+    REASON="malformed deprecate-check output — fail closed"
+  fi
+  notify_specifier_freshness_hold "$REASON"
+  echo "Error: deprecator freshness gate: HOLD for ${ID}: ${REASON}" >&2
+  exit 2
+fi
 
 # BL-1028: snapshot what this promotion is about to stage, BEFORE staging it,
 # so a refused integrity commit can be unwound exactly. Scoped to the two
