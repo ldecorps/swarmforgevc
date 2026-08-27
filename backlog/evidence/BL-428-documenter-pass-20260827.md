@@ -23,7 +23,10 @@ internal refactor — no user-visible commands, settings, or flows.
 
 ## Forward
 
-Materialize hardener delta (evidence, regression test, sweep script); forward
-to QA unchanged on docs.
+Materialize hardener delta (evidence, regression test, sweep script). **Spec-gap
+(SG1):** ticket `acceptance:` is block-scalar prose — pre-QA BL-761 fails closed
+as unreadable; cannot `git_handoff` to QA until specifier amends acceptance to
+a resolvable feature path (or documents a standing-tracker bypass). Note to
+specifier + coordinator priority `00`.
 
 By documenter.
