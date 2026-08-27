@@ -48,6 +48,9 @@ import {
   PropertyGeneratorReachCheckOutcome,
   assessPropertyGeneratorReach,
 } from './propertyGeneratorReachCheck';
+import { computeDocsStructure } from '../docs/docsStructure';
+import { loadKnownOrphanAllowlist } from '../docs/docsOrphanAllowlist';
+import { assessOrphanDocsLandCheck, OrphanDocsLandCheckOutcome } from './docsOrphanLandCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
 import { findBacklogFilePath } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
@@ -405,4 +408,19 @@ export function checkPerHatRolePromptEvidence(
     return { checked: false };
   }
   return assessPerHatRolePromptEvidence({ verdicts });
+}
+
+/** Git-backed BL-757 orphan-docs land check when authored Divio docs were touched. */
+export function checkOrphanedAuthoredDocs(repoRoot: string): OrphanDocsLandCheckOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  const allowlist = loadKnownOrphanAllowlist(repoRoot);
+  const report = computeDocsStructure(repoRoot);
+  return assessOrphanDocsLandCheck({
+    touchedRelativePaths: touched,
+    orphans: report.orphanedDocs,
+    allowlist,
+  });
 }
