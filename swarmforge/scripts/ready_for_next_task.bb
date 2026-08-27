@@ -13,6 +13,9 @@
 (load-file (str (fs/path (fs/parent *file*) "seat_affinity_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "seat_difficulty_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
+;; BL-1185: Work notes attribute mutation_cost via the same task-name parse
+;; supersede_lib already uses (task: header, else Work BL-… in the message).
+(load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -70,12 +73,22 @@
            :busy? (sibling-busy? ri)})
         (handoff-lib/stage-sibling-seats)))
 
+(defn- task-name-for-difficulty
+  "BL-1185: prefer task: (git_handoff); else Work BL-… from the note message.
+   Never invent a task header on type: note — attribution only."
+  [handoff-file]
+  (or (not-empty (handoff-lib/header-field handoff-file "task"))
+      (try
+        (supersede-lib/task-name-from-content (slurp (str handoff-file)))
+        (catch Exception _ nil))))
+
 (defn- difficulty-allows-claim?
-  "BL-1001: leave the parcel in the stage queue when this seat must not take it."
+  "BL-1001: leave the parcel in the stage queue when this seat must not take it.
+   BL-1185: Work notes without task: still resolve mutation_cost from the message."
   [handoff-file tiers]
   (let [me (handoff-lib/current-role)
         stage (handoff-lib/seat-stage me)
-        cost (mutation-cost-for-task (handoff-lib/header-field handoff-file "task"))
+        cost (mutation-cost-for-task (task-name-for-difficulty handoff-file))
         decision (seat-difficulty-lib/difficulty-claim-decision
                   {:me me
                    :my-tier (get tiers me)
