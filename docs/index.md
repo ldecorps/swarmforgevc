@@ -96,6 +96,7 @@ expects them, and are not migrated or rewritten here.
 - [Deprecator freshness-gate CLI before promote](how-to/BL-1173-deprecator-freshness-gate-cli.md) — `deprecate-check.js` allow|hold; promote fails closed (BL-1173 / Article 3.6).
 - [Run `/deprecate` soft verbs](how-to/BL-1174-deprecate-operator-verbs-scan-docs.md) — dry ranks orphan conf flags; confirm retires one into `docs/deprecated/` + index link; check wraps BL-1173; hard-tier only (BL-1174).
 - [Portable agent-memory capture and inject](how-to/BL-1177-portable-agent-memory-payload-capture-inject.md) — schema-versioned payload + fail-closed inject for same-role model swap (BL-1177; epic BL-1176).
+- [Wire agent-memory into hot-swap and trial boundaries](how-to/BL-1178-wire-agent-memory-into-hot-swap-and-trial.md) — BL-1177 capture/inject on BL-235 model switch and trial start/end (BL-1178).
 - [Keep the chunking property falsifiable](how-to/BL-738-chunking-property-reaches-the-split-boundary.md) — probe `maxLen=50` + `minLength: 51` so the property hits multi-chunk; scenario 02 falsifies (BL-738).
 - [Open-slot nudge skips type: epic trackers](how-to/BL-1145-open-slot-nudge-skips-epic-trackers.md) — promotion_gates_lib evaluate refuses epic/blocked so nudge and promote share one chain (BL-1145).
 - [Exit gates: committed acceptance + epic runtime wiring](how-to/BL-533-spec-commit-and-runtime-wiring-exit-gates.md) — untracked acceptance fails hygiene; multi-slice epics need `required_wiring` (BL-533).
