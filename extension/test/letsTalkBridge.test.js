@@ -611,6 +611,43 @@ test('formatBubbleMirrorText builds You / Bubble transcript', () => {
   assert.equal(formatBubbleMirrorText('hi', 'hello'), 'You: hi\n\nBubble: hello');
 });
 
+
+test('BL-709: unbound Bubble falls back to Cursor Remote mirror topic', () => {
+  const { effectiveLetsTalkMirrorTopicId } = require('../out/bridge/bridgeServer');
+  assert.equal(effectiveLetsTalkMirrorTopicId({ cursorTopicId: 9 }), 9);
+  assert.equal(effectiveLetsTalkMirrorTopicId({ cursorTopicId: 9, bubbleTopicId: 91 }), 91);
+  assert.equal(effectiveLetsTalkMirrorTopicId({}), undefined);
+});
+
+test('BL-709 mirror: unbound Bubble posts You/Bubble text to Cursor Remote', async () => {
+  const target = mkTmp();
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'),
+    JSON.stringify({ updateOffset: 0, cursorTopicId: 9 }, null, 2) + '\n'
+  );
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  const prevChat = process.env.TELEGRAM_CHAT_ID;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+  process.env.TELEGRAM_CHAT_ID = '12345';
+  const sent = [];
+  try {
+    await mirrorLetsTalkTurnToBubble(target, 'hi', 'hello there', {
+      sendMessage: async (_t, _c, text, _r, _p, topicId) => {
+        sent.push({ text, topicId });
+        return { success: true, messageId: sent.length };
+      },
+    });
+  } finally {
+    if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+    if (prevChat === undefined) delete process.env.TELEGRAM_CHAT_ID;
+    else process.env.TELEGRAM_CHAT_ID = prevChat;
+  }
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].topicId, 9);
+  assert.equal(sent[0].text, 'You: hi\n\nBubble: hello there');
+});
+
 test('BL-718 mirror: short turn posts You/Bubble text to Bubble topic only', async () => {
   const target = mkTmp();
   fs.writeFileSync(

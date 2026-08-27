@@ -11,7 +11,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "Cursor Remote and Bubble are distinct destinations: no Let's Talk turn is mirrored into the Cursor Remote topic once a Bubble topic id is bound, and no operator control verb is answered into Bubble."
@@ -80,6 +80,12 @@ description: |
   standing freeze: it is routing and operator clarity on existing surfaces, not
   growth of the Telegram product surface.
 
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::effectiveLetsTalkMirrorTopicId::unbound Bubble falls back to Cursor Remote"
+  - "extension/src/bridge/bridgeServer.ts::mirrorLetsTalkTurnToBubble::prefers dedicated Bubble topic"
+  - "extension/src/tools/telegramCursorBridgeCore.ts::frontDeskTopicMapWithoutCursorBridge::strips Bubble and Cursor Remote"
+  - "extension/test/bl709BubbleOwnTelegramTopic.property.test.js::BL-709 P1"
+  - "specs/pipeline/steps/index.js::bl709BubbleItsOwnTelegramTopicSteps::acceptance handler registered"
 acceptance: specs/features/BL-709-bubble-its-own-telegram-topic.feature
 
 source: |
