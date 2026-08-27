@@ -13,13 +13,24 @@ assigned_to: coder
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-601-trend-compaction-cadence.feature
+# Rematch 2026-08-27: first-lineage / bounce / cleaner tips superseded by
+# tip-pure acyclic rematch on hardener→documenter tip (content folded in).
+abandoned_commits:
+  - 8cea3c3e59
+  - d483f10527
+  - 809f0dab14
+  - 1228838bc3
+  - 2f777fc113
+  - a2e4e88a34
+  - 2faa3e5210
 
 required_wiring:
-  - "swarmforge/scripts/context_telemetry_lib.bb + context-events.jsonl::compaction:true events::primary structured detection signal (requires BL-665 producer)"
-  - ".swarmforge/telemetry/compaction-<YYYY-MM>.jsonl::derived compaction records::append-only gitignored {role, model, tokens-at-compaction, ts}"
-  - "extension/src/metrics/compactionCadence.ts::pure aggregator::compactions/hr per role + token-at-compaction distribution"
-  - "extension/src/metrics/trend.ts::compaction-cadence series::plotted via shared TrendedNumber framework"
   - "specs/pipeline/steps/index.js::bl601TrendCompactionCadenceSteps::acceptance handler registered"
+  - "swarmforge/scripts/context_telemetry_lib.bb::compaction::primary structured detection signal (requires BL-665 producer)"
+  - "extension/src/metrics/compactionTelemetryStore.ts::compaction-YYYY-MM.jsonl::append-only derived compaction records"
+  - "extension/src/metrics/compactionCadence.ts::aggregateCompactionCadence::compactions/hr per role + token-at-compaction distribution"
+  - "extension/src/metrics/compactionCadence.ts::trendForCompactionCadencePerHour::plotted via shared computeTrend framework"
+  - "extension/src/metrics/trend.ts::computeTrend::shared TrendResult framework (compactionCadence imports inward; no re-export)"
 
 invariants:
   - "Pane spinner strings alone never emit compaction records — only structured context-events with compaction:true count."
