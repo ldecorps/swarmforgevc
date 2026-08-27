@@ -45,7 +45,15 @@ stale cache") plus `e6d2cb13a` (cleaner dedupe refactor) and
   specifier+coordinator via `note` by the prior architect pass. Recorded
   here as BLOCKED, not pass/fail, per Article 4.4.
 
-## D1 — `extension/test/pipelineGridLive.test.js` never runs: missing `node:test` import
+## D1 — RETRACTED, see `BL-1188-architect-bounce-correction-20260827.md`
+
+**Do not act on D1 below.** It was a false positive caused by my own wrong
+test-runner invocation (`node --test` instead of this project's actual
+`vitest`, which sets `globals: true`). Full correction:
+`backlog/evidence/BL-1188-architect-bounce-correction-20260827.md`. D2 and
+D3 below are unaffected and still stand.
+
+## D1 (retracted) — `extension/test/pipelineGridLive.test.js` never runs: missing `node:test` import
 
 **File:** `extension/test/pipelineGridLive.test.js`
 **Class:** behavior (test-coverage-nullifying correctness defect)
