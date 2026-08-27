@@ -139,6 +139,7 @@ notes: |
     (scenarios 04/05/06, registered in suite-manifest.tsv) plus the
     existing worktree_drift_lib_test_runner.bb /
     test_worktree_drift_guard.sh / BL-1195 acceptance suite re-run clean."
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-27, by: hardender, blamed: coder, class: behavior, commit: dfd885f9f4, evidence: backlog/evidence/BL-1195-hardener-bounce-20260828.md }
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: fae547cc21, evidence: backlog/evidence/BL-1195-architect-bounce-20260828.md }
