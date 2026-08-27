@@ -84,8 +84,9 @@
 
 (defn- difficulty-allows-claim?
   "BL-1001: leave the parcel in the stage queue when this seat must not take it.
-   BL-1185: Work notes without task: still resolve mutation_cost from the message."
-  [handoff-file tiers]
+   BL-1185: Work notes without task: still resolve mutation_cost from the message.
+   BL-1167: same-model stage seats bypass tier filtering."
+  [handoff-file tiers models window-seats]
   (let [me (handoff-lib/current-role)
         stage (handoff-lib/seat-stage me)
         cost (mutation-cost-for-task (task-name-for-difficulty handoff-file))
@@ -95,6 +96,8 @@
                    :cost cost
                    :stage stage
                    :tiers tiers
+                   :models models
+                   :window-seats window-seats
                    :sibling-states (difficulty-sibling-states tiers)})]
     (= :claim decision)))
 
@@ -313,9 +316,11 @@
                 ;; BL-1001: drop candidates this seat must not take (tier /
                 ;; prefer-fit). They stay in the stage queue for a peer.
                 tiers                (seat-difficulty-lib/parse-seat-tiers pack-conf)
+                models               (seat-difficulty-lib/parse-seat-models pack-conf)
+                window-seats         (seat-difficulty-lib/parse-window-seats pack-conf)
                 claimable            (->> decided
                                           (remove #(= :defer (:action (second %))))
-                                          (filter (fn [[f _]] (difficulty-allows-claim? f tiers)))
+                                          (filter (fn [[f _]] (difficulty-allows-claim? f tiers models window-seats)))
                                           vec)]
             (doseq [[f decision] deferred]
               (println (seat-affinity-lib/deferral-line

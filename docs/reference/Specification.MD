@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1167: when every seat of a stage
+declares the same effective pack `--model`, BL-1001 `--seat-tier` filtering
+is bypassed — BL-983 idle-first among those seats; either seat may claim any
+`mutation_cost`. When models diverge, BL-1001 tier discipline returns
+unchanged. `seat_difficulty_lib.bb` `parse-seat-models` /
+`stage-models-uniform?`. Acceptance:
+`specs/features/BL-1167-same-model-coder-seats-bypass-tier-routing.feature`.
+How-to: `docs/how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1185: Work notes attribute
 `mutation_cost` for seat difficulty from the `Work BL-…` message when
 `task:` is absent — same `supersede_lib/task-name-from-content` path
@@ -9158,4 +9167,30 @@ change to BL-1001 tier ceilings.
 - **BL-1001** — difficulty-aware coder seat routing.
 - **BL-983** — multi-seat stage claim (idle-first).
 - How-to: `docs/how-to/BL-1185-work-note-missing-task-header-defers-hard-seat.md`.
+
+## Same-Model Seat Tier Bypass (BL-1167)
+
+BL-1001 filters multi-seat claims by ticket `mutation_cost` vs declared
+`--seat-tier`. When every seat of a stage shares the same effective pack
+`--model` (e.g. `cursor-forge` `coder` and `coder@cursor2` both `--model
+auto`), tier filtering would starve the easy-tier seat of medium/high work
+without reducing bounce risk — seats are model-equivalent.
+
+### Rule
+
+| Stage seat models | Claim filtering |
+|-------------------|-----------------|
+| All declared seats share one effective `--model` | Bypass BL-1001 tiers; BL-983 idle-first among seats (any `mutation_cost`) |
+| Seats declare distinct effective models | BL-1001 tier filtering unchanged |
+
+Detection is pack-conf only (`parse-seat-models` / `stage-models-uniform?` in
+`seat_difficulty_lib.bb`) — not runtime agent state. Stage-addressed
+coordinator routing is unchanged.
+
+### See Also
+
+- **BL-1001** — difficulty-aware coder seat routing (when models differ).
+- **BL-983** — multi-seat idle-first claim.
+- How-to: `docs/how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md`.
+
 
