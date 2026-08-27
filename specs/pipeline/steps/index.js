@@ -662,6 +662,7 @@ const DOMAINS = [
   require('./bl586PipelineBoardTopicIdentitySteps'),
   require('./bl1017BabysitterdRecreatesVanishedStandingSessionSteps'),
   require('./bl1169BabysitterHalfLaunchStarvationAutoRepairSteps'),
+  require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
   require('./bl1163HandoffdParseErrorBl668ParenHotfixSteps'),
   require('./bl1164QaChangedPathUnitTestGateSteps'),
   require('./bl1173DeprecatorFreshnessGateCliSteps'),
