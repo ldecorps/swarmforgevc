@@ -13,7 +13,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Operator intake 2026-08-27: BL-605 fully implemented and staged in coder
   worktree; commit refused by check_property_suite_drift.sh on ~22 pre-existing
