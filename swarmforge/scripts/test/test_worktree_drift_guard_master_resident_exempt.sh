@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# BL-1195 D1 (hardener bounce 20260828): coordinator and specifier are both
-# master-resident (roles.tsv worktree-name "master") - the SAME physical
-# checkout, not one-worktree-per-role like every other pipeline role. The
-# worktree-drift guard's in-progress-task exemption only ever consulted the
-# CURRENTLY INVOKING role's own in_process mailbox, so the coordinator's own
-# turn - with no in_process parcel of its own - false-flagged the
-# specifier's routine, legitimate, uncommitted WIP on `main` (Article 1.2
-# spec/prompt drafting, no handoff parcel involved) as unexplained drift and
-# refused (WORKTREE_DRIFT_DETECTED, exit 2). The reverse (specifier refused
-# by coordinator's WIP) is symmetric. Every other pipeline role has its own
-# dedicated `.worktrees/<role>`, so this shape is structurally impossible
-# there - scenario 04/05 below cover ONLY the master-resident pairing;
-# scenario 06 confirms a non-master role is unaffected. Real git fixture, no
-# mocked git - same established pattern as test_worktree_drift_guard.sh
-# (this file's sibling, which this file deliberately does not duplicate).
+# BL-1195 D1, re-fix round (architect bounce 20260828): the shared `master`
+# checkout is a genuinely concurrent, multi-writer surface by DESIGN, not
+# merely the coordinator+specifier pair - commit_integrity_lib.bb's own
+# header names coordinator bookkeeping, the BL-topic-record writer, QA's
+# fast-forward, the specifier, and operator_file_question.bb as all
+# committing into ONE git index with no isolation, and several of those
+# writers (Article 1.2 spec/prompt drafting, backlog bookkeeping) have no
+# handoff parcel to point at even in principle. The coder's FIRST fix
+# (union every master-resident role's in_process mailbox into the
+# exemption) still refused whenever NEITHER master-resident role held a
+# dispatched parcel - exactly hardener's own reproduction, which drops no
+# handoff anywhere. This file's fix instead exempts master-resident
+# worktrees from this guard's drift check entirely: a role whose own
+# worktree-name is "master" is never refused for tracked drift, with or
+# without an in-progress parcel. Every OTHER pipeline role keeps its own
+# dedicated `.worktrees/<role>`, so the guard's full original detection
+# value is retained there - see test_worktree_drift_guard.sh (this file's
+# sibling, unchanged) for those scenarios. Real git fixture, no mocked git.
 
 set -euo pipefail
 
@@ -51,23 +54,13 @@ mkdir -p "$ROOT/.swarmforge" \
          "$ROOT/.swarmforge/handoffs/specifier/inbox/"{new,in_process,completed}
 
 # Both master-resident roles point at the SAME root path with the SAME
-# real-roles.tsv worktree-name ("master" - the literal
-# mailbox-base-dir/D1 check consults; hardener's own repro's roles.tsv used
-# the role name in that column instead, which is not what production
-# actually writes there and would have masked this exact bug behind an
-# unrelated "no mailbox at all" empty-dir accident. See
-# `.swarmforge/roles.tsv` in the live swarm for the real shape this
-# mirrors.)
+# real-roles.tsv worktree-name ("master" - the literal check
+# `enforce-worktree-drift-guard!` consults).
 printf 'coordinator\tmaster\t%s\tmain\tCoordinator\tclaude\tguard-boundary-only\n' "$ROOT" \
   > "$ROOT/.swarmforge/roles.tsv"
 printf 'specifier\tmaster\t%s\tmain\tSpecifier\tclaude\tguard-boundary-only\n' "$ROOT" \
   >> "$ROOT/.swarmforge/roles.tsv"
 printf 'swarm_name\tprimary\nswarm_mode\tautonomous\n' > "$ROOT/.swarmforge/swarm-identity"
-
-drop_handoff() {  # dir role name
-  printf 'id: %s\nfrom: coder\nto: %s\nrecipient: %s\npriority: 00\ntype: git_handoff\ntask: BL-000-demo\ncommit: 0000000000\n\nbody for %s\n' \
-    "$3" "$2" "$2" "$3" > "$1/00_$3.handoff"
-}
 
 run_ready() {  # <role> - sets OUT, ERR, RC
   set +e
@@ -77,36 +70,38 @@ run_ready() {  # <role> - sets OUT, ERR, RC
   ERR="$(cat "$ROOT/stderr.txt")"
 }
 
-# ── scenario 04: specifier's own legitimate WIP must not refuse the ──────
-# coordinator's turn, which has no in_process parcel of its own.
+# ── scenario 04 (hardener's own reproduction, verbatim): specifier's own ─
+# legitimate WIP, with NO handoff parcel dropped anywhere - the exact shape
+# the coder's first fix still refused.
 echo "specifier drafting a new ticket spec, mid-edit" > "$ROOT/$DRIFT_REL"
-drop_handoff "$ROOT/.swarmforge/handoffs/specifier/inbox/in_process" specifier resume-spec
 run_ready coordinator
 echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
-  && fail "04: coordinator must not be refused for specifier's own legitimate WIP on the shared master checkout, got: $ERR"
+  && fail "04: coordinator must not be refused for specifier's own legitimate WIP with no parcel anywhere, got: $ERR"
 echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
-  || fail "04: expected control to reach dispatch once specifier's in-progress task explains the shared checkout's drift, got rc=$RC err=$ERR"
-pass "04: coordinator's own turn is not false-flagged for specifier's legitimate uncommitted WIP"
+  || fail "04: expected control to reach dispatch on the shared master checkout even with no parcel explaining the drift, got rc=$RC err=$ERR"
+pass "04: coordinator's own turn is not false-flagged for specifier's legitimate uncommitted WIP with no dispatched parcel anywhere"
 
-# ── scenario 05: symmetric - coordinator's own WIP must not refuse the ───
-# specifier's turn either.
-rm -f "$ROOT/.swarmforge/handoffs/specifier/inbox/in_process/00_resume-spec.handoff"
-drop_handoff "$ROOT/.swarmforge/handoffs/coordinator/inbox/in_process" coordinator resume-coord
+# ── scenario 05: symmetric - specifier's own turn, same unexplained drift,
+# same exemption.
 run_ready specifier
 echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
-  && fail "05: specifier must not be refused for coordinator's own legitimate WIP on the shared master checkout, got: $ERR"
+  && fail "05: specifier must not be refused for the shared master checkout's own drift either, got: $ERR"
 echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
-  || fail "05: expected control to reach dispatch once coordinator's in-progress task explains the shared checkout's drift, got rc=$RC err=$ERR"
-pass "05: specifier's own turn is not false-flagged for coordinator's legitimate uncommitted WIP"
+  || fail "05: expected control to reach dispatch, got rc=$RC err=$ERR"
+pass "05: specifier's own turn is not false-flagged for the same shared-checkout drift"
 
-# ── scenario 06: with NEITHER master-resident role holding an in-progress ─
-# task, the SAME drift is still correctly refused - this fix only widens
-# the exemption's SOURCE, it never disables the guard itself.
-rm -f "$ROOT/.swarmforge/handoffs/coordinator/inbox/in_process/00_resume-coord.handoff"
-run_ready coordinator
-[[ $RC -ne 0 ]] || fail "06: expected a refusal once no master-resident role has an in-progress task, rc=0 out=$OUT"
+# ── scenario 06: a non-master role (coder-shaped worktree-name) is ───────
+# UNAFFECTED by the master carve-out - the SAME unexplained drift there is
+# still refused. Reuses this fixture's own root as a second, non-master
+# "worktree" row to prove the carve-out is keyed on worktree-name, not on
+# role identity or on the physical path.
+printf 'coder\tcoder\t%s\tmain\tCoder\tclaude\tguard-boundary-only\n' "$ROOT" \
+  >> "$ROOT/.swarmforge/roles.tsv"
+mkdir -p "$ROOT/.swarmforge/handoffs/inbox/"{new,in_process,completed}
+run_ready coder
+[[ $RC -ne 0 ]] || fail "06: expected a refusal for a non-master role's own unexplained drift, rc=0 out=$OUT"
 echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
-  || fail "06: expected a drift report once no master-resident role has an in-progress task, got: $ERR"
-pass "06: with no master-resident role's task explaining it, the SAME drift is still refused"
+  || fail "06: expected a drift report for a non-master role, got: $ERR"
+pass "06: a non-master role's own worktree keeps full drift detection - only master is exempted"
 
 echo "ALL PASS"
