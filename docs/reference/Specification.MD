@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1167: when every seat of a stage
+declares the same effective pack `--model`, BL-1001 `--seat-tier` filtering
+is bypassed — BL-983 idle-first among those seats; either seat may claim any
+`mutation_cost`. When models diverge, BL-1001 tier discipline returns
+unchanged. `seat_difficulty_lib.bb` `parse-seat-models` /
+`stage-models-uniform?`. Acceptance:
+`specs/features/BL-1167-same-model-coder-seats-bypass-tier-routing.feature`.
+How-to: `docs/how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-600: human-decision latency trend —
 ask (ApprovalRequested) to verdict per gate via
 `humanDecisionLatency.ts`; pending asks contribute open age only; median +
@@ -36,6 +45,16 @@ epic trackers excluded; root `INTAKE-*.md` counted; exposed on
 `computeDeliveryMetrics.intakeBalance` through `trend.ts`. Acceptance:
 `specs/features/BL-599-trend-intake-balance.feature`. How-to:
 `docs/how-to/BL-599-trend-intake-balance.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-597: self-heal events trend —
+structured `{type, subject, reason, at}` records appended at existing
+recovery log sites to `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl`
+(gitignored); pure `aggregateSelfHealCounts` → `computeTrend` per type;
+failed append never blocks or alters recovery. Types:
+`stale-build-recompile`, `supervisor-respawn`, `kill-all-swarm`,
+`rotation-respawn`, `claim-heal`. Measurement only. Acceptance:
+`specs/features/BL-597-trend-self-heal-events.feature`. How-to:
+`docs/how-to/BL-597-trend-self-heal-events.md`.)
 Prior entry —
 **Last Updated:** August 27, 2026 (BL-980: Pipeline Board RECENTLY CLOSED
 lines append a relative closure-age suffix from durable `doneClosedAtMs`
@@ -7332,6 +7351,58 @@ to the project path; fixtures may omit it and emit nothing.
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 - **BL-823** — availability ledger (sibling monthly JSONL under
   `.swarmforge/telemetry/`).
+- **BL-597** — self-heal events trend (sibling monthly JSONL; same
+  `computeTrend` posture; see section below).
+
+## Self-Heal Events Trend (BL-597)
+
+The swarm heals itself constantly — stale-build recompiles, supervisor
+respawns, `kill_all_swarm`, mono-router rotation respawns, claim-heal —
+but historically counted none of it; a recovery that fixed a live outage
+stayed invisible until grepped by hand. BL-597 structures each existing
+prose log moment as a durable event and trends **per-type counts** over
+time. **Measurement only** — recovery behaviour is unchanged; a failed
+telemetry append must not block or alter whether self-heal runs.
+
+### Storage
+
+`.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl` — append-only, one JSON
+object per line, monthly files. Explicitly listed in `.gitignore` (and
+covered by the top-level `.swarmforge/` ignore). Clojure sites call
+`self-heal-telemetry-lib/append-self-heal-event!` (failures swallowed);
+tests may use `selfHealTelemetryStore.ts` / `self_heal_telemetry_cli.bb`.
+
+Record shape:
+
+```json
+{"type":"stale-build-recompile","subject":"front-desk-supervisor","reason":"recompiling before respawn","at":"2026-08-27T09:00:00.000Z"}
+```
+
+### Event types and emit sites
+
+| Type | Subject (typical) | Emit at existing log site |
+|------|-------------------|---------------------------|
+| `stale-build-recompile` | `front-desk-supervisor` | `front_desk_supervisor.bb` `ensure-current-build!` (with `stale-build-detected`) |
+| `supervisor-respawn` | `front-desk-supervisor` | `front_desk_supervisor.bb` `log-event!` `:started` |
+| `kill-all-swarm` | `lifecycle` | `kill_pipeline_swarm.sh` after SUCCESS (via CLI) |
+| `rotation-respawn` | `mono-router-resident` | `handoff_lib.bb` mono-router persona swap |
+| `claim-heal` | `handoffd` | `handoffd.bb` resume orphaned `in_process` |
+
+Each record is emitted **at the existing prose log site** for that recovery
+action — no parallel detection path.
+
+### Aggregation
+
+`selfHealTelemetry.ts` `aggregateSelfHealCounts` folds an **in-memory**
+event list into per-type `trend.ts` / `computeTrend` series (current /
+prior / delta / direction) — file-free aggregation.
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
+  `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
 
 ## Context-Compaction Cadence (BL-601)
 
@@ -7396,7 +7467,6 @@ back-edge was the standing architect bounce (cycle) this rematch closed.
   `computeTrend` posture).
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 - **BL-594** — swarm-behaviour-trends epic.
-
 ## Human-Decision Latency (BL-600)
 
 Some tickets wait on the swarm; some wait on the human. BL-600 pairs each
@@ -8952,3 +9022,29 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 - Auto-merge on green CI (human reviews all PRs)
 - Extension marketplace publication (internal use first)
 - Native Windows (tmux has no native Windows port; a Windows-hosted swarm runs via WSL2 instead — BL-091)
+
+## Same-Model Seat Tier Bypass (BL-1167)
+
+BL-1001 filters multi-seat claims by ticket `mutation_cost` vs declared
+`--seat-tier`. When every seat of a stage shares the same effective pack
+`--model` (e.g. `cursor-forge` `coder` and `coder@cursor2` both `--model
+auto`), tier filtering would starve the easy-tier seat of medium/high work
+without reducing bounce risk — seats are model-equivalent.
+
+### Rule
+
+| Stage seat models | Claim filtering |
+|-------------------|-----------------|
+| All declared seats share one effective `--model` | Bypass BL-1001 tiers; BL-983 idle-first among seats (any `mutation_cost`) |
+| Seats declare distinct effective models | BL-1001 tier filtering unchanged |
+
+Detection is pack-conf only (`parse-seat-models` / `stage-models-uniform?` in
+`seat_difficulty_lib.bb`) — not runtime agent state. Stage-addressed
+coordinator routing is unchanged.
+
+### See Also
+
+- **BL-1001** — difficulty-aware coder seat routing (when models differ).
+- **BL-983** — multi-seat idle-first claim.
+- How-to: `docs/how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md`.
+

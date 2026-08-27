@@ -48,6 +48,7 @@ expects them, and are not migrated or rewritten here.
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Steering a swarm role from Telegram, and reading the receipt](how-to/BL-566-steer-a-role-from-telegram.md) — per-role topic nudge + delivery receipt (BL-566); `menu_blocked` when a pane menu is live (BL-568).
 - [Reading front-desk human-loop reliability trends](how-to/BL-595-trend-human-loop-reliability.md) — approval-tap / steer / poll-health / tick-duration on `.swarmforge/telemetry/human-loop-YYYY-MM.jsonl` (BL-595; measures only).
+- [Reading self-heal event trends](how-to/BL-597-trend-self-heal-events.md) — stale-build / respawn / kill_all / rotation / claim-heal counts on `.swarmforge/telemetry/self-heal-YYYY-MM.jsonl` (BL-597; measures only).
 - [Reading intake-balance trends (filed vs closed)](how-to/BL-599-trend-intake-balance.md) — filed/closed/net from the same deliveryMetrics git-history adapter; epic trackers excluded (BL-599).
 - [Reading context-compaction cadence trends](how-to/BL-601-trend-compaction-cadence.md) — compactions/hr + token-at-compaction from structured `compaction:true` events only; NA when undetectable (BL-601; measures only).
 - [Reading human-decision latency trends](how-to/BL-600-trend-human-decision-latency.md) — ask→verdict median/outliers per gate; pending asks stay open age (BL-600; measures only).
@@ -79,6 +80,7 @@ expects them, and are not migrated or rewritten here.
 - [Daemon log-freshness watchdog](how-to/BL-675-daemon-log-freshness-watchdog.md) — cron-side stale-heartbeat checker for long-running daemons (BL-675).
 - [Supervisor freshness heartbeats and registry guard](how-to/BL-784-supervisor-freshness-heartbeats-and-registry-guard.md) — per-tick supervisor heartbeats, conf rows, fail-closed registry guard (BL-784).
 - [Difficulty-aware coder seat routing](how-to/BL-1001-difficulty-aware-coder-seat-routing.md) — `mutation_cost` vs declared `--seat-tier`; hard work never spills to easy-only (BL-1001).
+- [Same-model seats bypass tier routing](how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md) — shared `--model` → either seat may claim any `mutation_cost`; tier rules return when models differ (BL-1167).
 - [Unit-lane budgets scale with recorded contention](how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md) — load-relative Vitest timeouts with a finite ceiling; quiet host keeps base (BL-1007).
 - [Bounded fs.watch deadline follows recorded contention](how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md) — BL-933 helper scales 10s base with BL-1007 factor; stays under test budget (BL-1008).
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).

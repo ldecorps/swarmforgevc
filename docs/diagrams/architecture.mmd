@@ -228,6 +228,8 @@
 %% BL-595 (2026-08-25): front-desk human-loop reliability ledger —
 %% .swarmforge/telemetry/human-loop-YYYY-MM.jsonl (async append); four
 %% series (approval-tap / steering / poll-health / tick-duration) → trend.ts.
+%% BL-597 (2026-08-27): self-heal ledger — self-heal-YYYY-MM.jsonl at existing
+%% recovery log sites; aggregateSelfHealCounts → computeTrend (measures only).
 %% BL-599 (2026-08-27): intake-balance — filed/closed/net via deliveryMetrics
 %% git-history adapter → computeIntakeBalance / trend.ts (measures only).
 %% BL-601 (2026-08-27): compaction cadence — compaction-YYYY-MM.jsonl from
@@ -478,3 +480,4 @@ flowchart TB
   class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR,ACPDIR state;
   class TARGETREPO,GH gh;
   class MODELSTORE,OLLAMA state;
+%% BL-1167 (2026-08-27): when stage seats share the same pack --model,
