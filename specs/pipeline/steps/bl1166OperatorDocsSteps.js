@@ -137,8 +137,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^headings and paragraphs are legible at a phone viewport width$/, (ctx) => {
-    assert.match(ctx.bl1166Html, /max-width:\s*100/);
-    assert.match(ctx.bl1166Html, /overflow-wrap:\s*anywhere/);
+    const { operatorDocsHtml } = loadOut();
+    const shellHtml = ctx.bl1166Html ?? operatorDocsHtml.getOperatorDocsUiHtml();
+    assert.match(shellHtml, /max-width:\s*100/);
+    assert.match(shellHtml, /overflow-wrap:\s*anywhere/);
     assert.match(ctx.bl1166LatestPageBody.html, /<p>/);
   });
 
