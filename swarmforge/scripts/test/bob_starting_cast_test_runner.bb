@@ -50,7 +50,7 @@
                              :model "claude-opus-4-8" :policy "bob-starting-cast" :reason "x"}}}
       plan (bob-starting-cast-lib/apply-via-modelfactory-overlay cast)]
   (assert= "03: apply via model-factory overlay" "model-factory-overlay" (:via plan))
-  (assert= "03: overlay assignment shape" "claude-opus-4-8" (get-in plan [:assignment :coder :model]))
+  (assert= "03: overlay assignment shape" "claude-opus-4-8" (get-in plan [:assignment :coder :model])))
 
 ;; 04: model-change detection
 (let [cast {:kind "bob-starting-cast" :schema-version 1
