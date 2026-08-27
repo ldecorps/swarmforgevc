@@ -49,7 +49,6 @@ expects them, and are not migrated or rewritten here.
 - [Bubble Operator docs on phone](how-to/BL-1166-bubble-authored-docs-index-and-first-pages.md) — read-only Divio browser from `docs/index.md` via remote HTML page `operator-docs` (BL-1166; first slice of BL-1165).
 - [Steering a swarm role from Telegram, and reading the receipt](how-to/BL-566-steer-a-role-from-telegram.md) — per-role topic nudge + delivery receipt (BL-566); `menu_blocked` when a pane menu is live (BL-568).
 - [Reading front-desk human-loop reliability trends](how-to/BL-595-trend-human-loop-reliability.md) — approval-tap / steer / poll-health / tick-duration on `.swarmforge/telemetry/human-loop-YYYY-MM.jsonl` (BL-595; measures only).
-- [Reading self-heal event trends](how-to/BL-597-trend-self-heal-events.md) — stale-build / respawn / kill_all / rotation / claim-heal counts on `.swarmforge/telemetry/self-heal-YYYY-MM.jsonl` (BL-597; measures only).
 - [Reading intake-balance trends (filed vs closed)](how-to/BL-599-trend-intake-balance.md) — filed/closed/net from the same deliveryMetrics git-history adapter; epic trackers excluded (BL-599).
 - [Reading context-compaction cadence trends](how-to/BL-601-trend-compaction-cadence.md) — compactions/hr + token-at-compaction from structured `compaction:true` events only; NA when undetectable (BL-601; measures only).
 - [Reading human-decision latency trends](how-to/BL-600-trend-human-decision-latency.md) — ask→verdict median/outliers per gate; pending asks stay open age (BL-600; measures only).
@@ -271,4 +270,3 @@ expects them, and are not migrated or rewritten here.
 - [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.
 - [The Non-Pipeline Agents, As a Class](explanation/BL-643-non-pipeline-agents-as-a-class.md) — what makes an agent non-pipeline, the taxonomy, and what the Onboarder's three shipped slices actually do.
 - [Why Promotion Ranks by Epic Priority Before Ticket Priority](explanation/BL-900-epic-priority-promotion-ranking.md) — the rank-key shape, the epic-priority lookup and its fallbacks, and why expedited defects, queue-jump, and ambulance mode are untouched.
-- [BL-718 acceptance runs with real step handlers](how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md) — wire `bl718BubbleTalkMirrorSteps` so the Gherkin gate actually executes (BL-726).

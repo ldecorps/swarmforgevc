@@ -52,14 +52,6 @@ import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getCatchUpUiHtml } from './catchUpUiHtml';
-import {
-  buildOperatorDocsIndexState,
-  buildOperatorDocsPageState,
-  getOperatorDocsUiHtml,
-  isOperatorDocsIndexPath,
-  isOperatorDocsPagePath,
-  isOperatorDocsPath,
-} from './operatorDocsHtml';
 import { computeCatchUpStateLive } from './catchUpLive';
 import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
@@ -75,7 +67,6 @@ import { getLetsTalkUiHtml } from './letsTalkUiHtml';
 import {
   createLetsTalkWriteRoutes,
   isLetsTalkPath,
-  mergeOperatorDocsIntoUiBundleManifest,
 } from './letsTalkRoutes';
 import { createWebUiFontSizeRoutes, isWebUiFontSizePath } from './webUiFontSizeRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
@@ -517,15 +508,6 @@ function isContextBudgetPath(url: string): boolean {
 // GH-23: JSON state polled by the Context Budget Mini App with ?token=&agent=.
 function isContextBudgetStatePath(url: string): boolean {
   return url === '/context-budget-state' || url.startsWith('/context-budget-state?');
-}
-
-// BL-1166: Operator docs Mini App shell and JSON feeds.
-function isOperatorDocsIndexFeedPath(url: string): boolean {
-  return isOperatorDocsIndexPath(url);
-}
-
-function isOperatorDocsPageFeedPath(url: string): boolean {
-  return isOperatorDocsPagePath(url);
 }
 
 // BL-551 (bridge-08): JSON top-expensive-invocations/rollup feed over the
@@ -2179,10 +2161,6 @@ export function startBridge(
       }
       if (isContextBudgetPath(url)) {
         serveMiniAppHtml(res, getContextBudgetUiHtml());
-        return;
-      }
-      if (isOperatorDocsPath(url)) {
-        serveMiniAppHtml(res, getOperatorDocsUiHtml());
         return;
       }
       if (url === '/lets-talk/manifest.json' || url.startsWith('/lets-talk/manifest.json?')) {

@@ -7416,8 +7416,6 @@ to the project path; fixtures may omit it and emit nothing.
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 - **BL-823** — availability ledger (sibling monthly JSONL under
   `.swarmforge/telemetry/`).
-- **BL-597** — self-heal events trend (sibling monthly JSONL; same
-  `computeTrend` posture; see section below).
 
 ## Self-Heal Events Trend (BL-597)
 

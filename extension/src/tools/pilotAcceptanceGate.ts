@@ -77,12 +77,20 @@ import {
 } from './perHatRolePromptEvidenceCheck';
 import {
   PILOT_CRAP_VIOLATION_REFUSAL,
+  PILOT_CRAP_EVIDENCE_MISSING_REFUSAL,
   PilotScopedCrapCheckOutcome,
+  assessPilotScopedCrap,
+  isExtensionSrcTsPath,
+  isExtensionTsPath,
 } from './pilotScopedCrapCheck';
 import {
   PILOT_RAW_MKDTEMP_REFUSAL,
   PilotMkdtempConventionCheckOutcome,
 } from './pilotMkdtempConventionCheck';
+import {
+  PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL,
+  PropertyGeneratorReachCheckOutcome,
+} from './propertyGeneratorReachCheck';
 
 export {
   assessProducerCrosscheck,
@@ -146,8 +154,10 @@ export {
 
 export {
   PILOT_CRAP_VIOLATION_REFUSAL,
+  PILOT_CRAP_EVIDENCE_MISSING_REFUSAL,
   PilotScopedCrapCheckOutcome,
   assessPilotScopedCrap,
+  isExtensionSrcTsPath,
   isExtensionTsPath,
 } from './pilotScopedCrapCheck';
 
@@ -157,6 +167,13 @@ export {
   assessPilotMkdtempConvention,
   isExtensionTestJsPath,
 } from './pilotMkdtempConventionCheck';
+
+export {
+  PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL,
+  PropertyGeneratorReachCheckOutcome,
+  assessPropertyGeneratorReach,
+  isPropertyTestPath,
+} from './propertyGeneratorReachCheck';
 
 export interface AcceptanceRunResult {
   success: boolean;
@@ -177,7 +194,8 @@ export interface AcceptanceReceipt {
   unreachableStepHandlers?: { stepFilesScanned: number; patternsChecked: number };
   multiBranchParserCoverage?: { parsersScanned: number };
   perHatRolePromptEvidence?: { verdictsScanned: number };
-  scopedCrap?: { tsFilesScanned: number };
+  /** AcceptanceReceipt.scopedCrap — durable paths-scanned + outcome evidence (BL-745). */
+  scopedCrap?: { tsFilesScanned: number; scannedPaths: string[]; outcome: 'passed' };
   mkdtempConvention?: { testFilesScanned: number };
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
   producerCrosscheck?: ProducerCrosscheckMetadata;
@@ -212,6 +230,7 @@ export interface PilotAcceptanceGateDeps {
   checkCrossFileDuplication: () => CrossFileDuplicationCheckOutcome;
   checkScopedCrap: () => PilotScopedCrapCheckOutcome;
   checkMkdtempConvention: () => PilotMkdtempConventionCheckOutcome;
+  checkPropertyGeneratorReach: () => PropertyGeneratorReachCheckOutcome;
   checkShellEntryPointDrive: (ticketId: string) => ShellEntryPointDriveCheckOutcome;
   checkUnreachableStepHandlers: (ticketId: string) => UnreachableStepHandlerCheckOutcome;
   checkMultiBranchParserCoverage: (ticketId: string) => MultiBranchParserCoverageOutcome;
@@ -241,7 +260,9 @@ export interface PilotLandRefusal {
     | 'claim-unsupported'
     | 'cross-file-duplication'
     | 'crap-violation'
+    | 'crap-evidence-missing'
     | 'raw-mkdtemp-outside-helper'
+    | 'vacuous-property-generator'
     | 'parallel-shell-reimplementation'
     | 'unreachable-step-handler'
     | 'untested-parser-branch'
@@ -259,6 +280,10 @@ export interface PilotLandRefusal {
   crapFunction?: string;
   mkdtempFile?: string;
   mkdtempLine?: number;
+  vacuousPropertyFile?: string;
+  vacuousPropertyFunction?: string;
+  vacuousGeneratorBound?: number;
+  vacuousFunctionBoundary?: number;
   shellEntryPoint?: string;
   shellTestPath?: string;
   unreachablePattern?: string;
@@ -432,6 +457,67 @@ function checkCrap(
   return { crapCheck };
 }
 
+function extensionSrcPathsInScope(crapCheck: PilotScopedCrapCheckOutcome): string[] {
+  if (crapCheck.checked) {
+    const fromScanned = (crapCheck.scannedPaths ?? []).filter(isExtensionSrcTsPath);
+    if (fromScanned.length > 0) {
+      return fromScanned;
+    }
+    return crapCheck.srcPathsInScope ?? [];
+  }
+  return crapCheck.srcPathsInScope ?? [];
+}
+
+function buildScopedCrapReceiptEvidence(
+  crapCheck: PilotScopedCrapCheckOutcome
+): AcceptanceReceipt['scopedCrap'] | undefined {
+  if (!crapCheck.checked) {
+    return undefined;
+  }
+  const srcPaths = (crapCheck.scannedPaths ?? []).filter(isExtensionSrcTsPath);
+  if (srcPaths.length === 0) {
+    return undefined;
+  }
+  return {
+    tsFilesScanned: crapCheck.tsFilesScanned,
+    scannedPaths: crapCheck.scannedPaths ?? [],
+    outcome: 'passed',
+  };
+}
+
+function srcPathsNamedInEvidence(
+  srcPaths: string[],
+  evidence: AcceptanceReceipt['scopedCrap']
+): boolean {
+  if (!evidence) {
+    return false;
+  }
+  const named = evidence.scannedPaths.filter(isExtensionSrcTsPath);
+  return srcPaths.every((p) => named.includes(p));
+}
+
+// Step 3c⅝: src-touching lands must leave durable path-scoped CRAP evidence (BL-745).
+function requireScopedCrapReceiptEvidence(
+  ticketId: string,
+  crapCheck: PilotScopedCrapCheckOutcome
+): { refusal: PilotLandRefusal } | { evidence?: AcceptanceReceipt['scopedCrap'] } {
+  const srcPaths = extensionSrcPathsInScope(crapCheck);
+  if (srcPaths.length === 0) {
+    return { evidence: buildScopedCrapReceiptEvidence(crapCheck) };
+  }
+  const evidence = buildScopedCrapReceiptEvidence(crapCheck);
+  if (!srcPathsNamedInEvidence(srcPaths, evidence)) {
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'crap-evidence-missing',
+        reason: `${ticketId} refuses land: ${PILOT_CRAP_EVIDENCE_MISSING_REFUSAL}`,
+      },
+    };
+  }
+  return { evidence };
+}
+
 // Step 3c¾: touched extension/test/*.js must use mkTmpDir, not raw mkdtempSync
 // outside helpers/tmpDir.js (BL-743). Unreadable touched-file history fails OPEN.
 function checkMkdtemp(
@@ -451,6 +537,30 @@ function checkMkdtemp(
     };
   }
   return { mkdtempCheck };
+}
+
+// Step 3c⅞: touched *.property.test.js must reach the non-trivial branch of
+// the function under test (BL-739). vacuous *.property.test.js refuses land.
+// Unreadable touched-file history fails OPEN.
+export function checkPropertyGeneratorReach(
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { reachCheck: PropertyGeneratorReachCheckOutcome } {
+  const reachCheck = deps.checkPropertyGeneratorReach();
+  if (reachCheck.checked && reachCheck.miss) {
+    const { propertyFile, targetFunction, generatorBound, functionBoundary } = reachCheck.miss;
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'vacuous-property-generator',
+        reason: `${PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL} (file ${propertyFile}; function ${targetFunction}; generator max ${generatorBound}; boundary ${functionBoundary})`,
+        vacuousPropertyFile: propertyFile,
+        vacuousPropertyFunction: targetFunction,
+        vacuousGeneratorBound: generatorBound,
+        vacuousFunctionBoundary: functionBoundary,
+      },
+    };
+  }
+  return { reachCheck };
 }
 
 // Step 3d: when the run touches shell tests and the ticket names a non-test
@@ -617,7 +727,9 @@ function moveAndRecordReceipt(
   claimsCheck: CommitClaimsCheckOutcome,
   duplicationCheck: CrossFileDuplicationCheckOutcome,
   crapCheck: PilotScopedCrapCheckOutcome,
+  scopedCrapEvidence: AcceptanceReceipt['scopedCrap'] | undefined,
   mkdtempCheck: PilotMkdtempConventionCheckOutcome,
+  reachCheck: PropertyGeneratorReachCheckOutcome,
   shellDriveCheck: ShellEntryPointDriveCheckOutcome,
   unreachableCheck: UnreachableStepHandlerCheckOutcome,
   multiBranchCheck: MultiBranchParserCoverageOutcome,
@@ -649,8 +761,8 @@ function moveAndRecordReceipt(
   if (duplicationCheck.checked) {
     receipt.crossFileDuplicationFilesScanned = duplicationCheck.filesScanned;
   }
-  if (crapCheck.checked) {
-    receipt.scopedCrap = { tsFilesScanned: crapCheck.tsFilesScanned };
+  if (scopedCrapEvidence) {
+    receipt.scopedCrap = scopedCrapEvidence;
   }
   if (mkdtempCheck.checked) {
     receipt.mkdtempConvention = { testFilesScanned: mkdtempCheck.testFilesScanned };
@@ -690,7 +802,7 @@ function moveAndRecordReceipt(
       'cross-file duplication was not checked: the run\'s touched-file history could not be resolved'
     );
   }
-  if (!crapCheck.checked) {
+  if (!crapCheck.checked && extensionSrcPathsInScope(crapCheck).length === 0) {
     warnings.push(
       'scoped CRAP was not checked: the run\'s touched-file history or coverage report could not be resolved'
     );
@@ -698,6 +810,11 @@ function moveAndRecordReceipt(
   if (!mkdtempCheck.checked) {
     warnings.push(
       'mkdtemp convention was not checked: the run\'s touched-file history could not be resolved'
+    );
+  }
+  if (!reachCheck.checked) {
+    warnings.push(
+      'property generator reach was not checked: the run\'s touched-file history could not be resolved'
     );
   }
   if (!shellDriveCheck.checked) {
@@ -779,9 +896,19 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return crap.refusal;
   }
 
+  const crapEvidence = requireScopedCrapReceiptEvidence(ticketId, crap.crapCheck);
+  if ('refusal' in crapEvidence) {
+    return crapEvidence.refusal;
+  }
+
   const mkdtemp = checkMkdtemp(deps);
   if ('refusal' in mkdtemp) {
     return mkdtemp.refusal;
+  }
+
+  const propertyReach = checkPropertyGeneratorReach(deps);
+  if ('refusal' in propertyReach) {
+    return propertyReach.refusal;
   }
 
   const shellDrive = checkShellDrive(ticketId, deps);
@@ -816,7 +943,9 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     claims.claimsCheck,
     duplication.duplicationCheck,
     crap.crapCheck,
+    crapEvidence.evidence,
     mkdtemp.mkdtempCheck,
+    propertyReach.reachCheck,
     shellDrive.shellDriveCheck,
     unreachable.unreachableCheck,
     multiBranch.multiBranchCheck,

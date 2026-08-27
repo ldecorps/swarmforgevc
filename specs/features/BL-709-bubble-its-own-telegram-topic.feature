@@ -1,8 +1,3 @@
-# mutation-stamp: sha256=dd069a4723a2747221ce741cda6a7589ff7b843c428fe85748db8378088d9382
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-27T10:51:42.283734768Z","feature_name":"Bubble talks in its own Telegram topic","feature_path":"/tmp/swarmforge-bl709-hardender-wt/specs/features/BL-709-bubble-its-own-telegram-topic.feature","background_hash":"27e8f813fc75c6733812d2184d179acf931505b30fab3d80cff79d4d19319753","implementation_hash":"unknown","scenarios":[{"index":5,"name":"the front-desk topic map claims neither host-agent topic","scenario_hash":"157d338c35a79a49c963cc615cdb31a08ccb2ee52018198a349d0a1da0a12cef","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-27T10:51:42.283734768Z"}]}
-# acceptance-mutation-manifest-end
-
 Feature: Bubble talks in its own Telegram topic
   Let's Talk turns belong in a Bubble topic; Cursor Remote stays operator
   control only. Both still drive the same host-agent session — this separates
