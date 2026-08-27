@@ -53,6 +53,7 @@ expects them, and are not migrated or rewritten here.
 - [Reading intake-balance trends (filed vs closed)](how-to/BL-599-trend-intake-balance.md) — filed/closed/net from the same deliveryMetrics git-history adapter; epic trackers excluded (BL-599).
 - [Reading context-compaction cadence trends](how-to/BL-601-trend-compaction-cadence.md) — compactions/hr + token-at-compaction from structured `compaction:true` events only; NA when undetectable (BL-601; measures only).
 - [Reading human-decision latency trends](how-to/BL-600-trend-human-decision-latency.md) — ask→verdict median/outliers per gate; pending asks stay open age (BL-600; measures only).
+- [Reading handoff latency trends](how-to/BL-602-trend-handoff-latency.md) — enqueue→dequeue wait per recipient role; open waits never masquerade as fast pickups (BL-602; measures only).
 - [Reading false-alarm rate trends on alerts](how-to/BL-598-trend-false-alarm-rate.md) — per-type false-positive rate on `.swarmforge/telemetry/alerts-YYYY-MM.jsonl` (BL-598; measures only).
 - [Pane-title chrome covers every producible role name](how-to/BL-732-pane-title-chrome-covers-every-producible-role-name.md) — multi-word / `@`-seat SwarmForge titles strip as chrome (BL-732; closes BL-642 residual).
 - [Answering a menu-blocked pane from its Telegram steering topic](how-to/BL-568-menu-blocked-pane-questions-as-mapped-polls.md) — AskUserQuestion chrome → mapped poll in the role topic; vote drives the menu; steers suppressed while blocked (BL-568).
@@ -81,6 +82,8 @@ expects them, and are not migrated or rewritten here.
 - [Daemon log-freshness watchdog](how-to/BL-675-daemon-log-freshness-watchdog.md) — cron-side stale-heartbeat checker for long-running daemons (BL-675).
 - [Supervisor freshness heartbeats and registry guard](how-to/BL-784-supervisor-freshness-heartbeats-and-registry-guard.md) — per-tick supervisor heartbeats, conf rows, fail-closed registry guard (BL-784).
 - [Difficulty-aware coder seat routing](how-to/BL-1001-difficulty-aware-coder-seat-routing.md) — `mutation_cost` vs declared `--seat-tier`; hard work never spills to easy-only (BL-1001).
+- [Work notes attribute mutation cost without a task header](how-to/BL-1185-work-note-missing-task-header-defers-hard-seat.md) — `Work BL-…` message feeds BL-1001 difficulty; `task:` stays git_handoff-only (BL-1185).
+- [Same-model seats bypass tier routing](how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md) — shared `--model` → either seat may claim any `mutation_cost`; tier rules return when models differ (BL-1167).
 - [Unit-lane budgets scale with recorded contention](how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md) — load-relative Vitest timeouts with a finite ceiling; quiet host keeps base (BL-1007).
 - [Bounded fs.watch deadline follows recorded contention](how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md) — BL-933 helper scales 10s base with BL-1007 factor; stays under test budget (BL-1008).
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
@@ -88,6 +91,7 @@ expects them, and are not migrated or rewritten here.
 - [Promotion refuses a missing or draft acceptance feature](how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md) — blocking `acceptance` gate + `audit-acceptance`; no sibling-glob rescue (BL-626).
 - [Deprecator freshness-gate CLI before promote](how-to/BL-1173-deprecator-freshness-gate-cli.md) — `deprecate-check.js` allow|hold; promote fails closed (BL-1173 / Article 3.6).
 - [Run `/deprecate` soft verbs](how-to/BL-1174-deprecate-operator-verbs-scan-docs.md) — dry ranks orphan conf flags; confirm retires one into `docs/deprecated/` + index link; check wraps BL-1173; hard-tier only (BL-1174).
+- [Portable agent-memory capture and inject](how-to/BL-1177-portable-agent-memory-payload-capture-inject.md) — schema-versioned payload + fail-closed inject for same-role model swap (BL-1177; epic BL-1176).
 - [Keep the chunking property falsifiable](how-to/BL-738-chunking-property-reaches-the-split-boundary.md) — probe `maxLen=50` + `minLength: 51` so the property hits multi-chunk; scenario 02 falsifies (BL-738).
 - [Open-slot nudge skips type: epic trackers](how-to/BL-1145-open-slot-nudge-skips-epic-trackers.md) — promotion_gates_lib evaluate refuses epic/blocked so nudge and promote share one chain (BL-1145).
 - [Exit gates: committed acceptance + epic runtime wiring](how-to/BL-533-spec-commit-and-runtime-wiring-exit-gates.md) — untracked acceptance fails hygiene; multi-slice epics need `required_wiring` (BL-533).
@@ -96,7 +100,8 @@ expects them, and are not migrated or rewritten here.
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).
 - [Host-resolved Stryker mutation concurrency](how-to/BL-786-mutation-concurrency-host-resolved.md) — `mutation-concurrency.js` sizes workers from free RAM + BL-427 peak; `MUTATION_CONCURRENCY` pin wins (BL-786).
 - [Supervisor threads are not front-desk topics](how-to/BL-695-supervisor-threads-are-not-front-desk-topics.md) — SUP/unbound never write tracked topic JSON; icons stay durable off-git (BL-695).
-- [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
+- [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override; standing-red allowlist (BL-570 / BL-1175).
+- [Standing property reds do not block unrelated green commits](how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md) — explicit allowlist TSV; SKIP stays recovery-only (BL-1175).
 - [Thin-main CRAP-visible CLI gate](how-to/BL-534-thin-main-crap-visible-cli-gate.md) — tools `main()` must be exported and CC≤2; parcel never allowlists (BL-534).
 - [Reconcile import skips the property-suite guard](how-to/BL-1121-reconcile-import-skips-property-suite-guard.md) — byte-identical mid-merge import → `skip-reconcile-import`; env override stays recovery-only (BL-1121).
 - [Property-suite fixtures must not mutate shared main](how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md) — canary bare/HEAD around the property lane; refuse reset-to-origin when ahead (BL-1124).

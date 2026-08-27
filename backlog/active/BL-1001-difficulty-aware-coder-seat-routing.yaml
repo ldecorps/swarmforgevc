@@ -176,3 +176,5 @@ qa_e2e_procedure: >
   6. Confirm single-seat stages are unaffected: deliver tickets of each
      mutation_cost to a one-seat stage (e.g. architect) and confirm each is
      claimed as before, with no tier filtering applied.
+
+assigned_to: coder

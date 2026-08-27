@@ -39,3 +39,6 @@ export function computeTrend(series: TrendSeriesPoint[]): TrendResult {
 }
 
 // BL-605 global token series: callers import from ./globalTokenConsumption (acyclic — no re-export).
+
+// BL-602 handoff-latency series: callers import from ./handoffLatency (acyclic — no re-export).
+// handoffLatency imports computeTrend; a re-export here would cycle (same class as BL-601/605).

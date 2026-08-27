@@ -622,6 +622,7 @@ const DOMAINS = [
   require('./bl598TrendFalseAlarmRateSteps'),
   require('./bl599TrendIntakeBalanceSteps'),
   require('./bl601TrendCompactionCadenceSteps'),
+  require('./bl602TrendHandoffLatencySteps'),
   require('./bl600TrendHumanDecisionLatencySteps'),
   require('./bl965HealWrapperTempCleanupSteps'),
   require('./bl591EpicEtaSteps'),
@@ -653,6 +654,7 @@ const DOMAINS = [
   require('./bl1164QaChangedPathUnitTestGateSteps'),
   require('./bl1173DeprecatorFreshnessGateCliSteps'),
   require('./bl1174DeprecateOperatorVerbsScanDocsSteps'),
+  require('./bl1177PortableAgentMemoryPayloadSteps'),
   require('./bl738ChunkingPropertySteps'),
   require('./bl1012FreshnessSelfInflictedIncidentsSteps'),
   require('./bl621FrontDeskDegradedCauseEscalationSteps'),
@@ -778,7 +780,10 @@ const DOMAINS = [
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
-  require('./bl1166OperatorDocsSteps')
+  require('./bl1166OperatorDocsSteps'),
+  require('./bl1185WorkNoteMissingTaskHeaderSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl1175PropertySuiteStandingRedsSteps')
 ];
 
 function registerSteps(registry) {

@@ -10,6 +10,23 @@ priority: 1
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
+abandoned_commits:
+  - 9da06e6b92
+  - dd51ceb1c3
+  - 01783f0479
+  - d77a7b2dba
+  - 926319ccb2
+  - 3e081e5f83
+  - 0b0bca0f6d
+  - 595e3edb93
+  - 007154cb2b
+  - 2952154273
+  - 1eb963f497
+  - 00ea48311d
+  - abef89c58b
+  - 6f3de18daf
+  - 0d44ea8b9e
+  - be6585924f
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature
 
@@ -27,7 +44,7 @@ invariants:
 
 required_wiring:
   - "swarmforge/scripts/check_property_suite_drift.sh::property suite gate::green or allowlisted standing reds; unrelated green commits not refused"
-  - "extension/ npm run test:properties::standing inventory restored or allowlisted"
+  - "swarmforge/scripts/property_suite_standing_allowlist.tsv::standing inventory::each failing file allowlisted with rationale"
   - "specs/pipeline/steps/index.js::bl1175PropertySuiteStandingRedsSteps::acceptance handler registered"
 
 description: |
@@ -68,3 +85,6 @@ source: |
 notes: |
   - [2026-08-27] specifier: minted from operator intake drain; high severity
     because it blocks live pipeline handoff of approved BL-605.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 926319ccb2, evidence: backlog/evidence/BL-1175-qa-bounce-20260827.md }
