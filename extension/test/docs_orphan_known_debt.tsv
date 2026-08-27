@@ -1,0 +1,25 @@
+# BL-757 known pre-existing docs/index.md orphans (predates BL-723 pilot batch).
+# Format: mode-relative-path<TAB>noted-date<TAB>note
+how-to/BL-1127-local-coder-steward-evidence-bar.md	2026-07-31	pre-BL-756 debt
+how-to/BL-1132-headroom-raise-telemetry-path-and-coordinator-duty.md	2026-07-31	pre-BL-756 debt
+how-to/BL-1137-master-checkout-drift-mute-covers-cwd-scoped-git.md	2026-07-31	pre-BL-756 debt
+how-to/BL-1140-steward-local-model-bakeoff.md	2026-07-31	pre-BL-756 debt
+how-to/BL-1159-bridge-child-survives-without-crash-giveup-loop.md	2026-07-31	pre-BL-756 debt
+how-to/BL-597-trend-self-heal-events.md	2026-07-31	pre-BL-756 debt
+how-to/BL-657-launcher-tmux-server-dies-seconds-after-launch.md	2026-07-31	pre-BL-756 debt
+how-to/BL-699-pilot-quality-bounce-backs.md	2026-07-31	pre-BL-756 debt
+how-to/BL-700-pilot-telegram-status-posts.md	2026-07-31	pre-BL-756 debt
+how-to/BL-701-pilot-orphan-cleanup-stage-boundaries.md	2026-07-31	pre-BL-756 debt
+how-to/BL-702-operator-confirm-env-reload.md	2026-07-31	pre-BL-756 debt
+how-to/BL-705-lets-talk-more-chiptunes.md	2026-07-31	pre-BL-756 debt
+how-to/BL-706-lets-talk-floating-minimized-chat.md	2026-07-31	pre-BL-756 debt
+how-to/BL-707-android-floating-overlay-companion.md	2026-07-31	pre-BL-756 debt
+how-to/BL-723-pilot-tonight-quality-review.md	2026-07-31	pre-BL-756 debt
+how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md	2026-07-31	pre-BL-756 debt
+how-to/BL-989-portable-grep-tab-anchors.md	2026-07-31	pre-BL-756 debt
+reference/recurring-failure-mode-audit.md	2026-07-31	pre-BL-756 debt
+reference/specs/BL-696-amendment-lets-talk-operator-console.md	2026-07-31	pre-BL-756 debt
+reference/specs/BL-696-amendment-local-hybrid-audio.md	2026-07-31	pre-BL-756 debt
+reference/specs/BL-696-amendment-telegram-operator-commands.md	2026-07-31	pre-BL-756 debt
+reference/specs/BL-697-lets-talk-hands-free-listening.md	2026-07-31	pre-BL-756 debt
+reference/specs/BL-698-telegram-cursor-operator-command-surface.md	2026-07-31	pre-BL-756 debt
