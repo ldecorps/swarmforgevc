@@ -52,6 +52,7 @@ expects them, and are not migrated or rewritten here.
 - [Reading intake-balance trends (filed vs closed)](how-to/BL-599-trend-intake-balance.md) — filed/closed/net from the same deliveryMetrics git-history adapter; epic trackers excluded (BL-599).
 - [Reading context-compaction cadence trends](how-to/BL-601-trend-compaction-cadence.md) — compactions/hr + token-at-compaction from structured `compaction:true` events only; NA when undetectable (BL-601; measures only).
 - [Reading human-decision latency trends](how-to/BL-600-trend-human-decision-latency.md) — ask→verdict median/outliers per gate; pending asks stay open age (BL-600; measures only).
+- [Reading handoff latency trends](how-to/BL-602-trend-handoff-latency.md) — enqueue→dequeue wait per recipient role; open waits never masquerade as fast pickups (BL-602; measures only).
 - [Reading false-alarm rate trends on alerts](how-to/BL-598-trend-false-alarm-rate.md) — per-type false-positive rate on `.swarmforge/telemetry/alerts-YYYY-MM.jsonl` (BL-598; measures only).
 - [Pane-title chrome covers every producible role name](how-to/BL-732-pane-title-chrome-covers-every-producible-role-name.md) — multi-word / `@`-seat SwarmForge titles strip as chrome (BL-732; closes BL-642 residual).
 - [Answering a menu-blocked pane from its Telegram steering topic](how-to/BL-568-menu-blocked-pane-questions-as-mapped-polls.md) — AskUserQuestion chrome → mapped poll in the role topic; vote drives the menu; steers suppressed while blocked (BL-568).

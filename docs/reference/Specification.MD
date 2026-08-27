@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-602: handoff latency trend —
+`enqueued_at` → `dequeued_at` wait per recipient role via
+`handoffLatency.ts`; still-queued parcels contribute open wait only;
+master + worktree mailboxes (new / in_process / completed);
+`stageDwell.splitOutliers` + `computeTrend` inward import (no `trend.ts`
+re-export — acyclic). Measurement only. Acceptance:
+`specs/features/BL-602-trend-handoff-latency.feature`. How-to:
+`docs/how-to/BL-602-trend-handoff-latency.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-600: human-decision latency trend —
 ask (ApprovalRequested) to verdict per gate via
 `humanDecisionLatency.ts`; pending asks contribute open age only; median +
@@ -7492,6 +7501,43 @@ this rematch closed.
 - **BL-594** — swarm-behaviour-trends epic.
 - **BL-591** — ETA already treats blocked-on-human as non-velocity; this
   quantifies the human side.
+- **BL-595** — human-loop reliability ledger (sibling `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
+
+## Handoff Latency (BL-602)
+
+On mono-router, a handoff to a dormant role waits until the resident next
+rotates into that role — so queue wait looks identical to “never sent”
+without a metric. BL-602 pairs each parcel’s existing `enqueued_at` (send)
+with `dequeued_at` (ready_for_next claim) and trends **enqueue→dequeue
+latency** per recipient role. **Measurement only** — never changes
+dispatch, rotation, or claim behaviour. Pairs with BL-596 stranding.
+
+### Derivation
+
+`handoffLatency.ts` is pure over header timestamp pairs:
+
+| Input | Output |
+|-------|--------|
+| `enqueued_at` + `dequeued_at` (`dequeued >= enqueued`) | Processed `latencyMs` for that recipient |
+| `enqueued_at` only (still in `new/` / claimed without stamp) | `openWaitMs` only — never folded into processed median/outliers |
+
+Gather reads **master and worktree** role mailboxes (`new/`, `in_process/`,
+`completed/`) — master-only would false-negative worktree seats.
+Aggregation reuses `stageDwell.splitOutliers` for median + outlier honesty,
+then feeds `computeTrend` (current / prior / delta / direction).
+
+### Dependency direction (acyclic)
+
+`handoffLatency` imports `computeTrend` from `./trend` and `splitOutliers`
+from `./stageDwell`. `trend.ts` must **not** re-export handoff-latency
+helpers — keep the metrics graph acyclic (same posture as BL-600 / BL-601).
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-596** — rotation-cost / stranding (cross-read with handoff wait spikes).
+- **BL-577** — flow watchdog (stall alarms vs this latency distribution).
 - **BL-595** — human-loop reliability ledger (sibling `computeTrend` posture).
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 
