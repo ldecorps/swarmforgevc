@@ -1,0 +1,63 @@
+id: BL-1184
+title: "Briefing shift velocity — tickets landed per 8 consecutive hours, non-linear time axis"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+priority: 7
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1184-briefing-shift-velocity.feature
+
+human_approval: pending
+approval_context: >
+  Human Laurent via Cursor 2026-08-27 ~07:49 BST. Daily briefing family
+  (BL-896 burndown). Metric: tickets closed into backlog/done/ in 8 consecutive
+  hours. Plot as far back as history allows; non-linear time (recent precision).
+
+invariants:
+  - "Shift velocity counts done/ close events only — never open-count or intake as landed."
+  - "History uses existing git lifecycle adapter and/or telemetry — never a second backlog history reader."
+  - "Time axis is non-linear with greater recent precision — not a linear equal-day scale for the full history."
+
+required_wiring:
+  - "extension/src/metrics/ deliveryMetrics or shiftVelocity::8h landed counts::git and/or telemetry"
+  - ".swarmforge/telemetry/shift-velocity-*.jsonl::optional forward capture::append-only if no existing series"
+  - "briefing burndown/email path::shift velocity chart::non-linear time axis"
+  - "specs/pipeline/steps/index.js::bl1184BriefingShiftVelocitySteps::acceptance handler registered"
+
+description: |
+  ## Metric (locked)
+
+  Count of tickets landed (moved into `backlog/done/`) in each **8 consecutive
+  hours** window. Aggregation: max over rolling 8h windows per calendar day
+  (preferred default — one chartable point per day that answers "hardest
+  8-hour stretch"). Document if implementer chooses shift-aligned blocks
+  instead; chart and telemetry must share one definition.
+
+  ## History + axis
+
+  Prefer existing telemetry if it answers the window; else create append-only
+  jsonl going forward; git lifecycle closes fill history. Plot as far back as
+  sources allow. **Non-linear time axis** — recent values more precise than
+  older (warped / log-ish time); Y may stay linear.
+
+qa_e2e_procedure: >
+  (1) Fixture closes → 8h window count. (2) Git history backfill without a
+  second reader. (3) Chart/PNG path includes series with non-linear time.
+  (4) Telemetry append if created. (5) Epic trackers not counted as landed.
+
+out_of_scope: |
+  - PWA burndown (BL-659).
+  - Replacing BL-599 intake balance or BL-896 open burndown.
+  - Changing swarm shift schedule length.
+
+source: |
+  .swarmforge/operator/INTAKE-briefing-shift-velocity.md (human Laurent,
+  2026-08-27 ~07:49 BST).
+
+notes: |
+  - [2026-08-27] specifier: minted; default aggregation = max rolling 8h landed
+    count per calendar day for a single briefing series definition.
