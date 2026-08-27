@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=4397660dce3dd12a1932b13feeb52925cd708dac6870fc41e01a5b759740dc4c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T06:15:43.303989952Z","feature_name":"intake balance trend compares filed rate to close rate","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-599-trend-intake-balance.feature","background_hash":"33b530ca03c56438869a861722a37804cdf56f67bf99a2f31771668974bde642","implementation_hash":"unknown","scenarios":[{"index":2,"name":"intake balance counts buildable tickets and root intakes but not epic trackers","scenario_hash":"2f17a8f0b3c3f32cf1f20937f2ae53c06f0e279efc843851c99532477316fc49","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-08-27T06:14:12.233148643Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: intake balance trend compares filed rate to close rate
 
   # BL-599 (epic BL-594). Velocity tracks closes; this adds the intake side and

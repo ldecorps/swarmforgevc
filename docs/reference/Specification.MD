@@ -1,34 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 27, 2026 (BL-1169: babysitter half-launch and
-swarm-starved queue bounded auto-repair — `proc-*` half-launch CRIT
-`assoc`s `:ensure-session` when standing+allowed; swarm-starved streak ≥3
-queues `:ensure-control-plane` / `./swarm ensure` alongside CRIT; never
-swallows alerts. Acceptance:
-`specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature`.
-How-to: `docs/how-to/BL-611-babysitterd-runbook.md` BL-1169 section.)
+**Last Updated:** August 27, 2026 (BL-599: intake-balance trend —
+filed/closed/net per window via `deriveIntakeBalanceEvents` /
+`computeIntakeBalance` on the existing deliveryMetrics git-history adapter;
+epic trackers excluded; root `INTAKE-*.md` counted; exposed on
+`computeDeliveryMetrics.intakeBalance` through `trend.ts`. Acceptance:
+`specs/features/BL-599-trend-intake-balance.feature`. How-to:
+`docs/how-to/BL-599-trend-intake-balance.md`.)
 Prior entry —
-**Last Updated:** August 27, 2026 (BL-738: chunking property reaches the split
-boundary — shared `chunkingPropertyProbe` passes explicit `maxLen=50` with
-generator `minLength: 51` so `splitTelegramChunks` multi-chunk reassembly is
-exercised and falsifiable; not vacuous against TELEGRAM_MESSAGE_MAX_LENGTH.
-Acceptance: `specs/features/BL-738-chunking-property-reaches-the-split-boundary.feature`.
-How-to: `docs/how-to/BL-738-chunking-property-reaches-the-split-boundary.md`.)
-Prior entry —
-**Last Updated:** August 27, 2026 (BL-1174: `/deprecate` soft verbs —
-`deprecate.js` dry ranks orphan conf flags; confirm retires one (or refuses /
-human-asks) writing `docs/deprecated/` + `## Deprecated` index link; `check`
-wraps BL-1173; easy/weak seats refuse. Shared BL-698 operator surface.
-Acceptance: `specs/features/BL-1174-deprecate-operator-verbs-scan-docs.feature`.
-How-to: `docs/how-to/BL-1174-deprecate-operator-verbs-scan-docs.md`.)
-Prior entry —
-**Last Updated:** August 27, 2026 (BL-1173: deprecator freshness-gate CLI —
-`node extension/out/tools/deprecate-check.js <root> <BL-id>` prints
-`allow`|`hold` JSON; `promote_and_route_next.sh` fails closed on hold, crash,
-or malformed output (Article 3.6). Hold leaves the ticket in `paused/` and
-notifies the specifier at priority `00`. Acceptance:
-`specs/features/BL-1173-deprecator-freshness-gate-cli.feature`. How-to:
-`docs/how-to/BL-1173-deprecator-freshness-gate-cli.md`.)
+**Last Updated:** August 27, 2026 (BL-980: Pipeline Board RECENTLY CLOSED
+lines append a relative closure-age suffix from durable `doneClosedAtMs`
+(`formatRecentlyClosedAgeLabel` in `pipelineBoard.ts`; stamped once in
+`conciergeTick.ts`). Ladder: `just now` / `Nmin ago` / `Nh ago` / `Nd ago`.
+No suffix when no closure instant; plain-text and HTML paths agree; other
+sections unchanged. Acceptance:
+`specs/features/BL-980-recently-closed-elapsed-time.feature`. How-to:
+`docs/how-to/BL-980-recently-closed-elapsed-time.md`.)
 Prior entry —
 **Last Updated:** August 26, 2026 (BL-741: `/pilot` land gate always runs
 scoped CRAP on touched `extension/*.ts` via `pilotScopedCrapCheck.ts` /
