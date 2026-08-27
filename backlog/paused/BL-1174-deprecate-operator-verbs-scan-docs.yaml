@@ -10,9 +10,29 @@ depends_on: [BL-1173, BL-698]
 mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1174-deprecate-operator-verbs-scan-docs.feature
+# Tip-pure rematch 20260827 atop origin/main (QA bounce D1 entangled tip).
+abandoned_commits:
+  - 6f43d78339
+  - 6017c808db
+  - 7995fe5e05
+  - bef39958e2
+  - dd5b4c332c
+  - 5bf1c71ae3
+  - 3b2d77d8f3
+  - de82d4c8b2
+  - d50cc7b1f1
+  - f22b322fad
+  - df14615fe8
+  - 369e2dd616
+  - 37a72266b8
+  - 5be7395b8a
+  - fe49be7d8b
+  - 1d1b237676
+  - 89ade67ac9
 
 required_wiring:
-  - "extension/src/tools/telegram-front-desk-bot.ts::deprecate::register /deprecate in shared operator verb backend"
+  - "extension/src/tools/telegramControlCore.ts::DEPRECATE_PATTERN::register /deprecate in shared operator verb backend"
+  - "extension/src/tools/telegramCursorOperatorExec.ts::executeDeprecate::shared operator exec for /deprecate"
   - "specs/pipeline/steps/index.js::bl1174DeprecateOperatorVerbsScanDocsSteps::acceptance handler registered"
 
 invariants:
