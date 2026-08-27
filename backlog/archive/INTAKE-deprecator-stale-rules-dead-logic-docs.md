@@ -1,7 +1,9 @@
 # INTAKE — Deprecator activity: Boy Scout for business rules, stale tickets, dead logic, and docs
 
 **Source:** human (Laurent), 2026-08-27 ~07:03 BST; Cursor generalization from open question  
-**Status:** new intake, not minted  
+**Status:** ARCHIVED — minted as **BL-1172** epic + **BL-1173** (Q-jumped to active) + **BL-1174** (paused). Human Q-jump 2026-08-27 ~07:16 BST.
+
+Was: new intake, not minted  
 **Priority:** high — implementing old paused tickets without a freshness gate re-introduces
 dead logic; docs scatter "RETIRED/superseded" inline with no systematic registry.
 
