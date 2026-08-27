@@ -20,7 +20,7 @@ invariants:
   - "One disaster-class escalation replaces N duplicate symptom lines for the same incident window — not N copies of the same class."
   - "Unrecoverable classes (e.g. parse error) emit diagnose-only escalations — no repair storm."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Detect+Diagnose slice from INTAKE-disaster-recovery-detect-diagnose-repair-learn.md
   (2026-08-27). Pairs with BL-1169 repair and BL-1170 learn; BL-1170 playbook
