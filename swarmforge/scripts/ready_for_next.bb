@@ -9,6 +9,7 @@
 (load-file (str (fs/path (fs/parent *file*) "reference_freshness_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "worktree_drift_lib.bb")))
 
 
 ;; BL-640: pre-turn freshness guard. ready_for_next.sh is the one entry
@@ -127,6 +128,41 @@
       (dispatch-lib/exit! 2 (supersede-lib/refusal-exit-message verdict)))))
 
 (enforce-supersede-guard!)
+
+;; BL-1195: pre-turn worktree-drift guard. Same posture as BL-640/BL-1084
+;; above - runs BEFORE dispatch decides task vs batch, against THIS
+;; worktree's own root (dispatch-lib/git-root, not project-root - a
+;; master-resident role's own worktree IS the shared checkout, and every
+;; other role's worktree is its own separate git root). Degrades to a
+;; silent pass on any git hiccup (no git root, `git diff` failing) - it
+;; only ever refuses when it can positively name real drift, same posture
+;; as the reference-freshness guard above.
+(defn- modified-tracked-paths [root]
+  (let [result (sh/sh "git" "-C" (str root) "diff" "--name-only" "HEAD")]
+    (if (zero? (:exit result))
+      (remove str/blank? (str/split-lines (:out result)))
+      [])))
+
+;; "In-progress" means already RESUMED (in_process), not merely queued
+;; (new/) - a role that has not yet dequeued anything has no legitimate
+;; reason to have modified a tracked file at all, which is exactly
+;; scenario 01's own premise; peek-candidate-task-names above deliberately
+;; widens to new/ too (it is answering a different question - which task
+;; name would explain a supersede match), so this guard reads in_process/
+;; directly rather than reusing it.
+(defn- has-in-process-parcel? []
+  (boolean (seq (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
+
+(defn- enforce-worktree-drift-guard! []
+  (let [root (dispatch-lib/git-root)]
+    (when root
+      (let [drift (worktree-drift-lib/unexplained-drift
+                   {:modified-paths (modified-tracked-paths root)
+                    :has-in-progress-task? (has-in-process-parcel?)})]
+        (when (worktree-drift-lib/drift-detected? drift)
+          (dispatch-lib/exit! 2 (worktree-drift-lib/drift-report drift)))))))
+
+(enforce-worktree-drift-guard!)
 
 ;; BL-226: this receive helper's sole job is dispatch. Promoting paused
 ;; items into backlog/active/ is the coordinator's exclusive duty
