@@ -45,6 +45,7 @@
 
 ;; BL-596: rotation dynamics telemetry — one append per successful rotate.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "rotation_telemetry_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
 
 ;; BL-911: prompt-engine-lib is also a leaf dependency (its own load-file
 ;; list is empty) - loaded here so recompose-role-prompt! below can reuse
@@ -991,6 +992,11 @@
                 (rotation-telemetry-lib/append-rotation-event!
                  (target-root)
                  {:from from-role :to target-role :reason emit-reason})
+                (self-heal-telemetry-lib/append-self-heal-event!
+                 (target-root)
+                 {:type "rotation-respawn"
+                  :subject "mono-router-resident"
+                  :reason "persona swap"})
                 {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
                                      (str "tmux-exit-" (:exit result)))}))))))

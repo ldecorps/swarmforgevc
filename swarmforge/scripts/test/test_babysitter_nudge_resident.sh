@@ -63,7 +63,7 @@ grep -q -- 'C-m' "$CALL_LOG" || fail "01: expected verified submit (C-m)"
 pass "01: idle pane receives verified nudge with Enter"
 
 # ── 2: busy pane — no inject, SKIP_BUSY ─────────────────────────────────────
-printf '  esc to interrupt\n' > "$BEFORE_STDOUT_FILE"
+printf '  ⠋ Running command… (12s)\n' > "$BEFORE_STDOUT_FILE"
 printf '❯ \n' > "$AFTER_STDOUT_FILE"
 : > "$CALL_LOG"
 echo 0 > "$CAPTURE_COUNT_FILE"

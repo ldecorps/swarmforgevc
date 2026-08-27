@@ -285,8 +285,16 @@
 
 (dotimes [_ 300]
   (let [{:keys [result-stand result-no-stand]} (gen-presence-case)]
-    (assert-true "should-stand? never changes the outcome once the pane is confirmed present (invariant 3)"
-                 (= result-stand result-no-stand))))
+    ;; BL-804 inv 3: the ALERT (key/severity/message) is topology-blind once
+    ;; the pane is present. BL-1169 adds bounded repair on half-launch, which
+    ;; IS topology-gated (standing only) — so compare the finding without
+    ;; :repair, and assert repair appears only on the standing half-launch.
+    (assert-true "should-stand? never changes the alert once the pane is confirmed present (invariant 3)"
+                 (= (dissoc result-stand :repair) (dissoc result-no-stand :repair)))
+    (when (and result-stand (= "CRIT" (:severity result-stand))
+               (str/starts-with? (str (:key result-stand)) "proc-"))
+      (assert-true "half-launch repair is proposed only when the role should stand"
+                   (and (some? (:repair result-stand)) (nil? (:repair result-no-stand)))))))
 
 (assert-true "P4 generator reached both a required and a dormant missing-session case"
              (and (contains? @p4-branches-hit :absence-required)
@@ -353,17 +361,23 @@
 (defn- gen-repair-case []
   (let [pane-exists? (rbool)
         should-stand? (rbool)
-        role (rand-role-name)]
+        has-claude-process? (rbool)
+        process-gather-failed? (rbool)
+        role (rand-role-name)
+        half-launch? (and pane-exists? (not has-claude-process?) (not process-gather-failed?))]
     (swap! p6-branches-hit conj
            (cond (and (not pane-exists?) should-stand?) :absent-standing
                  (not pane-exists?) :absent-dormant
-                 :else :present))
+                 half-launch? :present-half-launch
+                 :else :present-healthy))
     {:pane-exists? pane-exists?
      :should-stand? should-stand?
+     :has-claude-process? has-claude-process?
+     :process-gather-failed? process-gather-failed?
      :result (sw/check-live-session {:role role
                                      :pane-exists? pane-exists?
-                                     :has-claude-process? (rbool)
-                                     :process-gather-failed? (rbool)
+                                     :has-claude-process? has-claude-process?
+                                     :process-gather-failed? process-gather-failed?
                                      :should-stand? should-stand?
                                      ;; a randomized budget that is always
                                      ;; permissive, so this half isolates the
@@ -372,15 +386,24 @@
                                      :max-repair-attempts (inc (rint 3))})}))
 
 (dotimes [_ 400]
-  (let [{:keys [pane-exists? should-stand? result]} (gen-repair-case)
-        repaired? (some? (:repair result))]
-    (assert-true "a repair is proposed if and only if the pane is absent AND the role should stand, for ANY role name"
-                 (= repaired? (and (not pane-exists?) should-stand?)))))
+  (let [{:keys [pane-exists? should-stand? has-claude-process? process-gather-failed? result]}
+        (gen-repair-case)
+        repaired? (some? (:repair result))
+        ;; BL-1169: repair when missing standing pane OR half-launch on a standing
+        ;; role (topology still gates dormants; gather-failed stays repair-free).
+        expect-repair? (and should-stand?
+                            (or (not pane-exists?)
+                                (and pane-exists?
+                                     (not has-claude-process?)
+                                     (not process-gather-failed?))))]
+    (assert-true "a repair is proposed iff standing role is missing OR half-launch, for ANY role name"
+                 (= repaired? expect-repair?))))
 
-(assert-true "P6(a) generator reached an absent standing role, an absent dormant role, and a present pane"
+(assert-true "P6(a) generator reached absent standing, absent dormant, half-launch, and healthy present"
              (and (contains? @p6-branches-hit :absent-standing)
                   (contains? @p6-branches-hit :absent-dormant)
-                  (contains? @p6-branches-hit :present)))
+                  (contains? @p6-branches-hit :present-half-launch)
+                  (contains? @p6-branches-hit :present-healthy)))
 
 ;; (b) the bound. Each trial replays a run of sweeps for one role whose pane
 ;; is missing throughout - the worst case, and the exact shape of the incident

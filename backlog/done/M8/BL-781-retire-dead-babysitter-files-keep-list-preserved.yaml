@@ -1,0 +1,96 @@
+id: BL-781
+title: "BL-611's KEEP list preserved three dead babysitter files, and scenario 15 allowlists exactly the two that contradict it — 'no wake runtime remains' is vacuous"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: low
+priority: 199
+direction: aligned
+depends_on: [BL-611]
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "deletions only — no refactor surface"
+  hardender: "no new production logic; BL-611 acceptance regression covers the scan"
+  documenter: "no user-facing doc change beyond optional BL-611 runbook cross-link"
+human_approval: approved
+approval_context: >
+  Low severity because nothing misbehaves at runtime — all three files are
+  provably uncalled. What is real is the acceptance integrity: BL-611's
+  scenario 15 asserts "no babysitter.prompt role, LLM launch path, or wake
+  runtime remains", and it passes only because the two surviving wake-runtime
+  files are named in the step handler's allowlist. Human approved deletion
+  of babysitter_lib.bb and babysitter_enqueue_wake.sh rather than salvage.
+
+source: |
+  Reported by the coder on 2026-08-01 in
+  `backlog/evidence/BL-611-coder-findings.md` (finding 1 and finding 3), and
+  extended by the specifier's own audit of the full KEEP list, which found a
+  second dead wake-queue file the coder had not flagged.
+
+# Tip-pure rematch 5.
+abandoned_commits:
+  - 31ede8f992
+  - b56ca33e92
+  - 2db73873d6
+  - 9e6d5bef50
+  - 1bba7bf898
+  - eceaf39588
+  - 9da97fcb29
+  - 0b352a2fc3
+  - efbc2d8558
+  - 88360ae238
+
+acceptance: specs/features/BL-781-retire-dead-babysitter-files-keep-list-preserved.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl781RetireDeadBabysitterFilesKeepListPreservedSteps::acceptance handler registered"
+  - "specs/pipeline/steps/bl611BabysitterdLifecycleSteps.js::babysitter_assess_lib.bb::salvaged assess lib stays allowlisted after wake-runtime entries removed"
+
+invariants:
+  - "BL-611 scenario 15's no wake runtime remains assertion is satisfied by absence, not by allowlist exemption of product wake-runtime files."
+  - "babysitter_assess_lib.bb, babysitter_nudge_lib.bb, and babysitter_nudge_resident.bb remain live; nothing in this parcel deletes or rewires them."
+
+description: |
+  Delete the three dead files, their dedicated test runners, and their entries
+  in the scenario-15 allowlist, so BL-611's "no wake runtime remains"
+  assertion is enforced by the scan rather than exempted from it.
+
+  The point of this ticket is NOT tidiness. It is that the allowlist and the
+  assertion contradict each other: the scan is told to ignore precisely the
+  files that would falsify it. Removing the files lets the allowlist entries
+  go too, and scenario 15 starts meaning what it says.
+
+  Do this as deletion, not repair. `babysitter_assess.bb` in particular is
+  tempting to fix — resist it. Its working half (`babysitter_assess_lib.bb`)
+  is already wired into `babysitter_check.bb` as the BL-528 claim-risk scan;
+  the broken CLI wrapper has no consumer and reviving one is new scope.
+
+  BL-611 is in backlog/done/ — sequence constraint satisfied.
+
+qa_e2e_procedure: >
+  (1) Three dead paths absent; babysitter_lib_test_runner absent.
+  (2) bl611BabysitterdLifecycleSteps allowlist no longer names deleted files.
+  (3) BL-611 scenario 15 green at parcel commit.
+  (4) babysitter_assess_lib and nudge test runners ALL PASS.
+  (5) start-swarm/stop-swarm/swarm ensure clean; repo grep shows no live callers.
+
+out_of_scope: |
+  - Fixing or reviving `babysitter_assess.bb`'s undefined symbols. Delete it.
+  - `babysitter_assess_lib.bb`'s own behaviour (the live BL-528 claim-risk
+    scan) — untouched here.
+  - Any change to the babysitterd sweep, its checks, or its nudge path.
+  - Re-litigating BL-611's KEEP/RECYCLE split beyond these three entries.
+
+notes: |
+  Audit method, so a reviewer can re-run it rather than trust this ticket:
+  for each KEEP-list entry, `git grep -l <name> <commit> -- ':!backlog/'
+  ':!docs/'` and discard hits that are the file itself, its own test runner,
+  or the step-handler allowlist. What remains is the live caller set. It was
+  empty for these three and non-empty for the rest.
+  [2026-08-27] specifier: feature file minted; coordinator may route to coder.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: b9e93b976f, evidence: backlog/evidence/BL-781-qa-bounce-rematch4-20260827.md }
