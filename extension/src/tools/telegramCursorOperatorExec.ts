@@ -11,6 +11,16 @@ import {
   formatMiniAppRedeployStartMessage,
   formatMiniAppRedeployFailureMessage,
 } from './telegramCursorBridgeMiniAppRedeploy';
+import {
+  startFrontDeskRedeployRun,
+  formatFrontDeskRedeployStartMessage,
+  formatFrontDeskRedeployFailureMessage,
+} from './telegramCursorBridgeFrontDeskRedeploy';
+import {
+  startAllRedeployRun,
+  formatAllRedeployStartMessage,
+  formatAllRedeployFailureMessage,
+} from './telegramCursorBridgeAllRedeploy';
 import { readBacklogFolders } from '../panel/backlogReader';
 import {
   selectAutopilotQueue,
@@ -664,8 +674,20 @@ export function executeOperatorVerb(
     };
   }
   if (v === '/redeploy') {
-    const mini = (args ?? '').toLowerCase().includes('mini');
-    if (mini) {
+    const argsLower = (args ?? '').trim().toLowerCase();
+    if (argsLower.includes('all')) {
+      const result = startAllRedeployRun(repoRoot);
+      const text = result.ok ? formatAllRedeployStartMessage(result) : formatAllRedeployFailureMessage(result);
+      return { text, wroteBounceSentinel: false };
+    }
+    if (argsLower.includes('front')) {
+      const result = startFrontDeskRedeployRun(repoRoot);
+      const text = result.ok
+        ? formatFrontDeskRedeployStartMessage(result)
+        : formatFrontDeskRedeployFailureMessage(result);
+      return { text, wroteBounceSentinel: false };
+    }
+    if (argsLower.includes('mini')) {
       const result = startMiniAppRedeployRun(repoRoot);
       const text = result.ok
         ? formatMiniAppRedeployStartMessage(result)
