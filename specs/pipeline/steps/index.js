@@ -812,7 +812,8 @@ const DOMAINS = [
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
   require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
-  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps')
+  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
+  require('./bl1188PipelineGridLiveStageParitySteps')
 ];
 
 function registerSteps(registry) {
