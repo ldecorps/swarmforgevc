@@ -52,6 +52,14 @@ import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getCatchUpUiHtml } from './catchUpUiHtml';
+import {
+  buildOperatorDocsIndexState,
+  buildOperatorDocsPageState,
+  getOperatorDocsUiHtml,
+  isOperatorDocsIndexPath,
+  isOperatorDocsPagePath,
+  isOperatorDocsPath,
+} from './operatorDocsHtml';
 import { computeCatchUpStateLive } from './catchUpLive';
 import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
@@ -67,6 +75,7 @@ import { getLetsTalkUiHtml } from './letsTalkUiHtml';
 import {
   createLetsTalkWriteRoutes,
   isLetsTalkPath,
+  mergeOperatorDocsIntoUiBundleManifest,
 } from './letsTalkRoutes';
 import { createWebUiFontSizeRoutes, isWebUiFontSizePath } from './webUiFontSizeRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
@@ -520,6 +529,15 @@ function isContextBudgetPath(url: string): boolean {
 // GH-23: JSON state polled by the Context Budget Mini App with ?token=&agent=.
 function isContextBudgetStatePath(url: string): boolean {
   return url === '/context-budget-state' || url.startsWith('/context-budget-state?');
+}
+
+// BL-1166: Operator docs Mini App shell and JSON feeds.
+function isOperatorDocsIndexFeedPath(url: string): boolean {
+  return isOperatorDocsIndexPath(url);
+}
+
+function isOperatorDocsPageFeedPath(url: string): boolean {
+  return isOperatorDocsPagePath(url);
 }
 
 // BL-551 (bridge-08): JSON top-expensive-invocations/rollup feed over the
@@ -1805,6 +1823,8 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isEpicReorderStatePath,
   isContextBudgetStatePath,
   isWebUiFontSizePath,
+  isOperatorDocsIndexFeedPath,
+  isOperatorDocsPageFeedPath,
 ];
 
 function isAuthorizedForRead(authHeader: string | undefined, url: string, registry: DeviceRegistry): boolean {
@@ -2011,7 +2031,18 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // as bubble-config/chiptunes above, so Android's UiBundleResolver can
       // decide fresh/cached/stale/bare from what this route actually serves.
       matches: isLetsTalkUiBundlePath,
-      compute: () => getLetsTalkUiBundleManifest(targetPath, process.env),
+      compute: () =>
+        mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env)),
+    },
+    {
+      // BL-1166: Operator docs index derived from docs/index.md.
+      matches: isOperatorDocsIndexFeedPath,
+      compute: () => buildOperatorDocsIndexState(targetPath),
+    },
+    {
+      // BL-1166: one authored markdown page rendered as HTML JSON.
+      matches: isOperatorDocsPageFeedPath,
+      compute: (url) => buildOperatorDocsPageState(targetPath, url),
     },
     {
       // BL-833: host-agent activity feed (catch-up read of the same buffer SSE pushes).
@@ -2119,8 +2150,6 @@ export function startBridge(
       respondJson,
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
     );
-
-
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
 
@@ -2160,6 +2189,10 @@ export function startBridge(
       }
       if (isContextBudgetPath(url)) {
         serveMiniAppHtml(res, getContextBudgetUiHtml());
+        return;
+      }
+      if (isOperatorDocsPath(url)) {
+        serveMiniAppHtml(res, getOperatorDocsUiHtml());
         return;
       }
       if (url === '/lets-talk/manifest.json' || url.startsWith('/lets-talk/manifest.json?')) {
