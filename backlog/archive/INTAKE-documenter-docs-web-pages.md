@@ -1,3 +1,12 @@
+# ARCHIVED — drained by specifier 2026-08-27
+
+Disposition:
+- Epic `backlog/paused/BL-1165-epic-bubble-authored-docs-browser.yaml`
+- First slice `backlog/paused/BL-1166-bubble-authored-docs-index-and-first-pages.yaml`
+  (human pre-approved).
+
+---
+
 # INTAKE — Think about a series of web pages to render the docs the documenter has been writing
 
 **Source:** human via Cursor, 2026-08-26 ~23:41 BST  
@@ -105,3 +114,13 @@ the index-exhaustiveness gate itself — though the two may meet in spec.
 - BL-824 / BL-829 — Bubble shell + pager (likely dependency if Bubble-hosted)
 - `backlog/hold/INTAKE-phone-wire-format-and-offline.md` — offline wire format
 - BL-711 — interface vs incarnation naming (Bubble not "Float Companion")
+
+## Mint mapping (specifier 2026-08-27)
+
+| Intake part | Ticket |
+| --- | --- |
+| Epic + design disposition | BL-1165 |
+| Index + four Divio sections + one how-to + one reference | BL-1166 |
+| Search / BL-### deep links | BL-1165 remaining_slices |
+| Unified Specs/Authored tabs | BL-1165 remaining_slices |
+| Offline v2 | BL-1165 remaining_slices |
