@@ -11,7 +11,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "Cursor Remote and Bubble are distinct destinations: no Let's Talk turn is mirrored into the Cursor Remote topic once a Bubble topic id is bound, and no operator control verb is answered into Bubble."
