@@ -37,3 +37,6 @@ export function computeTrend(series: TrendSeriesPoint[]): TrendResult {
   const delta = currentValue - priorValue;
   return { series, currentValue, priorValue, delta, direction: directionOf(delta) };
 }
+
+// BL-605: whole-swarm token rollup plotted via the shared TrendedNumber framework.
+export { globalTokenTrendSeries, trendForGlobalTokenConsumption } from './globalTokenConsumption';
