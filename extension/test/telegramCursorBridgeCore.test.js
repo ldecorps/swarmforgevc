@@ -962,6 +962,8 @@ test('cursor bridge: isCursorAgentGone holds formatting boundaries (BL-941)', ()
   assert.equal(isCursorAgentGone('Agent not found.'), false);
   assert.equal(isCursorAgentGone('Agent agent-dead not founded.'), false);
   assert.equal(isCursorAgentGone('xagent agent-dead not found.'), false);
+  assert.equal(isCursorAgentGone(`Agent  ${id} not found.`), true);
+  assert.equal(isCursorAgentGone(`Agent ${id}  not found.`), true);
   assert.equal(shouldResetCursorAgentSession(`Agent ${id} not found`), true);
   assert.equal(shouldResetCursorAgentSession('Agent not found.'), false);
 });
