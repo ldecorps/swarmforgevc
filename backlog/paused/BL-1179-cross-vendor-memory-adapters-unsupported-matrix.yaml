@@ -11,7 +11,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1179-cross-vendor-memory-adapters-unsupported-matrix.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Third slice of agent-memory-transfer. BoB premise is mixed vendors; document
   hard limits per runtime rather than silent no-ops.
