@@ -383,6 +383,7 @@ const DOMAINS = [
   require('./bl686EpicDrilldownSlugMatchSteps'),
   require('./bl1000FreshnessPinnedFixtureSteps'),
   require('./bl1001DifficultyAwareSeatRoutingSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl1007ContentionBudgetSteps'),
   require('./bl1008BoundedWatchDeadlineSteps'),
   require('./bl1009UnifiedPipelineGridAcrossSwarmsSteps'),
