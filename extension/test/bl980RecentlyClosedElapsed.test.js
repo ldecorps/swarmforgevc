@@ -85,6 +85,12 @@ test('a ticket with no recorded closure instant has no parenthetical', () => {
   assert.doesNotMatch(line, /\(/);
 });
 
+test('list entry omits closedAge when no closure instant was recorded', () => {
+  const data = board([{ id: 'BL-100', title: 'no-stamp', filename: 'BL-100-no-stamp.yaml' }]);
+  const entry = data.recentlyClosed[0];
+  assert.equal('closedAge' in entry, false);
+});
+
 test('the age comes from the durable closure record, not a file rewrite', () => {
   const data = board([closedItem('BL-966', 2 * HOUR_MS)]);
   const body = renderPipelineBoardBody(data);
