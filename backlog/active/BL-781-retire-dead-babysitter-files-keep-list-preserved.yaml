@@ -33,6 +33,7 @@ source: |
 
 # Tip-pure rematch 20260827 (union stranded + rematch5).
 abandoned_commits:
+  - 909c0e947e
   - 1bba7bf898
   - eceaf39588
   - 9da97fcb29

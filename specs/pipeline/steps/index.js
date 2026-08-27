@@ -749,10 +749,7 @@ const DOMAINS = [
   require('./bl1144FrequentQaPushRacesOnMainLandSteps'),
   require('./bl1135Bl1131ResidualLiveLandNoOperatorAbsorbSteps'),
   require('./bl668PostQaBranchSweepSteps'),
-<<<<<<< HEAD
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
-=======
->>>>>>> 9e6d5bef5 (fix(BL-781): tip-pure rematch 5 — wake-runtime retirement without hitchhikers.)
   require('./bl781RetireDeadBabysitterFilesKeepListPreservedSteps'),
   require('./bl1138Bl1135ResidualRematchBookkeepingDeadlockSteps'),
   require('./bl1141Bl1138ResidualRefuseRematchNotExecutedSteps'),
