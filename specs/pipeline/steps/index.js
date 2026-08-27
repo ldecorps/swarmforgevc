@@ -783,7 +783,8 @@ const DOMAINS = [
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
-  require('./bl709BubbleItsOwnTelegramTopicSteps')
+  require('./bl709BubbleItsOwnTelegramTopicSteps'),
+  require('./bl1166OperatorDocsSteps')
 ];
 
 function registerSteps(registry) {
