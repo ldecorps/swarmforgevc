@@ -110,3 +110,6 @@ notes: |
   after BL-651 lands. BL-651 is in backlog/done/ as of 2026-08-26.
   [2026-08-27] specifier: feature file minted; option (a) applied per BL-651
   Shape; coordinator may route to coder.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 53c7fbaf2b, evidence: backlog/evidence/BL-780-qa-bounce-rematch-20260827.md }
