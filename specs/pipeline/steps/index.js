@@ -794,7 +794,6 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
-<<<<<<< HEAD
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
   require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl832BubbleHealthTrendsPageSteps'),
@@ -803,11 +802,7 @@ const DOMAINS = [
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
   require('./bl834BubbleHostThinkingPageSteps'),
-=======
-  require('./bl1166OperatorDocsSteps'),
-  require('./bl834BubbleHostThinkingPageSteps'),
-  require('./bl1171DisasterClassCorrelationStructuredEscalationSteps')
->>>>>>> 5b7faaaec (fix(BL-1171): disaster-class correlation — one structured escalation per incident)
+  require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
 ];
 
 function registerSteps(registry) {
