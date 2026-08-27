@@ -134,3 +134,5 @@ notes: |
   "a new agent is created" with "no new agent is created". Those are opposite
   assertions, not duplicates, and collapsing them would delete the boundary the
   scenarios exist to pin. Left as-is deliberately; do not "resolve" it.
+
+assigned_to: coder
