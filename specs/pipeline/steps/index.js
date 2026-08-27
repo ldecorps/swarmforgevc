@@ -50,6 +50,7 @@ const DOMAINS = [
   require('./bl1142LocalOllamaMonoVsForgeCpuSteps'),
   require('./bl1143ColdSwapDayShiftOllamaQwenSteps'),
   require('./bl595HumanLoopReliabilityTrendSteps'),
+  require('./bl597TrendSelfHealEventsSteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),

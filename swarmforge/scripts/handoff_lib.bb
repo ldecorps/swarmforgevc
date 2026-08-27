@@ -43,6 +43,8 @@
 ;; ambulance-lib double-load above.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
+
 ;; BL-911: prompt-engine-lib is also a leaf dependency (its own load-file
 ;; list is empty) - loaded here so recompose-role-prompt! below can reuse
 ;; PromptEngine's compose (the single composition authority, BL-546) rather
@@ -978,6 +980,11 @@
                                             ["-t" session (shell-quote-lib/launch-command script)]))]
             (if (zero? (:exit result))
               (do (write-mono-router-active-role! target-role)
+                  (self-heal-telemetry-lib/append-self-heal-event!
+                   (target-root)
+                   {:type "rotation-respawn"
+                    :subject "mono-router-resident"
+                    :reason "persona swap"})
                   {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
                                      (str "tmux-exit-" (:exit result)))}))))))

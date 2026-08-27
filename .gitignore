@@ -4,6 +4,8 @@
 .swarmforge/
 # BL-593: append-only machine-local mutation run telemetry (same posture as context-events.jsonl).
 .swarmforge/telemetry/mutation-runs.jsonl
+# BL-597: self-heal recovery action append-only telemetry.
+.swarmforge/telemetry/self-heal-*.jsonl
 swarmforge/scripts/.bin/
 .worktrees/
 /tmp/
