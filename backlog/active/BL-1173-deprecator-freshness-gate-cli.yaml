@@ -11,6 +11,24 @@ depends_on: []
 mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1173-deprecator-freshness-gate-cli.feature
+# Tip-pure rematch 20260827: superseded rematch/bounce tips (content on
+# documenter tip 7b7ef3371d / hardener b2ba003897 line).
+abandoned_commits:
+  - 34dd529f7e
+  - 11cd5c794f
+  - 9cdfc155ea
+  - f35fd0517f
+  - 5a55728c72
+  - 88cc7b021d
+  - 5143dc0495
+  - 6b5212c6be
+  - 4b4130df8e
+  - bcdf8ae817
+  - d2f5cc05b4
+  - eb2139512a
+  - 062f2a4825
+  - 826c3bda14
+  - b1abbb53d3
 
 required_wiring:
   - "extension/src/tools/deprecate-check.ts::deprecateCheck::CLI prints allow|hold JSON for a ticket id"
