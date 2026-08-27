@@ -600,8 +600,9 @@ function checkShellDrive(
   return { shellDriveCheck };
 }
 
-// Step 3d½: touched authored Divio-mode docs must be linked from docs/index.md
-// (BL-757). Unreadable inputs fail OPEN; no docs touched skips the check.
+// Step 3d½: orphaned authored doc land refusal when docs touched — authored
+// Divio-mode docs must be linked from docs/index.md (BL-757). Unreadable
+// inputs fail OPEN; no docs touched skips the check.
 function checkOrphanAuthoredDocs(
   deps: PilotAcceptanceGateDeps
 ): { refusal: PilotLandRefusal } | { orphanDocsCheck: OrphanDocsLandCheckOutcome } {
