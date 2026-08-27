@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-600: human-decision latency trend —
+ask (ApprovalRequested) to verdict per gate via
+`humanDecisionLatency.ts`; pending asks contribute open age only; median +
+outliers via `stageDwell.splitOutliers`; `computeTrend` inward import (no
+`trend.ts` re-export — acyclic). Measurement only. Acceptance:
+`specs/features/BL-600-trend-human-decision-latency.feature`. How-to:
+`docs/how-to/BL-600-trend-human-decision-latency.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1164: QA changed-path unit test gate —
 Article 4.5 requires QA to run mapped unit/wiring/`suite-manifest.tsv` tests
 for each production path in `origin/main...HEAD` (narrowest command per
@@ -7385,6 +7393,106 @@ prior / delta / direction) — file-free aggregation.
 - **BL-594** — swarm-behaviour-trends epic.
 - **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
   `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
+
+## Context-Compaction Cadence (BL-601)
+
+Compaction frequency is a proxy for which roles are under context pressure,
+but the pane spinner strings (`auto-compact NN%`, `Compacting`) change between
+CLI versions and must never be the primary signal. BL-601 derives compaction
+records only from structured GH-22 context-events with `compaction: true`
+(BL-665 producer), pairs each with the token level at that instant
+(`input_tokens` → `tokens-at-compaction`), and trends **compactions/hour** plus
+the **token-at-compaction distribution** per role. **Measurement only** —
+this ticket never tunes compaction thresholds or alters agent behaviour.
+Pairs naturally with BL-596 (a persona that compacts constantly is also a
+rotation-cost signal).
+
+### Storage
+
+`.swarmforge/telemetry/compaction-<YYYY-MM>.jsonl` — append-only, one JSON
+object per line, monthly files (same posture as the human-loop and
+availability ledgers). Covered by the top-level `.swarmforge/` gitignore.
+`compactionTelemetryStore.ts` appends fire-and-forget; write failures are
+swallowed so an unwritable ledger never fails the emitting path.
+
+Derived record shape (from a `compaction:true` context event):
+
+```json
+{"role":"coder","model":"claude-sonnet-5","tokensAtCompaction":180000,"timestamp":"2026-08-27T06:00:00Z","timestampMs":1756274400000}
+```
+
+### Signal rules
+
+| Input | Result |
+|-------|--------|
+| Context-event with `compaction: true` | One compaction record (`role`, `model`, `tokensAtCompaction` = `inputTokens`, `timestamp`) |
+| Context-event with `compaction: false` / missing | No record |
+| Pane spinner text alone | No record |
+
+### Aggregation
+
+`compactionCadence.ts` folds an **in-memory** record list — file-free:
+
+- Per detectable role, per daily window: `compactionsPerHour` and
+  min / median / max token-at-compaction.
+- `trendForCompactionCadencePerHour` / the window series feed `computeTrend`
+  for current / prior / delta / direction.
+- Roles **not** in the caller's `detectableRoles` allow-list return
+  `applicable: false` with an empty series (NA) — never a fabricated zero,
+  even when unrelated records exist for other roles.
+
+### Dependency direction (acyclic)
+
+`compactionCadence` imports `computeTrend` from `./trend`. Callers that need
+`trendForCompactionCadencePerHour` load it from `out/metrics/compactionCadence`.
+`trend.ts` must **not** re-export anything from `./compactionCadence` — that
+back-edge was the standing architect bounce (cycle) this rematch closed.
+
+### See Also
+
+- **BL-665** / **GH-22** — structured `context-events.jsonl` producer
+  (`compaction:true` is the primary detection signal).
+- **BL-596** — rotation-cost trend (cross-read with high compaction cadence).
+- **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
+  `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
+- **BL-594** — swarm-behaviour-trends epic.
+## Human-Decision Latency (BL-600)
+
+Some tickets wait on the swarm; some wait on the human. BL-600 pairs each
+ApprovalRequested ask with its verdict and trends **ask→verdict latency**
+per gate (`approve` / `amend`) so approval-queue wait is visible separately
+from swarm velocity. **Measurement only** — never nudges, blocks, or alters
+asks or human verdict recording.
+
+### Derivation
+
+`humanDecisionLatency.ts` is pure over paired timestamps:
+
+| Input | Output |
+|-------|--------|
+| Ask + verdict (`verdictAtMs >= askAtMs`) | Decided `latencyMs` for that gate |
+| Ask still pending | `openAgeMs` only — never folded into decided median/outliers |
+
+Ask times come from existing stores (`approvalAskPostedAtMs` /
+`telegram-approval-ask-messages.json` pairing). Aggregation reuses
+`stageDwell.splitOutliers` for median + outlier honesty, then feeds
+`computeTrend` (current / prior / delta / direction).
+
+### Dependency direction (acyclic)
+
+`humanDecisionLatency` imports `computeTrend` from `./trend` and
+`splitOutliers` from `./stageDwell`. `trend.ts` must **not** re-export
+decision-latency helpers — that back-edge was the standing acyclic bounce
+this rematch closed.
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-591** — ETA already treats blocked-on-human as non-velocity; this
+  quantifies the human side.
+- **BL-595** — human-loop reliability ledger (sibling `computeTrend` posture).
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 
 ## Flow Watchdog (BL-577)

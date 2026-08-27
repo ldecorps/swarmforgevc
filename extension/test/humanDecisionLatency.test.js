@@ -61,3 +61,16 @@ test('trendForDecisionLatencyMedian reports current prior and direction', () => 
   assert.equal(trend.priorValue, 60000);
   assert.equal(trend.direction, 'up');
 });
+
+test('trend.ts does not re-export trendForDecisionLatencyMedian (acyclic)', () => {
+  const trendPath = require('node:path').join(__dirname, '..', 'src', 'metrics', 'trend.ts');
+  const src = require('node:fs').readFileSync(trendPath, 'utf8');
+  assert.equal(
+    /export\s*\{[^}]*trendForDecisionLatencyMedian/.test(src) ||
+      /export\s*\*\s*from\s*['"]\.\/humanDecisionLatency['"]/.test(src),
+    false,
+    'trend.ts must not re-export humanDecisionLatency helpers (dep-gate acyclic)'
+  );
+  const latency = require('../out/metrics/humanDecisionLatency');
+  assert.equal(typeof latency.trendForDecisionLatencyMedian, 'function');
+});
