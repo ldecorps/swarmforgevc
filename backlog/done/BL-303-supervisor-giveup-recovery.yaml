@@ -1,0 +1,73 @@
+id: BL-303
+title: "Bug (Defect B): front-desk supervisor's 'gave-up' is sticky/terminal and its attempt count never resets — a crash burst (or lifetime-accumulated crashes) causes a PERMANENT outage; add healthy-uptime reset + cooldown re-arm"
+milestone: M8
+status: todo
+type: bug
+priority: 15
+depends_on: []
+source: "Coordinator bug report 2026-07-11 (note 000246): 'Track Defect B: supervisor sticky gave-up caused a live outage; spec its fix.' Companion to BL-302 (bot-level poll resilience) — this is the SUPERVISOR level. Specifier read the live supervisor before scoping."
+
+notes: |
+  ROOT CAUSE (verified 2026-07-11 in front_desk_supervisor.bb / _lib.bb — the LIVE
+  supervisor launch_front_desk.sh runs; spawns bridge + bot):
+    1. `attempts` NEVER RESETS. `start!` does `(inc (:attempts entry))` and clears
+       crashed-at-ms, but never zeroes attempts — so it is a MONOTONIC LIFETIME counter.
+       A child that crashes `max-attempts` times spread over DAYS (long healthy gaps
+       between) still trips the cap and is given up on, though it was never in a real
+       crash-loop. The bound is meant to catch a TIGHT loop, but without a reset it also
+       kills a process for isolated crashes accumulated over its whole life.
+    2. `"gave-up"` IS TERMINAL/STICKY. `check-one!` has no `"gave-up"` case, so it falls
+       to the default `entry` branch and stays given-up FOREVER (the code comment even
+       says "never re-evaluated once given up"). When the underlying fault clears
+       (network back, dependency healed) NOTHING retries -> a permanent live outage until
+       a human manually restarts the supervisor. THIS is the reported "sticky gave-up
+       caused a live outage."
+
+    The bounded-retry design (BL-292) was deliberately sticky-terminal per a strict
+    reading of engineering.prompt's bounded-retry rule. But this is a USER-FACING chat bot
+    that must self-recover — permanent give-up = permanent outage is the wrong policy here
+    (contrast handoffd_supervisor.bb's deliberate zero-restart alarm-and-halt for the
+    swarm daemon). The coordinator has declared the sticky behavior the defect, so this is
+    a fix, not a policy fork. A cooldown re-arm is still BOUNDED-RATE (a long spaced retry,
+    not a tight loop) and keeps the escalation alarm — the same reasoning as BL-302.
+
+  SCOPE (extend the PURE lib front_desk_supervisor_lib.bb + the check-one! state machine;
+  keep all timing decisions pure/injected-clock testable, never a real timer — de0991e):
+    1. HEALTHY-UPTIME RESET: when a "running" child has been alive continuously past a
+       healthy-uptime window, reset its attempt count to 0 (track a started-at / healthy-
+       since ms). So the cap counts CONSECUTIVE rapid crashes, not lifetime crashes.
+    2. NON-STICKY GIVE-UP: "gave-up" becomes a timed state, not terminal. Record a
+       gave-up-at ms; once a (longer) cooldown elapses, reset attempts to 0 and re-arm
+       (start the child again). A crash burst that trips the cap causes a BOUNDED outage
+       (the cooldown), never a permanent one.
+    3. WITHIN COOLDOWN: after give-up and before the cooldown elapses, the child is left
+       DOWN (not restarted) — the retry stays spaced, no hot-restart. Bound preserved.
+    4. ESCALATION PRESERVED: tripping the cap still logs/alarms "gave-up" (a sustained
+       outage stays visible); the fix only removes the PERMANENCE, not the alarm.
+    5. New config with sensible defaults: FRONT_DESK_HEALTHY_RESET_MS,
+       FRONT_DESK_GIVEUP_COOLDOWN_MS (mirroring the existing FRONT_DESK_* env-long knobs).
+
+  ARCHITECT-REVIEW ITEMS (design refinements, not open product forks): whether both
+  mechanisms are needed or one suffices (recommend BOTH — reset prevents premature give-up;
+  cooldown re-arm guarantees eventual recovery even after a sustained-then-healed fault);
+  the default window/cooldown durations. Feature file not final until human review.
+
+  E2E QA PROCEDURE: drive check-one!/the pure decisions with an INJECTED clock. (a) A
+  running child whose started-at is older than the healthy window -> assert attempts reset
+  to 0. (b) A "gave-up" entry whose gave-up-at + cooldown <= now -> assert it re-arms
+  (attempts 0, spawns, status running). (c) Same entry with cooldown NOT yet elapsed ->
+  assert it stays "gave-up", no spawn. (d) A tight burst of crashes within the window ->
+  assert it still reaches "gave-up" (bound holds) and logs the alarm.
+
+  OUT OF SCOPE: BL-302's bot-internal poll backoff (separate ticket, complementary);
+  changing handoffd_supervisor.bb's deliberately-different zero-restart policy; the
+  supervisor's stop-file / pid conventions (unchanged).
+
+acceptance:
+  feature: specs/features/BL-303-supervisor-giveup-recovery.feature
+  steps:
+    - "A child that has run continuously past the healthy-uptime window has its restart-attempt count reset to zero"
+    - "A given-up child whose give-up cooldown has elapsed is re-armed: attempt count reset and the child started again"
+    - "A given-up child whose give-up cooldown has not yet elapsed is left down, not restarted (retry stays spaced; bound preserved)"
+
+mutation_cost: medium

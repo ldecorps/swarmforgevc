@@ -1,0 +1,128 @@
+id: BL-450
+title: "One standing 'Recert' Telegram topic where the human validates/amends/deletes Gherkin recert scenarios in-chat (full move out of the PWA)"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: recert-telegram-move
+priority: 30
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784195243074.md — feature request from the human via Telegram (OPERATOR thread, 2026-07-16, plainly restated twice): a DEDICATED 'Recertification' Telegram topic. Recert moved fully OUT of the PWA into its own standing forum topic where the human validates/amends/deletes recert scenarios in-chat. FULL-MOVE shape, DISTINCT from BL-339 (notify + PWA deep-link, already shipped) — the human does NOT want the deep-link-only option. Sibling in intent to BL-434 (Approvals standing topic). Shape settled with the human via AskUserQuestion 2026-07-16 (see human_approval)."
+
+description: |
+  Move Gherkin recertification FULLY out of the PWA into its own standing "Recert" Telegram topic,
+  where the human validates / amends / deletes recert scenarios in-chat. Sibling in intent to BL-434
+  (Approvals standing topic) — REUSE its standing-topic + id-bound-reply-routing scaffolding. This
+  ticket is the BUILD half; BL-451 is the RETIRE half (remove the PWA recert view + BL-339's now-dead
+  deep-link notify) and depends on this loop being proven live.
+
+  WHY THIS IS "CLOSE THE LOOP", NOT JUST "MOVE THE UI" (grounded in code 2026-07-16). The entire recert
+  verdict loop is DARK today:
+    - `recert-state.json` has NO production writer — `writeRecertStore` / `confirmScenario` /
+      `applyAcceptedProposal` (extension/src/docs/recertification.ts + recertificationStore.ts) have
+      zero live callers, so `lastReviewedIso` never advances and the oldest-first batch never rotates.
+    - The PWA's Confirm/Update/Delete verbs are `mailto:`-only (pwa/app.js `recertMailtoHref`).
+    - `bridge-recert-proposals.ts` is an UNWIRED manual CLI (no sweep/cron invokes it), so committed
+      proposals just accumulate in `backlog/recert-inbox/`; and `recert_proposals/<month>.jsonl` is a
+      write-only audit trail with no consumer.
+  The front-desk bot runs ON-HOST with direct `.swarmforge/` access, so this feature becomes the FIRST
+  end-to-end writer of `recert-state.json` (validate) and the first live producer of the
+  `recert_proposals` queue (amend/delete) — no email/webhook hop needed. This IS the runtime-wiring
+  slice the engineering epic-wiring rule requires for those previously-dark modules; treat the wiring
+  as load-bearing (place the store file in the wiring fixture and prove the read/write with a
+  break-then-fix test — engineering BL-383 disk-input rule).
+
+  HUMAN-CHOSEN SHAPE (AskUserQuestion, 2026-07-16):
+    - PWA fate: RETIRE the PWA recert view — tracked as BL-451 (which also retires BL-339's deep-link
+      notify, whose link target is being removed). Sequence BL-451 AFTER this loop works.
+    - Flow: ONE SCENARIO AT A TIME, conversationally. Post the oldest-unreviewed scenario; after the
+      human acts, the queue advances and the next-oldest is posted. Mirrors the PWA's single-scenario
+      view and avoids the per-scenario spam BL-339 warned about (a 17-scenario batch must NOT produce
+      17 messages). EDGE-TRIGGERED: track a durable posted-scenario marker; never re-post the same
+      scenario every tick (the anti-spam posture BL-339's `recert-notify-state.json` already models).
+    - Amend/delete gate: validate APPLIES DIRECTLY (a last-reviewed timestamp bump, low risk);
+      amend/delete become a PROPOSAL the specifier reviews before the durable .feature contract
+      changes. This finally wires up the existing `recert_proposals` queue and keeps a human gate on
+      editing the acceptance contract from a chat reply.
+
+  VERB MAPPING to existing outcomes (reuse; do NOT invent a second recording path):
+    - validate = confirm → `confirmScenario` + `writeRecertStore` (advance `lastReviewedIso`).
+    - amend = update → `appendRecertProposal` with `RecertProposal{outcome:"update", newText:<reply text>}`.
+    - delete = delete → `appendRecertProposal` with `{outcome:"delete"}`, confirmation-gated (BL-150 recert-04).
+  The JSONL append is JSON-escaped and safe for the reply text; the external-text sanitization the
+  engineering BL-409 rule requires happens when an accepted amend is later APPLIED into a .feature file
+  (specifier review — OUT of this ticket's scope).
+
+  Scope (verify the LIVE path at build time before naming files):
+    - Standing Recert topic created once alongside the Operator topic
+      (extension/src/tools/telegram-front-desk-bot.ts `ensureOperatorTopic` / core
+      `decideEnsureOperatorTopicAction`), bound with a stable RECERT subject id so a reply is NOT
+      mistaken for a throwaway SUP support thread, and registered for icon sync
+      (extension/src/concierge/conciergeTick.ts `standingTopicTargets`, BL-418).
+    - Post the current oldest scenario one at a time, edge-triggered off a durable posted-scenario
+      marker, driven off `computeRecertBatch` (extension/src/docs/recertificationStore.ts) the way
+      BL-434 posts an ask into a standing topic from conciergeTick.
+    - Reply recognition + verb routing: a new Recert-topic branch in
+      extension/src/tools/telegramFrontDeskBotCore.ts `decideUpdateAction`, plus a recert verb
+      classifier (sibling of `classifyApprovalReplyAction` in
+      extension/src/concierge/pendingApprovalReply.ts). A reply naming a scenario NOT currently up for
+      recert is SURFACED back, never silently applied (memory: front-desk-operator-fabricates-backlog-state).
+    - Verdict writers reuse `confirmScenario`/`writeRecertStore`/`appendRecertProposal` (they EXIST but
+      are dark) — this ticket gives them their first live caller.
+
+  Constraints:
+    - One at a time, edge-triggered — never re-post the same scenario every tick, never fan a whole
+      batch into per-scenario messages.
+    - Validate is the ONLY verb that mutates state directly here; amend/delete only QUEUE a proposal —
+      do not edit or delete a .feature scenario from a chat reply in this ticket.
+    - Delete requires an explicit in-chat confirmation before ANY proposal is queued (BL-150 recert-04).
+    - Do NOT change the recert data model (`RecertStoreData`, `RecertProposal`) or the PWA/inbound-email
+      path in this ticket — the PWA retirement is BL-451.
+    - Keep the testable core headless: topic posting decisions, verb classification, and the
+      posted-scenario edge-trigger are pure/testable modules; the Telegram API + tmux are the untested
+      boundary. Reach fixture cwd/HOME by STUBBING accessors, never `chdir`/HOME overlay (engineering
+      worker-thread rule); prove the store write is load-bearing (break-then-fix).
+
+  Reuse/sequencing (NOT a hard depends_on — see the repo's file-overlap-via-notes convention,
+  memory: cost-substrate-and-topic-hook-overlap-clusters): this edits
+  extension/src/concierge/conciergeTick.ts and extension/src/tools/telegramFrontDeskBotCore.ts, the
+  SAME two files as BL-434 (Approvals standing topic) and active BL-414/BL-425. It is NOT orthogonal to
+  them — sequence behind them, never concurrent, and reuse whichever standing-topic + id-routing
+  scaffolding lands first rather than building a second mechanism.
+
+  E2E QA PROCEDURE: with the concierge/front-desk bot running against a real recert-batch that has
+  scenarios: assert (a) the oldest-unreviewed scenario is posted into the Recert topic and nothing else
+  is; (b) a second tick with the same oldest scenario does NOT re-post it; reply "validate <id>" and
+  assert `recert-state.json` advances that scenario's `lastReviewedIso` and the next-oldest scenario is
+  then posted; reply to amend a scenario with new text and assert an "update" proposal carrying the text
+  lands in `recert_proposals/<month>.jsonl` (and the .feature file is untouched); reply "delete <id>"
+  and assert nothing is queued until an explicit confirmation, then confirm and assert a "delete"
+  proposal is queued; reply "validate <ghost-id>" for a scenario not up for recert and assert it is
+  surfaced, not applied; with an empty batch assert nothing is posted. Verify against real surfaces, not
+  a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-450-recert-standing-telegram-topic.feature
+  steps:
+    - "The oldest un-reviewed scenario is posted into the Recert topic, one at a time"
+    - "An already-posted scenario is not re-posted on the next tick"
+    - "Validating a scenario advances its last-reviewed timestamp and leaves the queue"
+    - "Amending a scenario queues an update proposal for specifier review, not a direct edit"
+    - "Deleting a scenario requires an explicit in-chat confirmation before anything is queued"
+    - "A confirmed delete queues a delete proposal for specifier review"
+    - "A reply naming a scenario not currently up for recertification is surfaced, not applied"
+    - "Nothing is posted when no scenario needs recertification"
+
+human_approval: >
+  Shape approved by the human via AskUserQuestion 2026-07-16 (three design forks the specifier raised):
+  (1) PWA fate = RETIRE the PWA recert view (full move); tracked as BL-451, sequenced after this loop.
+  (2) Flow = ONE SCENARIO AT A TIME, conversational (post oldest → act → post next), edge-triggered.
+  (3) Amend/delete gate = validate applies directly; amend/delete route through a specifier-review
+  proposal before the durable .feature contract changes. Exact reply grammar, the posted-scenario
+  message shape, and the delete-confirmation mechanism (follow-up reply vs inline button, BL-410) are to
+  be resolved at build time, not blocking promotion. HOLD ON PROMOTION for file overlap: edits
+  conciergeTick.ts + telegramFrontDeskBotCore.ts, shared with BL-434 and active BL-414/BL-425 — sequence
+  behind them, not a human-approval gate.
+
+mutation_cost: medium

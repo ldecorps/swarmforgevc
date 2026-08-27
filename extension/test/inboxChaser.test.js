@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-022: InboxChaser — unit tests.
  */
@@ -44,7 +45,7 @@ const ACTIVE_MS = NOW;          // last activity right now — within stuckInPro
 const IDLE_MS = NOW - 120_000;  // last activity 2 minutes ago — past stuckInProcessTimeoutSeconds
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-inbox-chaser-'));
+  return mkTmpDir('sfvc-inbox-chaser-');
 }
 
 // ── decideItemAction (pure) ───────────────────────────────────────────────────

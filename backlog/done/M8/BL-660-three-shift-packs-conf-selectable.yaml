@@ -1,0 +1,175 @@
+id: BL-660
+title: "Les 3×8 — three named shift packs (day 09-17, evening 17-01, night 01-09), ONE activated in conf, and every schedule-derived clock (cron start/stop, BL-617 window, closing ceremony, briefing) follows the shift"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 95
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-660-three-shift-packs-conf-selectable.feature
+invariants:
+  - "Every schedule-derived clock reads the single active shift definition — no start/stop/window/briefing constant exists outside it to drift."
+  - "Outage credit extends closing only for signature-backed external provider outages, capped and never crossing the next shift boundary; swarm-caused downtime never credits."
+  - "Shift change while running takes effect only at the next boundary; a working swarm is never killed mid-shift."
+
+approval_context: >
+  Operator, 2026-07-26 midday: "ce serait bien d'avoir une swarm basée sur
+  les 3 huits: 9am-5pm day, 5pm-1am evening, 1am-9am night. et comme ça dans
+  la conf on peut activer l'un des 3." Exactly one shift active at a time.
+
+required_wiring:
+  - 'swarmforge/scripts/swarm_shift_lib.bb::swarm-shift-lib::pure shift definitions and resolve for day evening night'
+  - 'swarmforge/scripts/reconcile_shift_schedule_crontab.bb::swarm_shift::applier renders cron from active shift not legacy-only'
+  - 'extension/src/tools/swarmShiftCore.ts::parseSwarmShift::TS literals agree with Babashka shift boundaries'
+  - 'specs/pipeline/steps/index.js::bl660ThreeShiftPacksSteps::acceptance handler registered so the runner executes every scenario'
+
+description: |
+  ## The one rule: the shift is the ONLY schedule source
+
+  Everything that today reads its own clock derives from the active shift:
+
+  1. **Start/stop**: shift start/end drive the scheduled launch and the
+     closing sequence. Cron remains the waker (nothing else is alive when
+     stopped), but the crontab lines are RENDERED from the conf by a
+     deterministic applier — never hand-maintained next to it. The applier
+     is idempotent and diffs before writing (a human-edited crontab line it
+     did not render is surfaced, not clobbered).
+  2. **BL-617 window**: becomes the INVERSE of the shift automatically
+     (pause outside working hours) — the pair of values disappears as an
+     independently-edited thing.
+  3. **Closing ceremony (BL-658)**: its "closure time" IS the shift end.
+     One derivation already specced there; this ticket supplies the source.
+  4. **Briefing**: via the ceremony (last act), or shift-end minus margin
+     until BL-658 lands.
+  5. **Telegram 24h getUpdates cliff**: the day gap must stay under 24h for
+     approvals queued while stopped — all three shifts leave a 16h gap,
+     fine; the acceptance pins the property so a future 2-shift-off
+     composition cannot silently break it.
+
+  ## Outage credit — the shift delivers its EFFECTIVE hours (operator,
+  ## 2026-07-26: "tu étends l'horaire de fermeture du temps d'outage...
+  ## pour garder un quart de 8h")
+
+  Provider-outage intervals (BL-650's signature-backed clock — the
+  2026-07-26 "Elevated errors for Opus 5" window is the founding record in
+  provider-outages.jsonl) EXTEND the shift's closing time, so a shift aims
+  at 8 EFFECTIVE hours, not 8 wall hours. Bounded, or it becomes a new
+  hazard:
+
+  - **Cap**: extension never exceeds a configured maximum (suggest 2h) AND
+    never crosses the next shift boundary minus a safety margin — a night
+    shift may run to 11:00 at most, never into a configured day shift.
+  - **Backstop unchanged**: the cron hard deadline moves WITH the credit
+    but its unconditional nature stays — a hung ceremony is still killed.
+  - **Only signature-backed outages credit** (BL-650's rule): an unproven
+    slow hour extends nothing. Swarm-caused downtime (its own crashes,
+    restarts) NEVER credits — the credit is for external theft only,
+    otherwise it rewards the swarm's own failures with overtime.
+  - **Announce it**: an extended close is posted (Operator topic) with the
+    credited interval and the new close time — never a silent overtime.
+
+  ## Edges the specifier must pin
+
+  - Shift CHANGE while stopped (edit conf during the day): next cron fire
+    uses the new shift — the applier reconciles crontab at apply time, and
+    a stale cron line from the old shift must not double-fire (the
+    lastHandledWindow marker family covers the window; the applier covers
+    cron).
+  - Shift change while RUNNING: takes effect at the next boundary; never
+    kills a working swarm mid-shift.
+  - Manual out-of-shift starts (the operator's "démarre pour dépiler" this
+    very midday) stay legal and unmanaged: scheduled machinery must not
+    fight a human start — the daytime pause neutralisation the operator
+    performs by hand today (consume the window marker) becomes part of the
+    manual-start path or a flag on the applier.
+  - DST: boundaries are LOCAL wall-clock (cron semantics) — state it,
+    with the known one-hour anomaly twice a year accepted rather than
+    engineered around.
+
+qa_e2e_procedure: >
+  (1) Set `config swarm_shift night` — assert rendered crontab start 01:00 /
+  stop 09:00 local, cooldown inverse 09:00→01:00, closure_stop_local 09:00.
+  (2) Switch day→evening in conf with applier — assert 17:00–01:00 lines, no
+  stale day-shift cron. (3) Remove swarm_shift — assert 24/7 matches disabled
+  cooldown_window. (4) Evening shift — assert cron stop is next calendar day
+  at 01:00. (5) Manual start outside day window — swarm stays up, no pause.
+  (6) For each shift name, assert stopped gap < 24h. (7) Re-run applier with
+  human crontab edit — line surfaced, not deleted. Live operator: one full
+  night shift with ceremony stop derived from shift end.
+
+source: |
+  ## Why this is the right generalisation, not a convenience
+
+  The 2026-07-25/26 sessions produced EIGHT members of one defect family:
+  observers and constants that nobody told about a schedule change (BL-647
+  producer, BL-650 watchdog clock, BL-648 relaunch, BL-657 launcher, the
+  briefing trigger, the briefing-series coverage hole, the Mini App's
+  daytime death, the cooldown/cron sibling clocks). Root cause each time:
+  THE SCHEDULE HAS NO NAME — it lives as a cron line here, a window pair
+  there, a constant elsewhere. This ticket gives it a name:
+
+  ```
+  config swarm_shift day       # 09:00 - 17:00 local
+  config swarm_shift evening   # 17:00 - 01:00 local (spans midnight)
+  config swarm_shift night     # 01:00 - 09:00 local
+  # absent/blank -> no shift scheduling: 24/7 behaviour, exactly today's
+  # semantics when the window is disabled
+  ```
+
+  The CURRENT hand-built 00:00-06:00 (cron night-start/stop, operator-side)
+  is superseded by `night` on adoption — note it is a 6h window today and
+  8h under the shift; the operator has ruled the 3x8 boundaries and they
+  win.
+
+out_of_scope: |
+  - Running TWO shifts (16h) or shift composition/rotation calendars. One
+    of three, per the operator's sentence; composition is a later ticket
+    with its own 24h-cliff analysis.
+  - Per-shift packs/model tiers (a cheaper night crew is a tempting future
+    — it belongs to the ModelFactory lane, not here).
+  - BL-658's ceremony internals. This ticket feeds it the source; the
+    ceremony spec stays where it is.
+
+notes: |
+  Ninth member of the schedule family and the one that dissolves it: once
+  the shift is the single named source, "nobody told the observer about the
+  schedule" stops being a possible bug class for every clock that derives.
+  The operator's current artisanal 00:00-06:00 has run two nights and
+  midwifed five defect tickets; the 3x8 conf is its industrialisation.
+
+  Specifier completed Gherkin contract 2026-08-26 (seven scenarios + outage
+  credit in invariants). Coordinates with BL-1162: when BL-660 lands,
+  reconcile_shift_schedule_crontab.bb must render swarm_shift conf; BL-1162
+  install/remove wraps the same registry.
+
+specifier_decisions: |
+  Minted scenarios 2026-08-26 per coordinator route. Seven minimum acceptance
+  signals from inline acceptance map 1:1 to scenarios 01–07. Outage credit,
+  shift-change-while-stopped, and DST edges remain in description/invariants
+  for implementer — not separate scenarios (INVEST small). Scenario 06 uses
+  Outline for three shift names. BL-1162 install/remove wraps the same cron
+  registry; reconcile/applier now renders `swarm_shift` conf.
+
+abandoned_commits:
+  - 04d5198d00
+  - 10a6eab95
+  - a3ea792262
+  - 9be64247ac
+  - f5ca526a1
+  - a135326f8f
+  - 96bff0a7b7
+  - 48496a6947
+  - cbe3674d9c
+  - c4f2f8e0ef
+  - 7f4f45804d
+  - f2ac77f443
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: c4f2f8e0ef, evidence: backlog/evidence/BL-660-architect-pass-rematch5-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: hardender, class: behavior, commit: 9e009cbec, evidence: backlog/evidence/BL-660-hardener-pass-rematch6-20260826.md }

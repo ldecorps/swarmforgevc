@@ -1,0 +1,90 @@
+id: BL-477
+title: "Build the upstream drift-watch mechanism local-engineering.prompt already mandates but that was never built: upstream-watch.json + a drift-check script + docs/upstream-deviations.md"
+milestone: M8
+type: feature
+severity: low
+epic: ""
+priority: 6
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784248453318.md — human (ldecorps) 2026-07-17 (Concierge thread): 'check uncle bob's upstream repo and see if there are new elements worth including in our swarm; run it and file a ticket if there is anything worth adding.' The human believes a drift-check mechanism EXISTS. Specifier survey 2026-07-17 confirms it does NOT: swarmforge/constitution/articles/local-engineering.prompt (rule 2) states 'upstream changes enter only through the drift-watch review (upstream-watch.json, docs/upstream-deviations.md), never by automatic fetch' — but neither upstream-watch.json nor docs/upstream-deviations.md exists in the repo. The governing article references a phantom mechanism. This ticket builds it. (The one-time content survey the human also asked for is dispositioned separately: BL-478 evaluates the single novel upstream element found.)"
+
+description: |
+  local-engineering.prompt rule 2 already declares HOW upstream changes are meant to enter this
+  heavily-diverged fork of unclebob/swarm-forge: only through a deliberate "drift-watch review" backed by
+  upstream-watch.json and docs/upstream-deviations.md, never by automatic fetch. That mechanism was never
+  actually built, so today "check upstream" is an ad-hoc manual `git ls-remote` with no durable baseline
+  and no repeatable "did anything change since we last looked?" answer. Build the mechanism the article
+  promises, so the human's request ("run it") becomes a repeatable command instead of a one-off.
+
+  What to build:
+    1. upstream-watch.json (repo root): per watched upstream repo and branch, the last-REVIEWED commit
+       SHA — the baseline "we have looked at everything up to here." Seed it (a human-blessed baseline at
+       review) with the upstreams and the SHAs the specifier observed on 2026-07-17:
+         - unclebob/swarm-forge: main = 9acd54d2239fef7e41ddacd8fd30dfb0e69672fe; also track the
+           non-main branch adversaries = 7aa2f3a2691ed92e26a11be4481d7d5c8e2ff859 (its one novel element
+           is under evaluation in BL-478).
+         - unclebob/Acceptance-Pipeline-Specification: main = accaa33d503340c56513ef387258f8da929ba902
+           (this equals swarmforge.lock.json's APS pin today); note the non-main branch
+           codex/bb-tools-equivalence = 3a1d7b06, which is NOT on APS main and is not adoptable via a pin
+           bump.
+       This file is the drift BASELINE; swarmforge.lock.json stays the separate INSTALL pin. Advancing a
+       watch SHA (recording "reviewed up to here") is a human commit, exactly like bumping an install pin.
+    2. A drift-check script (swarmforge/scripts/upstream_drift_check, bb or node) that: reads
+       upstream-watch.json, `git ls-remote`s each watched upstream, and REPORTS any branch whose live
+       head differs from the recorded SHA (advanced), plus any new upstream branch absent from the watch
+       file. It exits non-zero when drift exists and zero when clean. It is strictly READ-ONLY: it never
+       rewrites upstream-watch.json, never bumps a pin, never fetches into the working tree, and never
+       auto-adopts anything.
+    3. docs/upstream-deviations.md: the review log local-engineering.prompt references — a human-readable
+       record of each drift review and the adopt / skip / already-have decision, so a deliberate
+       divergence is documented rather than re-litigated on the next check.
+
+  Testability boundary (engineering.prompt): the drift DECISION is a pure function — given the recorded
+  watch map (repo/branch -> sha) and a live-refs map (repo/branch -> sha), it produces a drift report
+  (advanced entries with from/to, and new-branch entries). Unit tests drive that pure comparator directly.
+  The `git ls-remote` network fetch is the thin I/O boundary; the CLI main() is argument/I-O wiring only
+  over the exported pure comparator (thin-wrapper rule), and main() itself is called in-process by a test
+  against a fixture watch file with an injected/stubbed ls-remote seam — never only shelled as a
+  subprocess.
+
+  Explicitly OUT of scope:
+    - No automatic fetch, merge, cherry-pick, or pin bump. Our fork has NO common git ancestor with
+      unclebob/swarm-forge (verified 2026-07-17: git merge-base HEAD ub/main = none), so adoption is
+      always a manual, deliberate reimplementation reviewed by a human — never a git operation this tool
+      performs. The tool only tells a human WHERE to look.
+    - No CI/cron scheduling in this ticket (a later ticket can wire the check into a periodic job); this
+      ticket delivers the on-demand command + baseline + log.
+
+  Scope (files):
+    - NEW upstream-watch.json (repo root)
+    - NEW swarmforge/scripts/upstream_drift_check (+ its pure comparator lib, testable)
+    - NEW docs/upstream-deviations.md (seeded with the 2026-07-17 baseline review row)
+    - extension/test/ (or swarmforge/scripts/test/): unit tests for the pure comparator + in-process main()
+    Orthogonal to everything currently in flight (no overlap with the icon/topic cluster, benchmark, or
+    board tickets).
+
+  E2E QA PROCEDURE: run the drift-check script from the repo root. (1) With the seeded baseline SHAs it
+  reports NO drift (exit 0). (2) Hand-edit a copy of upstream-watch.json to an older SHA for one branch
+  and confirm the check reports that branch as drifted (from->to) and exits non-zero, WITHOUT modifying
+  the real upstream-watch.json. (3) Confirm the script performs no fetch/merge/pin change (git status
+  clean afterward except any report it prints to stdout).
+
+acceptance:
+  feature: specs/features/BL-477-upstream-drift-watch-check.feature
+  steps:
+    - "A watched upstream branch that advanced past the recorded SHA is reported as drift"
+    - "A watched upstream branch whose head equals the recorded SHA reports no drift"
+    - "A new upstream branch absent from the watch file is reported as drift"
+    - "The drift check is read-only and never rewrites the watch file or bumps a pin"
+
+approval_context: >
+  NEW feature file specs/features/BL-477-upstream-drift-watch-check.feature — flagged for human review
+  (specifier draft, NOT yet human-approved). The human asked to 'check upstream' and believes a mechanism
+  exists; local-engineering.prompt rule 2 references upstream-watch.json + docs/upstream-deviations.md but
+  they were never built. This ticket builds exactly that referenced mechanism. Human to confirm at review:
+  (a) the seed baseline is acceptable (or should be re-observed at build time), and (b) the read-only,
+  never-auto-adopt posture. FIRM contract: report-only drift detection against a recorded baseline; no
+  auto-fetch/merge/pin-bump (advancing a watch SHA stays a human commit).
+
+mutation_cost: low

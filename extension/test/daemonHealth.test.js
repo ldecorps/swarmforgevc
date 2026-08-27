@@ -1,9 +1,10 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { readDaemonHealth } = require('../out/swarm/daemonHealth');
+const { readDaemonHealth, computeDaemonProcessStatus } = require('../out/swarm/daemonHealth');
 const { loadPanelSource } = require('./helpers/extractPanelFunction');
 const { getWebviewHtml } = require('../out/panel/webviewHtml');
 
@@ -12,7 +13,7 @@ const { getWebviewHtml } = require('../out/panel/webviewHtml');
 // daemon process.
 
 function mkTarget(statusJson) {
-  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-daemon-health-'));
+  const target = mkTmpDir('sfvc-daemon-health-');
   if (statusJson !== undefined) {
     const dir = path.join(target, '.swarmforge', 'daemon');
     fs.mkdirSync(dir, { recursive: true });
@@ -42,6 +43,18 @@ test('readDaemonHealth reports persistent-failure', () => {
   assert.equal(readDaemonHealth(target).state, 'persistent-failure');
 });
 
+// BL-144: a daemon death now alarms and hard-stops instead of restarting -
+// 'halted' is the terminal state the supervisor writes for that, and it
+// must not be swallowed as 'unknown' the way a truly unrecognized state is.
+test('readDaemonHealth reports halted with the incident reason', () => {
+  const target = mkTarget(
+    '{"state":"halted","last_incident":{"reason":"dead","at":"2026-07-01T23:00:00Z"},"failure_log":"/tmp/x.log"}'
+  );
+  const health = readDaemonHealth(target);
+  assert.equal(health.state, 'halted');
+  assert.equal(health.detail, 'dead');
+});
+
 test('readDaemonHealth is unknown (no alarm) when no status file exists', () => {
   const target = mkTarget(undefined);
   assert.equal(readDaemonHealth(target).state, 'unknown');
@@ -62,7 +75,87 @@ test('readDaemonHealth omits detail when a non-healthy state has no incident rea
   assert.deepEqual(readDaemonHealth(target), { state: 'restarting' });
 });
 
+test('computeDaemonProcessStatus reports skipped when daemon is disabled and not running', () => {
+  const target = mkTarget(undefined);
+  const status = computeDaemonProcessStatus(target, { SWARMFORGE_SKIP_DAEMON: '1' });
+  assert.equal(status.phase, 'skipped');
+  assert.match(status.label, /SKIP_DAEMON/);
+});
+
+test('computeDaemonProcessStatus reports live daemon even when extension env has SKIP_DAEMON', () => {
+  const target = mkTarget('{"state":"healthy"}');
+  fs.writeFileSync(path.join(target, '.swarmforge', 'daemon', 'handoffd.pid'), '4242');
+  const status = computeDaemonProcessStatus(target, { SWARMFORGE_SKIP_DAEMON: '1' }, 20_000, {
+    isPidAlive: () => true,
+    heartbeatAgeMs: 5_000,
+  });
+  assert.equal(status.phase, 'polling');
+  assert.match(status.detail, /extension env expects no daemon/);
+});
+
+test('computeDaemonProcessStatus reports halted from the status file', () => {
+  const target = mkTarget('{"state":"halted","last_incident":{"reason":"dead"}}');
+  const status = computeDaemonProcessStatus(target);
+  assert.equal(status.phase, 'halted');
+  assert.match(status.label, /HALTED/);
+  assert.equal(status.detail, 'dead');
+});
+
+test('computeDaemonProcessStatus reports dead when pid is missing', () => {
+  const target = mkTarget('{"state":"healthy"}');
+  const status = computeDaemonProcessStatus(target);
+  assert.equal(status.phase, 'dead');
+});
+
+test('computeDaemonProcessStatus reports starting when pid is alive but heartbeat is absent', () => {
+  const target = mkTarget('{"state":"unknown"}');
+  const daemonDir = path.join(target, '.swarmforge', 'daemon');
+  fs.writeFileSync(path.join(daemonDir, 'handoffd.pid'), '4242');
+  const status = computeDaemonProcessStatus(target, {}, 1_000_000, {
+    isPidAlive: () => true,
+    heartbeatAgeMs: null,
+  });
+  assert.equal(status.phase, 'starting');
+});
+
+test('computeDaemonProcessStatus reports polling on a fresh heartbeat', () => {
+  const target = mkTarget('{"state":"healthy"}');
+  fs.writeFileSync(path.join(target, '.swarmforge', 'daemon', 'handoffd.pid'), '4242');
+  const status = computeDaemonProcessStatus(target, {}, 20_000, {
+    isPidAlive: () => true,
+    heartbeatAgeMs: 5_000,
+  });
+  assert.equal(status.phase, 'polling');
+});
+
+test('computeDaemonProcessStatus reports up between polling and stall thresholds', () => {
+  const target = mkTarget('{"state":"healthy"}');
+  fs.writeFileSync(path.join(target, '.swarmforge', 'daemon', 'handoffd.pid'), '4242');
+  const status = computeDaemonProcessStatus(target, {}, 40_000, {
+    isPidAlive: () => true,
+    heartbeatAgeMs: 20_000,
+  });
+  assert.equal(status.phase, 'up');
+});
+
+test('computeDaemonProcessStatus reports stale when heartbeat exceeds stall budget', () => {
+  const target = mkTarget('{"state":"healthy"}');
+  fs.writeFileSync(path.join(target, '.swarmforge', 'daemon', 'handoffd.pid'), '4242');
+  const status = computeDaemonProcessStatus(target, {}, 100_000, {
+    isPidAlive: () => true,
+    heartbeatAgeMs: 45_000,
+  });
+  assert.equal(status.phase, 'stale');
+});
+
 // --- webview side ---
+
+test('webview HTML has a daemon-status marker with phase styling', () => {
+  const html = getWebviewHtml('script.js', 'csp');
+  assert(html.includes('id="daemon-status"'), 'must have the daemon-status element');
+  assert(html.includes('.daemon-status.polling'), 'must style the polling phase');
+  assert(html.includes('.daemon-status.dead'), 'must style the dead phase');
+});
 
 test('webview HTML has a transport-health marker with alarm styling', () => {
   const html = getWebviewHtml('script.js', 'csp');
@@ -70,13 +163,16 @@ test('webview HTML has a transport-health marker with alarm styling', () => {
   assert(html.includes('.transport-health.down'), 'must style the persistent-failure state');
 });
 
-// BL-121: the panel now renders delivery-level transport health (see
-// transportHealth.test.js) rather than the daemon's process-only states —
-// 'broken'/'delivery-degraded' can fire on a dead-lettered or stalled
-// parcel, or a missed canary, even while the daemon process itself is alive.
+// BL-121: delivery-level transport health is separate from daemon process status.
 test('panel.js renders transport health states and clears the alarm when healthy', () => {
   const panelJs = loadPanelSource();
   assert(panelJs.includes("case 'transportHealth':"), 'must handle the transportHealth message');
   assert(/broken/.test(panelJs), 'must recognize the broken delivery state');
   assert(/delivery-degraded/.test(panelJs), 'must recognize the delivery-degraded state');
+});
+
+test('panel.js renders daemon process status updates from the host', () => {
+  const panelJs = loadPanelSource();
+  assert(panelJs.includes("case 'daemonProcessStatus':"), 'must handle daemonProcessStatus messages');
+  assert(/daemon-status/.test(panelJs), 'must apply daemon-status classes');
 });

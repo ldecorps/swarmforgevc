@@ -1,0 +1,234 @@
+id: BL-653
+title: "Escalation-driven operator: the LLM Operator wakes ONLY on an inbound human message or a deterministic-layer escalation — the runtime stops fabricating liveness pseudo-events every tick"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 94
+direction: human-requested
+depends_on: [BL-611]
+assigned_to: coder
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-653-operator-wakes-only-on-real-events-escalation-driven.feature
+invariants:
+  - "The operator LLM wakes only for an inbound human message or a deterministic-layer escalation; the runtime never manufactures a wake from its own sweep."
+  - "The patrol wake is never removed before a live producer of escalations exists. At every commit in this ticket's history, at least one of the two is true: the payload-free timer still wakes the operator, or a real emitter is wired and proven to reach it end to end. Removing the old wake while the new one is unpopulated does not degrade supervision, it deletes it — silently, and precisely on the nights nobody is watching."
+
+approval_context: >
+  Operator, 2026-07-25 23:55, designing the unattended-nights wake model:
+  "il ne devrait démarrer que s'il y a un message telegram qui est arrivé,
+  ou si le babysitter le réveille, non?" — confirmed as the target
+  architecture. BL-647 is the tactical patch that lands first; this is the
+  structural version that makes the whole class impossible.
+
+required_wiring:
+  - 'swarmforge/scripts/babysitter_check.bb::operator_enqueue_event.bb::CRIT findings enqueue BABYSITTER_ESCALATION to operator events.jsonl'
+  - 'swarmforge/scripts/operator_lib.bb::dead-agent-events::per-tick AGENT_EXITED fabrication excluded from tick-observed-events'
+  - 'swarmforge/scripts/operator_lib.bb::SWARM_CHECK_TIMER::payload-free timer excluded from tick-observed-events when escalation producer is live'
+  - 'specs/pipeline/steps/index.js::bl653OperatorEscalationDrivenSteps::acceptance handler registered so the runner executes every scenario'
+
+description: |
+  ## The drift this corrects
+
+  The operator's own design memory says "disposable event-driven LLM". In
+  practice `operator_runtime.bb`'s tick loop MANUFACTURES events from its own
+  liveness sweep: `dead-agent-events` compares roles.tsv to live tmux sessions
+  every tick and enqueues AGENT_EXITED for every absent role. Under the
+  default rotation pack six roles are dormant by design, so the queue refills
+  forever — measured 2026-07-25: 525 wakes over four days, then ~1 Opus
+  launch/min after the evening relaunch, every one concluding "nothing is
+  wrong". The night schedule (00:00-06:00 unattended) made this the single
+  most expensive line of the nightly bill, currently suppressed by a
+  self-disarming pid-hold in night-start.sh — a tourniquet, not a fix.
+
+  ## The operator's proposed model (2026-07-25)
+
+  The LLM Operator is summoned; it never patrols. Legitimate wake sources:
+
+  1. **Inbound human traffic** — TELEGRAM_TOPIC_MESSAGE /
+     TELEGRAM_BL_TOPIC_MESSAGE / HUMAN_COMMAND. (The front-desk restricted
+     operator keeps its own separate lifecycle, BL-334, untouched.)
+  2. **Deterministic-layer escalation** — the babysitter (or another
+     deterministic observer) detected something outside its remit and
+     explicitly summons LLM judgement.
+  3. **SWARM_CONTROL_LOST** — already produced deterministically and loudly
+     (BL-368); a genuine catastrophic fact, stays a direct wake.
+
+  Everything else the runtime currently wakes on is either deterministic
+  work that handoffd/babysitterd already own (TASK_ARRIVED dispatch,
+  SWARM_CHECK_TIMER patrols, PROVIDER_AVAILABLE cooldown clears) or a
+  fabricated observation (the AGENT_EXITED liveness diff).
+
+  ## The one missing piece of plumbing
+
+  babysitter_check.sh today nudges the COORDINATOR pane (`:205 send-keys`) —
+  it has no path to the operator at all. The bridge is small and must stay
+  deterministic: a babysitter finding classified "needs judgement" writes ONE
+  event (shape: BABYSITTER_ESCALATION with the finding text) into the
+  operator queue instead of / in addition to the coordinator nudge. The
+  babysitter decides WHEN mechanically; the operator decides WHAT — the
+  existing division of labour, now with a wire between them.
+
+  ## What retires
+
+  - `dead-agent-events` as a per-tick wake source. Agent-death detection
+    becomes the babysitter's job — it already cross-checks live PROCESSES
+    (the discipline the 2026-07-25 memory notes prescribe) and is already
+    rotation-aware, so a dormant role never reads as dead. It escalates only
+    a REAL death. This deletes the BL-647 class architecturally.
+  - SWARM_CHECK_TIMER as an LLM patrol. Periodic health is deterministic
+    (babysitterd owns it); an LLM re-reading a healthy swarm every N minutes
+    is the pattern 525 wakes proved worthless.
+  - The night-start.sh pid-hold tourniquet, once this lands.
+
+  ## Relation to BL-647 — both, in order
+
+  BL-647 (prio 02, expedite lane) fixes the producer NOW and is still
+  correct under this model (whatever produces liveness facts must know the
+  pack shape — the babysitter needs that same knowledge). This ticket then
+  moves the produce-and-wake decision out of the runtime tick entirely.
+  BL-647 first (small, in lane); this one behind it — do NOT let this epic-
+  shaped redesign preempt the one-line tactical fix.
+
+  Event-type model tiering ([[operator-model-event-type-tiering]]) survives
+  intact: fewer wake classes, same per-class model choice.
+
+qa_e2e_procedure: >
+  (1) Healthy night simulation — assert operator LLM launch count zero (not log
+  absence). (2) One Telegram topic message — exactly one launch with event.
+  (3) Babysitter escalation — one launch with finding text; below-bar finding
+  nudges coordinator only. (4) Kill resident — escalation within one sweep;
+  dormant rotation roles never fabricate death. (5) SWARM_CONTROL_LOST — direct
+  wake unchanged. (6) BL-334 restricted path byte-identical. (7) night-start.sh
+  pid-hold removed; unattended night cost tracks real events only. Fixture:
+  2026-07-26 six stuck parcels + four empty SWARM_CHECK_TIMER wakes.
+
+source: |
+  Operator 2026-07-25 23:55 framing and measured 2026-07-26 night fixture in
+  notes (six in_process parcels, 40+ minutes stuck-* WARNs, four payload-free
+  SWARM_CHECK_TIMER wakes with zero artifacts). INTAKE-unpark-bl653-stuck-parcel-
+  blind-spot.md dispositioned 2026-07-27.
+
+out_of_scope: |
+  - BL-647's fix. It lands first and stays valid: liveness producers must be
+    pack-aware whoever hosts them.
+  - The babysitter's check catalogue (BL-611 productization owns that). This
+    ticket only adds the escalation wire and the wake-model change.
+  - Telegram delivery guarantees while stopped (24h getUpdates window) —
+    separate concern, noted in the night-schedule memory.
+  - Retiring PROVIDER_LIMIT_REACHED/CONFIG_CHANGED as event types: the
+    specifier decides which become deterministic actions vs escalations, but
+    the DEFAULT for anything ambiguous is "deterministic first, escalate on
+    doubt" — that is the whole thesis.
+
+notes: |
+  Sixth and final rotation-related finding of 2026-07-25, and the only one
+  that is a DESIGN correction rather than a patch: 646/647/648/650/651 each
+  fixed one blind observer or one blind decision; this one relocates the
+  authority so observers that cannot be blind (deterministic, pack-aware,
+  free) do the watching, and the expensive judgement layer is summoned, never
+  scheduled. The operator's one-line framing is the spec: "il ne devrait
+  démarrer que s'il y a un message telegram, ou si le babysitter le réveille."
+
+  ## Amended 2026-07-27 (specifier) — operator intake dispositioned
+
+  From `INTAKE-unpark-bl653-stuck-parcel-blind-spot.md` (filed 2026-07-26, live
+  during the incident). The intake recommended "unpark unchanged, attach this as
+  the fixture, give it priority". Accepted, with one correction it did not ask
+  for and one flag it raised now answered.
+
+  ### The measured fixture (attach to scenarios 1, 3 and 4)
+
+  Previously this ticket argued from the operator's one-line framing. The
+  2026-07-26 night measured it:
+
+  - 14:54Z a QA->hardender parcel enters `in_process`; five architect->hardender
+    parcels join by 18:44Z. All six sit untouched — hardender is a dormant
+    mono-router rotation target and nothing rotates the resident there.
+  - 19:20:59Z babysitter first WARNs all six as `stuck-*`. It repeats the same
+    WARN every ~5min sweep through 20:03:40Z — six-plus sweeps, 40+ minutes,
+    oldest parcel then 5h+ old.
+  - 18:36:30Z, 19:06:52Z, 19:35:21Z, 20:05:31Z the operator LLM wakes four times
+    on `SWARM_CHECK_TIMER`. Every event is payload-free — literally
+    `{"type":"SWARM_CHECK_TIMER"}`, no finding text attached. Each run burns
+    ~60-90s and leaves zero artifacts: no commit, no note, no handoff.
+
+  Four wakes, a detector shouting for 40 minutes, and no connection between
+  them. That is scenario 1's headline claim (a wake that carries no information
+  buys nothing) and scenario 3's converse (a wake carrying the finding text is
+  the whole point), measured rather than argued.
+
+  ### depends_on: [BL-611] — added, and NOT a way of deprioritising this
+
+  The intake asked for priority; this dependency is what makes the fast path
+  actually work, not a deferral. BL-611 is already priority 05 to this ticket's
+  07, so the order is unchanged — the edge just makes it data instead of luck.
+
+  The reason is a producer/consumer split that would otherwise bite hard. The
+  operator side of this ticket is buildable today: `operator_lib.bb`,
+  `operator_runtime.bb` and their test runners are all tracked. The EMITTER is
+  not — the babysitter lives entirely in gitignored `.swarmforge/operator/`
+  (see BL-611's own notes), so nothing tracked can emit a `BABYSITTER_ESCALATION`
+  until BL-611 ports it.
+
+  Build the consumer first and every unit test passes over fakes while the live
+  path stays dark — the known epic-wiring failure shape. Here it is worse than
+  usual, because criterion 7 REMOVES night-start.sh's pid-hold and criterion 1
+  asserts zero launches on a healthy night. With no producer wired those two
+  are indistinguishable from zero launches on a catastrophic night. That is what
+  invariant 2 now forbids.
+
+  ### The out-of-band stopgap: preserved, but it does not satisfy this ticket
+
+  The operator patched the live `babysitter_check.sh` on 2026-07-26 (incident
+  containment, outside the pipeline, per the standing working agreement): `stuck-*`
+  keys are carved out of the CRIT-only nudge gate so they nudge like CRIT, same
+  1800s per-key dedup. No severity was reclassified.
+
+  Reviewed as the intake asked. It is a real fix for the COORDINATOR-visible half
+  and a strict subset of this ticket's intent — not a competing design. It closes
+  nothing on the OPERATOR-visible half, which is the half this ticket exists for:
+  the operator still wakes only on the payload-free timer. So it neither satisfies
+  nor supersedes any acceptance criterion here.
+
+  It is preserved where it can actually survive: folded into BL-611's acceptance 4
+  as a must-not-regress fixture. It had to be, and this is the part worth
+  remembering — the patch lives only on this checkout, in a gitignored file, in no
+  git history. A fresh bootstrap loses it, and a faithful port of the pre-patch
+  script would have quietly reinstated the exact blind spot it was written to
+  close.
+
+  ### The durability question the intake flagged as out of scope — answered
+
+  "Whether the babysitter script graduates into the tracked repo instead of
+  hand-authored runtime state": already ticketed, BL-611, human-approved, which
+  ports both scripts into `swarmforge/scripts/` with tests, lifecycle wiring and a
+  runbook. Nothing further needed; recorded here so the flag is visibly closed
+  rather than dropped.
+  - [2026-08-26T18:36Z] coordinator: drop alert — re-routed to specifier (assigned_to: specifier; coder inbox empty).
+  - [2026-08-26T13:58Z] coordinator: drop alert — no parcel in flight at coder;
+    acceptance feature absent from main HEAD; nudged specifier to re-spec.
+
+specifier_decisions: |
+  Gherkin contract completed 2026-08-26 per coordinator route. Nine scenario
+  blocks cover seven inline acceptance criteria (03 and 04 split escalation vs
+  coordinator-nudge and real-death vs dormant). Headline scenario 01 asserts
+  launch COUNT not log absence. Invariant 2 gates phased retirement of
+  SWARM_CHECK_TIMER LLM patrol. depends_on BL-611 unchanged — emitter ports with
+  babysitter productization.
+
+abandoned_commits:
+  - 9be64247ac
+  - c5ef08ab59
+  - a3ea792262
+  - 04d5198d00
+  - b022ead2e6
+  - 9baf1b9e56
+  - 309e11bdef
+  - 5b49c95060
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: 5b49c95060, evidence: backlog/evidence/BL-653-hardener-pass-rematch4-20260826.md }

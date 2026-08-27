@@ -1,0 +1,59 @@
+id: BL-311
+title: "Dispositioned .swarmforge/operator/INTAKE-*.md files are archived instead of sitting undeleted forever"
+milestone: M8
+status: done
+type: chore
+priority: 40
+direction: aligned
+depends_on: []
+source: "Side-finding while scoping BL-310 (seed-race fix): reviewing .swarmforge/operator/INTAKE-*.md for BL-310 turned up ~20 files, most already fully shipped/QA-approved, with no convention anywhere for archiving one once it becomes a ticket. Filed as its own small ticket per the human's explicit choice (kept out of BL-310)."
+
+notes: |
+  `.swarmforge/operator/INTAKE-*.md` is the channel the operator uses to
+  hand the coordinator a directive or scope request that isn't itself a
+  backlog item yet (e.g. `.swarmforge/operator/INTAKE-bl307-seed-race.md`,
+  the source of BL-310). No role prompt documents what happens to the file
+  once it has been turned into a ticket — in practice it is just left in
+  place. Verified live 2026-07-12: ~20 INTAKE-*.md files exist, and cross-
+  checking their titles against `backlog/done/` and closed memory entries
+  shows most (Telegram front-desk, PWA collapsible sections, recert-
+  backlog-context, support-role, operator-cooldown-false-freeze, etc.) are
+  already fully shipped. This matters beyond tidiness: BL-310 explicitly
+  had to avoid using "an INTAKE-*.md file exists" as a signal anywhere in
+  runtime logic, specifically because these stale files would make that
+  signal permanently true.
+
+  SCOPE:
+    1. Document the convention (specifier-owned prompt/constitution change,
+       not a code change): whichever role turns an `INTAKE-*.md` into a
+       backlog ticket moves it out of `.swarmforge/operator/` into a
+       `.swarmforge/operator/archive/` subdirectory in the same pass —
+       mirroring the existing backlog-root-drain rule ("remove the raw item
+       once specced so it is not processed twice").
+    2. One-time cleanup: for each of the ~20 files currently present, if its
+       corresponding ticket is already in `backlog/done/` (or its topic is
+       recorded as landed in memory), move it into
+       `.swarmforge/operator/archive/`. Leave any file whose ticket is not
+       yet done (e.g. still active/paused, or never actually ticketed) in
+       place.
+    3. `.swarmforge/` is local runtime state (gitignored) — this ticket
+       touches no tracked source and needs no unit/mutation coverage; it is
+       process documentation plus a one-time file move, done directly by
+       whichever role executes it (coordinator or specifier), not a coder
+       build task.
+
+  E2E QA PROCEDURE (manual, since there is no code path to exercise):
+  list `.swarmforge/operator/*.md` before and after the cleanup pass and
+  confirm (a) every moved file's corresponding ticket is verifiably in
+  `backlog/done/`, (b) every file left in place has no completed ticket,
+  and (c) the new archive convention is now written down in the owning
+  role's prompt.
+
+acceptance:
+  feature: specs/features/BL-311-intake-doc-archive-hygiene.feature
+  steps:
+    - "An INTAKE-*.md file whose corresponding ticket is already in backlog/done/ is moved into .swarmforge/operator/archive/"
+    - "An INTAKE-*.md file whose corresponding ticket is not yet done is left in place"
+    - "The archive-on-disposition convention is documented in the role prompt that processes intake docs"
+
+mutation_cost: low

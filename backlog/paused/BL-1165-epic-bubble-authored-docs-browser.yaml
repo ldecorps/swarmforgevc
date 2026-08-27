@@ -1,0 +1,80 @@
+id: BL-1165
+title: "EPIC — Bubble authored docs browser: read the documenter corpus on the phone from docs/index.md; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: bubble-authored-docs
+priority: 12
+direction: human-requested
+depends_on: [BL-829]
+mutation_cost: high
+decomposes_into: [BL-1166]
+human_approval: approved
+approval_context: >
+  Human ask (INTAKE-documenter-docs-web-pages.md, 2026-08-26): "Think about a
+  series of web pages to render the docs the documenter has been writing" —
+  phone-readable operator docs from docs/index.md Divio structure, not the
+  Gherkin docs-tree.json explorer alone. Standing Bubble ramp over Telegram/PWA
+  new UX (STEERING.md). Specifier chose: Bubble remote HTML in BL-829 pager,
+  separate "Operator docs" entry, bridge-served markdown→HTML, bridge-token auth,
+  honest v1 offline (bridge required). First slice BL-1166; search and full
+  section parity deferred. Human pre-approved tickets before sleep.
+description: |
+  ## Why this epic exists
+
+  The documenter has landed a growing authored corpus under `docs/` — how-to,
+  reference, tutorials, explanation — indexed by `docs/index.md`. A human on
+  the phone cannot comfortably read that corpus today:
+
+  - `pwa/` renders `docs-tree.json` (vision → milestone → ticket → Gherkin),
+    not documenter markdown pages.
+  - Bubble remote pages exist for operator screens but not for authored docs.
+  - Telegram Mini App is maintain-only — not the docs home.
+
+  This epic makes the **documenter corpus** readable on Bubble without
+  replacing the spec/Gherkin explorer or rewriting the Divio doc set.
+
+  ## Specifier disposition (defaults applied — human may amend)
+
+  | Decision | Choice | Reason |
+  | --- | --- | --- |
+  | Surface | Bubble remote HTML page(s) in the UI bundle (BL-829 pager) | STEERING standing Bubble ramp; same pattern as BL-831/832 |
+  | Placement | Separate **Operator docs** pager entry — not unified with Gherkin tree in v1 | Keeps BL-1166 one sitting; unified tabs are a follow-up slice |
+  | Rendering | On-demand markdown→HTML at the bridge from git `docs/` | Matches existing remote-HTML discipline; static pre-render deferred |
+  | Auth | Bridge token (Live Screen class) | Corpus is operator guidance, not public static projection |
+  | Offline v1 | Honest: content requires bridge reachability; no fabricated offline corpus | Compare hold INTAKE-phone-wire-format-and-offline posture |
+  | Navigation v1 | Index → Divio section → page; search and BL-### deep links deferred | INVEST Small for first slice |
+
+  ## Dependency
+
+  BL-829 remote page host — a page in a bundle nothing renders stays dark.
+
+  ## Scope boundary
+
+  Read-only docs browser — not editing, not minting tickets, not replacing
+  `docs/index.md` as git source of truth. Orphan index hygiene remains BL-756 /
+  documenter mint-time obligation unless a separate ticket says otherwise.
+
+remaining_slices:
+  - "Search and BL-### deep links — find how-to pages by ticket id in filename when one exists."
+  - "Unified browser tabs — optional Specs vs Authored docs top-level switch instead of separate pager entry."
+  - "Offline/cache posture v2 — piggyback companion manifest or pre-render if human asks after v1 ships."
+  - "Reference and tutorials section parity — every Divio section fully navigable beyond the first-slice sample pages."
+
+invariants:
+  - "Read-only: no write path to git or backlog from any page in this epic."
+  - "docs/index.md remains the navigation source of truth in git — the browser reads it, never replaces it."
+
+out_of_scope: |
+  - Rewriting or reorganising the Divio doc set.
+  - Replacing the PWA Gherkin/spec explorer (may coexist).
+  - New Telegram Mini App pages for docs.
+  - Fixing every pre-existing orphan in one slice (BL-756).
+
+source: |
+  backlog/INTAKE-documenter-docs-web-pages.md (human via Cursor,
+  2026-08-26 ~23:41 BST). Related: BL-756 (orphan hygiene), BL-824/BL-829
+  (Bubble shell + pager), BL-711 (Bubble naming).
+
+notes: |
+  - [2026-08-27] specifier: minted epic + first slice BL-1166; human pre-approved.

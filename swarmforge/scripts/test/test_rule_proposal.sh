@@ -17,7 +17,15 @@ pass() { echo "PASS: $*"; }
 
 # ── fixture: git repo with a coder worktree + specifier on master ───────────
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'rm -rf "$ROOT"' EXIT
+export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
+DAEMON_PID=""
+cleanup() {
+  # BL-406: kill the daemon as a backstop even if an earlier assertion exits
+  # this script before the normal stop-file+wait sequence runs.
+  [[ -n "$DAEMON_PID" ]] && kill "$DAEMON_PID" 2>/dev/null || true
+  rm -rf "$ROOT"
+}
+trap cleanup EXIT
 
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=t@t -c user.name=t commit -q --allow-empty -m one
@@ -39,7 +47,7 @@ mkdir -p "$CODER_WT/.swarmforge"
 printf "$ROLES" > "$CODER_WT/.swarmforge/roles.tsv"
 
 CODER_OUTBOX="$CODER_WT/.swarmforge/handoffs/outbox"
-SPECIFIER_INBOX_NEW="$ROOT/.swarmforge/handoffs/inbox/new"
+SPECIFIER_INBOX_NEW="$ROOT/.swarmforge/handoffs/specifier/inbox/new"
 mkdir -p "$CODER_OUTBOX"
 
 # ── fake tmux so notify! succeeds without a real session ────────────────────
@@ -59,14 +67,34 @@ make_draft() {
   echo "$file"
 }
 
+# BL-778: pin delivery mode so success grammar is environment-independent.
+# Fixture intends outbox queue + daemon drain — never ambient DELIVERED/exit-1.
+run_swarm_handoff() {
+  local draft="$1"
+  (
+    cd "$CODER_WT"
+    env -u SWARMFORGE_SKIP_DAEMON -u SWARMFORGE_MAILBOX_ONLY \
+      SWARMFORGE_ROLE=coder \
+      SWARMFORGE_SKIP_SYNC_INJECT=1 \
+      PATH="$FAKE_BIN:$PATH" \
+      bb "$SWARM_HANDOFF" "$draft" 2>&1
+  )
+}
+
+assert_queued() {
+  local label="$1" out="$2"
+  grep -q "^HANDOFF QUEUED (mailbox only, no tmux inject):" <<< "$out" \
+    || fail "$label: valid send was not queued with mailbox-only grammar; got: $out"
+}
+
 # ── 01: a valid proposal is queued and delivered to the specifier's inbox ───
 DRAFT="$(make_draft "$CODER_WT" \
   'type: rule_proposal' 'to: specifier' 'priority: 50' \
   'scope: constitution' \
   'body: Batch roles must forward every parcel, not just their own step.' \
   'rationale: BL-075 dropped a docs-only parcel this way.')"
-OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT")"
-grep -q "^HANDOFF QUEUED:" <<< "$OUT" || fail "01: valid rule_proposal was not queued; got: $OUT"
+OUT="$(run_swarm_handoff "$DRAFT")"
+assert_queued "01" "$OUT"
 
 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
 DAEMON_PID=$!
@@ -107,8 +135,8 @@ DRAFT="$(make_draft "$CODER_WT" \
   'scope: engineering' \
   "body: $TABBED_BODY" \
   'rationale: regression for the hand-rolled json-escape bug')"
-OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT")"
-grep -q "^HANDOFF QUEUED:" <<< "$OUT" || fail "03b: tab-bearing rule_proposal was not queued; got: $OUT"
+OUT="$(run_swarm_handoff "$DRAFT")"
+assert_queued "03b" "$OUT"
 
 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
 DAEMON_PID=$!
@@ -135,7 +163,7 @@ assert_rejected() {
   local draft
   draft="$(make_draft "$CODER_WT" "$@")"
   set +e
-  OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$draft" 2>&1)"
+  OUT="$(run_swarm_handoff "$draft")"
   RC=$?
   set -e
   [[ $RC -ne 0 ]] || fail "02 ($label): invalid draft was not rejected; got: $OUT"
@@ -179,8 +207,8 @@ for draft_lines in \
   "type: note|to: specifier|priority: 50|message: unaffected by rule_proposal"; do
   IFS='|' read -ra LINES <<< "$draft_lines"
   DRAFT="$(make_draft "$CODER_WT" "${LINES[@]}")"
-  OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT")"
-  grep -q "^HANDOFF QUEUED:" <<< "$OUT" || fail "04: existing type regressed for draft [$draft_lines]; got: $OUT"
+  OUT="$(run_swarm_handoff "$DRAFT")"
+  assert_queued "04 [$draft_lines]" "$OUT"
 done
 pass "04: awake, git_handoff, and note drafts still validate and queue exactly as before"
 

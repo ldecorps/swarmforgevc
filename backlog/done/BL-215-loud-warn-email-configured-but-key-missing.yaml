@@ -1,0 +1,61 @@
+id: BL-215
+title: "Warn loudly when email is configured but RESEND_API_KEY is missing (headless no-op)"
+milestone: M2
+status: todo
+priority: 05
+direction: reliability
+assigned_to: coder
+source: "coordinator note 2026-07-09: headless daemon+supervisor env lack RESEND_API_KEY; alarm/briefing email silently no-op. Operator (2026-07-09) chose: key stays an env var the operator provides; fix = make the miss loud + document it."
+
+description: |
+  COORDINATOR (2026-07-09): the headless daemon/supervisor can only send the
+  BL-144 death alarm and the BL-214 briefing email if RESEND_API_KEY is in its
+  OWN process env. But the extension resolves the key from env OR VS Code
+  SecretStorage (extension/src/notify/secrets.ts), and the daemon reads only
+  System/getenv "RESEND_API_KEY" (handoffd_supervisor.bb send-configured-alarm-email!).
+  So a key kept in SecretStorage, or a headless launch (CLI / no-VS-Code /
+  supervisor self-relaunch) with a bare env, leaves the daemon's key blank and
+  email silently no-ops even though notify_email_to is set.
+
+  OPERATOR DECISION (2026-07-09): the key stays an env var the operator
+  provides in the daemon's launch environment (shell profile / systemd unit /
+  launcher) — same source the conf comment already names. No new secret file,
+  no repo secret, no extension injection. The defect to fix is that the miss is
+  SILENT, so the operator never learns email is dead.
+
+  Root cause (verified): daemon_alarm_lib.bb's send-alarm-email! collapses two
+  distinct states into one silent result —
+    (if (or (str/blank? to) (str/blank? api-key))
+      {:success false :error "email not configured (missing notify_email_to or RESEND_API_KEY)"} ...)
+  "no recipient" (email intentionally off) and "recipient set but key missing"
+  (real misconfiguration) are indistinguishable, and the supervisor caller just
+  swallows the result.
+
+  Wanted behavior:
+  - Distinguish the two off-states at the send layer: recipient absent =>
+    email intentionally disabled => quiet no-op (unchanged); recipient present
+    but api-key blank => misconfiguration => a distinct result the caller can
+    escalate.
+  - When email is configured (notify_email_to set) but RESEND_API_KEY is absent
+    from the daemon's env, the daemon/supervisor logs a LOUD, visible warning
+    to its daemon log naming the missing env var and that the alarm/briefing
+    email cannot send — instead of a silent no-op.
+  - Do not spam: the missing-key warning is deduped (e.g. once per process or
+    once per day), not emitted on every poll/sweep.
+  - No change when fully configured (sends normally) or when email is
+    intentionally off (recipient unset => still quiet, no warning).
+  - Docs: state that a headless deployment MUST export RESEND_API_KEY in the
+    daemon's launch environment (the same env var the extension uses); note it
+    where the daemon-email config already lives (swarmforge.conf comment) and
+    in operator docs.
+
+  Constraints:
+  - Change lives in the shared send layer (daemon_alarm_lib.bb) + its daemon
+    caller, so BOTH the BL-144 alarm and the BL-214 briefing send benefit; do
+    not fork a second code path. Never log the key value itself.
+  - Tests inject fakes for the post/log side effects — no real network, no real
+    timers (BL-144 gate). The dedup is tested via an injected clock/state, not
+    wall-clock sleeps.
+
+acceptance: specs/features/BL-215-loud-warn-email-configured-but-key-missing.feature
+mutation_cost: low

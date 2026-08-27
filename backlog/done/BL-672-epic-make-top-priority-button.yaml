@@ -1,0 +1,99 @@
+id: BL-672
+title: "Make-top-priority button on the epic reorder screen — one tap makes an epic the unique top of the live backlog, dependency-bounded, order-preserving"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 03
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+invariants:
+  - "No apply ever produces an order where a live (paused/hold) item numerically outranks a live item in its own transitive depends_on closure."
+  - "Every pair of live items other than the tapped target keeps its relative displayed order (priority asc, id asc) across an apply."
+  - "An apply either lands all its writes as one commit-integrity commit or writes nothing; re-applying to an already-top target writes nothing and answers changed:false with a reason."
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::epic-reorder/make-top::route must be registered in the write-routes table"
+  - "extension/src/bridge/epicReorderUiHtml.ts::epic-reorder/make-top::the per-tile button must call the live route"
+acceptance: specs/features/BL-672-epic-make-top-priority.feature.draft
+
+approval_context: >
+  Operator ask 2026-07-26 (INTAKE-epic-make-top-priority-button.md), decisions
+  the specifier settled and asks sign-off on: (1) surface is the LIVE holistic
+  UI's existing BL-572 epic reorder screen (write action; PWA has no write
+  path — local-engineering rule 5). (2) "priority" is the ticket YAML
+  priority: field only (lower = better), never the handoff header (Article
+  3.2.4 two-scales rule); expedited-defect ordering is untouched. (3) The
+  domination set is live epics AND live topics in paused/ + hold/; active/ is
+  excluded (already promoted; rewriting in-flight tickets' YAML risks
+  worktree staleness for zero scheduling effect) and done/ is never read or
+  written. (4) depends_on bounds the move uniformly, at epic level too: a
+  target with a live dependency lands immediately after its worst-ranked live
+  dependency instead of absolute top, and the move REFUSES (fail closed,
+  blockers named) when a live dependency currently ranks below the target —
+  never a silent cascade-promotion of the dependency chain, never a downward
+  move. Amend if you want cascade semantics instead.
+
+source: |
+  Operator (human) 2026-07-26 via coordinator session:
+  .swarmforge/operator/INTAKE-epic-make-top-priority-button.md (archived to
+  operator/archive/ on drain). Verbatim ask: a "make top priority" button
+  scoped to epics; after the tap the epic is the UNIQUE occupant of the top
+  priority level among epics and every topic ends up at a lesser priority —
+  the epic genuinely dominates the whole backlog's ticket-level range.
+
+description: |
+  ## What
+
+  Add a "make top priority" verb to each tile on the shipped BL-572 epic
+  reorder screen. One tap on epic E computes, applies, and commits a
+  priority rewrite such that E ranks strictly better (numerically lower,
+  ties impossible) than every other live epic AND every live non-epic topic
+  in paused/ + hold/. Same machinery as BL-572's move route: pure decision
+  core in epicReorderSafety.ts (extended, or a sibling function beside
+  computeEpicReorder), writes resolved all-or-nothing via
+  resolveEpicWritePaths, applied atomically, committed synchronously through
+  runCommitIntegrity — never a raw git command from the bridge.
+
+  ## The operation (one primitive, reused by BL-673 one level down)
+
+  Raise target to the best rank strictly better than all its peers, bounded
+  by dependencies:
+  - No live dependency: target takes the absolute top; every displaced item
+    keeps its relative order via the same tie-run value-rewrite cascade
+    BL-572 already implements (values never negative; a floor-run at 0 is
+    the normal case, not an edge case).
+  - Live dependency ranked better than target: target lands immediately
+    after its worst-ranked live dependency (the top slot its deps permit),
+    response says so in reason.
+  - Live dependency ranked WORSE than target, or a cycle, or a dangling
+    depends_on id: refuse — changed:false, reason names the blocking ids,
+    nothing written. Deps resolving to done/ are satisfied (ignored); deps
+    resolving to active/ are in flight and ignored for ordering (the
+    coordinator's promotion gate owns completion).
+  - Already in the best permitted slot: no-op, changed:false with reason
+    (BL-572's response contract — a tap that did nothing must say so).
+
+  ## Constraints
+
+  - Read scope is fresh at request time, like the move route; auth via
+    requireControlAuth (control step-up, BL-241).
+  - Third-party order preservation is the hard-won BL-572 lesson (architect
+    bounces 1-3, backlog/evidence/BL-572-architect-bounce*.md) stated here
+    as an invariant up front — read that evidence before implementing.
+  - The pure core stays filesystem-free (paths in, writes out), per the
+    Design And Testability boundary; the invariants above want
+    property-style tests over generated backlogs (BL-654), not only the
+    scenario fixtures.
+  - Coder materializes the .feature.draft to .feature in the implementing
+    parcel and wires its step handlers in the same parcel (BL-441/BL-233).
+
+  ## e2e QA procedure
+
+  On the live bridge with real backlog fixtures: tap make-top on a non-top
+  epic with no deps — verify unique top, one commit on main, other items'
+  relative order unchanged. Tap again — verify changed:false and no new
+  commit. Tap make-top on BL-552 (live dep BL-545) — verify it lands
+  directly after BL-545, or refuses if BL-545 ranks worse that day.

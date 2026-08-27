@@ -1,0 +1,33 @@
+Feature: The master checkout's main ref reflects what QA landed
+
+  # BL-891 local-main-reflects-landed-01
+  Scenario: A landed commit reaches the master checkout's main ref
+    Given a master checkout on "main" with no local-only commits
+    And QA has landed an approved commit by pushing its branch to the remote "main"
+    When the landing completes
+    Then the master checkout's "main" ref is the landed commit
+    And the master checkout's working tree contains the landed files
+
+  # BL-891 local-main-reflects-landed-02
+  Scenario: Local-only bookkeeping commits are reconciled, not discarded
+    Given a master checkout on "main" carrying local-only backlog bookkeeping commits
+    And QA has landed an approved commit by pushing its branch to the remote "main"
+    When the landing completes
+    Then the landed commit is an ancestor of the master checkout's "main"
+    And every local-only bookkeeping commit is still reachable from "main"
+
+  # BL-891 local-main-reflects-landed-03
+  Scenario: A master checkout that cannot be reconciled is surfaced, never forced
+    Given a master checkout on "main" whose working tree has uncommitted changes
+    And QA has landed an approved commit by pushing its branch to the remote "main"
+    When the landing completes
+    Then the master checkout's "main" ref is left untouched
+    And the divergence is surfaced to the coordinator with its reason
+    And no reset, rebase, stash or force-update is performed on the master checkout
+
+  # BL-891 local-main-reflects-landed-04
+  Scenario: The drift between the two refs is observable before it accumulates
+    Given a master checkout on "main" that is behind the remote "main"
+    When the drift check runs
+    Then it reports how many commits "main" is behind the remote
+    And it reports how many commits "main" is ahead of the remote

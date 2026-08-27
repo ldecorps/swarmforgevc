@@ -1,7 +1,7 @@
 id: BL-029
 title: add a no-op comment to swarmLauncher.ts (pipeline smoke test)
 milestone: M3
-status: active
+status: done
 priority: 29
 assigned_to: coder
 

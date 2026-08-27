@@ -120,6 +120,27 @@ export function sendInstructionVerified(
   return retryUntilSubmitted(deps, start.pendingText, start.typed, maxRetries, retryDelayMs);
 }
 
+// BL-152: the chaser nudge and the BL-122 recovery redelivery both used to
+// send a bare, unverified `Enter` - no text, no confirmation the recipient
+// pane actually saw anything - while handoffd.bb's own notify! always sends
+// this exact literal through a verified submit. This is the one TS-side
+// source for that literal (hand-mirrored across the Babashka/TypeScript
+// boundary into handoffd.bb's `wake-message`, per its own comment) so the
+// two extension wake call sites cannot drift into duplicate strings.
+export const HANDOFF_WAKE_MESSAGE = 'You have new handoff mail. If idle, run ready_for_next.sh.';
+
+/**
+ * Submits the canonical handoff wake message through the same verified
+ * inject/retry/no-stack path as any other pane instruction, so a handoff
+ * wake can never regress to a bare, unconfirmed Enter.
+ */
+export function sendHandoffWakeUp(
+  deps: VerifiedInjectDeps,
+  options: VerifiedInjectOptions = {}
+): VerifiedInjectResult {
+  return sendInstructionVerified(deps, HANDOFF_WAKE_MESSAGE, options);
+}
+
 interface InjectionStart {
   pendingText: string;
   typed: boolean;

@@ -1,0 +1,16 @@
+---
+description: Operator intakes are local files under .swarmforge/operator/, not git-tracked backlog paths
+alwaysApply: true
+---
+
+# Operator intakes (local disk)
+
+When filing operator intakes while Cursor runs on the same machine as the swarm:
+
+- Write to `.swarmforge/operator/INTAKE-<slug>.md` only.
+- The specifier reads intakes directly from local disk — no git commit or push is needed or useful.
+- Do not file operator intakes under `backlog/INTAKE-*.md` for this workflow.
+- Do not force-add `.swarmforge/` to git; that path is gitignored by design.
+- Match how other intakes work tonight: plain local files, never tracked.
+
+After the specifier drains an intake into `backlog/paused/`, move the source file to `.swarmforge/operator/archive/` (per specifier.prompt).

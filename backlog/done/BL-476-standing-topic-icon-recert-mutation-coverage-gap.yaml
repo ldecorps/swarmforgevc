@@ -1,0 +1,67 @@
+id: BL-476
+title: "Close the pre-existing STANDING_TOPIC_ICON mutation-coverage gap: STANDING_TOPIC_ICON.recert ('📜') has no test assertion, so a string-literal mutant on it survives"
+milestone: M8
+type: chore
+severity: low
+epic: ""
+priority: 7
+direction: swarm-proposed
+depends_on: []
+source: "backlog/INTAKE-standing-topic-icon-survivor-debt.md — the human reported (2026-07-17, via the coordinator) a single mutation survivor near BL-469's code and judged it PRE-EXISTING standing-topic-icon debt, not a BL-469 gap. Specifier confirmation 2026-07-17 (per the intake's own 'confirm the exact mutant, do not trust the secondhand attribution' instruction): verified against the BL-469 tip commit 1d4d0c6bf2 (currently at QA), NOT just master — STANDING_TOPIC_ICON.recert ('📜') is asserted NOWHERE in the test tree (extension/test/topicIcon.test.js asserts support/intake '🎟', operator '🛎', approvals '📋' but NOT recert; the conciergeTick standing-sync test only drives support/intake + operator iconKeys). The recert entry was added by BL-450; the STANDING_TOPIC_ICON table itself by BL-418. BL-469's own parcel added coverage for its NEW ROLE_TOPIC_ICON table only — it neither introduced nor closed this recert gap."
+
+notes: |
+  DISPOSITION (specifier, 2026-07-17) — this is (a) pre-existing debt, decoupled from BL-469:
+    - BL-469 (per-agent steering-topic icons) is purely ADDITIVE: its scope adds a THIRD table
+      (ROLE_TOPIC_ICON) alongside ICON_EMOJI and STANDING_TOPIC_ICON and explicitly does NOT overload
+      either existing table. Confirmed from the BL-469 tip diff: it touched topicIcon.test.js only to
+      add ROLE_TOPIC_ICON assertions (8 role icons + the documented QA/paused collision). It did not
+      touch STANDING_TOPIC_ICON coverage. So the survivor is NOT attributable to BL-469.
+    - BL-469 is already at QA (documenter -> QA, commit 1d4d0c6bf2) and is NOT blocked by this — it
+      cleared the hardener's mutation gate without a documented survivor. The reason the pre-existing
+      recert survivor did not block BL-469: the hardener's --mutate is scoped per-parcel and Stryker runs
+      incrementally, so an UNCHANGED line in the STANDING_TOPIC_ICON block (recert '📜', unchanged by
+      BL-469) is not re-mutated in BL-469's pass. (See also [[bl446-stryker-zero-kill-repo-wide]] — the
+      repo-wide gate has a separate vacuousness concern; this ticket does not depend on resolving that,
+      the gap is real by direct inspection.)
+
+  WHY A SEPARATE LOW-PRIORITY DEBT TICKET (per the intake's own guidance and the BL-428 precedent):
+    - The gap is a genuine, KILLABLE coverage hole (not an equivalent mutant): adding
+      `assert.equal(STANDING_TOPIC_ICON.recert, '📜')` kills it outright. It is therefore real debt, not a
+      documented-as-equivalent survivor like the BL-423 evidence pass.
+    - It blocks nothing today, so it does not belong folded into BL-469's scope. It is preserved here as
+      visible, low-priority tech debt referencing its true origin (BL-450 recert entry, BL-418 table)
+      rather than being lost when the report scrolls away.
+
+  Scope (grep-confirmed 2026-07-17):
+    - extension/test/topicIcon.test.js: add a direct value assertion for the recert entry
+      (`assert.equal(STANDING_TOPIC_ICON.recert, '📜')`), mirroring the three sibling assertions already
+      present for support/intake, operator, and approvals — so ALL FOUR STANDING_TOPIC_ICON entries are
+      load-bearing under mutation.
+    - Optional, same parcel: make the conciergeTick standing-topic-icon sync test additionally drive the
+      'approvals' and 'recert' iconKeys through the sync path (it currently only drives 'support/intake'
+      and 'operator'), so every STANDING_TOPIC_ICON value is exercised end-to-end, not only asserted as a
+      constant. Break-then-fix per engineering.prompt: confirm the new assertion FAILS when the constant
+      is blanked, then restore.
+    - No production code change: STANDING_TOPIC_ICON's values are correct and human-decided; this is a
+      test-coverage fix only.
+
+  E2E / verification: run Stryker with --mutate scoped to extension/src/concierge/topicIcon.ts and confirm
+  every string-literal mutant on the four STANDING_TOPIC_ICON values is Killed (no Survived). A green
+  run BEFORE this fix that reports the recert mutant Survived, and Killed AFTER, is the acceptance signal.
+
+acceptance:
+  # Test-coverage / mutation debt — the deliverable is a killed mutant, not a new externally-visible
+  # product behaviour (the icons themselves are unchanged and already specced by BL-418/BL-434/BL-450).
+  # Outcome-style acceptance per the BL-428 / BL-474 debt-and-spike precedent; no Gherkin feature file.
+  outcome: "A string-literal mutation on any STANDING_TOPIC_ICON entry — specifically the previously-uncovered recert ('📜') — is Killed by a test. topicIcon.test.js asserts all four STANDING_TOPIC_ICON values directly, mirroring the existing three; a --mutate run on topicIcon.ts reports zero Survived among the STANDING_TOPIC_ICON string literals."
+
+human_approval: approved
+approval_context: >
+  Human surfaced the survivor (2026-07-17) and judged it pre-existing standing-topic-icon debt rather than
+  a BL-469 gap. Specifier confirmed the exact uncovered entry (STANDING_TOPIC_ICON.recert '📜') against the
+  BL-469 tip and dispositioned it as its own low-priority debt ticket referencing BL-418 (table) and BL-450
+  (recert entry), decoupled from BL-469 (which is at QA and not blocked). Test-only change; no icon value
+  changes. FIRM: recert gains a direct value assertion so all four STANDING_TOPIC_ICON entries are
+  load-bearing. Priority/exact test structure are not gating.
+
+mutation_cost: low

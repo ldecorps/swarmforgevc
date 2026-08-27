@@ -1,0 +1,81 @@
+id: BL-520
+title: "Rewrap the 19 grandfathered wrapped-step feature files and drain the BL-515 legacy allowlist"
+milestone: M8
+type: task
+epic: code-quality-gates
+status: done
+priority: 5
+direction: swarm-surfaced
+source: "Coder note 2026-07-18 after BL-515 landed: BL-515 started enforcing single-line Gherkin steps but grandfathered 19 pre-existing offenders via swarmforge/scripts/gherkin_lint_gate_legacy_wraps.txt so shipping the gate wouldn't retroactively block already-landed feature files. That allowlist is tech debt to drain: rewrap each file and remove its entry."
+
+notes: |
+  WHAT / WHY: BL-515's lint gate (swarmforge/scripts/gherkin_lint_gate.sh + gherkin_lint_gate_lib.bb)
+  rejects a Gherkin step whose text wraps onto a bare continuation line, because the vendored APS
+  parser SILENTLY DROPS that continuation line (and any <param> on it) while still exiting 0. To
+  avoid retroactively blocking 19 already-landed feature files, BL-515 grandfathered them in
+  gherkin_lint_gate_legacy_wraps.txt (continuation-line check only — never the phantom-column check,
+  never a NEW file). This ticket pays that debt down: rewrap every listed file to single-line steps
+  and remove its allowlist entry, until the list is empty and the exemption is gone.
+
+  THE NON-MECHANICAL CATCH (do not sed-join blindly): because the parser today DROPS the continuation
+  line, each affected scenario's existing step handler is registered against the TRUNCATED first-line
+  text only. Rejoining the wrap to one line restores the FULL step text the runtime matches, so the
+  step handler's regex must be reconciled to the full single-line text IN THE SAME PARCEL, or the
+  acceptance runner (specs/pipeline/runtime.js) throws on the now-unresolved scenario and blocks the
+  gate (BL-233). Two sub-cases:
+    - PROSE WRAP (no <param> on the continuation): rejoin to one line; update the step handler pattern
+      to match the full text. Behaviour is unchanged; the handler just matches more text than the
+      truncated form it matched before.
+    - DROPPED <param> ON THE CONTINUATION (confirmed at least once: BL-131's
+      `... setTimeout(resolve, <ms>)) ...` continuation carries <ms>): rejoin, then wire the restored
+      <param> through to the step handler AND confirm its Examples column is now referenced (making
+      the column load-bearing per the specifier's KNOWN_VALUES / prune-unreferenced-columns rules).
+      A restored param that the handler ignores is still a latent phantom column.
+
+  SCOPE / ORTHOGONALITY: touches only specs/features/<listed>.feature, their step handlers under
+  specs/pipeline/steps/, and swarmforge/scripts/gherkin_lint_gate_legacy_wraps.txt. Process the 19
+  files one at a time (each removal is independent and low-risk); may land in slices. Do NOT add any
+  NEW file to the allowlist — fix the wrap instead (the gate enforces unconditionally for every new or
+  changed file already). Orthogonal to BL-519 (bootstrap caching) and the console-epic tickets; NOT
+  orthogonal to any other in-flight change that edits one of the listed feature files.
+
+  END STATE: gherkin_lint_gate_legacy_wraps.txt has no feature-file entries left, and the now-dead
+  allowlist-consultation path in the gate is removed (or the file retained empty with a comment) so
+  the gate enforces single-line steps with zero exemptions. Removing the dead exemption plumbing once
+  the list is drained is in scope for the final slice.
+
+acceptance:
+  # Observable contract:
+  #  1. A legacy file rewrapped to single-line steps, with its allowlist entry removed, PASSES the
+  #     lint gate cleanly (no continuation-line failure, no phantom-column failure).
+  #  2. That file's acceptance run still resolves EVERY scenario to a step handler and passes — the
+  #     handler was reconciled to the restored full step text in the same parcel (BL-233).
+  #  3. A <param> the wrap had dropped is, after rewrap, threaded to the step handler and its Examples
+  #     column is referenced (load-bearing), not left as a phantom column.
+  #  4. When every listed file has been rewrapped and removed, the allowlist holds no feature-file
+  #     entries and the gate exempts nothing — single-line enforcement is unconditional.
+  feature: specs/features/BL-520-rewrap-legacy-wrapped-steps.feature
+
+# QA end-to-end procedure (verify in the live swarm):
+#   1. For a sample of the rewrapped files, confirm each formerly-wrapped step is now one physical
+#      line, run gherkin_lint_gate.sh on it, and confirm it PASSES with its allowlist entry removed.
+#   2. Run specs/pipeline/scripts/run_acceptance.sh on a rewrapped file and confirm every scenario
+#      resolves to a handler and the run passes (no runtime.js unresolved-step throw).
+#   3. For BL-131 (the confirmed dropped-<ms> case), confirm the restored <param> reaches the handler
+#      and its Examples column is referenced.
+#   4. Confirm gherkin_lint_gate_legacy_wraps.txt lists no feature files at the end, and that a fresh
+#      wrapped step in ANY file (listed or not) is still rejected by the gate.
+
+human_approval: approved
+approval_context: >
+  Swarm-surfaced follow-up to BL-515 (coder note, 2026-07-18): drain the 19-file grandfather allowlist
+  that BL-515 introduced so the single-line-step lint gate has zero standing exemptions. Sign-off is
+  on: (a) rewrapping all 19 listed feature files to single-line steps and removing each allowlist
+  entry; (b) the requirement that each rewrap reconcile its step handler (and, for a dropped <param>,
+  its Examples column) in the same parcel so acceptance still passes; (c) removing the now-dead
+  exemption plumbing once the list is drained. Low-risk, incremental, no product-behaviour change —
+  purely paying down the acceptance-contract debt BL-515 deliberately deferred.
+
+mutation_cost: low
+
+assigned_to: coder

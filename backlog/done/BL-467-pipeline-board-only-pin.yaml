@@ -1,0 +1,100 @@
+id: BL-467
+title: "Pin the pipeline board as the ONLY pinned message in the Telegram group; continuously unpin everything else"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 1
+direction: human-requested
+depends_on: []
+source: "human (ldecorps) via the Operator front desk 2026-07-16 — INTAKE-operator-question-1784236267242 (follow-up to the pinned-messages thread), plus the specifier's clarifying answer (enforcement posture, 2026-07-16). Pipeline-board cluster (BL-462/464/465)."
+
+description: |
+  The human wants the live pipeline board message (the monospace kanban grid posted in the dedicated
+  "Pipeline Board" Telegram topic by BL-452/455/462) to be the ONLY pinned message in the group:
+  "at the moment, I only want the pipeline board to be pinned." The Operator verified 2026-07-16 21:01Z
+  that the bridge has NO pin/unpin call anywhere today — this is new behavior.
+
+  Enforcement posture (human's clarifying answer to the specifier, 2026-07-16): ENFORCE CONTINUOUSLY.
+  On every concierge tick, unpin any message that is not the current board and keep the board pinned —
+  INCLUDING messages a human pins by hand later — until the human asks to disable this. This is the
+  literal reading of "nothing else should be pinned".
+
+  Mechanism decisions:
+    - Telegram Bot API pins are CHAT-LEVEL (one pin list per group; pinChatMessage takes no
+      message_thread_id), which is exactly the "pinned message in the group" the human means, so the
+      board message (which physically lives in the Pipeline Board topic) is pinned chat-wide.
+    - The board already DELETES its old message and POSTS a fresh one on each content change (BL-462),
+      so the pinned message id changes on every repost; the pin must follow to the new board message.
+    - Change-gate to avoid churn / service-message spam (~2880 ticks/day): read the CURRENT top pinned
+      message via getChat().pinned_message. Enforce (unpin all, then pin the board) ONLY when the top
+      pin is not the current board; when the board already IS the top pin, the tick is a no-op. Pin
+      SILENTLY (disable_notification) so re-pins never alert the group. This is a single unpin-all +
+      single pin, NOT a per-topic fan-out, so the anti-storm / first-tick-backfill rule does not apply.
+
+  Scope (grep-confirm live paths at build; live wiring verified 2026-07-16):
+    - extension/src/notify/telegramClient.ts: add three thin Bot API wrappers — pinChatMessage (with
+      disable_notification), unpinAllChatMessages, and a getChat wrapper exposing pinned_message's
+      message_id. Same thin-wrapper posture as the existing sendTelegramMessage / deleteMessage /
+      editForumTopic wrappers; each keeps main-free pure helpers per the thin-wrapper rule.
+    - a new pure/testable module (e.g. extension/src/concierge/pipelineBoardPinSync.ts) mirroring
+      pipelineBoardSync.ts: a decision function over (currentTopPinnedId, boardMessageId) plus a sync
+      function that drives injected adapters { getTopPinnedMessageId, unpinAllMessages, pinMessage }.
+      Best-effort like the board's deleteMessage adapter — a failed pin/unpin never throws and never
+      aborts the tick.
+    - extension/src/concierge/conciergeTick.ts: run this pin sync every tick AFTER syncBoardIfWired
+      (so it sees the freshly-posted board messageId from PipelineBoardState), gated on the new
+      adapters being wired (absent adapters = no pin sync, same posture as boardAdapters).
+    - extension/src/tools/telegram-front-desk-bot.ts: build the live adapters over the three new
+      telegramClient wrappers, alongside the existing boardAdapters block (line ~1216).
+
+  This ticket INCLUDES its runtime-wiring (the conciergeTick step + the live adapters) in the same
+  parcel — the pure module must NOT ship dark (engineering "no dark module" / specifier live-DATA
+  dependency rules). A green unit suite over fake adapters is not proof the live path pins; the E2E QA
+  procedure below verifies against the real group.
+
+  Constraints:
+    - READ-mostly / side-effect-scoped to pins: the pin sync only ever pins/unpins, never edits or
+      deletes board content (that stays pipelineBoardSync.ts's job). Do NOT alter the board's own
+      repost/change-gate behavior.
+    - Silent pins only (disable_notification true) — a re-pin must not notify the group.
+    - Idempotent / low-churn: an unchanged, already-clean tick (board is the top pin) is a complete
+      no-op — no getChat-driven unpin/pin.
+    - Best-effort: pin/unpin/getChat failures are swallowed (logged), never fatal to the tick, mirroring
+      the board's best-effort deleteMessage adapter.
+    - Exact wrapper signatures, the module name, and log wording are build-time details, not a
+      promotion gate.
+
+  Sequencing: touches conciergeTick.ts and telegram-front-desk-bot.ts, which the board/roster/recert
+  syncs also touch (standing-topic overlap cluster). Serialize against in-flight board tickets
+  (BL-464 active, BL-465 paused) — do NOT run concurrently with them. It ADDS a new sync step and new
+  telegramClient wrappers rather than changing the board renderer, so it is otherwise independent of
+  the render-refinement tickets; sequence after them to build on whatever board scaffolding is on main.
+
+  E2E QA PROCEDURE: on the real Telegram group — (1) with the board posted, confirm the board message
+  is pinned and appears in the group's pinned banner; (2) pin an unrelated message by hand, wait one
+  concierge tick, and confirm it is unpinned and the board is the sole remaining pin; (3) force a board
+  content change so it reposts (delete + fresh post) and confirm the NEW board message becomes the
+  pinned one (the stale one is gone); (4) confirm a re-pin does NOT emit a "pinned a message"
+  notification (disable_notification); (5) confirm an unchanged tick with the board already pinned makes
+  no pin/unpin API call (inspect the bot log). Verify against the real surface, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-467-pipeline-board-only-pin.feature
+  steps:
+    - "The pin sync enforces the board as the single pin only when it is not already the top pin"
+    - "A failed pin attempt is best-effort and does not abort the tick"
+
+human_approval: approved
+approval_context: >
+  Human-requested via the Operator front desk 2026-07-16 (INTAKE-operator-question-1784236267242),
+  with a specifier clarifying round. FIRM contract: the pipeline board message is the ONLY pinned
+  message in the group; enforcement is CONTINUOUS (every tick unpins anything that is not the current
+  board, including later human pins); pins are chat-level and SILENT; the pin follows the board across
+  its BL-462 reposts; an already-clean tick is a no-op. Build-time details NOT gating: exact wrapper
+  signatures, the new module name, log wording. Serialize on conciergeTick.ts /
+  telegram-front-desk-bot.ts after in-flight board tickets BL-464/BL-465. NEW feature file
+  specs/features/BL-467-pipeline-board-only-pin.feature — flagged for human review before build.
+
+mutation_cost: low

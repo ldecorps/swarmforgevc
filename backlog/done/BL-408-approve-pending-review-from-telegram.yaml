@@ -1,0 +1,88 @@
+id: BL-408
+title: "Fix the pending-review value drift and active-only scan so approve-from-Telegram actually fires"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 1
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784108659505.md — Operator-relayed Telegram question, 2026-07-15T09:44Z, human-requested ASAP via SUP-6: 'build an efficient way to approve tickets ... directly from Telegram'. Drained with the human 2026-07-15: this is Slice 1 of a 3-slice plan appended to the intake by a prior Claude Code session's root-cause analysis; slice 1 alone delivers approve-from-Telegram and is specced as its own ticket per the human's priority. Slices 2 (reject/amend verbs) and 3 (inline-keyboard buttons) are follow-up tickets, not this one."
+
+notes: |
+  THE FEATURE IS ALREADY BUILT AND WIRED (BL-357) BUT DEAD. Outbound,
+  conciergeTick posts an approval request into the ticket's topic
+  (`pendingApprovalFor` -> ApprovalRequested); inbound, a topic reply
+  matching `isApprovalReplyText` calls `recordApprovalReply`, which flips
+  the ticket's `human_approval` line (extension/src/concierge/
+  pendingApprovalReply.ts). It no-ops on every real ticket today because of
+  two independent defects in that chain — fix both, this ticket does not
+  add new machinery.
+
+  DEFECT 1 - VALUE DRIFT. The specifier writes `human_approval: pending-review`
+  (see every current paused ticket: BL-395, 403, 404, 405, 406, 407), but:
+  - `extension/src/panel/backlogReader.ts`'s `VALID_HUMAN_APPROVALS` is
+    `new Set(['pending', 'approved'])` (line 213), so
+    `normalizeHumanApproval()` returns `undefined` for `pending-review` —
+    the ticket reads as having NO approval state at all.
+  - `extension/src/concierge/pendingApprovalReply.ts`'s
+    `HUMAN_APPROVAL_PENDING_PATTERN` (`/^human_approval:\s*pending\s*$/m`,
+    line 22) does not match `pending-review`, so a reply never flips it.
+  FIX: treat `pending-review` as the pending state across BOTH sites —
+  widen `VALID_HUMAN_APPROVALS` (or however normalizeHumanApproval
+  classifies it) to accept `pending-review` as equivalent to `pending`, and
+  widen `HUMAN_APPROVAL_PENDING_PATTERN` (or the match logic around it) to
+  match `pending-review` too, still replacing it with
+  `human_approval: approved` on a matched reply. Do not change what the
+  specifier writes — the fix is in the readers, not the spec convention.
+
+  DEFECT 2 - FOLDER SCOPE. `conciergeTick.ts`'s `pendingApprovalFor` (line
+  102) is called as `pendingApprovalFor(folders.active)` (line 116) — it
+  scans ONLY `active/`. By pipeline convention (constitution Article 3,
+  specifier role) a ticket awaiting human review sits in `backlog/paused/`
+  until the coordinator promotes it — every one of the 6 current
+  pending-review tickets is in `paused/`. `ApprovalRequested` therefore
+  never fires for the tickets the feature exists to approve.
+  FIX: widen the scan `pendingApprovalFor` is called over to active + paused
+  (never `done` — an approval request for a finished ticket is meaningless),
+  mirroring the same active+paused walk `findTicketFilePath` in
+  `pendingApprovalReply.ts` already uses (that function's own comment notes
+  it never touches `done`). Reuse `forEachLiveTicketFile` or the equivalent
+  shared active+paused walk rather than hand-rolling a second copy of the
+  same folder concatenation.
+
+  CHANGE-GATE / EMIT-KEY THE POST (BL-394 lesson, explicitly called out in
+  the intake). Widening the scan means `ApprovalRequested` can now fire for
+  every paused ticket on every concierge tick unless it is change-gated like
+  every other event type — a paused ticket must be announced ONCE, not
+  re-announced on each tick. Use the project's existing emittedKey /
+  change-gate convention (the same mechanism BL-394 added for
+  epic-progress) so a ticket already carrying an outstanding
+  ApprovalRequested for its current pending state is not re-posted.
+
+  OUT OF SCOPE (deferred to follow-up tickets, not silently dropped):
+  - Slice 2: reject `<reason>` / amend `<note>` reply verbs (today only
+    "approve" is handled).
+  - Slice 3: Telegram inline-keyboard buttons (Approve/Amend/Reject) as a
+    callback_query alternative to typed replies.
+
+  E2E QA PROCEDURE: with a real paused ticket carrying
+  `human_approval: pending-review`, run a concierge tick and confirm an
+  ApprovalRequested post appears in that ticket's topic exactly once (not
+  once per tick); reply "approve" in that topic and confirm the ticket's
+  `human_approval:` line flips to `approved` in the backlog file on disk.
+  Then run another concierge tick and confirm no further approval-request
+  repost occurs for the now-approved ticket.
+
+acceptance:
+  feature: specs/features/BL-408-approve-pending-review-from-telegram.feature
+  steps:
+    - "A pending-review ticket is recognized as pending, not unset"
+    - "A reply of approve flips a pending-review ticket to approved"
+    - "A paused ticket's approval request is posted, not just an active one's"
+    - "An already-requested approval is not re-posted on every tick"
+    - "A done ticket never gets an approval request"
+
+human_approval: approved  # human, direct in Claude Code session with the coordinator, 2026-07-15: confirmed the SUP-6 ASAP request applies to this ticket, promoting despite the approve-from-Telegram mechanism itself being what's broken (chicken-and-egg — see notes)
+
+mutation_cost: low

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -24,9 +25,10 @@ const { PaneTailer } = require('../out/panel/paneTailer');
 // milliseconds, with no real timers and no subprocesses.
 let capturedWindow = '';
 beforeEach(() => {
+  vi.spyOn(tmuxClient, 'readLiveSwarmRoles').mockImplementation(tmuxClient.readSwarmRoles);
   vi.spyOn(tmuxClient, 'sessionExists').mockReturnValue(true);
   vi.spyOn(tmuxClient, 'getPaneBaseIndex').mockReturnValue(0);
-  vi.spyOn(tmuxClient, 'getPaneCommand').mockReturnValue('claude');
+  vi.spyOn(tmuxClient, 'getPanePidAndCommand').mockReturnValue({ pid: '1', command: 'claude' });
   vi.spyOn(tmuxClient, 'capturePane').mockImplementation(() => ({ stdout: capturedWindow, exitCode: 0, stderr: '' }));
   vi.spyOn(tmuxClient, 'resizeWindow').mockImplementation(() => {});
   vi.spyOn(tmuxClient, 'setHistoryLimit').mockImplementation(() => {});
@@ -38,7 +40,7 @@ afterEach(() => {
 });
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-panetailer-scrollback-'));
+  return mkTmpDir('sfvc-panetailer-scrollback-');
 }
 
 function writeState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\tclaude\n') {

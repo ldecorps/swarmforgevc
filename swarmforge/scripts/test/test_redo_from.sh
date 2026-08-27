@@ -5,6 +5,19 @@
 
 set -euo pipefail
 
+# BL-128: every bb "$REDO" invocation below relies on queue-handoff!'s
+# SWARMFORGE_ROLE-unset fallback to "coordinator" (salvage_lib.bb) to land
+# its freshly-queued handoff in $OUTBOX (coordinator's own per-role
+# mailbox). Before the mailbox split this didn't matter - every role's
+# outbox was the same shared flat directory - but now an ambient
+# SWARMFORGE_ROLE inherited from the invoking shell (e.g. run interactively
+# inside one of the pipeline agents' own role-scoped sessions, which already
+# export it) silently redirects the queued handoff into THAT role's own
+# mailbox instead, failing every assertion against $OUTBOX. Unset it here so
+# this test's outcome depends only on its own fixture, never on the caller's
+# environment.
+unset SWARMFORGE_ROLE
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REDO="$SCRIPT_DIR/../redo_from.bb"
 SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
@@ -41,7 +54,10 @@ mkdir -p "$ROOT/.swarmforge" "$CODER_WT/.swarmforge/handoffs/inbox/new" \
 
 ITEM="BL-900"
 TASK="BL-900-demo-item"
-OUTBOX="$ROOT/.swarmforge/handoffs/outbox"
+# BL-128: queue-handoff! sends as coordinator by default (salvage_lib.bb's
+# own SWARMFORGE_ROLE fallback), so redo's freshly-queued handoff lands in
+# coordinator's own per-role outbox, not the old shared flat one.
+OUTBOX="$ROOT/.swarmforge/handoffs/coordinator/outbox"
 
 drop_handoff() {  # dir name recipient extra-header
   printf 'id: %s\nfrom: specifier\nto: %s\nrecipient: %s\npriority: 00\ntype: git_handoff\ntask: %s\ncommit: %s\n%s\nbody\n' \
@@ -106,7 +122,10 @@ printf 'type: git_handoff\nto: coder\npriority: 00\ntask: %s\ncommit: %s\nreject
   "$TASK" "$C1" > "$ROOT/tmp/reject-draft.txt"
 (cd "$ROOT" && SWARMFORGE_ROLE=QA bb "$SWARM_HANDOFF" "$ROOT/tmp/reject-draft.txt" > /dev/null) \
   || fail "04: swarm_handoff rejected a draft carrying rejection_reason"
-REJECTED="$(ls -t "$OUTBOX"/*.handoff | head -1)"
+# QA's own worktree-name ("QA", not "master") keeps QA's flat, unprefixed
+# outbox layout - distinct from $OUTBOX above, which is coordinator's.
+QA_OUTBOX="$ROOT/.swarmforge/handoffs/outbox"
+REJECTED="$(ls -t "$QA_OUTBOX"/*.handoff | head -1)"
 grep -q "^rejection_reason: acceptance scenario 3 fails on empty input$" "$REJECTED" \
   || fail "04: rejection_reason header not preserved in the queued handoff"
 # simulate delivery: the rejection lands in the coder inbox, then gets redone
@@ -168,5 +187,24 @@ for stage in architect hardender documenter qa; do
   [[ -n "$(git -C "$ROOT" tag -l "redo/$ITEM/$stage/*")" ]] || fail "01-$stage: no tag"
 done
 pass "01: all pipeline stages accept a redo and address the right role"
+
+# ── 06: required_stages routing (BL-606) must never rewrite a redo destination
+# An operator-named redo_from stage is a deliberately-chosen, out-of-forward-
+# order destination - required_stages routing must return it untouched even
+# when the ticket declares a required_stages subset that excludes that stage
+# (architect BL-606 bounce defect 2). redo_from now stamps its own queued
+# handoff with rejection_reason (mirroring reroute.bb's reroute_reason) so
+# route-required-stages can recognize it as such.
+mkdir -p "$ROOT/backlog/active"
+printf 'id: %s\nrequired_stages: [coder, qa]\nstatus: active\n' "$ITEM" > "$ROOT/backlog/active/$ITEM.yaml"
+rm -f "$OUTBOX"/*.handoff
+(cd "$ROOT" && SWARMFORGE_REQUIRED_STAGES_ROUTING=1 bb "$REDO" "$ITEM" documenter "operator wants a docs-only redo" > /dev/null) \
+  || fail "06: redo failed with required_stages routing enabled"
+QUEUED="$(ls -t "$OUTBOX"/*.handoff | head -1)"
+grep -q "^to: documenter$" "$QUEUED" \
+  || fail "06: required_stages routing rewrote a redo_from destination's to: (expected documenter, the operator-named stage, even though it is outside the ticket's declared [coder, qa] subset); got: $(grep '^to:' "$QUEUED")"
+grep -q "^rejection_reason: operator wants a docs-only redo$" "$QUEUED" \
+  || fail "06: redo_from's own rejection_reason header missing from the queued handoff"
+pass "06: required_stages routing leaves a redo_from destination untouched even when the target is outside the declared subset"
 
 echo "ALL PASS"

@@ -11,9 +11,10 @@
 
 (ns salvage-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 
 (def stage->role
   {"coder" "coder"
@@ -33,7 +34,8 @@
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 
 (defn sh-out [dir & args]
-  (let [result (apply process/sh {:dir dir} args)]
+  ;; BL-1031: bounded chokepoint; :dir must survive (invariant 2).
+  (let [result (apply daemon-cycle-guard-lib/sh! {:dir dir} args)]
     (when (zero? (:exit result))
       (str/trim (:out result)))))
 
@@ -48,13 +50,6 @@
         (if (and candidate (fs/exists? (fs/path candidate ".swarmforge" "roles.tsv")))
           candidate
           (exit! 1 "Cannot find SwarmForge project root"))))))
-
-(defn worktree-paths [root]
-  (->> (str/split-lines (slurp (str (fs/path root ".swarmforge" "roles.tsv"))))
-       (remove str/blank?)
-       (map #(get (str/split % #"\t") 2))
-       (remove nil?)
-       distinct))
 
 (defn header-field [file field]
   (let [prefix (str field ": ")]
@@ -77,26 +72,30 @@
 
 (defn abandon-stale! [root item-id]
   (vec
-   (for [wt (worktree-paths root)
-         state ["new" "in_process"]
-         :let [inbox (fs/path wt ".swarmforge" "handoffs" "inbox")]
-         file (handoff-files (fs/path inbox state))
+   (for [role-info (handoff-lib/load-all-roles root)
+         state [:new :in_process]
+         file (handoff-files (handoff-lib/mailbox-dir role-info state))
          :when (item-handoff? file item-id)]
-     (let [abandoned-dir (fs/path inbox "abandoned")
+     (let [abandoned-dir (handoff-lib/mailbox-dir role-info :abandoned)
            target (fs/path abandoned-dir (fs/file-name file))]
        (fs/create-dirs abandoned-dir)
        (fs/move file target {:replace-existing false})
+       ;; BL-615: same post-move sidecar cleanup as done_with_current_task —
+       ;; remove-sidecars-of! deletes by the pre-move path string.
+       (handoff-lib/remove-sidecars-of! file)
        target))))
 
 (defn latest-item-handoffs
-  "The item's handoffs across every worktree's completed/ and abandoned/
-   dirs, newest first (filenames embed timestamp+sequence)."
+  "The item's handoffs across every ROLE's own completed/ and abandoned/
+   mailbox dirs, newest first (filenames embed timestamp+sequence).
+   Iterating per role (not deduped worktree path) is what visits
+   master-resident roles' now-distinct per-role subdirectories instead of
+   scanning their one shared worktree path just once (BL-128)."
   [root item-id]
-  (->> (worktree-paths root)
-       (mapcat (fn [wt]
-                 (let [inbox (fs/path wt ".swarmforge" "handoffs" "inbox")]
-                   (concat (handoff-files (fs/path inbox "completed"))
-                           (handoff-files (fs/path inbox "abandoned"))))))
+  (->> (handoff-lib/load-all-roles root)
+       (mapcat (fn [role-info]
+                 (concat (handoff-files (handoff-lib/mailbox-dir role-info :completed))
+                         (handoff-files (handoff-lib/mailbox-dir role-info :abandoned)))))
        (filter #(item-handoff? % item-id))
        (sort-by #(fs/file-name %))
        reverse))
@@ -129,7 +128,7 @@
         base (str "redo/" item-id "/" stage "/" stamp)]
     (loop [attempt 0]
       (let [tag (if (zero? attempt) base (str base "-" (inc attempt)))
-            result (process/sh {:dir root} "git" "tag" tag)]
+            result (daemon-cycle-guard-lib/sh! {:dir root} "git" "tag" tag)]
         (cond
           (zero? (:exit result)) tag
 
@@ -158,7 +157,7 @@
                 "task: " task "\n"
                 "commit: " commit "\n"
                 extra-lines))
-     (let [result (process/sh {:dir root
+     (let [result (daemon-cycle-guard-lib/sh! {:dir root
                                :extra-env {"SWARMFORGE_ROLE"
                                            (or (not-empty (System/getenv "SWARMFORGE_ROLE"))
                                                "coordinator")}}

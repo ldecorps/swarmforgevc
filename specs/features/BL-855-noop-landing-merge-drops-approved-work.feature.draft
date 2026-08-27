@@ -1,0 +1,53 @@
+Feature: A merge that takes none of what it merges never reaches origin
+
+  BL-848's landing merge recorded correct ancestry and an accurate-sounding
+  message while taking zero of its second parent's 108 files. The push sweep
+  pushed it, the ticket closed, and every audit trail claimed success. These
+  scenarios pin the missing question — did the merge actually TAKE anything —
+  and, just as importantly, pin that a merge with nothing to take is not a
+  fault, since 2 of the 4 tree-equal merges in the last 400 were exactly that.
+
+  Background:
+    Given a repository whose history contains merge commits
+    And the push sweep is inspecting the commits on main that have not reached origin
+
+  # BL-855 noop-landing-merge-drops-approved-work-01
+  Scenario Outline: The verdict turns on whether the merge took what was offered
+    Given a merge commit whose second parent offers <offered> paths its first parent lacks
+    And that merge commit's tree <tree_relation> its first parent's tree
+    When the push sweep decides whether to push it
+    Then the push is <verdict>
+
+    Examples:
+      | offered | tree_relation   | verdict |
+      | 108     | is identical to | refused |
+      | 0       | is identical to | allowed |
+      | 108     | differs from    | allowed |
+
+  # BL-855 noop-landing-merge-drops-approved-work-02
+  Scenario: The refusal states its reason, not a bare status
+    Given a merge commit that took none of the 108 paths its second parent offered
+    When the push sweep refuses to push it
+    Then the refusal names the offending merge commit
+    And the refusal names that commit's second parent
+    And the refusal states that 108 paths were dropped
+
+  # BL-855 noop-landing-merge-drops-approved-work-03
+  Scenario: Being genuinely QA-approved does not excuse a merge that took nothing
+    Given a merge commit that took none of the 108 paths its second parent offered
+    And that second parent is a genuinely QA-approved commit
+    When the push sweep decides whether to push it
+    Then the push is refused
+
+  # BL-855 noop-landing-merge-drops-approved-work-04
+  Scenario: A dirty working tree cannot change the verdict
+    Given a merge commit that took none of the 108 paths its second parent offered
+    And the working tree has uncommitted changes to those same paths
+    When the push sweep decides whether to push it
+    Then the push is refused
+
+  # BL-855 noop-landing-merge-drops-approved-work-05
+  Scenario: A non-merge commit is not subject to the check
+    Given a commit with a single parent
+    When the push sweep decides whether to push it
+    Then the push is allowed

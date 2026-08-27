@@ -1,0 +1,87 @@
+id: BL-473
+title: "Pipeline board: show EVERY ticket physically in backlog/active/ — a not-yet-held active ticket renders in a 'not started' state instead of vanishing (be as good as the PWA for active tickets)"
+milestone: M8
+type: bug
+severity: medium
+epic: ""
+priority: 1
+direction: human-requested
+depends_on: []
+source: "human (ldecorps) directly 2026-07-16: 'pipeline board — show as active the BL ticket physically sitting in the active backlog folder. that's easy to do. if their position in the swarm is not known, it's a bug to fix. but at a minimum, the pipeline board should be as good as the PWA for displaying active tickets.' Residual gap after BL-464; pipeline-board cluster (BL-462/464/465/467/468/471)."
+
+description: |
+  The pipeline board currently DROPS an active ticket whose swarm position it cannot resolve, so the
+  board under-reports what is active — the human wants it to be at least as complete as the static PWA,
+  which lists every active ticket.
+
+  ROOT OF THE GAP (verified in code 2026-07-16): after BL-464 the board's active rows come from an
+  authoritative ticket->stage map (.swarmforge/board/ticket-stage-map.json). But that map only carries a
+  ticket whose stage RESOLVES to a role: swarmforge/scripts/pipeline_stage_cli.bb's filter-active drops
+  any active id it cannot join to an in_process handoff, and extension/src/concierge/pipelineBoard.ts
+  computePipelineBoard builds rows ONLY from the resulting role-held map. A ticket physically in
+  backlog/active/ that no role currently holds — freshly promoted and not yet dequeued, or momentarily
+  between two stages — therefore produces NO row and disappears from the board (the exact case BL-471's
+  own correction had judged "correct behaviour"; the human is overriding that).
+
+  THE FIX / CONTRACT: physical membership in backlog/active/ is ground truth for "what is active"; the
+  stage map only DECORATES a row's position. The board's active row SET must equal the tickets whose
+  files sit in backlog/active/. Each row's stage is its authoritative stage when known; a ticket no role
+  currently holds renders in a distinct NOT-STARTED state and is never marked at any pipeline stage and
+  never dropped.
+
+  NOT-STARTED realisation (human's choice 2026-07-16): a "?" marker OR a dedicated "not started" column
+  on the right-hand side of the grid. The human's own reasoning: an active ticket no role holds "is not
+  started yet — it cannot be something else, can it?" — largely true (the common case is promoted-but-
+  not-yet-dequeued); the one honest caveat is a brief BETWEEN-STAGES gap (a role handed off, the next has
+  not dequeued), which from the board's data is indistinguishable from not-started. Both are the same
+  observable condition: in backlog/active/, held by no role. Exact glyph / header / left-vs-right
+  placement is a build-time cosmetic detail, not a promotion gate; the human's stated preference is a
+  "not started" column on the right-hand side (or a "?" marker).
+
+  Scope (grep-confirm the live path at build):
+    - extension/src/concierge/pipelineBoard.ts computePipelineBoard: build one row for EVERY active
+      ticket id (a new membership input = the physical backlog/active/ set), placing its X from the
+      role-held map and defaulting to the not-started state when the map has no stage for it. Keep the
+      one-row-per-ticket guarantee (BL-464) and the render pure/testable.
+    - extension/src/concierge/conciergeTick.ts syncBoardIfWired: it already loads folders.active — feed
+      those ids in as the membership set (RECOMMENDED seam; folders.active is ground truth independent of
+      the bb map's completeness). Alternatively pipeline_stage_cli.bb could emit a not-started sentinel
+      for every unresolved active ticket — build choice, as long as the observable contract holds.
+    - INHERITED and unchanged (BL-452/455/462/464): READ-ONLY board; edge-triggered on rendered content;
+      deterministic ordering; epic grouping; keep the render + join pure/testable, Telegram API + tmux the
+      untested boundary.
+
+  Sequencing: edits pipelineBoard.ts / conciergeTick.ts — the standing-topic/board overlap cluster.
+  Serialize against every in-flight board ticket (BL-465 render, BL-468 post-before-delete, BL-471
+  id-casing, paused BL-467 pin); build on whatever board scaffolding is on main at build time. Small,
+  self-contained membership change once the ordering is respected.
+
+  E2E QA PROCEDURE: on the real Telegram board, promote a ticket into backlog/active/ that no role has
+  dequeued yet and confirm it appears as an active row in the NOT-STARTED state (not absent, not marked
+  at a stage); then have a role pick it up and confirm the same ticket moves to that role's stage. Cross
+  the board's active-row count against `ls backlog/active/*.yaml` and confirm they match one-for-one.
+  Verify against the real surface, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-473-pipeline-board-shows-every-active-ticket.feature
+  steps:
+    - "A held active ticket still appears at its role's stage"
+    - "An active ticket no role holds appears in the not-started state and is not marked at any stage"
+    - "Every file in backlog/active/ is a board row exactly once, and only those"
+    - "A not-started ticket a role then picks up moves to that role's stage"
+
+human_approval: approved
+approval_context: >
+  Human-requested directly 2026-07-16 (ldecorps): "show as active the BL ticket physically sitting in the
+  active backlog folder ... at a minimum, the pipeline board should be as good as the PWA for displaying
+  active tickets." FIRM contract: the board's active row set equals the tickets physically in
+  backlog/active/ (one row each, only those); a ticket no role holds renders in a distinct NOT-STARTED
+  state, never dropped and never marked at a pipeline stage; a held ticket is unchanged (its role stage).
+  Realisation of the not-started state chosen by the human 2026-07-16: a "?" marker OR a dedicated
+  "not started" column on the right-hand side — exact glyph/header/placement is a build-time cosmetic
+  detail, NOT a promotion gate. Serialize on the board files against in-flight BL-465/BL-468/BL-471 and
+  paused BL-467. Ready for promotion once the board-file ordering is clear. A companion investigation
+  ticket (BL-474) tracks the human's "if their position is not known, it's a bug to fix" — why a stage
+  goes unknown at all — separately from this render-anyway fix.
+
+mutation_cost: low

@@ -50,7 +50,16 @@ done
 
 ITEM="BL-900"
 TASK="BL-900-demo-item"
-OUTBOX="$ROOT/.swarmforge/handoffs/outbox"
+# BL-128: state-dir (and so the outbox) is now resolved per-SENDER role, not
+# just per-invocation cwd - coder/cleaner/architect each have their own
+# dedicated worktree (not master-resident), so each keeps its own flat,
+# unprefixed outbox at its own worktree path. Every reroute/resume call
+# below runs as a specific SWARMFORGE_ROLE, so the outbox to check depends
+# on which role issued that particular call.
+CODER_OUTBOX="$CODER_WT/.swarmforge/handoffs/outbox"
+CLEANER_OUTBOX="$CLEANER_WT/.swarmforge/handoffs/outbox"
+ARCHITECT_OUTBOX="$ARCHITECT_WT/.swarmforge/handoffs/outbox"
+OUTBOX="$CODER_OUTBOX"
 
 # Seed a completed handoff so task-name/last-good-commit resolve (mirrors
 # test_redo_from.sh's fixture pattern).
@@ -110,7 +119,8 @@ pass "05: reroute abandons stale in-flight handoffs the same way redo_from does 
 OUT="$(cd "$ARCHITECT_WT" && SWARMFORGE_ROLE=architect bb "$RESUME" "$ITEM" "review done")"
 grep -q "^REROUTE RESUME: $ITEM resumes at cleaner" <<< "$OUT" || fail "02: unexpected resume output: $OUT"
 
-QUEUED="$(ls -t "$OUTBOX"/*.handoff | head -1)"
+# resume ran as architect, so the fresh handoff lands in architect's own outbox
+QUEUED="$(ls -t "$ARCHITECT_OUTBOX"/*.handoff | head -1)"
 grep -q "^to: cleaner$" "$QUEUED" || fail "02: resume did not re-enter the chain at the interrupted stage (cleaner)"
 grep -q "^reroute_reason: review done$" "$QUEUED" || fail "02: resume reason note missing"
 
@@ -171,5 +181,26 @@ grep -qi "livelock" <<< "$OUT" || fail "04: unexpected error for a livelock rero
 grep -q '"event":"reroute-blocked"' "$ROOT/.swarmforge/run-log.jsonl" || fail "04: no reroute-blocked event in the run log"
 grep -q '"reason":"livelock"' "$ROOT/.swarmforge/run-log.jsonl" || fail "04: run log missing livelock reason"
 pass "04: livelock (repeating coder<->cleaner pattern) stops automatic rerouting and escalates"
+
+# ── 06: required_stages routing (BL-606) must never rewrite a reroute detour ─
+# A reroute destination is a deliberately-chosen, out-of-forward-order target
+# (reroute_reason on the draft) - required_stages routing must return it
+# untouched even when the ticket declares a required_stages subset that
+# excludes that destination (architect BL-606 bounce defect 2).
+ITEM4="BL-904"
+TASK4="BL-904-required-stages-reroute-item"
+printf 'id: seed4\nfrom: specifier\nto: coder\nrecipient: coder\npriority: 00\ntype: git_handoff\ntask: %s\ncommit: %s\n\nbody\n' \
+  "$TASK4" "$HEAD10" > "$CODER_WT/.swarmforge/handoffs/inbox/completed/00_seed4.handoff"
+mkdir -p "$ROOT/backlog/active"
+printf 'id: %s\nrequired_stages: [coder, qa]\nstatus: active\n' "$ITEM4" > "$ROOT/backlog/active/$ITEM4.yaml"
+
+rm -f "$OUTBOX"/*.handoff
+OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder SWARMFORGE_REQUIRED_STAGES_ROUTING=1 bb "$REROUTE" "$ITEM4" architect "escalate for design review")"
+grep -q "^REROUTE: $ITEM4 from coder to architect" <<< "$OUT" || fail "06: unexpected reroute output: $OUT"
+QUEUED="$(ls -t "$OUTBOX"/*.handoff | head -1)"
+grep -q "^to: architect$" "$QUEUED" \
+  || fail "06: required_stages routing rewrote a reroute detour's to: (expected architect, the deliberately-chosen destination, even though it is outside the ticket's declared [coder, qa] subset); got: $(grep '^to:' "$QUEUED")"
+grep -q "^reroute_reason: escalate for design review$" "$QUEUED" || fail "06: reroute reason missing from the queued handoff"
+pass "06: required_stages routing leaves a reroute (reroute_reason) destination untouched even when the target is outside the declared subset"
 
 echo "ALL PASS"

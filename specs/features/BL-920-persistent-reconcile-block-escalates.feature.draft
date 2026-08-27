@@ -1,0 +1,53 @@
+Feature: A reconcile block that persists reaches the operator
+
+  # BL-920. BL-891's sweep surfaces ONE coordinator note per block episode
+  # and is then silent for as long as the block lasts, so 84 landed commits
+  # sat off local main with no further signal. Parked as .feature.draft
+  # (BL-233): a Babashka daemon sweep the JS acceptance runner cannot bind.
+  # The live gate is the unit suite under swarmforge/scripts/test/.
+
+  Background:
+    Given a master checkout whose local main is behind origin/main
+
+  # BL-920 first-block-notes-coordinator-01
+  Scenario Outline: the first tick of a block still notes the coordinator
+    Given the sweep is blocked by "<reason>"
+    When the reconcile sweep runs for the first time in that episode
+    Then the coordinator is sent one note naming the reason
+    And the operator is not escalated to yet
+
+    Examples:
+      | reason        |
+      | a dirty tree  |
+      | a merge conflict |
+
+  # BL-920 persisting-block-escalates-02
+  Scenario Outline: a block that persists escalates to the operator
+    Given the sweep is blocked by "<reason>"
+    When the block is still unresolved after the escalation threshold of ticks
+    Then the operator is escalated to
+    And the escalation names the reason and how far behind local main is
+
+    Examples:
+      | reason        |
+      | a dirty tree  |
+      | a merge conflict |
+
+  # BL-920 escalates-once-per-episode-03
+  Scenario: a persisting block escalates once, not on every tick
+    Given a block that has already escalated to the operator
+    When the sweep runs again with the same block unresolved
+    Then the operator is not escalated to again
+
+  # BL-920 resolved-block-resets-04
+  Scenario: resolving a block clears the escalation state
+    Given a block that has already escalated to the operator
+    When the block is resolved and local main reconciles
+    Then a later unrelated block notes the coordinator and escalates on its own merits
+
+  # BL-920 no-block-never-escalates-05
+  Scenario: a sweep that is never blocked never escalates
+    Given the working tree allows the merge to proceed
+    When the reconcile sweep runs
+    Then local main is reconciled with origin/main
+    And the operator is not escalated to

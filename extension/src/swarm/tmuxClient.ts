@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { sendInstructionVerified, VerifiedInjectResult } from './verifiedInject';
 import { isPaneActivelyProcessing } from '../panel/agentPaneState';
+import { classifyProviderError, ForgeErrorCategory } from './providerErrorTaxonomy';
+import * as realClock from './sleepSync';
 
 export interface TmuxRunResult {
   stdout: string;
@@ -157,6 +159,50 @@ export function getPanePid(socketPath: string, target: string): string {
   return result.stdout.trim();
 }
 
+// BL-362 QA bounce follow-up: PaneTailer's hot poll path queried pane_pid and
+// pane_current_command as two separate `display-message` subprocess spawns
+// per role per tick - a real, measured cost (each tmux invocation is a real
+// process spawn), not just a test-mocking artifact. tmux's own
+// `display-message -p` format string can return several placeholders from a
+// SINGLE call, so both values are fetched together here, halving that
+// specific per-role-per-tick spawn count. getPanePid/getPaneCommand above are
+// kept unchanged (still independently used/tested) for any caller that only
+// needs one value.
+export function getPanePidAndCommand(socketPath: string, target: string): { pid: string; command: string } {
+  const result = runCommand('tmux', [
+    '-S',
+    socketPath,
+    'display-message',
+    '-p',
+    '-t',
+    target,
+    '#{pane_pid}\t#{pane_current_command}',
+  ]);
+  if (result.exitCode !== 0) {
+    return { pid: '', command: '' };
+  }
+  const [pid, command] = result.stdout.trim().split('\t');
+  return { pid: pid ?? '', command: command ?? '' };
+}
+
+// BL-423: the half-launch check for a role's pane - a window/session can
+// exist (sessionExists true) with an idle SHELL sitting in it and no agent
+// ever spawned (the 12:05Z SWARM_CONTROL_LOST failure mode). pane_pid alone
+// only names the pane's own shell, never the agent - the operator's own
+// "pane_current_command reports zsh with a live claude child" experience is
+// that pane_current_command is not a reliable bootstrapped/not signal
+// either (a shell can wrap/background its child so the pane still reports
+// the shell). The robust, agent-agnostic signal is whether that shell pid
+// has ANY live child process at all - real bootstrap always forks one,
+// an unbootstrapped idle shell never does.
+export function hasLivePaneChild(panePid: string): boolean {
+  if (!panePid) {
+    return false;
+  }
+  const result = runCommand('pgrep', ['-P', panePid]);
+  return result.exitCode === 0 && result.stdout.trim().length > 0;
+}
+
 export function capturePane(
   socketPath: string,
   target: string,
@@ -288,6 +334,20 @@ export function readSwarmRoles(targetPath: string): SwarmRole[] {
   return roles;
 }
 
+/**
+ * sessions.tsv ∩ live tmux sessions. Under config rotation router, the pack
+ * still lists every pipeline role in sessions.tsv, but only the resident
+ * pane (usually coder) and coordinator exist — dormant roles must not be
+ * treated as tiles or readiness blockers.
+ */
+export function readLiveSwarmRoles(targetPath: string): SwarmRole[] {
+  const socket = readTmuxSocket(targetPath);
+  if (!socket) {
+    return [];
+  }
+  return readSwarmRoles(targetPath).filter((role) => sessionExists(socket, role.session));
+}
+
 export interface RespawnResult {
   success: boolean;
   message: string;
@@ -295,14 +355,15 @@ export interface RespawnResult {
   // respawn outright (BL-147): the pane was never touched, so callers that
   // bound automatic respawn attempts must not count this as a used attempt.
   skippedBusy?: boolean;
+  // BL-207: the stable Forge error category message's raw detail
+  // classifies to - never set on success, or on skippedBusy (a deliberate
+  // safety skip, not a backend failure to categorize). Orchestration/UI can
+  // branch on this instead of parsing message text.
+  category?: ForgeErrorCategory;
 }
 
-// Synchronous backoff wait for the retry loop below. The extension host is
-// single-threaded and blocking here is deliberate and bounded (a few hundred
-// ms, only on a verification retry) - the same tradeoff runCommand already
-// makes with its blocking spawnSync calls.
-export function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function respawnFailure(message: string): RespawnResult {
+  return { success: false, message, category: classifyProviderError(message).category };
 }
 
 /**
@@ -327,20 +388,30 @@ export function respawnPaneForced(
   ]);
 }
 
-export function respawnAgent(targetPath: string, role: string): RespawnResult {
+// BL-376: `wait` is the SAME backoff seam sendInstructionVerified already
+// accepts one layer down - respawnAgent simply never exposed it upward, so
+// no test could reach it and every wedged-pane retry blocked on a REAL
+// Atomics.wait (~800ms apiece). Optional and defaulted to the real
+// sleepSync (now its own module, ./sleepSync - see that file's own comment
+// for why a same-file default would not have been spy-able) so every
+// existing production call site (extension.ts, swarmPanel.ts,
+// coordinatorLossTrigger.ts, claudeSettingsFile.ts) is unaffected; a test
+// drives the whole retry loop with an injected fake instead, with zero
+// real time spent.
+export function respawnAgent(targetPath: string, role: string, wait?: (ms: number) => void): RespawnResult {
   const launchScript = path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`);
   if (!fs.existsSync(launchScript)) {
-    return { success: false, message: `No launch script found for role "${role}" at ${launchScript}` };
+    return respawnFailure(`No launch script found for role "${role}" at ${launchScript}`);
   }
 
   const socketPath = readTmuxSocket(targetPath);
   if (!socketPath) {
-    return { success: false, message: `Cannot respawn "${role}": no tmux socket recorded (is the swarm running?)` };
+    return respawnFailure(`Cannot respawn "${role}": no tmux socket recorded (is the swarm running?)`);
   }
 
   const roleEntry = readSwarmRoles(targetPath).find((entry) => entry.role === role);
   if (!roleEntry) {
-    return { success: false, message: `Cannot respawn "${role}": role not found in sessions.tsv` };
+    return respawnFailure(`Cannot respawn "${role}": role not found in sessions.tsv`);
   }
 
   // The launch script runs `claude` in the foreground and only exits when the
@@ -349,7 +420,32 @@ export function respawnAgent(targetPath: string, role: string): RespawnResult {
   // freezing the whole extension, and leave the agent outside tmux where no
   // tile can see it.
   const target = resolveAgentPaneTarget(socketPath, roleEntry.session, getPaneBaseIndex(socketPath));
-  return performVerifiedRespawn(socketPath, target, launchScript, role);
+  return performVerifiedRespawn(socketPath, target, launchScript, role, wait ?? realClock.sleepSync);
+}
+
+// BL-137 live repro: a chaser's liveness/activity signal can be stale and
+// misjudge a genuinely busy agent as stuck, escalating to a forced respawn -
+// which then typed a shell command into a coordinator pane that was actually
+// mid-turn. A fresh capture right before injecting anything is the only way
+// performVerifiedRespawn can independently confirm the caller's assumption;
+// "esc to interrupt" is Claude Code's own busy footer, so its presence
+// overrides the caller and refuses the respawn outright, without typing or
+// force-killing the pane.
+// BL-376 CRAP split: pulled out of performVerifiedRespawn (complexity 7,
+// same "split for CRAP" reason as BL-093 below) so the precheck's own
+// if+&& decision point no longer counts against the retry-loop wiring.
+// Returns the skip result when the pane is busy, undefined when clear to
+// proceed.
+function checkPaneBusy(socketPath: string, target: string, role: string): RespawnResult | undefined {
+  const precheck = capturePane(socketPath, target);
+  if (precheck.exitCode === 0 && isPaneActivelyProcessing(precheck.stdout)) {
+    return {
+      success: false,
+      skippedBusy: true,
+      message: `Skipped respawn for "${role}": pane is actively processing a turn (esc to interrupt) - not stuck.`,
+    };
+  }
+  return undefined;
 }
 
 // BL-093: split out of respawnAgent (CRAP) - type-and-verify first (works
@@ -358,22 +454,10 @@ export function respawnAgent(targetPath: string, role: string): RespawnResult {
 // retries - i.e. the pane is a WEDGED live TUI that send-keys cannot reach -
 // never on a healthy pane (a healthy pane confirms delivery on the first
 // attempt).
-function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string): RespawnResult {
-  // BL-137 live repro: a chaser's liveness/activity signal can be stale and
-  // misjudge a genuinely busy agent as stuck, escalating to a forced
-  // respawn - which then typed a shell command into a coordinator pane that
-  // was actually mid-turn. A fresh capture right before injecting anything
-  // is the only way this function can independently confirm the caller's
-  // assumption; "esc to interrupt" is Claude Code's own busy footer, so its
-  // presence overrides the caller and refuses the respawn outright, without
-  // typing or force-killing the pane.
-  const precheck = capturePane(socketPath, target);
-  if (precheck.exitCode === 0 && isPaneActivelyProcessing(precheck.stdout)) {
-    return {
-      success: false,
-      skippedBusy: true,
-      message: `Skipped respawn for "${role}": pane is actively processing a turn (esc to interrupt) - not stuck.`,
-    };
+function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string, wait: (ms: number) => void): RespawnResult {
+  const busy = checkPaneBusy(socketPath, target, role);
+  if (busy) {
+    return busy;
   }
 
   const command = `bash ${launchScript}`;
@@ -396,13 +480,13 @@ function performVerifiedRespawn(socketPath: string, target: string, launchScript
       sendEnter: () => {
         sendKeys(socketPath, target, 'Enter');
       },
-      wait: sleepSync,
+      wait,
     },
     command
   );
 
   if (typeFailure) {
-    return { success: false, message: `Failed to respawn "${role}": ${typeFailure.stderr || typeFailure.stdout || `exit ${typeFailure.exitCode}`}` };
+    return respawnFailure(`Failed to respawn "${role}": ${typeFailure.stderr || typeFailure.stdout || `exit ${typeFailure.exitCode}`}`);
   }
 
   if (result.status === 'delivered') {
@@ -421,10 +505,9 @@ function escalateToForcedRespawn(
 ): RespawnResult {
   const forced = respawnPaneForced(socketPath, target, launchScript);
   if (forced.exitCode !== 0) {
-    return {
-      success: false,
-      message: `Failed to respawn "${role}": send-keys did not submit (${result.reason}), and forced pane respawn also failed: ${forced.stderr || forced.stdout || `exit ${forced.exitCode}`}`,
-    };
+    return respawnFailure(
+      `Failed to respawn "${role}": send-keys did not submit (${result.reason}), and forced pane respawn also failed: ${forced.stderr || forced.stdout || `exit ${forced.exitCode}`}`
+    );
   }
   return {
     success: true,

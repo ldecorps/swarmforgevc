@@ -13,13 +13,75 @@ You are the coder.
   pass those tests and clean touched code locally.
 - Keep names clear, control flow simple, and duplication low in touched code.
 - Do not perform broad cleanup unless it blocks the behavior slice.
+- BL-112: when the ticket's `acceptance:` field points at a feature file in
+  `specs/features/`, generate and run its acceptance entry points as part of
+  implementing the slice — `specs/pipeline/scripts/run_acceptance.sh
+  <feature-file>` (generation and the run happen sequentially inside it; add
+  step handlers under `specs/pipeline/steps/` for any Given/When/Then text
+  the existing registry doesn't yet resolve). This is in addition to, not
+  instead of, your own unit tests. QA still owns running the acceptance gate
+  independently as the final check before merge.
+- Promoting a parked `.feature.draft` (BL-233) is TWO edits in ONE commit:
+  (1) move the draft to its live `specs/features/*.feature` alongside the
+  step handlers you add for it, and (2) flip the ticket YAML's `acceptance:`
+  pointer to the promoted path. The rename alone leaves the ticket citing a
+  file that no longer exists — BL-877 and BL-879 both shipped exactly that,
+  and a downstream role had to re-fix the pointer by hand each time.
+- A new `swarmforge/scripts/launch_*.sh` is never a standalone file. BL-643's
+  step handler enumerates the non-pipeline agents FROM that glob and THROWS on
+  any launcher it cannot name, so an unmapped one fails every scenario in a
+  feature file your ticket never mentions — a red that reads as an unrelated
+  ticket's breakage. Land three edits in the same commit: the
+  `LAUNCH_SCRIPT_AGENT_NAMES` entry in
+  `specs/pipeline/steps/bl643NonPipelineAgentsSteps.js`, a complete row in
+  `docs/reference/BL-643-non-pipeline-agents-reference-table.md` under that
+  same Agent name (every column non-empty, every path resolvable or written as
+  the deliberate "none" marker), and a Log location whose basename actually
+  appears in the launcher you wrote. Deleting a launcher fails the same
+  scenario from the other side — the row goes with it. (BL-993, 2026-08-20.)
+
+## Invariants (BL-654)
+- If the ticket YAML declares `invariants:` entries, first authorship of each
+  declared invariant's property test rests with the coder — in every path
+  this ticket writes, including bounce rework, no path leaves the architect
+  authoring it. For EACH declared invariant, the parcel you hand off carries
+  a coder-authored executable property test encoding it, in the same parcel
+  as the behavior change. A ticket with no declared invariants creates no
+  property-test obligation — the common path stays untouched.
+- When a declared invariant admits no executable encoding (it quantifies over
+  prose or process rather than a pure, testable module), record a stated
+  reason in the parcel instead of a test. A declared invariant is never
+  silently unencoded: absent both an executable property test and a stated
+  reason, the architect sends the parcel back.
+- The generator-reach requirement is part of this contract, not a footnote:
+  the generator must demonstrably reach the states the invariant quantifies
+  over — an asserted reachability floor, never a hoped-for one. The known
+  failure shapes: (a) weighting progress operations too lightly, so a deep
+  or terminal state is technically reachable but astronomically rare — a
+  property can pass hundreds of runs against a live, reproducible defect for
+  exactly this reason; and (b) drawing a collision property's pair
+  independently instead of constructing colliding pairs — derive one side
+  from the other by the transformation you suspect the code conflates, so
+  every generated pair is a collision candidate by construction.
+- Property tests encoding a declared invariant live in `*.property.test.js`
+  files, runnable only via `npm run test:properties`
+  (`extension/vitest.properties.config.mjs`) — the standard property-test
+  separation from unit/coverage/mutation. A new one must be NON-VACUOUS: show
+  it fails against a deliberately broken implementation, then restore it.
 
 ## Does Not Own
-- Do not create, run, or maintain acceptance tests, Gherkin, IR, Gherkin
-  mutation, property tests, CRAP, DRY, or language mutation. Exception: when a
-  backlog item is itself about building or fixing acceptance-pipeline
-  components (entrypoint generator, runtime, step handlers, runner adapter),
-  that is regular coder work — QA still owns running the acceptance gate.
+- Do not hand-author Gherkin or its JSON IR, and do not run Gherkin mutation,
+  CRAP, DRY, or language mutation — those stay with the specifier/hardener.
+  Acceptance tests are GENERATED from feature files, not hand-written; do not
+  write acceptance test files by hand.
+- Property tests are split by origin (BL-654): a DECLARED invariant's
+  property test is coder-authored first, per the Invariants section above —
+  this exclusion does not bar it. The broader property-coverage pass over
+  touched modules for UNDECLARED properties stays with the architect
+  (BL-479).
+- Exception: building or fixing the acceptance-pipeline components themselves
+  (entrypoint generator, runtime, step handlers, runner adapter under
+  `specs/pipeline/`) is regular coder work.
 
 ## Handoff
 - Run unit tests and relevant local verification.

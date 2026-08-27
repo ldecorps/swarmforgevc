@@ -1,7 +1,7 @@
 id: BL-084
 title: BUG — activation re-attach 3s budget too short for concurrent host+swarm cold-start (BL-080 follow-up)
 milestone: M2
-status: todo
+status: done
 priority: 02
 assigned_to: coder
 
