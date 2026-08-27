@@ -23,10 +23,11 @@ invariants:
   - "Time axis is non-linear with greater recent precision — not a linear equal-day scale for the full history."
 
 required_wiring:
-  - "extension/src/metrics/ deliveryMetrics or shiftVelocity::8h landed counts::git and/or telemetry"
-  - ".swarmforge/telemetry/shift-velocity-*.jsonl::optional forward capture::append-only if no existing series"
-  - "briefing burndown/email path::shift velocity chart::non-linear time axis"
-  - "specs/pipeline/steps/index.js::bl1184BriefingShiftVelocitySteps::acceptance handler registered"
+  - 'extension/src/metrics/shiftVelocity.ts::maxRollingEightHourLandedForDay::the locked metric itself — max over rolling 8h windows per day'
+  - 'extension/src/metrics/shiftVelocityTelemetryStore.ts::appendShiftVelocityRecord::the append-only forward capture of the series'
+  - 'swarmforge/scripts/handoffd.bb::briefing-shift-velocity-json::the briefing JSON path must actually source the chart'
+  - 'swarmforge/scripts/briefing_email_lib.bb::shift-velocity-source-fn::the email path must accept and render the chart source'
+  - 'specs/pipeline/steps/index.js::bl1184BriefingShiftVelocitySteps::acceptance handler registered'
 
 description: |
   ## Metric (locked)
@@ -61,5 +62,24 @@ source: |
 notes: |
   - [2026-08-27] specifier: minted; default aggregation = max rolling 8h landed
     count per calendar day for a single briefing series definition.
+  - [2026-08-27 18:50] specifier: AMENDED required_wiring in flight. Rows 1-3
+    as minted were prose and a glob, not `path::pattern` literals, so the
+    pre-QA gate refused the documenter's forward to QA - the BL-874 shape
+    exactly (a pattern is matched as a plain substring; there is no expansion
+    step, so "extension/src/metrics/ deliveryMetrics or shiftVelocity" and
+    ".swarmforge/telemetry/shift-velocity-*.jsonl" could never match, and the
+    second names a gitignored path that is in no commit at all). Replaced
+    with five literals, each VERIFIED present in the documenter's own
+    checkout before this amendment was written, via parse-wiring-entry plus a
+    substring check against the file: maxRollingEightHourLandedForDay,
+    appendShiftVelocityRecord, briefing-shift-velocity-json,
+    shift-velocity-source-fn, bl1184BriefingShiftVelocitySteps. The last two
+    also pin the exact wiring the hardener found silently REMOVED from
+    handoffd.bb and briefing_email_lib.bb during its pass (see that pass's
+    evidence file, "Worktree recovery note") - so this ticket's own gate now
+    catches that regression instead of missing it. Nothing the documenter
+    built changes; this is a spec-side fix. The gate reads required_wiring
+    from the SENDER's checkout, so the documenter must merge main before
+    re-running it - a commit on main alone does not clear it.
 
 assigned_to: coder

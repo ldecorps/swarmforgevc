@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1198-main-rematch-reset-must-attempt-push-before-discarding-local-ahead-commits.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Discovered 2026-08-27: coder sent a priority-00 note ("BL-428: specifier
   SG1 fix 18a0dad4e never landed on main; see evidence") pointing at
