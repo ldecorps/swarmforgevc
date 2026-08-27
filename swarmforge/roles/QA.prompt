@@ -48,6 +48,8 @@ You are QA.
   any straggler by its process group (`kill -- -<pgid>`) first; an orphaned run
   reparents to the OS and burns cores for hours.
 - Run the full unit test suite; it must be green.
+- Article 4.5 / BL-1164: mapped unit/wiring tests per changed production path;
+  bounce uncovered paths to coder (`failureClass: unit`).
 - If the project has property tests, run the separate property-test command
   (`npm run test:properties`) as part of the final gate and require it green,
   alongside the unit and acceptance suites — kept separate from
