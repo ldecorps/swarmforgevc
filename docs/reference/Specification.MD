@@ -7376,8 +7376,6 @@ prior / delta / direction) — file-free aggregation.
 - **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
   `computeTrend` posture).
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
-<<<<<<< HEAD
-=======
 
 ## Context-Compaction Cadence (BL-601)
 
@@ -7442,7 +7440,6 @@ back-edge was the standing architect bounce (cycle) this rematch closed.
   `computeTrend` posture).
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 - **BL-594** — swarm-behaviour-trends epic.
->>>>>>> 5f59949f46
 
 ## Flow Watchdog (BL-577)
 
