@@ -11,11 +11,25 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-597-trend-self-heal-events.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl597TrendSelfHealEventsSteps::acceptance handler registered"
+  - "swarmforge/scripts/front_desk_supervisor.bb::stale-build-detected::structured emit at existing log site"
+  - "extension/src/metrics/selfHealTelemetry.ts::aggregateSelfHealCounts::pure per-type count aggregator"
+
+invariants:
+  - "Each record is emitted at the existing prose log site for that recovery action — no parallel detection path."
+  - "Measuring never blocks or alters recovery; a failed telemetry append must not change whether self-heal runs."
+  - "Raw events live in append-only gitignored `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl` — never committed."
+
 source: |
   Human, 2026-07-23, epic BL-594. The swarm heals itself constantly and counts
   none of it. The 14:46 stale-build-detected recompile that (per current best
   theory) fixed the approval taps was invisible until grepped for by hand —
   a self-heal trend would have surfaced it immediately during BL-582.
+
 description: |
   Count the swarm's automatic recovery actions as a durable, plottable series,
   so a spike in self-healing is a visible signal rather than buried in logs.
@@ -37,12 +51,17 @@ description: |
   Value: a healthy swarm self-heals rarely; a rising respawn or recompile rate
   is an early warning of instability (a flapping provider, a memory spiral, a
   bad build) BEFORE it becomes a visible outage.
-acceptance: |
-  Specifier writes scenarios. Minimum:
-  1. Each self-heal action emits one structured event; the existing prose log
-     lines are the source, not a new detection path.
-  2. A pure aggregator yields per-type counts over a window via trend.ts.
-  3. Append-only, gitignored log.
+
+qa_e2e_procedure: >
+  (1) Fixture each self-heal type at its existing log site → one jsonl record
+  with type/subject/reason/ts. (2) Pure aggregator yields per-type counts over
+  a window via trend.ts. (3) Log append-only + gitignored. (4) Failed append
+  does not change recovery behaviour.
+
 out_of_scope: |
   - Changing any recovery behaviour. Counting only.
   - Alerting/escalation on a spike (a possible follow-on, its own ticket).
+
+notes: |
+  [2026-08-27] specifier: feature file minted (4 scenarios); invariants ≤3;
+  acceptance pointer fixed. Coordinator may route to coder.
