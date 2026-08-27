@@ -74,6 +74,7 @@ const PAUSE_DURATIONS_MS: Record<string, number> = {
 // whole decision. BL-698 also accepts slash /ambulance as a Control alias.
 const AMBULANCE_ENGAGE_PATTERN = /^(?:\/)?ambulance\s+(BL-\d+)$/i;
 const HOLD_REINSTATE_PATTERN = /^\/(hold|reinstate)\s+(BL-\d+)$/i;
+const DEPRECATE_PATTERN = /^\/deprecate(?:\s+(.*))?$/i;
 
 function decideControlTextAction(text: string): ControlDecision {
   const trimmed = text.trim();
@@ -100,6 +101,14 @@ function decideControlTextAction(text: string): ControlDecision {
       action: 'execute-shared-operator',
       verb: `/${holdMatch[1].toLowerCase()}`,
       args: holdMatch[2].toUpperCase(),
+    };
+  }
+  const deprecateMatch = trimmed.match(DEPRECATE_PATTERN);
+  if (deprecateMatch) {
+    return {
+      action: 'execute-shared-operator',
+      verb: '/deprecate',
+      args: (deprecateMatch[1] ?? '').trim() || undefined,
     };
   }
   if (lower === '/kill-all') {
