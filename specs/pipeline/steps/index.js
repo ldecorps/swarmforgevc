@@ -409,6 +409,7 @@ const DOMAINS = [
   require('./bl741PilotCrapGateSteps'),
   require('./bl745PilotLoggedCrapEvidenceSteps'),
   require('./bl743PilotMkdtempConventionSteps'),
+  require('./bl739PilotVacuousPropertyGateSteps'), // bl739PilotVacuousPropertyGateSteps: acceptance handler registered
   require('./bl664TurnProfilerTranscriptWalkerSteps'),
   require('./bl755PilotMultiBranchParserNeedsPerArmTestsSteps'),
   require('./bl758PilotInjectRolePromptsPerHatSteps'),
