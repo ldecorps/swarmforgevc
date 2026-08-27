@@ -45,6 +45,7 @@ import { engageOperatorAmbulance, releaseOperatorAmbulance } from './telegramOpe
 import { isPipelineEmpty } from './telegramPipelineDrain';
 import { decideDrainOutcome } from './telegramControlCore';
 import { appendAvailabilityRecord } from '../metrics/availabilityLedgerStore';
+import { formatPostmortemReply, runOperatorPostmortem } from './operatorPostmortem';
 
 function bounceSentinelPath(repoRoot: string): string {
   return path.join(repoRoot, '.swarmforge', 'bounce');
@@ -723,6 +724,9 @@ export function executeOperatorVerb(
   }
   if (v === '/deprecate') {
     return executeDeprecate(repoRoot, args, opts?.seatTier);
+  }
+  if (v === '/postmortem') {
+    return { text: formatPostmortemReply(runOperatorPostmortem(repoRoot, args)), wroteBounceSentinel: false };
   }
   if (v === '/shift' || v === '/holiday' || v === '/oncall') {
     return executePolicyVerb(repoRoot, v, args, opts?.principalId);
