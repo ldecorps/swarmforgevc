@@ -12,6 +12,15 @@ assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-980-recently-closed-elapsed-time.feature
+# Tip-pure rematch 2026-08-27 after QA bounce D1 (entangled tip) and D2
+# (docs Spec/index regression on rematch — stack atop origin/main docs).
+abandoned_commits:
+  - ab78df5605
+  - f4318fe302
+  - cdcdc92051
+  - e86cd84963
+  - 52f02b406f
+  - b9d252573e
 
 invariants:
   - "An age is never fabricated: a line carries a parenthetical age only when a durable closure instant is recorded for that ticket, and the age is computed from that record - never from a file mtime, which a rewrite would silently rejuvenate."
