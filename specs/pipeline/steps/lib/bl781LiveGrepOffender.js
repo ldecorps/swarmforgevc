@@ -15,6 +15,8 @@ function isLiveGrepOffender(relPath) {
   if (norm.startsWith('swarmforge/scripts/test/')) return false;
   // Feature Examples name the retired basenames to assert absence — not live callers (QA D1).
   if (norm.startsWith('specs/features/')) return false;
+  // Extension unit/property tests that encode the retirement contract name basenames too.
+  if (norm.startsWith('extension/test/')) return false;
   return norm.length > 0;
 }
 
