@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1173: deprecator freshness-gate CLI —
+`node extension/out/tools/deprecate-check.js <root> <BL-id>` prints
+`allow`|`hold` JSON; `promote_and_route_next.sh` fails closed on hold, crash,
+or malformed output (Article 3.6). Hold leaves the ticket in `paused/` and
+notifies the specifier at priority `00`. Acceptance:
+`specs/features/BL-1173-deprecator-freshness-gate-cli.feature`. How-to:
+`docs/how-to/BL-1173-deprecator-freshness-gate-cli.md`.)
+Prior entry —
 **Last Updated:** August 26, 2026 (BL-741: `/pilot` land gate always runs
 scoped CRAP on touched `extension/*.ts` via `pilotScopedCrapCheck.ts` /
 `pilotAcceptanceGate.ts` `checkCrap` — `mutation_cost: low` exempts mutation

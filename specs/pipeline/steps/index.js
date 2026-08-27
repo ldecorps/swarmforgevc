@@ -642,6 +642,7 @@ const DOMAINS = [
   require('./bl1004ReworkClaimSteps'),
   require('./bl586PipelineBoardTopicIdentitySteps'),
   require('./bl1017BabysitterdRecreatesVanishedStandingSessionSteps'),
+  require('./bl1173DeprecatorFreshnessGateCliSteps'),
   require('./bl1012FreshnessSelfInflictedIncidentsSteps'),
   require('./bl621FrontDeskDegradedCauseEscalationSteps'),
   require('./bl1021SubprocessOutlivesWaitBoundSteps'),
