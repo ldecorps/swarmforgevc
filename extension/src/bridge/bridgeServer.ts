@@ -2045,7 +2045,7 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
     },
     {
       // BL-832: Health page JSON — same readouts as bubbleHealthCore, on demand.
-      matches: isBubbleHealthTrendsPath,
+      matches: isBubbleHealthTrendsPath,  // health-trends JSON feed
       compute: () => buildBubbleHealthTrendsState(targetPath, nowMs),
     },
     {

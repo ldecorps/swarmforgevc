@@ -38,6 +38,7 @@ export const operatorDocs: LetsTalkUiBundlePage = {
 };
 
 
+// required_wiring anchor: bubbleHealthPage
 export const bubbleHealth: LetsTalkUiBundlePage = {
   id: 'health',
   title: 'Health',
