@@ -8,9 +8,25 @@ human_approval: approved
 severity: low
 priority: 190
 direction: human-requested
-depends_on: []
-assigned_to: specifier
+depends_on: [BL-665]
+assigned_to: coder
 mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-601-trend-compaction-cadence.feature
+
+required_wiring:
+  - "swarmforge/scripts/context_telemetry_lib.bb + context-events.jsonl::compaction:true events::primary structured detection signal (requires BL-665 producer)"
+  - ".swarmforge/telemetry/compaction-<YYYY-MM>.jsonl::derived compaction records::append-only gitignored {role, model, tokens-at-compaction, ts}"
+  - "extension/src/metrics/compactionCadence.ts::pure aggregator::compactions/hr per role + token-at-compaction distribution"
+  - "extension/src/metrics/trend.ts::compaction-cadence series::plotted via shared TrendedNumber framework"
+  - "specs/pipeline/steps/index.js::bl601TrendCompactionCadenceSteps::acceptance handler registered"
+
+invariants:
+  - "Pane spinner strings alone never emit compaction records — only structured context-events with compaction:true count."
+  - "Roles without a reliable compaction signal read NA, never a fabricated zero."
+  - "Aggregation is a pure function over compaction records — unit-testable without live panes or transcripts."
+  - "Measuring never tunes compaction thresholds or alters agent compaction behaviour."
+
 source: |
   Human, 2026-07-23, epic BL-594. The "13 min, no compaction yet" moment showed
   compaction is watched by eye but never recorded. Compaction frequency is a
@@ -38,13 +54,17 @@ description: |
   than scrape a spinner string that changes between CLI versions. If no robust
   signal exists, say so and scope to what is detectable rather than emit noisy
   data.
-acceptance: |
-  Specifier writes scenarios. Minimum:
-  1. Each detected compaction emits {role, model, tokens-at-compaction, ts}
-     from a signal the specifier has justified as reliable.
-  2. A pure aggregator yields compactions/hr per role and the
-     token-at-compaction distribution over a window.
-  3. If a role's compaction cannot be reliably detected, it reads NA, never a
-     fabricated zero.
+qa_e2e_procedure: >
+  (1) Fixture context-events with compaction:true → derived compaction record with
+  role/model/tokens/ts. (2) Pure aggregator: compactions/hr + token distribution
+  without fs. (3) Undetectable role → NA. (4) Spinner-only → no record. (5)
+  trend.ts current/prior/delta on compactions/hr series.
+
 out_of_scope: |
   - Tuning the compaction threshold. Measurement only.
+
+notes: |
+  - [2026-08-27] specifier: feature file minted from coordinator Work note.
+    Reliable signal pinned to GH-22 context-events.jsonl compaction:true (BL-665
+    producer required); pane spinner text explicitly rejected as primary trigger;
+    tokens-at-compaction from input_tokens + context_utilization_pct on event.

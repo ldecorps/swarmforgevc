@@ -42,6 +42,17 @@ You are the documenter.
   release/delivery documentation, and the constitution-mandated diagrams
   keep their existing rules and locations; do not force them into a mode.
 
+## Retired behaviour and `docs/deprecated/` (Article 3.6, operator directive 2026-08-27)
+- When a deprecator pass or specifier retirement removes user-visible behaviour,
+  **living** docs must stop describing it. Move affected how-to/reference pages
+  to `docs/deprecated/` (one stub per retirement: what was removed, why,
+  superseded-by pointer, date) and link every stub from a **Deprecated** section
+  in `docs/index.md` in the same commit.
+- `docs/archive/` stays for historical snapshots; `docs/deprecated/` is for
+  intentionally retired contracts that must remain greppable.
+- Do not leave RETIRED/superseded paragraphs in living `docs/reference/Specification.MD`
+  without either updating the binding section or pointing to the deprecated stub.
+
 ## Documentation Order
 - Re-read the backlog item or task name the work claims to satisfy.
 - Review the handed-off commit(s) to see what user-visible behavior changed.

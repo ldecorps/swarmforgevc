@@ -40,6 +40,11 @@
 %% defective ticket reworks from last clean ancestor on an isolated branch;
 %% QA lands verified whole trees only (no cherry-pick/rebase-to-land). See
 %% docs/how-to/BL-588-isolate-batch-recovery-trees.md; BL-532 deferrals are input.
+%% BL-668 (2026-08-27): after QA lands on origin/main, handoffd runs
+%% post-qa-branch-sweep-sweep! — fast-forwards clean/ff-able role branches in
+%% roles.tsv worktrees; dirty, in_process, or divergent roles are surfaced with
+%% logged skip reasons. QA merge-up notes reach surfaced roles only; clean roles
+%% need no LLM merge-up turn. See docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md.
 flowchart LR
   ROOT["backlog/ root\n(human raw intake)"]
   COORD(("coordinator\n(master, intake/routing +\nbacklog bookkeeping only,\nnever commits code,\nno git merge/push)"))
@@ -70,12 +75,17 @@ flowchart LR
   HARDENER -->|git_handoff\n(batch)| DOCUMENTER
   DOCUMENTER -->|git_handoff| QA
 
-  QA -->|merge-up broadcast: each role\nmerges its branch up to\nQA's approved commit| CODER
-  QA -->|merge-up broadcast| CLEANER
-  QA -->|merge-up broadcast| ARCHITECT
-  QA -->|merge-up broadcast| HARDENER
-  QA -->|merge-up broadcast| DOCUMENTER
-  QA -->|lands approved commit,\npushes origin\n(QA integrates)| MAIN
+  QA -->|lands approved commit,\npushes origin; handoffd runs\npost-qa-branch-sweep| MAIN
+  MAIN -.->|ff clean branches| CODER
+  MAIN -.->|ff clean branches| CLEANER
+  MAIN -.->|ff clean branches| ARCHITECT
+  MAIN -.->|ff clean branches| HARDENDER
+  MAIN -.->|ff clean branches| DOCUMENTER
+  QA -->|merge-up note\n(surfaced roles only)| CODER
+  QA -->|merge-up note| CLEANER
+  QA -->|merge-up note| ARCHITECT
+  QA -->|merge-up note| HARDENDER
+  QA -->|merge-up note| DOCUMENTER
   QA -->|notifies: approved commit\n+ task id| COORD
 
   COORD -->|moves ticket| DONE
