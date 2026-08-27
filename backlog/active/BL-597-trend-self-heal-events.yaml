@@ -65,3 +65,6 @@ out_of_scope: |
 notes: |
   [2026-08-27] specifier: feature file minted (4 scenarios); invariants ≤3;
   acceptance pointer fixed. Coordinator may route to coder.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: architect, blamed: coder, class: invariant-unencoded, commit: ce0a144ea9, evidence: backlog/evidence/BL-597-architect-bounce-20260827.md }
