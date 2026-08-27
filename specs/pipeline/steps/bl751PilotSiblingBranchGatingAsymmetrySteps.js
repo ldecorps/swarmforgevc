@@ -1,6 +1,6 @@
 'use strict';
 
-// BL-755: multi-branch parser per-arm coverage on /pilot land + hardener rule.
+// BL-751: sibling-branch gating asymmetry on /pilot land + hardener rule.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -10,7 +10,7 @@ const EXT_DIR = path.join(REPO_ROOT, 'extension');
 const {
   landPilotedTicket,
   resolveFeatureFilePath,
-  assessMultiBranchParserCoverage,
+  assessMultiBranchSiblingGating,
 } = require(path.join(EXT_DIR, 'out', 'tools', 'pilotAcceptanceGate'));
 const { composePilotExpeditorPrompt } = require(path.join(
   EXT_DIR,
@@ -21,66 +21,72 @@ const { composePilotExpeditorPrompt } = require(path.join(
 
 const HARDENDER = path.join(REPO_ROOT, 'swarmforge', 'roles', 'hardender.prompt');
 const FEATURE =
-  'Multi-branch parsers need one test per arm on /pilot land and in hardener guidance';
+  'sibling-branch gating asymmetry is caught on /pilot land and in hardener guidance';
+
+const ASYMMETRIC_DISPATCH = {
+  functionName: 'assess-one-claim',
+  sourcePath: 'swarmforge/scripts/babysitter_assess_lib.bb',
+  arms: [
+    { label: 'halt-imminent', guards: ['(>= reclaims (:halt-threshold cfg))'] },
+    { label: 'critical', guards: ['(>= reclaims (:bounce-threshold cfg))'] },
+    { label: 'warn', guards: ['(>= reclaims default-warn-reclaims)'] },
+    { label: 'warn-fixture-droppings', guards: ['head-unchanged?', 'fixture-droppings?'] },
+    {
+      label: 'warn-uncommitted',
+      guards: ['head-unchanged?', '(>= elapsed-pct 0.75)', '(pos? untracked)'],
+    },
+    { label: 'watch', guards: ['head-unchanged?', '(>= elapsed-pct 0.75)'] },
+  ],
+};
+
+const ALIGNED_DISPATCH = {
+  functionName: 'assess-one-claim',
+  sourcePath: 'swarmforge/scripts/babysitter_assess_lib.bb',
+  arms: [
+    { label: 'warn-fixture-droppings', guards: ['head-unchanged?', '(>= elapsed-pct 0.75)', 'fixture-droppings?'] },
+    {
+      label: 'warn-uncommitted',
+      guards: ['head-unchanged?', '(>= elapsed-pct 0.75)', '(pos? untracked)'],
+    },
+    { label: 'watch', guards: ['head-unchanged?', '(>= elapsed-pct 0.75)'] },
+  ],
+};
 
 function scoped(registry, pattern, handler) {
   registry.defineScoped(pattern, handler, FEATURE);
 }
 
 function mkFixtureRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl755-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl751-'));
 }
 
-function threeArms() {
-  return [
-    { label: 'double-quoted', marker: 'double-quoted' },
-    { label: 'single-quoted', marker: 'single-quoted' },
-    { label: 'unquoted', marker: 'unquoted' },
-  ];
-}
-
-function setThreeArmParser(ctx) {
-  ensureCtx(ctx);
-  ctx.parsers = [
-    {
-      functionName: 'take-flow-reason',
-      sourcePath: 'swarmforge/scripts/lib.bb',
-      arms: threeArms(),
-    },
-  ];
-}
-
-function assertPerArmGuidance(text, label) {
+function assertSiblingGatingGuidance(text, label) {
   const lower = (text || '').toLowerCase();
-  if (!/multi-branch|multi-arm|per (arm|branch)|one distinct test per/.test(lower)) {
-    throw new Error(`${label}: expected per-arm / multi-branch parser language`);
+  if (!/multi-branch|multi-arm|sibling|guard pattern|grace period|gating asymmetry/.test(lower)) {
+    throw new Error(`${label}: expected sibling-branch gating language`);
   }
-  if (!/test/.test(lower)) {
-    throw new Error(`${label}: expected test-per-arm language`);
+  if (!/compare|comparison|diff|against/.test(lower)) {
+    throw new Error(`${label}: expected explicit sibling comparison language`);
   }
 }
 
 function ensureCtx(ctx) {
-  ctx.ticketId = ctx.ticketId || 'BL-755-FIXTURE';
+  ctx.ticketId = ctx.ticketId || 'BL-751-FIXTURE';
   ctx.calls = ctx.calls || { move: 0, receipt: 0 };
   ctx.repoRootFixture = ctx.repoRootFixture || mkFixtureRoot();
   ctx.acceptanceDeclaration =
-    ctx.acceptanceDeclaration || 'specs/features/bl755-fixture.feature';
+    ctx.acceptanceDeclaration || 'specs/features/bl751-fixture.feature';
   ctx.acceptanceRunResult = ctx.acceptanceRunResult || { success: true, output: 'ok' };
-  ctx.parsers = ctx.parsers || [];
-  ctx.testTexts = ctx.testTexts || [];
+  ctx.dispatches = ctx.dispatches || [];
   ctx.historyResolvable = ctx.historyResolvable !== false;
   return ctx;
 }
 
-function multiBranchOutcome(ctx) {
+function siblingGatingOutcome(ctx) {
   if (!ctx.historyResolvable) {
     return { checked: false };
   }
-  return assessMultiBranchParserCoverage({
-    parsers: ctx.parsers,
-    testTexts: ctx.testTexts,
-  });
+  return assessMultiBranchSiblingGating({ dispatches: ctx.dispatches });
 }
 
 function baseDeps(ctx) {
@@ -106,8 +112,8 @@ function baseDeps(ctx) {
     checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => multiBranchOutcome(ctx),
-    checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
+    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+    checkMultiBranchSiblingGating: () => siblingGatingOutcome(ctx),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
@@ -122,7 +128,7 @@ function baseDeps(ctx) {
       ctx.writtenReceipt = receipt;
     },
     getLandedCommit: () => 'e'.repeat(40),
-    now: () => '2026-08-26T00:00:00.000Z',
+    now: () => '2026-08-27T00:00:00.000Z',
   };
 }
 
@@ -130,7 +136,7 @@ async function runGate(ctx) {
   ensureCtx(ctx);
   fs.mkdirSync(path.join(ctx.repoRootFixture, 'specs', 'features'), { recursive: true });
   fs.writeFileSync(
-    path.join(ctx.repoRootFixture, 'specs', 'features', 'bl755-fixture.feature'),
+    path.join(ctx.repoRootFixture, 'specs', 'features', 'bl751-fixture.feature'),
     'Feature: fixture\n',
     'utf8'
   );
@@ -146,9 +152,9 @@ function registerSteps(registry) {
 
   scoped(
     registry,
-    /^it requires at least one distinct test per arm of a multi-branch parser$/,
+    /^it requires comparing new multi-branch arms against sibling guard patterns$/,
     (ctx) => {
-      assertPerArmGuidance(ctx.hardenderPrompt || ctx.pilotPrompt, 'hardener/pilot guidance');
+      assertSiblingGatingGuidance(ctx.hardenderPrompt || ctx.pilotPrompt, 'hardener/pilot guidance');
     }
   );
 
@@ -156,55 +162,61 @@ function registerSteps(registry) {
     ctx.pilotPrompt = composePilotExpeditorPrompt(ticket);
   });
 
-  scoped(registry, /^the prompt requires at least one distinct test per arm of a multi-branch parser$/, (ctx) => {
-    assertPerArmGuidance(ctx.pilotPrompt, '/pilot prompt');
-    if (!/distinct test per arm/i.test(ctx.pilotPrompt || '')) {
-      throw new Error(`expected BL-755 "distinct test per arm" phrasing:\n${ctx.pilotPrompt}`);
+  scoped(
+    registry,
+    /^the prompt requires comparing new multi-branch arms against sibling guard patterns$/,
+    (ctx) => {
+      assertSiblingGatingGuidance(ctx.pilotPrompt, '/pilot prompt');
+      if (!/BL-751|sibling-branch gating|gating asymmetry/i.test(ctx.pilotPrompt || '')) {
+        throw new Error(`expected BL-751 sibling gating phrasing:\n${ctx.pilotPrompt}`);
+      }
     }
-  });
+  );
 
-  scoped(registry, /^the run's commits touched a function with three cond or case arms$/, (ctx) => {
-    setThreeArmParser(ctx);
-  });
+  scoped(
+    registry,
+    /^the run's commits touched a multi-arm cond with sibling gating asymmetry$/,
+    (ctx) => {
+      ensureCtx(ctx);
+      ctx.dispatches = [ASYMMETRIC_DISPATCH];
+    }
+  );
 
-  scoped(registry, /^only one of those arms is exercised by the run's tests$/, (ctx) => {
-    ensureCtx(ctx);
-    ctx.testTexts = ['covers double-quoted hazard'];
-  });
+  scoped(
+    registry,
+    /^the run's commits touched a multi-arm cond with aligned sibling guards$/,
+    (ctx) => {
+      ensureCtx(ctx);
+      ctx.dispatches = [ALIGNED_DISPATCH];
+    }
+  );
 
-  scoped(registry, /^each arm is exercised by at least one distinct test$/, (ctx) => {
-    ensureCtx(ctx);
-    ctx.testTexts = ['double-quoted', 'single-quoted', 'unquoted'];
-  });
-
-  scoped(registry, /^the run's commits touched a multi-arm parser with an untested arm$/, (ctx) => {
-    setThreeArmParser(ctx);
-    ctx.testTexts = ['double-quoted only'];
-  });
-
-  scoped(registry, /^the run's commits touched no function with three or more cond or case arms$/, (ctx) => {
-    ensureCtx(ctx);
-    ctx.parsers = [];
-    ctx.testTexts = [];
-  });
+  scoped(
+    registry,
+    /^the run's commits touched no multi-arm cond with three or more predicate arms$/,
+    (ctx) => {
+      ensureCtx(ctx);
+      ctx.dispatches = [];
+    }
+  );
 
   scoped(registry, /^the pilot runs the landing gate$/, async (ctx) => {
     await runGate(ctx);
   });
 
-  scoped(registry, /^the land is refused for untested parser branch$/, (ctx) => {
+  scoped(registry, /^the land is refused for sibling-branch gating asymmetry$/, (ctx) => {
     if (!ctx.outcome || ctx.outcome.landed !== false) {
       throw new Error(`expected refusal, got ${JSON.stringify(ctx.outcome)}`);
     }
-    if (ctx.outcome.reasonKind !== 'untested-parser-branch') {
-      throw new Error(`expected untested-parser-branch, got ${ctx.outcome.reasonKind}`);
+    if (ctx.outcome.reasonKind !== 'sibling-branch-gating-asymmetry') {
+      throw new Error(`expected sibling-branch-gating-asymmetry, got ${ctx.outcome.reasonKind}`);
     }
   });
 
-  scoped(registry, /^the refusal names an untested arm$/, (ctx) => {
+  scoped(registry, /^the refusal names the arm missing the shared guard$/, (ctx) => {
     const reason = (ctx.outcome && ctx.outcome.reason) || '';
-    if (!/single-quoted|unquoted|arm/i.test(reason)) {
-      throw new Error(`refusal did not name an untested arm: ${reason}`);
+    if (!/warn-fixture-droppings|missing/i.test(reason)) {
+      throw new Error(`refusal did not name the asymmetric arm: ${reason}`);
     }
   });
 

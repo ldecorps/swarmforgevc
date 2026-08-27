@@ -35,6 +35,7 @@ function mkDeps(overrides) {
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
@@ -257,6 +258,7 @@ test('landPilotedTicket refuses a land whose commit claims an unsupported change
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
@@ -289,6 +291,7 @@ test('landPilotedTicket checks claims only after a green contract, never before'
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
@@ -307,6 +310,7 @@ test('landPilotedTicket lands with a warning and records zero commits checked wh
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
   });
   let receipt;
@@ -331,6 +335,7 @@ test('landPilotedTicket lands with no warnings field when every commit claim was
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
@@ -352,6 +357,7 @@ test('landPilotedTicket never moves or writes a receipt when the commit-claim ch
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
   });
   await landPilotedTicket('BL-FIX', deps);
