@@ -12,6 +12,8 @@ import { RoleWorktree } from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, runMergeLog } from '../metrics/gitHistoryAdapter';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
 import { computeStageDwellReportForRoles, StageDwellReportResult } from '../metrics/stageDwell';
+import { loadCompletedTicketRecords } from '../metrics/reworkObservatorySource';
+import { buildBubbleHealthTrends, BubbleHealthTrendsPayload } from './bubbleHealthCore';
 import {
   readSwarmName,
   computeAssignments,
@@ -132,6 +134,17 @@ export function buildStageDwellState(targetPath: string, nowMs?: number): StageD
 // computeBurnRateForRoles' own real-clock default in production.
 export function buildBurnRateState(targetPath: string, nowMs?: number): Record<string, number> {
   return computeBurnRateForRoles(targetPath, resolveRoleWorktrees(targetPath), nowMs);
+}
+
+export function buildBubbleHealthTrendsState(targetPath: string, nowMs?: number): BubbleHealthTrendsPayload {
+  const effectiveNow = nowMs ?? Date.now();
+  const roles = resolveRoleWorktrees(targetPath);
+  return buildBubbleHealthTrends(
+    buildDeliveryMetricsState(targetPath, effectiveNow),
+    buildStageDwellState(targetPath, effectiveNow),
+    loadCompletedTicketRecords(targetPath, roles),
+    effectiveNow
+  );
 }
 
 export interface SwarmPanel {

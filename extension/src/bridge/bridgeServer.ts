@@ -14,6 +14,7 @@ import {
   buildHolisticState,
   buildStageDwellState,
   buildBurnRateState,
+  buildBubbleHealthTrendsState,
   BridgeState,
 } from './bridgeState';
 import { extractBearerToken, isAuthorizedByQueryToken, parseQueryCredential } from './bridgeAuth';
@@ -60,6 +61,11 @@ import {
   isOperatorDocsPagePath,
   isOperatorDocsPath,
 } from './operatorDocsHtml';
+import {
+  getBubbleHealthUiHtml,
+  isBubbleHealthPath,
+  isBubbleHealthTrendsPath,
+} from './bubbleHealthHtml';
 import { computeCatchUpStateLive } from './catchUpLive';
 import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
@@ -76,6 +82,7 @@ import {
   createLetsTalkWriteRoutes,
   isLetsTalkPath,
   mergeOperatorDocsIntoUiBundleManifest,
+  mergeBubbleHealthIntoUiBundleManifest,
 } from './letsTalkRoutes';
 import { createWebUiFontSizeRoutes, isWebUiFontSizePath } from './webUiFontSizeRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
@@ -2032,7 +2039,14 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // decide fresh/cached/stale/bare from what this route actually serves.
       matches: isLetsTalkUiBundlePath,
       compute: () =>
-        mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env)),
+        mergeBubbleHealthIntoUiBundleManifest(
+          mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+        ),
+    },
+    {
+      // BL-832: Health page JSON — same readouts as bubbleHealthCore, on demand.
+      matches: isBubbleHealthTrendsPath,
+      compute: () => buildBubbleHealthTrendsState(targetPath, nowMs),
     },
     {
       // BL-1166: Operator docs index derived from docs/index.md.
@@ -2193,6 +2207,10 @@ export function startBridge(
       }
       if (isOperatorDocsPath(url)) {
         serveMiniAppHtml(res, getOperatorDocsUiHtml());
+        return;
+      }
+      if (isBubbleHealthPath(url)) {
+        serveMiniAppHtml(res, getBubbleHealthUiHtml());
         return;
       }
       if (url === '/lets-talk/manifest.json' || url.startsWith('/lets-talk/manifest.json?')) {
