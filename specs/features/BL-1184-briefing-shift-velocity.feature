@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6a36746557d63c2520bcf27ef3c2606e1d119fb319156077699ca4c66db97cd6
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T17:46:43.716671826Z","feature_name":"briefing shift velocity plots tickets landed per eight-hour stretch","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1184-briefing-shift-velocity.feature","background_hash":"30b11da3fb854d0736e831663b91a636e5e0def15aebde7b62eac10e92c8abc3","implementation_hash":"unknown","scenarios":[{"index":4,"name":"forward capture uses telemetry when required","scenario_hash":"b8a5f311bade2dee0a182012cc3adb0446f55210264ec17974b98cb8b72aedac","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-27T17:36:46.320239894Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: briefing shift velocity plots tickets landed per eight-hour stretch
 
   # BL-1184 (epic BL-594 family). Count done/ closes in 8 consecutive hours;
