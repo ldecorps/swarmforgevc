@@ -1830,6 +1830,8 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isEpicReorderStatePath,
   isContextBudgetStatePath,
   isWebUiFontSizePath,
+  isOperatorDocsIndexFeedPath,
+  isOperatorDocsPageFeedPath,
 ];
 
 function isAuthorizedForRead(authHeader: string | undefined, url: string, registry: DeviceRegistry): boolean {
