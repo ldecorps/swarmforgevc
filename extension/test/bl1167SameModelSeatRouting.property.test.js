@@ -19,14 +19,13 @@ function claimDecision(conf, cost) {
 (load-file ${JSON.stringify(LIB)})
 (let [conf (slurp *in*)
       models (seat-difficulty-lib/parse-seat-models conf)
-      seats (seat-difficulty-lib/parse-window-seats conf)
       tiers (seat-difficulty-lib/parse-seat-tiers conf)
-      uniform? (seat-difficulty-lib/stage-models-uniform? models seats "coder")
+      equivalent? (seat-difficulty-lib/stage-models-equivalent? models conf "coder")
       decision (seat-difficulty-lib/difficulty-claim-decision
         {:me "coder@cursor2" :my-tier "easy" :cost ${JSON.stringify(cost)} :stage "coder"
-         :tiers tiers :models models :window-seats seats
+         :tiers tiers :models models :conf-text conf
          :sibling-states [{:role "coder" :tier "hard" :busy? true}]})]
-  (println (str uniform? "|" (name decision))))
+  (println (str equivalent? "|" (name decision))))
 `;
   const res = spawnSync('bb', ['-e', script], {
     encoding: 'utf8',
@@ -38,7 +37,7 @@ function claimDecision(conf, cost) {
   return { uniform: uniform === 'true', decision };
 }
 
-test('BL-1167 P1: identical models ⇒ uniform and easy may claim high', () => {
+test('BL-1167 P1: identical models ⇒ equivalent and easy may claim high', () => {
   fc.assert(
     fc.property(fc.constantFrom('auto', 'opus', 'sonnet'), (model) => {
       const conf = `${confLine('coder', model, 'hard')}\n${confLine('coder@cursor2', model, 'easy')}\n`;
@@ -50,7 +49,7 @@ test('BL-1167 P1: identical models ⇒ uniform and easy may claim high', () => {
   );
 });
 
-test('BL-1167 P2: distinct models ⇒ not uniform and easy skips high', () => {
+test('BL-1167 P2: distinct models ⇒ not equivalent and easy skips high', () => {
   fc.assert(
     fc.property(
       fc.constantFrom('auto', 'opus', 'sonnet'),

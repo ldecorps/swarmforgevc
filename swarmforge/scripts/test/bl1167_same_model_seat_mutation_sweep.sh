@@ -52,27 +52,27 @@ PY
 
 echo "mutation sweep over $LIB (BL-1167)"
 
-mutate "uniform bypass claims skip instead" \
-  '(stage-models-uniform? (or models {}) (or window-seats #{}) stage)
+mutate "equivalent bypass claims skip instead" \
+  '(stage-models-equivalent? models conf-text stage)
     :claim' \
-  '(stage-models-uniform? (or models {}) (or window-seats #{}) stage)
+  '(stage-models-equivalent? models conf-text stage)
     :skip-ineligible'
 
-mutate "uniform needs three seats" \
-  '(and (>= (count seats) 2)' \
-  '(and (>= (count seats) 3)'
+mutate "equivalent needs three seats" \
+  '(pos? (count seats))' \
+  '(>= (count seats) 3)'
 
-mutate "uniform equality flipped" \
-  '(apply = vals)' \
-  '(apply not= vals)'
+mutate "equivalent requires single model value" \
+  '(= 1 (count values))' \
+  '(pos? (count values))'
 
-mutate "uniform requires all models nil" \
-  '(every? some? vals)' \
-  '(every? nil? vals)'
+mutate "equivalent requires every seat has model" \
+  '(= (count seats) (count (filter #(contains? models %) seats)))' \
+  'false'
 
-mutate "stage-seat-ids never matches" \
-  '(= stage (first (str/split seat #"@" 2)))' \
-  '(= (str stage "-nope") (first (str/split seat #"@" 2)))'
+mutate "stage-seat filter never matches" \
+  '(= stage (seat-stage seat))' \
+  '(= stage "nope")'
 
 echo "---"
 echo "surgical killed=$killed survived=$survived skipped=$skipped"
