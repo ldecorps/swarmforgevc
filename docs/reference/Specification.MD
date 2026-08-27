@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1181: BoB starting cast — steward
+`export-bob-starting-cast` names one certified model per role; apply reuses
+ModelFactory overlay or pack model apply only; `bobStartingCastApply.ts`
+runs BL-1177 memory transfer before overlay when a role's model changes.
+Acceptance:
+`specs/features/BL-1181-bob-starting-cast-cherry-pick-apply.feature`.
+How-to: `docs/how-to/BL-1181-bob-starting-cast-cherry-pick-apply.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-665: context-telemetry producer —
 `contextTelemetryProducer.ts` walks role transcripts (BL-664 substrate),
 derives events, and appends via GH-22 `context_telemetry_cli.bb record`;
@@ -7881,6 +7889,15 @@ handoff parcels, calls `attemptSameRoleModelSwitch`, and only respawns when
 inject succeeds. Trial start/end reuse `runTrialBoundaryMemoryTransfer` with
 the same fail-closed contract. How-to:
 `docs/how-to/BL-1178-wire-agent-memory-into-hot-swap-and-trial.md`.
+
+### BoB starting cast (BL-1181)
+
+Model Steward cherry-picks a starting lineup: `bob_starting_cast_lib.bb`
+exports one top certified `(provider, model)` per role (mixed vendors allowed).
+Apply goes through ModelFactory assignment overlay or pack model apply —
+`assertKnownApplyPath` rejects any third route. When apply changes a role's
+model, `applyBobCast` runs capture/inject (BL-1177) before writing the overlay.
+How-to: `docs/how-to/BL-1181-bob-starting-cast-cherry-pick-apply.md`.
 
 ### Out of scope (BL-1177 API slice)
 

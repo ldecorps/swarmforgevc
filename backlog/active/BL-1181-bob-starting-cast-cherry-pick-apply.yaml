@@ -21,7 +21,8 @@ invariants:
   - "Applying a cast that changes a role's model runs agent-memory transfer (BL-1177+) before live work."
 
 required_wiring:
-  - "model_steward_lib / ModelFactory::BoB cast export + apply::one model per role"
+  - "swarmforge/scripts/bob_starting_cast_lib.bb::export-bob-starting-cast::one model per role"
+  - "extension/src/tools/bobStartingCastApply.ts::model-factory-overlay::ModelFactory apply path"
   - "specs/pipeline/steps/index.js::bl1181BobStartingCastSteps::acceptance handler registered"
 
 description: |
