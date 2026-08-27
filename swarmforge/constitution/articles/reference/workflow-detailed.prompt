@@ -545,6 +545,17 @@ ONE removed passage, not three):
 
 ## Commit Messages
 - Include your role byline in every git commit message in this form: `By <role>.`
+- **Parcel vs evidence subject prefix (BL-711).** A subject that starts with
+  the bare ticket id and colon — `BL-711:` — marks the ticket's **parcel**
+  commit (the deliverable: prose, acceptance infra, ticket YAML). It must
+  never touch `backlog/evidence/`. Stage-pass evidence, hardener deltas,
+  documenter notes, and bounce write-ups use a **scoped** prefix instead:
+  `evidence(BL-711):`, `docs(BL-711):`, `chore(BL-711):`, etc. Prose-only
+  acceptance suites (BL-711 vocabulary-04, BL-715 modes-05) grep every
+  `^BL-<n>:` commit and assert an allowlisted file set — a bare-prefix
+  evidence commit is counted as parcel content and fails QA. The shared
+  `commit-msg` hook (`check_parcel_subject_evidence.sh`) refuses the
+  mistake at commit time.
 - Example:
 
 ```text
