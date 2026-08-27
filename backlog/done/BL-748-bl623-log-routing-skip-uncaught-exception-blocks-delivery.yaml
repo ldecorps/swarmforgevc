@@ -8,7 +8,7 @@ severity: medium
 # real-time wake, a leaked draft file and an uncaught-exception trace instead of
 # a controlled message - degraded, not lost. Not low: it defeats a guardrail the
 # originating ticket stated explicitly, and nothing exercises the path.
-status: paused
+status: todo
 epic: swarm-reliability
 priority: 79
 direction: normal
