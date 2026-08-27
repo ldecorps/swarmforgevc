@@ -70,8 +70,6 @@ import {
 import { computeCatchUpStateLive } from './catchUpLive';
 import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
-import { getSpecTreeUiHtml } from './specTreeUiHtml';
-import { computeDocsTree } from '../docs/docsTree';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
 import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
 import { computeEpicTopics, filterEpicsWithTopics, resolveTopicMembership } from './epicTopicSlugMatch';
@@ -421,16 +419,6 @@ function isEpicReorderPath(url: string): boolean {
 // BL-572: JSON state for the epic reorder Mini App.
 function isEpicReorderStatePath(url: string): boolean {
   return url === '/epic-reorder-state' || url.startsWith('/epic-reorder-state?');
-}
-
-// BL-592: live read-only spec tree Mini App shell.
-function isSpecTreePath(url: string): boolean {
-  return url === '/spec-tree' || url.startsWith('/spec-tree?');
-}
-
-// BL-592: JSON state for the spec tree Mini App (computeDocsTree output).
-function isSpecTreeStatePath(url: string): boolean {
-  return url === '/spec-tree-state' || url.startsWith('/spec-tree-state?');
 }
 
 // GH-23: Context Budget dashboard Mini App shell.
@@ -1733,7 +1721,6 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isPausedPagerStatePath,
   isCatchUpStatePath,
   isEpicReorderStatePath,
-  isSpecTreeStatePath,
   isContextBudgetStatePath,
   isWebUiFontSizePath,
   isOperatorDocsIndexFeedPath,
@@ -1918,11 +1905,6 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // BL-572: epic priority reorder JSON feed for the Mini App.
       matches: isEpicReorderStatePath,
       compute: () => computeEpicReorderState(targetPath),
-    },
-    {
-      // BL-592: live spec navigation tree JSON feed for the Mini App.
-      matches: isSpecTreeStatePath,
-      compute: () => computeDocsTree(targetPath, nowMs),
     },
     {
       // GH-23: Context Budget dashboard JSON feed for the Mini App.
@@ -2114,10 +2096,6 @@ export function startBridge(
       }
       if (isEpicReorderPath(url)) {
         serveMiniAppHtml(res, getEpicReorderUiHtml());
-        return;
-      }
-      if (isSpecTreePath(url)) {
-        serveMiniAppHtml(res, getSpecTreeUiHtml());
         return;
       }
       if (isContextBudgetPath(url)) {

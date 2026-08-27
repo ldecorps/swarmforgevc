@@ -71,7 +71,6 @@ export function getConsoleMenuUiHtml(): string {
   <a class="btn secondary" id="paused-pager" data-testid="paused-ticket-pager" href="#">Paused tickets</a>
   <a class="btn secondary" id="catch-up" data-testid="catch-up-pager" href="#">Catch up</a>
   <a class="btn secondary" id="epic-reorder" data-testid="epic-reorder" href="#">Reorder epics</a>
-  <a class="btn secondary" id="spec-tree" data-testid="spec-tree" href="#">Spec tree</a>
   <a class="btn secondary" id="context-budget" data-testid="context-budget" href="#">Context budget</a>
   <a class="btn secondary" id="lets-talk" data-testid="lets-talk" href="#">Let's Talk</a>
 </main>
@@ -86,7 +85,6 @@ export function getConsoleMenuUiHtml(): string {
   document.getElementById('paused-pager').href = '/paused-pager' + q;
   document.getElementById('catch-up').href = '/catch-up' + q;
   document.getElementById('epic-reorder').href = '/epic-reorder' + q;
-  document.getElementById('spec-tree').href = '/spec-tree' + q;
   document.getElementById('context-budget').href = '/context-budget' + q;
   document.getElementById('lets-talk').href = '/lets-talk' + q;
 })();
