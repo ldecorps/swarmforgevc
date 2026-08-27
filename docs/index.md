@@ -55,6 +55,7 @@ expects them, and are not migrated or rewritten here.
 - [Reading human-decision latency trends](how-to/BL-600-trend-human-decision-latency.md) — ask→verdict median/outliers per gate; pending asks stay open age (BL-600; measures only).
 - [Reading handoff latency trends](how-to/BL-602-trend-handoff-latency.md) — enqueue→dequeue wait per recipient role; open waits never masquerade as fast pickups (BL-602; measures only).
 - [Reading false-alarm rate trends on alerts](how-to/BL-598-trend-false-alarm-rate.md) — per-type false-positive rate on `.swarmforge/telemetry/alerts-YYYY-MM.jsonl` (BL-598; measures only).
+- [Gate snippet shows the question, not terminal chrome](how-to/BL-642-gate-snippet-question-not-chrome.md) — pane title rule + truncated footer dropped from NeedsApproval snippet (BL-642).
 - [Pane-title chrome covers every producible role name](how-to/BL-732-pane-title-chrome-covers-every-producible-role-name.md) — multi-word / `@`-seat SwarmForge titles strip as chrome (BL-732; closes BL-642 residual).
 - [Answering a menu-blocked pane from its Telegram steering topic](how-to/BL-568-menu-blocked-pane-questions-as-mapped-polls.md) — AskUserQuestion chrome → mapped poll in the role topic; vote drives the menu; steers suppressed while blocked (BL-568).
 - [Answering the Swarm Offline](how-to/BL-441-answering-offline-runbook.md)
@@ -70,6 +71,7 @@ expects them, and are not migrated or rewritten here.
 - [Handling Pre-QA Gate Handoff Refusals](how-to/BL-531-handoff-refusal-remedies.md)
 - [Rule-proposal shell test asserts real handoff queue grammar](how-to/BL-778-rule-proposal-test-asserts-stale-queue-grammar.md) — pin mailbox-only; assert full `HANDOFF QUEUED (mailbox only…)` line (BL-778).
 - [Run BL-528 claim-progress acceptance via APS handlers](how-to/BL-612-claim-progress-acceptance-step-handlers.md) — handlers drive `claim_progress_lib.bb`; no behaviour change (BL-612).
+- [Routing skip trail records the hop's actual skips](how-to/BL-623-routing-skip-trail-records-actual-hop.md) — skip record from sender→delivered recipient, not rewrite-only (BL-623).
 - [Routing-skip journal failure never withholds delivery](how-to/BL-748-routing-skip-recording-failure-never-withholds-delivery.md) — `ROUTING-SKIP RECORD FAILED` on stderr; parcel still delivered (BL-748 / BL-623).
 - [Call-site tracing before guardrail-gap nit-downgrade](how-to/BL-749-pilot-guardrail-gap-requires-call-site-trace.md) — BL-749: review hats and /pilot must trace call sites before dismissing a ticket guardrail gap as a nit
 - [Unreachable step handlers are untested-behavior flags](how-to/BL-753-pilot-unreachable-step-handler-untested-behavior.md) — BL-753: registered-but-never-matched APS patterns refuse /pilot land; review hats ask the claim question
@@ -77,6 +79,7 @@ expects them, and are not migrated or rewritten here.
 - [Per-hat role prompt reinject on /pilot](how-to/BL-758-pilot-inject-role-prompts-per-hat.md) — BL-758: composePilotStagePrompt + verdict path/hash evidence; land refuses pilot-hat-prompt-missing
 - [Residual-word allowlist survives backlog stage moves](how-to/BL-694-residual-word-allowlist-survives-stage-moves.md) — basename under active/paused/hold only (BL-694).
 - [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).
+- [stage_skip_reasons flow-style is readable](how-to/BL-661-stage-skip-reasons-flow-style.md) — flow + block parse; malformed comma surfaced (BL-661; see BL-754).
 - [Malformed stage_skip_reasons is surfaced, never silently truncated](how-to/BL-754-stage-skip-reasons-never-silently-loses-a-stage.md) — unquoted comma → `skip_reasons_malformed=`; handoff still delivers (BL-754 / BL-661).
 - [Freshness shell tests pin a fixture conf, not the live ops file](how-to/BL-1000-freshness-tests-read-a-pinned-fixture.md) — `daemon_log_freshness.fixture.conf`; ops raise of live threshold cannot redden suite (BL-1000).
 - [Daemon log-freshness watchdog](how-to/BL-675-daemon-log-freshness-watchdog.md) — cron-side stale-heartbeat checker for long-running daemons (BL-675).
@@ -211,6 +214,7 @@ expects them, and are not migrated or rewritten here.
 - [`done_with_current.sh` refuses every argument](how-to/BL-652-done-with-current-arg-rejection.md) — any argv (incl. `--help`) fails fast with zero completion side effects (BL-652).
 - [Supersede pre-turn guard — stop mid-flight work at every stage](how-to/BL-1084-a-superseded-task-stops-at-every-stage.md) — durable `.swarmforge/superseded/<task>` markers; every role's `ready_for_next` refuses without bouncing (BL-1084).
 - [Clearing Byte-Identical Hot-Synced Copies Before a Worktree Merge](how-to/BL-924-clear-identical-untracked-copies-before-merge.md) — the `clear_identical_untracked_and_merge.bb` script to run instead of a bare `git merge` when untracked, hot-synced script copies block a worktree fast-forward, its all-or-nothing identity proof, and what it deliberately never touches.
+- [Operator runtime test fixture sandbox](how-to/BL-671-operator-runtime-fixture-sandbox.md) — `operator_runtime_sandbox.sh` copy-list for load-file closure (BL-671).
 - [Keeping the operator_runtime.bb JS fixture list honest](how-to/BL-944-operator-runtime-fixture-closure-guard.md) — the source-derived load-file closure guard that replaced a six-times-drifted hand-maintained list, how to add a new dependency without repeating the drift, and how this differs from BL-671's separate shell-fixture sandbox.
 - [The Constitution Doc-Citation Guard](how-to/BL-945-constitution-doc-citation-guard.md) — why a constitution article citing a `docs/...` path now fails the standing extension suite if that path doesn't resolve on `main`, what it deliberately does and doesn't scan, and how it differs from BL-640's worktree-freshness guard.
 - [The Hardening-Debt Ledger](how-to/BL-942-hardening-debt-ledger.md) — why the office-hours mutation/CRAP bypass's "runs later against a quiet host" promise can no longer be kept under continuous 3x8 shifts, how to record a deferral and read outstanding debt, and its dedup/no-row-on-success rules.
