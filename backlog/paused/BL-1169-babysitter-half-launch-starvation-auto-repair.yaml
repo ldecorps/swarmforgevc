@@ -59,3 +59,5 @@ source: |
 notes: |
   - [2026-08-27] specifier: minted from root intake drain; BL-1017 scenario 03
     boundary (no repair when agent gone) retired by this slice per BL-1006.
+  - [2026-08-27] coordinator: human_approval pending — not promoted; expedited
+    high-severity first candidate when approval lands (specifier note 054827Z).
