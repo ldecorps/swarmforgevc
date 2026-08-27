@@ -617,6 +617,13 @@ const DOMAINS = [
   require('./bl1146HostQueueEnqueueNextHoldOnHostQuestionSteps'),
   require('./bl786MutationConcurrencyHostResolvedSteps'),
   require('./bl598TrendFalseAlarmRateSteps'),
+<<<<<<< HEAD
+=======
+  require('./bl599TrendIntakeBalanceSteps'),
+  require('./bl600TrendHumanDecisionLatencySteps'),
+  require('./bl601TrendCompactionCadenceSteps'),
+  require('./bl738ChunkingPropertySteps'),
+>>>>>>> 94b2447a0 (fix(BL-738): make splitTelegramChunks property exercise multi-chunk branch.)
   require('./bl965HealWrapperTempCleanupSteps'),
   require('./bl591EpicEtaSteps'),
   require('./bl593MutationRunDurationTelemetrySteps'),
