@@ -16,6 +16,9 @@ stage_skip_reasons:
   architect: "chokepoint and skip predicates settled in-ticket"
   hardender: "bb/shell outside mutate scope; fixture sweep tests cover acceptance"
 acceptance: specs/features/BL-668-post-qa-deterministic-branch-sweep.feature
+# BL-1163 hotfix slice (e7842d33f5) rides coder-cursor2 tip separately — not this parcel.
+abandoned_commits:
+  - e7842d33f5
 
 approval_context: >
   Operator intake proposal 2 (deterministic-git-choreography-assist, session
