@@ -809,6 +809,7 @@ const DOMAINS = [
   require('./bl834BubbleHostThinkingPageSteps'),
   require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
+  require('./bl1170PostmortemOperatorVerbFailureClassLearnSteps'),
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
 ];
 
