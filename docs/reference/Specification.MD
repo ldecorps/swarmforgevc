@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1185: Work notes attribute
+`mutation_cost` for seat difficulty from the `Work BL-…` message when
+`task:` is absent — same `supersede_lib/task-name-from-content` path
+`difficulty-allows-claim?` now uses. `task:` stays git_handoff-only; notes
+remain `type: note`. Hard seats no longer `:defer-better-fit` / `NO_TASK`
+an ambulance patient solely because the Work note omitted `task:`.
+Acceptance:
+`specs/features/BL-1185-work-note-missing-task-header-defers-hard-seat.feature`.
+How-to: `docs/how-to/BL-1185-work-note-missing-task-header-defers-hard-seat.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-600: human-decision latency trend —
 ask (ApprovalRequested) to verdict per gate via
 `humanDecisionLatency.ts`; pending asks contribute open age only; median +
