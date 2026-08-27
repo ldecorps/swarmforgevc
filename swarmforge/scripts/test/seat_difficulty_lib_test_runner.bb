@@ -95,7 +95,42 @@
          :claim
          (seat-difficulty-lib/difficulty-claim-decision
           {:me "coder" :my-tier nil :cost "high" :stage "coder"
-           :tiers {} :sibling-states []}))
+           :tiers {} :sibling-states [] :models {} :conf-text ""}))
+
+(let [same-model-conf (str "window coder claude coder --model auto --seat-tier hard\n"
+                           "window coder@cursor2 claude coder-s --model auto --seat-tier easy\n")
+      same-models (seat-difficulty-lib/parse-seat-models same-model-conf)
+      diff-model-conf (str "window coder claude coder --model auto --seat-tier hard\n"
+                           "window coder@cursor2 claude coder-s --model claude-sonnet-5 --seat-tier easy\n")
+      diff-models (seat-difficulty-lib/parse-seat-models diff-model-conf)
+      tiers {"coder" "hard" "coder@cursor2" "easy"}]
+  (assert= "parse models from window --model"
+           {"coder" "auto" "coder@cursor2" "auto"}
+           same-models)
+  (assert= "same-model stage detected"
+           true
+           (seat-difficulty-lib/stage-models-equivalent? same-models same-model-conf "coder"))
+  (assert= "different models not equivalent"
+           false
+           (seat-difficulty-lib/stage-models-equivalent? diff-models diff-model-conf "coder"))
+  (assert= "easy claims medium when same model (BL-1167)"
+           :claim
+           (seat-difficulty-lib/difficulty-claim-decision
+            {:me "coder@cursor2" :my-tier "easy" :cost "medium" :stage "coder"
+             :tiers tiers :models same-models :conf-text same-model-conf
+             :sibling-states [{:role "coder" :tier "hard" :busy? false}]}))
+  (assert= "easy claims high when same model and hard busy"
+           :claim
+           (seat-difficulty-lib/difficulty-claim-decision
+            {:me "coder@cursor2" :my-tier "easy" :cost "high" :stage "coder"
+             :tiers tiers :models same-models :conf-text same-model-conf
+             :sibling-states [{:role "coder" :tier "hard" :busy? true}]}))
+  (assert= "easy skips high when models differ (BL-1001 unchanged)"
+           :skip-ineligible
+           (seat-difficulty-lib/difficulty-claim-decision
+            {:me "coder@cursor2" :my-tier "easy" :cost "high" :stage "coder"
+             :tiers tiers :models diff-models :conf-text diff-model-conf
+             :sibling-states [{:role "coder" :tier "hard" :busy? true}]})))
 
 ;; ── BL-1167 same-model bypass ───────────────────────────────────────────
 (let [conf (str "window coder claude coder --model auto --seat-tier hard\n"
