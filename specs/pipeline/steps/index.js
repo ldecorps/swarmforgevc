@@ -813,7 +813,8 @@ const DOMAINS = [
   require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
-  require('./bl1188PipelineGridLiveStageParitySteps')
+  require('./bl1188PipelineGridLiveStageParitySteps'),
+  require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps')
 ];
 
 function registerSteps(registry) {

@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { formatUpdatedAtLabel } from './pipelineBoard';
-import { lookupBacklogItemById } from '../panel/backlogReader';
+import { lookupBacklogItemById, readBacklogFolders } from '../panel/backlogReader';
 import { extractTicketId, findTicketIdInText, readHandoffHeaderRecordsWithBatches } from '../metrics/swarmMetrics';
 import { mailboxDir, parseRolesTsv, readPipelineStages } from '../swarm/swarmState';
 
@@ -143,27 +143,32 @@ function readInProcessClaimsForRole(
   return { earliest, heldParcelCount };
 }
 
+// BL-1189 invariant 1: a ticket that has moved out of backlog/active (a
+// bookkeep-closed ticket, most commonly) must never read as primary working
+// now, even when a role's in_process claim file for it was never cleared -
+// BL-600 stayed "working" on four tiles this way through a close cascade.
+// lookupBacklogItemById searches every folder including done/, so presence
+// alone cannot distinguish a live claim from a stale one; only active/
+// membership can.
+function isTicketActive(targetPath: string, ticketId: string): boolean {
+  const needle = ticketId.toUpperCase();
+  return readBacklogFolders(targetPath).active.some((item) => item.id.toUpperCase() === needle);
+}
+
 export function resolveResidentHeldTicketMeta(targetPath: string, modelRole: string): ResidentHeldTicketMeta {
   const { earliest: claim, heldParcelCount } = readInProcessClaimsForRole(targetPath, modelRole);
   const ticketId =
     claim?.ticketId ??
     readPipelineStages(targetPath).find((stage) => stage.role === modelRole)?.heldTicketIds[0];
-  if (!ticketId) {
+  if (!ticketId || !isTicketActive(targetPath, ticketId)) {
     return {};
   }
   const claimEnteredAtMs = claim?.claimEnteredAtMs;
   const parcelCount = heldParcelCount > 1 ? heldParcelCount : undefined;
   const item = lookupBacklogItemById(targetPath, ticketId);
-  if (item) {
-    return {
-      ticketId: item.id,
-      ticketTitle: item.title,
-      ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}),
-      ...(parcelCount !== undefined ? { heldParcelCount: parcelCount } : {}),
-    };
-  }
   return {
-    ticketId,
+    ticketId: item?.id ?? ticketId,
+    ...(item?.title !== undefined ? { ticketTitle: item.title } : {}),
     ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}),
     ...(parcelCount !== undefined ? { heldParcelCount: parcelCount } : {}),
   };
@@ -180,6 +185,28 @@ export function resolveResidentHeldTicketMetaForRoles(
     }
   }
   return {};
+}
+
+// BL-1189 invariant 2: across one capture, a given ticket is primary
+// working on at most one seat - the FIRST role (in the caller's processing
+// order) to report it keeps the attribution; any later role reporting the
+// SAME ticket in the same capture had it demoted-or-omitted rather than
+// shown as an equal, independent "working now" claim on a second tile.
+// `claimedTicketIds` is mutated in place (threaded across the caller's
+// per-role loop for one capture) - never persisted between captures, so a
+// genuine re-claim on the NEXT capture is unaffected.
+export function dedupePrimaryWorkingTicket(
+  claimedTicketIds: Set<string>,
+  meta: ResidentHeldTicketMeta
+): ResidentHeldTicketMeta {
+  if (!meta.ticketId) {
+    return meta;
+  }
+  if (claimedTicketIds.has(meta.ticketId)) {
+    return {};
+  }
+  claimedTicketIds.add(meta.ticketId);
+  return meta;
 }
 
 export function readMonoRouterActiveRole(targetPath: string): string | undefined {
