@@ -196,6 +196,18 @@ export function effectiveBubbleMirrorTopicId(topicIds: CursorBridgeTopicIds): nu
   return topicIds.bubbleTopicId === topicIds.cursorTopicId ? undefined : topicIds.bubbleTopicId;
 }
 
+/**
+ * BL-709: Let's Talk mirror destination.
+ * Bound dedicated Bubble → Bubble only; unbound → previous Cursor Remote mirror.
+ */
+export function effectiveLetsTalkMirrorTopicId(topicIds: CursorBridgeTopicIds): number | undefined {
+  const bubble = effectiveBubbleMirrorTopicId(topicIds);
+  if (bubble !== undefined) {
+    return bubble;
+  }
+  return typeof topicIds.cursorTopicId === 'number' ? topicIds.cursorTopicId : undefined;
+}
+
 export function formatBubbleMirrorText(transcript: string, replyText: string): string {
   const you = transcript.trim();
   const agent = replyText.trim();
@@ -287,7 +299,7 @@ async function mirrorLetsTalkChoicePollToBubble(
   if (!botToken || !chatId) {
     return;
   }
-  const topicId = effectiveBubbleMirrorTopicId(readCursorBridgeTopicIds(targetPath));
+  const topicId = effectiveLetsTalkMirrorTopicId(readCursorBridgeTopicIds(targetPath));
   if (topicId === undefined) {
     return;
   }
@@ -315,7 +327,7 @@ export async function mirrorLetsTalkTurnToBubble(
   if (!botToken || !chatId) {
     return;
   }
-  const topicId = effectiveBubbleMirrorTopicId(readCursorBridgeTopicIds(targetPath));
+  const topicId = effectiveLetsTalkMirrorTopicId(readCursorBridgeTopicIds(targetPath));
   if (topicId === undefined) {
     return;
   }

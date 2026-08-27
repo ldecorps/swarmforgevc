@@ -386,6 +386,7 @@ const DOMAINS = [
   require('./bl1175PropertySuiteStandingRedsSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
+  require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl1164QaChangedPathUnitTestGateSteps'),
   require('./bl1007ContentionBudgetSteps'),
   require('./bl1008BoundedWatchDeadlineSteps'),
