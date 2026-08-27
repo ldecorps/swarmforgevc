@@ -12,10 +12,6 @@ function loadPure() {
   return require(path.join(EXT_DIR, 'out', 'metrics', 'compactionCadence'));
 }
 
-function loadTrend() {
-  return require(path.join(EXT_DIR, 'out', 'metrics', 'trend'));
-}
-
 function ensure(ctx) {
   if (!ctx.bl601) ctx.bl601 = {};
   return ctx.bl601;
@@ -186,10 +182,12 @@ function registerSteps(registry) {
   });
 
   scoped(/^the compaction cadence trend is computed$/, (ctx) => {
-    ensure(ctx).trend = loadTrend().trendForCompactionCadencePerHour(ensure(ctx).windows);
+    // Import from compactionCadence (not trend.ts re-export) — keeps graph acyclic.
+    ensure(ctx).trend = loadPure().trendForCompactionCadencePerHour(ensure(ctx).windows);
   });
 
   scoped(/^trend\.ts reports current prior delta and direction for the series$/, (ctx) => {
+    // Values come from computeTrend (trend.ts) via compactionCadence helper.
     const trend = ensure(ctx).trend;
     assert.equal(trend.currentValue, 0.2);
     assert.equal(trend.priorValue, 0.1);
