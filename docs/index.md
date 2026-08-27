@@ -126,6 +126,7 @@ expects them, and are not migrated or rewritten here.
 - [Dev-host bounce under WSL: exactly one window](how-to/BL-578-devhost-bounce-wsl-window-leak.md) — Windows-side kill-old + headless-swarm refuse/`--force` (BL-578).
 - [Keep BL-578 acceptance bound](how-to/BL-988-orphaned-wsl-acceptance-contract-binding.md) — restore orphaned step binding; property regression against re-orphan (BL-988).
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
+- [Context-telemetry producer wiring](how-to/BL-665-context-telemetry-producer-wiring.md) — transcript walker fills GH-22 store via `record`; handoffd sweep (BL-665).
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
 - [Paused pager shows server failure reasons](how-to/BL-662-paused-pager-shows-server-failure-reason.md) — JSON `reason` on non-OK for Expedite/Approve (BL-662).

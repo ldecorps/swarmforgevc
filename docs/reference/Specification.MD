@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-665: context-telemetry producer —
+`contextTelemetryProducer.ts` walks role transcripts (BL-664 substrate),
+derives events, and appends via GH-22 `context_telemetry_cli.bb record`;
+handoffd `context-telemetry-producer-sweep!` runs unattended; idempotent
+`agent:session_id:timestamp` dedupe with backfill on first run. Acceptance:
+`specs/features/BL-665-context-telemetry-producer-wiring.feature`.
+How-to: `docs/how-to/BL-665-context-telemetry-producer-wiring.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-634: promotion `slice_size_envelope`
 gate on declared estimates — shares BL-626 chokepoint; p90 default 514
 insertions (2026-07-25 distribution); high band or over-threshold insertions
@@ -7575,7 +7583,9 @@ back-edge was the standing architect bounce (cycle) this rematch closed.
 ### See Also
 
 - **BL-665** / **GH-22** — structured `context-events.jsonl` producer
-  (`compaction:true` is the primary detection signal).
+  (`contextTelemetryProducer.ts` + handoffd sweep; `compaction:true` is the
+  primary detection signal). How-to:
+  `docs/how-to/BL-665-context-telemetry-producer-wiring.md`.
 - **BL-596** — rotation-cost trend (cross-read with high compaction cadence).
 - **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
   `computeTrend` posture).

@@ -185,7 +185,19 @@ bb swarmforge/scripts/context_telemetry_cli.bb record ...
 
 The CLI will create the directory if it does not exist and append events to `.swarmforge/telemetry/context-events.jsonl` within the specified state directory.
 
-## Future: Live Capture Integration (GH-22 Slice 2)
+## Transcript-walker producer (BL-665)
 
-This ticket (GH-22 Slice 1) provides the recorder and query CLI only. **Live capture wiring** — automatically invoking the record command at agent-invocation call sites — is planned as GH-22 Slice 2 and is documented in `GH-22-context-telemetry-slice-2.feature.draft`.
+GH-22 Slice 1 shipped the recorder and query CLI. **BL-665** wires the
+scheduled producer: `contextTelemetryProducer.ts` walks role transcripts
+(BL-664 substrate), derives context-usage events, and calls this CLI's
+`record` path. handoffd runs `context-telemetry-producer-sweep!` on its
+shared tick; the run is idempotent and backfills history on first pass.
+
+See [BL-665 context-telemetry producer wiring](BL-665-context-telemetry-producer-wiring.md).
+
+## Future: Live per-invocation capture (GH-22 Slice 2)
+
+Automatic `record` at every agent-invocation call site (not the transcript
+walker) remains planned as GH-22 Slice 2 and is documented in
+`GH-22-context-telemetry-slice-2.feature.draft`.
 
