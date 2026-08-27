@@ -38,8 +38,7 @@ export function computeTrend(series: TrendSeriesPoint[]): TrendResult {
   return { series, currentValue, priorValue, delta, direction: directionOf(delta) };
 }
 
-// BL-605 global token series: plotted via shared TrendedNumber framework.
-export { globalTokenTrendSeries, trendForGlobalTokenConsumption } from './globalTokenConsumption';
+// BL-605 global token series: callers import from ./globalTokenConsumption (acyclic — no re-export).
 // BL-601: do NOT re-export trendForCompactionCadencePerHour from here —
 // compactionCadence imports computeTrend; a re-export creates an acyclic cycle
 // (architect bounce 88c606593c). Callers import from ./compactionCadence.
