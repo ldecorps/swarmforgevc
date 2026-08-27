@@ -1,34 +1,24 @@
-# BL-602 — architect pass (invariant rematch) — 20260827
+# BL-602 — architect pass — 20260827
 
-**Tip:** tip-pure rematch `d317c2ec4` → architect `b2368e7f0`
-**Handoff:** `00_20260827T090352Z_000993_from_cleaner_to_architect`
-Prior bounce: four invariants unencoded.
+**Tip:** tip-pure `8ffb40072` + acyclic `ae8348ff5` + cleaner `414274f32` → architect
+**Handoff:** `00_20260827T095808Z_001002_from_cleaner_to_architect`
 
 ## Verdict
 
-**Pass** — forward to hardender. Review inventory: NONE.
-
-## Scope / tip purity
-
-BL-602 paths: `handoffLatency.ts`, unit + `handoffLatencyInvariants.property.test.js`
-(P1–P4), APS steps, index wiring, rematch evidence.
+**Pass** — forward to hardender. Inventory NONE.
 
 ## Architecture
 
-- Pure aggregator; master + worktree mailbox gather.
-- No `trend.ts` re-export cycle (dep-gate PASSED).
-
-## Invariants
-
-All four declared invariants encoded as properties (4/4).
+Handoff latency aggregator imports `computeTrend` inward; `trend.ts` must not
+re-export `handoffLatency` (same acyclic class as BL-601/605).
 
 ## Verification
 
 | Check | Result |
 |-------|--------|
 | unit | 5/5 |
-| property | 4/4 |
-| APS | 8/8 |
-| dep-gate | PASSED |
+| APS | **8/8** |
+| acyclic | no handoffLatency re-export |
+| index markers | cleared |
 
 By architect.

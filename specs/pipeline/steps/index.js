@@ -626,11 +626,7 @@ const DOMAINS = [
   require('./bl786MutationConcurrencyHostResolvedSteps'),
   require('./bl598TrendFalseAlarmRateSteps'),
   require('./bl599TrendIntakeBalanceSteps'),
-<<<<<<< HEAD
-=======
-  require('./bl601TrendCompactionCadenceSteps'),
   require('./bl602TrendHandoffLatencySteps'),
->>>>>>> 8ffb40072 (fix(BL-602): tip-pure handoff latency rematch without deleting BL-597/599.)
   require('./bl600TrendHumanDecisionLatencySteps'),
   require('./bl601TrendCompactionCadenceSteps'),
   require('./bl605GlobalTokenConsumptionSteps'),
@@ -789,7 +785,6 @@ const DOMAINS = [
   require('./bl1119ClosingCeremonyRoleQualityDialSteps'),
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
-  require('./bl602TrendHandoffLatencySteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
 ];
 
