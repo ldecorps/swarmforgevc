@@ -407,6 +407,7 @@ const DOMAINS = [
   require('./bl749PilotGuardrailGapRequiresCallSiteTraceSteps'),
   require('./bl753PilotUnreachableStepHandlerUntestedBehaviorSteps'),
   require('./bl741PilotCrapGateSteps'),
+  require('./bl745PilotLoggedCrapEvidenceSteps'),
   require('./bl743PilotMkdtempConventionSteps'),
   require('./bl664TurnProfilerTranscriptWalkerSteps'),
   require('./bl755PilotMultiBranchParserNeedsPerArmTestsSteps'),
