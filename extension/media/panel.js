@@ -351,69 +351,81 @@ function renderBacklog(items) {
 }
 
 function detectFooterLineCount(text) {
-  if (!text) return 0;
-
-  const lines = text.split('\n');
-  let footerStart = -1;
-
-  // Scan from the bottom up to find the pinned footer
-  // Strategy: locate the input prompt at the very end, then work up to find
-  // status/permission lines that are part of the footer
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i] || '';
-    const trimmed = line.trim();
-
-    // Empty lines at the very end don't count as part of the footer
-    if (i === lines.length - 1 && trimmed === '') {
-      continue;
-    }
-
-    // Input prompt line: starts with ❯ or >
-    // "❯ type a message…", "> message", or a bare "❯ " when the input box is
-    // empty — trim() strips the trailing space real captures leave on an
-    // empty prompt, so the marker must also match at end-of-string.
-    if (/^[❯>](\s|$)/.test(trimmed)) {
-      footerStart = i;
-      break;
-    }
+  function isTrailingEmptyLine(index, lineCount, trimmed) {
+    return index === lineCount - 1 && trimmed === '';
   }
 
+  function isPromptLine(trimmed) {
+    return /^[❯>](\s|$)/.test(trimmed);
+  }
+
+  function findPromptLineIndex(lines) {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const trimmed = (lines[i] || '').trim();
+      if (isTrailingEmptyLine(i, lines.length, trimmed)) {
+        continue;
+      }
+      // "❯ type a message…", "> message", or a bare "❯ " when the input box is
+      // empty — trim() strips the trailing space real captures leave on an
+      // empty prompt, so the marker must also match at end-of-string.
+      if (isPromptLine(trimmed)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  function isBracketStatusLine(trimmed) {
+    return /^\[.+\]|\[auto\]|\[.*permission/.test(trimmed);
+  }
+
+  function isInterruptLine(trimmed) {
+    return /^esc\s+to|^.*interrupt|^.*break/i.test(trimmed);
+  }
+
+  function isFooterContentBoundary(trimmed) {
+    return trimmed.length > 40 || !/^[[\-*@]/.test(trimmed);
+  }
+
+  function shouldExtendFooter(trimmed) {
+    return isBracketStatusLine(trimmed) || isInterruptLine(trimmed);
+  }
+
+  function tryExtendFooterLine(trimmed, index, footerEnd) {
+    if (trimmed === '') {
+      return { footerEnd, stop: false };
+    }
+    if (shouldExtendFooter(trimmed)) {
+      return { footerEnd: index, stop: false };
+    }
+    if (isFooterContentBoundary(trimmed)) {
+      return { footerEnd, stop: true };
+    }
+    return { footerEnd, stop: false };
+  }
+
+  function extendFooterEnd(lines, footerStart) {
+    let footerEnd = footerStart;
+    const minIndex = Math.max(0, footerStart - 5);
+    for (let i = footerStart - 1; i >= minIndex; i--) {
+      const next = tryExtendFooterLine((lines[i] || '').trim(), i, footerEnd);
+      footerEnd = next.footerEnd;
+      if (next.stop) {
+        break;
+      }
+    }
+    return footerEnd;
+  }
+
+  if (!text) {
+    return 0;
+  }
+  const lines = text.split('\n');
+  const footerStart = findPromptLineIndex(lines);
   if (footerStart === -1) {
     return 0;
   }
-
-  // Now scan up from the prompt to find other footer lines
-  let footerEnd = footerStart;
-  for (let i = footerStart - 1; i >= Math.max(0, footerStart - 5); i--) {
-    const line = lines[i] || '';
-    const trimmed = line.trim();
-
-    // Skip empty lines
-    if (trimmed === '') {
-      continue;
-    }
-
-    // Permission/status line: contains [brackets] or single-word status
-    if (/^\[.+\]|\[auto\]|\[.*permission/.test(trimmed)) {
-      footerEnd = i;
-      continue;
-    }
-
-    // Interrupt/help line: "esc to break" or similar
-    if (/^esc\s+to|^.*interrupt|^.*break/i.test(trimmed)) {
-      footerEnd = i;
-      continue;
-    }
-
-    // If we hit a line that's clearly content (long, not status-like),
-    // we've reached the end of the footer
-    if (trimmed.length > 40 || !/^[[\-*@]/.test(trimmed)) {
-      break;
-    }
-  }
-
-  return lines.length - footerEnd;
+  return lines.length - extendFooterEnd(lines, footerStart);
 }
 
 function isAtBottom(el, contentText) {

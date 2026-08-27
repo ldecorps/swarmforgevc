@@ -25,55 +25,84 @@
 // Ported from media/panel.js's detectFooterLineCount — the host and webview
 // run in different JS environments with no shared module system, so this is
 // intentionally duplicated; keep the two in sync if either changes.
-export function detectFooterLineCount(text: string): number {
-  if (!text) return 0;
 
-  const lines = text.split('\n');
-  let footerStart = -1;
+function isTrailingEmptyLine(index: number, lineCount: number, trimmed: string): boolean {
+  return index === lineCount - 1 && trimmed === '';
+}
 
+function isPromptLine(trimmed: string): boolean {
+  return /^[❯>](\s|$)/.test(trimmed);
+}
+
+function findPromptLineIndex(lines: string[]): number {
   for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i] || '';
-    const trimmed = line.trim();
-
-    if (i === lines.length - 1 && trimmed === '') {
+    const trimmed = (lines[i] || '').trim();
+    if (isTrailingEmptyLine(i, lines.length, trimmed)) {
       continue;
     }
+    if (isPromptLine(trimmed)) {
+      return i;
+    }
+  }
+  return -1;
+}
 
-    if (/^[❯>](\s|$)/.test(trimmed)) {
-      footerStart = i;
+function isBracketStatusLine(trimmed: string): boolean {
+  return /^\[.+\]|\[auto\]|\[.*permission/.test(trimmed);
+}
+
+function isInterruptLine(trimmed: string): boolean {
+  return /^esc\s+to|^.*interrupt|^.*break/i.test(trimmed);
+}
+
+function isFooterContentBoundary(trimmed: string): boolean {
+  return trimmed.length > 40 || !/^[[\-*@]/.test(trimmed);
+}
+
+function shouldExtendFooter(trimmed: string): boolean {
+  return isBracketStatusLine(trimmed) || isInterruptLine(trimmed);
+}
+
+function tryExtendFooterLine(
+  trimmed: string,
+  index: number,
+  footerEnd: number
+): { footerEnd: number; stop: boolean } {
+  if (trimmed === '') {
+    return { footerEnd, stop: false };
+  }
+  if (shouldExtendFooter(trimmed)) {
+    return { footerEnd: index, stop: false };
+  }
+  if (isFooterContentBoundary(trimmed)) {
+    return { footerEnd, stop: true };
+  }
+  return { footerEnd, stop: false };
+}
+
+function extendFooterEnd(lines: string[], footerStart: number): number {
+  let footerEnd = footerStart;
+  const minIndex = Math.max(0, footerStart - 5);
+  for (let i = footerStart - 1; i >= minIndex; i--) {
+    const next = tryExtendFooterLine((lines[i] || '').trim(), i, footerEnd);
+    footerEnd = next.footerEnd;
+    if (next.stop) {
       break;
     }
   }
+  return footerEnd;
+}
 
+export function detectFooterLineCount(text: string): number {
+  if (!text) {
+    return 0;
+  }
+  const lines = text.split('\n');
+  const footerStart = findPromptLineIndex(lines);
   if (footerStart === -1) {
     return 0;
   }
-
-  let footerEnd = footerStart;
-  for (let i = footerStart - 1; i >= Math.max(0, footerStart - 5); i--) {
-    const line = lines[i] || '';
-    const trimmed = line.trim();
-
-    if (trimmed === '') {
-      continue;
-    }
-
-    if (/^\[.+\]|\[auto\]|\[.*permission/.test(trimmed)) {
-      footerEnd = i;
-      continue;
-    }
-
-    if (/^esc\s+to|^.*interrupt|^.*break/i.test(trimmed)) {
-      footerEnd = i;
-      continue;
-    }
-
-    if (trimmed.length > 40 || !/^[[\-*@]/.test(trimmed)) {
-      break;
-    }
-  }
-
-  return lines.length - footerEnd;
+  return lines.length - extendFooterEnd(lines, footerStart);
 }
 
 // The largest k (0 <= k <= min(oldLines.length, newLines.length)) such that
