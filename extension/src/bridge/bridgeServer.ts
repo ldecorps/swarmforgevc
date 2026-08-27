@@ -14,6 +14,7 @@ import {
   buildHolisticState,
   buildStageDwellState,
   buildBurnRateState,
+  buildBubbleHealthTrendsState,
   BridgeState,
 } from './bridgeState';
 import { extractBearerToken, isAuthorizedByQueryToken, parseQueryCredential } from './bridgeAuth';
@@ -52,6 +53,19 @@ import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getCatchUpUiHtml } from './catchUpUiHtml';
+import {
+  buildOperatorDocsIndexState,
+  buildOperatorDocsPageState,
+  getOperatorDocsUiHtml,
+  isOperatorDocsIndexPath,
+  isOperatorDocsPagePath,
+  isOperatorDocsPath,
+} from './operatorDocsHtml';
+import {
+  getBubbleHealthUiHtml,
+  isBubbleHealthPath,
+  isBubbleHealthTrendsPath,
+} from './bubbleHealthHtml';
 import { computeCatchUpStateLive } from './catchUpLive';
 import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
@@ -67,6 +81,8 @@ import { getLetsTalkUiHtml } from './letsTalkUiHtml';
 import {
   createLetsTalkWriteRoutes,
   isLetsTalkPath,
+  mergeOperatorDocsIntoUiBundleManifest,
+  mergeBubbleHealthIntoUiBundleManifest,
 } from './letsTalkRoutes';
 import { createWebUiFontSizeRoutes, isWebUiFontSizePath } from './webUiFontSizeRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
@@ -188,6 +204,18 @@ export function effectiveBubbleMirrorTopicId(topicIds: CursorBridgeTopicIds): nu
   return topicIds.bubbleTopicId === topicIds.cursorTopicId ? undefined : topicIds.bubbleTopicId;
 }
 
+/**
+ * BL-709: Let's Talk mirror destination.
+ * Bound dedicated Bubble → Bubble only; unbound → previous Cursor Remote mirror.
+ */
+export function effectiveLetsTalkMirrorTopicId(topicIds: CursorBridgeTopicIds): number | undefined {
+  const bubble = effectiveBubbleMirrorTopicId(topicIds);
+  if (bubble !== undefined) {
+    return bubble;
+  }
+  return typeof topicIds.cursorTopicId === 'number' ? topicIds.cursorTopicId : undefined;
+}
+
 export function formatBubbleMirrorText(transcript: string, replyText: string): string {
   const you = transcript.trim();
   const agent = replyText.trim();
@@ -279,7 +307,7 @@ async function mirrorLetsTalkChoicePollToBubble(
   if (!botToken || !chatId) {
     return;
   }
-  const topicId = effectiveBubbleMirrorTopicId(readCursorBridgeTopicIds(targetPath));
+  const topicId = effectiveLetsTalkMirrorTopicId(readCursorBridgeTopicIds(targetPath));
   if (topicId === undefined) {
     return;
   }
@@ -307,7 +335,7 @@ export async function mirrorLetsTalkTurnToBubble(
   if (!botToken || !chatId) {
     return;
   }
-  const topicId = effectiveBubbleMirrorTopicId(readCursorBridgeTopicIds(targetPath));
+  const topicId = effectiveLetsTalkMirrorTopicId(readCursorBridgeTopicIds(targetPath));
   if (topicId === undefined) {
     return;
   }
@@ -508,6 +536,15 @@ function isContextBudgetPath(url: string): boolean {
 // GH-23: JSON state polled by the Context Budget Mini App with ?token=&agent=.
 function isContextBudgetStatePath(url: string): boolean {
   return url === '/context-budget-state' || url.startsWith('/context-budget-state?');
+}
+
+// BL-1166: Operator docs Mini App shell and JSON feeds.
+function isOperatorDocsIndexFeedPath(url: string): boolean {
+  return isOperatorDocsIndexPath(url);
+}
+
+function isOperatorDocsPageFeedPath(url: string): boolean {
+  return isOperatorDocsPagePath(url);
 }
 
 // BL-551 (bridge-08): JSON top-expensive-invocations/rollup feed over the
@@ -2002,7 +2039,14 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // decide fresh/cached/stale/bare from what this route actually serves.
       matches: isLetsTalkUiBundlePath,
       compute: () =>
-        mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env)),
+        mergeBubbleHealthIntoUiBundleManifest(
+          mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+        ),
+    },
+    {
+      // BL-832: Health page JSON — same readouts as bubbleHealthCore, on demand.
+      matches: isBubbleHealthTrendsPath,
+      compute: () => buildBubbleHealthTrendsState(targetPath, nowMs),
     },
     {
       // BL-1166: Operator docs index derived from docs/index.md.
@@ -2115,13 +2159,11 @@ export function startBridge(
       respondJson,
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
     );
-    // BL-790: POST /agent-notes — authenticated note queue (agentNotesRoutes).
     const agentNotesRoutes = createAgentNotesRoutes(
       requireControlAuth,
       respondJson,
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
     );
-
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
 
@@ -2161,6 +2203,14 @@ export function startBridge(
       }
       if (isContextBudgetPath(url)) {
         serveMiniAppHtml(res, getContextBudgetUiHtml());
+        return;
+      }
+      if (isOperatorDocsPath(url)) {
+        serveMiniAppHtml(res, getOperatorDocsUiHtml());
+        return;
+      }
+      if (isBubbleHealthPath(url)) {
+        serveMiniAppHtml(res, getBubbleHealthUiHtml());
         return;
       }
       if (url === '/lets-talk/manifest.json' || url.startsWith('/lets-talk/manifest.json?')) {

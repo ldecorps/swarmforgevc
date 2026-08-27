@@ -28,7 +28,6 @@ import {
 } from './letsTalkCore';
 import type { SynthesizeSpeech, TranscribeAudio, LetsTalkAudioResolution } from './letsTalkAudio';
 import type { CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
-
 import type { LetsTalkUiBundlePage, LetsTalkUiBundleManifest } from './letsTalkUiBundle';
 
 export const operatorDocs: LetsTalkUiBundlePage = {
@@ -38,6 +37,23 @@ export const operatorDocs: LetsTalkUiBundlePage = {
   order: 6,
 };
 
+
+export const bubbleHealth: LetsTalkUiBundlePage = {
+  id: 'health',
+  title: 'Health',
+  entryPath: 'health',
+  order: 3,
+};
+
+export function mergeBubbleHealthIntoUiBundleManifest(manifest: LetsTalkUiBundleManifest): LetsTalkUiBundleManifest {
+  if (manifest.pages.some((page) => page.id === bubbleHealth.id)) {
+    return manifest;
+  }
+  return {
+    ...manifest,
+    pages: [...manifest.pages, bubbleHealth].sort((a, b) => a.order - b.order),
+  };
+}
 export function mergeOperatorDocsIntoUiBundleManifest(manifest: LetsTalkUiBundleManifest): LetsTalkUiBundleManifest {
   if (manifest.pages.some((page) => page.id === operatorDocs.id)) {
     return manifest;
