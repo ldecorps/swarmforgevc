@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1166: Bubble Operator docs remote page —
+`operator-docs` in BL-829 ui-bundle manifest (`letsTalkRoutes.operatorDocs`,
+order 6); bridge serves read-only HTML from git `docs/` via
+`docs/index.md` Divio sections; phone viewport layout; bridge token
+required; honest unavailable when corpus unreachable. First slice of
+BL-1165. Acceptance:
+`specs/features/BL-1166-bubble-authored-docs-index-and-first-pages.feature`.
+How-to: `docs/how-to/BL-1166-bubble-authored-docs-index-and-first-pages.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-726: BL-718 Bubble talk mirror
 acceptance is wired — `bl718BubbleTalkMirrorSteps.js` registered from
 `specs/pipeline/steps/index.js`, handlers drive

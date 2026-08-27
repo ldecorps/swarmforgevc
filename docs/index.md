@@ -46,6 +46,7 @@ expects them, and are not migrated or rewritten here.
 - [RECENTLY CLOSED lines show closure age](how-to/BL-980-recently-closed-elapsed-time.md) — `(10min ago)` from durable `doneClosedAtMs`; RECENTLY CLOSED only (BL-980).
 - [One unified pipeline grid across swarms](how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md) — one kanban; caption `s1`/`s2` badges when multi-swarm; remote held-by-role never guessed (BL-1009).
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
+- [Bubble Operator docs on phone](how-to/BL-1166-bubble-authored-docs-index-and-first-pages.md) — read-only Divio browser from `docs/index.md` via remote HTML page `operator-docs` (BL-1166; first slice of BL-1165).
 - [Steering a swarm role from Telegram, and reading the receipt](how-to/BL-566-steer-a-role-from-telegram.md) — per-role topic nudge + delivery receipt (BL-566); `menu_blocked` when a pane menu is live (BL-568).
 - [Reading front-desk human-loop reliability trends](how-to/BL-595-trend-human-loop-reliability.md) — approval-tap / steer / poll-health / tick-duration on `.swarmforge/telemetry/human-loop-YYYY-MM.jsonl` (BL-595; measures only).
 - [Reading self-heal event trends](how-to/BL-597-trend-self-heal-events.md) — stale-build / respawn / kill_all / rotation / claim-heal counts on `.swarmforge/telemetry/self-heal-YYYY-MM.jsonl` (BL-597; measures only).
