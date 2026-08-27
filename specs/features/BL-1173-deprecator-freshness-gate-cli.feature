@@ -1,7 +1,3 @@
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-27T06:38:28.672101974Z","feature_name":"deprecator freshness gate refuses stale paused tickets at promotion","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1173-deprecator-freshness-gate-cli.feature","background_hash":"93d5ab1a3c16434223dfa0762a73ce4058ad8ddb3ce6b6acb15bcb44abb6d4bf","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
-# acceptance-mutation-manifest-end
-
 Feature: deprecator freshness gate refuses stale paused tickets at promotion
 
   # BL-1173 (epic BL-1172): machine-checkable Article 3.6 gate. CLI prints

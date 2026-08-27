@@ -800,6 +800,7 @@ const DOMAINS = [
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
   require('./bl832BubbleHealthTrendsPageSteps'),
+  require('./bl834BubbleHostThinkingPageSteps'),
   require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
 ];

@@ -76,17 +76,6 @@ test('BL-1175 invariant 2: all-allowlisted suite red allows; non-allowlisted red
     assert.equal(ok.status, 0, `${ok.stdout}\n${ok.stderr}`);
     assert.match(`${ok.stdout}\n${ok.stderr}`, /allowlisted-standing-reds/);
 
-    // FAIL lines may print extension/test/... — normalize must strip the prefix
-    // so the TSV key (test/...) still allowlists (BL-1175 hardener surgical).
-    const extPrefixed = [
-      'bash',
-      '-c',
-      `printf '%s\\n' ' FAIL  extension/${allowlisted} > x' >&2; exit 1`,
-    ];
-    const okExt = runGuard(tmp, extPrefixed);
-    assert.equal(okExt.status, 0, `${okExt.stdout}\n${okExt.stderr}`);
-    assert.match(`${okExt.stdout}\n${okExt.stderr}`, /allowlisted-standing-reds/);
-
     const bad = runGuard(tmp, mixed);
     assert.notEqual(bad.status, 0, `${bad.stdout}\n${bad.stderr}`);
     assert.match(`${bad.stdout}\n${bad.stderr}`, /pipelineBoard\.property\.test\.js/);

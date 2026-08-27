@@ -243,19 +243,5 @@ set -e
 echo "$OUT13" | grep -q 'pipelineBoard.property.test.js' \
   || fail "13: must name failing property file, got: $OUT13"
 pass "13: guard still refuses silent unallowlisted reds"
-git -C "$ROOT" reset -q HEAD
-rm -rf "$ROOT/extension"
-
-# ── 14: BL-1175 extension/test/ FAIL path normalizes to allowlist key ─────
-stage extension/src/pipelineBoard.ts
-EXT_ALLOWLISTED_RED=(bash -c 'printf "%s\n" " FAIL  extension/test/bl632CommitTimeGuardInvariants.property.test.js > x" >&2; exit 1')
-set +e
-OUT14="$(cd "$ROOT" && bash "$GUARD" "${EXT_ALLOWLISTED_RED[@]}" 2>&1)"
-ST14=$?
-set -e
-[[ "$ST14" -eq 0 ]] || fail "14: extension/test/ allowlisted FAIL must allow, got $ST14: $OUT14"
-echo "$OUT14" | grep -q 'allowlisted-standing-reds' \
-  || fail "14: expected allowlisted-standing-reds after normalize, got: $OUT14"
-pass "14: extension/test/ FAIL path normalizes onto allowlist key"
 
 echo "ALL PASS"

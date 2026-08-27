@@ -2,11 +2,11 @@
 
 ## Inbound
 
-Architect rematch after QA bounce. Tip-pure `4b60aa3928`. Prior harden on tip.
+Architect rematch after QA bounce. Tip-pure `4b60aa3928`.
 
-## Gates (re-verified)
+## Gates
 
-Acceptance / properties / surgical re-verified where present on tip.
+Re-verified on tip (acceptance / surgical where present).
 
 ## Forward
 

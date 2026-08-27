@@ -9,8 +9,6 @@ import { parseExpediteTicket, parseReexpediteTicket } from './telegramCursorBrid
 import { parsePilotTicket, parsePilotSafeCommand } from './telegramCursorBridgePilot';
 import { parseRedeployCommand } from './telegramCursorBridgeRedeploy';
 import { parseMiniAppRedeployCommand } from './telegramCursorBridgeMiniAppRedeploy';
-import { parseFrontDeskRedeployCommand } from './telegramCursorBridgeFrontDeskRedeploy';
-import { parseAllRedeployCommand } from './telegramCursorBridgeAllRedeploy';
 import { parseLogCommand, type LogTarget } from './telegramCursorBridgeLogs';
 import {
   decideOperatorConfirmCallback,
@@ -483,13 +481,7 @@ function decideGatedOperatorVerb(
   ) {
     return undefined;
   }
-  // Miniapp / frontdesk / all redeploy: treat as soft /redeploy with args for confirm+exec.
-  if (parseAllRedeployCommand(trimmed)) {
-    return mapOperatorConfirmDecision(decideOperatorVerbConfirm('/redeploy all', pending));
-  }
-  if (parseFrontDeskRedeployCommand(trimmed)) {
-    return mapOperatorConfirmDecision(decideOperatorVerbConfirm('/redeploy frontdesk', pending));
-  }
+  // Miniapp redeploy: treat as soft /redeploy with args for confirm+exec.
   if (parseMiniAppRedeployCommand(trimmed)) {
     return mapOperatorConfirmDecision(decideOperatorVerbConfirm('/redeploy miniapp', pending));
   }
@@ -925,8 +917,6 @@ export function formatHelpMessage(): string {
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
     '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
     '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
-    '/redeploy frontdesk — soft confirm, then bounce the front desk (bridge + bot)',
-    '/redeploy all — soft confirm, then bounce cursor bridge, front desk, and mini app bridge',
     '/pause — soft confirm; freeze new promotion until /resume (in-flight continues; useful on flaky data)',
     '/resume — soft confirm; allow promotion again',
     '/syncenv /compile /pull — soft confirm (one Confirm tap)',

@@ -29,6 +29,12 @@ test('aggregateSelfHealCounts yields per-type bucket counts', () => {
       reason: 'bounded restart',
       at: '2026-08-27T10:30:00.000Z',
     },
+    {
+      type: 'stale-build-recompile',
+      subject: 'front-desk-supervisor',
+      reason: 'outside window',
+      at: '2026-08-26T08:00:00.000Z',
+    },
   ];
   const agg = aggregateSelfHealCounts(events, {
     startMs: Date.parse('2026-08-27T09:00:00.000Z'),
@@ -36,6 +42,7 @@ test('aggregateSelfHealCounts yields per-type bucket counts', () => {
     bucketMs: 60 * 60 * 1000,
   });
   assert.equal(agg['stale-build-recompile'].series.length, 2);
+  assert.equal(agg['stale-build-recompile'].series.reduce((n, p) => n + p.value, 0), 2);
   assert.equal(agg['supervisor-respawn'].currentValue, 1);
 });
 
@@ -53,6 +60,7 @@ test('emitSelfHealEvent appends one jsonl record', async () => {
     assert.equal(events.length, 1);
     assert.equal(events[0].type, 'claim-heal');
     assert.equal(events[0].subject, 'handoffd');
+    assert.equal(events[0].reason, 'resume orphaned in_process');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
