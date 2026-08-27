@@ -107,6 +107,38 @@ vitest).
 that unconditionally `fs.rmSync(ctx.gridRoot, { recursive: true, force:
 true })` if `ctx.gridRoot` is set.
 
+## D3 — declared acceptance feature file was never actually committed
+
+**File:** `specs/features/BL-1188-pipeline-grid-live-stage-parity.feature`
+**Class:** behavior (acceptance-pointer defect)
+**Blamed role:** coder
+
+The ticket YAML declares `acceptance:
+specs/features/BL-1188-pipeline-grid-live-stage-parity.feature`. The file
+exists on disk in this worktree, but it is **untracked** (`git status`
+shows `??`) and is not part of any of the three BL-1188 commits
+(`daa10afce`, `e6d2cb13a`, `6c544b94e`) or their merge — confirmed via
+`git show <commit> --stat | grep .feature` on each, all empty, and via
+`git log --all --oneline -- specs/features/BL-1188-...feature`, which only
+turns up `seed`/`seed fixture`/`init` canary commits (the same
+corruption-canary shape documented in
+`backlog/evidence/BL-1124-property-fixture-git-env-leak-20260827.md` and
+the hardener/cleaner branch-corruption evidence this session). Caught
+mechanically by `swarm_handoff.sh`'s own `PRE_QA_GATE_FAIL
+acceptance-pointer` check when I attempted to send this bounce — it
+correctly refused: "path ... does not exist at cited commit."
+
+The step handler file (`bl1188PipelineGridLiveStageParitySteps.js`) IS
+committed and registered (see Passed checks above), so the acceptance
+*wiring* is real — only the `.feature` scenario source itself was never
+`git add`ed and committed alongside it.
+
+**Remediation:** `git add specs/features/BL-1188-pipeline-grid-live-stage-parity.feature`
+and commit it (the working-tree content itself was not flagged as wrong by
+this review — only its absence from history). Re-verify with `git cat-file
+-e <new-commit>:specs/features/BL-1188-pipeline-grid-live-stage-parity.feature`
+before forwarding again.
+
 ## Notes
 
 - Stale-build false alarm avoided: my first property-test run showed all 3
@@ -119,5 +151,6 @@ true })` if `ctx.gridRoot` is set.
 
 ## Forward
 
-Bounced to **coder**, task name carries a one-line summary of both defects.
-Not forwarded to hardener.
+Bounced to **coder**, task name carries a one-line summary. Not forwarded
+to hardener. Three defects total (D1, D2, D3) in this one bounce, per
+Article 4.4's complete-inventory rule.
