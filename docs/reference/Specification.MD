@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1170: `/postmortem` operator verb —
+qualifies cleared disaster incidents, updates failure-class registry and
+operator playbook, mints `INTAKE-disaster-*` stub; idempotent per incident
+window; refuses when no recent incident. Soft confirm tier on BL-698 surface.
+Acceptance:
+`specs/features/BL-1170-postmortem-operator-verb-failure-class-learn.feature`.
+How-to: `docs/how-to/BL-1170-postmortem-operator-verb-failure-class-learn.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1181: BoB starting cast — steward
 `export-bob-starting-cast` names one certified model per role; apply reuses
 ModelFactory overlay or pack model apply only; `bobStartingCastApply.ts`
