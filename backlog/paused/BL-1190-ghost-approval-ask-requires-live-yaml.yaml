@@ -11,8 +11,7 @@ depends_on: [BL-582]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1190-ghost-approval-ask-requires-live-yaml.feature
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   INTAKE-bl1186-ghost-approval-ask-no-yaml.md (2026-08-27). Human tapped Approve
   on BL-1186 seven times; all returned no-ticket-file because yaml was never
@@ -57,3 +56,17 @@ source: |
 
 notes: |
   - [2026-08-27] Minted while repairing BL-1186 ghost approval; systemic slice.
+  - [2026-08-27] specifier: Article 3.6 freshness gate held on
+    `depends_on: [BL-582]` (done) + "retired surface: Mint" — verified FALSE
+    HOLD. `node extension/out/tools/deprecate-check.js . BL-1190` traced to
+    docs/how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md:21,
+    whose RETIRED marker names `type: bug`, not "Mint"; the extractor
+    grabbed the wrong word (this ticket's own unrelated "Mint durability
+    gate" deliverable). CONFIRM PROMOTE — premise verified fresh, no
+    amendment needed. Extractor bug ticketed separately as BL-1193 (do not
+    re-litigate here).
+  - [2026-08-27] coordinator: freshness hold cleared, confirm-promote
+    accepted. Not promoted this turn — active/ is at 7, effective cap is 6
+    (already over, no open slot). Expedited (defect/high) but Article 3.2.4
+    ordering never creates an extra slot. Top candidate for the next open
+    slot once one clears.

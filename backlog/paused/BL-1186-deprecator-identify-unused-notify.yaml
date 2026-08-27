@@ -10,8 +10,7 @@ depends_on: [BL-1173]
 mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1186-deprecator-identify-unused-notify.feature
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Human Laurent via Cursor 2026-08-27 ~08:31 BST addendum to BL-1172. New child
   — do not expand in-flight BL-1174. Identify + notify only; no auto-delete

@@ -45,14 +45,17 @@ notes: |
   it is the standing home for the debt and the source the on-touch/module slices
   draw from.
 
-acceptance: |
-  No net-new testable behavior of its own — the acceptance criterion for any decrap
-  work drawn from this tracker is the EXISTING hardener gate applied to that slice's
-  changed functions: each touched function ends at CRAP<=6 with 100% coverage, no
-  surviving mutants, and NO behavior change (a pure refactor: the function's existing
-  acceptance/unit tests still pass unchanged). A module-scoped decrap slice, when
-  actually taken up, gets its own concrete feature file at that time; this standing
-  tracker does not carry one.
+acceptance: specs/features/BL-428-decrap-paneHistory-slice.feature
+
+specifier_decisions: |
+  2026-08-27 (SG1 / documenter forward): materialized the paneHistory module slice
+  feature per tracker policy §2 — inline block-scalar acceptance was unreadable at
+  pre-QA (BL-761). Standing tracker policy unchanged; future slices get their own
+  feature files when taken up.
+  2026-08-27 (recovery): SG1 commit 18a0dad4e was made on main but never pushed
+  before something reset local main to origin/main, silently dropping it (see
+  backlog/evidence/BL-428-sg1-fix-dropped-by-origin-reset-20260827.md). Recovered
+  via cherry-pick; no content change from the original SG1 decision.
 
 qa_e2e: |
   Per decrap slice (not for the tracker as a whole): regenerate the CRAP>6 list via
