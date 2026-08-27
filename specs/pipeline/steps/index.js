@@ -576,6 +576,7 @@ const DOMAINS = [
   require('./bl936Bl805PropertyLaneExercisesTheParcelGateSteps'),
   require('./bl937ShellScriptsRunOnStockMacosBash32Steps'),
   require('./bl915CursorBridgeGoneAgentSessionResetSteps'),
+  require('./bl941CursorGoneAgentClassifierBoundariesSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
   require('./bl938AgedNoteRotateFixtureRotationRouterSteps'),
   require('./bl923DwellCountsOccupiedTimeSteps'),
