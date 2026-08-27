@@ -52,6 +52,7 @@ const DOMAINS = [
   require('./bl595HumanLoopReliabilityTrendSteps'),
   require('./bl596MonoRouterRotationDynamicsSteps'),
   require('./bl597TrendSelfHealEventsSteps'),
+  require('./bl599TrendIntakeBalanceSteps'),
   require('./bl602TrendHandoffLatencySteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
