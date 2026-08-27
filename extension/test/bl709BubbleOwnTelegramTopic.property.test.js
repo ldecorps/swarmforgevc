@@ -89,3 +89,14 @@ test('BL-709 P3: unbound Bubble degrades without crash — Cursor Remote mirror 
   );
   assert.ok(reached >= 10);
 });
+
+test('BL-709 P4: colliding Bubble and Cursor Remote ids are not a dedicated Bubble', () => {
+  fc.assert(
+    fc.property(topicIdArb, (topicId) => {
+      const ids = { cursorTopicId: topicId, bubbleTopicId: topicId };
+      assert.equal(effectiveBubbleMirrorTopicId(ids), undefined);
+      assert.equal(effectiveLetsTalkMirrorTopicId(ids), topicId);
+    }),
+    { numRuns: 20 }
+  );
+});
