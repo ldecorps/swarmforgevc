@@ -73,3 +73,7 @@ notes: |
     task: — coordinator corrected: illegal on notes.
   - [2026-08-27] specifier: refined — message attribution only; dropped stamp-
     task: scenario; drained follow-up intake; stays paused under ambulance.
+  - [2026-08-27] operator via Cursor: hitchhiker died in BL-1174 tip-pure
+    rematch (QA bounce BL-506). Restored from approved tip 1207cf674 into
+    active (ambulance patient closed). Durable fix = message attribution in
+    difficulty-allows-claim?; ops easy in_process pin is not the fix.
