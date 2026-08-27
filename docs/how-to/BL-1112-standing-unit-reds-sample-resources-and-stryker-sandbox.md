@@ -33,8 +33,10 @@ From `extension/` with `swarm.env` loaded:
 npx vitest run test/sampleResourcesCli.test.js test/strykerSandboxSiblingsLib.test.js
 ```
 
-Both suites should be green. Complements BL-847 (measure the agent, not the
-shell) and the Stryker sandbox sibling-link helper for mutation runs.
+Both suites should be green. Test git helpers in `sharedRepoFixture.js` unset
+`GIT_DIR` / `GIT_WORK_TREE` so fixture repos stay isolated inside active
+worktrees. Complements BL-847 (measure the agent, not the shell) and the
+Stryker sandbox sibling-link helper for mutation runs.
 
 ## FF-only rematch
 
