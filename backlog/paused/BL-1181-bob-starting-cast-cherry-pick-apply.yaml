@@ -1,0 +1,44 @@
+id: BL-1181
+title: "BoB starting cast — steward cherry-pick export and apply path"
+milestone: M8
+type: feature
+status: todo
+epic: best-of-breed-swarm
+priority: 4
+direction: human-requested
+depends_on: [BL-1177, BL-525, BL-547]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1181-bob-starting-cast-cherry-pick-apply.feature
+
+human_approval: approved
+approval_context: >
+  Quick-start slice of BoB intake: steward cherry-picks one (provider, model)
+  per role as the initial permanent lineup. Reuse ModelFactory / pack apply.
+
+invariants:
+  - "BoB cast apply reuses ModelFactory or pack --model surfaces — never a third assignment path."
+  - "Applying a cast that changes a role's model runs agent-memory transfer (BL-1177+) before live work."
+
+required_wiring:
+  - "model_steward_lib / ModelFactory::BoB cast export + apply::one model per role"
+  - "specs/pipeline/steps/index.js::bl1181BobStartingCastSteps::acceptance handler registered"
+
+description: |
+  Steward exports a named BoB starting cast (best-of-breed per role, mixed
+  vendors allowed) and apply path via existing ModelFactory / pack surfaces.
+  Same-role model changes during apply transfer memory (depends BL-1177).
+
+qa_e2e_procedure: >
+  (1) Steward cherry-pick → cast names one model per role. (2) Apply via
+  existing assignment path. (3) Model change on a role triggers memory transfer.
+
+out_of_scope: |
+  - Day-long trial loop (BL-1182).
+  - Live production trials before BL-1183 gate.
+
+source: |
+  .swarmforge/operator/INTAKE-best-of-breed-swarm-model-trials.md. Epic BL-1180 child.
+
+notes: |
+  - [2026-08-27] specifier: minted from operator intake drain.
