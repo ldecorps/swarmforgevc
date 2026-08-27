@@ -87,6 +87,10 @@ import {
   PILOT_RAW_MKDTEMP_REFUSAL,
   PilotMkdtempConventionCheckOutcome,
 } from './pilotMkdtempConventionCheck';
+import {
+  PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL,
+  PropertyGeneratorReachCheckOutcome,
+} from './propertyGeneratorReachCheck';
 
 export {
   assessProducerCrosscheck,
@@ -164,6 +168,13 @@ export {
   isExtensionTestJsPath,
 } from './pilotMkdtempConventionCheck';
 
+export {
+  PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL,
+  PropertyGeneratorReachCheckOutcome,
+  assessPropertyGeneratorReach,
+  isPropertyTestPath,
+} from './propertyGeneratorReachCheck';
+
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
@@ -218,6 +229,7 @@ export interface PilotAcceptanceGateDeps {
   checkCrossFileDuplication: () => CrossFileDuplicationCheckOutcome;
   checkScopedCrap: () => PilotScopedCrapCheckOutcome;
   checkMkdtempConvention: () => PilotMkdtempConventionCheckOutcome;
+  checkPropertyGeneratorReach: () => PropertyGeneratorReachCheckOutcome;
   checkShellEntryPointDrive: (ticketId: string) => ShellEntryPointDriveCheckOutcome;
   checkUnreachableStepHandlers: (ticketId: string) => UnreachableStepHandlerCheckOutcome;
   checkMultiBranchParserCoverage: (ticketId: string) => MultiBranchParserCoverageOutcome;
@@ -249,6 +261,7 @@ export interface PilotLandRefusal {
     | 'crap-violation'
     | 'crap-evidence-missing'
     | 'raw-mkdtemp-outside-helper'
+    | 'vacuous-property-generator'
     | 'parallel-shell-reimplementation'
     | 'unreachable-step-handler'
     | 'untested-parser-branch'
@@ -266,6 +279,10 @@ export interface PilotLandRefusal {
   crapFunction?: string;
   mkdtempFile?: string;
   mkdtempLine?: number;
+  vacuousPropertyFile?: string;
+  vacuousPropertyFunction?: string;
+  vacuousGeneratorBound?: number;
+  vacuousFunctionBoundary?: number;
   shellEntryPoint?: string;
   shellTestPath?: string;
   unreachablePattern?: string;
@@ -521,6 +538,30 @@ function checkMkdtemp(
   return { mkdtempCheck };
 }
 
+// Step 3c⅞: touched *.property.test.js must reach the non-trivial branch of
+// the function under test (BL-739). vacuous *.property.test.js refuses land.
+// Unreadable touched-file history fails OPEN.
+export function checkPropertyGeneratorReach(
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { reachCheck: PropertyGeneratorReachCheckOutcome } {
+  const reachCheck = deps.checkPropertyGeneratorReach();
+  if (reachCheck.checked && reachCheck.miss) {
+    const { propertyFile, targetFunction, generatorBound, functionBoundary } = reachCheck.miss;
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'vacuous-property-generator',
+        reason: `${PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL} (file ${propertyFile}; function ${targetFunction}; generator max ${generatorBound}; boundary ${functionBoundary})`,
+        vacuousPropertyFile: propertyFile,
+        vacuousPropertyFunction: targetFunction,
+        vacuousGeneratorBound: generatorBound,
+        vacuousFunctionBoundary: functionBoundary,
+      },
+    };
+  }
+  return { reachCheck };
+}
+
 // Step 3d: when the run touches shell tests and the ticket names a non-test
 // .sh entry-point, every named basename must be invoked in a touched test
 // (BL-747 / BL-637 parallel-reimplementation gap). Unreadable inputs fail OPEN.
@@ -687,6 +728,7 @@ function moveAndRecordReceipt(
   crapCheck: PilotScopedCrapCheckOutcome,
   scopedCrapEvidence: AcceptanceReceipt['scopedCrap'] | undefined,
   mkdtempCheck: PilotMkdtempConventionCheckOutcome,
+  reachCheck: PropertyGeneratorReachCheckOutcome,
   shellDriveCheck: ShellEntryPointDriveCheckOutcome,
   unreachableCheck: UnreachableStepHandlerCheckOutcome,
   multiBranchCheck: MultiBranchParserCoverageOutcome,
@@ -767,6 +809,11 @@ function moveAndRecordReceipt(
   if (!mkdtempCheck.checked) {
     warnings.push(
       'mkdtemp convention was not checked: the run\'s touched-file history could not be resolved'
+    );
+  }
+  if (!reachCheck.checked) {
+    warnings.push(
+      'property generator reach was not checked: the run\'s touched-file history could not be resolved'
     );
   }
   if (!shellDriveCheck.checked) {
@@ -858,6 +905,11 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return mkdtemp.refusal;
   }
 
+  const propertyReach = checkPropertyGeneratorReach(deps);
+  if ('refusal' in propertyReach) {
+    return propertyReach.refusal;
+  }
+
   const shellDrive = checkShellDrive(ticketId, deps);
   if ('refusal' in shellDrive) {
     return shellDrive.refusal;
@@ -892,6 +944,7 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     crap.crapCheck,
     crapEvidence.evidence,
     mkdtemp.mkdtempCheck,
+    propertyReach.reachCheck,
     shellDrive.shellDriveCheck,
     unreachable.unreachableCheck,
     multiBranch.multiBranchCheck,

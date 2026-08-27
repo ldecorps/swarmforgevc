@@ -39,6 +39,10 @@ import {
 } from './perHatRolePromptEvidenceCheck';
 import { PilotScopedCrapCheckOutcome, assessPilotScopedCrap } from './pilotScopedCrapCheck';
 import { PilotMkdtempConventionCheckOutcome, assessPilotMkdtempConvention } from './pilotMkdtempConventionCheck';
+import {
+  PropertyGeneratorReachCheckOutcome,
+  assessPropertyGeneratorReach,
+} from './propertyGeneratorReachCheck';
 import { CommitClaimsCheckOutcome } from './pilotAcceptanceGate';
 import { findBacklogFilePath } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
@@ -181,6 +185,15 @@ export function checkMkdtempConvention(repoRoot: string): PilotMkdtempConvention
     return { checked: false };
   }
   return assessPilotMkdtempConvention(repoRoot, touched);
+}
+
+/** Git-backed BL-739 property generator reach check wired into PilotAcceptanceGateDeps.checkPropertyGeneratorReach. */
+export function checkPropertyGeneratorReach(repoRoot: string): PropertyGeneratorReachCheckOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  return assessPropertyGeneratorReach(repoRoot, touched);
 }
 
 /** Git-backed BL-741 scoped CRAP check wired into PilotAcceptanceGateDeps.checkScopedCrap. */

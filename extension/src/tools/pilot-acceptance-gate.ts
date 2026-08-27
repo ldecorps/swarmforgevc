@@ -32,12 +32,12 @@ import {
   extractHandoffdRootsFromPs,
   isLifecycleTeardownTicket,
 } from './multiworktreeAcceptanceFixture';
-import { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, checkScopedCrap, checkMkdtempConvention, checkShellEntryPointDrive, checkUnreachableStepHandlers, checkMultiBranchParserCoverage, checkPerHatRolePromptEvidence, RunCommit } from './commitClaimGitReader';
+import { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, checkScopedCrap, checkMkdtempConvention, checkPropertyGeneratorReach, checkShellEntryPointDrive, checkUnreachableStepHandlers, checkMultiBranchParserCoverage, checkPerHatRolePromptEvidence, RunCommit } from './commitClaimGitReader';
 import { findBacklogFilePath, markDone, BacklogMoveResult } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
-export { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, checkScopedCrap, checkMkdtempConvention, checkShellEntryPointDrive, checkUnreachableStepHandlers, checkMultiBranchParserCoverage, checkPerHatRolePromptEvidence, RunCommit };
+export { resolveRunCommits, checkCommitClaims, checkCrossFileDuplication, checkScopedCrap, checkMkdtempConvention, checkPropertyGeneratorReach, checkShellEntryPointDrive, checkUnreachableStepHandlers, checkMultiBranchParserCoverage, checkPerHatRolePromptEvidence, RunCommit };
 
 // Exported (like this codebase's other tools/ CLIs) so it runs in-process
 // under coverage instead of only via the compiled CLI's subprocess.
@@ -192,6 +192,7 @@ export function buildDeps(repoRoot: string): PilotAcceptanceGateDeps {
     checkCrossFileDuplication: () => checkCrossFileDuplication(repoRoot),
     checkScopedCrap: () => checkScopedCrap(repoRoot),
     checkMkdtempConvention: () => checkMkdtempConvention(repoRoot),
+    checkPropertyGeneratorReach: () => checkPropertyGeneratorReach(repoRoot),
     checkShellEntryPointDrive: (ticketId) => checkShellEntryPointDrive(repoRoot, ticketId),
     checkUnreachableStepHandlers: (ticketId) => checkUnreachableStepHandlers(repoRoot, ticketId),
     checkMultiBranchParserCoverage: (ticketId) => checkMultiBranchParserCoverage(repoRoot, ticketId),
