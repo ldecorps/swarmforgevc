@@ -642,6 +642,11 @@ const DOMAINS = [
   require('./bl1004ReworkClaimSteps'),
   require('./bl586PipelineBoardTopicIdentitySteps'),
   require('./bl1017BabysitterdRecreatesVanishedStandingSessionSteps'),
+<<<<<<< HEAD
+=======
+  require('./bl1169BabysitterHalfLaunchStarvationAutoRepairSteps'),
+  require('./bl1173DeprecatorFreshnessGateCliSteps'),
+>>>>>>> 062f2a482 (feat(BL-1173): deprecator freshness-gate CLI and fail-closed promote consult.)
   require('./bl1012FreshnessSelfInflictedIncidentsSteps'),
   require('./bl621FrontDeskDegradedCauseEscalationSteps'),
   require('./bl1021SubprocessOutlivesWaitBoundSteps'),
