@@ -384,6 +384,7 @@ const DOMAINS = [
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
   require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl711InterfaceVsIncarnationGlossarySteps'),
+  require('./bl790BridgeQueuesNoteForRoleSteps'),
   require('./bl1164QaChangedPathUnitTestGateSteps'),
   require('./bl1007ContentionBudgetSteps'),
   require('./bl1008BoundedWatchDeadlineSteps'),

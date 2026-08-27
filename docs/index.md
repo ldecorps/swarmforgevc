@@ -78,6 +78,7 @@ expects them, and are not migrated or rewritten here.
 - [Daemon log-freshness watchdog](how-to/BL-675-daemon-log-freshness-watchdog.md) — cron-side stale-heartbeat checker for long-running daemons (BL-675).
 - [Supervisor freshness heartbeats and registry guard](how-to/BL-784-supervisor-freshness-heartbeats-and-registry-guard.md) — per-tick supervisor heartbeats, conf rows, fail-closed registry guard (BL-784).
 - [Difficulty-aware coder seat routing](how-to/BL-1001-difficulty-aware-coder-seat-routing.md) — `mutation_cost` vs declared `--seat-tier`; hard work never spills to easy-only (BL-1001).
+
 - [Work notes attribute mutation cost without a task header](how-to/BL-1185-work-note-missing-task-header-defers-hard-seat.md) — `Work BL-…` message feeds BL-1001 difficulty; `task:` stays git_handoff-only (BL-1185).
 - [Unit-lane budgets scale with recorded contention](how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md) — load-relative Vitest timeouts with a finite ceiling; quiet host keeps base (BL-1007).
 - [Bounded fs.watch deadline follows recorded contention](how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md) — BL-933 helper scales 10s base with BL-1007 factor; stays under test budget (BL-1008).
@@ -261,4 +262,3 @@ expects them, and are not migrated or rewritten here.
 - [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.
 - [The Non-Pipeline Agents, As a Class](explanation/BL-643-non-pipeline-agents-as-a-class.md) — what makes an agent non-pipeline, the taxonomy, and what the Onboarder's three shipped slices actually do.
 - [Why Promotion Ranks by Epic Priority Before Ticket Priority](explanation/BL-900-epic-priority-promotion-ranking.md) — the rank-key shape, the epic-priority lookup and its fallbacks, and why expedited defects, queue-jump, and ambulance mode are untouched.
-- [BL-718 acceptance runs with real step handlers](how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md) — wire `bl718BubbleTalkMirrorSteps` so the Gherkin gate actually executes (BL-726).

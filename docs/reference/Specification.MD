@@ -8878,3 +8878,25 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 - Auto-merge on green CI (human reviews all PRs)
 - Extension marketplace publication (internal use first)
 - Native Windows (tmux has no native Windows port; a Windows-hosted swarm runs via WSL2 instead — BL-091)
+
+## BL-718 Acceptance Step Wiring (BL-726)
+
+BL-718's Bubble talk mirror product code and unit tests landed, but its
+acceptance feature under `specs/features/BL-718-*.feature` had **zero** step
+handlers — every scenario failed `no step handler matched` at
+`specs/pipeline/runtime.js`, so the Gherkin gate never actually ran.
+
+### Fix
+
+`specs/pipeline/steps/bl718BubbleTalkMirrorSteps.js` registers handlers for
+every BL-718 Given/When/Then and drives committed
+`mirrorLetsTalkTurnToBubble` / `splitTelegramChunks` behaviour (not
+prompt-text assertions). The module is required from
+`specs/pipeline/steps/index.js`. Companion pilot-process gap: BL-727 (done).
+
+### See Also
+
+- **BL-718** — Bubble talk mirror chunks and fails loudly.
+- How-to: `docs/how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md`,
+  `docs/how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md`.
+

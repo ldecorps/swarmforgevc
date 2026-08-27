@@ -73,6 +73,7 @@ import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
 import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
 import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
 import { createLetsTalkMetaRoutes } from './letsTalkMetaRoutes';
+import { createAgentNotesRoutes } from './agentNotesRoutes';
 import { getLetsTalkBubbleConfig, isLetsTalkBubbleConfigPath } from './letsTalkBubbleConfig';
 import { getLetsTalkChiptunesCatalog, isLetsTalkChiptunesPath } from './letsTalkChiptunes';
 import { getLetsTalkUiBundleManifest, isLetsTalkUiBundlePath } from './letsTalkUiBundle';
@@ -2113,6 +2114,12 @@ export function startBridge(
       respondJson,
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
     );
+    const agentNotesRoutes = createAgentNotesRoutes(
+      requireControlAuth,
+      respondJson,
+      (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
+    );
+
 
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
@@ -2212,6 +2219,7 @@ export function startBridge(
         ...letsTalkAudioEngineRoutes,
         ...letsTalkMetaRoutes,
         ...webUiFontSizeRoutes,
+        ...agentNotesRoutes,
       ].find((route) => route.matches(req, url));
       if (writeRoute) {
         writeRoute.handle(req, res, targetPath, registry);
