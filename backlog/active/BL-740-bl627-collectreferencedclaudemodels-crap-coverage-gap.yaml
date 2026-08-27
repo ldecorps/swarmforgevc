@@ -10,6 +10,7 @@ priority: 76
 direction: normal
 depends_on: []
 mutation_cost: low
+acceptance: specs/features/BL-740-bl627-collectreferencedclaudemodels-crap-coverage-gap.feature
 source: |
   Found during BL-723 (pilot-tonight quality review), hardener viewpoint
   pass, 2026-07-30. Coder, cleaner, and architect all reviewed BL-627's
