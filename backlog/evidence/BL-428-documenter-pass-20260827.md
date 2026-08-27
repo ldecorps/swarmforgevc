@@ -29,4 +29,12 @@ as unreadable; cannot `git_handoff` to QA until specifier amends acceptance to
 a resolvable feature path (or documents a standing-tracker bypass). Note to
 specifier + coordinator priority `00`.
 
+**2026-08-27 (resolved):** specifier materialized
+`specs/features/BL-428-decrap-paneHistory-slice.feature` at `18a0dad4e`
+(dropped by an origin-main reset, recovered via cherry-pick as `14cfec1c1` —
+see `backlog/evidence/BL-428-sg1-fix-dropped-by-origin-reset-20260827.md`).
+Merged main into this worktree (`94fe01893`) to pick it up. Acceptance is now
+a resolvable feature path; SG1 is cleared. No further doc delta — forwarding
+to QA.
+
 By documenter.

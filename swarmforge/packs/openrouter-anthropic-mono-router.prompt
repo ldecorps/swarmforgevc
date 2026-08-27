@@ -14,7 +14,8 @@ stage respawns onto an Anthropic model tailored to that role.
 | architect | `anthropic/claude-sonnet-5` | Design and boundary reasoning |
 | hardender | `anthropic/claude-sonnet-5` | Mutation / coverage work |
 | QA | `anthropic/claude-sonnet-5` | Verification gate — run suites, bounce with evidence |
-| cleaner / documenter | `anthropic/claude-haiku-4.5` | Mechanical refactor and docs (cheap tier) |
+| documenter | `anthropic/claude-sonnet-5` | Docs / retirement judgment — needs stronger reasoning |
+| cleaner | `anthropic/claude-haiku-4.5` | Mechanical refactor (cheap tier) |
 | coordinator | `anthropic/claude-haiku-4.5` | Bookkeeping — promote, route, close (separate process) |
 
 ## Pipeline shape
