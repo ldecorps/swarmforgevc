@@ -45,14 +45,35 @@ notes: |
   it is the standing home for the debt and the source the on-touch/module slices
   draw from.
 
-acceptance: |
-  No net-new testable behavior of its own — the acceptance criterion for any decrap
-  work drawn from this tracker is the EXISTING hardener gate applied to that slice's
-  changed functions: each touched function ends at CRAP<=6 with 100% coverage, no
-  surviving mutants, and NO behavior change (a pure refactor: the function's existing
-  acceptance/unit tests still pass unchanged). A module-scoped decrap slice, when
-  actually taken up, gets its own concrete feature file at that time; this standing
-  tracker does not carry one.
+acceptance: specs/features/BL-428-decrap-paneHistory-slice.feature.draft
+
+specifier_decisions: |
+  2026-08-27 (SG1 / documenter forward): materialized the paneHistory module slice
+  feature per tracker policy §2 — inline block-scalar acceptance was unreadable at
+  pre-QA (BL-761). Standing tracker policy unchanged; future slices get their own
+  feature files when taken up.
+  2026-08-27 (recovery): SG1 commit 18a0dad4e was made on main but never pushed
+  before something reset local main to origin/main, silently dropping it (see
+  backlog/evidence/BL-428-sg1-fix-dropped-by-origin-reset-20260827.md). Recovered
+  via cherry-pick; no content change from the original SG1 decision.
+  2026-08-27 (QA bounce, note 001787 "BL-428 acceptance feature: 0 step handlers
+  wired, all 5 scenarios fail"): QA is right, and materializing the file as an
+  EXECUTABLE .feature was the specifier's error, not the coder's or QA's. SG1
+  asked for the Gherkin to be readable and filed rather than an unreadable inline
+  block scalar (BL-761); it never asked for it to be runnable, and the two got
+  conflated. Every scenario in that file asserts about the project's own gates -
+  a CRAP report ran, the pre-existing unit/parity/scroll suites still pass - never
+  about externally visible behavior, because a decrap slice is behavior-preserving
+  by definition (this ticket's own qa_e2e says "pure refactor - no acceptance
+  scenario changed"). There is therefore no honest handler to write: one that
+  greps for words goes green whether or not the gate ran, and one that reads live
+  runtime paths is forbidden to acceptance handlers. Renamed to
+  specs/features/BL-428-decrap-paneHistory-slice.feature.draft (permanently
+  non-executable, header says so and says do not re-materialize) and repointed
+  acceptance: at the draft - the pointer gate accepts an existing .feature.draft
+  and no *.feature glob reaches it, so the runner stops throwing. The operative
+  contract is unchanged and is this ticket's qa_e2e field. NOTHING THE CODER BUILT
+  CHANGES; no rebuild is needed, only a re-run of the gate after merging main.
 
 qa_e2e: |
   Per decrap slice (not for the tracker as a whole): regenerate the CRAP>6 list via

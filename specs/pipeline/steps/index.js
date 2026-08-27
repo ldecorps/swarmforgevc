@@ -814,7 +814,8 @@ const DOMAINS = [
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl1188PipelineGridLiveStageParitySteps'),
-  require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps')
+  require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps'),
+  require('./bl1200GitEnvGuardSteps')
 ];
 
 function registerSteps(registry) {
