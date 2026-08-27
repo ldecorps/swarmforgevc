@@ -15,7 +15,7 @@ seat without cutting bounce risk.
 
 `seat_difficulty_lib.bb` parses pack window `--model` values
 (`parse-seat-models`). When **every** declared seat of a stage shares the
-same effective model (`stage-models-uniform?`), tier filtering is bypassed
+same effective model (`stage-models-equivalent?`), tier filtering is bypassed
 and claim selection is BL-983 idle-first among those seats — any
 `mutation_cost`. When models differ, BL-1001 tier rules apply unchanged.
 
