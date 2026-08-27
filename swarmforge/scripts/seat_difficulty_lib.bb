@@ -90,6 +90,7 @@
     (and (>= (count seats) 2)
          (every? some? vals)
          (apply = vals))))
+
 (defn parse-mutation-cost
   "mutation_cost value from ticket YAML text, or nil when absent/unknown."
   [yaml]
