@@ -26,7 +26,7 @@ approval_context: >
 required_wiring:
   - 'swarmforge/scripts/swarm_shift_lib.bb::swarm-shift-lib::pure shift definitions and resolve for day evening night'
   - 'swarmforge/scripts/reconcile_shift_schedule_crontab.bb::swarm_shift::applier renders cron from active shift not legacy-only'
-  - 'extension/src/tools/swarmShiftCore.ts::parseSwarmShift::TS literals agree with Babashka shift boundaries'
+  - 'extension/src/tools/swarmShiftCore.ts::parseSwarmShiftConfig::TS literals agree with Babashka shift boundaries'
   - 'specs/pipeline/steps/index.js::bl660ThreeShiftPacksSteps::acceptance handler registered so the runner executes every scenario'
 
 description: |

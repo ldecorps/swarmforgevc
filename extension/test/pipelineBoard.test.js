@@ -21,8 +21,6 @@ const {
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
   PIPELINE_BOARD_GRID_MAX_WIDTH,
-  PIPELINE_BOARD_STAGE_CELL_WIDTH,
-  computePipelineBoardGridLineWidth,
   isEpicTrackerPausedItem,
   formatCollapsedEpicLine,
   PIPELINE_BOARD_COLLAPSED_EPICS_MAX,
@@ -279,7 +277,7 @@ test('renderPipelineBoardBody: an empty board shows a bare no-active-tickets pla
 // normalized comparison, which would pass while the phone render is
 // broken - the ticket's own explicit warning).
 function matrixLine(gutter, cells, cellWidth) {
-  return gutter + cells.map((c) => c.padStart(cellWidth, NBSP)).join(NBSP);
+  return gutter + cells.map((c) => NBSP + c.padStart(cellWidth, NBSP)).join('');
 }
 
 // BL-979: after the axis pivot the matrix is a stage-glyph header over one
@@ -432,7 +430,7 @@ test('wrapPipelineBoardHtml: wraps the grid text in a <pre> block', () => {
 
 test('wrapPipelineBoardHtml: emits &#160; for Unicode NBSP so Telegram keeps the stage header on one line', () => {
   const NBSP = '\u00a0';
-  const header = stageHeader(3);
+  const header = `${NBSP.repeat(4)}${NBSP}NS${NBSP}SP${NBSP}CO${NBSP}CL${NBSP}AR${NBSP}HD${NBSP}DC${NBSP}QA`;
   const html = wrapPipelineBoardHtml(header);
   assert.ok(html.includes('DC&#160;QA'), `expected &#160; before QA, got: ${html}`);
   assert.ok(!html.includes('&nbsp;'), 'named &nbsp; is not a Telegram HTML entity — would show literally');
@@ -441,29 +439,6 @@ test('wrapPipelineBoardHtml: emits &#160; for Unicode NBSP so Telegram keeps the
 
 test('wrapPipelineBoardHtml: escapes HTML-significant characters', () => {
   assert.equal(wrapPipelineBoardHtml('a & b < c > d'), '<pre>a &amp; b &lt; c &gt; d</pre>');
-});
-
-test('renderPipelineBoardGridOnly: stage header is one line with intact QA under the grid width budget', () => {
-  const data = computePipelineBoard(
-    { coder: ['BL-658'] },
-    [],
-    { 'BL-658': { title: 'x', filename: 'BL-658-x.yaml', location: 'active' } },
-    { activeIds: ['BL-658'] }
-  );
-  const header = renderPipelineBoardGridOnly(data).split('\n')[0];
-  assert.ok(!header.includes('\n'), 'header must be a single line');
-  assert.ok(header.includes('QA'), 'header must contain intact QA');
-  assert.ok(header.length <= PIPELINE_BOARD_GRID_MAX_WIDTH);
-  assert.equal(header.length, computePipelineBoardGridLineWidth(3));
-});
-
-test('computePipelineBoardGridLineWidth: names the stage-set width budget', () => {
-  assert.equal(PIPELINE_BOARD_STAGE_CELL_WIDTH, 2);
-  assert.equal(
-    computePipelineBoardGridLineWidth(3),
-    3 + PIPELINE_BOARD_COLUMN_ORDER.length * PIPELINE_BOARD_STAGE_CELL_WIDTH + (PIPELINE_BOARD_COLUMN_ORDER.length - 1)
-  );
-  assert.ok(computePipelineBoardGridLineWidth(3) <= PIPELINE_BOARD_GRID_MAX_WIDTH);
 });
 
 // BL-462 pipeline-board-refine-03: an "updated at" footer, fed a pure

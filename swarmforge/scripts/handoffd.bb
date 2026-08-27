@@ -1897,8 +1897,7 @@
           ;; Read/evaluate only when a slot is actually open: done-ids scans
           ;; backlog/done/ recursively, and with capacity closed the decide
           ;; below is false regardless.
-          eligible (when (and (number? active-count) (number? cap)
-                               (backlog-depth-lib/under-depth-cap? active-count cap))
+          eligible (when (and (number? active-count) (number? cap) (< active-count cap))
                      (chase-sweep-lib/nudge-eligible-candidates
                       (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
                       {:active-count active-count

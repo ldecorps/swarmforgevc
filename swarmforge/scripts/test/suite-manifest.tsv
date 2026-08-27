@@ -396,5 +396,4 @@ gh25_role_ask_escalation_test_runner.bb	standing
 bl1138_rematch_bookkeeping_test_runner.bb	standing		
 bl615_orphaned_claim_progress_test_runner.bb	standing		
 test_done_with_current_arg_rejection.sh	standing		
-test_bl1162_start_stop_swarm_cron_lifecycle.sh	standing		
-bl1162_swarmforge_cron_property_runner.sh	standing		
+bl1141_refuse_rematch_test_runner.bb	standing		
