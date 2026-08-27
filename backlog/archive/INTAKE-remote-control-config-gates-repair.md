@@ -89,3 +89,48 @@ on.
 - `config remote_control off` auto-inject skip (`test_remote_control_launch.sh`)
 - Archived intake that minted BL-898:
   `backlog/archive/INTAKE-rc-failed-footer-auto-repair.md`
+
+---
+
+## Specifier disposition (appended 2026-08-28, not part of the human's text above)
+
+**Minted as a 1:N split** — the intake asked for two separable behaviours
+(goal 1 = launch, goals 2/3 = repair) and named the hybrid as an acceptable
+direction. Both tickets are `epic: fleet-topology`, `milestone: M8`,
+`human_approval: pending`:
+
+- **BL-1217** — `backlog/paused/BL-1217-rc-repair-refuses-to-fight-a-deliberate-config-off.yaml`
+  (defect/high). The REPAIR half = the intake's preferred direction 2, goals
+  2 and 3, locked decision 2. Every RC repair path gates on effective config
+  and refuses to respawn when it says off.
+- **BL-1218** — `backlog/paused/BL-1218-config-off-is-honored-at-launch-over-an-explicit-window-flag.yaml`
+  (defect/medium). The LAUNCH half = the intake's direction 1, goal 1, locked
+  decision 1. `config remote_control off` is honoured even when a window line
+  names `--remote-control` explicitly.
+
+Landing both IS the intake's direction 3 (hybrid). They are independent —
+either is valuable and testable alone — so neither declares `depends_on` the
+other.
+
+**Both operator directives and all four locked decisions are preserved
+VERBATIM in the `notes:` of BOTH tickets**, per Article 5.3 (a consolidation
+never drops a human sentence). Neither ticket can be read in isolation and
+lose half the ask.
+
+Premises verified before minting, not assumed:
+- `remote_control` is parsed in `swarmforge/scripts/swarmforge.sh` — not the
+  repo-root `swarmforge.sh` the intake's shorthand named.
+- `remote_control_health_lib.bb`: `expected-rc-name` (line 55) reads the
+  persisted launch script and nothing else; `classify` maps `(nil? expected)`
+  to `:off`; `actionable?` (line 246) is `#{:degraded :session-dead}` and
+  takes only a status — no config input exists anywhere on that path. This is
+  precisely why an explicit window-line flag survives a config `off`.
+- Ten packs set `config remote_control off`; `swarmforge.conf` and
+  `packs/full-forge.conf` name `--remote-control` on all seven Claude window
+  lines, which is the shape that makes the flag outlive the switch.
+
+One open question is flagged for the human in BL-1218's `approval_context:`
+rather than guessed: on a collision (config off + explicit window flag), this
+spec has **config win silently**; the intake also permitted **erroring loudly
+until the window line is cleaned**. The recommendation and its reasoning are
+recorded there.
