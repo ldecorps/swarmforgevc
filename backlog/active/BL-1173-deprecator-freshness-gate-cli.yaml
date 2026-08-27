@@ -4,11 +4,11 @@ milestone: M8
 type: feature
 status: todo
 epic: deprecator
-assigned_to: specifier
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: []
-mutation_cost: medium
+mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1173-deprecator-freshness-gate-cli.feature
 
@@ -21,6 +21,7 @@ invariants:
   - "CLI failure or malformed output fails CLOSED — never treat as allow (same posture as BL-262)."
   - "Expedited-defect ordering never bypasses the freshness gate (Article 3.6)."
   - "On hold the ticket stays in paused and a priority-00 note reaches the specifier."
+  - "Deprecator execution and this ticket's claim require a hard-tier multi-document reasoner — mutation_cost high; easy seats refuse (operator 2026-08-27)."
 
 human_approval: approved
 approval_context: >
@@ -48,6 +49,12 @@ description: |
   Coordinator keeps fail-closed manual checklist as fallback until CLI lands;
   after land, prefer CLI.
 
+  ## Model capability (locked human decision 2026-08-27)
+
+  Deprecator-related work — including building and claiming this ticket — runs
+  on a hard-tier multi-document reasoner only (`mutation_cost: high`). Easy
+  seats refuse.
+
 qa_e2e_procedure: >
   (1) Supersede marker → hold. (2) Clean ticket → allow. (3) depends_on done +
   RETIRED surface in description → hold. (4) Promote helper refuses on hold and
@@ -65,3 +72,12 @@ notes: |
   - [2026-08-27] Cursor: minted + queue-jumped (approve + force-promote) per
     human directive. Specifier owns first pass to confirm acceptance/feature
     then route to coder.
+  - [2026-08-27] Cursor: ambulance engaged for BL-1173
+    (`ambulance_cli.bb engage BL-1173`). Sibling BL-1174 stays paused — only
+    one ambulance patient; engage it after this slice lands. Epic BL-1172 is
+    not promotable.
+  - [2026-08-27] specifier: confirmed feature (5 scenarios) + wiring; routed to
+    coder. git_handoff 26453cffdc already on HEAD (topic text only — no merge).
+  - [2026-08-27] human: deprecator execution MUST use a model that reasons
+    well across many documents — must-have. `mutation_cost` raised to high;
+    Article 3.6 + prompts refuse easy/weak seats for judgment.
