@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1216-duplicate-id-finding-names-the-live-copy-and-flags-divergence.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   One thing needs sign-off: whether the gate should recommend a survivor at
   all, or only report the two facts and leave the choice entirely to the

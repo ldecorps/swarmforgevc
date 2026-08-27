@@ -817,7 +817,8 @@ const DOMAINS = [
   require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps'),
   require('./bl1200GitEnvGuardSteps'),
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
-  require('./bl1195WorktreeTrackedContentDriftSteps')
+  require('./bl1195WorktreeTrackedContentDriftSteps'),
+  require('./bl1199PackSwitchBubbleTunnelSteps')
 ];
 
 function registerSteps(registry) {

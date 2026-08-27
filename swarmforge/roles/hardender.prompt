@@ -2016,3 +2016,53 @@ You are the hardender.
 - A booleans-only print is not merely safer, it is usually the better probe:
   what a resolver test asserts is which credential was CHOSEN, never what it
   contained.
+
+## A real-integration test can be STRUCTURALLY incapable of discriminating the fix — revert the fix and re-run before you count it as proof (rule_proposal 2026-08-27, accepted)
+- **The production code's own dispatch guard can make a whole real-git /
+  real-process test unable to tell the fixed branch from the broken one.**
+  This is not a fixture you can sharpen and not a test you should delete: the
+  discriminating state is UNREACHABLE through that call site. A green run
+  proves the plumbing reaches the primitive; it proves nothing about the
+  behaviour change the ticket exists for. Passing is not power.
+- **Measure power the only way that works: revert the fix to its pre-fix
+  shape, re-run, and compare the output.** Byte-identical PASS on both sides
+  means zero discriminating power — say so out loud. A test you never watched
+  fail is a coverage counter, whatever it is named.
+- **When the ceiling is real, do all four of these — none of them is
+  optional:** (1) KEEP the test; it is a genuine wiring and
+  regression guard, and proving the adapters are really wired to the shared
+  primitive is worth having. (2) Record the ceiling in the TEST FILE's own
+  header, so a future hardener does not "fix" the test by chasing an
+  unreachable scenario through real git. (3) Name where the existence proof
+  actually lives — normally the fake-adapter property/unit test, whose
+  non-vacuity check DOES kill the mutant instantly. (4) Say it in the
+  hardening evidence; a pass table listing it as ALL PASS with no ceiling
+  noted overstates the gate.
+- **Do not spend a second structurally-limited test on a sibling call site of
+  the same shape.** Once the ceiling is understood, the same trivial
+  one-liner adapter behind the same gated dispatch buys the same nothing —
+  record it as an out-of-scope observation instead of burning a pass on it.
+- **Distinct from its two neighbours in this file, and the difference is
+  WHERE the defeat lives.** "Check that a test's FIXTURE has not already
+  satisfied the very condition the test claims to prove" (BL-328) is about
+  SETUP you control — fix the fixture and the test regains power. "Confirm
+  the new assertion goes RED against the pre-fix code" (BL-1018) is the
+  same revert-and-watch TECHNIQUE, applied to an assertion you just wrote.
+  This rule is the case where neither remedy exists: the defeat is in the
+  PRODUCTION dispatch, so no fixture and no assertion can reach past it, and
+  the honest move is to name the limit rather than to keep sharpening.
+- Evidence (proposed by the hardender, 2026-08-27, BL-1198; verified at the
+  hardener's own tip while accepting, `backlog/evidence/BL-1198-hardener-
+  pass-20260827.md`): `swarm_heal.bb` had ZERO test coverage of any kind, so
+  the hardener added `test_swarm_heal_push_before_reset.sh` to prove its real
+  `git push` / `git reset --hard` adapters reach `rematch-with-push-first!`.
+  But every dispatch path into `:rematch!` (`post-land-absorb-plan`,
+  `automated-absorb-plan` in `master_main_reconcile_lib.bb`) is gated
+  `(zero? (or behind 0)) -> :noop` FIRST, so reaching `:rematch!` at all
+  requires a genuine `behind > 0` divergence — and the push attempt milliseconds
+  later hits the same unmoved origin and is rejected by the same git rule that
+  rejects `--ff-only`. The push-succeeds branch is unreachable there. Confirmed
+  empirically, not reasoned: reverting `:rematch!` to a bare `git reset --hard
+  origin/main` produced byte-identical PASS output on both scenarios. The
+  `bl1198` property check over fake `:push!`/`:reset!` adapters is the real
+  existence proof, and its non-vacuity run flags an always-reset mutant.
