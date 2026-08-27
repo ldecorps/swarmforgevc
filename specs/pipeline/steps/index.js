@@ -791,8 +791,18 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
+<<<<<<< HEAD
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
+=======
+  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl1175PropertySuiteStandingRedsSteps'),
+  require('./bl718BubbleTalkMirrorSteps'),
+  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
+  require('./bl1166OperatorDocsSteps'),
+  require('./bl709BubbleItsOwnTelegramTopicSteps')
+>>>>>>> b3ddc2e692
 ];
 
 function registerSteps(registry) {
