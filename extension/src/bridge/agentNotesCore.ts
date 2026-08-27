@@ -101,12 +101,9 @@ export async function queueAgentNoteViaHandoff(
   fs.writeFileSync(draftPath, `type: note\nto: ${role}\npriority: 00\nmessage: ${queuedMessage}\n`);
   const cli = path.join(targetPath, 'swarmforge', 'scripts', 'swarm_handoff.bb');
   try {
-    const handoffEnv: NodeJS.ProcessEnv = { ...process.env, SWARMFORGE_ROLE: 'coordinator' };
-    delete handoffEnv.GIT_DIR;
-    delete handoffEnv.GIT_WORK_TREE;
     await exec('bb', [cli, draftPath], {
       cwd: targetPath,
-      env: handoffEnv,
+      env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' },
     });
     return { ok: true };
   } catch {
