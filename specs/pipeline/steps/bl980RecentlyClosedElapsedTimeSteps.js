@@ -107,10 +107,30 @@ function registerSteps(registry) {
   });
 
   scoped(/^its line ends with "\(([^)]+)\)"$/, (ctx, age) => {
+    const { formatRecentlyClosedAgeLabel } = require(path.join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      'extension',
+      'out',
+      'concierge',
+      'pipelineBoard'
+    ));
     const line = recentlyClosedLines(ctx.body)[0];
     assert.ok(line, `expected a RECENTLY CLOSED line, body:\n${ctx.body}`);
+    const item = ctx.recentlyClosed[0];
+    const nowMs = ctx.nowMs ?? NOW;
+    const derived = formatRecentlyClosedAgeLabel(item.closedAtMs, nowMs);
+    assert.equal(derived, age, 'Examples age must match formatRecentlyClosedAgeLabel output');
     assert.match(line, new RegExp(`\\(${age.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)$`));
     assert.match(ctx.html, new RegExp(`\\(${age.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`));
+    const olderClose = formatRecentlyClosedAgeLabel(item.closedAtMs - 1, nowMs);
+    const youngerClose = formatRecentlyClosedAgeLabel(item.closedAtMs + 1, nowMs);
+    assert.ok(
+      olderClose !== derived || youngerClose !== derived,
+      'closure instant must sit on a ladder bucket edge, not a plateau interior'
+    );
   });
 
   scoped(/^a closed ticket with no recorded closure instant$/, (ctx) => {
