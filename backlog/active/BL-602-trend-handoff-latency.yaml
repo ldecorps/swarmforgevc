@@ -9,8 +9,25 @@ severity: low
 priority: 183
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-602-trend-handoff-latency.feature
+
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::send path::enqueued_at stamped on each outbound handoff"
+  - "swarmforge/scripts/ready_for_next_task.bb::claim path::dequeued_at stamped when parcel moves to in_process"
+  - "extension/src/metrics/handoffLatency.ts::gather + pair timestamps::reads master and worktree role mailboxes"
+  - "extension/src/metrics/stageDwell.ts::splitOutliers::median + outlier honesty reused per recipient role"
+  - "extension/src/metrics/trend.ts::handoff-latency series::plotted via shared TrendedNumber framework"
+  - "specs/pipeline/steps/index.js::bl602TrendHandoffLatencySteps::acceptance handler registered"
+
+invariants:
+  - "Still-queued handoffs contribute OPEN wait only — never fabricated as a fast completed pickup."
+  - "Gather covers master-resident and worktree mailboxes (new, in_process, completed) — master-only read is a false negative."
+  - "Aggregation is a pure function over enqueued/dequeued pairs — unit-testable without live handoffd."
+  - "Measuring never changes dispatch, rotation, or ready_for_next claim behaviour."
+
 source: |
   Human, 2026-07-23, epic BL-594. The "handoff vanished" fear (a parcel sitting
   in a dormant role's inbox/new looking identical to one never sent) has no
@@ -33,15 +50,16 @@ description: |
   direct signal that role is being starved (pairs with BL-596's stranding
   metric). A parcel stuck for hours shows as a latency outlier instead of a
   silent "did it vanish?".
-acceptance: |
-  Specifier writes scenarios. Minimum:
-  1. Each processed handoff yields latency = dequeued_at - enqueued_at, per
-     recipient role, from the timestamps already on the handoff file.
-  2. A pure aggregator produces a median + outlier latency series per role over
-     a window, unit-tested with fixtures.
-  3. A still-queued handoff contributes an OPEN wait (currently-waiting), never
-     a fabricated completion.
-  4. The read covers worktree mailboxes, not only master's (the known
-   false-negative if master's mailbox is read alone).
+qa_e2e_procedure: >
+  (1) Fixture handoff headers → latency = dequeued_at - enqueued_at per role.
+  (2) Pure aggregator unit tests: median + outlier split per role without fs.
+  (3) Queued parcel → open wait excluded from processed stats. (4) Worktree
+  mailbox fixtures included. (5) trend.ts current/prior/delta on median series.
+
 out_of_scope: |
   - Changing dispatch/rotation. Measurement only.
+
+notes: |
+  - [2026-08-27] specifier: feature file minted from coordinator Work note;
+    pairs enqueued_at/dequeued_at already on handoff headers; worktree mailbox
+    coverage per BL-577/BL-1109 gather posture; pairs with BL-596 stranding.
