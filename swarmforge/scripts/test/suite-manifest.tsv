@@ -140,6 +140,7 @@ swarm_identity_lib_test_runner.bb	standing
 swarm_socket_lib_test_runner.bb	standing		
 swarm_status_lib_test_runner.bb	standing		
 supersede_lib_test_runner.bb	standing		
+self_heal_telemetry_lib_test_runner.bb	standing		
 sync_worktree_scripts_lib_test_runner.bb	standing		
 task_commit_coherence_gate_lib_test_runner.bb	standing		
 telegram_topic_lib_test_runner.bb	standing		
