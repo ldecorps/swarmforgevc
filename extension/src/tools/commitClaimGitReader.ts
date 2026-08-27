@@ -33,6 +33,11 @@ import {
   extractMultiBranchParsers,
 } from './multiBranchParserCoverageCheck';
 import {
+  MultiBranchSiblingGatingOutcome,
+  assessMultiBranchSiblingGating,
+  extractMultiBranchGatingDispatches,
+} from './multiBranchSiblingGatingCheck';
+import {
   PerHatRolePromptEvidenceOutcome,
   assessPerHatRolePromptEvidence,
   StageVerdictEvidence,
@@ -326,6 +331,25 @@ export function checkMultiBranchParserCoverage(
   return assessMultiBranchParserCoverage({
     parsers: extractMultiBranchParsers(sources),
     testTexts: tests.map((t) => t.text),
+  });
+}
+
+/** Git-backed BL-751 sibling-branch gating asymmetry check. */
+export function checkMultiBranchSiblingGating(
+  repoRoot: string,
+  _ticketId: string
+): MultiBranchSiblingGatingOutcome {
+  const touched = resolveTouchedFiles(repoRoot);
+  if (!touched) {
+    return { checked: false };
+  }
+  const sourcePaths = touched.filter((p) => isParserSourcePath(p));
+  if (sourcePaths.length === 0) {
+    return { checked: true, dispatchesScanned: 0 };
+  }
+  const sources = readTouchedFileTexts(repoRoot, sourcePaths);
+  return assessMultiBranchSiblingGating({
+    dispatches: extractMultiBranchGatingDispatches(sources),
   });
 }
 

@@ -3,6 +3,8 @@
 // BL-1184: briefing shift velocity — tickets landed per 8h stretch.
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
@@ -32,6 +34,16 @@ function ensure(ctx) {
     ctx.bl1184 = {};
   }
   return ctx.bl1184;
+}
+
+function mkFixtureRoot() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl1184-'));
+}
+
+function freshFixture(ctx) {
+  const st = ensure(ctx);
+  st.fixtureRoot = mkFixtureRoot();
+  return st;
 }
 
 function registerSteps(registry) {
@@ -132,16 +144,23 @@ function registerSteps(registry) {
   });
 
   scoped(/^no existing landed-window telemetry$/, (ctx) => {
-    ensure(ctx).telemetryPaths = [];
+    freshFixture(ctx).telemetryPaths = [];
   });
 
   scoped(/^an existing matching telemetry series$/, (ctx) => {
-    ensure(ctx).telemetryPaths = ['/tmp/shift-velocity.jsonl'];
+    const st = freshFixture(ctx);
+    const logPath = path.join(st.fixtureRoot, '.swarmforge', 'telemetry', 'shift-velocity.jsonl');
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.writeFileSync(logPath, '', 'utf8');
+    st.telemetryPaths = [logPath];
   });
 
   scoped(/^shift velocity recording is configured$/, (ctx) => {
     const st = ensure(ctx);
-    st.recording = configureShiftVelocityRecording('/tmp/bl1184-fixture', st.telemetryPaths);
+    if (!st.fixtureRoot) {
+      st.fixtureRoot = mkFixtureRoot();
+    }
+    st.recording = configureShiftVelocityRecording(st.fixtureRoot, st.telemetryPaths ?? []);
   });
 
   scoped(/^an append-only shift-velocity log is created$/, (ctx) => {
@@ -155,7 +174,7 @@ function registerSteps(registry) {
     const recording = ensure(ctx).recording;
     assert.equal(recording.reused, true);
     assert.equal(recording.created, false);
-    assert.equal(recording.path, '/tmp/shift-velocity.jsonl');
+    assert.match(recording.path, /shift-velocity\.jsonl$/);
   });
 }
 

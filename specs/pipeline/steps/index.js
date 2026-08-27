@@ -414,6 +414,7 @@ const DOMAINS = [
   require('./bl739PilotVacuousPropertyGateSteps'), // bl739PilotVacuousPropertyGateSteps: acceptance handler registered
   require('./bl664TurnProfilerTranscriptWalkerSteps'),
   require('./bl755PilotMultiBranchParserNeedsPerArmTestsSteps'),
+  require('./bl751PilotSiblingBranchGatingAsymmetrySteps'),
   require('./bl758PilotInjectRolePromptsPerHatSteps'),
   require('./bl1147ProbeLegacyTopicAdoptionSteps'),
   require('./bl1150OutageFailoverCliLoadFileSafeSteps'),
@@ -558,6 +559,7 @@ const DOMAINS = [
   require('./bl922UnreadableAcceptanceCaughtAtMintSteps'),
   require('./bl1027MintTimeDanglingAcceptanceSteps'),
   require('./bl626PromotionGateSteps'),
+  require('./bl634SliceSizeEnvelopeAtPromotionSteps'),
   require('./bl1126LocalAgentTelegramTurnReliabilitySteps'),
   require('./bl1095RetireExpediteBugTypeSteps'),
   require('./bl918PeriodicSamplesAreNotStallsSteps'),

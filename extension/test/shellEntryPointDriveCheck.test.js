@@ -35,6 +35,7 @@ function mkDeps(overrides) {
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
@@ -145,6 +146,7 @@ test('landPilotedTicket refuses parallel-shell-reimplementation and writes nothi
     }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
   });
   const outcome = await landPilotedTicket('BL-747', deps);
@@ -163,6 +165,7 @@ test('landPilotedTicket warns when shell drive history is unreadable', async () 
     checkShellEntryPointDrive: () => ({ checked: false }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
+      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     writeReceipt: (_id, r) => {
       calls.writeReceipt += 1;
