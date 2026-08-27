@@ -320,6 +320,7 @@ const DOMAINS = [
   require('./bl547ModelStewardSteps'),
   require('./bl669OutageDrivenSeatFailoverViaStewardSteps'),
   require('./bl557ModelStewardSlice3Steps'),
+  require('./bl559PipelineboardPropertyTestPrefixSubstringBugSteps'),
   require('./bl551LlmCostLedgerSteps'),
   require('./bl525ModelFactorySteps'),
   require('./gh22ContextTelemetrySteps'),
