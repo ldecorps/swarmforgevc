@@ -566,6 +566,44 @@ test('BL-480: a paused ticket pending approval renders its title/notes in the as
   assert.ok(ask.text.includes('this ticket fixes the widget'), `expected the paused ticket's notes in the ask, got: ${ask.text}`);
 });
 
+// BL-1190: pre-post gate - even a folder item that presents as
+// humanApproval: 'pending' must not arm an ApprovalRequested ask when
+// ticketFileExists (wired live to findTicketFilePath) says its yaml is
+// gone. Simulates the race the folder snapshot alone cannot see (the yaml
+// vanishing after this tick's readFolders() but before the ask is posted),
+// not just "no yaml at all" (which never reaches folders in the first
+// place).
+test('BL-1190: no ApprovalRequested ask is armed when ticketFileExists refuses the id', async () => {
+  const { adapters, setFolders, sent, state } = fakeAdapters();
+  setFolders(
+    folders({
+      paused: [{ id: 'BL-1190', title: 'ghost approval ask', humanApproval: 'pending' }],
+    })
+  );
+  adapters.ticketFileExists = (backlogId) => backlogId !== 'BL-1190';
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 0);
+  assert.ok(!sent.some((m) => m.text.includes('BL-1190 needs your approval')), 'no buttoned ask must be posted');
+  assert.ok(!state.snapshot.pendingApproval.includes('BL-1190'), 'the gated id must not even enter the persisted snapshot');
+});
+
+test('BL-1190: an ApprovalRequested ask still arms when ticketFileExists confirms the id', async () => {
+  const { adapters, setFolders, sent } = fakeAdapters();
+  setFolders(
+    folders({
+      paused: [{ id: 'BL-1190', title: 'real ticket', humanApproval: 'pending' }],
+    })
+  );
+  adapters.ticketFileExists = (backlogId) => backlogId === 'BL-1190';
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 1);
+  assert.ok(sent.some((m) => m.text.includes('BL-1190 needs your approval')), 'the buttoned ask must be posted');
+});
+
 // Approvals ask reconcile: diffApprovalRequested is edge-triggered
 // (not-pending → pending). When pendingApproval is ALREADY in the persisted
 // baseline but no buttoned ask was ever recorded on the live Approvals

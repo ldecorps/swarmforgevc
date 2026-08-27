@@ -20,9 +20,7 @@ import { translateMarkdown, translateString, TranslationSession } from '../i18n/
 // translateDocsTree (below) is the one function that populates them; a
 // tree computeDocsTree alone produces carries none of them at all.
 
-export const DOCS_TREE_SCHEMA_VERSION = 2;
-
-export const NO_EPIC_KEY = '(no epic)';
+export const DOCS_TREE_SCHEMA_VERSION = 1;
 
 export interface VisionDoc {
   id: string;
@@ -44,16 +42,9 @@ export interface MilestoneTicketSummary {
   implemented: boolean;
 }
 
-export interface EpicNode {
-  epicKey: string;
-  title?: string;
-  trackerId?: string;
-  tickets: MilestoneTicketSummary[];
-}
-
 export interface MilestoneNode {
   milestone: string;
-  epics: EpicNode[];
+  tickets: MilestoneTicketSummary[];
 }
 
 export interface TicketNode {
@@ -126,67 +117,18 @@ function toMilestoneTicketSummary(item: StatusedItem): MilestoneTicketSummary {
   return summary;
 }
 
-function buildEpicTrackersByKey(items: StatusedItem[]): Map<string, StatusedItem> {
-  const trackers = new Map<string, StatusedItem>();
-  for (const item of items) {
-    if (item.type === 'epic' && item.epic) {
-      trackers.set(item.epic, item);
-    }
-  }
-  return trackers;
-}
-
-function epicKeyForItem(item: StatusedItem): string {
-  return item.epic ?? NO_EPIC_KEY;
-}
-
-function buildEpicNodes(milestoneItems: StatusedItem[], trackersByEpicKey: Map<string, StatusedItem>): EpicNode[] {
-  const byEpic = new Map<string, StatusedItem[]>();
-  for (const item of milestoneItems) {
-    const key = epicKeyForItem(item);
-    if (!byEpic.has(key)) {
-      byEpic.set(key, []);
-    }
-    byEpic.get(key)!.push(item);
-  }
-  const nodes: EpicNode[] = [];
-  for (const [epicKey, members] of byEpic.entries()) {
-    const tracker = trackersByEpicKey.get(epicKey);
-    const ticketMembers = tracker ? members.filter((m) => m.id !== tracker.id) : members;
-    const node: EpicNode = {
-      epicKey,
-      tickets: ticketMembers.map(toMilestoneTicketSummary).sort((a, b) => a.id.localeCompare(b.id)),
-    };
-    if (tracker) {
-      node.title = tracker.title;
-      node.trackerId = tracker.id;
-    }
-    nodes.push(node);
-  }
-  return nodes.sort((a, b) => a.epicKey.localeCompare(b.epicKey));
-}
-
 function buildMilestoneNodes(items: StatusedItem[]): MilestoneNode[] {
-  const trackersByEpicKey = buildEpicTrackersByKey(items);
-  const byMilestone = new Map<string, StatusedItem[]>();
+  const byMilestone = new Map<string, MilestoneTicketSummary[]>();
   for (const item of items) {
     const milestone = item.milestone ?? UNSPECIFIED_MILESTONE;
     if (!byMilestone.has(milestone)) {
       byMilestone.set(milestone, []);
     }
-    byMilestone.get(milestone)!.push(item);
+    byMilestone.get(milestone)!.push(toMilestoneTicketSummary(item));
   }
   return [...byMilestone.entries()]
-    .map(([milestone, milestoneItems]) => ({
-      milestone,
-      epics: buildEpicNodes(milestoneItems, trackersByEpicKey),
-    }))
+    .map(([milestone, tickets]) => ({ milestone, tickets }))
     .sort((a, b) => a.milestone.localeCompare(b.milestone));
-}
-
-/** Flatten epic-grouped milestone data for consumers that skip the epic tier (PWA). */
-export function flattenMilestoneTickets(milestone: MilestoneNode): MilestoneTicketSummary[] {
-  return milestone.epics.flatMap((epic) => epic.tickets);
 }
 
 // Split out of toTicketNode (below) so each function's own complexity -
@@ -277,16 +219,8 @@ export function filterDocsTree(tree: DocsTreeData, query: string): DocsTreeData 
   const tickets = tree.tickets.filter((ticket) => ticketMatchesQuery(ticket, lowerQuery));
   const matchingIds = new Set(tickets.map((ticket) => ticket.id));
   const milestones = tree.milestones
-    .map((milestone) => ({
-      milestone: milestone.milestone,
-      epics: milestone.epics
-        .map((epic) => ({
-          ...epic,
-          tickets: epic.tickets.filter((ticket) => matchingIds.has(ticket.id)),
-        }))
-        .filter((epic) => epic.tickets.length > 0),
-    }))
-    .filter((milestone) => milestone.epics.length > 0);
+    .map((milestone) => ({ ...milestone, tickets: milestone.tickets.filter((ticket) => matchingIds.has(ticket.id)) }))
+    .filter((milestone) => milestone.tickets.length > 0);
   return { ...tree, tickets, milestones };
 }
 

@@ -310,26 +310,15 @@
 (defn- diagram-heading [name]
   (case name
     "not-done-burndown" "Backlog burndown — open tickets remaining"
-    "shift-velocity" "Shift velocity — max tickets landed per 8h"
     (str name " diagram")))
 
 (defn- diagram-note-line [diagrams]
   (let [names (set (map :name diagrams))
         has-arch? (or (contains? names "architecture") (contains? names "swarm-flow"))
-        has-burn? (contains? names "not-done-burndown")
-        has-shift? (contains? names "shift-velocity")]
+        has-burn? (contains? names "not-done-burndown")]
     (cond
-      (and has-arch? has-burn? has-shift?)
-      "Architecture diagrams, open-ticket burndown, and shift-velocity chart: rendered inline above (HTML view)."
-
       (and has-arch? has-burn?)
       "Architecture diagrams and the open-ticket burndown chart: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
-
-      (and has-burn? has-shift?)
-      "Open-ticket burndown and shift-velocity charts: rendered inline above (HTML view)."
-
-      has-shift?
-      "Shift-velocity chart: rendered inline above (HTML view)."
 
       has-burn?
       "Open-ticket burndown chart: rendered inline above (HTML view)."
@@ -392,15 +381,11 @@
 ;; redundant safety net for that same reason: an injected fake thunk that
 ;; throws for real must not prevent its sibling's result from shipping,
 ;; exactly like a production source's own internal catch already does.
-(defn diagram-section-from-sources
-  ([architecture-source-fn burndown-source-fn]
-   (diagram-section-from-sources architecture-source-fn burndown-source-fn nil))
-  ([architecture-source-fn burndown-source-fn shift-velocity-source-fn]
-   (let [architecture (try (architecture-source-fn) (catch Exception _ nil))
-         burndown (try (burndown-source-fn) (catch Exception _ nil))
-         shift-v (try (when shift-velocity-source-fn (shift-velocity-source-fn)) (catch Exception _ nil))
-         diagrams (vec (concat (or architecture []) (or burndown []) (or shift-v [])))]
-     (build-diagram-section (seq diagrams)))))
+(defn diagram-section-from-sources [architecture-source-fn burndown-source-fn]
+  (let [architecture (try (architecture-source-fn) (catch Exception _ nil))
+        burndown (try (burndown-source-fn) (catch Exception _ nil))
+        diagrams (vec (concat (or architecture []) (or burndown [])))]
+    (build-diagram-section (seq diagrams))))
 
 ;; BL-393: the diagram section's own html (a <div> of <h3>/<img> per
 ;; diagram) must coexist with the rendered body, never replace it -

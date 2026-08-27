@@ -6,7 +6,6 @@ const {
   resolveResidentRoleIdentity,
   resolveResidentHeldTicketMeta,
   resolveResidentHeldTicketMetaForRoles,
-  dedupePrimaryWorkingTicket,
   formatClaimEnteredAgo,
 } = require('../out/concierge/residentPaneSpy');
 
@@ -208,7 +207,6 @@ test('resolveResidentHeldTicketMetaForRoles falls back to the home role mailbox'
   const worktree = path.join(tmp, 'coder-wt');
   fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
   fs.mkdirSync(path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
-  fs.mkdirSync(path.join(tmp, 'backlog', 'active'), { recursive: true });
   fs.writeFileSync(
     path.join(tmp, '.swarmforge', 'roles.tsv'),
     `coder\tcoder-wt\t${worktree}\tswarmforge-coder\tCoder\tclaude\n`
@@ -217,39 +215,10 @@ test('resolveResidentHeldTicketMetaForRoles falls back to the home role mailbox'
     path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process', '00_test.handoff'),
     'task: BL-529-ticket-branch-mismatch-guard\ndequeued_at: 2026-07-21T10:00:00Z\n\nbody\n'
   );
-  fs.writeFileSync(
-    path.join(tmp, 'backlog', 'active', 'BL-529-ticket-branch-mismatch-guard.yaml'),
-    'id: BL-529\ntitle: "Ticket branch mismatch guard"\n'
-  );
   assert.equal(
     resolveResidentHeldTicketMetaForRoles(tmp, ['hardender', 'architect', 'coder']).ticketId,
     'BL-529'
   );
-});
-
-// BL-1189 invariant 1: a claim referencing a ticket outside backlog/active
-// (bookkeep-closed, or a ticket id that was never real) must never read as
-// primary working now, even with a live, unclaimed in_process claim file.
-test('resolveResidentHeldTicketMeta omits a ticket that is no longer in backlog/active (BL-1189)', () => {
-  const fs = require('node:fs');
-  const path = require('node:path');
-  const { mkTmpDir } = require('./helpers/tmpDir');
-  const tmp = mkTmpDir('sfvc-resident-held-closed-');
-  const worktree = path.join(tmp, 'coder-wt');
-  fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
-  fs.mkdirSync(path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
-  fs.mkdirSync(path.join(tmp, 'backlog', 'done'), { recursive: true });
-  fs.writeFileSync(
-    path.join(tmp, '.swarmforge', 'roles.tsv'),
-    `coder\tcoder-wt\t${worktree}\tswarmforge-coder\tCoder\tclaude\n`
-  );
-  fs.writeFileSync(
-    path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process', '00_stale.handoff'),
-    'task: BL-600-stale-post-close\ndequeued_at: 2026-08-27T10:00:00Z\n\nbody\n'
-  );
-  fs.writeFileSync(path.join(tmp, 'backlog', 'done', 'BL-600-stale-post-close.yaml'), 'id: BL-600\ntitle: "closed"\n');
-
-  assert.deepEqual(resolveResidentHeldTicketMeta(tmp, 'coder'), {});
 });
 
 test('resolveResidentHeldTicketMeta counts batch held parcels (BL-1046)', () => {
@@ -296,27 +265,4 @@ test('renderResidentPaneSpyBody puts header above pane text', () => {
     paneText: 'hello',
   });
   assert.match(body, /^Resident: coder on Sonnet 5\n\nhello$/);
-});
-
-// BL-1189 invariant 2: at most one seat per ticket per capture.
-test('dedupePrimaryWorkingTicket keeps the first tile to claim a ticket and omits later ones', () => {
-  const claimed = new Set();
-  const first = dedupePrimaryWorkingTicket(claimed, { ticketId: 'BL-600', ticketTitle: 'first' });
-  const second = dedupePrimaryWorkingTicket(claimed, { ticketId: 'BL-600', ticketTitle: 'second' });
-  assert.deepEqual(first, { ticketId: 'BL-600', ticketTitle: 'first' });
-  assert.deepEqual(second, {});
-});
-
-test('dedupePrimaryWorkingTicket leaves distinct tickets and empty metas untouched', () => {
-  const claimed = new Set();
-  assert.deepEqual(dedupePrimaryWorkingTicket(claimed, {}), {});
-  assert.deepEqual(dedupePrimaryWorkingTicket(claimed, { ticketId: 'BL-1' }), { ticketId: 'BL-1' });
-  assert.deepEqual(dedupePrimaryWorkingTicket(claimed, { ticketId: 'BL-2' }), { ticketId: 'BL-2' });
-  assert.deepEqual(claimed, new Set(['BL-1', 'BL-2']));
-});
-
-test('dedupePrimaryWorkingTicket does not mutate claimedTicketIds when the meta carries no ticket', () => {
-  const claimed = new Set(['BL-9']);
-  dedupePrimaryWorkingTicket(claimed, {});
-  assert.deepEqual(claimed, new Set(['BL-9']));
 });
