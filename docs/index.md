@@ -81,6 +81,7 @@ expects them, and are not migrated or rewritten here.
 - [Mint-time hygiene refuses a dangling acceptance pointer](how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md) — `DANGLING-ACCEPTANCE` at specifier hygiene; shared `applicable?` with BL-880 (BL-1027).
 - [Promotion refuses a missing or draft acceptance feature](how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md) — blocking `acceptance` gate + `audit-acceptance`; no sibling-glob rescue (BL-626).
 - [Deprecator freshness-gate CLI before promote](how-to/BL-1173-deprecator-freshness-gate-cli.md) — `deprecate-check.js` allow|hold; promote fails closed (BL-1173 / Article 3.6).
+- [Run `/deprecate` soft verbs](how-to/BL-1174-deprecate-operator-verbs-scan-docs.md) — dry ranks orphan conf flags; confirm retires one into `docs/deprecated/` + index link; check wraps BL-1173; hard-tier only (BL-1174).
 - [Open-slot nudge skips type: epic trackers](how-to/BL-1145-open-slot-nudge-skips-epic-trackers.md) — promotion_gates_lib evaluate refuses epic/blocked so nudge and promote share one chain (BL-1145).
 - [Exit gates: committed acceptance + epic runtime wiring](how-to/BL-533-spec-commit-and-runtime-wiring-exit-gates.md) — untracked acceptance fails hygiene; multi-slice epics need `required_wiring` (BL-533).
 - [Expedite lane is defect-only; type bug retired](how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md) — predicate + mint `RETIRED-TICKET-TYPE`; use `type: defect` (BL-1095).
