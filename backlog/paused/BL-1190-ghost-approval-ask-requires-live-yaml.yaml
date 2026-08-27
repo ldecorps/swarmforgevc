@@ -56,3 +56,12 @@ source: |
 
 notes: |
   - [2026-08-27] Minted while repairing BL-1186 ghost approval; systemic slice.
+  - [2026-08-27] specifier: Article 3.6 freshness gate held on
+    `depends_on: [BL-582]` (done) + "retired surface: Mint" — verified FALSE
+    HOLD. `node extension/out/tools/deprecate-check.js . BL-1190` traced to
+    docs/how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md:21,
+    whose RETIRED marker names `type: bug`, not "Mint"; the extractor
+    grabbed the wrong word (this ticket's own unrelated "Mint durability
+    gate" deliverable). CONFIRM PROMOTE — premise verified fresh, no
+    amendment needed. Extractor bug ticketed separately as BL-1193 (do not
+    re-litigate here).

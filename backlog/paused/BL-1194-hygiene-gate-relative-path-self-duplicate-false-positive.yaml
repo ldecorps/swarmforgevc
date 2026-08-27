@@ -1,0 +1,88 @@
+id: BL-1194
+title: "specifier_backlog_hygiene_gate.bb reports a brand-new ticket as a duplicate of itself when invoked with a working-directory-relative path"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: deprecator
+priority: 45
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1194-hygiene-gate-relative-path-self-duplicate-false-positive.feature
+human_approval: pending
+approval_context: >
+  Discovered while minting BL-1193 (2026-08-27): running
+  `swarmforge/scripts/specifier_backlog_hygiene_gate.sh
+  backlog/paused/BL-1193-...yaml` (the exact invocation the specifier's own
+  role prompt and Article 4.5-style gates document, run from the repo root)
+  reported `DUPLICATE-ID BL-1193 ... also: <the identical absolute path>` —
+  the file flagged as a duplicate of itself. Re-running with the absolute
+  path form of the same, single, uncommitted file made the false positive
+  disappear, isolating the bug to path-string comparison, not corpus logic.
+  Needs the standard human sign-off gate before promotion.
+
+description: |
+  ## What
+
+  `specifier_backlog_hygiene_gate.bb`'s duplicate-id check (BL-1105) builds
+  its local corpus index (`read-local-id-index` -> `list-backlog-ticket-files`)
+  from `backlog-root`, which `specifier_backlog_hygiene_gate.bb`'s own
+  `backlog-root` function always resolves to an ABSOLUTE path
+  (`repo-root/backlog`, itself derived from `fs/canonicalize *file*`). Every
+  path the corpus scan records is therefore absolute.
+
+  `other-holders` excludes the subject's own entry from that corpus by a bare
+  string equality: `(remove #(= (:path %) (str subject-path)) local)`. When
+  the CLI is invoked with a path RELATIVE to the working directory — the
+  natural form (`backlog/paused/<file>.yaml`, run from the repo root, which
+  is exactly what the specifier's own "Sending specs" handoff instructions
+  and BL-1105's own live call site describe) — `subject-path` stays relative
+  while every corpus entry is absolute. The two strings never match, the
+  subject's own entry is never excluded, and a brand-new, otherwise-unique
+  ticket is reported as `DUPLICATE-ID ... also: <itself>`.
+
+  This is exactly the kind of self-inflicted false positive Article 3.6's
+  sibling gates exist to prevent triggering on real work — a specifier
+  minting a routine ticket the ordinary way gets an incorrect hard FAIL and
+  either has to know to retry with an absolute path (undocumented) or wastes
+  a turn misdiagnosing a real corpus collision that isn't there.
+
+  ## How (direction, not mandate)
+
+  Normalize both sides to a common form before comparing — e.g. canonicalize
+  every subject path (and/or every corpus path) the same way before the
+  equality check in `other-holders`, so relative and absolute spellings of
+  the identical file always compare equal. `subject-from-path` and
+  `list-backlog-ticket-files` are the two producers to reconcile.
+
+  ## Constraints
+
+  - Must not weaken the genuine cross-file duplicate-id detection (BL-1105):
+    two DIFFERENT files sharing an id must still fail, from any path form.
+  - Must not require callers to change how they invoke the gate — the fix is
+    internal to the comparison, not a new required flag.
+
+qa_e2e_procedure: >
+  From the repo root, `git rm`/create a fresh single-id paused ticket and run
+  `swarmforge/scripts/specifier_backlog_hygiene_gate.sh
+  backlog/paused/<that-file>.yaml` (relative path, matching normal usage).
+  Confirm no DUPLICATE-ID is reported for that id. Then add a second file
+  under a different pool with the same id and confirm the gate still fails
+  and names both files.
+
+out_of_scope: |
+  - The unrelated BL-1193 false-positive-token defect that was being
+    adjudicated when this was found — separate ticket, separate root cause.
+
+invariants:
+  - "The duplicate-id check's verdict for a single ticket file is identical whether the gate is invoked with a path relative to the working directory or an absolute path."
+
+source: |
+  Discovered by the specifier, 2026-08-27, while running the required
+  specifier_backlog_hygiene_gate.sh pass on newly-minted BL-1193.
+
+notes: |
+  - [2026-08-27] specifier: worked around for BL-1193's own mint by invoking
+    the gate with an absolute path this one time; that is not a fix.
