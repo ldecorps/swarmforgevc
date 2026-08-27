@@ -1,5 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-666: budget-aware shift governor at
+BL-660 shift boundaries — anchor-calibrated burn projection chooses
+full/SHORT/CHEAP/SKIP with announced arithmetic; BL-664 walker burn meter;
+never spends paid credits without opt-in. Acceptance:
+`specs/features/BL-666-budget-aware-shift-governor.feature`. How-to:
+`docs/how-to/BL-666-budget-aware-shift-governor.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-565: Max-billed pipeline
 `llm_invocation` rows capture tokens at delivery when GH-22 / transcript usage
 is observable; `syntheticCostUsd` from committed list prices stays distinct
@@ -9303,6 +9310,35 @@ are not backfilled.
 - **BL-551** — LLM cost ledger foundation.
 - **BL-665 / GH-22** — context-telemetry producer and recorder.
 - How-to: `docs/how-to/BL-565-cost-ledger-synthetic-pricing-max-billed-roles.md`.
+
+## Budget-Aware Shift Governor (BL-666)
+
+BL-619 projects weekly exhaustion in the briefing (read-only). BL-666 is the
+acting counterpart at each shift boundary hosted by
+`shift_schedule_applier_lib.bb`: human Usage anchors (same store as BL-619)
+plus BL-664 transcript-derived burn choose a shift verdict.
+
+### Verdict ladder
+
+| Preference | When |
+|------------|------|
+| **full** | Measured burn per shift ≤ affordable pace to replenish |
+| **SHORT** | Moderate overrun — trimmed hours |
+| **CHEAP** | Severe overrun — ModelFactory `assign --mode cheap` on certified seats only |
+| **SKIP** | Tank cannot afford shift; approvals/Telegram drain at next start |
+
+Every verdict announcement includes remaining %, days-to-reset, and measured vs
+affordable burn — never silent. Stale anchors (> threshold) enter degraded
+mode with no exact projection presented as confident. Paid credits are never
+spent without explicit opt-in; BL-305 PROVIDER_LIMIT/cooldown stays the hard
+floor.
+
+### See Also
+
+- **BL-619** — token-burn briefing warning (anchors + projection).
+- **BL-660** — three shift packs / shift applier host.
+- **BL-664** — transcript walker (burn meter input).
+- How-to: `docs/how-to/BL-666-budget-aware-shift-governor.md`.
 
 ## Work-Note Mutation Cost Attribution (BL-1185)
 
