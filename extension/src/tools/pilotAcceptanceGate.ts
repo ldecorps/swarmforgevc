@@ -91,6 +91,10 @@ import {
   PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL,
   PropertyGeneratorReachCheckOutcome,
 } from './propertyGeneratorReachCheck';
+import {
+  ORPHANED_AUTHORED_DOC_REFUSAL,
+  OrphanDocsLandCheckOutcome,
+} from './docsOrphanLandCheck';
 
 export {
   assessProducerCrosscheck,
@@ -175,6 +179,12 @@ export {
   isPropertyTestPath,
 } from './propertyGeneratorReachCheck';
 
+export {
+  ORPHANED_AUTHORED_DOC_REFUSAL,
+  OrphanDocsLandCheckOutcome,
+  assessOrphanDocsLandCheck,
+} from './docsOrphanLandCheck';
+
 export interface AcceptanceRunResult {
   success: boolean;
   output: string;
@@ -197,6 +207,7 @@ export interface AcceptanceReceipt {
   /** AcceptanceReceipt.scopedCrap — durable paths-scanned + outcome evidence (BL-745). */
   scopedCrap?: { tsFilesScanned: number; scannedPaths: string[]; outcome: 'passed' };
   mkdtempConvention?: { testFilesScanned: number };
+  orphanedDocsCheck?: { docsTouched: boolean };
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
   producerCrosscheck?: ProducerCrosscheckMetadata;
 }
@@ -232,6 +243,7 @@ export interface PilotAcceptanceGateDeps {
   checkMkdtempConvention: () => PilotMkdtempConventionCheckOutcome;
   checkPropertyGeneratorReach: () => PropertyGeneratorReachCheckOutcome;
   checkShellEntryPointDrive: (ticketId: string) => ShellEntryPointDriveCheckOutcome;
+  checkOrphanedAuthoredDocs: () => OrphanDocsLandCheckOutcome;
   checkUnreachableStepHandlers: (ticketId: string) => UnreachableStepHandlerCheckOutcome;
   checkMultiBranchParserCoverage: (ticketId: string) => MultiBranchParserCoverageOutcome;
   checkPerHatRolePromptEvidence: (ticketId: string) => PerHatRolePromptEvidenceOutcome;
@@ -264,6 +276,7 @@ export interface PilotLandRefusal {
     | 'raw-mkdtemp-outside-helper'
     | 'vacuous-property-generator'
     | 'parallel-shell-reimplementation'
+    | 'orphaned-authored-doc'
     | 'unreachable-step-handler'
     | 'untested-parser-branch'
     | 'pilot-hat-prompt-missing'
@@ -286,6 +299,7 @@ export interface PilotLandRefusal {
   vacuousFunctionBoundary?: number;
   shellEntryPoint?: string;
   shellTestPath?: string;
+  orphanedDocPath?: string;
   unreachablePattern?: string;
   unreachableStepFile?: string;
   untestedParserFunction?: string;
@@ -586,6 +600,26 @@ function checkShellDrive(
   return { shellDriveCheck };
 }
 
+// Step 3d½: touched authored Divio-mode docs must be linked from docs/index.md
+// (BL-757). Unreadable inputs fail OPEN; no docs touched skips the check.
+function checkOrphanAuthoredDocs(
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { orphanDocsCheck: OrphanDocsLandCheckOutcome } {
+  const orphanDocsCheck = deps.checkOrphanedAuthoredDocs();
+  if (orphanDocsCheck.checked && orphanDocsCheck.docsTouched && orphanDocsCheck.miss) {
+    const { path: docPath } = orphanDocsCheck.miss;
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'orphaned-authored-doc',
+        reason: `${ORPHANED_AUTHORED_DOC_REFUSAL} (${docPath})`,
+        orphanedDocPath: docPath,
+      },
+    };
+  }
+  return { orphanDocsCheck };
+}
+
 // Step 3e: touched specs/pipeline/steps/*.js patterns must match a rendered
 // step of the ticket's acceptance feature (BL-753). Unreadable inputs fail OPEN.
 function checkUnreachableHandlers(
@@ -731,6 +765,7 @@ function moveAndRecordReceipt(
   mkdtempCheck: PilotMkdtempConventionCheckOutcome,
   reachCheck: PropertyGeneratorReachCheckOutcome,
   shellDriveCheck: ShellEntryPointDriveCheckOutcome,
+  orphanDocsCheck: OrphanDocsLandCheckOutcome,
   unreachableCheck: UnreachableStepHandlerCheckOutcome,
   multiBranchCheck: MultiBranchParserCoverageOutcome,
   perHatCheck: PerHatRolePromptEvidenceOutcome,
@@ -772,6 +807,9 @@ function moveAndRecordReceipt(
       shellTestsScanned: shellDriveCheck.shellTestsScanned,
       entryPointsNamed: shellDriveCheck.entryPointsNamed,
     };
+  }
+  if (orphanDocsCheck.checked && orphanDocsCheck.docsTouched) {
+    receipt.orphanedDocsCheck = { docsTouched: true };
   }
   if (unreachableCheck.checked) {
     receipt.unreachableStepHandlers = {
@@ -820,6 +858,11 @@ function moveAndRecordReceipt(
   if (!shellDriveCheck.checked) {
     warnings.push(
       'shell entry-point drive was not checked: the ticket yaml or touched-file history could not be resolved'
+    );
+  }
+  if (!orphanDocsCheck.checked) {
+    warnings.push(
+      'orphaned authored docs were not checked: the touched-file history could not be resolved'
     );
   }
   if (!unreachableCheck.checked) {
@@ -916,6 +959,11 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return shellDrive.refusal;
   }
 
+  const orphanDocs = checkOrphanAuthoredDocs(deps);
+  if ('refusal' in orphanDocs) {
+    return orphanDocs.refusal;
+  }
+
   const unreachable = checkUnreachableHandlers(ticketId, deps);
   if ('refusal' in unreachable) {
     return unreachable.refusal;
@@ -947,6 +995,7 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     mkdtemp.mkdtempCheck,
     propertyReach.reachCheck,
     shellDrive.shellDriveCheck,
+    orphanDocs.orphanDocsCheck,
     unreachable.unreachableCheck,
     multiBranch.multiBranchCheck,
     perHat.perHatCheck,

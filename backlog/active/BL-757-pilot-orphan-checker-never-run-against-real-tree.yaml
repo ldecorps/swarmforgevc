@@ -3,13 +3,30 @@ title: "Pilot process: BL-456's docs-structure orphan checker exists but has nev
 milestone: M8
 type: defect
 severity: low
-status: todo
+status: in_progress
 epic: code-quality-gates
-assigned_to: specifier
+assigned_to: coder
 priority: 27
 direction: queue-jump
-depends_on: []
+depends_on: [BL-756]
 mutation_cost: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "wire existing checker + allowlist; no batch dedup surface"
+  architect: "specifier pinned option 1 (mechanical gate); no design fork left"
+acceptance: specs/features/BL-757-pilot-orphan-checker-never-run-against-real-tree.feature
+
+invariants:
+  - "A suite invokes computeDocsStructure on this repo's real docs/ root — fixture-only coverage is not enough."
+  - "Non-allowlisted orphans fail the suite and refuse /pilot land when authored docs were touched."
+  - "Known pre-existing orphans may sit on an explicit dated allowlist; silent empty orphanedDocs or a permanently-red suite without allowlist is not acceptable."
+  - "Commits that touch no authored Divio-mode doc are not refused solely for missing orphan-land evidence."
+
+required_wiring:
+  - "extension/test/docsStructureRealTree.test.js::computeDocsStructure(REPO_ROOT)::orphanedDocs vs dated allowlist"
+  - "extension/src/tools/pilotAcceptanceGate.ts::orphaned authored doc land refusal when docs touched"
+  - "specs/pipeline/steps/index.js::bl757RealTreeOrphanGateSteps::acceptance handler registered"
+
 source: |
   Found during BL-723 (pilot-tonight quality review), documenter viewpoint
   pass, 2026-07-31. Companion remaining-work ticket: BL-756.
@@ -41,32 +58,29 @@ notes: |
   Pilot-process half of the BL-756 documenter-lens shortfall (shared across
   all 10 of tonight's orphaned docs).
 
+  [2026-08-27] specifier: feature landed; assigned_to coder. Pin: option 1
+  (mechanical suite + /pilot land gate), not checklist-only. depends_on
+  BL-756 so the ten pilot-batch paths are cleared before this gate must
+  pass green. Allowlist is for the pre-existing debt only — dated, explicit.
+
 description: |
   ## What
 
   Wire `computeDocsStructure` into something that actually runs against
-  this repo, not just its own fixture tests. Two reasonable shapes (pick
-  one, or propose a third at spec time):
+  this repo, not just its own fixture tests.
 
-  1. A repo-scoped test (e.g. `extension/test/docsStructureRealTree.test.js`)
-     that calls `computeDocsStructure(REPO_ROOT)` and asserts
-     `orphanedDocs` is empty — paired with fixing BL-756 and the 18
-     pre-existing orphans (or an explicit, dated allowlist for orphans not
-     yet fixed, so the gate is honest about known debt rather than
-     permanently red or silently gutted).
-  2. A documenter-role handoff-checklist addition: before forwarding to QA,
-     run the orphan checker against the working tree and confirm any
-     newly-added doc isn't in the report — cheaper than a permanent gate,
-     but relies on the role remembering to run it rather than a mechanical
-     backstop.
+  Specifier ruling: **option 1 — gate-blocking**, matching the project's
+  stated "index stays exhaustive and orphan-free" rule. Shape:
 
-  ## Question to answer
+  1. A repo-scoped test that calls `computeDocsStructure(REPO_ROOT)` and
+     asserts every orphan is either absent or on an explicit dated allowlist
+     for pre-existing debt (not a silent gut, not permanently red).
+  2. A /pilot land check when authored Divio-mode docs were touched: a new
+     non-allowlisted orphan refuses land.
 
-  Given this project already has a real, tested checker for exactly this
-  class of defect, should landing a NEW authored doc without linking it be
-  gate-blocking (option 1) the same way a missing test or a CRAP violation
-  is, or is a checklist reminder (option 2) enough given the low severity
-  (an orphaned doc is still findable by search, just not from the index)?
-  Recommend option 1 given this project's own stated "index stays
-  exhaustive and orphan-free" rule already treats it as a hard requirement,
-  not a nice-to-have — but leave the tradeoff for the specifier to rule on.
+  Checklist-only (option 2) is out — too weak for a rule already treated as hard.
+
+  ## depends_on
+
+  BL-756 must land first so tonight's ten named paths are indexed before this
+  gate is required green against the real tree.
