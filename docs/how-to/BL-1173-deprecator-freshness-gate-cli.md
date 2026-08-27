@@ -64,5 +64,5 @@ bash specs/pipeline/scripts/run_acceptance.sh \
 
 Acceptance: `specs/features/BL-1173-deprecator-freshness-gate-cli.feature`
 
-Related: epic BL-1172 (deprecator); sibling BL-1174 (full `/deprecate` scan —
-out of scope here).
+Related: epic BL-1172 (deprecator); sibling
+[BL-1174 `/deprecate` soft verbs](BL-1174-deprecate-operator-verbs-scan-docs.md).

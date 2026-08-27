@@ -36,6 +36,8 @@ import {
   applyShiftEnd,
   applyOncall,
 } from './telegramCursorOperatorPolicy';
+import { parseDeprecateArgs, runDeprecateCli } from './deprecate';
+import type { SeatTier } from './deprecate';
 import { readPipelineStages } from '../swarm/swarmState';
 import { drainAgentSessions } from '../swarm/swarmStopper';
 import { parkToHold, reinstateFromHold } from '../panel/backlogWriter';
@@ -585,6 +587,33 @@ function executePolicyVerb(repoRoot: string, verb: string, args?: string, princi
   return { text: `${verb}: unknown policy verb`, wroteBounceSentinel: false };
 }
 
+/** BL-1174: /deprecate dry|confirm|check — soft verb, hard-tier judgment only. */
+export function executeDeprecate(
+  repoRoot: string,
+  args?: string,
+  seatTier?: SeatTier
+): OperatorExecuteResult {
+  const tokens = (args ?? '').trim().split(/\s+/).filter(Boolean);
+  const head = (tokens[0] ?? 'confirm').toLowerCase();
+  const mode = head === 'dry' || head === 'check' ? head : 'confirm';
+  const argv: string[] =
+    mode === 'check'
+      ? [repoRoot, 'check', tokens[1] ?? '']
+      : [repoRoot, mode];
+  const tier = seatTier ?? (mode === 'check' ? undefined : 'hard');
+  if (tier) {
+    argv.push('--seat-tier', tier);
+  }
+  const parsed = parseDeprecateArgs(argv);
+  if (!parsed) {
+    return {
+      text: 'usage: /deprecate [dry|check BL-id] — confirm retires one ranked item',
+      wroteBounceSentinel: false,
+    };
+  }
+  return { text: runDeprecateCli(parsed), wroteBounceSentinel: false };
+}
+
 /**
  * Run a confirmed (or read-tier) operator verb. Never returns secret values.
  */
@@ -592,7 +621,7 @@ export function executeOperatorVerb(
   repoRoot: string,
   verb: string,
   args?: string,
-  opts?: { principalId?: string }
+  opts?: { principalId?: string; seatTier?: 'hard' | 'easy' | 'weak' }
 ): OperatorExecuteResult {
   const v = verb.toLowerCase();
   if (v === '/syncenv') {
@@ -691,6 +720,9 @@ export function executeOperatorVerb(
   }
   if (v === '/hydrate' || v === '/mint') {
     return executeHydrate(repoRoot, v === '/mint' ? 'mint' : 'hydrate', args);
+  }
+  if (v === '/deprecate') {
+    return executeDeprecate(repoRoot, args, opts?.seatTier);
   }
   if (v === '/shift' || v === '/holiday' || v === '/oncall') {
     return executePolicyVerb(repoRoot, v, args, opts?.principalId);

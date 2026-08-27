@@ -262,6 +262,18 @@ test('BL-698: /kill-all on Control maps to emergency stop', () => {
   assert.deepEqual(decision, { action: 'execute-emergency-stop' });
 });
 
+
+test('BL-1174: /deprecate on Control routes to shared operator', () => {
+  assert.deepEqual(
+    decideControlEventAction(textEvent('/deprecate'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'execute-shared-operator', verb: '/deprecate', args: undefined }
+  );
+  assert.deepEqual(
+    decideControlEventAction(textEvent('/deprecate dry'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'execute-shared-operator', verb: '/deprecate', args: 'dry' }
+  );
+});
+
 test('BL-698: /drain-agents and /drain-swarm alias shared operator', () => {
   assert.deepEqual(
     decideControlEventAction(textEvent('/drain-agents'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
