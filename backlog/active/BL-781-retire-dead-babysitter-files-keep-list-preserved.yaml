@@ -32,6 +32,8 @@ source: |
 
 # Tip-pure rematch 5.
 abandoned_commits:
+  - f24f97622f
+  - cb572b08a1
   - 4e0ed48b07
   - 8ed8e62315
   - a9d17e084a
