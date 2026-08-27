@@ -1,6 +1,7 @@
 /**
  * BL-1178: wire BL-1177 capture/inject into same-role model switch paths
  * (BL-235 hot-swap, trial boundaries, relaunch hooks).
+ * seat relaunch / hot-swap / trial lifecycle: capture then inject (BL-1177 API)
  */
 
 import * as fs from 'fs';
