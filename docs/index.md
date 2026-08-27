@@ -49,6 +49,7 @@ expects them, and are not migrated or rewritten here.
 - [Steering a swarm role from Telegram, and reading the receipt](how-to/BL-566-steer-a-role-from-telegram.md) — per-role topic nudge + delivery receipt (BL-566); `menu_blocked` when a pane menu is live (BL-568).
 - [Reading front-desk human-loop reliability trends](how-to/BL-595-trend-human-loop-reliability.md) — approval-tap / steer / poll-health / tick-duration on `.swarmforge/telemetry/human-loop-YYYY-MM.jsonl` (BL-595; measures only).
 - [Reading self-heal event trends](how-to/BL-597-trend-self-heal-events.md) — stale-build / respawn / kill_all / rotation / claim-heal counts on `.swarmforge/telemetry/self-heal-YYYY-MM.jsonl` (BL-597; measures only).
+- [Reading intake-balance trends (filed vs closed)](how-to/BL-599-trend-intake-balance.md) — filed/closed/net from the same deliveryMetrics git-history adapter; epic trackers excluded (BL-599).
 - [Reading false-alarm rate trends on alerts](how-to/BL-598-trend-false-alarm-rate.md) — per-type false-positive rate on `.swarmforge/telemetry/alerts-YYYY-MM.jsonl` (BL-598; measures only).
 - [Pane-title chrome covers every producible role name](how-to/BL-732-pane-title-chrome-covers-every-producible-role-name.md) — multi-word / `@`-seat SwarmForge titles strip as chrome (BL-732; closes BL-642 residual).
 - [Answering a menu-blocked pane from its Telegram steering topic](how-to/BL-568-menu-blocked-pane-questions-as-mapped-polls.md) — AskUserQuestion chrome → mapped poll in the role topic; vote drives the menu; steers suppressed while blocked (BL-568).
@@ -93,7 +94,6 @@ expects them, and are not migrated or rewritten here.
 - [Host-resolved Stryker mutation concurrency](how-to/BL-786-mutation-concurrency-host-resolved.md) — `mutation-concurrency.js` sizes workers from free RAM + BL-427 peak; `MUTATION_CONCURRENCY` pin wins (BL-786).
 - [Supervisor threads are not front-desk topics](how-to/BL-695-supervisor-threads-are-not-front-desk-topics.md) — SUP/unbound never write tracked topic JSON; icons stay durable off-git (BL-695).
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
-- [QA changed-path unit test inventory](how-to/BL-1164-qa-changed-path-unit-test-gate.md) — Article 4.5: run mapped unit/wiring tests per changed production path; bounce uncovered to coder (BL-1164).
 - [Thin-main CRAP-visible CLI gate](how-to/BL-534-thin-main-crap-visible-cli-gate.md) — tools `main()` must be exported and CC≤2; parcel never allowlists (BL-534).
 - [Reconcile import skips the property-suite guard](how-to/BL-1121-reconcile-import-skips-property-suite-guard.md) — byte-identical mid-merge import → `skip-reconcile-import`; env override stays recovery-only (BL-1121).
 - [Property-suite fixtures must not mutate shared main](how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md) — canary bare/HEAD around the property lane; refuse reset-to-origin when ahead (BL-1124).
@@ -125,6 +125,7 @@ expects them, and are not migrated or rewritten here.
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
 - [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md) — BL-727 contract execution, BL-729 commit-claim, BL-731 multi-worktree fixture, BL-733 producer crosscheck, BL-735 acceptance-execution, BL-737 cross-file duplication, BL-741 scoped CRAP, BL-747 shell entry-point drive, BL-753 unreachable step-handler gate
+- [QA changed-path unit test inventory](how-to/BL-1164-qa-changed-path-unit-test-gate.md) — Article 4.5: run mapped unit/wiring tests per changed production path; bounce uncovered to coder (BL-1164).
 - [Probe legacy topic adoption paths](how-to/BL-1147-probe-legacy-topic-adoption.md) — BL-1147 read-only probe for BL-294 auto-open, cursor Host re-adopt, and map scrub candidates
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)
 - [Breaking the front-desk ↔ Cursor-operator import cycle](how-to/BL-759-cursor-operator-front-desk-bot-import-cycle.md) — drain helpers in leaf modules; full-repo dependency gate green (BL-759).
