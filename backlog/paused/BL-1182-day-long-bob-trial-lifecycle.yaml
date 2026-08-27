@@ -11,7 +11,7 @@ mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1182-day-long-bob-trial-lifecycle.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Core trial loop from BoB intake. Trial window: one operating day. Promote if
   outranks; tie → cheapest wins (cost_class / measured cost). Record losers so
