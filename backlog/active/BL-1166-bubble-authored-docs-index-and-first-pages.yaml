@@ -10,6 +10,22 @@ priority: 13
 direction: human-requested
 depends_on: [BL-829]
 mutation_cost: medium
+abandoned_commits:
+  - 7700fa210d
+  - 90f73754c8
+  - c2518022e4
+  - 0a6c7ec061
+  - 270c4c14f3
+  - 4a2de79cde
+  - ab6a5758c0
+  - 57cfbf2d8e
+  - 729960e36c
+  - 46d691761b
+  - ee09308555
+  - 372b730296
+  - ba091c7cd6
+  - 3b16b1cbcd
+  - 06284be69e
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1166-bubble-authored-docs-index-and-first-pages.feature
 
@@ -76,3 +92,6 @@ notes: |
 source: |
   Part 1 (index + first pages) of backlog/INTAKE-documenter-docs-web-pages.md
   (human via Cursor, 2026-08-26). Epic BL-1165.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: c2518022e4, evidence: backlog/evidence/BL-1166-qa-bounce-20260827.md }
