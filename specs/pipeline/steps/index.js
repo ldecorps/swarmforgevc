@@ -793,6 +793,10 @@ const DOMAINS = [
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
+  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
+  require('./bl1185WorkNoteMissingTaskHeaderSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl718BubbleTalkMirrorSteps'),
 ];
 
 function registerSteps(registry) {
