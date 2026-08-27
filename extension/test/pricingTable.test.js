@@ -120,3 +120,50 @@ test('BL-627: the current repo roster passes the pricing coverage check', () => 
   assert.equal(result.ok, true, result.message);
   assertPricingCoverage(REPO_ROOT);
 });
+
+test('BL-740: collectReferencedClaudeModels merges packs, launch, and skips wrong extensions', () => {
+  const root = mkTmpDir('bl740-roster-');
+  try {
+    fs.mkdirSync(path.join(root, 'swarmforge', 'packs'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.swarmforge', 'launch'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'swarmforge', 'packs', 'alpha.conf'),
+      'window coder claude coder --model claude-pack-alpha --dangerously-skip-permissions\n'
+    );
+    fs.writeFileSync(
+      path.join(root, 'swarmforge', 'packs', 'beta.conf'),
+      'coordinator_model claude-pack-beta\n'
+    );
+    fs.writeFileSync(path.join(root, 'swarmforge', 'packs', 'README.txt'), 'ignore me\n');
+    fs.writeFileSync(
+      path.join(root, '.swarmforge', 'launch', 'coder.claude-settings.json'),
+      '{"model":"claude-launch-coder"}\n'
+    );
+    fs.writeFileSync(path.join(root, '.swarmforge', 'launch', 'notes.txt'), 'ignore me\n');
+
+    const referenced = collectReferencedClaudeModels(root);
+    assert.deepEqual(referenced, ['claude-launch-coder', 'claude-pack-alpha', 'claude-pack-beta']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('BL-740: collectReferencedClaudeModels still scans packs and launch when swarmforge.conf is absent', () => {
+  const root = mkTmpDir('bl740-no-conf-');
+  try {
+    fs.mkdirSync(path.join(root, 'swarmforge', 'packs'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.swarmforge', 'launch'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'swarmforge', 'packs', 'solo.conf'),
+      'window qa claude qa --model claude-pack-solo --dangerously-skip-permissions\n'
+    );
+    fs.writeFileSync(
+      path.join(root, '.swarmforge', 'launch', 'qa.claude-settings.json'),
+      '{"model":"claude-launch-qa"}\n'
+    );
+
+    assert.deepEqual(collectReferencedClaudeModels(root), ['claude-launch-qa', 'claude-pack-solo']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
