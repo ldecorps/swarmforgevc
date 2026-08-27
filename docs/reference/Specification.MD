@@ -96,11 +96,20 @@ Acceptance:
 `specs/features/BL-1185-work-note-missing-task-header-defers-hard-seat.feature`.
 How-to: `docs/how-to/BL-1185-work-note-missing-task-header-defers-hard-seat.md`.)
 Prior entry —
+**Last Updated:** August 27, 2026 (BL-1178: agent-memory transfer wired into
+BL-235 same-role hot-swap — `agentMemoryHotSwap.ts` capture→inject before
+respawn; failed inject aborts switch; trial start/end same contract.
+Acceptance:
+`specs/features/BL-1178-wire-agent-memory-into-hot-swap-and-trial.feature`.
+How-to: `docs/how-to/BL-1178-wire-agent-memory-into-hot-swap-and-trial.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1177: portable agent-memory payload —
 schema-versioned `portable-agent-memory-payload` with continuity summary,
 open parcel ids, optional handoff pack / tool-state pointers; pure
 `aggregateCapturePayload` + fail-closed `inject` in
-`agentMemoryTransfer.ts` for same-role model swap; BL-1178 wires hot-swap.
+`agentMemoryTransfer.ts` for same-role model swap; **BL-1178** wires
+`backendSwitch.switchRoleModel` and trial boundaries via
+`agentMemoryHotSwap.ts`.
 Acceptance:
 `specs/features/BL-1177-portable-agent-memory-payload-capture-inject.feature`.
 How-to:
@@ -7855,9 +7864,16 @@ role match, and returns either:
 
 **Never** silently pretends continuity on bad input.
 
-### Out of scope (this slice)
+### Hot-swap wiring (BL-1178)
 
-- Hot-swap / trial wiring — **BL-1178**
+`switchRoleModel` (`backendSwitch.ts`) builds outgoing capture state from open
+handoff parcels, calls `attemptSameRoleModelSwitch`, and only respawns when
+inject succeeds. Trial start/end reuse `runTrialBoundaryMemoryTransfer` with
+the same fail-closed contract. How-to:
+`docs/how-to/BL-1178-wire-agent-memory-into-hot-swap-and-trial.md`.
+
+### Out of scope (BL-1177 API slice)
+
 - Cross-vendor adapters — **BL-1179**
 - Cross-role memory merge
 
