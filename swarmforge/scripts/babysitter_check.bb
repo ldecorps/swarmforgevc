@@ -907,7 +907,8 @@
   (spit (str escalation-dedup-file) (json/generate-string m)))
 
 (defn enqueue-operator-escalation! [finding]
-  (let [event (operator-lib/babysitter-escalation-event finding)
+  (let [detail (chase-sweep-lib/format-babysitter-escalation-detail finding)
+        event {:type "BABYSITTER_ESCALATION" :subject (:key finding) :detail detail}
         script (fs/path script-dir "operator_enqueue_event.bb")]
     (process/shell {:dir (str project-root) :extra-env {"OPERATOR_EVENTS_LOCK_MAX_WAIT_MS" "5000"}}
                      "bb" (str script) (str project-root) (json/generate-string event))))
@@ -1156,7 +1157,8 @@
     ;; The CRIT for each repaired role is still printed below, unconditionally
     ;; - a repair never swallows its alert, because a session that keeps
     ;; vanishing is the signal worth keeping (qa_e2e_procedure step 2).
-    (when (seq repairs)
+    (when (and (seq repairs)
+               (not (babysitterd-sweep-lib/diagnose-only-disaster-sweep? findings snapshot)))
       (let [cp-repairs (filter #(= :ensure-control-plane (:action %)) repairs)
             role-repairs (filter #(= :ensure-session (:action %)) repairs)]
         ;; BL-958: whole-plane recovery first (./swarm ensure). Per-role
@@ -1209,10 +1211,11 @@
               {:keys [to-nudge new-dedup-state]}
               (babysitterd-sweep-lib/decide-nudges findings nudge-opts)
               {:keys [to-escalate new-escalation-dedup-state]}
-              (babysitterd-sweep-lib/decide-escalations findings
-                                                         {:last-escalated-ms-by-key escalation-dedup
-                                                          :now-ms now
-                                                          :cooldown-ms nudge-cooldown-ms})]
+              (babysitterd-sweep-lib/decide-escalations
+               (babysitterd-sweep-lib/prepare-escalation-findings findings snapshot)
+               {:last-escalated-ms-by-key escalation-dedup
+                :now-ms now
+                :cooldown-ms nudge-cooldown-ms})]
           (doseq [f to-escalate]
             (try
               (enqueue-operator-escalation! f)
