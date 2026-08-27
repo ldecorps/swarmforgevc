@@ -13,7 +13,7 @@ const PWA_DIR = path.join(__dirname, '..', '..', 'pwa');
 
 function fakeBacklog() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     board: { active: [], paused: [], doneByMilestone: {} },
@@ -28,7 +28,7 @@ function fakeBacklog() {
 
 function fakeDocsTree(overrides = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     vision: [
@@ -36,7 +36,7 @@ function fakeDocsTree(overrides = {}) {
       { id: 'architectureDiagram', title: 'Architecture', kind: 'mermaid', content: 'graph TD; A-->B;' },
     ],
     milestones: [
-      { milestone: 'M4', tickets: [{ id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1 }] },
+      { milestone: 'M4', epics: [{ epicKey: '(no epic)', tickets: [{ id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1 }] }] },
     ],
     tickets: [
       {
