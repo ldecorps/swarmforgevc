@@ -319,8 +319,19 @@ EOF
 }
 
 FRESHNESS_RAW="$(deprecate_check_cli)"
-FRESHNESS_DECISION="$(printf '%s' "$FRESHNESS_RAW" | sed -n 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
-FRESHNESS_REASON="$(printf '%s' "$FRESHNESS_RAW" | sed -n 's/.*"reason"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+# Interpret via the same pure fail-closed helper the property tests lock
+# (BL-1173 inv 1) — never re-derive allow/hold in shell.
+FRESHNESS_JSON="$(printf '%s' "$FRESHNESS_RAW" | node -e '
+const { interpretFreshnessCliOutput } = require(process.argv[1]);
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (c) => { raw += c; });
+process.stdin.on("end", () => {
+  process.stdout.write(JSON.stringify(interpretFreshnessCliOutput(raw)));
+});
+' "${ROOT}/extension/out/tools/deprecate-check.js" 2>/dev/null || echo '{"decision":"hold","reason":"interpretFreshnessCliOutput failed — fail closed"}')"
+FRESHNESS_DECISION="$(printf '%s' "$FRESHNESS_JSON" | sed -n 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+FRESHNESS_REASON="$(printf '%s' "$FRESHNESS_JSON" | sed -n 's/.*"reason"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
 if [[ -z "$FRESHNESS_DECISION" || "$FRESHNESS_DECISION" == "hold" ]]; then
   REASON="${FRESHNESS_REASON:-malformed or missing deprecate-check output — fail closed}"
   if [[ -z "$FRESHNESS_DECISION" ]]; then
