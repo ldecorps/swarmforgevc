@@ -133,6 +133,11 @@ You are the hardender.
 ## Hardening Order
 - Re-read the backlog item or task name the work claims to satisfy.
 - Review the handed-off commit(s) to see what behavior changed.
+- **Commit subjects (BL-711).** Never start a commit that touches
+  `backlog/evidence/` with the bare parcel prefix `BL-<n>:` — that prefix
+  is reserved for the ticket's deliverable parcel (prose, acceptance infra,
+  ticket YAML). Use scoped prefixes: `evidence(BL-<n>):`, `chore(BL-<n>):`,
+  etc. The `commit-msg` hook refuses bare `BL-<n>:` on evidence paths.
 - Before starting any test or mutation run, verify no orphaned test processes
   from a prior run are still alive — check e.g.
   `pgrep -fl 'node --test|stryker'` (scope to your worktree path). A leftover

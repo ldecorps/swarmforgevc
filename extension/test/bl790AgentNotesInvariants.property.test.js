@@ -18,8 +18,8 @@ const {
 // Runs ONLY via `npm run test:properties`.
 
 const printableArb = fc.constantFrom(...'abcXYZ0123 ./-_:é中');
-const controlCharArb = fc.constantFrom('\n', '\r', '\t', '\x00', '\x0b', '\x1f', '\x7f');
-const userMessageCharArb = fc.oneof({ weight: 3, arbitrary: printableArb }, { weight: 1, arbitrary: controlCharArb });
+const forbiddenCharArb = fc.constantFrom('\n', '\r', '\x00', '\x0b', '\x1f', '\x7f');
+const userMessageCharArb = fc.oneof({ weight: 3, arbitrary: printableArb }, { weight: 1, arbitrary: forbiddenCharArb });
 const userMessageArb = fc.oneof(
   fc.array(userMessageCharArb, { maxLength: 120 }).map((cs) => cs.join('')),
   fc.string({ unit: 'binary', maxLength: 120 })
@@ -53,15 +53,15 @@ function countOutboxNotes(root) {
   return fs.readdirSync(dir).filter((name) => name.endsWith('.handoff')).length;
 }
 
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHAR = /[\x00-\x1f\x7f]/;
+// Matches agentNotesCore hasForbiddenLineOrControl (tab is allowed on a single line).
+const FORBIDDEN_CHAR = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\n|\r/;
 
 test('BL-790 invariant 2: no caller message produces a queued header over 80 chars or spanning more than one line', () => {
   fc.assert(
     fc.property(userMessageArb, (message) => {
       const result = validateAgentNoteUserMessage(message);
       if (result.ok) {
-        assert.doesNotMatch(result.queuedMessage, CONTROL_CHAR);
+        assert.doesNotMatch(result.queuedMessage, FORBIDDEN_CHAR);
         assert.ok(result.queuedMessage.length <= AGENT_NOTE_MESSAGE_MAX_LEN);
         assert.equal(result.queuedMessage, composeAgentNoteMessage(message));
         return true;
@@ -69,7 +69,7 @@ test('BL-790 invariant 2: no caller message produces a queued header over 80 cha
       if (message.length === 0) {
         return result.reason.includes('that a note needs a message');
       }
-      if (CONTROL_CHAR.test(message)) {
+      if (FORBIDDEN_CHAR.test(message)) {
         return result.reason.includes('the single-line requirement');
       }
       return result.reason.includes('the one-line character limit');
@@ -81,7 +81,7 @@ test('BL-790 invariant 2: no caller message produces a queued header over 80 cha
 test('BL-790 invariant 1: successful sends always shell to swarm_handoff.bb, never write mailbox paths directly', async () => {
   await fc.assert(
     fc.asyncProperty(
-      fc.string({ minLength: 1, maxLength: AGENT_NOTE_USER_MESSAGE_MAX_LEN }).filter((s) => !CONTROL_CHAR.test(s)),
+      fc.string({ minLength: 1, maxLength: AGENT_NOTE_USER_MESSAGE_MAX_LEN }).filter((s) => !FORBIDDEN_CHAR.test(s)),
       async (message) => {
         const root = mkTargetWithRoles(['coder']);
         const execCalls = [];
