@@ -1974,6 +1974,7 @@ export function startBridge(
     const sseClients = new Set<http.ServerResponse>();
     let lastSnapshot: string | undefined;
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
+    // hostActivityStream — live push channel for BL-834 Host page (SSE /events).
     const unsubscribeHostActivity = subscribeHostActivity(({ sessionId, line }) => {
       const payload = JSON.stringify({ sessionId, line });
       for (const client of sseClients) {
@@ -2054,6 +2055,7 @@ export function startBridge(
       respondJson,
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
     );
+    // BL-790: POST /agent-notes — authenticated note queue (agentNotesRoutes).
     const agentNotesRoutes = createAgentNotesRoutes(
       requireControlAuth,
       respondJson,

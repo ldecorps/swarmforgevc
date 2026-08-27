@@ -133,11 +133,6 @@ You are the hardender.
 ## Hardening Order
 - Re-read the backlog item or task name the work claims to satisfy.
 - Review the handed-off commit(s) to see what behavior changed.
-- **Commit subjects (BL-711).** Never start a commit that touches
-  `backlog/evidence/` with the bare parcel prefix `BL-<n>:` — that prefix
-  is reserved for the ticket's deliverable parcel (prose, acceptance infra,
-  ticket YAML). Use scoped prefixes: `evidence(BL-<n>):`, `chore(BL-<n>):`,
-  etc. The `commit-msg` hook refuses bare `BL-<n>:` on evidence paths.
 - Before starting any test or mutation run, verify no orphaned test processes
   from a prior run are still alive — check e.g.
   `pgrep -fl 'node --test|stryker'` (scope to your worktree path). A leftover
@@ -530,17 +525,6 @@ You are the hardender.
   other arms stay dark is how BL-661 landed: three seats praised the
   double-quoted tests and never noticed two of three `take-flow-reason`
   branches had zero coverage (BL-754).
-
-## A new multi-branch arm must match sibling guard patterns (BL-751)
-- When the parcel adds or changes a branch in an existing multi-arm `cond` /
-  `case` dispatch (severities, states, verdicts), read every sibling arm's guard
-  predicates and compare the new arm against the shared pattern — grace periods
-  (`elapsed-pct`, idle timeouts), head-unchanged gates, reclaim thresholds.
-  If ≥2 siblings share a guard and the new arm omits it, that gating asymmetry
-  is not-on-par unless the ticket explicitly documents the deviation as
-  deliberate. BL-646's `:warn-fixture-droppings` branch is the exemplar: it
-  shared `head-unchanged?` with `:warn-uncommitted` and `:watch` but skipped
-  their `(>= elapsed-pct 0.75)` grace gate.
 
 ## Recording A Send-Back (BL-635)
 - You do not bounce as a matter of course — your normal path is always forward

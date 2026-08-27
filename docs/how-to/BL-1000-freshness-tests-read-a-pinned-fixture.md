@@ -24,9 +24,11 @@ Staged ages in the suites are stale against **these** pins. Raising the live
 conf no longer reddens the suite; restart assertions still hold against the
 fixture.
 
-Every conf those tests read is git-tracked (fresh clone sufficient).
+Every conf those tests read is git-tracked (fresh clone sufficient). Acceptance
+scenario 03 uses a detached `git worktree add` (not `git clone`) so the
+fresh-checkout probe works when the repo is an active worktree.
 
-## Operator note
+## Verify
 
 Tune production thresholds in `daemon_log_freshness.conf` as before. Do not
 point the shell suites at that file. If you change the fixture pins, update

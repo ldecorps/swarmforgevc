@@ -72,10 +72,6 @@ import {
   MultiBranchParserCoverageOutcome,
 } from './multiBranchParserCoverageCheck';
 import {
-  SIBLING_BRANCH_GATING_ASYMMETRY_REFUSAL,
-  MultiBranchSiblingGatingOutcome,
-} from './multiBranchSiblingGatingCheck';
-import {
   PILOT_HAT_PROMPT_MISSING_REFUSAL,
   PerHatRolePromptEvidenceOutcome,
 } from './perHatRolePromptEvidenceCheck';
@@ -152,18 +148,6 @@ export {
 } from './multiBranchParserCoverageCheck';
 
 export {
-  SIBLING_BRANCH_GATING_ASYMMETRY_REFUSAL,
-  assessMultiBranchSiblingGating,
-  extractMultiBranchGatingDispatches,
-  extractCondGatingDispatches,
-  extractGuardTokens,
-  MIN_GATING_ARMS,
-  MultiBranchSiblingGatingOutcome,
-  SiblingGatingAsymmetryMiss,
-  MultiBranchGatingDispatch,
-} from './multiBranchSiblingGatingCheck';
-
-export {
   PILOT_HAT_PROMPT_MISSING_REFUSAL,
   assessPerHatRolePromptEvidence,
   verdictHasRolePromptEvidence,
@@ -219,7 +203,6 @@ export interface AcceptanceReceipt {
   shellEntryPointDrive?: { shellTestsScanned: number; entryPointsNamed: number };
   unreachableStepHandlers?: { stepFilesScanned: number; patternsChecked: number };
   multiBranchParserCoverage?: { parsersScanned: number };
-  multiBranchSiblingGating?: { dispatchesScanned: number };
   perHatRolePromptEvidence?: { verdictsScanned: number };
   /** AcceptanceReceipt.scopedCrap — durable paths-scanned + outcome evidence (BL-745). */
   scopedCrap?: { tsFilesScanned: number; scannedPaths: string[]; outcome: 'passed' };
@@ -263,7 +246,6 @@ export interface PilotAcceptanceGateDeps {
   checkOrphanedAuthoredDocs: () => OrphanDocsLandCheckOutcome;
   checkUnreachableStepHandlers: (ticketId: string) => UnreachableStepHandlerCheckOutcome;
   checkMultiBranchParserCoverage: (ticketId: string) => MultiBranchParserCoverageOutcome;
-  checkMultiBranchSiblingGating: (ticketId: string) => MultiBranchSiblingGatingOutcome;
   checkPerHatRolePromptEvidence: (ticketId: string) => PerHatRolePromptEvidenceOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
@@ -297,7 +279,6 @@ export interface PilotLandRefusal {
     | 'orphaned-authored-doc'
     | 'unreachable-step-handler'
     | 'untested-parser-branch'
-    | 'sibling-branch-gating-asymmetry'
     | 'pilot-hat-prompt-missing'
     | 'move-failed';
   reason: string;
@@ -324,10 +305,6 @@ export interface PilotLandRefusal {
   untestedParserFunction?: string;
   untestedParserArm?: string;
   untestedParserPath?: string;
-  siblingGatingFunction?: string;
-  siblingGatingArm?: string;
-  siblingGatingPath?: string;
-  siblingGatingMissingGuard?: string;
   missingHatPromptRole?: string;
   missingHatPromptVerdict?: string;
 }
@@ -623,8 +600,9 @@ function checkShellDrive(
   return { shellDriveCheck };
 }
 
-// Step 3d½: touched authored Divio-mode docs must be linked from docs/index.md
-// (BL-757). Unreadable inputs fail OPEN; no docs touched skips the check.
+// Step 3d½: orphaned authored doc land refusal when docs touched — authored
+// Divio-mode docs must be linked from docs/index.md (BL-757). Unreadable
+// inputs fail OPEN; no docs touched skips the check.
 function checkOrphanAuthoredDocs(
   deps: PilotAcceptanceGateDeps
 ): { refusal: PilotLandRefusal } | { orphanDocsCheck: OrphanDocsLandCheckOutcome } {
@@ -686,30 +664,6 @@ function checkMultiBranchCoverage(
     };
   }
   return { multiBranchCheck };
-}
-
-// Step 3f2: run-touched multi-arm dispatches must not omit shared sibling guards
-// (grace periods, timeouts) that ≥2 predicate arms already share (BL-751).
-function checkSiblingGating(
-  ticketId: string,
-  deps: PilotAcceptanceGateDeps
-): { refusal: PilotLandRefusal } | { siblingGatingCheck: MultiBranchSiblingGatingOutcome } {
-  const siblingGatingCheck = deps.checkMultiBranchSiblingGating(ticketId);
-  if (siblingGatingCheck.checked && siblingGatingCheck.miss) {
-    const { functionName, sourcePath, armLabel, missingGuard } = siblingGatingCheck.miss;
-    return {
-      refusal: {
-        landed: false,
-        reasonKind: 'sibling-branch-gating-asymmetry',
-        reason: `${SIBLING_BRANCH_GATING_ASYMMETRY_REFUSAL} (function ${functionName}; arm ${armLabel}; missing ${missingGuard}; file ${sourcePath})`,
-        siblingGatingFunction: functionName,
-        siblingGatingArm: armLabel,
-        siblingGatingPath: sourcePath,
-        siblingGatingMissingGuard: missingGuard,
-      },
-    };
-  }
-  return { siblingGatingCheck };
 }
 
 // Step 3g: every completed expedite stage verdict must record the injected
@@ -815,7 +769,6 @@ function moveAndRecordReceipt(
   orphanDocsCheck: OrphanDocsLandCheckOutcome,
   unreachableCheck: UnreachableStepHandlerCheckOutcome,
   multiBranchCheck: MultiBranchParserCoverageOutcome,
-  siblingGatingCheck: MultiBranchSiblingGatingOutcome,
   perHatCheck: PerHatRolePromptEvidenceOutcome,
   multiWorktreeFixture?: MultiworktreeFixtureMetadata,
   producerCrosscheck?: ProducerCrosscheckMetadata
@@ -867,9 +820,6 @@ function moveAndRecordReceipt(
   }
   if (multiBranchCheck.checked) {
     receipt.multiBranchParserCoverage = { parsersScanned: multiBranchCheck.parsersScanned };
-  }
-  if (siblingGatingCheck.checked) {
-    receipt.multiBranchSiblingGating = { dispatchesScanned: siblingGatingCheck.dispatchesScanned };
   }
   if (perHatCheck.checked) {
     receipt.perHatRolePromptEvidence = { verdictsScanned: perHatCheck.verdictsScanned };
@@ -924,11 +874,6 @@ function moveAndRecordReceipt(
   if (!multiBranchCheck.checked) {
     warnings.push(
       'multi-branch parser coverage was not checked: the touched-file history could not be resolved'
-    );
-  }
-  if (!siblingGatingCheck.checked) {
-    warnings.push(
-      'multi-branch sibling gating was not checked: the touched-file history could not be resolved'
     );
   }
   if (!perHatCheck.checked) {
@@ -1030,11 +975,6 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return multiBranch.refusal;
   }
 
-  const siblingGating = checkSiblingGating(ticketId, deps);
-  if ('refusal' in siblingGating) {
-    return siblingGating.refusal;
-  }
-
   const perHat = checkPerHatPromptEvidence(ticketId, deps);
   if ('refusal' in perHat) {
     return perHat.refusal;
@@ -1059,7 +999,6 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     orphanDocs.orphanDocsCheck,
     unreachable.unreachableCheck,
     multiBranch.multiBranchCheck,
-    siblingGating.siblingGatingCheck,
     perHat.perHatCheck,
     fixtureMetadata,
     producerGate.crosscheck

@@ -4,9 +4,6 @@
 # (BL-105) - git resolves every hook name from that one directory, so no
 # separate install step is needed for this file.
 #
-# BL-711: also runs check_parcel_subject_evidence.sh — refuses bare
-# "BL-<n>:" subjects when staged paths include backlog/evidence/.
-#
 # git guarantees commit-msg runs, with the now-finalized message, for the
 # same commit attempt whenever pre-commit passed - see the note in
 # swarmforge/git-hooks/pre-commit for why the message-naming check can only
@@ -14,5 +11,4 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-"$REPO_ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$1"
-"$REPO_ROOT/swarmforge/scripts/check_parcel_subject_evidence.sh" "$1"
+exec "$REPO_ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$1"

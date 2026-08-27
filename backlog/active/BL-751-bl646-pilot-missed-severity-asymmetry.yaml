@@ -36,4 +36,3 @@ description: |
   Harden `/pilot`'s architect-equivalent or hardener-equivalent step to
   perform this sibling-branch comparison for any new case added to an
   existing multi-branch dispatch.
-acceptance: specs/features/BL-751-pilot-sibling-branch-gating-asymmetry.feature

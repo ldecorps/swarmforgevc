@@ -67,7 +67,6 @@ test('landPilotedTicket refuses raw-mkdtemp-outside-helper before move', async (
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;

@@ -92,9 +92,11 @@ expects them, and are not migrated or rewritten here.
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
 - [Mint-time hygiene refuses a dangling acceptance pointer](how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md) — `DANGLING-ACCEPTANCE` at specifier hygiene; shared `applicable?` with BL-880 (BL-1027).
 - [Promotion refuses a missing or draft acceptance feature](how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md) — blocking `acceptance` gate + `audit-acceptance`; no sibling-glob rescue (BL-626).
+- [Slice size envelope at promotion](how-to/BL-634-slice-size-envelope-at-promotion.md) — declared estimate over p90 or high band requires split-or-justify before coder starts (BL-634).
 - [Deprecator freshness-gate CLI before promote](how-to/BL-1173-deprecator-freshness-gate-cli.md) — `deprecate-check.js` allow|hold; promote fails closed (BL-1173 / Article 3.6).
 - [Run `/deprecate` soft verbs](how-to/BL-1174-deprecate-operator-verbs-scan-docs.md) — dry ranks orphan conf flags; confirm retires one into `docs/deprecated/` + index link; check wraps BL-1173; hard-tier only (BL-1174).
 - [Portable agent-memory capture and inject](how-to/BL-1177-portable-agent-memory-payload-capture-inject.md) — schema-versioned payload + fail-closed inject for same-role model swap (BL-1177; epic BL-1176).
+- [Wire agent-memory into hot-swap and trial boundaries](how-to/BL-1178-wire-agent-memory-into-hot-swap-and-trial.md) — BL-1177 capture/inject on BL-235 model switch and trial start/end (BL-1178).
 - [Keep the chunking property falsifiable](how-to/BL-738-chunking-property-reaches-the-split-boundary.md) — probe `maxLen=50` + `minLength: 51` so the property hits multi-chunk; scenario 02 falsifies (BL-738).
 - [Open-slot nudge skips type: epic trackers](how-to/BL-1145-open-slot-nudge-skips-epic-trackers.md) — promotion_gates_lib evaluate refuses epic/blocked so nudge and promote share one chain (BL-1145).
 - [Exit gates: committed acceptance + epic runtime wiring](how-to/BL-533-spec-commit-and-runtime-wiring-exit-gates.md) — untracked acceptance fails hygiene; multi-slice epics need `required_wiring` (BL-533).
@@ -124,6 +126,7 @@ expects them, and are not migrated or rewritten here.
 - [Dev-host bounce under WSL: exactly one window](how-to/BL-578-devhost-bounce-wsl-window-leak.md) — Windows-side kill-old + headless-swarm refuse/`--force` (BL-578).
 - [Keep BL-578 acceptance bound](how-to/BL-988-orphaned-wsl-acceptance-contract-binding.md) — restore orphaned step binding; property regression against re-orphan (BL-988).
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
+- [Context-telemetry producer wiring](how-to/BL-665-context-telemetry-producer-wiring.md) — transcript walker fills GH-22 store via `record`; handoffd sweep (BL-665).
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
 - [Paused pager shows server failure reasons](how-to/BL-662-paused-pager-shows-server-failure-reason.md) — JSON `reason` on non-OK for Expedite/Approve (BL-662).
@@ -150,6 +153,7 @@ expects them, and are not migrated or rewritten here.
 - [Running Bubble's JVM unit suite](how-to/BL-769-android-jvm-unit-suite.md) — which Kotlin logic is testable on the host JVM, and where the pure-logic/device-surface line falls.
 - [Collapsed-bubble gesture model](how-to/BL-828-bubble-collapsed-gesture-model.md) — tap to talk / tap again to send; double-tap to expand; idle tap deferred one double-tap window (BL-828; updates BL-707).
 - [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks (including per-agent process markers, BL-1108), what a nudge looks like, CRIT escalations to the operator (BL-653), start/stop/ensure, state layout, the flipped env skip, the Operator's tell-never-restart freshness watchdog (down/pidfile-lie/announce-mute/healthy), the bounded vanished-session repair, the bounded control-plane auto-heal (attempt/wall-clock bound, three-outcome REPAIR line), and the detector that tells someone when pipeline code lands on `main` outside QA; half-launch / swarm-starved bounded auto-repair (BL-1169).
+- [Disaster-class correlation and structured escalation](how-to/BL-1171-disaster-class-correlation-structured-escalation.md) — one JSON playbook escalation when handoffd + half-launch + starved correlate; diagnose-only on parse errors (BL-1171).
 - [Escalation-driven operator wake model](how-to/BL-653-operator-escalation-driven-wake-model.md) — operator LLM wakes only on human traffic, babysitter CRIT escalation, or SWARM_CONTROL_LOST; retires fabricated per-tick wakes and night-start pid-hold (BL-653).
 - [Three named shift packs — one active in conf](how-to/BL-660-three-shift-packs-conf-selectable.md) — `config swarm_shift day|evening|night` drives start/stop crontab, cooldown inverse, ceremony stop, and briefing from one source (BL-660).
 - [Babysitter rotate-not-honored skips standing packs](how-to/BL-1129-babysitter-rotate-not-honored-skips-standing.md) — check 9 gated on `rotation-router?`; standing packs never CRIT (BL-1129).

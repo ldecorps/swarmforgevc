@@ -228,6 +228,23 @@
 %% BL-595 (2026-08-25): front-desk human-loop reliability ledger —
 %% .swarmforge/telemetry/human-loop-YYYY-MM.jsonl (async append); four
 %% series (approval-tap / steering / poll-health / tick-duration) → trend.ts.
+%% BL-597 (2026-08-27): self-heal ledger — self-heal-YYYY-MM.jsonl at existing
+%% recovery log sites; aggregateSelfHealCounts → computeTrend (measures only).
+%% BL-599 (2026-08-27): intake-balance — filed/closed/net via deliveryMetrics
+%% git-history adapter → computeIntakeBalance / trend.ts (measures only).
+%% BL-601 (2026-08-27): compaction cadence — compaction-YYYY-MM.jsonl from
+%% structured compaction:true context-events only; compactionCadence →
+%% computeTrend (inward); trend.ts must not re-export (acyclic).
+%% BL-600 (2026-08-27): human-decision latency — ask→verdict median/outliers
+%% via humanDecisionLatency → computeTrend (inward; no trend re-export).
+%% BL-602 (2026-08-27): handoff latency — enqueued_at→dequeued_at per recipient
+%% via handoffLatency → computeTrend (inward; master+worktree mailboxes).
+%% BL-1177 (2026-08-27): portable agent-memory — capture/inject payload API
+%% in agentMemoryTransfer.ts for same-role model swap.
+%% BL-1178 (2026-08-27): agentMemoryHotSwap wires capture/inject into
+%% backendSwitch.switchRoleModel and trial boundaries before respawn.
+%% BL-665 (2026-08-27): contextTelemetryProducer walks transcripts and
+%% fills GH-22 store via context_telemetry_cli.bb record; handoffd sweep.
 %% BL-732 (2026-08-25): needsHumanDetection pane-title chrome mirrors
 %% display_name_for_role (multi-word + @-seat); closes BL-642 residual.
 %% BL-695 (2026-08-25): supervisor/unbound threads never write
@@ -473,6 +490,16 @@ flowchart TB
   class MODELSTORE,OLLAMA state;
 %% BL-726 (2026-08-27): BL-718 acceptance step handlers wired
 %% (bl718BubbleTalkMirrorSteps) — Gherkin gate actually runs.
+%% BL-744 (2026-08-27): Bubble mirror topic merge helpers extracted to
+%% bubbleMirrorTopic.ts / bubbleMirrorState.ts / bubbleMirrorDelivery.ts;
+%% CRAP<=6 branch coverage via bl744TopicMergeHelpers.test.js.
+%% BL-757 (2026-08-27): computeDocsStructure real-tree orphan gate —
+%% docsStructureRealTree.test.js + /pilot land check (BL-756 indexed first).
+%% BL-634 (2026-08-27): slice size envelope gate at promotion (BL-626 chokepoint).
+%% BL-1171 (2026-08-27): disaster-class correlation — one structured
+%% BABYSITTER_ESCALATION when handoffd + half-launch + starved correlate.
+%% BL-834 (2026-08-27): Host thinking remote page (host) — BL-833 feed
+%% over SSE; watch-only, three honest states.
 %% BL-832 (2026-08-27): Health remote page (health) — reads existing
 %% bridge metrics; each readout labels its own window.
 %% BL-1166 (2026-08-27): Operator docs remote page (operator-docs) — read-only
@@ -481,3 +508,4 @@ flowchart TB
 %% commits pass check_property_suite_drift.sh without SKIP;
 %% BL-1185 (2026-08-27): Work notes without task: still attribute
 %% mutation_cost via Work BL-… message (supersede_lib task-name-from-content);
+%% BL-1167 (2026-08-27): when stage seats share the same pack --model,

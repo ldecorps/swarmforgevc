@@ -64,7 +64,6 @@ function mkGateDeps(unreachableOutcome) {
       }),
       checkUnreachableStepHandlers: () => unreachableOutcome,
       checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-      checkMultiBranchSiblingGating: () => ({ checked: true, dispatchesScanned: 0 }),
       checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
       moveTicketToDone: () => {
         calls.move += 1;
