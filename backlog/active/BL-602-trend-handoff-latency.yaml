@@ -21,6 +21,12 @@ abandoned_commits:
   - 618e99fd3b
   - 7ee4ad73fc
   - d912a443c7
+  - 9b3e0564c4
+  - 68afc3a49f
+  - 688bde3239
+  - 7c368ad62e
+  - 9cfdfb3b19
+  - 732ca2276a
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-602-trend-handoff-latency.feature
 
@@ -29,7 +35,7 @@ required_wiring:
   - "swarmforge/scripts/ready_for_next_task.bb::claim path::dequeued_at stamped when parcel moves to in_process"
   - "extension/src/metrics/handoffLatency.ts::gatherRoleHandoffLatencyRecords::reads master and worktree role mailboxes"
   - "extension/src/metrics/stageDwell.ts::splitOutliers::median + outlier honesty reused per recipient role"
-  - "extension/src/metrics/handoffLatency.ts::computeTrend inward::plotted via shared TrendedNumber framework (no trend.ts re-export — acyclic)"
+  - "extension/src/metrics/handoffLatency.ts::medianTrend: computeTrend::per-role median series via shared TrendResult framework"
   - "extension/src/metrics/trend.ts::BL-602 handoff-latency::callers import from ./handoffLatency (acyclic — no re-export)"
   - "specs/pipeline/steps/index.js::bl602TrendHandoffLatencySteps::acceptance handler registered"
 

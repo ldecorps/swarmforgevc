@@ -16,10 +16,10 @@ NONE.
   BL-602 Last Updated + Handoff Latency section + how-to + index link +
   architecture note stacked on top (living prior entries kept).
 - `required_wiring` realigned to tip-pure path::needle strings
-  (`gatherRoleHandoffLatencyRecords`, `computeTrend` inward, `trend.ts`
+  (`gatherRoleHandoffLatencyRecords`, `medianTrend: computeTrend`, `trend.ts`
   acyclic comment).
-- `abandoned_commits` already on tip for superseded first-lineage /
-  parallel-branch tips.
+- `abandoned_commits` extended for stranded architect/cleaner/hardender tips
+  on the bounce lineage.
 
 ## Acceptance cross-check
 Aligned with `specs/features/BL-602-trend-handoff-latency.feature`.
