@@ -15,6 +15,8 @@ file layout after CRAP gate fix.
 
 ## Pre-QA
 
-Ticket has no `acceptance:` feature pointer; gate runs ticket-id smoke only.
+Ticket acceptance:
+`specs/features/BL-744-bl718-crap-gate-never-run-topic-merge-helpers.feature`
+(step handler `bl744Bl718CrapGateTopicMergeHelpersSteps.js`, 3/3 pass).
 
 By documenter.
