@@ -8,6 +8,24 @@ const FEATURE = 'context-compaction cadence trend exposes per-role context press
 const REPO = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO, 'extension');
 
+/** Fixture vocabulary for Outline rows — pins kill Gherkin example-cell mutants (BL-908). */
+const EXPECTED_BY_ROLE = Object.freeze({
+  coder: Object.freeze({
+    model: 'claude-sonnet-5',
+    ts: '2026-08-27T06:00:00Z',
+    util_pct: 92,
+    input_tokens: 180000,
+    tokens_at: 180000,
+  }),
+  QA: Object.freeze({
+    model: 'gpt-5',
+    ts: '2026-08-27T07:15:00Z',
+    util_pct: 88,
+    input_tokens: 95000,
+    tokens_at: 95000,
+  }),
+});
+
 function loadPure() {
   return require(path.join(EXT_DIR, 'out', 'metrics', 'compactionCadence'));
 }
@@ -15,6 +33,12 @@ function loadPure() {
 function ensure(ctx) {
   if (!ctx.bl601) ctx.bl601 = {};
   return ctx.bl601;
+}
+
+function pinForRole(role) {
+  const pin = EXPECTED_BY_ROLE[role];
+  assert.ok(pin, `BL-601: unknown Outline role fixture ${JSON.stringify(role)}`);
+  return pin;
 }
 
 function registerSteps(registry) {
@@ -26,7 +50,11 @@ function registerSteps(registry) {
     /^role "(.+)" on model "(.+)" had a context event with compaction true at (.+)$/,
     (ctx, role, model, ts) => {
       const st = ensure(ctx);
+      const pinned = pinForRole(role.trim());
+      assert.equal(model.trim(), pinned.model, 'BL-601 Outline model must match fixture pin');
+      assert.equal(ts.trim(), pinned.ts, 'BL-601 Outline timestamp must match fixture pin');
       st.event = { role: role.trim(), model: model.trim(), timestamp: ts.trim(), compaction: true };
+      st.pin = pinned;
     }
   );
 
@@ -34,6 +62,9 @@ function registerSteps(registry) {
     /^that event carried context utilization (\d+) percent and (\d+) input tokens$/,
     (ctx, utilPct, inputTokens) => {
       const st = ensure(ctx);
+      assert.ok(st.pin, 'BL-601: role pin must be set before util/tokens');
+      assert.equal(Number(utilPct), st.pin.util_pct, 'BL-601 Outline util_pct must match fixture pin');
+      assert.equal(Number(inputTokens), st.pin.input_tokens, 'BL-601 Outline input_tokens must match fixture pin');
       st.event.contextUtilizationPct = Number(utilPct);
       st.event.inputTokens = Number(inputTokens);
     }
@@ -45,17 +76,25 @@ function registerSteps(registry) {
   });
 
   scoped(/^one compaction record is emitted for role "(.+)"$/, (ctx, role) => {
-    assert.ok(ensure(ctx).record);
-    assert.equal(ensure(ctx).record.role, role.trim());
+    const st = ensure(ctx);
+    assert.ok(st.record);
+    const pin = pinForRole(role.trim());
+    assert.equal(st.record.role, role.trim());
+    assert.equal(st.pin, pin);
   });
 
   scoped(
     /^the record carries model "(.+)" tokens-at-compaction (\d+) and timestamp (.+)$/,
     (ctx, model, tokensAt, ts) => {
-      const record = ensure(ctx).record;
-      assert.equal(record.model, model.trim());
-      assert.equal(record.tokensAtCompaction, Number(tokensAt));
-      assert.equal(record.timestamp, ts.trim());
+      const st = ensure(ctx);
+      const record = st.record;
+      const pin = st.pin;
+      assert.equal(model.trim(), pin.model);
+      assert.equal(Number(tokensAt), pin.tokens_at);
+      assert.equal(ts.trim(), pin.ts);
+      assert.equal(record.model, pin.model);
+      assert.equal(record.tokensAtCompaction, pin.tokens_at);
+      assert.equal(record.timestamp, pin.ts);
     }
   );
 
