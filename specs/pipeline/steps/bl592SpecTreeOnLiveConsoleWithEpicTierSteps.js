@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { afterEach } = require('node:test');
 const { JSDOM } = require(path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom'));
 
 const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
@@ -18,12 +19,27 @@ const FEATURE = 'the live Mini App console exposes a read-only spec tree Milesto
 const TOKEN = 'bl592-spec-tree-token';
 const PWA_DIR = path.join(__dirname, '..', '..', '..', 'pwa');
 
+// Scrubbed of ambient GIT_DIR/GIT_WORK_TREE before every call - without
+// this, a `cwd`-scoped git subprocess with either var set in the ambient
+// environment ignores `cwd` entirely and operates on whatever repo those
+// vars point at instead of this fixture's own isolated one (same class of
+// hazard as extension/test/helpers/sharedRepoFixture.js's own established
+// fix; observed here directly: `git add -A`/`git commit` inside this
+// fixture raced the real repo's `.git/index.lock` under concurrent
+// scenarios). Never omit this for any git call added to this file.
+function git(args, cwd) {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  execFileSync('git', args, { cwd, env });
+}
+
 function mkFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl592-'));
-  execFileSync('git', ['init', '-q'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
-  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
+  git(['init', '-q'], root);
+  git(['config', 'user.email', 't@t'], root);
+  git(['config', 'user.name', 't'], root);
+  git(['commit', '-q', '-m', 'init', '--allow-empty'], root);
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'done'), { recursive: true });
@@ -44,8 +60,8 @@ function writeYaml(ctx, folder, filename, content) {
     return;
   }
   fs.writeFileSync(filePath, content);
-  execFileSync('git', ['add', '-A'], { cwd: ctx.root });
-  execFileSync('git', ['commit', '-q', '-m', `seed ${filename}`], { cwd: ctx.root });
+  git(['add', '-A'], ctx.root);
+  git(['commit', '-q', '-m', `seed ${filename}`], ctx.root);
 }
 
 function sleep(ms) {
@@ -110,6 +126,32 @@ function stopBridge(ctx) {
   }
 }
 
+// BL-592 architect bounce (D1): the manual stopBridge()/mkFixture() calls
+// above leak both the bridge handle and the mkdtempSync fixture dir on any
+// throw before their own scenario reaches its designated cleanup step -
+// engineering.prompt's Test Speed And Isolation rule (BL-971). runtime.js's
+// runScenario has no per-scenario teardown hook of its own, so this uses
+// node:test's real afterEach instead, scoped by tracking only the ctx the
+// CURRENT scenario's Background step just created - cleanup is then
+// unconditional regardless of which step throws, or none at all.
+let currentCtx;
+
+function trackCtx(ctx) {
+  currentCtx = ctx;
+  return ctx;
+}
+
+afterEach(() => {
+  if (!currentCtx) {
+    return;
+  }
+  stopBridge(currentCtx);
+  if (currentCtx.root) {
+    fs.rmSync(currentCtx.root, { recursive: true, force: true });
+  }
+  currentCtx = undefined;
+});
+
 function clickButton(dom, testId) {
   const btn = dom.window.document.querySelector(`[data-testid="${testId}"]`);
   assert.ok(btn, `expected button data-testid="${testId}"`);
@@ -172,6 +214,7 @@ function renderPwa(docsTree) {
 }
 
 async function ensureBridge(ctx) {
+  trackCtx(ctx);
   if (!process.env.CURSOR_API_KEY) {
     process.env.CURSOR_API_KEY = 'test-key';
   }
@@ -187,6 +230,7 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^the live Mini App console spec tree screen is open$/, (ctx) => {
+    trackCtx(ctx);
     ctx.root = mkFixture();
     writeYaml(
       ctx,
