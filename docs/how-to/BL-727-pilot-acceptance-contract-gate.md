@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-741, BL-747, BL-753, BL-755, BL-758)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-741, BL-747, BL-753, BL-755, BL-757, BL-758)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -176,6 +176,27 @@ Between a green contract (and the other land gates) and the yaml move:
 
 **Remediation when refused:** improve tests/coverage for the named function
 (companion remaining-work BL-740 for the BL-627 function itself).
+
+## Real-tree docs orphan gate (BL-757)
+
+BL-456's `computeDocsStructure` orphan checker only ever ran against
+throwaway fixture trees — never this repo's real `docs/`. Tonight's pilot
+landed ten unlinked docs (BL-756) with nothing catching them. BL-757 wires
+the checker into two mechanical gates (specifier option 1 — not a checklist
+reminder):
+
+1. **Repo-scoped unit suite** — `extension/test/docsStructureRealTree.test.js`
+   calls `computeDocsStructure(REPO_ROOT)` and fails on any non-allowlisted
+   orphan. Pre-existing debt lives in `extension/test/docs_orphan_known_debt.tsv`
+   (dated, explicit — not a silent gut or permanently red suite).
+2. **`/pilot` land check** — when the run touches an authored Divio-mode doc
+   under `docs/`, `checkOrphanedAuthoredDocs` refuses land if that path is
+   orphaned and not allowlisted (`reasonKind: 'orphaned-authored-doc'`).
+   Commits that touch no authored docs skip this check.
+
+**Remediation when refused:** link the doc from `docs/index.md` in the
+matching Divio section (same commit), or add a dated allowlist entry only for
+genuine pre-existing debt — never leave new pilot landings orphaned.
 
 ## Shell entry-point drive (BL-747)
 
@@ -454,6 +475,8 @@ run, and no gate ever noticed.
   (companion remaining-work BL-736)
 - BL-741 — always run scoped CRAP on touched `extension/*.ts` at `/pilot`
   land; `mutation_cost: low` does not skip (companion remaining-work BL-740)
+- BL-757 — real-tree docs orphan gate on suite + `/pilot` land when authored
+  docs touched (companion remaining-work BL-756)
 - BL-747 — refuse land when touched shell tests do not invoke ticket-named
   entry-point scripts (companion remaining-work BL-746 landed)
 - BL-753 — refuse land for registered APS patterns that match no rendered
