@@ -1,0 +1,41 @@
+Feature: the scheduled end of day picks its lifecycle verb from configuration
+
+  # PARKED — do not promote to .feature without a human revocation on record.
+  #
+  # This was BL-762's scenario 06. It is parked, not deleted, because the
+  # design is sound and only its precondition is currently vetoed.
+  #
+  # Why parked (specifier, 2026-08-08):
+  #
+  #   1. There is no scheduled day-shift-end path to hang a verb off. Nothing
+  #      in the repo or the live crontab stops the swarm on a timer; the only
+  #      swarmforge cron entry is the BL-675 freshness check. The Telegram
+  #      operator's `/shift end` (applyShiftEnd in
+  #      extension/src/tools/telegramCursorOperatorPolicy.ts) only clears a
+  #      policy flag — it stops nothing.
+  #   2. Building one is explicitly vetoed. `.swarmforge/operator/
+  #      continuous-shifts.json` is armed with `scheduledStop: false` and the
+  #      note "Do not restore night-stop / day-shift-end / cooldown 17:00-09:00
+  #      until the human revokes" — first armed 2026-07-31, reaffirmed
+  #      2026-08-03 and 2026-08-04. backlog/STEERING.md records the same
+  #      directive as an explicit veto on this class of work.
+  #
+  # Unparking condition: the human revokes continuous-shifts (or asks for a
+  # scheduled bedtime directly). At that point this becomes its own ticket —
+  # the scheduler is a separate mechanism from the bedtime verb, which shipped
+  # in BL-762 as an operator-invoked command and needs no change to be driven
+  # by one.
+
+  Background:
+    Given a running swarm with its ancillary services up
+
+  # BL-762 scheduled-end-of-day-picks-its-verb-06
+  Scenario Outline: the scheduled end of day picks its verb from configuration
+    Given the scheduled day-shift-end is configured <configuration>
+    When the scheduled end of day runs
+    Then <expected> is the verb invoked
+
+    Examples:
+      | configuration               | expected           |
+      | with no lights-out override | the bedtime verb   |
+      | for lights-out              | the full stop verb |

@@ -1,0 +1,63 @@
+id: BL-538
+title: "Console paused-ticket pager: one paused item per page (id+title, YAML, Expedite); swipe to next/previous"
+milestone: M8
+type: feature
+status: done
+epic: swarmforge-console
+assigned_to: 
+priority: 1
+mutation_cost: medium
+direction: human-requested
+depends_on: [BL-516]
+source: "Human (overseeing workflow) 2026-07-19 in-session: next high-priority ticket under the telegram console epic — file to specifier. Want to quickly see each paused ticket to prioritize them."
+
+notes: |
+  USER STORY
+    As the human overseeing the workflow
+    I want to be able to quickly see each paused ticket
+    So that I can prioritize them
+
+  WHAT / WHY (slice of epic: swarmforge-console / BL-517)
+    Phone-glanceable triage for backlog/paused/. Today the human must open files
+    or scroll Telegram topics to decide what to expedite. This page makes paused
+    work reviewable one ticket at a time, with a one-tap jump to the front of the
+    queue.
+
+  UI (one paused item per page)
+    1. TOP — ticket number (e.g. BL-528) and short description/title.
+    2. MIDDLE — the ticket YAML (readable; scroll within the page if long).
+    3. BOTTOM — a primary button: "Set highest priority, expedite".
+    4. GESTURE — swipe left / right (or equivalent next/prev controls that work
+       on phone) to iterate to the next / previous paused item. Order: stable,
+       human-useful default = current priority ascending then id (specifier to
+       pin in APS); wrap or stop at ends — pin in feature.
+
+  EXPEDITE BUTTON SEMANTICS
+    On tap (with a confirm if the console already uses two-tap for destructive
+    control — align with BL-516 /ensure discipline):
+      - Set this ticket's `priority` to the highest value (0 or the project's
+        established "critical" floor — pin in APS).
+      - Expedite: reuse BL-490's meaning where applicable — jump the queue so
+        the swarm can pick it up next (promote paused→active when depth allows,
+        and/or force the priority so coordinator triage picks it first). Do NOT
+        invent a second approval/promote path if BL-490 / existing movers already
+        cover the effect; wire through them.
+    After success: advance to the next paused item (or show empty state).
+
+  SURFACE
+    Prefer the SwarmForge console / Telegram mini-app webview track (BL-517
+    slice 4 direction) so this rides the same allowlisted channel as BL-516.
+    Specifier: name the concrete host (PWA route vs Telegram WebApp vs operator
+    console) after reading live console/PWA state — do not build a second
+    unauthenticated public page.
+
+  SCOPE OUT
+    - Editing arbitrary YAML fields beyond priority/expedite.
+    - Bulk multi-select.
+    - Replacing the pipeline board LINKS list (BL-506/BL-513).
+
+  SPECIFIER
+    Write APS under specs/features/BL-538-*.feature before coder work.
+    Update BL-517 `decomposes_into` is done at filing; keep epic notes in sync
+    if slice numbering needs a label (e.g. "paused-ticket pager").
+acceptance: specs/features/BL-538-console-paused-ticket-pager.feature

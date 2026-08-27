@@ -1,0 +1,79 @@
+id: BL-498
+title: "Mutation gate: EntrypointBoilerplateIgnorer must also exclude tsc's import-helper preamble (__importStar/__importDefault/__createBinding/__setModuleDefault), ~20-45 unkillable equivalent survivors per import*-as file"
+milestone: M8
+type: defect
+severity: medium
+epic: ""
+priority: 5
+direction: swarm-proposed
+depends_on: []
+source: "Hardener rule_proposal (scope engineering) 2026-07-17, surfaced during BL-485 hardening: mutation-site-count.js scored 65 survivors purely from the tsc import-helper shim. Dispositioned by the specifier as a DEFECT (a tooling fix to the ignorer), not a governance-article append — appending prose to engineering.prompt would not exclude the mutants; the ignorer plugin code must be extended. Reject-note sent to the hardener; filed here as the fix ticket."
+
+notes: |
+  ORIGIN — hardener rule_proposal (engineering) during BL-485 hardening. VERIFIED by the specifier:
+  the compiled `extension/out/**/*.js` head of every `import * as x` file carries tsc's helper
+  preamble — `var __createBinding = (this && this.__createBinding) || (…)`, `__setModuleDefault`,
+  `__importStar`, and `__importDefault` — and 123 `extension/src` files use the `import * as`
+  convention (`grep -rl 'import \* as'`). Stryker mutates that preamble into ~20-45 behaviorally
+  EQUIVALENT survivors per file (the defensive `Object.create ? fast : slow` fallbacks and
+  `k2 === undefined` guards produce identical observable behavior however mutated), which the
+  BL-447 EntrypointBoilerplateIgnorer does NOT yet exclude — so every such file shows survivors it
+  can never kill, on every run, forever.
+
+  WHY THIS IS A DEFECT, NOT AN ENGINEERING-ARTICLE RULE: the remedy is a code change to the
+  ignorer plugin, not a behavioral guideline for authors. There is no prose rule to extend — the
+  BL-447 exclusion lives entirely in `extension/src/mutation/entrypointBoilerplateIgnorer.ts` and
+  its unit tests. Appending a sentence to engineering.prompt would leave the gate exactly as broken.
+  (Specifier disposition pattern: a rule_proposal that describes a transient/tooling defect gets a
+  fix ticket + note, not a governance append.)
+
+  THE FIX (behaviour pinned in the feature; AST-predicate authoring is the coder's call):
+    - Extend EntrypointBoilerplateIgnorer to recognize and EXCLUDE the tsc import-helper shim
+      assignments — the SAME structural-exclusion mechanism it already uses for the two existing
+      shapes (`require.main === module` guard, `__esModule` defineProperty). Add a third
+      MutantLocationFacts flag (e.g. isTscImportHelper) alongside isRequireMainGuard /
+      isEsModuleBoilerplate; classifyMutantLocation excludes if ANY is true.
+    - RECOGNITION MUST STAY ANTI-VACUOUS (the load-bearing constraint the file's own comment
+      names): match by STRUCTURAL LOCATION only, on BOTH (a) a CLOSED set of the exact tsc helper
+      names AND (b) the exact `var __NAME = (this && this.__NAME) || (…)` init shape tsc emits.
+      Name-alone is not enough (a project var coincidentally named `__importStar` with a different
+      initializer must stay KEPT), and never a broad "top-of-file"/"any var" exclusion. Mirror the
+      existing recognizers that pin the exact `require.main === module` and `__esModule` shapes.
+    - Make the helper-name set a CLOSED, EXTENSIBLE list (mirroring the Stryker-sandbox SIBLING_NAMES
+      pattern) so a future tsc helper (e.g. __exportStar / __rest for other syntaxes) is added by
+      name, not by a new mechanism. Scope THIS ticket to the four import-related helpers named above.
+    - Keep the classifier PURE and in-process unit-tested with plain AST literals, exactly as the
+      two existing shapes are (entrypointBoilerplateIgnorer.test.js). No live Babel traversal in tests.
+
+  SCOPE (verify the live path at build):
+    - extension/src/mutation/entrypointBoilerplateIgnorer.ts (classifyMutantLocation + a new
+      structural recognizer for the helper shim), extension/test/entrypointBoilerplateIgnorer.test.js.
+    - Confirm against the Stryker SANDBOX, not just a local run: the ignorer is a registered
+      PluginKind.Ignore plugin (stryker-plugin.ts); re-run mutation on an import*-as file and confirm
+      the shim survivors are gone and REAL survivors still register (anti-vacuous proof).
+
+  RELATED (not a dependency): BL-485 (active) adds a cleaner mutation-site SIZE gate via a separate
+  mutation-site-count.js scan; the SAME shim inflates that COUNT too. This ticket fixes the Stryker
+  survivor GATE (the ignorer); if BL-485's counter should likewise discount the shim, that is BL-485's
+  own concern — flagged there, out of scope here. Orthogonal files, so the two can run concurrently.
+
+acceptance:
+  # The tsc import-helper shim shapes are excluded; a same-named var without the tsc init shape and
+  # ordinary logic are KEPT (anti-vacuous); the two pre-existing boilerplate shapes stay excluded
+  # (regression). The AST-predicate implementation is not pinned; the classifier contract is.
+  feature: specs/features/BL-498-mutation-gate-excludes-tsc-import-helpers.feature
+
+human_approval: approved
+approval_context: >
+  Hardener-proposed mutation-gate hygiene fix, low risk. FIRM: extend the BL-447
+  EntrypointBoilerplateIgnorer to also exclude tsc's import-helper preamble
+  (__importStar/__importDefault/__createBinding/__setModuleDefault), which today produces ~20-45
+  unkillable equivalent survivors per `import * as` file (123 such files) and inflates the gate on
+  every run. The exclusion stays ANTI-VACUOUS — structural-location-only, matched on a closed helper-name
+  set AND the exact tsc init shape, never name-alone or a broad head-of-file exclusion — so it can
+  never hide a real-logic mutant. What needs your sign-off is the scenario contract in the feature
+  file. OPEN (coder's call): the exact AST predicate, and whether to seed the extensible helper-name
+  set with other tsc helpers (__exportStar/__rest) now or leave that to a follow-up. Priority 5,
+  swarm-proposed.
+
+mutation_cost: low

@@ -1,0 +1,90 @@
+id: BL-326
+title: "The test suite emails the human — a plain test run sent 136 real alarm emails from killed test daemons"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 0
+direction: aligned
+depends_on: []
+source: "Raised by the human 2026-07-13 ('i am getting a lot of emails') via .swarmforge/operator/INTAKE-test-suite-emails-the-human.md; drained per BL-311's convention. Coordinator routed it URGENT."
+
+notes: |
+  WHAT HAPPENS. `test_handoffd_supervisor.sh` deliberately kills daemons to exercise
+  BL-144's alarm-and-halt. Each killed daemon fires a REAL alarm through
+  `send-configured-email!` (daemon_alarm_lib.bb:148), which reads `notify_email_to` from
+  the effective conf — every pack ships a REAL address (`config notify_email_to
+  ldecorps@gmail.com`) — and `RESEND_API_KEY` from the process env, which is set for every
+  agent, and then posts via the REAL `default-post!`. One real email per killed test
+  daemon. Measured on this box: 253 temp project roots under `/tmp/tmp.*`, 136
+  `handoffd-failure-*.log` files, ~136 real emails. The `/tmp/tmp.*` root in the mail body
+  is the tell: a test fixture, not a real swarm.
+
+  THE GUARD MUST NOT LIVE IN THE TEST AUTHOR'S MEMORY — PROVEN EMPIRICALLY. The hazard was
+  already known: BL-215's case guards ITSELF with a per-invocation `env -u RESEND_API_KEY`.
+  But `env -u` is per-invocation, and the cases that actually kill daemons never got it.
+  A sweep of the whole test tree (specifier, 2026-07-13) shows how fragile that convention
+  is:
+    - test_handoffd_closing_context_clear_wiring.sh   guarded (2x)
+    - test_handoffd_briefing_generation_wiring.sh     guarded
+    - test_handoffd_role_context_clear_wiring.sh      guarded
+    - test_handoffd_supervisor_reaper_path_boundary.sh guarded
+    - test_handoffd_briefing_email_wiring.sh          guarded
+    - test_handoffd_banked_briefing_wiring.sh         guarded
+    - test_handoffd_supervisor.sh                     guarded in ONE case only -> 136 emails
+    - test_daemon_alarm_lib.sh                        no guard needed (fake keys + injected
+                                                      post-fn; never reaches the network)
+  Six authors remembered; one remembered in exactly one place; that single omission mailed
+  the human 136 times. A convention with a 1-in-7 miss rate and a real-world blast radius is
+  not a control. Put the guard in the SEND PATH.
+
+  SAME CLASS AS BL-315. "Real operator env/config reaches a test fixture" is exactly
+  BL-315's `SWARMFORGE_CONFIG` leak into `test_coordinator_*`. It has now recurred with a
+  worse consequence. Expect it again.
+
+  SCOPE:
+    1. FAIL-SAFE IN THE SEND PATH (the durable fix). `send-configured-email!` must REFUSE to
+       send when the daemon is not a real swarm — e.g. its project root is a throwaway temp
+       directory, or an explicit test marker is set — regardless of what the env and conf
+       say. Do not rely on every future test author remembering to unset a variable. The
+       alarm must still be RECORDED (failure log, halt) — only the mail is suppressed.
+    2. LAND THE OPERATOR'S STOP-THE-BLEEDING FIX PROPERLY. The Operator added a single
+       `unset RESEND_API_KEY` near the top of `test_handoffd_supervisor.sh` (currently
+       UNCOMMITTED at line 40 of the master checkout, and hand-copied into all six role
+       worktrees as an emergency measure). Land it as a real commit and remove the worktree
+       copies — they are not a commit and will drift. It is safe: no case asserts
+       `alarm_email == true`; the only assertion is BL-215's `alarm_email == False`, which
+       still holds (its own `env -u` becomes correct-and-redundant).
+    3. NO STRAY DAEMONS. No `/tmp/tmp.*` daemon may survive a test run (8 such roots were
+       still present at spec time).
+    4. OUT OF SCOPE: whether the packs should ship a real `notify_email_to` at all, and
+       whether a dedicated test-mode conf should exist. Worth asking, but the fail-safe in
+       (1) makes the answer non-urgent — do not redesign the conf story in this ticket.
+
+  ADJACENT — DO NOT ASSUME IT IS FIXED. The suite is also flaky (failed at case 05 once and
+  case 06 once across two runs). The intake suspects the temp daemons kill each other, which
+  is BL-321 (the supervisor's reaper substring-matched the project root and killed
+  nested/sibling daemons) — and 253 live temp roots under /tmp is a perfect reproduction of
+  it. BL-321's fix has now LANDED, but the long-lived live supervisor process keeps the old
+  substring logic in memory until it is RESTARTED. So: VERIFY the flake against a restarted
+  supervisor rather than assuming BL-321 cleared it.
+
+  E2E QA PROCEDURE: run the FULL suite on a box with a REAL `RESEND_API_KEY` exported and a
+  REAL `notify_email_to` in the effective conf, and assert ZERO emails were sent. Assert
+  against a real run, not a mock — the entire defect is that the LIVE path is what leaks, so
+  a mocked send proves nothing. Then assert (a) the daemon-killing cases still run and still
+  assert alarm+halt, (b) BL-215's configured-but-keyless loud-warning case still passes, and
+  (c) no `/tmp/tmp.*` daemon survives the run.
+
+acceptance:
+  feature: specs/features/BL-326-test-suite-never-emails-the-human.feature
+  steps:
+    - "A full test run sends no email at all"
+    - "A daemon rooted in a throwaway test directory never sends mail"
+    - "The alarm-and-halt behaviour is still fully exercised"
+    - "A configured-but-keyless daemon still warns loudly"
+    - "No daemon outlives the test run"
+
+human_approval: pending
+
+mutation_cost: low

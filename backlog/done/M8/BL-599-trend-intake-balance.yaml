@@ -1,0 +1,104 @@
+id: BL-599
+title: "Trend: intake balance — tickets filed/day vs closed/day, and net backlog growth"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 181
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-599-trend-intake-balance.feature
+# Tip-pure rematch 2026-08-27 after QA bounce D1 (entangled tip). First-lineage
+# / bounce tips superseded; Spec/index rematched atop origin/main.
+abandoned_commits:
+  - 827121f814
+  - fbbe592e34
+  - fce61aee54
+  - 9653d3e368
+  - 8109a5dfba
+  - 4541e911cc
+  - 3647650d42
+  - e8212a3028
+  - 952dbd9101
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl599TrendIntakeBalanceSteps::acceptance handler registered"
+  - "extension/src/metrics/deliveryMetrics.ts::deriveIntakeBalanceEvents::filed and closed events from existing git history adapter"
+  - "extension/src/metrics/deliveryMetrics.ts::computeIntakeBalance::per-window filed closed net via trend.ts"
+
+invariants:
+  - "Intake balance derives from the same git-history adapter deliveryMetrics already uses — no second backlog history reader."
+  - "Epic trackers (type: epic paths) never count as buildable intake; backlog-root INTAKE-*.md and active/paused BL tickets do."
+  - "Aggregation is a pure function over derived events — unit-testable without live git."
+
+source: |
+  Human, 2026-07-23, epic BL-594. ~15 tickets were filed in one session; is
+  the swarm shipping faster than it is being fed? deliveryMetrics tracks
+  velocity (closes) but not intake, so net backlog trajectory is unmeasured.
+
+description: |
+  Add an intake-vs-drain series: per day, tickets ADDED to the backlog
+  (new BL-*.yaml appearing in active/paused, or the backlog root INTAKE-*.md)
+  vs tickets CLOSED (moved to done/), and the running net (backlog growing or
+  shrinking).
+
+  Data source is the same git-history-of-backlog-moves deliveryMetrics /
+  gitHistoryAdapter already read for velocity - this ADDS the intake side of
+  the ledger, it does not build a second history reader. A file first
+  appearing under backlog/ is an intake event; a file moving to backlog/done/
+  is a close event; the net is their difference over a window, plotted through
+  trend.ts.
+
+  Value: answers "are we keeping up" directly, and feeds BL-591's ETA - a
+  backlog that grows faster than it drains means every epic's ETA is receding,
+  which a velocity-only view hides.
+
+  ## Reuse (specifier, 2026-08-15; still binding)
+
+  `notDoneBurndown.ts` and `deliveryMetrics.ts` already share
+  `deriveTicketLifecycles` / intake-balance helpers from BL-896 work. Extend or
+  extract — do not add a third remaining-count implementation. Requirement 3
+  (backlog-root `INTAKE-*.md` as intake) is implemented in
+  `deriveIntakeBalanceEvents`; wire acceptance scenarios to prove it.
+
+qa_e2e_procedure: >
+  (1) Fixture git history → filed/closed/net per window via deriveIntakeBalanceEvents
+  and computeIntakeBalance. (2) Pure aggregator unit tests green without live git.
+  (3) INTAKE-*.md counts; epic paths excluded. (4) trend.ts net series with
+  current/prior/delta. (5) computeDeliveryMetrics exposes intakeBalance.
+
+out_of_scope: |
+  - Velocity/burndown of closes (deliveryMetrics owns those); this adds the
+    intake counterpart and the net.
+  - Briefing PNG rendering (notDoneBurndown owns email surface).
+
+notes: |
+  ## Most of this aggregator already exists — reuse it (specifier, 2026-08-15)
+
+  The morning-briefing chart landed as `14724edae7` brought
+  `extension/src/metrics/notDoneBurndown.ts`'s `computeNotDoneBurndownSeries`,
+  which already derives, from the same `deriveTicketLifecycles` adapter this
+  ticket names: per-day `filed` and `closed` counts, and in aggregate
+  `totalFiled` / `totalClosed` / `mintPerDay` / `closePerDay` / `net`. That is
+  requirement 1 and most of requirement 2 already written.
+
+  The two tickets are NOT merged, because the surfaces differ — that one
+  renders a PNG into the briefing email, this one feeds `trend.ts` and the
+  PWA. But whoever builds this must extend or extract from that function
+  rather than write a third remaining-count implementation; there are already
+  two (`deliveryMetrics.ts`'s per-milestone `burndownForMilestone` and the new
+  repo-wide one), and BL-896 is the ticket deciding what to do about that
+  duplication. Wait for, or read, BL-896's outcome before choosing which to
+  build on. Requirement 3 (counting backlog-root `INTAKE-*.md` items as
+  intake) is genuinely new work either way.
+
+  [2026-08-27] specifier: feature file minted; handoff 0196ee0b46 not merged
+  (divergent coordinator branch carried unrelated pipeline code); equivalent
+  promotion 75000ed42 already on HEAD. Coordinator may route to coder.
+  - [2026-08-27] coordinator: open-slot nudge BL-599 cleared — already in
+    backlog/active/ with dispatch trail to coder; no re-promote (BL-1097).

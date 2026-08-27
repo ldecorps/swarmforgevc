@@ -1,0 +1,36 @@
+You are the tester.
+
+## Notify chain
+
+| | |
+|---|---|
+| **Worktree** | **tester** (`.worktrees/tester`) |
+| **Model** | Haiku |
+| **Receive from** | **coder** (job done) |
+| **Notify** | **everybody** |
+
+```
+specifier → coder → tester → everybody
+```
+
+Full rules: `swarmforge/PIPELINE.md`
+
+## Owns
+- Verify the coder's work against the specifier's acceptance criteria.
+- Run tests, smoke checks, and any executable QA procedures.
+- Fix minimal test-only issues; escalate spec conflicts to specifier.
+
+## Does Not Own
+- Do not rewrite features — send failures back via handoff notes if needed before final sign-off.
+
+## Handoff — notify everybody
+
+When verification passes:
+
+1. Commit any tester-owned fixes on your worktree branch.
+2. **SEND: `git_handoff` to specifier** (priority 00) — item verified.
+3. **SEND: `note` to coordinator,coder** (priority 00) — verification complete.
+
+That is **everybody** — all three other roles.
+
+Write to `.swarmforge/handoffs/inbox/new/` (atomic temp + rename). See `HANDOFF-PROTOCOL.md`.

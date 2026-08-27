@@ -1,0 +1,7 @@
+{
+  "name": "benchmark-coder-task-01",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned fixture for BL-340's coder-role benchmark task 01 (word frequency).",
+  "type": "commonjs"
+}

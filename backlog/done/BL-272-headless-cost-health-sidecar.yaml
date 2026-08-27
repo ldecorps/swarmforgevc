@@ -1,0 +1,88 @@
+id: BL-272
+title: "Emit the BL-213 cost & health sidecar from the headless briefing path (cf BL-214/BL-258)"
+milestone: M5
+status: todo
+priority: 10
+direction: reliability
+assigned_to: coder
+depends_on: [BL-213, BL-258]
+source: "coordinator direction 2026-07-11: 'BL-213 cost-health .json sidecar: emit from headless path (cf BL-214).' Specifier verified the gap against live code 2026-07-11."
+
+description: |
+  BL-213's deterministic cost & health sidecar (docs/briefings/<date>.json) is
+  emitted ONLY from the VS Code extension host: computeCostHealthSidecar ->
+  writeCostHealthSidecar -> commitCostHealthSidecar are called just once, from
+  extension.ts's onBriefingDue (the host's briefing scheduler, ~L545-547). A swarm
+  running HEADLESS (BL-258 generates the briefing, BL-214 emails it, no VS Code
+  host) therefore never emits the sidecar — so BL-213 cost-05's briefing "Cost &
+  Health" section is omitted and cost-06's phone card is hidden on every headless
+  day. Close that gap the same way BL-214/BL-258 made the briefing itself
+  host-independent.
+
+  Live layer verified 2026-07-11 (build against these, do not reinvent):
+    - HOST path (the behavior to mirror): extension/src/extension.ts onBriefingDue
+      emits+commits the sidecar best-effort inside a try/catch BEFORE nudging the
+      coordinator to compose the briefing.
+    - HEADLESS trigger: swarmforge/scripts/briefing_generation_schedule_lib.bb
+      (driven by handoffd.bb) — generate-briefing-if-due! fires a :notify! tmux
+      nudge to the coordinator when morning-trigger-due? (configured
+      briefing_morning_time_utc reached AND docs/briefings/<date>.md absent). It
+      currently only nudges; it does NOT emit the sidecar.
+    - The sidecar emit has NO headless entrypoint today: computeCostHealthSidecar/
+      writeCostHealthSidecar/commitCostHealthSidecar are called only in-process
+      from extension.ts. tools/ has no cost-health CLI (only briefing-digest-line,
+      render-briefing-diagrams).
+    - commitCostHealthSidecar already fails-closed on an unchanged file (git
+      commit -- <file> with nothing staged throws -> caught -> returns false), so
+      re-emitting an identical sidecar makes no duplicate commit.
+
+  Wanted behavior:
+  - When the headless morning briefing trigger fires for the day, that day's cost
+    & health sidecar (docs/briefings/<date>.json) is emitted and committed by the
+    SAME deterministic BL-213 emitter — no VS Code host required — so the headless
+    briefing's Cost & Health section and the phone card are populated exactly as
+    on a host-running day.
+  - Sidecar emission is BEST-EFFORT: a failure emitting/committing it must never
+    block the briefing-generation nudge (mirror the host's try/catch).
+  - Idempotent: an unchanged day sidecar is not committed twice (rely on / preserve
+    commitCostHealthSidecar's fails-closed no-op; do not create empty commits).
+
+  Implementation latitude (coder chooses the mechanism):
+  - The natural bridge (Babashka daemon -> TypeScript emitter) is a thin headless
+    Node CLI, e.g. extension/src/tools/emit-cost-health-sidecar.ts ->
+    out/tools/emit-cost-health-sidecar.js, that runs exactly
+    compute -> write -> commit for a target path (same three calls as
+    extension.ts:545-547). Mirror the repo's other headless CLIs
+    (co-change-report.js, briefing-digest-line.js): keep main() a thin dispatcher
+    over a testable pure/exported helper, and cover main() with a subprocess test
+    so the CLI wiring is not coverage-invisible (recurring CLI-coverage lesson).
+  - Wire the headless trigger to invoke that CLI when it fires: extend
+    briefing_generation_schedule_lib.bb's generate-briefing-if-due! (or its
+    handoffd.bb driver) to also run the emit — best-effort, as an ADAPTER-injected
+    action so the Babashka decision stays unit-testable with a fake emit adapter
+    (mirror the existing :notify!/:log! adapter pattern), never a real shell-out or
+    real timer in tests.
+  - The sidecar is a DETERMINISTIC tool artifact — never authored by the
+    coordinator/LLM (BL-213). The daemon (or the CLI it invokes) emits it; do not
+    push sidecar authoring into the coordinator nudge.
+
+  Constraints:
+  - REUSE BL-213's emitter and BL-258's trigger; add only the headless entrypoint
+    + wiring. Do not duplicate the emit logic or the trigger decision.
+  - No real timers / no real tmux / no real git in unit or acceptance tests
+    (engineering article); drive the decision and the emit through injected
+    adapters / fixtures.
+  - Compose with BL-258's once-per-day gate; do not double-emit within a day
+    beyond the idempotent no-op.
+
+  QA e2e procedure (clock + adapters injected; no real host):
+  - Fire the headless morning trigger for a day with no briefing and no host
+    present; assert docs/briefings/<date>.json is emitted + committed by the
+    deterministic emitter.
+  - Make the emit adapter throw; fire the trigger; assert the briefing-generation
+    nudge is still sent (best-effort).
+  - With the day's sidecar already present and unchanged, fire the trigger; assert
+    no duplicate commit is made.
+
+acceptance: specs/features/BL-272-headless-cost-health-sidecar.feature
+mutation_cost: low

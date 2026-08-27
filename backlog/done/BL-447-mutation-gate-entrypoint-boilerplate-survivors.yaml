@@ -1,0 +1,79 @@
+id: BL-447
+title: "Mutation gate reports structurally-unkillable CLI-entrypoint boilerplate as survivors - exclude it surgically without hiding real logic"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+epic: ""
+priority: 3
+direction: swarm-proposed
+depends_on: [BL-446]
+source: "cleaner rule_proposal (engineering) 2026-07-16, id 20260716T074033Z_000319: 'Stryker activeMutant/coverage globals are in-process only; a subprocess smoke test's spawned node process never sees them, so a require.main guard is structurally unkillable/uncovered by mutation. BL-445 mutation pass: check-suite-duration-budget's require.main guard + __esModule boilerplate had 9/42 survivors incl. a NoCoverage block despite its subprocess test; ~42 files use this pattern.' Specifier disposition: not a durable author-discipline rule (the file follows every existing thin-wrapper/in-process-main rule perfectly and STILL survives) - it is a mutation-scope tooling defect, specced as this fix ticket instead of appended to engineering.prompt."
+
+notes: |
+  The hardener's no-surviving-mutants gate is polluted on EVERY tools/CLI module by mutants that no
+  test can ever kill. Each such module ends with the shared entrypoint guard
+  `if (require.main === module) { runCliMain(main); }` (runCliMain is swarm-metrics.ts's shared wrapper;
+  52 source call sites confirmed by grep) plus a tsc-generated `__esModule`/exports header. Two
+  independent reasons make these unkillable:
+    - The in-process main() test calls main() DIRECTLY and never executes the `require.main === module`
+      guard line - it reads as NoCoverage, so its mutants survive.
+    - The subprocess smoke test spawns a fresh `node` process that does NOT carry Stryker's in-memory
+      activeMutant/coverage globals (they live only in the vitest worker that Stryker instruments), so it
+      can never register a kill for ANYTHING it runs, guard included.
+  So a module that follows every existing engineering rule perfectly (check-suite-duration-budget.ts:
+  thin main(), in-process main() test, subprocess smoke as an addition) STILL showed 9/42 survivors,
+  including the NoCoverage guard block. This is a mutation-scope defect, not an author-discipline gap -
+  appending a "rule" would tell authors a true fact they can do nothing about.
+
+  DISTINCT FROM BL-446 (do not fold them together, but sequence them - both touch the mutation config
+  surface, so NOT orthogonal; run one at a time). BL-446 = the ACTIVATION defect (0 mutants killed
+  repo-wide; gate vacuous). BL-447 = the opposite failure mode that surfaces once kills work again: real
+  kills happen (33/42 on that file) but a fixed boilerplate residue always survives. depends_on BL-446:
+  BL-447 must be proven against a WORKING kill mechanism on a FRESH cache-cleared non-incremental run, or
+  an excluded-boilerplate survivor cannot be told apart from a broken-activation one.
+
+  DELIVERABLE HAS TWO PARTS, verified differently (mirrors BL-445/BL-446):
+    1. THE PURE CLASSIFIER (durable, the .feature scenarios): a pure, in-process-testable predicate that
+       decides, per candidate mutant, whether it lands on structurally-unkillable entrypoint/module
+       boilerplate (excluded) or on mutable code (kept). Decided by STRUCTURAL LOCATION only.
+    2. THE WIRING (operational, the real gate + QA e2e): wire the classifier into the LIVE Stryker gate
+       as an Ignorer (Stryker `Ignorer.shouldIgnore(path) => reason|undefined`, PluginKind.Ignore;
+       extension/src/mutation/stryker-plugin.ts already declares the plugin array - today only a Reporter;
+       add the Ignorer as its sibling, delegating the decision to the pure classifier and keeping the
+       Babel-AST extraction as thin wiring). A pure predicate with no live caller is a dark feature
+       (engineering.prompt wiring rule), so the wiring lands in the SAME parcel.
+
+  ANTI-VACUOUS - the load-bearing constraint. The exclusion must be SURGICAL: only the `require.main`
+  entrypoint guard block and the generated `__esModule`/exports boilerplate, decided by structural
+  location, NEVER by "this mutant has no coverage / survived". A mutant in real exported logic (e.g.
+  classifySuiteDuration's `>=`) must still be mutated and must still survive-and-surface when untested -
+  otherwise this recreates a BL-446-style vacuous gate one file at a time. The .feature's scenario 02
+  pins exactly this. Do NOT broaden the exclusion beyond this boilerplate class, and do NOT hand-edit
+  mutation manifests (engineering guardrail).
+
+  Scope (verify the live path at build time - specifier rule): extension/stryker.config.json
+  (mutate: out/**/*.js; appendPlugins: ["./out/mutation/stryker-plugin.js"]); extension/src/mutation/
+  stryker-plugin.ts (extend the plugin array with the Ignorer); extension/src/tools/swarm-metrics.ts's
+  runCliMain and the `if (require.main === module)` guard it wraps across ~52 tools/CLIs; the tsc
+  `__esModule`/exports header. The Ignorer runs over the compiled out/**/*.js AST (that IS the mutate
+  scope), so both the guard node and the defineProperty(__esModule) node are reachable there. Mechanism
+  is the architect/coder's call - the Ignorer plugin is the precedented candidate (a bare `// Stryker
+  disable` comment cannot annotate generated boilerplate).
+
+  E2E QA PROCEDURE: (1) delete stryker-incremental.json (never trust a cached verdict, BL-446 /
+  operational memory); (2) run a scoped Stryker pass over a well-tested tools/CLI (e.g.
+  check-suite-duration-budget.js) on a cleared cache; confirm the `require.main === module` guard and the
+  `__esModule` boilerplate mutants are reported IGNORED, not Survived. (3) Plant a mutant in that file's
+  real logic (e.g. flip classifySuiteDuration's `>=`) with NO covering test and confirm it still SURVIVES
+  and is surfaced - the exclusion did not leak into real logic. (4) Confirm the surviving-mutant count for
+  the file drops to only genuine logic gaps (no boilerplate false-positives).
+
+acceptance:
+  feature: specs/features/BL-447-mutation-gate-entrypoint-boilerplate-survivors.feature
+  steps:
+    - "A candidate mutant on the require.main entrypoint guard or generated __esModule boilerplate is classified excluded"
+    - "A candidate mutant in exported business logic is classified kept, even with no covering test, so it can still surface as a survivor"
+
+human_approval: >
+mutation_cost: low

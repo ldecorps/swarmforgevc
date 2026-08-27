@@ -1,0 +1,86 @@
+id: BL-234
+title: "BUG: readBacklogFolders drops tickets whose status field is absent or unrecognized (dashboard/bridge underreport)"
+direction: reliability
+type: bug
+priority: 20
+mutation_cost: low
+source: "coordinator note 2026-07-10: 'dashboard: readBacklogFolders drops tickets w/o valid status'. Specifier confirmed the live mechanism and live drops (see below)."
+
+description: |
+  readBacklogFolders (extension/src/panel/backlogReader.ts) drops any ticket
+  whose status: field is missing OR not one of {todo, active, done}. Both parser
+  paths gate on it and return null:
+    - extractRequiredFields (backlogReader.ts:146)
+    - parseBacklogYamlLenient (backlogReader.ts:178)
+  with VALID_STATUSES = {todo, active, done} (backlogReader.ts:24). A dropped
+  ticket then vanishes from every readBacklogFolders consumer: the backlog
+  dashboard (metrics/backlogDashboard.ts), the read bridge (bridge/bridgeState.ts),
+  delivery metrics (metrics/deliveryMetrics.ts), and the docs tree (docs/docsTree.ts).
+
+  This contradicts the folder-authoritative design already documented on the
+  sibling reader (readBacklog, backlogReader.ts:253): "The folder is authoritative:
+  the pipeline moves files between backlog folders without touching the yaml status
+  field, so a promoted item may still say 'status: todo'." readBacklogFolders in
+  fact buckets STRUCTURALLY by folder (its active/paused/done keys come from which
+  directory readYamlFiles scanned) — the ticket's own status field is not even used
+  to choose the bucket, yet it is used as a gate to drop the ticket.
+
+  Confirmed live 2026-07-10:
+    - BL-233 has NO status field -> dropped.
+    - BL-101 has status: blocked ('blocked' not in VALID_STATUSES) -> dropped.
+    - A paused-folder ticket honestly marked "status: paused" would drop too
+      (paused is not a recognized status). Many real tickets omit status entirely
+      because the folder is authoritative (BL-230, BL-232 were also status-less).
+
+  Why it matters: silent, unbounded underreporting of the backlog — the dashboard
+  and bridge show fewer tickets than exist, with no error. It is the same
+  "green dashboard hides reality" failure mode the reliability epic (BL-151)
+  targeted, in the read path.
+
+  Wanted behavior (observable):
+    - readBacklogFolders reports every parseable ticket under the folder it
+      physically sits in, regardless of its status: field being absent,
+      unrecognized (e.g. blocked, paused), or a stale-but-valid mismatch
+      (e.g. status: active on a file in paused/).
+    - The folder is authoritative for the bucket, not the status field.
+    - Only genuinely unparseable files (no id or no title) are skipped; id and
+      title remain required.
+    - No parseable ticket in a folder is silently dropped: a folder's bucket
+      contains every parseable ticket file in that folder.
+
+  Constraints:
+    - Fix at the shared seam so the sibling reader benefits too: readBacklog also
+      routes through readYamlFiles + the same parser and today drops status-less
+      tickets in active/done before its overrideStatus can apply
+      (readYamlFiles:216 applies the override only AFTER a non-null parse). The
+      folder-authoritative intent must hold for both readers.
+    - Do not weaken id/title requirements; do not start including files with no
+      id or title.
+    - Keep VALID_STATUSES / the BacklogItem.status type coherent — status may be
+      absent or folder-derived; pick a representation (optional status, or folder
+      override applied even when the field is absent) that the coder/architect
+      justifies. Mechanism is their call; the spec fixes the observable behavior.
+
+  Scope: extension/src/panel/backlogReader.ts — extractRequiredFields,
+  parseBacklogYamlLenient (status no longer a hard drop gate), readYamlFiles
+  (apply folder status even when the field is absent), readBacklogFolders (folder
+  authoritative for active/paused/done). Consumers unchanged.
+
+acceptance: specs/features/BL-234-readbacklogfolders-keeps-status-less-tickets.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (host-side, no VS Code needed):
+  1. Point readBacklogFolders at a fixture backlog with, in paused/: a ticket
+     with no status field, one with status: blocked, one with status: paused, one
+     with a valid status. Assert all four appear in the paused bucket.
+  2. Put a ticket with status: active in paused/; assert it lands in the paused
+     bucket, NOT active (folder authoritative over a stale valid status).
+  3. Put a file with no id (and one with no title) in a folder; assert neither is
+     reported in any bucket.
+  4. Assert each folder's bucket count equals the number of parseable ticket
+     files in that folder (nothing silently dropped).
+  5. Regression against the live backlog: assert BL-233 (no status) and BL-101
+     (status: blocked) now appear in the paused bucket.
+
+# HUMAN APPROVAL: feature file specs/features/BL-234-...feature is a new draft
+# authored by the specifier and is pending human review.

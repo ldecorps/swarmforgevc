@@ -1,0 +1,48 @@
+id: BL-219
+title: "'cannot be spawned' launcher test flakes: chmod 0000 is unenforced under root/WSL"
+milestone: M2
+status: todo
+priority: 05
+direction: reliability
+assigned_to: coder
+source: "coder note 2026-07-09 (found during BL-212 flaky-test work): swarmLauncher's 'cannot be spawned' test uses chmod 0000, which is unreliable."
+
+description: |
+  CODER (2026-07-09, during BL-212): the launcher test that asserts launchSwarm
+  fails when its start script "cannot be spawned" forces that condition with
+  chmod 0000, which is unreliable.
+
+  Verified: extension/test/swarmLauncher.test.js (~line 303), test
+  "launchSwarm resolves failure when the process cannot be spawned":
+    fs.chmodSync(scriptPath, 0o000);   // make it unspawnable
+    ... expect result.success === false / /Failed to start swarm/
+    finally fs.chmodSync(scriptPath, 0o755);
+
+  Why it flakes:
+    - root bypasses permission checks entirely, so a 0000 file is still
+      readable/executable — the spawn SUCCEEDS and the expected failure never
+      happens. Containers and CI routinely run as root.
+    - WSL / Windows-mounted filesystems do not reliably enforce POSIX mode
+      bits, so chmod 0000 can be a no-op. This swarm runs on WSL2.
+    Either way the assertion is environment-dependent -> flaky.
+
+  Wanted behavior:
+  - Force the "cannot be spawned" condition DETERMINISTICALLY, independent of
+    the runtime user and filesystem:
+      * point launchSwarm at a NON-EXISTENT start-script path (ENOENT always
+        fails to spawn, even as root), OR
+      * inject a failing spawn/exec seam if launchSwarm has (or can take) one —
+        the testable-seam approach the engineering rules prefer.
+    Remove the chmod 0o000 / 0o755 dance.
+  - The test still asserts the same observable behavior: launchSwarm resolves
+    result.success === false with a "Failed to start swarm" message.
+  - Sweep the suite for sibling permission-bit failure simulations (grep
+    chmod 0o000 / 0o000 / mode 0) and convert any others the same way.
+
+  Constraints:
+  - Encodes the engineering.prompt "Test Speed And Isolation" rule added
+    2026-07-09 ("Never simulate a failure with filesystem permission bits").
+  - No real timers; keep the test instant and deterministic.
+
+acceptance: specs/features/BL-219-cannot-be-spawned-test-chmod-0000-flake.feature
+mutation_cost: low

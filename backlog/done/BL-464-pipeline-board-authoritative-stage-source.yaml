@@ -1,0 +1,86 @@
+id: BL-464
+title: "BUG: pipeline board is wrong about where work is — misses actively-worked tickets and double-rows a ticket; feed it from an authoritative coordinator source"
+milestone: M8
+type: bug
+severity: high
+status: todo
+epic: ""
+priority: 1
+direction: expedite
+depends_on: []
+source: "human (ldecorps) via the Operator front desk 2026-07-16 — INTAKE-operator-question-1784230241758 (missing active tickets) + the DEFECT in -1784230021148 (one ticket on two rows). Human's Q2 answer 2026-07-16 chose the coordinator-fed approach."
+
+description: |
+  The live BL-452/BL-455 pipeline board is WRONG about parcel location, which the human said "defeats
+  the purpose of this whole function." Two concrete failures:
+    (a) Tickets a role is ACTIVELY WORKING do not appear at all — he watched the coder on BL-434 and
+        BL-450 while neither showed on the board.
+    (b) A single ticket renders on TWO rows with different stage marks during a transition — he saw
+        BL-460 twice (once under DC, once under QA). A ticket must be exactly one row.
+
+  ROOT CAUSE (verified in code 2026-07-16): the board's active-ticket data source is
+  extension/src/swarm/swarmState.ts readInProcessTicketIds, which scrapes each role's inbox/in_process
+  handoffs and extracts a ticket id ONLY from a git_handoff `task:` header:
+    - A freshly-PROMOTED ticket is kicked off to the coder by a coordinator NOTE (the promote-via-note
+      convention), and a note has NO `task:` header — so the coder's active ticket is invisible to the
+      board until it becomes a downstream git_handoff. That is exactly why BL-434/450 were missing.
+    - extension/src/concierge/pipelineBoard.ts computePipelineBoard pushes one row per (role, id) with
+      no cross-role dedupe, so a ticket momentarily in_process at two roles renders as two rows.
+
+  THE FIX (human's chosen approach, Q2 — "the coordinator, who knows where tickets are, could feed in
+  the details for this grid"): the board's ACTIVE ticket rows come from an AUTHORITATIVE ticket->stage
+  source reflecting where each active ticket actually is — the same parcel-location knowledge the
+  coordinator already uses to track/unblock work — NOT an in_process scrape. It covers a note-held
+  ticket as well as a git_handoff-held one, and yields EXACTLY ONE stage per ticket (which subsumes the
+  double-row defect: one stage per ticket => one row).
+
+  Scope (grep-confirm at build):
+    - The coordinator (which tracks parcel location) PERSISTS each active ticket's current stage to a
+      durable store the concierge tick reads. This is a NAMED WRITER->READER wiring pair — do NOT ship
+      the board reader over an unfed store (engineering: a consumer that reads a store needs a real
+      production WRITER of that exact store; specifier live-data-dependency rule). The coordinator.prompt
+      instruction to persist ticket->stage is a specifier-owned change that lands with this ticket; the
+      writer helper and the concierge-tick read are the coder's.
+    - extension/src/concierge/conciergeTick.ts syncBoardIfWired + extension/src/swarm/swarmState.ts:
+      replace readRoleHeldTickets / readInProcessTicketIds as the grid's active-ticket source with a
+      read of the authoritative store; retire or bypass the task-header-only scrape for the grid.
+    - extension/src/concierge/pipelineBoard.ts computePipelineBoard: guarantee one row per active
+      ticket at its single current stage.
+
+  Constraints:
+    - INHERITED and unchanged from BL-452/455: READ-ONLY board (nothing depends on it); edge-triggered
+      on rendered content; deterministic ordering. Keep the render + the join pure/testable; the
+      Telegram API + tmux stay the untested boundary. Reach fixtures by stubbing accessors, never
+      chdir/HOME overlay.
+    - Whatever mechanism the coordinator uses to persist ticket->stage must be a REAL production writer
+      exercised by the coordinator's actual tracking, not a fixture-only or dark writer.
+
+  Sequencing: edits pipelineBoard.ts / conciergeTick.ts — the standing-topic/board overlap cluster.
+  Serialize against in-flight BL-462 and any other active conciergeTick.ts / pipelineBoard.ts ticket;
+  build on whatever board scaffolding is on main at build time.
+
+  E2E QA PROCEDURE: with the swarm running, promote a ticket so the coder starts it FROM A COORDINATOR
+  NOTE and assert it appears on the board at the coder stage (the old scrape would miss it); watch a
+  ticket transition between two stages and assert it is never shown on two rows at once and always at
+  its true current stage; confirm the coordinator actually writes the ticket->stage store (a real
+  writer, not empty) and the board reads it. Verify against the real Telegram board, not a fixture
+  (BL-335).
+
+acceptance:
+  feature: specs/features/BL-464-pipeline-board-authoritative-stage-source.feature
+  steps:
+    - "A ticket the coder works after a note-based promotion appears at the coder stage"
+    - "Each active ticket appears on exactly one row"
+    - "A ticket that has moved to a new stage shows at the new stage only"
+    - "The board's active rows come from the authoritative parcel-location source, not an in_process scrape"
+
+human_approval: >
+  Human-requested via the Operator front desk 2026-07-16, flagged as defeating the board's purpose. He
+  chose the coordinator-fed data source (Q2) over a smaller note-aware scraper. Firm contract: every
+  active ticket appears at its true current stage exactly once, including tickets held via a coordinator
+  note; the source is authoritative parcel-location, not an in_process task-header scrape. The exact
+  store format and the coordinator's persistence mechanism are build-time details, but the writer MUST
+  be real (not a dark/unfed store). Expedite: the board is actively misleading. Serialize on the board
+  files against in-flight BL-462.
+
+mutation_cost: medium

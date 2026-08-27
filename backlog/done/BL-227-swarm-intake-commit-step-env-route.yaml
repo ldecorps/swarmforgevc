@@ -1,0 +1,50 @@
+id: BL-227
+title: "swarm-intake.yml Commit step: env-route issue number/URL instead of ${{ }} in run:"
+direction: security-hardening
+priority: 40
+mutation_cost: low
+source: "specifier observation 2026-07-10 while accepting the hardener's engineering rule banning ${{ }} in Actions run: bodies; found the live intake workflow's Commit step still using the pattern (low risk)."
+
+description: |
+  The engineering article now bans interpolating `${{ }}` expressions inside a
+  GitHub Actions `run:` script body (bind via `env:` and use `"$VAR"`). The live
+  `.github/workflows/swarm-intake.yml` already env-routes the DANGEROUS fields
+  (issue title, body) in its "Write backlog root item" step, but its "Commit"
+  step (lines 44-52) still interpolates directly in the git commit -m body:
+    - `${{ github.event.issue.number }}` (line 49)
+    - `${{ github.event.issue.html_url }}` (line 51)
+
+  SEVERITY: negligible. Both values are GitHub-controlled — issue.number is
+  always an integer, issue.html_url is a derived URL of the form
+  https://github.com/<owner>/<repo>/issues/<n> — so neither is attacker-injectable
+  the way a title/body/filename is. This is defense-in-depth and consistency (the
+  project's own flagship intake workflow should obey the rule it just adopted),
+  NOT an active RCE. It is deliberately low priority; the real attacker-influenceable
+  vector lives in BL-092 (active), fixed within that parcel.
+
+  Wanted behavior:
+    - The Commit step binds the issue number and html_url to `env:` keys (mirroring
+      the Write step) and references them as quoted `"$VAR"`s in the git commit -m
+      body. No `run:` step in the workflow interpolates a `${{ github.event... }}`
+      or `${{ steps... }}` expression.
+    - The produced commit message still records the issue number and URL —
+      content equivalent to today; only the interpolation mechanism changes.
+
+  Scope (verified live 2026-07-10): .github/workflows/swarm-intake.yml, the
+  "Commit" step only. The "Write backlog root item" step already conforms.
+  backlog-dashboard.yml's one `${{ steps... }}` is in an `environment:` block,
+  not a `run:` body — not in scope.
+
+acceptance: specs/features/BL-227-swarm-intake-commit-step-env-route.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs:
+  1. Inspect .github/workflows/swarm-intake.yml: assert no `run:` block contains a
+     `${{ github.event` or `${{ steps` interpolation (grep the run bodies).
+  2. Assert the Commit step declares an `env:` block binding the issue number and
+     html_url, and the git commit -m body references them as `"$VAR"`s.
+  3. Confirm the intended commit message still contains the issue number and the
+     issue URL (content-equivalent to the prior version).
+
+# HUMAN APPROVAL: feature file specs/features/BL-227-...feature is a new draft
+# authored by the specifier and is pending human review. Low/negligible severity.

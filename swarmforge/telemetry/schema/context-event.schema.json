@@ -1,0 +1,30 @@
+{
+  "_comment": "GH-22 Slice 1 — informal structural reference for one Context Telemetry invocation event. Not a JSON Schema validator; context_telemetry_lib.bb is the executable source of truth. Runtime state is an append-only JSONL log at .swarmforge/telemetry/context-events.jsonl, one event object per line — there is no committed seed, the log starts empty.",
+
+  "context_event": {
+    "agent": "string, e.g. \"coder\" — required",
+    "role": "string, the pipeline role at the time of the invocation — required",
+    "session_id": "string, identifies the tmux/agent session the event belongs to — required",
+    "timestamp": "ISO-8601 string, caller-supplied (the CLI never reads the wall clock itself) — required",
+    "input_tokens": "number — required",
+    "output_tokens": "number — required",
+    "tool_output_tokens": "number, or null — optional",
+    "prompt_engine_tokens": "number, or null — optional",
+    "system_prompt_tokens": "number, or null — optional",
+    "history_tokens": "number, or null — optional",
+    "context_utilization_pct": "number, 0-100 — required",
+    "compaction": "boolean, whether this invocation triggered a compaction — required",
+    "provider": "string, e.g. \"anthropic\" — required",
+    "model": "string, e.g. \"claude-sonnet-5\" — required",
+    "estimated_cost_usd": "number, or null — optional, caller-supplied only; Slice 1 has no pricing/computation logic"
+  },
+
+  "summary": {
+    "agent": "string, the --agent the summary was queried for, or null when unscoped",
+    "session_id": "string, the --session-id the summary was queried for, or null when unscoped",
+    "event_count": "number, events matched by the query scope",
+    "compaction_count": "number, events in scope with compaction:true",
+    "avg_context_utilization_pct": "number, mean of context_utilization_pct across events in scope, or null when event_count is 0",
+    "time_to_first_compaction_ms": "number, elapsed time between the earliest event in scope and the earliest compaction:true event in scope, or null when no event in scope ever compacted"
+  }
+}

@@ -1,0 +1,83 @@
+id: BL-506
+title: "Pipeline board LINKS section lists oldest ticket first: order the links most-recent (highest ticket number) first, numeric-aware"
+milestone: M8
+type: defect
+severity: low
+epic: ""
+priority: 11
+depends_on: []
+source: "Root intake backlog/INTAKE-pipeline-board-links-order.md (coordinator-relayed human follow-up correction 2026-07-17: 'my bad: it's the ordering of the yaml links that has to go from most recent'). Specifier asked the human 2026-07-17 and confirmed the ordering semantics before speccing."
+
+notes: |
+  The board's LINKS section renders oldest-first (BL-001, BL-002, BL-003, ...) because
+  buildLinks (extension/src/concierge/pipelineBoard.ts, ~L357-364) sorts every link by id STRING
+  ascending across all four sources (active rows, parked, recently-closed, root-intake):
+      links.sort((a, b) => a.id.localeCompare(b.id));
+  The human wants most-recent first.
+
+  DECISION (confirmed with the human 2026-07-17): "most recent" = highest ticket NUMBER first,
+  numeric-aware - NOT a plain string reverse. The merged sources carry only {id, path} (no
+  closed-at timestamp), so true chronological order would need extra data plumbed through
+  PipelineBoardLinkEntry; the human chose highest-id-first as the recency proxy.
+
+  THE CHANGE (behaviour pinned in the feature):
+    1. Order LINKS by ticket number DESCENDING (highest / newest first).
+    2. NUMERIC-aware, not lexicographic: parse the trailing digits of each id and compare as
+       numbers, so BL-1000 sorts ABOVE BL-999 (a string sort places "BL-1000" below "BL-999" -
+       the exact bug the current comparator hits the moment any id reaches 4 digits; a BL-1000
+       reference already exists in the intake doc). Use the prefix as a deterministic tiebreak
+       for equal numbers.
+    3. An id with no parseable trailing number (a root-intake filename stem, e.g. "INTAKE-...")
+       sorts AFTER every numbered link, ordered deterministically among such ids, so the render
+       stays stable tick-over-tick (the board's content-signature change-gate in
+       pipelineBoardSync.ts requires a deterministic order). [Specifier decision flagged for human
+       sign-off: unnumbered ids sort LAST, not first - the LINKS block is a reference list, not a
+       priority list. Easy to flip on approval if the human wants root intake at the top.]
+
+  Only the LINKS ORDERING changes. The grid, the below-grid lists, the link TEXT/format, and
+  BL-502's link-budget/overflow behaviour (budgetPipelineBoardLinks / the "+N more" indicator)
+  are all unchanged - the budget trims from the END of the list, so with most-recent-first the
+  OLDEST links are the ones dropped under budget pressure, which is the desirable direction.
+
+  SCOPE (verify the live path at build):
+    - extension/src/concierge/pipelineBoard.ts (buildLinks's sort comparator; add a small pure
+      numeric-aware id-order helper - a natural KNOWN_VALUES-free comparator, unit + acceptance
+      testable without booting VS Code).
+    - Check extension/test/pipelineBoard.test.js and any pipeline-board acceptance fixture for an
+      assertion pinning the CURRENT ascending LINKS order, and update it so the fix does not just
+      move the defect into a stale test expectation (BL-465's link scenarios assert PRESENCE of
+      links, not order - grep to confirm before assuming none pin order).
+
+  ORTHOGONALITY: shares extension/src/concierge/pipelineBoard.ts with BL-505 but touches a
+  DIFFERENT function (buildLinks vs BL-505's slug/id/list render) - not orthogonal (same file),
+  so sequence after BL-505 (priority 11 vs 10); do not run the two concurrently. Otherwise
+  orthogonal to the rest of the paused queue.
+
+acceptance:
+  # Observable contract: the LINKS section lists ticket links by ticket number descending
+  # (highest first), numeric-aware (BL-1000 above BL-999), with unnumbered root-intake ids sorted
+  # deterministically after every numbered link. Grid, lists, link text, and BL-502's link budget
+  # are unchanged.
+  feature: specs/features/BL-506-pipeline-board-links-most-recent-first.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. In-process, compute the board over a synthetic backlog mixing 3- and 4-digit BL ids and a
+#      root-intake entry with a real repoBaseUrl; assert the rendered LINKS lines are ordered
+#      highest-number-first, BL-1000 precedes BL-999, and the INTAKE- entry follows every BL link.
+#   3. Render over the CURRENT live backlog and confirm the LINKS section now leads with the
+#      highest-numbered ticket, not BL-001.
+
+human_approval: approved
+approval_context: >
+  Draining the human's own root-intake follow-up (backlog/INTAKE-pipeline-board-links-order.md:
+  "the ordering of the yaml links has to go from most recent"). What needs your sign-off is the
+  meaning of "most recent" in the LINKS section: the feature pins it to highest ticket NUMBER
+  first, numeric-aware (so BL-1000 sorts above BL-999, durable past the 3-digit boundary) - your
+  "highest id first" choice, rather than plumbing real closed-at/created-at timestamps through for
+  true chronological order. One smaller call I made for you, easy to flip: root-intake entries
+  (raw "INTAKE-..." stems with no ticket number) sort LAST, after every numbered link, since they
+  carry no number to rank by and the LINKS block is a reference list. Say the word if you'd rather
+  see the freshly-filed root intake at the TOP.
+
+mutation_cost: low

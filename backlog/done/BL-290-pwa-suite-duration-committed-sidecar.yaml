@@ -1,0 +1,89 @@
+id: BL-290
+title: "Surface suite-test duration on the STATIC PWA via a committed sidecar (emit -> fold into backlog.json -> render), like cost/health"
+milestone: M8
+status: todo
+priority: 30
+direction: aligned
+assigned_to: coder
+depends_on: []
+source: ".swarmforge/operator/INTAKE-pwa-suite-duration.md — human command via operator -> coordinator 2026-07-11 (attended RC): show unit-test suite duration + trend on the static backlog PWA (the surface reachable on their phone). Specifier confirmed the mechanism."
+
+description: |
+  The human wants the unit-test suite duration + trend on the STATIC backlog-dashboard
+  PWA (pwa/index.html -> pwa/app.js). Today it only exists in the holistic UI
+  (renderSuiteDurationReadout) + the daily briefing, because suite-duration records are
+  machine-local (gitignored) and the static PWA is fed by backlog.json, a
+  git-SHA-reproducible projection that excludes machine-local data (two-surface rule).
+  The holistic UI isn't reachable headless (bridge needs a VS Code host + tunnel), so
+  the phone can't see it at all today.
+
+  MECHANISM CONFIRMED (verified 2026-07-11): use the EXISTING sanctioned pattern for
+  moving machine-local data onto the static projection — a COMMITTED SIDECAR, not a live
+  fetch. This is exactly how cost/health already reaches the PWA (BL-213/BL-272): the
+  daily sidecar docs/briefings/<date>.json is a deterministic, committed carrier for
+  machine-local producers, emitted headlessly and folded into backlog.json. Suite
+  duration was "deliberately excluded" (backlogDashboard.ts ~L176) only because it was
+  never given this treatment. Give it the same treatment. Vertical slice, three parts,
+  each reusing a verified seam:
+
+  1. EMIT (into the committed sidecar): snapshot the suite-duration trend into the same
+     committed docs/briefings/<date>.json carrier the cost/health emitter already writes.
+     - Trend = computeSuiteDurationTrend (extension/src/metrics/deliveryMetrics.ts):
+       {hasLocalData, dailySeries, trend, warn} from the machine-local records.
+     - Emit path = extension/src/tools/emit-cost-health-sidecar.ts (BL-272): it already
+       computes -> writeCostHealthSidecar -> commitCostHealthSidecar (idempotent: an
+       unchanged day is not committed twice, touches ONLY the sidecar file). Add the
+       suite-duration trend to that sidecar's assembled content + the same host path
+       (extension.ts onBriefingDue mirrors it). Coder's choice whether it is a field on
+       the sidecar object or a sibling key in the same file — the CARRIER is the same
+       committed docs/briefings/<date>.json, so no new commit path / no new git plumbing.
+
+  2. FOLD (into backlog.json): backlogDashboard.buildBacklogDashboard reads the latest
+     committed sidecar (as it already does for costHealth) and includes the
+     suite-duration trend at metrics.suiteDurationTrend. Update the "Test-suite duration
+     is deliberately excluded" comment (~L176) — it now rides the committed sidecar, so
+     backlog.json at a SHA carries the snapshot committed at/before that SHA
+     (git-reproducible, same posture as costHealth — NOT a live read).
+
+  3. RENDER (on the static PWA): pwa/app.js renders metrics.suiteDurationTrend, mirroring
+     holisticUiHtml.ts renderSuiteDurationReadout: "Suite duration[(WARN)]: <latest>s
+     latest" + trendArrow(trend); a no-data readout when hasLocalData is false. Keep
+     user-visible labels going through the tr()/locale catalog (BL-229/BL-261 posture).
+
+  Wanted behavior (see the feature file):
+    - The committed daily sidecar carries the suite-duration trend; the backlog
+      projection folds it into backlog.json's metrics.
+    - The static PWA shows the latest suite duration and its trend, and marks a
+      regressing suite (the BL-252/BL-078 warn signal) as a regression.
+    - With no local suite-duration data, the PWA shows a no-data readout — and makes NO
+      live/host fetch (it reads only backlog.json; the two-surface rule holds).
+
+  Constraints / testability:
+    - TWO-SURFACE RULE (hard): the static PWA reads ONLY backlog.json. Do NOT add a live
+      fetch to a host endpoint from the PWA. The data is git-derivable solely because it
+      was committed into the sidecar. Reuse the SAME warn signal (computeSuiteDuration /
+      BL-078) — no second definition of "regressing".
+    - Sidecar assembly + the fold are PURE over provided inputs (fixture records / a
+      fixture sidecar) — testable with no live swarm, no network. The emit CLI stays a
+      THIN wrapper over exported pure helpers with a subprocess test in ADDITION
+      (engineering "CLI main() must be a thin wrapper"), mirroring emit-cost-health-
+      sidecar's own test. The PWA render is jsdom-testable (extension/test/
+      pwaDashboard.test.js pattern): assert the readout with local data, the WARN mark
+      when regressing, and the no-data readout otherwise. Never seed a fixture timestamp
+      from the real clock while the code reads its own clock (de0991e).
+    - The sidecar commit stays scoped to the sidecar file only (never a broader git add),
+      exactly as the cost/health emitter already does.
+
+  Out of scope (flagged separately by the intake): the holistic UI being unreachable
+  headless (bridge needs a VS Code host + tunnel) is its own gap — a future ticket. This
+  ticket only puts suite duration on the always-hosted static PWA.
+
+  QA e2e procedure (fixtures; no live swarm/network):
+    - Assemble a sidecar from fixture suite-duration records; assert it carries the
+      trend; run the fold and assert backlog.json.metrics.suiteDurationTrend equals it.
+    - Render the dashboard (jsdom) from a backlog.json fixture with local data; assert
+      the PWA shows the latest duration + trend; set warn and assert the regression mark;
+      render with hasLocalData false and assert the no-data readout and no network call.
+
+acceptance: specs/features/BL-290-pwa-suite-duration-committed-sidecar.feature
+mutation_cost: medium

@@ -1,0 +1,58 @@
+id: BL-240
+title: "Remote gate-answer write path: answer a captured to-human gate remotely, gate-answers only"
+direction: feature
+milestone: M6
+priority: 45
+mutation_cost: medium
+source: "coordinator roadmap-gap-scan 2026-07-10; gap #4. Operator posture: answer captured needs-human gates only (no arbitrary keystrokes/shell). Spec.MD 1356-1367."
+
+description: |
+  Roadmap gap #4. When an agent blocks on a to-human gate it writes the gate to
+  the message store; the bridge pushes it to the connected remote client.
+  Answering from a remote client (phone app or the BL-239 Telegram adapter)
+  unblocks the pipeline without returning to the desk — Spec.MD calls this the
+  single most valuable mobile feature, since a blocked swarm otherwise sits idle.
+
+  Operator posture (2026-07-10): the remote write path is scoped to ANSWERING
+  CAPTURED GATES ONLY — no arbitrary keystrokes, shell, or general remote control.
+  Client-agnostic: the same path serves any remote client.
+
+  Wanted behavior (observable):
+    - An authenticated remote client answering a captured gate answers it via the
+      SAME helper-script call the extension uses locally, and the blocked item
+      proceeds.
+    - The write path accepts only gate answers; any other action is refused (no
+      arbitrary keystrokes/shell).
+    - An unauthenticated client cannot answer a gate.
+    - An answer applies only to the specific captured gate it targets; other
+      blocked gates are unaffected.
+
+  Constraints:
+    - Rides the existing read bridge (BL-065) and the existing to-human gate
+      mechanism + message store; do not duplicate gate logic — reuse the local
+      helper-script call.
+    - Auth is required for the write; the stronger threat-model hardening
+      (rotation, revocation, read-vs-control step-up) is BL-241, sequenced after
+      this. This item establishes the narrow, authenticated gate-answer surface.
+    - Testable boundary: the write path is a host-side module driven without the
+      VS Code UI.
+
+  Scope: extension host — the bridge's control surface limited to gate-answer,
+  wiring a remote answer to the local gate-answer helper-script call, target-gate
+  resolution, and auth check.
+
+acceptance: specs/features/BL-240-remote-gate-answer-write-path.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (host-side; transport/UI seam faked):
+  1. Block a role on a captured gate; submit an answer as an authenticated remote
+     client; assert the gate is answered via the local helper-script call and the
+     item proceeds.
+  2. As an authenticated client, attempt a non-gate action; assert it is refused
+     (no keystrokes/shell run).
+  3. Attempt a gate answer with no/invalid auth; assert refused.
+  4. Block two roles on distinct gates; answer one remotely; assert only that gate
+     is answered and the other stays blocked.
+
+# HUMAN APPROVAL: feature file specs/features/BL-240-...feature is a new draft
+# authored by the specifier and is pending human review.

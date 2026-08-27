@@ -1,0 +1,88 @@
+id: BL-433
+title: "build_freshness_cli.bb sync leaves operator_runtime reading stale after its own restart — a single sync pass must return it fresh, not require a second pass"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+epic: ""
+priority: 15
+direction: agent-reported
+depends_on: []
+source: "rule_proposal from the coordinator (mis-scoped as scope:constitution; substance is a defect-ticket request), specifier session 2026-07-15. Observed 3x this session: coordinator now re-syncs on every QA-approval bookkeeping as a workaround, which masks the restart-ordering defect rather than fixing it."
+
+description: |
+  `swarmforge/scripts/build_freshness_cli.bb sync` recompiles and restarts stale processes, but a sync
+  that restarts operator_runtime returns while operator_runtime STILL reads stale, so a second sync pass
+  is always needed to clear it. The coordinator has been papering over this by re-syncing on every
+  bookkeeping cycle. Fix the restart-ordering race so ONE sync pass settles it.
+
+  ROOT CAUSE (confirmed in code 2026-07-15).
+    - `gather-processes` reads operator_runtime's running SHA from `.swarmforge/operator/status.json`
+      (`:build_sha`), which is written by operator_runtime.bb itself on its first tick.
+    - `restart-operator-group!` writes the stop-file, kills the old process, deletes the pid-file, then
+      launches the new operator_runtime.bb ASYNCHRONOUSLY (`process/process`, fire-and-forget) and
+      RETURNS IMMEDIATELY — it neither clears the old `status.json` nor waits for the new process to
+      publish a fresh one. So for a short window the old (stale) `:build_sha` still sits in status.json.
+    - `run-sync!` computes and returns its `:report` from a snapshot gathered at the TOP, BEFORE any
+      restart. So even on a perfect restart the sync's own output shows operator_runtime stale with
+      `restarted:["operator"]`, and any immediate re-read of status.json also sees the old SHA until the
+      new tick lands. Result: the reported state never reflects the restart within the same pass.
+    (Contrast: `restart-front-desk-group!` DELETES its status.json and relaunches synchronously via
+    launch_front_desk.sh, so it does not exhibit this.)
+
+  DESIRED BEHAVIOUR. A single `sync` that restarts operator_runtime must not return until the new
+  process has published a fresh status.json (`:build_sha` == main HEAD), bounded by a timeout, and the
+  `:report` it returns must reflect that SETTLED post-restart state — so operator_runtime reads fresh
+  after one pass, with no second sync required. If the new process fails to publish fresh status within
+  the timeout, sync must fail loudly (non-zero exit, as it already does for a failed restart step) rather
+  than falsely reporting fresh or hanging indefinitely (engineering article: every wait is bounded).
+
+  HUMAN DECISIONS (2026-07-16, resolving the two open items below):
+    - Settle-timeout is 10s. The single sync pass waits up to 10s for the new operator_runtime to
+      publish a fresh status.json (`:build_sha` == HEAD); fresh in time -> report settled, exit 0;
+      still stale at 10s -> exit non-zero (loud fail). 10s is the human-approved bound (a normal
+      first-tick — spawn + Babashka load + status write — is ~1-5s), not a build-time free choice.
+    - On restart, DELETE operator_runtime's status.json first — mirroring `restart-front-desk-group!`,
+      which already deletes its status.json — so no consumer can read a stale `:build_sha` during the
+      restart window. The settle-wait then blocks until status.json REAPPEARS with `:build_sha` == HEAD.
+
+  Constraints:
+    - Do not introduce a second parallel restart mechanism — reuse operator_runtime.bb's own
+      stop-file/pid-file/status.json convention (the CLI's single-owner header rule). The status.json
+      deletion + reappear-wait reuses that same convention (as the front-desk path does); it is not a
+      new mechanism.
+    - The bounded-wait must tolerate operator_runtime's first-tick delay; OPERATOR_INTERVAL_MS only
+      governs the sleep AFTER the first tick, which already writes status.json, so a few seconds of
+      settle headroom is the right order — confirm against the live startup path at build time.
+    - Keep front-desk and handoffd sync behaviour unchanged (they do not have this race); a general
+      "re-gather and report settled state after restarts" fix must not regress them.
+
+  Scope (verify at build time): `swarmforge/scripts/build_freshness_cli.bb` — `restart-operator-group!`
+  (bounded settle-wait on the new process's fresh status.json) and `run-sync!` (report the post-restart
+  settled state, not the pre-restart snapshot). `build_freshness_lib.bb` freshness comparison is reused
+  unchanged. The existing test is `swarmforge/scripts/test/test_build_freshness_cli.sh`.
+
+  E2E QA PROCEDURE: with the swarm's operator_runtime running on a stale build, advance main by one
+  commit and run `build_freshness_cli.bb <root> sync` ONCE; assert its returned report shows
+  operator_runtime NOT stale and that an immediately-following `report` also shows it fresh — with no
+  second sync pass. Then simulate a new process that never publishes fresh status and assert the single
+  sync exits non-zero within the bounded timeout instead of hanging or reporting a false fresh.
+
+acceptance:
+  feature: specs/features/BL-433-build-freshness-operator-restart-race.feature
+  steps:
+    - "A single sync that restarts operator_runtime returns it reading fresh"
+    - "The sync report reflects the settled post-restart state, not the pre-restart snapshot"
+    - "No second sync pass is needed to clear operator_runtime staleness"
+    - "If the restarted process never publishes fresh status, sync fails within a bounded timeout"
+    - "Front-desk and handoffd sync behaviour is unchanged"
+
+human_approval: >
+  approved. Reported by the coordinator (agent-reported defect, 3x this session); root cause confirmed
+  in code. The two previously-open items are now human-decided (2026-07-16): settle-timeout = 10s, and
+  YES delete operator status.json on restart (mirroring the front-desk path) then wait for it to
+  reappear fresh. Contract firm; ready for promotion. The exact scenario wording stays behavioral —
+  10s and the deletion are pinned in the description, and are build-verified against the live startup
+  path, not re-litigated.
+
+mutation_cost: low

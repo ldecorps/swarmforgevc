@@ -1,0 +1,75 @@
+id: BL-1186
+title: "Deprecator identifies unused/seldom-used functionality and notifies human as retirement candidates"
+milestone: M8
+type: feature
+status: todo
+epic: deprecator
+priority: 1
+direction: queue-jump
+depends_on: [BL-1173]
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1186-deprecator-identify-unused-notify.feature
+human_approval: approved
+approval_context: >
+  Human Laurent via Cursor 2026-08-27 ~08:31 BST addendum to BL-1172. New child
+  — do not expand in-flight BL-1174. Identify + notify only; no auto-delete
+  (BL-311 three-bucket). Thresholds locked: trailing 90 days never-seen = unused;
+  fewer than 3 hits in 90 days = seldom.
+
+invariants:
+  - "The scan never auto-closes tickets or deletes code — notification only (BL-311 three-bucket)."
+  - "Unused and seldom classifications use the locked 90-day / 3-hit thresholds from the human addendum."
+  - "Judgment across many documents requires a hard-tier reasoner — mutation_cost high; easy seats refuse."
+
+required_wiring:
+  - "extension/src/tools/deprecate-identify-unused.ts::runDeprecatorIdentifyUnusedScan::CLI or verb emits ranked unused/seldom report"
+  - "specs/pipeline/steps/index.js::bl1186DeprecatorIdentifyUnusedNotifySteps::acceptance handler registered"
+
+description: |
+  ## What
+
+  Ship a read-only deprecator pass that scans code paths, conf keys, and operator
+  verbs against a trailing usage ledger and notifies the human with retirement
+  candidates. Two classes, thresholds locked by the human:
+
+  | Class | Rule |
+  | --- | --- |
+  | unused | zero hits in trailing 90 days |
+  | seldom | fewer than 3 hits in trailing 90 days |
+
+  Output is a ranked report + human notification. No auto-delete, no ticket close.
+
+  ## Why
+
+  BL-1174 `/deprecate` handles one retirement at a time after human adjudication.
+  This slice gives the operator a periodic inventory of what to consider retiring
+  before stale logic re-ships from old paused tickets.
+
+  ## How (direction, not mandate)
+
+  Reuse telemetry / usage ledger sources where they exist; fail open with an
+  honest empty report when ledger data is unavailable. Notification may ride the
+  daily briefing or a dedicated operator topic — pick the surface that already
+  reaches the human on this pack.
+
+qa_e2e_procedure: >
+  (1) Seed ledger with zero-hit and 2-hit surfaces — report classes them unused
+  and seldom respectively. (2) Seed a 40-hit surface — omitted. (3) Confirm
+  notification queued and no code/config mutated. (4) Run on easy seat — refuse
+  with needs hard-tier reasoner if judgment path invoked.
+
+out_of_scope: |
+  - Auto-retirement or auto-close (BL-1174 owns adjudicated retirement).
+  - Replacing Boy Scout code-debt scan (BL-1013).
+
+source: |
+  Human Laurent via Cursor 2026-08-27 ~08:31 BST addendum to BL-1172 epic.
+  Repaired from ghost-approval incident (INTAKE-bl1186-ghost-approval-ask-no-yaml.md):
+  approval ask fired before yaml was committed — this mint lands on main with
+  staging before spec-ready handoff.
+
+notes: |
+  - [2026-08-27] Cursor/specifier: re-minted on main after ghost approval ask;
+    human directive "use staging please" — yaml staged and committed before
+    coordinator note.

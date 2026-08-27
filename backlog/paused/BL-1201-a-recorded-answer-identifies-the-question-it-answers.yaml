@@ -1,0 +1,146 @@
+id: BL-1201
+title: "A recorded human answer names no question, so a role cannot tell a fresh answer from one consumed days ago"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: question-attention-path
+priority: 15
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1201-a-recorded-answer-identifies-the-question-it-answers.feature
+human_approval: pending
+approval_context: >
+  Caught live 2026-08-27 18:30:54Z. The coordinator delivered the specifier a
+  priority-00 note reading "answer ready:
+  .swarmforge/operator/role-answers/specifier.json". That file held a
+  five-day-old answer — recordedAt 2026-08-22T17:01:36Z, file mtime 08-22
+  18:01, so nothing had rewritten it — about where to archive settled mailbox
+  handoffs. That answer was consumed five days ago: backlog/debt/
+  BL-1073-rolling-mailbox-retention-drips-settled-mail-out-of-the-hot-path.yaml
+  quotes it verbatim at line 165 and is already human-approved. Meanwhile
+  .swarmforge/operator/role-awaiting/specifier.json held a different, live
+  question about a detached master checkout.
+
+  Nothing about the note, the file, or the store said which question the
+  answer belonged to. The specifier noticed only because the two questions
+  were about unrelated things. Two questions of similar shape — and the
+  question-attention-path epic exists precisely to make questions frequent —
+  would produce a role acting confidently on the human's answer to something
+  else.
+
+  Firm: an answer must name its question, and a role must refuse one it
+  cannot match. Negotiable: whether the correlator is the asked_at_ms this
+  ticket names or something better, and whether a consumed answer is deleted
+  or moved aside.
+description: |
+  ## What
+
+  `writeRoleAnswerFileIfNeeded` in
+  `extension/src/tools/telegram-front-desk-bot.ts` records an answer as
+  `{ text, recordedAt }` at `.swarmforge/operator/role-answers/<role>.json` —
+  keyed by role name alone, carrying no reference to the question, and never
+  cleared once read. Its companion `composeRoleAnswerNoteMessage` sends the
+  bare pointer note whenever the answer exceeds `ROLE_ANSWER_NOTE_MAX_LEN`
+  (80, the note cap). Three changes:
+
+  1. **Record the correlator.** `role_ask.bb` already stamps `asked_at_ms`
+     into `.swarmforge/operator/role-awaiting/<role>.json` when it records the
+     question. Carry that same `asked_at_ms` into the answer file, under that
+     same key — the two files then name the same question without any
+     translation step between a Babashka writer and a TypeScript one.
+
+  2. **Refuse a mismatch.** An answer whose `asked_at_ms` does not equal the
+     role's currently-pending question is reported as not matching and is not
+     consumed; the pending question stays pending. Silence is not acceptable
+     here — a role that finds a mismatched answer must be told, because the
+     human believes they have answered.
+
+  3. **Retire a consumed answer.** Once consumed, the answer must stop
+     presenting itself as fresh. Move it aside or mark it consumed — do not
+     leave a live-looking file behind, which is what turned one stale answer
+     into a note delivered five days later.
+
+  ## Why
+
+  The store was built for one answer at a time and reads correctly only if
+  every answer is consumed before the next question is asked. Nothing enforces
+  that, and today it was not true: an answer sat unread-looking for five days
+  while a different question went out under the same role key. The failure is
+  silent and confident — the role is TOLD an answer is ready, so its natural
+  next act is to obey it.
+
+  This is the same family as the `role_ask` single-slot discipline: one
+  pending question per role is already the rule, and this defect is what
+  happens when the answer side does not honor the same pairing.
+
+  ## Constraints
+
+  - Do not change `role_ask.bb`'s question-side contract or the single-pending
+    -question rule — this ticket makes the ANSWER side honor a pairing that
+    the question side already records.
+  - The inline-note path (answers within `ROLE_ANSWER_NOTE_MAX_LEN`) must keep
+    working unchanged; it carries its text in the note itself and never
+    touches the file. Only the pointer path is at issue.
+  - No answer text may be destroyed by this fix. Consumed answers are moved
+    aside or marked, never deleted — the same posture BL-1073's own approved
+    answer ("nothing deleted") set for settled mail.
+  - Do not require the human to do anything differently. They tap or type an
+    answer; the correlation is the system's job.
+
+qa_e2e_procedure: >
+  (1) Fixture: write a role-awaiting question with a known asked_at_ms, then
+  write an answer file carrying a DIFFERENT asked_at_ms; drive the answer path
+  and confirm the role is told the answer does not match and that the pending
+  question is still recorded as pending. (2) Same, with matching asked_at_ms:
+  confirm the answer is delivered and the question is no longer pending. (3)
+  Consume an answer, then re-run the delivery path and confirm the consumed
+  answer is not offered a second time as fresh. (4) Regression: an answer
+  short enough to ride inline in the note still arrives inline, with no file
+  written. (5) Replay this incident directly — a role-answers file five days
+  older than the pending question — and confirm it is refused rather than
+  handed over.
+
+out_of_scope: |
+  - BL-836 (a waiting clarification readable and answerable over the bridge)
+    and the rest of the question-attention-path epic's delivery work. This is
+    the pairing defect underneath them, not new delivery surface.
+  - The coordinator's own relay behaviour. It forwarded a pointer note
+    faithfully; the pointer was the thing that could not be trusted.
+  - Any change to how many questions a role may have pending at once.
+  - Cleaning up the existing stale .swarmforge/operator/role-answers/*.json
+    files by hand — local runtime state, and the fix makes them harmless.
+
+invariants:
+  - "A recorded answer names the question it answers, and a role never consumes one whose question it cannot match to its own pending question."
+  - "No answer text is destroyed: a consumed or mismatched answer is moved aside or marked, never deleted."
+
+source: |
+  Specifier, 2026-08-27 18:44 BST, working coordinator note 002874
+  ("answer ready: .swarmforge/operator/role-answers/specifier.json",
+  created 18:30:54Z). Store shape read directly from
+  extension/src/tools/telegram-front-desk-bot.ts
+  (roleAnswerFilePointerPath / composeRoleAnswerNoteMessage /
+  writeRoleAnswerFileIfNeeded, around line 1630) and from role_ask.bb's
+  asked_at_ms stamp; the stale answer's provenance confirmed against
+  backlog/debt/BL-1073-*.yaml, which quotes it verbatim.
+
+notes: |
+  - "[2026-08-27] specifier: IR-DRY flagged one medium-confidence
+    possible-synonym pair — 'a recorded answer identifies a different
+    question' vs '...that same pending question'. Reviewed and deliberately
+    kept separate: they are the two OPPOSITE sides of the behaviour this
+    ticket exists for, and collapsing them would erase the distinction being
+    tested. Not expressed as a Scenario Outline either, because the two rows
+    would need to parameterize the Then outcomes as well, which is the
+    shared-cell shape this project's Gherkin mutation runs already struggle
+    to kill."
+  - "[2026-08-27] specifier: the scenarios' Given setup was NOT lifted
+    into a Background. Scenario 02 deliberately has no pending question, so a
+    shared 'a role has a pending question recorded' would change what it
+    asserts."
+
+required_wiring:
+  - 'extension/src/tools/telegram-front-desk-bot.ts::asked_at_ms::the recorded answer must carry the asked_at_ms of the question it answers, or nothing downstream can pair them'

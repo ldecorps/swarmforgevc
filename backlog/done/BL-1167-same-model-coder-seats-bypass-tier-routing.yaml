@@ -1,0 +1,107 @@
+id: BL-1167
+title: "When coder seats share the same model, tier routing is off — either seat may claim any mutation_cost"
+milestone: M8
+type: feature
+status: todo
+epic: multi-seat-stages
+assigned_to: coder
+priority: 5
+direction: human-requested
+depends_on: [BL-983]
+mutation_cost: low
+abandoned_commits:
+  - 8578caf5d3
+  - 06a200ec29
+  - a507ed7e6d
+  - d1369d1c61
+  - fa828f1959
+  - 0452531b29
+  - 93cda4ca37
+  - 465281d90d
+  - 0db5e13778
+  - 20bf1ee84f
+  - 3e9b875ae8
+  - 6e49b8a02d
+  - 378c873759
+  - 61906b1d60
+  - 86637c1150
+  - 313254f0c5
+  - e94f774668
+  - 0df196c120
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1167-same-model-coder-seats-bypass-tier-routing.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1167SameModelSeatRoutingSteps::acceptance handler registered"
+  - "swarmforge/scripts/seat_difficulty_lib.bb::parse-seat-models::pack window --model values parsed for same-model detection"
+
+invariants:
+  - "When every seat of a stage declares the same effective --model, tier declarations do not suppress claim eligibility — BL-983 idle-first routing applies among those seats."
+  - "When seats of a stage declare distinct effective models, BL-1001 tier filtering remains unchanged."
+
+human_approval: approved
+approval_context: >
+  Operator ruling verbatim (INTAKE-cursor2-same-model-no-tier-routing.md,
+  2026-08-26): when both coder seats run the same model (`auto` on `coder` and
+  `coder@cursor2`), the coordinator may pass coder work to either seat
+  regardless of `mutation_cost` or `--seat-tier`. BL-1001 tier rules apply only
+  when seats are model-differentiated. Human priority 00.
+
+description: |
+  ## What
+
+  `cursor-forge` runs both coder seats on `--model auto` with
+  `--seat-tier hard` / `--seat-tier easy`. BL-1001 tier filtering then blocks
+  medium/high tickets from `coder@cursor2` even when both seats are
+  model-equivalent — starving the second seat without reducing bounce risk.
+
+  When every seat of a stage shares the same effective `--model`, tier rules
+  must not apply. Claim selection reverts to BL-983 idle-first among seats.
+  When models diverge again, BL-1001 tier discipline returns unchanged.
+
+  ## How (direction, not mandate)
+
+  Extend `seat_difficulty_lib.bb` (and `ready_for_next_task.bb` if needed) to
+  parse `--model` from pack window lines, detect model-equivalent stages, and
+  bypass `difficulty-claim-decision` tier filtering for those stages. Prefer
+  load-balance / idle-first among eligible seats — do not invent a new
+  coordinator router; `route_backlog_to_coder.sh` stays stage-addressed.
+
+  ## Verification
+
+  - Property/unit tests on `seat_difficulty_lib` for same-model vs
+    differentiated-model decisions.
+  - Acceptance scenarios drive real `ready_for_next_task.bb` over a two-seat
+    fixture mirroring `cursor-forge` (both `auto`) and a differentiated control.
+
+qa_e2e_procedure: >
+  (1) Unit/property tests for seat_difficulty_lib same-model bypass green.
+  (2) Acceptance feature green after compile.
+  (3) On a live cursor-forge swarm with both coder seats on auto, promote a
+  medium mutation_cost ticket and confirm either seat may claim it when idle.
+
+out_of_scope: |
+  - Changing BL-1001 tier semantics when models differ.
+  - Coordinator promote/order logic beyond existing stage-addressed routing.
+  - Auto-detecting model equivalence from runtime agent state (pack conf only).
+
+notes: |
+  - [2026-08-27] specifier: minted from
+    .swarmforge/operator/INTAKE-cursor2-same-model-no-tier-routing.md.
+  - Pack comment in cursor-forge.conf may be updated in the documenter pass to
+    record the same-model exception (optional, not blocking).
+
+source: |
+  .swarmforge/operator/INTAKE-cursor2-same-model-no-tier-routing.md (human via
+  Cursor, 2026-08-26 ~23:16 BST); archived copy also at
+  backlog/archive/INTAKE-cursor2-same-model-no-tier-routing.md.
+
+  Human ruling, verbatim (Article 5.3):
+
+  > When both coder seats run the same model (`auto` on `coder` and
+  > `coder@cursor2`), the coordinator may pass coder work to either seat
+  > regardless of the ticket's `mutation_cost` or declared `--seat-tier`.
+  > BL-1001 tier rules apply only when seats are model-differentiated.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 6e49b8a02d, evidence: backlog/evidence/BL-1167-qa-bounce-20260827.md }

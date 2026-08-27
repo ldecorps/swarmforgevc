@@ -1,0 +1,124 @@
+id: BL-1195
+title: "Investigate + guard: a role worktree's tracked content can silently drift from its own HEAD with no authoring commit"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1195-worktree-tracked-content-drift-is-detected-not-silently-carried.feature
+human_approval: approved
+approval_context: >
+  Discovered 2026-08-27: coordinator routed
+  backlog/evidence/coder-stray-revert-BL1191-BL1184-20260827.md to the
+  specifier for adjudication. The coder found its own worktree
+  (.worktrees/coder) holding uncommitted content that reverted
+  swarmforge/scripts/handoff_inject_lib.bb and handoffd.bb to
+  pre-BL-1191 (a DONE, shipped ticket) and briefing_email_lib.bb to
+  pre-BL-1184 (its own active ticket), plus a wholesale deletion of
+  swarmforge/scripts/test/test_swarm_handoff_sync_deliver.sh — with no
+  commit anywhere authoring any of it. The coder stashed rather than
+  forwarding (`.worktrees/coder` `stash@{0}`,
+  "coder-worktree-stray-revert-BL1191-BL1184-20260827"; underlying commit
+  content cited as a4aec863c). BL-1184's own feature code was NOT lost —
+  intact in the coder's actual working tree; the stray content was only
+  ever uncommitted working-tree state.
+
+  This matches the "silent revert, no authoring commit" symptom family
+  ([[phantom-revert-root-cause-launcher-cp]] / BL-373,
+  [[detect-content-no-commit-authored]] / BL-1098) but neither existing
+  fix explains it: BL-373's launcher-sync guard already protects exactly
+  this file set (swarmforge/scripts/ is git-tracked in every role
+  worktree, so sync_worktree_scripts.bb's tracked-path check leaves it to
+  git — verified against the current script, not assumed), and BL-1098
+  is about a ref-vs-ref merge mechanism on main/origin/main, not
+  uncommitted drift inside one role's own worktree. Needs standard human
+  sign-off before promotion; this is an investigation-shaped ticket, not
+  a routine fix.
+
+description: |
+  ## What
+
+  A pipeline role's own worktree can hold tracked-file content that
+  silently diverges from that worktree's own git HEAD, with no commit
+  anywhere (local or on any branch) that authored the change. The coder
+  caught this instance only because it happened to notice unexpected diff
+  content before doing any work; nothing structural would have caught it
+  if the coder had not looked, or had looked less carefully — the parcel
+  could have been forwarded with BL-1191's shipped fix silently missing
+  again.
+
+  The mechanism is UNKNOWN. BL-373's launcher-cp mechanism is the closest
+  precedent and shares every surface symptom (stale content, no commit,
+  discovered in a worktree — never in the master checkout so far), but its
+  fix already guards exactly the paths affected here
+  (`swarmforge/scripts/`), so it is not — by itself — sufficient
+  explanation; either that guard has a gap this incident exposes, or a
+  second, different mechanism produces the identical symptom. Root-causing
+  is IN scope; this ticket does not presume which.
+
+  ## Deliverables
+
+  1. **Investigate.** Using the preserved stash
+     (`.worktrees/coder` `stash@{0}`) as primary forensic evidence — do
+     NOT drop it before this investigation reads it — determine what wrote
+     the reverted content into the coder's working tree. Candidate
+     mechanisms worth checking first (not exhaustive, not mandated):
+     sync_worktree_scripts.bb's tracked-path guard for an edge case (stale
+     git index, a race between merge and sync, path-prefix mismatch);
+     worktree merge/rebase tooling picking a stale side; any
+     babysitter/supervisor auto-heal or restore path that touches worktree
+     files; a stale local branch ref resurrected by some tool. If a root
+     cause is found and fixed, say so in the ticket notes and cite the
+     commit.
+  2. **Guard, regardless of root cause.** Ship a worktree integrity check
+     (session-start or pre-work) that compares a role worktree's tracked
+     files against that worktree's own HEAD and flags drift not explained
+     by the role's own in-progress task — the acceptance scenarios below
+     are this deliverable's contract and must ship even if deliverable 1
+     cannot pin an exact mechanism. Mirrors what the coder did ad hoc
+     (notice, preserve via stash, do not forward) as a standing, checked
+     behavior instead of relying on an individual role's vigilance.
+
+  ## Constraints
+
+  - Never auto-discard drifted content — preserve (stash or equivalent),
+    same posture as the coder's own defensive move and as this
+    constitution's "Clean Up After Yourself" guardrail (never delete work
+    you did not create).
+  - Must not false-flag a role's own legitimate in-progress edits to a
+    tracked file as drift (scenario 02).
+  - BL-1184 and BL-1191 themselves need no rework — their shipped/active
+    content is confirmed intact; do not re-open either.
+
+qa_e2e_procedure: >
+  (1) In a fixture worktree, hand-edit a tracked file to differ from HEAD
+  with no corresponding task context; run the integrity check; confirm it
+  reports the drift and does not silently proceed. (2) Repeat with the
+  edit belonging to the fixture role's own in-progress task; confirm no
+  false flag. (3) Confirm a clean worktree passes silently. (4) If
+  deliverable 1 found a fix, exercise the specific mechanism directly
+  (e.g., replay the exact launcher/sync/merge sequence that produced this
+  incident) and confirm it no longer reverts.
+
+out_of_scope: |
+  - Re-shipping or re-verifying BL-1184/BL-1191 content — unaffected.
+  - BL-1098's merge-on-main detection mechanism — separate ticket, separate
+    ref-vs-ref technique.
+
+invariants:
+  - "A role worktree's tracked-file content is never silently forwarded (committed, handed off, or acted on) when it differs from that worktree's own HEAD for a reason the role's current task does not explain."
+
+source: |
+  backlog/evidence/coder-stray-revert-BL1191-BL1184-20260827.md (coordinator
+  record, 2026-08-27), routed to the specifier for adjudication per that
+  evidence file's own closing line.
+
+notes: |
+  - [2026-08-27] specifier: minted per coordinator's routing note. The
+    coder's stash (.worktrees/coder stash@{0}) is the primary evidence for
+    deliverable 1 — whoever picks this up reads it BEFORE it is dropped.

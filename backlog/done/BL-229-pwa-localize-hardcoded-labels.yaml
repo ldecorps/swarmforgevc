@@ -1,0 +1,44 @@
+id: BL-229
+title: "PWA: route hardcoded ETA/remaining (and other) UI labels through the locale catalog"
+direction: i18n
+priority: 25
+mutation_cost: low
+source: "operator screenshot 2026-07-10 ('FR should translate everything'); specifier diagnosis: some UI labels are inline English literals bypassing BL-118's translator."
+
+description: |
+  BL-118 localized the PWA chrome, but a few user-visible labels in the render
+  functions are still inline English literals that never go through the tr(...)
+  catalog, so they stay English in French mode. Confirmed live 2026-07-10:
+    - pwa/app.js:195  ' — ETA '   (ticket ETA label)
+    - pwa/app.js:233  ' remaining' (milestone remaining-count label)
+    - pwa/app.js:417  ' [' + status + ']' (raw status badge — review as candidate)
+
+  Operator rule for FR (2026-07-10): ordinary words are translated (e.g.
+  "remaining" -> "restants"); jargon may keep its English value in the French
+  catalog (e.g. "ETA" can stay "ETA").
+
+  Wanted behavior:
+    - Every user-visible label the app renders is a catalog lookup (tr(key)), not
+      an inline English literal. New keys added to BOTH the en and fr blocks of
+      pwa/locales.js.
+    - French shows the French catalog value for ordinary-word labels; jargon
+      labels may keep an English value.
+    - English mode is byte-for-byte unchanged (en values equal today's literals).
+
+  Scope: pwa/app.js render functions + pwa/locales.js. This is the app's OWN
+  labels only. Translating ticket/doc CONTENT (the authored sentences) is the
+  separate, larger BL-230 — keep the two distinct.
+
+acceptance: specs/features/BL-229-pwa-localize-hardcoded-labels.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs:
+  1. Grep pwa/app.js render functions for inline user-visible English literals
+     (' — ETA ', ' remaining', and any others surfaced by the audit); assert each
+     is now a tr(...) lookup.
+  2. Render the PWA in French; assert the burndown shows the French word for
+     "remaining" and the ETA label is catalog-sourced (French value may be "ETA").
+  3. Render in English; assert the labels are identical to the prior version.
+
+# HUMAN APPROVAL: feature file specs/features/BL-229-...feature is a new draft
+# authored by the specifier and is pending human review.

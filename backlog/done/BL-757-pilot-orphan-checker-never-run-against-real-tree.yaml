@@ -1,0 +1,86 @@
+id: BL-757
+title: "Pilot process: BL-456's docs-structure orphan checker exists but has never been run against this repo's real docs/ tree"
+milestone: M8
+type: defect
+severity: low
+status: in_progress
+epic: code-quality-gates
+assigned_to: coder
+priority: 27
+direction: queue-jump
+depends_on: [BL-756]
+mutation_cost: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "wire existing checker + allowlist; no batch dedup surface"
+  architect: "specifier pinned option 1 (mechanical gate); no design fork left"
+acceptance: specs/features/BL-757-pilot-orphan-checker-never-run-against-real-tree.feature
+
+invariants:
+  - "A suite invokes computeDocsStructure on this repo's real docs/ root — fixture-only coverage is not enough."
+  - "Non-allowlisted orphans fail the suite and refuse /pilot land when authored docs were touched."
+  - "Known pre-existing orphans may sit on an explicit dated allowlist; silent empty orphanedDocs or a permanently-red suite without allowlist is not acceptable."
+  - "Commits that touch no authored Divio-mode doc are not refused solely for missing orphan-land evidence."
+
+required_wiring:
+  - "extension/test/docsStructureRealTree.test.js::computeDocsStructure(REPO_ROOT)::orphanedDocs vs dated allowlist"
+  - "extension/src/tools/pilotAcceptanceGate.ts::orphaned authored doc land refusal when docs touched"
+  - "specs/pipeline/steps/index.js::bl757RealTreeOrphanGateSteps::acceptance handler registered"
+
+source: |
+  Found during BL-723 (pilot-tonight quality review), documenter viewpoint
+  pass, 2026-07-31. Companion remaining-work ticket: BL-756.
+
+  BL-456 (already in `backlog/done/`) built a real, working orphan-doc
+  checker: `computeDocsStructure` / `computeDocsStructureReport`
+  (`extension/src/docs/docsStructure.ts`), which reports any authored doc
+  under a Divio mode directory that `docs/index.md` doesn't link. Its own
+  test file (`extension/test/docsStructure.test.js`) exercises the pure
+  report function and the impure real-tree reader thoroughly — but only
+  ever against throwaway fixture trees built with `mkTmpDir`. Grepped the
+  whole `extension/` tree: `computeDocsStructure` (the real-tree entry
+  point) is called from exactly one place — its own test file, against a
+  fixture, never against this repo's actual `docs/` directory. No test, CI
+  step, or gate asserts the real tree's `orphanedDocs` is empty.
+
+  Consequence, made concrete by BL-756: tonight's pilot landed 9 new how-to
+  docs and 1 new reference doc, and every single one went unlinked from
+  `docs/index.md` with nothing catching it — the exact "pure module DARK
+  until wired" pattern this project's own engineering guidance already
+  names as a gap class for other subsystems. Running the checker by hand
+  against the real tree (not part of any landed gate) also turned up 18
+  more pre-existing orphans predating tonight's batch entirely, meaning
+  this has been silently drifting since at least BL-456 landed.
+
+notes: |
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
+
+  Pilot-process half of the BL-756 documenter-lens shortfall (shared across
+  all 10 of tonight's orphaned docs).
+
+  [2026-08-27] specifier: feature landed; assigned_to coder. Pin: option 1
+  (mechanical suite + /pilot land gate), not checklist-only. depends_on
+  BL-756 so the ten pilot-batch paths are cleared before this gate must
+  pass green. Allowlist is for the pre-existing debt only — dated, explicit.
+
+description: |
+  ## What
+
+  Wire `computeDocsStructure` into something that actually runs against
+  this repo, not just its own fixture tests.
+
+  Specifier ruling: **option 1 — gate-blocking**, matching the project's
+  stated "index stays exhaustive and orphan-free" rule. Shape:
+
+  1. A repo-scoped test that calls `computeDocsStructure(REPO_ROOT)` and
+     asserts every orphan is either absent or on an explicit dated allowlist
+     for pre-existing debt (not a silent gut, not permanently red).
+  2. A /pilot land check when authored Divio-mode docs were touched: a new
+     non-allowlisted orphan refuses land.
+
+  Checklist-only (option 2) is out — too weak for a rule already treated as hard.
+
+  ## depends_on
+
+  BL-756 must land first so tonight's ten named paths are indexed before this
+  gate is required green against the real tree.

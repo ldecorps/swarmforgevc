@@ -1,0 +1,54 @@
+id: BL-241
+title: "Remote-access security hardening: token rotation, device revocation, read-vs-control scope + step-up"
+direction: security
+milestone: M6
+priority: 45
+mutation_cost: medium
+depends_on: [BL-240]
+source: "coordinator roadmap-gap-scan 2026-07-10; gap #5 (sequenced after #4). Spec.MD 1426."
+
+description: |
+  Roadmap gap #5. The remote tunnel needs a real threat model. BL-065's bridge
+  today has ONE static bearer token: no rotation, no revocation, no scoping, and
+  no distinction between viewing and control. Sequenced AFTER BL-240 — there is no
+  control surface to harden until the gate-answer write path exists.
+
+  Wanted behavior (observable):
+    - An access token can be rotated: the old token stops authenticating and the
+      new one works.
+    - A lost device can be revoked without affecting other authorized devices.
+    - A read-only-scoped client cannot perform control actions (e.g. answering a
+      gate) — scope is enforced.
+    - Control actions require a stronger auth step than read-only viewing
+      (step-up), so viewing and controlling are not the same trust level.
+
+  Constraints:
+    - Builds on BL-240's authenticated gate-answer surface and BL-065's bridge;
+      hardens them rather than replacing them.
+    - Secrets/tokens live host-side/secret-store only, never in the working tree
+      or a commit (local-engineering secret rule).
+    - Off-LAN relay choice (self-hosted vs hosted) has privacy implications since
+      agent output could traverse it — flag as a related operator decision, not
+      resolved here.
+    - Testable boundary: auth/scope/rotation/revocation are host-side modules
+      driven without the VS Code UI.
+
+  Scope: extension host — token issuance/rotation, a device registry with
+  revocation, per-client read-only vs control scope enforcement, and a step-up
+  auth gate on control actions. The bridge's auth layer.
+
+acceptance: specs/features/BL-241-remote-access-security-hardening.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (host-side auth module; transport faked):
+  1. Authenticate with a token, rotate it; assert the old token is rejected and
+     the new one accepted.
+  2. Register two devices, revoke one; assert it can no longer connect and the
+     other is unaffected.
+  3. As a read-only client, attempt a control action (answer a gate); assert
+     refused.
+  4. As a control client, perform a control action; assert it required a stronger
+     auth step than viewing did.
+
+# HUMAN APPROVAL: feature file specs/features/BL-241-...feature is a new draft
+# authored by the specifier and is pending human review.

@@ -1,0 +1,141 @@
+id: BL-686
+title: "Epic drill-down and topic make-top match children by epic ticket id instead of epic slug — every drill-down is empty and the write route 404s"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 03
+direction: human-requested
+mutation_cost: low
+invariants:
+  - "An epic tile's drill-down shows exactly the live non-epic tickets whose `epic:` slug equals that tile's own `epic:` slug — for every epic, including every epic whose ticket id and slug differ (which is all of them)."
+  - "The topic make-top route accepts exactly the epic identity the drill-down sends it, and computes its peer set over exactly the topics the drill-down displayed — read side and write side never disagree about who is in the epic."
+  - "No `type: epic` ticket ever appears as a topic in any epic's drill-down list or in any topic make-top peer set."
+acceptance: specs/features/BL-686-epic-drilldown-slug-match.feature
+
+approval_context: >
+  Restores BL-674's already-approved behaviour, which shipped non-functional.
+  Two decisions genuinely new to this ticket need sign-off. (1) Identity on
+  the wire: the drill-down keeps sending the epic's TICKET ID (BL-545) and
+  the server resolves id -> slug, rather than putting the slug on the wire —
+  because epic slugs are NOT unique (BL-542 and BL-545 both declare
+  `swarm-intelligence-layer` today), so a slug is not a usable identity for a
+  tile. (2) Slug-collision behaviour (scenario 05): two epic tickets sharing
+  a slug both drill down to the same child set, deterministically — truthful
+  to what the backlog data actually says, rather than inventing a tie-break.
+  Also flagged, deliberately NOT fixed here: BL-542 ("epic model routing")
+  declaring BL-545's slug looks like a copy-paste error in the ticket data,
+  not a code defect — a one-line YAML correction for the human, out of scope
+  for this parcel. Separately open: whether `active/` children should join
+  this reorder set at all (raised to the human as its own question; if the
+  answer is yes it becomes a follow-up ticket, and the "No live topics in
+  this epic." empty-state copy is renamed in THAT ticket, not this one).
+
+source: |
+  Operator (human) 2026-07-27, two intakes for the same fault:
+  backlog/INTAKE-20260727-epic-drilldown-includes-parked-topics.md (the
+  report — "No live topics in this epic." on the BL-545 tile while BL-545
+  has numerous parked children) and
+  .swarmforge/operator/INTAKE-epic-drilldown-id-slug-mismatch.md (the traced
+  root cause). Routed by the coordinator as HIGH SEV.
+
+description: |
+  ## What
+
+  BL-674's epic drill-down is non-functional for every epic, always, and its
+  sibling write route is non-functional with it. The read side and the write
+  side compare an epic's **ticket id** against a child's **epic slug** — two
+  strings that are different by design and never equal.
+
+  Confirmed live in the code and in the backlog data (not hypothesis):
+
+  - `epicReorderUiHtml.ts:199` filters `t.epic === epicId`, where `epicId`
+    comes from the tile's `data-id`.
+  - That `data-id` is the epic's own ticket id (`BL-545`), set in
+    `bridgeServer.ts:594` (`readPausedEpics` reads each epic ticket's `id:`).
+  - `t.epic` is the child's raw `epic:` YAML field — a slug
+    (`swarm-intelligence-layer`), set in `bridgeServer.ts:603`
+    (`computeEpicReorderState`).
+  - Children declare epic membership by SLUG, never by the epic ticket's id.
+    Verified across all 15 live epic tickets: `id:` and `epic:` differ on
+    every one of them. So the comparison is false for every epic, forever.
+  - The write route repeats the same comparison —
+    `handleEpicReorderTopicMakeTopRoute`, `bridgeServer.ts:923`
+    (`target.epic !== value.epicId`) and its `peers` filter one line below.
+    Driven from the drill-down button (which sends the tile's ticket id as
+    `epicId`), every topic make-top 404s. Read side and write side must be
+    fixed together, in this one parcel.
+
+  ## Two further defects found while confirming the trace
+
+  Both are in scope here; neither appears in the original report.
+
+  1. **Epic trackers leak into their own topic list.**
+     `computeEpicReorderState` builds `topics` as every live item with a
+     truthy `epic:` — and an epic tracker self-declares its own slug, so it
+     is one of them. Fixing only the id/slug comparison would make BL-545's
+     drill-down list BL-545 (and BL-542) as topics of themselves. Worse, the
+     write route's `peers` filter has the same leak, so making a topic top
+     would have to outrank the epic tracker's own priority — silently
+     conflating the tile ordering (BL-572/BL-672) with the within-epic topic
+     ordering (BL-673). Exclude `type: epic` rows from both.
+
+  2. **Epic slugs are not unique.** BL-542 and BL-545 both declare
+     `epic: swarm-intelligence-layer`. So the naive fix suggested in the
+     intake — put the slug on the wire as the tile identity — is not
+     available: two tiles would share one identity. Keep the ticket id as the
+     identity and resolve id -> slug on the server.
+
+  ## Direction
+
+  Move the membership decision out of the webview and into the testable
+  module, which is where BL-674's own ticket said decision-shaped logic
+  belongs. `computeEpicReorderState` resolves each epic tile's slug and
+  attaches that tile's child topics keyed by the tile's **ticket id**; the
+  webview filters on ticket id (unique, stable, already its `data-id`) and
+  stays presentation-only; the write route receives the ticket id and does
+  the same server-side resolution. The exact shape is the coder's call — the
+  scenarios are the contract.
+
+  ## Why it shipped green through the full pipeline
+
+  The fixtures conflated the two strings. `bl674EpicDrilldownUiSteps.js`
+  seeds an epic ticket with `id: EA` / `epic: EA` and children with
+  `epic: EA`, so id and slug are the same string and the broken comparison
+  succeeds. The unit tests beside it
+  (`extension/test/epicDrilldownUiHtml.test.js` and the two bridge tests) do
+  the same. **The regression coverage in this parcel must use real-shaped
+  data — an epic ticket whose id and slug differ — everywhere it touches this
+  surface, and the existing BL-672/673/674 fixtures must be corrected to the
+  real shape rather than left as the shape that hid this.** A fix whose tests
+  still conflate id and slug has not been tested.
+
+  ## Scope
+
+  - `extension/src/bridge/bridgeServer.ts` — `computeEpicReorderState`,
+    `handleEpicReorderTopicMakeTopRoute`.
+  - `extension/src/bridge/epicReorderUiHtml.ts` — `renderDrilldown`.
+  - `specs/pipeline/steps/` — new BL-686 handlers; correct the BL-674
+    handlers' conflated fixture.
+  - `extension/test/epicDrilldownUiHtml.test.js`,
+    `epicMakeTopBridge.test.js`, `topicMakeTopBridge.test.js` — correct the
+    conflated fixtures.
+
+  Out of scope, deliberately: widening the live set to include `active/`
+  children; renaming the "No live topics in this epic." empty state; the
+  BL-542 duplicate-slug data correction. See `approval_context`.
+
+  ## e2e QA procedure
+
+  On the phone Mini App: open the Reorder Epics screen and drill into
+  "EPIC — Swarm Intelligence Layer" (BL-545). The drill-down lists its parked
+  children (BL-590, BL-624, BL-625, BL-643, BL-682 at filing time) in
+  priority order — not "No live topics in this epic." — and lists neither
+  BL-545 nor BL-542. Tap Make top on a dependency-free child: the list
+  re-renders with it first and the write is committed (no 404). Back returns
+  to the tiles. Repeat on a second epic (BL-517, swarmforge-console) to
+  confirm it is not BL-545-specific.
+
+assigned_to: coder

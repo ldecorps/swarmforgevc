@@ -1,0 +1,104 @@
+id: BL-1173
+title: "Deprecator freshness-gate CLI — fail-closed check before every paused→active promote"
+milestone: M8
+type: feature
+status: todo
+epic: deprecator
+assigned_to: coder
+priority: 0
+direction: queue-jump
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1173-deprecator-freshness-gate-cli.feature
+# Tip-pure rematch 20260827: superseded rematch/bounce tips (content on
+# documenter tip 7b7ef3371d / hardener b2ba003897 line).
+abandoned_commits:
+  - 34dd529f7e
+  - 11cd5c794f
+  - 9cdfc155ea
+  - f35fd0517f
+  - 5a55728c72
+  - 88cc7b021d
+  - 5143dc0495
+  - 6b5212c6be
+  - 4b4130df8e
+  - bcdf8ae817
+  - d2f5cc05b4
+  - eb2139512a
+  - 062f2a4825
+  - 826c3bda14
+  - b1abbb53d3
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 34dd529f7e, evidence: backlog/evidence/BL-1173-qa-bounce-20260827.md }
+
+required_wiring:
+  - "extension/src/tools/deprecate-check.ts::deprecateCheck::CLI prints allow|hold JSON for a ticket id"
+  - "swarmforge/scripts/promote_and_route_next.sh::deprecate-check::consult freshness gate before promote"
+  - "specs/pipeline/steps/index.js::bl1173DeprecatorFreshnessGateCliSteps::acceptance handler registered"
+
+invariants:
+  - "CLI failure or malformed output fails CLOSED — never treat as allow (same posture as BL-262)."
+  - "Expedited-defect ordering never bypasses the freshness gate (Article 3.6)."
+  - "On hold the ticket stays in paused and a priority-00 note reaches the specifier."
+  - "Deprecator execution and this ticket's claim require a hard-tier multi-document reasoner — mutation_cost high; easy seats refuse (operator 2026-08-27)."
+
+human_approval: approved
+approval_context: >
+  Human Laurent via Cursor 2026-08-27 ~07:16 BST: "Qjump this intake."
+  Critical slice of INTAKE-deprecator-stale-rules-dead-logic-docs.md. Article
+  3.6 already binds the manual checklist; this ticket ships the machine gate
+  and wires it into every promote path.
+
+description: |
+  ## What
+
+  Ship `node extension/out/tools/deprecate-check.js <root> <BL-id>` printing
+  `{"decision":"allow"}` or `{"decision":"hold","reason":"..."}`. Wire into
+  every paused→active promotion site (coordinator prompt already requires it;
+  `promote_and_route_next.sh` and any other promote helper must consult the
+  CLI and refuse on hold).
+
+  Hold signals (any one): `.swarmforge/superseded/<id>`; ticket claims
+  superseded/retired without done closure; all depends_on done but description
+  names RETIRED surfaces; repeated spec-gap bounces on the same ticket.
+
+  ## How (direction, not mandate)
+
+  Pure check core + thin CLI (Boy Scout / onboarding-contract-gate shape).
+  Coordinator keeps fail-closed manual checklist as fallback until CLI lands;
+  after land, prefer CLI.
+
+  ## Model capability (locked human decision 2026-08-27)
+
+  Deprecator-related work — including building and claiming this ticket — runs
+  on a hard-tier multi-document reasoner only (`mutation_cost: high`). Easy
+  seats refuse.
+
+qa_e2e_procedure: >
+  (1) Supersede marker → hold. (2) Clean ticket → allow. (3) depends_on done +
+  RETIRED surface in description → hold. (4) Promote helper refuses on hold and
+  leaves ticket in paused. (5) CLI crash → hold, never allow.
+
+out_of_scope: |
+  - Full /deprecate scan and retirement (BL-1174).
+  - Auto-closing stale tickets without specifier adjudication.
+
+source: |
+  backlog/INTAKE-deprecator-stale-rules-dead-logic-docs.md (human Laurent,
+  2026-08-27 ~07:03 BST; Q-jump ~07:16 BST). Epic BL-1172 child; Q-JUMPED.
+
+notes: |
+  - [2026-08-27] Cursor: minted + queue-jumped (approve + force-promote) per
+    human directive. Specifier owns first pass to confirm acceptance/feature
+    then route to coder.
+  - [2026-08-27] Cursor: ambulance engaged for BL-1173
+    (`ambulance_cli.bb engage BL-1173`). Sibling BL-1174 stays paused — only
+    one ambulance patient; engage it after this slice lands. Epic BL-1172 is
+    not promotable.
+  - [2026-08-27] specifier: confirmed feature (5 scenarios) + wiring; routed to
+    coder. git_handoff 26453cffdc already on HEAD (topic text only — no merge).
+  - [2026-08-27] human: deprecator execution MUST use a model that reasons
+    well across many documents — must-have. `mutation_cost` raised to high;
+    Article 3.6 + prompts refuse easy/weak seats for judgment.

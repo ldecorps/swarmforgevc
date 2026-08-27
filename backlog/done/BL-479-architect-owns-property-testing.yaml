@@ -1,0 +1,137 @@
+id: BL-479
+title: "Give property testing an owner: adopt upstream six-pack's architect-owned property-testing phase — engineering.prompt already legislates property-test separation but NO role owns it"
+milestone: M8
+type: chore
+severity: low
+epic: ""
+priority: 7
+direction: human-requested
+depends_on: []
+source: "Human (ldecorps) 2026-07-17, direct session: asked to compare unclebob/swarm-forge's six-pack branch against our fork ('has uncle bob introduced interesting things in his swarm?'), then approved filing this ticket ('ok do it') for the clearest gap found — architect-owned property testing. Follow-on to the same-day upstream survey that produced BL-477/BL-478."
+
+notes: |
+  SURVEY RESULT (2026-07-17, ub/six-pack deep-dive — extends the BL-477/478 survey):
+
+  Method: read every role prompt on unclebob/swarm-forge `six-pack` and checked each idea against our
+  fork's prompts, reporting only what is genuinely ABSENT here. (Reminder: our fork has NO common git
+  ancestor with upstream — git merge-base HEAD ub/main = none — so adoption is always a manual, adapted
+  reimplementation, never a port; local-engineering.prompt rule 2.)
+
+  THE GAP THIS TICKET CLOSES — property testing has no owner:
+    - engineering.prompt (lines ~43-47) already legislates property tests as a distinct verification
+      category: "Keep property tests separate from normal verification. Do not include property-test tags
+      in normal unit coverage ... unless the role owns property-test verification." But NO role owns it:
+      coder.prompt and cleaner.prompt explicitly exclude themselves; architect/hardender/QA prompts never
+      mention the word. The constitution references a phantom owner — the same shape as BL-477's phantom
+      drift-watch mechanism.
+    - Upstream's six-pack architect.prompt closes exactly this hole: after architectural review completes,
+      the architect "owns property testing support" — find (or build a small) property-testing framework,
+      assess property coverage, improve/add property tests where useful properties are undercovered
+      (invariants, broad input ranges, round trips, conservation, idempotence, ordering,
+      parsing/formatting stability), and include them in verification as a SEPARATE explicit command.
+    - Fit check: the architect is the right owner here too — it already reviews module boundaries and
+      testability, sits after cleaner (so properties land on cleaned structure), and before hardender
+      (upstream's hardender and QA then "include property tests in the standard verification suite as a
+      separate explicit command when the project has them").
+
+  WHAT TO ADOPT (adapted, not ported):
+    1. Amend swarmforge/roles/architect.prompt: add an "## Property Testing" section owning
+       property-test support after architectural improvements — assess coverage of useful properties on
+       the modules touched by the current task/batch, add/improve property tests where undercovered, keep
+       them a separate explicit command per engineering.prompt. GOVERNANCE CHANGE — human reviews the
+       exact wording before it lands (constitution/role amendments are the human's call).
+    2. Framework: fast-check (the standard for our TypeScript + vitest 3.x stack; NOT currently a dep).
+       Add as a devDependency; wire a separate script (e.g. `npm run test:properties` targeting a
+       `*.property.test.ts` glob) excluded from normal unit coverage / mutation / CRAP commands, exactly
+       as engineering.prompt already requires.
+    3. Seed 1-2 real property tests on an obviously property-shaped pure module (candidates: backlog
+       parsing round-trip, handoff-protocol field parse/format stability, grid layout invariants) so the
+       command is non-vacuous from day one — an empty property suite would be another vacuous gate
+       (cf. BL-446, BL-463).
+    4. Touch the downstream mentions: hardender.prompt / QA.prompt verification sequences gain "run the
+       property-test command when the project has one" — mirroring upstream's wiring so properties are
+       actually exercised after they exist.
+
+  SECONDARY UPSTREAM FINDING (recorded here for the deviations log — NOT in scope to build, human may
+  spin it out or skip):
+    - Upstream's six-pack cleaner has a mutation-site SIZE gate our cleaner lacks: use the mutation
+      tool's scan/count mode on changed/new files (counting mutation sites WITHOUT running mutation), and
+      if any file exceeds 100 sites, do a behavior-preserving split before handoff, preserving manifests.
+      Preventive control against oversized mutation targets; adjacent to (but distinct from) the resolved
+      BL-446 zero-kill defect. Stryker equivalent would be a dry-run/instrument count against out/-mapped
+      sources (mind stryker-mutate-scope-is-out-not-src). Decision deliberately deferred: record
+      ADOPT/ADAPT/SKIP in docs/upstream-deviations.md once BL-477 lands.
+    - Everything else in the six-pack role prompts (differential mutation vs manifest, soft Gherkin
+      mutation, end-to-end QA suite concept, APS gherkin-parser discipline) is already independently
+      present in our fork — verified by grep, not assumed.
+
+  SPECIFIER DRAFT (2026-07-17):
+    STATUS — WORDING APPROVED AS-IS AND LANDED (2026-07-17, coordinator note
+    00_20260717T034444Z_000499 relaying human approval). The three prompt amendments are now WRITTEN INTO
+    THE LIVE PROMPT FILES: architect.prompt gained the "## Property Testing" section (before "## Does Not
+    Own"); hardender.prompt and QA.prompt each gained the `npm run test:properties` bullet. They match the
+    companion file backlog/active/BL-479-property-testing-amendment.draft.md verbatim. The wording gate is
+    now satisfied — the coder BUILD STEPS below are UNBLOCKED (add fast-check, wire the separate command,
+    seed one non-vacuous property test).
+    NOTE on the human_approval field: it still reads `pending` because the approval was relayed through the
+    coordinator note, not the concierge topic-flip; per backlog-schema.md only the human's reply flips it
+    to `approved`, never the specifier. The wording is landed regardless; the field will settle when the
+    human/concierge flips it (or an "approve" reply in the BL-479 topic fires the concierge flip).
+    Secondary finding (b), the cleaner mutation-site SIZE gate, was FILED as its own ticket BL-485 (paused)
+    per the human's decision — not recorded SKIP. docs/upstream-deviations.md's ADOPT record for both
+    remains a documenter-stage deliverable (build step 5).
+
+    BUILD STEPS (coder — after wording approval):
+      1. Add `fast-check` as a devDependency in extension/package.json at an EXACT pinned version (no `^`
+         range — engineering.prompt Startup Tools: quality tools are pinned, not floating). Run
+         `npm install` so it lands in the lockfile.
+      2. Add script `"test:properties"` to extension/package.json that compiles then runs ONLY the
+         property files (e.g. `npm run compile && vitest run` pointed at the property glob via a dedicated
+         config/dir). It must NOT pull in the normal unit suite.
+      3. CRITICAL WIRING — keep property tests out of the normal runs. Vitest's DEFAULT include already
+         matches `*.test.js`, so a `foo.property.test.js` would otherwise be swept into `npm run coverage`
+         and the Stryker/CRAP/DRY runs, violating engineering.prompt's separation rule. Add
+         `**/*.property.test.js` to vitest.config.mjs's `exclude` so the default unit/coverage run skips
+         them, and confirm Stryker's mutation run and `npm run crap`/`npm run dry` do not execute them
+         either. Prove it: `npm run coverage` and the mutation run must NOT report the property file.
+      4. Seed ONE real, non-vacuous property test (`<module>.property.test.js`) on an obviously
+         property-shaped PURE module. Candidate (specifier pick): a backlog/handoff-protocol parse↔format
+         round-trip, or grid-layout invariants — coder confirms which touched-module is cleanest. Use
+         fast-check generators over a broad input range; assert the invariant (round-trip identity /
+         idempotence / ordering). Demonstrate NON-VACUITY: show the test FAILS when the invariant is
+         deliberately broken, then restore — record that break-then-fix in the ticket evidence.
+      5. Record the six-pack survey decisions in docs/upstream-deviations.md's review log (BL-477 has
+         landed; the file exists): ADOPT for this property-testing change, and the human's (b) decision
+         for the cleaner mutation-site gate (own ticket vs SKIP). This is a documenter-stage deliverable.
+
+    QA E2E PROCEDURE (verify in the live swarm):
+      - `cd extension && npm run test:properties` → green, and it runs the seeded property file(s).
+      - `npm run coverage` (and the mutation/CRAP/DRY runs) do NOT include any `*.property.test.js` file
+        — grep the coverage/mutation output for the property filename; it must be absent.
+      - Break the seeded invariant in the module under test → `npm run test:properties` FAILS; restore →
+        green (the non-vacuity proof is reproducible).
+      - `swarmforge/roles/architect.prompt` contains the "## Property Testing" section, and
+        hardender.prompt + QA.prompt reference `npm run test:properties` (matching the approved wording).
+      - `docs/upstream-deviations.md` review log records the ADOPT (this) and (b) decisions.
+
+acceptance:
+  # Governance + tooling wiring; outcome-style per the BL-478 precedent. No Gherkin feature file — the
+  # deliverable is a role-prompt amendment plus a runnable, non-vacuous property-test command, not
+  # end-user-visible product behavior.
+  outcome: "architect.prompt owns property testing (human-approved wording); fast-check is a devDependency with a separate property-test command excluded from normal coverage/mutation/CRAP; at least one real property test on a pure module passes via that command and fails when its invariant is deliberately broken (non-vacuity proof); hardender/QA verification sequences reference the property command; the six-pack survey's adopt/skip decisions (this + the cleaner mutation-site gate) are recorded in docs/upstream-deviations.md once BL-477 lands."
+
+human_approval: pending
+approval_context: >
+  Filing was already approved (2026-07-17 'ok do it'); this pending flag is the WORDING review the
+  ticket always reserved (was approval_context (a)). The exact proposed wording is drafted in
+  backlog/active/BL-479-property-testing-amendment.draft.md — three prompt edits: architect.prompt gains
+  a "## Property Testing" section owning it, and hardender.prompt + QA.prompt reference the separate
+  `npm run test:properties` command. NOT yet landed in the live prompt files (a role-prompt edit is
+  global), so approving here unblocks the coder build too. TWO decisions needed: (a) approve or edit the
+  architect.prompt wording in the draft file; (b) the secondary cleaner mutation-site-gate finding —
+  file as its own low-priority ticket (specifier lean) or record SKIP in docs/upstream-deviations.md.
+  FIRM (not open): property tests stay a separate explicit command outside normal
+  coverage/mutation/CRAP (engineering.prompt already mandates this); the seeded property test must be
+  demonstrated non-vacuous (fails when its invariant is broken).
+
+mutation_cost: low

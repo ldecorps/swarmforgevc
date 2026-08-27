@@ -1,0 +1,55 @@
+id: BL-1187
+title: "Babysitterd recognizes main-sync deadlock and hints the operator with overlapping paths"
+milestone: M8
+type: feature
+status: todo
+priority: 2
+direction: human-requested
+depends_on: [BL-891, BL-1113, BL-653]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1187-main-sync-deadlock-operator-hint.feature
+
+required_wiring:
+  - "swarmforge/scripts/master_main_reconcile_lib.bb::operator-deadlock-hint::names overlapping paths for operator"
+  - "specs/pipeline/steps/bl1187BabysitterdMainSyncDeadlockOperatorHintSteps.js::registerSteps::acceptance handler registered"
+
+invariants:
+  - "main-sync-deadlock finding escalates to operator (CRIT) but never nudges the coordinator — that pane is already suppressed and flooded."
+  - "Hint names overlapping dirty paths when git can compute them; fails open to BL-891 doc pointer when unknown."
+
+human_approval: approved
+approval_context: >
+  INTAKE-babysitterd-main-sync-deadlock-operator-hint.md (2026-08-27). Live
+  dirty-overlap deadlock; handoffd trip-once alert insufficient for spy-only ops.
+
+description: |
+  ## What
+
+  When `.swarmforge/daemon/main-sync-deadlock.json` is active, babysitterd emits
+  a CRIT finding each sweep with ahead/behind/reason and named overlapping dirty
+  paths when computable. Finding escalates via BABYSITTER_ESCALATION (deduped);
+  coordinator nudge suppressed.
+
+  ## How
+
+  Pure hint in `master_main_reconcile_lib.bb`; `check-main-sync-deadlock` in
+  `babysitterd_sweep_lib.bb`; gatherer reads marker + git overlap in
+  `babysitter_check.bb`.
+
+qa_e2e_procedure: >
+  (1) Fixture active deadlock + overlapping path → CRIT message names path.
+  (2) Escalation-eligible, not nudge-eligible. (3) Inactive marker → no finding.
+
+out_of_scope: |
+  - Auto-healing dirty overlap.
+  - Resident spy sync status UI.
+
+source: |
+  backlog/INTAKE-babysitterd-main-sync-deadlock-operator-hint.md (operator/Cursor,
+  2026-08-27 ~13:45 BST).
+
+notes: |
+  - [2026-08-27] Cursor commit intake from live BL-709/BL-745 deadlock incident.
+
+assigned_to: coder

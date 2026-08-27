@@ -1,0 +1,64 @@
+id: BL-216
+title: "Backlog-depth check reads a nonexistent config path and mis-parses the -1 no-limit sentinel"
+milestone: M2
+status: todo
+priority: 05
+direction: reliability
+assigned_to: coder
+source: "coordinator rule_proposal (engineering scope, filed as ticket) 2026-07-09: check-backlog-depth read wrong conf path, produced false 'active=7, max=5' warnings all session; also can't parse the -1 sentinel."
+
+description: |
+  COORDINATOR (2026-07-09): swarm_handoff.bb's backlog-depth check read the
+  wrong config path and warned all session ("active=7, max=5") though the real
+  cap is -1 (no limit). Verified against live code — the defect is three bugs,
+  and it is DUPLICATED in a second file:
+
+  Two call sites share the identical broken block:
+    1. swarmforge/scripts/swarm_handoff.bb  check-backlog-depth (line ~186):
+       prints the "Active backlog depth exceeded" WARNING.
+    2. swarmforge/scripts/ready_for_next.bb  promote-next-paused-item-if-needed
+       (line ~9): actually AUTO-PROMOTES the oldest paused item to active when
+       active-count < max-depth. So the bug is not cosmetic here — it drives a
+       real dispatch decision.
+
+  The three bugs in each:
+    a. WRONG PATH: reads (fs/path project-root ".swarmforge" "swarmforge.conf"),
+       which does not exist. The real tracked config is
+       swarmforge/swarmforge.conf. slurp throws every call -> catch -> hardcoded
+       default 5. That is the source of the false "max=5" warnings.
+    b. SIGN-DROPPING REGEX: (re-find #"\d+") on "config
+       active_backlog_max_depth -1" captures "1", so even with the right path
+       the -1 no-limit sentinel parses as 1 — the tightest possible cap.
+    c. NO SENTINEL BRANCH: -1 (documented no-limit) is never treated as "no
+       limit"; the code always compares against it. Under the real -1 config a
+       naive path+regex fix would still break: swarm_handoff would compare
+       against -1 and, worse, ready_for_next's (< active-count -1) is never
+       true, so paused items would never auto-promote.
+
+  Wanted behavior:
+  - Read the cap from the real tracked config swarmforge/swarmforge.conf.
+  - Parse a SIGNED integer, so -1 reads as -1 (not 1).
+  - Honor the no-limit sentinel: when active_backlog_max_depth < 0 (documented
+    -1), depth is unlimited — swarm_handoff emits NO depth warning, and
+    ready_for_next's promotion is not blocked by depth.
+  - A positive cap N behaves normally: warn only when active > N; promotion's
+    depth gate holds only when active < N.
+  - Genuinely absent/unparseable config degrades gracefully (no crash) and does
+    NOT reproduce the spurious over-cap warning / artificially tight gate.
+  - Extract ONE shared conf-reading helper used by BOTH call sites so they
+    cannot diverge again (they are currently copy-pasted with the same bug).
+
+  Constraints:
+  - Babashka; no network, no real timers in tests. Test the reader as a pure
+    function over provided conf text (fixtures), and the two call-site
+    behaviors via a temp backlog/active + backlog/paused tree.
+  - Fix both files in this ticket — do not fix one twin and leave the other.
+
+  Out of scope (flag for coordinator/specifier, do NOT change here):
+    ready_for_next.bb auto-promoting paused->active overlaps the coordinator's
+    stated promotion authority ("Coordinator should promote paused items"). Whether
+    a script should auto-promote at all is a separate policy question; this
+    ticket only makes its existing depth gate read config correctly.
+
+acceptance: specs/features/BL-216-backlog-depth-reads-wrong-conf-and-breaks-no-limit-sentinel.feature
+mutation_cost: low

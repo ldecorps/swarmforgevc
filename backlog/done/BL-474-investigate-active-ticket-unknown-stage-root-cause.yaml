@@ -1,0 +1,64 @@
+id: BL-474
+title: "Investigate: why does an active ticket's swarm stage become UNKNOWN — is 'not started' always honest, or is the authoritative stage map ever missing a genuinely-held ticket?"
+milestone: M8
+type: chore
+severity: low
+epic: ""
+priority: 6
+direction: human-requested
+depends_on: [BL-473]
+source: "human (ldecorps) 2026-07-16, the second half of the pipeline-board directive: 'if their position in the swarm is not known, it's a bug to fix.' BL-473 makes such a ticket VISIBLE (not-started state); this ticket asks WHY the position is unknown in the first place."
+
+description: |
+  SPECIFIER-OWNED INVESTIGATION / SPIKE — not coder work yet. BL-473 stops a position-unknown active
+  ticket from vanishing by rendering it in a distinct "not started" state. This ticket asks the separate
+  question the human raised: WHEN a ticket's swarm position is unknown, is that always a legitimate,
+  self-correcting transient — or is it sometimes a real tracking DEFECT where a genuinely-held ticket is
+  missing (or misplaced) in the authoritative stage map?
+
+  Background: the board's stage source is .swarmforge/board/ticket-stage-map.json, computed by
+  swarmforge/scripts/pipeline_stage_cli.bb (reconcile-stage-map + filter-active) and written by the
+  coordinator, which swarmforge/roles/coordinator.prompt instructs to run `sync` after every
+  promotion/routing/bookkeeping/queue-sweep action. An active ticket is "not started" on the board iff it
+  resolves to NO role. Legitimate reasons: promoted-but-not-yet-dequeued; a brief between-stages gap
+  (a role handed off, the next has not dequeued). Suspect DEFECT reasons to prove out or rule out:
+    - the coordinator's `sync` is stale (it changed tracking but did not re-run sync), so a genuinely-held
+      ticket shows not-started until the next sync;
+    - pipeline_stage_lib.bb's role-resolution (extract-ticket-id / ticket-id-from-headers / the note-vs-
+      task header coverage) misses a real way a role holds a ticket, so an actively-worked ticket never
+      resolves;
+    - a stuck/undelivered handoff sits un-dequeued long enough that "not started" durably misrepresents
+      a ticket that IS in flight.
+
+  Deliverable: an audit that ENUMERATES every path by which a ticket lands in backlog/active/ and every
+  path by which it becomes/leaves role-held, classifies each resulting not-started case as
+  legitimate-transient vs tracking-defect, and either (a) concludes not-started is always honest (close
+  with the finding recorded), or (b) writes a concrete follow-up ticket for each real tracking-defect
+  (e.g. a freshness guarantee on the coordinator's sync, or a role-resolution gap fix). Do NOT pre-bake a
+  fix here — the point is the diagnosis; a confident guess at the mechanism before the audit is exactly
+  what the specifier's "verify the live integration layer before scoping" rule forbids.
+
+  No feature file yet: the concrete testable behaviour is unknown until the audit completes. Any fix this
+  spike surfaces gets its OWN ticket with its own Gherkin acceptance — this item does not itself enter the
+  coder pipeline.
+
+  Sequencing: depends on BL-473 (share the same board/stage-map understanding; investigate against the
+  post-BL-473 behaviour so "not started" is the baseline). Read-only investigation — no scheduling
+  conflict with the board render tickets.
+
+acceptance:
+  # Investigation/spike — deliverable is a diagnosis, not a code behaviour, so no Gherkin feature file.
+  # Done when: every path to active/ and to/from role-held is enumerated; each not-started case is
+  # classified legitimate-transient vs tracking-defect; and EITHER a "not-started is always honest"
+  # finding is recorded, OR a concrete follow-up ticket exists for each real tracking-defect.
+  outcome: "Audit recorded; each unknown-stage case classified; follow-up ticket(s) filed for any real tracking-defect, or a no-fix-needed finding recorded."
+
+human_approval: approved
+approval_context: >
+  Human-requested 2026-07-16 as the root-cause companion to BL-473 (the human: 'if their position in the
+  swarm is not known, it's a bug to fix' — and, when asked, chose 'Also file investigation ticket').
+  Specifier-owned spike: enumerate the paths, classify legitimate-transient vs tracking-defect, and spawn
+  a concrete follow-up ticket for any real defect (or record a no-fix-needed finding). No feature file /
+  no coder pipeline until a concrete fix is identified. Low priority; depends on BL-473 landing first.
+
+mutation_cost: none
