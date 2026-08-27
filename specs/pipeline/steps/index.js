@@ -378,6 +378,7 @@ const DOMAINS = [
   require('./bl696LetsTalkSteps'),
   require('./bl766MiniAppLetsTalkRetiredSteps'),
   require('./bl696TelegramCursorBridgeOperatorSteps'),
+  require('./bl710OneClearTelegramRedeployPathSteps'),
   require('./bl688RecordableSpecFailureClassesSteps'),
   require('./bl690EnsureDaemonRepairStartsNotHaltsSteps'),
   require('./bl686EpicDrilldownSlugMatchSteps'),
