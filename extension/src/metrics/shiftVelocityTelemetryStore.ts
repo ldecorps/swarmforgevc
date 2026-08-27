@@ -41,20 +41,21 @@ export function hasShiftVelocityTelemetry(mainWorktreePath: string): boolean {
   return listShiftVelocityLedgerFiles(mainWorktreePath).length > 0;
 }
 
+function isTelemetryRecordShape(c: Partial<ShiftVelocityTelemetryRecord>): c is ShiftVelocityTelemetryRecord {
+  return (
+    typeof c.at === 'string' &&
+    typeof c.dayLabel === 'string' &&
+    typeof c.landedMax === 'number' &&
+    typeof c.windowHours === 'number'
+  );
+}
+
 function parseRecord(line: string): ShiftVelocityTelemetryRecord | null {
   try {
     const parsed: unknown = JSON.parse(line);
     if (!parsed || typeof parsed !== 'object') return null;
     const c = parsed as Partial<ShiftVelocityTelemetryRecord>;
-    if (
-      typeof c.at !== 'string' ||
-      typeof c.dayLabel !== 'string' ||
-      typeof c.landedMax !== 'number' ||
-      typeof c.windowHours !== 'number'
-    ) {
-      return null;
-    }
-    return { at: c.at, dayLabel: c.dayLabel, landedMax: c.landedMax, windowHours: c.windowHours };
+    return isTelemetryRecordShape(c) ? { at: c.at, dayLabel: c.dayLabel, landedMax: c.landedMax, windowHours: c.windowHours } : null;
   } catch {
     return null;
   }

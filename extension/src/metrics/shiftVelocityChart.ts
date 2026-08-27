@@ -17,9 +17,9 @@ export function nonLinearTimeX(
   padL: number,
   plotW: number
 ): number {
-  const span = Math.max(maxMs - minMs, 1);
   const age = maxMs - dayMs;
-  const maxAge = maxMs - minMs;
+  // Floor at 1 so a single-day series (minMs === maxMs) stays finite.
+  const maxAge = Math.max(maxMs - minMs, 1);
   const t = Math.log(1 + age) / Math.log(1 + maxAge);
   return padL + (1 - t) * plotW;
 }
