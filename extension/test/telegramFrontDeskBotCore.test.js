@@ -3526,6 +3526,10 @@ function closingFixtureAdapters(overrides = {}) {
     // PollAdapters field here already has.
     commitApprovalWrites: overrides.commitApprovalWrites,
     notifyApprovalsTopic: overrides.notifyApprovalsTopic,
+    // BL-1190: pass through only when the test actually supplies one - an
+    // absent override means "no-op reason unexplained", the same optional
+    // posture every other PollAdapters field here already has.
+    explainApprovalRecordNoOp: overrides.explainApprovalRecordNoOp,
     editCalls,
   };
 }
@@ -3635,6 +3639,37 @@ test('recordApprovalDecisionAndClose: a decision that was NOT actually pending (
 
   assert.equal(result.changed, false);
   assert.deepEqual(adapters.editCalls, [], 'expected no edit attempted for a no-op (already-decided) recording');
+});
+
+// BL-1190: a tap that recorded nothing because the ticket yaml is gone
+// entirely is the ghost-ask case - unlike the ordinary already-decided
+// no-op above (never touches the ask), this one closes the ask inline,
+// with the stale verdict, so a repeat tap cannot recur indefinitely.
+test('recordApprovalDecisionAndClose: a no-ticket-file no-op closes the stored ask with the Stale verdict', async () => {
+  const adapters = closingFixtureAdapters({
+    recordApprovalReply: async () => false,
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-1190 needs your approval...' }),
+    explainApprovalRecordNoOp: async () => 'no-ticket-file',
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-1190', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, false);
+  assert.equal(adapters.editCalls.length, 1, 'expected the ghost ask to be closed');
+  assert.match(adapters.editCalls[0].text, /-- Stale: ticket file missing/);
+});
+
+test('recordApprovalDecisionAndClose: an already-decided no-op (not no-ticket-file) still attempts no edit', async () => {
+  const adapters = closingFixtureAdapters({
+    recordApprovalReply: async () => false,
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
+    explainApprovalRecordNoOp: async () => 'already-approved',
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, false);
+  assert.deepEqual(adapters.editCalls, [], 'an already-decided no-op is not a ghost ask - it stays for the decided-verdict reconcile');
 });
 
 test('recordApprovalDecisionAndClose: a failed message edit is logged and does not throw - the decision recording still succeeded', async () => {
