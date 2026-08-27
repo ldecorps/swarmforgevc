@@ -1,5 +1,11 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-711: interface-vs-incarnation vocabulary —
+**messaging** (today: Telegram), **host agent** (today: Cursor), operator phone
+app **Bubble**; architecture prose may use interface words; operator how-tos
+keep incarnation names. Acceptance:
+`specs/features/BL-711-interface-vs-incarnation-glossary.feature`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-710: Telegram `/redeploy` verb family
 covers cursor bridge, Mini App bridge, front desk, and union `/redeploy all`;
 each form is soft-tier confirm, reloads `swarm.env`, and the reply names what
