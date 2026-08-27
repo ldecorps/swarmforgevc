@@ -584,6 +584,7 @@ const DOMAINS = [
   require('./bl936Bl805PropertyLaneExercisesTheParcelGateSteps'),
   require('./bl937ShellScriptsRunOnStockMacosBash32Steps'),
   require('./bl915CursorBridgeGoneAgentSessionResetSteps'),
+  require('./bl941CursorGoneAgentClassifierBoundariesSteps'),
   require('./bl1166OperatorDocsSteps'),
   require('./bl832BubbleHealthTrendsPageSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
