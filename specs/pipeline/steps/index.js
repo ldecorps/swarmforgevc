@@ -337,6 +337,7 @@ const DOMAINS = [
   require('./bl531PreQaDurabilityWiringGateSteps'),
   require('./bl972PreQaGateEvidenceNotSubjectSteps'),
   require('./bl606RequiredStagesRoutingSteps'),
+  require('./bl605GlobalTokenConsumptionSteps'),
   require('./bl623RoutingSkipTrailSteps'),
   require('./bl748RoutingSkipRecordingSteps'),
   require('./bl754StageSkipReasonsSteps'),
