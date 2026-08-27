@@ -23,6 +23,8 @@ abandoned_commits:
   - 8109a5dfba
   - 4541e911cc
   - 3647650d42
+  - e8212a3028
+  - 952dbd9101
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl599TrendIntakeBalanceSteps::acceptance handler registered"
