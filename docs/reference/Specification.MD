@@ -1,5 +1,11 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-790: bridge `POST /agent-notes` queues a
+priority-00 `type: note` into a declared role's mailbox via `swarm_handoff.bb`
+— message one line / 80 chars with `Bubble: ` operator prefix; slice A only
+(Bubble UI is BL-793). Acceptance:
+`specs/features/BL-790-bridge-queues-a-note-for-a-role.feature`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-711: interface-vs-incarnation vocabulary —
 **messaging** (today: Telegram), **host agent** (today: Cursor), operator phone
 app **Bubble**; architecture prose may use interface words; operator how-tos
@@ -6375,7 +6381,7 @@ Respawn preserves the agent's worktree and branch state — only the running pro
 
 ### Read-Only Bridge (Phase 1)
 
-The bridge is an **opt-in local HTTP server** that exposes the same on-disk swarm state the extension reads, via JSON endpoints and a real-time event stream. It is read-only, stateless, and localhost-only in this phase.
+The bridge is an **opt-in local HTTP server** that exposes the same on-disk swarm state the extension reads, via JSON endpoints and a real-time event stream. Phase 1 is mostly read-only and localhost-only; **BL-790** adds one authenticated control endpoint (`POST /agent-notes`) that queues operator notes into role mailboxes.
 
 **When to use it:** Expose swarm state to a monitoring tool, script, or browser client running on your development machine. Later phases will add remote (off-LAN) access and control endpoints.
 
@@ -6411,6 +6417,7 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 | `GET /holistic` | JSON: the projection backing the `/` page — swarm assignments, done-by-milestone, recent activity | The web UI's own data source; also usable directly by scripts |
 | `GET /stage-dwell` | JSON: per-stage queue-wait/processing dwell (median/p90/max), bottleneck stage, trend vs. prior window | The coordinator's swarm-optimizer instrument; also usable directly by scripts |
 | `GET /burn-rate` | JSON: per-role live token burn rate (tokens/hr) | Live "how fast is each agent burning tokens right now" meter, beyond BL-100's daily aggregates |
+| `POST /agent-notes` | JSON: queue a `type: note` parcel at priority `00` into a declared role's mailbox | Operator steering from authenticated bridge clients (Bubble Notes UI in BL-793); body `{ "role": "<declared-role>", "message": "<text>" }`; message is one line, max 80 characters total after the `Bubble: ` attribution prefix; refuses undeclared roles, empty/over-budget/multiline messages, and unauthenticated callers; queues via `swarm_handoff.bb` only — never writes mailbox files directly |
 
 `GET /metrics`, `GET /cost-telemetry`, `GET /cost-rank`, `GET /holistic`, `GET /stage-dwell`, and `GET /burn-rate` are all computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk and handoff-state/transcript reads are too expensive to recompute every tick.
 
