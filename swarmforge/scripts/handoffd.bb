@@ -1439,7 +1439,7 @@
     (if (not= gate :rotate)
       (do (log! (str "chase-rotate-" (name gate)) target-role)
           {:ok false :reason (name gate)})
-      (let [result (handoff-lib/rotate-resident-to! target-role "chase")]
+      (let [result (handoff-lib/rotate-resident-to! target-role)]
         (when (:ok result)
           (reset! last-chase-rotate-at-ms (System/currentTimeMillis))
           (log! "chase-rotate" target-role))
