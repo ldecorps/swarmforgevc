@@ -424,6 +424,7 @@ const DOMAINS = [
   require('./bl611BabysitterdLifecycleSteps'),
   require('./bl792UnitSuiteGreenAndProfiledSteps'),
   require('./bl787BubbleNamedTunnelFixedUrlSteps'),
+  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
   require('./bl795MonoRouterStarvationHandFixSteps'),
   require('./bl769AndroidPureLogicJvmUnitSeamSteps'),
   require('./bl828BubbleCollapsedGestureModelSteps'),
