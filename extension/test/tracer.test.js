@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-020: Tracing-bullet test — tracer utility functions.
  */
@@ -20,7 +21,7 @@ const {
 } = require('../out/swarm/tracer');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-tracer-test-'));
+  return mkTmpDir('sfvc-tracer-test-');
 }
 
 // ── generateTraceId ────────────────────────────────────────────────────────

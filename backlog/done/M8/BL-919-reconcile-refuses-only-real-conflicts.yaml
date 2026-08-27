@@ -1,0 +1,182 @@
+id: BL-919
+title: "The master-main reconcile blocks on any dirt at all, so a mergeable-but-dirty checkout parks QA behind commits git would have merged cleanly"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: deterministic-transit-assist
+human_approval: approved
+priority: 20
+direction: human-requested
+depends_on: [BL-891]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-919-reconcile-refuses-only-real-conflicts.feature.draft
+
+invariants:
+  - "The sweep never stashes, resets, rebases, or force-updates, and every commit reachable before it runs is still reachable after."
+  - "A sweep that does not complete a merge leaves the checkout exactly as it found it — uncommitted changes untouched, never left mid-merge."
+  - "Narrowing the gate is strictly one-directional: every working-tree state the old gate allowed to reconcile still reconciles. The fix may only widen what proceeds, never block something that used to pass."
+
+approval_context: >
+  Wants sign-off on the 1:N split. The intake
+  `.swarmforge/operator/INTAKE-bl891-dirty-overlap-reconcile.md` names two
+  fixes under one "preferred (smallest) shape": narrow the dirty gate (this
+  ticket) and escalate a persistent block to the operator (BL-920). I split
+  them because each delivers its own observable outcome and neither waits on
+  the other — narrowing the gate stops the false parks whether or not
+  escalation exists, and escalation is worth having however wide the gate is.
+
+  The intake also says out-of-scope items are mine to choose. I took all
+  three of its suggested exclusions unchanged; they are listed in
+  `out_of_scope:` with the human's own wording.
+
+  Severity `high` is a deliberate call and expedites this under Article
+  3.2.4. Justification: it is not hypothetical — it parked QA this morning
+  with 84 landed commits off local `main`, and both trigger conditions are
+  routine rather than rare (the master checkout is chronically dirty, and
+  local `main` falls behind after every QA land). Downgrade to `medium` if
+  you would rather it queue normally; nothing else changes.
+
+source: |
+  Operator intake `.swarmforge/operator/INTAKE-bl891-dirty-overlap-reconcile.md`
+  (human ldecorps via Cursor, 2026-08-17 ~07:56 BST), drained by the
+  specifier 2026-08-17 into BL-919 (this ticket, the dirty gate) and BL-920
+  (operator escalation). The human's framing question, verbatim:
+
+  > is there a way to prevent this from happening again?
+
+  asked after merge `7f5f53212` and QA note `00_20260817T054818Z_000241`
+  ("local main 22-ahead/84-behind origin; needs fetch+merge before more
+  bookkeeping").
+
+  The intake is explicit that this is not a rewrite:
+
+  > Do **not** treat this as a rewrite of BL-891. That sweep already ships.
+  > This is the documented remainder: dirty-blocked, then quiet.
+
+description: |
+  ## What happened, in the human's own words
+
+  > 1. QA landed via `git push origin HEAD:main` (the only landing it is
+  >    allowed). That advanced `origin/main` and left local `main` alone.
+  > 2. Coordinator/specifier kept committing bookkeeping on local `main`.
+  >    Result: **24 ahead / 84 behind**, a real merge, not a fast-forward.
+  > 3. BL-891 saw the drift (`handoffd.log` 06:19Z `ahead=24 behind=84`) and
+  >    logged **`dirty-blocked`**. Master checkout WIP (briefings, hotfix
+  >    ledger, BL-908 yaml, `.vscode/settings.json`) is routine.
+  > 4. QA cannot merge into `main` from `.worktrees/QA`. Coordinator is
+  >    forbidden git merge/push. Push-sweep refuses a non-fast-forward.
+  >    Everyone waited.
+  > 5. Human merged `--no-edit origin/main` **without stashing**. Git's `ort`
+  >    strategy succeeded; dirty files were untouched. Overlap between
+  >    porcelain dirty paths and files the merge would change was **empty**.
+
+  > So the stall was not "no reconcile exists". It was "reconcile refused
+  > because *any* dirt, even dirt git would not overwrite".
+
+  ## Confirmed in code at spec time
+
+  `master-main-reconcile-worktree-clean?`
+  (`swarmforge/scripts/handoffd.bb:2562`) is literally
+  `git status --porcelain` returning blank. `reconcile-decision`
+  (`swarmforge/scripts/master_main_reconcile_lib.bb:56`) then reads
+  `(not clean?) :dirty-blocked` with no notion of WHICH paths are dirty.
+
+  Note what is already right and must stay that way: `merge!`
+  (`handoffd.bb:2573`) is exactly the command the human ran by hand —
+  `git merge --no-edit origin/main`, aborting on conflict. The merge
+  machinery is correct. Only the gate in front of it is too wide.
+
+  ## Goal, in the human's own words
+
+  > Stop a behind-and-dirty-but-mergeable master checkout from parking QA.
+
+  > - Keep BL-891 invariants: no stash, no reset, no rebase, no force, abort
+  >   a real conflict so the checkout is never left mid-merge.
+  > - Narrow the dirty gate: refuse only when git itself would refuse (dirt
+  >   overlaps merge-affected paths / untracked clash), not when
+  >   `--porcelain` is merely non-empty. This morning's merge is the
+  >   existence proof.
+
+  ## Shape of the fix (direction, not mandate)
+
+  The decision needs to know which paths are dirty and which the incoming
+  merge would change, rather than a single clean/dirty boolean — so the
+  pure `reconcile-decision` grows a real input and the git-specific
+  path-gathering stays behind an adapter, matching the lib's existing
+  split. Invariant 3 is the one to design against: this may only widen what
+  proceeds. If computing the overlap is ever uncertain, refusing is the safe
+  answer, because refusing is what happens today.
+
+qa_e2e_procedure: |
+  1. Reproduce the reported state on a scratch clone: local `main` behind
+     `origin/main` by a real merge (not a fast-forward), with the working
+     tree dirty on paths the incoming merge does not touch. Run the sweep and
+     confirm local `main` reconciles and every dirty file is byte-identical
+     afterwards.
+  2. Same setup, but dirty a path the incoming merge DOES change. Confirm no
+     merge is attempted, the checkout is untouched, and the block names the
+     offending paths.
+  3. Same setup with an untracked file at a path the merge would create.
+     Confirm it refuses rather than letting git fail mid-merge.
+  4. Clean tree, behind: confirm reconcile behaves exactly as it does today —
+     this must be a narrowing of what blocks, never a change to the merge.
+  5. Force a genuine content conflict with the tree otherwise clear. Confirm
+     the merge aborts and `git status` shows no in-progress merge.
+  6. Confirm invariant 3 directly: no working-tree state that reconciles
+     today fails to reconcile after the change.
+
+out_of_scope: |
+  The intake's own exclusions, taken unchanged ("Out of scope unless
+  specifier chooses them" — I chose to keep all three):
+
+  - Moving `main` onto a forever-clean worktree.
+  - Letting the coordinator merge.
+  - Changing QA's `push origin HEAD:main` landing.
+
+  Also out of scope here:
+
+  - Operator escalation when a block persists — that is BL-920, split from
+    the same intake.
+  - BL-356 push-sweep, which pushes the opposite direction and never merges
+    origin into local `main`.
+  - BL-839 master-checkout drift, which OBSERVES dirty script content against
+    `main`. The intake is explicit that it "must not be the writer here".
+
+notes: |
+  2026-08-17 specifier, on minting. Drained from operator intake per BL-311;
+  the source `INTAKE-*.md` is archived in the same pass.
+
+  **Probed before speccing; every claim in the intake holds.** Read
+  `master_main_reconcile_lib.bb` and `handoffd.bb` directly rather than
+  trusting the report: the `--porcelain`-blank gate, the correct
+  `git merge --no-edit origin/main` with abort-on-conflict, and the
+  coordinator-only surface are all exactly as described. Nothing in the
+  intake turned out to be worse or better than reported, which is unusual
+  enough to be worth recording.
+
+  **Degraded gating — the hardener must record this, not imply it away.**
+  This is Babashka. Per engineering.prompt's Startup Tools, Babashka/Clojure
+  has NO code-mutation, CRAP or DRY tooling wired; the gate is its own unit
+  suite, here `swarmforge/scripts/test/master_main_reconcile_lib_test_runner.bb`
+  and `..._property_runner.bb`. Both already assert the CURRENT blanket-dirty
+  behaviour (`"reconcile-decision: behind, dirty tree -> dirty-blocked"`), so
+  they must be updated deliberately as part of this change, not worked
+  around.
+
+  **Acceptance is a `.feature.draft` on purpose**, following BL-891's own
+  precedent (`acceptance:` there points at
+  `BL-891-local-main-ref-reflects-landed-commit.feature.draft`). These
+  scenarios describe a Babashka daemon sweep the JS acceptance runner cannot
+  bind, so a live `.feature` would arm the runner against scenarios with no
+  possible step handler and hard-fail the hardener's gate (BL-233). The
+  executable gate is the Babashka unit suite named above.
+
+  **No `required_wiring:` deliberately.** The sweep is already wired —
+  `master-main-reconcile-sweep!` is called from `handoffd.bb:3163`. This
+  ticket changes a decision inside an existing call path and adds no new call
+  site, so any pattern an entry could carry would already match today and
+  pass vacuously. Per BL-874 an entry that cannot fail is worse than none.
+
+assigned_to: coder

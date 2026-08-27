@@ -1,0 +1,101 @@
+id: BL-465
+title: "Pipeline-board render round 2: wider descriptions (landscape), drop redundant PK, distinct parked/paused/intake/recently-closed sections, and a GitHub link list below the grid"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 1
+direction: human-requested
+depends_on: []
+source: "human (ldecorps) via the Operator front desk 2026-07-16 — INTAKE-operator-question-1784230021148, plus the specifier's clarifying answers (Q1 2026-07-16: links ride a list below the grid). Follow-on rendering refinements to the BL-452/455/462 board."
+
+description: |
+  Rendering refinements to the pipeline board, from the human's clarifications (he reads it mainly in
+  LANDSCAPE, so more horizontal width is acceptable):
+    1. Each ticket entry LEADS with a short kebab slug (2-3 words, derived from the ticket's backlog
+       filename slug, e.g. BL-467-pipeline-board-only-pin -> "pipeline-board-only-pin"). Two placements:
+         - In the aligned stage GRID: fill the dedicated SLUG column with the 2-3 word kebab slug.
+           Human's instruction 2026-07-16: "add the slug back to the pipeline board grid — there will be
+           room enough for 2 or 3 words." The grid carries the slug ONLY (no title): its width is spent
+           on the 8 stage columns, so there is no title column to widen.
+         - In the BELOW-GRID lists (parked / awaiting-approval / paused / root-intake / recently-closed):
+           the entry leads with the same kebab slug THEN fills the remaining landscape width with more of
+           the truncated title. Human's decision 2026-07-16 (Q: kebab slug vs truncated title -> "both:
+           slug + wider title"), refining the earlier "show more of the description" ask.
+       Exact kebab word-count and column width are build-time cosmetic details, not a promotion gate.
+    2. Drop the redundant per-line "PK" label in the parked list (the section header already says it is
+       parked); keep the awaiting-approval distinction by giving it its OWN "AWAITING APPROVAL:" section
+       (drop the per-line "AA" label too) — human's decision 2026-07-16.
+    3. Add the PAUSED backlog items and the ROOT-INTAKE items (raw backlog/ root asks) as their OWN
+       sections alongside the parked area.
+    4. Add a RECENTLY-CLOSED section.
+    5. Hyperlink each ticket id (grid rows + the parked/paused/intake sections + recently-closed) to its
+       backlog item on GitHub. Telegram does NOT render links inside a <pre> block (same platform wall
+       as BL-449's icon glyphs), so — the human's Q1 choice — the links ride a TAPPABLE LINK LIST BELOW
+       the grid, leaving the aligned monospace grid intact.
+
+  Scope (grep-confirm at build):
+    - extension/src/concierge/pipelineBoard.ts (render): widen the slug in the grid AND the below-grid
+      lists; drop the PK label; add distinct parked / paused / root-intake / recently-closed sections;
+      emit a below-grid link list keyed by ticket id. Keep the widened slug a single delimiter-safe line
+      (strip newlines — external-text-into-structured-output rule).
+    - extension/src/concierge/conciergeTick.ts (caller): supply the paused list, the root-intake list
+      (raw backlog/ root files), the recently-closed list, and the repo base URL. These are live
+      local/git data on the LIVE Telegram surface — read them in the tick from the backlog folders + git;
+      they are NOT limited to the git-SHA static PWA projection (local-engineering two-surface rule: the
+      board is the live holistic surface, so live/local data is fine here).
+    - GitHub URL: derive the base from the origin remote (git@github.com:ldecorps/swarmforgevc.git ->
+      https://github.com/ldecorps/swarmforgevc); link an active ticket to backlog/active/<file>, a paused
+      one to backlog/paused/<file>, a closed one to backlog/done/<file> (on a stable ref, e.g. main).
+
+  Constraints:
+    - INHERITED and unchanged: READ-ONLY board; edge-triggered on rendered content; deterministic
+      ordering; keep the renderer pure/testable, Telegram API + tmux the untested boundary.
+    - The aligned monospace grid must stay a <pre> block with NO links inside it — links only in the
+      below-grid list.
+    - Exact widened width, section headers, and link-line format are build-time cosmetic details, not a
+      promotion gate.
+
+  Sequencing: same board files as BL-462 / BL-464 — serialize after them; build on whatever board
+  scaffolding is on main at build time. Best sequenced AFTER BL-464 so the richer sections render over
+  the authoritative data source, but the render changes are otherwise independent.
+
+  E2E QA PROCEDURE: on the real Telegram board, assert grid rows and below-grid entries LEAD with a
+  short kebab slug and then show MORE title than before on a single line; assert the parked list no
+  longer repeats "PK" while awaiting-approval is
+  still distinguished; assert separate PAUSED, ROOT-INTAKE, and RECENTLY-CLOSED sections appear with the
+  right items; tap a link in the below-grid list and confirm it opens the ticket's backlog file on
+  GitHub (active/paused/done path correct); confirm the grid itself remains an aligned monospace block
+  with no inline links. Verify against the real surface, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-465-pipeline-board-render-round2.feature
+  steps:
+    - "The stage grid's slug column shows a short kebab slug (2-3 words)"
+    - "A below-grid list entry leads with the kebab slug then fills the remaining width with more of its title"
+    - "The parked list drops the redundant PK label"
+    - "The board lists parked, awaiting-approval, paused, root-intake, and recently-closed items in their own sections"
+    - "A tappable link list below the grid links each ticket id to its GitHub backlog item"
+    - "The aligned monospace grid is preserved"
+
+human_approval: >
+  Human-requested via the Operator front desk 2026-07-16 with a follow-up clarification round; links
+  ride a below-grid list per his Q1 choice (Telegram cannot render links inside the <pre> grid). Firm
+  contract: each ticket entry LEADS with a short 2-3 word kebab slug; in the aligned stage GRID the
+  slug fills the dedicated slug column and the grid carries the slug ONLY (human's instruction
+  2026-07-16: "add the slug back to the grid — room enough for 2 or 3 words"; the grid has no title
+  column to widen), while the BELOW-GRID lists lead with that slug then fill the remaining landscape
+  width with more of the truncated title (human's decision 2026-07-16: "both: slug + wider title").
+  No redundant PK label; distinct parked /
+  awaiting-approval / paused / root-intake / recently-closed sections (awaiting-approval is its OWN
+  section, no per-line "AA" label — human's decision 2026-07-16); a tappable GitHub link list below the
+  grid; aligned grid preserved. Build-time details NOT gating: exact width, headers, link-line format, and the precise
+  "recently-closed" window. Serialize on the board files after in-flight BL-462 and ideally after
+  BL-464 (authoritative data source). REFINED 2026-07-16 per the human's direct instruction ("add the
+  slug back to the pipeline board grid — room enough for 2 or 3 words"): grid = slug-only column,
+  below-grid lists = slug + wider title; feature file board-round2-01/01b re-split accordingly.
+  CONFIRMED as-specced by the human (ldecorps) directly 2026-07-16 (grid = slug-only, wider title in
+  the below-grid lists); no changes requested. Ready for promotion, serialized after BL-462/BL-464.
+
+mutation_cost: medium

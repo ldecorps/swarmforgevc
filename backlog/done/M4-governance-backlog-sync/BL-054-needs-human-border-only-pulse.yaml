@@ -1,7 +1,7 @@
 id: BL-054
 title: refine BL-045 — needs-human pulse on the tile border only, not the text
 milestone: M4
-status: todo
+status: done
 priority: 06
 assigned_to: coder
 

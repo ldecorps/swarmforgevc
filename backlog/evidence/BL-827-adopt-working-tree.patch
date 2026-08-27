@@ -1,0 +1,512 @@
+diff --git a/docs/reference/Specification.MD b/docs/reference/Specification.MD
+index fa9df0a9..b8d079e8 100644
+--- a/docs/reference/Specification.MD
++++ b/docs/reference/Specification.MD
+@@ -1048,17 +1048,18 @@ Flow watchdog alarms are **unsuppressable by design** — they go to Telegram (t
+ Configure the flow watchdog in `swarmforge.conf`:
+ 
+ ```
+-config flow_watchdog_warn_ms 900000           # alarm at 15 minutes (default)
+-config flow_watchdog_escalate_ms 3600000      # escalate at 1 hour (default)
++config flow_watchdog_warn_ms 900000           # global fallback warn at 15 minutes (default)
++config flow_watchdog_escalate_ms 3600000      # global fallback escalate at 1 hour (default)
+ ```
+ 
+-These are the **thresholds for alarm tiers**, not disables:
++These are the **global fallback thresholds**. Per-spec thresholds are resolved outside `decide-tier` from a calibrated percentile table (`.swarmforge/daemon/flow-watchdog-thresholds.json`), keyed by the alarm's own `(from→to, type)` identity:
+ 
+-- **Warn tier:** first alarm when age exceeds `flow_watchdog_warn_ms`
+-- **Escalate tier:** escalate to a higher-priority message when age exceeds `flow_watchdog_escalate_ms`
+-- **No suppression:** once a parcel reaches warn-tier age, one alarm fires; once it reaches escalate-tier age, one escalation fires. The same parcel never re-alarms between tiers, and dormancy of the holding role is never a reason to silence the alarm.
++- **Warn tier (≈ p67):** fires when age exceeds the 67th percentile of historical mailbox residence for that spec — roughly the slowest third of cases
++- **Escalate tier (≈ p97):** fires when age exceeds the 97th percentile — roughly the slowest 3%
++- **Fallback chain:** exact `from->to|type` → `*->to|type` → the global conf pair above (when a key lacks ≥8 samples). A coarser `*->*|type` row is recorded for observability but not consulted — mixing unrelated routes under one type would mis-calibrate dormant pipeline roles.
++- **No suppression:** once a parcel reaches its resolved warn-tier age, one alarm fires; once it reaches escalate-tier age, one escalation fires. The same parcel never re-alarms between tiers, and dormancy of the holding role is never a reason to silence the alarm. Spec dependence changes which numbers are fed into `decide-tier`, never whether the alarm may speak.
+ 
+-Malformed or absent config values fall back to the defaults above — the watchdog never disables itself.
++Malformed or absent config values fall back to the defaults above — the watchdog never disables itself. The percentile table is refreshed at most every 6 hours from each role's `completed/` and `abandoned/` audits.
+ 
+ ### Durable state and dedup
+ 
+diff --git a/swarmforge/scripts/flow_watchdog_lib.bb b/swarmforge/scripts/flow_watchdog_lib.bb
+index e321b2ff..716307c5 100644
+--- a/swarmforge/scripts/flow_watchdog_lib.bb
++++ b/swarmforge/scripts/flow_watchdog_lib.bb
+@@ -10,6 +10,12 @@
+ ;; worktree hot-sync touches files), and alarm on a durable, unsuppressable
+ ;; path once it crosses a warn/escalate threshold.
+ ;;
++;; Thresholds are SPEC-DEPENDENT (from→to|type): warn ≈ p67 and escalate ≈
++;; p97 of historical mailbox residence for that hop, falling through
++;; *->to|type then the global conf pair when samples are sparse. Resolution
++;; happens OUTSIDE decide-tier so the structural no-suppression guarantee
++;; below is preserved.
++;;
+ ;; Host: a handoffd sweep sibling (design decision, ticket option (a)) -
+ ;; handoffd already owns role enumeration (BL-128's mailbox-dir/
+ ;; load-all-roles), header parsing, and the durable Telegram OPERATOR-topic
+@@ -69,14 +75,127 @@
+   "The impure fs-reading half: reads the EFFECTIVE config (backlog-depth-lib's
+    own conf-file-path, so a --pack/SWARMFORGE_CONFIG override is honored the
+    same way active_backlog_max_depth already is) and parses both thresholds.
+-   An absent/unreadable config degrades to the defaults, never a crash."
++   An absent/unreadable config degrades to the defaults, never a crash.
++   These are the GLOBAL fallback pair; per-spec resolution (resolve-thresholds)
++   prefers a calibrated percentile table when one exists."
+   [project-root]
+   (let [conf-text (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+                        (catch Exception _ nil))]
+     {:warn-ms (parse-warn-ms conf-text)
+      :escalate-ms (parse-escalate-ms conf-text)}))
+ 
+-;; ── age (mirrors mono_router_lib's note-aged? precedence exactly) ──────────
++;; ── spec-dependent percentile thresholds (warn ≈ p67 / top 33%, escalate ≈ p97 / top 3%) ─
++;; Spec identity is the alarm's own (from→to, type) key. Threshold RESOLUTION
++;; happens here — outside decide-tier — so the structural no-suppression
++;; guarantee (acceptance-05) stays intact: decide-tier still never sees
++;; :from/:to/:type. Sparse specs fall through *->to|type → *->*|type → global.
++
++(def warn-percentile
++  "Warn catches roughly the slowest third of historical ages for a spec."
++  67)
++
++(def escalate-percentile
++  "Escalate catches roughly the slowest 3% of historical ages for a spec."
++  97)
++
++(def min-samples-for-calibration
++  "Fewer samples than this cannot support a meaningful percentile box —
++   fall through to a coarser key (or the global conf pair) instead of
++   treating noise as a threshold."
++  8)
++
++(def min-warn-ms
++  "Floor under a calibrated warn so sub-minute clock noise never fires."
++  60000)
++
++(defn spec-key
++  "Exact lookup key: \"from->to|type\". Blank parts become \"?\" so a missing
++   header never collides with a real role/type name."
++  [{:keys [from to type]}]
++  (str (or (not-empty from) "?") "->" (or (not-empty to) "?") "|" (or (not-empty type) "?")))
++
++(defn to-type-key
++  "Fallback keyed only by holding recipient + type: \"*->to|type\"."
++  [{:keys [to type]}]
++  (str "*->" (or (not-empty to) "?") "|" (or (not-empty type) "?")))
++
++(defn type-key
++  "Coarsest typed fallback: \"*->*|type\"."
++  [{:keys [type]}]
++  (str "*->*|" (or (not-empty type) "?")))
++
++(defn percentile-ms
++  "Pure: p-th percentile over a non-empty seq of durations (ms). Uses the
++   same ceil-rank rule as extension/src/metrics/stageDwell.ts so calibrator
++   and reporter agree. nil when samples are empty."
++  [samples-ms p]
++  (let [sorted (vec (sort samples-ms))
++        n (count sorted)]
++    (when (pos? n)
++      (let [idx (min (dec n) (max 0 (dec (long (Math/ceil (* (/ (double p) 100.0) n))))))]
++        (nth sorted idx)))))
++
++(defn thresholds-from-samples
++  "Pure: durations → {:warn-ms :escalate-ms :n} at the warn/escalate
++   percentiles, or nil when under min-samples-for-calibration. Escalation is
++   forced strictly above warn (a tiny/flat sample must not collapse the two
++   tiers into one fire)."
++  [samples-ms]
++  (let [n (count samples-ms)]
++    (when (>= n min-samples-for-calibration)
++      (let [warn-raw (or (percentile-ms samples-ms warn-percentile) 0)
++            esc-raw (or (percentile-ms samples-ms escalate-percentile) 0)
++            warn-ms (max min-warn-ms (long warn-raw))
++            escalate-ms (max (inc warn-ms) (long esc-raw))]
++        {:warn-ms warn-ms :escalate-ms escalate-ms :n n}))))
++
++(defn build-threshold-table
++  "Pure: seq of {:from :to :type :duration-ms} → a specs map keyed by
++   exact / to-type / type fallback strings. Only keys that clear the
++   min-sample gate are emitted."
++  [dwell-records]
++  (let [by-exact (group-by spec-key dwell-records)
++        by-to-type (group-by to-type-key dwell-records)
++        by-type (group-by type-key dwell-records)
++        entry (fn [source samples]
++                (when-let [t (thresholds-from-samples (map :duration-ms samples))]
++                  (assoc t :source source)))]
++    (into {}
++          (concat
++           (keep (fn [[k samples]]
++                   (when-let [e (entry "exact" samples)] [k e]))
++                 by-exact)
++           (keep (fn [[k samples]]
++                   (when-let [e (entry "to-type" samples)] [k e]))
++                 by-to-type)
++           (keep (fn [[k samples]]
++                   (when-let [e (entry "type" samples)] [k e]))
++                 by-type)))))
++
++(defn resolve-thresholds
++  "Pure: pick warn/escalate for one parcel. Prefers exact spec, then
++   *->to|type, then the global conf pair. (The coarser *->*|type row is
++   still written into the calibrated table for observability, but is NOT
++   consulted here — a type-level mix of QA→specifier hops and rotation
++   waits would mis-calibrate dormant pipeline roles.) Returns
++   {:warn-ms :escalate-ms :resolved-via} — resolved-via is the matched key
++   or \"global\". decide-tier never sees the route identity."
++  [{:keys [from to type]} specs-table global-thresholds]
++  (let [specs (or specs-table {})
++        candidates [(spec-key {:from from :to to :type type})
++                    (to-type-key {:to to :type type})]]
++    (or (some (fn [k]
++                (when-let [e (get specs k)]
++                  (when (and (number? (:warn-ms e)) (number? (:escalate-ms e))
++                             (pos? (:warn-ms e)) (pos? (:escalate-ms e))
++                             (> (:escalate-ms e) (:warn-ms e)))
++                    {:warn-ms (long (:warn-ms e))
++                     :escalate-ms (long (:escalate-ms e))
++                     :resolved-via k})))
++              candidates)
++        {:warn-ms (:warn-ms global-thresholds)
++         :escalate-ms (:escalate-ms global-thresholds)
++         :resolved-via "global"})))
+ 
+ (defn- parse-instant-ms
+   "Pure: an ISO-8601 instant string to epoch millis, or nil when absent,
+@@ -86,6 +205,36 @@
+     (some-> s str str/trim not-empty java.time.Instant/parse .toEpochMilli)
+     (catch Exception _ nil)))
+ 
++(defn dwell-record-from-headers
++  "Pure: one completed/abandoned handoff's headers → {:from :to :type
++   :duration-ms} or nil. Duration prefers completed_at − enqueued_at (full
++   mailbox residence), then dequeued_at − enqueued_at (queue wait only)."
++  [{:keys [from to type enqueued_at dequeued_at completed_at]}]
++  (let [enq (parse-instant-ms enqueued_at)
++        deq (parse-instant-ms dequeued_at)
++        comp (parse-instant-ms completed_at)
++        duration (cond
++                   (and enq comp (>= comp enq)) (- comp enq)
++                   (and enq deq (>= deq enq)) (- deq enq)
++                   :else nil)]
++    (when (and duration (not-empty type))
++      {:from from :to to :type type :duration-ms duration})))
++
++(defn calibrate-threshold-table
++  "Pure orchestration over already-parsed header maps: build the specs table
++   and wrap it with calibration metadata."
++  [header-maps now-ms]
++  (let [records (keep dwell-record-from-headers header-maps)
++        specs (build-threshold-table records)]
++    {:calibratedAt now-ms
++     :warnPercentile warn-percentile
++     :escalatePercentile escalate-percentile
++     :minSamples min-samples-for-calibration
++     :sampleCount (count records)
++     :specs specs}))
++
++;; ── age (mirrors mono_router_lib's note-aged? precedence exactly) ──────────
++
+ (defn parcel-age-ms
+   "Age source is the first PARSEABLE of enqueued_at, then created_at -
+    enqueued_at leads because it answers 'how long has this sat in THIS
+@@ -151,6 +300,58 @@
+ (defn- read-json [path]
+   (try (json/parse-string (slurp path) true) (catch Exception _ nil)))
+ 
++(defn thresholds-file-path [daemon-dir]
++  (str (fs/path daemon-dir "flow-watchdog-thresholds.json")))
++
++(defn read-threshold-table
++  "Durable calibrated specs map, or {} when absent/malformed — never a crash.
++   Shape: {:calibratedAt :specs {\"from->to|type\" {:warn-ms :escalate-ms :n :source}}}.
++   Spec keys are normalised to strings on read (cheshire keywordizes JSON
++   object keys, which would break string lookup in resolve-thresholds)."
++  [daemon-dir]
++  (let [raw (or (read-json (thresholds-file-path daemon-dir)) {})
++        specs (or (:specs raw) {})]
++    (assoc raw :specs
++           (into {}
++                 (map (fn [[k v]]
++                        [(if (keyword? k) (name k) (str k))
++                         (if (map? v)
++                           (into {} (map (fn [[kk vv]] [(keyword (name kk)) vv]) v))
++                           v)])
++                      specs)))))
++
++(defn write-threshold-table! [daemon-dir table]
++  (fs/create-dirs daemon-dir)
++  (spit (thresholds-file-path daemon-dir) (json/generate-string table)))
++
++(def threshold-recalibration-ms
++  "Re-read completed audits and rewrite the percentile table at most this
++   often — calibration walks every completed/abandoned handoff and must not
++   run on every chase-cadence sweep."
++  (* 6 60 60 1000))
++
++(defn threshold-table-stale?
++  "True when the durable table is missing, untimestamped, or older than
++   threshold-recalibration-ms."
++  [table now-ms]
++  (let [at (:calibratedAt table)]
++    (or (nil? at)
++        (not (number? at))
++        (>= (- now-ms (long at)) threshold-recalibration-ms))))
++
++(defn calibration-headers-from-file
++  "Impure: one handoff file → header map for dwell-record-from-headers, or
++   nil when unreadable."
++  [file-path]
++  (try
++    {:from (handoff-lib/header-field file-path "from")
++     :to (handoff-lib/header-field file-path "to")
++     :type (handoff-lib/header-field file-path "type")
++     :enqueued_at (handoff-lib/header-field file-path "enqueued_at")
++     :dequeued_at (handoff-lib/header-field file-path "dequeued_at")
++     :completed_at (handoff-lib/header-field file-path "completed_at")}
++    (catch Exception _ nil)))
++
+ (defn read-state
+   "Keyed by parcel id -> {:tier :alarmedAt :snoozed}. Absent/malformed file
+    degrades to {} - never a crash."
+@@ -217,6 +418,31 @@
+ (defn scan-mailbox-dir [dir]
+   (vec (map parcel-record (list-handoff-files dir))))
+ 
++(defn collect-calibration-headers
++  "Impure: every .handoff under the given dirs (completed/abandoned, incl.
++   batch_*), as header maps. Absent dirs contribute nothing."
++  [dirs]
++  (vec (keep calibration-headers-from-file
++             (mapcat list-handoff-files (remove nil? dirs)))))
++
++(defn ensure-threshold-table!
++  "Refresh the durable percentile table when stale. dirs: completed/abandoned
++   mailbox paths across roles. Returns the (possibly freshly written) table.
++   A calibration failure leaves the prior table in place — never disables
++   the watchdog."
++  [daemon-dir dirs now-ms]
++  (let [current (read-threshold-table daemon-dir)]
++    (if-not (threshold-table-stale? current now-ms)
++      current
++      (try
++        (let [fresh (calibrate-threshold-table
++                     (collect-calibration-headers dirs)
++                     now-ms)]
++          (write-threshold-table! daemon-dir fresh)
++          fresh)
++        (catch Exception _
++          current)))))
++
+ ;; ── humanized age + alarm text ───────────────────────────────────────────────
+ 
+ (defn humanize-age-ms
+@@ -261,11 +487,14 @@
+ ;; run-sweep!'s docstring for why the return value gates durable state.
+ 
+ (defn run-sweep!
+-  "role-inboxes: seq of {:role :new-dir :in-process-dir}. Reads the effective
+-   config thresholds, scans every role's new/in_process mailboxes, alarms
+-   (via adapters' :emit-alarm!) on every parcel whose tier just changed, and
+-   persists the updated durable state - including pruning entries for
+-   parcels that have progressed out of new/in_process entirely.
++  "role-inboxes: seq of {:role :new-dir :in-process-dir optional :completed-dir
++   :abandoned-dir}. Reads the effective GLOBAL config thresholds as fallback,
++   refreshes the per-spec percentile table when stale (warn≈p67 / escalate≈p97
++   of historical mailbox residence per from→to|type), resolves warn/escalate
++   PER PARCEL outside decide-tier, scans every role's new/in_process
++   mailboxes, alarms (via adapters' :emit-alarm!) on every parcel whose tier
++   just changed, and persists the updated durable state - including pruning
++   entries for parcels that have progressed out of new/in_process entirely.
+ 
+    Alarm-recorded-on-CONFIRMED-write only (BL-577 bounce fix): a parcel's
+    tier/alarmedAt is written to durable state ONLY when :emit-alarm! itself
+@@ -277,7 +506,10 @@
+    confirmation would let one failed write permanently suppress a real
+    flow-stall, defeating the ticket's unsuppressable-by-design invariant."
+   [role-inboxes now-ms project-root daemon-dir adapters]
+-  (let [{:keys [warn-ms escalate-ms]} (read-thresholds project-root)
++  (let [global (read-thresholds project-root)
++        calib-dirs (mapcat (fn [row] [(:completed-dir row) (:abandoned-dir row)]) role-inboxes)
++        table (ensure-threshold-table! daemon-dir calib-dirs now-ms)
++        specs (:specs table {})
+         state (read-state daemon-dir)
+         parcels (vec (mapcat
+                       (fn [{:keys [role new-dir in-process-dir]}]
+@@ -295,6 +527,7 @@
+              (let [age-ms (parcel-age-ms {:enqueued-at (:enqueued-at parcel)
+                                            :created-at (:created-at parcel)
+                                            :now-ms now-ms})
++                   {:keys [warn-ms escalate-ms]} (resolve-thresholds parcel specs global)
+                    tier (evaluate-parcel-tier age-ms warn-ms escalate-ms acc-state (:id parcel))]
+                (if (= tier :none)
+                  acc-state
+diff --git a/swarmforge/scripts/handoffd.bb b/swarmforge/scripts/handoffd.bb
+index 006585bd..cd28e8f6 100755
+--- a/swarmforge/scripts/handoffd.bb
++++ b/swarmforge/scripts/handoffd.bb
+@@ -1647,7 +1647,9 @@
+   (vec (for [[role role-info] roles]
+          {:role role
+           :new-dir (handoff-lib/mailbox-dir role-info :new)
+-          :in-process-dir (handoff-lib/mailbox-dir role-info :in_process)})))
++          :in-process-dir (handoff-lib/mailbox-dir role-info :in_process)
++          :completed-dir (handoff-lib/mailbox-dir role-info :completed)
++          :abandoned-dir (handoff-lib/mailbox-dir role-info :abandoned)})))
+ 
+ (defn flow-watchdog-live-session? [roles socket role]
+   (boolean
+diff --git a/swarmforge/scripts/test/flow_watchdog_test_runner.bb b/swarmforge/scripts/test/flow_watchdog_test_runner.bb
+index 27df8c1e..75b120aa 100755
+--- a/swarmforge/scripts/test/flow_watchdog_test_runner.bb
++++ b/swarmforge/scripts/test/flow_watchdog_test_runner.bb
+@@ -575,6 +575,120 @@
+            2
+            (count @alarms)))
+ 
++;; ── spec-dependent percentile thresholds (warn≈p67 / escalate≈p97) ─────────
++
++(assert= "spec-key encodes from->to|type"
++         "cleaner->architect|git_handoff"
++         (flow-watchdog-lib/spec-key {:from "cleaner" :to "architect" :type "git_handoff"}))
++
++(assert= "to-type-key wildcards the sender"
++         "*->architect|git_handoff"
++         (flow-watchdog-lib/to-type-key {:to "architect" :type "git_handoff"}))
++
++(assert= "type-key wildcards both ends"
++         "*->*|git_handoff"
++         (flow-watchdog-lib/type-key {:type "git_handoff"}))
++
++;; 10 samples [10..100]: ceil-rank p67 → index 6 → 70; p97 → index 9 → 100.
++(assert= "percentile-ms p67 over 10 evenly spaced samples"
++         70
++         (flow-watchdog-lib/percentile-ms (range 10 110 10) 67))
++
++(assert= "percentile-ms p97 over 10 evenly spaced samples"
++         100
++         (flow-watchdog-lib/percentile-ms (range 10 110 10) 97))
++
++(assert= "thresholds-from-samples returns nil under the min-sample gate"
++         nil
++         (flow-watchdog-lib/thresholds-from-samples (range 7)))
++
++(let [t (flow-watchdog-lib/thresholds-from-samples
++         ;; Eight 1-minute samples and two long ones → p67 near 1m (floored),
++         ;; p97 near the long tail.
++         (concat (repeat 8 (* 60 1000)) [(* 30 60 1000) (* 60 60 1000)]))]
++  (assert= "thresholds-from-samples warn is at least the 1-minute floor"
++           true
++           (>= (:warn-ms t) flow-watchdog-lib/min-warn-ms))
++  (assert= "thresholds-from-samples escalate is strictly above warn"
++           true
++           (> (:escalate-ms t) (:warn-ms t)))
++  (assert= "thresholds-from-samples records sample count"
++           10
++           (:n t)))
++
++(let [global {:warn-ms 900000 :escalate-ms 3600000}
++      specs {"cleaner->architect|git_handoff" {:warn-ms 1200000 :escalate-ms 7200000 :n 20 :source "exact"}
++             "*->architect|git_handoff" {:warn-ms 1000000 :escalate-ms 6000000 :n 40 :source "to-type"}
++             "*->*|git_handoff" {:warn-ms 800000 :escalate-ms 5000000 :n 80 :source "type"}}]
++  (assert= "resolve-thresholds prefers the exact from->to|type key"
++           {:warn-ms 1200000 :escalate-ms 7200000 :resolved-via "cleaner->architect|git_handoff"}
++           (flow-watchdog-lib/resolve-thresholds
++            {:from "cleaner" :to "architect" :type "git_handoff"} specs global))
++  (assert= "resolve-thresholds falls back to *->to|type when exact is missing"
++           {:warn-ms 1000000 :escalate-ms 6000000 :resolved-via "*->architect|git_handoff"}
++           (flow-watchdog-lib/resolve-thresholds
++            {:from "coder" :to "architect" :type "git_handoff"} specs global))
++  (assert= "resolve-thresholds skips *->*|type and uses global when exact/to-type miss"
++           {:warn-ms 900000 :escalate-ms 3600000 :resolved-via "global"}
++           (flow-watchdog-lib/resolve-thresholds
++            {:from "coder" :to "hardender" :type "git_handoff"}
++            (dissoc specs "*->architect|git_handoff") global))
++  (assert= "resolve-thresholds falls back to the global conf pair when no spec matches"
++           {:warn-ms 900000 :escalate-ms 3600000 :resolved-via "global"}
++           (flow-watchdog-lib/resolve-thresholds
++            {:from "a" :to "b" :type "note"} {} global)))
++
++(let [headers (map (fn [i]
++                     {:from "cleaner" :to "architect" :type "git_handoff"
++                      :enqueued_at "2026-08-01T00:00:00Z"
++                      :completed_at (str "2026-08-01T00:" (format "%02d" (+ 10 i)) ":00Z")})
++                   (range 10))
++      table (flow-watchdog-lib/calibrate-threshold-table headers 12345)
++      exact (get-in table [:specs "cleaner->architect|git_handoff"])]
++  (assert= "calibrate-threshold-table stamps calibratedAt"
++           12345
++           (:calibratedAt table))
++  (assert= "calibrate-threshold-table emits an exact-spec entry once sample gate clears"
++           true
++           (boolean exact))
++  (assert= "calibrate-threshold-table also emits to-type and type fallbacks"
++           true
++           (boolean (and (get-in table [:specs "*->architect|git_handoff"])
++                         (get-in table [:specs "*->*|git_handoff"])))))
++
++;; End-to-end: a calibrated warn ABOVE the parcel's age suppresses the alarm
++;; that the flat global 60s warn would have fired — proving resolution is
++;; per-spec, not a mute inside decide-tier.
++(let [root (mk-sweep-fixture!)
++      daemon-dir (fs/path root ".swarmforge" "daemon")
++      new-dir (fs/path root "architect" "inbox" "new")
++      completed-dir (fs/path root "architect" "inbox" "completed")
++      now-ms (* 1784900000 1000)
++      alarms (atom [])
++      ;; Seed 10 completed hops whose residence is ~30 minutes → calibrated
++      ;; warn well above the 90s live parcel age.
++      _ (doseq [i (range 10)]
++          (write-handoff! (str (fs/path completed-dir (str "hist" i ".handoff")))
++                           [["id" (str "hist" i)] ["from" "cleaner"] ["to" "architect"]
++                            ["type" "git_handoff"]
++                            ["enqueued_at" "2026-08-01T00:00:00Z"]
++                            ["completed_at" (str "2026-08-01T00:30:" (format "%02d" i) "Z")]]))]
++  (write-handoff! (str (fs/path new-dir "live.handoff"))
++                   [["id" "live"] ["from" "cleaner"] ["to" "architect"] ["type" "git_handoff"]
++                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
++  (flow-watchdog-lib/run-sweep!
++   [{:role "architect" :new-dir new-dir
++     :in-process-dir (fs/path root "architect" "inbox" "in_process")
++     :completed-dir completed-dir}]
++   now-ms (str root) daemon-dir
++   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
++  (assert= "spec-dependent warn (≈p67 of ~30m history) does not fire on a 90s parcel that global 60s would catch"
++           0
++           (count @alarms))
++  (assert= "decide-tier still has no from/to/type keys after the spec-dependent change"
++           #{:age-ms :warn-ms :escalate-ms :highest-tier-alarmed :snoozed?}
++           flow-watchdog-lib/tier-decision-input-keys))
++
+ ;; ── report ────────────────────────────────────────────────────────────────
+ (if (seq @failures)
+   (do
+diff --git a/swarmforge/swarmforge.conf b/swarmforge/swarmforge.conf
+index 42fec039..1d599e01 100644
+--- a/swarmforge/swarmforge.conf
++++ b/swarmforge/swarmforge.conf
+@@ -110,12 +110,16 @@ config recert_email_to recert@tolokarooo.resend.app
+ # threshold, measured from its own enqueued_at/created_at header (never file
+ # mtime). Unlike liveness-based self-heal, this catches a stall even while
+ # every liveness signal reads green. flow_watchdog_warn_ms/
+-# flow_watchdog_escalate_ms are the two escalation tiers (re-alarm only on a
+-# tier change, never a repeat within the same tier); the alarm itself lands
+-# in the durable Telegram OPERATOR-topic outbox
+-# (.swarmforge/operator/telegram-reply-outbox.jsonl), the same path the
+-# endless-loop and claim-progress halts already use. Absent, malformed,
+-# zero, and negative all degrade to the defaults below —
++# flow_watchdog_escalate_ms are the GLOBAL fallback pair (re-alarm only on a
++# tier change, never a repeat within the same tier). Per-spec thresholds are
++# resolved outside decide-tier from a calibrated percentile table
++# (.swarmforge/daemon/flow-watchdog-thresholds.json): warn ≈ p67 (slowest
++# ~33% of historical ages for that from→to|type), escalate ≈ p97 (slowest
++# ~3%), falling through *->to|type → these globals when a spec lacks enough
++# samples. The alarm itself lands in the durable Telegram
++# OPERATOR-topic outbox (.swarmforge/operator/telegram-reply-outbox.jsonl),
++# the same path the endless-loop and claim-progress halts already use.
++# Absent, malformed, zero, and negative all degrade to the defaults below —
+ # flow-watchdog-lib/default-warn-ms and default-escalate-ms are the single
+ # source of truth for those literals, so they are not duplicated here.
+ # config flow_watchdog_warn_ms 900000

@@ -1,0 +1,196 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const {
+  parseReviewVerdict,
+  reviewPrompt,
+  rolePromptPath,
+  pipelineReviewForceResultFromEnv,
+  createPipelineReviewOracle,
+  runReviewChain,
+} = require('../out/benchmark/pipelineReviewOracle');
+
+// ── parseReviewVerdict (pure) ───────────────────────────────────────────
+
+test('parseReviewVerdict reads ACCEPT from a real CLI JSON result', () => {
+  const stdout = JSON.stringify({ is_error: false, result: 'Looks good.\nPIPELINE_ORACLE_VERDICT: ACCEPT' });
+  assert.equal(parseReviewVerdict(stdout), 'ACCEPT');
+});
+
+test('parseReviewVerdict reads REVISED when the role fixed something', () => {
+  const stdout = JSON.stringify({ is_error: false, result: 'Fixed a naming issue.\nPIPELINE_ORACLE_VERDICT: REVISED' });
+  assert.equal(parseReviewVerdict(stdout), 'REVISED');
+});
+
+test('parseReviewVerdict reads REJECT when the role names a blocking issue', () => {
+  const stdout = JSON.stringify({ is_error: false, result: 'Breaks the build.\nPIPELINE_ORACLE_VERDICT: REJECT' });
+  assert.equal(parseReviewVerdict(stdout), 'REJECT');
+});
+
+test('parseReviewVerdict treats a CLI-level is_error as REJECT, never a silent ACCEPT', () => {
+  const stdout = JSON.stringify({ is_error: true, result: 'PIPELINE_ORACLE_VERDICT: ACCEPT' });
+  assert.equal(parseReviewVerdict(stdout), 'REJECT');
+});
+
+test('parseReviewVerdict treats a missing verdict marker as REJECT', () => {
+  const stdout = JSON.stringify({ is_error: false, result: 'I looked at it but forgot to conclude.' });
+  assert.equal(parseReviewVerdict(stdout), 'REJECT');
+});
+
+test('parseReviewVerdict treats unparseable JSON as REJECT rather than throwing', () => {
+  assert.equal(parseReviewVerdict('not json at all'), 'REJECT');
+});
+
+test('parseReviewVerdict treats an empty result field as REJECT', () => {
+  const stdout = JSON.stringify({ is_error: false });
+  assert.equal(parseReviewVerdict(stdout), 'REJECT');
+});
+
+// ── reviewPrompt (pure) ──────────────────────────────────────────────────
+
+test('reviewPrompt embeds the role prompt text, the task id, the stage name, and every verdict option', () => {
+  const prompt = reviewPrompt('architect', 'You are the architect...', { id: 'coder-task-01' });
+  assert.match(prompt, /You are the architect\.\.\./);
+  assert.match(prompt, /coder-task-01/);
+  assert.match(prompt, /as the architect role/);
+  assert.match(prompt, /PIPELINE_ORACLE_VERDICT: ACCEPT/);
+  assert.match(prompt, /PIPELINE_ORACLE_VERDICT: REVISED/);
+  assert.match(prompt, /PIPELINE_ORACLE_VERDICT: REJECT/);
+});
+
+// Pins the FULL prompt content, not spot-check regexes above - the
+// instructional lines between the role prompt and the verdict markers are
+// what the reviewing LLM actually reads to know what to do; a silently
+// emptied or garbled instruction (or lines silently concatenated without
+// their newline separators) would degrade real review quality with no
+// signal any code path could ever catch, since this text is consumed by
+// an LLM, never parsed by this codebase.
+test('reviewPrompt produces the exact newline-joined prompt content', () => {
+  const prompt = reviewPrompt('QA', 'ROLE PROMPT TEXT', { id: 'task-x' });
+  assert.equal(
+    prompt,
+    [
+      'ROLE PROMPT TEXT',
+      '',
+      'You are reviewing a candidate diff for benchmark task "task-x" as the QA role above.',
+      'The diff is already applied to the files in your current working directory.',
+      'If it needs no changes from your perspective, make no edits.',
+      'If it has fixable issues, fix them directly in the working tree now.',
+      'If it has a blocking issue you cannot fix, make no edits and explain why.',
+      'End your final message with exactly one line, nothing after it:',
+      'PIPELINE_ORACLE_VERDICT: ACCEPT   (nothing needed changing)',
+      'PIPELINE_ORACLE_VERDICT: REVISED  (you fixed something)',
+      'PIPELINE_ORACLE_VERDICT: REJECT   (blocking issue, unfixable by you)',
+    ].join('\n')
+  );
+});
+
+// ── rolePromptPath (pure) ────────────────────────────────────────────────
+
+test('rolePromptPath resolves under <repoRoot>/swarmforge/roles/<stage>.prompt', () => {
+  assert.equal(rolePromptPath('/some/repo', 'hardender'), path.join('/some/repo', 'swarmforge', 'roles', 'hardender.prompt'));
+});
+
+// ── runReviewChain (pure orchestration - stop-on-REJECT, bounce
+//    accumulation across stages - driven with scripted verdicts, no
+//    subprocess) ────────────────────────────────────────────────────────
+
+test('runReviewChain: every stage ACCEPT survives with zero bounces, and every stage is invoked', async () => {
+  const invoked = [];
+  const result = await runReviewChain(['cleaner', 'architect'], async (stage) => {
+    invoked.push(stage);
+    return 'ACCEPT';
+  });
+  assert.deepEqual(result, { survived: true, bounces: 0 });
+  assert.deepEqual(invoked, ['cleaner', 'architect']);
+});
+
+test('runReviewChain: a REVISED stage counts one round of rework and the chain continues', async () => {
+  const result = await runReviewChain(['cleaner', 'architect'], async (stage) =>
+    stage === 'cleaner' ? 'REVISED' : 'ACCEPT'
+  );
+  assert.deepEqual(result, { survived: true, bounces: 1 });
+});
+
+test('runReviewChain: multiple REVISED stages accumulate bounces across the whole chain', async () => {
+  const result = await runReviewChain(['cleaner', 'architect', 'hardender', 'QA'], async () => 'REVISED');
+  assert.deepEqual(result, { survived: true, bounces: 4 });
+});
+
+test('runReviewChain: a REJECT stops the chain immediately - later stages are never invoked', async () => {
+  const invoked = [];
+  const result = await runReviewChain(['cleaner', 'architect', 'hardender', 'QA'], async (stage) => {
+    invoked.push(stage);
+    return stage === 'architect' ? 'REJECT' : 'ACCEPT';
+  });
+  assert.deepEqual(result, { survived: false, bounces: 0 });
+  assert.deepEqual(invoked, ['cleaner', 'architect']);
+});
+
+test('runReviewChain: a REJECT preserves the rework count accumulated before it', async () => {
+  const result = await runReviewChain(['cleaner', 'architect', 'hardender'], async (stage) => {
+    if (stage === 'cleaner') return 'REVISED';
+    if (stage === 'architect') return 'REVISED';
+    return 'REJECT';
+  });
+  assert.deepEqual(result, { survived: false, bounces: 2 });
+});
+
+// ── pipelineReviewForceResultFromEnv / createPipelineReviewOracle's own
+//    E2E test seam - no real `claude` subprocess is ever spawned under it ──
+
+const ENV_KEY = 'RUN_ROLE_BENCHMARK_ORACLE_FORCE_RESULT';
+
+function withEnv(key, value, fn) {
+  const previous = process.env[key];
+  try {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+    return fn();
+  } finally {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  }
+}
+
+test('pipelineReviewForceResultFromEnv returns null when the env var is unset', () => {
+  withEnv(ENV_KEY, undefined, () => {
+    assert.equal(pipelineReviewForceResultFromEnv(), null);
+  });
+});
+
+test('pipelineReviewForceResultFromEnv parses the forced result when set', () => {
+  withEnv(ENV_KEY, JSON.stringify({ survived: false, bounces: 3 }), () => {
+    assert.deepEqual(pipelineReviewForceResultFromEnv(), { survived: false, bounces: 3 });
+  });
+});
+
+test('createPipelineReviewOracle short-circuits to the forced result and never spawns a real subprocess', async () => {
+  const oracle = createPipelineReviewOracle('/does/not/exist/as/a/repo', 'sonnet');
+  const result = await withEnv(ENV_KEY, JSON.stringify({ survived: true, bounces: 1 }), () =>
+    oracle.review('/does/not/exist/as/a/diff/dir', { id: 'task-x' })
+  );
+  // A real invocation would fail loudly (role prompt files under a
+  // nonexistent repo root, no real `claude` binary guaranteed in CI) - the
+  // forced result short-circuiting BEFORE any of that proves the seam
+  // genuinely bypasses the real path, not merely that the real path
+  // happens to also produce this value.
+  assert.deepEqual(result, { survived: true, bounces: 1 });
+});
+
+// ── BL-387 QA bounce: a setup failure (missing/unreadable role-prompt
+//    file) must degrade to REJECT exactly like a bad CLI response does,
+//    never propagate as an uncaught exception - drives the REAL
+//    createPipelineReviewOracle closure (no FORCE_RESULT short-circuit,
+//    no scripted runReviewChain verdicts) against a repo root that has NO
+//    swarmforge/roles/*.prompt files at all, mirroring QA's own repro. ──
+
+test('createPipelineReviewOracle degrades to survived:false rather than throwing when a role-prompt file is missing', async () => {
+  const repoRootWithNoRolePrompts = mkTmpDir('sfvc-oracle-no-roles-');
+  const diffDir = mkTmpDir('sfvc-oracle-diffdir-');
+  const oracle = createPipelineReviewOracle(repoRootWithNoRolePrompts, 'sonnet');
+
+  const result = await withEnv(ENV_KEY, undefined, () => oracle.review(diffDir, { id: 'task-x' }));
+
+  assert.deepEqual(result, { survived: false, bounces: 0 }, `expected a degraded REJECT result, not a thrown exception, got: ${JSON.stringify(result)}`);
+});

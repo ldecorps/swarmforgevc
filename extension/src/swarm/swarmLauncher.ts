@@ -1,23 +1,66 @@
 // pipeline smoke test BL-029
 import * as cp from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import type { SecretStorage } from 'vscode';
 import {
   listTmuxSessions,
+  readLiveSwarmRoles,
   readSwarmRoles,
   readTmuxSocket,
   sessionExists,
+  SwarmRole,
+  getPaneBaseIndex,
+  resolveAgentPaneTarget,
+  getPanePid,
+  hasLivePaneChild,
 } from './tmuxClient';
-import { clearStaleSwarmState } from './swarmStopper';
+import { stopSwarm } from './swarmStopper';
 import { spawnTrackedJob } from './childJobRegistry';
+import { classifyProviderError, ForgeErrorCategory } from './providerErrorTaxonomy';
+import { loadSwarmEnvFile } from '../tools/swarmEnv';
 
 export interface LaunchResult {
   success: boolean;
   message: string;
   targetPath: string;
+  // BL-207: the stable Forge error category message's raw detail
+  // classifies to - never set on success. Orchestration/UI can branch on
+  // this instead of parsing message text.
+  category?: ForgeErrorCategory;
 }
 
 const SWARM_LAUNCH_SUCCESS_MESSAGE = 'Swarm launched successfully.';
+
+// BL-212: the only piece of launchSwarm that touches a real subprocess -
+// structurally a subset of cp.ChildProcess (a real spawn result satisfies
+// this automatically), narrow enough that a test double can satisfy it
+// without faking the whole Node ChildProcess API. Same injectable-seam
+// pattern as ShellRunFn/spawnAndCaptureShellOutput below.
+export interface SwarmLaunchChild {
+  pid?: number;
+  stdout: { on(event: 'data', listener: (chunk: Buffer) => void): unknown } | null;
+  stderr: { on(event: 'data', listener: (chunk: Buffer) => void): unknown } | null;
+  on(event: 'error', listener: (err: Error) => void): unknown;
+  on(event: 'close', listener: (code: number | null) => void): unknown;
+  on(event: 'exit', listener: () => void): unknown;
+}
+
+export type SwarmSpawnFn = (
+  swarmScript: string,
+  targetPath: string,
+  launchEnv: NodeJS.ProcessEnv
+) => SwarmLaunchChild;
+
+function defaultSwarmSpawn(swarmScript: string, targetPath: string, launchEnv: NodeJS.ProcessEnv): SwarmLaunchChild {
+  return cp.spawn(swarmScript, [targetPath], {
+    cwd: targetPath,
+    env: launchEnv,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
+}
 
 // BL-058: launch failures used to surface only as ephemeral toasts, so a
 // failed launch left nothing to diagnose. Every attempt persists the spawned
@@ -27,6 +70,7 @@ const LAUNCH_LOG_SUBPATH = path.join('.swarmforge', 'last-launch.log');
 interface LaunchAttemptRecord {
   runName?: string;
   swarmScript: string;
+  configPath?: string;
   success: boolean;
   message: string;
   stdout: string;
@@ -42,6 +86,7 @@ function persistLaunchLog(targetPath: string, record: LaunchAttemptRecord): void
         `SwarmForge launch attempt ${new Date().toISOString()}`,
         `script: ${record.swarmScript}`,
         `runName: ${record.runName ?? '(none)'}`,
+        `config: ${record.configPath ?? '(default)'}`,
         `success: ${record.success}`,
         `message: ${record.message}`,
         '--- stdout ---',
@@ -56,7 +101,30 @@ function persistLaunchLog(targetPath: string, record: LaunchAttemptRecord): void
   }
 }
 
-export function isSwarmReady(targetPath: string): boolean {
+// BL-423: the actual-bootstrap check reusing isSwarmReady's own
+// window-exists chain (getPaneBaseIndex -> resolveAgentPaneTarget ->
+// getPanePid, the exact discovery resourceSamplerActivation.ts's
+// resolvePanePid already uses) plus hasLivePaneChild's "any live child at
+// all" signal - agent-agnostic, so it doesn't need to know claude/aider/
+// copilot's own process name.
+export function defaultRoleBootstrapped(socketPath: string, role: SwarmRole): boolean {
+  const target = resolveAgentPaneTarget(socketPath, role.session, getPaneBaseIndex(socketPath));
+  return hasLivePaneChild(getPanePid(socketPath, target));
+}
+
+// checkRoleBootstrapped is OPTIONAL and undefined by default - isSwarmReady's
+// own pre-BL-423 contract (window/session existence only) is preserved
+// unchanged for every existing caller (launchSwarm's polling loop,
+// waitForSwarmReady, swarmOrchestrator.ts) so none of them slow down or
+// risk a false "not ready" from a slow-to-fork agent process during an
+// ordinary launch's own settle window. Only a caller that explicitly wants
+// the stronger "agents actually bootstrapped" guarantee (BL-423's own
+// restart-verification step, reusing this SAME function rather than a
+// parallel readiness mechanism) passes defaultRoleBootstrapped above.
+export function isSwarmReady(
+  targetPath: string,
+  checkRoleBootstrapped?: (socketPath: string, role: SwarmRole) => boolean
+): boolean {
   const socket = readTmuxSocket(targetPath);
   if (!socket) {
     return false;
@@ -71,25 +139,278 @@ export function isSwarmReady(targetPath: string): boolean {
     return false;
   }
 
-  return roles.every((role) => sessionExists(socket, role.session));
+  // Classic packs: every sessions.tsv row has a standing pane.
+  const classicReady = roles.every(
+    (role) => sessionExists(socket, role.session) && (!checkRoleBootstrapped || checkRoleBootstrapped(socket, role))
+  );
+  if (classicReady) {
+    return true;
+  }
+
+  // Mono-router (config rotation router): dormant roles stay in sessions.tsv
+  // but only the resident + coordinator panes exist. Attach when both are up
+  // so the live feed is not stuck dark forever. Optional bootstrap check
+  // (BL-423) still applies to the live roles only.
+  const live = readLiveSwarmRoles(targetPath);
+  const hasCoordinator = live.some((role) => role.role === 'coordinator');
+  const hasResident = live.some((role) => role.role !== 'coordinator');
+  if (!(hasCoordinator && hasResident)) {
+    return false;
+  }
+  if (!checkRoleBootstrapped) {
+    return true;
+  }
+  return live.every((role) => checkRoleBootstrapped(socket, role));
 }
 
-// Dirs where tmux, bb (babashka), and claude are commonly installed. A
-// Dock/Finder-launched VS Code inherits a minimal PATH without these, so the
+// Dirs where tmux, bb (babashka), claude, and aider are commonly installed.
+// A Dock/Finder-launched VS Code inherits a minimal PATH without these, so the
 // spawned ./swarm cannot find its tools and the launch silently fails.
-const COMMON_TOOL_PATHS = ['/opt/homebrew/bin', '/usr/local/bin'];
+const COMMON_TOOL_PATHS = [
+  '/opt/homebrew/bin',
+  '/usr/local/bin',
+  path.join(os.homedir(), '.local', 'bin'),
+];
 
-export function augmentPath(currentPath: string | undefined): string {
+function pythonUserBinDirs(): string[] {
+  const base = path.join(os.homedir(), 'Library', 'Python');
+  try {
+    return fs
+      .readdirSync(base)
+      .map((version) => path.join(base, version, 'bin'))
+      .filter((dir) => fs.existsSync(dir));
+  } catch {
+    return [];
+  }
+}
+
+// BL-116: probedDirs (from the user's login shell, see below) are merged in
+// ahead of the hardcoded common-tool list, which stays as the fallback -
+// this parameter defaults to [] so every existing call site/test is
+// unaffected until something actually supplies a probe result.
+export function augmentPath(currentPath: string | undefined, probedDirs: string[] = []): string {
+  const toolPaths = [...probedDirs, ...COMMON_TOOL_PATHS, ...pythonUserBinDirs()];
   const existing = (currentPath ?? '').split(':').filter((p) => p.length > 0);
-  const missing = COMMON_TOOL_PATHS.filter((dir) => !existing.includes(dir));
+  const missing = toolPaths.filter((dir) => !existing.includes(dir));
   return [...missing, ...existing].join(':');
 }
 
-export function buildLaunchEnv(runName?: string): NodeJS.ProcessEnv {
+// BL-116: COMMON_TOOL_PATHS above hardcodes macOS dirs (Homebrew, ~/.local/bin
+// covers some Linux cases but not linuxbrew or a custom shell profile's own
+// PATH exports). A desktop-launched VS Code inherits a minimal PATH
+// regardless of platform, so the spawned ./swarm can't find tmux/bb/claude.
+// Probing the user's actual LOGIN shell ($SHELL -lc 'echo $PATH') is the
+// portable fix: whatever the user's own shell profile puts on PATH is
+// exactly what a terminal-launched swarm would see.
+const LOGIN_SHELL_PROBE_TIMEOUT_MS = 1500;
+
+export function parseLoginShellPathOutput(stdout: string): string[] {
+  return stdout
+    .trim()
+    .split(':')
+    .filter((p) => p.length > 0);
+}
+
+// Thin adapter boundary (constitution testability rule): the only piece
+// that touches a real subprocess/timer. probeLoginShellPath below is the
+// testable logic layer, built on an injected runFn.
+function spawnAndCaptureShellOutput(
+  shell: string,
+  args: string[],
+  timeoutMs: number
+): Promise<{ code: number | null; stdout: string }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: { code: number | null; stdout: string }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(result);
+    };
+
+    let child: cp.ChildProcess;
+    try {
+      child = cp.spawn(shell, args, { stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      finish({ code: null, stdout: '' });
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      child.kill();
+      finish({ code: null, stdout: '' });
+    }, timeoutMs);
+
+    let stdout = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      finish({ code, stdout });
+    });
+    child.on('error', () => {
+      clearTimeout(timer);
+      finish({ code: null, stdout: '' });
+    });
+  });
+}
+
+export type ShellRunFn = (
+  shell: string,
+  args: string[],
+  timeoutMs: number
+) => Promise<{ code: number | null; stdout: string }>;
+
+// BL-116 path-probe-01/02: runs the login-shell probe and parses its PATH,
+// or returns [] (never throws) on any failure/timeout - callers merge an
+// empty probe result in as a no-op, falling back to the existing hardcoded
+// list exactly as augmentPath already did before this ticket.
+export async function probeLoginShellPath(
+  shell: string,
+  timeoutMs: number = LOGIN_SHELL_PROBE_TIMEOUT_MS,
+  runFn: ShellRunFn = spawnAndCaptureShellOutput
+): Promise<string[]> {
+  const { code, stdout } = await runFn(shell, ['-lc', 'echo $PATH'], timeoutMs);
+  if (code !== 0) {
+    return [];
+  }
+  return parseLoginShellPathOutput(stdout);
+}
+
+let cachedProbePromise: Promise<string[]> | null = null;
+let cachedProbeResult: string[] = [];
+
+// BL-116 path-probe-01: the probe runs at MOST once per activation - a
+// second call while one is already in flight (or after one has completed)
+// returns the same cached promise/result rather than spawning another
+// shell. resetLoginShellPathCacheForTests exists only for test isolation
+// between cases.
+export function resetLoginShellPathCacheForTests(): void {
+  cachedProbePromise = null;
+  cachedProbeResult = [];
+}
+
+export function getCachedLoginShellPathDirs(
+  shell: string = process.env.SHELL ?? '/bin/sh',
+  timeoutMs: number = LOGIN_SHELL_PROBE_TIMEOUT_MS,
+  runFn?: ShellRunFn
+): Promise<string[]> {
+  if (cachedProbePromise === null) {
+    cachedProbePromise = probeLoginShellPath(shell, timeoutMs, runFn).then((dirs) => {
+      cachedProbeResult = dirs;
+      return dirs;
+    });
+  }
+  return cachedProbePromise;
+}
+
+// BL-116: kicks off the (at-most-once, cached) probe in the background and
+// never awaits it - callers must not block activation or a launch on a
+// login shell that might be slow or hung. augmentPath/buildLaunchEnv stay
+// synchronous and simply read whatever has resolved so far
+// (readCachedLoginShellPathDirsSync, below): [] until the probe completes,
+// the real probed dirs once it does. A launch that races ahead of the
+// probe still works exactly as it did before this ticket (falls back to
+// the hardcoded list); one that starts after the probe resolves benefits
+// from it.
+export function primeLoginShellPathProbe(): void {
+  void getCachedLoginShellPathDirs();
+}
+
+export function readCachedLoginShellPathDirsSync(): string[] {
+  return cachedProbeResult;
+}
+
+export function resolveSwarmConfigPath(): string | undefined {
+  const fromEnv = process.env['SWARMFORGE_CONFIG'];
+  if (fromEnv !== undefined && fromEnv.trim() !== '') {
+    return fromEnv.trim();
+  }
+
+  try {
+    // Lazy load: unit tests run outside the extension host.
+    const vscode = require('vscode') as typeof import('vscode');
+    const fromSettings = vscode.workspace
+      .getConfiguration('swarmforge')
+      .get<string>('configPath');
+    if (fromSettings !== undefined && fromSettings.trim() !== '') {
+      return fromSettings.trim();
+    }
+  } catch {
+    // vscode unavailable outside the extension host
+  }
+
+  return undefined;
+}
+
+/** Count `window` lines in a swarmforge pack/profile config file. */
+export function countRolesInConfig(configPath: string): number {
+  try {
+    const content = fs.readFileSync(configPath, 'utf8');
+    return content.split('\n').filter((line) => line.trimStart().startsWith('window ')).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * BL-929: true when a pack/profile config declares itself a rotation
+ * (mono-router) pack via `config rotation router`. A standing pack (e.g.
+ * full-forge) has no such line - every pipeline role owns its own pane, so
+ * there is no rotation to declare. An unreadable config reads as false
+ * (not a rotation pack), same fail-closed posture as countRolesInConfig.
+ */
+export function configHasRotationRouter(configPath: string): boolean {
+  try {
+    const content = fs.readFileSync(configPath, 'utf8');
+    return content.split('\n').some((line) => line.trim() === 'config rotation router');
+  } catch {
+    return false;
+  }
+}
+
+/** True when roles.tsv matches the configured pack/profile role count. */
+export function runningSwarmMatchesConfig(targetPath: string, configPath?: string): boolean {
+  const resolved = configPath?.trim() || resolveSwarmConfigPath();
+  if (!resolved) {
+    return true;
+  }
+  const expected = countRolesInConfig(resolved);
+  if (expected === 0) {
+    return true;
+  }
+  const roles = readSwarmRoles(targetPath);
+  if (roles.length === 0) {
+    return false;
+  }
+  // Coordinator is provisioned outside pack `window` lines (BL-243).
+  const pipelineRoles = roles.filter((role) => role.role !== 'coordinator');
+  return pipelineRoles.length === expected;
+}
+
+/** BL-702: merge `.swarmforge/swarm.env` over host env (same order as bridge-child-env). */
+export function buildLaunchEnv(
+  runName?: string,
+  configPath?: string,
+  repoRoot?: string
+): NodeJS.ProcessEnv {
+  const swarmEnv = repoRoot ? loadSwarmEnvFile(repoRoot) : {};
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...swarmEnv,
     SWARMFORGE_TERMINAL: 'none',
-    PATH: augmentPath(process.env.PATH),
+    PATH: augmentPath(process.env.PATH, readCachedLoginShellPathDirsSync()),
+    // BL-352: the ONE shared env builder both VS Code launch paths use
+    // before spawning ./swarm (extension.ts's own launchSwarm command
+    // directly, and autoLaunchSwarmOnActivation via this file's own
+    // launchSwarm) - both already call runLog.ts's appendRun themselves,
+    // so swarmforge.sh's own new run-recording must skip whenever this
+    // flag is present, or the SAME launch would be recorded twice. A real
+    // shell launch never runs through buildLaunchEnv at all, so the flag
+    // is simply absent there - swarmforge.sh's own default is to record.
+    SWARMFORGE_SKIP_SHELL_RUN_RECORD: '1',
   };
 
   if (runName) {
@@ -98,13 +419,48 @@ export function buildLaunchEnv(runName?: string): NodeJS.ProcessEnv {
     delete env['SWARM_RUN_NAME'];
   }
 
+  // BL-154 phase 1: handoff via tmux injection only unless explicitly disabled.
+  if (process.env['SWARMFORGE_SKIP_DAEMON'] !== undefined) {
+    env['SWARMFORGE_SKIP_DAEMON'] = process.env['SWARMFORGE_SKIP_DAEMON'];
+  }
+
+  const resolvedConfig = configPath ?? resolveSwarmConfigPath();
+  if (resolvedConfig !== undefined) {
+    env['SWARMFORGE_CONFIG'] = resolvedConfig;
+  } else {
+    delete env['SWARMFORGE_CONFIG'];
+  }
+
+  if (process.env['SWARMFORGE_MAILBOX_ONLY'] !== undefined) {
+    env['SWARMFORGE_MAILBOX_ONLY'] = process.env['SWARMFORGE_MAILBOX_ONLY'];
+  }
+
+  return env;
+}
+
+/** BL-130: forward provider API keys to ./swarm without writing them to disk. */
+export async function enrichLaunchEnvWithProviderKeys(
+  env: NodeJS.ProcessEnv,
+  secrets?: SecretStorage
+): Promise<NodeJS.ProcessEnv> {
+  const { resolveMistralApiKey, resolveOpenAIApiKey } = await import('../notify/secrets');
+  const mistralKey = await resolveMistralApiKey(secrets);
+  if (mistralKey) {
+    env['MISTRAL_API_KEY'] = mistralKey;
+  }
+  const openaiKey = await resolveOpenAIApiKey(secrets);
+  if (openaiKey) {
+    env['OPENAI_API_KEY'] = openaiKey;
+  }
   return env;
 }
 
 export async function launchSwarm(
   targetPath: string,
   runName?: string,
-  readyTimeoutMs = 120_000
+  readyTimeoutMs = 120_000,
+  secrets?: SecretStorage,
+  spawnFn: SwarmSpawnFn = defaultSwarmSpawn
 ): Promise<LaunchResult> {
   const swarmScript = path.join(targetPath, 'swarm');
   if (!fs.existsSync(swarmScript)) {
@@ -117,17 +473,20 @@ export async function launchSwarm(
       stdout: '',
       stderr: '',
     });
-    return { success: false, message, targetPath };
+    return { success: false, message, targetPath, category: classifyProviderError(message).category };
   }
 
-  // A previous run's tmux-socket/sessions.tsv can satisfy isSwarmReady and
-  // make this launch report success against a dead or dying swarm. If the
-  // swarm is not currently ready, tear down whatever answers on the old
-  // socket and remove the marker files, so readiness below can only be
-  // satisfied by the state the NEW ./swarm run writes.
-  if (!isSwarmReady(targetPath)) {
-    clearStaleSwarmState(targetPath);
-  }
+  const configPath = resolveSwarmConfigPath();
+
+  // Explicit cold launch: always tear down a live or stale swarm first so
+  // readiness polling cannot report success against a previous pack (e.g.
+  // three-role resilience-min while seven-pack is configured).
+  stopSwarm(targetPath);
+
+  const launchEnv = await enrichLaunchEnvWithProviderKeys(
+    buildLaunchEnv(runName, configPath, targetPath),
+    secrets
+  );
 
   return new Promise((resolve) => {
     // BL-108 spawn-registry-01: detached:true makes child.pid the new
@@ -136,13 +495,7 @@ export async function launchSwarm(
     // extension host is killed before it can await this child's own exit.
     const child = spawnTrackedJob(
       path.join(targetPath, '.swarmforge'),
-      () =>
-        cp.spawn(swarmScript, [targetPath], {
-          cwd: targetPath,
-          env: buildLaunchEnv(runName),
-          stdio: ['ignore', 'pipe', 'pipe'],
-          detached: true,
-        }),
+      () => spawnFn(swarmScript, targetPath, launchEnv),
       { worktree: targetPath, kind: 'swarm-launch', ownerHostPid: process.pid }
     );
 
@@ -161,8 +514,16 @@ export async function launchSwarm(
       }
       settled = true;
       cleanup();
-      persistLaunchLog(targetPath, { runName, swarmScript, success, message, stdout, stderr });
-      resolve({ success, message, targetPath });
+      persistLaunchLog(targetPath, {
+        runName,
+        swarmScript,
+        configPath,
+        success,
+        message,
+        stdout,
+        stderr,
+      });
+      resolve({ success, message, targetPath, category: success ? undefined : classifyProviderError(message).category });
     };
 
     child.stderr?.on('data', (chunk: Buffer) => {
@@ -226,16 +587,25 @@ export function chooseReattachTimeoutMs(
   return swarmSocketPresent ? coldStartTimeoutMs : fastTimeoutMs;
 }
 
+// BL-131: getNowMs/scheduleTick default to the real clock/setTimeout, so
+// every existing production call site is byte-for-byte unaffected; tests
+// inject a fake clock + a tick-capturing scheduler (same pattern as
+// briefingScheduler.ts/chaserMonitor.ts) to drive the poll loop
+// synchronously instead of waiting on the real clock.
 export function waitForSwarmReady(
   targetPath: string,
   timeoutMs = 120_000,
-  pollMs = 500
+  pollMs = 500,
+  getNowMs: () => number = Date.now,
+  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => {
+    setTimeout(fn, ms);
+  }
 ): Promise<boolean> {
   if (isSwarmReady(targetPath)) {
     return Promise.resolve(true);
   }
 
-  const deadline = Date.now() + timeoutMs;
+  const deadline = getNowMs() + timeoutMs;
 
   return new Promise((resolve) => {
     const check = () => {
@@ -243,11 +613,11 @@ export function waitForSwarmReady(
         resolve(true);
         return;
       }
-      if (Date.now() >= deadline) {
+      if (getNowMs() >= deadline) {
         resolve(false);
         return;
       }
-      setTimeout(check, pollMs);
+      scheduleTick(check, pollMs);
     };
     check();
   });

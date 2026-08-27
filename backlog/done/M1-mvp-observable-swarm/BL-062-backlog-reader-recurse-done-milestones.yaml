@@ -1,7 +1,7 @@
 id: BL-062
 title: BUG — panel shows zero done items since done/ was grouped by milestone; reader must recurse
 milestone: M1
-status: todo
+status: done
 priority: 03
 assigned_to: coder
 

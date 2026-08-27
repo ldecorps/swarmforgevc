@@ -1,0 +1,105 @@
+id: BL-455
+title: "Pipeline-board refinement: group ticket rows by epic, move parked tickets out of the grid into a list below it, and show a short slug per ticket"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784205716069.md — human via Telegram SUP-7, relayed by the Operator 2026-07-16, explicitly PRIORITIZED ('Human explicitly asked to prioritize this change'). A refinement/extension of the shipped BL-452 pipeline board (backlog/done/BL-452-pipeline-board-telegram-topic.yaml), not a new topic."
+
+description: |
+  Three refinements to the live BL-452 pipeline board (the monospace kanban grid edited in place in the
+  dedicated Pipeline Board Telegram topic). The board today renders one flat row per active ticket, keyed
+  by bare ticket id, with parked / awaiting-approval tickets appearing as ordinary grid rows in dedicated
+  status columns. The human asked for three glance-ability improvements:
+    1. GROUP the ticket rows BY EPIC — tickets sharing an epic are clustered together under that epic;
+       tickets with no epic are grouped together.
+    2. Take PARKED tickets OUT of the grid and list them SEPARATELY BELOW it — parked and
+       awaiting-approval tickets are no longer grid rows/columns; they become a short list beneath the
+       stage grid.
+    3. Add a short SLUG per ticket so each row shows at a glance WHAT the ticket is about (derived from
+       the ticket title).
+
+  PRIORITY: human explicitly asked to prioritize this. The coordinator promotes it ahead of the current
+  paused queue once specced (same override BL-452 carried), BUT it is NOT orthogonal to the in-flight
+  standing-topic / front-desk work — see the sequencing note below; it jumps the queue, it does not run
+  concurrent on the shared files.
+
+  Scope (live paths VERIFIED in code 2026-07-16 — grep-confirm again at build before editing):
+    - The pure renderer extension/src/concierge/pipelineBoard.ts: computePipelineBoardRows(roleHeldTickets,
+      paused) assembles rows and renderPipelineBoard(rows) renders the fixed-width grid. TODAY a
+      PipelineBoardRow is { id, column } ONLY — no epic, no title, no slug reaches the renderer, and parked
+      / awaiting-approval tickets are appended as ordinary rows with column 'parked' / 'awaiting-approval'.
+      This ticket WIDENS the row/render inputs to carry each ticket's epic + title (slug derived from
+      title) and CHANGES the output shape: the grid holds only tickets that sit at a real pipeline stage
+      (grouped by epic, slug shown), and a separate below-grid list enumerates the parked /
+      awaiting-approval tickets (with their slugs). Keep it a single monospace code block whose width still
+      fits a phone.
+    - The wiring in extension/src/concierge/conciergeTick.ts: syncBoardIfWired(...) builds the rows from
+      readRoleHeldTickets() (role -> held ticket ids, a cheap in_process read via
+      readPipelineStages/PipelineStage.heldTicketIds in extension/src/swarm/swarmState.ts) and
+      folders.paused. It must now JOIN those ticket ids to their backlog items to obtain epic + title —
+      BacklogItem.epic / .title already exist in extension/src/panel/backlogReader.ts (readBacklogFolders).
+      Read epic/title from the backlog folders the tick already loads; do NOT add a git-history walk.
+    - RECONCILE the shipped BL-452 acceptance in the SAME parcel: the parked / awaiting-approval GRID
+      COLUMNS go away, so specs/features/BL-452-pipeline-board-telegram-topic.feature scenario
+      pipeline-board-02's `parked` / `awaiting-approval` example rows and its step handler in
+      specs/pipeline/steps/bl452PipelineBoardSteps.js must be updated to assert the below-grid list
+      instead of a grid column — the acceptance runner THROWS on any scenario whose step handler no longer
+      matches the rendered shape (BL-233), so a stale BL-452 scenario would hard-fail the hardener's gate.
+
+  Constraints:
+    - Unchanged from BL-452 and INHERITED: READ-ONLY / side-effect-free (pure render + post; nothing in the
+      swarm depends on the board); ONE message edited in place in ONE topic; EDGE-TRIGGERED — only
+      re-render+edit when the rendered board TEXT changes, never on an unchanged tick (anti-storm /
+      editForumTopic 429 rule; memory backfill-vs-stale-tick-icon-revert). Grouping + the parked list must
+      remain deterministic so the edge-trigger text comparison is stable (a fixed epic + ticket ordering,
+      not hash-order).
+    - Every active ticket still lands in exactly ONE place — either a stage cell in its epic group, or the
+      below-grid parked/awaiting-approval list — never both, never neither (no empty rows, no ghost rows).
+    - Keep the renderer + the row join pure/testable (the unit/acceptance seam); the Telegram API + tmux
+      remain the untested boundary. Reach any fixture cwd/HOME by STUBBING accessors, never chdir / HOME
+      overlay (engineering worker-thread rule).
+    - The slug is a short, single-line, delimiter-safe projection of the title (strip newlines; bound the
+      width) — never the raw title verbatim (engineering external-text-into-structured-output rule); exact
+      length / truncation is a build-time detail.
+
+  Sequencing (NOT a hard depends_on — repo file-overlap-via-notes convention, memory:
+  standing-topic-feature-overlap-cluster / cost-substrate-and-topic-hook-overlap-clusters): edits
+  extension/src/concierge/pipelineBoard.ts and extension/src/concierge/conciergeTick.ts — the SAME
+  standing-topic / front-desk files as BL-434, BL-450, BL-452, and active BL-414 / BL-425 / BL-449. It jumps
+  the PAUSED queue per the human's priority directive, but it is NOT orthogonal to an ACTIVE ticket on those
+  files: serialize against any in-flight conciergeTick.ts / pipelineBoard.ts ticket rather than running
+  concurrent, and build on whatever board scaffolding is on main at build time.
+
+  E2E QA PROCEDURE: with the swarm running and active tickets spanning several epics and stages, assert the
+  Pipeline Board topic message shows ticket rows CLUSTERED by epic (an epic header/group over the tickets
+  that share it; no-epic tickets grouped together), each row carrying a short readable slug describing the
+  ticket; park a ticket and assert it DISAPPEARS from the stage grid and APPEARS in a separate list below
+  the grid (and an awaiting-approval ticket likewise); move a ticket to a new stage and assert the SAME
+  board message is edited in place to show the move; run a tick with no change and assert the message is NOT
+  edited; assert rendering/posting writes no ticket/handoff/backlog state. Verify against the real Telegram
+  surface, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-455-pipeline-board-epic-grouping-parked-slug.feature
+  steps:
+    - "Ticket rows are grouped by epic"
+    - "Parked and awaiting-approval tickets are listed below the grid, not as grid rows"
+    - "Each ticket row shows a short slug derived from its title"
+    - "A ticket held by a role is still marked in that role's column within its epic group"
+    - "Rendering the board modifies no swarm state"
+
+human_approval: >
+  Human-requested and explicitly PRIORITIZED via Telegram SUP-7, relayed by the Operator 2026-07-16
+  (INTAKE-operator-question-1784205716069). The three refinements (group-by-epic, parked-below-grid,
+  per-ticket slug) are the firm contract; the exact epic-header glyphs, slug length/truncation, grid width,
+  and below-grid list format are build-time details, not a promotion gate. PRIORITY: promote ahead of the
+  paused queue, but serialize against any ACTIVE conciergeTick.ts / pipelineBoard.ts / front-desk ticket
+  (BL-414 / BL-425 / BL-449) — jumps the queue, does not run concurrent on the shared files. Note the coder
+  must reconcile the shipped BL-452 acceptance (parked columns removed) in the same parcel.
+
+mutation_cost: medium

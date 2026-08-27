@@ -1,0 +1,95 @@
+id: BL-389
+title: "LIVE INCIDENT — a deliberately-dropped Telegram update parks the offset forever, replaying side effects into 209 commits on origin/main"
+milestone: M8
+type: bug
+status: todo
+severity: critical
+priority: 0
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-front-desk-redelivery-commit-loop.md — Operator, 2026-07-14 ~10:13Z, filed LIVE. Root cause CONFIRMED in code by the specifier (the intake's own stuck-offset hypothesis was close but not the mechanism — see below). Human decisions 2026-07-14: front desk STAYS DOWN until this lands; keystone fix ships alone."
+
+notes: |
+  THE INCIDENT. `backlog/topics/BL-359.json` was rewritten and committed roughly every 15 seconds
+  (~8 commits/min) from 10:54 to 11:38 local — 209 commits titled `BL topic record for BL-359`, ALL
+  pushed to origin/main by handoffd's push sweep. The record grew to 21.8 KB / 209 messages, almost
+  all of it the same two human messages replayed, each answered again with "Nothing to approve right
+  now." The human sent those messages ONCE. The flood only stopped because the bot was stopped.
+
+  ROOT CAUSE — CONFIRMED IN CODE, AND IT IS NOT WHAT THE INTAKE GUESSED. The intake hypothesised a
+  partial-failure hole where side effects succeed but the delivery flag comes back false. That is not
+  it: `postOperatorContext` (`extension/src/tools/telegram-front-desk-bot.ts:169`) appends and returns
+  `true` UNCONDITIONALLY — it cannot report failure. The real mechanism is a CONFLATION:
+
+    1. `processUpdate` (`telegramFrontDeskBotCore.ts:272`) returns FALSE for a DELIBERATE DROP —
+       `decision.action === 'drop'`, i.e. `not-principal` or `no-text`.
+    2. `pollAndForward` pushes that boolean straight into `delivered[]` — it does not distinguish
+       "dropped on purpose" from "failed to deliver", even though `PollResult` COUNTS them separately
+       (`posted` vs `dropped`). The distinction already exists in the code; it just is not used where
+       it matters.
+    3. `offsetAfterDelivery` (BL-369's anti-message-loss guard) returns the offset UNCHANGED at the
+       first `!delivered[i]`.
+
+  So ANY dropped update — a photo, a sticker, an edit, a service message ("X joined the group"), or
+  a message from anyone but the principal — PARKS THE TELEGRAM OFFSET PERMANENTLY. Telegram then
+  redelivers that update and every update after it on every single poll, forever.
+
+  THE GUARD IS RIGHT ABOUT FAILURES AND WRONG ABOUT DROPS. BL-369 is correct that a FAILED delivery
+  must not advance the offset: a failure may succeed on retry, and advancing past it would lose the
+  message permanently. But a DROP is a TERMINAL decision — it can NEVER succeed on retry — so
+  refusing to advance past it is an unbounded retry of something that cannot ever succeed. That is
+  the same defect family as the engineering article's bounded-retry rule. DO NOT fix this by
+  weakening the failure path (scenario 02 is the neighbour guard: BL-369 must not regress, and
+  scenario 03 drives BOTH conditions at once to pin which wins).
+
+  THE AMPLIFIER — MISSING IDEMPOTENCY KEYS. Redelivery alone would be harmless if the side effects
+  were idempotent. BL-369's own comment on `offsetAfterDelivery` says the design is "safe precisely
+  because bridgeServer.ts's own ingest is idempotent by update_id" — and that is TRUE for
+  `postToBridge(subjectId, text, updateId)`. But the OTHER side-effecting adapters were never given
+  an update id at all:
+    - `postOperatorContext(backlogId, text)`   <- appends to the BL topic record. THIS is what flooded.
+    - `openSubjectAndRecord(topicId, text)`    <- mints a fresh SUP-###.
+    - `recordApprovalReply(backlogId)`
+  So BL-369's safety argument covers exactly one of the four paths. Thread `update_id` through ALL of
+  them and dedupe on it (scenarios 04 + 05). Fix BOTH halves in this parcel: the offset conflation is
+  the trigger, the missing idempotency is what turned it into 209 commits — either one alone leaves a
+  live loop the next time an update fails for a real reason.
+
+  THE STUCK DETECTOR DID NOT SAVE US. `shouldEscalateStuckDelivery` exists and fires, but it only
+  ESCALATES — it never stops the side effects. Worth noting in the build; do not rely on it as a
+  backstop.
+
+  STEP REGISTRY — THE ANTONYM PAIR MUST BE TWO DISTINCT HANDLERS. This feature deliberately asserts
+  a thing and its negation — "the front desk moves past that message" / "does NOT move past that
+  message" — because that opposition IS the fix (advance on a drop, park on a failure). IR-DRY flags
+  the pair; that is expected. Register them as separate, EXACTLY-matched handlers: a substring or
+  loose regex match would let the positive handler also satisfy the negative step, and both scenarios
+  would pass green while asserting nothing at all — on the one ticket where that would be worst.
+
+  OPERATIONAL FACTS THE BUILDER MUST KNOW. (a) The front desk is DOWN and STAYS DOWN until this lands
+  (human, 2026-07-14) — the parked offset lives on TELEGRAM's side, so restarting the bot does not
+  clear it and would immediately resume the flood. (b) The fix must therefore also be safe on the
+  FIRST poll after restart, when Telegram will redeliver the whole parked backlog at once: that first
+  batch is precisely where scenarios 04/05 earn their keep. (c) Test with doubles only — the
+  engineering article's isolation rules are absolute; never stand up a real bot or a real Telegram.
+
+  E2E QA PROCEDURE: with a fake update stream, feed a dropped update (a non-text message) followed by
+  good ones, and assert the offset advances past the drop and the good ones are processed exactly
+  once. Feed a failing delivery and assert the offset does NOT advance past it (BL-369 preserved).
+  Replay an identical update batch twice and assert the topic record gains NO second copy of any
+  message and the human is answered only once. Then, in the live swarm, restart the front desk and
+  assert the parked backlog drains once, the BL-359 record gains no duplicates, and NO new
+  `BL topic record` commits appear beyond the single legitimate one.
+
+acceptance:
+  feature: specs/features/BL-389-a-dropped-message-must-not-park-the-offset.feature
+  steps:
+    - "A message dropped on purpose is never fetched again"
+    - "A message whose delivery failed is fetched again"
+    - "A dropped message ahead of a failed one does not shield it"
+    - "A message delivered twice is only recorded once"
+    - "A message delivered twice is only answered once"
+
+human_approval: approved
+
+mutation_cost: medium

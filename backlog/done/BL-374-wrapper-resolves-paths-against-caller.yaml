@@ -1,0 +1,65 @@
+id: BL-374
+title: "run_gherkin_mutation.sh absolutizes two of its three path arguments — the third dumps scratch into a git-tracked vendor directory"
+milestone: M8
+type: defect
+severity: low
+status: todo
+priority: 6
+depends_on: []
+source: "rule_proposal from the hardender, 2026-07-14 (scope role:hardender), raised while working BL-372. Rule rejected as scoped; the underlying script defect is ticketed here and the generalizable lesson went into the engineering article instead."
+
+notes: |
+  WHAT IS WRONG. `specs/pipeline/scripts/run_gherkin_mutation.sh` takes three path arguments —
+  feature-file, work-dir, steps-module — and absolutizes exactly two of them:
+
+      FEATURE_FILE="$(cd "$(dirname "$FEATURE_FILE")" && pwd)/$(basename "$FEATURE_FILE")"   # line 26
+      STEPS_MODULE="$(cd "$(dirname "$STEPS_MODULE")" && pwd)/$(basename "$STEPS_MODULE")"   # line 27
+      # WORK_DIR (line 22) gets no such treatment
+
+  It then `cd "$VENDOR_DIR"` (line 34) before exec'ing `bb gherkin-mutator --work-dir "$WORK_DIR"`.
+  So a RELATIVE work-dir names two different directories in one run: `mkdir -p "$WORK_DIR"` (line 32,
+  pre-cd) creates it under the CALLER's cwd, while bb — now running from the vendor dir — resolves the
+  same relative string against `swarmforge/vendor/aps/` and writes the mutation scratch there.
+
+  WHY IT MATTERS. `swarmforge/vendor/aps/` is git-tracked and NOT gitignored (verified:
+  `git check-ignore swarmforge/vendor/aps/tmp/x` reports it is not ignored). The run therefore leaves
+  an untracked diff inside a tracked vendor path — noise a human has to identify and delete by hand,
+  in the one directory where stray files are most likely to be mistaken for a vendored-tool change.
+  The caller's own work-dir, meanwhile, is created and left empty.
+
+  THE FIX IS ONE LINE, AND CONSISTENCY IS THE POINT. Absolutize WORK_DIR the same way the other two
+  path arguments are already absolutized, before the `cd`. Do NOT fix this by requiring callers to
+  pass an absolute path — that was the rejected rule proposal, and it would leave the trap armed for
+  the next caller. A wrapper that changes directory owns the job of pinning its arguments first; see
+  the matching guardrail now in the engineering article.
+
+  Note the in-repo caller (`specs/pipeline/steps/gherkinMutationSteps.js`) already passes an absolute
+  path, so it is unaffected either way. The exposed surface is the HAND-RUN path: `hardender.prompt`
+  tells the hardener to run `run_gherkin_mutation.sh <feature-file> [work-dir] ...` directly, where a
+  relative `./tmp/gm` is the natural thing to type. That is how BL-372 hit it.
+
+  SCOPE. `specs/pipeline/scripts/run_gherkin_mutation.sh`. Out of scope: the vendored APS tool itself
+  (do not patch vendor code — it is pinned by SHA), and the gitignore rules (the scratch should not be
+  landing there at all; ignoring it would hide the defect rather than fix it).
+
+  TESTING NOTE. The observable behavior is "which directory did the scratch land in", so drive the
+  real script from a throwaway cwd and assert on the two directories — the caller-relative one is
+  populated, the vendor dir gains nothing. Scenario 01 is a Scenario Outline: per the engineering
+  rules its `work-dir-form` column must be LOAD-BEARING — validate the value against an explicit
+  KNOWN_VALUES lookup and fail on anything not in it, never a passthrough or a binary ===/else, or
+  gherkin-mutator will mutate the value into the else branch and the mutant survives to the hardener.
+
+  E2E QA PROCEDURE: from a clean tree, `cd` into a worktree, run the script with a RELATIVE work-dir
+  (e.g. `./tmp/gm`) against any Scenario-Outline feature file, then run `git status` on
+  `swarmforge/vendor/aps/`. It must be clean, and `./tmp/gm` must hold the mutation scratch. Before
+  the fix this reproduces the stray-vendor-diff on demand.
+
+acceptance:
+  feature: specs/features/BL-374-wrapper-resolves-paths-against-caller.feature
+  steps:
+    - "The work directory is resolved against the caller, not the tool's directory"
+    - "A mutation run leaves the vendored tool directory clean"
+
+human_approval: pending
+
+mutation_cost: low

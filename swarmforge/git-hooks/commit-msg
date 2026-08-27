@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# BL-901: shared commit-msg hook, installed repo-wide via the same
+# `core.hooksPath swarmforge/git-hooks` setting the pre-commit hook uses
+# (BL-105) - git resolves every hook name from that one directory, so no
+# separate install step is needed for this file.
+#
+# git guarantees commit-msg runs, with the now-finalized message, for the
+# same commit attempt whenever pre-commit passed - see the note in
+# swarmforge/git-hooks/pre-commit for why the message-naming check can only
+# be enforced here, not there.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+exec "$REPO_ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$1"

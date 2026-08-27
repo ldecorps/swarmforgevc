@@ -1,0 +1,92 @@
+id: BL-1160
+title: "Live Screen: each role tile gets its own activity dot — not one viewport-fixed dot"
+milestone: M8
+type: feature
+severity: low
+# low: glanceability / per-tile health UX on phone grid; not swarm-down.
+status: active
+epic: swarmforge-console
+priority: 30
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1160-live-screen-activity-dot-per-tile.feature
+human_approval: approved
+approval_context: >
+  Human ask via INTAKE-live-screen-activity-dot-per-tile.md (2026-08-26):
+  add an activity dot for each tile on the Live Screen phone grid
+  (e.musicalsifu.com). Sibling to BL-1046 (held ticket on tile). Keeps today's
+  green/amber/red semantics; dots inside each tile (~8px, bottom-left preferred).
+  Fullscreen Expand must retain a status cue. Approve = ship; Amend if you want
+  a different placement or to defer until per-pane heartbeats land.
+invariants:
+  - "Each grid tile's activity dot reflects that tile's own freshness signal when the payload carries one; whole-poll freshness must not paint every tile green when only aggregate data exists."
+  - "The grid tile dot and the fullscreen Expand status cue read the same honest signal for that pane — they never disagree."
+
+required_wiring:
+  - "extension/src/bridge/residentSpyUiHtml.ts::setStatus::per-tile dots must update from the same freshness path as today's single dot"
+  - "specs/pipeline/steps/index.js::bl1160LiveScreenActivityDotPerTileSteps::acceptance handler registered so the runner executes every scenario"
+
+description: |
+  ## What
+
+  The Live Screen role grid (`residentSpyUiHtml.ts`, BL-994) shows eight
+  square-ish tiles on phone. Today one fixed `#dot` (`position: fixed`
+  bottom-left of viewport) reflects whole-poll freshness via `setStatus` /
+  `tickAge`. On the 2×4 layout that dot overlaps one tile (often DOCUMENTER)
+  and reads as global, not per-role.
+
+  Human ask (verbatim): **add an activity dot for each tile.**
+
+  ## Why
+
+  Per-tile health at a glance on the surface the operator uses from a phone.
+
+  ## How (direction, not mandate)
+
+  Move or duplicate `.dot` from body-fixed into each `.pane-col` / tile head
+  so the grid shows N dots for N tiles (~8px, bottom-left of tile content).
+  Colour semantics unchanged: ok `#3fb950`, stale `#d29922`, err `#f85149`;
+  hidden when never successfully polled if that matches today's hide rules.
+  Grid tile shows role name + held-ticket strip (BL-1046) + Expand + dot —
+  no transcript in tile (BL-994 posture). Fullscreen Expand keeps a clear
+  status cue (keep or relocate today's single-dot behaviour).
+
+  If only whole-poll freshness exists today, per-tile dots must use the
+  honest signal available — do not imply per-pane heartbeats that do not
+  exist. Name any follow-on for true per-pane heartbeats in notes.
+
+qa_e2e_procedure: >
+  (1) Open Live Screen on phone-width grid with eight tiles — assert eight
+  visible activity dots, each inside its tile. (2) Force stale/err on one pane
+  when per-pane signal exists — that tile's dot turns amber/red while others
+  stay honest. (3) Never-polled pane — dot hidden or non-ok, not misleading
+  green. (4) Expand one tile — status cue still visible. (5) HTML fixture /
+  unit test: one status indicator node per pane column in rendered markup.
+
+specifier_decisions: |
+  Minted 2026-08-26 from backlog/INTAKE-live-screen-activity-dot-per-tile.md
+  (operator re-file ~15:20 BST). Five scenarios cover intake acceptance sketch.
+  BL-1046 is sibling not dependency — tiles may ship ticket strip before or
+  after dots; invariant prevents false all-green when only aggregate freshness
+  exists.
+
+out_of_scope: |
+  - Bubble Live port (separate intakes).
+  - Changing Expand / fullscreen transcript layout beyond status cue.
+  - New status meanings (CPU, model, ticket) — existing activity/freshness only.
+
+notes: |
+  Human ask verbatim: "add an activity dot for each tile."
+
+  Related: BL-994 (grid), BL-1046 (held ticket on tile),
+  `extension/src/bridge/residentSpyUiHtml.ts` — `.dot`, `setStatus`, `tickAge`.
+
+source: |
+  backlog/INTAKE-live-screen-activity-dot-per-tile.md
+  (human via Cursor 2026-08-26 ~09:21 BST, re-filed ~15:20 BST at operator request)
+  - [2026-08-26T18:49Z] coordinator: STARVED sweep — QA commit f5e11920ee on main;
+    active reopened by reconcile; awaiting QA git_handoff close (not coder re-route).
+
+assigned_to: coder

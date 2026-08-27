@@ -1,0 +1,95 @@
+id: BL-675
+title: "Cron-side daemon log-freshness watchdog — a share-no-fate POSIX check that restarts wedged sweep daemons, because process liveness lies"
+milestone: M8
+type: defect
+status: done
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 03
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+invariants:
+  - "The checker shares no fate with what it watches: it runs from cron using POSIX shell and coreutils only (curl solely for announcing) and functions with every swarm daemon, bb, and node dead."
+  - "Every violation and restart is appended to a durable incident record BEFORE any network announce is attempted — a failed Telegram send never loses the record."
+  - "Quiet is never dead: each watched daemon emits a timestamped heartbeat every loop tick independent of work volume, and the checker triggers only on heartbeat age beyond that daemon's own threshold — a healthy pause or cooldown never restarts anything."
+required_wiring:
+  - "swarmforge/scripts/install_freshness_cron.sh::freshness_check::the installer must reference the checker it schedules"
+  - "swarmforge/scripts/handoffd.bb::heartbeat::handoffd must emit the heartbeat the checker depends on"
+  - "swarmforge/scripts/babysitter_runtime.bb::heartbeat::babysitterd must emit the heartbeat the checker depends on"
+acceptance: specs/features/BL-675-daemon-log-freshness.feature
+
+approval_context: >
+  Severity high: today (2026-07-26 ~14:09-15:20) BOTH watchdog loops froze
+  with processes alive — handoffd futex-wedged, babysitterd mute in its
+  sleep — and for ~65 minutes nothing delivered, chased, warned, or swept;
+  the human noticed only via the ABSENCE of nudges. Decisions to sign off:
+  (1) one composed slice (heartbeats + cron checker + restart + announce) —
+  heartbeat-only would deliver nothing observable; (2) the checker has
+  AUTONOMOUS restart authority over the deterministic daemons (kill +
+  re-run their own start scripts, no human in the loop), announcing after
+  the durable record; (3) per-daemon thresholds live in one declared place,
+  not hardcoded per call site; (4) BL-611's productized babysitterd becomes
+  one of the watched daemons — adjacent area, coordinator should not run
+  the two concurrently.
+
+source: |
+  Operator (human) 2026-07-26 15:25, minutes after unsticking the blackout:
+  .swarmforge/operator/INTAKE-watchdog-freshness-who-watches-the-watchmen.md
+  (archived to operator/archive/ on drain). Three recorded classes of
+  process-liveness lies now: futex-hang, mute-loop, clean-slate. The true
+  liveness of a sweep daemon is "its log wrote recently", and every current
+  watcher shares fate with what it watches (same process tree, same bb
+  runtime, same box). Cron survived every incident this week.
+
+description: |
+  ## What
+
+  Two coupled halves, one slice:
+
+  1. **Heartbeat emission.** Each deterministic sweep daemon (handoffd,
+     babysitterd — plus any sibling the coder finds registered in the
+     launch/lifecycle scripts) writes a timestamped, content-free heartbeat
+     line to its own log on every loop tick, so log freshness never depends
+     on work existing to log.
+
+  2. **Cron-side freshness checker.** A small POSIX script (no bb, no
+     node) scheduled by cron every 1-5 minutes via an idempotent in-repo
+     installer (install_freshness_cron.sh; e2e verifies the crontab line).
+     For each watched daemon it asserts heartbeat age against that
+     daemon's threshold. On violation: kill the wedged process, restart it
+     via its OWN existing start script (never a reimplemented launch),
+     append the incident to a durable record file, then announce on
+     Telegram via curl. If the announce itself fails, the durable record
+     is the surviving artifact the next human reads.
+
+  ## Constraints
+
+  - The checker never restarts on mere absence of WORK lines — only on
+    heartbeat staleness (non-vacuity: a token-cooldown pause stays quiet
+    and alive, and must not trigger).
+  - Restart actions are idempotent and bounded: one restart per daemon per
+    violation, no tight respawn loop if the daemon wedges again instantly
+    (a repeat violation inside a cool-off window escalates by announcing
+    louder, not by hammering restarts).
+  - The POSIX checker is a testable module for the shell suite
+    (swarmforge/scripts/test/): thresholds, log paths, kill/restart, clock
+    and curl all injectable via env seams — no real timers, no live paths,
+    no killing the test process (engineering rules).
+  - Relation: BL-653's escalation-driven operator treats the deterministic
+    layer as primary watcher — this is that layer's own pulse; a freshness
+    violation is a legitimate escalation event. Fold nothing of BL-653 in;
+    just leave the announce line grep-able for it.
+  - Coder materializes the .feature.draft to .feature and wires step
+    handlers in the same parcel (BL-441/BL-233).
+
+  ## e2e QA procedure
+
+  Reproduce today's shape on the live box: SIGSTOP handoffd (process
+  alive, log frozen). Within one cron tick past its threshold, verify the
+  checker killed and relaunched it via start scripts, the durable record
+  names the daemon and heartbeat age, and the Telegram announce arrived.
+  Then hold the swarm in a quiet pause past all thresholds and verify
+  heartbeats kept every log fresh and nothing restarted.

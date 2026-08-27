@@ -1,0 +1,64 @@
+id: BL-706
+title: "Let's Talk — minimize full page into a floating talk chat"
+milestone: M8
+type: feature
+severity: medium
+status: done
+epic: swarmforge-console
+human_approval: approved
+priority: 25
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "Minimized mode keeps the same discrete Let's Talk turn loop (speak in, hear reply out); no duplex route is added."
+  - "Auth, bearer persistence, and existing turn/playback paths still work in both full-page and floating modes."
+  - "Floating surface stays visible enough to talk to — not a fully hidden background-only state."
+  - "Human can restore the full Let's Talk page from the floating piece."
+
+approval_context: >
+  Human via Let's Talk voice session 2026-07-29: file intake, then mint now.
+  Product ask: minimize the full Let's Talk (recto) page into a floating
+  chat-box / letter-like piece on screen that remains speakable.
+  Pilot polls 2026-07-29 pinned: compact bubble, draggable, record+pause+reply,
+  persist minimized after reload. Closed 2026-07-29 (evidence
+  backlog/evidence/BL-706-qa-pass-20260729.md). Same-day human bounce-back:
+  first minimize chrome was a tall control panel — reshaped to round chat-head
+  mic bubble and redeployed. Confirm poll on Cursor Remote: Yes — ship it.
+
+description: |
+  ## What
+
+  Add a minimize path on the Let's Talk Mini App page. When minimized, the
+  full layout collapses into a floating talk surface (chat-box / letter-like /
+  bubble-like) that stays on screen and remains speakable. The human can
+  expand back to the full page.
+
+  ## Intent (human words)
+
+  - Not fully backgrounded; not full-screen.
+  - A floating piece they can keep talking to while other context stays around it.
+
+  ## Approach
+
+  Prefer an additive UI mode on the existing Let's Talk page over a separate
+  product shell. Concrete chrome (size, drag, position, expand control) is
+  specifier/designer choice within that intent; keep the first slice simple.
+  Spike Telegram WebApp / PWA constraints if needed before coding.
+
+  ## Out of scope
+
+  - Redesigning hold music, language matching, or other Let's Talk product rules
+  - Native OS picture-in-picture unless that is the only viable Mini App path
+  - A full second app shell unrelated to Let's Talk
+  - Duplex / continuous call audio
+
+acceptance: specs/features/BL-706-lets-talk-floating-minimized-chat.feature
+
+source: |
+  Human via Let's Talk voice session 2026-07-29.
+  Drained from `.swarmforge/operator/INTAKE-lets-talk-floating-minimized-chat.md`
+  (and backlog/INTAKE-lets-talk-floating-minimized-chat.md).

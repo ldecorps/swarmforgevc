@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-082: cooldown-aware wake scheduling — unit tests.
  */
@@ -22,7 +23,7 @@ const {
 const NOW = new Date('2026-07-02T17:00:00Z').getTime(); // 17:00 UTC
 
 function mkTmpFile() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-cooldown-'));
+  const dir = mkTmpDir('sfvc-cooldown-');
   return path.join(dir, 'cooldowns.json');
 }
 

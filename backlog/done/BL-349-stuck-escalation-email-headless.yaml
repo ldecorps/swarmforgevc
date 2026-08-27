@@ -1,0 +1,83 @@
+id: BL-349
+title: "A stuck role's escalation never emails the human on a headless box — the alert has no headless sender"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 4
+direction: expedite
+depends_on: []
+source: "backlog/evidence/BL-336-headless-dark-emitter-audit-20260713.md, finding H4 — BL-336's audit (a LIST, not a refactor; it deliberately fixed nothing). Raised by the coder as a follow-up for the specifier to spec on its own merits; the coder ranked it FIRST of the five."
+
+notes: |
+  THE DEFECT. When a role sits stuck/gated past grace+cooldown, the live `handoffd.bb`'s
+  `:on-stuck-escalation!` adapter (handoffd.bb:629) is wired to EXACTLY ONE action:
+  `chase-sweep-lib/write-escalation!`, which writes `.swarmforge/daemon/chase-escalations.json`
+  and stops. The code that EMAILS the human about it — `NeedsHumanEmailNotifier`
+  (extension/src/notify/needsHumanEmailNotifier.ts) — exists only in the VS Code extension host,
+  instantiated from `extension.ts:389` and `panel/swarmPanel.ts:312`. The audit grepped the real,
+  live `handoffd.bb` for any email/resend call near "escalat": there is none.
+
+  SO: on a headless box — which is HOW THIS SWARM ACTUALLY RUNS — a role can sit stuck
+  indefinitely and the human is never told. The file gets written; nobody reads it.
+
+  THIS IS THE THIRD TIME. This is the closest structural twin to BL-214/BL-335: a real alert
+  channel whose sender is host-gated. The daemon-death alarm and BL-333/BL-345's starvation alarm
+  are the SAME shape and both already email from the daemon via ONE shared sender. This signal is
+  the odd one out. Reuse `daemon_alarm_lib/send-configured-email!` — do NOT build a second email
+  path (this project's standing "reuse the one email path" convention).
+
+  AND IT MUST NOT REPEAT BL-333's MISTAKE. `send-configured-email!` returns
+  `{:success bool :reason kw :error str}` and `default-post!` CATCHES its own exceptions — so a
+  failed send is SILENT by construction. The standing engineering rule (added after BL-333 shipped
+  exactly this bug in the starvation alarm, fixed in BL-345) is absolute here:
+    - NEVER persist the "already notified" flag before the send is attempted.
+    - NEVER compute it without consulting the sender's result.
+    - A TRANSIENT failure (`:success false`, no `:reason`) must NOT arm — retry it, BOUNDED with
+      backoff, and on exhausting the cap arm anyway and log the undelivered alarm LOUDLY.
+    - A TERMINAL misconfiguration (`:reason :disabled` / `:missing-api-key`) can never succeed on
+      retry — warn once and arm.
+  An alarm for a silent failure that itself fails silently is the whole bug. Read BL-345 before
+  starting; it is the worked example.
+
+  SCOPE:
+    1. `handoffd.bb`'s `:on-stuck-escalation!` adapter gains a SECOND action alongside its existing
+       `write-escalation!`: send the human an email via the existing
+       `daemon_alarm_lib/send-configured-email!` path.
+    2. Edge-triggered, on the same `escalated?` edge `write-escalation!` already computes — a role
+       that STAYS stuck must not re-email on every sweep; a role that recovers and re-sticks must
+       email again.
+    3. Consult the send result per the rule above (transient -> bounded retry, never arm;
+       terminal -> warn once and arm; exhausted -> arm and log loudly).
+    4. Keep `write-escalation!` working unchanged — the file is still the record; the email is the
+       missing leg, not a replacement.
+    5. OUT OF SCOPE: retiring the extension-host `NeedsHumanEmailNotifier` (leave it; the
+       double-send guard is scenario 05's job, not a deletion). The other four BL-336 findings
+       (BL-350/351/352/353).
+
+  SCOPE OVERLAP — SEQUENCE, DO NOT RUN CONCURRENTLY. BL-350 (finding H1) also edits
+  `handoffd.bb`'s poll loop. `depends_on: []` is honest — neither BLOCKS the other — but they touch
+  the same file and must not be in flight at the same time (constitution: Concurrent Work
+  Orthogonality). This one goes first.
+
+  E2E QA PROCEDURE: with a REAL headless swarm and NO editor attached, drive a role genuinely stuck
+  past its escalation threshold (do not simulate the escalation file — the whole defect is that the
+  file is all that happens today) and assert a real email is sent. Then leave it stuck across
+  another sweep and assert NO second email. Then recover it, re-stick it, and assert a second email
+  DOES arrive. Finally, make the send fail transiently and assert the escalation is NOT armed and IS
+  retried — the BL-333 regression this ticket must not reintroduce.
+
+acceptance:
+  feature: specs/features/BL-349-stuck-escalation-email-headless.feature
+  steps:
+    - "A newly escalated role emails the human"
+    - "The escalation is still recorded, as it was before"
+    - "A role that stays stuck is not emailed about repeatedly"
+    - "A role that recovers and gets stuck again is escalated again"
+    - "A send that fails is retried, not treated as delivered"
+    - "An undeliverable escalation is surfaced rather than silently forgotten"
+    - "No role stuck means no email"
+
+human_approval: pending
+
+mutation_cost: medium

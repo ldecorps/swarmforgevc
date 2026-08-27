@@ -1,0 +1,147 @@
+id: BL-449
+title: "Epic Telegram topics carry distinct musical-form icons; codify 'epics have icons representing musical forms'"
+milestone: M8
+type: feature
+status: todo
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784184936428.md — Operator-filed 2026-07-16 (a Telegram directive the Operator could not answer). Human directive: assign musical-form/orchestral icons to the three EPIC topics (147 Swarm Role Benchmarking, 149 Dynamic Routing, 151 Onboarding a New Target Repo) and codify the constitution rule 'Epics have icons representing musical forms'. Operator decision appended to the intake 2026-07-16: do BOTH deliverables (codify the rule AND set stock performance-emoji icons now — the 'defer Telegram icons' option was NOT chosen). Drained by the specifier 2026-07-16; the platform constraint and glyph mapping below were confirmed with the human (ldecorps) this session."
+
+notes: |
+  WHAT / WHY. Two deliverables from one human directive:
+    (1) The three epic topics get distinct musical-form icons, wired so NEW
+        epic topics get one automatically too.
+    (2) Codify the rule 'Epics have icons representing musical forms' in a
+        constitution prompt via the normal pipeline (no direct main edit).
+
+  PLATFORM WALL (confirmed, load-bearing). Telegram Bot API topic icons may
+  ONLY be stickers from the free getForumTopicIconStickers set (~112, changes
+  over time) — arbitrary images/SVGs are rejected, and the set has NO
+  notation/instrument stickers. So the owned orchestra "forms" art
+  (Symphony/Concerto/Suite/Fugue/Overture, docs/branding/icon-system.md §4d) is
+  the PWA / fleet-console / bot-avatar realisation of the rule; Telegram TOPIC
+  icons are the closest-available stock PERFORMANCE stickers standing in for the
+  same rule. Both deliverables encode ONE rule on two surfaces.
+
+  GLYPH MAPPING (finalised with the human this session):
+    - BENCHMARKING (topic 147)     -> 🎙
+    - DYNAMIC_ROUTING (topic 149)  -> 🎭
+    - ONBOARDING (topic 151)       -> 🎬
+  147 is deliberately NOT 🎶 — 🎶 reads as 🎵 (feature-in-flight) at badge size.
+  Already-taken glyphs to avoid in the epic pool: 🎵 (feature), 🎟 (support/
+  intake), 🏛 (operator). Live-set-present performance emoji available for the
+  pool tail (per icon-system.md §5a, verified against the live set 2026-07-15):
+  🎙 🎭 🎬 🎤 🎨 🎩 🕺 💃 ✍️ 📚 (exclude 🎶 for the badge-collision reason above).
+
+  BEHAVIOR WANTED (see the feature file — 5 scenarios):
+    - The three seeded epics resolve to 🎙 / 🎭 / 🎬.
+    - A newly-created epic topic is auto-assigned the NEXT distinct icon from an
+      ordered musical-form pool (headed by 🎙 🎭 🎬); distinct while the pool has
+      unused slots, then a graceful (logged) reuse — distinctness is best-effort
+      beyond pool size, never a crash.
+    - The epic pool is DISJOINT from the ticket-state icons (✅🦠🎵🔍👀) and the
+      standing-topic icons (🎟🏛) — this both proves separation and enforces the
+      no-🎵-collision requirement.
+    - Resolve-or-skip against the LIVE set (BL-342 scenario 06 posture): a desired
+      emoji absent from getForumTopicIconStickers is SKIPPED (topic left
+      unchanged), never sent as an unvalidated custom_emoji_id. Do not hardcode a
+      sticker id; use topicIcon.ts's resolveIconStickerId against the live-fetched
+      list.
+    - Ownership: the LIVE tick only sets/updates an epic icon the swarm owns (a
+      human-customised epic icon is left alone) or on a brand-new epic topic
+      (free to set the initial icon) — exactly syncTopicIcon's isNewTopic /
+      readSwarmIconId rule. The one-time BACKFILL is the authorized override
+      (running it IS the authorization), setting all three seeded epics even
+      though their current hand-assigned trophy/lightning/folder icons are NOT
+      swarm-owned. The not-owned+backfill vs not-owned+live-tick rows in the
+      ownership Outline pin that priority (the "drive both branch triggers true at
+      once" engineering rule).
+
+  KEEP EPICS SEPARATE FROM THE TICKET-STATE SYNC (explicit human requirement).
+  Epics are deliberately OUT of BL-342's ticket-state icon sync (topicIcon.ts
+  header + resolveIconState / conciergeTick.ts fire only on ticket
+  TaskStarted/TaskCompleted/pause transitions). This is a NEW, separate epic-icon
+  assignment path — its own table/pool + resolver — NOT a new TopicIconState
+  member and NOT a change to resolveIconState. Reuse syncTopicIcon /
+  resolveIconStickerId (the apply + live-set-validate machinery), never the
+  ticket-state RESOLUTION.
+
+  SCOPE / LIVE PATH (verify who actually calls what before finalising):
+    - A new epic-icon module (mirror topicIcon.ts's small pure-resolver shape):
+      the ordered pool + resolveEpicIcon(epic) pure logic, unit-tested over the
+      example rows. Keep it beside topicIcon.ts but distinct from ICON_EMOJI /
+      TopicIconState.
+    - The epic-topic CREATE path (extension/src/concierge/topicRouter.ts
+      decideEpicTopicAction + its live caller in conciergeTick.ts): on creating a
+      NEW epic topic, resolve + apply its pool icon via syncTopicIcon
+      (isNewTopic=true). This is the "new epic topics also get one" half — confirm
+      the live caller of decideEpicTopicAction and wire it there, not a dead layer.
+    - A one-time backfill tool for the three existing epics, modelled on
+      tools/backfill-standing-topic-icons.ts / backfill-topic-icons.ts: read
+      .swarmforge/operator/epic-topic-map.json, use buildAlwaysEligibleIconAdapters
+      (override ownership), set 🎙/🎭/🎬, and seed the live tick's seen-set so it
+      never re-treats a backfilled epic as newly-entered (same pattern the standing
+      backfill uses).
+    - A wiring test that adds epic-topic-map.json as a NEW on-disk input MUST place
+      it in the fixture and prove the read is load-bearing by break-then-fix (blank
+      the map -> no epic icon set -> restore) — a green wiring suite whose fixture
+      never contained the map is not proof the wiring reads it (engineering
+      "wiring test that adds a NEW on-disk input" rule).
+
+  DELIVERABLE 2 — CONSTITUTION RULE (through the pipeline, NOT a specifier direct
+  edit): add a short rule to swarmforge/constitution/articles/local-engineering.prompt
+  (the project's UI/surface engineering article, home of the "two phone-viewable
+  surfaces" rule) stating: 'Epics have icons representing musical forms.' The rule
+  must note the two-surface realisation — PWA/fleet-console/bot-avatar carry the
+  owned orchestra FORM marks (docs/branding/icon-system.md §4d); Telegram topic
+  icons use the closest stock performance sticker as the stand-in (platform wall:
+  no notation/instrument stickers) — so a future reader does not try to push an SVG
+  form onto a Telegram topic. Cite §4d. NOTE: icon-system.md (§4d) currently lives
+  on branch branding/epic-marks, not main; the citation is a documentation pointer
+  and does not block the code, but that branch should land on main (separate merge)
+  for the citation to resolve.
+
+  COORDINATOR SERIALISATION (overlap-cluster hazard). This edits the concierge
+  topic cluster (topicRouter.ts / conciergeTick.ts, beside topicIcon.ts). depends_on
+  is empty but this is NOT orthogonal to the active BL-425 (per-agent Telegram
+  topics, which edits topicRouter.ts / backlogTopicMapStore.ts) or any other
+  topic-hook-cluster ticket (BL-414/417/418/424 lineage). Do NOT run BL-449
+  concurrently with BL-425 or another topic-cluster ticket — sequence them; they
+  edit the same files. Flagged per the known overlap-cluster hazard.
+
+  OUT OF SCOPE: changing how epics are DEFINED/announced (epicProgress.ts); any
+  change to the ticket-state icon resolution (resolveIconState / ICON_EMOJI); a
+  title-suffix cue; pushing SVG art onto Telegram topic icons (platform wall);
+  re-deriving the branding art (already committed on branding/epic-marks).
+
+acceptance:
+  feature: specs/features/BL-449-epic-topic-musical-form-icons.feature
+  steps:
+    - "each seeded epic topic maps to its finalised musical-form icon"
+    - "a newly-created epic topic is auto-assigned the next distinct pool icon"
+    - "epic icons never collide with the ticket-state or standing-topic icons"
+    - "an epic emoji absent from the live icon set is skipped, never sent unvalidated"
+    - "ownership governs whether the epic-icon path may set an icon"
+
+qa_e2e: |
+  1. Unit (host-side, no Telegram): drive resolveEpicIcon over the three seeded
+     epics (BENCHMARKING->🎙, DYNAMIC_ROUTING->🎭, ONBOARDING->🎬); drive the
+     new-epic pool assignment (a 4th epic gets a pool icon distinct from all
+     three); assert the epic pool is DISJOINT from ICON_EMOJI and
+     STANDING_TOPIC_ICON; drive the absent-emoji skip (desired emoji not in the
+     live set -> no setTopicIcon call, topic unchanged); drive the ownership
+     Outline (not-owned+live-tick -> unchanged, not-owned+backfill -> set,
+     owned+live-tick -> set). Add the epic-topic-map break-then-fix wiring test.
+  2. Constitution rule: grep swarmforge/constitution/articles/local-engineering.prompt
+     for the codified 'Epics have icons representing musical forms' rule and its
+     two-surface note + §4d citation.
+  3. Live (against the real forum group): run the backfill and confirm epic topics
+     147/149/151 show 🎙/🎭/🎬; create a fresh epic topic and confirm it auto-gets
+     the next distinct performance sticker; confirm a ticket-state transition on a
+     normal BL topic still updates only that topic's state icon and never touches an
+     epic topic; confirm a manually-recustomised epic icon is left alone by the live
+     tick.
+
+human_approval: approved
+mutation_cost: medium

@@ -1,8 +1,7 @@
 import {
   capturePane,
-  getPaneCommand,
-  getPanePid,
-  readSwarmRoles,
+  getPanePidAndCommand,
+  readLiveSwarmRoles,
   readTmuxSocket,
   resizeWindow,
   resolveAgentPaneTarget,
@@ -15,13 +14,15 @@ import {
 } from '../swarm/tmuxClient';
 import { appendInputEntry } from '../swarm/inputLog';
 import { recordHumanInput } from '../swarm/humanInputTracker';
-import { agentPaneStatusMessage } from './agentPaneState';
+import { agentPaneStatusMessage, isAgentActivelyWorking } from './agentPaneState';
 import { stripAnsi } from './ansi';
-import { detectNeedsHuman } from './needsHumanDetection';
+import { classifyDecisionStatus, detectNeedsHuman, DecisionStatus } from './needsHumanDetection';
 import { accumulatePaneHistory } from './paneHistory';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
 export const STALL_THRESHOLD_MS = 120_000;
+// Recent pane/output motion keeps the tile border in a soft "working" pulse.
+export const WORKING_INDICATOR_MS = 30_000;
 const DEFAULT_HISTORY_LINES = 5000;
 const MAX_HISTORY_LINES = 50000;
 
@@ -64,6 +65,58 @@ export function isStalled(lastChangedAt: number, now: number): boolean {
   return now - lastChangedAt >= STALL_THRESHOLD_MS;
 }
 
+// BL-210: the per-role working-state decision emitActivityEvents used to
+// compute inline (CRAP 93.91 - unreachable except through a full
+// timer-driven PaneTailer). Pure so it's testable without a class instance
+// or a real clock: given a role's raw command/pane text, its last-changed
+// time, whether it was previously working, and whether it's currently a
+// dead role, decide whether it's working now and whether that's a change
+// from before - emitActivityEvents becomes a thin loop over this.
+export interface RoleActivityStatus {
+  command: string;
+  rawText: string;
+  lastChangedMs: number | undefined;
+  wasWorking: boolean;
+  isDead: boolean;
+}
+
+export interface RoleActivityDecision {
+  working: boolean;
+  changed: boolean;
+}
+
+export function decideRoleActivity(status: RoleActivityStatus, nowMs: number): RoleActivityDecision {
+  // A dead role can never be "working" - forced false regardless of
+  // whatever its last-observed command/text/recency would otherwise imply.
+  const working = status.isDead
+    ? false
+    : isAgentActivelyWorking(status.command, status.rawText) ||
+      (status.lastChangedMs !== undefined && nowMs - status.lastChangedMs < WORKING_INDICATOR_MS);
+  return { working, changed: working !== status.wasWorking };
+}
+
+// Builds the RoleActivityStatus decideRoleActivity needs from the raw,
+// possibly-unset per-role lookups emitActivityEvents holds (Map.get returns
+// undefined for a role not yet observed). Split out so those two `?? ''`
+// fallbacks - untestable without a class instance - are pure and covered
+// directly instead of holding emitActivityEvents' own CRAP up as dead weight
+// atop decideRoleActivity's already-covered decision branches.
+export function buildRoleActivityStatus(
+  command: string | undefined,
+  rawText: string | undefined,
+  lastChangedMs: number | undefined,
+  wasWorking: boolean,
+  isDead: boolean
+): RoleActivityStatus {
+  return {
+    command: command ?? '',
+    rawText: rawText ?? '',
+    lastChangedMs,
+    wasWorking,
+    isDead,
+  };
+}
+
 /**
  * BL-120: `tmux respawn-pane` (e.g. a relaunch that reuses the existing
  * session rather than killing it) swaps the process running in a pane
@@ -101,6 +154,16 @@ export interface NeedsHumanEvent {
   needsHuman: boolean;
 }
 
+export interface DecisionStatusEvent {
+  role: string;
+  status: DecisionStatus;
+}
+
+export interface ActivityEvent {
+  role: string;
+  working: boolean;
+}
+
 export class PaneTailer {
   private interval: ReturnType<typeof setInterval> | undefined;
   private lastText = new Map<string, string>();
@@ -110,9 +173,15 @@ export class PaneTailer {
   // this, not the growing history.
   private lastRawText = new Map<string, string>();
   private lastChangedAt = new Map<string, number>();
+  private lastPaneCommand = new Map<string, string>();
   private stalledRoles = new Set<string>();
+  private workingRoles = new Set<string>();
   private deadRoles = new Set<string>();
   private needsHumanRoles = new Set<string>();
+  // BL-421: last-emitted decision status per role, so an unchanged
+  // classification (e.g. two consecutive polls both 'resolved') never
+  // refires the event - mirrors needsHumanRoles' own dedup above.
+  private decisionStatusRoles = new Map<string, DecisionStatus>();
   private liveRoles = new Set<string>();
   private paneBaseIndex = 0;
   private roles: SwarmRole[] = [];
@@ -138,7 +207,9 @@ export class PaneTailer {
     private readonly onRoles?: (roles: SwarmRole[]) => void,
     paneRows?: number,
     private readonly onNeedsHuman?: (events: NeedsHumanEvent[]) => void,
-    private readonly onPollError?: (message: string) => void
+    private readonly onPollError?: (message: string) => void,
+    private readonly onActivity?: (events: ActivityEvent[]) => void,
+    private readonly onDecisionStatus?: (events: DecisionStatusEvent[]) => void
   ) {
     this.historyLines = normalizeHistoryLines(historyLines);
     this.paneRows = normalizePaneRows(paneRows);
@@ -159,30 +230,41 @@ export class PaneTailer {
     }
   }
 
-  start(pollMs = DEFAULT_POLL_INTERVAL_MS): void {
-    this.stop();
+  // BL-131: scheduleTick/clearTick default to the real setInterval/
+  // clearInterval, so every existing production caller is byte-for-byte
+  // unaffected; tests inject a tick-capturing fake (same pattern as
+  // chaserMonitor.ts/waitForSwarmReady) to drive poll() synchronously
+  // instead of waiting on the real clock.
+  start(
+    pollMs = DEFAULT_POLL_INTERVAL_MS,
+    scheduleTick: (fn: () => void, ms: number) => ReturnType<typeof setInterval> = setInterval,
+    clearTick: (handle: ReturnType<typeof setInterval>) => void = clearInterval
+  ): void {
+    this.stop(clearTick);
     this.refreshState();
 
-    this.interval = setInterval(() => {
+    this.interval = scheduleTick(() => {
       this.poll();
     }, pollMs);
     this.poll();
   }
 
-  stop(): void {
+  stop(clearTick: (handle: ReturnType<typeof setInterval>) => void = clearInterval): void {
     if (this.interval) {
-      clearInterval(this.interval);
+      clearTick(this.interval);
       this.interval = undefined;
     }
   }
 
   refreshState(): void {
     this.socketPath = readTmuxSocket(this.targetPath) ?? '';
-    this.roles = readSwarmRoles(this.targetPath);
+    this.roles = readLiveSwarmRoles(this.targetPath);
     this.lastText.clear();
     this.lastRawText.clear();
     this.lastChangedAt.clear();
+    this.lastPaneCommand.clear();
     this.stalledRoles.clear();
+    this.workingRoles.clear();
     this.deadRoles.clear();
     this.liveRoles.clear();
     this.paneHistory.clear();
@@ -244,7 +326,9 @@ export class PaneTailer {
     }
 
     this.emitStallEvents();
+    this.emitActivityEvents();
     this.emitNeedsHumanEvents();
+    this.emitDecisionStatusEvents();
   }
 
   // Captures every role's pane for this tick, isolating one role's thrown
@@ -298,6 +382,36 @@ export class PaneTailer {
     return { role: role.role, stalled };
   }
 
+  private emitActivityEvents(): void {
+    if (!this.onActivity) {
+      return;
+    }
+    const now = Date.now();
+    const events: ActivityEvent[] = [];
+    for (const role of this.roles) {
+      const status = buildRoleActivityStatus(
+        this.lastPaneCommand.get(role.role),
+        this.lastRawText.get(role.role),
+        this.lastChangedAt.get(role.role),
+        this.workingRoles.has(role.role),
+        this.deadRoles.has(role.role)
+      );
+      const decision = decideRoleActivity(status, now);
+      if (!decision.changed) {
+        continue;
+      }
+      if (decision.working) {
+        this.workingRoles.add(role.role);
+      } else {
+        this.workingRoles.delete(role.role);
+      }
+      events.push({ role: role.role, working: decision.working });
+    }
+    if (events.length > 0) {
+      this.onActivity(events);
+    }
+  }
+
   private emitNeedsHumanEvents(): void {
     if (!this.onNeedsHuman) {
       return;
@@ -325,6 +439,31 @@ export class PaneTailer {
     }
   }
 
+  // BL-421: classifies each role's decision-menu status from the CURRENT
+  // capture (lastRawText, the same input emitNeedsHumanEvents reasons about
+  // above) and the reconstructed transcript (lastText, BL-070's accumulated
+  // history) so a resolved AskUserQuestion menu is marked historical instead
+  // of reading as an actionable live prompt.
+  private emitDecisionStatusEvents(): void {
+    if (!this.onDecisionStatus) {
+      return;
+    }
+    const events: DecisionStatusEvent[] = [];
+    for (const role of this.roles) {
+      const currentFrame = this.lastRawText.get(role.role);
+      const transcript = this.lastText.get(role.role);
+      const status = classifyDecisionStatus(currentFrame, transcript);
+      const previous = this.decisionStatusRoles.get(role.role);
+      if (status !== previous) {
+        this.decisionStatusRoles.set(role.role, status);
+        events.push({ role: role.role, status });
+      }
+    }
+    if (events.length > 0) {
+      this.onDecisionStatus(events);
+    }
+  }
+
   // Re-reads the socket path and role list for this tick, resetting retained
   // state when either changes. Split out from poll() so a thrown error here
   // (e.g. a state-file race) can be caught without also swallowing the
@@ -340,7 +479,7 @@ export class PaneTailer {
 
   private applySocketChange(latestSocket: string): void {
     this.socketPath = latestSocket;
-    this.roles = readSwarmRoles(this.targetPath);
+    this.roles = readLiveSwarmRoles(this.targetPath);
     this.lastText.clear();
     this.lastRawText.clear();
     this.paneHistory.clear();
@@ -357,7 +496,7 @@ export class PaneTailer {
   // the cleaner). Re-read roles.tsv each poll and refresh the panel when the
   // role set changes, so the new tile appears without a full relaunch.
   private refreshRolesOnUnchangedSocket(): void {
-    const latestRoles = readSwarmRoles(this.targetPath);
+    const latestRoles = readLiveSwarmRoles(this.targetPath);
     if (!rolesChanged(this.roles, latestRoles)) {
       return;
     }
@@ -424,6 +563,7 @@ export class PaneTailer {
     this.lastText.delete(role);
     this.lastRawText.delete(role);
     this.lastChangedAt.delete(role);
+    this.lastPaneCommand.delete(role);
     this.paneHistory.delete(role);
     this.paneHistoryContentLines.delete(role);
   }
@@ -433,7 +573,9 @@ export class PaneTailer {
   private captureRoleOutput(role: SwarmRole, updates: TileOutput[]): string | null {
     const target = resolveAgentPaneTarget(this.socketPath, role.session, this.paneBaseIndex);
 
-    const currentPid = getPanePid(this.socketPath, target);
+    // BL-362 QA bounce follow-up: one display-message call for both values
+    // (getPanePidAndCommand), not two separate tmux subprocess spawns.
+    const { pid: currentPid, command: paneCommand } = getPanePidAndCommand(this.socketPath, target);
     if (didPaneRespawn(this.panePids.get(role.role), currentPid)) {
       this.resetRoleRetainedState(role.role);
     }
@@ -450,9 +592,14 @@ export class PaneTailer {
     }
 
     const rawText = stripAnsi(result.stdout);
-    const paneCommand = getPaneCommand(this.socketPath, target);
-    const statusOverlay = agentPaneStatusMessage(paneCommand, rawText);
-    this.lastRawText.set(role.role, statusOverlay ?? rawText);
+    this.lastPaneCommand.set(role.role, paneCommand);
+    const statusOverlay = agentPaneStatusMessage(paneCommand, rawText, role.agent);
+    const effectiveRaw = statusOverlay ?? rawText;
+    const previousRaw = this.lastRawText.get(role.role);
+    this.lastRawText.set(role.role, effectiveRaw);
+    if (previousRaw === undefined || previousRaw !== effectiveRaw) {
+      this.lastChangedAt.set(role.role, Date.now());
+    }
     return statusOverlay ?? this.accumulateHistory(role.role, rawText);
   }
 

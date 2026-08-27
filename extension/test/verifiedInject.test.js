@@ -3,6 +3,8 @@ const {
   hasPendingInput,
   isTextStillPending,
   sendInstructionVerified,
+  HANDOFF_WAKE_MESSAGE,
+  sendHandoffWakeUp,
 } = require('../out/swarm/verifiedInject');
 
 // --- hasPendingInput / isTextStillPending: pure heuristics over rendered
@@ -218,4 +220,45 @@ test('sendInstructionVerified: retry loop tracks the RECOVERED pending text, not
   assert.equal(result.status, 'delivered');
   assert.equal(result.attempts, 2, 'must track the recovered stale text, requiring the second Enter to see it clear');
   assert.equal(calls.sendLiteral.length, 0);
+});
+
+// --- sendHandoffWakeUp: the single shared path both the chaser nudge and
+//     the BL-122 recovery redelivery submit through, so neither can regress
+//     to a bare, unverified Enter (BL-152). ---
+
+// BL-152 wake-parity-01 / wake-parity-02
+test('sendHandoffWakeUp submits the canonical handoff wake message as a verified literal, never a bare Enter', () => {
+  const { deps, calls } = makeDeps(['❯ ', '❯ ']);
+  const result = sendHandoffWakeUp(deps);
+  assert.equal(result.status, 'delivered');
+  assert.deepEqual(calls.sendLiteral, [HANDOFF_WAKE_MESSAGE]);
+  assert.equal(calls.sendEnter, 1);
+});
+
+// BL-152 single-source-03
+test('HANDOFF_WAKE_MESSAGE is the one shared literal, matching handoffd.bb wake-message exactly', () => {
+  assert.equal(HANDOFF_WAKE_MESSAGE, 'You have new handoff mail. If idle, run ready_for_next.sh.');
+});
+
+// BL-152 no-stacking (shared with wake-parity-01/02): a wake must never
+// stack a second copy onto a pane that already has undelivered input.
+test('sendHandoffWakeUp never stacks a duplicate wake onto an already-pending input', () => {
+  const { deps, calls } = makeDeps([`❯ ${HANDOFF_WAKE_MESSAGE}`]);
+  const result = sendHandoffWakeUp(deps, { maxRetries: 1, retryDelayMs: 5 });
+  assert.equal(calls.sendLiteral.length, 0, 'must not type a new wake copy when one is already pending');
+  assert.equal(result.status, 'skipped-pending');
+});
+
+// BL-152 wake-parity-01 / wake-parity-02
+test('sendHandoffWakeUp retries a lost submit exactly like sendInstructionVerified, still never re-typing', () => {
+  const captures = [
+    '❯ ',
+    `❯ ${HANDOFF_WAKE_MESSAGE}`,
+    'ran\n❯ ',
+  ];
+  const { deps, calls } = makeDeps(captures);
+  const result = sendHandoffWakeUp(deps, { maxRetries: 5, retryDelayMs: 10 });
+  assert.equal(result.status, 'delivered');
+  assert.equal(result.attempts, 2);
+  assert.deepEqual(calls.sendLiteral, [HANDOFF_WAKE_MESSAGE]);
 });

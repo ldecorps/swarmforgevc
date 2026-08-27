@@ -1,7 +1,7 @@
 id: BL-051
 title: "URGENT: tile grid must fit the panel (no overlap, no scroll) with weighted coordinator/specifier + doubling selected tile"
 milestone: M4
-status: todo
+status: done
 priority: 00
 assigned_to: coder
 

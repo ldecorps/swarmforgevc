@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,7 +10,7 @@ const { computeSuiteDuration, DEFAULT_SUITE_WARN_SECONDS } = require('../out/met
 // flagging creep before it throttles the whole pipeline (BL-060 lesson).
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-duration-'));
+  return mkTmpDir('sfvc-suite-duration-');
 }
 
 function writeLog(worktreePath, records) {

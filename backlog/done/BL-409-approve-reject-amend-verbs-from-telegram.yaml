@@ -1,0 +1,67 @@
+id: BL-409
+title: "Extend Telegram approval replies with reject <reason> / amend <note> verbs"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 2
+direction: human-requested
+depends_on: ["BL-408"]
+source: "backlog/INTAKE-operator-question-1784108659505.md — Slice 2 of the 3-slice approve-from-Telegram plan appended by a prior Claude Code session's root-cause analysis. Human confirmed 2026-07-15: queue this in now rather than waiting for BL-408 to land first."
+
+notes: |
+  BL-408 makes "approve" actually flip a pending-review ticket's
+  `human_approval` from a Telegram reply. This ticket is the same chain's
+  remaining two verbs from the original ask ("approve/amend/reject an
+  action ... on tickets sitting in the backlog"):
+
+  - `reject <reason>`: sets `human_approval: rejected  # <reason>` on the
+    ticket's backlog file (mirroring the existing approve-text-replace
+    shape in extension/src/concierge/pendingApprovalReply.ts — a targeted
+    line replace, not a full rewrite) and closes the approval-request loop
+    for that ticket (do not keep re-posting ApprovalRequested for a
+    rejected ticket — a rejected ticket goes back to the specifier for
+    rework, same as a `rule_proposal` reject path, not around the
+    concierge topic loop).
+  - `amend <note>`: does NOT flip `human_approval` — it stays pending. Post
+    the note as operator context on the ticket via the existing
+    `postOperatorContext` (extension/src/tools/telegram-front-desk-bot.ts:187),
+    the same channel BL-217/BL-383-style operator context already uses, so
+    the specifier sees the amendment note the next time it reviews the
+    ticket. The ticket keeps its outstanding ApprovalRequested state
+    (an amend is not a resolution).
+
+  MATCHING. Extend `isApprovalReplyText` (or add a sibling matcher) in
+  `pendingApprovalReply.ts` to recognize the three verb forms
+  (`approve`, `reject <reason>`, `amend <note>`) from a topic reply, each
+  routed to its own effect — do not overload the existing approve-only
+  boolean return into a three-way dispatch without also updating every
+  caller that currently treats a truthy result as "approved".
+
+  DEPENDS ON BL-408: this ticket builds on the fixed pending-review
+  matching and active+paused scan — do not re-fix those defects here.
+
+  OUT OF SCOPE: Slice 3 (inline-keyboard buttons) — a separate ticket
+  (BL-410).
+
+  E2E QA PROCEDURE: with a pending-review ticket (post-BL-408, so its
+  ApprovalRequested actually posts), reply `reject bad scope` in its topic
+  and confirm the backlog file's `human_approval:` line becomes `rejected`
+  with the reason recorded, and that no further ApprovalRequested reposts
+  for it. Separately, reply `amend tighten the acceptance criteria` on
+  another pending ticket and confirm `human_approval` is unchanged
+  (still pending-review) while the note appears as operator context on
+  the ticket.
+
+acceptance:
+  feature: specs/features/BL-409-approve-reject-amend-verbs-from-telegram.feature
+  steps:
+    - "A reject reply records the rejection reason and stops re-announcing the ticket"
+    # "An amend reply posts the note as operator context without changing the approval state"
+    # RETIRED by BL-509 (2026-07-17): amend now flips the ticket to 'amending' and closes the
+    # ask. The durable amend contract lives in specs/features/BL-509-amend-button-steers-ticket.feature.
+    - "An approve reply still flips the ticket to approved (regression guard)"
+
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
+
+mutation_cost: low

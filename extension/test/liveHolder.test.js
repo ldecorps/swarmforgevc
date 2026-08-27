@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const path = require('node:path');
 const { findLiveHolder } = require('../out/swarm/swarmState');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-holder-'));
+  return mkTmpDir('sfvc-holder-');
 }
 
 function mkdirp(dir) {

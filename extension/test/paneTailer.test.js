@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { mapInputToTmuxKey, mapSpecialKeyToTmux, normalizeHistoryLines } = require('../out/panel/paneTailer');
 const { stripAnsi } = require('../out/panel/ansi');
 const { getPaneCommand } = require('../out/swarm/tmuxClient');
@@ -124,10 +126,14 @@ test('mapSpecialKeyToTmux returns undefined for empty string', () => {
   assert.equal(mapSpecialKeyToTmux(''), undefined);
 });
 
-const { isStalled, STALL_THRESHOLD_MS } = require('../out/panel/paneTailer');
+const { isStalled, STALL_THRESHOLD_MS, WORKING_INDICATOR_MS } = require('../out/panel/paneTailer');
 
 test('STALL_THRESHOLD_MS is 120000', () => {
   assert.equal(STALL_THRESHOLD_MS, 120_000);
+});
+
+test('WORKING_INDICATOR_MS is 30000', () => {
+  assert.equal(WORKING_INDICATOR_MS, 30_000);
 });
 
 test('isStalled returns false when elapsed < threshold', () => {
@@ -254,4 +260,154 @@ test('setWindowSizeManual returns a result and does not throw on a dead socket',
   const result = setWindowSizeManual('/tmp/nonexistent-sfvc-socket-xyz');
   assert.ok(typeof result.exitCode === 'number');
   assert.notEqual(result.exitCode, 0);
+});
+
+// ── decideRoleActivity (pure, BL-210) ─────────────────────────────────────
+// Extracted from PaneTailer's private emitActivityEvents (CRAP 93.91,
+// ~17% covered - unreachable except through a full timer-driven instance).
+// No class, no real clock: a fixed NOW plus a plain RoleActivityStatus
+// object per test, mirroring inboxChaser.ts/idleClear.ts's own decideX
+// convention.
+
+const { decideRoleActivity } = require('../out/panel/paneTailer');
+
+const ACTIVITY_NOW = new Date('2026-07-09T12:00:00Z').getTime();
+
+function roleActivityStatus(overrides = {}) {
+  return {
+    command: '',
+    rawText: '',
+    lastChangedMs: undefined,
+    wasWorking: false,
+    isDead: false,
+    ...overrides,
+  };
+}
+
+test('pure-decision-01: reads no class instance state and takes nowMs as an explicit parameter', () => {
+  assert.equal(decideRoleActivity.length, 2);
+});
+
+test('recently-changed pane (within WORKING_INDICATOR_MS) is working', () => {
+  const status = roleActivityStatus({ lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS - 1) });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, true);
+});
+
+test('a pane unchanged for longer than WORKING_INDICATOR_MS, with no active-work command, is not working', () => {
+  const status = roleActivityStatus({ lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 1) });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+});
+
+test('lastChangedMs undefined (never observed) is not working from recency alone', () => {
+  const status = roleActivityStatus({ lastChangedMs: undefined });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+});
+
+// BL-1003 QA bounce D1: the fixture this test used before was a synthetic
+// string built from the bare pre-BL-1003 marker substring (see the
+// pre-existing 'Thinking…' fixtures below for its exact shape), not a
+// captured pane frame - unrepresentative, because rawText here is the
+// same tmux pane-capture text the respawn precheck reads, and real mid-turn
+// captures carry a spinner-glyph-led live status frame line (see
+// specs/features/fixtures/BL-970/). Read the shared captures both sides are
+// verified against, so this caller's coverage cannot drift from them again.
+const BL970_FIXTURES_DIR = path.join(
+  __dirname, '..', '..', 'specs', 'features', 'fixtures', 'BL-970'
+);
+function bl970Capture(name) {
+  return fs.readFileSync(path.join(BL970_FIXTURES_DIR, name), 'utf8');
+}
+
+test('an active-work command/pane text makes a role working regardless of recency', () => {
+  // The REAL capture BL-1003 was minted over: live frame
+  // `✢ Precipitating… (10m 13s · ↓ 16.7k tokens)`, no busy-marker
+  // substring anywhere - the pre-BL-1003 lexical contract read it as idle
+  // (measured in the ticket), so this test is red against that
+  // implementation, not merely green with the structural one.
+  const status = roleActivityStatus({
+    command: 'node',
+    rawText: bl970Capture('midturn-unlisted-verb-real-capture.txt'),
+    lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 100_000),
+  });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, true);
+});
+
+test('a stale pane merely quoting the busy marker in scrollback is not working', () => {
+  // idle-quoted-busy-marker.txt: transcript text quoting the bare
+  // pre-BL-1003 marker substring in scrollback, with no live status frame -
+  // the false-busy direction the old lexical contract got wrong at this
+  // caller (it reported working).
+  const status = roleActivityStatus({
+    command: 'node',
+    rawText: bl970Capture('idle-quoted-busy-marker.txt'),
+    lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 100_000),
+  });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+});
+
+test('changed is true only when working differs from wasWorking', () => {
+  const becameWorking = roleActivityStatus({ wasWorking: false, lastChangedMs: ACTIVITY_NOW });
+  assert.equal(decideRoleActivity(becameWorking, ACTIVITY_NOW).changed, true);
+
+  const staysWorking = roleActivityStatus({ wasWorking: true, lastChangedMs: ACTIVITY_NOW });
+  assert.equal(decideRoleActivity(staysWorking, ACTIVITY_NOW).changed, false);
+
+  const staysIdle = roleActivityStatus({ wasWorking: false, lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 1) });
+  assert.equal(decideRoleActivity(staysIdle, ACTIVITY_NOW).changed, false);
+});
+
+// dead-role-clears-working-03
+test('a role that becomes dead while working emits a not-working, changed decision', () => {
+  const status = roleActivityStatus({ isDead: true, wasWorking: true, lastChangedMs: ACTIVITY_NOW });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+  assert.equal(decision.changed, true);
+});
+
+test('a role that is dead and was already not working produces no change (no redundant event)', () => {
+  const status = roleActivityStatus({ isDead: true, wasWorking: false, lastChangedMs: ACTIVITY_NOW });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+  assert.equal(decision.changed, false);
+});
+
+test('a dead role is never working even with an active-work command/recent change (isDead forces false)', () => {
+  const status = roleActivityStatus({ isDead: true, command: 'node', rawText: 'Thinking… (esc to interrupt)', lastChangedMs: ACTIVITY_NOW });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+});
+
+// ── buildRoleActivityStatus (pure, BL-210 cleanup) ────────────────────────
+// Builds decideRoleActivity's input from the raw Map.get() lookups
+// emitActivityEvents holds - a role not yet observed reads back undefined
+// for command/rawText, which must default to '' rather than reach
+// isAgentActivelyWorking as undefined.
+
+const { buildRoleActivityStatus } = require('../out/panel/paneTailer');
+
+test('buildRoleActivityStatus defaults an unobserved command/rawText to empty strings', () => {
+  const status = buildRoleActivityStatus(undefined, undefined, undefined, false, false);
+  assert.deepEqual(status, {
+    command: '',
+    rawText: '',
+    lastChangedMs: undefined,
+    wasWorking: false,
+    isDead: false,
+  });
+});
+
+test('buildRoleActivityStatus passes through an observed command/rawText unchanged', () => {
+  const status = buildRoleActivityStatus('node', 'Thinking… (esc to interrupt)', ACTIVITY_NOW, true, false);
+  assert.deepEqual(status, {
+    command: 'node',
+    rawText: 'Thinking… (esc to interrupt)',
+    lastChangedMs: ACTIVITY_NOW,
+    wasWorking: true,
+    isDead: false,
+  });
 });

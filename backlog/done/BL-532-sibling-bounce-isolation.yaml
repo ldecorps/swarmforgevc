@@ -1,0 +1,246 @@
+id: BL-532
+title: "Isolate bounce recovery from sibling defect contamination — a parcel with no failing check of its own is deferred pending the blocker, never re-queued for rework"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+priority: 6
+mutation_cost: medium
+direction: human-requested
+depends_on: []
+assigned_to: coder
+source: "BL-512 audit BL-FIX-005. Evidence: backlog/evidence/BL-477-upstream-drift-watch-mechanism-bounce-20260717-b.md; backlog/evidence/BL-465-recently-closed-not-sorted-by-recency-bounce-20260717-b.md; backlog/evidence/BL-475-retire-superseded-bl462-grid-slug-scenario-bounce-20260717.md; rule_proposals L11."
+
+description: |
+  ## What / why
+
+  Article 2.6 lets a batch role (cleaner, hardener) produce ONE commit that
+  satisfies several tickets. That is correct and stays. The consequence is that
+  every ticket riding that commit shares one tree — so one ticket's defect
+  bounces all of them.
+
+  On 2026-07-17 the combined BL-475/BL-477/BL-469/BL-465 tree carried BL-469's
+  icon collision. BL-477's own evidence file records the shape exactly:
+
+  > **Failing command**: none of BL-477's own; blocked by the shared-tree defect
+  > … **Failure class**: `integration` — blocked by a sibling ticket's defect in
+  > the same shared commit tree, not a defect of its own. … No rework needed for
+  > BL-477 itself.
+
+  Three separate costs follow, and all three are avoidable:
+
+  1. **A clean ticket is re-queued for rework it does not need.** BL-477 was
+     bounced with a `git_handoff` back down the chain, even though its own
+     verification was clean and its remediation section says so.
+  2. **The same bounce is paid twice.** When a later parcel for the same ticket
+     arrived on the same tree, QA checked out the commit, re-ran the blocker's
+     check, confirmed nothing had changed, and wrote a SECOND evidence file
+     (`-b.md`) saying so — for BL-477, BL-465 and BL-469 alike, on one day.
+  3. **The BL-454 tally is poisoned.** Each of those bounces was recorded
+     against a `producingRole`, so a role that introduced nothing is charged for
+     the blocker's defect. The failure-mode inventory this ticket's own audit
+     came from is built on that tally.
+
+  ## The deferral
+
+  A parcel whose tree carries an open blocker and which has **no failing check
+  of its own** is DEFERRED pending that blocker. A deferral is not a bounce:
+  no rework `git_handoff`, no per-ticket evidence file, no `record-qa-bounce.js`
+  call, no entry in the bounce tally. It is a durable machine-readable marker
+  that says "this ticket is fine; it is waiting on ticket A".
+
+  ### Failure signature
+
+  Two failures are the same failure when their signature matches. The signature
+  is `<failureClass>::<normalized failing command>`, normalization being trim
+  plus collapse of internal whitespace runs to one space. Fixed-string equality,
+  no regex, no fuzzy matching — a signature that is wrong must be visibly wrong.
+
+  This is what makes the suppression narrow: an open deferral suppresses the
+  re-queue for the blocker's signature ONLY. A failure on the deferred ticket
+  with any other signature is that ticket's own defect and bounces normally.
+  This is the ticket's central guarantee, and scenario 05 pins both directions.
+
+  ### Repeat arrival
+
+  When a later parcel for a deferred ticket reaches QA, QA asks for its
+  disposition before spending a verification pass. The answer names the blocker
+  and hands back the blocker's recorded failing command. QA re-runs that ONE
+  command at the new commit — not the ticket's whole suite:
+
+  - still failing → the deferral stands; QA notes the holder and moves on. No
+    second evidence file, no second bounce record.
+  - now passing → QA clears that deferral and verifies the ticket normally.
+
+  The tool never executes the recorded command itself. It is read from a file
+  and printed for QA to run; executing it would turn a data store into an
+  arbitrary-command sink.
+
+  ### A ticket may have several blockers
+
+  Openness is keyed on the `(ticket, blockedBy)` PAIR, not the ticket. Clearing
+  one blocker does not release a ticket still pending another (scenario 06).
+
+  ## Shape
+
+  - `extension/src/quality/siblingDeferral.ts` — the pure decision surface:
+    the record shape, `failureSignature`, the idempotency natural key, the
+    latest-record-wins reduction from a record list to a ticket's open blockers,
+    and `decideDisposition` returning `verify` | `defer` | `bounce`. No I/O:
+    `.dependency-cruiser.cjs`'s no-io-from-policy rule forbids fs imports from
+    `src/quality/`, and `qaBounce.ts` — this module's sibling and vocabulary
+    source — already lives there under exactly that constraint.
+  - `extension/src/metrics/siblingDeferralStore.ts` — the impure append/read
+    layer over `.swarmforge/qa_deferrals/<yyyy-MM>.jsonl`, mirroring
+    `qaBounceStore.ts`'s posture (gitignored, machine-local, atomic append,
+    month-bucketed on the record's own `at`, unparseable lines skipped).
+  - `extension/src/tools/qa-sibling-check.ts` — the CLI QA runs, three
+    subcommands. `main` stays a thin wrapper over exported helpers
+    (engineering.prompt's CLI rule):
+
+        qa-sibling-check.js status --ticket <id>
+          exit 0  VERIFY <ticket>
+          exit 3  DEFERRED <ticket> BLOCKED_BY <blocker> CHECK <command>   (one line per open blocker)
+        qa-sibling-check.js defer --ticket <id> --blocked-by <id> --class <failureClass> --check "<command>" --commit <10-hex>
+        qa-sibling-check.js clear --ticket <id> --blocked-by <id> --commit <10-hex>
+
+    Exit 2 is reserved for usage errors, so a caller can tell "deferred" from
+    "you typed it wrong". `--class` is validated against `qaBounce.ts`'s
+    existing `KNOWN_FAILURE_CLASSES` — no second vocabulary.
+  - `swarmforge/roles/QA.prompt` — the runtime wiring, and the reason this
+    parcel is not a dark mechanism. QA's bounce ritual is agent-driven; there is
+    no automated bouncer to call the lib from, so the prompt IS the live call
+    site. Two edits, both in the verification-FAILS branch: run `status` before
+    verifying a parcel, and record a `defer` (not a bounce) for each ticket in a
+    batch that has no failing check of its own.
+
+  ## Constraints
+
+  - Do not change how a real bounce is recorded, classified or routed. This
+    ticket adds a disposition BEFORE the bounce ritual; the ritual itself,
+    `record-qa-bounce.js`, and the BL-425/BL-576 owning-role routing are
+    untouched.
+  - The deferral store is a separate directory from `.swarmforge/qa_bounces/`,
+    not a differently-named file inside it, so no future reader of the bounce
+    corpus can pick deferrals up by accident. Keeping the tally clean is half
+    this ticket's value; it must not depend on a glob staying narrow.
+
+specifier_decisions: |
+  1. **Defer, do not auto-hold the parcel.** The tool reports and records; QA
+     still decides and still sends the holder a `note`. An automated hold would
+     need to own parcel state, which QA's ritual does not centralize anywhere
+     this ticket could safely reach.
+
+  2. **The blocker's check is re-run by QA, never by the tool.** The recorded
+     command comes out of a JSONL file. Executing it would make any writer of
+     that file a command-injection vector into QA's worktree. Printing it costs
+     QA one paste and removes the hazard entirely.
+
+  3. **Signature is class + normalized command, fixed-string.** The alternative
+     — matching on the error excerpt — is prose, varies between runs, and fails
+     open silently. A command is what QA already records verbatim in evidence
+     field 1, so the data exists today at zero extra cost.
+
+  4. **Openness keyed on the (ticket, blocker) pair.** Keying on the ticket
+     alone would let a second blocker be silently lost when the first cleared,
+     releasing a still-blocked parcel. Scenario 06 exists to keep that honest.
+
+  5. **A deferral is never counted in the QA-bounce tally.** This is a
+     correctness fix, not bookkeeping taste: BL-512's own audit ranked failure
+     modes off that tally, and sibling-contamination bounces charged to an
+     uninvolved `producingRole` are exactly the noise that misdirects the next
+     audit.
+
+  6. **Tree isolation is split out, not dropped.** The ticket's OUTCOME line
+     names two remedies: skip the re-queue, and isolate the trees. Only the
+     first is buildable without changing how batch roles commit. Tree isolation
+     contradicts Article 2.6's one-commit-many-tickets model and is an
+     architectural change to the pipeline, so it is specced separately as
+     **BL-588** (paused, `human_approval: pending`) rather than folded in here.
+     A human should read BL-588 before that half is built.
+
+acceptance: |
+  specs/features/BL-532-sibling-bounce-isolation.feature
+
+  Every scenario needs its step handler in this same parcel — the acceptance
+  runner throws on an unhandled scenario (BL-233). Handlers drive
+  `siblingDeferral.ts` and the CLI over a temp-dir store; they must never shell
+  out to a live swarm.
+
+  The feature file was linted clean (`gherkin_lint_gate.sh`) and IR-DRY
+  reviewed. The remaining checker findings are the `<disposition>` outline
+  placeholder against its concrete instances, and `pending ticket A` against
+  `pending ticket D` — intentional parameterization and a genuine value
+  difference, not accidental drift. One handler serves each family.
+
+  Unit gate (`extension/test/`), covering what the Gherkin does not pin:
+  - `failureSignature` normalization: leading/trailing whitespace and internal
+    whitespace runs collapse; two commands differing only in spacing share a
+    signature; differing class alone does not.
+  - Idempotency: two `defer` writes for the same (ticket, blocker, date, class)
+    collapse to one record, matching `qaBounceNaturalKey`'s posture.
+  - Latest-record-wins: `defer` → `clear` → `defer` for one pair leaves it OPEN.
+  - Open blockers are returned in a stable order (by blocker ticket id) so the
+    CLI's multi-line output is deterministic.
+  - A malformed JSONL line is skipped, not fatal; a missing store directory
+    reads as no deferrals.
+  - CLI: `--class` outside `KNOWN_FAILURE_CLASSES` is a usage error (exit 2),
+    never written raw; a missing required flag is exit 2; `status` on an
+    unknown ticket is exit 0 `VERIFY`.
+  - Exit codes are distinct: 0 verify, 3 deferred, 2 usage.
+
+  QA end-to-end procedure (live swarm, from the QA worktree):
+
+  1. **Deferral instead of a bounce.** Take any commit and record a deferral:
+     `qa-sibling-check.js defer --ticket BL-XXX --blocked-by BL-YYY --class
+     integration --check "npm run compile" --commit <hex>`. Confirm
+     `.swarmforge/qa_deferrals/<month>.jsonl` gained exactly one line, and that
+     `.swarmforge/qa_bounces/` is untouched.
+  2. **Tally is unchanged.** Run the QA-bounce tally reader before and after
+     step 1 and confirm the counts are identical — the deferral must be
+     invisible to it.
+  3. **Repeat arrival.** Run `qa-sibling-check.js status --ticket BL-XXX`.
+     Confirm exit 3 and a line naming `BL-YYY` and the exact recorded command.
+  4. **Clear and resume.** Run `clear --ticket BL-XXX --blocked-by BL-YYY
+     --commit <hex>`, then `status` again. Confirm exit 0 and `VERIFY`.
+  5. **Two blockers.** Defer the same ticket on two different blockers, clear
+     one, confirm `status` still exits 3 and names only the remaining blocker.
+  6. **Own defect is unaffected.** Confirm that a ticket with an open deferral
+     which fails a check with a DIFFERENT signature still goes through the
+     normal bounce ritual — evidence file, `record-qa-bounce.js`, and the
+     BL-425/BL-576 owning-role routing all unchanged.
+  7. **Prompt wiring is live.** Confirm `swarmforge/roles/QA.prompt` at the
+     delivered commit instructs QA to run `status` before verifying and to
+     record a `defer` for a batch sibling with no failing check of its own —
+     this prompt edit is the only call site, so a parcel without it ships a
+     dark mechanism (engineering.prompt's runtime-wiring rule).
+
+docs: |
+  documenter:
+  - `swarmforge/roles/QA.prompt` — review the deferral branch added to the
+    verification-FAILS ritual for accuracy against what shipped, including that
+    a deferral never calls `record-qa-bounce.js`.
+  - A `docs/how-to` runbook entry: what a deferred parcel is, how to read a
+    `DEFERRED` line, how to clear one, and how to tell a deferral from a bounce
+    when reading `.swarmforge/`.
+  - The architecture diagram under `docs/diagrams/` only if the deferral store
+    changes what that diagram depicts; state the check either way.
+
+out_of_scope: |
+  - **Tree isolation (specced as BL-588, paused, awaiting human approval).**
+    Giving each ticket its own recovery tree so a sibling's defect cannot ride
+    it contradicts Article 2.6's one-commit-many-tickets batch model and changes
+    how batch roles commit and forward. It is the second half of this ticket's
+    OUTCOME line and is deliberately split out, not dropped — see BL-588.
+  - Any change to the bounce ritual itself: evidence-file contract (BL-140),
+    `record-qa-bounce.js`, failure-class vocabulary, or the BL-425/BL-576
+    owning-role bounce routing.
+  - Automatically holding, re-sending or re-forwarding a deferred parcel. The
+    tool records and reports; QA and the holding role act.
+  - Executing a recorded blocker command (decision 2).
+  - Deriving the batch's ticket set from commit-message scanning. QA already
+    knows the batch's tickets from the handoffs it received and passes them as
+    arguments. **BL-531 builds a `.bb` whole-token ticket-id-in-commit-message
+    matcher for its ancestry check; if a later ticket needs the same primitive
+    here, unify with that one rather than writing a second.**
+  - Backfilling deferrals onto the 2026-07-17 evidence corpus.

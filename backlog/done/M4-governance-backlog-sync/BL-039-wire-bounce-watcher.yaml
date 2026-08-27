@@ -1,7 +1,7 @@
 id: BL-039
 title: wire bounceWatcher into activate() and rebuild out/
 milestone: M4
-status: active
+status: done
 priority: 39
 assigned_to: coder
 

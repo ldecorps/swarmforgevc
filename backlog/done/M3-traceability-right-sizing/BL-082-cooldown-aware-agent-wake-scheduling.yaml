@@ -1,7 +1,7 @@
 id: BL-082
 title: FEATURE — cooldown-aware wake scheduling after token reset windows
 milestone: M3
-status: todo
+status: done
 priority: 05
 assigned_to: coder
 

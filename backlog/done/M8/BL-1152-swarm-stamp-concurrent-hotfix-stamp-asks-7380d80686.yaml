@@ -1,0 +1,101 @@
+id: BL-1152
+title: "Swarm stamp-off: certify Cursor hotfix 7380d80686 (concurrent Approvals hotfix stamp Yes/No)"
+milestone: M8
+type: defect
+severity: medium
+# medium: Approvals could not certify/waive concurrent hotfix asks without
+# stealing the single awaiting-answer slot; already fixed on local main.
+# Not high: swarm is up; Hotfix-Certification still pending until human
+# ledger decision.
+status: paused
+epic: swarm-reliability
+priority: 15
+direction: aligned
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.feature
+human_approval: approved
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 7380d80686. Confirm or
+  refute only — do not reimplement. Human certifies or waives via Approvals /
+  ledger after QA; green tests alone never write certified/waived.
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1152ConcurrentHotfixStampAsksStampOffSteps::acceptance handler registered so the runner executes every review scenario"
+invariants:
+  - "This stamp-off never reimplements the hotfix — review confirms or refutes landed commit 7380d80686 only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."
+description: >
+  WHAT. Operator/Cursor hotfix 7380d80686 is live on local main with trailer
+  Hotfix-Certification: pending. Subject: Allow concurrent hotfix stamp
+  Yes/No asks on Approvals via Telegram.
+
+  Landed behaviour under review (do not redesign):
+  (1) resolveAskOptions reads .swarmforge/operator/hotfix-stamp-asks.json for
+  threadIds starting with hotfix-, returning that entry's options without
+  requiring the single awaiting-answer.json slot.
+  (2) Approvals taps on hotfix-<commit> subjects call hotfix_ledger_update
+  --decide (approved/waived) via applyHotfixStampAnswer / spawnSync bb, and
+  do not forward those answers through the ordinary bridge ask path.
+
+  WHY. Unticketed hotfixes never become official swarm deals on green tests
+  alone (BL-848). Concurrent stamp asks were blocked on the single
+  awaiting-answer slot; this land unblocks Approvals certify/waive.
+
+  HOW (direction, not mandate). Walk the acceptance feature against the
+  landed sources at 7380d80686; open a narrow follow-up only if review finds
+  a defect. Do not rewrite telegram-front-desk-bot in this parcel.
+
+qa_e2e_procedure: >
+  (1) At commit 7380d80686, confirm resolveAskOptions has a hotfix- branch
+  that reads hotfix-stamp-asks.json.
+  (2) Confirm applyHotfixStampAnswer / postToBridgeOrHotfixStamp routes
+  hotfix- subjectIds to bb hotfix_ledger_update --decide and not postToBridge.
+  (3) Confirm non-hotfix threads still use awaiting-answer.json + postToBridge.
+  (4) Record degraded Babashka gate (no mutation/CRAP/DRY). Leave
+  Hotfix-Certification pending until human ledger decision.
+
+out_of_scope: |
+  - Reverting or rewriting the hotfix.
+  - Changing how hotfix-stamp-asks.json is authored/posted.
+  - Certifying the ledger row without a human decision.
+  - Pushing main to origin (human/QA).
+  - Reminting BL-848 process itself.
+
+notes:
+  - [2026-08-26T10:25Z] specifier: minted from operator intake
+    .swarmforge/operator/INTAKE-stamp-off-hotfix-7380d80686-approvals-concurrent.md;
+    ledger linked 7380d80686 → BL-1152.
+source: |
+  Operator intake
+  .swarmforge/operator/INTAKE-stamp-off-hotfix-7380d80686-approvals-concurrent.md
+  (2026-08-26); babysitter health sweep; BL-848 stamp-off posture.
+
+assigned_to: coder
+abandoned_commits:
+  - 076e8fb6c4
+  - 6b560afb6
+  - 537116c2fc
+  - 98777d55b
+  - 7108b6735
+  - f095fbeea6
+  - d9cf1ce8b
+  - 38c6836d8
+  - f7ea521326
+  - fb68024dc
+  - 81ba52f34
+  - 9f358ce79
+  - 72cab36d4
+  - 375047095
+  - 8cc0d7322
+  - 80de53933
+  - be7406d60
+  - 73a7a98af5
+  - 2145551ce6
+  - 85dfc17a97
+bounce_count: 4
+bounce_history:
+  - { at: 2026-08-26, by: QA, blamed: cleaner, class: behavior, commit: 076e8fb6c4, evidence: backlog/evidence/BL-1152-qa-bounce-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: 98777d55b, evidence: backlog/evidence/BL-1152-qa-bounce-rematch-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: architect, class: behavior, commit: d9cf1ce8b, evidence: backlog/evidence/BL-1152-qa-bounce-rematch2-20260826.md }
+  - { at: 2026-08-26, by: QA, blamed: hardener, class: behavior, commit: e3d7e80cf, evidence: backlog/evidence/BL-1152-qa-bounce-rematch3-20260826.md }

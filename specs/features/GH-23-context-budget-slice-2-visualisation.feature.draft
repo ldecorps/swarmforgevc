@@ -1,0 +1,26 @@
+Feature: Context Budget dashboard — visualisation (Slice 2, parked)
+
+  # GH-23 Slice 2 — NOT built yet, NOT executed by the acceptance runner
+  # (BL-233 slice scoping: this is a `.feature.draft`). Adds the chart/
+  # timeline requirements from the original GH-23 intake. Also depends on
+  # GH-22 Slice 2 (live capture wiring) for the "updates live while agents
+  # execute" requirement to mean anything real.
+
+  # GH-23 stacked-context-budget-bar-05
+  Scenario: the dashboard shows a stacked context budget bar
+    Given agent "coder" has recorded telemetry with system/prompt/history/tool token breakdowns
+    When I open the Context Budget dashboard for "coder"
+    Then the page shows a stacked bar of system, prompt, history, and tool-output token usage plus remaining free budget
+
+  # GH-23 timeline-with-compaction-markers-06
+  Scenario: the dashboard shows a timeline of context growth with compaction markers
+    Given agent "coder" has recorded telemetry spanning multiple invocations including a compaction
+    When I open the Context Budget dashboard for "coder"
+    Then the page shows a timeline of context utilisation over time
+    And marks the point where the compaction occurred
+
+  # GH-23 live-auto-refresh-07
+  Scenario: the dashboard updates live while an agent is actively running
+    Given agent "coder" is actively running and emitting live telemetry events
+    When I have the Context Budget dashboard open for "coder"
+    Then the displayed summary updates without a manual page reload as new events arrive

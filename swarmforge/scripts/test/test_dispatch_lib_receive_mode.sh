@@ -11,11 +11,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-READY_DISPATCH="$SCRIPT_DIR/../ready_for_next.bb"
-DONE_DISPATCH="$SCRIPT_DIR/../done_with_current.bb"
-
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-998: the receive/completion helpers resolve their OWN root - the .sh
+# wrappers cd to their own dirname and the .bb dispatchers hand off to those
+# wrappers by name. Correct in production, where every worktree carries its
+# own hot-synced swarmforge/scripts/ copy; fatal here, because dispatching
+# the REAL repo's copy would cd out of the fixture and resolve THIS checkout
+# - testing live swarm state instead of the fixture, and claiming real
+# parcels out of real mailboxes while doing it. Give the fixture its own
+# copy and dispatch through that. Ported verbatim from
+# test_ready_for_next_no_promotion.sh.
+install_scripts() {
+  local wt="$1"
+  mkdir -p "$wt/swarmforge/scripts"
+  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
+}
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
@@ -26,6 +39,10 @@ COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 BATCH_WT="$ROOT/.worktrees/batchrole"
 git -C "$ROOT" worktree add -q -b batchrole "$BATCH_WT"
+install_scripts "$BATCH_WT"
+# BL-998: dispatch through the FIXTURE's copy, never the real scripts dir.
+READY_DISPATCH="$BATCH_WT/swarmforge/scripts/ready_for_next.bb"
+DONE_DISPATCH="$BATCH_WT/swarmforge/scripts/done_with_current.bb"
 
 ROLES="batchrole\tbatchrole\t$BATCH_WT\tswarmforge-batchrole\tBatchrole\tclaude\tbatch
 weirdrole\tweirdrole\t$BATCH_WT\tswarmforge-weirdrole\tWeirdrole\tclaude\tyolo

@@ -1,0 +1,86 @@
+id: BL-312
+title: "Burn-rate meter and cost sidecar double-count master-resident roles instead of reporting them as combined/unattributed"
+milestone: M8
+status: todo
+type: bug
+priority: 02
+direction: expedite
+depends_on: []
+source: "Coordinator flagged in its 2026-07-12 briefing, escalated by the human via operator (.swarmforge/operator/INTAKE-burn-meter-master-resident-double-count.md). Not a pre-baked design — root cause confirmed by code inspection before speccing."
+
+notes: |
+  CONFIRMED ROOT CAUSE (verified against source, not just the intake's
+  hypothesis): `computeBurnRateForRoles` (`extension/src/metrics/
+  burnRate.ts:50`) and the equivalent BL-272 cost-sidecar path
+  (`extension/src/metrics/costTelemetry.ts:132`) both call the shared
+  `readTranscriptUsage(role.worktreePath, ...)` (`extension/src/metrics/
+  transcriptUsage.ts:118-149`) keyed purely on `worktreePath` — never on
+  role name, tmux session, pane id, or Claude session id (none of which
+  are even parsed anywhere in this data path today; `parseRolesTsv`,
+  `extension/src/swarm/swarmState.ts:39-55`, only carries `role`,
+  `worktreeName`, `worktreePath`, `displayName`, `agent`). `readTranscriptUsage`
+  reads and merges EVERY `.jsonl` file in that worktree's
+  `~/.claude/projects/<slug>/` directory into one pool.
+
+  `resolveRoleWorktrees` (`extension/src/bridge/bridgeState.ts:72-82`) maps
+  every roster role to `{ role, worktreePath }`, dropping `worktreeName`
+  entirely. Since `specifier` and `coordinator` both carry `worktreeName:
+  master` with the identical `worktreePath` in `.swarmforge/roles.tsv`,
+  both roles' lookups resolve to the SAME directory, and each is assigned
+  the FULL combined pool independently — not a split — which is exactly
+  the observed symptom (byte-identical 247,165-token totals for both in
+  `2026-07-12.json`) and inflates the day-total headline by double-
+  counting one of the two.
+
+  There is currently no per-agent signal anywhere in this path (no pane id,
+  no session id, no per-file attribution) that could genuinely SPLIT the
+  shared directory's usage between the two roles — `swarmState.ts` already
+  documents the master-resident collision and special-cases it for mailbox
+  nesting (`mailboxBaseDir`, worktreeName === 'master'), but burn-rate/cost
+  telemetry never consults `worktreeName` or that nesting at all.
+
+  SCOPE (matches the intake's own explicit fallback requirement — do not
+  attempt to invent a heuristic per-session split; none of the required
+  correlating data exists today and a guessed split would itself be a
+  plausible-but-wrong number, which the intake explicitly rules out):
+    1. Detect, from the current roster, when two or more roles resolve to
+       the same `worktreePath` (the master-resident collision case).
+    2. For a colliding group, compute ONE combined usage total for the
+       group (read the shared directory once, not once per colliding
+       role) and report it labeled as shared/combined across the
+       colliding roles' names — never assign the same full total to each
+       role independently.
+    3. Both the BL-273 burn-rate-per-role output AND the BL-272
+       `.swarmforge/cost/<day>.json` sidecar must reflect this — they
+       share the same root cause and the same day-total headline the
+       intake calls out (~672k), so fixing only one leaves the other's
+       total wrong.
+    4. Any role whose `worktreePath` is NOT shared with another current
+       roster role is completely unaffected by this change — same
+       behavior as today.
+    5. Out of scope: building a real per-agent split (pane/session
+       correlation). If a genuine per-agent signal becomes available
+       later, a follow-up ticket can use it; this ticket's job is to stop
+       reporting a wrong, double-counted number, not to make the split
+       accurate.
+
+  E2E QA PROCEDURE: (a) construct a fixture roster where two roles share
+  one worktreePath with real transcript files in that path's project dir
+  -> assert both roles' reported usage reflects the SAME combined total
+  exactly once (not summed twice into the day aggregate) and is visibly
+  labeled as combined/shared, not two independent numbers; (b) a roster
+  with every role on a distinct worktreePath -> assert output is
+  unchanged from current behavior; (c) regenerate today's real
+  `2026-07-12.json` cost sidecar against the fix and confirm the day
+  total no longer double-counts the coordinator/specifier pair, and note
+  the restated total.
+
+acceptance:
+  feature: specs/features/BL-312-burn-meter-master-resident-double-count.feature
+  steps:
+    - "Two roles sharing the same worktreePath are reported as one combined/shared usage total, not two independent identical totals"
+    - "The combined total is counted exactly once in the day's aggregate, eliminating the double-count"
+    - "A role whose worktreePath is not shared with any other current roster role is unaffected"
+    - "Both the burn-rate per-role output and the cost sidecar day-total reflect the corrected attribution"
+
+mutation_cost: medium

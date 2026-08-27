@@ -1,0 +1,119 @@
+id: BL-307
+title: "Swarm auto-hibernates to concierge-banked when fully drained (mandatory closing pass) and auto-relaunches when new work arrives"
+milestone: M8
+status: todo
+type: feature
+priority: 01
+direction: expedite
+depends_on: []
+source: "Operator directive 2026-07-12 (transported verbatim by the coordinator via .swarmforge/operator/INTAKE-dynamic-per-ticket-agent-routing.md): budget-constrained (<10% tokens until Thursday), build ONLY the 'Auto-hibernate on drain + mandatory closing pass' slice of the dynamic-per-ticket-routing epic; everything else in that epic is explicitly deferred to later slices."
+
+notes: |
+  This is slice 1 of the dynamic-per-ticket-agent-routing epic
+  (.swarmforge/operator/INTAKE-dynamic-per-ticket-agent-routing.md). The epic's
+  end state is a demand-routed swarm (only a ticket's needed roles run); THIS
+  slice is narrower — it only automates the whole-swarm park/relaunch transition
+  that a human has so far done by hand (see memory
+  swarm-profiles-full-forge-concierge-banked / [[operator-is-external-to-swarm]]):
+  emptying roles.tsv + killing the build-agent tmux sessions to enter
+  concierge-banked, and restoring roles.tsv + relaunching to leave it.
+
+  CLASSIFICATION: tagged `expedite` (not `aligned`/`non-aligned` under the current
+  `reliability-first` direction, backlog/STEERING.md) because it is an explicit,
+  time-boxed operator directive addressing an active operational constraint
+  (imminent token exhaustion before the next reset) — the same "operational
+  blocker" carve-out STEERING.md gives bugs-first pulls, not a themed feature.
+
+  WHY OPERATOR_RUNTIME.BB OWNS THIS: it is the only always-alive process (survives
+  the build swarm's own death/teardown) and already ticks on a timer, watches tmux
+  liveness, and owns `.swarmforge/roles.tsv` + `.swarmforge/tmux-socket` reads —
+  exactly the primitives the proven-by-hand park procedure used. Do not build a
+  second watcher.
+
+  SCOPE — reuse the proven mechanics only, do not invent a new park/relaunch
+  mechanism:
+    - DOWN-TRIGGER (hibernate): each tick, evaluate a closing-pass gate that only
+      fires on the INTERSECTION of:
+        1. No promotable backlog work remains (`backlog/active/` is empty AND no
+           `backlog/paused/` item is currently pull-eligible). A ticket parked
+           `status: blocked` (e.g. today's BL-101, blocked on a human hardware
+           step) is NOT promotable and must NEVER permanently block hibernation.
+        2. Every role in the CURRENT roster (read fresh from `.swarmforge/roles.tsv`
+           at evaluation time, never a hardcoded role list) has an empty
+           `inbox/new` AND holds no in-process handoff. A role that is simply
+           ABSENT from the current roster (e.g. lean-drain today has no architect/
+           hardener/documenter/cleaner) is trivially quiescent — it can never hold
+           a parcel — and must never block hibernation.
+        3. Condition 2, evaluated against a roster that DOES include the
+           documenter whenever the documenter is part of the current pack, is
+           also what satisfies the "tail roles have finished so docs/ stay
+           current" requirement — no separate docs-freshness signal is needed for
+           this slice.
+      Only when all three hold does the runtime perform hibernation, using the
+      exact sequence already proven by hand: back up `.swarmforge/roles.tsv`,
+      empty it (this is what stops the `AGENT_EXITED` respawn fight), kill the
+      build-agent tmux sessions on the SWARM socket (`.swarmforge/tmux-socket`) —
+      never the Operator's own socket — and leave `handoffd`, the runtime itself,
+      and the Telegram front-desk bot running. Record the transition (state +
+      timestamp) in the runtime's existing status output, the same way every
+      other runtime state transition is surfaced today.
+    - UP-TRIGGER (auto-relaunch): while hibernated, the runtime watches for new
+      promotable work arriving (condition 1 above flips back to false) and, on
+      that signal, relaunches: restores the backed-up roster, brings the
+      build-agent tmux sessions back up via the SAME mechanism already proven by
+      hand (the `SWARMFORGE_CONFIG` override + the zsh entrypoint — never the
+      self-updating `./swarm` bootstrapper, never the broken `--pack` flag; see
+      memory swarm-profiles-full-forge-concierge-banked for the exact traps),
+      and clears the hibernation state.
+    - Decision logic (the closing-pass predicate and the up-trigger predicate)
+      must be pure, injected-state functions living beside the existing pure
+      decision functions this codebase already uses for the same runtime
+      (`operator_lib.bb`'s `should-launch-operator?` pattern) — inject roster
+      contents, backlog listing, per-role inbox/in-process state, and current
+      time; no live tmux/fs reads inside the pure functions themselves. The
+      actual tmux kill/relaunch and file I/O stay thin wiring in
+      `operator_runtime.bb`, called through an injectable seam so unit tests can
+      assert "would hibernate" / "would relaunch" and spy on which actions the
+      wiring invoked, without a real tmux socket (this project's testable-module
+      boundary excludes live tmux/PTY from unit tests; see local-engineering
+      Key Integration Surface + engineering.prompt Design And Testability).
+
+  OUT OF SCOPE for this slice (deferred to future slices of the same epic, per
+  the operator's explicit build-order): the per-ticket routing manifest, per-role
+  dynamic up/down lifecycle, warm-core/break-even tuning, and the banked-mode
+  morning-briefing-snapshot requirement from a separate intake
+  (INTAKE-banked-mode-briefing.md). Do not build any of these now.
+
+  CONTAMINATION FLAG (pipeline): `operator_runtime.bb` is currently dirty in the
+  shared main checkout with ticket-less operator-tunnel work (see memory
+  [[operator-tunnel-contamination-blocks-merge]]). The coder must stash
+  --include-untracked before starting, keep this ticket's diff to
+  `operator_runtime.bb`/`operator_lib.bb`/tests only, and pop the stash back
+  after landing — never fold the tunnel work into this ticket's commit.
+
+  E2E QA PROCEDURE (fixture-driven, injected roster/backlog/inbox state and an
+  injected clock — no real tmux): (a) feed a fully-quiescent fixture (empty
+  active/, only a blocked paused item, every current-roster role idle) -> assert
+  the closing pass decides to hibernate, the roster is backed up then emptied,
+  and the status output records the hibernation. (b) feed the same fixture but
+  with one role holding an in-process task -> assert it does NOT hibernate. (c)
+  feed the same fixture but with a pending inbox item for one role -> assert it
+  does NOT hibernate. (d) feed a roster that omits the documenter -> assert its
+  absence never blocks hibernation. (e) starting from a hibernated fixture, feed
+  a newly-promotable ticket -> assert the runtime decides to relaunch, the
+  backed-up roster is restored, and the hibernation state clears. Then, as a
+  live confirmation (not unit-covered), QA dry-runs one real park+relaunch cycle
+  against a disposable roster/socket pair, mirroring the hand-verified procedure
+  in memory swarm-profiles-full-forge-concierge-banked, and confirms handoffd +
+  operator_runtime + the front-desk bot never went down.
+
+acceptance:
+  feature: specs/features/BL-307-swarm-auto-hibernate-on-drain.feature
+  steps:
+    - "The closing pass hibernates the swarm only when no promotable backlog work remains AND every role in the current roster is idle (empty inbox, no in-process task)"
+    - "A role still holding an in-process task, or with a pending inbox item, blocks hibernation even when the backlog is otherwise drained"
+    - "A blocked (non-promotable) paused ticket never permanently blocks hibernation, and a role absent from the current roster is trivially quiescent and never blocks it either"
+    - "Hibernating backs up and empties the roster, kills only the build-agent tmux sessions on the swarm socket, leaves handoffd/runtime/front-desk running, and records the transition in the runtime's status output"
+    - "New promotable work arriving while hibernated triggers an automatic relaunch that restores the backed-up roster and clears the hibernation state"
+
+mutation_cost: medium

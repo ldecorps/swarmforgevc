@@ -147,6 +147,95 @@ function resolveAutostartTarget({ argv, env, settingsContent }) {
   return readTargetPathFromSettings(settingsContent) ?? null;
 }
 
+// Ordered platform-specific default install locations to try before falling
+// back to a bare "code" resolved from PATH.
+function platformVsCodeCandidates(platform) {
+  if (platform === 'darwin') {
+    return ['/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code'];
+  }
+  if (platform === 'linux') {
+    return ['/usr/share/code/bin/code', '/snap/bin/code'];
+  }
+  return [];
+}
+
+// Resolves which VS Code CLI binary to launch the dev host with (BL-361).
+function resolveVsCodeBinary({ platform, env, isExecutable }) {
+  const override = env && env.VSCODE_BIN;
+  if (override) {
+    if (isExecutable(override)) {
+      return { binary: override };
+    }
+    return {
+      error: 'vscode-not-found',
+      message: `VSCODE_BIN=${override} cannot be executed on this host.`,
+    };
+  }
+  const candidates = [...platformVsCodeCandidates(platform), 'code'];
+  for (const candidate of candidates) {
+    if (isExecutable(candidate)) {
+      return { binary: candidate };
+    }
+  }
+  return {
+    error: 'vscode-not-found',
+    message: `No usable VS Code CLI found (tried: ${candidates.join(', ')}). Set VSCODE_BIN to override.`,
+  };
+}
+
+function buildDevHostLaunchCommand(binary, extensionDir, workspacePath) {
+  return { command: binary, args: [`--extensionDevelopmentPath=${extensionDir}`, workspacePath] };
+}
+
+function isWslPlatform({ platform, env }) {
+  const e = env || {};
+  return platform === 'linux' && Boolean(e.WSL_DISTRO_NAME || e.WSL_INTEROP || e.WSLENV);
+}
+
+function powershellSingleQuoted(value) {
+  return String(value || '').replace(/'/g, "''");
+}
+
+function buildWindowsKillOldCommands(extensionPath) {
+  const psPath = powershellSingleQuoted(extensionPath);
+  const script =
+    "$p='" + psPath + "';" +
+    "Get-CimInstance Win32_Process |" +
+    " Where-Object {" +
+    " $_.Name -match '^(Code|Code - Insiders)\\.exe$' -and" +
+    " $_.CommandLine -like ('*--extensionDevelopmentPath=' + $p + '*') -and" +
+    " $_.CommandLine -notlike '*--type=*'" +
+    " } |" +
+    " ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
+  return [
+    {
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-NonInteractive', '-Command', script],
+    },
+  ];
+}
+
+function headlessMarkerDecision({ markerPresent, force }) {
+  if (!markerPresent) {
+    return { action: 'proceed' };
+  }
+  if (force) {
+    return {
+      action: 'warn-and-proceed',
+      message: 'BOUNCE WARNING: .swarmforge/headless-swarm present; --force overrides refusal',
+    };
+  }
+  return {
+    action: 'refuse',
+    message: 'BOUNCE FAILED [stage: headless-swarm] .swarmforge/headless-swarm is present; pass --force to override',
+  };
+}
+
+function recordBounceHostCount(priorLiveCount, terminatedCount, launchedCount) {
+  const afterKill = Math.max(0, (priorLiveCount || 0) - (terminatedCount || 0));
+  return afterKill + (launchedCount || 0);
+}
+
 module.exports = {
   parseMarker,
   isMarkerFresh,
@@ -157,4 +246,10 @@ module.exports = {
   isSwarmReady,
   readTargetPathFromSettings,
   resolveAutostartTarget,
+  resolveVsCodeBinary,
+  buildDevHostLaunchCommand,
+  isWslPlatform,
+  buildWindowsKillOldCommands,
+  headlessMarkerDecision,
+  recordBounceHostCount,
 };

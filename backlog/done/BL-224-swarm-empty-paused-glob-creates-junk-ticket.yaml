@@ -1,0 +1,64 @@
+id: BL-224
+title: "./swarm mutation_cost pre-pass creates a junk '*.yaml' ticket when backlog/paused is empty"
+direction: reliability
+priority: 20
+mutation_cost: low
+source: "operator+claude live diagnosis 2026-07-10: observed during a two-pack launch with an isolated (single-active, empty-paused) backlog. The launch printed 'grep: .../backlog/paused/*.yaml: No such file or directory' three times and left a stray file literally named '*.yaml' (22 bytes, content 'mutation_cost: medium') inside backlog/paused/. Removed by hand at the time."
+
+description: |
+  The repo-root, git-tracked ./swarm launcher (lines 29-42) runs a pre-pass that
+  appends an estimated `mutation_cost:` to each paused backlog item that lacks
+  one, looping over `"$SCRIPT_DIR/backlog/paused"/*.yaml`.
+
+  BUG: the glob is unguarded and bash nullglob is off by default. When
+  backlog/paused/ has no *.yaml files the pattern does not expand, so the loop
+  runs once with the literal string "$SCRIPT_DIR/backlog/paused/*.yaml" as
+  $item. `grep -q ... "$item"` then fails on the nonexistent path (printing
+  "No such file or directory" to stderr), `! grep` is true, no content grep
+  matches, and the else branch runs `echo "mutation_cost: medium" >> "…/*.yaml"`,
+  which CREATES a real 22-byte file literally named `*.yaml` in backlog/paused/.
+
+  Why it matters (not cosmetic): that `*.yaml` file is scanned by the
+  coordinator as a real ticket named "*.yaml", and it recurs on EVERY launch
+  whenever backlog/paused is empty — precisely the isolated-single-active state
+  the stabilize profiles create, so the workflow triggers it every time.
+
+  Wanted behavior:
+    - No file is ever created when backlog/paused/ has no *.yaml.
+    - No spurious grep/stderr "No such file or directory" noise at launch for an
+      empty paused dir.
+    - Estimation is unchanged when paused DOES contain yaml files: an item
+      lacking `mutation_cost:` still gets one; an item that already has it is
+      left byte-for-byte unchanged (no duplicate line).
+
+  Scope (verified live 2026-07-10): repo-root `swarm`, the mutation_cost
+  pre-pass at lines 29-42. `git grep` found the same unguarded-glob pattern
+  nowhere else in the repo — this is the single occurrence.
+
+  Suggested fix (implementer's call): guard the loop against the non-expanding
+  glob — e.g. `shopt -s nullglob` scoped around the loop, or `[[ -e "$item" ]]
+  || continue` as the loop body's first line. Prefer the smallest change that
+  keeps the existing estimation/classification logic intact. Do not modify the
+  swarm machinery under swarmforge/ — this is the repo-root launcher only.
+
+  Regression guard: add an automated check asserting that a pre-pass over an
+  empty backlog/paused/ creates no file named '*.yaml' and emits no glob stderr
+  noise (see the feature file's non-behavioral gates).
+
+acceptance: specs/features/BL-224-swarm-empty-paused-glob-creates-junk-ticket.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs to verify the scenarios hold in the live swarm:
+  1. In a scratch checkout, empty backlog/paused/ of all *.yaml files (e.g. move
+     them aside), leaving the directory present but with no yaml.
+  2. Run the repo-root ./swarm pre-pass step against that tree, capturing stderr.
+     Assert: (a) no file named '*.yaml' now exists in backlog/paused/, and
+     (b) stderr contains no "No such file or directory" line for the paused glob.
+  3. Restore one paused *.yaml that has no `mutation_cost:` line; re-run the
+     pre-pass. Assert the item now carries a `mutation_cost:` line.
+  4. Re-run the pre-pass a second time over that same item. Assert the file is
+     byte-for-byte identical to after step 3 (no duplicate mutation_cost line).
+
+# HUMAN APPROVAL: feature file specs/features/BL-224-...feature is a new draft
+# authored by the specifier and is pending human review before it is treated as
+# the authoritative acceptance contract.

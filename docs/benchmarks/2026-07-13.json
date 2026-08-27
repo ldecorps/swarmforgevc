@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "generatedAtIso": "2026-07-13T16:26:31.300Z",
+  "taskId": "coder-task-01-word-frequency",
+  "qualityThreshold": 0.8,
+  "qualityThresholdDescription": "A model is \"cheapest acceptable\" only if its mean quality score - the fraction of the pinned task's own tests passing, averaged across its repeated runs - is >= 0.8.",
+  "provenance": "Each recorded run executes the configured provider CLI headlessly against a fresh copy of the pinned task fixture; quality is scored afterward by running the fixture's own test suite. Excluded models (see exclusionReason) never ran a trial.",
+  "models": [
+    {
+      "modelId": "claude-haiku",
+      "provider": "claude",
+      "model": "haiku",
+      "label": "Claude Haiku 4.5",
+      "excluded": false,
+      "exclusionReason": null,
+      "repetitions": 2,
+      "meanQuality": 1,
+      "qualityStdDev": 0,
+      "meanCostUsd": 0.043100900000000004,
+      "costStdDev": 0.0009290999999999952,
+      "meanDurationMs": 23419.5,
+      "meanTokens": 1762.5,
+      "runs": [
+        {
+          "modelId": "claude-haiku",
+          "repetition": 1,
+          "ran": true,
+          "qualityScore": 1,
+          "testsPassed": 6,
+          "testsTotal": 6,
+          "durationMs": 22343,
+          "costUsd": 0.04217180000000001,
+          "tokens": {
+            "inputTokens": 49,
+            "outputTokens": 1566
+          },
+          "sessionId": "383dc3bf-c48b-4ff2-a797-46223fe52ee1"
+        },
+        {
+          "modelId": "claude-haiku",
+          "repetition": 2,
+          "ran": true,
+          "qualityScore": 1,
+          "testsPassed": 6,
+          "testsTotal": 6,
+          "durationMs": 24496,
+          "costUsd": 0.04403,
+          "tokens": {
+            "inputTokens": 49,
+            "outputTokens": 1861
+          },
+          "sessionId": "1c720b8e-85eb-42fd-abc8-bbe1b73312c7"
+        }
+      ]
+    },
+    {
+      "modelId": "claude-sonnet",
+      "provider": "claude",
+      "model": "sonnet",
+      "label": "Claude Sonnet 5",
+      "excluded": false,
+      "exclusionReason": null,
+      "repetitions": 2,
+      "meanQuality": 1,
+      "qualityStdDev": 0,
+      "meanCostUsd": 0.13826070000000001,
+      "costStdDev": 0.0003263000000000016,
+      "meanDurationMs": 17815,
+      "meanTokens": 974,
+      "runs": [
+        {
+          "modelId": "claude-sonnet",
+          "repetition": 1,
+          "ran": true,
+          "qualityScore": 1,
+          "testsPassed": 6,
+          "testsTotal": 6,
+          "durationMs": 17193,
+          "costUsd": 0.1379344,
+          "tokens": {
+            "inputTokens": 12,
+            "outputTokens": 947
+          },
+          "sessionId": "ad0570e1-3726-44a7-a344-d103a5192b63"
+        },
+        {
+          "modelId": "claude-sonnet",
+          "repetition": 2,
+          "ran": true,
+          "qualityScore": 1,
+          "testsPassed": 6,
+          "testsTotal": 6,
+          "durationMs": 18437,
+          "costUsd": 0.13858700000000002,
+          "tokens": {
+            "inputTokens": 12,
+            "outputTokens": 977
+          },
+          "sessionId": "804dba4f-3646-4185-8df0-9cd4fcee79fb"
+        }
+      ]
+    },
+    {
+      "modelId": "claude-opus",
+      "provider": "claude",
+      "model": "opus",
+      "label": "Claude Opus 4.8",
+      "excluded": false,
+      "exclusionReason": null,
+      "repetitions": 2,
+      "meanQuality": 1,
+      "qualityStdDev": 0,
+      "meanCostUsd": 0.17976950000000003,
+      "costStdDev": 0.013534499999999991,
+      "meanDurationMs": 21842,
+      "meanTokens": 1454,
+      "runs": [
+        {
+          "modelId": "claude-opus",
+          "repetition": 1,
+          "ran": true,
+          "qualityScore": 1,
+          "testsPassed": 6,
+          "testsTotal": 6,
+          "durationMs": 19290,
+          "costUsd": 0.16623500000000002,
+          "tokens": {
+            "inputTokens": 10,
+            "outputTokens": 1353
+          },
+          "sessionId": "3a8cd1dc-5d9c-41b8-9e13-d4e306320374"
+        },
+        {
+          "modelId": "claude-opus",
+          "repetition": 2,
+          "ran": true,
+          "qualityScore": 1,
+          "testsPassed": 6,
+          "testsTotal": 6,
+          "durationMs": 24394,
+          "costUsd": 0.193304,
+          "tokens": {
+            "inputTokens": 14,
+            "outputTokens": 1531
+          },
+          "sessionId": "98923474-142f-45cc-b402-14e90779498a"
+        }
+      ]
+    },
+    {
+      "modelId": "aider-mistral",
+      "provider": "aider",
+      "model": "mistral-large-latest",
+      "label": "aider + Mistral Large (cannot act autonomously)",
+      "excluded": true,
+      "exclusionReason": "aider cannot execute shell actions autonomously, so it cannot perform the coder role's task",
+      "repetitions": 0,
+      "meanQuality": 0,
+      "qualityStdDev": 0,
+      "meanCostUsd": null,
+      "costStdDev": null,
+      "meanDurationMs": 0,
+      "meanTokens": null,
+      "runs": []
+    }
+  ],
+  "ranking": {
+    "bestByQuality": "claude-haiku",
+    "bestByValue": "claude-haiku",
+    "cheapestAcceptable": "claude-haiku",
+    "noAcceptableModelReason": null
+  }
+}

@@ -1,0 +1,82 @@
+id: BL-286
+title: "BUG BL-260: briefing architecture diagrams break in Gmail (data-URI imgs) — send them as cid inline attachments instead"
+milestone: M8
+status: todo
+priority: 10
+direction: non-aligned
+assigned_to: coder
+depends_on: []
+source: "Human/operator bug report via coordinator 2026-07-11: BL-260's rendered briefing diagrams show broken in Gmail. Root cause: they are embedded as inline <img src=\"data:image/png;base64,...\"> and Gmail (and other webmail) block data-URI image sources in email. Specced by specifier 2026-07-11."
+
+description: |
+  BUG in the shipped BL-260 briefing-diagram feature. The daily briefing email
+  embeds each rendered architecture diagram as an inline data-URI image
+  (<img src="data:image/png;base64,...">). Gmail — the human's actual client — and
+  most webmail strip/block data-URI image sources in email HTML, so every diagram
+  renders broken/blank. (The BL-260 code even comments "no CID/attachment plumbing
+  needed"; that assumption is the defect.)
+
+  FIX: send each diagram as a cid INLINE ATTACHMENT and reference it from the HTML
+  via <img src="cid:...">. This is the RFC-2392 standard for inline email images
+  and is what Gmail renders. The image bytes already exist as base64 in the diagram
+  payload — this moves them from the img `src` into an attachment; no new rendering
+  work.
+
+  Live layer verified 2026-07-11 (three seams to thread the attachments through):
+    - swarmforge/scripts/briefing_email_lib.bb `build-diagram-section` (~L102): today
+      emits <img src="data:image/png;base64,<base64>"> per diagram and returns
+      {:html :note-line}. CHANGE: emit <img src="cid:<content-id>"> per diagram and
+      ALSO return the attachment descriptors, e.g.
+      {:html ... :note-line ... :attachments [{:filename :content-id :base64}...]}.
+      Each content-id must be unique within the email and must match its img's cid.
+      No data-URI must remain in the HTML.
+    - swarmforge/scripts/briefing_email_lib.bb `send-unsent-briefings!` (~L116): today
+      threads :html as a 3rd arg to :send-email!. CHANGE: also thread the diagram
+      section's :attachments through to :send-email! (extend the adapter contract the
+      same optional, backward-compatible way :html was added in BL-260 — absent
+      section => unchanged call).
+    - swarmforge/scripts/daemon_alarm_lib.bb `default-post!` (~L52) + `send-alarm-email!`
+      (~L86): today `(cond-> body html (assoc :html html))` into the Resend JSON body.
+      CHANGE: thread an optional :attachments and include it in the body when present —
+      Resend attachment shape is {:filename :content <base64> :content_id}; setting
+      content_id makes it inline-referenceable via cid:. Absent :attachments => the
+      exact prior body (the BL-144 plain-text death-alarm path and every pre-existing
+      caller stay byte-for-byte unchanged).
+
+  Wanted behavior (see the feature file):
+    - When diagrams are available, the briefing HTML references each by a cid image
+      source (never a data-URI), and the send payload carries one inline attachment per
+      diagram whose content_id matches its cid and whose content is the image bytes.
+    - No data-URI image source remains anywhere in the HTML (regression guard on the
+      exact defect).
+    - Degradation is unchanged: no diagrams available => plaintext note + no
+      attachments; a caller with no diagram section => the prior payload (no
+      attachments, no html).
+
+  Constraints / testability:
+    - build-diagram-section stays PURE over its [{:name :base64}...] input: given the
+      diagrams it returns the html (cid refs), the note-line, and the attachment
+      descriptors — no fs/network. The Resend POST stays behind the existing injectable
+      post-fn! seam; assert the JSON body's :attachments (filename/content/content_id)
+      and the cid<->content_id correspondence with a fake post-fn!, never a real send.
+    - The cid<->attachment mapping must be total: every cid in the HTML has exactly one
+      matching attachment and vice-versa (no dangling reference, no orphan attachment).
+    - Backward compatibility is a hard contract: the alarm death-email and every
+      pre-BL-260 / no-diagram caller produce the identical prior payload (no
+      :attachments key). Mirror how BL-260 kept :html optional.
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+
+  QA e2e procedure (fake post-fn!; no real network/render):
+    - Build a diagram section from a 2-diagram fixture; assert the html has two
+      cid: image sources and zero data: sources, and two attachment descriptors whose
+      content-ids equal the two cids.
+    - Send via send-unsent-briefings! with a fake send-email!/post-fn!; capture the
+      Resend body; assert :attachments has one entry per diagram with filename +
+      base64 content + content_id, each content_id matching an html cid.
+    - Send a no-diagram briefing; assert the body has no :attachments and no :html
+      (backward compatible); send a renderer-unavailable run; assert plaintext note +
+      no attachments.
+
+acceptance: specs/features/BL-286-briefing-diagram-cid-attachments.feature
+mutation_cost: medium

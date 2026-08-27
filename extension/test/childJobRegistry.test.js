@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -12,7 +13,7 @@ const {
 } = require('../out/swarm/childJobRegistry');
 
 function mkTmpSwarmforgeDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'child-job-registry-'));
+  return mkTmpDir('child-job-registry-');
 }
 
 test('recordTrackedJob persists an entry that readTrackedJobs returns', () => {

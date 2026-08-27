@@ -1,0 +1,39 @@
+id: BL-143
+title: "Coordinator inbox visibility: show real .handoff payloads by default, hide sidecars unless debug"
+milestone: M4
+status: done
+priority: 05
+direction: aligned
+assigned_to: specifier
+source: "operator request (2026-07-06): sidecar files are distracting coordinator flow"
+
+description: |
+  Problem:
+  Operational sidecar files (`.chase.json`, `.nudge`) appear in inbox
+  listings and can visually dominate queue views. They are metadata, not work
+  parcels, but they make the coordinator experience noisy and can create false
+  impressions that work is pending or stuck.
+
+  Wanted behavior:
+  Coordinator-facing queue/intake visibility should default to real handoff
+  payloads only (`*.handoff`). Sidecars should be hidden by default and only
+  shown in explicit debug/diagnostic mode.
+
+  Scope:
+  - Coordinator-relevant views/commands/log summaries that report inbox state.
+  - Keep sidecar files intact for chaser logic; this ticket is observability
+    filtering, not sidecar deletion policy.
+  - Ensure docs and runbook examples use payload-only queue checks by default.
+  - Note: some surfaces already filter to .handoff (e.g. swarmMetrics.ts's
+    listing); the behavior spans multiple views/scripts, so keep the scope
+    behavior-level rather than pinning one file.
+
+  QA e2e procedure (verify in a live swarm, not just unit tests):
+  - Seed an inbox with a sidecar (.chase.json/.nudge) but no .handoff; confirm
+    the default coordinator queue view reports no pending work (no false busy).
+  - Enable debug/diagnostic mode; confirm sidecars become visible with labels.
+  - Run a chaser sweep; confirm chase/nudge still read and write sidecars as
+    before (filtering is view-only, not deletion).
+
+acceptance: specs/features/BL-143-coordinator-inbox-view-hides-sidecars-by-default.feature
+mutation_cost: low

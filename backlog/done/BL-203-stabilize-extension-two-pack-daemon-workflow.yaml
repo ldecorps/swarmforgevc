@@ -1,0 +1,118 @@
+id: BL-203
+title: stabilize extension launch — two-pack daemon workflow smoke harness
+milestone: M2
+status: todo
+priority: 00
+direction: reliability
+assigned_to: coordinator
+source: operator request 2026-07-09 (extension in bad state; stabilize bare workflow)
+
+notes: |
+  HOLD (coordinator, 2026-07-09): filed after the current session's BL-121
+  promotion sweep, so it was never evaluated against the running 7-pack.
+  BL-203 needs queue isolation (only paused ticket) and a relaunch under the
+  stabilize-two-pack profile (coordinator+coder+cleaner) — a swarm-config
+  change, not a normal same-swarm promotion. BL-121 is mid-flight at the
+  coder on the current 7-pack (uncommitted canary/detection WIP:
+  canaryInjector.ts, transportHealth.ts). Operator decision (2026-07-09):
+  let BL-121 finish and merge to main first; do NOT bounce or isolate the
+  queue while BL-121 is in flight. Once BL-121's QA-approved commit merges
+  to main and the ticket closes to done/, isolate the paused queue per this
+  ticket's stabilize-two-pack.conf header comment, request a bounce to the
+  stabilize-two-pack profile via remote_bounce.sh, then promote BL-203 solo.
+
+  UPDATE (coordinator, 2026-07-09): BL-121 merged (6a9446125, closed to
+  done/). At that fork the operator chose to continue the reliability epic
+  rather than pivot to BL-203 immediately — BL-122 (recovery half,
+  depends_on BL-121, priority 00) is now active on the 7-pack. BL-203 stays
+  held until BL-122's chain (and whatever follows per BL-151: BL-128,
+  BL-146) clears too — same reasoning as before, now extended: do not
+  isolate/bounce while reliability-epic work is in flight at the coder.
+
+  UPDATE (coordinator, 2026-07-09, later): the guarding chain is now fully
+  clear — BL-122, BL-128, and BL-146 have all merged and closed to
+  done/M2-reliability-layer/. The dependency hold is stale. Not auto-acting:
+  promoting this ticket still requires isolating the paused queue (setting
+  every other paused item aside) and requesting a profile bounce to
+  stabilize-two-pack via remote_bounce.sh — a swarm-topology change with
+  real disruption to the other paused work, not a normal promotion. Flagged
+  to the operator for a go/no-go before isolating+bouncing.
+
+  UPDATE (coordinator, 2026-07-09, later still): operator approved bouncing
+  in principle, but BL-112-aps-stage2 was found actively in flight at the
+  architect stage on the current 7-pack at ask time — stabilize-two-pack has
+  no architect/hardener/documenter/QA roles, so bouncing immediately would
+  strand that parcel with no role able to pick it up. Operator decision:
+  wait for BL-112 to clear the 7-pack (finish architect->hardener->
+  documenter->QA->merge) before isolating the queue and bouncing. Same
+  precedent as the earlier BL-121/122 hold. Re-evaluate this hold at the next
+  merge/close recheck once BL-112 closes to done/ (and re-check BL-132/BL-217
+  too, which were freshly active/routed at ask time and may also be in
+  flight by then).
+
+  UPDATE (coordinator, 2026-07-09, even later): BL-112 closed (4731482).
+  Also found BL-132 active with real uncommitted coder WIP and BL-217 active
+  unstarted — asked the operator again; decision: wait for both to also
+  close before isolating/bouncing (not just BL-112). Since then BL-132
+  closed too (664195c). Intake is being deliberately held (no new promotion
+  into the 2 freed active/ slots) so active drains toward empty/BL-217-only
+  instead of refilling — this is a temporary, operator-directed exception to
+  the normal "fill every open slot" recheck rule, not a standing change.
+  Remaining condition: BL-217 (backlog/active/, not yet started by coder)
+  closes to done/. Once active/ is empty, isolate paused/ down to BL-203
+  (mv everything else to backlog/_held/), request `remote_bounce.sh
+  <target> swarm`, then promote BL-203 solo.
+
+description: |
+  Problem:
+  The VS Code extension launch path has been unreliable for hundreds of
+  commits. Before larger feature work resumes, prove the minimal happy path
+  end-to-end with daemon ON:
+
+    1. Extension starts; handoffd comes up.
+    2. Coordinator promotes this ticket from paused → active.
+    3. Daemon routes the parcel coordinator → coder → cleaner → coordinator.
+    4. `./swarm-kill` tears everything down gracefully (idempotent).
+
+  Scope:
+  Diagnose and fix the extension launch/workflow failures that have blocked
+  reliable runs for hundreds of commits. Prove the minimal happy path with
+  daemon ON, then harden it:
+
+    1. Extension starts; handoffd comes up.
+    2. Coordinator promotes this ticket from paused → active.
+    3. Daemon routes the parcel coordinator → coder → cleaner → coordinator.
+    4. `./swarm-kill` tears everything down gracefully (idempotent).
+
+  Use the stabilize-two-pack profile (Opus/high on coord+coder, Sonnet on
+  cleaner) — not the cheap Haiku two-pack exercise config.
+
+  Deliverables:
+  - Fixes to extension launch, daemon wiring, or handoff path as root-caused
+  - A repeatable smoke check (script or doc) referencing the stabilize launch
+    config so the workflow stays green after this ticket
+
+  Out of scope:
+  - Seven-pack or specifier stages
+  - Unrelated feature work
+
+  UPDATE (coordinator, 2026-07-09, final): active/ drained to empty (BL-112,
+  BL-132, BL-217 all closed). Isolated backlog/paused/ into backlog/_held/
+  (18 items moved aside) leaving only BL-203, then promoted BL-203 solo into
+  active/ (fd4fd35). Mechanism note: no VS Code extension host is running in
+  this environment (this swarm was launched via raw shell scripts, not the
+  extension), so remote_bounce.sh's sentinel has nothing to consume it —
+  confirmed by an unconsumed bounce sentinel from 20:40 with no
+  bounce-ack.json ever written. Operator chose manual relaunch instead:
+  kill_all_swarm.sh, then relaunch with
+  SWARMFORGE_CONFIG=swarmforge/profiles/stabilize-two-pack.conf. The
+  coordinator handed off these exact commands rather than running them
+  itself (BL-107: the coordinator is the swarm's cleanup owner and must
+  never exit its own session or trigger swarm teardown from inside it).
+  Once the two-pack comes up, its coordinator should route this ticket to
+  the coder immediately (it is already the sole active item). When done,
+  restore backlog/_held/ back into backlog/paused/ and bounce/relaunch back
+  to the normal profile.
+
+acceptance: specs/features/BL-203-stabilize-extension-two-pack-daemon-workflow.feature
+mutation_cost: medium

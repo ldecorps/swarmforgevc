@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-121: delivery-level transport health detection — unit tests.
  *
@@ -23,7 +24,7 @@ const {
 const NOW = new Date('2026-07-05T22:00:00Z').getTime();
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-transport-health-'));
+  return mkTmpDir('sfvc-transport-health-');
 }
 
 function writeHandoff(dir, name, headers, mtimeMs) {
@@ -281,6 +282,17 @@ test('with no offending parcels and no canary data, transport health falls back 
       canary: { state: 'no-data', ageSeconds: 0 },
     }),
     { state: 'delivery-degraded', offending: [] }
+  );
+  // BL-144: a halted daemon (alarmed + hard-stopped, no auto-restart) must
+  // read as 'broken', not fall through to 'unknown' and hide the alarm.
+  assert.deepEqual(
+    computeTransportHealth({
+      daemonHealth: { state: 'halted' },
+      deadLetters: [],
+      stalledParcels: [],
+      canary: { state: 'no-data', ageSeconds: 0 },
+    }),
+    { state: 'broken', offending: [] }
   );
   assert.deepEqual(
     computeTransportHealth({
