@@ -653,6 +653,7 @@ const DOMAINS = [
   require('./bl1164QaChangedPathUnitTestGateSteps'),
   require('./bl1173DeprecatorFreshnessGateCliSteps'),
   require('./bl1174DeprecateOperatorVerbsScanDocsSteps'),
+  require('./bl1177PortableAgentMemoryPayloadSteps'),
   require('./bl738ChunkingPropertySteps'),
   require('./bl1012FreshnessSelfInflictedIncidentsSteps'),
   require('./bl621FrontDeskDegradedCauseEscalationSteps'),

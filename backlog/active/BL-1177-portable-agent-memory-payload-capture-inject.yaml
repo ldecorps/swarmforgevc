@@ -22,7 +22,7 @@ invariants:
   - "Aggregation of what to capture is pure over named inputs — unit-testable without a live agent."
 
 required_wiring:
-  - "extension/src/ or swarmforge/scripts/ agentMemoryTransfer::capture + inject::portable payload API"
+  - "extension/src/tools/agentMemoryTransfer.ts::capture + inject::portable payload API"
   - "specs/pipeline/steps/index.js::bl1177PortableAgentMemoryPayloadSteps::acceptance handler registered"
 
 description: |
