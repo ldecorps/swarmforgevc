@@ -2,7 +2,7 @@ id: BL-1085
 title: "push-sweep re-proves the same QA refusal every heavy cycle: no cache keyed on tip plus ahead-SHA set, and the two gates each walk the ahead range independently"
 milestone: M8
 type: defect
-status: todo
+status: paused
 epic: swarm-reliability
 severity: medium
 priority: 62

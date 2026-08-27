@@ -1285,25 +1285,6 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
-(defn- log-rotation-actionability-ordering-warnings!
-  "BL-780: once at daemon start, name both values when rotation thresholds
-   would alarm the human before the swarm may act on the same parcel.
-   Compared against flow_watchdog_warn_ms (not the router-specific pair) —
-   acceptance names that key explicitly; rotation-actionability gates apply
-   to mono-router note/starve behaviour while the ticket's defect window is
-   measured against the plain warn tier."
-  []
-  (let [warn-ms (:warn-ms (flow-watchdog-lib/read-thresholds project-root))
-        conf-text (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
-                       (catch Exception _ nil))
-        note-ms (mono-router-lib/parse-note-actionable-after-ms conf-text)
-        starve-ms (mono-router-lib/parse-rotation-starve-after-ms conf-text)]
-    (doseq [msg (mono-router-lib/rotation-actionability-ordering-warnings
-                 {:note-actionable-after-ms note-ms
-                  :rotation-starve-after-ms starve-ms
-                  :flow-watchdog-warn-ms warn-ms})]
-      (log! "rotation-actionability-ordering-inverted" msg))))
-
 (defn- handoff-envelope
   "The full {:headers :body} shape ambulance-lib/parcel-held? needs (task:/
    message:/body attribution) - handoff-header-field above only ever reads
@@ -3226,14 +3207,14 @@
 (defn- post-qa-branch-sweep-role-dirty? [worktree-path]
   (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "status" "--porcelain"]
                                         {:dir worktree-path})]
-    (and (zero? exit) (not (str/blank? (str/trim out))))))
+    (and (zero? exit) (not (str/blank? (str/trim out)))))
 
 (defn- post-qa-branch-sweep-role-in-process? [role-info]
   (let [dir (handoff-lib/mailbox-dir role-info :in_process)]
     (and (fs/directory? dir)
          (boolean
           (some #(str/ends-with? (str (fs/file-name %)) ".handoff")
-                (fs/list-dir dir))))))
+                (fs/list-dir dir)))))
 
 (defn- post-qa-branch-sweep-role-facts! [role-name]
   (when-let [ri (handoff-lib/load-role-info role-name (str project-root))]
@@ -3770,7 +3751,6 @@
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
     (self-heal-stale-stubs! roles)
-    (log-rotation-actionability-ordering-warnings!)
     (cond
       poll-once-only?
       (do
