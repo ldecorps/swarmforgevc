@@ -18,3 +18,8 @@ to `1228838bc` via `git reset --hard`. This rematch commit uses
 after scoped property + acceptance green above.
 
 By coder.
+
+## Rematch2
+Also exclude `extension/test/` — property test named deleted basenames and
+re-failed scenario 07. Acceptance 13/13 after rematch2.
+

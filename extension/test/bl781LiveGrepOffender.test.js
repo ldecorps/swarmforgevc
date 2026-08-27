@@ -24,4 +24,5 @@ test('backlog, docs, steps, and test runners stay non-live', () => {
   assert.equal(isLiveGrepOffender('docs/how-to/x.md'), false);
   assert.equal(isLiveGrepOffender('specs/pipeline/steps/bl781RetireDeadBabysitterFilesKeepListPreservedSteps.js'), false);
   assert.equal(isLiveGrepOffender('swarmforge/scripts/test/babysitter_lib_test_runner.bb'), false);
+  assert.equal(isLiveGrepOffender('extension/test/bl781LiveGrepOffender.property.test.js'), false);
 });
