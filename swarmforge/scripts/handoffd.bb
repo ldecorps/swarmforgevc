@@ -1290,6 +1290,27 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
+(defn- log-rotation-actionability-ordering-warnings!
+  "BL-780 config-threshold-inversion: once at daemon start, name both values
+   when rotation thresholds would alarm the human before the swarm may act on
+   the same parcel. Compared against flow_watchdog_warn_ms (not the
+   router-specific pair) — acceptance names that key explicitly;
+   rotation-actionability gates apply to mono-router note/starve behaviour
+   while the ticket's defect window is measured against the plain warn tier."
+  []
+  (let [warn-ms (:warn-ms (flow-watchdog-lib/read-thresholds project-root))
+        conf-text (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+                       (catch Exception _ nil))
+        note-ms (mono-router-lib/parse-note-actionable-after-ms conf-text)
+        starve-ms (mono-router-lib/parse-rotation-starve-after-ms conf-text)]
+    (doseq [msg (mono-router-lib/rotation-actionability-ordering-warnings
+                 {:note-actionable-after-ms note-ms
+                  :rotation-starve-after-ms starve-ms
+                  :flow-watchdog-warn-ms warn-ms})]
+      ;; required_wiring token config-threshold-inversion (alias of live key).
+      (log! "config-threshold-inversion" msg)
+      (log! "rotation-actionability-ordering-inverted" msg))))
+
 (defn- handoff-envelope
   "The full {:headers :body} shape ambulance-lib/parcel-held? needs (task:/
    message:/body attribution) - handoff-header-field above only ever reads
@@ -1425,7 +1446,7 @@
     (if (not= gate :rotate)
       (do (log! (str "chase-rotate-" (name gate)) target-role)
           {:ok false :reason (name gate)})
-      (let [result (handoff-lib/rotate-resident-to! target-role "chase")]
+      (let [result (handoff-lib/rotate-resident-to! target-role)]
         (when (:ok result)
           (reset! last-chase-rotate-at-ms (System/currentTimeMillis))
           (log! "chase-rotate" target-role))
@@ -3757,6 +3778,7 @@
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
     (self-heal-stale-stubs! roles)
+    (log-rotation-actionability-ordering-warnings!)
     (cond
       poll-once-only?
       (do
