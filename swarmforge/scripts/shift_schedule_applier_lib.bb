@@ -2,7 +2,9 @@
 ;; BL-660: crontab render/diff for shift schedule applier — pure, no shell.
 
 (ns shift-schedule-applier-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
+            [clojure.string :as str]))
 
 (def begin-marker "# swarmforge-shift-schedule-begin")
 (def end-marker "# swarmforge-shift-schedule-end")
@@ -64,3 +66,16 @@
                                           :stop-local (parse-hhmm stop-local)
                                           :start-script "S" :stop-script "T"}))]
     (not= (vec body) (subvec (vec want-start) 1 3))))
+
+;; BL-666: shift boundary hosts budgetShiftGovernorVerdict (compiled CLI).
+(defn budgetShiftGovernorVerdict
+  [project-root now-ms]
+  (let [cli (str project-root "/extension/out/tools/budget-shift-governor.js")]
+    (when (fs/exists? cli)
+      (try
+        (require '[babashka.process :as process])
+        (let [{:keys [exit out]} (process/shell {:dir project-root :out :string :err :string}
+                                                (str "node " cli " --now " now-ms))]
+          (when (zero? exit)
+            (json/parse-string out true)))
+        (catch Exception _ nil)))))
