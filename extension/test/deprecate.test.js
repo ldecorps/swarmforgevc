@@ -12,6 +12,7 @@ const {
   rankStaleItems,
   adjudicateTop,
   exceedsEnvelope,
+  orphanConfSignals,
   runDeprecate,
   renderDeprecateReport,
   applyRetirement,
@@ -36,6 +37,17 @@ test('BL-1174: seatAllowsDeprecate accepts hard only', () => {
   assert.equal(seatAllowsDeprecate('easy'), false);
   assert.equal(seatAllowsDeprecate('weak'), false);
   assert.equal(seatAllowsDeprecate(undefined), false);
+});
+
+test('BL-1174: orphanConfSignals excludes flags with extra tree hits', () => {
+  const conf = 'config live_flag 1\nconfig orphan_flag 1\n';
+  const hitCounts = { live_flag: 3, orphan_flag: 1 };
+  const signals = orphanConfSignals(conf, (flag) => hitCounts[flag] ?? 0);
+  assert.deepEqual(
+    signals.map((s) => s.subject),
+    ['orphan_flag']
+  );
+  assert.equal(signals[0].kind, 'orphan-conf-flag');
 });
 
 test('BL-1174: HARD_TIER_REFUSE_REASON names multi-document reasoner', () => {
