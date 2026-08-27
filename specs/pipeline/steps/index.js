@@ -787,6 +787,7 @@ const DOMAINS = [
   require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
   require('./bl1167SameModelSeatRoutingSteps'),
   require('./bl1175PropertySuiteStandingRedsSteps'),
+  require('./bl832BubbleHealthTrendsPageSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl1166OperatorDocsSteps')
