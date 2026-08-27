@@ -43,6 +43,8 @@
 ;; ambulance-lib double-load above.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 
+;; BL-596: rotation dynamics telemetry — one append per successful rotate.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "rotation_telemetry_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
 
 ;; BL-911: prompt-engine-lib is also a leaf dependency (its own load-file
@@ -979,13 +981,20 @@
                                             env-args
                                             ["-t" session (shell-quote-lib/launch-command script)]))]
             (if (zero? (:exit result))
-              (do (write-mono-router-active-role! target-role)
-                  (self-heal-telemetry-lib/append-self-heal-event!
-                   (target-root)
-                   {:type "rotation-respawn"
-                    :subject "mono-router-resident"
-                    :reason "persona swap"})
-                  {:ok true})
+              (let [from-role (read-mono-router-active-role)
+                    emit-reason (or reason
+                                    (not-empty (str/trim (or (System/getenv "SWARMFORGE_ROTATION_REASON") "")))
+                                    rotation-telemetry-lib/default-reason)]
+                (write-mono-router-active-role! target-role)
+                (rotation-telemetry-lib/append-rotation-event!
+                 (target-root)
+                 {:from from-role :to target-role :reason emit-reason})
+                (self-heal-telemetry-lib/append-self-heal-event!
+                 (target-root)
+                 {:type "rotation-respawn"
+                  :subject "mono-router-resident"
+                  :reason "persona swap"})
+                {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
                                      (str "tmux-exit-" (:exit result)))}))))))
     (catch Exception e
