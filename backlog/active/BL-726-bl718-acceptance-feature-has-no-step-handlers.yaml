@@ -5,11 +5,24 @@ type: defect
 severity: medium
 status: todo
 epic: swarmforge-console
-assigned_to: specifier
+assigned_to: coder
 priority: 72
 direction: normal
 depends_on: []
 mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-726-bl718-acceptance-feature-has-no-step-handlers.feature
+
+invariants:
+  - "Running the BL-718 feature through specs/pipeline/cli.js never fails with no step handler matched."
+  - "BL-718 step handlers drive committed mirror/chunking code — never prompt-text-only assertions."
+  - "The steps module is registered from specs/pipeline/steps/index.js so the runner loads it."
+
+required_wiring:
+  - "specs/pipeline/steps/bl718BubbleTalkMirrorSteps.js::registerSteps::handlers for every BL-718 feature step"
+  - "specs/pipeline/steps/index.js::bl718BubbleTalkMirrorSteps::acceptance handler registered"
+  - "extension/src/tools/telegramCursorBridgeCore.ts::splitTelegramChunks::shared chunker exercised by long-reply scenario"
+
 source: |
   Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
   2026-07-30. BL-718's own implementation (Bubble talk mirror chunking) is
@@ -24,6 +37,10 @@ notes: |
   BL-723 coder verdict on BL-718: not-on-par, specifically for this gap (the
   implementation itself was rated on-par). Linked pilot-process defect: BL-727.
 
+  [2026-08-27] specifier: feature minted from coordinator Work note. Reconfirmed
+  at HEAD: all 6 BL-718 scenarios still fail "no step handler matched" on
+  Background Given. Product code stays; this ticket only wires the gate.
+
 description: |
   ## What
 
@@ -35,9 +52,13 @@ description: |
   behavior (chunk boundaries, operator event JSON, topic routing), never
   prompt text.
 
-  ## Acceptance
+qa_e2e_procedure: >
+  (1) node specs/pipeline/cli.js specs/features/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.feature
+  — zero "no step handler matched", all scenarios green. (2) Handler module
+  registered in steps/index.js and calls real mirror/chunker. (3) Existing
+  extension/test/letsTalkBridge.test.js stays green.
 
-  Run `node specs/pipeline/cli.js specs/features/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.feature`
-  end to end with no "no step handler matched" failures, and each scenario's
-  assertions are behavior-real (grep for the actual function calls in the
-  handler file).
+out_of_scope: |
+  - Changing Bubble talk mirror product behaviour (already landed under BL-718).
+  - Pilot land gate (BL-727).
+  - Vacuous property / CRAP shortfalls on BL-718 (BL-738/739, BL-744/745).

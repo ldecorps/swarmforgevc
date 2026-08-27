@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: multi-seat-stages
-assigned_to: none
+assigned_to: coder
 priority: 5
 direction: human-requested
 depends_on: [BL-983]
