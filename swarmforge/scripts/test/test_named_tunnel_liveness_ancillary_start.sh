@@ -107,4 +107,30 @@ echo "$ERR" | grep -qi "bubble named tunnel" \
   || fail "regression: expected exactly the one normal launch call, no relaunch, got $(cat "$RELAUNCH_COUNT_FILE")"
 pass "regression: a genuinely live named tunnel passes with no relaunch and no false report"
 
+# ── regression guard: an unconfigured root is never flagged either ───────
+# BL-1199's own constraint: "A root with no named tunnel configured must
+# report 'not configured', never 'down'". named_tunnel_liveness_check.bb
+# exits 2 (NOT_CONFIGURED) here, distinct from exit 1 (DOWN) - this guards
+# the ancillary-start call site's own branch on that exit code, not just
+# the predicate: a mutant widening the DOWN branch's `== "1"` guard to also
+# catch NOT_CONFIGURED's "2" (e.g. `!= "0"`) survives both scenarios above
+# untouched, since scenario 01 and the live-tunnel regression never drive a
+# NOT_CONFIGURED result.
+rm -f "$ROOT/.swarmforge/operator/named-tunnel.env"
+rm -f "$ROOT/.swarmforge/operator/resident-spy-cloudflared.pid"
+echo 0 > "$RELAUNCH_COUNT_FILE"
+cat > "$FIXTURE_SCRIPTS/launch_resident_spy_tunnel.sh" <<EOF
+#!/usr/bin/env bash
+count=\$(cat "$RELAUNCH_COUNT_FILE")
+echo \$((count + 1)) > "$RELAUNCH_COUNT_FILE"
+exit 0
+EOF
+chmod +x "$FIXTURE_SCRIPTS/launch_resident_spy_tunnel.sh"
+run_ancillary_start
+echo "$ERR" | grep -qi "bubble named tunnel" \
+  && fail "regression: an unconfigured root must never be flagged as down, got: $ERR"
+[[ "$(cat "$RELAUNCH_COUNT_FILE")" == "1" ]] \
+  || fail "regression: an unconfigured root must never trigger a relaunch attempt, got $(cat "$RELAUNCH_COUNT_FILE")"
+pass "regression: an unconfigured root passes with no relaunch and no false 'down' report"
+
 echo "ALL PASS"
