@@ -10,6 +10,10 @@ priority: 92
 direction: normal
 depends_on: []
 mutation_cost: low
+acceptance: specs/features/BL-559-pipelineboard-property-test-prefix-substring-bug.feature
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl559PipelineboardPropertyTestPrefixSubstringBugSteps::BL-559 step handlers must be registered in DOMAINS"
 source: |
   Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
   2026-07-30. BL-559's landing commits contain zero code diff — they only
