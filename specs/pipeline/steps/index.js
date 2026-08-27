@@ -626,6 +626,8 @@ const DOMAINS = [
   require('./bl786MutationConcurrencyHostResolvedSteps'),
   require('./bl598TrendFalseAlarmRateSteps'),
   require('./bl599TrendIntakeBalanceSteps'),
+  require('./bl601TrendCompactionCadenceSteps'),
+  require('./bl602TrendHandoffLatencySteps'),
   require('./bl600TrendHumanDecisionLatencySteps'),
   require('./bl601TrendCompactionCadenceSteps'),
   require('./bl605GlobalTokenConsumptionSteps'),
@@ -778,7 +780,6 @@ const DOMAINS = [
   require('./bl1119ClosingCeremonyRoleQualityDialSteps'),
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
-  require('./bl602TrendHandoffLatencySteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
 ];
 

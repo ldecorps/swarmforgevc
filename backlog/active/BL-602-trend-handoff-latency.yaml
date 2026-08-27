@@ -11,6 +11,16 @@ direction: human-requested
 depends_on: []
 assigned_to: coder
 mutation_cost: low
+abandoned_commits:
+  - ce2ee20358
+  - 986ae0f534
+  - b2368e7f0a
+  - 19779e6886
+  - d317c2ec49
+  - 0f6b7a845a
+  - 618e99fd3b
+  - 7ee4ad73fc
+  - d912a443c7
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-602-trend-handoff-latency.feature
 
@@ -19,7 +29,7 @@ required_wiring:
   - "swarmforge/scripts/ready_for_next_task.bb::claim path::dequeued_at stamped when parcel moves to in_process"
   - "extension/src/metrics/handoffLatency.ts::gather + pair timestamps::reads master and worktree role mailboxes"
   - "extension/src/metrics/stageDwell.ts::splitOutliers::median + outlier honesty reused per recipient role"
-  - "extension/src/metrics/trend.ts::handoff-latency series::plotted via shared TrendedNumber framework"
+  - "extension/src/metrics/handoffLatency.ts::computeTrend inward::plotted via shared TrendedNumber framework (no trend.ts re-export — acyclic)"
   - "specs/pipeline/steps/index.js::bl602TrendHandoffLatencySteps::acceptance handler registered"
 
 invariants:
@@ -63,3 +73,6 @@ notes: |
   - [2026-08-27] specifier: feature file minted from coordinator Work note;
     pairs enqueued_at/dequeued_at already on handoff headers; worktree mailbox
     coverage per BL-577/BL-1109 gather posture; pairs with BL-596 stranding.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 7ee4ad73fc, evidence: backlog/evidence/BL-602-qa-bounce-20260827.md }
