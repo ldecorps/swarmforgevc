@@ -29,7 +29,7 @@ required_wiring:
   - "swarmforge/scripts/ready_for_next_task.bb::claim path::dequeued_at stamped when parcel moves to in_process"
   - "extension/src/metrics/handoffLatency.ts::gather + pair timestamps::reads master and worktree role mailboxes"
   - "extension/src/metrics/stageDwell.ts::splitOutliers::median + outlier honesty reused per recipient role"
-  - "extension/src/metrics/trend.ts::handoff-latency series::plotted via shared TrendedNumber framework"
+  - "extension/src/metrics/handoffLatency.ts::computeTrend inward::plotted via shared TrendedNumber framework (no trend.ts re-export — acyclic)"
   - "specs/pipeline/steps/index.js::bl602TrendHandoffLatencySteps::acceptance handler registered"
 
 invariants:
