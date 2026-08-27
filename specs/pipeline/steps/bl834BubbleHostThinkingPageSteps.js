@@ -49,13 +49,20 @@ function cleanup(ctx) {
 async function withBridge(ctx, fn) {
   const st = ensure(ctx);
   const { startBridge } = loadOut();
-  const handle = await startBridge(st.root, path.join(st.root, 'runs.jsonl'), TOKEN, {});
-  st.handle = handle;
+  const prevKey = process.env.CURSOR_API_KEY;
+  process.env.CURSOR_API_KEY = 'test-key';
+  let handle;
   try {
+    handle = await startBridge(st.root, path.join(st.root, 'runs.jsonl'), TOKEN, {});
+    st.handle = handle;
     return await fn(handle);
   } finally {
-    handle.stop();
-    st.handle = null;
+    if (handle) {
+      handle.stop();
+      st.handle = null;
+    }
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 }
 
