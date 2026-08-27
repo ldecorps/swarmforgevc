@@ -52,6 +52,33 @@ test('deriveSyntheticCostUsd stays null for a provider-billed record (billed-cos
   assert.equal(deriveSyntheticCostUsd(record), null);
 });
 
+test('deriveSyntheticCostUsd returns null when token fields are only partially present', () => {
+  const record = invocation({
+    tokens: { inputTokens: 1_000, outputTokens: null, cacheCreationTokens: 0, cacheReadTokens: 0 },
+  });
+  assert.equal(deriveSyntheticCostUsd(record), null);
+});
+
+test('deriveSyntheticCostUsd returns null when list-price estimate is zero', () => {
+  const record = invocation({
+    tokens: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+  });
+  assert.equal(deriveSyntheticCostUsd(record), null);
+});
+
+test('enrichLlmInvocationRecord leaves the record unchanged when synthetic cannot be derived', () => {
+  const record = invocation({
+    tokens: { inputTokens: null, outputTokens: 500, cacheCreationTokens: 0, cacheReadTokens: 0 },
+  });
+  const enriched = enrichLlmInvocationRecord(record);
+  assert.equal(enriched.syntheticCostUsd, undefined);
+});
+
+test('isUnknownSyntheticPrice is false when tokens are absent even for unknown models', () => {
+  const record = invocation({ tokens: null, model: 'not-in-pricing-table', origin: origin({ model: 'not-in-pricing-table' }) });
+  assert.equal(isUnknownSyntheticPrice(record), false);
+});
+
 test('unknown model with tokens yields null synthetic and isUnknownSyntheticPrice (unknown-model-unknown-price-bucket-06)', () => {
   const record = invocation({ model: 'not-in-pricing-table', origin: origin({ model: 'not-in-pricing-table' }) });
   assert.equal(deriveSyntheticCostUsd(record), null);
