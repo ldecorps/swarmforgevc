@@ -38,9 +38,9 @@ export function computeTrend(series: TrendSeriesPoint[]): TrendResult {
   return { series, currentValue, priorValue, delta, direction: directionOf(delta) };
 }
 
-// BL-600: human-decision latency median series via shared TrendedNumber framework.
-export { trendForDecisionLatencyMedian } from './humanDecisionLatency';
-
 // BL-601: do NOT re-export trendForCompactionCadencePerHour from here —
 // compactionCadence imports computeTrend; a re-export creates an acyclic cycle
 // (architect bounce 88c606593c). Callers import from ./compactionCadence.
+
+// BL-605 global token series: plotted via shared TrendedNumber framework.
+export { globalTokenTrendSeries, trendForGlobalTokenConsumption } from './globalTokenConsumption';
