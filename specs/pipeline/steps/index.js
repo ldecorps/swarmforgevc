@@ -588,6 +588,7 @@ const DOMAINS = [
   require('./bl941CursorGoneAgentClassifierBoundariesSteps'),
   require('./bl1166OperatorDocsSteps'),
   require('./bl832BubbleHealthTrendsPageSteps'),
+  require('./bl834BubbleHostThinkingPageSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
   require('./bl938AgedNoteRotateFixtureRotationRouterSteps'),
   require('./bl923DwellCountsOccupiedTimeSteps'),

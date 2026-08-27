@@ -65,6 +65,23 @@ export function mergeOperatorDocsIntoUiBundleManifest(manifest: LetsTalkUiBundle
   };
 }
 
+export const bubbleHostPage: LetsTalkUiBundlePage = {
+  id: 'host',
+  title: 'Host',
+  entryPath: 'host',
+  order: 5,
+};
+
+export function mergeBubbleHostIntoUiBundleManifest(manifest: LetsTalkUiBundleManifest): LetsTalkUiBundleManifest {
+  if (manifest.pages.some((page) => page.id === bubbleHostPage.id)) {
+    return manifest;
+  }
+  return {
+    ...manifest,
+    pages: [...manifest.pages, bubbleHostPage].sort((a, b) => a.order - b.order),
+  };
+}
+
 export const LETS_TALK_TURN_MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 export interface LetsTalkRouteDeps {
