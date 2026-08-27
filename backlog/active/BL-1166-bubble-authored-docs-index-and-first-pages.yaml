@@ -17,6 +17,15 @@ abandoned_commits:
   - 0a6c7ec061
   - 270c4c14f3
   - 4a2de79cde
+  - ab6a5758c0
+  - 57cfbf2d8e
+  - 729960e36c
+  - 46d691761b
+  - ee09308555
+  - 372b730296
+  - ba091c7cd6
+  - 3b16b1cbcd
+  - 06284be69e
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1166-bubble-authored-docs-index-and-first-pages.feature
 
