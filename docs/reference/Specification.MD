@@ -1,5 +1,13 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-599: intake-balance trend —
+filed/closed/net per window via `deriveIntakeBalanceEvents` /
+`computeIntakeBalance` on the existing deliveryMetrics git-history adapter;
+epic trackers excluded; root `INTAKE-*.md` counted; exposed on
+`computeDeliveryMetrics.intakeBalance` through `trend.ts`. Acceptance:
+`specs/features/BL-599-trend-intake-balance.feature`. How-to:
+`docs/how-to/BL-599-trend-intake-balance.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-597: self-heal events trend —
 structured `{type, subject, reason, at}` records appended at existing
 recovery log sites to `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl`
