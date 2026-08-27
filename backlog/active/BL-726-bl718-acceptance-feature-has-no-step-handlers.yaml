@@ -10,6 +10,23 @@ priority: 72
 direction: normal
 depends_on: []
 mutation_cost: low
+abandoned_commits:
+  - d0971f9b7d
+  - e5596d62a1
+  - 1b126ed55b
+  - ab3e3d90b1
+  - 7030faaa60
+  - ba26bb810a
+  - fce93446d9
+  - 45feea0605
+  - cd1e7ee565
+  - d0b7a763e2
+  - 6a13a57183
+  - c80efa3b1c
+  - d8980b5ee2
+  - b4eaf10a60
+  - 5f0e158ba2
+  - cec7552c5a
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-726-bl718-acceptance-feature-has-no-step-handlers.feature
 
@@ -62,3 +79,6 @@ out_of_scope: |
   - Changing Bubble talk mirror product behaviour (already landed under BL-718).
   - Pilot land gate (BL-727).
   - Vacuous property / CRAP shortfalls on BL-718 (BL-738/739, BL-744/745).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: ab3e3d90b1, evidence: backlog/evidence/BL-726-qa-bounce-20260827.md }
