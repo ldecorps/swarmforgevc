@@ -775,6 +775,7 @@ const DOMAINS = [
   require('./bl1119ClosingCeremonyRoleQualityDialSteps'),
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
+  require('./bl602TrendHandoffLatencySteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps')
 ];
 
