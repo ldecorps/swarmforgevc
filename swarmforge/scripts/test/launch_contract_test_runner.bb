@@ -110,6 +110,20 @@
            []
            (launch-contract-lib/launch-contract-violations (slurp-pack compliant-pack))))
 
+;; ── launch-contract-07: standing full-forge packs omit rotation by design ───
+
+(assert= "launch-contract-07: bare coordinator_agent aider without window lines still requires rotation"
+         true
+         (launch-contract-lib/missing-rotation? "config coordinator_agent aider"))
+
+(assert= "launch-contract-07: standing cursor-forge.conf does not require rotation"
+         false
+         (launch-contract-lib/missing-rotation? (slurp-pack "cursor-forge")))
+
+(assert= "launch-contract-07: standing cursor-forge.conf has zero launch-contract violations"
+         []
+         (launch-contract-lib/launch-contract-violations (slurp-pack "cursor-forge")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
