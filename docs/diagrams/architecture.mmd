@@ -230,6 +230,9 @@
 %% series (approval-tap / steering / poll-health / tick-duration) → trend.ts.
 %% BL-599 (2026-08-27): intake-balance — filed/closed/net via deliveryMetrics
 %% git-history adapter → computeIntakeBalance / trend.ts (measures only).
+%% BL-601 (2026-08-27): compaction cadence — compaction-YYYY-MM.jsonl from
+%% structured compaction:true context-events only; compactionCadence →
+%% computeTrend (inward); trend.ts must not re-export (acyclic).
 %% BL-732 (2026-08-25): needsHumanDetection pane-title chrome mirrors
 %% display_name_for_role (multi-word + @-seat); closes BL-642 residual.
 %% BL-695 (2026-08-25): supervisor/unbound threads never write
