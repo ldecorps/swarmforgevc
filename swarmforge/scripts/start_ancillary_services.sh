@@ -141,4 +141,29 @@ if [[ "${SWARMFORGE_SKIP_RESIDENT_SPY_TUNNEL:-}" == "1" ]]; then
 elif [[ -f "$SCRIPT_DIR/launch_resident_spy_tunnel.sh" ]]; then
   bash "$SCRIPT_DIR/launch_resident_spy_tunnel.sh" "$ROOT" || \
     echo "WARN: resident spy tunnel launch failed." >&2
+  # BL-1199: a zero exit from the launcher above is not the end of the
+  # story - the 2026-08-27 incident's own recorded pid had already died by
+  # the time anyone looked. Re-read the recorded pid and confirm the named
+  # tunnel is actually alive, via the SAME predicate swarm_status.bb's own
+  # "bubble-cloudflared" row uses (named_tunnel_liveness_check.bb), never a
+  # second hand-rolled check. A root with no named tunnel configured
+  # (NOT_CONFIGURED, exit 2) is not a fault - nothing further to do. A
+  # dead named tunnel (DOWN, exit 1) gets ONE bounded relaunch attempt -
+  # launch_resident_spy_tunnel.sh is already idempotent (prints
+  # "already running pid=" and exits when the pid is live), so calling it
+  # again is safe - then a final, loud report naming the NAMED tunnel
+  # specifically, never the editor tunnel, if it is still down.
+  if [[ -f "$SCRIPT_DIR/named_tunnel_liveness_check.bb" ]] && command -v bb >/dev/null 2>&1; then
+    NAMED_TUNNEL_RC=0
+    bb "$SCRIPT_DIR/named_tunnel_liveness_check.bb" "$ROOT" >/dev/null 2>&1 || NAMED_TUNNEL_RC=$?
+    if [[ "$NAMED_TUNNEL_RC" == "1" ]]; then
+      echo "WARN: Bubble named tunnel reported UP by the launcher but is not alive; attempting one relaunch..." >&2
+      bash "$SCRIPT_DIR/launch_resident_spy_tunnel.sh" "$ROOT" || true
+      NAMED_TUNNEL_RC=0
+      bb "$SCRIPT_DIR/named_tunnel_liveness_check.bb" "$ROOT" >/dev/null 2>&1 || NAMED_TUNNEL_RC=$?
+      if [[ "$NAMED_TUNNEL_RC" == "1" ]]; then
+        echo "WARN: Bubble named tunnel (resident-spy-cloudflared) is DOWN after one relaunch attempt — run: bash $SCRIPT_DIR/launch_resident_spy_tunnel.sh $ROOT" >&2
+      fi
+    fi
+  fi
 fi

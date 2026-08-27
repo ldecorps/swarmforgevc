@@ -27,6 +27,10 @@
 ;; a pidfile naming a live but unrelated process (pid reuse) must read as
 ;; DOWN, and a bare kill-0 cannot tell that apart from the real thing.
 (load-file (str (fs/path script-dir "operator_runtime_watch_lib.bb")))
+;; BL-1199: the SAME "is the Bubble named tunnel live?" decision
+;; start_ancillary_services.sh's own named_tunnel_liveness_check.bb wraps -
+;; one shared predicate for both surfaces, never a second hand-rolled check.
+(load-file (str (fs/path script-dir "named_tunnel_liveness_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -270,6 +274,43 @@
                                  (when (and live (not pidfile-alive?)) "adopted-live")
                                  (when (and pidfile-pid (not pidfile-alive?)) "stale-pid")]))})))
 
+;; BL-1199: same two config sources named_tunnel_liveness_check.bb's own
+;; CLI wiring reads - an ambient env var wins outright, otherwise
+;; named-tunnel.env's own declared value (a blank/absent value is
+;; unconfigured, matching launch_resident_spy_tunnel.sh's own
+;; `[[ -n "$NAMED_TUNNEL" ]]` gate exactly).
+(defn named-tunnel-configured? [op]
+  (let [ambient (System/getenv "SWARMFORGE_NAMED_TUNNEL")]
+    (if-not (str/blank? ambient)
+      true
+      (let [env-file (fs/path op "named-tunnel.env")]
+        (boolean
+         (when (fs/exists? env-file)
+           (some (fn [line]
+                   (when-let [[_ v] (re-matches #"(?:export\s+)?SWARMFORGE_NAMED_TUNNEL=(.*)" (str/trim line))]
+                     (not (str/blank? (str/replace v #"^[\"']|[\"']$" "")))))
+                 (str/split-lines (slurp (str env-file))))))))))
+
+;; BL-1199: the Bubble named tunnel's own row, distinct from vscode-tunnel
+;; below (same pidfile launch_resident_spy_tunnel.sh writes,
+;; resident-spy-cloudflared.pid, previously observed by NOTHING on this
+;; surface). Reuses named-tunnel-liveness-lib/liveness-verdict - the SAME
+;; decision named_tunnel_liveness_check.bb's own CLI wraps for ancillary
+;; start - rather than a second hand-rolled up/down/not-configured check.
+(defn gather-bubble-cloudflared [op]
+  (let [pid (read-pid (fs/path op "resident-spy-cloudflared.pid"))
+        alive (pid-alive? pid)
+        configured (named-tunnel-configured? op)
+        verdict (named-tunnel-liveness-lib/liveness-verdict
+                 {:configured? configured :pid-alive? alive})]
+    {:name "bubble-cloudflared"
+     :status verdict
+     :uptime (when (= verdict :up) (pid-etime pid))
+     :detail (str/join " "
+                       (remove str/blank?
+                               [(when pid (str "pid=" pid))
+                                (when (and pid (not alive) (not= verdict :not-configured)) "stale-pid")]))}))
+
 (defn gather-daemons []
   (let [op (fs/path state-dir "operator")
         daemon (fs/path state-dir "daemon")]
@@ -277,7 +318,12 @@
      (daemon-from-pid "handoffd-supervisor" (fs/path daemon "handoffd-supervisor.pid"))
      (gather-operator-runtime)
      (gather-babysitterd)
-     (daemon-from-pid "cloudflare-tunnel" (fs/path op "tunnel.pid"))]))
+     ;; BL-1199: was "cloudflare-tunnel" - renamed so this row can never be
+     ;; mistaken for the Bubble named tunnel again (this is the editor
+     ;; tunnel, `code tunnel` / swarmforge-ops, sourced from tunnel.pid;
+     ;; verified repo-wide the old name has no other consumer to break).
+     (daemon-from-pid "vscode-tunnel" (fs/path op "tunnel.pid"))
+     (gather-bubble-cloudflared op)]))
 
 (defn read-json [path]
   (when (fs/exists? path)
