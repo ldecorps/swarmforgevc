@@ -141,3 +141,31 @@ notes: |
     asserts a genuinely distinct variable/repo and merging would lose
     per-variable/per-repo specificity that matters if the fix only covers
     one side; not accidental drift, left as separate steps."
+  - "[2026-08-27] specifier: the SHELL half of this same defect fired live at
+    19:31 the same day — swarmforge/scripts/test/expedite_fixture.sh (no
+    GIT_DIR clearing) wrote 20 commits onto local main and left the master
+    checkout detached. This ticket's approved scope is the JS lane
+    (extension/test/** via vitest setupFiles) and cannot reach the shell
+    suite, so a sibling was minted rather than this ticket's approved scope
+    being broadened after the fact: BL-1200. Neither blocks the other.
+    Evidence: backlog/evidence/master-checkout-detached-by-expedite-fixture-20260827.md.
+    Measured that day: 332 shell tests, 75 run git, 0 clear either variable."
+  - "[2026-08-27] specifier: THIRD independent hit of this root cause in one
+    day, by a third role. Hardener rule_proposal 18:26:40Z asked for a fresh
+    critical defect ('test:properties still mutates live worktree branch w/
+    init/seed commits'); declined as a duplicate — this ticket already names
+    the property lane and carries a required_wiring entry on
+    vitest.properties.config.mjs. Recorded here as promotion evidence, not
+    as new scope. Repro:
+    .worktrees/hardender/backlog/evidence/BL-1184-hardener-pass-20260827.md
+    'Worktree recovery note' — a fixture harness ran git init/commit cycles
+    against the live swarmforge-hardender worktree, carried the branch ref 45
+    commits past the real merge (da8ef009a) and reduced the branch tip's tree
+    to src/ and swarmforge/ only; recovered by mixed reset. It also left
+    handoffd.bb and briefing_email_lib.bb with the BL-1184 briefing-email
+    wiring silently REMOVED in the working tree, unexplained by any pass's
+    evidence — the same content-no-commit-authored shape as BL-1098.
+    Timeline for the day: coder 18:10 (property fixture, this ticket),
+    hardener 18:26 (role branch, above), specifier 19:31 (master checkout
+    detached, BL-1200). This ticket is approved and paused; what it needs is
+    a promotion slot, not another ticket."
