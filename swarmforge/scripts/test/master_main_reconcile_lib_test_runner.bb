@@ -721,6 +721,31 @@
              (master-main-reconcile-lib/designed-end-state-is-deadlock-tripped?
               "conflict"))
 
+;; ── rematch-with-push-first! (BL-1198) ───────────────────────────────────
+
+(let [reset-calls (atom 0)
+      result (master-main-reconcile-lib/rematch-with-push-first!
+              {:push! (fn [] {:success true})
+               :reset! (fn [] (swap! reset-calls inc) {:success true :outcome :should-not-happen})})]
+  (assert-true "bl1198: a successful push reports success" (:success result))
+  (assert= "bl1198: a successful push reports outcome :pushed" :pushed (:outcome result))
+  (assert= "bl1198: a successful push never calls reset!" 0 @reset-calls))
+
+(let [push-calls (atom 0)
+      result (master-main-reconcile-lib/rematch-with-push-first!
+              {:push! (fn [] (swap! push-calls inc) {:success false :error "non-fast-forward"})
+               :reset! (fn [] {:success true :outcome :rematched-bookkeeping})})]
+  (assert= "bl1198: a rejected push still calls reset! (exactly once)" 1 @push-calls)
+  (assert-true "bl1198: a rejected push falls through to reset!'s success" (:success result))
+  (assert= "bl1198: a rejected push falls through to reset!'s own outcome"
+           :rematched-bookkeeping (:outcome result)))
+
+(let [result (master-main-reconcile-lib/rematch-with-push-first!
+              {:push! (fn [] {:success false :error "non-fast-forward"})
+               :reset! (fn [] {:success false :error "reset failed" :outcome :rematch-bookkeeping})})]
+  (assert= "bl1198: reset!'s own failure result passes through verbatim"
+           {:success false :error "reset failed" :outcome :rematch-bookkeeping} result))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")

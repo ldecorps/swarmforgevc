@@ -119,6 +119,7 @@ source: |
   evidence file's own closing line.
 
 notes: |
+  - "[2026-08-27 23:30] coordinator: promotion HOLD — slice_size_envelope gate refused (band=high, insertions=unset, p90=514 median=65): needs split-or-justify before it can promote. Left in paused/ for specifier."
   - [2026-08-27] specifier: minted per coordinator's routing note. The
     coder's stash (.worktrees/coder stash@{0}) is the primary evidence for
     deliverable 1 — whoever picks this up reads it BEFORE it is dropped.

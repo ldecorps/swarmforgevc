@@ -153,6 +153,7 @@ source: |
   launch_resident_spy_tunnel.sh directly, not inferred from the intake.
 
 notes: |
+  - "[2026-08-27 23:30] coordinator: promotion HOLD — promote_and_route_next.sh run for this ticket coincided with the shared main checkout's .git/config flipping to core.bare=true (fatal: this operation must be run in a work tree), blocking all git ops repo-wide. Fixed (bare reset to false) but root cause unconfirmed — may be this ticket's own tooling or an unrelated concurrent process. Held pending specifier/operator investigation before retrying promotion. See priority-00 note sent same timestamp."
   - "[2026-08-27] specifier: intake directive 2 (quoted verbatim in source
     above) was checked against the live code before being left out of scope,
     not assumed. `swarm_status.bb`'s `front-desk-child-alive?` already
