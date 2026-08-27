@@ -28,6 +28,7 @@ required_wiring:
   - "swarmforge/scripts/ready_for_next_task.bb::difficulty-allows-claim?::mutation cost from task header or Work BL- message via task-name-from-content"
   - "swarmforge/scripts/supersede_lib.bb::task-name-from-content::reuse for difficulty attribution"
   - "specs/pipeline/steps/index.js::bl1185WorkNoteMissingTaskHeaderSteps::acceptance handler registered"
+  - "extension/test/bl1185WorkNoteMissingTaskHeader.property.test.js::P1-P3::three declared invariants property-encoded"
 
 description: |
   ## What
