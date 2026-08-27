@@ -32,13 +32,23 @@ function ensure(ctx) {
 async function withBridge(ctx, fn) {
   const st = ensure(ctx);
   const { startBridge } = loadOut();
-  const handle = await startBridge(st.root, path.join(st.root, 'runs.jsonl'), st.token, {});
-  st.handle = handle;
+  const prevKey = process.env.CURSOR_API_KEY;
+  process.env.CURSOR_API_KEY = prevKey || 'bl1166-test-key';
+  let handle;
   try {
+    handle = await startBridge(st.root, path.join(st.root, 'runs.jsonl'), st.token, {});
+    st.handle = handle;
     return await fn(handle);
   } finally {
-    handle.stop();
+    if (handle) {
+      handle.stop();
+    }
     st.handle = null;
+    if (prevKey === undefined) {
+      delete process.env.CURSOR_API_KEY;
+    } else {
+      process.env.CURSOR_API_KEY = prevKey;
+    }
   }
 }
 
@@ -137,6 +147,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^headings and paragraphs are legible at a phone viewport width$/, (ctx) => {
+    const { operatorDocsHtml } = loadOut();
+    if (!ctx.bl1166Html) {
+      ctx.bl1166Html = operatorDocsHtml.getOperatorDocsUiHtml();
+    }
+    assert.ok(ctx.bl1166LatestPageBody, 'expected rendered page body from the prior When step');
     assert.match(ctx.bl1166Html, /max-width:\s*100/);
     assert.match(ctx.bl1166Html, /overflow-wrap:\s*anywhere/);
     assert.match(ctx.bl1166LatestPageBody.html, /<p>/);
