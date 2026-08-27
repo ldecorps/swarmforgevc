@@ -110,6 +110,27 @@ test('undetectable roles read NA not zero compactions', () => {
   assert.equal(series.windows.length, 0);
 });
 
+test('records for a non-detectable role stay NA even when events exist', () => {
+  const records = [
+    {
+      role: 'documenter',
+      model: 'claude-sonnet-5',
+      tokensAtCompaction: 1000,
+      timestamp: '2026-08-27T06:00:00Z',
+      timestampMs: Date.parse('2026-08-27T06:00:00Z'),
+    },
+  ];
+  const series = queryCompactionCadenceForRole(
+    'documenter',
+    records,
+    ['coder', 'QA'],
+    Date.parse('2026-08-29T00:00:00Z')
+  );
+  assert.equal(series.applicable, false);
+  assert.equal(series.windows.length, 0);
+  assert.equal(series.trend, null);
+});
+
 test('trendForCompactionCadencePerHour reports current prior delta and direction', () => {
   const windows = [
     {
