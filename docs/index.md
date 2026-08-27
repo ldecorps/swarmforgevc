@@ -43,6 +43,7 @@ expects them, and are not migrated or rewritten here.
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
+- [RECENTLY CLOSED lines show closure age](how-to/BL-980-recently-closed-elapsed-time.md) — `(10min ago)` from durable `doneClosedAtMs`; RECENTLY CLOSED only (BL-980).
 - [One unified pipeline grid across swarms](how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md) — one kanban; caption `s1`/`s2` badges when multi-swarm; remote held-by-role never guessed (BL-1009).
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Steering a swarm role from Telegram, and reading the receipt](how-to/BL-566-steer-a-role-from-telegram.md) — per-role topic nudge + delivery receipt (BL-566); `menu_blocked` when a pane menu is live (BL-568).
