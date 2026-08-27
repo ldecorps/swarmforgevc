@@ -828,10 +828,10 @@ function parseChoicePoll(value: unknown): CursorBridgeChoicePoll | undefined {
   return poll;
 }
 
-function buildPersistedState(record: Record<string, unknown>): CursorBridgePersistedState {
-  const state: CursorBridgePersistedState = {
-    updateOffset: parseNonNegativeInt(record.updateOffset, 0),
-  };
+function applyPersistedIdentityFields(
+  state: CursorBridgePersistedState,
+  record: Record<string, unknown>
+): void {
   const topicId = parseOptionalTopicId(record.cursorTopicId);
   const bubbleTopicId = parseOptionalTopicId(record.bubbleTopicId);
   const agentId = parseOptionalNonEmptyString(record.agentId);
@@ -844,6 +844,12 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   if (agentId !== undefined) {
     state.agentId = agentId;
   }
+}
+
+function applyPersistedPromptFields(
+  state: CursorBridgePersistedState,
+  record: Record<string, unknown>
+): void {
   const pendingPromptsRaw = Array.isArray(record.pendingPrompts) ? record.pendingPrompts : undefined;
   if (pendingPromptsRaw) {
     const pendingPrompts = pendingPromptsRaw
@@ -861,6 +867,12 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   if (supersededPromptPollIds !== undefined) {
     state.supersededPromptPollIds = supersededPromptPollIds;
   }
+}
+
+function applyPersistedChoicePollFields(
+  state: CursorBridgePersistedState,
+  record: Record<string, unknown>
+): void {
   const pendingChoicePollsRaw = Array.isArray(record.pendingChoicePolls) ? record.pendingChoicePolls : undefined;
   if (pendingChoicePollsRaw) {
     const pendingChoicePolls = pendingChoicePollsRaw
@@ -870,6 +882,12 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
       state.pendingChoicePolls = pendingChoicePolls;
     }
   }
+}
+
+function applyPersistedLivenessFields(
+  state: CursorBridgePersistedState,
+  record: Record<string, unknown>
+): void {
   const livenessStatus = parseLivenessStatus(record.livenessStatus);
   if (livenessStatus) {
     state.livenessStatus = livenessStatus;
@@ -882,6 +900,16 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   if (enqueueNextPromptId !== undefined) {
     state.enqueueNextPromptId = enqueueNextPromptId;
   }
+}
+
+function buildPersistedState(record: Record<string, unknown>): CursorBridgePersistedState {
+  const state: CursorBridgePersistedState = {
+    updateOffset: parseNonNegativeInt(record.updateOffset, 0),
+  };
+  applyPersistedIdentityFields(state, record);
+  applyPersistedPromptFields(state, record);
+  applyPersistedChoicePollFields(state, record);
+  applyPersistedLivenessFields(state, record);
   return state;
 }
 

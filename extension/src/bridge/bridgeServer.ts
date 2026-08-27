@@ -110,16 +110,18 @@ import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalk
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
 import {
-  sendTelegramMessageWithRateLimitRetry,
   sendTelegramPoll,
-  type SendMessageResult,
 } from '../notify/telegramClient';
+import { sendBubbleMirrorChunks, telegramMirrorEnv } from './bubbleMirrorDelivery';
+import { appendPendingChoicePoll } from './bubbleMirrorState';
 import {
-  bubbleTopicIdFromMap,
-  cursorBridgeTopicIdFromMap,
-  parseCursorBridgeState,
-  splitTelegramChunks,
-} from '../tools/telegramCursorBridgeCore';
+  bubbleMirrorTopicForPath,
+  effectiveBubbleMirrorTopicId,
+  type CursorBridgeTopicIds,
+} from './bubbleMirrorTopic';
+import type { MirrorLetsTalkTurnDeps, BubbleMirrorPollFn, BubbleMirrorSendFn } from './bubbleMirrorTypes';
+export type { MirrorLetsTalkTurnDeps, BubbleMirrorPollFn, BubbleMirrorSendFn } from './bubbleMirrorTypes';
+export { effectiveBubbleMirrorTopicId, mergeTopicId, readCursorBridgeTopicIds } from './bubbleMirrorTopic';
 import { execFileSync } from 'child_process';
 import { estimateEpicEta } from '../metrics/epicEta';
 
@@ -147,64 +149,6 @@ const EPIC_REORDER_MOVE_MAX_BODY_BYTES = 4 * 1024;
 const EPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
 // BL-673: topic make-top body ({epicId, topicId}).
 const EPIC_TOPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
-const CURSOR_BRIDGE_STATE_FILE = 'cursor-bridge-state.json';
-const CURSOR_BRIDGE_TOPIC_MAP_FILE = 'cursor-bridge-topic-map.json';
-
-interface CursorBridgeTopicIds {
-  cursorTopicId?: number;
-  bubbleTopicId?: number;
-}
-
-function mergeTopicId(
-  preferred: number | undefined,
-  fallback: number | undefined
-): number | undefined {
-  return typeof preferred === 'number' && Number.isFinite(preferred) && preferred > 0
-    ? preferred
-    : fallback;
-}
-
-function readCursorBridgeTopicIds(targetPath: string): CursorBridgeTopicIds {
-  let stateCursorTopicId: number | undefined;
-  let stateBubbleTopicId: number | undefined;
-  const statePath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_STATE_FILE);
-  if (fs.existsSync(statePath)) {
-    try {
-      const state = parseCursorBridgeState(JSON.parse(fs.readFileSync(statePath, 'utf8')));
-      stateCursorTopicId = state.cursorTopicId;
-      stateBubbleTopicId = state.bubbleTopicId;
-    } catch {
-      // fall through to topic map
-    }
-  }
-  const mapPath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_TOPIC_MAP_FILE);
-  if (!fs.existsSync(mapPath)) {
-    return {
-      cursorTopicId: stateCursorTopicId,
-      bubbleTopicId: stateBubbleTopicId,
-    };
-  }
-  try {
-    const map = JSON.parse(fs.readFileSync(mapPath, 'utf8')) as Record<string, string>;
-    return {
-      cursorTopicId: mergeTopicId(stateCursorTopicId, cursorBridgeTopicIdFromMap(map)),
-      bubbleTopicId: mergeTopicId(stateBubbleTopicId, bubbleTopicIdFromMap(map)),
-    };
-  } catch {
-    return {
-      cursorTopicId: stateCursorTopicId,
-      bubbleTopicId: stateBubbleTopicId,
-    };
-  }
-}
-
-/** Prefer the dedicated Bubble topic; never dump ordinary talk onto Cursor Remote. */
-export function effectiveBubbleMirrorTopicId(topicIds: CursorBridgeTopicIds): number | undefined {
-  if (topicIds.bubbleTopicId === undefined) {
-    return undefined;
-  }
-  return topicIds.bubbleTopicId === topicIds.cursorTopicId ? undefined : topicIds.bubbleTopicId;
-}
 
 /**
  * BL-709: Let's Talk mirror destination.
@@ -227,32 +171,24 @@ export function formatBubbleMirrorText(transcript: string, replyText: string): s
   return agent || you;
 }
 
-export type BubbleMirrorSendFn = (
-  token: string,
-  chatId: string,
-  text: string,
-  replyToMessageId?: number,
-  postFn?: unknown,
-  messageThreadId?: number
-) => Promise<SendMessageResult>;
-
-export type BubbleMirrorPollFn = (
-  token: string,
-  chatId: string,
-  question: string,
-  options: string[],
-  messageThreadId?: number
-) => Promise<{ success: boolean; pollId?: string; error?: string }>;
-
-export interface MirrorLetsTalkTurnDeps {
-  sendMessage?: BubbleMirrorSendFn;
-  sendPoll?: BubbleMirrorPollFn;
-  splitChunks?: (text: string, maxLen?: number) => string[];
-}
-
 interface LetsTalkChoicePollSpec {
   question: string;
   options: string[];
+}
+
+function choicePollMirrorTarget(
+  targetPath: string,
+  replyText: string
+): { topicId: number; spec: LetsTalkChoicePollSpec } | undefined {
+  const topicId = bubbleMirrorTopicForPath(targetPath);
+  if (topicId === undefined) {
+    return undefined;
+  }
+  const spec = extractLetsTalkChoicePoll(replyText);
+  if (!spec) {
+    return undefined;
+  }
+  return { topicId, spec };
 }
 
 function extractLetsTalkChoicePoll(replyText: string): LetsTalkChoicePollSpec | null {
@@ -280,49 +216,22 @@ function extractLetsTalkChoicePoll(replyText: string): LetsTalkChoicePollSpec | 
   return { question: question.slice(0, 280), options: options.map((opt) => opt.slice(0, 100)) };
 }
 
-function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsTalkChoicePollSpec, originTopicId: number): void {
-  const statePath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_STATE_FILE);
-  let raw: Record<string, unknown> = {};
-  if (fs.existsSync(statePath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as Record<string, unknown>;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        raw = parsed;
-      }
-    } catch {
-      raw = {};
-    }
-  }
-  const existing = Array.isArray(raw.pendingChoicePolls) ? raw.pendingChoicePolls : [];
-  const next = [...existing, { pollId, question: spec.question, options: spec.options, createdAtMs: Date.now(), originTopicId }].slice(-20);
-  raw.pendingChoicePolls = next;
-  fs.writeFileSync(statePath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
-}
-
 async function mirrorLetsTalkChoicePollToBubble(
   targetPath: string,
   replyText: string,
+  env: { botToken: string; chatId: string },
   deps: MirrorLetsTalkTurnDeps = {}
 ): Promise<void> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) {
-    return;
-  }
-  const topicId = effectiveLetsTalkMirrorTopicId(readCursorBridgeTopicIds(targetPath));
-  if (topicId === undefined) {
-    return;
-  }
-  const spec = extractLetsTalkChoicePoll(replyText);
-  if (!spec) {
+  const target = choicePollMirrorTarget(targetPath, replyText);
+  if (!target) {
     return;
   }
   const sendPoll = deps.sendPoll ?? sendTelegramPoll;
-  const sent = await sendPoll(botToken, chatId, spec.question, spec.options, topicId);
+  const sent = await sendPoll(env.botToken, env.chatId, target.spec.question, target.spec.options, target.topicId);
   if (!sent.success || !sent.pollId) {
     return;
   }
-  appendPendingChoicePoll(targetPath, sent.pollId, spec, topicId);
+  appendPendingChoicePoll(targetPath, sent.pollId, target.spec, target.topicId);
 }
 
 /** Best-effort mirror of Bubble / Let's Talk turns into the standing Bubble Telegram topic. */
@@ -332,12 +241,11 @@ export async function mirrorLetsTalkTurnToBubble(
   replyText: string,
   deps: MirrorLetsTalkTurnDeps = {}
 ): Promise<void> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) {
+  const env = telegramMirrorEnv();
+  if (!env) {
     return;
   }
-  const topicId = effectiveLetsTalkMirrorTopicId(readCursorBridgeTopicIds(targetPath));
+  const topicId = bubbleMirrorTopicForPath(targetPath);
   if (topicId === undefined) {
     return;
   }
@@ -345,28 +253,11 @@ export async function mirrorLetsTalkTurnToBubble(
   if (!text.trim()) {
     return;
   }
-  // BL-718: chunk like Cursor Remote — never one un-chunked send over Telegram's limit.
-  const splitChunks = deps.splitChunks ?? splitTelegramChunks;
-  const sendMessage = deps.sendMessage ?? sendTelegramMessageWithRateLimitRetry;
-  const chunks = splitChunks(text);
-  for (let i = 0; i < chunks.length; i += 1) {
-    const result = await sendMessage(botToken, chatId, chunks[i], undefined, undefined, topicId);
-    if (!result.success) {
-      const err = result.error || 'unknown send failure';
-      const msg = `Bubble talk mirror failed (topic ${topicId}, chunk ${i + 1}/${chunks.length}): ${err}`;
-      console.error(msg);
-      appendOperatorEvent(targetPath, {
-        type: 'bubble-talk-mirror-failed',
-        topicId,
-        chunk: i + 1,
-        chunkCount: chunks.length,
-        error: err,
-        at: new Date().toISOString(),
-      });
-      return;
-    }
+  const ok = await sendBubbleMirrorChunks(targetPath, env.botToken, env.chatId, topicId, text, deps);
+  if (!ok) {
+    return;
   }
-  await mirrorLetsTalkChoicePollToBubble(targetPath, replyText, deps);
+  await mirrorLetsTalkChoicePollToBubble(targetPath, replyText, env, deps);
 }
 
 export interface BridgeHandle {
