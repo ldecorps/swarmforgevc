@@ -146,10 +146,12 @@ function registerSteps(registry) {
   });
 
   scoped(/^headings and paragraphs are legible at a phone viewport width$/, (ctx) => {
-    const { operatorDocsHtml } = loadOut();
-    const shellHtml = ctx.bl1166Html ?? operatorDocsHtml.getOperatorDocsUiHtml();
-    assert.match(shellHtml, /max-width:\s*100/);
-    assert.match(shellHtml, /overflow-wrap:\s*anywhere/);
+    if (!ctx.bl1166Html) {
+      const { operatorDocsHtml } = loadOut();
+      ctx.bl1166Html = operatorDocsHtml.getOperatorDocsUiHtml();
+    }
+    assert.match(ctx.bl1166Html, /max-width:\s*100/);
+    assert.match(ctx.bl1166Html, /overflow-wrap:\s*anywhere/);
     assert.ok(ctx.bl1166LatestPageBody && typeof ctx.bl1166LatestPageBody.html === 'string');
     assert.match(ctx.bl1166LatestPageBody.html, /<p>/);
   });
