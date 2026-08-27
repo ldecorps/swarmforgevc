@@ -80,6 +80,7 @@ expects them, and are not migrated or rewritten here.
 - [Daemon log-freshness watchdog](how-to/BL-675-daemon-log-freshness-watchdog.md) — cron-side stale-heartbeat checker for long-running daemons (BL-675).
 - [Supervisor freshness heartbeats and registry guard](how-to/BL-784-supervisor-freshness-heartbeats-and-registry-guard.md) — per-tick supervisor heartbeats, conf rows, fail-closed registry guard (BL-784).
 - [Difficulty-aware coder seat routing](how-to/BL-1001-difficulty-aware-coder-seat-routing.md) — `mutation_cost` vs declared `--seat-tier`; hard work never spills to easy-only (BL-1001).
+- [Work notes attribute mutation cost without a task header](how-to/BL-1185-work-note-missing-task-header-defers-hard-seat.md) — `Work BL-…` message feeds BL-1001 difficulty; `task:` stays git_handoff-only (BL-1185).
 - [Unit-lane budgets scale with recorded contention](how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md) — load-relative Vitest timeouts with a finite ceiling; quiet host keeps base (BL-1007).
 - [Bounded fs.watch deadline follows recorded contention](how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md) — BL-933 helper scales 10s base with BL-1007 factor; stays under test budget (BL-1008).
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
