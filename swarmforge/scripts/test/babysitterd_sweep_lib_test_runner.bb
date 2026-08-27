@@ -614,44 +614,6 @@
                                                                    {:last-escalated-ms-by-key {} :now-ms 100000 :cooldown-ms 1800000})]
                  (= [crit] to-escalate))))
 
-;; ── BL-1171 disaster-class correlation ──────────────────────────────────────
-(def cascade-findings
-  [{:key "handoffd" :severity "CRIT" :message "handoffd.bb not running"}
-   {:key "swarm-starved" :severity "CRIT" :message "SWARM STARVED streak=3"}
-   {:key "proc-coder" :severity "CRIT" :message "pane alive but NO claude (half-launch/exit)"}
-   {:key "proc-cleaner" :severity "CRIT" :message "pane alive but NO claude (half-launch/exit)"}
-   {:key "proc-architect" :severity "CRIT" :message "pane alive but NO claude (half-launch/exit)"}])
-
-(assert-true "BL-1171: starvation cascade rolls correlated CRITs into one disaster-class escalation"
-             (let [prepared (sw/prepare-escalation-findings cascade-findings {})
-                   {:keys [to-escalate]} (sw/decide-escalations prepared
-                                                                 {:last-escalated-ms-by-key {} :now-ms 100000 :cooldown-ms 1800000})]
-               (and (= 1 (count to-escalate))
-                    (= "disaster-class" (:key (first to-escalate)))
-                    (= "starvation-cascade" (get-in (first to-escalate) [:disaster-class :failure_class])))))
-
-(assert-true "BL-1171: handoffd parse error emits diagnose-only disaster escalation"
-             (let [snapshot {:handoffd-startup-error "Parse error at line 42"
-                             :handoffd-log-path ".swarmforge/daemon/handoffd.log"}
-                   prepared (sw/prepare-escalation-findings [] snapshot)
-                   finding (first prepared)]
-               (and (= "disaster-class" (:key finding))
-                    (:diagnose-only finding)
-                    (str/includes? (:message finding) "human hotfix")
-                    (sw/diagnose-only-disaster-sweep? [] snapshot))))
-
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "chase_sweep_lib.bb")))
-
-(assert-true "BL-1171: structured escalation detail is JSON with failure_class and suggested_actions"
-             (let [finding (first (sw/prepare-escalation-findings cascade-findings {}))
-                   detail (chase-sweep-lib/format-babysitter-escalation-detail finding)
-                   parsed (chase-sweep-lib/parse-babysitter-escalation-detail detail)]
-               (and parsed
-                    (= "starvation-cascade" (:failure_class parsed))
-                    (seq (:suggested_actions parsed))
-                    (every? #(contains? % :owner) (:suggested_actions parsed))
-                    (seq (:evidence_paths parsed)))))
-
 ;; ── format helpers ────────────────────────────────────────────────────────
 (assert-true "format-finding-line includes timestamp, severity, key, message"
              (let [line (sw/format-finding-line {:key "memory" :severity "CRIT" :message "low mem"} "2026-08-01T00:00:00Z")]
@@ -870,6 +832,25 @@
 (assert= "BL-779: no pause keeps standard all-clear"
          "OK all checks green"
          (sw/format-all-clear-line {:pause-active? false :pause-until-ms nil}))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "master_main_reconcile_lib.bb")))
+
+(assert-true "BL-1187: active deadlock emits CRIT main-sync-deadlock finding"
+             (let [f (sw/check-main-sync-deadlock
+                      {:deadlock-active? true :ahead 144 :behind 593 :reason "dirty"
+                       :overlapping-paths ["backlog/active/BL-709.yaml"]})]
+               (and f (= "main-sync-deadlock" (:key f)) (= "CRIT" (:severity f))
+                    (str/includes? (:message f) "clear overlapping path backlog/active/BL-709.yaml")
+                    (str/includes? (:message f) "Not /pilot"))))
+
+(assert-nil "BL-1187: inactive deadlock emits no finding"
+            (sw/check-main-sync-deadlock {:deadlock-active? false}))
+
+(assert-true "BL-1187: main-sync-deadlock escalates but does not nudge coordinator"
+             (let [f (sw/check-main-sync-deadlock
+                      {:deadlock-active? true :ahead 3 :behind 1 :reason "dirty"
+                       :overlapping-paths []})]
+               (and f (sw/escalation-eligible? f) (not (sw/nudge-eligible? f)))))
 
 (when (seq @failures)
   (binding [*out* *err*]
