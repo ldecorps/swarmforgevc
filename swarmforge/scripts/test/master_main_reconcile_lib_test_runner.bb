@@ -592,6 +592,13 @@
 (assert-true "deadlock-clear?: behind 0 clears"
              (master-main-reconcile-lib/deadlock-clear? 0))
 
+(assert-true "operator-deadlock-hint names a single overlapping path"
+             (clojure.string/includes?
+              (master-main-reconcile-lib/operator-deadlock-hint
+               {:ahead 144 :behind 593 :reason "dirty"
+                :overlapping-paths ["backlog/active/BL-709.yaml"]})
+              "clear overlapping path backlog/active/BL-709.yaml"))
+
 ;; ── BL-1120: never abort a foreign merge ────────────────────────────────
 (assert= "merge-attempt-plan: MERGE_HEAD already present -> skip"
          :skip-human-merge-in-progress

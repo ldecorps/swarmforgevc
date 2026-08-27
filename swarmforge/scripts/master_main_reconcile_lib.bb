@@ -576,6 +576,25 @@
        "Coordinator bookkeeping held; wakes and drop-nudges suppressed until behind=0. "
        "Clear overlapping dirty paths or wait for BL-891 reconcile."))
 
+(defn format-overlapping-path-hint
+  "BL-1187: name actionable paths for operator/babysitter hints."
+  [paths]
+  (let [paths (vec (remove #(= unknown-dirty-marker %) (or paths [])))]
+    (case (count paths)
+      0 "inspect master checkout git status (BL-891 docs/how-to/BL-891-master-main-reconcile-sweep.md)"
+      1 (str "clear overlapping path " (first paths))
+      (<= (count paths) 3) (str "clear overlapping paths: " (str/join ", " paths))
+      (str (count paths) " overlapping paths — see docs/how-to/BL-891-master-main-reconcile-sweep.md"))))
+
+(defn operator-deadlock-hint
+  "BL-1187: babysitterd/operator-facing hint when main-sync-deadlock is active."
+  [{:keys [ahead behind reason overlapping-paths]}]
+  (str "main-sync deadlock (" (or reason "diverged") "): local main ahead="
+       (or ahead 0) " behind=" (or behind 0)
+       "; coordinator bookkeeping halted — operator fix: "
+       (format-overlapping-path-hint overlapping-paths)
+       "; handoffd auto-reconciles once overlap clears (BL-891). Not /pilot."))
+
 ;; ── adapter-injected orchestration ───────────────────────────────────────
 ;; adapters: {:rev-counts!          (fn [] -> {:ahead int :behind int}) -
 ;;                                   already fetches origin/main as a side
