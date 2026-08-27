@@ -170,3 +170,6 @@ notes: |
   for high stated openly in `approval_context` rather than hidden. If the
   human reads "unapproved work reached main past four gates" as the headline,
   high is defensible and the expedite lane is where it belongs.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: 454ffa1e7a, evidence: backlog/evidence/BL-1084-architect-bounce-20260827.md }
