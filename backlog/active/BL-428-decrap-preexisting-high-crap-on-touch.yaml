@@ -67,3 +67,4 @@ approval_context: >
   hardener's delegated question). Any actively-scoped decrap slice drawn from it
   follows the normal spec + human-review flow at that time.
 mutation_cost: low
+assigned_to: coder
