@@ -313,6 +313,20 @@ exemption must not become a silent refuse.
 Acceptance:
 [`specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature`](../../specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature).
 
+## Disaster-class correlation (BL-1171)
+
+When handoffd down, swarm-starved, and ≥3 half-launch roles fire together,
+babysitterd rolls the correlated CRITs into **one** `disaster-class`
+escalation with structured JSON detail (`failure_class`, `suggested_actions`
+with owners, `evidence_paths`) instead of N symptom lines. Unrecoverable
+handoffd parse errors emit diagnose-only escalations — bounded auto-repair is
+suppressed for that sweep.
+
+How-to:
+[`docs/how-to/BL-1171-disaster-class-correlation-structured-escalation.md`](BL-1171-disaster-class-correlation-structured-escalation.md).
+Acceptance:
+[`specs/features/BL-1171-disaster-class-correlation-structured-escalation.feature`](../../specs/features/BL-1171-disaster-class-correlation-structured-escalation.feature).
+
 ## Control-plane auto-heal, bounded in time (BL-958/BL-1071)
 
 Before this fix, a missing tmux control plane (`control-plane-missing`, see

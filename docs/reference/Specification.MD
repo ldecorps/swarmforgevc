@@ -1,5 +1,14 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1171: babysitter disaster-class
+correlation — when handoffd down + ≥3 half-launch + swarm-starved fire
+together, `babysitterd_sweep_lib.bb` rolls to one structured
+`BABYSITTER_ESCALATION` with `failure_class`, `suggested_actions` (owner per
+action), and `evidence_paths`; handoffd parse errors are diagnose-only with
+repair suppressed. Acceptance:
+`specs/features/BL-1171-disaster-class-correlation-structured-escalation.feature`.
+How-to: `docs/how-to/BL-1171-disaster-class-correlation-structured-escalation.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-834: Bubble **Host** remote page —
 manifest page `host` (order 5) in BL-829 ui-bundle; `/host` HTML shell
 seeds from `GET /host-activity` then attaches to SSE `hostActivityStream`
