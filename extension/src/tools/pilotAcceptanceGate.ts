@@ -194,6 +194,7 @@ export interface AcceptanceReceipt {
   unreachableStepHandlers?: { stepFilesScanned: number; patternsChecked: number };
   multiBranchParserCoverage?: { parsersScanned: number };
   perHatRolePromptEvidence?: { verdictsScanned: number };
+  /** AcceptanceReceipt.scopedCrap — durable paths-scanned + outcome evidence (BL-745). */
   scopedCrap?: { tsFilesScanned: number; scannedPaths: string[]; outcome: 'passed' };
   mkdtempConvention?: { testFilesScanned: number };
   multiWorktreeFixture?: MultiworktreeFixtureMetadata;
