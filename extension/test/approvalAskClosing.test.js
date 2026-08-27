@@ -97,6 +97,18 @@ test('approvalAskTextShowsDecidedVerdict: still recognizes the pre-BL-721 "Exped
   assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Expedited 2026-07-17 03:07 UTC'), true);
 });
 
+// Pre-existing 'ruled' verdict - closed while hardening BL-1190's own new
+// 'stale' verdict addition to the same function (CRAP flagged this
+// function's untested branch, unrelated to the stale addition itself).
+test('decisionLineFor: a ruled verdict records the specifier ruling label and the UTC decision time', () => {
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+  assert.equal(decisionLineFor({ kind: 'ruled', label: 'amend' }, nowMs), '-- Ruled: amend 2026-07-17 03:07 UTC');
+});
+
+test('approvalAskTextShowsDecidedVerdict: recognizes a ruled ask footer', () => {
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Ruled: amend 2026-07-17 03:07 UTC'), true);
+});
+
 // BL-1190: 'stale' closes a ghost ask (its ticket yaml is gone entirely) -
 // a FIFTH verdict, distinct from every decided verdict above (none of which
 // apply: there is no verdict to read).

@@ -153,12 +153,43 @@
 (defn- has-in-process-parcel? []
   (boolean (seq (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
 
+;; BL-1195 D1 (hardener bounce 20260828): coordinator and specifier are both
+;; master-resident (roles.tsv worktree-name "master") - the SAME physical
+;; checkout, not one-worktree-per-role like every other pipeline role. The
+;; exemption above only ever consulted the CURRENTLY INVOKING role's own
+;; in_process mailbox, so the coordinator's own turn - with no in_process
+;; parcel of its own - false-flagged the specifier's routine, uncommitted,
+;; legitimate WIP on `main` (Article 1.2 spec/prompt drafting, no handoff
+;; parcel involved) as unexplained drift and refused every turn
+;; (WORKTREE_DRIFT_DETECTED, exit 2) - a standing regression for the one
+;; role that must never exit (BL-107). The reverse (specifier refused by
+;; coordinator's WIP) is symmetric. Every OTHER pipeline role has its own
+;; dedicated `.worktrees/<role>`, exclusively written by that one role, so
+;; this false-positive shape is structurally impossible there - widening
+;; the exemption to union every master-resident role's in_process mailbox
+;; (via handoff-lib/handoff-files, unfiltered - these files are addressed
+;; to the SIBLING role, not to me, so the recipient-filtered my-handoff-files
+;; above would wrongly see none of them) changes behavior ONLY for the
+;; master-resident pairing; every other role's single-mailbox check above
+;; stays byte-identical and this function is a pure addition, never a
+;; replacement of it.
+(defn- master-resident-sibling-has-in-process-parcel? [root]
+  (let [me (handoff-lib/current-role)
+        all-roles (handoff-lib/load-all-roles root)
+        my-info (some #(when (= (:role %) me) %) all-roles)]
+    (boolean
+     (when (= (:worktree-name my-info) "master")
+       (some (fn [role-info]
+               (seq (handoff-lib/handoff-files (handoff-lib/mailbox-dir role-info :in_process))))
+             (filter #(= (:worktree-name %) "master") all-roles))))))
+
 (defn- enforce-worktree-drift-guard! []
   (let [root (dispatch-lib/git-root)]
     (when root
       (let [drift (worktree-drift-lib/unexplained-drift
                    {:modified-paths (modified-tracked-paths root)
-                    :has-in-progress-task? (has-in-process-parcel?)})]
+                    :has-in-progress-task? (or (has-in-process-parcel?)
+                                                (master-resident-sibling-has-in-process-parcel? root))})]
         (when (worktree-drift-lib/drift-detected? drift)
           (dispatch-lib/exit! 2 (worktree-drift-lib/drift-report drift)))))))
 
