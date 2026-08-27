@@ -31,17 +31,19 @@ Feature: a vanished standing role session is recreated, not merely alerted about
     And no repair decision is emitted
 
   # BL-1017 babysitterd-recreates-vanished-standing-session-03
-  Scenario Outline: a present pane is never treated as a missing session
+  # BL-1169 retires the half-launch row: pane-up / agent-gone now queues
+  # bounded repair (same path as missing-session). Remaining rows stay
+  # repair-free — healthy agent, or UNAVAILABLE gather (BL-802).
+  Scenario Outline: a present healthy or unavailable pane is never treated as a missing session
     Given role "coder" whose pane exists
     And the pane process state is <process state>
     When the sweep assesses that role
     Then no repair decision is emitted
 
     Examples:
-      | process state              |
-      | a live claude process      |
-      | no claude process under it |
-      | a failed process gather    |
+      | process state           |
+      | a live claude process   |
+      | a failed process gather |
 
   # BL-1017 babysitterd-recreates-vanished-standing-session-04
   Scenario: a role repaired inside the cooldown window is not repaired again

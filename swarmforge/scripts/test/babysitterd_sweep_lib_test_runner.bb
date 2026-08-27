@@ -88,15 +88,48 @@
             (sw/check-live-session {:role "cleaner" :pane-exists? false
                                      :has-claude-process? false :should-stand? false}))
 
-;; Scenario 03: a present pane is never a missing session, in any process state.
+;; Scenario 03: a present pane with a LIVE agent is never a missing/half-launch
+;; repair target; a failed gather stays UNAVAILABLE (no repair). BL-1169 retires
+;; the old "half-launch never repairs" boundary — that case is asserted below.
 (doseq [[label extra] [["a live claude process" {:has-claude-process? true}]
-                       ["no claude process under it" {:has-claude-process? false}]
                        ["a failed process gather" {:has-claude-process? false
                                                    :process-gather-failed? true}]]]
-  (assert-nil (str "BL-1017: a present pane emits no session repair (" label ")")
+  (assert-nil (str "BL-1017: a present healthy/unavailable pane emits no session repair (" label ")")
               (:repair (sw/check-live-session (merge {:role "coder" :pane-exists? true
                                                       :should-stand? true}
                                                      extra)))))
+
+;; BL-1169: half-launch (pane up, agent gone) queues the same bounded repair.
+(assert-true "BL-1169: half-launch emits CRIT and ensure-session repair when allowed"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? true
+                                              :has-claude-process? false :should-stand? true})]
+               (and f (= "CRIT" (:severity f)) (= "proc-coder" (:key f))
+                    (= {:action :ensure-session :role "coder"} (:repair f)))))
+
+(assert-true "BL-1169: half-launch CRIT stays visible when cooldown withholds repair"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? true
+                                              :has-claude-process? false :should-stand? true
+                                              :now-ms 1000000
+                                              :last-repair-ms 999000
+                                              :repair-attempts 1
+                                              :repair-cooldown-ms 60000
+                                              :max-repair-attempts 1})]
+               (and f (= "CRIT" (:severity f)) (nil? (:repair f)))))
+
+(assert-true "BL-1169: swarm-starved streak at ensure threshold queues control-plane ensure"
+             (let [{:keys [finding]} (sw/check-swarm-starved
+                                      {:active-ticket-count 2 :any-pane-busy? false
+                                       :paused? false :prev-streak 2
+                                       :pending-claims [] :in-process-claims []})]
+               (and finding (= "swarm-starved" (:key finding))
+                    (= {:action :ensure-control-plane} (:repair finding)))))
+
+(assert-true "BL-1169: swarm-starved CRIT at streak 2 does not yet queue ensure"
+             (let [{:keys [finding]} (sw/check-swarm-starved
+                                      {:active-ticket-count 2 :any-pane-busy? false
+                                       :paused? false :prev-streak 1
+                                       :pending-claims [] :in-process-claims []})]
+               (and finding (= "swarm-starved" (:key finding)) (nil? (:repair finding)))))
 
 ;; Scenario 04: bounded (invariant 2). Inside the cooldown window an
 ;; already-attempted role gets the CRIT but no second repair, so a session
