@@ -3,9 +3,9 @@ title: "10 of tonight's pilot-landed docs (9 how-to + BL-627's reference doc) ar
 milestone: M8
 type: defect
 severity: low
-status: todo
+status: in_progress
 epic: code-quality-gates
-assigned_to: specifier
+assigned_to: coder
 priority: 26
 direction: queue-jump
 depends_on: []

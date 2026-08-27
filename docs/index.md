@@ -124,7 +124,9 @@ expects them, and are not migrated or rewritten here.
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
+- [Paused pager shows server failure reasons](how-to/BL-662-paused-pager-shows-server-failure-reason.md) — JSON `reason` on non-OK for Expedite/Approve (BL-662).
 - [Let's Talk — Discrete Audio Turns in the Mini App Console](how-to/BL-696-miniapp-lets-talk-cursor-audio.md)
+- [Bubble talk mirror chunks and fails loudly](how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md) — Bubble topic mirror via shared chunker; `bubble-talk-mirror-failed` on send failure (BL-718).
 - [Telegram Cursor Remote operator commands](how-to/BL-698-telegram-cursor-operator-commands.md) — phone-first slash verbs on the Cursor Remote topic, danger tiers, and (BL-1113) CreatePlan **Confirm plan** / **Reject plan** progress buttons.
 - [Host-agent activity feed](how-to/BL-833-host-agent-activity-feed.md) — bounded tee of host progress lines; `GET /host-activity` + SSE `host-activity` (BL-833; screen BL-834).
 - [Bubble Host thinking page on phone](how-to/BL-834-bubble-host-thinking-page.md) — watch host activity live from BL-833 feed; working / quiet / unreachable states (BL-834).
@@ -134,6 +136,7 @@ expects them, and are not migrated or rewritten here.
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
+- [Pages deploy timeout headroom and workflow action majors](how-to/BL-641-pages-deploy-timeout-and-action-majors.md) — 20m deploy timeout; action version majors pinned (BL-641).
 - [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md) — BL-727 contract execution, BL-729 commit-claim, BL-731 multi-worktree fixture, BL-733 producer crosscheck, BL-735 acceptance-execution, BL-737 cross-file duplication, BL-741 scoped CRAP, BL-747 shell entry-point drive, BL-753 unreachable step-handler gate
 - [QA changed-path unit test inventory](how-to/BL-1164-qa-changed-path-unit-test-gate.md) — Article 4.5: run mapped unit/wiring tests per changed production path; bounce uncovered to coder (BL-1164).
 - [Probe legacy topic adoption paths](how-to/BL-1147-probe-legacy-topic-adoption.md) — BL-1147 read-only probe for BL-294 auto-open, cursor Host re-adopt, and map scrub candidates
@@ -243,6 +246,7 @@ expects them, and are not migrated or rewritten here.
 - [BL-010 Spec: Heartbeat Decorator](reference/specs/BL-010-spec.md)
 - [BL-011 Spec: Watchdog](reference/specs/BL-011-spec.md)
 - [BL-012 Spec: Chase and Dead-Letter Escalation](reference/specs/BL-012-spec.md)
+- [BL-627 — Pricing table correctness and coverage invariant](reference/specs/BL-627-pricing-table-correctness-and-coverage-invariant.md) — list-price table version 2; bare `claude-*` roster coverage check (BL-627).
 - [M2 Specification — Reliability Layer](reference/specs/m2-spec.md)
 - [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver; BL-782 root-scoped liveness probes and `--probe-liveness`.
 - [Build Freshness QA Approval Gate (BL-629)](reference/BL-629-build-freshness-qa-approval-gate.md) — the deploy-time gate preventing sync of pre-QA code to daemons.
