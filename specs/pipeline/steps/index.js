@@ -620,11 +620,8 @@ const DOMAINS = [
   require('./bl1146HostQueueEnqueueNextHoldOnHostQuestionSteps'),
   require('./bl786MutationConcurrencyHostResolvedSteps'),
   require('./bl598TrendFalseAlarmRateSteps'),
-<<<<<<< HEAD
   require('./bl599TrendIntakeBalanceSteps'),
   require('./bl600TrendHumanDecisionLatencySteps'),
-=======
->>>>>>> 401553761 (fix(BL-601): tip-pure rematch — compaction cadence without hitchhikers.)
   require('./bl601TrendCompactionCadenceSteps'),
   require('./bl965HealWrapperTempCleanupSteps'),
   require('./bl591EpicEtaSteps'),
