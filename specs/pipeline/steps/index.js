@@ -249,6 +249,7 @@ const DOMAINS = [
   require('./bl454QaBounceMetricSteps'),
   require('./bl512RecurringFailureModeAuditSteps'),
   require('./bl456DivioDocsReorgSteps'),
+  require('./bl756TonightPilotDocsOrphanedFromIndexSteps'),
   require('./bl455PipelineBoardSteps'),
   require('./bl413StaleSandboxSweepSteps'),
   require('./bl458AcceptanceFixtureProcessLeakSteps'),
