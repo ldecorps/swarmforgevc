@@ -51,6 +51,7 @@ const DOMAINS = [
   require('./bl1143ColdSwapDayShiftOllamaQwenSteps'),
   require('./bl595HumanLoopReliabilityTrendSteps'),
   require('./bl596MonoRouterRotationDynamicsSteps'),
+  require('./bl597TrendSelfHealEventsSteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),
@@ -441,6 +442,7 @@ const DOMAINS = [
   require('./bl761AcceptanceContractMustBeRunnableSteps'),
   require('./bl785FreshnessDeliberateStopSteps'),
   require('./bl708RoleAskRelayStripsQuestionFieldsSteps'),
+  require('./bl710OneClearTelegramRedeployPathSteps'),
   require('./bl802BabysitterdMacosPortabilitySteps'),
   require('./bl536ProviderAuthErrorAutoRespawnSteps'),
   require('./bl803PromoteRouteSedBsdPortabilitySteps'),
@@ -482,6 +484,8 @@ const DOMAINS = [
   require('./bl858BootPrefixCapSteps'),
   require('./bl826HandsFreeSelfListenEchoLoopSteps'),
   require('./bl717SilentReturnAfterHoldMusicSteps'),
+  require('./bl718BubbleTalkMirrorSteps'),
+  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl854OrthogonalityAdvisesInsteadOfBlockingSteps'),
   require('./bl643NonPipelineAgentsSteps'),
   require('./bl861DeferralSurvivesBlockerClosingSteps'),
@@ -533,6 +537,8 @@ const DOMAINS = [
   require('./bl697LetsTalkHandsFreeSteps'),
   require('./bl689BounceCarriesDefectInventorySteps'),
   require('./bl628AutonomousHostBootstrapSteps'),
+  require('./bl790BridgeQueuesNoteForRoleSteps'),
+  require('./bl711InterfaceVsIncarnationGlossarySteps'),
   require('./bl895SpecificationMdBl607DuplicateSteps'),
   require('./bl768BounceKeyPairGeneratorCoverageSteps'),
   require('./bl624OnboarderSurveyToGateSteps'),
@@ -789,6 +795,12 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
+  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps'),
+  require('./bl1167SameModelSeatRoutingSteps'),
+  require('./bl1175PropertySuiteStandingRedsSteps'),
+  require('./bl718BubbleTalkMirrorSteps'),
+  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
+  require('./bl1166OperatorDocsSteps')
 ];
 
 function registerSteps(registry) {
