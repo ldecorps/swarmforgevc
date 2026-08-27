@@ -7,7 +7,7 @@ epic: deprecator
 priority: 0
 direction: queue-jump
 depends_on: []
-decomposes_into: [BL-1173, BL-1174]
+decomposes_into: [BL-1173, BL-1174, BL-1186]
 mutation_cost: high
 human_approval: approved
 approval_context: >
