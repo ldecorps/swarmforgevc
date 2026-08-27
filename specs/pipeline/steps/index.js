@@ -586,6 +586,7 @@ const DOMAINS = [
   require('./bl936Bl805PropertyLaneExercisesTheParcelGateSteps'),
   require('./bl937ShellScriptsRunOnStockMacosBash32Steps'),
   require('./bl915CursorBridgeGoneAgentSessionResetSteps'),
+  require('./bl941CursorGoneAgentClassifierBoundariesSteps'),
   require('./bl1166OperatorDocsSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
   require('./bl938AgedNoteRotateFixtureRotationRouterSteps'),
@@ -797,7 +798,6 @@ const DOMAINS = [
   require('./bl832BubbleHealthTrendsPageSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
-  require('./bl1166OperatorDocsSteps'),
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
 ];

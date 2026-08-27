@@ -948,6 +948,22 @@ test('cursor bridge: isCursorAgentGone detects a resume whose agentId the SDK no
   assert.equal(shouldResetCursorAgentSession('Agent agent-47f26e41-65e8-459a-96f0-4a6a8e7bbfb0 not found.'), true);
 });
 
+test('cursor bridge: isCursorAgentGone holds formatting boundaries (BL-941)', () => {
+  const id = 'agent-47f26e41-65e8-459a-96f0-4a6a8e7bbfb0';
+  assert.equal(isCursorAgentGone(`Agent ${id} not found.`), true);
+  assert.equal(isCursorAgentGone(`Agent ${id} not found`), true);
+  assert.equal(isCursorAgentGone(`AGENT ${id.toUpperCase()} NOT FOUND.`), true);
+  assert.equal(
+    isCursorAgentGone(`Something went wrong: Agent ${id} not found. Please retry.`),
+    true
+  );
+  assert.equal(isCursorAgentGone('Agent not found.'), false);
+  assert.equal(isCursorAgentGone('Agent agent-dead not founded.'), false);
+  assert.equal(isCursorAgentGone('xagent agent-dead not found.'), false);
+  assert.equal(shouldResetCursorAgentSession(`Agent ${id} not found`), true);
+  assert.equal(shouldResetCursorAgentSession('Agent not found.'), false);
+});
+
 test('cursor bridge: isCursorResourceExhausted detects rate-limit / quota errors', () => {
   assert.equal(isCursorResourceExhausted('[resource_exhausted] Error'), true);
   assert.equal(isCursorResourceExhausted('resource exhausted'), true);
