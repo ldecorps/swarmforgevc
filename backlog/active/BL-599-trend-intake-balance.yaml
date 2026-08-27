@@ -9,7 +9,7 @@ severity: low
 priority: 181
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-599-trend-intake-balance.feature
