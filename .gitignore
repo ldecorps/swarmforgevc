@@ -8,7 +8,6 @@
 .swarmforge/telemetry/rotation-*.jsonl
 # BL-597: self-heal recovery action append-only telemetry.
 .swarmforge/telemetry/self-heal-*.jsonl
-
 swarmforge/scripts/.bin/
 .worktrees/
 /tmp/

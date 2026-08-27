@@ -54,7 +54,6 @@ const DOMAINS = [
   require('./bl597TrendSelfHealEventsSteps'),
   require('./bl599TrendIntakeBalanceSteps'),
   require('./bl602TrendHandoffLatencySteps'),
-
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),
@@ -647,7 +646,10 @@ const DOMAINS = [
   require('./bl1004ReworkClaimSteps'),
   require('./bl586PipelineBoardTopicIdentitySteps'),
   require('./bl1017BabysitterdRecreatesVanishedStandingSessionSteps'),
+  require('./bl1169BabysitterHalfLaunchStarvationAutoRepairSteps'),
   require('./bl1173DeprecatorFreshnessGateCliSteps'),
+  require('./bl1174DeprecateOperatorVerbsScanDocsSteps'),
+  require('./bl738ChunkingPropertySteps'),
   require('./bl1012FreshnessSelfInflictedIncidentsSteps'),
   require('./bl621FrontDeskDegradedCauseEscalationSteps'),
   require('./bl1021SubprocessOutlivesWaitBoundSteps'),
