@@ -23,9 +23,17 @@ Cursor Remote, and it must not silently drop long replies or failed sends.
 
 ## Where it lives
 
-- Mirror: `extension/src/bridge/bridgeServer.ts` → `mirrorLetsTalkTurnToBubble`
-- Chunker: `extension/src/tools/telegramCursorBridgeCore.ts` → `splitTelegramChunks`
-- Tests: `extension/test/letsTalkBridge.test.js` (BL-718 cases)
+- Mirror orchestration: `extension/src/bridge/bridgeServer.ts` →
+  `mirrorLetsTalkTurnToBubble`, `mirrorLetsTalkChoicePollToBubble`
+- Topic routing (BL-744): `extension/src/bridge/bubbleMirrorTopic.ts` →
+  `mergeTopicId`, `readCursorBridgeTopicIds` (state file vs topic-map merge)
+- Pending poll state (BL-744): `extension/src/bridge/bubbleMirrorState.ts` →
+  `appendPendingChoicePoll`
+- Delivery helpers (BL-744): `extension/src/bridge/bubbleMirrorDelivery.ts`
+- Chunker: `extension/src/tools/telegramCursorBridgeCore.ts` →
+  `splitTelegramChunks`, `buildPersistedState` (`bubbleTopicId` branch)
+- Tests: `extension/test/letsTalkBridge.test.js` (BL-718 cases),
+  `extension/test/bl744TopicMergeHelpers.test.js` (topic-merge branch coverage)
 - Acceptance: `specs/features/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.feature`
 
 ## Out of scope
