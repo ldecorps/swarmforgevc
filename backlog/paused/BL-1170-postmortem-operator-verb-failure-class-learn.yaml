@@ -19,7 +19,7 @@ invariants:
   - "/postmortem never auto-mints BL tickets — only backlog INTAKE-disaster-* stubs (BL-311)."
   - "One postmortem pass per failure_class incident window — idempotent, no duplicate learn artefacts."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   INTAKE-postmortem-operator-verb-failure-class-learn.md (human Laurent,
   2026-08-27). Learn slice of disaster-recovery loop; depends on BL-698 verb
