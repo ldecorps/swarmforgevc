@@ -324,5 +324,4 @@ if pipeline_survivor_scan "$ROOT"; then
 fi
 
 log "kill_all_swarm SUCCESS — clean slate"
-bb "$SCRIPT_DIR/self_heal_telemetry_cli.bb" "$ROOT" "a kill_all_swarm invocation" >/dev/null 2>&1 || true
 echo "SwarmForge stopped and cleaned. Audit: $AUDIT"

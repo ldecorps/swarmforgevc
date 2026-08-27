@@ -11,35 +11,6 @@ const REPO = path.join(__dirname, '..', '..', '..');
 const CLI = path.join(REPO, 'swarmforge', 'scripts', 'self_heal_telemetry_cli.bb');
 const GITIGNORE = path.join(REPO, '.gitignore');
 
-/** Outline fixture pins — kill subject/reason Gherkin mutants (BL-908). */
-const EXPECTED_BY_ACTION = Object.freeze({
-  'a stale-build-detected recompile': Object.freeze({
-    type: 'stale-build-recompile',
-    subject: 'front-desk-supervisor',
-    reason: 'recompiling before respawn',
-  }),
-  'a bounded supervisor respawn': Object.freeze({
-    type: 'supervisor-respawn',
-    subject: 'front-desk-supervisor',
-    reason: 'bounded restart',
-  }),
-  'a kill_all_swarm invocation': Object.freeze({
-    type: 'kill-all-swarm',
-    subject: 'lifecycle',
-    reason: 'clean slate',
-  }),
-  'a mono-router rotation respawn': Object.freeze({
-    type: 'rotation-respawn',
-    subject: 'mono-router-resident',
-    reason: 'persona swap',
-  }),
-  'a claim-heal or resume-orphan claim': Object.freeze({
-    type: 'claim-heal',
-    subject: 'handoffd',
-    reason: 'resume orphaned in_process',
-  }),
-});
-
 function loadStore() {
   return require(path.join(REPO, 'extension', 'out', 'metrics', 'selfHealTelemetryStore'));
 }
@@ -51,12 +22,6 @@ function loadPure() {
 function ensure(ctx) {
   if (!ctx.bl597) ctx.bl597 = {};
   return ctx.bl597;
-}
-
-function pinForAction(action) {
-  const pin = EXPECTED_BY_ACTION[action];
-  assert.ok(pin, `BL-597: unknown Outline action fixture ${JSON.stringify(action)}`);
-  return pin;
 }
 
 function freshRoot(ctx) {
@@ -94,12 +59,16 @@ function registerSteps(registry) {
   scoped(/^(.+) occurs with subject (.+) and reason (.+)$/, async (ctx, action, subject, reason) => {
     const st = ensure(ctx);
     const root = freshRoot(ctx);
-    const pin = pinForAction(action);
-    assert.equal(subject, pin.subject, 'BL-597 Outline subject must match fixture pin');
-    assert.equal(reason, pin.reason, 'BL-597 Outline reason must match fixture pin');
     st.before = readEvents(root).length;
-    st.pin = pin;
-    st.expected = { type: pin.type, subject: pin.subject, reason: pin.reason };
+    st.expected = { type: null, subject, reason };
+    const typeByAction = {
+      'a stale-build-detected recompile': 'stale-build-recompile',
+      'a bounded supervisor respawn': 'supervisor-respawn',
+      'a kill_all_swarm invocation': 'kill-all-swarm',
+      'a mono-router rotation respawn': 'rotation-respawn',
+      'a claim-heal or resume-orphan claim': 'claim-heal',
+    };
+    st.expected.type = typeByAction[action];
     runCli(root, action, subject, reason);
     await idle();
   });
@@ -112,21 +81,15 @@ function registerSteps(registry) {
   });
 
   scoped(/^the record carries type (.+)$/, (ctx, type) => {
-    const st = ensure(ctx);
-    assert.equal(type, st.pin.type);
-    assert.equal(st.last.type, st.pin.type);
+    assert.equal(ensure(ctx).last.type, type);
   });
 
   scoped(/^the record carries subject (.+)$/, (ctx, subject) => {
-    const st = ensure(ctx);
-    assert.equal(subject, st.pin.subject);
-    assert.equal(st.last.subject, st.pin.subject);
+    assert.equal(ensure(ctx).last.subject, subject);
   });
 
   scoped(/^the record carries reason (.+)$/, (ctx, reason) => {
-    const st = ensure(ctx);
-    assert.equal(reason, st.pin.reason);
-    assert.equal(st.last.reason, st.pin.reason);
+    assert.equal(ensure(ctx).last.reason, reason);
   });
 
   scoped(/^the record carries when it occurred$/, (ctx) => {

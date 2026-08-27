@@ -1,0 +1,80 @@
+id: BL-1185
+title: "Work notes missing task: make hard seats defer-better-fit and strand ambulance patients"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: multi-seat-stages
+priority: 0
+direction: swarm-reported
+depends_on: [BL-1001]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1185-work-note-missing-task-header-defers-hard-seat.feature
+
+human_approval: approved
+approval_context: >
+  Operator intakes 2026-08-27: ambulance BL-1174 stranded hard seat. Coordinator
+  2026-08-27: task: is illegal on notes (git_handoff-only); easy seat pinned as
+  temporary ops; BL-1185 stays paused under ambulance. Durable fix = message
+  attribution for mutation_cost, not stamping task: onto notes.
+
+invariants:
+  - "Work BL-… notes resolve a task name for seat difficulty even when the task: header is absent — same attribution supersede_lib already uses."
+  - "A high mutation_cost ambulance patient is not stranded on a hard seat solely because the Work note omitted task:."
+  - "task: remains git_handoff-only — Work route notes stay type: note without a task header (swarm_handoff validation unchanged)."
+
+required_wiring:
+  - "swarmforge/scripts/ready_for_next_task.bb::difficulty-allows-claim?::mutation cost from task header or Work BL- message via task-name-from-content"
+  - "swarmforge/scripts/supersede_lib.bb::task-name-from-content::reuse for difficulty attribution"
+  - "specs/pipeline/steps/index.js::bl1185WorkNoteMissingTaskHeaderSteps::acceptance handler registered"
+  - "extension/test/bl1185WorkNoteMissingTaskHeader.property.test.js::P1-P3::three declared invariants property-encoded"
+
+description: |
+  ## What
+
+  `difficulty-allows-claim?` reads cost only via `header-field "task"`. Work
+  notes are `type: note` with `message: Work BL-…` and **must not** carry
+  `task:` (`swarm_handoff.bb`: task is git_handoff-only). Nil task → nil cost
+  → hard seat `:defer-better-fit` when an easy sibling is idle → `NO_TASK`
+  while the ambulance patient sits in `new/`.
+
+  ## Fix (direction — locked 2026-08-27)
+
+  Attribute Work notes for difficulty the same way `supersede_lib` already
+  does: prefer `task:` when present (git_handoff), else parse `Work BL-…`
+  from the message. **Do not** stamp `task:` onto notes.
+
+  ## Ops (temporary — coordinator)
+
+  Easy seat pinned busy so hard can claim BL-1174 under nil-cost path. Remove
+  pin when this lands or ambulance clears. BL-1185 stays paused while
+  ambulance patient is BL-1174.
+
+qa_e2e_procedure: >
+  (1) Fixture Work note without task: → cost from message / yaml high.
+  (2) Hard seat claims ambulance patient; not defer-better-fit. (3) Work emit
+  stays type:note with no task:; swarm_handoff still refuses task on notes.
+  (4) Non-Work note without task: still nil cost.
+
+out_of_scope: |
+  - Implementing BL-1174 /deprecate verbs.
+  - Changing BL-1001 tier ceilings themselves.
+  - Allowing task: on type: note (rejected — git_handoff-only).
+  - Disengaging the ambulance or removing the easy pin (ops).
+
+source: |
+  .swarmforge/operator/INTAKE-bl1174-work-note-missing-task-header-defer-better-fit.md
+  (2026-08-27 ~08:16 BST); refined by
+  INTAKE-work-notes-task-header-bl1001.md and coordinator note
+  00_20260827T072253Z (task: illegal on notes; easy pinned; BL-1185 paused).
+
+notes: |
+  - [2026-08-27] specifier: minted from operator intake; ops asked re-send with
+    task: — coordinator corrected: illegal on notes.
+  - [2026-08-27] specifier: refined — message attribution only; dropped stamp-
+    task: scenario; drained follow-up intake; stays paused under ambulance.
+  - [2026-08-27] operator via Cursor: hitchhiker died in BL-1174 tip-pure
+    rematch (QA bounce BL-506). Restored from approved tip 1207cf674 into
+    active (ambulance patient closed). Durable fix = message attribution in
+    difficulty-allows-claim?; ops easy in_process pin is not the fix.

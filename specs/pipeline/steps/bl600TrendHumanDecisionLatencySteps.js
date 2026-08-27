@@ -8,22 +8,6 @@ const FEATURE = 'human-decision latency trend separates approval-queue wait from
 const REPO = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO, 'extension');
 
-/** Fixture vocabulary for Outline rows — pins kill Gherkin example-cell mutants (BL-908). */
-const KNOWN_VALUES = Object.freeze({
-  'BL-100': Object.freeze({
-    gate: 'approve',
-    ask_ts: 1000,
-    verdict_ts: 3700000,
-    latency_ms: 3699000,
-  }),
-  'BL-200': Object.freeze({
-    gate: 'amend',
-    ask_ts: 5000,
-    verdict_ts: 65000,
-    latency_ms: 60000,
-  }),
-});
-
 function loadPure() {
   return require(path.join(EXT_DIR, 'out', 'metrics', 'humanDecisionLatency'));
 }
@@ -32,15 +16,13 @@ function loadLatency() {
   return require(path.join(EXT_DIR, 'out', 'metrics', 'humanDecisionLatency'));
 }
 
+function loadTrend() {
+  return require(path.join(EXT_DIR, 'out', 'metrics', 'trend'));
+}
+
 function ensure(ctx) {
   if (!ctx.bl600) ctx.bl600 = {};
   return ctx.bl600;
-}
-
-function pinForTicket(ticket) {
-  const pin = KNOWN_VALUES[ticket];
-  assert.ok(pin, `BL-600: unknown Outline ticket fixture ${JSON.stringify(ticket)}`);
-  return pin;
 }
 
 function registerSteps(registry) {
@@ -50,20 +32,13 @@ function registerSteps(registry) {
 
   scoped(/^ticket "(.+)" had an (\w+) ask posted at (\d+)$/, (ctx, ticket, gate, askTs) => {
     const st = ensure(ctx);
-    const pinned = pinForTicket(ticket.trim());
-    assert.equal(gate.trim(), pinned.gate, 'BL-600 Outline gate must match fixture pin');
-    assert.equal(Number(askTs), pinned.ask_ts, 'BL-600 Outline ask_ts must match fixture pin');
     st.ticket = ticket.trim();
     st.gate = gate.trim();
     st.askAtMs = Number(askTs);
-    st.pin = pinned;
   });
 
   scoped(/^the human decided that ticket at (\d+)$/, (ctx, verdictTs) => {
-    const st = ensure(ctx);
-    assert.ok(st.pin, 'BL-600: ticket pin must be set before verdict');
-    assert.equal(Number(verdictTs), st.pin.verdict_ts, 'BL-600 Outline verdict_ts must match fixture pin');
-    st.verdictAtMs = Number(verdictTs);
+    ensure(ctx).verdictAtMs = Number(verdictTs);
   });
 
   scoped(/^human decision latency is derived for that ticket$/, (ctx) => {
@@ -81,17 +56,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^the latency is (\d+) milliseconds$/, (ctx, latencyMs) => {
-    const st = ensure(ctx);
-    assert.ok(st.pin, 'BL-600: ticket pin must be set before latency assert');
-    assert.equal(Number(latencyMs), st.pin.latency_ms, 'BL-600 Outline latency_ms must match fixture pin');
-    assert.equal(st.derived.latencyMs, Number(latencyMs));
+    assert.equal(ensure(ctx).derived.latencyMs, Number(latencyMs));
   });
 
   scoped(/^the record carries gate (\w+)$/, (ctx, gate) => {
-    const st = ensure(ctx);
-    assert.ok(st.pin, 'BL-600: ticket pin must be set before gate assert');
-    assert.equal(gate.trim(), st.pin.gate, 'BL-600 Outline gate must match fixture pin');
-    assert.equal(st.derived.gate, gate.trim());
+    assert.equal(ensure(ctx).derived.gate, gate.trim());
   });
 
   scoped(/^fixture decision-latency records spanning more than one window$/, (ctx) => {

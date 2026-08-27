@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T10:04:27.181044316Z","feature_name":"standing property-suite reds must not block unrelated green commits","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender-bl1175/specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature","background_hash":"dd51ff9fa9da1674bf14ab9920944ae9843b5f6f837f93db80fd7d642203ec15","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: standing property-suite reds must not block unrelated green commits
 
   # BL-1175: coder cannot commit feat(BL-605) — check_property_suite_drift.sh
