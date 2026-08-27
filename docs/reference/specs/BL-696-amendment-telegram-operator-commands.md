@@ -15,6 +15,8 @@ Operator skills on the **Cursor Remote** Telegram forum topic (principal-only, t
 | `/reexpedite [BL-xxx]` | Checkpoint main WIP, then relaunch expedite |
 | `/redeploy` | Compile extension + restart supervised `telegram-cursor-bridge` |
 | `/redeploy miniapp` | Compile extension + bounce headless Mini App bridge (`/lets-talk`) |
+| `/redeploy frontdesk` | Compile extension + bounce front-desk supervisor (bridge + bot); reloads `swarm.env` |
+| `/redeploy all` | Union of cursor bridge, Mini App bridge, and front desk; reply names every process restarted |
 | `/log [expedite\|redeploy\|bridge]` | Tail last lines of operator log (`/log` auto-picks running expedite) |
 | `/update` | Operational snapshot: in-flight agent run, expedite progress, active backlog |
 | Photo + optional caption | Downloaded and forwarded to Cursor agent as multimodal prompt |
@@ -45,6 +47,7 @@ Steps: `specs/pipeline/steps/bl696TelegramCursorBridgeOperatorSteps.js`
 | Pilot (Cursor-staffed) | `telegramCursorBridgePilot.ts` |
 | Redeploy (cursor bridge) | `telegramCursorBridgeRedeploy.ts` |
 | Redeploy (mini app) | `telegramCursorBridgeMiniAppRedeploy.ts` |
+| Redeploy (front desk / union) | `telegramCursorBridgeRedeploy.ts` (BL-710 targets) |
 | Log tail | `telegramCursorBridgeLogs.ts` |
 | `/update` snapshot | `telegramCursorBridgeUpdate.ts` |
 | Shell wrappers | `swarmforge/scripts/expedite_with_progress.sh`, `redeploy_cursor_bridge.sh`, … |

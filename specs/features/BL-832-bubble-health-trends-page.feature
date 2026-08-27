@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d21f20aaeab6c010df4fe92a0ae4bad88dd58ccc2a31b7240a127531ba07230f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T12:20:03.763027436Z","feature_name":"Bubble's Health page reports how the swarm has been working, without inventing a number","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-832-bubble-health-trends-page.feature","background_hash":"f91394f1db8393d5abd4b1a2d0c99b9f5de47b10ddefe417d2edae1cc33949bc","implementation_hash":"unknown","scenarios":[{"index":0,"name":"every readout equals the computation that owns it","scenario_hash":"17c107a5544ca56db3d046b326dc79bb347c30cf4621342fbdc131b4e0f77099","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-27T12:20:03.763027436Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble's Health page reports how the swarm has been working, without inventing a number
 
   Traverse time, rework, the bottleneck stage and velocity are already computed
