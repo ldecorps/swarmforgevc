@@ -626,6 +626,7 @@ const DOMAINS = [
   require('./bl599TrendIntakeBalanceSteps'),
   require('./bl600TrendHumanDecisionLatencySteps'),
   require('./bl601TrendCompactionCadenceSteps'),
+  require('./bl605GlobalTokenConsumptionSteps'),
   require('./bl965HealWrapperTempCleanupSteps'),
   require('./bl591EpicEtaSteps'),
   require('./bl593MutationRunDurationTelemetrySteps'),

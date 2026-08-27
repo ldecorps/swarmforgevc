@@ -41,3 +41,4 @@ export function computeTrend(series: TrendSeriesPoint[]): TrendResult {
 // BL-601: do NOT re-export trendForCompactionCadencePerHour from here —
 // compactionCadence imports computeTrend; a re-export creates an acyclic cycle
 // (architect bounce 88c606593c). Callers import from ./compactionCadence.
+// BL-605 global token series: callers import from ./globalTokenConsumption (acyclic — no re-export).
