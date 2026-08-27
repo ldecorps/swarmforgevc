@@ -22,7 +22,7 @@ invariants:
   - "A failed transfer aborts the switch with a clear signal — never leaves an amnesiac seat as success."
 
 required_wiring:
-  - "seat relaunch / hot-swap / trial lifecycle::capture then inject::BL-1177 API"
+  - "extension/src/tools/agentMemoryHotSwap.ts::capture then inject::BL-1177 API"
   - "specs/pipeline/steps/index.js::bl1178WireAgentMemoryHotSwapSteps::acceptance handler registered"
 
 description: |
