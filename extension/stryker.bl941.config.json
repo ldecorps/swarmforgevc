@@ -2,7 +2,7 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "vitest",
   "vitest": {
-    "configFile": "vitest.letsTalkCursorBridge.config.mjs",
+    "configFile": "vitest.bl941.config.mjs",
     "related": false
   },
   "concurrency": 1,

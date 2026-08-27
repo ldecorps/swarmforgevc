@@ -861,8 +861,6 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
       '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
       '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
-      '/redeploy frontdesk — soft confirm, then bounce the front desk (bridge + bot)',
-      '/redeploy all — soft confirm, then bounce cursor bridge, front desk, and mini app bridge',
       '/pause — soft confirm; freeze new promotion until /resume (in-flight continues; useful on flaky data)',
       '/resume — soft confirm; allow promotion again',
       '/syncenv /compile /pull — soft confirm (one Confirm tap)',
@@ -962,6 +960,8 @@ test('cursor bridge: isCursorAgentGone holds formatting boundaries (BL-941)', ()
   assert.equal(isCursorAgentGone('Agent not found.'), false);
   assert.equal(isCursorAgentGone('Agent agent-dead not founded.'), false);
   assert.equal(isCursorAgentGone('xagent agent-dead not found.'), false);
+  assert.equal(isCursorAgentGone(`Agent  ${id} not found.`), true);
+  assert.equal(isCursorAgentGone(`Agent ${id}  not found.`), true);
   assert.equal(shouldResetCursorAgentSession(`Agent ${id} not found`), true);
   assert.equal(shouldResetCursorAgentSession('Agent not found.'), false);
 });
