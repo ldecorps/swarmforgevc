@@ -801,6 +801,7 @@ const DOMAINS = [
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
+  require('./bl834BubbleHostThinkingPageSteps'),
 ];
 
 function registerSteps(registry) {
