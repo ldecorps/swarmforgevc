@@ -45,18 +45,14 @@ export function budgetShiftGovernorVerdict(targetPath: string, nowMs: number) {
 }
 
 function main() {
-  const ctx = resolveCliMainWorktreeContext(process.argv.slice(2));
-  if ('error' in ctx) {
-    console.error(ctx.error);
-    process.exit(1);
-  }
+  const ctx = resolveCliMainWorktreeContext();
   let nowMs = Date.now();
   const args = process.argv.slice(2);
   const nowIdx = args.indexOf('--now');
   if (nowIdx >= 0 && args[nowIdx + 1]) {
     nowMs = Number(args[nowIdx + 1]);
   }
-  printJsonToStdout(budgetShiftGovernorVerdict(ctx.targetPath, nowMs));
+  printJsonToStdout(budgetShiftGovernorVerdict(ctx.mainWorktreePath, nowMs));
 }
 
 runCliMain(main);
