@@ -69,6 +69,10 @@ acceptance: |
   carry one (design is not settled; a feature file whose scenarios outrun an
   undesigned build would be premature).
 
+  - [2026-08-27T17:26Z] coordinator: open-slot nudge declined — deferred
+    tracker (human 2026-07-16 chose document-as-not-wired, not pin+install).
+    Moved to backlog/hold/; promote only after operator explicitly activates.
+
 qa_e2e: |
   Per the eventual pickup spec: from a clean checkout, run the install script and
   confirm all three tools resolve to their pinned SHAs; plant a surviving mutant in
