@@ -253,6 +253,67 @@ export function deprecateCheck(root: string, ticketId: string): FreshnessDecisio
   return evaluateDeprecatorFreshness(gatherTicketFreshnessFacts(root, ticketId));
 }
 
+function parseFreshnessJson(raw: string): unknown | null {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function decisionFromParsed(parsed: unknown): FreshnessDecision | null {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+  const decision = (parsed as { decision?: unknown }).decision;
+  const reason = (parsed as { reason?: unknown }).reason;
+  if (decision === 'allow') {
+    return { decision: 'allow' };
+  }
+  if (decision === 'hold') {
+    return hold(typeof reason === 'string' && reason.length > 0 ? reason : 'hold without reason — fail closed');
+  }
+  return null;
+}
+
+/**
+ * Pure fail-closed interpreter for promote_and_route_next.sh's CLI consult.
+ * Empty, unparseable, or non-allow/hold shapes never become allow (BL-1173 inv 1).
+ */
+export function interpretFreshnessCliOutput(raw: string | null | undefined): FreshnessDecision {
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return hold('empty deprecate-check output — fail closed');
+  }
+  const parsed = parseFreshnessJson(String(raw));
+  if (parsed === null) {
+    return hold('malformed deprecate-check output — fail closed');
+  }
+  return decisionFromParsed(parsed) ?? hold('malformed deprecate-check output — fail closed');
+}
+
+/**
+ * Article 3.6 / BL-1173 inv 2: expedite eligibility never overrides a freshness hold.
+ */
+export function mayPromoteGivenFreshness(
+  decision: FreshnessDecision,
+  _expediteEligible: boolean
+): boolean {
+  return decision.decision === 'allow';
+}
+
+/**
+ * BL-1173 inv 3: on hold the ticket stays paused and the specifier must be notified.
+ */
+export function holdPromoteSideEffects(decision: FreshnessDecision): {
+  staysPaused: boolean;
+  notifySpecifierPriority00: boolean;
+} {
+  if (decision.decision === 'hold') {
+    return { staysPaused: true, notifySpecifierPriority00: true };
+  }
+  return { staysPaused: false, notifySpecifierPriority00: false };
+}
+
 export const main = makeArgsGuardedMain(
   parseArgs,
   'Usage: node deprecate-check.js <project-root> <BL-id>\n',
