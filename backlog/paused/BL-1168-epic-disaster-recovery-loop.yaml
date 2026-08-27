@@ -9,7 +9,7 @@ direction: human-requested
 depends_on: []
 decomposes_into: [BL-1169, BL-1170, BL-1171]
 mutation_cost: high
-human_approval: pending
+human_approval: approved
 approval_context: >
   Parent frame from INTAKE-disaster-recovery-detect-diagnose-repair-learn.md
   (human Laurent, 2026-08-27). Sibling intakes minted as BL-1169 (repair),
