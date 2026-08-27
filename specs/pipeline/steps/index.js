@@ -434,6 +434,7 @@ const DOMAINS = [
   require('./bl708RoleAskRelayStripsQuestionFieldsSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
   require('./bl711InterfaceVsIncarnationGlossarySteps'),
+  require('./bl790BridgeQueuesNoteForRoleSteps'),
   require('./bl802BabysitterdMacosPortabilitySteps'),
   require('./bl536ProviderAuthErrorAutoRespawnSteps'),
   require('./bl803PromoteRouteSedBsdPortabilitySteps'),
