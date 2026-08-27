@@ -78,6 +78,7 @@ notes: |
   or the step-handler allowlist. What remains is the live caller set. It was
   empty for these three and non-empty for the rest.
   [2026-08-27] specifier: feature file minted; coordinator may route to coder.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: b9e93b976f, evidence: backlog/evidence/BL-781-qa-bounce-rematch4-20260827.md }
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 4cfb903e97, evidence: backlog/evidence/BL-781-qa-bounce-rematch5-20260827.md }
