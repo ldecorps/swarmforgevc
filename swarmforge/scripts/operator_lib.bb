@@ -1178,24 +1178,27 @@
 ;; ledger's honest-null discipline, the SAME discipline costUsd/model
 ;; already use elsewhere in this file (front-desk-cost-record above).
 (defn handoff-delivery-llm-invocation-record
-  [{:keys [recipient headers]} now-iso-str]
-  (llm-invocation-record
-   {:at now-iso-str
-    :model nil
-    :tokens nil
-    :cost-usd nil
-    :origin (llm-invocation-origin
-             {:subsystem "pipeline"
-              :role recipient
-              :stage recipient
-              :trigger "handoff"
-              :ticket-id (get headers "task")
-              :handoff-id (get headers "id")
-              :handoff-type (get headers "type")
-              :script nil
-              :pack nil
-              :model nil
-              :provider nil})}))
+  [{:keys [recipient headers usage]} now-iso-str]
+  (let [tokens (or (:tokens usage) nil)
+        model (or (:model usage) nil)
+        provider (or (:provider usage) nil)]
+    (llm-invocation-record
+     {:at now-iso-str
+      :model model
+      :tokens tokens
+      :cost-usd nil
+      :origin (llm-invocation-origin
+               {:subsystem "pipeline"
+                :role recipient
+                :stage recipient
+                :trigger "handoff"
+                :ticket-id (get headers "task")
+                :handoff-id (get headers "id")
+                :handoff-type (get headers "type")
+                :script nil
+                :pack nil
+                :model model
+                :provider provider})})))
 
 ;; BL-551 writer-reap-03: the front-desk headless `claude -p --output-format
 ;; json` reap already captures total_cost_usd/model exactly (BL-511); this

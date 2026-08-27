@@ -16,7 +16,10 @@
 
 (ns llm-cost-ledger-lib
   (:require [babashka.fs :as fs]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [clojure.string :as str]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "context_telemetry_store.bb")))
 
 (defn telemetry-dir
   "Mirrors extension/src/metrics/llmCostLedgerStore.ts's
@@ -45,6 +48,25 @@
   (let [file (ledger-file-for-month state-dir (month-key (:at record)))]
     (fs/create-dirs (fs/parent file))
     (spit (str file) (str (json/generate-string record) "\n") :append true)))
+
+
+(defn latest-role-usage-from-context-events
+  "BL-565: reuse GH-22 context-events.jsonl (via context-telemetry-store/read-events!)
+   for the recipient role's latest turn usage before a handoff delivery record
+   is stamped. Returns nil when the log is absent or has no row for the role."
+  [state-dir role]
+  (when-not (str/blank? role)
+    (let [events (context-telemetry-store/read-events! (telemetry-dir state-dir))
+          role-events (filter #(= role (:role %)) events)
+          latest (last (sort-by #(.toEpochMilli (java.time.Instant/parse (:timestamp %)))
+                                role-events))]
+      (when latest
+        {:model (:model latest)
+         :provider (:provider latest)
+         :tokens {:inputTokens (:input_tokens latest)
+                  :outputTokens (:output_tokens latest)
+                  :cacheCreationTokens 0
+                  :cacheReadTokens 0}}))))
 
 ;; Allow `bb llm_cost_ledger_lib.bb` to be a no-op load (it is a library).
 (when (= *file* (System/getProperty "babashka.file")) nil)

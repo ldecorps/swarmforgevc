@@ -19,6 +19,13 @@
 // silently vanishes either (the caller can still see the record itself and
 // count it separately).
 
+import {
+  deriveSyntheticCostUsd,
+  enrichLlmInvocationRecord,
+  isUnknownSyntheticPrice,
+  PRICING_TABLE_AS_OF_LABEL,
+} from './syntheticLlmCost';
+
 export type LlmInvocationSubsystem = 'pipeline' | 'operator' | 'front_desk' | 'daemon' | 'extension';
 
 export type LlmInvocationTrigger =
@@ -72,6 +79,7 @@ export interface LlmInvocationRecord {
   // $0 (see module doc).
   costUsd: number | null;
   origin: LlmInvocationOrigin;
+  syntheticCostUsd?: number;
 }
 
 // Named, fixed horizons (notes: "Horizons (fixed, named)"). Kept as data so
@@ -104,11 +112,20 @@ function withinHorizon(record: LlmInvocationRecord, horizonMs: number, nowMs: nu
   return ms > nowMs - horizonMs && ms <= nowMs;
 }
 
-// Sort comparator: cost descending, unknown (null) cost sorted after every
-// priced row regardless of magnitude, tie-broken by timestamp descending
-// (most recent first) - matches the ticket's stated RANKING rule exactly.
+function syntheticUsd(record: LlmInvocationRecord): number {
+  if (record.costUsd !== null) {
+    return 0;
+  }
+  const derived = record.syntheticCostUsd ?? deriveSyntheticCostUsd(record);
+  return derived ?? 0;
+}
+
 function compareByCostDesc(a: LlmInvocationRecord, b: LlmInvocationRecord): number {
   if (a.costUsd === null && b.costUsd === null) {
+    const synthDiff = syntheticUsd(b) - syntheticUsd(a);
+    if (synthDiff !== 0) {
+      return synthDiff;
+    }
     return atMs(b) - atMs(a);
   }
   if (a.costUsd === null) {
@@ -133,25 +150,41 @@ export interface RankedLlmInvocations {
   records: LlmInvocationRecord[];
   totalCostUsd: number;
   unknownCostCount: number;
+  totalSyntheticCostUsd: number;
+  unknownSyntheticPriceCount: number;
+  pricingTableAsOf: string;
 }
 
-// Pure: filters records to the horizon window, ranks priced-first by cost
-// descending, and separately totals ONLY the priced rows (unknown-cost-07:
-// an unknown-cost invocation is never counted as zero).
 export function rankLlmInvocations(records: LlmInvocationRecord[], options: RankLlmInvocationsOptions): RankedLlmInvocations {
-  const inWindow = records.filter((record) => withinHorizon(record, options.horizonMs, options.nowMs));
+  const enriched = records.map(enrichLlmInvocationRecord);
+  const inWindow = enriched.filter((record) => withinHorizon(record, options.horizonMs, options.nowMs));
   const ranked = [...inWindow].sort(compareByCostDesc);
   const topN = options.topN ?? ranked.length;
   let totalCostUsd = 0;
   let unknownCostCount = 0;
+  let totalSyntheticCostUsd = 0;
+  let unknownSyntheticPriceCount = 0;
   for (const record of inWindow) {
     if (record.costUsd === null) {
       unknownCostCount += 1;
+      const synth = record.syntheticCostUsd ?? deriveSyntheticCostUsd(record);
+      if (synth !== null) {
+        totalSyntheticCostUsd += synth;
+      } else if (isUnknownSyntheticPrice(record)) {
+        unknownSyntheticPriceCount += 1;
+      }
     } else {
       totalCostUsd += record.costUsd;
     }
   }
-  return { records: ranked.slice(0, topN), totalCostUsd, unknownCostCount };
+  return {
+    records: ranked.slice(0, topN),
+    totalCostUsd,
+    unknownCostCount,
+    totalSyntheticCostUsd,
+    unknownSyntheticPriceCount,
+    pricingTableAsOf: PRICING_TABLE_AS_OF_LABEL,
+  };
 }
 
 export type LlmInvocationOriginDimension = 'subsystem' | 'role' | 'stage' | 'trigger' | 'ticketId' | 'script' | 'pack' | 'model' | 'provider';
@@ -167,8 +200,10 @@ export function isKnownOriginDimension(value: string): value is LlmInvocationOri
 export interface LlmCostRollupGroup {
   key: Record<string, string | null>;
   costUsd: number;
+  syntheticCostUsd: number;
   invocationCount: number;
   unknownCostCount: number;
+  unknownSyntheticPriceCount: number;
 }
 
 export interface RollupLlmInvocationsOptions {
@@ -181,10 +216,9 @@ function groupKey(record: LlmInvocationRecord, groupBy: LlmInvocationOriginDimen
   return groupBy.map((dimension) => String(record.origin[dimension])).join('\0');
 }
 
-// Pure: sums costUsd (priced rows only) and counts invocations per distinct
-// composite origin key, ordered by summed cost descending (group-by-06).
 export function rollupLlmInvocationsByOrigin(records: LlmInvocationRecord[], options: RollupLlmInvocationsOptions): LlmCostRollupGroup[] {
-  const inWindow = records.filter((record) => withinHorizon(record, options.horizonMs, options.nowMs));
+  const enriched = records.map(enrichLlmInvocationRecord);
+  const inWindow = enriched.filter((record) => withinHorizon(record, options.horizonMs, options.nowMs));
   const groups = new Map<string, LlmCostRollupGroup>();
   for (const record of inWindow) {
     const compositeKey = groupKey(record, options.groupBy);
@@ -194,17 +228,35 @@ export function rollupLlmInvocationsByOrigin(records: LlmInvocationRecord[], opt
       for (const dimension of options.groupBy) {
         key[dimension] = record.origin[dimension] as string | null;
       }
-      group = { key, costUsd: 0, invocationCount: 0, unknownCostCount: 0 };
+      group = {
+        key,
+        costUsd: 0,
+        syntheticCostUsd: 0,
+        invocationCount: 0,
+        unknownCostCount: 0,
+        unknownSyntheticPriceCount: 0,
+      };
       groups.set(compositeKey, group);
     }
     group.invocationCount += 1;
     if (record.costUsd === null) {
       group.unknownCostCount += 1;
+      const synth = record.syntheticCostUsd ?? deriveSyntheticCostUsd(record);
+      if (synth !== null) {
+        group.syntheticCostUsd += synth;
+      } else if (isUnknownSyntheticPrice(record)) {
+        group.unknownSyntheticPriceCount += 1;
+      }
     } else {
       group.costUsd += record.costUsd;
     }
   }
-  return Array.from(groups.values()).sort((a, b) => b.costUsd - a.costUsd);
+  return Array.from(groups.values()).sort((a, b) => {
+    if (b.costUsd !== a.costUsd) {
+      return b.costUsd - a.costUsd;
+    }
+    return b.syntheticCostUsd - a.syntheticCostUsd;
+  });
 }
 
 // ── origin cost trend series (trend-series-11 .. trend-surface-15) ───────

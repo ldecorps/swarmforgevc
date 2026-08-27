@@ -114,6 +114,41 @@ test('two unknown-cost records within the same window tie-break by timestamp des
   assert.deepEqual(result.records.map((r) => r.at), ['2026-07-22T11:00:00Z', '2026-07-22T10:00:00Z']);
 });
 
+test('unknown-cost records with tokens rank by synthetic dollars descending before timestamp tie-break (BL-565)', () => {
+  const nowMs = Date.parse('2026-07-22T12:00:00Z');
+  const records = [
+    invocation({
+      at: '2026-07-22T11:00:00Z',
+      costUsd: null,
+      tokens: { inputTokens: 100_000, outputTokens: 50_000, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    }),
+    invocation({
+      at: '2026-07-22T11:30:00Z',
+      costUsd: null,
+      tokens: { inputTokens: 1_000_000, outputTokens: 500_000, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    }),
+  ];
+  const result = rankLlmInvocations(records, { horizonMs: LLM_COST_HORIZONS_MS['3h'], nowMs });
+
+  assert.ok(result.records[0].syntheticCostUsd > result.records[1].syntheticCostUsd);
+});
+
+test('billed rows contribute only to totalCostUsd, never to totalSyntheticCostUsd (BL-565)', () => {
+  const nowMs = Date.parse('2026-07-22T12:00:00Z');
+  const records = [
+    invocation({ at: '2026-07-22T11:00:00Z', costUsd: 4 }),
+    invocation({
+      at: '2026-07-22T11:05:00Z',
+      costUsd: null,
+      tokens: { inputTokens: 1_000_000, outputTokens: 500_000, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    }),
+  ];
+  const result = rankLlmInvocations(records, { horizonMs: LLM_COST_HORIZONS_MS['24h'], nowMs });
+
+  assert.equal(result.totalCostUsd, 4);
+  assert.ok(result.totalSyntheticCostUsd > 0);
+});
+
 // ── rank-horizons-05 ─────────────────────────────────────────────────────
 
 for (const horizon of ['3h', '24h', '7d']) {
@@ -183,6 +218,24 @@ test('rollup groups also exclude unknown cost from summed cost but still count t
   assert.equal(groups[0].costUsd, 4);
   assert.equal(groups[0].invocationCount, 2);
   assert.equal(groups[0].unknownCostCount, 1);
+});
+
+test('rollup groups accumulate syntheticCostUsd separately from billed costUsd (BL-565)', () => {
+  const nowMs = Date.parse('2026-07-22T12:00:00Z');
+  const records = [
+    invocation({ at: '2026-07-22T11:00:00Z', costUsd: 4, origin: origin({ trigger: 'reap' }) }),
+    invocation({
+      at: '2026-07-22T11:05:00Z',
+      costUsd: null,
+      origin: origin({ trigger: 'reap' }),
+      tokens: { inputTokens: 1_000_000, outputTokens: 500_000, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    }),
+  ];
+  const groups = rollupLlmInvocationsByOrigin(records, { horizonMs: LLM_COST_HORIZONS_MS['24h'], nowMs, groupBy: ['trigger'] });
+
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].costUsd, 4);
+  assert.ok(groups[0].syntheticCostUsd > 0);
 });
 
 // ── trend-series-11 / trend-sampling-12 ─────────────────────────────────

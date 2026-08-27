@@ -1104,7 +1104,7 @@ function writeLlmLedger(target, records) {
 }
 
 test('BL-551: buildCostHealthSidecar carries the given topExpensiveOriginsByHorizon verbatim', () => {
-  const byHorizon = { '3h': [], '24h': [{ key: { role: 'coder' }, costUsd: 4, invocationCount: 2, unknownCostCount: 0 }], '7d': [] };
+  const byHorizon = { '3h': [], '24h': [{ key: { role: 'coder' }, costUsd: 4, syntheticCostUsd: 0, invocationCount: 2, unknownCostCount: 0, unknownSyntheticPriceCount: 0 }], '7d': [] };
   const sidecar = buildCostHealthSidecar(
     '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
     undefined, undefined, undefined, byHorizon
@@ -1120,7 +1120,7 @@ test('BL-551: topExpensiveOriginsByHorizon is omitted entirely (not null) when n
 test('BL-551: the rendered briefing section lists rolled-up origins with their summed cost, per horizon', () => {
   const byHorizon = {
     '3h': [],
-    '24h': [{ key: { role: 'coder', trigger: 'handoff' }, costUsd: 4, invocationCount: 2, unknownCostCount: 0 }],
+    '24h': [{ key: { role: 'coder', trigger: 'handoff' }, costUsd: 4, syntheticCostUsd: 0, invocationCount: 2, unknownCostCount: 0, unknownSyntheticPriceCount: 0 }],
     '7d': [],
   };
   const sidecar = buildCostHealthSidecar(
@@ -1144,7 +1144,7 @@ test('BL-551: an origin group with unpriced invocations notes the unpriced count
 });
 
 test('BL-551: an origin group whose every key value is null falls back to the "unknown origin" label', () => {
-  const byHorizon = { '3h': [], '24h': [{ key: { role: null, trigger: null }, costUsd: 4, invocationCount: 1, unknownCostCount: 0 }], '7d': [] };
+  const byHorizon = { '3h': [], '24h': [{ key: { role: null, trigger: null }, costUsd: 4, syntheticCostUsd: 0, invocationCount: 1, unknownCostCount: 0, unknownSyntheticPriceCount: 0 }], '7d': [] };
   const sidecar = buildCostHealthSidecar(
     '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
     undefined, undefined, undefined, byHorizon
