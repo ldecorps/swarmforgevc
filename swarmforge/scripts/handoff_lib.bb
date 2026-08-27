@@ -933,8 +933,10 @@
    (str (fs/path (target-root) "swarmforge" "swarmforge.conf"))))
 
 (defn rotate-resident-to!
-  "Rotate the resident pane to <target-role>. Returns {:ok true} or
-   {:ok false :reason ...}. Never System/exit — safe for handoffd chase.
+  "Rotate the resident pane to <target-role>. Optional <reason> labels the
+   telemetry event (default rotate, or SWARMFORGE_ROTATION_REASON env).
+   Returns {:ok true} or {:ok false :reason ...}. Never System/exit — safe
+   for handoffd chase.
 
    BL-931: refuses outright on a pack that is not a rotation router - a
    standing pack (e.g. full-forge) gives every role its own pane, so there
@@ -943,7 +945,8 @@
    working colleague's pane (the specifier, twice, on 2026-08-18). Checked
    here rather than only in respawn-as! so handoffd's daemon-driven chase
    (the OTHER caller, invariant 2) is covered by the same gate."
-  [target-role]
+  ([target-role] (rotate-resident-to! target-role nil))
+  ([target-role reason]
   (try
     (if-not (rotation-router-pack?)
       {:ok false :reason "not-a-rotation-router"}
@@ -998,7 +1001,7 @@
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
                                      (str "tmux-exit-" (:exit result)))}))))))
     (catch Exception e
-      {:ok false :reason (.getMessage e)})))
+      {:ok false :reason (.getMessage e)}))))
 
 (defn respawn-as!
   "Rotate the resident pane to <target-role>, running that role's own launch
@@ -1029,7 +1032,7 @@
                    :active-role role
                    :target-role target-role})
         do-respawn! (fn []
-                      (let [result (rotate-resident-to! target-role)]
+                      (let [result (rotate-resident-to! target-role "handoff-forward")]
                         (when-not (:ok result)
                           (binding [*out* *err*]
                             (case (:reason result)
