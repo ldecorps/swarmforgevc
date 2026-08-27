@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1177: portable agent-memory payload —
+schema-versioned `portable-agent-memory-payload` with continuity summary,
+open parcel ids, optional handoff pack / tool-state pointers; pure
+`aggregateCapturePayload` + fail-closed `inject` in
+`agentMemoryTransfer.ts` for same-role model swap; BL-1178 wires hot-swap.
+Acceptance:
+`specs/features/BL-1177-portable-agent-memory-payload-capture-inject.feature`.
+How-to:
+`docs/how-to/BL-1177-portable-agent-memory-payload-capture-inject.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-602: handoff latency trend —
 `enqueued_at` → `dequeued_at` wait per recipient role via
 `handoffLatency.ts`; still-queued parcels contribute open wait only;
@@ -7756,6 +7766,56 @@ watchdog would otherwise say.
 - **BL-840** — Provider-Outage Evidence Reaches Flow Watchdog: supplies BL-650's previously-unwired provider-outage adapter with a real production evidence source (see above)
 - **BL-839** — Master-Checkout Drift Alarm: a different sweep in the same `handoffd.bb` cadence, reusing this same Telegram Operator outbox, but alarming on a different question (does the master checkout's own working tree still match `main`, not parcel age) — see [the runbook](../how-to/BL-839-master-checkout-drift-alarm.md)
 - **BL-891** — Master-Main Reconcile Sweep: another sweep in the same cadence, mirroring BL-356's push-sweep in the opposite direction — merges `origin/main` forward into the master checkout's local `main` ref, surfacing a `note` to the coordinator (not this Telegram alarm channel) only when a dirty or untracked path actually overlaps a path the incoming merge would change (BL-919 narrowed this from a blanket any-dirt gate) — see [the runbook](../how-to/BL-891-master-main-reconcile-sweep.md)
+
+## Portable Agent Memory Transfer (BL-1177)
+
+First slice of epic BL-1176 (`agent-memory-transfer`). When a **same-role
+model swap** replaces the outgoing agent, continuity must survive without
+shipping a vendor-opaque session blob as the only artifact. BL-1177 defines a
+**schema-versioned portable payload** and a pure **capture / inject API** in
+`extension/src/tools/agentMemoryTransfer.ts`.
+
+### Payload schema (v1)
+
+| Field | Purpose |
+| --- | --- |
+| `kind: 'portable-agent-memory-payload'` | Discriminator — never a vendor blob alone |
+| `schemaVersion` | Currently `1` (`AGENT_MEMORY_PAYLOAD_SCHEMA_VERSION`) |
+| `role` | Normalized recipient role (must match inject target) |
+| `continuitySummary` | Transcript / session summary for the incoming seat |
+| `openParcelContext.openParcelIds` | Sorted, de-duplicated open parcel ids |
+| `handoffPack` (optional) | Structured handoff continuity bag |
+| `toolStatePointers` (optional) | Named tool-state references |
+
+### Capture
+
+`capture(outgoingState)` wraps pure `aggregateCapturePayload` over named
+inputs (`transcriptSummary`, `openParcelIds`, optional `handoffPack` /
+`toolStatePointers`). Unit-testable without a live agent — no filesystem or
+vendor session read in this slice.
+
+### Inject (fail-closed)
+
+`inject(role, rawPayload)` validates with `validatePortablePayload`, checks
+role match, and returns either:
+
+- `{ ok: true, openParcelContext, continuitySummary, pretendedContinuity: false }`, or
+- `{ ok: false, signal, pretendedContinuity: false }` for missing, malformed,
+  or role-mismatched payloads.
+
+**Never** silently pretends continuity on bad input.
+
+### Out of scope (this slice)
+
+- Hot-swap / trial wiring — **BL-1178**
+- Cross-vendor adapters — **BL-1179**
+- Cross-role memory merge
+
+### See Also
+
+- **BL-1176** — agent-memory-transfer epic
+- **BL-235** — per-role model dropdown + respawn (consumer path for BL-1178)
+- **BL-669** — outage-driven seat failover via Model Steward (different continuity problem)
 
 ## Per-Agent Lifecycle Control
 
