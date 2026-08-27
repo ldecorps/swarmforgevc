@@ -37,6 +37,23 @@
 ;; implementation's decision against an independent restatement of the OLD
 ;; (BL-891-era) blanket "any dirt blocks" gate, over the SAME generated
 ;; scenario, and asserts the old gate's :should-reconcile is never lost.
+;;
+;; BL-1198's own declared invariant (coder-authored first, per BL-654):
+;;   "A commit on local main is never discarded by a rematch/reset path
+;;   without that path first attempting to push it to origin."
+;; Encoded directly over rematch-with-push-first! (the ONE shared primitive
+;; all three real reset call sites - handoffd.bb, swarm_heal.bb,
+;; post_hotfix_merge_origin.bb - now route through): over every generated
+;; push outcome, reset! never fires except immediately after push! was
+;; attempted and reported failure, and a SUCCESSFUL push never also calls
+;; reset! (the commit is already safely on origin - nothing left to
+;; discard). The real-git half (a genuine, undiverged local-ahead commit
+;; surviving on origin without a reset) is unit-proven directly against the
+;; shared primitive above (master_main_reconcile_lib_test_runner.bb); no
+;; separate real-git fixture per call site is needed since all three now
+;; share this one orchestration function, per this ticket's own
+;; qa_e2e_procedure ("each of the three rematch call sites (or the shared
+;; primitive once centralized)").
 
 (ns master-main-reconcile-lib-property-runner
   (:require [babashka.fs :as fs]
@@ -447,6 +464,54 @@
           (System/exit 1)))))
 
 (non-vacuity-check-resolve-doesnt-clear-state)
+
+;; ── BL-1198: rematch-with-push-first! never discards without pushing first ─
+
+(defn gen-push-scenario [s]
+  (let [[push-success? s1] (gen-bool s)]
+    [{:push-success? push-success?} s1]))
+
+(defn- push-before-reset-violation [orchestrate! scenario]
+  (let [calls (atom [])
+        push! (fn [] (swap! calls conj :push) {:success (:push-success? scenario)})
+        reset! (fn [] (swap! calls conj :reset) {:success true})]
+    (orchestrate! {:push! push! :reset! reset!})
+    (cond
+      ;; reset! must never fire except immediately after push! was
+      ;; attempted and reported failure - any other call sequence
+      ;; (including reset with no push at all) is exactly the discard
+      ;; this invariant forbids.
+      (and (some #{:reset} @calls) (not= [:push :reset] @calls))
+      (str "reset fired without a prior failed push: " (pr-str @calls))
+
+      ;; a SUCCESSFUL push must never also call reset - the commit is
+      ;; already safely on origin, nothing left to discard. This is the
+      ;; scenario-specific half the plain ordering check above cannot see
+      ;; on its own ([:push :reset] alone looks like the correct sequence
+      ;; even when the push actually succeeded).
+      (and (:push-success? scenario) (some #{:reset} @calls))
+      (str "reset called despite a successful push: " (pr-str @calls))
+
+      :else true)))
+
+(check-all "bl1198: reset never fires without push being attempted and failing first"
+           gen-push-scenario
+           (fn [scenario] (push-before-reset-violation master-main-reconcile-lib/rematch-with-push-first! scenario)))
+
+;; Non-vacuity: a mutant that ignores the push outcome entirely (today's
+;; pre-fix bug shape - always resets, unconditionally) must be caught.
+(defn- mutant-always-resets-regardless-of-push! [{:keys [push! reset!]}]
+  (push!)
+  (reset!))
+
+(defn- non-vacuity-check-bl1198-push-before-reset []
+  (let [violation (push-before-reset-violation mutant-always-resets-regardless-of-push! {:push-success? true})]
+    (if (not= true violation)
+      (println (str "non-vacuity confirmed: a mutant that always resets regardless of push success is flagged - " violation))
+      (do (println "NON-VACUITY FAILURE (bl1198 always-resets mutant): expected a violation, got true")
+          (System/exit 1)))))
+
+(non-vacuity-check-bl1198-push-before-reset)
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "master_main_reconcile_lib property: " runs " runs"))
