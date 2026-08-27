@@ -154,6 +154,12 @@ export interface TickState {
 
 export interface ConciergeTickAdapters {
   readFolders: () => BacklogFoldersSnapshot;
+  // BL-1190: pre-post gate for ApprovalRequested - live-wired to
+  // pendingApprovalFor.ts::findTicketFilePath against targetPath. Optional
+  // (defaults to no gate, i.e. the folder scan alone decides) so every
+  // existing adapters fixture built before this field existed keeps
+  // behaving exactly as it did.
+  ticketFileExists?: (backlogId: string) => boolean;
   // BL-301: the live gate snapshot (computeRoleGateStatesLive, tmux-pane
   // capture) and the role->ticket inversion (computeCurrentHolders'
   // ticketId->role, inverted) - both wired live in the bot from targetPath,
@@ -263,6 +269,12 @@ export interface ConciergeTickAdapters {
   reconcileDecidedApprovalAskCloses?: (nowMs: number) => Promise<void>;
   // BL-584: email digest for Approvals-topic asks unanswered past threshold.
   sweepStaleApprovalAsks?: (nowMs: number) => Promise<void>;
+  // BL-1190: closes a recorded ApprovalRequested ask whose ticket yaml has
+  // disappeared entirely (never just moved to a decided verdict, which
+  // reconcileDecidedApprovalAskCloses above already covers) - the periodic
+  // half of the ghost-ask fix, alongside the inline close on a no-ticket-
+  // file tap (telegramFrontDeskBotCore.ts's recordApprovalDecisionAndClose).
+  reconcileGhostApprovalAskCloses?: (nowMs: number) => Promise<void>;
 }
 
 export interface TickResult {
@@ -300,12 +312,33 @@ function ticketSummariesFor(active: BacklogFolderItem[], paused: BacklogFolderIt
 // pending - diffApprovalRequested fires only on not-pending->pending transitions
 // (the same shape diffTaskStarted uses), so a ticket asked once is not re-asked
 // on each tick, regardless of folder.
-function pendingApprovalFor(active: BacklogFolderItem[], paused: BacklogFolderItem[]): string[] {
+// BL-1190: pre-post gate - a ticket only counts as awaiting an
+// ApprovalRequested ask when its yaml can still be found by id
+// (pendingApprovalFor.ts::findTicketFilePath, via the optional
+// ticketFileExists adapter). Guards the gap between this tick's folder
+// snapshot and the async post that follows it (topic edits/creates can
+// take real time), not just the ordinary case - a ticket already absent
+// from `active`/`paused` never reaches this filter's input at all. Optional
+// so every existing adapters fixture built before this field existed keeps
+// treating an id already in the live folder scan as sufficient.
+function pendingApprovalFor(
+  active: BacklogFolderItem[],
+  paused: BacklogFolderItem[],
+  ticketFileExists?: (backlogId: string) => boolean
+): string[] {
   const all = [...active, ...paused];
-  return all.filter((item) => item.humanApproval === 'pending').map((item) => item.id);
+  return all
+    .filter((item) => item.humanApproval === 'pending')
+    .filter((item) => ticketFileExists === undefined || ticketFileExists(item.id))
+    .map((item) => item.id);
 }
 
-function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSignal[], roleTicket: Record<string, string>): EventStreamSnapshot {
+function toEventStreamSnapshot(
+  folders: BacklogFoldersSnapshot,
+  gates: GateSignal[],
+  roleTicket: Record<string, string>,
+  ticketFileExists?: (backlogId: string) => boolean
+): EventStreamSnapshot {
   return {
     backlog: {
       active: folders.active.map((item) => item.id),
@@ -315,7 +348,7 @@ function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSigna
     gates,
     roleTicket,
     ticketSummaries: ticketSummariesFor(folders.active, folders.paused),
-    pendingApproval: pendingApprovalFor(folders.active, folders.paused),
+    pendingApproval: pendingApprovalFor(folders.active, folders.paused, ticketFileExists),
   };
 }
 
@@ -1229,9 +1262,10 @@ async function processConciergeEvent(
 // completely unaffected by this default.
 export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: number = Date.now()): Promise<TickResult> {
   await adapters.reconcileDecidedApprovalAskCloses?.(nowMs);
+  await adapters.reconcileGhostApprovalAskCloses?.(nowMs);
   await adapters.sweepStaleApprovalAsks?.(nowMs);
   const folders = adapters.readFolders();
-  const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket());
+  const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket(), adapters.ticketFileExists);
   const epicDefinitions = epicDefinitionsFor(folders);
   // BL-449: resolved ONCE per tick (never per-event) so two epics newly
   // created within the SAME tick still see each other in

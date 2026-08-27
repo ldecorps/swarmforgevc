@@ -136,6 +136,7 @@ import {
   AskOption,
   closeApprovalAskForBacklogId,
   roleFromAskThreadId,
+  reconcileStaleApprovalAsks,
 } from './telegramFrontDeskBotCore';
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
@@ -152,6 +153,7 @@ import {
   explainApprovalRecordNoOp,
 } from '../concierge/pendingApprovalReply';
 import { reconcileDecidedApprovalAskCloses } from '../concierge/decidedApprovalAskCloseReconcile';
+import { ticketFileExists } from '../concierge/pendingApprovalFor';
 import {
   DEFAULT_COOLDOWN_MS,
   DEFAULT_STALE_AFTER_MS,
@@ -3195,6 +3197,10 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     readRootIntakeFiles: () => readRootIntakeFiles(targetPath),
     readBoardProjectRoot: () => targetPath,
     readRepoBaseUrl: () => readRepoBaseUrl(targetPath),
+    // BL-1190: pre-post gate - an ApprovalRequested ask never fires for an
+    // id whose yaml findTicketFilePath cannot find, closing the gap between
+    // this tick's folder snapshot and the async post that follows it.
+    ticketFileExists: (backlogId: string) => ticketFileExists(targetPath, backlogId),
     // BL-434: the standing "Approvals" topic's own roster sync - shares the
     // SAME ensureApprovalsTopic the ask-routing RouteAdapters above uses
     // (never a second Approvals-topic notion), so the roster and every
@@ -3225,6 +3231,18 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
         {
           readApprovalAskMessages: () => readApprovalAskMessages(targetPath),
           readCloseVerdict: (backlogId) => readApprovalCloseVerdict(targetPath, backlogId),
+          closeApprovalAsk: (backlogId, verdict, tickNowMs) => closeApprovalAskForBacklogId(closeFields, backlogId, verdict, tickNowMs),
+          waitBetweenCloses: (ms) => sleep(ms),
+        },
+        nowMs
+      );
+    },
+    reconcileGhostApprovalAskCloses: async (nowMs) => {
+      const closeFields = buildApprovalAskCloseAdapterFields(botToken, targetPath, chatId);
+      await reconcileStaleApprovalAsks(
+        {
+          readApprovalAskMessages: () => readApprovalAskMessages(targetPath),
+          ticketFileExists: (backlogId) => ticketFileExists(targetPath, backlogId),
           closeApprovalAsk: (backlogId, verdict, tickNowMs) => closeApprovalAskForBacklogId(closeFields, backlogId, verdict, tickNowMs),
           waitBetweenCloses: (ms) => sleep(ms),
         },
