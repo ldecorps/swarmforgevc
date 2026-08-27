@@ -559,6 +559,7 @@ const DOMAINS = [
   require('./bl922UnreadableAcceptanceCaughtAtMintSteps'),
   require('./bl1027MintTimeDanglingAcceptanceSteps'),
   require('./bl626PromotionGateSteps'),
+  require('./bl634SliceSizeEnvelopeAtPromotionSteps'),
   require('./bl1126LocalAgentTelegramTurnReliabilitySteps'),
   require('./bl1095RetireExpediteBugTypeSteps'),
   require('./bl918PeriodicSamplesAreNotStallsSteps'),
