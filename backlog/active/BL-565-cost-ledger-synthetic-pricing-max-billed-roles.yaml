@@ -2,14 +2,14 @@ id: BL-565
 title: "Cost ledger synthetic pricing — capture tokens and list-price dollar equivalents for Max-billed swarm roles"
 milestone: M8
 type: feature
-status: todo
+status: in_progress
 epic: cost-intelligence
 human_approval: approved
 severity: low
 priority: 107
 direction: human-requested
 depends_on: [BL-551]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 source: |
   Human request 2026-07-23, from reviewing the live BL-551 ledger output:

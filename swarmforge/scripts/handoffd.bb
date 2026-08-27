@@ -541,10 +541,13 @@
                   ;; try/catch'd so a telemetry write failure never blocks
                   ;; the real delivery/wake below it.
                   (try
-                    (llm-cost-ledger-lib/append-llm-invocation-record!
-                     (str state-dir)
-                     (operator-lib/handoff-delivery-llm-invocation-record
-                      {:recipient recipient :headers headers} (now)))
+                    (let [usage (llm-cost-ledger-lib/latest-role-usage-from-context-events
+                                 (str state-dir) recipient)]
+                      (llm-cost-ledger-lib/append-llm-invocation-record!
+                       (str state-dir)
+                       (operator-lib/handoff-delivery-llm-invocation-record
+                        {:recipient recipient :headers headers :usage usage}
+                        (now))))
                     (catch Exception e
                       (log! "llm-cost-ledger-append-error" recipient (.getMessage e))))
                   (maybe-notify! socket roles (:session role-info) recipient (str target)

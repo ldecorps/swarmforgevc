@@ -11,6 +11,7 @@ import {
   LlmInvocationOrigin,
   LlmInvocationRecord,
 } from './llmCostLedger';
+import { enrichLlmInvocationRecord } from './syntheticLlmCost';
 
 export function llmCostTelemetryDir(mainWorktreePath: string): string {
   return path.join(mainWorktreePath, '.swarmforge', 'telemetry');
@@ -89,7 +90,7 @@ function readLedgerFile(filePath: string): LlmInvocationRecord[] {
     }
     const record = parseLlmInvocationLine(line);
     if (record) {
-      records.push(record);
+      records.push(enrichLlmInvocationRecord(record));
     }
   }
   return records;

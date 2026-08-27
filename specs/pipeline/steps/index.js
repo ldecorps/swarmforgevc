@@ -323,6 +323,7 @@ const DOMAINS = [
   require('./bl557ModelStewardSlice3Steps'),
   require('./bl559PipelineboardPropertyTestPrefixSubstringBugSteps'),
   require('./bl551LlmCostLedgerSteps'),
+  require('./bl565CostLedgerSyntheticPricingSteps'),
   require('./bl525ModelFactorySteps'),
   require('./gh22ContextTelemetrySteps'),
   require('./gh23ContextBudgetDashboardSteps'),
