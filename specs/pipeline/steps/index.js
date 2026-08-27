@@ -51,7 +51,6 @@ const DOMAINS = [
   require('./bl1143ColdSwapDayShiftOllamaQwenSteps'),
   require('./bl595HumanLoopReliabilityTrendSteps'),
   require('./bl596MonoRouterRotationDynamicsSteps'),
-  require('./bl597TrendSelfHealEventsSteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),
@@ -772,7 +771,8 @@ const DOMAINS = [
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
   require('./bl602TrendHandoffLatencySteps'),
-  require('./bl683HandoffDepthWarningCountsNonTicketsSteps')
+  require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
+  require('./bl1166OperatorDocsSteps')
 ];
 
 function registerSteps(registry) {
