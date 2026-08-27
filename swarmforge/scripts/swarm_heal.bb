@@ -87,9 +87,16 @@
                          :dirty-paths! (fn [] [])
                          :tip-contains-origin! (fn [] (zero? (:exit (sh root "git" "merge-base" "--is-ancestor" "origin/main" "HEAD"))))
                          :would-conflict! (fn [] false)
+                         ;; BL-1198: attempt a push first — only reset when
+                         ;; that push is rejected (genuine divergence).
                          :rematch! (fn []
-                                     (let [r (sh root "git" "reset" "--hard" "origin/main")]
-                                       {:success (zero? (:exit r)) :error (:err r)}))
+                                     (master-main-reconcile-lib/rematch-with-push-first!
+                                      {:push! (fn []
+                                                (let [r (sh root "git" "push" "origin" "main")]
+                                                  {:success (zero? (:exit r)) :error (:err r)}))
+                                       :reset! (fn []
+                                                 (let [r (sh root "git" "reset" "--hard" "origin/main")]
+                                                   {:success (zero? (:exit r)) :error (:err r)}))}))
                          :merge! (fn []
                                    (let [r (sh root "git" "merge" "--ff-only" "--no-edit" "origin/main")]
                                      (if (zero? (:exit r))
