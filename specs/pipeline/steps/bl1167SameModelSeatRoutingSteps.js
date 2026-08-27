@@ -1,7 +1,7 @@
 'use strict';
 
-// BL-1167: same-model stage seats bypass BL-1001 tier filtering.
-// Drives REAL ready_for_next_task.bb over a two-seat fixture.
+// BL-1167: same-model stage seats bypass tier filtering. Drives REAL
+// ready_for_next_task.bb over a two-seat coder fixture mirroring cursor-forge.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -17,6 +17,8 @@ const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const HARD = 'coder';
 const EASY = 'coder@cursor2';
 const STAGE = 'coder';
+
+const KNOWN_COSTS = new Set(['low', 'medium', 'high']);
 
 function seatDir(root, role) {
   return path.join(root, role.replace('@', '-'));
@@ -35,10 +37,22 @@ function writeConf(root, { hardModel = 'auto', easyModel = 'auto' } = {}) {
   );
 }
 
-function mkFixture(ctx, models) {
+function gitEnv() {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  return env;
+}
+
+function mkFixture(ctx, { hardModel = 'auto', easyModel = 'auto' } = {}) {
   const root = mkSocketFixtureRoot('bl1167-acc-');
   ctx.root = root;
-  const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  const git = (args) =>
+    execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      env: gitEnv(),
+    });
   git(['init', '-q', '.']);
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
@@ -50,19 +64,20 @@ function mkFixture(ctx, models) {
     path.join(root, '.swarmforge', 'roles.tsv'),
     roles.map((r) => `${r}\t${r.replace('@', '-')}-wt\t${seatDir(root, r)}\tswarmforge-${r}\t${r}\tclaude\ttask`).join('\n') + '\n'
   );
-  writeConf(root, models);
+  writeConf(root, { hardModel, easyModel });
   fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(root, 'bin', 'tmux'), '#!/usr/bin/env bash\nexit 0\n');
   fs.chmodSync(path.join(root, 'bin', 'tmux'), 0o755);
   fs.writeFileSync(path.join(root, 'fake.sock'), '');
   fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), path.join(root, 'fake.sock'));
-  git(['add', '-A']);
-  git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'seed']);
+  git(['-c', 'core.hooksPath=/dev/null', 'add', '-A']);
+  git(['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', 'seed']);
   ctx.commit = git(['rev-parse', '--short=10', 'HEAD']).trim();
 }
 
 function fixtureEnv(root, role) {
   return {
+    ...gitEnv(),
     PATH: `${path.join(root, 'bin')}:${process.env.PATH}`,
     HOME: process.env.HOME,
     SWARMFORGE_ROLE: role,
@@ -70,7 +85,7 @@ function fixtureEnv(root, role) {
 }
 
 function writeTicket(ctx, cost) {
-  const ids = { low: 'BL-9161', medium: 'BL-9162', high: 'BL-9163' };
+  const ids = { low: 'BL-9167', medium: 'BL-9168', high: 'BL-9169' };
   const id = ids[cost];
   ctx.ticketId = id;
   ctx.task = `${id}-probe`;
@@ -128,16 +143,16 @@ function registerSteps(registry) {
 
   scoped(/^a coder stage with two seats both declared for the same model$/, (ctx) => {
     mkFixture(ctx, { hardModel: 'auto', easyModel: 'auto' });
-    ctx.sameModel = true;
   });
 
   scoped(/^a ticket whose mutation_cost is (.+)$/, (ctx, cost) => {
+    if (!KNOWN_COSTS.has(cost)) throw new Error(`unknown cost ${cost}`);
     writeTicket(ctx, cost);
     send(ctx);
   });
 
   scoped(/^both coder seats are idle$/, () => {
-    /* default */
+    /* default fixture state */
   });
 
   scoped(/^the hard-tier seat is busy$/, (ctx) => {
@@ -149,12 +164,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^the two coder seats declare different models$/, (ctx) => {
-    if (!ctx.root) {
-      mkFixture(ctx, { hardModel: 'opus', easyModel: 'auto' });
-    } else {
-      writeConf(ctx.root, { hardModel: 'opus', easyModel: 'auto' });
-    }
-    ctx.sameModel = false;
+    writeConf(ctx.root, { hardModel: 'auto', easyModel: 'claude-sonnet-5' });
   });
 
   scoped(/^the easy-tier seat polls for work$/, (ctx) => {
@@ -164,16 +174,13 @@ function registerSteps(registry) {
   scoped(/^that seat may claim the ticket$/, (ctx) => {
     assert.ok(
       holdsProbe(ctx, EASY),
-      `expected easy seat to claim; out=${ctx.pollEasy.stdout} err=${ctx.pollEasy.stderr}`
+      `expected ${EASY} to hold claim; stdout=${ctx.pollEasy.stdout}${ctx.pollEasy.stderr}`
     );
   });
 
   scoped(/^that seat must not claim the ticket$/, (ctx) => {
-    assert.equal(
-      holdsProbe(ctx, EASY),
-      false,
-      `easy must not claim when models differ; out=${ctx.pollEasy.stdout}`
-    );
+    assert.equal(holdsProbe(ctx, EASY), false, 'easy seat must not claim when models differ');
+    assert.match(ctx.pollEasy.stdout, /NO_TASK|ROTATE_HOME/, 'poll should report no claim');
   });
 }
 

@@ -13,9 +13,6 @@
 (load-file (str (fs/path (fs/parent *file*) "seat_affinity_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "seat_difficulty_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
-;; BL-1185: Work notes attribute mutation_cost via the same task-name parse
-;; supersede_lib already uses (task: header, else Work BL-… in the message).
-(load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -73,23 +70,13 @@
            :busy? (sibling-busy? ri)})
         (handoff-lib/stage-sibling-seats)))
 
-(defn- task-name-for-difficulty
-  "BL-1185: prefer task: (git_handoff); else Work BL-… from the note message.
-   Never invent a task header on type: note — attribution only."
-  [handoff-file]
-  (or (not-empty (handoff-lib/header-field handoff-file "task"))
-      (try
-        (supersede-lib/task-name-from-content (slurp (str handoff-file)))
-        (catch Exception _ nil))))
-
 (defn- difficulty-allows-claim?
-  "BL-1001: leave the parcel in the stage queue when this seat must not take it.
-   BL-1185: Work notes without task: still resolve mutation_cost from the message.
-   BL-1167: same-model stage seats bypass tier filtering."
-  [handoff-file tiers models window-seats]
+  "BL-1001: leave the parcel in the stage queue when this seat must not take it."
+  [handoff-file tiers pack-conf]
   (let [me (handoff-lib/current-role)
         stage (handoff-lib/seat-stage me)
-        cost (mutation-cost-for-task (task-name-for-difficulty handoff-file))
+        cost (mutation-cost-for-task (handoff-lib/header-field handoff-file "task"))
+        models (seat-difficulty-lib/parse-seat-models pack-conf)
         decision (seat-difficulty-lib/difficulty-claim-decision
                   {:me me
                    :my-tier (get tiers me)
@@ -97,7 +84,7 @@
                    :stage stage
                    :tiers tiers
                    :models models
-                   :window-seats window-seats
+                   :conf-text pack-conf
                    :sibling-states (difficulty-sibling-states tiers)})]
     (= :claim decision)))
 
@@ -316,11 +303,9 @@
                 ;; BL-1001: drop candidates this seat must not take (tier /
                 ;; prefer-fit). They stay in the stage queue for a peer.
                 tiers                (seat-difficulty-lib/parse-seat-tiers pack-conf)
-                models               (seat-difficulty-lib/parse-seat-models pack-conf)
-                window-seats         (seat-difficulty-lib/parse-window-seats pack-conf)
                 claimable            (->> decided
                                           (remove #(= :defer (:action (second %))))
-                                          (filter (fn [[f _]] (difficulty-allows-claim? f tiers models window-seats)))
+                                          (filter (fn [[f _]] (difficulty-allows-claim? f tiers pack-conf)))
                                           vec)]
             (doseq [[f decision] deferred]
               (println (seat-affinity-lib/deferral-line

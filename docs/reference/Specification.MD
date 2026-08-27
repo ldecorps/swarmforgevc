@@ -106,7 +106,7 @@ declares the same effective pack `--model`, BL-1001 `--seat-tier` filtering
 is bypassed — BL-983 idle-first among those seats; either seat may claim any
 `mutation_cost`. When models diverge, BL-1001 tier discipline returns
 unchanged. `seat_difficulty_lib.bb` `parse-seat-models` /
-`stage-models-uniform?`. Acceptance:
+`stage-models-equivalent?`. Acceptance:
 `specs/features/BL-1167-same-model-coder-seats-bypass-tier-routing.feature`.
 How-to: `docs/how-to/BL-1167-same-model-coder-seats-bypass-tier-routing.md`.)
 Prior entry —
@@ -9310,7 +9310,7 @@ without reducing bounce risk — seats are model-equivalent.
 | All declared seats share one effective `--model` | Bypass BL-1001 tiers; BL-983 idle-first among seats (any `mutation_cost`) |
 | Seats declare distinct effective models | BL-1001 tier filtering unchanged |
 
-Detection is pack-conf only (`parse-seat-models` / `stage-models-uniform?` in
+Detection is pack-conf only (`parse-seat-models` / `stage-models-equivalent?` in
 `seat_difficulty_lib.bb`) — not runtime agent state. Stage-addressed
 coordinator routing is unchanged.
 
