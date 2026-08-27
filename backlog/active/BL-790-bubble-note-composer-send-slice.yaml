@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: bubble-note-composer
 human_approval: approved
-assigned_to: none
+assigned_to: coder
 priority: 125
 direction: human-requested
 depends_on: []

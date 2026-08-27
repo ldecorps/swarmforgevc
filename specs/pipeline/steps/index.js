@@ -752,6 +752,7 @@ const DOMAINS = [
   require('./bl1144FrequentQaPushRacesOnMainLandSteps'),
   require('./bl1135Bl1131ResidualLiveLandNoOperatorAbsorbSteps'),
   require('./bl668PostQaBranchSweepSteps'),
+  require('./bl781RetireDeadBabysitterFilesKeepListPreservedSteps'),
   require('./bl1138Bl1135ResidualRematchBookkeepingDeadlockSteps'),
   require('./bl1141Bl1138ResidualRefuseRematchNotExecutedSteps'),
   require('./bl1123GuardMasterCheckoutAgainstBareAndCollapsedTipSteps'),
@@ -778,7 +779,8 @@ const DOMAINS = [
   require('./bl1119ClosingCeremonyRoleQualityDialSteps'),
   require('./bl759CursorOperatorFrontDeskCycleSteps'),
   require('./bl1120HandoffdMustNotAbortForeignMergeSteps'),
-  require('./bl683HandoffDepthWarningCountsNonTicketsSteps')
+  require('./bl683HandoffDepthWarningCountsNonTicketsSteps'),
+  require('./bl780NoteActionabilityOutrunsWatchdogWarnSteps')
 ];
 
 function registerSteps(registry) {
