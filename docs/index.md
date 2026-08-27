@@ -43,10 +43,14 @@ expects them, and are not migrated or rewritten here.
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
+- [RECENTLY CLOSED lines show closure age](how-to/BL-980-recently-closed-elapsed-time.md) — `(10min ago)` from durable `doneClosedAtMs`; RECENTLY CLOSED only (BL-980).
 - [One unified pipeline grid across swarms](how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md) — one kanban; caption `s1`/`s2` badges when multi-swarm; remote held-by-role never guessed (BL-1009).
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Steering a swarm role from Telegram, and reading the receipt](how-to/BL-566-steer-a-role-from-telegram.md) — per-role topic nudge + delivery receipt (BL-566); `menu_blocked` when a pane menu is live (BL-568).
 - [Reading front-desk human-loop reliability trends](how-to/BL-595-trend-human-loop-reliability.md) — approval-tap / steer / poll-health / tick-duration on `.swarmforge/telemetry/human-loop-YYYY-MM.jsonl` (BL-595; measures only).
+- [Reading self-heal event trends](how-to/BL-597-trend-self-heal-events.md) — stale-build / respawn / kill_all / rotation / claim-heal counts on `.swarmforge/telemetry/self-heal-YYYY-MM.jsonl` (BL-597; measures only).
+- [Reading intake-balance trends (filed vs closed)](how-to/BL-599-trend-intake-balance.md) — filed/closed/net from the same deliveryMetrics git-history adapter; epic trackers excluded (BL-599).
+- [Reading human-decision latency trends](how-to/BL-600-trend-human-decision-latency.md) — ask→verdict median/outliers per gate; pending asks stay open age (BL-600; measures only).
 - [Reading false-alarm rate trends on alerts](how-to/BL-598-trend-false-alarm-rate.md) — per-type false-positive rate on `.swarmforge/telemetry/alerts-YYYY-MM.jsonl` (BL-598; measures only).
 - [Pane-title chrome covers every producible role name](how-to/BL-732-pane-title-chrome-covers-every-producible-role-name.md) — multi-word / `@`-seat SwarmForge titles strip as chrome (BL-732; closes BL-642 residual).
 - [Answering a menu-blocked pane from its Telegram steering topic](how-to/BL-568-menu-blocked-pane-questions-as-mapped-polls.md) — AskUserQuestion chrome → mapped poll in the role topic; vote drives the menu; steers suppressed while blocked (BL-568).

@@ -13,12 +13,21 @@ assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-600-trend-human-decision-latency.feature
+# Tip-pure rematch 2026-08-27 after acyclic humanDecisionLatency↔trend bounce.
+abandoned_commits:
+  - 281382a311
+  - 8593b10c55
+  - 6036352f61
+  - 566c122982
+  - c31a2f8a36
+  - eb7f487af2
 
 required_wiring:
   - "extension/src/notify/staleApprovalEscalation.ts::approvalAskPostedAtMs::ask timestamp from topic outbound ApprovalRequested"
   - "extension/src/tools/telegram-front-desk-bot.ts::readApprovalAskMessages::pairs ask to backlog id via telegram-approval-ask-messages.json"
   - "extension/src/metrics/stageDwell.ts::splitOutliers::median + outlier honesty reused for decision-latency aggregation"
-  - "extension/src/metrics/trend.ts::decision-latency series::plotted via shared TrendedNumber framework"
+  - "extension/src/metrics/humanDecisionLatency.ts::deriveTicketDecisionLatency::ask-to-verdict latency and open age"
+  - "extension/src/metrics/trend.ts::computeTrend::shared TrendResult framework (humanDecisionLatency imports inward; no re-export)"
   - "specs/pipeline/steps/index.js::bl600TrendHumanDecisionLatencySteps::acceptance handler registered"
 
 invariants:

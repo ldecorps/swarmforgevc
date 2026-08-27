@@ -1,5 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-600: human-decision latency trend —
+ask (ApprovalRequested) to verdict per gate via
+`humanDecisionLatency.ts`; pending asks contribute open age only; median +
+outliers via `stageDwell.splitOutliers`; `computeTrend` inward import (no
+`trend.ts` re-export — acyclic). Measurement only. Acceptance:
+`specs/features/BL-600-trend-human-decision-latency.feature`. How-to:
+`docs/how-to/BL-600-trend-human-decision-latency.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-599: intake-balance trend —
+filed/closed/net per window via `deriveIntakeBalanceEvents` /
+`computeIntakeBalance` on the existing deliveryMetrics git-history adapter;
+epic trackers excluded; root `INTAKE-*.md` counted; exposed on
+`computeDeliveryMetrics.intakeBalance` through `trend.ts`. Acceptance:
+`specs/features/BL-599-trend-intake-balance.feature`. How-to:
+`docs/how-to/BL-599-trend-intake-balance.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-597: self-heal events trend —
+structured `{type, subject, reason, at}` records appended at existing
+recovery log sites to `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl`
+(gitignored); pure `aggregateSelfHealCounts` → `computeTrend` per type;
+failed append never blocks or alters recovery. Types:
+`stale-build-recompile`, `supervisor-respawn`, `kill-all-swarm`,
+`rotation-respawn`, `claim-heal`. Measurement only. Acceptance:
+`specs/features/BL-597-trend-self-heal-events.feature`. How-to:
+`docs/how-to/BL-597-trend-self-heal-events.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-980: Pipeline Board RECENTLY CLOSED
+lines append a relative closure-age suffix from durable `doneClosedAtMs`
+(`formatRecentlyClosedAgeLabel` in `pipelineBoard.ts`; stamped once in
+`conciergeTick.ts`). Ladder: `just now` / `Nmin ago` / `Nh ago` / `Nd ago`.
+No suffix when no closure instant; plain-text and HTML paths agree; other
+sections unchanged. Acceptance:
+`specs/features/BL-980-recently-closed-elapsed-time.feature`. How-to:
+`docs/how-to/BL-980-recently-closed-elapsed-time.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1169: babysitter half-launch and
 swarm-starved queue bounded auto-repair — `proc-*` half-launch CRIT
 `assoc`s `:ensure-session` when standing+allowed; swarm-starved streak ≥3
@@ -7286,6 +7321,95 @@ to the project path; fixtures may omit it and emit nothing.
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 - **BL-823** — availability ledger (sibling monthly JSONL under
   `.swarmforge/telemetry/`).
+- **BL-597** — self-heal events trend (sibling monthly JSONL; same
+  `computeTrend` posture; see section below).
+
+## Self-Heal Events Trend (BL-597)
+
+The swarm heals itself constantly — stale-build recompiles, supervisor
+respawns, `kill_all_swarm`, mono-router rotation respawns, claim-heal —
+but historically counted none of it; a recovery that fixed a live outage
+stayed invisible until grepped by hand. BL-597 structures each existing
+prose log moment as a durable event and trends **per-type counts** over
+time. **Measurement only** — recovery behaviour is unchanged; a failed
+telemetry append must not block or alter whether self-heal runs.
+
+### Storage
+
+`.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl` — append-only, one JSON
+object per line, monthly files. Explicitly listed in `.gitignore` (and
+covered by the top-level `.swarmforge/` ignore). Clojure sites call
+`self-heal-telemetry-lib/append-self-heal-event!` (failures swallowed);
+tests may use `selfHealTelemetryStore.ts` / `self_heal_telemetry_cli.bb`.
+
+Record shape:
+
+```json
+{"type":"stale-build-recompile","subject":"front-desk-supervisor","reason":"recompiling before respawn","at":"2026-08-27T09:00:00.000Z"}
+```
+
+### Event types and emit sites
+
+| Type | Subject (typical) | Emit at existing log site |
+|------|-------------------|---------------------------|
+| `stale-build-recompile` | `front-desk-supervisor` | `front_desk_supervisor.bb` `ensure-current-build!` (with `stale-build-detected`) |
+| `supervisor-respawn` | `front-desk-supervisor` | `front_desk_supervisor.bb` `log-event!` `:started` |
+| `kill-all-swarm` | `lifecycle` | `kill_pipeline_swarm.sh` after SUCCESS (via CLI) |
+| `rotation-respawn` | `mono-router-resident` | `handoff_lib.bb` mono-router persona swap |
+| `claim-heal` | `handoffd` | `handoffd.bb` resume orphaned `in_process` |
+
+Each record is emitted **at the existing prose log site** for that recovery
+action — no parallel detection path.
+
+### Aggregation
+
+`selfHealTelemetry.ts` `aggregateSelfHealCounts` folds an **in-memory**
+event list into per-type `trend.ts` / `computeTrend` series (current /
+prior / delta / direction) — file-free aggregation.
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
+  `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
+
+## Human-Decision Latency (BL-600)
+
+Some tickets wait on the swarm; some wait on the human. BL-600 pairs each
+ApprovalRequested ask with its verdict and trends **ask→verdict latency**
+per gate (`approve` / `amend`) so approval-queue wait is visible separately
+from swarm velocity. **Measurement only** — never nudges, blocks, or alters
+asks or human verdict recording.
+
+### Derivation
+
+`humanDecisionLatency.ts` is pure over paired timestamps:
+
+| Input | Output |
+|-------|--------|
+| Ask + verdict (`verdictAtMs >= askAtMs`) | Decided `latencyMs` for that gate |
+| Ask still pending | `openAgeMs` only — never folded into decided median/outliers |
+
+Ask times come from existing stores (`approvalAskPostedAtMs` /
+`telegram-approval-ask-messages.json` pairing). Aggregation reuses
+`stageDwell.splitOutliers` for median + outlier honesty, then feeds
+`computeTrend` (current / prior / delta / direction).
+
+### Dependency direction (acyclic)
+
+`humanDecisionLatency` imports `computeTrend` from `./trend` and
+`splitOutliers` from `./stageDwell`. `trend.ts` must **not** re-export
+decision-latency helpers — that back-edge was the standing acyclic bounce
+this rematch closed.
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-591** — ETA already treats blocked-on-human as non-velocity; this
+  quantifies the human side.
+- **BL-595** — human-loop reliability ledger (sibling `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
 
 ## Flow Watchdog (BL-577)
 
