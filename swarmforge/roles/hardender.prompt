@@ -526,6 +526,21 @@ You are the hardender.
   double-quoted tests and never noticed two of three `take-flow-reason`
   branches had zero coverage (BL-754).
 
+## A new dispatch branch must be diffed against its siblings' gating pattern (BL-751)
+- When the parcel adds a new case/branch to a function whose EXISTING arms
+  already share a structural pattern — a timeout, grace period, or guard
+  condition applied uniformly — diff the new arm's structure against its
+  siblings before you pass. A shared pattern silently dropped on the new arm
+  is a defect candidate, not a style nit: flag it for an explicit decision
+  (follow the pattern, or document the deviation) rather than a silent
+  omission.
+- BL-646 added `:warn-fixture-droppings` to `babysitter_assess_lib.bb`'s
+  severity `cond` without the `(>= elapsed-pct 0.75)` grace-period guard its
+  two sibling arms (`:warn-uncommitted`, `:watch`) both carry — and, being
+  first in the `cond`, it also shadowed the gated sibling. Three review
+  passes missed it because each read the new arm in isolation, never against
+  its siblings (BL-750).
+
 ## Recording A Send-Back (BL-635)
 - You do not bounce as a matter of course — your normal path is always forward
   to the documenter. But if you ever DO send a parcel back (e.g. per the
