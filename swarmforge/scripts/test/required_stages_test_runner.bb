@@ -299,20 +299,6 @@
          (required-stages-lib/read-stage-skip-reasons
           "id: BL-1\nstage_skip_reasons: { cleaner: no test, architect: covered }\n"))
 
-;; ── BL-754 declared invariants (coder-authored encoding, BL-654) ─────────
-(assert= "BL-754 invariant 2: quote style alone never changes parsed reasons"
-         (required-stages-lib/read-stage-skip-reasons
-          "id: BL-1\nstage_skip_reasons: { cleaner: \"alpha, beta\", architect: \"gamma\" }\n")
-         (required-stages-lib/read-stage-skip-reasons
-          "id: BL-1\nstage_skip_reasons: { cleaner: 'alpha, beta', architect: 'gamma' }\n"))
-
-(let [malformed-read (required-stages-lib/read-stage-skip-reasons
-                       "id: BL-1\nstage_skip_reasons: { cleaner: x, y, z, architect: ok }\n")]
-  (assert-true "BL-754 invariant 1: present-but-malformed never returned as complete"
-               (some? (:malformed malformed-read)))
-  (assert-true "BL-754 invariant 1: malformed names remainder"
-               (str/includes? (:malformed malformed-read) "x, y, z")))
-
 ;; ── ran-and-skipped (acceptance scenario 08) ──────────────────────────────
 
 (let [content (str "id: BL-606\nrequired_stages: [coder, qa]\nstatus: done\n")

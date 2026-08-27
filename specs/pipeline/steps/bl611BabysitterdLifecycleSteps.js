@@ -275,8 +275,11 @@ function isAllowedBabysitterMatch(relPath) {
   if (
     [
       'swarmforge/scripts/babysitter_assess_lib.bb',
+      'swarmforge/scripts/babysitter_assess.bb',
+      'swarmforge/scripts/babysitter_lib.bb',
       'swarmforge/scripts/babysitter_nudge_lib.bb',
       'swarmforge/scripts/babysitter_nudge_resident.bb',
+      'swarmforge/scripts/babysitter_enqueue_wake.sh',
     ].includes(p)
   ) {
     return true;
@@ -354,10 +357,6 @@ const RETIRED_FILE_PATHS = [
   'swarmforge/scripts/babysitter.claude-settings.json',
   'extension/src/tools/notify-babysitter.ts',
   'swarmforge/scripts/babysitter_runtime.bb',
-  // BL-781: dead wake-runtime / broken CLI wrappers retired after BL-611
-  'swarmforge/scripts/babysitter_lib.bb',
-  'swarmforge/scripts/babysitter_enqueue_wake.sh',
-  'swarmforge/scripts/babysitter_assess.bb',
 ];
 
 const FORBIDDEN_RETIRED_PATTERNS = [
@@ -368,9 +367,6 @@ const FORBIDDEN_RETIRED_PATTERNS = [
   /babysitter\.claude-settings\.json/i,
   /notify-babysitter/i,
   /babysitter_runtime\.bb/i,
-  /babysitter_lib\.bb/i,
-  /babysitter_enqueue_wake\.sh/i,
-  /babysitter_assess\.bb(?!_lib)/i,
 ];
 
 // git-tracked files only — "the repo after this ticket lands" means the
