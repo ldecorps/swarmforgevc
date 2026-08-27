@@ -1,5 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-1174: `/deprecate` soft verbs —
+`deprecate.js` dry ranks orphan conf flags; confirm retires one (or refuses /
+human-asks) writing `docs/deprecated/` + `## Deprecated` index link; `check`
+wraps BL-1173; easy/weak seats refuse. Shared BL-698 operator surface.
+Acceptance: `specs/features/BL-1174-deprecate-operator-verbs-scan-docs.feature`.
+How-to: `docs/how-to/BL-1174-deprecate-operator-verbs-scan-docs.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1173: deprecator freshness-gate CLI —
 `node extension/out/tools/deprecate-check.js <root> <BL-id>` prints
 `allow`|`hold` JSON; `promote_and_route_next.sh` fails closed on hold, crash,

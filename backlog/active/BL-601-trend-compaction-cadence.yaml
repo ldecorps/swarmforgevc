@@ -68,6 +68,3 @@ notes: |
     Reliable signal pinned to GH-22 context-events.jsonl compaction:true (BL-665
     producer required); pane spinner text explicitly rejected as primary trigger;
     tokens-at-compaction from input_tokens + context_utilization_pct on event.
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: a2e4e88a34, evidence: backlog/evidence/BL-601-architect-bounce-20260827.md }
