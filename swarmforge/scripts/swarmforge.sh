@@ -144,6 +144,11 @@ SwarmForge launcher
       operator, Telegram front desk. Mono-router dormant rotate targets
       report DORMANT (not FAILED).
 
+  ./swarm heal [project-root]
+      Unblock coordinator bookkeeping: clean master checkout on main,
+      sync local main with origin/main, clear main-sync deadlock when safe.
+      Run when ./swarm status shows BL-891 notes or coordinator is stuck.
+
   ./swarm attach ...
       Attach helpers (see swarm_attach.sh).
 
@@ -161,6 +166,16 @@ if [[ "${1:-}" == "status" ]]; then
     shift
   fi
   exec bb "$SCRIPT_DIR/swarm_status.bb" "$STATUS_ROOT" "$@"
+fi
+
+if [[ "${1:-}" == "heal" ]]; then
+  shift
+  HEAL_ROOT="$PWD"
+  if [[ $# -gt 0 && "${1}" != -* && -d "$1" ]]; then
+    HEAL_ROOT="$(cd "$1" && pwd)"
+    shift
+  fi
+  exec bb "$SCRIPT_DIR/swarm_heal.bb" "$HEAL_ROOT"
 fi
 
 if [[ "${1:-}" == "ensure" ]]; then
