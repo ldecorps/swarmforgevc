@@ -155,3 +155,5 @@ notes: |
   Gherkin lint gate: clean. IR-DRY: 4 findings, all kept - every one sits on the
   quote-style x comma-presence axis this ticket exists to test, and normalising
   any would erase the contrast.
+
+assigned_to: coder
