@@ -1055,26 +1055,6 @@
     return (ticket.scenarios || []).some(function (s) { return s.text.toLowerCase().indexOf(lowerQuery) !== -1; });
   }
 
-  function milestoneEpics(m) {
-    if (m.epics) {
-      return m.epics;
-    }
-    if (m.tickets) {
-      return [{ epicKey: '', tickets: m.tickets }];
-    }
-    return [];
-  }
-
-  function milestoneTicketCount(m) {
-    return milestoneEpics(m).reduce(function (n, epic) { return n + (epic.tickets || []).length; }, 0);
-  }
-
-  function milestoneAllTickets(m) {
-    return milestoneEpics(m).reduce(function (acc, epic) {
-      return acc.concat(epic.tickets || []);
-    }, []);
-  }
-
   function filterDocsTree(tree, query) {
     var trimmed = (query || '').trim();
     if (!trimmed) {
@@ -1085,22 +1065,8 @@
     var matchingIds = {};
     tickets.forEach(function (t) { matchingIds[t.id] = true; });
     var milestones = (tree.milestones || [])
-      .map(function (m) {
-        return {
-          milestone: m.milestone,
-          epics: milestoneEpics(m)
-            .map(function (epic) {
-              return {
-                epicKey: epic.epicKey,
-                title: epic.title,
-                trackerId: epic.trackerId,
-                tickets: (epic.tickets || []).filter(function (t) { return matchingIds[t.id]; }),
-              };
-            })
-            .filter(function (epic) { return epic.tickets.length > 0; }),
-        };
-      })
-      .filter(function (m) { return m.epics.length > 0; });
+      .map(function (m) { return { milestone: m.milestone, tickets: m.tickets.filter(function (t) { return matchingIds[t.id]; }) }; })
+      .filter(function (m) { return m.tickets.length > 0; });
     var filtered = {};
     for (var key in tree) {
       if (Object.prototype.hasOwnProperty.call(tree, key)) {
@@ -1201,7 +1167,7 @@
       return;
     }
     (tree.milestones || []).forEach(function (m) {
-      container.appendChild(navButton(m.milestone + ' (' + milestoneTicketCount(m) + ')', { level: 'milestone', milestone: m.milestone }));
+      container.appendChild(navButton(m.milestone + ' (' + m.tickets.length + ')', { level: 'milestone', milestone: m.milestone }));
     });
   }
 
@@ -1230,7 +1196,7 @@
       container.appendChild(noDataParagraph(tr('milestoneNotFound')));
       return;
     }
-    milestoneAllTickets(milestone).forEach(function (t) {
+    milestone.tickets.forEach(function (t) {
       container.appendChild(navButton(
         t.id + ' — ' + ticketTitle(t) + ' [' + t.status + '] (' + implementationLabel(t) + ')',
         { level: 'ticket', milestone: docsView.milestone, ticketId: t.id },

@@ -216,6 +216,7 @@ test_generate_autonomous_conf.sh	standing
 test_generate_secondary_conf.sh	standing		
 test_generate_systemd_units.sh	standing		
 test_gherkin_lint_gate.sh	standing		
+test_git_env_guard_lib.sh	standing		
 test_github_intake_write.sh	standing		
 test_handoff_state_dir_worktree_root.sh	standing		
 test_handoffd_aged_note_rotate_wiring.sh	standing		

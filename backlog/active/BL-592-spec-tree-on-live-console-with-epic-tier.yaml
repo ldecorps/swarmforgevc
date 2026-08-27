@@ -121,3 +121,6 @@ notes: |
     epic modelling (duplicate header per touched milestone, filtered children);
     live serving via bridge poll of computeDocsTree; schema v2 + PWA migration
     in same parcel. Replaced inline acceptance block.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: 3cd8e6c173, evidence: backlog/evidence/BL-592-architect-bounce-20260827.md }

@@ -50,17 +50,13 @@ test('vision docs pass through as provided', () => {
   assert.deepEqual(tree.vision, vision);
 });
 
-function ticketsInMilestone(milestoneNode) {
-  return milestoneNode.epics.flatMap((epic) => epic.tickets);
-}
-
 test('tickets are grouped into milestone nodes with folder-authoritative status', () => {
   const items = [item({ id: 'BL-100', status: 'active', milestone: 'M4' }), item({ id: 'BL-101', status: 'done', milestone: 'M4' })];
   const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
   assert.equal(tree.milestones.length, 1);
   assert.equal(tree.milestones[0].milestone, 'M4');
   assert.deepEqual(
-    ticketsInMilestone(tree.milestones[0]).map((t) => [t.id, t.status]).sort(),
+    tree.milestones[0].tickets.map((t) => [t.id, t.status]).sort(),
     [['BL-100', 'active'], ['BL-101', 'done']]
   );
 });
@@ -123,7 +119,7 @@ test('omitting the lifecycles argument entirely defaults to no timeline fields (
 test('the milestone ticket summary carries the same implemented flag as the full ticket node, not a separate derivation', () => {
   const items = [item({ id: 'BL-100', status: 'done', milestone: 'M4' }), item({ id: 'BL-101', status: 'active', milestone: 'M4' })];
   const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
-  const byId = Object.fromEntries(ticketsInMilestone(tree.milestones[0]).map((t) => [t.id, t.implemented]));
+  const byId = Object.fromEntries(tree.milestones[0].tickets.map((t) => [t.id, t.implemented]));
   assert.deepEqual(byId, { 'BL-100': true, 'BL-101': false });
 });
 
@@ -463,7 +459,7 @@ test('the milestone hierarchy is kept, but each milestone\'s own ticket summarie
 
   assert.equal(filtered.milestones.length, 1);
   assert.equal(filtered.milestones[0].milestone, 'M7');
-  assert.deepEqual(filtered.milestones[0].epics[0].tickets.map((t) => t.id), ['BL-100']);
+  assert.deepEqual(filtered.milestones[0].tickets.map((t) => t.id), ['BL-100']);
 });
 
 test('a milestone left with zero matching tickets is dropped from the filtered hierarchy', () => {
@@ -488,47 +484,4 @@ test('vision docs and every other tree field pass through untouched by filtering
   assert.deepEqual(filtered.vision, tree.vision);
   assert.equal(filtered.schemaVersion, tree.schemaVersion);
   assert.equal(filtered.sourceSha, tree.sourceSha);
-});
-
-// ── epic tier (BL-592) ───────────────────────────────────────────────────
-
-test('BL-592: tickets group under epic buckets within each milestone', () => {
-  const items = [
-    item({ id: 'BL-100', milestone: 'M8', epic: 'alpha' }),
-    item({ id: 'BL-101', milestone: 'M8', epic: 'beta' }),
-    item({ id: 'BL-102', milestone: 'M8' }),
-  ];
-  const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
-  const epics = tree.milestones[0].epics;
-  assert.equal(epics.length, 3);
-  const alpha = epics.find((e) => e.epicKey === 'alpha');
-  const beta = epics.find((e) => e.epicKey === 'beta');
-  const noEpic = epics.find((e) => e.epicKey === '(no epic)');
-  assert.deepEqual(alpha.tickets.map((t) => t.id), ['BL-100']);
-  assert.deepEqual(beta.tickets.map((t) => t.id), ['BL-101']);
-  assert.deepEqual(noEpic.tickets.map((t) => t.id), ['BL-102']);
-});
-
-test('BL-592: epic tracker supplies header title and is omitted from ticket leaves', () => {
-  const items = [
-    item({ id: 'EPIC-1', type: 'epic', epic: 'EPIC-1', title: 'Tracker title', status: 'paused', milestone: 'M8' }),
-    item({ id: 'BL-100', milestone: 'M8', epic: 'EPIC-1' }),
-  ];
-  const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
-  const epic = tree.milestones[0].epics.find((e) => e.epicKey === 'EPIC-1');
-  assert.equal(epic.title, 'Tracker title');
-  assert.equal(epic.trackerId, 'EPIC-1');
-  assert.deepEqual(epic.tickets.map((t) => t.id), ['BL-100']);
-});
-
-test('BL-592: cross-milestone epic duplicates under each touched milestone', () => {
-  const items = [
-    item({ id: 'BL-100', milestone: 'M8', epic: 'shared' }),
-    item({ id: 'BL-101', milestone: 'M9', epic: 'shared' }),
-  ];
-  const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
-  const m8 = tree.milestones.find((m) => m.milestone === 'M8');
-  const m9 = tree.milestones.find((m) => m.milestone === 'M9');
-  assert.deepEqual(m8.epics[0].tickets.map((t) => t.id), ['BL-100']);
-  assert.deepEqual(m9.epics[0].tickets.map((t) => t.id), ['BL-101']);
 });
