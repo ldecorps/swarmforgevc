@@ -136,3 +136,6 @@ notes: |
   scenarios exist to pin. Left as-is deliberately; do not "resolve" it.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: hardender, class: behavior, commit: 99f023746, evidence: backlog/evidence/BL-941-qa-bounce-20260827.md }
