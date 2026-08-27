@@ -62,6 +62,12 @@ You are the documenter.
   current date IN THE SAME COMMIT as the content change. Never bump the date
   without a content change, and never leave a date bump uncommitted.
 - Commit doc changes to your worktree branch.
+- **Commit subjects (BL-711).** Never start a commit that touches
+  `backlog/evidence/` with the bare parcel prefix `BL-<n>:` — that prefix
+  is reserved for the ticket's prose/acceptance parcel. Use scoped prefixes:
+  `docs(BL-<n>):`, `evidence(BL-<n>):`, or `chore(BL-<n>):` for evidence
+  and stage-pass commits. The `commit-msg` hook refuses bare `BL-<n>:` on
+  evidence paths; vocabulary-04-style acceptance fails the same way at QA.
 
 ## Does Not Own
 - Do not change production code or tests (factual doc-comment fixes excepted).
