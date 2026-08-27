@@ -34,6 +34,7 @@ import {
   OriginCostTrendSeries,
 } from '../metrics/llmCostLedger';
 import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
+import { PRICING_TABLE_AS_OF_LABEL } from '../metrics/syntheticLlmCost';
 import {
   computeRoundsPerCloseSeriesByRole,
   computeDailyReworkSeriesByRole,
@@ -529,7 +530,11 @@ function renderCostPerTicketLines(costPerTicket: CostPerTicketSummary | undefine
 function renderOriginGroupLine(group: LlmCostRollupGroup): string {
   const label = originLabel(group.key);
   const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
-  return `  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`;
+  const billed = `$${group.costUsd.toFixed(2)}`;
+  const synthetic = group.syntheticCostUsd > 0
+    ? ` + ~$${group.syntheticCostUsd.toFixed(2)} est (${PRICING_TABLE_AS_OF_LABEL})`
+    : '';
+  return `  - ${label}: ${billed}${synthetic}${unknownNote}`;
 }
 
 function renderHorizonOriginLines(horizon: LlmCostHorizon, groups: LlmCostRollupGroup[] | undefined): string[] {
