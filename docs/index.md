@@ -93,6 +93,7 @@ expects them, and are not migrated or rewritten here.
 - [Host-resolved Stryker mutation concurrency](how-to/BL-786-mutation-concurrency-host-resolved.md) — `mutation-concurrency.js` sizes workers from free RAM + BL-427 peak; `MUTATION_CONCURRENCY` pin wins (BL-786).
 - [Supervisor threads are not front-desk topics](how-to/BL-695-supervisor-threads-are-not-front-desk-topics.md) — SUP/unbound never write tracked topic JSON; icons stay durable off-git (BL-695).
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
+- [QA changed-path unit test inventory](how-to/BL-1164-qa-changed-path-unit-test-gate.md) — Article 4.5: run mapped unit/wiring tests per changed production path; bounce uncovered to coder (BL-1164).
 - [Thin-main CRAP-visible CLI gate](how-to/BL-534-thin-main-crap-visible-cli-gate.md) — tools `main()` must be exported and CC≤2; parcel never allowlists (BL-534).
 - [Reconcile import skips the property-suite guard](how-to/BL-1121-reconcile-import-skips-property-suite-guard.md) — byte-identical mid-merge import → `skip-reconcile-import`; env override stays recovery-only (BL-1121).
 - [Property-suite fixtures must not mutate shared main](how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md) — canary bare/HEAD around the property lane; refuse reset-to-origin when ahead (BL-1124).

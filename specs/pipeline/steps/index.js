@@ -647,6 +647,7 @@ const DOMAINS = [
   require('./bl1017BabysitterdRecreatesVanishedStandingSessionSteps'),
   require('./bl1169BabysitterHalfLaunchStarvationAutoRepairSteps'),
   require('./bl1163HandoffdParseErrorBl668ParenHotfixSteps'),
+  require('./bl1164QaChangedPathUnitTestGateSteps'),
   require('./bl1173DeprecatorFreshnessGateCliSteps'),
   require('./bl1174DeprecateOperatorVerbsScanDocsSteps'),
   require('./bl738ChunkingPropertySteps'),
