@@ -96,11 +96,12 @@ later, separate call.
 
 ## Fail-open independence from the architecture diagrams
 
-The two diagram sources — architecture diagrams and this chart — are each
-wrapped in their own `try`/`catch` in `handoffd.bb`
+The diagram sources — architecture diagrams, this chart, and (since BL-1184)
+the [shift-velocity chart](BL-1184-briefing-shift-velocity-chart.md) — are
+each wrapped in their own `try`/`catch` in `handoffd.bb`
 (`diagram-section-from-sources` in `briefing_email_lib.bb`) before being
 concatenated into one email section. One source throwing, returns `nil`, or
-renders nothing cannot suppress the other, and cannot suppress the send
+renders nothing cannot suppress the others, and cannot suppress the send
 itself:
 
 - Architecture diagrams fail, chart succeeds → email still carries the

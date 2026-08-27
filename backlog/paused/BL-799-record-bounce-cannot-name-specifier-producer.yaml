@@ -73,3 +73,16 @@ notes: |
      producer.
   2. Run with no arguments; assert the usage text lists specifier among
      producing roles.
+
+occurrences:
+  - "[2026-08-27] BL-1184: the documenter bounced a spec-gap defect to the
+    specifier (malformed required_wiring rows blocking the pre-QA gate). The
+    specifier fixed the spec and tried to record the send-back per its own
+    prompt's BL-635 rule; record-bounce.js printed usage and refused, because
+    --role still accepts only coder|cleaner|architect|hardender|documenter.
+    Evidence file backlog/evidence/BL-1184-bounce-20260827.md was committed
+    instead, so the incident is durable in the corpus but absent from the
+    store the daily briefing and the per-role bounce-rate experiment read.
+    That is the concrete cost of leaving this at severity: low — every
+    specifier-owned bounce is invisible to the numbers, and spec-gap is
+    precisely the class a lean pass would want to see trending."

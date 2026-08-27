@@ -1,4 +1,5 @@
 import { Resvg } from '@resvg/resvg-js';
+import { escapeXmlForSvg, niceChartAxisMax } from './briefingChartSvgCommon';
 import { NotDoneBurndownSeries, NotDoneBurndownProjection } from './notDoneBurndown';
 
 // SVG/PNG rendering for the not-done (open) ticket chart on the daily
@@ -11,21 +12,6 @@ export const NOT_DONE_BURNDOWN_DIAGRAM_NAME = 'not-done-burndown';
 // Chart SVG is 960px wide; 2x is enough for email/high-DPI without the
 // multi-second cost of the architecture diagrams' 3200px width.
 export const BURNDOWN_RENDER_WIDTH = 1920;
-
-function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function niceMax(value: number): number {
-  if (value <= 0) {
-    return 10;
-  }
-  const padded = value * 1.1;
-  const mag = Math.pow(10, Math.floor(Math.log10(padded)));
-  const norm = padded / mag;
-  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  return nice * mag;
-}
 
 /**
  * Pure (BL-910): the caption line for the projection, derived from the same
@@ -66,7 +52,7 @@ export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
   const points = data.series;
-  const maxY = niceMax(Math.max(...points.map((p) => p.remaining), 1));
+  const maxY = niceChartAxisMax(Math.max(...points.map((p) => p.remaining), 1), 10);
   const n = Math.max(points.length - 1, 1);
 
   const xy = (i: number, remaining: number): [number, number] => {
@@ -111,7 +97,7 @@ export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
     .sort((a, b) => a - b)
     .map((i) => {
       const [x] = xy(i, 0);
-      return `<text x="${x.toFixed(1)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#555" font-family="ui-monospace,Menlo,monospace">${escapeXml(points[i].label)}</text>`;
+      return `<text x="${x.toFixed(1)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#555" font-family="ui-monospace,Menlo,monospace">${escapeXmlForSvg(points[i].label)}</text>`;
     })
     .join('\n');
 
@@ -123,8 +109,8 @@ export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `<rect width="100%" height="100%" fill="#f7f5f0"/>`,
     `<text x="${padL}" y="26" font-size="18" font-weight="700" fill="#1a3a4a" font-family="system-ui,sans-serif">Backlog burndown — open tickets remaining, last ${data.windowDays} days</text>`,
-    `<text x="${padL}" y="44" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXml(subtitle)}</text>`,
-    `<text x="${padL}" y="58" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXml(projectionLine)}</text>`,
+    `<text x="${padL}" y="44" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXmlForSvg(subtitle)}</text>`,
+    `<text x="${padL}" y="58" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXmlForSvg(projectionLine)}</text>`,
     ...gridLines,
     `<polyline fill="none" stroke="#1a3a4a" stroke-width="2.6" points="${poly}"/>`,
     dots,

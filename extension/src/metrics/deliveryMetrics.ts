@@ -622,3 +622,11 @@ export function computeDeliveryMetrics(targetPath: string, roles: RoleWorktree[]
     suiteDurationTrend: computeSuiteDurationTrend(targetPath, roles, nowMs),
   };
 }
+
+// BL-1184: shift velocity (8h landed counts) — same git lifecycle adapter.
+export {
+  computeDailyShiftVelocitySeries,
+  buildShiftVelocityFromGitHistory,
+  countLandedInEightHourWindow,
+  SHIFT_VELOCITY_LIFECYCLE_ADAPTER,
+} from './shiftVelocity';
