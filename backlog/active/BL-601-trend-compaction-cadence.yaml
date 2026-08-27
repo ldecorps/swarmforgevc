@@ -13,8 +13,9 @@ assigned_to: coder
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-601-trend-compaction-cadence.feature
-# Rematch 2026-08-27: first-lineage / bounce / cleaner tips superseded by
-# tip-pure acyclic rematch on hardener→documenter tip (content folded in).
+# Rematch 2026-08-27: tip-pure after QA bounce D1 (entangled documenter tip
+# bc6bdf0497). First-lineage / architect / cleaner tips superseded; Spec/index
+# rematched atop origin/main.
 abandoned_commits:
   - 8cea3c3e59
   - d483f10527
@@ -23,6 +24,15 @@ abandoned_commits:
   - 2f777fc113
   - a2e4e88a34
   - 2faa3e5210
+  - d319be02a2
+  - e6913c503a
+  - d51323483e
+  - e7aa38561d
+  - a02e92b592
+  - d6284a12a8
+  - bc6bdf0497
+  - aa6192976e
+  - 995881da0c
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl601TrendCompactionCadenceSteps::acceptance handler registered"

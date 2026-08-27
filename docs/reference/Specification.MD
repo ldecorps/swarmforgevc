@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-601: context-compaction cadence trend —
+structured `compaction:true` context-events only (never pane spinner text);
+derive `{role, model, tokens-at-compaction, ts}` to
+`.swarmforge/telemetry/compaction-<YYYY-MM>.jsonl`; pure aggregator yields
+compactions/hr + token distribution per role via `compactionCadence.ts` →
+`computeTrend` (inward import; `trend.ts` must not re-export
+`compactionCadence` — keeps the metrics graph acyclic); undetectable roles
+read NA, never a fabricated zero. Measurement only. Acceptance:
+`specs/features/BL-601-trend-compaction-cadence.feature`. How-to:
+`docs/how-to/BL-601-trend-compaction-cadence.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-597: self-heal events trend —
+structured `{type, subject, reason, at}` records appended at existing
+recovery log sites to `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl`
+(gitignored); pure `aggregateSelfHealCounts` → `computeTrend` per type;
+failed append never blocks or alters recovery. Types:
+`stale-build-recompile`, `supervisor-respawn`, `kill-all-swarm`,
+`rotation-respawn`, `claim-heal`. Measurement only. Acceptance:
+`specs/features/BL-597-trend-self-heal-events.feature`. How-to:
+`docs/how-to/BL-597-trend-self-heal-events.md`.)
+Prior entry —
+**Last Updated:** August 27, 2026 (BL-980: Pipeline Board RECENTLY CLOSED
+lines append a relative closure-age suffix from durable `doneClosedAtMs`
+(`formatRecentlyClosedAgeLabel` in `pipelineBoard.ts`; stamped once in
+`conciergeTick.ts`). Ladder: `just now` / `Nmin ago` / `Nh ago` / `Nd ago`.
+No suffix when no closure instant; plain-text and HTML paths agree; other
+sections unchanged. Acceptance:
+`specs/features/BL-980-recently-closed-elapsed-time.feature`. How-to:
+`docs/how-to/BL-980-recently-closed-elapsed-time.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1169: babysitter half-launch and
 swarm-starved queue bounded auto-repair — `proc-*` half-launch CRIT
 `assoc`s `:ensure-session` when standing+allowed; swarm-starved streak ≥3
@@ -7286,6 +7316,122 @@ to the project path; fixtures may omit it and emit nothing.
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
 - **BL-823** — availability ledger (sibling monthly JSONL under
   `.swarmforge/telemetry/`).
+- **BL-597** — self-heal events trend (sibling monthly JSONL; same
+  `computeTrend` posture; see section below).
+
+## Self-Heal Events Trend (BL-597)
+
+The swarm heals itself constantly — stale-build recompiles, supervisor
+respawns, `kill_all_swarm`, mono-router rotation respawns, claim-heal —
+but historically counted none of it; a recovery that fixed a live outage
+stayed invisible until grepped by hand. BL-597 structures each existing
+prose log moment as a durable event and trends **per-type counts** over
+time. **Measurement only** — recovery behaviour is unchanged; a failed
+telemetry append must not block or alter whether self-heal runs.
+
+### Storage
+
+`.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl` — append-only, one JSON
+object per line, monthly files. Explicitly listed in `.gitignore` (and
+covered by the top-level `.swarmforge/` ignore). Clojure sites call
+`self-heal-telemetry-lib/append-self-heal-event!` (failures swallowed);
+tests may use `selfHealTelemetryStore.ts` / `self_heal_telemetry_cli.bb`.
+
+Record shape:
+
+```json
+{"type":"stale-build-recompile","subject":"front-desk-supervisor","reason":"recompiling before respawn","at":"2026-08-27T09:00:00.000Z"}
+```
+
+### Event types and emit sites
+
+| Type | Subject (typical) | Emit at existing log site |
+|------|-------------------|---------------------------|
+| `stale-build-recompile` | `front-desk-supervisor` | `front_desk_supervisor.bb` `ensure-current-build!` (with `stale-build-detected`) |
+| `supervisor-respawn` | `front-desk-supervisor` | `front_desk_supervisor.bb` `log-event!` `:started` |
+| `kill-all-swarm` | `lifecycle` | `kill_pipeline_swarm.sh` after SUCCESS (via CLI) |
+| `rotation-respawn` | `mono-router-resident` | `handoff_lib.bb` mono-router persona swap |
+| `claim-heal` | `handoffd` | `handoffd.bb` resume orphaned `in_process` |
+
+Each record is emitted **at the existing prose log site** for that recovery
+action — no parallel detection path.
+
+### Aggregation
+
+`selfHealTelemetry.ts` `aggregateSelfHealCounts` folds an **in-memory**
+event list into per-type `trend.ts` / `computeTrend` series (current /
+prior / delta / direction) — file-free aggregation.
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
+  `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
+
+## Context-Compaction Cadence (BL-601)
+
+Compaction frequency is a proxy for which roles are under context pressure,
+but the pane spinner strings (`auto-compact NN%`, `Compacting`) change between
+CLI versions and must never be the primary signal. BL-601 derives compaction
+records only from structured GH-22 context-events with `compaction: true`
+(BL-665 producer), pairs each with the token level at that instant
+(`input_tokens` → `tokens-at-compaction`), and trends **compactions/hour** plus
+the **token-at-compaction distribution** per role. **Measurement only** —
+this ticket never tunes compaction thresholds or alters agent behaviour.
+Pairs naturally with BL-596 (a persona that compacts constantly is also a
+rotation-cost signal).
+
+### Storage
+
+`.swarmforge/telemetry/compaction-<YYYY-MM>.jsonl` — append-only, one JSON
+object per line, monthly files (same posture as the human-loop and
+availability ledgers). Covered by the top-level `.swarmforge/` gitignore.
+`compactionTelemetryStore.ts` appends fire-and-forget; write failures are
+swallowed so an unwritable ledger never fails the emitting path.
+
+Derived record shape (from a `compaction:true` context event):
+
+```json
+{"role":"coder","model":"claude-sonnet-5","tokensAtCompaction":180000,"timestamp":"2026-08-27T06:00:00Z","timestampMs":1756274400000}
+```
+
+### Signal rules
+
+| Input | Result |
+|-------|--------|
+| Context-event with `compaction: true` | One compaction record (`role`, `model`, `tokensAtCompaction` = `inputTokens`, `timestamp`) |
+| Context-event with `compaction: false` / missing | No record |
+| Pane spinner text alone | No record |
+
+### Aggregation
+
+`compactionCadence.ts` folds an **in-memory** record list — file-free:
+
+- Per detectable role, per daily window: `compactionsPerHour` and
+  min / median / max token-at-compaction.
+- `trendForCompactionCadencePerHour` / the window series feed `computeTrend`
+  for current / prior / delta / direction.
+- Roles **not** in the caller's `detectableRoles` allow-list return
+  `applicable: false` with an empty series (NA) — never a fabricated zero,
+  even when unrelated records exist for other roles.
+
+### Dependency direction (acyclic)
+
+`compactionCadence` imports `computeTrend` from `./trend`. Callers that need
+`trendForCompactionCadencePerHour` load it from `out/metrics/compactionCadence`.
+`trend.ts` must **not** re-export anything from `./compactionCadence` — that
+back-edge was the standing architect bounce (cycle) this rematch closed.
+
+### See Also
+
+- **BL-665** / **GH-22** — structured `context-events.jsonl` producer
+  (`compaction:true` is the primary detection signal).
+- **BL-596** — rotation-cost trend (cross-read with high compaction cadence).
+- **BL-595** — human-loop reliability ledger (sibling monthly JSONL /
+  `computeTrend` posture).
+- **BL-096** — shared `computeTrend` / `TrendResult` framework.
+- **BL-594** — swarm-behaviour-trends epic.
 
 ## Flow Watchdog (BL-577)
 
