@@ -44,7 +44,7 @@ invariants:
 
 required_wiring:
   - "swarmforge/scripts/check_property_suite_drift.sh::property suite gate::green or allowlisted standing reds; unrelated green commits not refused"
-  - "extension/ npm run test:properties::standing inventory restored or allowlisted"
+  - "swarmforge/scripts/property_suite_standing_allowlist.tsv::allowlist::standing inventory restored or allowlisted"
   - "specs/pipeline/steps/index.js::bl1175PropertySuiteStandingRedsSteps::acceptance handler registered"
 
 description: |
