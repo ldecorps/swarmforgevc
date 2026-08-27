@@ -51,6 +51,7 @@ const DOMAINS = [
   require('./bl1143ColdSwapDayShiftOllamaQwenSteps'),
   require('./bl595HumanLoopReliabilityTrendSteps'),
   require('./bl597TrendSelfHealEventsSteps'),
+  require('./bl602TrendHandoffLatencySteps'),
   require('./bl612ClaimProgressAcceptanceStepHandlersSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),
