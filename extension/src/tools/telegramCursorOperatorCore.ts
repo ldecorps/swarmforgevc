@@ -20,6 +20,7 @@ const SOFT_VERBS = new Set([
   '/quiet',
   '/redeploy',
   '/deprecate',
+  '/postmortem',
 ]);
 
 const HARD_VERBS = new Set([

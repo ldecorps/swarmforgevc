@@ -809,6 +809,7 @@ const DOMAINS = [
   require('./bl710OneClearTelegramRedeployPathSteps'),
   require('./bl834BubbleHostThinkingPageSteps'),
   require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
+  require('./bl1170PostmortemOperatorVerbFailureClassLearnSteps'),
 ];
 
 function registerSteps(registry) {
