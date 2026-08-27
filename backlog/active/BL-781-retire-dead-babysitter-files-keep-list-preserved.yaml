@@ -30,44 +30,46 @@ source: |
   extended by the specifier's own audit of the full KEEP list, which found a
   second dead wake-queue file the coder had not flagged.
 
-
-
-# Tip-pure rematch 6 (union).
+# Tip-pure rematch 5.
 abandoned_commits:
-  - 85bbc7f7ca
-  - 948e9ea77e
-  - 20cac5476b
-  - 57ac85029c
-  - 82118c8efd
-  - ba5999db3d
-  - 44ce7035fd
-  - ffa3a0dc7d
-  - 68afc3a49f
+  - 919d916091
+  - c293b301ea
+  - 909c0e947e
+  - bbaac767b9
+  - 0057afe965
+  - 7b4737ee64
+  - cb20459d4a
+  - 81d1993924
+  - dca6b2088e
+  - 9dfef3e418
+  - 5f5af8726d
+  - cf209925de
+  - 57b650ed0b
+  - 96a0ff42c6
+  - 6705e62cbe
+  - 9d45e93638
   - 91bfa5feeb
   - 6d420c6091
   - 2ceb9960e8
+  - 57ac85029c
+  - ba5999db3d
+  - 44ce7035fd
+  - 948e9ea77e
+  - 60fa4e549e
+  - 85bbc7f7ca
+  - 37846f8180
+  - 82118c8efd
+  - 20cac5476b
+  - 801bab8ab2
+  - 6c1847ba4c
   - 7cdbb957c1
   - c2d2945ec6
   - 57860c32e9
   - 6ba1bcaf94
   - 4cfb903e97
-  - 9d45e93638
-  - 801bab8ab2
-  - 6c1847ba4c
-  - 80bd4fe0e3
-  - 249f4d0b78
-  - 8ada40fbde
-  - c293b301ea
-  - cf209925de
-  - 57b650ed0b
-  - 96a0ff42c6
-  - 6705e62cbe
+  - 36f3600560
+  - c1ff3cf95f
   - b4bbe74de8
-  - 81d1993924
-  - dca6b2088e
-  - 9dfef3e418
-  - 5f5af8726d
-  - 6c1847ba40
   - 69d60f6208
   - 31ede8f992
   - b56ca33e92
@@ -79,37 +81,8 @@ abandoned_commits:
   - 0b352a2fc3
   - efbc2d8558
   - 88360ae238
-  - 909c0e947e
-  - 7b4737ee64
-  - cb20459d4a
-  - bbaac767b9
-  - 0057afe965
-  - b91c0bfb5c
-  - c0ffa84591
-  - 9276c08354
-  - 021a967c09
-  - efdc056eca
-  - f8505e45e9
-  - dafdc9c713
-  - 9559add8b5
-  - 3132e9dcc4
-  - 800bccf535
-  - 8da797377d
-  - 23aa89ba7b
-  - 87b1ac9538
-  - 9a9780bcae
-  - 85c2de2816
-  - 5ab7691079
-  - 65f50e2fd4
-  - ede899fcbe
-  - 6b5bfa3a1c
-  - 429a9957b0
-  - be2c162fb6
-  - 675d4e99c7
-  - 87ddcaacda
 
 acceptance: specs/features/BL-781-retire-dead-babysitter-files-keep-list-preserved.feature
-
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl781RetireDeadBabysitterFilesKeepListPreservedSteps::acceptance handler registered"
@@ -157,3 +130,6 @@ notes: |
   or the step-handler allowlist. What remains is the live caller set. It was
   empty for these three and non-empty for the rest.
   [2026-08-27] specifier: feature file minted; coordinator may route to coder.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: b9e93b976f, evidence: backlog/evidence/BL-781-qa-bounce-rematch4-20260827.md }
