@@ -6,12 +6,9 @@ Cursor Remote, and it must not silently drop long replies or failed sends.
 
 ## Behaviour
 
-1. **Bubble topic when bound** — `mirrorLetsTalkTurnToBubble` posts to the bound
-   Bubble topic (`bubbleTopicId` / topic-map `BUBBLE`) via
-   `effectiveLetsTalkMirrorTopicId`. When Bubble is unbound, the mirror falls
-   back to **Cursor Remote** (BL-709 scenario 07). When Bubble and Cursor Remote
-   share the same id, treat Bubble as unbound — never duplicate into the host
-   topic.
+1. **Bubble topic only** — `mirrorLetsTalkTurnToBubble` posts to the bound
+   Bubble topic (`bubbleTopicId` / topic-map `BUBBLE`). If Bubble is unbound or
+   identical to Cursor Remote, the mirror skips (no host-topic dump).
 2. **Shared chunker** — text is split with `splitTelegramChunks` (same helper
    Cursor Remote uses). Length alone never truncates a transcript.
 3. **Fails loudly** — when a chunk send returns `success: false` after retries,

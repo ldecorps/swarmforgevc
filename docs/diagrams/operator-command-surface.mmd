@@ -6,7 +6,7 @@ flowchart LR
     shiftStatus["/shift status /holiday list"]
   end
   subgraph soft [Soft confirm]
-    softV["/compile /pull /syncenv /redeploy (+ miniapp|frontdesk|all)"]
+    softV["/compile /pull /syncenv /redeploy"]
     policy["/shift start /holiday add /oncall"]
   end
   subgraph hard [Hard confirm]

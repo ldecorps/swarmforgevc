@@ -8,7 +8,7 @@ ask for Confirm before they mutate anything. Swarm relaunches re-read
 
 - **Read** (`/status`, `/update`, `/log`, `/doctor`, `/tunnel`, `/conf`, `/help`,
   `/confirm-off`): run immediately.
-- **Soft** (`/compile`, `/pull`, `/syncenv`, `/redeploy`, `/redeploy miniapp`, `/redeploy frontdesk`, `/redeploy all`, …): one Confirm tap.
+- **Soft** (`/compile`, `/pull`, `/syncenv`, `/redeploy`, …): one Confirm tap.
 - **Hard** (`/restart`, `/bounce …`, `/ensure`, `/stop`, …): Confirm with an
   explicit hard warning.
 
@@ -16,8 +16,7 @@ ask for Confirm before they mutate anything. Swarm relaunches re-read
 
 ## Env reload
 
-`/restart`, `/start`, `/bounce swarm|extension|all`, and every `/redeploy` form
-(`/redeploy`, `/redeploy miniapp`, `/redeploy frontdesk`, `/redeploy all`)
+`/restart`, `/start`, `/bounce swarm|extension|all`, and bridge redeploy paths
 merge `.swarmforge/swarm.env` over the host environment before child spawn
 (`buildLaunchEnv` / bridge start scripts). Values are never echoed by
 `/syncenv` — only key presence.

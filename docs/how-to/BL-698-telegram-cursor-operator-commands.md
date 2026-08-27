@@ -10,7 +10,7 @@ Confirm + env-reload note: [BL-702 how-to](BL-702-operator-confirm-env-reload.md
 | Tier | Gate | Examples |
 |------|------|----------|
 | Read | none | `/status` `/doctor` `/tunnel` `/conf` `/autopilot dry` `/land dry` `/shift status` `/holiday list` |
-| Soft | one Confirm tap | `/compile` `/pull` `/syncenv` `/redeploy` … `/shift start` `/holiday add` `/hold` `/reinstate` |
+| Soft | one Confirm tap | `/compile` `/pull` `/syncenv` `/redeploy` `/shift start` `/holiday add` `/hold` `/reinstate` |
 | Hard | two-step confirm | `/restart` `/bounce` `/hydrate` `/mint` `/autopilot` `/land` `/ensure` `/stop` `/kill-all` `/drain-agents` `/drain-swarm` `/ambulance` |
 
 `/confirm-off` clears a pending confirm.
@@ -41,24 +41,9 @@ Holiday quiet refuses `/pilot` `/expedite` `/autopilot` `/land` `/hydrate` `/min
 
 Durable state lives only under `.swarmforge/operator/` (gitignored).
 
-## Redeploy forms (BL-710)
-
-After changing `extension/` code, pick the form that matches what you touched. Each is **soft** tier (one Confirm tap). The reply names what actually restarted — never a process the command did not bounce.
-
-| Form | Restarts | Leaves running |
-|------|----------|----------------|
-| `/redeploy` | Cursor bridge (Cursor Remote slash verbs, Let's Talk text pairing) | front desk, Mini App bridge |
-| `/redeploy miniapp` | headless Mini App bridge (`/lets-talk`) | Cursor bridge, front desk |
-| `/redeploy frontdesk` | front-desk supervisor (bridge + bot: approvals, role topics, reply-outbox relay) | Cursor bridge, Mini App bridge |
-| `/redeploy all` | **all three** Telegram runtimes above | — (status reply lists every process that came back) |
-
-`/compile` alone rebuilds the extension but **restarts nothing**. `/help` lists every redeploy form. `/log redeploy` (or `/log bridge`) tails compile output and which child returned.
-
-Wrong topic or non-principal sender → no-op (no confirm offered).
-
 ## Env reload
 
-`/restart`, `/bounce`, and every `/redeploy` form re-merge `.swarmforge/swarm.env` into child launch env. `/syncenv` reports key presence only (never values).
+`/restart`, `/bounce`, and `/redeploy` re-merge `.swarmforge/swarm.env` into child launch env. `/syncenv` reports key presence only (never values).
 
 ## CreatePlan confirm (BL-1113 stamp-off)
 

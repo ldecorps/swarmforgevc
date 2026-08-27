@@ -49,20 +49,13 @@ Telegram WebView storage does **not** carry over to an installed Chrome PWA.
 
 ---
 
-## Telegram turn mirror (BL-709)
+## Cursor Remote mirroring
 
-On each successful Let's Talk turn, the bridge best-effort mirrors `replyText` via
-`effectiveLetsTalkMirrorTopicId`: when a dedicated **Bubble** topic is bound,
-both sides of the turn post there and **Cursor Remote** stays operator-control
-only (slash verbs and typed direct prompts). When Bubble is unbound, the mirror
-falls back to the **Cursor Remote** topic — the pre-BL-709 behaviour. Numbered choice lists (2–10 options)
-are posted as a Telegram poll on the same destination and recorded in
+On each successful Let's Talk turn, the bridge best-effort mirrors `replyText` to the
+Cursor Remote Telegram topic (`onTurnSuccess`). Numbered choice lists (2–10 options)
+are also posted as a Telegram poll and recorded in
 `cursor-bridge-state.json` → `pendingChoicePolls`. Poll answers become follow-up
 prompts to the same agent. Mirror failures never fail the Mini App turn.
-
-The front-desk topic map exported to Concierge must claim neither Bubble nor
-Cursor Remote — both are bridge-owned host-agent surfaces, not assignable role
-topics.
 
 ---
 

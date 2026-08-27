@@ -58,9 +58,6 @@ Unauthorised sender or wrong topic → ignore/refuse with no side effect (same b
 | `/hydrate [INTAKE\|BL-xxx]` | **Specifier-only wake:** start the sleeping swarm with only the specifier; drain/spec the intake (or finish an underspecced ticket); **auto drain-stop as soon as the specifier hands off to coder** — coder does not start |
 | `/mint [INTAKE\|slug]` | Alias of `/hydrate` with intake-first wording (“mint a BL from this intake”); same lifecycle and stop-on-coder-handoff contract |
 | `/redeploy` | compile + restart supervised cursor bridge (**must reload swarm.env**) |
-| `/redeploy miniapp` | compile + bounce headless Mini App bridge (`/lets-talk`) |
-| `/redeploy frontdesk` | compile + bounce front-desk supervisor (bridge + bot); **must reload swarm.env** |
-| `/redeploy all` | compile + restart cursor bridge, Mini App bridge, and front desk; status reply names each process that came back |
 | `/log [expedite\|redeploy\|bridge\|…]` | tail operator logs |
 
 ### Prep-pass ladder (pin)

@@ -28,19 +28,16 @@ The screen shows:
 - a **New session** control;
 - a short text transcript of the latest agent reply after each turn.
 
-Successful audio turns are also mirrored (best-effort) to the standing **Bubble**
-Telegram topic when the bridge has bound one (`BUBBLE` / `bubbleTopicId`).
-When Bubble is not yet bound, the mirror falls back to the **Cursor Remote**
-topic — the previous behaviour (BL-709). Numbered choice polls ride the same
-destination as the turn transcript.
+Successful audio turns are also mirrored (best-effort) to the Cursor Remote
+Telegram topic, including numbered choice polls when the reply lists options.
 
 **Amendments:**
 
 - [Local hybrid audio](../reference/specs/BL-696-amendment-local-hybrid-audio.md)
   (2026-07-27) — whisper.cpp STT + browser `speechSynthesis`.
 - [Operator console post-ship](../reference/specs/BL-696-amendment-lets-talk-operator-console.md)
-  (2026-07-29) — PWA auth, hold music, wake lock, Pause all, Bubble-topic
-  mirror (Cursor Remote fallback when unbound), `/redeploy miniapp`, miniapp watchdog.
+  (2026-07-29) — PWA auth, hold music, wake lock, Pause all, Cursor Remote
+  mirror, `/redeploy miniapp`, miniapp watchdog.
 - [Floating minimize](BL-706-lets-talk-floating-minimized-chat.md)
   (2026-07-29) — compact draggable bubble with record + pause + expand.
 - [Android floating overlay companion](BL-707-android-floating-overlay-companion.md)

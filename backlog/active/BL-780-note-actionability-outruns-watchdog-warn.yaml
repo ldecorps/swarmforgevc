@@ -1,0 +1,134 @@
+id: BL-780
+title: "note_actionable_after_ms (20m) is longer than flow_watchdog_warn_ms (15m): an aged note ALWAYS alarms the human before the swarm is allowed to rotate for it"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: low
+priority: 185
+direction: aligned
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+abandoned_commits:
+  - a3b53c22f3
+  - b400bc6dee
+  - 823576ac63
+  - 8fd94aece0
+  - 8105061b02
+  - 893302e1c2
+  - 7d69627835
+  - ae5b287dc6
+  - 50be3c579e
+  - e0e02daa34
+  - 74de51055d
+  - 84c4f12ac2
+  - b15ddf55d0
+  - c0823b549d
+  - 0896667ba5
+  - 53c7fbaf2b
+  - 7c0e7426dd
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "default constant and startup log only — no style surface"
+  hardender: "bb outside Stryker mutate scope; ordering covered by unit + acceptance fixtures"
+  documenter: "BL-576 how-to default comment update optional in same parcel"
+human_approval: approved
+approval_context: >
+  A one-line default change with a real trade-off only the human should make,
+  surfaced by the specifier on 2026-08-01 while speccing BL-651 (whose Shape
+  requires the rotation threshold to sit "comfortably BELOW the watchdog's
+  WARN threshold"). BL-651 meets that for git_handoffs; notes cannot, because
+  BL-576's 20-minute actionability gate outlives the 15-minute warn tier.
+  THE CHOICE: (a) lower `note_actionable_after_ms` toward ~10 min — the swarm
+  drains broadcast notes before the human is alarmed, at the cost of BL-576's
+  thrash-protection window; (b) raise `flow_watchdog_warn_ms` above the note
+  gate — quieter alarms, slower human notice of a real stall; (c) leave both
+  and accept that every aged note alarms first. Approve with the letter you
+  want; reject to keep (c) explicitly.
+  Specifier applied option (a) at mint 2026-08-27: no letter was recorded in
+  the approval topic; (a) matches BL-651 Shape (rotation below warn).
+
+source: |
+  Specifier, 2026-08-01, while writing BL-651's spec. Verified against the
+  live effective config rather than the tracked defaults:
+  `flow_watchdog_lib.bb/read-thresholds` → `{:warn-ms 900000,
+  :escalate-ms 3600000}`; `mono_router_lib.bb/default-note-actionable-after-ms`
+  → 1200000. The active pack conf (`swarmforge/packs/mono-router.conf`, per
+  `.swarmforge/swarm-identity`) overrides none of the three.
+
+acceptance: specs/features/BL-780-note-actionability-outruns-watchdog-warn.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl780NoteActionabilityOutrunsWatchdogWarnSteps::acceptance handler registered"
+  - "swarmforge/scripts/handoffd.bb::config-threshold-inversion::startup warning when note gate outruns warn"
+
+invariants:
+  - "Every rotation-actionability threshold shipped or configured for notes sits strictly below flow_watchdog_warn_ms for the same effective config — an inverted pair is reported at daemon start, never silently accepted."
+  - "BL-576 broadcast-thrash protection is unchanged at whatever note_actionable_after_ms value ships: a five-role merge-up still drains at most one role per sweep with ROTATE_HOME between drains."
+
+description: |
+  ## The defect
+
+  Two thresholds govern the same waiting parcel and they are ordered the
+  wrong way round:
+
+  - `note_actionable_after_ms` = 20 min — before this, the chase sweep is
+    forbidden to rotate the resident for a note in a dormant queue
+    (BL-576, protecting against QA's five-role merge-up broadcast thrashing
+    the resident through five rotations).
+  - `flow_watchdog_warn_ms` = 15 min — after this, the human is alarmed that
+    the parcel is stalled.
+
+  So for the whole 15–20 minute window the system alarms a human about a
+  parcel it is itself refusing to act on, and every note that ages into
+  actionability has already produced a warn. BL-651's Shape names the
+  intended relationship explicitly ("the swarm drains a queue before the
+  human is ever alarmed about it"); this is the one parcel type where the
+  current defaults make that impossible.
+
+  ## Human choice (option a)
+
+  Lower the shipped default `note_actionable_after_ms` to ten minutes
+  (600000 ms) — the same posture as BL-651's `rotation_starve_after_ms`
+  default — so note rotation can act before the fifteen-minute warn tier.
+  Do not raise `flow_watchdog_warn_ms` or leave the inversion in place.
+
+  ## Shape
+
+  Whichever numbers ship, the durable part is ORDERING: every threshold that
+  gates rotating for a parcel must be lower than the threshold that alarms a
+  human about that same parcel. A config that inverts them is reported once
+  at daemon start (`config-threshold-inversion` log line naming both values),
+  never silently accepted or auto-rewritten.
+
+  ## BL-576 retirement (BL-1006)
+
+  When this lands, retire BL-576 aged-note-actionability-04's default row
+  (empty conf line → 10 minutes, not 20). Do not reword the other rows.
+
+qa_e2e_procedure: >
+  (1) Unit tests on mono_router_lib / flow_watchdog_lib defaults show
+  note_actionable_after_ms < flow_watchdog_warn_ms.
+  (2) Fixture conf with inverted ordering emits config-threshold-inversion once
+  at handoffd startup and handoffd keeps running.
+  (3) BL-576 scenario 05 regression green (five-role merge-up one rotation per
+  sweep).
+  (4) Acceptance feature green after compile.
+
+out_of_scope: |
+  - BL-651's own `rotation_starve_after_ms` (already specced below warn).
+  - The watchdog's tier logic and escalate tier (BL-650 / BL-577).
+  - Clamping a bad config automatically — report, do not silently rewrite an
+    operator's number.
+
+notes: |
+  Orthogonal to BL-651 in behaviour but adjacent in files
+  (`mono_router_lib.bb`), so do not run the two concurrently — sequence this
+  after BL-651 lands. BL-651 is in backlog/done/ as of 2026-08-26.
+  [2026-08-27] specifier: feature file minted; option (a) applied per BL-651
+  Shape; coordinator may route to coder.
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 53c7fbaf2b, evidence: backlog/evidence/BL-780-qa-bounce-rematch-20260827.md }
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: c0823b549d, evidence: backlog/evidence/BL-780-qa-bounce-rematch2-20260827.md }

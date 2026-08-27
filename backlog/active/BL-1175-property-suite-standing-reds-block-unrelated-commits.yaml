@@ -24,9 +24,8 @@ abandoned_commits:
   - 1eb963f497
   - 00ea48311d
   - abef89c58b
-  - 6f3de18daf
-  - 0d44ea8b9e
-  - be6585924f
+=======
+>>>>>>> c9ff163c32
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature
 
@@ -85,6 +84,3 @@ source: |
 notes: |
   - [2026-08-27] specifier: minted from operator intake drain; high severity
     because it blocks live pipeline handoff of approved BL-605.
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 926319ccb2, evidence: backlog/evidence/BL-1175-qa-bounce-20260827.md }
