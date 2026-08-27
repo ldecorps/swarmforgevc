@@ -132,6 +132,8 @@ export interface TickState {
   // TickState file, treated as "no roster posted yet" (the first tick after
   // this ships creates the standing topic and posts the first roster).
   approvalsRoster?: ApprovalsRosterState;
+  // BL-649: pending-set identity gate for swarm-start doorbell announcements.
+  approvalsAnnouncementMarker?: { pendingSetIdentity: string; lastAnnouncedAtMs: number };
   // BL-450: the Recert topic's own durable "last rendered/posted" marker -
   // same posture as approvalsRoster above. Absent on an old/fresh TickState
   // file, treated as "no scenario posted yet".
@@ -509,16 +511,10 @@ function buildTicketMetaLookup(
 function recentlyClosedItems(
   folders: BacklogFoldersSnapshot,
   doneClosedAtMs: Record<string, number>
-): { id: string; title?: string; filename: string; closedAtMs?: number }[] {
+): { id: string; title?: string; filename: string }[] {
   return folders.done
     .filter((item): item is BacklogFolderItem & { filename: string } => item.filename !== undefined)
-    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity))
-    .map((item) => ({
-      id: item.id,
-      title: item.title,
-      filename: item.filename,
-      ...(doneClosedAtMs[item.id] !== undefined ? { closedAtMs: doneClosedAtMs[item.id] } : {}),
-    }));
+    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity));
 }
 
 // BL-465 bounce: stamps this tick's OWN observed instant onto every ticket

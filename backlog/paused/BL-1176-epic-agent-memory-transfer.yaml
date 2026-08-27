@@ -1,0 +1,49 @@
+id: BL-1176
+title: "EPIC — Agent memory transfer: same-role model switch preserves working context; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: agent-memory-transfer
+priority: 2
+direction: human-requested
+depends_on: []
+decomposes_into: [BL-1177, BL-1178, BL-1179]
+mutation_cost: high
+human_approval: approved
+approval_context: >
+  Human Laurent via Cursor 2026-08-27 ~08:01 BST. First-class epic (not a BoB
+  sub-slice). BoB day trials / cast swaps depend on this so seats do not cold
+  start amnesiac mid-role.
+description: |
+  ## Why
+
+  Same-role model changes today are pack/pane swaps. Transcripts and agent
+  session memory are vendor-specific; crossing providers (or models) typically
+  drops mid-ticket reasoning. BoB and steward hot-swap are useless or harmful
+  without continuity.
+
+  ## Loop
+
+  Capture portable memory for a role → inject into the incoming agent on the
+  same role before live work → fail closed with a clear signal when transfer
+  is impossible for a vendor pair.
+
+  ## Children (minted 2026-08-27)
+
+  | Slice | Ticket | Delivers |
+  | --- | --- | --- |
+  | Payload + API | BL-1177 | Portable memory payload + capture/inject |
+  | Wire paths | BL-1178 | Hot-swap / relaunch / trial start-end |
+  | Cross-vendor | BL-1179 | Adapters + unsupported matrix |
+
+invariants:
+  - "Never silently pretend continuity when transfer is impossible — refuse with a clear signal."
+  - "Memory transfer is same-role only — not cross-role merge or a global shared brain."
+  - "Epic is not directly promotable — coordinator promotes children only."
+
+source: |
+  .swarmforge/operator/INTAKE-agent-memory-transfer.md (human Laurent,
+  2026-08-27 ~08:01 BST). Sibling BoB intake depends on this epic.
+
+notes: |
+  - [2026-08-27] specifier: minted as first-class epic; BoB epic BL-1180 depends_on.

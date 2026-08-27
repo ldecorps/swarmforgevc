@@ -99,6 +99,45 @@ You are the coordinator.
   operator flip `agreement` to `agreed` in `.swarmforge/contract.yaml`) before
   any build work can dispatch for it.
 
+## Deprecator Freshness Gate At Promotion Time (Article 3.6, operator directive 2026-08-27)
+- Before EVERY promotion of a paused item into `backlog/active/` — wherever
+  this file describes one (intake, post-QA bookkeeping, promotion-recheck,
+  open-slot nudge) — run a **deprecator freshness check** on the candidate
+  **after** the onboarding contract gate and **before** expedited-defect
+  ordering. This gate matters most for **old tickets**: work that sat in
+  `paused/` while the system changed underneath it.
+- **Preferred path (when shipped):**
+  `node extension/out/tools/deprecate-check.js <project-root> <BL-id>`
+  prints JSON: `{"decision":"allow"}` or `{"decision":"hold","reason":"..."}`.
+- **Manual checklist until the CLI lands** — hold (do NOT promote) when ANY
+  signal fires:
+  1. `.swarmforge/superseded/<BL-id>` exists.
+  2. The ticket YAML notes/description say superseded/retired/obsolete without
+     a matching done closure.
+  3. Every `depends_on` entry is already in `backlog/done/` AND the ticket
+     still names modules, operator verbs, conf keys, or flows that living
+     docs or code mark RETIRED/superseded (grep `docs/reference/Specification.MD`,
+     `docs/how-to/`, and the tree for the named surface).
+  4. `.swarmforge/bounces/` shows repeated `spec-gap` bounces on the same
+     ticket — premise may be stale, not just implementation.
+- On `hold`, do NOT promote — leave the item in `backlog/paused/` and send a
+  `note` (priority `00`) to the **specifier** naming the ticket and the stale
+  signal(s). The specifier adjudicates: amend spec, retire, split, or confirm
+  promote with rationale — never promote around a hold yourself.
+- **Fail-closed:** missing evidence, ambiguous YAML, or CLI failure is `hold`,
+  same posture as the onboarding contract gate — never promote on a gate you
+  could not evaluate.
+- **Ordering:** this gate sits above Article 3.2.4 expedited-defect ordering.
+  A stale defect is not expedited into the pipeline.
+- Full deprecator activity (on-demand scan, `/deprecate`, `docs/deprecated/`):
+  `backlog/archive/INTAKE-deprecator-stale-rules-dead-logic-docs.md`. Adoption record:
+  `swarmforge/constitution/articles/reference/deprecator-freshness-gate-amendment-2026-08-27.md`.
+- **Model capability (must-have, Article 3.6):** deprecator judgment and
+  `/deprecate` execution require a hard-tier / multi-document reasoning model.
+  Do not route deprecator parcels (`mutation_cost: high`, epic `deprecator`) to
+  easy seats; if only a weak seat is free, leave the slot empty or escalate —
+  never spill.
+
 ## Expedited Defects At Promotion Time (Article 3.2.4, operator directive 2026-07-25)
 - At EVERY promotion decision — intake, post-QA recheck, open-slot nudge —
   apply Article 3.2.4: a `type: defect` (or legacy `type: bug`) ticket with

@@ -1,0 +1,77 @@
+id: BL-1174
+title: "/deprecate operator verbs — ranked stale-rule scan, one retirement, docs/deprecated/"
+milestone: M8
+type: feature
+status: todo
+epic: deprecator
+priority: 2
+direction: queue-jump
+depends_on: [BL-1173, BL-698]
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1174-deprecate-operator-verbs-scan-docs.feature
+
+required_wiring:
+  - "extension/src/tools/telegram-front-desk-bot.ts::deprecate::register /deprecate in shared operator verb backend"
+  - "specs/pipeline/steps/index.js::bl1174DeprecateOperatorVerbsScanDocsSteps::acceptance handler registered"
+
+invariants:
+  - "One retirement per /deprecate run — or refuse with reason (BL-1015 envelope)."
+  - "Living how-to/reference must not describe withdrawn behaviour after a retirement pass."
+  - "/deprecate never auto-closes tickets without specifier adjudication (BL-311)."
+  - "/deprecate judgment runs only on a hard-tier multi-document reasoner — refuse on easy/weak seats (operator 2026-08-27 must-have)."
+  - "mutation_cost is high so BL-1001 never spills this ticket to an easy seat."
+
+human_approval: approved
+approval_context: >
+  Same Q-jump intake as BL-1173. Soft verbs after the freshness gate CLI lands.
+  Depends on BL-1173 check path and BL-698 verb backend.
+
+description: |
+  ## What
+
+  Soft-tier operator verbs on the shared BL-698 surface:
+
+  | Verb | Tier | Behaviour |
+  | --- | --- | --- |
+  | `/deprecate` | soft | Ranked scan; retire top item or refuse |
+  | `/deprecate dry` | read | Scan only |
+  | `/deprecate check BL-xxx` | read | Same as BL-1173 CLI (or wraps it) |
+
+  Rank sources by recurrence + blast radius (Boy Scout philosophy). Three-bucket
+  adjudication (BL-564): retire / defect / human ask. On retire: remove dead
+  logic, retire scenarios, move docs to `docs/deprecated/` and link from
+  `docs/index.md`.
+
+  ## Model capability (locked human decision 2026-08-27)
+
+  `/deprecate` execution is judgment across many tickets, specs, docs, and code
+  surfaces. It MUST run on a hard-tier / multi-document reasoning model only.
+  Easy seats and weak/local-only models refuse with "needs hard-tier
+  multi-document reasoner." `mutation_cost: high` enforces the claim path.
+
+qa_e2e_procedure: >
+  (1) /deprecate dry ranks without mutating. (2) /deprecate retires one orphan
+  conf flag + writes docs/deprecated stub + index link. (3) Ambiguous candidate
+  → human ask, no deletion. (4) Oversized retirement → refuse with reason.
+
+out_of_scope: |
+  - Replacing Boy Scout code-debt scan (BL-1013).
+  - Big-bang retirement of all stale paused tickets.
+
+source: |
+  backlog/INTAKE-deprecator-stale-rules-dead-logic-docs.md (human Laurent,
+  2026-08-27). Epic BL-1172 child.
+
+notes: |
+  - [2026-08-27] Cursor: minted with epic; waits on BL-1173 for check path reuse.
+  - [2026-08-27] human: execution must-have — multi-document reasoner only;
+    mutation_cost high; easy seats refuse.
+  - [2026-08-27] Cursor/human: ambulance after BL-1173 done. Freshness gate
+    false-positived on deprecator subject vocabulary (STALE_CLAIM_RE hit on
+    an invariant describing withdrawal of living-doc behaviour); reworded that
+    invariant to "withdrawn behaviour" so promote can allow. Confirm-promote
+    rationale for Article 3.6 — this ticket IS the deprecator verb work, not a
+    claim that this ticket itself was already closed away.
+
+assigned_to: coder

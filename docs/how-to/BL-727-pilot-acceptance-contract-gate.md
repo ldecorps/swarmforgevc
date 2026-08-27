@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-747, BL-753, BL-755, BL-758)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-741, BL-747, BL-753, BL-755, BL-758)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -151,6 +151,31 @@ gate now checks files touched by the run's own non-merge commits (same
 **Remediation when refused:** factor the shared block into one helper (see
 companion remaining-work BL-736 for the BL-637 `--help` bodies) and re-run
 the gate — do not silent-bypass.
+
+## Scoped CRAP gate (BL-741)
+
+BL-627 landed `collectReferencedClaudeModels` at CRAP=10.89 with no CRAP pass
+— `mutation_cost: low` likely skipped the hardener-equivalent step. BL-741
+hardens `/pilot` so **CRAP is always run**, scoped to `extension/*.ts` files
+the run's own commits touched. `mutation_cost: low` lightens mutation testing
+only; it never exempts CRAP from pilot or pipeline land (also stated in
+`swarmforge/roles/hardender.prompt`).
+
+Between a green contract (and the other land gates) and the yaml move:
+
+1. Resolve touched `extension/**/*.ts` paths from the run's non-merge commits
+   (same ancestry scope as BL-729).
+2. Run scoped CRAP (`pilotScopedCrapCheck.ts` / `extension/scripts/crapReport.js`
+   logic) against those files only — not the whole repo.
+3. Refuse (`reasonKind: 'crap-violation'`) when any touched function exceeds
+   CRAP 6, naming file and function. A refused land is inert: yaml stays put,
+   no acceptance receipt.
+4. If touched-file history or coverage cannot be resolved, fail **OPEN** with a
+   warning that scoped CRAP was not checked.
+5. A clean CRAP check does not force land — other gates may still refuse.
+
+**Remediation when refused:** improve tests/coverage for the named function
+(companion remaining-work BL-740 for the BL-627 function itself).
 
 ## Shell entry-point drive (BL-747)
 
@@ -427,6 +452,8 @@ run, and no gate ever noticed.
   revert-then-reland notes required (companion remaining-work BL-734)
 - BL-737 — refuse land on identical ≥12-line blocks in >2 touched files
   (companion remaining-work BL-736)
+- BL-741 — always run scoped CRAP on touched `extension/*.ts` at `/pilot`
+  land; `mutation_cost: low` does not skip (companion remaining-work BL-740)
 - BL-747 — refuse land when touched shell tests do not invoke ticket-named
   entry-point scripts (companion remaining-work BL-746 landed)
 - BL-753 — refuse land for registered APS patterns that match no rendered

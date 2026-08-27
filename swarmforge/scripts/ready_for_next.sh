@@ -23,7 +23,7 @@ printf '%s\n' "$OUT"
 if [[ "$(printf '%s\n' "$OUT" | head -n1)" == "ROTATE_HOME" ]]; then
   HOME_ROLE="$(printf '%s\n' "$OUT" | sed -n 's/^HOME_ROLE: //p' | head -n1)"
   ROTATE_BIN="${SWARMFORGE_ROTATE_TO_ROLE:-$SCRIPT_DIR/rotate_to_role.sh}"
-  SWARMFORGE_ROTATION_REASON=rotate-home exec "$ROTATE_BIN" "${HOME_ROLE:-coder}"
+  exec "$ROTATE_BIN" "${HOME_ROLE:-coder}"
 fi
 
 exit "$RC"

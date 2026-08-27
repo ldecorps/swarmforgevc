@@ -1,4 +1,4 @@
-// BL-096 metrics-06: one shared trend function applied uniformly to every
+// BL-664 turnProfile TrendedNumber series: mechanical and turn-overhead shares per stage for briefing and charts.
 // delivery-metrics series (velocity, burndown, cycle time, suite duration).
 // BL-100 (token-cost telemetry trend) depends on this same framework, so the
 // shape stays generic (a labeled value series in, a {current, prior, delta,

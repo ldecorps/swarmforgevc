@@ -44,6 +44,18 @@
   defects first, Article 3.2.4), leaving the slot empty if none exists.
   See **workflow-detailed.prompt**.
 
+## Deprecator Freshness Gate At Promotion (Article 3.6, 2026-08-27)
+- Before a paused ticket enters `backlog/active/`, the coordinator runs the
+  deprecator freshness check — especially for **old tickets** whose premises
+  may no longer match the live system. On hold, promotion stops and the
+  specifier adjudicates (amend, retire, split, or confirm). **Do not implement
+  or forward work you can see assumes retired behaviour** — record a
+  `spec-gap` note to specifier and coordinator instead of re-shipping dead
+  logic. Intake: `backlog/archive/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.
+- **Model must-have:** deprecator judgment and `/deprecate` run only on a
+  hard-tier model that reasons well across many documents; easy/weak seats
+  refuse (Article 3.6).
+
 ## Worktree Discipline
 - At startup, discover and remember your assigned branch/worktree; work
   only there. Do not base work on another branch unless named in a

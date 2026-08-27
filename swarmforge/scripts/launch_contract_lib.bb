@@ -39,10 +39,18 @@
   (and (requires-explicit-launch-contract? conf-text)
        (nil? (coordinator-config-lib/raw-config-value conf-text "coordinator_model"))))
 
+(defn standing-pack?
+  "True when the conf declares multiple standing window panes and omits
+   rotation — full-forge topology (e.g. cursor-forge), not mono-router."
+  [conf-text]
+  (and (nil? (coordinator-config-lib/raw-config-value conf-text "rotation"))
+       (<= 2 (count (re-seq #"(?m)^window " conf-text)))))
+
 (defn missing-rotation?
   [conf-text]
   (and (requires-explicit-launch-contract? conf-text)
-       (nil? (coordinator-config-lib/raw-config-value conf-text "rotation"))))
+       (nil? (coordinator-config-lib/raw-config-value conf-text "rotation"))
+       (not (standing-pack? conf-text))))
 
 (defn launch-contract-violations
   "Every required-but-missing pack-contract field, as a seq of
