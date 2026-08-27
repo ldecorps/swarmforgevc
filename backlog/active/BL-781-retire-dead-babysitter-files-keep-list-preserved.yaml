@@ -30,8 +30,11 @@ source: |
   extended by the specifier's own audit of the full KEEP list, which found a
   second dead wake-queue file the coder had not flagged.
 
-# Tip-pure rematch 5.
+
+
+# Tip-pure rematch 6 (union).
 abandoned_commits:
+  - 69d60f6208
   - 31ede8f992
   - b56ca33e92
   - 2db73873d6
@@ -42,8 +45,37 @@ abandoned_commits:
   - 0b352a2fc3
   - efbc2d8558
   - 88360ae238
+  - 909c0e947e
+  - 7b4737ee64
+  - cb20459d4a
+  - bbaac767b9
+  - 0057afe965
+  - b91c0bfb5c
+  - c0ffa84591
+  - 9276c08354
+  - 021a967c09
+  - efdc056eca
+  - f8505e45e9
+  - dafdc9c713
+  - 9559add8b5
+  - 3132e9dcc4
+  - 800bccf535
+  - 8da797377d
+  - 23aa89ba7b
+  - 87b1ac9538
+  - 9a9780bcae
+  - 85c2de2816
+  - 5ab7691079
+  - 65f50e2fd4
+  - ede899fcbe
+  - 6b5bfa3a1c
+  - 429a9957b0
+  - be2c162fb6
+  - 675d4e99c7
+  - 87ddcaacda
 
 acceptance: specs/features/BL-781-retire-dead-babysitter-files-keep-list-preserved.feature
+
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl781RetireDeadBabysitterFilesKeepListPreservedSteps::acceptance handler registered"
@@ -91,6 +123,3 @@ notes: |
   or the step-handler allowlist. What remains is the live caller set. It was
   empty for these three and non-empty for the rest.
   [2026-08-27] specifier: feature file minted; coordinator may route to coder.
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: b9e93b976f, evidence: backlog/evidence/BL-781-qa-bounce-rematch4-20260827.md }

@@ -619,6 +619,12 @@ test('BL-709: unbound Bubble falls back to Cursor Remote mirror topic', () => {
   assert.equal(effectiveLetsTalkMirrorTopicId({}), undefined);
 });
 
+test('BL-709: colliding Bubble and Cursor Remote ids treat Bubble as unbound', () => {
+  const { effectiveBubbleMirrorTopicId, effectiveLetsTalkMirrorTopicId } = require('../out/bridge/bridgeServer');
+  assert.equal(effectiveBubbleMirrorTopicId({ cursorTopicId: 9, bubbleTopicId: 9 }), undefined);
+  assert.equal(effectiveLetsTalkMirrorTopicId({ cursorTopicId: 9, bubbleTopicId: 9 }), 9);
+});
+
 test('BL-709 mirror: unbound Bubble posts You/Bubble text to Cursor Remote', async () => {
   const target = mkTmp();
   fs.writeFileSync(

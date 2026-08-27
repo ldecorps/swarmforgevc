@@ -35,6 +35,16 @@ const RESTARTED_LABEL = {
   'front desk': 'frontDesk',
 };
 
+const SENDER_ID = {
+  'a non-principal': 77,
+  'the principal': PRINCIPAL_ID,
+};
+
+const ORIGIN_TOPIC_ID = {
+  'the Cursor Remote topic': CURSOR_TOPIC_ID,
+  'another topic': OTHER_TOPIC_ID,
+};
+
 function mkRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl710-'));
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
@@ -184,8 +194,10 @@ function registerBl710OneClearTelegramRedeployPathSteps(registry) {
     if (!ctx.spawnCounts) {
       installSpawnMocks(ctx);
     }
-    const fromId = senderLabel.includes('non-principal') ? 77 : PRINCIPAL_ID;
-    const topicId = originLabel.includes('another topic') ? OTHER_TOPIC_ID : CURSOR_TOPIC_ID;
+    const fromId = SENDER_ID[senderLabel];
+    const topicId = ORIGIN_TOPIC_ID[originLabel];
+    assert.ok(fromId !== undefined, `unknown sender label: ${senderLabel}`);
+    assert.ok(topicId !== undefined, `unknown origin label: ${originLabel}`);
     ctx.lastDecision = decideInboundAction(
       inbound('/redeploy frontdesk', fromId, topicId),
       PRINCIPAL_ID,
@@ -218,10 +230,10 @@ function registerBl710OneClearTelegramRedeployPathSteps(registry) {
   });
 
   scoped(/^the help text lists the bare, mini app, front desk and union redeploy forms$/, (ctx) => {
-    assert.match(ctx.helpText, /\/redeploy —/);
-    assert.match(ctx.helpText, /\/redeploy miniapp/);
-    assert.match(ctx.helpText, /\/redeploy frontdesk/);
-    assert.match(ctx.helpText, /\/redeploy all/);
+    assert.match(ctx.helpText, /\/redeploy — soft confirm, then compile and restart this bridge/);
+    assert.match(ctx.helpText, /\/redeploy miniapp — soft confirm, then bounce the headless mini app bridge/);
+    assert.match(ctx.helpText, /\/redeploy frontdesk — soft confirm, then bounce the front desk \(bridge \+ bot\)/);
+    assert.match(ctx.helpText, /\/redeploy all — soft confirm, then bounce cursor bridge, front desk, and mini app bridge/);
   });
 }
 

@@ -25,7 +25,6 @@ aps_equivalence_cli_test_runner.bb	standing
 aps_equivalence_lib_test_runner.bb	standing		
 availability_ledger_lib_test_runner.bb	standing		
 babysitter_assess_lib_test_runner.bb	standing		
-babysitter_lib_test_runner.bb	standing		
 babysitter_nudge_lib_test_runner.bb	standing		
 babysitterd_freshness_lib_test_runner.bb	standing		
 babysitterd_sweep_lib_test_runner.bb	standing		
@@ -141,7 +140,6 @@ swarm_identity_lib_test_runner.bb	standing
 swarm_socket_lib_test_runner.bb	standing		
 swarm_status_lib_test_runner.bb	standing		
 supersede_lib_test_runner.bb	standing		
-rotation_telemetry_lib_test_runner.bb	standing		
 self_heal_telemetry_lib_test_runner.bb	standing		
 sync_worktree_scripts_lib_test_runner.bb	standing		
 task_commit_coherence_gate_lib_test_runner.bb	standing		
@@ -400,4 +398,7 @@ bl615_orphaned_claim_progress_test_runner.bb	standing
 test_done_with_current_arg_rejection.sh	standing		
 test_bl1162_start_stop_swarm_cron_lifecycle.sh	standing		
 bl1162_swarmforge_cron_property_runner.sh	standing		
+
+test_bl780_rotation_actionability_ordering.sh	standing		
+bl780_rotation_actionability_ordering_property_runner.bb	standing		
 BL-1167	bl1167_same_model_seat_mutation_sweep	bl1167_same_model_seat_mutation_sweep.sh	mutation

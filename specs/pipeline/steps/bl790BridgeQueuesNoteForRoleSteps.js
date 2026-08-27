@@ -39,14 +39,22 @@ function writeRolesTsv(targetPath, roles) {
   fs.writeFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), `${tsv}\n`);
 }
 
+function fixtureGitEnv() {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  return env;
+}
+
 function seedGitRepo(targetPath) {
-  execFileSync('git', ['init', '-q'], { cwd: targetPath });
+  execFileSync('git', ['init', '-q'], { cwd: targetPath, env: fixtureGitEnv() });
   fs.mkdirSync(path.join(targetPath, 'backlog', 'active'), { recursive: true });
   fs.writeFileSync(path.join(targetPath, 'backlog', 'active', 'BL-000.yaml'), 'id: BL-000\n');
   fs.symlinkSync(path.join(REPO_ROOT, 'swarmforge'), path.join(targetPath, 'swarmforge'), 'dir');
-  execFileSync('git', ['add', '-A'], { cwd: targetPath });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'seed'], {
+  execFileSync('git', ['add', '-A'], { cwd: targetPath, env: fixtureGitEnv() });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--no-verify', '-m', 'seed'], {
     cwd: targetPath,
+    env: fixtureGitEnv(),
   });
 }
 

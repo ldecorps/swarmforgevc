@@ -19,10 +19,24 @@ const VOCABULARY_MARKER = '**Interface vs incarnation';
 const CHAT_ADAPTER_HEADING =
   '### Chat adapter (Signal / Telegram / WhatsApp / Teams) — human channel only';
 
+/** Outline fixture pins — kill Gherkin example-cell mutants (BL-908). */
+const KNOWN_VALUES = Object.freeze({
+  messaging: Object.freeze({ incarnation: 'Telegram' }),
+  'host agent': Object.freeze({ incarnation: 'Cursor' }),
+});
+
 const PROSE_PREFIXES = ['docs/'];
 const TEST_INFRA_PREFIXES = ['specs/features/', 'specs/pipeline/steps/'];
 const TICKET_PREFIXES = ['backlog/active/', 'backlog/paused/', 'backlog/done/'];
 const BEHAVIOR_PREFIXES = ['extension/src/', 'swarmforge/scripts/', 'android/'];
+
+function pinForInterface(name) {
+  const pin = KNOWN_VALUES[name];
+  if (!pin) {
+    throw new Error(`BL-711: unknown Outline interface fixture ${JSON.stringify(name)}`);
+  }
+  return pin;
+}
 
 function git(args) {
   return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' });
@@ -100,18 +114,29 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it names the interface (.*)$/, (ctx, interfaceName) => {
+    const name = interfaceName.trim();
+    const pin = pinForInterface(name);
+    ctx.bl711Pin = pin;
+    ctx.bl711Interface = name;
     const text = normalizedVocabulary(ctx);
-    const pattern = new RegExp(`\\b${interfaceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    const pattern = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
     if (!pattern.test(text)) {
-      throw new Error(`BL-711: expected interface "${interfaceName}" in vocabulary section`);
+      throw new Error(`BL-711: expected interface "${name}" in vocabulary section`);
     }
   });
 
   registry.define(/^it names (.*) as that interface's current incarnation$/, (ctx, incarnation) => {
+    const name = incarnation.trim();
+    const pin = ctx.bl711Pin || pinForInterface(ctx.bl711Interface || '');
+    if (name !== pin.incarnation) {
+      throw new Error(
+        `BL-711 Outline incarnation must match fixture pin (got ${JSON.stringify(name)}, want ${JSON.stringify(pin.incarnation)})`
+      );
+    }
     const text = normalizedVocabulary(ctx);
-    const pattern = new RegExp(`\\b${incarnation.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    const pattern = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
     if (!pattern.test(text)) {
-      throw new Error(`BL-711: expected incarnation "${incarnation}" in vocabulary section`);
+      throw new Error(`BL-711: expected incarnation "${name}" in vocabulary section`);
     }
   });
 
