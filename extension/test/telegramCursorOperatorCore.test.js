@@ -13,6 +13,7 @@ test('BL-702: soft verbs are light-confirm tier', () => {
   assert.equal(operatorDangerTier('/pause'), 'soft');
   assert.equal(operatorDangerTier('/redeploy'), 'soft');
   assert.equal(operatorDangerTier('/deprecate'), 'soft');
+  assert.equal(operatorDangerTier('/postmortem'), 'soft');
 });
 
 test('BL-1174: deprecate dry and check are read tier', () => {

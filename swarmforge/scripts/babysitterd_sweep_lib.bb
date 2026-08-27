@@ -13,6 +13,7 @@
 
 (ns babysitterd-sweep-lib
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 ;; BL-996: classify-pane-busy? (below) now delegates to chase_sweep_lib.bb's
@@ -558,6 +559,133 @@
      :new-escalation-dedup-state (reduce (fn [m {:keys [key]}] (assoc m key now-ms))
                                          last-escalated-ms-by-key
                                          to-escalate)}))
+
+;; ── BL-1171 disaster-class correlation ───────────────────────────────────────
+
+(def disaster-class-key "disaster-class")
+(def starvation-cascade-class "starvation-cascade")
+(def handoffd-parse-dead-class "handoffd-parse-dead")
+(def min-half-launch-for-cascade 3)
+
+(def default-disaster-evidence-paths
+  [".swarmforge/daemon/handoffd.log"
+   ".swarmforge/babysitterd/streak"
+   ".swarmforge/incidents/control-plane.json"])
+
+(defn half-launch-finding? [{:keys [key message]}]
+  (and (str/starts-with? (str key) "proc-")
+       (str/includes? (str (or message "")) "half-launch")))
+
+(defn handoffd-down-finding? [{:keys [key]}]
+  (= "handoffd" (str key)))
+
+(defn swarm-starved-finding? [{:keys [key]}]
+  (= "swarm-starved" (str key)))
+
+(defn count-half-launch-findings [findings]
+  (count (filter half-launch-finding? findings)))
+
+(defn starvation-cascade-candidate? [findings]
+  (and (>= (count-half-launch-findings findings) min-half-launch-for-cascade)
+       (some handoffd-down-finding? findings)
+       (some swarm-starved-finding? findings)))
+
+(defn handoffd-parse-error-snapshot? [{:keys [handoffd-startup-error]}]
+  (boolean (seq (str (or handoffd-startup-error "")))))
+
+(defn disaster-correlated-keys [findings]
+  (into #{}
+        (concat (map :key (filter handoffd-down-finding? findings))
+                (map :key (filter swarm-starved-finding? findings))
+                (map :key (filter half-launch-finding? findings)))))
+
+(defn playbooks-path [repo-root]
+  (when repo-root
+    (str (fs/path (str repo-root) ".swarmforge" "operator" "failure-class-playbooks.json"))))
+
+(defn read-failure-class-playbooks
+  "BL-1170: operator playbook store — optional override for disaster-class detail."
+  [repo-root]
+  (let [path (playbooks-path repo-root)]
+    (when (and path (fs/exists? path))
+      (try
+        (json/parse-string (slurp path) true)
+        (catch Exception _ {})))))
+
+(defn merge-playbook-into-disaster-class
+  [disaster-class playbooks]
+  (if-not (and disaster-class playbooks)
+    disaster-class
+    (let [fc (:failure_class disaster-class)
+          pb (get playbooks (keyword fc) (get playbooks fc))]
+      (if-not pb
+        disaster-class
+        (merge disaster-class
+               (select-keys pb [:suggested_actions :summary :human_hotfix_required]))))))
+
+(defn enrich-disaster-escalation [escalation repo-root]
+  (let [playbooks (read-failure-class-playbooks repo-root)]
+    (if-not playbooks
+      escalation
+      (update escalation :disaster-class #(merge-playbook-into-disaster-class % playbooks)))))
+
+(defn build-starvation-cascade-disaster-escalation
+  ([findings] (build-starvation-cascade-disaster-escalation findings nil))
+  ([findings repo-root]
+   (let [half-count (count-half-launch-findings findings)
+         base {:key disaster-class-key
+               :severity "CRIT"
+               :message (str "disaster-class " starvation-cascade-class ": handoffd down, "
+                             half-count " half-launch role(s), swarm starved")
+               :disaster-class {:failure_class starvation-cascade-class
+                                :likely_causes ["handoffd not running blocks delivery and respawn"
+                                                "multiple role panes are half-launched (agent gone, shell up)"
+                                                "swarm mailboxes are starved with work pending"]
+                                :suggested_actions [{:action "run ./swarm ensure once" :owner "babysitterd"}
+                                                    {:action "inspect handoffd.log last 20 lines" :owner "operator"}
+                                                    {:action "confirm agents respawned after ensure" :owner "human"}]
+                                :evidence_paths default-disaster-evidence-paths}}]
+     (enrich-disaster-escalation base repo-root))))
+
+(defn build-handoffd-parse-disaster-escalation
+  ([snapshot] (build-handoffd-parse-disaster-escalation snapshot nil))
+  ([{:keys [handoffd-log-path handoffd-startup-error]} repo-root]
+   (let [log-path (or handoffd-log-path ".swarmforge/daemon/handoffd.log")
+         base {:key disaster-class-key
+               :severity "CRIT"
+               :diagnose-only true
+               :message (str "disaster-class " handoffd-parse-dead-class ": handoffd startup failed — "
+                             "human hotfix required; see " log-path)
+               :disaster-class {:failure_class handoffd-parse-dead-class
+                                :likely_causes [(str "handoffd.bb failed to start: " handoffd-startup-error)]
+                                :suggested_actions [{:action (str "inspect " log-path " and apply a human hotfix")
+                                                     :owner "human"}]
+                                :evidence_paths [log-path]
+                                :diagnose_only true}}]
+     (enrich-disaster-escalation base repo-root))))
+
+(defn prepare-escalation-findings
+  "Roll correlated CRIT symptoms into one disaster-class escalation per window."
+  [findings snapshot]
+  (let [eligible (vec (filter escalation-eligible? findings))
+        repo-root (:repo-root snapshot)]
+    (cond
+      (handoffd-parse-error-snapshot? snapshot)
+      [(build-handoffd-parse-disaster-escalation snapshot repo-root)]
+
+      (starvation-cascade-candidate? eligible)
+      [(build-starvation-cascade-disaster-escalation eligible repo-root)]
+
+      :else eligible)))
+
+(defn diagnose-only-disaster-sweep?
+  "When true, the sweep must not queue bounded auto-repair (BL-1171 invariant 2)."
+  [findings snapshot]
+  (or (handoffd-parse-error-snapshot? snapshot)
+      (boolean (:diagnose-only (first (prepare-escalation-findings findings snapshot))))))
+
+(defn disaster-class-escalation? [{:keys [key]}]
+  (= disaster-class-key (str key)))
 
 ;; ── check: control-plane-missing (BL-958 ownership) ─────────────────────────
 ;; babysitterd owns the response (:recover via ./swarm ensure when launch
