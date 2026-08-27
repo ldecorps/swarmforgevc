@@ -124,16 +124,10 @@ function registerSteps(registry) {
 
   registry.define(/^it does not introduce a second brand for that app$/, (ctx) => {
     const text = normalizedVocabulary(ctx);
-    const phoneMatch = text.match(/phone app[^.]*\./i);
-    if (!phoneMatch) {
-      throw new Error('BL-711: expected a phone-app sentence in vocabulary section');
-    }
-    const sentence = phoneMatch[0];
-    const boldNames = [...sentence.matchAll(/\*\*([^*]+)\*\*/g)].map((match) => match[1]);
-    const productNames = boldNames.filter((name) => name.toLowerCase() !== 'phone app');
+    const productNames = [...text.matchAll(/product name is \*\*([^*]+)\*\*/gi)].map((match) => match[1]);
     if (productNames.length !== 1 || productNames[0] !== 'Bubble') {
       throw new Error(
-        `BL-711: expected Bubble as the sole phone-app product name, found: ${productNames.join(', ')}`
+        `BL-711: expected Bubble as the sole phone-app product name, found: ${productNames.join(', ') || '(none)'}`
       );
     }
   });
