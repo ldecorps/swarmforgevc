@@ -121,6 +121,21 @@ function defaultClaudeProjectsDir(): string {
   return path.join(os.homedir(), '.claude', 'projects');
 }
 
+export function listTranscriptJsonlPaths(
+  worktreePath: string,
+  projectsDir: string = defaultClaudeProjectsDir()
+): string[] {
+  const dir = path.join(projectsDir, projectSlug(worktreePath));
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((fileName) => fileName.endsWith('.jsonl'))
+      .map((fileName) => path.join(dir, fileName));
+  } catch {
+    return [];
+  }
+}
+
 // Missing directory (role never ran here) reads as zero records, never an
 // error (cost-07: absent data degrades to zeros).
 export function readTranscriptUsage(
