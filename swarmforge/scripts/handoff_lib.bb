@@ -43,9 +43,6 @@
 ;; ambulance-lib double-load above.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 
-;; BL-596: rotation dynamics telemetry — one append per successful rotate.
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "rotation_telemetry_lib.bb")))
-
 ;; BL-911: prompt-engine-lib is also a leaf dependency (its own load-file
 ;; list is empty) - loaded here so recompose-role-prompt! below can reuse
 ;; PromptEngine's compose (the single composition authority, BL-546) rather
@@ -932,10 +929,8 @@
    (str (fs/path (target-root) "swarmforge" "swarmforge.conf"))))
 
 (defn rotate-resident-to!
-  "Rotate the resident pane to <target-role>. Optional <reason> labels the
-   telemetry event (default rotate, or SWARMFORGE_ROTATION_REASON env).
-   Returns {:ok true} or {:ok false :reason ...}. Never System/exit — safe
-   for handoffd chase.
+  "Rotate the resident pane to <target-role>. Returns {:ok true} or
+   {:ok false :reason ...}. Never System/exit — safe for handoffd chase.
 
    BL-931: refuses outright on a pack that is not a rotation router - a
    standing pack (e.g. full-forge) gives every role its own pane, so there
@@ -944,8 +939,7 @@
    working colleague's pane (the specifier, twice, on 2026-08-18). Checked
    here rather than only in respawn-as! so handoffd's daemon-driven chase
    (the OTHER caller, invariant 2) is covered by the same gate."
-  ([target-role] (rotate-resident-to! target-role nil))
-  ([target-role reason]
+  [target-role]
   (try
     (if-not (rotation-router-pack?)
       {:ok false :reason "not-a-rotation-router"}
@@ -983,19 +977,12 @@
                                             env-args
                                             ["-t" session (shell-quote-lib/launch-command script)]))]
             (if (zero? (:exit result))
-              (let [from-role (read-mono-router-active-role)
-                    emit-reason (or reason
-                                    (not-empty (str/trim (or (System/getenv "SWARMFORGE_ROTATION_REASON") "")))
-                                    rotation-telemetry-lib/default-reason)]
-                (write-mono-router-active-role! target-role)
-                (rotation-telemetry-lib/append-rotation-event!
-                 (target-root)
-                 {:from from-role :to target-role :reason emit-reason})
-                {:ok true})
+              (do (write-mono-router-active-role! target-role)
+                  {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
                                      (str "tmux-exit-" (:exit result)))}))))))
     (catch Exception e
-      {:ok false :reason (.getMessage e)}))))
+      {:ok false :reason (.getMessage e)})))
 
 (defn respawn-as!
   "Rotate the resident pane to <target-role>, running that role's own launch
@@ -1026,7 +1013,7 @@
                    :active-role role
                    :target-role target-role})
         do-respawn! (fn []
-                      (let [result (rotate-resident-to! target-role "handoff-forward")]
+                      (let [result (rotate-resident-to! target-role)]
                         (when-not (:ok result)
                           (binding [*out* *err*]
                             (case (:reason result)
