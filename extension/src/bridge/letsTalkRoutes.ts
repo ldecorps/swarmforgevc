@@ -28,7 +28,6 @@ import {
 } from './letsTalkCore';
 import type { SynthesizeSpeech, TranscribeAudio, LetsTalkAudioResolution } from './letsTalkAudio';
 import type { CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
-
 import type { LetsTalkUiBundlePage, LetsTalkUiBundleManifest } from './letsTalkUiBundle';
 
 export const operatorDocs: LetsTalkUiBundlePage = {
