@@ -1,0 +1,85 @@
+id: BL-605
+title: "Trend: simple global token consumption — whole-swarm total tokens over time, cumulative and rate"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 170
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "rollup aggregator over existing transcriptUsage reader; no batch dedup surface"
+  architect: "authoritative source and trend.ts series shape settled in-ticket"
+  hardender: "extension TS outside mutate scope; pure fixture aggregator tests"
+  documenter: "epic BL-594 trend framework docs; series self-describing in briefing"
+acceptance: specs/features/BL-605-trend-global-token-consumption.feature
+
+approval_context: >
+  Human 2026-07-23 epic BL-594: "how about a simple global tokens consumption."
+  burnRate and costTelemetry cover per-role views; this is the whole-swarm headline.
+
+invariants:
+  - "Global totals sum transcriptUsage across all roles — never a frequently-null ledger token field."
+  - "Aggregation is a pure function over per-role usage records — unit-testable without fs."
+  - "Buckets with missing role usage are marked incomplete — never silently counted as zero."
+
+required_wiring:
+  - 'extension/src/metrics/transcriptUsage.ts::readTranscriptUsage::authoritative populated per-role token records'
+  - 'extension/src/metrics/globalTokenConsumption.ts::pure aggregator::cumulative total and rate summed across roles per bucket'
+  - 'extension/src/metrics/trend.ts::global token series::plotted via shared TrendedNumber framework'
+  - 'specs/pipeline/steps/index.js::bl605GlobalTokenConsumptionSteps::acceptance handler registered so the runner executes every scenario'
+
+description: |
+  A single headline series: the WHOLE swarm's token consumption over time -
+  cumulative total and a simple rate (tokens/hour or /day). One line, not a
+  per-role breakdown (burnRate already does per-role tokens/hr; costTelemetry
+  already sums per-role usage). The gap is a plain global rollup surfaced as
+  its own trend the human can watch at a glance.
+
+  Mostly a ROLLUP of data that already exists, not new instrumentation:
+    - transcriptUsage / costTelemetry already read per-role token totals.
+    - the LLM cost ledger (.swarmforge/telemetry/llm-cost-<YYYY-MM>.jsonl,
+      BL-551) already records invocations.
+  Sum across roles per time bucket -> the global series, plotted via trend.ts.
+
+  Data-honesty caveat the specifier must handle: the ledger currently writes
+  some records with `tokens: null` (observed 2026-07-22). A global total is
+  only as complete as its source; the series must either use the transcript-
+  usage totals (which are populated) as the authority, or clearly mark buckets
+  where token data is missing rather than silently under-count. Pin which
+  source is authoritative and do not sum a field that is frequently null.
+
+  Value: the simplest possible "how hard is the swarm working / how much am I
+  spending" glance, and the natural companion to the per-role cost telemetry
+  already shipped. Publishes on the mini app (BL-603) and reads into the
+  briefing analysis (BL-604) like every other BL-594 series.
+
+qa_e2e_procedure: >
+  (1) Fixture per-role transcript usage — aggregator yields cumulative global
+  total and window rate. (2) Multi-bucket fixtures — pure function sums all roles.
+  (3) Partial role coverage bucket — marked incomplete not zero. (4) Null ledger
+  tokens with populated transcripts — global follows transcripts only. Live: trend
+  surface shows whole-swarm token headline alongside per-role cost telemetry.
+
+source: |
+  Human, 2026-07-23, epic BL-594: "how about a simple global tokens
+  consumption."
+
+specifier_decisions: |
+  Minted 2026-08-26 per coordinator route (002283). Four scenarios map inline
+  acceptance 1–3 plus authority pin for ledger null tokens. transcriptUsage is
+  authoritative; totalTokens posture matches burnRate (input+output+cache fields).
+  Mini-app publish and briefing analysis remain BL-603/BL-604.
+
+notes: |
+  Child of epic BL-594. Natural companion to burnRate/costTelemetry per-role views.
+
+out_of_scope: |
+  - Per-role breakdown (burnRate/costTelemetry own that); global rollup only.
+  - Cost in dollars (llmCostLedger owns that); tokens only.
+  - Mini-app publish and morning briefing analysis (BL-603/BL-604).

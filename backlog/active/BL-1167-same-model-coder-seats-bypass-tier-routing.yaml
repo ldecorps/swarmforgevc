@@ -25,6 +25,9 @@ abandoned_commits:
   - 378c873759
   - 61906b1d60
   - 86637c1150
+  - 313254f0c5
+  - e94f774668
+  - 0df196c120
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1167-same-model-coder-seats-bypass-tier-routing.feature
 
