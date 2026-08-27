@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=df1a873ccee4a5da1c56597d178190b72ba4d11a4ede74576952e5d7370038a0
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T12:21:56.260649914Z","feature_name":"the Cursor gone-agent classifier holds its boundaries","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-941-cursor-gone-agent-classifier-boundaries.feature","background_hash":"8fb938996674e40718be7a74fe55d624cb0efe74f6dc35239589407b51f38a43","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the stored agent is gone whatever the surface formatting","scenario_hash":"699b9cb5a79b5f44797e86a6d95ddf7cec18743d57033474b48126ef834c716c","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-27T12:21:56.260649914Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the Cursor gone-agent classifier holds its boundaries
 
   # BL-941 runs the mutation and CRAP gates BL-915 could not — the file was

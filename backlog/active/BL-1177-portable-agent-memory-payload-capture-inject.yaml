@@ -11,6 +11,10 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1177-portable-agent-memory-payload-capture-inject.feature
 
+abandoned_commits:
+  - a14d988241
+  - 3e3b5286d5
+
 human_approval: approved
 approval_context: >
   First slice of INTAKE-agent-memory-transfer.md. Prefer portable artifacts

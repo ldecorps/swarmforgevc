@@ -13,6 +13,18 @@ assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-599-trend-intake-balance.feature
+# Tip-pure rematch 2026-08-27 after QA bounce D1 (entangled tip). First-lineage
+# / bounce tips superseded; Spec/index rematched atop origin/main.
+abandoned_commits:
+  - 827121f814
+  - fbbe592e34
+  - fce61aee54
+  - 9653d3e368
+  - 8109a5dfba
+  - 4541e911cc
+  - 3647650d42
+  - e8212a3028
+  - 952dbd9101
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl599TrendIntakeBalanceSteps::acceptance handler registered"

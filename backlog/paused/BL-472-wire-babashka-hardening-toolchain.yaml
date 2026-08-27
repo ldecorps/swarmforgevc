@@ -87,4 +87,4 @@ approval_context: >
   human-review flow (including a new feature file) at that time.
 mutation_cost: low
 
-assigned_to: coder
+assigned_to: specifier
