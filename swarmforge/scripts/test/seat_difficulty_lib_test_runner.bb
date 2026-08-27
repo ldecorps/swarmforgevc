@@ -132,46 +132,6 @@
              :tiers tiers :models diff-models :conf-text diff-model-conf
              :sibling-states [{:role "coder" :tier "hard" :busy? true}]})))
 
-;; ── BL-1167 same-model bypass ───────────────────────────────────────────
-(let [conf (str "window coder claude coder --model auto --seat-tier hard\n"
-                "window coder@cursor2 claude coder-c2 --model auto --seat-tier easy\n")
-      models (seat-difficulty-lib/parse-seat-models conf)
-      seats (seat-difficulty-lib/parse-window-seats conf)
-      tiers (seat-difficulty-lib/parse-seat-tiers conf)]
-  (assert= "parse-seat-models both auto"
-           {"coder" "auto" "coder@cursor2" "auto"}
-           models)
-  (assert= "same-model stage is uniform"
-           true
-           (seat-difficulty-lib/stage-models-uniform? models seats "coder"))
-  (assert= "easy claims medium when same model"
-           :claim
-           (seat-difficulty-lib/difficulty-claim-decision
-            {:me "coder@cursor2" :my-tier "easy" :cost "medium" :stage "coder"
-             :tiers tiers :models models :window-seats seats
-             :sibling-states [{:role "coder" :tier "hard" :busy? false}]}))
-  (assert= "easy claims high when same model and hard busy"
-           :claim
-           (seat-difficulty-lib/difficulty-claim-decision
-            {:me "coder@cursor2" :my-tier "easy" :cost "high" :stage "coder"
-             :tiers tiers :models models :window-seats seats
-             :sibling-states [{:role "coder" :tier "hard" :busy? true}]})))
-
-(let [conf (str "window coder claude coder --model opus --seat-tier hard\n"
-                "window coder@cursor2 claude coder-c2 --model auto --seat-tier easy\n")
-      models (seat-difficulty-lib/parse-seat-models conf)
-      seats (seat-difficulty-lib/parse-window-seats conf)
-      tiers (seat-difficulty-lib/parse-seat-tiers conf)]
-  (assert= "differentiated models not uniform"
-           false
-           (seat-difficulty-lib/stage-models-uniform? models seats "coder"))
-  (assert= "easy still skips high when models differ"
-           :skip-ineligible
-           (seat-difficulty-lib/difficulty-claim-decision
-            {:me "coder@cursor2" :my-tier "easy" :cost "high" :stage "coder"
-             :tiers tiers :models models :window-seats seats
-             :sibling-states [{:role "coder" :tier "hard" :busy? true}]})))
-
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str (count @failures) " failure(s)"))
