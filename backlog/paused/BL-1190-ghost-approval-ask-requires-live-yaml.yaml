@@ -65,3 +65,8 @@ notes: |
     gate" deliverable). CONFIRM PROMOTE — premise verified fresh, no
     amendment needed. Extractor bug ticketed separately as BL-1193 (do not
     re-litigate here).
+  - [2026-08-27] coordinator: freshness hold cleared, confirm-promote
+    accepted. Not promoted this turn — active/ is at 7, effective cap is 6
+    (already over, no open slot). Expedited (defect/high) but Article 3.2.4
+    ordering never creates an extra slot. Top candidate for the next open
+    slot once one clears.
