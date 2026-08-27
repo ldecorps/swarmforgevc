@@ -2615,6 +2615,20 @@
     (catch Exception e
       (log! "resource-sample-sweep-error" (.getMessage e)))))
 
+;; BL-665: shells to the compiled run-context-telemetry-producer.js CLI —
+;; walks role transcripts via BL-664's transcriptWalker and fills GH-22's
+;; context-events store through context_telemetry_cli.bb record. Idempotent
+;; within a tick and across reruns (agent+session_id+timestamp dedupe), so
+;; firing every cycle like sibling sweeps is safe.
+(defn context-telemetry-producer-sweep! []
+  (try
+    (let [cli-path (node-tool-path "run-context-telemetry-producer.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "context-telemetry-producer" (str/trim out))))
+    (catch Exception e
+      (log! "context-telemetry-producer-sweep-error" (.getMessage e)))))
+
 ;; BL-356: twice in one day local `main` accumulated hours of committed work
 ;; that never reached origin, indistinguishable from a dead swarm from
 ;; outside - nothing in the swarm ever pushed; publication depended
@@ -3966,6 +3980,10 @@
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353 above.
                     (run-sweep! "resource-sample-sweep"
                         #(resource-sample-sweep!))
+                    ;; BL-665: context-telemetry producer shares the same
+                    ;; cadence — idempotent dedupe makes every-tick safe.
+                    (run-sweep! "context-telemetry-producer-sweep"
+                        #(context-telemetry-producer-sweep!))
                     ;; BL-356: push sweep shares the same cadence - no
                     ;; separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350 above.
