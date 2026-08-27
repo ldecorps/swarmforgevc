@@ -11,8 +11,7 @@ depends_on: [BL-582]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1190-ghost-approval-ask-requires-live-yaml.feature
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   INTAKE-bl1186-ghost-approval-ask-no-yaml.md (2026-08-27). Human tapped Approve
   on BL-1186 seven times; all returned no-ticket-file because yaml was never
