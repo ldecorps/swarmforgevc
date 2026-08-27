@@ -415,6 +415,7 @@ const DOMAINS = [
   require('./bl743PilotMkdtempConventionSteps'),
   require('./bl739PilotVacuousPropertyGateSteps'), // bl739PilotVacuousPropertyGateSteps: acceptance handler registered
   require('./bl664TurnProfilerTranscriptWalkerSteps'),
+  require('./bl666BudgetAwareShiftGovernorSteps'),
   require('./bl665ContextTelemetryProducerWiringSteps'),
   require('./bl755PilotMultiBranchParserNeedsPerArmTestsSteps'),
   require('./bl751PilotSiblingBranchGatingAsymmetrySteps'),
