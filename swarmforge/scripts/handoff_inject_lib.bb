@@ -10,6 +10,7 @@
 (load-file (str (fs/path scripts-dir "agent_runtime_inject.bb")))
 (load-file (str (fs/path scripts-dir "chase_sweep_lib.bb")))
 (load-file (str (fs/path scripts-dir "ambulance_lib.bb")))
+(load-file (str (fs/path scripts-dir "wake_dedup_lib.bb")))
 
 (def wake-message agent-runtime-lib/default-wake-chat-message)
 
@@ -175,25 +176,40 @@
     (chase-sweep-lib/actively-processing? pane)))
 
 (defn- notify-delivered-recipient!
-  "Wake one recipient unless deduped or busy. Mutates notified-sessions."
+  "Wake one recipient unless session-deduped, BL-1191 wake-dedup suppressed,
+   or busy. Mutates notified-sessions."
   [socket session wake-sess notified-sessions recipient role-info
    project-root filename log-fn]
-  (cond
-    (contains? @notified-sessions wake-sess)
-    (when log-fn (log-fn "deliver-notify-skip-dedup" recipient wake-sess))
+  (let [state-dir (str (fs/path project-root ".swarmforge"))]
+    (cond
+      (contains? @notified-sessions wake-sess)
+      (when log-fn (log-fn "deliver-notify-skip-dedup" recipient wake-sess))
 
-    (recipient-pane-busy? socket session)
-    (when log-fn (log-fn "deliver-notify-skip-busy" recipient wake-sess))
+      (recipient-pane-busy? socket session)
+      (when log-fn (log-fn "deliver-notify-skip-busy" recipient wake-sess))
 
-    :else
-    (do (swap! notified-sessions conj wake-sess)
-        (notify! socket session
-                 :log-fn log-fn
-                 :agent (:agent role-info)
-                 :traffic {:project-root project-root
-                            :source "sync-deliver"
-                            :role recipient
-                            :parcel filename}))))
+      :else
+      (let [now-ms (System/currentTimeMillis)
+            dedup (wake-dedup-lib/load-decision state-dir role-info now-ms)]
+        (if (= (:action dedup) :suppress)
+          (do (when log-fn (log-fn "wake-dedup-skip" recipient (:skip-reason dedup)))
+              (record-inject-traffic! project-root
+                                        {:source "sync-deliver"
+                                         :outcome "dedup-skip"
+                                         :role recipient
+                                         :session wake-sess
+                                         :parcel filename
+                                         :detail (:skip-reason dedup)}))
+          (do (swap! notified-sessions conj wake-sess)
+              (notify! socket session
+                       :log-fn log-fn
+                       :agent (:agent role-info)
+                       :traffic {:project-root project-root
+                                  :source "sync-deliver"
+                                  :role recipient
+                                  :parcel filename})
+              (wake-dedup-lib/record-injection! state-dir recipient
+                                                  (:fingerprint dedup) now-ms)))))))
 
 (defn- write-parcel-to-recipients!
   [project-root outbox-path message roles socket filename recipients log-fn]
