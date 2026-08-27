@@ -9,7 +9,7 @@ severity: medium
 priority: 102
 direction: human-requested
 depends_on: []
-assigned_to: documenter
+assigned_to: coder
 mutation_cost: low
 required_stages: [documenter, qa]
 stage_skip_reasons: { coder: "prose-only how-to guide; the documenter authors it — no production code", cleaner: "no code to refactor", architect: "no architectural surface", hardender: "no executable or test surface to mutate" }
