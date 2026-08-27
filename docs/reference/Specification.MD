@@ -1,6 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 27, 2026 (BL-726: BL-718 Bubble talk mirror
+**Last Updated:** August 27, 2026 (BL-710: Telegram `/redeploy` verb family
+covers cursor bridge, Mini App bridge, front desk, and union `/redeploy all`;
+each form is soft-tier confirm, reloads `swarm.env`, and the reply names what
+actually restarted. Acceptance:
+`specs/features/BL-710-one-clear-telegram-redeploy-path.feature`. How-to:
+`docs/how-to/BL-698-telegram-cursor-operator-commands.md` § Redeploy forms.)
+Prior entry —
 acceptance is wired — `bl718BubbleTalkMirrorSteps.js` registered from
 `specs/pipeline/steps/index.js`, handlers drive
 `mirrorLetsTalkTurnToBubble` / `splitTelegramChunks`; pipeline CLI no longer
