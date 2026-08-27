@@ -1,0 +1,54 @@
+id: BL-1168
+title: "EPIC — Disaster recovery loop: detect, diagnose, repair, learn; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: disaster-recovery-loop
+priority: 3
+direction: human-requested
+depends_on: []
+decomposes_into: [BL-1169, BL-1170, BL-1171]
+mutation_cost: high
+human_approval: pending
+approval_context: >
+  Parent frame from INTAKE-disaster-recovery-detect-diagnose-repair-learn.md
+  (human Laurent, 2026-08-27). Sibling intakes minted as BL-1169 (repair),
+  BL-1170 (/postmortem learn verb), BL-1171 (disaster-class diagnose). Half-launch
+  instance NOT merged into this epic body — linked as BL-1169 only.
+description: |
+  ## Why
+
+  Babysitterd finds and escalates well but synthesizes poorly: today's
+  starvation cascade (handoffd down + 9× half-launch + swarm-starved) read as
+  separate CRIT fires, operator got symptoms not playbooks, and post-incident
+  learning required hand-written INTAKE-*.md hours later.
+
+  ## Loop
+
+  Detect (mostly exists) → Diagnose (failure class + clue bundle) → Repair
+  (bounded auto, extend BL-1017/BL-958) → Learn (/postmortem verb + intake stub).
+
+  ## Children (minted 2026-08-27)
+
+  | Slice | Ticket | Delivers |
+  | --- | --- | --- |
+  | Repair | BL-1169 | Half-launch + swarm-starved bounded auto-repair |
+  | Learn | BL-1170 | `/postmortem` operator verb + registries + intake stub |
+  | Diagnose | BL-1171 | Disaster-class correlation + structured escalation |
+
+remaining_slices:
+  - "Auto-enqueue soft postmortem after disaster-class clear (optional trigger in BL-1170 notes)."
+  - "Operator queue consumption when 100+ BABYSITTER_ESCALATION events pile up — separate if BL-1169 insufficient."
+
+invariants:
+  - "Auto-repair never swallows the CRIT — same posture as BL-1017."
+  - "Specifier retains intake→ticket authority; learn artefacts mint INTAKE stubs only (BL-311)."
+
+source: |
+  backlog/INTAKE-disaster-recovery-detect-diagnose-repair-learn.md (human Laurent,
+  2026-08-27 ~06:39 BST); links
+  INTAKE-babysitter-half-launch-starvation-auto-recover.md and
+  INTAKE-postmortem-operator-verb-failure-class-learn.md as siblings, not merged.
+
+notes: |
+  - [2026-08-27] specifier: epic + three slices from root intake drain.
