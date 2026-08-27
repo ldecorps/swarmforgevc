@@ -9,6 +9,25 @@ priority: 5
 direction: human-requested
 depends_on: [BL-983]
 mutation_cost: low
+abandoned_commits:
+  - 8578caf5d3
+  - 06a200ec29
+  - a507ed7e6d
+  - d1369d1c61
+  - fa828f1959
+  - 0452531b29
+  - 93cda4ca37
+  - 465281d90d
+  - 0db5e13778
+  - 20bf1ee84f
+  - 3e9b875ae8
+  - 6e49b8a02d
+  - 378c873759
+  - 61906b1d60
+  - 86637c1150
+  - 313254f0c5
+  - e94f774668
+  - 0df196c120
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1167-same-model-coder-seats-bypass-tier-routing.feature
 
@@ -83,3 +102,6 @@ source: |
   > `coder@cursor2`), the coordinator may pass coder work to either seat
   > regardless of the ticket's `mutation_cost` or declared `--seat-tier`.
   > BL-1001 tier rules apply only when seats are model-differentiated.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-27, by: QA, blamed: coder, class: behavior, commit: 6e49b8a02d, evidence: backlog/evidence/BL-1167-qa-bounce-20260827.md }

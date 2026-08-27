@@ -162,3 +162,5 @@ qa_e2e_procedure: >
      `specs/features/BL-1000-freshness-tests-read-a-pinned-fixture.feature`
      execute with registered handlers (no runtime THROW on a missing
      handler).
+
+assigned_to: coder
