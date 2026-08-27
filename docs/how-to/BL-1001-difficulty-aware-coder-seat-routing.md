@@ -53,3 +53,6 @@ Acceptance:
 `specs/features/BL-1001-difficulty-aware-coder-seat-routing.feature`
 
 Related: Spec BL-983 multi-seat claim; `docs/how-to/BL-1004-cross-seat-rework-claim-deferral.md`.
+When **every** seat of the stage declares the same pack `--model`, tier
+filtering is bypassed (BL-1167) — see
+[Same-model seats bypass tier routing](BL-1167-same-model-coder-seats-bypass-tier-routing.md).
