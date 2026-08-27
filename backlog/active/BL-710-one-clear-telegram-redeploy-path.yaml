@@ -11,7 +11,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "Every redeploy form reports which live process it actually restarted; a success reply never names a process the command did not bounce."
