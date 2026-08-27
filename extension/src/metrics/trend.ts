@@ -37,3 +37,6 @@ export function computeTrend(series: TrendSeriesPoint[]): TrendResult {
   const delta = currentValue - priorValue;
   return { series, currentValue, priorValue, delta, direction: directionOf(delta) };
 }
+
+// BL-600: human-decision latency median series via shared TrendedNumber framework.
+export { trendForDecisionLatencyMedian } from './humanDecisionLatency';
