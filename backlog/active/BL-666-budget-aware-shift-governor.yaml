@@ -64,7 +64,7 @@ description: |
 acceptance: specs/features/BL-666-budget-aware-shift-governor.feature
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 required_wiring:
-  - 'swarmforge/scripts/shift_applier_lib.bb::budgetShiftGovernorVerdict::shift boundary hosts governor'
+  - 'swarmforge/scripts/shift_schedule_applier_lib.bb::budgetShiftGovernorVerdict::shift boundary hosts governor'
   - 'extension/src/tools/turnProfile.ts::bl664WalkerBurnMeter::burn meter reads transcript walker output'
   - 'specs/pipeline/steps/index.js::bl666BudgetAwareShiftGovernorSteps::acceptance handler registered'
 
