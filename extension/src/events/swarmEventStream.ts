@@ -41,9 +41,6 @@ export interface TicketSummary {
   // ApprovalRequested event's payload the same way diffTaskStarted already
   // carries the other three fields into a TaskStarted event.
   approvalContext?: string;
-  // BL-589: discrete ruling choices - carried into ApprovalRequested payload
-  // so topicRouter.ts can render option buttons alongside default verbs.
-  rulingOptions?: string[];
 }
 
 export interface EventStreamSnapshot {

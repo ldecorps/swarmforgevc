@@ -214,22 +214,7 @@ export function messageTextForEvent(event: SwarmEvent): string {
 // confusing "Expedite" with the offline Cursor-bridge expeditor) - the
 // callback_data stays `expedite:<id>` for compatibility with the existing
 // round-trip; only the human-visible label changed.
-const INLINE_BUTTON_LABEL_MAX = 64;
-
-function truncateInlineButtonLabel(label: string): string {
-  if (label.length <= INLINE_BUTTON_LABEL_MAX) {
-    return label;
-  }
-  return `${label.slice(0, INLINE_BUTTON_LABEL_MAX - 1)}…`;
-}
-
-function rulingOptionButtonRows(backlogId: string, rulingOptions: string[]): InlineKeyboardButton[][] {
-  return rulingOptions.map((label, index) => [
-    { text: truncateInlineButtonLabel(label), callbackData: `rule:${backlogId}:${index}` },
-  ]);
-}
-
-function defaultApprovalVerbRows(backlogId: string): InlineKeyboardButton[][] {
+function approvalRequestedButtons(backlogId: string): InlineKeyboardButton[][] {
   return [
     [
       { text: 'Approve', callbackData: `approve:${backlogId}` },
@@ -237,24 +222,19 @@ function defaultApprovalVerbRows(backlogId: string): InlineKeyboardButton[][] {
       { text: 'Reject', callbackData: `reject:${backlogId}` },
       { text: 'Q jump', callbackData: `expedite:${backlogId}` },
     ],
+    // More: full spec + Gherkin in an in-topic follow-up (Telegram alert
+    // text is ~200 chars — too small for APS prose). Second row keeps the
+    // four decision verbs on one thumb-reachable line.
     [
       { text: 'More', callbackData: `more:${backlogId}` },
+      // BL-893: hold the live stack for this ticket (same Control marker).
       { text: 'Ambulance', callbackData: `ambulance:${backlogId}` },
     ],
   ];
 }
 
-function approvalRequestedButtons(backlogId: string, rulingOptions?: string[]): InlineKeyboardButton[][] {
-  const optionRows = rulingOptions && rulingOptions.length > 0 ? rulingOptionButtonRows(backlogId, rulingOptions) : [];
-  return [...optionRows, ...defaultApprovalVerbRows(backlogId)];
-}
-
 function messageButtonsForEvent(event: SwarmEvent): InlineKeyboardButton[][] | undefined {
-  if (event.type !== 'ApprovalRequested' || event.backlogId === null) {
-    return undefined;
-  }
-  const rulingOptions = event.payload.rulingOptions as string[] | undefined;
-  return approvalRequestedButtons(event.backlogId, rulingOptions);
+  return event.type === 'ApprovalRequested' && event.backlogId !== null ? approvalRequestedButtons(event.backlogId) : undefined;
 }
 
 // BL-299: distinct from messageTextForEvent's generic progress line - the

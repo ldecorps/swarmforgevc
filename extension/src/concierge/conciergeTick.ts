@@ -40,8 +40,6 @@ export interface BacklogFolderItem {
   // backlogReader.ts parses from `approval_context` (BL-479) - never a
   // second parse.
   approvalContext?: string;
-  // BL-589: read straight off BacklogItem.rulingOptions (ruling_options yaml).
-  rulingOptions?: string[];
   // BL-357: read straight off the SAME BacklogItem.humanApproval field
   // backfill-human-approval.ts seeded and backlogReader.ts already parses -
   // never a second approval-state derivation.
@@ -287,7 +285,6 @@ function ticketSummariesFor(active: BacklogFolderItem[], paused: BacklogFolderIt
       notes: item.notes,
       firstAcceptanceStep: item.firstAcceptanceStep,
       approvalContext: item.approvalContext,
-      rulingOptions: item.rulingOptions,
     };
   }
   return summaries;

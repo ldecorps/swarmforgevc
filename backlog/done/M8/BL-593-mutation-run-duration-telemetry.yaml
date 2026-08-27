@@ -105,31 +105,30 @@ description: |
   same ambiguity. scope+mutant-count+incremental are what make the number
   interpretable; they are load-bearing, not nice-to-have.
 
-qa_e2e_procedure: >
-  (1) Run a scoped mutation pass to completion — one jsonl line appended, live
-  snapshot still overwritten as today. (2) Inspect line: started_at, ended_at,
-  elapsed_s, role, scope+total, incremental, concurrency, kill breakdown,
-  build_sha. (3) Kill mid-run — no false completed record (none or aborted:true
-  partial). (4) Unit tests on pure builder without fs. (5) Second run appends
-  without rewriting first line; file gitignored. Optional: grep last N lines for
-  "how long did the last few take".
+acceptance: |
+  Specifier writes the scenarios. Minimum:
 
-source: |
-  Human, 2026-07-23, after asking "how long did the last few mutation testings
-  last" and being told it is not recorded cleanly: "yes file this extra bit of
-  telemetry, can't get enough of them."
+  1. A completed mutation run appends exactly one record to
+     `.swarmforge/telemetry/mutation-runs.jsonl`; the live per-mutant snapshot
+     behaviour is unchanged.
+  2. The record carries at minimum: started_at, ended_at, elapsed_s, role,
+     scope (glob/files) + mutant total, incremental flag, effective
+     concurrency, the kill-status breakdown, and build_sha.
+  3. A run that is KILLED/aborted mid-way does not append a misleading
+     "completed" record - either it appends nothing, or it appends with an
+     explicit `aborted: true` and the partial counts, but never a clean record
+     that reads as a finished full run (the exact failure the current
+     overwritten-snapshot design has).
+  4. The record-building is a PURE function over (state, start/end, scope
+     meta) - unit-tested with fixtures, no fs and no Stryker, mirroring
+     mutationProgress.ts's own already-pure buildProgressRecord split.
+  5. The log is append-only and gitignored (machine-local runtime data), the
+     same posture as context-events.jsonl - never committed, never a source of
+     truth that must survive a fresh checkout.
 
-specifier_decisions: |
-  Minted 2026-08-26 per coordinator route (restored after BL-656 QA merges dropped
-  prior spec commit from main). Five scenarios map inline acceptance 1–5.
-  Log path: .swarmforge/telemetry/mutation-runs.jsonl (context-events.jsonl precedent).
-  Aborted runs: append nothing OR aborted:true with partial counts — never a clean
-  completed full-run record. Tiny "last N runs" reader CLI is optional follow-on
-  (out of slice 1); jsonl is grep-able without it.
-
-notes: |
-  Reuses mutationProgress.ts pure split and MutationProgressReporter completion
-  hook. Sibling to BL-591/BL-594 trend tickets — feeds real per-run cost later.
+  Optional follow-on (specifier decides in or out): a tiny reader that prints
+  the last N runs' scope+elapsed, so "how long did the last few take" is one
+  command. Even without it, the jsonl is grep-able.
 
 out_of_scope: |
   - Changing what gets mutated, the concurrency, or the incremental cache
@@ -139,4 +138,3 @@ out_of_scope: |
     instead of a git-history proxy.
   - Retroactively reconstructing durations for past runs - there is no data;
     telemetry starts when this lands.
-  - Slice 1: dedicated reader CLI printing last N scope+elapsed (jsonl grep suffices).

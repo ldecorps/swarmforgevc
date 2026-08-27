@@ -181,3 +181,10 @@
   stamp_ticket: BL-1152
   human_decision: null
   decided_at: null
+- commit: 24b229373c
+  subject: "Front desk ops hotfix: rearm bridge script + source swarm.env at runtime start."
+  detected_at: 2026-08-26
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
