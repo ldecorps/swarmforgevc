@@ -1,5 +1,7 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 27, 2026 (BL-709: Bubble gets its own Telegram forum topic — Let's Talk mirrors to Bubble when bound; Cursor Remote operator-only; unbound fallback. How-to: BL-696, BL-696 amendment, BL-718. Acceptance: specs/features/BL-709-bubble-its-own-telegram-topic.feature.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-1175: standing property-suite reds
 are explicitly allowlisted in
 `swarmforge/scripts/property_suite_standing_allowlist.tsv` so
