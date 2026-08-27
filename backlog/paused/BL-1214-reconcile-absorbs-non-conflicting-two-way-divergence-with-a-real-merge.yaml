@@ -2,7 +2,7 @@ id: BL-1214
 title: "master-main reconcile plans :ff-absorb for a two-way divergence but can only fast-forward, so it resets the local commit away instead of merging it"
 milestone: M8
 type: defect
-severity: high
+severity: critical
 status: todo
 epic: swarm-reliability
 priority: 10
@@ -140,3 +140,35 @@ notes: |
     the same four files. Do not promote this until BL-1198 is in
     backlog/done/, or the two parcels will collide (Concurrent Work
     Orthogonality)."
+  - "[2026-08-28] specifier: this defect FIRED IN PRODUCTION on `main` and
+    destroyed four committed commits. Severity raised high -> critical on the
+    schema's own definition (`critical` = swarm-down or data-loss); this is no
+    longer a standing-lane red, it is realised loss. `git reflog show main`
+    records `main@{2}: reset: moving to origin/main`, and the branches had
+    genuinely diverged (`git merge-base --is-ancestor 9fcce267a 07f4283a3`
+    reports NOT an ancestor), so this is the exact two-way case the ticket
+    describes: plan says absorb, executor reset. Destroyed, newest first:
+    07f4283a3 `Approve BL-1214: record human_approval`, 23f154cd4 `Approve
+    BL-1215: record human_approval`, 09f46574c `BL topic record for BL-1198`,
+    779a036e5 `Correct BL-891 fixup: restore BL-1188/1189/592 with real
+    content, not stale`. An earlier `main@{11}: reset: moving to origin/main`
+    shows this is not a one-off."
+  - "[2026-08-28] specifier: the sharpest fact for anyone weighing this
+    ticket's priority — the reset destroyed the HUMAN'S OWN APPROVAL OF THIS
+    TICKET. 07f4283a3 flipped BL-1214 `human_approval: pending` -> `approved`
+    and 23f154cd4 did the same for BL-1215. Both flips are gone; both tickets
+    read `pending` on `main` again and cannot promote, and the human will be
+    re-asked for an approval they already gave. The specifier must not flip
+    the field back (schema: `approved` is written by the human, never by the
+    specifier), so it has to be re-applied from the rescue ref below or
+    re-asked."
+  - "[2026-08-28] specifier: nothing is unrecoverable — the dropped commits
+    were preserved as local refs the moment the loss was noticed:
+    `rescue/main-before-reset-20260828` -> 07f4283a3 (the full pre-reset tip,
+    containing all four), and `rescue/BL-1216-spec` -> 2c1c01bd4 (the BL-1216
+    spec, written after the reset and at risk of the next one). Recovery is a
+    cherry-pick, not a rewrite. Delete these refs only once the content is
+    reachable from `origin/main`. Collateral still live on `main`: BL-1188,
+    BL-1189 and BL-592 are back in `backlog/hold/` — the repair 779a036e5
+    made was undone with it (see
+    [coordinator-false-identical-content-claim] evidence and BL-1216)."
