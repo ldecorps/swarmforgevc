@@ -43,6 +43,7 @@ expects them, and are not migrated or rewritten here.
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
+- [RECENTLY CLOSED lines show closure age](how-to/BL-980-recently-closed-elapsed-time.md) — `(10min ago)` from durable `doneClosedAtMs`; RECENTLY CLOSED only (BL-980).
 - [One unified pipeline grid across swarms](how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md) — one kanban; caption `s1`/`s2` badges when multi-swarm; remote held-by-role never guessed (BL-1009).
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Steering a swarm role from Telegram, and reading the receipt](how-to/BL-566-steer-a-role-from-telegram.md) — per-role topic nudge + delivery receipt (BL-566); `menu_blocked` when a pane menu is live (BL-568).
@@ -80,9 +81,6 @@ expects them, and are not migrated or rewritten here.
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
 - [Mint-time hygiene refuses a dangling acceptance pointer](how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md) — `DANGLING-ACCEPTANCE` at specifier hygiene; shared `applicable?` with BL-880 (BL-1027).
 - [Promotion refuses a missing or draft acceptance feature](how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md) — blocking `acceptance` gate + `audit-acceptance`; no sibling-glob rescue (BL-626).
-- [Deprecator freshness-gate CLI before promote](how-to/BL-1173-deprecator-freshness-gate-cli.md) — `deprecate-check.js` allow|hold; promote fails closed (BL-1173 / Article 3.6).
-- [Run `/deprecate` soft verbs](how-to/BL-1174-deprecate-operator-verbs-scan-docs.md) — dry ranks orphan conf flags; confirm retires one into `docs/deprecated/` + index link; check wraps BL-1173; hard-tier only (BL-1174).
-- [Keep the chunking property falsifiable](how-to/BL-738-chunking-property-reaches-the-split-boundary.md) — probe `maxLen=50` + `minLength: 51` so the property hits multi-chunk; scenario 02 falsifies (BL-738).
 - [Open-slot nudge skips type: epic trackers](how-to/BL-1145-open-slot-nudge-skips-epic-trackers.md) — promotion_gates_lib evaluate refuses epic/blocked so nudge and promote share one chain (BL-1145).
 - [Exit gates: committed acceptance + epic runtime wiring](how-to/BL-533-spec-commit-and-runtime-wiring-exit-gates.md) — untracked acceptance fails hygiene; multi-slice epics need `required_wiring` (BL-533).
 - [Expedite lane is defect-only; type bug retired](how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md) — predicate + mint `RETIRED-TICKET-TYPE`; use `type: defect` (BL-1095).
@@ -105,6 +103,7 @@ expects them, and are not migrated or rewritten here.
 - [Resident Spy pane font-size control](how-to/BL-609-resident-spy-font-size-control.md) — compact +/- in header; default 13px; host-persisted stickiness via BL-1153 (BL-609 UX).
 - [Sticky web UI font-size choice](how-to/BL-1153-sticky-web-font-size-choice.md) — Live Screen, Pipeline Board, and Paused pager restore size after reload via extension-host JSON; PWA Cache unchanged (BL-1153).
 - [Live Screen grid tiles name the ticket a seat holds](how-to/BL-1046-console-tile-names-the-ticket-a-seat-holds.md) — ticket id, slug, compact claim age, batch +N on phone grid; same payload as Expand (BL-1046).
+- [Live Screen per-tile activity dots](how-to/BL-1160-live-screen-activity-dot-per-tile.md) — one status dot inside each grid tile; ok/stale/err palette unchanged; Expand keeps status cue (BL-1160).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Isolating batch recovery trees](how-to/BL-588-isolate-batch-recovery-trees.md) — approach 3: clean siblings re-forward unchanged and land while a defective batch sibling reworks on an isolated branch; QA merges verified whole trees only (BL-588).
 - [Dev-host bounce under WSL: exactly one window](how-to/BL-578-devhost-bounce-wsl-window-leak.md) — Windows-side kill-old + headless-swarm refuse/`--force` (BL-578).
@@ -130,7 +129,7 @@ expects them, and are not migrated or rewritten here.
 - [Named tunnel Bubble — fixed URL on a Cloudflare zone you own](how-to/named-tunnel-bubble-musicalsifu.md)
 - [Running Bubble's JVM unit suite](how-to/BL-769-android-jvm-unit-suite.md) — which Kotlin logic is testable on the host JVM, and where the pure-logic/device-surface line falls.
 - [Collapsed-bubble gesture model](how-to/BL-828-bubble-collapsed-gesture-model.md) — tap to talk / tap again to send; double-tap to expand; idle tap deferred one double-tap window (BL-828; updates BL-707).
-- [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks (including per-agent process markers, BL-1108), what a nudge looks like, CRIT escalations to the operator (BL-653), start/stop/ensure, state layout, the flipped env skip, the Operator's tell-never-restart freshness watchdog (down/pidfile-lie/announce-mute/healthy), the bounded vanished-session repair, the bounded control-plane auto-heal (attempt/wall-clock bound, three-outcome REPAIR line), and the detector that tells someone when pipeline code lands on `main` outside QA; half-launch / swarm-starved bounded auto-repair (BL-1169).
+- [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks (including per-agent process markers, BL-1108), what a nudge looks like, CRIT escalations to the operator (BL-653), start/stop/ensure, state layout, the flipped env skip, the Operator's tell-never-restart freshness watchdog (down/pidfile-lie/announce-mute/healthy), the bounded vanished-session repair, the bounded control-plane auto-heal (attempt/wall-clock bound, three-outcome REPAIR line), and the detector that tells someone when pipeline code lands on `main` outside QA.
 - [Escalation-driven operator wake model](how-to/BL-653-operator-escalation-driven-wake-model.md) — operator LLM wakes only on human traffic, babysitter CRIT escalation, or SWARM_CONTROL_LOST; retires fabricated per-tick wakes and night-start pid-hold (BL-653).
 - [Three named shift packs — one active in conf](how-to/BL-660-three-shift-packs-conf-selectable.md) — `config swarm_shift day|evening|night` drives start/stop crontab, cooldown inverse, ceremony stop, and briefing from one source (BL-660).
 - [Babysitter rotate-not-honored skips standing packs](how-to/BL-1129-babysitter-rotate-not-honored-skips-standing.md) — check 9 gated on `rotation-router?`; standing packs never CRIT (BL-1129).
@@ -147,7 +146,6 @@ expects them, and are not migrated or rewritten here.
 - [Email escalation for unanswered role questions](how-to/GH-25-email-escalation-for-unanswered-role-questions.md) — one-shot GitHub `@ldecorps` mention past threshold; `status.json` pending/escalated (GH-25).
 - [`/pilot safe` — auto-pick a low-blast defect for offline pilot](how-to/BL-722-pilot-safe-defects.md) — the safe-pool filter (approved, low-mutation, specced defect, not needs_design), its ranking, and the empty-pool refusal.
 - [Certifying an operator hotfix](how-to/BL-848-certify-an-operator-hotfix.md) — declaring a hand-landed hotfix with the `Hotfix-Certification: pending` trailer, the ledger state machine, and why no hotfix becomes an official swarm deal on green tests alone.
-- [Concurrent hotfix stamp asks on Approvals](how-to/BL-1152-swarm-stamp-concurrent-hotfix-stamp-asks-7380d80686.md) — stamp-off of hotfix `7380d80686`; `hotfix-stamp-asks.json` + ledger `--decide` bypass the single awaiting-answer slot (BL-1152).
 - [Master-Checkout Drift Alarm — Understanding the Alert](how-to/BL-839-master-checkout-drift-alarm.md) — what to do when the master checkout's daemon-executed scripts no longer match `main`.
 - [Auto-repair durable master-checkout daemon-script drift](how-to/BL-1139-master-checkout-drift-auto-repair.md) — restore from `main` when not in-flight; RESTORED note + handoffd bounce (BL-1139; updates BL-839).
 - [Master-checkout drift mutes WARN while a commit is in flight](how-to/BL-1122-master-checkout-drift-mutes-warn-while-commit-in-flight.md) — mid-commit mute; durable reversion still alarms (BL-1122); post-add window closed by BL-1134.
