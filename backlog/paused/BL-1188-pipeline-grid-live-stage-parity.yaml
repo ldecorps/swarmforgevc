@@ -1,0 +1,67 @@
+id: BL-1188
+title: "Pipeline STATUS GRID uses live stage report — not stale cache CO flood"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: pipeline-board
+priority: 24
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1188-pipeline-grid-live-stage-parity.feature
+human_approval: pending
+
+approval_context: >
+  Human Laurent via Cursor 2026-08-27 ~10:23 BST. STATUS GRID at
+  e.musicalsifu.com/pipeline-grid showed nearly every active ticket under CO
+  while Resident Spy correctly showed other seats working. Root cause:
+  pipelineGridLive.ts still reads ticket-stage-map cache; Telegram uses live
+  report (BL-487). Re-landed from orphaned commit 117dd0f9b with staging on main.
+
+invariants:
+  - "capturePipelineGridLive never uses the coordinator-written ticket-stage-map cache as its sole source of role-held tickets when a live pipeline_stage_cli.bb report is available."
+  - "On each capture tick the grid recomputes role-held tickets from live swarm state — it does not reuse a prior snapshot's stage marks."
+
+required_wiring:
+  - 'extension/src/bridge/pipelineGridLive.ts::readLiveRoleHeldTickets::PWA grid capture must derive from live report like Telegram'
+  - 'specs/pipeline/steps/index.js::bl1188PipelineGridLiveStageParitySteps::acceptance handler registered'
+
+description: |
+  ## What
+
+  The Pipeline STATUS GRID PWA (`/pipeline-grid`, `pipelineGridLive.ts`) is far
+  less accurate than Resident Spy about who is doing what. On the phone grid,
+  almost every active ticket shows X under CO while Spy correctly shows
+  hardender, architect, QA, etc. actively working different tickets.
+
+  ## Why
+
+  `capturePipelineGridLive` still stages from
+  `.swarmforge/board/ticket-stage-map.json` via `readTicketStageMap` — the
+  coordinator cache. Telegram's board already uses live
+  `pipeline_stage_cli.bb report` each tick (BL-487 / `readLiveRoleHeldTickets`).
+
+  ## How (direction, not mandate)
+
+  1. Wire `pipelineGridLive.ts` to the same live report path Telegram uses.
+  2. Align working marks with Spy's in_process claim + live pane signal.
+  3. Treat mailbox `new/` distinctly from claimed work.
+
+qa_e2e_procedure: >
+  (1) With swarm running, open /pipeline-grid — stage marks match Telegram live
+  board and Spy (not all CO). (2) Deep coder new/ queue — tickets at
+  hardender/QA still show those stages. (3) Move a ticket; next tick reflects
+  move without manual cache sync.
+
+out_of_scope: |
+  - Replacing Resident Spy.
+  - BL-670 health dots (consume when landed).
+
+source: |
+  backlog/INTAKE-pipeline-grid-match-resident-spy-accuracy.md (human Laurent via
+  Cursor, 2026-08-27 ~10:23 BST).
+
+notes: |
+  - [2026-08-27] Re-landed from orphaned 117dd0f9b; sibling BL-1189 (Live Screen).
