@@ -45,6 +45,18 @@ test('findTicketFilePath: never matches backlog/done (a ticket cannot be un-clos
   assert.equal(findTicketFilePath(root, 'BL-1190'), undefined);
 });
 
+test('findTicketFilePath: matches an id: line with trailing whitespace after the value', () => {
+  const root = mkTmpDir('bl1190-pending-for-');
+  const dir = path.join(root, 'backlog', 'active');
+  fs.mkdirSync(dir, { recursive: true });
+  // A trailing space (editor artifact) or CRLF line ending leaves stray
+  // whitespace inside the regex capture (`.` does not match `\n` but does
+  // match `\r`) - the id must still be recognized, not silently missed.
+  fs.writeFileSync(path.join(dir, 'BL-1190-slug.yaml'), 'id: BL-1190 \r\ntitle: t\nhuman_approval: pending\n');
+  const found = findTicketFilePath(root, 'BL-1190');
+  assert.equal(found, path.join(root, 'backlog', 'active', 'BL-1190-slug.yaml'));
+});
+
 test('ticketFileExists: true/false mirror findTicketFilePath', () => {
   const root = mkTmpDir('bl1190-pending-for-');
   writeTicket(root, 'active', 'BL-1190-slug.yaml', 'BL-1190');
