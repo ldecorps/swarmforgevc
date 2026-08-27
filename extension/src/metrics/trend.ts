@@ -37,3 +37,7 @@ export function computeTrend(series: TrendSeriesPoint[]): TrendResult {
   const delta = currentValue - priorValue;
   return { series, currentValue, priorValue, delta, direction: directionOf(delta) };
 }
+
+// BL-601: do NOT re-export trendForCompactionCadencePerHour from here —
+// compactionCadence imports computeTrend; a re-export creates an acyclic cycle
+// (architect bounce 88c606593c). Callers import from ./compactionCadence.
