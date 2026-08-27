@@ -14,6 +14,8 @@ NONE.
 - Living docs from prior pass (`4b60aa392`) remain accurate — how-to,
   Specification Standing Property-Suite Allowlist section, index link, BL-570
   cross-link, architecture note; no user-visible behaviour change this pass.
+- `required_wiring` realigned: TSV needle replaces unmatchable
+  `extension/ npm run test:properties` path (prior pass noted but uncommitted).
 - Allowlist inventory is machine-readable in
   `swarmforge/scripts/property_suite_standing_allowlist.tsv` (27 rows).
 
