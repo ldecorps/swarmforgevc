@@ -5,7 +5,7 @@ type: chore
 severity: medium
 status: blocked
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 5
 direction: pipeline-note
 depends_on: [BL-1248]
