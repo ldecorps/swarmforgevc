@@ -35,6 +35,11 @@
 ;; an install path carrying an apostrophe cannot break the repair that exists
 ;; to save the role.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
+;; BL-1217: the shared effective-config reader (conf-file-path) and the
+;; shared `config <key> <value>` parser (raw-config-value) - reused, never
+;; a third hand-rolled conf reader.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
 
 (def ^:private nul (str (char 0)))
 
@@ -52,14 +57,37 @@
   [state-dir role]
   (fs/path state-dir "launch" (str role ".sh")))
 
+(defn remote-control-off-in-conf-text?
+  "Pure: true when conf-text sets `config remote_control off`. An absent
+   key or any other value means on - today's default, unchanged."
+  [conf-text]
+  (= "off" (coordinator-config-lib/raw-config-value conf-text "remote_control")))
+
+(defn remote-control-configured-off?
+  "BL-1217: true when the EFFECTIVE pack config (backlog-depth-lib/
+   conf-file-path - the swarm-identity-persisted conf for the swarm that is
+   actually running, or the tracked default when no identity was persisted)
+   sets `config remote_control off`. An unreadable conf file also means on
+   (fail open to today's behaviour, never a spurious :off)."
+  [project-root]
+  (let [conf-path (backlog-depth-lib/conf-file-path project-root)]
+    (remote-control-off-in-conf-text? (try (slurp (str conf-path)) (catch Exception _ "")))))
+
 (defn expected-rc-name
   "The RC name a role SHOULD run with, read from its persisted launch script
-   (the source of truth for how its pane is respawned). nil when the script is
-   absent or carries no --remote-control (RC deliberately off for that role)."
+   (the source of truth for how its pane is respawned) - UNLESS the effective
+   pack config sets `config remote_control off`, in which case this returns
+   nil regardless of what the script says (BL-1217: config must gate desired
+   state, not merely auto-inject at launch). state-dir is always
+   <project-root>/.swarmforge at every real call site (remote_control_health.bb,
+   swarm_ensure.bb), so project-root is derived from it rather than adding a
+   new positional arg to every arity of check-role that calls this."
   [state-dir role]
-  (let [launch (launch-script-path state-dir role)]
-    (when (fs/exists? launch)
-      (extract-rc-name (slurp (str launch))))))
+  (let [project-root (fs/parent state-dir)]
+    (when-not (remote-control-configured-off? project-root)
+      (let [launch (launch-script-path state-dir role)]
+        (when (fs/exists? launch)
+          (extract-rc-name (slurp (str launch))))))))
 
 (defn respawn-role-pane!
   "Kills and respawns session on socket running its persisted launch script,
