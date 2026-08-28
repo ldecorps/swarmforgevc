@@ -57,15 +57,35 @@ the human's answer to something else.
 5. **The inline-note path is unaffected.** An answer short enough to ride
    inline in the note (≤80 chars) still arrives inline, with no file
    written and nothing to correlate.
+6. **The pointer note itself now names the CLI, not the raw file.**
+   QA's own D1 bounce on this ticket caught that
+   `composeRoleAnswerNoteMessage` still emitted `"answer ready:
+   .swarmforge/operator/role-answers/<role>.json"` — byte-identical to
+   before the fix — so a role acting on the note exactly as written still
+   read the raw file directly and got none of `deliverRoleAnswer`'s
+   guarantees; the correlator fix was reachable from a test or from this
+   doc, but not from the production note a role actually receives. Fixed:
+   `roleAnswerCliInvocation(role)` now composes `node
+   extension/out/tools/deliver-role-answer.js --role <role>`, and the
+   pointer branch of `composeRoleAnswerNoteMessage` emits `"answer ready:
+   <that invocation>"` instead of the bare path — the note text itself
+   carries the enforcement now, not only docs a role was never told to
+   read.
 
 ## How a role should act on an "answer ready" note
 
-Previously a role (or human) read `.swarmforge/operator/role-answers/<role>.json`
-directly off the bare pointer note — exactly the read that handed over the
-stale five-day-old answer. That direct-read path still exists as a file on
-disk, but reading it directly no longer applies the correlator check.
+The pointer note a role actually receives now reads, e.g.:
 
-**Use the CLI instead:**
+```text
+answer ready: node extension/out/tools/deliver-role-answer.js --role coordinator
+```
+
+Run the command the note names — that **is** the CLI, not a bare file
+path to read directly. The underlying
+`.swarmforge/operator/role-answers/<role>.json` file still exists on disk,
+but reading it directly bypasses the correlator check entirely (exactly
+the read that produced the original incident) and is never the right way
+to act on this note.
 
 ```bash
 node extension/out/tools/deliver-role-answer.js --role <role>
@@ -86,6 +106,7 @@ It runs `deliverRoleAnswer` and prints one of:
 | --- | --- |
 | Correlator stamp on capture | `writeRoleAnswerFile`, `extension/src/tools/telegram-front-desk-bot.ts` |
 | Refuse/consume logic | `deliverRoleAnswer`, same file |
+| Pointer note names the CLI | `roleAnswerCliInvocation` / `composeRoleAnswerNoteMessage`, same file (QA D1 re-fix) |
 | CLI entry point | `extension/src/tools/deliver-role-answer.ts` → `node deliver-role-answer.js --role <role>` |
 | Capture-time wiring (marker survives until consumption) | `captureRoleAnswer`, `extension/src/tools/telegramFrontDeskBotCore.ts` |
 | Answer pointer file | `.swarmforge/operator/role-answers/<role>.json` |

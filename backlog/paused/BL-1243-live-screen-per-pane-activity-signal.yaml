@@ -1,0 +1,118 @@
+id: BL-1243
+title: "Each Live Screen tile paints its own agent's activity, derived from pane text the snapshot already holds"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+priority: 28
+direction: human-requested
+depends_on: [BL-1160]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1243-live-screen-per-pane-activity-signal.feature
+
+human_approval: approved
+approval_context: >
+  The build is cheap and the operator already ruled on cost, so what needs your
+  sign-off is the MAPPING, which the intake deliberately left open ("whatever
+  the chosen honest mapping"). Concretely: which pane states map onto the three
+  existing kinds ok / stale / err, and in particular whether a genuinely idle
+  agent reads as ok (it is healthy, just not working) or as stale (nothing is
+  happening on it). I have not chosen; the scenarios gate that roles polled
+  together CAN differ and that a pane with no text of its own is never ok,
+  which any honest mapping satisfies. Say which reading you want.
+
+invariants:
+  - "A tile is never painted ok on a signal it did not derive from its own pane: an unavailable or never-captured pane is never green."
+  - "The per-tile signal performs no tmux capture and no poll beyond those the Live Screen snapshot already performs."
+
+required_wiring:
+  - 'extension/src/bridge/residentPaneLive.ts::activitySignal::the field the BL-1160 UI already reads must actually be SET on the live snapshot. Verified absent 2026-08-28 - activitySignal appears only in residentSpyUiHtml.ts, so this file having no reference to it today IS the defect: a reader with no writer, the BL-419/BL-298 shape.'
+  - "specs/pipeline/steps/index.js::bl1243LiveScreenPerPaneActivitySteps::acceptance handler registered"
+
+description: |
+  ## The operator ask, verbatim
+
+  > Can each individual activity dot reflect the activity of the individual
+  > agent? Is that a big runtime overhead? If so don't do it.
+
+  ## What is true today, verified at mint
+
+  BL-1160 (done, M8) shipped a `.pane-status-dot` inside each role tile and
+  taught the UI to prefer an optional per-pane `activitySignal`:
+  `resolvePaneStatusKind` in `extension/src/bridge/residentSpyUiHtml.ts`
+  returns `pane.activitySignal` when present and otherwise falls back to the
+  whole-poll aggregate.
+
+  Nothing ever sets it. `activitySignal` appears in exactly one file in
+  `extension/src/` - the UI that reads it. `PaneLiveSnapshot` in
+  `extension/src/bridge/residentPaneLive.ts` carries `paneText`,
+  `available`, `header` and the rest, and has no such field. So every tile
+  falls through to the aggregate and all dots move together, which is exactly
+  what the operator screenshot shows.
+
+  This is a reader with no writer. BL-1160 deferred the writer deliberately and
+  said not to fake it from aggregate data; this ticket supplies it.
+
+  ## Why it is cheap
+
+  The Live Screen poll already captures each live role pane text
+  (`captureLiveScreenPanes` -> `tryCaptureRolePane`) behind the BL-881 5s TTL
+  cache, so overlapping polls share one walk. Deriving a per-tile signal from
+  the `paneText` already in hand is CPU on data already paid for. A pure
+  helper over pane text already exists and is a reuse candidate rather than a
+  mandate: `isPaneActivelyProcessing(paneText: string)` exported from
+  `extension/src/panel/agentPaneState.ts`.
+
+  ## Fix wanted, in direction only
+
+  Set an honest per-pane signal on the snapshot the UI already consumes, so
+  the BL-1160 path lights up without a second freshness channel.
+
+constraints: >
+  Out of scope / firm lines, and the first is the operator's own stop
+  condition rather than a preference:
+
+  - If the only honest design needs NEW per-pane tmux probes, a second poll
+    loop, or a higher Mini App poll rate, STOP and do not ship - leave the
+    aggregate dots and bounce the ticket back. The operator asked for this
+    only on condition it is not a real runtime cost, and named that class
+    (BL-881) as the thing that wedges the bridge.
+  - Do NOT invent new status kinds. ok / stale / err are the whole palette in
+    this slice; CPU, model and ticket cues are explicitly out.
+  - Do NOT fake a per-pane signal from aggregate data - the exact thing BL-1160
+    refused when it deferred the writer.
+  - Do NOT change the fullscreen Expand cue to a different source from the
+    tile it came from (BL-1160 invariant 2).
+  - Not in scope: the Bubble port of this surface, and any change to the static
+    backlog-dashboard PWA. This is the LIVE holistic UI only.
+
+qa_e2e_procedure: >
+  1. With the swarm up, open the Live Screen phone grid and confirm the dots
+     are no longer uniform: at least one busy role and one quiet role differ
+     within a single poll.
+  2. Force one role pane unavailable (kill or detach it) and confirm its tile
+     is not green while the others stay honest.
+  3. Expand that tile to fullscreen and confirm the cue matches the tile.
+  4. Cost check, the operator's own condition: grep the Live Screen path for
+     pane-capture call sites and confirm the parcel adds none beyond today's
+     per-role walk, and that the Mini App poll cadence is unchanged.
+  5. Confirm no status kind outside ok / stale / err reaches the UI.
+
+out_of_scope: |
+  - True per-pane heartbeats or any new probe (that is the stop condition).
+  - Bubble port; new status meanings (CPU / model / ticket); poll-rate change.
+
+source: |
+  .swarmforge/operator/INTAKE-live-screen-per-agent-activity-dots.md
+  (human Laurent via Cursor, 2026-08-28 ~12:20 BST). Archived to
+  .swarmforge/operator/archive/ in the same pass that minted this ticket.
+
+notes: |
+  - [2026-08-28] specifier: minted from the operator intake. Premise verified
+    rather than assumed before scoping: BL-1160 is in backlog/done/M8,
+    resolvePaneStatusKind reads activitySignal at residentSpyUiHtml.ts:798-800,
+    PaneLiveSnapshot holds paneText at residentPaneLive.ts:31/111/131, and
+    isPaneActivelyProcessing is exported from panel/agentPaneState.ts:81. The
+    grep for writers of activitySignal returned only the reading file, which is
+    what makes required_wiring entry 1 non-vacuous.
