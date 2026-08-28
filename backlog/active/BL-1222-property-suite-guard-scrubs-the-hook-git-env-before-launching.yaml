@@ -202,3 +202,5 @@ notes: |
     will exercise this script's decision block. Different files, so not a
     conflict, but they share the shell test harness. Rule 3 is the
     coordinator's call; flagging it so the choice is made deliberately."
+
+assigned_to: coder
