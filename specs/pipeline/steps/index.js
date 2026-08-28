@@ -823,7 +823,8 @@ const DOMAINS = [
   require('./bl1199PackSwitchBubbleTunnelSteps'),
   require('./bl1195WorktreeTrackedContentDriftSteps'),
   require('./bl1186DeprecatorIdentifyUnusedNotifySteps'),
-  require('./bl1214AbsorbWithMergeSteps')
+  require('./bl1214AbsorbWithMergeSteps'),
+  require('./bl1219RoleInboxResolutionSteps')
 ];
 
 function registerSteps(registry) {

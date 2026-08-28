@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import type { InboxChaserConfig, RoleInbox } from '../swarm/inboxChaser';
 import { scanInProcess } from '../swarm/inboxChaser';
 import { recoverDeadLetters, appendRecoveryLog } from '../swarm/handoffRecovery';
-import { parseRolesTsv } from '../swarm/swarmState';
+import { parseRolesTsv, mailboxDir } from '../swarm/swarmState';
 import type { LivenessState } from './liveness';
 import {
   computeMailboxFingerprintForRole,
@@ -48,10 +48,16 @@ export interface ChaserCallbacks {
   onStuckEscalation: (role: string, escalated: boolean) => void;
 }
 
-// Handoff inboxes live per WORKTREE (from roles.tsv), not under a per-role
-// <target>/.swarmforge/handoffs/<role>/ layout — the monitor previously built
-// the latter, which does not exist, so the live sweep scanned empty paths and
-// never chased anything (BL-067 root cause 2).
+// Handoff inboxes live per WORKTREE (from roles.tsv) for a dedicated-worktree
+// role, but per-ROLE under the shared root for a master-resident role
+// (specifier/coordinator both run on the "master" worktree, so they need
+// their own handoffs/<role>/ subdirectory to avoid colliding with each
+// other) — resolved via mailboxDir, the ONE shared TS-side resolver (BL-128)
+// that already agrees with the Babashka daemon's own handoff-lib/mailbox-dir
+// (BL-1219: this function previously hand-rolled the dedicated-worktree-only
+// shape directly, which is correct for worktree roles but silently resolved
+// both master-resident roles to the stale flat fossil directory instead of
+// their real mailbox).
 export function buildRoleInboxes(targetPath: string, rolesList: string[]): RoleInbox[] {
   const rolesFile = path.join(targetPath, '.swarmforge', 'roles.tsv');
   let entries;
@@ -62,14 +68,11 @@ export function buildRoleInboxes(targetPath: string, rolesList: string[]): RoleI
   }
   return entries
     .filter((entry) => rolesList.includes(entry.role))
-    .map((entry) => {
-      const inbox = path.join(entry.worktreePath, '.swarmforge', 'handoffs', 'inbox');
-      return {
-        role: entry.role,
-        inboxNewDir: path.join(inbox, 'new'),
-        inProcessDir: path.join(inbox, 'in_process'),
-      };
-    });
+    .map((entry) => ({
+      role: entry.role,
+      inboxNewDir: mailboxDir(entry, 'inbox', 'new'),
+      inProcessDir: mailboxDir(entry, 'inbox', 'in_process'),
+    }));
 }
 
 // BL-148 root cause: chase_sweep_lib.bb's stuck-in-process "alert" escalation
