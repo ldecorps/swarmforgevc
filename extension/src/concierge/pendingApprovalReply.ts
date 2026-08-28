@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import type { ApprovalDecisionVerdict } from './approvalAskClosing';
 import { parseBacklogYaml } from '../panel/backlogReader';
-import { forEachLiveTicketFile } from '../util/liveTicketFiles';
+import { findTicketFilePath } from './pendingApprovalFor';
 
 // A simple, deliberate keyword match - not NLP. Mirrors
 // backfill-human-approval.ts's own deriveApprovalFromCommentBlock, which
@@ -201,24 +201,6 @@ export function rejectHumanApprovalText(rawText: string, reason: string): { text
     text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, `human_approval: rejected  # ${sanitizedReason}`),
     changed: true,
   };
-}
-
-// Located by the ticket's own `id:` field, never a filename guess - the
-// same identity backlogReader.ts already treats as authoritative. Walks the
-// live folders (active + paused, never done) via the shared scan
-// forEachLiveTicketFile already uses for backfill-human-approval.ts's
-// identical folder walk (cleaner review: the two has duplicated the same
-// readdir-with-missing-folder-tolerance loop).
-function findTicketFilePath(targetPath: string, backlogId: string): string | undefined {
-  let found: string | undefined;
-  forEachLiveTicketFile(targetPath, (filePath) => {
-    const idMatch = fs.readFileSync(filePath, 'utf8').match(/^id:\s*(.+)$/m);
-    if (idMatch && idMatch[1].trim() === backlogId) {
-      found = filePath;
-      return 'stop';
-    }
-  });
-  return found;
 }
 
 // BL-416: read-only counterpart to the writers below - whether THIS
