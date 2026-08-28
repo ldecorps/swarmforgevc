@@ -819,6 +819,7 @@ const DOMAINS = [
   require('./bl1213ParcelRollbackGuardSteps'),
   require('./bl1205HandoffRefusesAMassDeletionForwardSteps'),
   require('./bl1203RoleAnswerNotesDeliveredOnceSteps'),
+  require('./bl1204RedeployTargetsReachableAndListedSteps'),
   require('./bl1199PackSwitchBubbleTunnelSteps'),
   require('./bl1195WorktreeTrackedContentDriftSteps'),
   require('./bl1186DeprecatorIdentifyUnusedNotifySteps')
