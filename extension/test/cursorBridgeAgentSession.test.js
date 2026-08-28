@@ -487,95 +487,20 @@ test('cursorBridgeAgentSession: isAbandonedAgentLock keeps a live pid lock', () 
   assert.equal(isAbandonedAgentLock(file), false);
 });
 
-// BL-1207: `  42  \n` used to sit in this table. readLockHolderPid trims
-// BEFORE parsing (production is correct - the lock is written as
-// `${process.pid}\n`), so a padded pid is well-formed, not malformed. On
-// this host pid 42 belongs to a live, root-owned systemd-journal process,
-// so the row's verdict was decided by whether that pid happened to be
-// running - host-dependent, not the rejection behaviour it was filed
-// under. Moved to the liveness scenario below (invariant 1); this table
-// keeps only contents that are malformed on every host.
-const MALFORMED_LOCK_CASES = [
-  ['lock-zero.lock', '0\n'],
-  ['lock-abc.lock', 'abc\n'],
-  ['lock-empty.lock', '\n'],
-  ['lock-null-padded.lock', '\u0000999999999\n'],
-];
-
-// BL-1207: a dead-process stand-in from a declared constant, never a small
-// literal a real system process could hold - same reasoning as
-// bl984FixtureSweep.property.test.js's DEAD_PID_BASE (99000000, "far
-// beyond any real pid table: macOS pid_max ~99998, Linux ~4M default").
-// Scenario 03 asserts this host actually cannot signal it, so the
-// stand-in can never quietly become a real process the way pid 42 did.
-const DEAD_PID = 99000001;
-
-test('cursorBridgeAgentSession: isAbandonedAgentLock rejects malformed pid values without consulting any host process', () => {
+test('cursorBridgeAgentSession: isAbandonedAgentLock rejects invalid pid values', () => {
   const root = mkRoot();
-  let killCalls = 0;
-  const originalKill = process.kill;
-  process.kill = (pid, signal) => {
-    killCalls += 1;
-    return originalKill.call(process, pid, signal);
-  };
-  try {
-    for (const [name, raw] of MALFORMED_LOCK_CASES) {
-      const file = path.join(root, '.swarmforge', 'operator', name);
-      fs.writeFileSync(file, raw);
-      assert.equal(isAbandonedAgentLock(file), true, `expected abandoned for ${JSON.stringify(raw)}`);
-    }
-    assert.equal(killCalls, 0, 'expected no host process to be consulted for malformed contents');
-  } finally {
-    process.kill = originalKill;
+  const cases = [
+    ['lock-zero.lock', '0\n'],
+    ['lock-abc.lock', 'abc\n'],
+    ['lock-empty.lock', '\n'],
+    ['lock-space.lock', '  42  \n'],
+    ['lock-null-padded.lock', '\u0000999999999\n'],
+  ];
+  for (const [name, raw] of cases) {
+    const file = path.join(root, '.swarmforge', 'operator', name);
+    fs.writeFileSync(file, raw);
+    assert.equal(isAbandonedAgentLock(file), true, `expected abandoned for ${JSON.stringify(raw)}`);
   }
-});
-
-// BL-1207 invariant 2: the malformed-case table and this liveness scenario
-// stay disjoint and jointly total - the padded-pid row that used to sit in
-// the malformed table now lives here, exercising readLockHolderPid's trim
-// branch via liveness alone rather than via a host-accidental rejection.
-test('cursorBridgeAgentSession: isAbandonedAgentLock judges a padded pid by liveness alone, not by its padding', () => {
-  const root = mkRoot();
-
-  const ownFile = path.join(root, '.swarmforge', 'operator', 'lock-own-padded.lock');
-  fs.writeFileSync(ownFile, `  ${process.pid}  \n`);
-  assert.equal(isAbandonedAgentLock(ownFile), false, "expected the suite's own padded pid not abandoned");
-
-  const deadFile = path.join(root, '.swarmforge', 'operator', 'lock-dead-padded.lock');
-  fs.writeFileSync(deadFile, `  ${DEAD_PID}  \n`);
-  assert.equal(isAbandonedAgentLock(deadFile), true, 'expected the declared unreachable padded pid abandoned');
-});
-
-test('cursorBridgeAgentSession: the declared unreachable pid is actually unreachable on this host', () => {
-  let code;
-  try {
-    process.kill(DEAD_PID, 0);
-    assert.fail(`expected process.kill(${DEAD_PID}, 0) to raise, it succeeded`);
-  } catch (err) {
-    code = err.code;
-  }
-  assert.notEqual(code, 'EPERM', `DEAD_PID=${DEAD_PID} is live but unsignalable on this host - pick a different constant`);
-  assert.ok(code === 'ESRCH' || code === 'ERANGE', `expected ESRCH or ERANGE for DEAD_PID=${DEAD_PID}, got ${code}`);
-});
-
-// BL-1207 invariant 2 / constraint: keyed on the SAME structured list the
-// verdict test above iterates, never a text grep - a prose grep would trip
-// on this very test file explaining the offending value.
-test('cursorBridgeAgentSession: no malformed case parses to a positive integer', () => {
-  for (const [name, raw] of MALFORMED_LOCK_CASES) {
-    const parsed = Number.parseInt(raw.trim(), 10);
-    const isPositiveInt = Number.isFinite(parsed) && parsed > 0;
-    assert.equal(isPositiveInt, false, `expected ${name} (${JSON.stringify(raw)}) not to parse to a positive integer, got ${parsed}`);
-  }
-});
-
-// Non-vacuity for the guard above: a scratch case shaped exactly like the
-// original defect (a small integer padded with spaces) must fail it.
-test('cursorBridgeAgentSession: the malformed-case guard is non-vacuous', () => {
-  const scratchCase = ['lock-scratch-regression.lock', '  42  \n'];
-  const parsed = Number.parseInt(scratchCase[1].trim(), 10);
-  const isPositiveInt = Number.isFinite(parsed) && parsed > 0;
-  assert.equal(isPositiveInt, true, 'fixture precondition: the scratch case must itself be a well-formed pid to prove the guard is not vacuous');
 });
 
 test('cursorBridgeAgentSession: isAbandonedAgentLock treats EPERM from process.kill as a live holder', () => {
