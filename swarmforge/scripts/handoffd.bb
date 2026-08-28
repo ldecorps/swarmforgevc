@@ -3143,17 +3143,26 @@
         (master-main-reconcile-lib/merge-tree-reports-conflict? (:out tree))))))
 
 (defn- master-main-rematch-onto-origin!
-  "BL-1138/1141: reset --hard origin/main. Never touches foreign MERGE_HEAD."
+  "BL-1138/1141: reset --hard origin/main. Never touches foreign MERGE_HEAD.
+   BL-1198: attempts a push first (reusing push-sweep-push! - the same
+   git-push adapter push_sweep_lib.bb's own periodic sweep already uses,
+   never a second push path) - only resets when that push is rejected."
   [success-outcome failure-outcome]
   (if (master-main-merge-head-present?)
     {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
-    (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
-                              ["git" "reset" "--hard" "origin/main"]
-                              {:dir (str project-root)})]
-      (if (zero? exit)
+    (let [result (master-main-reconcile-lib/rematch-with-push-first!
+                  {:push! push-sweep-push!
+                   :reset! (fn []
+                             (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
+                                                       ["git" "reset" "--hard" "origin/main"]
+                                                       {:dir (str project-root)})]
+                               (if (zero? exit)
+                                 {:success true}
+                                 {:success false :error (str/trim (or err (name failure-outcome)))})))})]
+      (if (:success result)
         {:success true :outcome success-outcome}
         {:success false
-         :error (str/trim (or err (name failure-outcome)))
+         :error (or (:error result) (name failure-outcome))
          :outcome failure-outcome}))))
 
 (defn- master-main-reconcile-merge! []
