@@ -986,7 +986,7 @@ test('BL-607: a reply in a role topic while a question is pending, LIVE pane, de
   assert.deepEqual(queued, [], 'a delivered live-pane answer must never also be queued as a note');
 });
 
-test('BL-607: a reply in a role topic while a question is pending, DORMANT pane, queues the answer as a note and clears the pending marker', async () => {
+test('BL-607: a reply in a role topic while a question is pending, DORMANT pane, queues the answer as a note; BL-1201: the pending marker is NOT cleared here', async () => {
   const queued = [];
   const cleared = [];
   await pollAndForward(0, PRINCIPAL_ID, {
@@ -1009,7 +1009,10 @@ test('BL-607: a reply in a role topic while a question is pending, DORMANT pane,
     },
   });
   assert.deepEqual(queued, [{ role: 'specifier', text: 'use staging' }]);
-  assert.deepEqual(cleared, ['specifier']);
+  // BL-1201 architect bounce D1: see the sibling DORMANT test above -
+  // only deliverRoleAnswer clears this leg's marker now, once a role
+  // actually consumes the answer, never at capture time.
+  assert.deepEqual(cleared, []);
 });
 
 // BL-607 architect bounce 2 (secondary, recommended): enqueueRoleAnswerNote's
@@ -2921,7 +2924,7 @@ test('BL-607: a tap on a role question with a LIVE pane delivers via redirectToR
   assert.equal(result.posted, 1);
 });
 
-test('BL-607: a tap on a role question with a DORMANT pane queues the answer as a note, still clears the pending marker', async () => {
+test('BL-607: a tap on a role question with a DORMANT pane queues the answer as a note; BL-1201: the pending marker is NOT cleared here', async () => {
   const queued = [];
   const cleared = [];
   await pollAndForward(
@@ -2941,7 +2944,13 @@ test('BL-607: a tap on a role question with a DORMANT pane queues the answer as 
     })
   );
   assert.deepEqual(queued, [{ role: 'specifier', text: 'staging' }]);
-  assert.deepEqual(cleared, ['specifier']);
+  // BL-1201 architect bounce D1: clearing the marker at capture time, in
+  // the same breath as writing the answer file, made deliverRoleAnswer's
+  // own pairing check unreachable - by the time anything could check it,
+  // the marker enqueueRoleAnswerNote just stamped askedAtMs FROM was
+  // already gone. Only deliverRoleAnswer (telegram-front-desk-bot.ts),
+  // called once a role actually consumes the answer, clears it now.
+  assert.deepEqual(cleared, []);
 });
 
 // BL-607 architect bounce 2 (secondary): the SAME "do not clear on a failed
