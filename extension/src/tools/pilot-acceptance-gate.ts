@@ -22,6 +22,7 @@ import {
   PilotLandOutcome,
   AcceptanceRunResult,
   AcceptanceReceipt,
+  OriginMainLandingCheckOutcome,
 } from './pilotAcceptanceGate';
 import {
   parseProducerCrosscheckFromEnv,
@@ -171,6 +172,29 @@ export function getLandedCommit(repoRoot: string): string {
   return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
 }
 
+// BL-1215: fetches origin/main fresh (a stale local remote-tracking ref
+// would otherwise report a genuinely-landed commit as missing) then checks
+// ancestry. Both the fetch and the ancestry check fail CLOSED - any git
+// failure here (no remote configured, network down, an unresolvable
+// commit) is `reachable: false`, never treated as "nothing to check
+// against" the way the fails-open checks elsewhere in this file do.
+export function checkOriginMainLanding(repoRoot: string, commit: string): OriginMainLandingCheckOutcome {
+  try {
+    execFileSync('git', ['fetch', 'origin', 'main'], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    return { reachable: false, reason: `origin/main could not be fetched: ${(err as Error).message}` };
+  }
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', commit, 'origin/main'], {
+      cwd: repoRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { reachable: true };
+  } catch {
+    return { reachable: false, reason: `${commit} is not an ancestor of origin/main` };
+  }
+}
+
 export function buildDeps(repoRoot: string): PilotAcceptanceGateDeps {
   let cachedFixture = assessMultiworktreeFixture(repoRoot, listLinkedWorktreePaths(repoRoot), probeHandoffdRootsFromPs());
   let executedFeaturePath: string | undefined;
@@ -201,6 +225,7 @@ export function buildDeps(repoRoot: string): PilotAcceptanceGateDeps {
     moveTicketToDone: (ticketId) => moveTicketToDone(repoRoot, ticketId),
     writeReceipt: (ticketId, receipt) => writeReceipt(repoRoot, ticketId, receipt),
     getLandedCommit: () => getLandedCommit(repoRoot),
+    checkOriginMainLanding: (commit) => checkOriginMainLanding(repoRoot, commit),
     now: () => new Date().toISOString(),
   };
 }

@@ -42,6 +42,7 @@ function buildDeps(crapOutcome, calls) {
       calls.lastReceipt = receipt;
     },
     getLandedCommit: () => 'a'.repeat(40),
+    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
   };
 }

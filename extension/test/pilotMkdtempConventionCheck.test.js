@@ -76,6 +76,7 @@ test('landPilotedTicket refuses raw-mkdtemp-outside-helper before move', async (
       calls.receipt += 1;
     },
     getLandedCommit: () => 'a'.repeat(40),
+    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-26T00:00:00.000Z',
   });
   assert.equal(outcome.landed, false);
