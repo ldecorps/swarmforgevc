@@ -44,6 +44,7 @@ function mkDeps(overrides) {
       calls.writeReceipt += 1;
     },
     getLandedCommit: () => 'abc1234567',
+    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-07-31T00:00:00.000Z',
     ...overrides,
   };

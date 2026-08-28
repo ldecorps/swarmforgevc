@@ -13,6 +13,7 @@ const {
   moveTicketToDone,
   writeReceipt,
   getLandedCommit,
+  checkOriginMainLanding,
   resolveRunCommits,
   checkCommitClaims,
   main,
@@ -57,6 +58,16 @@ function commitFile(root, relPath, content, message) {
   execFileSync('git', ['add', relPath], { cwd: root });
   execFileSync('git', ['commit', '-q', '-m', message], { cwd: root });
   return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+}
+
+// BL-1215: a real bare "origin" remote, with the checkout's current HEAD
+// pushed to it as `main` - the gate now requires this before it will land.
+function addOriginAndPushHead(root, branch) {
+  const originRoot = mkRepo('sfvc-pag-cli-origin-');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main'], { cwd: originRoot });
+  execFileSync('git', ['remote', 'add', 'origin', originRoot], { cwd: root });
+  execFileSync('git', ['push', '-q', 'origin', `${branch || 'HEAD'}:main`], { cwd: root });
+  return originRoot;
 }
 
 function writeTicketYaml(root, ticketId, extraFields) {
@@ -208,6 +219,55 @@ test('getLandedCommit throws (fails loud) when the repo has no commit yet', () =
   const root = mkRepo();
   initGitRepo(root, { commit: false });
   assert.throws(() => getLandedCommit(root));
+});
+
+// ── checkOriginMainLanding: real git wiring (BL-1215) ────────────────────
+
+// A real bare remote + a real clone, so origin/main is a genuine
+// remote-tracking ref a fetch can advance - never a hand-rolled fake.
+function mkRepoWithOrigin() {
+  const originRoot = mkRepo('sfvc-pag-cli-origin-');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main'], { cwd: originRoot });
+  const root = mkRepo('sfvc-pag-cli-clone-');
+  execFileSync('git', ['clone', '-q', originRoot, '.'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root });
+  execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: root });
+  commitFile(root, 'README.md', 'seed', 'seed');
+  execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: root });
+  return { root, originRoot };
+}
+
+test('checkOriginMainLanding reports reachable for a commit already pushed to origin/main', () => {
+  const { root } = mkRepoWithOrigin();
+  const sha = commitFile(root, 'a.txt', 'a', 'pushed commit');
+  execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: root });
+
+  const outcome = checkOriginMainLanding(root, sha);
+
+  assert.deepEqual(outcome, { reachable: true });
+});
+
+test('checkOriginMainLanding refuses (fails closed) for a commit that exists only locally, never pushed', () => {
+  const { root } = mkRepoWithOrigin();
+  const sha = commitFile(root, 'b.txt', 'b', 'local-only commit');
+  // Deliberately never pushed.
+
+  const outcome = checkOriginMainLanding(root, sha);
+
+  assert.equal(outcome.reachable, false);
+  assert.match(outcome.reason, new RegExp(sha));
+});
+
+test('checkOriginMainLanding refuses (fails closed) when origin cannot be read at all - no remote configured', () => {
+  const root = mkRepo('sfvc-pag-cli-noorigin-');
+  initGitRepoOnMain(root);
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+
+  const outcome = checkOriginMainLanding(root, sha);
+
+  assert.equal(outcome.reachable, false);
+  assert.match(outcome.reason, /origin\/main could not be fetched/);
 });
 
 // ── resolveRunCommits / checkCommitClaims: real git wiring (BL-729) ─────
@@ -411,6 +471,9 @@ test('main(): lands in-process on a green run, moving the yaml and writing a rec
     'utf8'
   );
   writeTicketYaml(root, 'BL-FIX', ['acceptance: specs/features/fixture.feature']);
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'fixture'], { cwd: root });
+  addOriginAndPushHead(root);
 
   const { exitCode, output } = await runCli(['BL-FIX'], root);
 
@@ -425,6 +488,49 @@ test('main(): lands in-process on a green run, moving the yaml and writing a rec
   assert.equal(receipt.result, 'passed');
   assert.match(receipt.landedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.equal(receipt.landedCommit, output.receipt.landedCommit);
+});
+
+// Hardener (BL-1215): the sibling of the green-run test above, through the
+// SAME full main() orchestration - only pilotAcceptanceGateCli.test.js's
+// own checkOriginMainLanding unit tests exercised the reachable:false path
+// before this, so landPilotedTicket's own checkOriginLanding branch (the
+// code that actually WITHHOLDS the move) had no vitest-visible coverage of
+// its own (the acceptance feature's fake-deps step handler covers it, but
+// under node:test, invisible to this project's v8/CRAP tooling). Real git
+// throughout - a genuine origin remote, a commit pushed as the shared base,
+// then a SECOND local-only commit this run's HEAD points at, never pushed.
+test('main(): refuses in-process, writing nothing, when the run commit never reached origin/main', async () => {
+  const root = mkRepo();
+  initGitRepo(root);
+  fs.mkdirSync(path.join(root, 'specs', 'features'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'specs', 'features', 'fixture.feature'), 'Feature: fixture\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'specs', 'pipeline'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'specs', 'pipeline', 'runnerAdapter.js'),
+    "module.exports = { runPipeline: () => Promise.resolve({ success: true, output: 'ok' }) };",
+    'utf8'
+  );
+  writeTicketYaml(root, 'BL-FIX', ['acceptance: specs/features/fixture.feature']);
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'shared base'], { cwd: root });
+  addOriginAndPushHead(root);
+  // The run's OWN implementation commit, made after the push above - HEAD
+  // now points at it, but origin/main still only knows the shared base.
+  fs.writeFileSync(path.join(root, 'implementation.txt'), 'the fix', 'utf8');
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'implement the fix (never pushed)'], { cwd: root });
+  const localOnlyCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+
+  const { exitCode, output } = await runCli(['BL-FIX'], root);
+
+  assert.equal(exitCode, 1);
+  assert.equal(output.landed, false);
+  assert.equal(output.reasonKind, 'commit-not-on-origin-main');
+  assert.equal(output.unlandedCommit, localOnlyCommit);
+  assert.match(output.reason, new RegExp(localOnlyCommit));
+  assert.equal(fs.existsSync(path.join(root, 'backlog', 'active', 'BL-FIX-fixture.yaml')), true, 'the yaml must stay in active/, never move to done/ on refusal');
+  assert.equal(fs.existsSync(path.join(root, 'backlog', 'done', 'BL-FIX-fixture.yaml')), false);
+  assert.equal(fs.existsSync(path.join(root, '.swarmforge', 'expedite', 'BL-FIX')), false, 'no receipt directory at all - the refusal must precede any write');
 });
 
 // End-to-end (BL-729): a green acceptance contract still refuses the land
@@ -482,6 +588,7 @@ test('main(): a claim-refused land now succeeds once the claiming sentence is am
   assert.equal(refused.output.reasonKind, 'claim-unsupported');
 
   execFileSync('git', ['commit', '-q', '--amend', '-m', 'Touch an unrelated file (frobnicate follow-up tracked separately).'], { cwd: root });
+  addOriginAndPushHead(root, 'run-branch');
   const landed = await runCli(['BL-FIX'], root);
 
   assert.equal(landed.exitCode, undefined);
