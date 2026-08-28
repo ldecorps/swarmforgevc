@@ -10,6 +10,10 @@ same shape:
 Organised by pattern rather than chronology, because the pattern is what transfers.
 Dates and ticket ids are here so each claim can be checked.
 
+This page is the reasoning; the operational prohibitions themselves — what
+not to do, for someone about to change the swarm — live in
+[What NOT to do when tweaking the swarm](../how-to/BL-644-what-not-to-do-when-tweaking-the-swarm.md).
+
 ---
 
 ## 1. A green suite is not evidence
