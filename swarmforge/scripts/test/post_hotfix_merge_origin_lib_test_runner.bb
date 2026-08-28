@@ -56,7 +56,12 @@
   (assert-true "success merges after fetch" (= [:fetch :merge] @calls))
   (assert-true "success ok" (:ok? result))
   (assert= "success exit 0" 0 (:exit result))
-  (assert= "success outcome merged" :merged (:outcome result))
+  ;; BL-1214 architect bounce D1: this scenario's :merge! (mapped to
+  ;; absorb-with-merge!'s :ff! slot) succeeds alone - a plain fast-forward,
+  ;; no divergence - which is outcome :ff, not :merged (:merged is only the
+  ;; NEW non-conflicting-two-way-divergence case BL-1214 adds, via a real
+  ;; :merge3! attempt after :ff! fails; not exercised by this scenario).
+  (assert= "success outcome ff" :ff (:outcome result))
   (assert-true "deadlock cleared when behind 0"
                (not (master-main-reconcile-lib/deadlock-active?
                      (master-main-reconcile-lib/read-deadlock daemon)))))
