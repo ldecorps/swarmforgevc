@@ -184,7 +184,7 @@ notes: |
     explicitly, so a fixture that cannot tell them apart cannot gate this at
     all. Keep that finding open against the rebuild.
 
+assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: b033583c08, evidence: backlog/evidence/BL-1192-architect-bounce-20260828.md }
-assigned_to: coder

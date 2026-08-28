@@ -224,65 +224,8 @@
                 :else {:id id :path (str f)})]
      (violations-for-text text opts))))
 
-;; ── BL-1105: duplicate ticket id refused at mint ───────────────────────────
-(def backlog-pools ["paused" "active" "hold" "done"])
-
-;; ── BL-1216: pool classification + content verdict for DUPLICATE-ID ────────
-(def live-pools #{"paused" "active"})
-(def terminal-pools #{"hold" "done"})
-
-(defn path-pool
-  "Which backlog pool a path sits in (paused/active/hold/done), or nil when
-   none of them appears as a path segment."
-  [p]
-  (some (fn [pool] (when (re-find (re-pattern (str "(^|/)" pool "/")) (str p)) pool))
-        backlog-pools))
-
-(defn pool-classification
-  "\"live\" (active/paused — the coordinator promotes and routes out of
-   these), \"terminal\" (hold/done — nothing auto-promotes out of either),
-   or nil for an unrecognized pool."
-  [pool]
-  (cond
-    (contains? live-pools pool) "live"
-    (contains? terminal-pools pool) "terminal"
-    :else nil))
-
-(defn- describe-path
-  [p]
-  (let [pool (path-pool p)]
-    (str p " [" (or pool "unknown") "/" (or (pool-classification pool) "unknown") "]")))
-
-(defn- safe-read
-  [read-fn p]
-  (try (read-fn p) (catch Exception _ nil)))
-
-(defn content-verdict
-  "\"CONTENT IDENTICAL\" only when every colliding path is readable and its
-   content is byte-identical to the subject's; \"CONTENT DIFFERS\" otherwise,
-   including any unreadable file (fail closed — invariant 2, BL-1216: an
-   unreadable file must never be reported as identical)."
-  ([subject-path other-paths] (content-verdict subject-path other-paths slurp))
-  ([subject-path other-paths read-fn]
-   (let [subject-text (safe-read read-fn subject-path)]
-     (if (and subject-text
-              (every? #(= subject-text (safe-read read-fn %)) other-paths))
-       "CONTENT IDENTICAL"
-       "CONTENT DIFFERS"))))
-
-(defn- sole-live-keep
-  "The one path to keep when exactly one of subject+others sits in a live
-   pool; nil otherwise (BL-1216 invariant 3 — never name a keep when zero or
-   more than one colliding copy is live)."
-  [path others]
-  (let [all-paths (cons path (map :path others))
-        live (filter #(= "live" (pool-classification (path-pool %))) all-paths)]
-    (when (= 1 (count live)) (first live))))
-
-(defn format-violation
-  ([v] (format-violation v slurp))
-  ([{:keys [kind id path feature-path others message ticket-type]} read-fn]
-   (case kind
+(defn format-violation [{:keys [kind id path feature-path others message ticket-type]}]
+  (case kind
     :missing-epic (str "MISSING-EPIC " id "  " path "  (non-epic ticket needs epic:)")
     :missing-epic-on-epic (str "MISSING-EPIC " id "  " path "  (type: epic must self-declare epic:)")
     :missing-milestone (str "MISSING-MILESTONE " id "  " path "  (type: epic needs milestone:)")
@@ -298,22 +241,21 @@
                               "multi-slice epic needs required_wiring on a child)")
     :retired-ticket-type (str "RETIRED-TICKET-TYPE " id "  " path
                               "  (type: " (or ticket-type "bug") " is retired — use type: defect)")
-    :duplicate-id (let [verdict (content-verdict path (map :path others) read-fn)
-                        keep (sole-live-keep path others)]
-                    (str "DUPLICATE-ID " id "  " (describe-path path)
-                         "  also: " (str/join ", " (map #(describe-path (:path %)) others))
-                         "  (" verdict "; duplicate ticket id — refuse at mint"
-                         (when keep (str "; keep: " keep))
-                         ")"))
+    :duplicate-id (str "DUPLICATE-ID " id "  " path
+                       "  also: " (str/join ", " (map :path others))
+                       "  (duplicate ticket id — refuse at mint)")
     :published-corpus-unreadable (str "PUBLISHED-CORPUS-UNREADABLE  "
                                       (or message "published corpus could not be read")
                                       "  (fail closed — never treat as empty)")
     :local-corpus-unreadable (str "LOCAL-CORPUS-UNREADABLE  "
                                   (or message "local backlog corpus could not be read")
                                   "  (fail closed — never treat as empty)")
-    (str "VIOLATION " id "  " path))))
+    (str "VIOLATION " id "  " path)))
 
 (defn all-clean? [violations] (empty? violations))
+
+;; ── BL-1105: duplicate ticket id refused at mint ───────────────────────────
+(def backlog-pools ["paused" "active" "hold" "done"])
 
 (defn- ticket-yaml-path?
   [p]
@@ -357,24 +299,9 @@
        (filter ticket-yaml-path?)
        vec))
 
-(defn- ticket-id-from-filename
-  "Best-effort id from a `<ID>-slug.yaml` filename (the backlog naming
-   convention this file's own resolve-child-ticket-text already relies on),
-   e.g. \"BL-1216-example.yaml\" -> \"BL-1216\". nil when the name doesn't fit."
-  [p]
-  (when-let [[_ id] (re-find #"^([A-Za-z]+-\d+)-.*\.ya?ml$" (last (str/split (str p) #"/")))]
-    id))
-
 (defn read-local-id-index
-  "Read-only scan of the local backlog tree. Fail-closed on a missing backlog
-   root (never treat a wrong path as an empty corpus). BL-1216: an individual
-   ticket file that cannot be read (e.g. permission-denied) no longer aborts
-   the whole corpus scan PROVIDED its id is still recoverable from its
-   filename per the `<ID>-slug.yaml` convention — the file still surfaces in
-   the index (so a real collision is still caught, never silently dropped),
-   just without real content for duplicate-id-violations' content-verdict to
-   compare against. A file whose id cannot even be guessed from its name
-   still fails the whole corpus closed, unchanged from before."
+  "Read-only scan of the local backlog tree. Fail-closed on any slurp error
+   or a missing backlog root (never treat a wrong path as an empty corpus)."
   [backlog-root]
   (try
     (when-not (fs/directory? backlog-root)
@@ -385,11 +312,9 @@
           pairs (map (fn [p]
                        (try [p (slurp p)]
                             (catch Exception e
-                              (if-let [id (ticket-id-from-filename p)]
-                                [p (str "id: " id "\n")]
-                                (throw (ex-info (str "unreadable local ticket: " p
-                                                     " (" (.getMessage e) ")")
-                                                {:path p}))))))
+                              (throw (ex-info (str "unreadable local ticket: " p
+                                                   " (" (.getMessage e) ")")
+                                              {:path p})))))
                      files)]
       (index-ticket-files pairs))
     (catch Exception e
