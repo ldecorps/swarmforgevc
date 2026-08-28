@@ -58,6 +58,7 @@ push-succeeds scenario through real git.
 
 ## Related
 
+- [BL-1214 `:ff-absorb` attempts a real 3-way merge before resetting local main away](BL-1214-ff-absorb-attempts-real-merge-before-reset.md)
 - [BL-891 master-main reconcile](BL-891-master-main-reconcile-sweep.md)
 - [BL-1141 refuse-rematch executes live](BL-1141-bl1138-residual-refuse-rematch-not-executed.md)
 - [BL-1124 property fixtures must not mutate shared main](BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md)
