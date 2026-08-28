@@ -164,10 +164,31 @@
     (and (or (str/includes? s "rematch") (str/includes? s "refuse"))
          (not (re-find #"(?i)finish this merge in an editor|resolve.*(in|with).*editor" s)))))
 
-(defn merge-tree-reports-conflict?
-  "True when `git merge-tree` output names a content/add conflict."
-  [merge-tree-out]
-  (boolean (re-find #"(?i)changed in both|CONFLICT|added in both" (or merge-tree-out ""))))
+;; BL-1236: the predicate this replaces (`merge-tree-reports-conflict?`)
+;; case-insensitively grepped the CONTENT of the legacy three-argument
+;; `git merge-tree`'s unified-diff output for words like "CONFLICT" - so
+;; any merged file whose own text happened to contain that word (this
+;; repo's ticket/evidence prose does, constantly) read as a predicted
+;; conflict. Ten resets discarded committed work this way, one destroying
+;; a human's approval tap. `git merge-tree --write-tree <a> <b>` (git
+;; >= 2.38) gives an actual machine-readable VERDICT instead: exit 0 is a
+;; clean merge, exit 1 is a genuine conflict, anything else means the
+;; simulation itself could not run - never a diff to read. Mirrors the
+;; in-repo precedent, tree_collapse_guard_lib.bb:73-80, which already keys
+;; on exit alone for exactly this reason ("never a diff-based guess").
+(defn merge-verdict
+  "Classify a `git merge-tree --write-tree <a> <b>` invocation's exit code
+   into git's own verdict for the merge: :clean, :conflict, or
+   :unavailable (the simulation itself could not run - a git failure,
+   never treated as \"conflict\"). An unavailable verdict must never
+   authorise a reset (BL-1236 invariant 3) - callers dispatch it to its
+   own non-destructive plan branch, same as merge-head-present? or a
+   dirty-path overlap."
+  [exit-code]
+  (case (int (or exit-code -1))
+    0 :clean
+    1 :conflict
+    :unavailable))
 
 ;; BL-1131: rematch-then-FF land — behind=0 without operator absorb merge.
 (defn prepublish-rematch-plan
@@ -195,10 +216,20 @@
 
 (defn absorb-dispatch-plan
   "Single absorb decision for handoffd + post_hotfix runners.
-   Prefer land noop/replay, then BL-1130 refuse-rematch, else :ff-absorb.
-   Never returns an operator content-conflict absorb."
+   Prefer land noop/replay, then BL-1236 verdict-unavailable, then BL-1130
+   refuse-rematch, else :ff-absorb. Never returns an operator
+   content-conflict absorb.
+   BL-1236: `verdict-unavailable?` (true when the merge-tree simulation
+   itself could not run, distinct from a genuine reported conflict) is
+   checked AFTER noop - a divergence that needs no merge at all (already
+   up to date, or nothing behind) is safe regardless of what the verdict
+   would have been - but BEFORE every branch that could otherwise plan an
+   :ff-absorb (whose fallback is a reset) or a rematch: an unavailable
+   answer must never be treated as license to attempt the merge and reset
+   on failure. Callers execute :verdict-unavailable as a pure block/surface,
+   same shape as :dirty-blocked - never a git write."
   [{:keys [merge-head-present? behind ahead tip-contains-origin?
-           would-conflict? absorb-would-conflict?] :as ctx}]
+           would-conflict? absorb-would-conflict? verdict-unavailable?] :as ctx}]
   (let [conflict? (or would-conflict? absorb-would-conflict?)
         bl1130 (automated-absorb-plan
                 (assoc ctx :would-conflict? conflict?
@@ -208,6 +239,7 @@
     (cond
       (= bl1130 :skip-human-merge-in-progress) :skip-human-merge-in-progress
       (= land :noop) :noop
+      verdict-unavailable? :verdict-unavailable
       (= land :replay-bookkeeping) :replay-bookkeeping
       (= bl1130 :refuse-rematch) :refuse-rematch
       :else :ff-absorb)))
@@ -363,7 +395,10 @@
       (if (<= (count rematch-bk) 80) rematch-bk "BL-1135: rematch bookkeeping onto origin/main")
       :human-merge-in-progress
       (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
-        (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted")))))
+        (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted"))
+      :verdict-unavailable
+      (let [msg (str "BL-1236: merge verdict unavailable, " behind " behind origin - not reset")]
+        (if (<= (count msg) 80) msg "BL-1236: merge verdict unavailable - not reset")))))
 
 (defn surface-draft-lines
   "A `note` to the coordinator only - reconciling the master checkout's own
@@ -433,12 +468,17 @@
 
 (defn merge-failure-reason
   "Map merge! outcome to persisted block reason. BL-1135: rematch outcomes
-   stay distinct from conflict (Operator needs-a-human absorb paging)."
+   stay distinct from conflict (Operator needs-a-human absorb paging).
+   BL-1236: :verdict-unavailable stays distinct from both - it is neither
+   a reported conflict nor a designed rematch recovery, so it must not be
+   routed through rematch-owner-recovery?'s silent-state-only path; it
+   goes through handle-blocked! like \"dirty\", surfacing a note."
   [outcome]
   (case (or outcome :conflict)
     :human-merge-in-progress "human-merge-in-progress"
     :refuse-rematch "refuse-rematch"
     :rematch-bookkeeping "rematch-bookkeeping"
+    :verdict-unavailable "verdict-unavailable"
     "conflict"))
 
 (defn rematch-owner-recovery?

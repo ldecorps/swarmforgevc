@@ -127,32 +127,47 @@
    colliding local-ahead → rematch! onto origin/main (BL-1138), else
    surface rematch-bookkeeping. Predicted or real conflict (both merge!
    and merge3! failed) → rematch! when wired (BL-1141), else refuse-rematch
-   without MERGE_HEAD (BL-1130). Never stash; never pages operator absorb.
-   rematch! itself attempts a push before any reset (BL-1198) - this
-   function has no visibility into that, by design. merge3! is optional
-   (nil-safe) so a caller not yet wired for BL-1214 keeps today's
-   ff-only-then-rematch behavior unchanged."
+   without MERGE_HEAD (BL-1130). An unavailable merge-verdict! (git could
+   not answer) surfaces and exits non-zero without attempting anything
+   (BL-1236) - never treated as a conflict, never as clean. Never stash;
+   never pages operator absorb. rematch! itself attempts a push before any
+   reset (BL-1198) - this function has no visibility into that, by design.
+   merge3! is optional (nil-safe) so a caller not yet wired for BL-1214
+   keeps today's ff-only-then-rematch behavior unchanged."
   [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! merge3! abort!
-           status-porcelain! mid-merge? would-conflict! tip-contains-origin!
+           status-porcelain! mid-merge? merge-verdict! tip-contains-origin!
            rematch!]}]
   (fetch!)
   (refresh-honest-surfaced! daemon-dir (set (or (dirty-paths!) #{})))
   (let [{:keys [ahead behind]} (rev-counts!)
         tip-ok? (boolean (when tip-contains-origin! (tip-contains-origin!)))
-        conflict? (boolean (when would-conflict! (would-conflict!)))
+        ;; BL-1236: an unwired merge-verdict! adapter is treated as
+        ;; :unavailable, never :clean - an absent answer must never be
+        ;; assumed safe.
+        verdict (if merge-verdict! (merge-verdict!) :unavailable)
+        conflict? (= verdict :conflict)
+        unavailable? (= verdict :unavailable)
         plan (master-main-reconcile-lib/absorb-dispatch-plan
               {:merge-head-present? (boolean (mid-merge?))
                :behind behind
                :ahead ahead
                :tip-contains-origin? tip-ok?
                :would-conflict? conflict?
-               :absorb-would-conflict? conflict?})]
+               :absorb-would-conflict? conflict?
+               :verdict-unavailable? unavailable?})]
     (case plan
       :skip-human-merge-in-progress
       {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
 
       :noop
       (finish-ok daemon-dir rev-counts! :noop)
+
+      ;; BL-1236 invariant 3: git could not produce a verdict - surface and
+      ;; exit non-zero, but never reset (never even attempt a merge that
+      ;; could fall to one on its own failure).
+      :verdict-unavailable
+      (surface-absorb-failure rev-counts! :verdict-unavailable
+                               "BL-1236: merge verdict unavailable — not reset (rerun once git can answer)")
 
       :replay-bookkeeping
       (finish-replay-bookkeeping daemon-dir rev-counts! mid-merge? rematch!)
