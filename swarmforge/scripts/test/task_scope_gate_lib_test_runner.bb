@@ -222,6 +222,87 @@
     (assert-false "no task ticket id: not blocked" (task-scope-gate-lib/blocked? result))
     (assert-true "no task ticket id: no warning" (nil? (:warning result)))))
 
+;; BL-1192 architect bounce round 2 D1: a deliberate rebuild off origin/main
+;; (BL-1241's own escape hatch for an entangled tip) does not descend from
+;; the previously-cited commit by construction. `rev-list base..commit`
+;; never ERRORS on a non-descendant base (verified empirically: two-dot
+;; range syntax is well-defined for disconnected histories too) - so the
+;; observable defect isn't "the rebuild's own commit goes missing", it's
+;; that an unbounded base pulls in OLD, unrelated history that happens to
+;; be tagged for this same task from a much earlier iteration, which a
+;; disconnected abandoned-commit provides no boundary against. This fixture
+;; reproduces exactly that: an EARLIER, already-landed BL-1174 commit sits
+;; on origin/main's own history, itself entangled with BL-1185 (old,
+;; irrelevant to the current rebuild) - walking from a disconnected
+;; abandoned commit re-discovers it; walking from origin/main correctly
+;; does not, because it IS reachable from origin/main and origin/main is
+;; the override's own base (qa_e2e_procedure check 2).
+(with-fixture [root]
+  ;; An earlier, ALREADY-LANDED BL-1174 commit, itself entangled with
+  ;; BL-1185 - old history, nothing to do with the current rebuild, but
+  ;; still reachable from origin/main.
+  (commit! root "backlog/active/BL-1174-x.yaml" "id: BL-1174\n" "BL-1174-fixture: earlier landed work")
+  (commit! root "backlog/active/BL-1185-old.yaml" "id: BL-1185\n" "BL-1174-fixture: earlier landed work, entangled with BL-1185")
+  (mark-origin-main-here! root)
+  (let [origin-sha (:out (sh! root "git" "rev-parse" "origin/main"))]
+    ;; The entangled attempt QA bounced THIS pass, built on a DISCONNECTED
+    ;; root (BL-1241's own "extreme case": a collapsed/orphaned branch
+    ;; state, not merely a sibling of origin/main).
+    (sh! root "git" "checkout" "-q" "--orphan" "disconnected")
+    (sh! root "git" "commit" "-q" "--allow-empty" "-m" "disconnected-root")
+    (commit! root "backlog/active/BL-1174-x.yaml" "id: BL-1174\n" "BL-1174-fixture: entangled attempt on a disconnected branch")
+    (commit! root "backlog/active/BL-1185-x.yaml" "id: BL-1185\n" "BL-1174-fixture: entangled - also touches BL-1185")
+    (let [abandoned-commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          abandoned-short (subs abandoned-commit 0 10)]
+      (record-handoff! root "BL-1174-fixture" abandoned-commit)
+      ;; Deliberate rebuild: back to origin/main (the rebuild's real
+      ;; parent), so the new tip shares NO history with the abandoned
+      ;; commit beyond origin/main itself.
+      (sh! root "git" "checkout" "-q" "main")
+      (sh! root "git" "reset" "-q" "--hard" origin-sha)
+      (commit! root "backlog/active/BL-1174-x.yaml"
+               (str "id: BL-1174\nabandoned_commits:\n  - " abandoned-short "\n")
+               "BL-1174-fixture: tip-pure rebuild off origin/main, records abandonment")
+      (let [rebuilt-commit (:out (sh! root "git" "rev-parse" "HEAD"))
+            ancestry-check (sh! root "git" "merge-base" "--is-ancestor" abandoned-commit rebuilt-commit)
+            result (task-scope-gate-lib/findings-for-git-handoff
+                    {:root root :task-name "BL-1174-fixture" :commit rebuilt-commit})]
+        (assert-false "fixture sanity: rebuild does not descend from the abandoned commit"
+                      (zero? (:exit ancestry-check)))
+        (assert-false "abandoned base -> walk from origin/main, old landed history excluded"
+                      (task-scope-gate-lib/blocked? result))
+        (assert= "abandoned base -> no findings (old BL-1185 entanglement out of range)" [] (:findings result))))))
+
+;; The converse, same fixture shape but WITHOUT recording the abandonment:
+;; the disconnected abandoned commit provides no boundary, so the walk from
+;; it reaches all the way back to origin/main's own root and re-discovers
+;; the EARLIER landed BL-1174 commit's stale entanglement with BL-1185 -
+;; a real false positive on old, irrelevant history, exactly what the
+;; override exists to prevent.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-1174-x.yaml" "id: BL-1174\n" "BL-1174-fixture: earlier landed work")
+  (commit! root "backlog/active/BL-1185-old.yaml" "id: BL-1185\n" "BL-1174-fixture: earlier landed work, entangled with BL-1185")
+  (mark-origin-main-here! root)
+  (let [origin-sha (:out (sh! root "git" "rev-parse" "origin/main"))]
+    (sh! root "git" "checkout" "-q" "--orphan" "disconnected")
+    (sh! root "git" "commit" "-q" "--allow-empty" "-m" "disconnected-root")
+    (commit! root "backlog/active/BL-1174-x.yaml" "id: BL-1174\n" "BL-1174-fixture: entangled attempt on a disconnected branch")
+    (commit! root "backlog/active/BL-1185-x.yaml" "id: BL-1185\n" "BL-1174-fixture: entangled - also touches BL-1185")
+    (let [abandoned-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (record-handoff! root "BL-1174-fixture" abandoned-commit)
+      (sh! root "git" "checkout" "-q" "main")
+      (sh! root "git" "reset" "-q" "--hard" origin-sha)
+      ;; No abandonment recorded this time.
+      (commit! root "backlog/active/BL-1174-x.yaml" "id: BL-1174\n" "BL-1174-fixture: unrelated rebuild, abandonment never recorded")
+      (let [rebuilt-commit (:out (sh! root "git" "rev-parse" "HEAD"))
+            result (task-scope-gate-lib/findings-for-git-handoff
+                    {:root root :task-name "BL-1174-fixture" :commit rebuilt-commit})]
+        (assert-true "unrecorded abandonment: disconnected base re-discovers old landed entanglement, blocked"
+                     (task-scope-gate-lib/blocked? result))
+        (assert= "unrecorded abandonment: finding names the OLD BL-1185 entanglement"
+                 [{:path "backlog/active/BL-1185-old.yaml" :ticket-id "BL-1185"}]
+                 (:findings result))))))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))

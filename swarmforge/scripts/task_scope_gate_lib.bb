@@ -40,6 +40,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "salvage_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
 
 (defn- git! [root & args]
   (apply daemon-cycle-guard-lib/sh! (into ["git" "-C" (str root)] args)))
@@ -119,6 +120,46 @@
           first
           (salvage-lib/header-field "commit")))
 
+;; BL-1192 architect bounce round 2 D1 (2026-08-28): a deliberate rebuild-off-
+;; main (BL-1241's own escape hatch for an entangled tip) does not descend
+;; from the previously-cited commit by construction - the whole point of the
+;; rebuild is to drop it. Left unhandled, `last-handoff-commit` still returns
+;; that dropped commit as `base`, and `rev-list base..commit` either errors
+;; (no merge base) or silently omits the rebuild's own real diff. The ticket's
+;; own remedy: when `base` is recorded in the task's `abandoned_commits`
+;; field, the walk starts from `origin/main` instead - the same documented
+;; override `pre_qa_gate_lib.bb`'s `read-abandoned-commits` /
+;; `abandoned-sha?` shape already implements for the ancestry check, reused
+;; here (never a second parser) via `pre_qa_gate_gather_lib.bb`'s
+;; `find-ticket-yaml-content`.
+(defn- abandoned-sha? [sha abandoned]
+  (some #(str/starts-with? sha %) abandoned))
+
+(defn- abandoned-commits-for-ticket [root task-ticket-id]
+  (when-let [yaml-content (pre-qa-gate-gather-lib/find-ticket-yaml-content root task-ticket-id)]
+    (let [field (pre-qa-gate-lib/read-abandoned-commits yaml-content)]
+      (when (:present? field) (or (:items field) [])))))
+
+;; nil (never a sha) signals "origin/main could not be resolved" - the
+;; caller's fail-open, not re-derived here.
+(defn- origin-main-sha [root]
+  (let [res (git! root "rev-parse" "-q" "--verify" "origin/main^{commit}")]
+    (when (zero? (:exit res)) (str/trim (:out res)))))
+
+(defn- effective-base
+  "Returns {:base sha-or-nil} on success, or {:unreadable? true} when the
+   base is abandoned but origin/main cannot be resolved - the caller must
+   fail open, never silently fall back to the abandoned (wrong) base."
+  [root task-ticket-id base]
+  (if-not base
+    {:base nil}
+    (let [abandoned (or (abandoned-commits-for-ticket root task-ticket-id) [])]
+      (if (abandoned-sha? base abandoned)
+        (if-let [origin-main (origin-main-sha root)]
+          {:base origin-main}
+          {:unreadable? true})
+        {:base base}))))
+
 (defn- commit-message-names-task? [root commit task-ticket-id]
   ;; SUBJECT-only, PRIMARY (first-mentioned) ticket id only - via
   ;; pipeline-stage-lib's single-match extract-ticket-id, never
@@ -177,11 +218,14 @@
       (let [commit-check (git! root "rev-parse" "-q" "--verify" (str commit "^{commit}"))]
         (if-not (zero? (:exit commit-check))
           @unreadable-warning
-          (let [base (last-handoff-commit root task-ticket-id)
-                changed-paths (task-tagged-changed-paths root base commit task-ticket-id)]
-            (if (nil? changed-paths)
+          (let [raw-base (last-handoff-commit root task-ticket-id)
+                {:keys [base unreadable?]} (effective-base root task-ticket-id raw-base)]
+            (if unreadable?
               @unreadable-warning
-              {:findings (foreign-scope-findings task-ticket-id changed-paths)})))))))
+              (let [changed-paths (task-tagged-changed-paths root base commit task-ticket-id)]
+                (if (nil? changed-paths)
+                  @unreadable-warning
+                  {:findings (foreign-scope-findings task-ticket-id changed-paths)})))))))))
 
 (defn blocked? [{:keys [findings]}]
   (boolean (seq findings)))
