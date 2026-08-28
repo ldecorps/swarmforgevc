@@ -98,6 +98,7 @@ expects them, and are not migrated or rewritten here.
 - [Promotion refuses a missing or draft acceptance feature](how-to/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.md) — blocking `acceptance` gate + `audit-acceptance`; no sibling-glob rescue (BL-626).
 - [Slice size envelope at promotion](how-to/BL-634-slice-size-envelope-at-promotion.md) — declared estimate over p90 or high band requires split-or-justify before coder starts (BL-634).
 - [Deprecator freshness-gate CLI before promote](how-to/BL-1173-deprecator-freshness-gate-cli.md) — `deprecate-check.js` allow|hold; promote fails closed (BL-1173 / Article 3.6).
+- [Active-pool freshness/hold divergence audit](how-to/BL-1228-active-pool-freshness-hold-divergence-audit.md) — report-only sweep of `backlog/active/` against its own freshness verdict, wired into promote; fail-closed, never moves a ticket (BL-1228).
 - [Run `/deprecate` soft verbs](how-to/BL-1174-deprecate-operator-verbs-scan-docs.md) — dry ranks orphan conf flags; confirm retires one into `docs/deprecated/` + index link; check wraps BL-1173; hard-tier only (BL-1174).
 - [Run the deprecator identify-unused scan](how-to/BL-1186-deprecator-identify-unused-notify.md) — ranks trailing-90-day usage-ledger entries unused/seldom, queues a human notification; read-only, hard-tier only (BL-1186).
 - [Portable agent-memory capture and inject](how-to/BL-1177-portable-agent-memory-payload-capture-inject.md) — schema-versioned payload + fail-closed inject for same-role model swap (BL-1177; epic BL-1176).

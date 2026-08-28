@@ -182,3 +182,6 @@ notes: |
     PROMOTE and promote without a second specifier round-trip."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: QA, blamed: documenter, class: behavior, commit: 20a109cc1, evidence: backlog/evidence/BL-1228-qa-bounce-20260828.md }

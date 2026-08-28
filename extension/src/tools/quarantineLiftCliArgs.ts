@@ -15,43 +15,28 @@ export interface QuarantineLiftCliArgs {
 
 export const USAGE = 'Usage: quarantine-lift-check --root <path> --by <role> [--branch <ref>]\n';
 
-interface RawFlags {
-  root?: string;
-  by?: string;
-  branch?: string;
-}
-
-// CRAP: a flag-name lookup table replaces an if/else-if chain per flag,
-// keeping this function's own cyclomatic complexity (and therefore CRAP)
-// low regardless of how many flags the CLI grows.
-const FLAG_SETTERS: Record<string, (flags: RawFlags, value: string | undefined) => void> = {
-  '--root': (flags, value) => { flags.root = value; },
-  '--by': (flags, value) => { flags.by = value; },
-  '--branch': (flags, value) => { flags.branch = value; },
-};
-
-function parseRawFlags(argv: string[]): RawFlags | null {
-  const flags: RawFlags = {};
+export function parseArgs(argv: string[]): QuarantineLiftCliArgs | null {
+  let root: string | undefined;
+  let by: string | undefined;
+  let branch: string | undefined;
   for (let i = 0; i < argv.length; i += 1) {
-    const setter = FLAG_SETTERS[argv[i]];
-    if (!setter) {
+    const flag = argv[i];
+    const value = argv[i + 1];
+    if (flag === '--root') {
+      root = value;
+      i += 1;
+    } else if (flag === '--by') {
+      by = value;
+      i += 1;
+    } else if (flag === '--branch') {
+      branch = value;
+      i += 1;
+    } else {
       return null;
     }
-    setter(flags, argv[i + 1]);
-    i += 1;
   }
-  return flags;
-}
-
-function toQuarantineLiftCliArgs(flags: RawFlags): QuarantineLiftCliArgs | null {
-  const { root, by, branch } = flags;
   if (!root || !by || !isKnownBounceRole(by)) {
     return null;
   }
   return { root, by, branch };
-}
-
-export function parseArgs(argv: string[]): QuarantineLiftCliArgs | null {
-  const flags = parseRawFlags(argv);
-  return flags ? toQuarantineLiftCliArgs(flags) : null;
 }
