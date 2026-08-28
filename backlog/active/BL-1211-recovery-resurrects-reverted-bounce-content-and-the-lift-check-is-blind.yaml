@@ -16,6 +16,8 @@ priority: 20
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
+abandoned_commits:
+  - 173bb2422f
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounce-content.feature
 
@@ -303,8 +305,29 @@ approval_context: >
   failed here, twice in one afternoon, with careful people running
   it. Say the word if you want it written the other way.
 
+  [2026-08-28] coder: QA bounce D1 (backlog/evidence/BL-1211-qa-bounce-20260828.md)
+  found the cited commit 173bb2422f an extreme entangled-tip case - a
+  literal merge of local main into the documenter branch, 90 changed
+  paths across roughly a dozen unrelated tickets, fifth and largest
+  occurrence this pass of the same branch-wide condition. Rebuilt
+  tip-pure from the last verified re-fix round (architect/cleaner/
+  hardener evidence: BL-1211-architect-pass-recovery-cli-20260828.md,
+  BL-1211-cleaner-recovery-cli-pass-20260828.md,
+  BL-1211-hardener-pass-20260828.md): bounceResurrectionGitAdapter.ts,
+  quarantineLiftCliArgs.ts, recoveryFilterCliArgs.ts, bounceResurrection.test.js
+  and bl1211OperatorCli.test.js carry the hardener's CRAP<=6 extraction;
+  quarantine-lift-check.ts, recovery-filter-check.ts and the feature/steps
+  were already present unchanged. Re-applied the documenter's how-to doc,
+  docs/index.md entry and Specification.MD paragraph, isolated to their
+  own BL-1211 hunks. The required_wiring typo this ticket's own spec-gap
+  note flagged was already corrected in this worktree's copy. Verified:
+  tsc --noEmit clean; bounceResurrection.test.js + bl1211OperatorCli.test.js
+  24/24; acceptance feature 8/8. 173bb2422f recorded above as
+  abandoned_commits - deliberately dropped, not lost work.
+
 assigned_to: coder
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-08-28, by: cleaner, blamed: coder, class: behavior, commit: a96b3a10f0, evidence: backlog/evidence/BL-1211-cleaner-bounce-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: c914c40443, evidence: backlog/evidence/BL-1211-architect-bounce-20260828.md }
+  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 42b5cd4dd, evidence: backlog/evidence/BL-1211-qa-bounce-20260828.md }
