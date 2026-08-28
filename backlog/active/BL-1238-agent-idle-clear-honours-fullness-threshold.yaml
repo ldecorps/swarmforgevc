@@ -5,9 +5,10 @@ type: defect
 severity: medium
 status: todo
 epic: swarm-reliability
-priority: 20
-direction: human
+priority: 0
+direction: queue-jump
 depends_on: [BL-141, BL-089]
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1238-agent-idle-clear-honours-fullness-threshold.feature
@@ -116,6 +117,8 @@ source: |
   sentences are preserved in this ticket's description above.
 
 notes: |
+  - [2026-08-28T07:03Z] human (Cursor): /jumpq BL-1238 — queue-jump force-promote
+    paused→active (depth was full 9/9) and route to coder. Depends BL-141/BL-089 done.
   - [2026-08-28] specifier: the intake's claimed gap verified before minting,
     not taken on trust. `maybe-clear-at-idle-boundary!` is quoted above from
     `ready_for_next_task.bb` as it stands; `ready_for_next_batch.bb` defines
