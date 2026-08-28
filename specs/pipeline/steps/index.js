@@ -831,7 +831,8 @@ const DOMAINS = [
   require('./bl1201AnswerIdentifiesQuestionSteps'),
   require('./bl1215OriginMainLandGateSteps'),
   require('./bl1211QuarantineLiftAuthorshipSteps'),
-  require('./bl1217RcConfigGateSteps')
+  require('./bl1217RcConfigGateSteps'),
+  require('./bl1192TaskScopeGateSteps')
 ];
 
 function registerSteps(registry) {
