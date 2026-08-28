@@ -212,6 +212,78 @@ function registerSteps(registry) {
       cleanupFixtureRoot(ctx);
     }
   });
+
+  // ── scenarios 06-07: the operator-facing CLI ─────────────────────────────
+  // Drives the REAL compiled CLI (extension/out/tools/quarantine-lift-check.js)
+  // as a subprocess, not the in-process quarantineLiftCheck function - "an
+  // operator runs the quarantine-lift check" means the actual command line
+  // entry point, exercising parseArgs/makeArgsGuardedMain/printJsonToStdout
+  // end to end, same principle as BL-1192's CLI driver.
+
+  const CLI = path.join(REPO_ROOT, 'extension', 'out', 'tools', 'quarantine-lift-check.js');
+
+  function runCli(root, by) {
+    const result = { status: 0, stdout: '' };
+    try {
+      result.stdout = execFileSync('node', [CLI, '--root', root, '--by', by], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      result.status = err.status ?? 1;
+      result.stdout = err.stdout ?? '';
+    }
+    return { status: result.status, verdict: JSON.parse(result.stdout) };
+  }
+
+  scoped(/^the branch carries content the bounce removed, with no commit authoring its return$/, (ctx) => {
+    const st = ctx.bl1211;
+    commitFile(st.root, 'src/thing.ts', 'bounced content\n', 'recovery: restore thing.ts from hardender', 'coordinator');
+  });
+
+  scoped(/^an operator runs the quarantine-lift check against that branch$/, (ctx) => {
+    const st = ctx.bl1211;
+    st.cliResult = runCli(st.root, 'architect');
+  });
+
+  scoped(/^the check refuses the lift$/, (ctx) => {
+    const st = ctx.bl1211;
+    assert.equal(st.cliResult.status, 1, `expected exit 1 on refusal, got: ${JSON.stringify(st.cliResult)}`);
+    assert.equal(st.cliResult.verdict.granted, false, `expected granted:false, got: ${JSON.stringify(st.cliResult.verdict)}`);
+  });
+
+  scoped(/^it names the path whose return is unauthorized$/, (ctx) => {
+    const st = ctx.bl1211;
+    try {
+      assert.ok(st.cliResult.verdict.refusedPaths.includes('src/thing.ts'), `expected src/thing.ts named, got: ${JSON.stringify(st.cliResult.verdict)}`);
+    } finally {
+      cleanupFixtureRoot(ctx);
+    }
+  });
+
+  scoped(/^the branch's bounce history cannot be resolved$/, (ctx) => {
+    const st = ctx.bl1211;
+    // Overwrite the recorded bounce with a syntactically valid but
+    // nonexistent commit hash - bouncedCommitPaths' `git diff-tree` on it
+    // fails, making the record unresolvable rather than absent.
+    const bounceFile = fs.readdirSync(path.join(st.root, '.swarmforge', 'bounces')).find((f) => f.endsWith('.jsonl'));
+    const bounceFilePath = path.join(st.root, '.swarmforge', 'bounces', bounceFile);
+    const lines = fs.readFileSync(bounceFilePath, 'utf8').trim().split('\n');
+    const rewritten = lines.map((line) => {
+      const rec = JSON.parse(line);
+      if (rec.ticket === st.ticket) rec.commit = '0000000000000000000000000000000000000000';
+      return JSON.stringify(rec);
+    });
+    fs.writeFileSync(bounceFilePath, rewritten.join('\n') + '\n');
+  });
+
+  scoped(/^it reports that it could not decide, rather than reporting the branch clean$/, (ctx) => {
+    const st = ctx.bl1211;
+    try {
+      const v = st.cliResult.verdict;
+      assert.deepEqual(v.refusedTickets, [st.ticket], `expected the unresolved ticket named, got: ${JSON.stringify(v)}`);
+      assert.deepEqual(v.refusedPaths, [], `a could-not-decide refusal names no specific path, got: ${JSON.stringify(v)}`);
+    } finally {
+      cleanupFixtureRoot(ctx);
+    }
+  });
 }
 
 module.exports = { registerSteps };

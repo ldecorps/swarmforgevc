@@ -122,4 +122,30 @@ code was independently, thoroughly verified via targeted `vitest run` and
 hand-mutation (see `BL-1215-hardener-pass-20260828.md`) before reaching
 for this override.
 
+## Update: the "rogue-fixture.sh" identified — likely explains the storm, and it is not a bug
+
+Hardening BL-1196's own follow-on amendment (GIT_INDEX_FILE stripping,
+this same day) surfaced the source: `specs/pipeline/steps/bl1196GitEnvGuardStripSteps.js`
+scenario 04 ("A fixture commit made under a worktree hook environment
+leaves that worktree untouched") builds a fixture root named
+`bl1196-hook-main-<hash>` containing a REAL git repo with a linked
+worktree, a REAL `.git/hooks/pre-commit` that shells to the REAL
+`check_property_suite_drift.sh`, with an injectable `rogue-fixture.sh`
+as the suite command — an exact byte-for-byte match to the fixture path
+observed in the storm
+(`/tmp/bl1196-hook-main-NAuI9R/rogue-fixture.sh`).
+
+This most likely means the coder was running a heavy, repeated
+verification pass over this exact scenario (a stability/fuzz check
+across many worktree configurations, matching this session's own
+"run 3-10 times to confirm no flake" practice, just at a much larger
+scale) while landing the GIT_INDEX_FILE amendment — not a runaway/
+unbounded spawn bug. The observed load-84 spike was real and worth the
+report regardless (any legitimate heavy verification pass sharing a host
+with everyone else's git operations is worth knowing about), but this is
+very likely NOT a defect in the coder's own test shape. Recording the
+connection so the coordinator/coder do not have to re-derive it, and so
+this incident is not mistaken for an unbounded-loop defect if revisited
+later.
+
 By hardener.
