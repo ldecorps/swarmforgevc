@@ -1,0 +1,159 @@
+id: BL-1237
+title: "The reference-freshness guard is direction-blind, so a worktree AHEAD of main is refused every turn with a remedy that cannot work and no bypass"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 17
+direction: agent-reported
+depends_on: [BL-640]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1237-reference-freshness-guard-is-direction-aware.feature
+
+human_approval: approved
+approval_context: >
+  One thing needs sign-off: whether to fix this now or wait. The cleaner is
+  blocked right now, and the block clears on its own if QA passes BL-1227 (in
+  QA's in_process as of 2026-08-28T06:32Z) - so "wait" is a real option today.
+  The argument for fixing anyway is that the block is unbounded and recurs for
+  free: any future ticket whose required_stages skip a role while touching
+  articles/reference/ reproduces it, and the guard offers the blocked role no
+  remedy and no bypass, so recovery always depends on an unrelated ticket
+  clearing an unrelated gate. The fix is small - one predicate gains one input.
+
+invariants:
+  - "A worktree is refused only for reference content it is MISSING relative to main — never for content it carries that main does not yet have."
+  - "Every refusal this guard raises names a remedy the refused role can actually perform to clear it."
+
+required_wiring:
+  - 'swarmforge/scripts/ready_for_next.bb::reference-freshness-lib/::the pre-turn guard must keep asking the shared lib for the verdict rather than inlining its own comparison, so the direction test is testable as pure logic'
+  - 'specs/pipeline/steps/index.js::bl1237ReferenceFreshnessDirectionSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  `reference_freshness_lib.bb`:
+
+      (defn stale-paths
+        [worktree-shas main-shas]
+        (->> main-shas
+             (keep (fn [[path sha]] (when (not= sha (get worktree-shas path)) path)))
+             sort vec))
+
+  "Different from main" is treated as "stale". It is not. A pipeline worktree
+  is routinely **ahead** of `main` — that is what an in-flight parcel looks
+  like — and the guard cannot tell ahead from behind.
+
+  `ready_for_next.bb` wires it unconditionally at load:
+
+      (defn- enforce-reference-freshness-guard! []
+        ... (when (seq stale) (dispatch-lib/exit! 2 (staleness-report stale))))
+      (enforce-reference-freshness-guard!)
+
+  There is no env seam, no flag, no override. `exit! 2` ends the turn before
+  dispatch ever decides task vs batch.
+
+  ## Why it is not self-clearing
+
+  The refusal's own prescribed remedy is "merge main, then run
+  `ready_for_next.sh` again". In the ahead direction that merge is a no-op —
+  only the worktree's side has touched those paths since the merge-base — so
+  the guard refuses again, identically, every turn. **A refusal whose stated
+  remedy cannot clear it is a hard block, not a gate.**
+
+  ## The live incident
+
+  2026-08-28: the cleaner is refused with `STALE_REFERENCE_ELABORATION` for all
+  five `articles/reference/*` files, on every turn, task or idle. The five all
+  trace to `b283239757` — BL-1227, `required_stages: [coder, qa]`, which
+  deliberately skips cleaner, architect, hardener and documenter. Its content
+  reached the cleaner's worktree through ordinary branch merges while
+  processing BL-1207/BL-1201/BL-1216/BL-1228; it has not reached `main`,
+  because it is sitting in QA's `in_process` awaiting approval.
+
+  So the cleaner is blocked, with no action available to it, until an
+  unrelated ticket clears an unrelated gate. If QA bounces BL-1227, the block
+  simply continues.
+
+  The cleaner correctly refused both bad exits: it did not overwrite its newer
+  copies with `main`'s older ones (that would discard approved BL-1227 work),
+  and it did not patch the guard without a ticket.
+
+  ## Why this recurs for free
+
+  `required_stages` fast-tracking is a supported, encouraged mechanism. Any
+  ticket that skips a role while touching `articles/reference/` reproduces
+  this exactly. The combination is not exotic — BL-1227 is a boot-prefix trim,
+  and trimming boot-inlined prose into `articles/reference/` is precisely what
+  the budget gate tells the specifier to do.
+
+  ## How (direction, not mandate)
+
+  - **Give the predicate the missing signal.** Staleness is "the worktree has
+    not absorbed main's version of this path", which content hashes alone
+    cannot express. One cheap discriminator: for each reference path, take
+    main's most recent commit touching it and ask
+    `git merge-base --is-ancestor <that commit> HEAD`. True means the worktree
+    already contains main's amendment, so a content difference is the
+    worktree's own newer work — allow. False with differing content is the
+    real drift BL-640 exists to catch — refuse.
+  - **Keep the pure/IO split.** `reference_freshness_lib.bb` is pure decision
+    logic by contract and its docstring says so. Compute the ancestry facts in
+    `ready_for_next.bb` and pass them in as another plain map; do not put `sh`
+    calls in the lib.
+  - **Do not weaken the behind case.** Scenario 03 is BL-640's whole point and
+    must stay red-on-violation.
+
+qa_e2e_procedure: >
+  (1) In a scratch clone with two worktrees, commit a change to a file under
+  `swarmforge/constitution/articles/reference/` on a branch, merge that branch
+  into worktree A, and leave `main` without it. (2) Run `ready_for_next.sh` in
+  worktree A and confirm it proceeds — before this ticket it exits 2 with
+  STALE_REFERENCE_ELABORATION. (3) Confirm A's copies of those files are
+  byte-unchanged afterwards. (4) Now commit a different reference-file
+  amendment directly on `main` that worktree B has never merged, run
+  `ready_for_next.sh` in B, and confirm it still refuses and names that file.
+  (5) Perform the remedy the refusal names, re-run, and confirm it now
+  proceeds — the refusal must be clearable by the role that received it.
+  (6) On the live swarm, confirm the cleaner can run `ready_for_next.sh`
+  while BL-1227 is still unlanded.
+
+out_of_scope: |
+  - BL-1227 itself. It is correct, human-approved, and legitimately with QA;
+    nothing here asks for it to be changed, re-routed, or un-fast-tracked.
+  - Adding a bypass flag or env seam to `ready_for_next.bb`. A guard that
+    refuses correctly needs no escape hatch, and an escape hatch would let a
+    genuinely-stale role act. Fix the predicate, not the enforcement.
+  - The `required_stages` skip mechanism. It is working as designed; this
+    ticket makes a guard tolerate a state that mechanism legitimately creates.
+
+source: |
+  Cleaner `note` (priority 00) to specifier+coordinator, 2026-08-28T06:46:06Z:
+  "cleaner blocked, ref-freshness guard fires ahead-of-main, see e70b63af1".
+  Evidence: backlog/evidence/cleaner-blocked-reference-freshness-guard-ahead-of-main-20260828.md
+
+notes: |
+  - [2026-08-28] specifier: every claim in the cleaner's note verified
+    independently before minting. `stale-paths` is direction-blind as quoted;
+    `enforce-reference-freshness-guard!` runs at load with no seam and no
+    bypass; BL-1227 carries `required_stages: [coder, qa]` with recorded
+    `stage_skip_reasons`; and BL-1227's parcel is in QA's `in_process`
+    (`50_20260828T063239Z_001368_from_coder_to_QA_for_QA.handoff`, commit
+    `b283239757`). Answering the cleaner's first question directly: yes, it is
+    with QA now.
+  - [2026-08-28] specifier: the cleaner asked whether this was worth a ticket
+    and the answer is yes, but not mainly because of today's block, which will
+    probably clear on its own. It is worth a ticket because the guard's
+    refusal is unclearable BY CONSTRUCTION in this direction, which makes
+    recovery depend on an unrelated ticket passing an unrelated gate. That is
+    a property of the guard, not of BL-1227.
+  - [2026-08-28] specifier: observation for the implementer, deliberately NOT
+    in scope. `main-reference-shas` and `worktree-reference-shas` both use
+    `git -C <root>`, which an ambient GIT_DIR/GIT_WORK_TREE defeats (BL-1233
+    measured this: `-C` does not win over the ambient variables). Under that
+    leak both sides read the SAME tree, the shas match, and this guard passes
+    vacuously - a fail-open on a safety gate. BL-1233 owns the launcher site,
+    BL-1196 and BL-1222 the suite sites; if a fourth site is worth owning it
+    is a sibling ticket, not this one. Do not fold it in.

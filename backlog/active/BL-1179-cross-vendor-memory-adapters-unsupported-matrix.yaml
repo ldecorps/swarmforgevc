@@ -21,7 +21,7 @@ invariants:
   - "Supported pairs use the portable payload from BL-1177 — not a second ad-hoc format."
 
 required_wiring:
-  - "agent memory transfer adapters::per-runtime capture/inject::unsupported matrix"
+  - 'extension/src/tools/agentMemoryHotSwap.ts::AgentMemoryTransferApi::anti-drift anchor on the LIVE seam, not a wiring check. BL-1178 already routes the hot swap through this typed seam into agentMemoryTransfer, so adapters and the unsupported matrix must be reachable from here rather than built as an island beside it. Corrected 2026-08-28: the original entry named the prose phrase "agent memory transfer adapters" as a path, which the gate matches as a literal file and can therefore never satisfy (BL-874 shape)'
   - "specs/pipeline/steps/index.js::bl1179CrossVendorMemoryAdapterSteps::acceptance handler registered"
 
 description: |
@@ -43,5 +43,19 @@ source: |
 
 notes: |
   - [2026-08-27] specifier: minted from operator intake drain.
+  - [2026-08-28] specifier: required_wiring entry 1 corrected after the
+    coder's priority-00 note. It read
+    "agent memory transfer adapters::per-runtime capture/inject::unsupported matrix"
+    - the first field is matched as a literal FILE PATH, so a prose phrase
+    there can never be satisfied and would have blocked the documenter's
+    handoff to QA. This is the BL-874 shape; the coder was right to flag it
+    at the first hop rather than let it surface five stages later.
+  - [2026-08-28] specifier: BOOKKEEPING ONLY - nothing you build changes.
+    The replacement anchors the LIVE seam BL-1178 already built
+    (agentMemoryHotSwap.ts's AgentMemoryTransferApi), so it records that the
+    adapters and matrix must be reachable from the real hot-swap path rather
+    than sitting beside it. No scope, acceptance or invariant changed. Merge
+    main and re-read the YAML before your handoff so the gate reads the
+    corrected line from your own checkout, which is where it looks.
 
 assigned_to: coder
