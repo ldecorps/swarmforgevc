@@ -93,9 +93,33 @@ description: |
   `backlog/evidence/<task-id>-*` for the named task do not count as foreign
   overlap.
 
-  Before shipping, re-run the architect's falsification check against
-  `dd5b4c332` under the corrected range and record the finding count. A range
-  that still explodes has not been fixed, whatever the unit tests say.
+  ### The corrected range needs the abandonment override too
+
+  The "since the task's own most recent ancestor handoff" walk assumes the
+  newly-cited commit DESCENDS from the previously-cited one. A deliberate
+  tip-pure rebuild off `origin/main` breaks that assumption on purpose — and
+  that rebuild is exactly the move a role makes to escape an entangled tip, so
+  the gate must not block it. The coder demonstrated this live on 2026-08-28:
+  the wiring false-positived against BL-1227's legitimate rebuild `af55356bd`.
+
+  So the gate MUST honour the ticket's `abandoned_commits` field, the same
+  documented override `pre_qa_gate_lib.bb` already implements
+  (`read-abandoned-commits` / `abandoned-sha?`, and `backlog-schema.md`'s
+  `abandoned_commits` row). When the previously-cited commit is recorded as
+  abandoned, the walk starts from `origin/main` for that parcel rather than
+  from a commit the new tip does not descend from — and does not report the
+  ticket's own rebuilt paths as foreign.
+
+  This is not optional polish. Without it the corrected range blocks the one
+  remedy available for the condition BL-1241 describes, which would make this
+  gate worse than the range it replaced.
+
+  Before shipping, run BOTH checks: re-run the architect's falsification
+  against `dd5b4c332` under the corrected range and record the finding count,
+  AND confirm a rebuild-off-main parcel with `abandoned_commits` recorded
+  passes cleanly. A range that still explodes has not been fixed, and one that
+  blocks a recorded rebuild has broken something new, whatever the unit tests
+  say.
 
   Fail-open when `origin/main` cannot be resolved, git diff fails, or no
   foreign ticket can be positively identified — same posture as BL-953.
@@ -146,6 +170,15 @@ notes: |
     do with a tip that is genuinely entangled, since bouncing it to the
     coder cannot work - a coder cannot remove commits that are ancestors of
     its own branch.
+  - [2026-08-28] specifier: second amendment the same day, from the coder's
+    note. My first correction specified the "since last handoff" range and
+    stopped there; the coder then showed that range false-positives against a
+    deliberate rebuild-off-main, because the walk assumes descent the rebuild
+    deliberately breaks. Recorded above as a hard requirement rather than a
+    hint: a gate that blocks the escape hatch for the very condition it
+    detects is worse than no gate. Credit where due - the coder found this by
+    hitting it, reverted the unlanded wiring correctly rather than working
+    around it, and said so.
   - [2026-08-28] specifier: D2 (acceptance fixture cannot distinguish the two
     ranges) is now doubly required - the corrected spec names two ranges
     explicitly, so a fixture that cannot tell them apart cannot gate this at

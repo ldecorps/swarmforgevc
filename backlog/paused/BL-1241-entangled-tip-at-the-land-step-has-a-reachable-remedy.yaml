@@ -123,6 +123,24 @@ notes: |
   - [2026-08-28] specifier: invariant 1 is the general form of that pattern
     and is deliberately phrased to be checkable against any gate, not just
     this one.
+  - [2026-08-28] specifier: MATERIAL UPDATE, hours after minting - remedy (b)
+    is PARTLY BUILT ALREADY, which changes the approval question. The coder
+    escaped BL-1227's entanglement the same morning by rebuilding tip-pure off
+    `origin/main` (`af55356bd`) and recording `abandoned_commits:
+    [b283239757, 778991d218]` on the ticket, which `pre_qa_gate_lib.bb`'s
+    ancestry check already honours as a documented override
+    (`backlog-schema.md`, `read-abandoned-commits`). So the move exists; what
+    does not exist is a land step that NAMES it. Read the approval question as
+    "should the land step direct this existing move, and to whom?" rather than
+    "should we build a rebuild mechanism from nothing". That makes (b)
+    substantially cheaper than the approval_context above implies, and it is
+    now my recommendation over (a).
+  - [2026-08-28] specifier: the same rebuild also breaks BL-1192's corrected
+    range, because the walk assumes descent that the rebuild deliberately
+    severs. BL-1192 was amended the same day to require the abandonment
+    override. Anyone building THIS ticket should check that a chosen remedy
+    does not trip a sibling gate the same way - that failure mode has now
+    appeared twice in one morning.
   - [2026-08-28] specifier: PROSE HALF IS MINE, and no gate will chase me for
     it (BL-798). Whatever remedy is chosen has to be written into
     `swarmforge/roles/QA.prompt` or the land step will not follow it, and that
