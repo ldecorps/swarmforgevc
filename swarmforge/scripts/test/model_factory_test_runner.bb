@@ -150,6 +150,15 @@
 (assert= "a non-map overlay (e.g. malformed JSON that parsed to a scalar/array) degrades to pack model"
          "sonnet" (model-factory-lib/resolve-role-model "not-a-map" "coder" "sonnet"))
 
+(let [overlay {:documenter {:role "documenter" :agent "cursor" :provider "cursor" :model "auto"}}]
+  (assert= "cursor/auto overlay must not win on a Claude seat resolver (live 2026-08-28)"
+           "claude-sonnet-5"
+           (model-factory-lib/resolve-role-model overlay "documenter" "claude-sonnet-5")))
+
+(let [overlay {:coder {:role "coder" :agent "claude" :provider "anthropic" :model "opus"}}]
+  (assert= "same-agent claude overlay still wins"
+           "opus" (model-factory-lib/resolve-role-model overlay "coder" "sonnet")))
+
 ;; ── BL-1079: provider→agent for cursor is the launcher allow-list token ──
 (assert= "BL-1079: ModelFactory derives agent token cursor for provider cursor"
          "cursor" (model-factory-lib/agent-for-provider "cursor"))

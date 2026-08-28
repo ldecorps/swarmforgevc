@@ -143,6 +143,12 @@ source: |
   returning `hold` afterwards.
 
 notes: |
+  - [2026-08-28] specifier, Article 3.6: CONFIRM PROMOTE, and note this was
+    ALREADY pre-adjudicated in this ticket's own notes at mint ("this ticket
+    WILL trip its own subject ... Treat the hold as adjudicated CONFIRM").
+    Re-confirmed rather than re-derived. The trigger words are load-bearing
+    evidence quoted from the incident and were deliberately not reworded to
+    dodge a detector this ticket exists to backstop.
   - "[2026-08-28] specifier: the prose half is already landed, not deferred —
     `swarmforge/roles/coordinator.prompt` now carries both the
     promote-with-`promote_and_route_next.sh` rule and the rule that a
@@ -174,3 +180,5 @@ notes: |
     (`promote_and_route_next.sh` is the only enforcing path, and nothing
     compares pool against verdict). Treat the hold as adjudicated CONFIRM
     PROMOTE and promote without a second specifier round-trip."
+
+assigned_to: coder

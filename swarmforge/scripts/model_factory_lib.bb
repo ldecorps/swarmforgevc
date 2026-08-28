@@ -237,7 +237,21 @@
    `pack-model` passes straight through whenever the overlay is not a map,
    names no entry for `role`, or that entry's :model is blank — the overlay
    only overrides fields it actually names (ticket's own contract); every
-   other case returns the overlay's named model instead."
+   other case returns the overlay's named model instead.
+
+   Cross-agent refuse (2026-08-28, third live hit): this resolver is only
+   called for Claude seats (resolve_claude_model_for_index). A BoB / steward
+   overlay that staffs the same role as cursor/auto (or any non-claude agent)
+   must NOT overwrite Claude's --settings model — Claude Code then dies with
+   'issue with the selected model (auto)'. Keep pack-model when the overlay
+   entry names a non-claude :agent."
   [overlay role pack-model]
-  (let [overlay-model (when (map? overlay) (:model (get overlay (keyword role))))]
-    (if (clojure.string/blank? overlay-model) pack-model overlay-model)))
+  (let [entry (when (map? overlay) (get overlay (keyword role)))
+        overlay-model (when entry (:model entry))
+        overlay-agent (when entry (:agent entry))]
+    (cond
+      (clojure.string/blank? overlay-model) pack-model
+      (and (not (clojure.string/blank? overlay-agent))
+           (not= (str overlay-agent) "claude"))
+      pack-model
+      :else overlay-model)))
