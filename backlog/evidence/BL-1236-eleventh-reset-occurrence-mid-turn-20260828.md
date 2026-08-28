@@ -119,3 +119,11 @@ complete, green, around the hole — with no bounce, no conflict, and no signal
 to anyone that the contract changed underneath them. Restoration by cherry-pick
 is not a mitigation either: everything restored at 12:52 was destroyed again at
 13:03, eleven minutes later.
+
+## Corroboration from a second role
+
+The coordinator independently reported the same occurrence by priority-00 note:
+"BL-1236 12th: reset wiped my BL-1228 close, re-closed 82efa6e->a2e8f42". So the
+13:03 sweep also discarded a completed backlog close, which its owner had to
+redo. Two roles, working on unrelated tickets, lost work to the same one-second
+decision — neither would have seen the other's casualty.
