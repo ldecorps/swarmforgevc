@@ -9,8 +9,21 @@ severity: medium
 priority: 116
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
+acceptance: specs/features/BL-592-spec-tree-on-live-console-with-epic-tier.feature
+
+invariants:
+  - "Spec tree navigation is read-only — no path from any level edits backlog YAML, documentation sources, or files a ticket."
+  - "Every non-epic-tracker backlog ticket appears under exactly one epic bucket within its milestone (including the visible '(no epic)' bucket when epic: is absent)."
+  - "A cross-milestone epic duplicates its header under every milestone that has at least one member ticket, listing only tickets whose milestone: matches that milestone under each appearance."
+
+required_wiring:
+  - "extension/src/docs/docsTree.ts::DOCS_TREE_SCHEMA_VERSION::schema bumped for epic tier; MilestoneNode carries epic grouping"
+  - "extension/src/bridge/bridgeServer.ts::spec-tree::live JSON route serves computeDocsTree output over the bridge"
+  - "extension/src/bridge/consoleMenuUiHtml.ts::spec-tree::console menu links the live spec tree screen"
+  - "specs/pipeline/steps/index.js::bl592SpecTreeOnLiveConsoleWithEpicTierSteps::acceptance handler registered"
+
 source: |
   Human, 2026-07-23: "I want a tree structure to navigate through the spec.
   From Milestones -> Epic -> BL Item -> gherkins. This subject has been debated
@@ -48,15 +61,11 @@ description: |
   surface; this tree belongs on the live console alongside the other console
   screens.
 
-  This is a RENDERING port, not a re-derivation: the live console gets the same
-  tree data (from computeDocsTree, served fresh over the bridge rather than as
-  a committed artifact) and renders it as a drill-down. The specifier decides
-  whether the bridge serves computeDocsTree's output on request or reads a
-  sidecar, mirroring how the other live-console data is served. Being on the
-  live surface, it can be LIVE (reflects the working tree now) rather than
-  pinned to the last published SHA - a real gain over the PWA version, but keep
-  it READ-ONLY: navigating the spec never edits it (BL-117's own non-behavioral
-  gate).
+  **Specifier decision (live serving):** mirror BL-572 — add a console-menu
+  screen plus `GET /spec-tree-state?token=...` that returns `computeDocsTree`
+  output from the live target checkout on each poll (no committed sidecar).
+  Being on the live surface, it reflects the working tree now rather than the
+  last published SHA; stay READ-ONLY (BL-117 non-behavioral gate).
 
   ## Delta 2: insert the EPIC tier
 
@@ -66,60 +75,49 @@ description: |
 
       Milestone -> Epic -> BL item -> Gherkin
 
-  So each milestone lists its EPICS, and each epic lists its member tickets
-  (the `epic:` field every ticket already carries), and each ticket opens to
-  its Gherkin. Concretely this means a new grouping tier in the tree schema
-  (an EpicNode between MilestoneNode and TicketNode), keyed by the ticket
-  `epic:` field, with the ticket roll-up moving under it.
+  **Specifier decisions (edge cases):**
 
-  Edge cases the specifier must pin, all real in the current backlog:
-    - A ticket with NO `epic:` field (older tickets, one-offs) - needs an
-      "(no epic)" bucket under its milestone, not to vanish.
-    - An epic tracker ticket itself (`type: epic`) - is it a node header, a
-      child, or both? It carries the epic's own description; likely the
-      Epic node's own detail, not a sibling leaf.
-    - An epic spanning MILESTONES - epics and milestones are not strictly
-      nested today (an epic's children can carry different `milestone:`
-      values). Decide: does an epic appear under each milestone its children
-      touch, or does the tree pick the epic's dominant milestone? This is the
-      one genuinely non-obvious modelling choice - do not let it be made
-      implicitly by whatever the grouping code happens to do.
+  - **No `epic:` field:** visible `(no epic)` bucket under the ticket's
+    milestone; ticket never dropped.
+  - **`type: epic` tracker:** supplies the Epic node's title/description;
+    NOT duplicated as a navigable ticket leaf under its own epic bucket.
+  - **Cross-milestone epic (the non-obvious choice):** the epic header appears
+    under **every milestone that has at least one member ticket** (by the
+    member's own `milestone:` field). Under each appearance, only tickets whose
+    `milestone:` equals that milestone are listed. Rationale: milestone-first
+    navigation must not hide tickets or force a single "dominant" milestone
+    guess.
 
   ## Schema-version discipline
 
-  `docsTree.ts` carries `DOCS_TREE_SCHEMA_VERSION` and BL-118 established that
-  new fields are ADDITIVE (contentFr etc. added without bumping shape). An
-  Epic tier is a structural change, not an additive field: bump the schema
-  version, and keep the PWA's existing consumer working (either it keeps
-  reading the old shape, or it is migrated in the same parcel - the specifier
-  decides, but a silently broken PWA docs explorer is not acceptable).
+  `DOCS_TREE_SCHEMA_VERSION` bumps (structural change, not additive field).
+  **Specifier decision:** bump to `2` with `MilestoneNode.epics[]` between
+  milestone and tickets. The static PWA MUST be migrated in the same parcel so
+  `pwa/app.js` drills milestone -> epic -> ticket when `schemaVersion >= 2`,
+  while still reading the flat root `tickets[]` roll-up for ticket lookup and
+  search. A silently broken PWA docs explorer is not acceptable.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum:
-
-  1. The live Mini App console has a read-only spec tree navigable
-     Milestone -> Epic -> BL item -> Gherkin, served over the bridge (not the
-     static PWA artifact).
-  2. Epics group by the ticket `epic:` field; a ticket without one falls into a
-     visible "(no epic)" bucket under its milestone, never dropped.
-  3. Drilling a BL item reaches its Gherkin scenarios via the existing
-     gherkinScenarios extraction - the leaf is unchanged from BL-117.
-  4. The tree is READ-ONLY: no path from it edits a spec, files a ticket, or
-     writes anything back (BL-117's non-behavioral gate, preserved).
-  5. The cross-milestone-epic modelling choice is pinned by an explicit
-     scenario, not left to grouping-code accident.
-  6. The docs-tree schema version is bumped and the existing static-PWA
-     consumer is not silently broken by the new tier.
-
-  The derivation (computeDocsTree / gherkinScenarios) is reused; new work is
-  the Epic grouping tier and the live-console rendering + bridge serving.
+qa_e2e_procedure: >
+  (1) Open live console spec tree via bridge token; drill M8 -> an epic ->
+  BL-592 -> Gherkin scenarios render. (2) Fixture ticket with no epic: appears
+  under "(no epic)". (3) Cross-milestone epic fixture: epic header under both
+  milestones, filtered children each side. (4) No edit/create affordance at any
+  level. (5) Publish docs-tree.json after schema bump; static PWA still drills
+  to Gherkin. (6) `bash specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-592-spec-tree-on-live-console-with-epic-tier.feature`.
 
 out_of_scope: |
   - Editing specs or filing tickets from the tree. Read-only, full stop.
   - Removing or changing the static PWA docs explorer beyond the schema
     migration needed to keep it working.
   - The vision/top level from BL-117 (Specification.MD, roadmap, diagrams).
-    The human's hierarchy starts at Milestone; whether to also carry BL-117's
-    vision level on the live console is the specifier's call, not required.
+    The human's hierarchy starts at Milestone; carrying BL-117's vision level
+    on the live console is optional, not required.
   - Per-epic ETA (BL-591) or reordering (BL-572) - this is navigation only,
     though it shares the epic surface with both.
+
+notes: |
+  - [2026-08-27] specifier: wrote acceptance feature; pinned cross-milestone
+    epic modelling (duplicate header per touched milestone, filtered children);
+    live serving via bridge poll of computeDocsTree; schema v2 + PWA migration
+    in same parcel. Replaced inline acceptance block.

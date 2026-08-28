@@ -159,4 +159,75 @@ pass "sync deliver skips tmux wake when resident pane is mid-turn"
 
 rm -rf "$ROOT2"
 
+# ── 03: rapid self-notes → BL-1191 wake dedup suppresses stacked wakes ───────
+ROOT3="$(mktemp -d)"
+git -C "$ROOT3" init -q
+git -C "$ROOT3" config user.email "test@test"
+git -C "$ROOT3" config user.name "test"
+SOCK3="$ROOT3/fake.sock"
+touch "$SOCK3"
+mkdir -p "$ROOT3/.swarmforge"
+echo "$SOCK3" > "$ROOT3/.swarmforge/tmux-socket"
+MASTER_WT3="$ROOT3"
+mkdir -p "$MASTER_WT3/.swarmforge/handoffs/coordinator/"{outbox/tmp,sent,inbox/new}
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$MASTER_WT3" > "$ROOT3/.swarmforge/roles.tsv"
+
+CALL_LOG3="$ROOT3/tmux-calls.log"
+BEFORE_STDOUT_FILE3="$ROOT3/before-stdout.txt"
+AFTER_STDOUT_FILE3="$ROOT3/after-stdout.txt"
+CAPTURE_COUNT_FILE3="$ROOT3/capture-count"
+export CALL_LOG="$CALL_LOG3" BEFORE_STDOUT_FILE="$BEFORE_STDOUT_FILE3" AFTER_STDOUT_FILE="$AFTER_STDOUT_FILE3" CAPTURE_COUNT_FILE="$CAPTURE_COUNT_FILE3"
+
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+echo "$*" >> "$CALL_LOG"
+for arg in "$@"; do
+  if [[ "$arg" == "capture-pane" ]]; then
+    count="$(cat "$CAPTURE_COUNT_FILE" 2>/dev/null || echo 0)"
+    echo $((count + 1)) > "$CAPTURE_COUNT_FILE"
+    if [[ "$count" == "0" ]]; then
+      cat "$BEFORE_STDOUT_FILE" 2>/dev/null
+    else
+      cat "$AFTER_STDOUT_FILE" 2>/dev/null
+    fi
+    exit 0
+  fi
+done
+exit 0
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+
+echo '❯ ' > "$BEFORE_STDOUT_FILE3"
+echo '❯ ' > "$AFTER_STDOUT_FILE3"
+
+send_self_note() {
+  local msg="$1"
+  local draft="$ROOT3/draft-$$.handoff"
+  cat > "$draft" <<EOF
+type: note
+to: coordinator
+priority: 00
+message: ${msg}
+EOF
+  (
+    cd "$ROOT3"
+    export SWARMFORGE_ROLE=coordinator
+    export SWARMFORGE_SKIP_DAEMON=1
+    PATH="$FAKE_BIN:$PATH" bb "$SWARM_HANDOFF" "$draft"
+  ) > "$ROOT3/out-$$.txt"
+  rm -f "$draft"
+}
+
+send_self_note "dedup wake test one"
+send_self_note "dedup wake test two"
+
+wake_literals="$(grep -c -- '-l' "$CALL_LOG3" || true)"
+[[ "$wake_literals" == "1" ]] || fail "03: expected exactly one wake literal across two rapid self-notes, got $wake_literals"
+grep -q "dedup-skip" "$ROOT3/.swarmforge/handoffs/inject-traffic.log" \
+  || fail "03: expected dedup-skip in inject-traffic.log"
+
+pass "sync deliver wake dedup suppresses second wake within cooldown"
+
+rm -rf "$ROOT3"
+
 echo "ALL PASS"

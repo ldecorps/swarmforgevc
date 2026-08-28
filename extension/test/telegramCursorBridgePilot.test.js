@@ -106,6 +106,14 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'distinct test per arm before pass — not only the branch the ticket',
       'narrates. Untested arms are untested-parser-branch defects.',
       '',
+      'REVIEW HATS (hardener during /pilot) — BL-751:',
+      'A new arm added to an existing multi-branch dispatch (cond / case /',
+      'if-else) whose other arms already share a gating pattern (a timeout,',
+      'grace period, or guard condition applied uniformly) must be diffed',
+      'against those siblings before pass. A shared pattern silently dropped',
+      'on the new arm is a defect candidate, not a style nit — flag it for an',
+      'explicit decision (follow the pattern or document the deviation).',
+      '',
       'Isolation (same as BL-567):',
       '- Work only in `.worktrees/expedite-BL-702` on branch `expedite/BL-702`.',
       '- Do not use handoffd, mailboxes, tmux, rotate_to_role, ready_for_next, or the coordinator.',
@@ -265,6 +273,16 @@ test('composePilotExpeditorPrompt requires per-arm tests for multi-branch parser
   assert.match(text, /distinct test per arm/);
   assert.match(text, /multi-branch parser/);
   assert.match(text, /untested-parser-branch/);
+});
+
+test('composePilotExpeditorPrompt requires diffing a new dispatch branch against its siblings (BL-751)', () => {
+  const text = composePilotExpeditorPrompt('BL-751');
+  assert.match(text, /BL-751/);
+  assert.match(text, /multi-branch dispatch/);
+  assert.match(text, /gating pattern/);
+  assert.match(text, /diffed\nagainst those siblings/);
+  assert.match(text, /defect candidate, not a style nit/);
+  assert.doesNotMatch(text, /is not a defect candidate/);
 });
 
 test('composePilotStagePrompt includes live role prompt and thin wrapper (BL-758)', () => {
