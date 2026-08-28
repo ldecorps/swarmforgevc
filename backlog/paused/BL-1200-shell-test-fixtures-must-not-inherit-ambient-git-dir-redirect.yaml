@@ -200,6 +200,13 @@ notes: |
     human later prefers two inline unsets, the two required_wiring entries
     above change with it, exactly as approval_context says."
 
+# documenter, 2026-08-28: d6c467a8a2 is a corrupted ambient-GIT_DIR-leak tree (BL-1124 class)
+# stranded on the architect/cleaner/coder/hardender branches — merging it would delete ~9700
+# real files. Hardener already substituted the sane ancestor c4e382c71 in its own pass
+# (backlog/evidence/BL-1200-hardener-pass-20260827.md); this stranded commit must never be merged.
+abandoned_commits:
+  - d6c467a8a2
+
 required_wiring:
   - 'swarmforge/scripts/test/expedite_fixture.sh::git_env_guard.sh::the fixture that fired must source the guard itself — a hand-run test never reaches the suite runner'
   - 'swarmforge/scripts/test/run_bb_suite.sh::git_env_guard.sh::the standing suite entry point must source the guard so every spawned test is clean'
