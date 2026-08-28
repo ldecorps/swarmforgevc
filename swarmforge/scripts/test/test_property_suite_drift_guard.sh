@@ -366,4 +366,82 @@ rm -f "$MARKER16" "$ROOT/../bl1202_out16_$$"
 git -C "$ROOT" reset -q HEAD~1 --hard
 rm -rf "$ROOT/extension"
 
+# ── 17 (BL-1222): the hook's inherited git environment does not reach the
+#    launched suite. GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE are exactly what
+#    a real pre-commit hook exports for a commit made from a linked
+#    worktree (measured live, ticket description) - simulated here by
+#    exporting fabricated values before invoking the guard, the same shape
+#    a hook environment presents regardless of how it got there.
+FAKE_MAIN_GITDIR_17="$ROOT/../bl1222_fake_main_17_$$"
+rm -rf "$FAKE_MAIN_GITDIR_17"
+git init -q -b main "$FAKE_MAIN_GITDIR_17"
+git -C "$FAKE_MAIN_GITDIR_17" -c user.email=t@t -c user.name=t commit -q --allow-empty -m fake-main-init
+mkdir -p "$FAKE_MAIN_GITDIR_17/extension/src"
+echo v1 > "$FAKE_MAIN_GITDIR_17/extension/src/pipelineBoard.ts"
+git -C "$FAKE_MAIN_GITDIR_17" add extension/src/pipelineBoard.ts
+
+ENV_OUT_17="$ROOT/../bl1222_env_out_$$"
+rm -f "$ENV_OUT_17"
+DUMP_ENV_17=(bash -c 'env | grep -E "^GIT_(DIR|WORK_TREE|INDEX_FILE)=" > "'"$ENV_OUT_17"'" || true; exit 0')
+set +e
+OUT17="$(
+  cd "$FAKE_MAIN_GITDIR_17"
+  GIT_DIR="$FAKE_MAIN_GITDIR_17/.git" \
+  GIT_INDEX_FILE="$FAKE_MAIN_GITDIR_17/.git/index" \
+  bash "$GUARD" "${DUMP_ENV_17[@]}" 2>&1
+)"
+ST17=$?
+set -e
+[[ "$ST17" -eq 0 ]] || fail "17: green injected suite must allow, got $ST17: $OUT17"
+[[ -f "$ENV_OUT_17" ]] || fail "17: injected suite never ran (no env dump produced): $OUT17"
+if [[ -s "$ENV_OUT_17" ]]; then
+  fail "17: suite process still inherited git env vars: $(cat "$ENV_OUT_17")"
+fi
+pass "17: the launched suite receives none of GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE from the invoking hook"
+rm -f "$ENV_OUT_17"
+rm -rf "$FAKE_MAIN_GITDIR_17"
+
+# ── 18 (BL-1222): a SHELL fixture the suite shells out to (mkdtemp + git
+#    init + git commit, the exact class BL-1200 was filed for) is isolated
+#    too - the class a vitest setupFile can never reach, since it covers
+#    code running inside vitest, not a nested shell process the suite
+#    spawns. A fake "linked worktree" gitdir is a REAL git repo here (not
+#    just a fabricated path), so an un-scrubbed run would actually commit
+#    into it - proving the isolation, not merely that nothing crashed.
+FAKE_MAIN_GITDIR="$ROOT/../bl1222_fake_main_$$"
+rm -rf "$FAKE_MAIN_GITDIR"
+git init -q -b main "$FAKE_MAIN_GITDIR"
+git -C "$FAKE_MAIN_GITDIR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m fake-main-init
+mkdir -p "$FAKE_MAIN_GITDIR/extension/src"
+echo v1 > "$FAKE_MAIN_GITDIR/extension/src/pipelineBoard.ts"
+git -C "$FAKE_MAIN_GITDIR" add extension/src/pipelineBoard.ts
+HEAD_BEFORE_18="$(git -C "$FAKE_MAIN_GITDIR" rev-parse HEAD)"
+
+NESTED_MARKER_18="$ROOT/../bl1222_nested_out_$$"
+rm -f "$NESTED_MARKER_18"
+NESTED_FIXTURE_18=(bash -c '
+  NESTED_DIR="$(mktemp -d)"
+  git -C "$NESTED_DIR" init -q -b main
+  git -C "$NESTED_DIR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m nested-fixture-commit
+  git -C "$NESTED_DIR" rev-parse HEAD > "'"$NESTED_MARKER_18"'"
+  rm -rf "$NESTED_DIR"
+')
+set +e
+OUT18="$(
+  cd "$FAKE_MAIN_GITDIR"
+  GIT_DIR="$FAKE_MAIN_GITDIR/.git" \
+  GIT_INDEX_FILE="$FAKE_MAIN_GITDIR/.git/index" \
+  bash "$GUARD" "${NESTED_FIXTURE_18[@]}" 2>&1
+)"
+ST18=$?
+set -e
+[[ "$ST18" -eq 0 ]] || fail "18: green injected suite must allow, got $ST18: $OUT18"
+[[ -f "$NESTED_MARKER_18" ]] || fail "18: nested shell fixture never ran: $OUT18"
+HEAD_AFTER_18="$(git -C "$FAKE_MAIN_GITDIR" rev-parse HEAD)"
+[[ "$HEAD_AFTER_18" == "$HEAD_BEFORE_18" ]] \
+  || fail "18: the fake linked worktree's HEAD moved from $HEAD_BEFORE_18 to $HEAD_AFTER_18 - the nested fixture's git init/commit leaked into it"
+pass "18: a nested shell fixture's git init + commit is isolated, not redirected into the invoking worktree"
+rm -f "$NESTED_MARKER_18"
+rm -rf "$FAKE_MAIN_GITDIR"
+
 echo "ALL PASS"

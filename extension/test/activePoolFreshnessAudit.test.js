@@ -248,10 +248,6 @@ test('checkFreshnessViaCli returns empty (fail-closed) when the CLI is missing',
   assert.equal(checkFreshnessViaCli(root, 'BL-1'), '');
 });
 
-// BL-1038-EXEMPT: exercises the real deprecate-check.js CLI subprocess
-// against ONE fixed, nonexistent ticket id - O(1) in the repository's size
-// (a single ticket lookup, not an enumeration or history walk), the same
-// shape promote_and_route_next.sh's own real-CLI consult already takes.
 test('checkFreshnessViaCli runs the real built CLI and returns its stdout', () => {
   // Real repo root, a ticket id unlikely to exist — exercises the CLI's own
   // fail-closed "no ticket found" path deterministically, never asserting
