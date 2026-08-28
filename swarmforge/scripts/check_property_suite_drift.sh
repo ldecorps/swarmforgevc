@@ -191,6 +191,18 @@ BEFORE="$(bl1124_snapshot "$REPO_ROOT")"
 # report_canary_once (from either the normal path below or a kill trap)
 # can address that whole group by pgid and `wait` can be interrupted by a
 # caught signal without losing the suite's own exit status.
+# BL-1196 (amended 2026-08-28): git exports GIT_DIR/GIT_INDEX_FILE (absolute,
+# GIT_WORK_TREE unset) into every hook it runs for a commit made from a
+# linked worktree, and this script's own environment inherits them straight
+# from the pre-commit hook that invoked it. A fixture inside the suite doing
+# mkdtemp + `git init` + `git commit` would silently obey an inherited
+# redirect over its own cwd - this is the vector a vitest setupFile can never
+# reach, since it covers code inside vitest, not the shell fixtures the
+# suite shells out to. Stripped here, once, right before the suite (or the
+# test-injected command) launches, so every subprocess it starts inherits a
+# clean environment regardless of what the invoking hook exported.
+unset -v GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
 SUITE_OUT_FILE="$(mktemp)"
 set -m
 if (( $# > 0 )); then

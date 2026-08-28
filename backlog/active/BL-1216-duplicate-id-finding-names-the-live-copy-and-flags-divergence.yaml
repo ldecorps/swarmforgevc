@@ -134,20 +134,43 @@ source: |
 
 notes: |
   - "[2026-08-28] specifier: the half the architect reported (three tickets
-    retired against stale content) was already remediated on local `main` at
-    779a036e5 before this disposition; verified byte-identical to
-    swarmforge-architect's copies for all three. Nothing outstanding there.
-    This ticket exists for the gate gap that let it happen, not for the
-    repair."
-  - "[2026-08-28] specifier: four tickets from the same incident are still
-    mis-pooled and are NOT fixed by this ticket — BL-644 and BL-751
-    (`active/` → `hold/`), BL-1200 (`paused/` → `hold/`), BL-1196
-    (`paused/` → `done/`, still `status: todo`). Article 3.1 makes `hold/`
-    human-held, so only a human may move those three back; BL-1196's is
-    coordinator bookkeeping. Surfaced to the coordinator by note, not
-    actioned here."
+    retired against stale content) IS remediated — re-verified on `main`
+    2026-08-28T04:04Z: BL-592, BL-1188 and BL-1189 each carry the fields the
+    bad resolution had dropped (`bounce_count`, `invariants`,
+    `required_wiring`). Correction to the earlier wording in this note: the
+    restore commit `779a036e5` is NOT an ancestor of `main`, so it must not
+    be cited as the landing point nor merged forward — the content reached
+    `main` by another path, and the unreachable hash is BL-1213's problem,
+    not this ticket's. Nothing outstanding here; this ticket exists for the
+    gate gap that let the mis-resolution happen, not for the repair."
+  - "[2026-08-28] specifier: the pool state of the other four tickets from
+    that incident has MOVED since this ticket was drafted, and the earlier
+    wording of this note (BL-644/BL-751/BL-1200 sitting in `hold/`) is
+    superseded. Re-verified on `main` 2026-08-28T04:04Z: BL-1196 is back in
+    `paused/` (restored at 2f7d22541); BL-644, BL-751 and BL-1200 now sit in
+    `backlog/done/`, each closed by its own explicit `Close ...: move to
+    done` commit and each still carrying `status: todo`. None is in `hold/`
+    any more, so the Article 3.1 human-held argument no longer applies to
+    them. Unchanged: none of this is fixed by this ticket — the
+    pool-vs-`status:` disagreement stays out of scope (see out_of_scope),
+    and whether those three closures are correct is coordinator/human
+    bookkeeping, surfaced by note rather than actioned here."
   - "[2026-08-28] specifier: overlaps BL-1194 in one function
     (`other-holders`) without depending on it. BL-1194 changes which entries
     appear in a finding; this changes what a finding says about the entries
     it has. Either can land first; expect a small merge overlap, not a
     blocked slice."
+  - "[2026-08-28] specifier, Article 3.6 freshness adjudication — CONFIRM
+    PROMOTE. The coordinator's hold was a false positive: the gate matched
+    `retired`/`obsolete` in narrative prose describing what a bad resolution
+    did to OTHER tickets, not a claim that BL-1216 is itself superseded. No
+    supersede marker exists for BL-1216 in `.swarmforge/superseded/`, and it
+    carries no spec-gap bounce history. Premise re-verified live in
+    `swarmforge/scripts/backlog_hygiene_lib.bb` on 2026-08-28: the
+    `:duplicate-id` branch of `violation-message` still emits only the id and
+    the raw colliding paths — no pool classification, no content verdict —
+    while `backlog-pools` and `other-holders` exist exactly as the How
+    section assumes. The gap is unchanged and unbuilt. A later gate pass may
+    promote on this rationale without re-deriving it."
+
+assigned_to: coder

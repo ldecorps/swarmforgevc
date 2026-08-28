@@ -59,3 +59,5 @@ notes: >
 
 notes: |
   2026-08-24 coordinator: specifier reports ready in paused/; holding — human_approval pending. Active cap full (BL-556/BL-682/BL-1089). Expedite lane applies after approval (high defects BL-1109/1110/1111).
+
+assigned_to: coder

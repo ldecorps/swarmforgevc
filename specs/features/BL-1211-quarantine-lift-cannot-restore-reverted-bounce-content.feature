@@ -66,3 +66,17 @@ Feature: BL-1211 restoring a collapsed branch never resurrects content a bounce 
     When the quarantine lift check runs
     Then the lift is granted
     And the lift cites the commit that authored the content back
+
+  # BL-1211 quarantine-lift-cannot-restore-reverted-bounce-content-06
+  Scenario: an operator can reach the lift verdict without writing code
+    Given the branch carries content the bounce removed, with no commit authoring its return
+    When an operator runs the quarantine-lift check against that branch
+    Then the check refuses the lift
+    And it names the path whose return is unauthorized
+
+  # BL-1211 quarantine-lift-cannot-restore-reverted-bounce-content-07
+  Scenario: the operator-facing check fails closed when it cannot decide
+    Given the branch's bounce history cannot be resolved
+    When an operator runs the quarantine-lift check against that branch
+    Then the check refuses the lift
+    And it reports that it could not decide, rather than reporting the branch clean

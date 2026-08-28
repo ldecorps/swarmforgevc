@@ -19,6 +19,10 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounce-content.feature
 
+required_wiring:
+  - 'extension/src/tools/quarantine-lift-check.ts::quarantineLiftCheck::the lift verdict must have a production caller; correct-and-tested with no CLI is the BL-419 shape, and the incident this ticket was filed for was a lift performed by hand'
+  - 'extension/src/tools/quarantine-lift-check.ts::filterRecoveryPaths::the recovery half needs the same operator-reachable entry point; a recovery that cannot consult the filter still resurrects bounced content'
+
 invariants:
   - "A recovery never resurrects content a revert on that same branch deliberately removed: whatever a restore-from-sibling brings back is filtered by the branch's own revert history, so recovering a collapsed branch cannot undo its bounces."
   - "A quarantine lift can fail in BOTH directions - on content that went missing and on content that came back. An empty deletion diff against a sibling is necessary and never sufficient, because a branch restored from that sibling scores zero by construction."
@@ -218,6 +222,42 @@ notes: >
   bounceRevertGitAdapter/bounceRevertVerdict, this is the
   recovery/lift path. Sequence their merges deliberately if both go
   active.
+
+  [2026-08-28] Specifier answer to the architect's priority-00 note
+  ("BL-1211 logic correct+tested but no CLI/gate calls it yet - scope
+  call?"): YES, the call is in scope for THIS ticket, and this
+  amendment makes that enforceable rather than advisory. Verified the
+  finding at 9703b4ab9 - quarantineLiftCheck and filterRecoveryPaths in
+  extension/src/metrics/bounceResurrectionGitAdapter.ts are reached only
+  by specs/pipeline/steps/bl1211QuarantineLiftAuthorshipSteps.js, with
+  no production caller anywhere.
+
+  The reason is that both declared invariants are properties of an
+  OPERATION, not of a function: "a recovery never resurrects content a
+  revert deliberately removed", and "a quarantine lift can fail in BOTH
+  directions". Unwired, neither holds - a recovery and a lift would be
+  performed exactly as they were on 2026-08-27, by hand, against the
+  same blind deletion-diff check, while the ticket read as delivered.
+  That is the BL-419 shape, and this ticket exists because the incident
+  already happened once.
+
+  Two required_wiring entries added, both plain literals per BL-874.
+  There is no existing quarantine-lift or restore-from-sibling script to
+  host the call - the procedure is a runbook - so the call site has to
+  be created. extension/src/tools/quarantine-lift-check.ts is named only
+  so the wiring gate has a literal to match, following the established
+  deprecate-check.ts to out/tools/deprecate-check.js pattern; hosting
+  both verbs in one CLI is direction, not mandate.
+
+  Feature file gains scenarios 06 and 07 - an operator can reach the
+  verdict, and the operator-facing path fails closed when it cannot
+  decide. Their step handlers must land in the same parcel (BL-233),
+  which is fine because the wiring is a coder rebuild regardless. Lint
+  gate clean.
+
+  Scope grew, so this is a genuine rebuild, not bookkeeping. Nothing
+  already built is invalidated: the verdict logic, the git adapter and
+  scenarios 01-05 stand as they are.
 
 approval_context: >
   One call, and one thing I want to be explicit about.
