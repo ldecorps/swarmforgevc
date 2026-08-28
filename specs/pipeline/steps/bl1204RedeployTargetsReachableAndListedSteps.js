@@ -56,6 +56,27 @@ function writeStubScript(root, scriptName, marker) {
   fs.chmodSync(scriptPath, 0o755);
 }
 
+const MARKER_POLL_TIMEOUT_MS = 3000;
+const MARKER_POLL_INTERVAL_MS = 25;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// BL-1204 cleaner bounce D1: the redeploy scripts run detached and
+// unref'd, so the marker they write lands asynchronously - bounded poll,
+// never a synchronous read (races and loses almost every time) and never
+// an unbounded wait (a genuinely broken dispatch must still fail fast).
+async function waitForMarker(markerPath) {
+  const deadline = Date.now() + MARKER_POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(markerPath)) {
+      return;
+    }
+    await sleep(MARKER_POLL_INTERVAL_MS);
+  }
+}
+
 function registerSteps(registry) {
   scoped(registry, /^the Cursor bridge is accepting Telegram commands$/, (ctx) => {
     ctx.bl1204 = { root: mkFixtureRoot() };
@@ -82,7 +103,7 @@ function registerSteps(registry) {
     st.startPattern = spec.startPattern;
   });
 
-  scoped(registry, /^the command is accepted as a soft-confirm redeploy for (\S+)$/, (ctx, target) => {
+  scoped(registry, /^the command is accepted as a soft-confirm redeploy for (\S+)$/, async (ctx, target) => {
     const st = ctx.bl1204;
     assert.equal(st.target, target);
     assert.equal(st.tier, 'soft', `expected /redeploy ${target} to gate as soft-confirm, got tier=${st.tier}`);
@@ -91,8 +112,19 @@ function registerSteps(registry) {
     assert.equal(st.decision.args, target);
     // The execute-time dispatch must reach THIS target's own module, not
     // silently fall through to the plain cursor-bridge redeploy (today's
-    // bug shape) - both facts checked directly against the real result.
+    // bug shape) - executeOperatorVerb's return value is built synchronously
+    // (right after spawn() hands back a pid), so this half is reliable with
+    // no race.
     assert.match(st.executeResult.text, st.startPattern, `expected the real dispatch to reach ${target}'s own module, got: ${st.executeResult.text}`);
+    // BL-1204 cleaner bounce D1: the three redeploy modules spawn their
+    // script `detached: true` + `child.unref()` - a deliberate fire-and-
+    // forget so the bridge-bouncing redeploy never blocks the caller - so
+    // the marker file the script writes lands asynchronously, not by the
+    // time executeOperatorVerb returns. A synchronous read here raced the
+    // child process and lost almost every time (confirmed: absent
+    // immediately, present ~300ms later). Poll with a bounded timeout
+    // instead of assuming either timing.
+    await waitForMarker(st.marker);
     assert.equal(fs.readFileSync(st.marker, 'utf8').trim(), 'ok', `expected ${target}'s own script to have actually run`);
     fs.rmSync(st.root, { recursive: true, force: true });
   });
