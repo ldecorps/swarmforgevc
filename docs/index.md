@@ -293,6 +293,7 @@ expects them, and are not migrated or rewritten here.
 - [Pinned-Repo Fixture and the Live-Derivation Guard (BL-1038)](reference/BL-1038-pinned-repo-fixture-and-live-derivation-guard.md) — the dependency-closure fixture that replaces whole-directory copies of the live `swarmforge/scripts/`, the guard that catches both direct and indirect (escapes-into-production) live-repository reads, and its six scoped exemptions.
 - [Shared Git-Repo Fixture and Its Guard (BL-1039)](reference/BL-1039-shared-git-repo-fixture.md) — the seed-once template that replaces per-test `git init`/`config`/`commit` in the unit lane, its structural isolation, the by-inspection creation guard and its three scoped exemptions.
 - [ACP-Hosted Seat Snapshot (BL-1081)](reference/BL-1081-acp-hosted-seat-snapshot.md) — the `.swarmforge/acp/<role>.json` schema, the provider-table `:acp` dimension, which babysitter checks change for a hosted seat, the `acp-host-pane` CLI, and the production launcher that puts the `vibe` spike seat behind the host.
+- [Nested Git-Repository Guard (BL-1230)](reference/BL-1230-nested-git-repository-guard.md) — reports any git repository nested in the tracked tree that git itself didn't put there (a `backlog/.git` leak's redirect of `git rev-parse --show-toplevel`); exempt by construction (worktree gitfiles, `node_modules`), report-only, sibling of BL-1039's source-text scan.
 ## Explanation
 
 *Understanding-oriented: discursive background and rationale.*
