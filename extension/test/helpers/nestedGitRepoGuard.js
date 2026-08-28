@@ -38,20 +38,17 @@ const SKIP_DIR_NAMES = new Set(['node_modules', '.worktrees']);
  * descend into node_modules (a whole vendored subtree, exempt by
  * construction) or into any directory it reports (a leaked repo's own
  * internals are not this guard's business).
- *
- * `readdir` is an injectable seam (defaults to `fs.readdirSync`) so tests can
- * simulate an unreadable directory without real filesystem permissions.
  */
-function findNestedGitRepositories(root, { readdir = fs.readdirSync } = {}) {
+function findNestedGitRepositories(root) {
   const violations = [];
-  walk(root, root, violations, readdir);
+  walk(root, root, violations);
   return violations;
 }
 
-function walk(root, dir, violations, readdir) {
+function walk(root, dir, violations) {
   let entries;
   try {
-    entries = readdir(dir, { withFileTypes: true });
+    entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
     return; // unreadable directory - nothing to report, nothing to crash on
   }
@@ -76,7 +73,7 @@ function walk(root, dir, violations, readdir) {
       continue;
     }
     if (entry.isDirectory()) {
-      walk(root, path.join(dir, entry.name), violations, readdir);
+      walk(root, path.join(dir, entry.name), violations);
     }
   }
 }
