@@ -214,7 +214,8 @@ notes: |
     green after the fix.
 
 assigned_to: coder
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: b033583c08, evidence: backlog/evidence/BL-1192-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: dff356cc18, evidence: backlog/evidence/BL-1192-qa-bounce-20260828.md }
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 7a3773c711, evidence: backlog/evidence/BL-1192-architect-bounce-round2-20260828.md }
