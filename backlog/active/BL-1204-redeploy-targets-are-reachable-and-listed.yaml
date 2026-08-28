@@ -140,7 +140,8 @@ notes: |
     BL-751's scope. Only the direction of the defect differs from its note,
     and that difference is what decides the fix — hence the correction is
     recorded here rather than left to the coder to rediscover."
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: acceptance, commit: 24c22bbb79, evidence: backlog/evidence/BL-1204-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: cleaner, blamed: coder, class: acceptance, commit: 402bfc208c, evidence: backlog/evidence/BL-1204-missing-acceptance-step-handler-bounce-20260828.md }
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 51d623336, evidence: backlog/evidence/BL-1204-architect-bounce-20260828-2.md }
