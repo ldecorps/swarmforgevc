@@ -11,7 +11,7 @@ severity: high
 # content is bounced work rather than destroyed work.
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 20
 direction: swarm-reported
 depends_on: []
