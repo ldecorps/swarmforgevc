@@ -182,11 +182,13 @@ notes: >
   into work. The role_ask marker directory is empty, so the slot is free and
   this is not a re-ask.
 
-  Related, none of which own this: BL-1236 (defect/critical, paused,
-  human_approval pending - the actual conflict-predicate fix, and the
-  condition named in the switch comment); BL-1214 (done - the reconcile
-  reset itself); BL-1198 (push before discarding local ahead commits);
-  BL-1215 (pilot land gate). Evidence for the twelve occurrences:
+  Related, none of which own this switch: BL-1236 (defect/critical,
+  LANDED and CLOSED - 871f2fa85 / 2b3c796d1 / 112027d99; still named in
+  the conf as the original re-enable condition, with the live flip owned
+  by BL-1251); BL-1214 (done - the reconcile reset itself); BL-1198
+  (push before discarding local ahead commits); BL-1215 (pilot land
+  gate); BL-1251 (paused, human_approval pending - the flip decision
+  now that BL-1236 has landed). Evidence for the twelve occurrences:
   backlog/evidence/BL-1236-tenth-reset-cause-pinned-20260828.md and
   BL-1236-eleventh-reset-occurrence-mid-turn-20260828.md.
 
@@ -235,9 +237,10 @@ notes: >
   swarmforge/scripts/master_main_reconcile_lib.bb (both the parse and the
   guard live in the lib - see the guard-placement paragraph in the
   description; handoffd.bb's call site is deliberately left ALONE, per the
-  constraint forbidding its removal and per scenario 05). BL-1236 will touch
-  the same lib when it is approved, so prefer not to run the two
-  concurrently - sequence this one first, since it is the unblocked half.
+  constraint forbidding its removal and per scenario 05). BL-1236 already
+  edited the same lib and landed first; this branch merged origin/main
+  (fb72a0698) before the conf-comment fix, so the concurrency hazard the
+  mint named is resolved rather than outstanding.
 
   DEPRECATOR FRESHNESS ADJUDICATION - specifier stage, expedite re-run,
   2026-08-28 ~17:05 (Article 3.6). Outcome: AMEND (not retire, not confirm
@@ -274,28 +277,20 @@ notes: >
   BL-1251 with human_approval: pending, so the amendment narrows nothing
   and decides nothing on their behalf.
 
-  MERGE HAZARD FOR THE CODER, READ BEFORE TOUCHING CODE. This branch is 18
-  commits behind origin/main (merge-base 2d1d905d4) and those 18 include
-  BL-1236, which edits master_main_reconcile_lib.bb - the same file this
-  ticket edits. The mint's orthogonality note assumed this ticket would
-  sequence FIRST; it did not. A `git merge-tree --write-tree HEAD
-  origin/main` simulation at 17:05 reports content conflicts in exactly two
-  files, specs/pipeline/steps/index.js (both sides register new step
-  handlers) and swarmforge/scripts/test/master_main_reconcile_lib_test_runner.bb
-  (both sides add cases). master_main_reconcile_lib.bb itself AUTO-merges,
-  which is the dangerous one: an auto-merge of this file is precisely where
-  a silent drop hides, so after merging, diff every file this ticket owns
-  against BOTH parents rather than trusting a clean exit. Merge before
-  working, never reset --hard.
+  MERGE HAZARD - RESOLVED this pass. fb72a0698 already merged origin/main
+  (including BL-1236) into expedite/BL-1248; HEAD is d98131ace with the
+  conf comment updated. Re-verified this Cursor-as-expeditor specifier
+  pass (2026-08-28 ~18:50): `git merge-base --is-ancestor 871f2fa85 HEAD`
+  and `112027d99` both true; `master_main_reconcile_enabled` still ABSENT
+  on origin/main; worktree clean. The mint's "sequence this one first"
+  assumption is historical.
 
-  UNCOMMITTED WORK PRESENT AT STAGE START, NOT MINE, NOT SWEPT. The
-  previous run's cleaner stage died without a verdict (it blocked on a
-  Monitor notification) and left one edit uncommitted:
-  specs/pipeline/steps/bl1248MasterMainReconcileKillSwitchSteps.js loses the
-  now-unused SHIPPED_CONF constant. Verified genuinely dead - the file has
-  no other reference to it, scenario 04 reads its path from the Gherkin
-  step argument instead. It is on-spec cleaner work; finish and commit it
-  rather than restarting from a clean tree, and do not sweep it.
+  Cursor-as-expeditor specifier pass, 2026-08-28 ~18:50: re-verified
+  premises at HEAD after the prior automated expedite failed without a
+  durable verdict.json for this stage. Stale Related/Orthogonality notes
+  that still described BL-1236 as paused/pending were amended above;
+  deliverable and human_approval unchanged. No further feature/scenario
+  change.
 
 approval_context: >
   This is your own 12:16Z directive returned as a ticket, because it had no
