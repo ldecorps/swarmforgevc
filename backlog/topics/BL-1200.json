@@ -1,0 +1,1 @@
+{"id":"BL-1200","messages":[{"seq":0,"ts":1787878575610,"author":"swarm","type":"outbound","text":"BL-1200 ✅ done — Shell test fixtures inherit an ambient GIT_DIR/GIT_WORK_TREE redirect and commit into the live repository"}]}
