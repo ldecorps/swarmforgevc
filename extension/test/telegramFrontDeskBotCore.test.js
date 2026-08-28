@@ -67,6 +67,9 @@ const {
   ONBOARDING_SUBJECT_ID,
   decideOnboardingReplyAction,
   formatCallbackDiagnosticLine,
+  staleApprovalAsksNeedingClose,
+  reconcileStaleApprovalAsks,
+  STALE_ASK_CLOSE_GAP_MS,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -3526,6 +3529,10 @@ function closingFixtureAdapters(overrides = {}) {
     // PollAdapters field here already has.
     commitApprovalWrites: overrides.commitApprovalWrites,
     notifyApprovalsTopic: overrides.notifyApprovalsTopic,
+    // BL-1190: pass through only when the test actually supplies one - an
+    // absent override means "no-op reason unexplained", the same optional
+    // posture every other PollAdapters field here already has.
+    explainApprovalRecordNoOp: overrides.explainApprovalRecordNoOp,
     editCalls,
   };
 }
@@ -3635,6 +3642,37 @@ test('recordApprovalDecisionAndClose: a decision that was NOT actually pending (
 
   assert.equal(result.changed, false);
   assert.deepEqual(adapters.editCalls, [], 'expected no edit attempted for a no-op (already-decided) recording');
+});
+
+// BL-1190: a tap that recorded nothing because the ticket yaml is gone
+// entirely is the ghost-ask case - unlike the ordinary already-decided
+// no-op above (never touches the ask), this one closes the ask inline,
+// with the stale verdict, so a repeat tap cannot recur indefinitely.
+test('recordApprovalDecisionAndClose: a no-ticket-file no-op closes the stored ask with the Stale verdict', async () => {
+  const adapters = closingFixtureAdapters({
+    recordApprovalReply: async () => false,
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-1190 needs your approval...' }),
+    explainApprovalRecordNoOp: async () => 'no-ticket-file',
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-1190', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, false);
+  assert.equal(adapters.editCalls.length, 1, 'expected the ghost ask to be closed');
+  assert.match(adapters.editCalls[0].text, /-- Stale: ticket file missing/);
+});
+
+test('recordApprovalDecisionAndClose: an already-decided no-op (not no-ticket-file) still attempts no edit', async () => {
+  const adapters = closingFixtureAdapters({
+    recordApprovalReply: async () => false,
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
+    explainApprovalRecordNoOp: async () => 'already-approved',
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, false);
+  assert.deepEqual(adapters.editCalls, [], 'an already-decided no-op is not a ghost ask - it stays for the decided-verdict reconcile');
 });
 
 test('recordApprovalDecisionAndClose: a failed message edit is logged and does not throw - the decision recording still succeeded', async () => {
@@ -6971,4 +7009,135 @@ test('BL-582: the Approve tap is answered as soon as the record outcome is known
   await pollAndForward(0, PRINCIPAL_ID, adapters);
 
   assert.deepEqual(order, ['record', 'answer', 'commit', 'repaint'], 'the spinner clears before the commit and the repaint, both of which can block');
+});
+
+// BL-1190: staleApprovalAsksNeedingClose / reconcileStaleApprovalAsks - the
+// periodic half of the ghost-approval-ask fix (closes a recorded
+// ApprovalRequested ask whose ticket yaml has disappeared entirely).
+
+test('staleApprovalAsksNeedingClose: empty recorded asks needs nothing', () => {
+  assert.deepEqual(staleApprovalAsksNeedingClose({}, () => true), []);
+});
+
+test('staleApprovalAsksNeedingClose: excludes an ask whose ticket file still exists', () => {
+  const recorded = { 'BL-1': { topicId: 1, messageId: 1, text: 'ask' } };
+  assert.deepEqual(
+    staleApprovalAsksNeedingClose(recorded, () => true),
+    []
+  );
+});
+
+test('staleApprovalAsksNeedingClose: includes an ask whose ticket file has disappeared', () => {
+  const recorded = { 'BL-1': { topicId: 1, messageId: 1, text: 'ask' } };
+  assert.deepEqual(
+    staleApprovalAsksNeedingClose(recorded, () => false),
+    ['BL-1']
+  );
+});
+
+test('staleApprovalAsksNeedingClose: excludes an already-decided ask even when its ticket file is gone', () => {
+  const recorded = { 'BL-1': { topicId: 1, messageId: 1, text: 'ask\n-- Approved 2026-07-17 03:07 UTC' } };
+  assert.deepEqual(
+    staleApprovalAsksNeedingClose(recorded, () => false),
+    []
+  );
+});
+
+// Two-candidate case (BL-1's own hardening discipline: a selector needs a
+// multi-candidate fixture, not just single-item true/false) - one gone, one
+// still live, in reverse-alphabetical insertion order to also prove the
+// output is sorted, not merely filtered.
+test('staleApprovalAsksNeedingClose: with multiple recorded asks, only the ones with no live ticket file are returned, sorted', () => {
+  const recorded = {
+    'BL-2': { topicId: 2, messageId: 2, text: 'ask 2' },
+    'BL-1': { topicId: 1, messageId: 1, text: 'ask 1' },
+    'BL-3': { topicId: 3, messageId: 3, text: 'ask 3\n-- Approved 2026-07-17 03:07 UTC' },
+  };
+  const liveTickets = new Set(['BL-2']);
+  assert.deepEqual(
+    staleApprovalAsksNeedingClose(recorded, (id) => liveTickets.has(id)),
+    ['BL-1']
+  );
+});
+
+test('reconcileStaleApprovalAsks: closes nothing and never waits when no ask is stale', async () => {
+  const closed = [];
+  let waited = 0;
+  await reconcileStaleApprovalAsks(
+    {
+      readApprovalAskMessages: () => ({ 'BL-1': { topicId: 1, messageId: 1, text: 'ask' } }),
+      ticketFileExists: () => true,
+      closeApprovalAsk: async (id) => {
+        closed.push(id);
+      },
+      waitBetweenCloses: async () => {
+        waited += 1;
+      },
+    },
+    1000
+  );
+  assert.deepEqual(closed, []);
+  assert.equal(waited, 0);
+});
+
+test('reconcileStaleApprovalAsks: closes a single stale ask with the stale verdict and does not wait after the last one', async () => {
+  const closed = [];
+  let waited = 0;
+  await reconcileStaleApprovalAsks(
+    {
+      readApprovalAskMessages: () => ({ 'BL-1': { topicId: 1, messageId: 1, text: 'ask' } }),
+      ticketFileExists: () => false,
+      closeApprovalAsk: async (id, verdict, nowMs) => {
+        closed.push({ id, verdict, nowMs });
+      },
+      waitBetweenCloses: async () => {
+        waited += 1;
+      },
+    },
+    1234
+  );
+  assert.deepEqual(closed, [{ id: 'BL-1', verdict: { kind: 'stale' }, nowMs: 1234 }]);
+  assert.equal(waited, 0, 'no wait needed after the only (last) close');
+});
+
+test('reconcileStaleApprovalAsks: waits BETWEEN closes but not after the final one', async () => {
+  const closed = [];
+  const waits = [];
+  await reconcileStaleApprovalAsks(
+    {
+      readApprovalAskMessages: () => ({
+        'BL-1': { topicId: 1, messageId: 1, text: 'ask 1' },
+        'BL-2': { topicId: 2, messageId: 2, text: 'ask 2' },
+        'BL-3': { topicId: 3, messageId: 3, text: 'ask 3' },
+      }),
+      ticketFileExists: () => false,
+      closeApprovalAsk: async (id) => {
+        closed.push(id);
+      },
+      waitBetweenCloses: async (ms) => {
+        waits.push(ms);
+      },
+    },
+    0
+  );
+  assert.deepEqual(closed, ['BL-1', 'BL-2', 'BL-3']);
+  assert.deepEqual(waits, [STALE_ASK_CLOSE_GAP_MS, STALE_ASK_CLOSE_GAP_MS], 'exactly one wait between each pair, none after the last');
+});
+
+test('reconcileStaleApprovalAsks: falls back to a no-op wait when waitBetweenCloses is not provided', async () => {
+  const closed = [];
+  await reconcileStaleApprovalAsks(
+    {
+      readApprovalAskMessages: () => ({
+        'BL-1': { topicId: 1, messageId: 1, text: 'ask 1' },
+        'BL-2': { topicId: 2, messageId: 2, text: 'ask 2' },
+      }),
+      ticketFileExists: () => false,
+      closeApprovalAsk: async (id) => {
+        closed.push(id);
+      },
+    },
+    0
+  );
+  assert.deepEqual(closed, ['BL-1', 'BL-2']);
 });

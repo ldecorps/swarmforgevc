@@ -812,7 +812,8 @@ const DOMAINS = [
   require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
-  require('./bl1200GitEnvGuardSteps')
+  require('./bl1200GitEnvGuardSteps'),
+  require('./bl1190GhostApprovalAskRequiresLiveYamlSteps')
 ];
 
 function registerSteps(registry) {

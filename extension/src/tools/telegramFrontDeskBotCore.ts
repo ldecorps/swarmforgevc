@@ -13,7 +13,13 @@ import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 // second copy of the same arithmetic.
 import { formatDurationMs } from '../metrics/swarmMetrics';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
-import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText, alreadyRuledToastText } from '../concierge/approvalAskClosing';
+import {
+  ApprovalDecisionVerdict,
+  composeDecidedAskText,
+  alreadyDecidedToastText,
+  alreadyRuledToastText,
+  approvalAskTextShowsDecidedVerdict,
+} from '../concierge/approvalAskClosing';
 import { unsafeDispatchToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
@@ -1233,6 +1239,56 @@ async function notifyHumanDecisionRecorded(adapters: PollAdapters): Promise<void
   adapters.scheduleConciergeTick?.();
 }
 
+// BL-1190: a recorded ask whose ticket yaml has since disappeared entirely
+// (BL-1186's ghost ask - posted from a yaml that never landed, or a live
+// one later removed/reverted). Distinct from decidedApprovalAskCloseReconcile's
+// sweep (which closes asks for a ticket that IS still found but has moved
+// to a decided verdict): this one has no verdict to read at all - the
+// ticket file is simply gone - so it is its own closing reconcile, not a
+// branch of that one. Already-closed asks (any decided line, "Stale:"
+// included) are skipped, same guard decidedApprovalAsksNeedingClose uses.
+export interface RecordedApprovalAskForStaleClose {
+  topicId: number;
+  messageId: number;
+  text: string;
+}
+
+export function staleApprovalAsksNeedingClose(
+  recordedAsks: Readonly<Record<string, RecordedApprovalAskForStaleClose>>,
+  ticketFileExists: (backlogId: string) => boolean
+): string[] {
+  return Object.keys(recordedAsks)
+    .filter((backlogId) => {
+      const ask = recordedAsks[backlogId];
+      if (!ask || approvalAskTextShowsDecidedVerdict(ask.text)) {
+        return false;
+      }
+      return !ticketFileExists(backlogId);
+    })
+    .sort((a, b) => a.localeCompare(b));
+}
+
+export interface StaleApprovalAskReconcileAdapters {
+  readApprovalAskMessages: () => Readonly<Record<string, RecordedApprovalAskForStaleClose>>;
+  ticketFileExists: (backlogId: string) => boolean;
+  closeApprovalAsk: (backlogId: string, verdict: ApprovalDecisionVerdict, nowMs: number) => Promise<void>;
+  waitBetweenCloses?: (ms: number) => Promise<void>;
+}
+
+export const STALE_ASK_CLOSE_GAP_MS = 150;
+
+export async function reconcileStaleApprovalAsks(adapters: StaleApprovalAskReconcileAdapters, nowMs: number): Promise<void> {
+  const wait = adapters.waitBetweenCloses ?? (async () => undefined);
+  const recorded = adapters.readApprovalAskMessages();
+  const needing = staleApprovalAsksNeedingClose(recorded, adapters.ticketFileExists);
+  for (let i = 0; i < needing.length; i += 1) {
+    await adapters.closeApprovalAsk(needing[i], { kind: 'stale' }, nowMs);
+    if (i + 1 < needing.length) {
+      await wait(STALE_ASK_CLOSE_GAP_MS);
+    }
+  }
+}
+
 // BL-892: shared commit step for every plain Approve/Reject/Amend writer -
 // mirrors recordExpediteDecisionAndClose's own commitExpediteWrites call
 // below, but LOUD on a GENUINE failure (never silent): Expedite defers its
@@ -1289,6 +1345,14 @@ export async function recordApprovalDecisionAndClose(
     verdict.kind === 'approved' ? await adapters.recordApprovalReply(backlogId) : await adapters.recordRejectionReply(backlogId, verdict.reason);
   await onDecisionRecorded?.(changed);
   if (!changed) {
+    // BL-1190: a tap that recorded nothing because the ticket yaml is gone
+    // entirely (never just already-decided, which the decided-verdict
+    // reconcile already closes) is the ghost-ask case - close it here,
+    // inline, rather than waiting for the next reconcile sweep, so a
+    // repeat tap cannot recur indefinitely (scenario 03).
+    if ((await adapters.explainApprovalRecordNoOp?.(backlogId)) === 'no-ticket-file') {
+      await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'stale' }, nowMs);
+    }
     return { changed: false, committed: false };
   }
   const committed = await commitApprovalDecision(adapters, backlogId, verdict.kind);

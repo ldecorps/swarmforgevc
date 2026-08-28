@@ -96,3 +96,34 @@ test('approvalAskTextShowsDecidedVerdict: recognizes each decided footer shape',
 test('approvalAskTextShowsDecidedVerdict: still recognizes the pre-BL-721 "Expedited" footer on an already-closed ask', () => {
   assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Expedited 2026-07-17 03:07 UTC'), true);
 });
+
+// Pre-existing 'ruled' verdict - closed while hardening BL-1190's own new
+// 'stale' verdict addition to the same function (CRAP flagged this
+// function's untested branch, unrelated to the stale addition itself).
+test('decisionLineFor: a ruled verdict records the specifier ruling label and the UTC decision time', () => {
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+  assert.equal(decisionLineFor({ kind: 'ruled', label: 'amend' }, nowMs), '-- Ruled: amend 2026-07-17 03:07 UTC');
+});
+
+test('approvalAskTextShowsDecidedVerdict: recognizes a ruled ask footer', () => {
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Ruled: amend 2026-07-17 03:07 UTC'), true);
+});
+
+// BL-1190: 'stale' closes a ghost ask (its ticket yaml is gone entirely) -
+// a FIFTH verdict, distinct from every decided verdict above (none of which
+// apply: there is no verdict to read).
+
+test('decisionLineFor: a stale verdict records the missing-ticket-file line and the UTC decision time', () => {
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+  assert.equal(decisionLineFor({ kind: 'stale' }, nowMs), '-- Stale: ticket file missing 2026-07-17 03:07 UTC');
+});
+
+test('composeDecidedAskText: a stale verdict appends the missing-ticket-file line below the original text', () => {
+  const original = 'BL-1190 needs your approval...';
+  const text = composeDecidedAskText(original, { kind: 'stale' }, 0);
+  assert.ok(text.startsWith(`${original}\n-- Stale: ticket file missing`), `expected the stale line appended, got: ${text}`);
+});
+
+test('approvalAskTextShowsDecidedVerdict: recognizes the Stale footer', () => {
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Stale: ticket file missing 2026-07-17 03:07 UTC'), true);
+});
