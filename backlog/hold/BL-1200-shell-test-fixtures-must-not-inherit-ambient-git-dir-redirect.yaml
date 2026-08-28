@@ -143,10 +143,6 @@ notes: |
     already detached the master checkout's HEAD. It was written to disk and
     committed off-branch; if it reads as never having been on main, that is
     the incident, not a lost commit."
-
-required_wiring:
-  - 'swarmforge/scripts/test/expedite_fixture.sh::git_env_guard.sh::the fixture that fired must source the guard itself — a hand-run test never reaches the suite runner'
-  - 'swarmforge/scripts/test/run_bb_suite.sh::git_env_guard.sh::the standing suite entry point must source the guard so every spawned test is clean'
   - "[2026-08-27 18:40] specifier: FOURTH role hit by this root cause today,
     and the second whose branch was left unusable. Architect note 001123 —
     'architect HEAD collapsed to 3 paths, blocks BL-592 bounce revert'; its
@@ -165,3 +161,52 @@ required_wiring:
     18:10 (property fixture, BL-1196), hardener 18:26 (swarmforge-hardender,
     45 junk commits), architect 18:40 (swarmforge-architect, tree collapsed,
     bounce revert blocked), specifier 19:31 (master checkout detached)."
+
+  - "[2026-08-27] specifier (expedite stage 1): AMENDED. A third item had been
+    appended to `required_wiring:` that was prose, not a `path::pattern` entry
+    — it is the note immediately above this one, moved here verbatim. Left in
+    place it was doubly wrong, confirmed by running the real gate parser
+    (`pre-qa-gate-lib/read-required-wiring`) against this file: the block-list
+    reader requires every non-blank line under the key to be a single-line
+    `- item`, so a multi-line scalar made the WHOLE field unparseable —
+    `{:present? true :items nil}`. That yields (a) a hard `:manifest` finding
+    blocking the documenter's handoff to QA, and (b) `wiring-entries []`, so
+    neither real entry would ever have been checked. Prose moved, no scope
+    change, both real entries untouched."
+  - "[2026-08-27] specifier (expedite stage 1): counts re-measured on the live
+    tree, not restated. 332 shell tests under swarmforge/scripts/test/ —
+    reproduces exactly. 0 clearing GIT_DIR/GIT_WORK_TREE — reproduces exactly.
+    The git-using count reproduces as 82 by a git-subcommand-invocation grep
+    and 94 by any mention of `git`; the description's 75 used a narrower
+    predicate. Nothing in the fix, the scenarios or the wiring turns on which
+    of the three is used, so the description's figures are left as written;
+    this note is the correction of record. Premise verified LIVE at expedite
+    time: expedite_fixture.sh:41,43 still run `git init -q -b main .` and
+    `git config user.name \"expedite fixture\"` unguarded,
+    swarmforge/scripts/test/lib/git_env_guard.sh does not exist, and
+    run_bb_suite.sh does exist. Article 3.6 freshness: no supersede marker, no
+    depends_on, no prior spec-gap bounce — PASS, promote."
+  - "[2026-08-27] specifier (expedite stage 1): BL-233 reminder, not a scope
+    change — the acceptance step handlers for this feature file must land in
+    THIS parcel. specs/pipeline/runtime.js throws on any scenario with no
+    handler, so shipping the .feature without
+    specs/pipeline/steps/bl1200*Steps.js hard-fails the hardener's gate."
+  - "[2026-08-27] specifier (expedite stage 1): `human_approval:` is still
+    `pending`, and approval_context asks the human one question — shared guard
+    file vs two inline `unset` lines. Unanswerable offline. Proceeding on the
+    shared-guard shape the ticket already specifies, on the ground that the
+    operator invoking expedite.sh on BL-1200 as written is the authorization
+    to run it as written; the expeditor has no human_approval gate. If the
+    human later prefers two inline unsets, the two required_wiring entries
+    above change with it, exactly as approval_context says."
+
+# documenter, 2026-08-28: d6c467a8a2 is a corrupted ambient-GIT_DIR-leak tree (BL-1124 class)
+# stranded on the architect/cleaner/coder/hardender branches — merging it would delete ~9700
+# real files. Hardener already substituted the sane ancestor c4e382c71 in its own pass
+# (backlog/evidence/BL-1200-hardener-pass-20260827.md); this stranded commit must never be merged.
+abandoned_commits:
+  - d6c467a8a2
+
+required_wiring:
+  - 'swarmforge/scripts/test/expedite_fixture.sh::git_env_guard.sh::the fixture that fired must source the guard itself — a hand-run test never reaches the suite runner'
+  - 'swarmforge/scripts/test/run_bb_suite.sh::git_env_guard.sh::the standing suite entry point must source the guard so every spawned test is clean'

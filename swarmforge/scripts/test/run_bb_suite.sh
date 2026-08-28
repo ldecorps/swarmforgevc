@@ -26,6 +26,11 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BL-1200: strip an inherited GIT_DIR/GIT_WORK_TREE before this entry point
+# spawns a single standing test - a hand-run test never reaches this file,
+# but every test the sweep spawns from here must still be clean.
+# shellcheck source=lib/git_env_guard.sh
+source "$SCRIPT_DIR/lib/git_env_guard.sh"
 MANIFEST="$SCRIPT_DIR/suite-manifest.tsv"
 INVENTORY="$SCRIPT_DIR/suite_inventory_cli.bb"
 
