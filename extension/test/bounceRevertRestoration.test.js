@@ -4,7 +4,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { decideBounceRevertVerdict } = require('../out/quality/bounceRevertVerdict');
-const { bounceRevertCheck } = require('../out/metrics/bounceRevertGitAdapter');
+const { bounceRevertCheck, gatherBounceRevertFacts } = require('../out/metrics/bounceRevertGitAdapter');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-1208: a destructive revert remedy is earned by AUTHORSHIP of live
@@ -142,4 +142,52 @@ test('BL-1208: an EDITED (not re-added) file is never a restoration candidate, e
   const report = bounceRevertCheck({ repoRoot: root, commit: backToA, by: 'architect' });
   assert.equal(report.verdict, 'violation');
   assert.match(report.remedy, /git revert/);
+});
+
+// Hardener: existedIdenticallyBeforeLoss's own `git log` call has a
+// fail-safe branch (`if (log.status !== 0) return false`) that no real-git
+// fixture above can reach - by the time this function runs, the caller has
+// already established the file is an add-back (parent absent), and for
+// every commit with a real parent, `git log <parent> -- path` succeeds
+// (status 0) whether or not the path has any history, so the ONLY way this
+// git invocation itself fails is an anomalous git error unrelated to the
+// path's own history. Exercised directly with a fake runGit that mirrors
+// every other call correctly and fails ONLY the `log` invocation, to prove
+// the fail-safe direction: when the tool cannot determine restoration, it
+// does NOT default to withholding the remedy (which would silently soften
+// this ticket's own safety net) - it defaults to offering it, exactly as
+// every pre-BL-1208 caller already did.
+test('BL-1208: a git-log failure while checking prior history is NOT read as "restored" - the remedy is still offered (fail-safe direction)', () => {
+  const commit = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+  const branch = 'swarmforge-architect';
+  const filePath = 'src/thing.ts';
+  const content = 'important content\n';
+  // A commit hash the (failed) `log` call's stdout carries anyway - proves
+  // the fail-safe check is what discards it, not merely empty stdout: if
+  // the status guard were removed, this line would still be split out of
+  // stdout and its `show` lookup below WOULD match `content`, flipping
+  // .some(...) to true and silently un-doing the fail-safe.
+  const staleLoggedCommit = 'a'.repeat(40);
+
+  const fakeRunGit = (args) => {
+    const joined = args.join(' ');
+    if (joined.startsWith('rev-parse --verify --quiet')) return { status: 0, stdout: '' };
+    if (joined.startsWith('merge-base --is-ancestor')) return { status: 1, stdout: '' };
+    if (joined.startsWith('diff-tree')) return { status: 0, stdout: `${filePath}\n` };
+    if (args[0] === 'show' && args[1] === `${commit}:${filePath}`) return { status: 0, stdout: content };
+    if (args[0] === 'show' && args[1] === `${commit}^:${filePath}`) return { status: 1, stdout: '' };
+    if (args[0] === 'show' && args[1] === `${branch}:${filePath}`) return { status: 0, stdout: content };
+    if (args[0] === 'show' && args[1] === `${staleLoggedCommit}:${filePath}`) return { status: 0, stdout: content };
+    // The `log` call itself fails (status 128, an anomalous git error) but,
+    // as some git failures do, still emits stdout - the fail-safe must key
+    // off the STATUS, never off whether stdout happens to be empty.
+    if (args[0] === 'log') return { status: 128, stdout: `${staleLoggedCommit}\n` };
+    throw new Error(`fakeRunGit: unexpected git invocation: ${joined}`);
+  };
+
+  const facts = gatherBounceRevertFacts({ commit, by: 'architect' }, fakeRunGit);
+  const file = facts.files.find((f) => f.path === filePath);
+  assert.equal(file.restoredFromEarlierHistory, false, 'a failed git-log lookup must never be read as a positive restoration finding, even when it still emits stdout');
+  assert.equal(file.tipMatchesBounced, true);
+  assert.equal(file.bouncedDiffersFromParent, true);
 });
