@@ -10,7 +10,7 @@ severity: low
 # read red as normal.
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 45
 direction: swarm-reported
 depends_on: [BL-1209]
