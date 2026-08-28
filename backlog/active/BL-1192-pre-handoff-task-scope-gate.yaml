@@ -94,4 +94,7 @@ notes: |
   hardener dwell and coordinator chase signals deferred — BL-596 in-flight and
   BL-594 trend series already track rotation/chase dynamics.
 
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: b033583c08, evidence: backlog/evidence/BL-1192-architect-bounce-20260828.md }
 assigned_to: coder
