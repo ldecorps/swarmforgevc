@@ -12,7 +12,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1238-agent-idle-clear-honours-fullness-threshold.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The decision itself is already locked by the human and is not in question.
   What needs sign-off is the behaviour when no fullness reading can be
