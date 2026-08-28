@@ -443,6 +443,30 @@
                     parse-long)]
     (if (and n (pos? n)) n escalation-default-threshold)))
 
+;; ── BL-1248: config kill switch ──────────────────────────────────────────
+;; Fails closed BY CONSTRUCTION, not by enumerating bad values: the ONLY
+;; token that enables is the exact literal "true" as the key's sole value.
+;; Absent (no matching line), empty (no third token), malformed ("banana"),
+;; and even the negative-looking "false" all fall through the same single
+;; `=` check to disabled - there is no separate "explicitly false" branch to
+;; forget, mirroring parse-escalation-threshold's own degrade-to-default
+;; shape but with "disabled" as the one and only fallback rather than a
+;; degrade-to-a-default-number.
+(defn parse-enabled?
+  "Pure: `config master_main_reconcile_enabled <value>` from conf text.
+   Only the exact value \"true\" enables the sweep - the line must tokenize
+   to exactly 3 whitespace-separated tokens (`config`, the key, one value
+   token); trailing garbage after the value ('true true') is malformed, not
+   an affirmative, and falls through to disabled like any other malformed
+   line."
+  [conf-text]
+  (boolean
+   (when-let [line (some->> (str/split-lines (or conf-text ""))
+                             (filter #(str/starts-with? % "config master_main_reconcile_enabled"))
+                             first)]
+     (let [tokens (str/split (str/trim line) #"\s+")]
+       (and (= 3 (count tokens)) (= "true" (nth tokens 2)))))))
+
 (defn next-block-state
   "Advance the persisted per-episode block state for one blocked tick with
    `reason` (\"dirty\" or \"conflict\"). A reason that differs from the
@@ -788,8 +812,14 @@
 ;; so a LATER, unrelated block always surfaces - and, on its own schedule,
 ;; escalates - fresh rather than being silently suppressed by a stale flag
 ;; from a resolved episode (BL-920 invariant 2).
+;; BL-1248: `enabled?` is an optional 4th arg, defaulting to true, so every
+;; PRE-EXISTING 3-arg call site (this lib's own extensive unit/property
+;; suites, none of which own the kill switch) keeps behaving exactly as
+;; before with zero edits - only handoffd.bb's own call site, and this
+;; ticket's own new tests, need to reach the 4-arg form.
 (defn sweep!
-  [daemon-dir threshold adapters]
+  ([daemon-dir threshold adapters] (sweep! daemon-dir threshold true adapters))
+  ([daemon-dir threshold enabled? adapters]
   (let [state (read-state daemon-dir)
         counts ((:rev-counts! adapters))
         {:keys [ahead behind]} (drift-report counts)]
@@ -828,9 +858,20 @@
                                                        :overlapping-paths (overlapping-paths dirty-paths merge-changed-paths)})))
 
         :should-reconcile
-        (let [result ((:merge! adapters))]
-          (if (:success result)
-            (do
-              ((:log! adapters) "master-main-reconcile" "reconciled")
-              (write-state! daemon-dir {}))
-            (handle-merge-failure! daemon-dir state adapters behind handle-blocked! result)))))))
+        (if-not enabled?
+          ;; BL-1248: the ONLY branch this switch guards - the sole
+          ;; state-mutating adapter (:merge!) is never invoked while off.
+          ;; Everything above (drift log, dirty-paths/merge-changed-paths
+          ;; computation, :up-to-date and :dirty-blocked's own :surface!/
+          ;; :escalate! divergence-notification paths) already ran
+          ;; unconditionally above this branch and stays that way - the
+          ;; switch governs the reconcile action only, never the
+          ;; surfacing/escalation paths that tell a human main and origin
+          ;; have diverged (this ticket's own firm constraint).
+          ((:log! adapters) "master-main-reconcile" "skipped-by-config")
+          (let [result ((:merge! adapters))]
+            (if (:success result)
+              (do
+                ((:log! adapters) "master-main-reconcile" "reconciled")
+                (write-state! daemon-dir {}))
+              (handle-merge-failure! daemon-dir state adapters behind handle-blocked! result)))))))))

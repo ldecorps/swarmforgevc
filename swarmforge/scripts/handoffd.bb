@@ -3262,6 +3262,18 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
+;; BL-1248: config kill switch, disabled while absent - see
+;; master_main_reconcile_lib.bb's own parse-enabled? for the fail-closed
+;; contract. Guarded inside sweep! at the :should-reconcile branch only
+;; (not here at the call site), so the drift log and the dirty-blocked/
+;; conflict surfacing+escalation paths keep running while the switch is
+;; off - this ticket's own firm constraint against silencing divergence
+;; notification along with the reconcile action.
+(defn- master-main-reconcile-enabled? []
+  (master-main-reconcile-lib/parse-enabled?
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
 ;; BL-920: a persistent block escalates to the operator - reuses the SAME
 ;; operator alert channel send-open-slot-escalation-alert! above already
 ;; established (Telegram OPERATOR topic outbox + email via daemon-alarm-
@@ -3296,6 +3308,7 @@
     (master-main-reconcile-lib/sweep!
      (str daemon-dir)
      (master-main-reconcile-escalation-threshold)
+     (master-main-reconcile-enabled?)
      {:rev-counts! push-sweep-rev-counts!
       :dirty-paths! master-main-reconcile-dirty-paths!
       :merge-changed-paths! master-main-reconcile-merge-changed-paths!
