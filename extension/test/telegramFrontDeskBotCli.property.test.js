@@ -1,6 +1,11 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const fc = require('fast-check');
-const { composeRoleAnswerNoteMessage } = require('../out/tools/telegram-front-desk-bot');
+const { mkTmpDir } = require('./helpers/tmpDir');
+const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
+const { composeRoleAnswerNoteMessage, enqueueRoleAnswerNote, roleAnswerFilePointerPath } = require('../out/tools/telegram-front-desk-bot');
 
 // BL-607 (architect, property support): composeRoleAnswerNoteMessage builds
 // the single-line `message:` header of the note that carries a human's
@@ -58,3 +63,141 @@ test('property: composeRoleAnswerNoteMessage always yields a valid single-line s
     { numRuns: 500 }
   );
 });
+
+// ── BL-1203 (coder.prompt's Invariants section - first authorship rests
+// with the coder): PROPERTY tests over enqueueRoleAnswerNote's real,
+// impure behavior (real git+roles.tsv fixture, real swarm_handoff.bb
+// subprocess per call) - both declared invariants:
+//
+//   invariant 1 - "A role receives at most one note per inbound answer,
+//      however many times that answer is re-processed": across a
+//      generated SEQUENCE of (updateId, text) calls against ONE role, the
+//      number of notes actually queued equals the number of DISTINCT
+//      updateIds in that sequence - never more (a duplicate updateId
+//      queues nothing new), never fewer (every distinct updateId still
+//      gets through, including when its text repeats an earlier one -
+//      identity, not content, is the key).
+//
+//   invariant 2 - "A note that names an answer file names a file whose
+//      recorded answer is the one the note announces": after the full
+//      sequence, the pointer file's own text matches the text of the
+//      LAST call in the sequence with a genuinely new (not-yet-seen)
+//      updateId - the file is never left stale behind a later capture.
+//
+// Real subprocess I/O per call makes this the slow end of the property
+// lane - numRuns and sequence length are both kept small deliberately
+// (each fc run is several real `bb swarm_handoff.bb` spawns), matching
+// this file's own "the property lane's isolation guards" precedent of
+// bounding expensive generative runs rather than skipping them.
+//
+// Non-vacuity proven by hand at authoring time, TWICE: the naive "compare
+// against only the single most-recently-recorded updateId" dedup this
+// property itself caught (a replay INTERLEAVED with a different newer
+// updateId - e.g. ids [1, 2, 1] - read the second "1" as unseen and
+// queued a 3rd note) is exactly why the fix keeps a bounded seenUpdateIds
+// HISTORY, not a single scalar; dropping that history back to a scalar
+// fails invariant 1 on the first such interleaved case this property
+// generates. Separately, reverting writeRoleAnswerFile to only fire when
+// the answer does not fit inline (the pre-fix writeRoleAnswerFileIfNeeded
+// shape) fails invariant 2 on its first generated "long answer then short
+// answer" sequence. Both restored before landing.
+
+// Built ONCE, shared across every fc iteration - copySeededRepoInto and
+// copyLiveScriptClosureInto are themselves the expensive part (a real git
+// checkout + a real script-dependency-closure copy). Reusing one fixture
+// root and resetting only the mutable state each iteration touches (the
+// outbox and the pointer file) keeps this property test's runtime bounded
+// by the real `bb swarm_handoff.bb` subprocess cost alone, not by
+// re-paying fixture setup 15+ times over.
+let sharedRoot;
+
+function ensureSharedRoot() {
+  if (sharedRoot) {
+    return sharedRoot;
+  }
+  sharedRoot = mkTmpDir('bl1203-property-');
+  copySeededRepoInto(sharedRoot);
+  copyLiveScriptClosureInto(path.join(sharedRoot, 'swarmforge', 'scripts'), [
+    'commit_integrity_cli.bb', 'swarm_handoff.bb', 'ambulance_cli.bb',
+    'operator_ask.bb', 'role_ask.bb', 'support_thread.bb'
+  ]);
+  fs.mkdirSync(path.join(sharedRoot, '.swarmforge'), { recursive: true });
+  const tsv = [
+    ['specifier', 'session', sharedRoot, 'swarmforge-specifier', 'specifier', 'claude', 'task'].join('\t'),
+    ['coordinator', 'session', sharedRoot, 'swarmforge-coordinator', 'coordinator', 'claude', 'task'].join('\t'),
+  ].join('\n');
+  fs.writeFileSync(path.join(sharedRoot, '.swarmforge', 'roles.tsv'), tsv + '\n');
+  return sharedRoot;
+}
+
+function resetMutableFixtureState(root) {
+  fs.rmSync(path.join(root, '.swarmforge', 'handoffs'), { recursive: true, force: true });
+  fs.rmSync(path.join(root, '.swarmforge', 'operator', 'role-answers'), { recursive: true, force: true });
+  fs.rmSync(path.join(root, 'tmp'), { recursive: true, force: true });
+}
+
+function outboxFileCount(root) {
+  const dir = path.join(root, '.swarmforge', 'handoffs', 'outbox');
+  return fs.existsSync(dir) ? fs.readdirSync(dir).length : 0;
+}
+
+const roleAnswerCallArb = fc.record({
+  updateId: fc.integer({ min: 1, max: 4 }),
+  text: fc.constantFrom('use staging', 'use staging please', 'go check the logs', 'ok'),
+});
+
+test(
+  'property (BL-1203 invariant 1): a role receives at most one note per inbound answer identity across an arbitrary replay sequence',
+  async () => {
+    const root = ensureSharedRoot();
+    await fc.assert(
+      fc.asyncProperty(fc.array(roleAnswerCallArb, { minLength: 1, maxLength: 4 }), async (calls) => {
+        resetMutableFixtureState(root);
+        for (const call of calls) {
+          await enqueueRoleAnswerNote(root, 'specifier', call.text, call.updateId);
+        }
+        const distinctUpdateIds = new Set(calls.map((c) => c.updateId));
+        assert.equal(
+          outboxFileCount(root),
+          distinctUpdateIds.size,
+          `expected exactly ${distinctUpdateIds.size} queued note(s) for ${distinctUpdateIds.size} distinct updateId(s) in ${JSON.stringify(calls)}, got ${outboxFileCount(root)}`
+        );
+      }),
+      { numRuns: 10 }
+    );
+    fs.rmSync(root, { recursive: true, force: true });
+    sharedRoot = undefined;
+  },
+  60000
+);
+
+test(
+  'property (BL-1203 invariant 2): the pointer file always holds the text of the last genuinely-new-updateId capture, never a stale earlier one',
+  async () => {
+    const root = ensureSharedRoot();
+    await fc.assert(
+      fc.asyncProperty(fc.array(roleAnswerCallArb, { minLength: 1, maxLength: 4 }), async (calls) => {
+        resetMutableFixtureState(root);
+        const seen = new Set();
+        let lastNewText;
+        for (const call of calls) {
+          await enqueueRoleAnswerNote(root, 'specifier', call.text, call.updateId);
+          if (!seen.has(call.updateId)) {
+            seen.add(call.updateId);
+            lastNewText = call.text;
+          }
+        }
+        const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
+        assert.equal(
+          stored.text,
+          lastNewText,
+          `expected the pointer file to hold "${lastNewText}" (the last genuinely-new capture) for ${JSON.stringify(calls)}, got "${stored.text}"`
+        );
+      }),
+      { numRuns: 10 }
+    );
+    fs.rmSync(root, { recursive: true, force: true });
+    sharedRoot = undefined;
+  },
+  60000
+);
