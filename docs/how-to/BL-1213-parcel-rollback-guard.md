@@ -60,7 +60,7 @@ send.
 ## Related
 
 - BL-1098 (push-sweep silent-revert predicate, `push_sweep_lib.bb`; see [BL-1085 push-sweep how-to](BL-1085-push-sweep-caches-its-refusal-and-gathers-once.md)) — the check this gate's shape deliberately does not reimplement; different question, different chokepoint.
-- BL-1205 (mass-deletion forward gate), BL-1211 (resurrection direction + quarantine lift), BL-1208 (record-bounce revert remedy), BL-1195 (worktree drift with no authoring commit) — sibling tickets in the same incident thread; none of them covers this direction.
+- BL-1205 (mass-deletion forward gate), BL-1211 (resurrection direction + quarantine lift), [BL-1208](BL-1208-bounce-revert-remedy-requires-authorship-not-liveness.md) (record-bounce revert remedy), BL-1195 (worktree drift with no authoring commit) — sibling tickets in the same incident thread; none of them covers this direction.
 
 ## Verify
 
