@@ -74,3 +74,25 @@ notes: |
   - [2026-08-27] Cursor/specifier: re-minted on main after ghost approval ask;
     human directive "use staging please" — yaml staged and committed before
     coordinator note.
+  - "[2026-08-28] coder: implemented. extension/src/tools/deprecate-identify-unused.ts
+    reads .swarmforge/deprecator/usage-ledger.json (fails open, honest empty
+    report, when absent/malformed/non-array — no ledger ingestion pipeline
+    exists yet anywhere in this repo, so this ticket only CONSUMES a ledger,
+    per its own \"How\" direction), classifies each entry at the locked
+    thresholds (0 hits = unused; 1-2 hits = seldom; 3+ omitted, disjoint by
+    construction), and queues a human-visible notification file under
+    .swarmforge/deprecator/pending-notifications/ naming every candidate and
+    its class — no backlog/docs/config file is ever touched. Unit tests
+    (extension/test/deprecateIdentifyUnused.test.js) and property tests
+    (deprecateIdentifyUnused.property.test.js) cover declared invariants 1
+    (never mutates anything outside its own notification queue — asserted
+    against a full pre/post filesystem snapshot) and 2 (threshold
+    correctness/disjointness), both non-vacuous. Invariant 3 (\"Judgment
+    across many documents requires a hard-tier reasoner; easy seats
+    refuse\") admits NO executable encoding in this pure module — it
+    quantifies over which SEAT may run this ticket's own pipeline stages
+    (BL-1001 dispatch + Article 3.6 seat-tier gating), not over anything
+    deprecate-identify-unused.ts computes; recorded as a stated reason per
+    BL-654 rather than a test. Acceptance suite (all 4 scenarios) green via
+    specs/pipeline/steps/bl1186DeprecatorIdentifyUnusedNotifySteps.js,
+    registered in specs/pipeline/steps/index.js."
