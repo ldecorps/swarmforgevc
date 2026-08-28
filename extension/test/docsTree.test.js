@@ -51,17 +51,13 @@ test('vision docs pass through as provided', () => {
   assert.deepEqual(tree.vision, vision);
 });
 
-function ticketsInMilestone(milestoneNode) {
-  return milestoneNode.epics.flatMap((epic) => epic.tickets);
-}
-
 test('tickets are grouped into milestone nodes with folder-authoritative status', () => {
   const items = [item({ id: 'BL-100', status: 'active', milestone: 'M4' }), item({ id: 'BL-101', status: 'done', milestone: 'M4' })];
   const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
   assert.equal(tree.milestones.length, 1);
   assert.equal(tree.milestones[0].milestone, 'M4');
   assert.deepEqual(
-    ticketsInMilestone(tree.milestones[0]).map((t) => [t.id, t.status]).sort(),
+    tree.milestones[0].tickets.map((t) => [t.id, t.status]).sort(),
     [['BL-100', 'active'], ['BL-101', 'done']]
   );
 });
@@ -124,7 +120,7 @@ test('omitting the lifecycles argument entirely defaults to no timeline fields (
 test('the milestone ticket summary carries the same implemented flag as the full ticket node, not a separate derivation', () => {
   const items = [item({ id: 'BL-100', status: 'done', milestone: 'M4' }), item({ id: 'BL-101', status: 'active', milestone: 'M4' })];
   const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
-  const byId = Object.fromEntries(ticketsInMilestone(tree.milestones[0]).map((t) => [t.id, t.implemented]));
+  const byId = Object.fromEntries(tree.milestones[0].tickets.map((t) => [t.id, t.implemented]));
   assert.deepEqual(byId, { 'BL-100': true, 'BL-101': false });
 });
 
@@ -464,7 +460,7 @@ test('the milestone hierarchy is kept, but each milestone\'s own ticket summarie
 
   assert.equal(filtered.milestones.length, 1);
   assert.equal(filtered.milestones[0].milestone, 'M7');
-  assert.deepEqual(filtered.milestones[0].epics[0].tickets.map((t) => t.id), ['BL-100']);
+  assert.deepEqual(filtered.milestones[0].tickets.map((t) => t.id), ['BL-100']);
 });
 
 test('a milestone left with zero matching tickets is dropped from the filtered hierarchy', () => {
