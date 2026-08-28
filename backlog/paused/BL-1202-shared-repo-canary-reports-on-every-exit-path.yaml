@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1202-shared-repo-canary-reports-on-every-exit-path.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   This is the detector half. BL-1200 and BL-1196 stop test fixtures writing
   into the live repository; this ticket is about the guard that was built to
