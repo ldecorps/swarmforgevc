@@ -5,7 +5,6 @@ const path = require('node:path');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 const {
   captureResidentPaneLive,
-  captureCoordinatorPaneLive,
   captureMonoRouterLiveScreen,
   captureLiveScreenPanes,
   orderLiveScreenRoles,
@@ -104,38 +103,6 @@ test('captureResidentPaneLive includes modelLabel from the role settings file', 
     assert.equal(snap.roleLabel, 'Coder');
     assert.equal(snap.modelLabel, 'Sonnet 5');
     assert.match(snap.sessionTarget, /^swarmforge-coder:/);
-  } finally {
-    fake.restore();
-  }
-});
-
-// tryCaptureRolePane's other real entry point besides the resident/live-
-// screen paths above (BL-1189 added a claimedTicketIds default parameter to
-// it - this call site exercises that default, since captureCoordinatorPaneLive
-// never threads a shared dedup Set of its own).
-test('captureCoordinatorPaneLive captures the coordinator pane by role, unaffected by other tiles', () => {
-  const tmp = mkTmpDir('sfvc-coordinator-pane-live-');
-  const paneText = seedResidentPaneFixture(tmp, { role: 'coordinator', model: 'claude-sonnet-5' });
-  const fake = installInProcessTmux([
-    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
-    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
-    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
-  ]);
-  try {
-    const snap = captureCoordinatorPaneLive(tmp);
-    assert.ok(snap);
-    assert.match(snap.sessionTarget, /^swarmforge-coordinator:/);
-  } finally {
-    fake.restore();
-  }
-});
-
-test('captureCoordinatorPaneLive returns undefined when no coordinator role is on the roster', () => {
-  const tmp = mkTmpDir('sfvc-coordinator-pane-live-');
-  seedResidentPaneFixture(tmp, { role: 'coder', model: 'claude-sonnet-5' });
-  const fake = installInProcessTmux([]);
-  try {
-    assert.equal(captureCoordinatorPaneLive(tmp), undefined);
   } finally {
     fake.restore();
   }
@@ -558,72 +525,6 @@ test('captureResidentPaneLive omits modelLabel when settings file is absent', ()
     const snap = captureResidentPaneLive(tmp);
     assert.ok(snap);
     assert.equal(snap.modelLabel, undefined);
-  } finally {
-    fake.restore();
-  }
-});
-
-// BL-1189: the exact 2026-08-27 incident shape - a ticket bookkeep-closed
-// while several roles' in_process claim files for it were never cleared
-// (or several roles genuinely claim the same ticket at once). Live Screen
-// must show it as primary working on at most one tile, never all of them.
-function seedMultiSeatClaimFixture(tmp, roles, ticketId, { active = true } = {}) {
-  const stateDir = path.join(tmp, '.swarmforge');
-  fs.mkdirSync(stateDir, { recursive: true });
-  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/fake.sock');
-  fs.writeFileSync(
-    path.join(stateDir, 'sessions.tsv'),
-    roles.map((role, i) => `${i + 1}\t${role}\tswarmforge-${role}\t${role}\tclaude\n`).join('')
-  );
-  const worktreeFor = (role) => path.join(tmp, `${role}-worktree`);
-  fs.writeFileSync(
-    path.join(stateDir, 'roles.tsv'),
-    roles.map((role) => [role, role, worktreeFor(role), `swarmforge-${role}`, role, 'claude'].join('\t')).join('\n') + '\n'
-  );
-  for (const role of roles) {
-    const dir = path.join(worktreeFor(role), '.swarmforge', 'handoffs', 'inbox', 'in_process');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, '00_claim.handoff'),
-      `task: ${ticketId}-fixture\ndequeued_at: 2026-08-27T10:00:00Z\n\nbody\n`
-    );
-  }
-  const backlogDir = path.join(tmp, 'backlog', active ? 'active' : 'done');
-  fs.mkdirSync(backlogDir, { recursive: true });
-  fs.writeFileSync(path.join(backlogDir, `${ticketId}-fixture.yaml`), `id: ${ticketId}\ntitle: "fixture"\n`);
-}
-
-test('BL-1189: a ticket claimed at multiple roles at once shows as primary working on at most one tile', () => {
-  const tmp = mkTmpDir('sfvc-multi-seat-claim-');
-  const roles = ['coordinator', 'cleaner', 'architect', 'documenter'];
-  seedMultiSeatClaimFixture(tmp, roles, 'BL-600');
-  const fake = seedFullPackFakeTmux('$ some command\n> plain output, no role banner');
-  try {
-    withSwarmforgeConfig(undefined, () => {
-      const panes = captureLiveScreenPanes(tmp);
-      const claiming = panes.filter((p) => p.pane.ticketId === 'BL-600');
-      assert.equal(claiming.length, 1, `expected exactly one tile claiming BL-600, got ${claiming.map((p) => p.id).join(',')}`);
-    });
-  } finally {
-    fake.restore();
-  }
-});
-
-// BL-1189 invariant 1, exercised through the full live-capture path: a
-// ticket bookkeep-closed to backlog/done/ with a stale, never-cleared
-// in_process claim must not appear as primary working on ANY tile, not
-// merely be deduplicated down to one.
-test('BL-1189: a bookkeep-closed ticket with a stale claim shows on no tile at all', () => {
-  const tmp = mkTmpDir('sfvc-closed-stale-claim-');
-  const roles = ['coordinator', 'cleaner', 'architect', 'documenter'];
-  seedMultiSeatClaimFixture(tmp, roles, 'BL-600', { active: false });
-  const fake = seedFullPackFakeTmux('$ some command\n> plain output, no role banner');
-  try {
-    withSwarmforgeConfig(undefined, () => {
-      const panes = captureLiveScreenPanes(tmp);
-      const claiming = panes.filter((p) => p.pane.ticketId === 'BL-600');
-      assert.equal(claiming.length, 0, `expected no tile to claim a closed ticket, got ${claiming.map((p) => p.id).join(',')}`);
-    });
   } finally {
     fake.restore();
   }

@@ -17,7 +17,6 @@ import {
   readMonoRouterActiveRole,
   resolveResidentRoleIdentity,
   resolveResidentHeldTicketMetaForRoles,
-  dedupePrimaryWorkingTicket,
   formatResidentSpyHeader,
   formatClaimEnteredAgo,
 } from '../concierge/residentPaneSpy';
@@ -100,8 +99,7 @@ function tryCaptureRolePane(
   roleEntry: SwarmRole,
   roles: SwarmRole[],
   paneBaseIndex: number,
-  monoRouterActiveRole?: string,
-  claimedTicketIds: Set<string> = new Set()
+  monoRouterActiveRole?: string
 ): PaneLiveSnapshot | undefined {
   const target = resolveAgentPaneTarget(socketPath, roleEntry.session, paneBaseIndex);
   const captured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_DEFAULT_LINES);
@@ -116,15 +114,11 @@ function tryCaptureRolePane(
   const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
   const identity = resolveResidentRoleIdentity(roleSearchText, roleEntry, roles, monoRouterActiveRole);
   const modelId = readRoleModelId(targetPath, identity.modelRole);
-  const rawHeldTicket = resolveResidentHeldTicketMetaForRoles(targetPath, [
+  const heldTicket = resolveResidentHeldTicketMetaForRoles(targetPath, [
     monoRouterActiveRole,
     identity.modelRole,
     roleEntry.role,
   ].filter((role, index, rolesToTry): role is string => !!role && rolesToTry.indexOf(role) === index));
-  // BL-1189 invariant 2: this tile's claim is demoted-or-omitted (never an
-  // equal, independent "working now" strip) when an earlier-processed tile
-  // in the SAME capture already claimed the same ticket.
-  const heldTicket = dedupePrimaryWorkingTicket(claimedTicketIds, rawHeldTicket);
   return {
     available: true,
     roleLabel: identity.roleLabel,
@@ -261,14 +255,11 @@ export function captureLiveScreenPanes(targetPath: string): LiveScreenPaneEntry[
   const monoLayout = isMonoRouterLayout(targetPath, liveRoles);
   const paneBaseIndex = getPaneBaseIndex(socketPath);
   const activeRole = readMonoRouterActiveRole(targetPath);
-  // BL-1189 invariant 2: shared across every tile in this one capture, so
-  // only the first tile to claim a given ticket keeps it.
-  const claimedTicketIds = new Set<string>();
   return orderLiveScreenRoles(liveRoles).map((roleEntry) => {
     const id = liveScreenPaneId(roleEntry, monoLayout);
     const label = liveScreenPaneLabel(roleEntry, monoLayout);
     const monoActive = monoRouterActiveRoleForPane(monoLayout, roleEntry.role, activeRole);
-    const raw = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, paneBaseIndex, monoActive, claimedTicketIds);
+    const raw = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, paneBaseIndex, monoActive);
     const showClaimEntered = id === 'resident' || roleEntry.role === 'coder';
     const pane = withHeader(raw ? { ...raw, available: true } : unavailablePane(), label, {
       includeClaimEnteredAgo: showClaimEntered,
