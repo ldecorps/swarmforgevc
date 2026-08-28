@@ -11,7 +11,7 @@ severity: medium
 # and that file matches the suite's own discovery glob (BL-971's class).
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 35
 direction: swarm-reported
 depends_on: []
