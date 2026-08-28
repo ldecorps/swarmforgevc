@@ -66,6 +66,9 @@ scope for this ticket.
 
 - [BL-891 master-main reconcile sweep](BL-891-master-main-reconcile-sweep.md)
   — the sweep whose merge-tree foresight this predicate feeds.
+- [BL-1248 kill switch](BL-1248-master-main-reconcile-kill-switch.md) —
+  operator config to disable the reconcile action while keeping drift
+  surfacing; shipped off, flip owned by BL-1251.
 - [BL-1214 `:ff-absorb` attempts a real 3-way merge before resetting local
   main away](BL-1214-ff-absorb-attempts-real-merge-before-reset.md) — the
   sibling fix on the same reset-discards-commits failure mode, one layer
