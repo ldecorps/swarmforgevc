@@ -78,12 +78,18 @@ async function waitForMarker(markerPath) {
 }
 
 function registerSteps(registry) {
-  scoped(registry, /^the Cursor bridge is accepting Telegram commands$/, (ctx) => {
-    ctx.bl1204 = { root: mkFixtureRoot() };
-  });
+  // BL-1204 architect bounce D1 (5th BL-971-shape occurrence this session):
+  // the Background runs for EVERY scenario in this feature, including "The
+  // help message lists exactly the redeploy targets" - which never touches
+  // a fixture root at all. Creating one here leaked it unconditionally on
+  // that scenario. The fixture root is only ever needed by the redeploy-
+  // target Outline scenario, so it is created lazily in that scenario's own
+  // first step below instead - the Background stays a no-op placeholder so
+  // the shared step text still matches for every scenario.
+  scoped(registry, /^the Cursor bridge is accepting Telegram commands$/, () => {});
 
   scoped(registry, /^the operator sends "\/redeploy (\S+)"$/, (ctx, target) => {
-    const st = ctx.bl1204;
+    const st = (ctx.bl1204 = { root: mkFixtureRoot() });
     st.target = target;
     // Decision layer: the SAME parse used live (operatorDangerTier looks
     // only at the base verb "/redeploy", which is why frontdesk/all were

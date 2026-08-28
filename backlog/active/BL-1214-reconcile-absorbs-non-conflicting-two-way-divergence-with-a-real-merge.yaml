@@ -174,3 +174,6 @@ notes: |
     [coordinator-false-identical-content-claim] evidence and BL-1216)."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 6b08f29d29, evidence: backlog/evidence/BL-1214-reconcile-absorbs-non-conflicting-two-way-divergence-with-a-real-merge-bounce-20260828.md }
