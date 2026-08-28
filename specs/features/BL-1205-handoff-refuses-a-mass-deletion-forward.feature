@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-28T02:07:57.657510687Z","feature_name":"a git_handoff whose merge into the recipient's branch would mass-delete tracked files is refused before it is sent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1205-handoff-refuses-a-mass-deletion-forward.feature","background_hash":"b8ffbd94102d4622a06346f074f988f8a5e409b6f062d6e84765f28fafee3a0f","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: a git_handoff whose merge into the recipient's branch would mass-delete tracked files is refused before it is sent
 
   # BL-1205 (epic swarm-reliability). 2026-08-27: refs/heads/swarmforge-architect

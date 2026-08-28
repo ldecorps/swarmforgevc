@@ -18,6 +18,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "review_forward_evidence_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "parcel_rollback_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "tree_collapse_guard_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -380,6 +381,21 @@
         parcel-rollback-block
         (when (parcel-rollback-guard-lib/blocked? parcel-rollback-result)
           parcel-rollback-result)
+        ;; BL-1205 tree-collapse gate: refuses a git_handoff whose merge
+        ;; into ANY named recipient's branch would mass-delete tracked
+        ;; files - every hop, no ticket id required (see
+        ;; tree_collapse_guard_lib.bb). Same fail-open posture; a warning
+        ;; per unreadable recipient branch never blocks on its own.
+        tree-collapse-result
+        (when (and (= "git_handoff" type) canonical (seq recipients))
+          (tree-collapse-guard-lib/findings-for-git-handoff
+           {:root (project-root) :recipients recipients :commit canonical}))
+        _ (doseq [warning (:warnings tree-collapse-result)]
+            (binding [*out* *err*]
+              (println (str "TREE_COLLAPSE WARNING: " warning))))
+        tree-collapse-block
+        (when (tree-collapse-guard-lib/blocked? tree-collapse-result)
+          tree-collapse-result)
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -407,7 +423,9 @@
                                     {:sender sender :task-name task-name :commit canonical}))
                              parcel-rollback-block
                              (conj (parcel-rollback-guard-lib/refusal-message
-                                    {:task-name task-name :findings (:findings parcel-rollback-block)}))))
+                                    {:task-name task-name :findings (:findings parcel-rollback-block)}))
+                             tree-collapse-block
+                             (conj (tree-collapse-guard-lib/refusal-message tree-collapse-block))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))

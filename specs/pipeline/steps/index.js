@@ -817,6 +817,7 @@ const DOMAINS = [
   require('./bl1200GitEnvGuardSteps'),
   require('./bl1198RematchPushFirstSteps'),
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
+  require('./bl1205HandoffRefusesAMassDeletionForwardSteps'),
   require('./bl1195WorktreeTrackedContentDriftSteps'),
   require('./bl1199PackSwitchBubbleTunnelSteps'),
   require('./bl1213ParcelRollbackGuardSteps'),

@@ -145,6 +145,7 @@ rotation_telemetry_lib_test_runner.bb	standing
 self_heal_telemetry_lib_test_runner.bb	standing		
 sync_worktree_scripts_lib_test_runner.bb	standing		
 task_commit_coherence_gate_lib_test_runner.bb	standing		
+tree_collapse_guard_lib_test_runner.bb	standing		
 telegram_topic_lib_test_runner.bb	standing		
 test_agent_runtime_inject_mock.sh	standing		
 test_agent_runtime_lib.sh	standing		

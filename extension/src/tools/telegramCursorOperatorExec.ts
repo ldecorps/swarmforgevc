@@ -11,6 +11,18 @@ import {
   formatMiniAppRedeployStartMessage,
   formatMiniAppRedeployFailureMessage,
 } from './telegramCursorBridgeMiniAppRedeploy';
+import {
+  parseFrontDeskRedeployCommand,
+  startFrontDeskRedeployRun,
+  formatFrontDeskRedeployStartMessage,
+  formatFrontDeskRedeployFailureMessage,
+} from './telegramCursorBridgeFrontDeskRedeploy';
+import {
+  parseAllRedeployCommand,
+  startAllRedeployRun,
+  formatAllRedeployStartMessage,
+  formatAllRedeployFailureMessage,
+} from './telegramCursorBridgeAllRedeploy';
 import { readBacklogFolders } from '../panel/backlogReader';
 import {
   selectAutopilotQueue,
@@ -665,6 +677,28 @@ export function executeOperatorVerb(
     };
   }
   if (v === '/redeploy') {
+    // BL-1204: frontdesk/all were parsed and gated (operatorDangerTier's
+    // base-verb lookup already soft-confirms them via /redeploy's own soft
+    // tier) but never dispatched here - args fell through to the plain
+    // cursor-bridge branch below, silently bouncing the wrong runtime.
+    // Reuse each module's own parser against the reconstructed full text
+    // rather than a second ad hoc substring match, so this dispatch and
+    // each module's own accepted-variant set can never drift apart.
+    const fullText = `/redeploy${args ? ` ${args}` : ''}`;
+    if (parseFrontDeskRedeployCommand(fullText)) {
+      const result = startFrontDeskRedeployRun(repoRoot);
+      const text = result.ok
+        ? formatFrontDeskRedeployStartMessage(result)
+        : formatFrontDeskRedeployFailureMessage(result);
+      return { text, wroteBounceSentinel: false };
+    }
+    if (parseAllRedeployCommand(fullText)) {
+      const result = startAllRedeployRun(repoRoot);
+      const text = result.ok
+        ? formatAllRedeployStartMessage(result)
+        : formatAllRedeployFailureMessage(result);
+      return { text, wroteBounceSentinel: false };
+    }
     const mini = (args ?? '').toLowerCase().includes('mini');
     if (mini) {
       const result = startMiniAppRedeployRun(repoRoot);

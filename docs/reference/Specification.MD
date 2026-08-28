@@ -1,5 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1205: `swarm_handoff.sh` refuses a
+`git_handoff` to any recipient — ticket or not — when merging the cited
+commit into that recipient's own branch would mass-delete its tracked
+files: simulates the merge via `git merge-tree`, refuses when removed
+paths exceed the smaller of 5% of the recipient's own path count or 100
+paths flat. Containment half of the 2026-08-27 tree-collapse incident;
+report-only, never rewrites the commit; fail-open on unreadable facts. No
+new extension command or setting. Acceptance:
+`specs/features/BL-1205-handoff-refuses-a-mass-deletion-forward.feature`.
+How-to: `docs/how-to/BL-1205-tree-collapse-guard.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1213: `swarm_handoff.sh` refuses a
 `git_handoff` send whose branch tip holds pre-parcel content for a path
 the ticket's own accepted parcel commit changed, with no revert of that

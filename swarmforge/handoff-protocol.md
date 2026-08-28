@@ -663,6 +663,57 @@ send.
 
 How-to: `docs/how-to/BL-1213-parcel-rollback-guard.md`.
 
+## Tree-Collapse Guard (BL-1205)
+
+`swarm_handoff.sh` refuses a `git_handoff` — to **any** recipient, whether
+or not it names a ticket — when merging the cited commit into that
+recipient's own branch would mass-delete the recipient's tracked files.
+This is the containment half of the 2026-08-27 incident: 200 test-fixture
+commits (`init`/`seed`/`fixture: initial`, all authored `t <t@t>` at the
+identical second) collapsed `refs/heads/swarmforge-architect` to 79
+tracked paths, each commit a ~9,700-file deletion relative to the real
+tree. Every later merge honored those deletions the ordinary way — one
+side deleted, the other untouched, no conflict, no marker — so the branch
+looked like it was healing while merges silently re-applied the deletion
+each time. None of the other four gates saw it: the pre-QA gate only arms
+for a send whose `to` includes QA and keys its findings to a ticket id, so
+a deletion tied to no ticket crossed every non-QA hop untouched.
+
+Mechanics (`tree_collapse_guard_lib.bb`):
+
+- **Simulates the merge, does not infer intent.**
+  `git merge-tree --write-tree <recipient-branch> <cited-commit>` produces
+  the tree the recipient would actually end up with; its path count is
+  compared against the recipient branch's own current count — the same
+  simulation that confirmed the original incident.
+- **Threshold**: refuses when the merge would remove more paths than the
+  **smaller of** 5% of the recipient branch's own path count or 100 paths
+  flat. The live incident's 9,680-path removal cleared either bound by two
+  orders of magnitude; an ordinary directory-deletion refactor clears
+  neither.
+- **Every named recipient is checked independently** (no hop is exempt,
+  no ticket id required) — a finding for any ONE recipient refuses the
+  whole send.
+- **Report-only.** The guard never alters, rewrites, or reverts the
+  commit it is refusing — no git write of any kind happens here.
+- **Fail-open on unreadable facts**, same posture as the other four
+  send-time gates: an unreadable recipient branch contributes a warning,
+  never a refusal on its own.
+
+Refusal message names the recipient, the recipient's branch, and the
+before/after/removed path counts:
+
+```text
+Cannot send git_handoff to hardener: merging the cited commit into
+swarmforge-hardender would remove 9680 of its 9773 tracked paths (leaving
+93) - refused as a mass-deletion forward (BL-1205). If this is genuinely
+intended, land it by hand after confirming the recipient branch's health;
+if the recipient branch is itself corrupt, it needs re-cutting from a
+known-good ref, not a parcel routed through it.
+```
+
+How-to: `docs/how-to/BL-1205-tree-collapse-guard.md`.
+
 ## Bounce Revert Verification (BL-954)
 
 A bounce requires the bouncing role to remove the bounced commit's content
