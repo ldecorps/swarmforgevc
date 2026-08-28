@@ -24,8 +24,24 @@ pass() { echo "PASS: $*"; }
 # copy and dispatch through that.
 source "$SCRIPT_DIR/lib/install_scripts.sh"
 
+# BL-1238 architect bounce D1: ready_for_next_task.sh carries shebang
+# #!/usr/bin/env zsh, and this test reaches it indirectly via
+# done_with_current_task.bb's `process/exec` (not a direct `zsh -f -c`
+# invocation this file could add -f to itself). zsh sources ~/.zshenv
+# unconditionally even for a non-interactive shebang run, so on a host
+# whose ~/.zshenv prepends a real tool directory onto $PATH (e.g.
+# ~/.local/bin with a real tmux binary), that re-prepend lands ahead of
+# this test's own $FAKE_BIN and the REAL tmux runs instead of the fixture
+# fake - the same documented hazard test_bl1069_tmux_server_version.sh's
+# own header comment names ("~/.zshenv re-exports real credentials over
+# fixture values"). zsh honours ZDOTDIR from the inherited environment
+# even via shebang, so pointing it at an empty directory with no .zshenv
+# is the equivalent of `zsh -f` for this indirect invocation shape.
+ZDOTDIR="$(mktemp -d)"
+export ZDOTDIR
+
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'rm -rf "$ROOT"' EXIT
+trap 'rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
