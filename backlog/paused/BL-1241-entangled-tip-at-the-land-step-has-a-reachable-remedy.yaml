@@ -12,7 +12,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This ticket deliberately does NOT choose the remedy, because the choice is
   yours and the options differ in cost. (a) Land the siblings first, in
