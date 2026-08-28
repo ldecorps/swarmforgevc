@@ -812,16 +812,17 @@ const DOMAINS = [
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
   require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
   require('./bl1188PipelineGridLiveStageParitySteps'),
+  require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps'),
   require('./bl1200GitEnvGuardSteps'),
   require('./bl1198RematchPushFirstSteps'),
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
+  require('./bl1213ParcelRollbackGuardSteps'),
   require('./bl1205HandoffRefusesAMassDeletionForwardSteps'),
   require('./bl1203RoleAnswerNotesDeliveredOnceSteps'),
-  require('./bl1195WorktreeTrackedContentDriftSteps'),
+  require('./bl1204RedeployTargetsReachableAndListedSteps'),
   require('./bl1199PackSwitchBubbleTunnelSteps'),
-  require('./bl1213ParcelRollbackGuardSteps'),
-  require('./bl1186DeprecatorIdentifyUnusedNotifySteps'),
-  require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps')
+  require('./bl1195WorktreeTrackedContentDriftSteps'),
+  require('./bl1186DeprecatorIdentifyUnusedNotifySteps')
 ];
 
 function registerSteps(registry) {
