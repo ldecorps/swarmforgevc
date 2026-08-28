@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1198: `main` rematch/reset path
+attempts `git push origin main` once before any of its three
+`git reset --hard origin/main` call sites fires — push succeeds (no real
+divergence) → no reset, ahead becomes 0 by fast-forward; push rejected
+(genuine divergence) → today's reset proceeds unchanged. One shared
+primitive `rematch-with-push-first!` in `master_main_reconcile_lib.bb`.
+No new extension command or setting. Acceptance:
+`specs/features/BL-1198-main-rematch-reset-must-attempt-push-before-discarding-local-ahead-commits.feature`.
+How-to: `docs/how-to/BL-1198-rematch-reset-must-push-before-discarding-local-ahead-commits.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1186: deprecator identify-unused
 scan — `deprecate-identify-unused.js <root>` classifies trailing-90-day
 usage-ledger entries `unused` (0 hits) or `seldom` (1-2 hits), queues a
