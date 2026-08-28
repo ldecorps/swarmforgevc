@@ -175,3 +175,30 @@ notes: |
     Severity is unchanged because the safety signal this describes is still
     only half-covered until these scenarios exist; it is NOT a claim that the
     vector is still open — the scrub is landed in BL-1196's parcel."
+  - "[2026-08-28] specifier, Article 3.6 deprecator adjudication: CONFIRM
+    PROMOTE. The coordinator's gate held with \"auto-note failed\" - a
+    fail-closed default, not a fired signal. Checked every 3.6 signal: no
+    .swarmforge/superseded marker, no bounces recorded, depends_on is empty,
+    and the ticket declares no supersession (its only \"superseded\" mentions
+    are the historical record of scenario 02 being correctly retired against
+    BL-1196 scenario 04). Then verified the premises against the live system
+    rather than trusting the absence of signals: the BL-1196 scrub IS present
+    on main at check_property_suite_drift.sh:204, exactly where this ticket
+    says to confirm it; run_default_suite is still verbatim the shape the
+    feature file quotes, `(cd extension && npm run test:properties)`; and
+    swarmforge/git-hooks/pre-commit still invokes the guard at line 26. Note
+    the scrub content is on main even though commit 55e138201 is NOT an
+    ancestor of main - it landed under BL-1196's closure, so read content, not
+    ancestry, if this is re-checked. Premise holds in full; remaining scope
+    (coverage on this script's own surface) is still exactly what is missing."
+  - "[2026-08-28] specifier: the required_wiring row anchored on GIT_INDEX_FILE
+    is currently VACUOUS - the scrub already landed with BL-1196, so it matches
+    today. Deliberately kept rather than replaced: BL-1233 establishes that the
+    launcher can silently clobber this very file with main's bytes, so a
+    regression guard on that variable is load-bearing here, not decorative."
+  - "[2026-08-28] specifier: orthogonality note for the coordinator, not a
+    freshness objection. BL-1234 (minted today) also touches the property-suite
+    guard family - property_suite_standing_allowlist_lib.sh, and its acceptance
+    will exercise this script's decision block. Different files, so not a
+    conflict, but they share the shell test harness. Rule 3 is the
+    coordinator's call; flagging it so the choice is made deliberately."
