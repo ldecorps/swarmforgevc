@@ -4,6 +4,7 @@ milestone: M8
 type: defect
 severity: high
 status: todo
+assigned_to: coder
 epic: swarm-reliability
 priority: 15
 direction: swarm-reported
@@ -11,19 +12,26 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1196-test-git-fixtures-must-not-inherit-ambient-git-dir-redirect.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
-  RE-APPROVAL ASKED 2026-08-28, after the defect fired twice more. Two things
-  changed and nothing else: (a) GIT_INDEX_FILE joins the stripped variables —
-  this is the widening the previously-approved out_of_scope pre-authorised in
-  its own words ("widen only if a future incident actually implicates one"),
-  and the 2026-08-28 incident implicates it directly; (b) a second enforcement
-  site is added, an env scrub where check_property_suite_drift.sh launches the
-  suite. (b) is the genuinely new element and the one worth your eye: it is a
-  one-line change at a boundary, and it is what protects the SHELL fixtures the
-  JS suite shells out to — the writer in BL-1200's half — which a vitest
-  setupFile can never reach. If you would rather ship only the setupFile half
-  now, say so and (b) is split out rather than silently dropped.
+  ANSWERED 2026-08-28 — both halves of the amendment are human-approved, and
+  the answer is recorded here because the commits carrying it were destroyed
+  by the main-reset bug (BL-1214) and had to be recovered from the reflog.
+  (a) GIT_INDEX_FILE joining the stripped variables is the widening the
+  previously-approved out_of_scope pre-authorised in its own words ("widen
+  only if a future incident actually implicates one"), and the 2026-08-28
+  incident implicates it directly — inside the existing approval, not new
+  scope. (b) the second enforcement site, an env scrub where
+  check_property_suite_drift.sh launches the suite, WAS genuinely new scope
+  and was put to the human separately: it was split out as BL-1222, asked in
+  the Approvals topic (message 55746), and APPROVED by the human at commit
+  708a020b2 ("Approve BL-1222: record human_approval" — the Telegram
+  front-desk bot's human-tap path, telegramFrontDeskBotCore.ts:1313, not the
+  night auto-approve sweep, which uses a different message). Both halves were
+  already built and architect-reviewed by the time that record was recovered,
+  so (b) is carried here rather than re-run through its own pipeline; BL-1222
+  survives as the small acceptance-hardening slice for the coverage this
+  ticket does not reach. Nothing was dropped and nothing shipped unseen.
 
   Also worth knowing before you judge urgency: this ticket was never built. It
   reached backlog/done/ on 2026-08-27 as a by-product of a duplicate-pool
@@ -148,18 +156,25 @@ out_of_scope: |
     direct human decision per hardener-branch-corruption-20260827.md's
     3-option menu) — this ticket is the root-cause prevention, not that
     recovery.
-  - Extending the strip to other GIT_* plumbing vars (GIT_INDEX_FILE,
-    GIT_OBJECT_DIRECTORY, GIT_COMMON_DIR, etc.) beyond GIT_DIR/GIT_WORK_TREE —
-    those are the only two vars any existing guard in this codebase
-    (sharedRepoFixture.js, sampleResourcesCli.test.js) has ever needed to
-    clear; widen only if a future incident actually implicates one.
+  - Extending the strip to GIT_OBJECT_DIRECTORY, GIT_COMMON_DIR and the
+    remaining GIT_* plumbing vars. GIT_INDEX_FILE is NO LONGER deferred — the
+    2026-08-28 incident met this list's own stated condition for widening
+    ("widen only if a future incident actually implicates one") by clobbering
+    the worktree index, so it moved into scope; the rest stay out under the
+    unchanged condition.
+  - The nested-shell-fixture and short-circuit-unchanged assertions on the
+    guard script (BL-1222 scenarios 03 and 04). This ticket lands the scrub
+    and proves it end to end through scenario 04; BL-1222 owns the remaining
+    coverage on the script's own surface.
 
 invariants:
   - "No test file's git() spawn is directed by an inherited ambient GIT_DIR or GIT_WORK_TREE — every fixture git spawn resolves against the cwd it was given, regardless of what the host shell had exported before the test process started."
+  - "No process the property-suite guard launches inherits GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE from the hook that invoked it, and the guard's existing pass, fail and short-circuit behaviours stay observable-identical."
 
 required_wiring:
   - "extension/vitest.config.mjs::test/helpers/gitEnvGuardSetup.js::guard registered in the unit lane's setupFiles"
   - "extension/vitest.properties.config.mjs::test/helpers/gitEnvGuardSetup.js::guard registered in the property lane's setupFiles, where the coder's own note was raised"
+  - "swarmforge/scripts/check_property_suite_drift.sh::GIT_INDEX_FILE::the second enforcement site must be in the guard that actually launches the suite; anchored to the variable name, which any implementation must spell out whatever the surrounding syntax, rather than to an identifier not chosen at spec time (BL-874)"
 
 source: |
   Coder priority-00 note, 2026-08-27T18:10:03Z ("New defect: property fixture
@@ -254,4 +269,36 @@ notes: |
     of this ticket's scenarios, since it was never built — the coder must land
     handlers for all four in the same parcel or the acceptance runner throws
     on the unmatched step (BL-233)."
-
+  - "[2026-08-28] specifier — ARCHITECT SPEC-GAP HOLD ANSWERED. The architect
+    held this parcel (evidence 0f26bf07b) because the YAML it merged read
+    human_approval: pending while the coder had already built the second
+    enforcement site, and the only approval commit it could find (ba8b3cfa1)
+    predated the amendment. That reading was correct against main as it stood
+    and the hold was the right call. The approval did exist: the second site
+    had been split out as BL-1222 and approved by the human at 708a020b2, and
+    the whole chain — the split (7ff6cc898), the approval (708a020b2), the
+    topic record (0b479240a) and the coordinator's own promotion of this
+    ticket (ecac59035) — was destroyed by the main-reset bug (BL-1214) and was
+    reachable only through the reflog. Recovered and re-landed here. No rework
+    is owed by any role: what the coder built and the cleaner and architect
+    reviewed matches this contract exactly."
+  - "[2026-08-28] specifier — this ticket's active/ placement is a RESTORED
+    promotion, not a new one. The coordinator promoted it at ecac59035
+    (02:46:46, paused -> active for coder), the reset destroyed that commit,
+    and main was left showing it in paused/ while all six role branches and an
+    in-flight parcel treated it as active. Restoring the promotion commit's
+    effect keeps main consistent with the pipeline; the promotion decision was
+    the coordinator's and is unchanged. assigned_to: coder is restored from
+    that same commit."
+  - "[2026-08-28] specifier — why the second enforcement site is carried here
+    rather than in BL-1222. The split was made at 02:55 on the explicit
+    reasoning that this ticket was already active with a coder on it, so
+    widening its contract in place would be the BL-317/BL-325 staleness
+    failure. That premise did not survive: the coder received the unsplit
+    amendment and built both halves (55e138201), and this ticket's own
+    scenario 04 is satisfied by driving the real guard script, so the scrub is
+    load-bearing for this ticket's approved acceptance, not an out-of-scope
+    passenger. BL-1222 is NOT retired — retiring a ticket the human approved
+    an hour earlier would erase their decision. It keeps the coverage this
+    ticket does not reach (nested shell fixture, short-circuits unchanged) and
+    is now a small acceptance slice on top of a landed scrub."

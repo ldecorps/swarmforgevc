@@ -1,0 +1,190 @@
+id: BL-1220
+title: "Twenty-five main-lane test files import test from node:test, fail Vitest collection, and their assertions therefore run nowhere at all"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal, not merely a red. These files are counted as
+# test coverage by everyone who reads the suite, and none of their assertions
+# has executed since the lane moved to Vitest. Nothing in this repository runs
+# `node --test` (see the description), so there is no second runner picking
+# them up. Contrast BL-1206, whose 13 property-lane files are the same shape
+# but allowlisted: same darkness, different visibility.
+status: todo
+epic: code-quality-gates
+priority: 25
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1220-main-lane-node-test-imports-leave-assertions-unrun.feature
+human_approval: approved
+approval_context: >
+  Sibling of BL-1206, minted rather than folded into it for the same reason
+  BL-1200 was minted beside BL-1196: BL-1206 is already human-approved, its
+  scope is explicitly the 13 PROPERTY-lane files and the property allowlist,
+  and it enumerates them by name. This is a distinct, larger set in the unit
+  lane with no allowlist involved. Each lands independently.
+
+  What is worth your eye: this ticket asserts the two lanes' files are not
+  merely uncollected but genuinely UNRUN, and BL-1206's own severity comment
+  says the opposite ("the 13 files' assertions do run and pass under
+  node:test's own runner"). That sentence appears to be false — measured
+  2026-08-28, `npm test` runs `scripts/recordTestDuration.js`, which spawns
+  Vitest and nothing else, and that file's own BL-124 comment reads "the suite
+  now runs under Vitest (node --test can no longer run the...)". There is no
+  `node --test` invocation in package.json or in swarmforge/scripts. BL-1206
+  has been amended in the same pass to correct its rationale and severity; if
+  you know of a runner this sweep missed, say so and both corrections should
+  be reverted together.
+
+  Ten of these 25 files ALSO carry BL-1221's defect. Repairing collection here
+  will make those ten start failing on `deps.checkOrphanedAuthoredDocs is not
+  a function` instead of failing to collect. That is progress, not a
+  regression, and it is called out in out_of_scope so QA does not read it as
+  one.
+description: |
+  ## What
+
+  Remove `const { test } = require('node:test');` (and any `describe`/`it`
+  imported the same way) from the 25 main-lane `extension/test/*.test.js`
+  files that carry it, so those bindings resolve to the ones
+  `extension/vitest.config.mjs` already provides via `globals: true`. Do not
+  otherwise rewrite the tests.
+
+  The 25, measured 2026-08-28:
+
+      benchmarkNodeTestEvaluator.test.js   nightClosingCeremonyLive.test.js
+      bl1147ProbeLegacyTopicAdoption.test.js  nightClosingCeremonyRun.test.js
+      bl1150OutageFailoverCliLoadFileSafe.test.js  operatorPostmortem.test.js
+      contextTelemetryProducer.test.js     pendingApprovalsAnnouncement.test.js
+      crossFileDuplicationCheck.test.js    perHatRolePromptEvidenceCheck.test.js
+      devBounceLib.test.js                 pilotAcceptanceGate.test.js
+      hostActivityFeed.test.js             pilotMkdtempConventionCheck.test.js
+      humanLoopReliability.test.js         pilotScopedCrapCheck.test.js
+      multiBranchParserCoverageCheck.test.js  propertyGeneratorReachCheck.test.js
+      multiworktreeAcceptanceFixture.test.js  shellEntryPointDriveCheck.test.js
+      nightClosingCeremony.test.js         telegramCursorBridgePilot.test.js
+      nightClosingCeremonyGate.test.js     transcriptWalker.test.js
+      unreachableStepHandlerCheck.test.js
+
+  Add one guard test, scoped to the unit lane's own glob, that fails when a
+  file matching `test/*.test.js` (excluding `*.property.test.js`) imports from
+  `node:test`. The guard is deliberately lane-scoped so this ticket stays
+  independent of BL-1206; widening it to the property glob is a one-line
+  follow-up once BL-1206 lands, and belongs to whichever lands second.
+
+  ## Why this is worse than a red
+
+  A file importing `test` from `node:test` declares its tests to a runner
+  Vitest is not, so Vitest collects nothing from it and reports
+  `No test suite found in file ...`. Verified directly on
+  `crossFileDuplicationCheck.test.js`: `1 failed`, `Tests no tests`.
+
+  The part that matters is what does NOT then happen. **Nothing in this
+  repository runs `node --test`.** `npm test` is
+  `npm run compile && node scripts/recordTestDuration.js`, and that script
+  spawns `node_modules/.bin/vitest run` — its own comment at line 41 records
+  why: "BL-124: the suite now runs under Vitest (node --test can no longer run
+  the...)". So these 25 files' assertions have not executed at all since
+  BL-124. They are read as coverage by every role that greps for a test
+  covering a module, and they cover nothing.
+
+  This is also, concretely, a large slice of the standing unit red that every
+  role is currently told to normalize past (QA measured 206 failures across 47
+  files on 2026-08-28 and had to diagnose all 47 by hand to clear an unrelated
+  ticket). Draining these 25 makes the next role's "is this mine?" question
+  cheaper, which is the second reason to do it.
+
+  ## How (direction, not mandate)
+
+  The import line is the whole defect; deleting it is expected to be
+  sufficient, because `globals: true` already supplies the same names. Where a
+  file's assertions then fail for a real reason, that failure is a finding to
+  report, not something to paper over — see the constraint below.
+
+  ## Constraints
+
+  - **A file that will not pass is not to be allowlisted, skipped, or deleted
+    to clear the lane.** If removing the import reveals a genuine failure,
+    report it (with the file and the reason) and leave that file's import
+    removed and failing, or bounce it as a finding. Silencing is the one
+    outcome this ticket must not produce — an allowlist is how the property
+    lane's identical 13 became invisible in the first place.
+  - Do not rewrite assertions, restructure suites, or migrate any file to a
+    different test style beyond removing the import.
+  - Do not touch the 13 property-lane files or
+    `property_suite_standing_allowlist.tsv` — that is BL-1206.
+
+qa_e2e_procedure: >
+  (1) `cd extension && npx vitest run test/crossFileDuplicationCheck.test.js`
+  — before the fix this reports `No test suite found in file`; after it,
+  a non-zero number of tests is collected and runs. (2) For all 25 named
+  files, confirm each now collects at least one test:
+  `npx vitest run <the 25 paths>` and check the reported test count is greater
+  than zero for every file, with no file reporting "no tests". (3) Confirm the
+  full unit suite's failing-FILE count dropped by at least 15 versus the
+  pre-change baseline — at least, because ten of the 25 are expected to remain
+  red on BL-1221's separate defect, and that is the correct outcome here.
+  (4) Confirm the new guard fails on a deliberately reintroduced
+  `require('node:test')` in a scratch main-lane file, and passes once removed.
+  (5) Confirm the guard does NOT fire on the 13 property-lane files, which are
+  out of scope and still carry the import. (6) `grep -rn "node:test"
+  extension/test/*.test.js` excluding property files returns nothing but the
+  guard's own reference to the string.
+
+out_of_scope: |
+  - The 13 property-lane files and the property standing allowlist — BL-1206,
+    approved and paused. Same root cause, different lane, lands independently.
+  - BL-1221's `deps.checkOrphanedAuthoredDocs` stub gap. Ten of this ticket's
+    25 files carry both defects and will move from "fails to collect" to
+    "collects, then throws on the missing dep" once this lands. That is the
+    expected intermediate state and must not be read as a regression caused
+    here, nor fixed here.
+  - The other diagnosed members of the standing unit red: the ambient
+    `CURSOR_API_KEY` gap (infra-environment, ~10 files), and the assorted
+    repo-hygiene guard reds (`constitutionDocCitations`, `tmpDirMigrationGuard`,
+    `tempDirTrapGuard`, `socketFixtureShortRootGuard`, `liveRepoDerivationGuard`).
+    Separate causes, separately owned.
+  - Adding a unit-lane standing allowlist. This ticket removes reds by
+    repairing them; it must not introduce the mechanism that hid the property
+    lane's copy of this same defect.
+
+invariants:
+  - "No file in the unit lane declares its tests to a runner the lane does not execute — every test declared in extension/test/*.test.js is collected and run by Vitest."
+  - "A test file contributing zero collected tests fails its lane; it is never allowlisted, skipped, or deleted into a pass."
+
+source: |
+  QA note 001816 (priority 00) to specifier+coordinator, 2026-08-28T01:41:53Z:
+  "Untracked defect (23 files, node:test/Vitest): see BL-1189-qa-pass-20260828.md".
+  Surfaced while clearing BL-1189, whose own verdict was PASS and unaffected;
+  QA correctly sent a note rather than minting or bouncing. QA's evidence
+  records that it grepped backlog/{active,paused,hold} and found this genuinely
+  untracked, and that the architect's earlier sweep
+  (architect-vitest-node-test-no-suite-found-20260827.md → BL-1206) had scoped
+  its own grep to `test/*.property.test.js` only, which is why the larger
+  main-lane set was never seen.
+
+  Specifier re-measured every number independently before minting rather than
+  taking the note's counts: 25 main-lane files (QA said ~23), 14 property-lane
+  files (BL-1206 enumerates 13), 10 files carrying both this and BL-1221.
+  The "runs nowhere" claim was established from package.json and
+  extension/scripts/recordTestDuration.js, not assumed.
+
+notes: |
+  - "[2026-08-28] specifier: the 'assertions still run under node:test' belief
+    is the load-bearing error here, and it predates this ticket — it is
+    written into BL-1206's own severity comment as the reason that ticket is
+    only medium. There is no node --test runner in this repo. BL-1206 amended
+    in the same pass; if that amendment is wrong, this ticket's severity is
+    wrong too and both should move together."
+  - "[2026-08-28] specifier: deliberately NOT scoped to add a unit-lane
+    allowlist, and the constraint against silencing is written into the
+    acceptance rather than left as advice. The property lane's identical 13
+    files became invisible precisely because an allowlist absorbed them with a
+    'pending fix' rationale pointing at an already-landed ticket (BL-1175, per
+    BL-1206). Repeating that here would convert 25 visible reds into 25
+    invisible ones and close the ticket looking green."
+  - "[2026-08-28] specifier: no required_wiring on this ticket. The fix is a
+    deletion plus a self-executing guard test, so there is no call site whose
+    absence the pre-QA gate should refuse — arming it against a string the
+    implementer has not chosen yet is the BL-874 failure, not diligence."
