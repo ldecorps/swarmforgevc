@@ -1,0 +1,164 @@
+id: BL-1225
+title: "a build-freshness sync erases runtime.log when it restarts the operator runtime, and starts the handoff daemon as caller=unknown, so the restarts it caused cannot be attributed afterwards"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+priority: 45
+direction: operator-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1225-sync-initiated-restart-leaves-a-readable-trail.feature
+human_approval: pending
+approval_context: >
+  Minted from operator intake
+  .swarmforge/operator/INTAKE-build-freshness-sync-vs-operator-runtime-supervisor-double-restart.md
+  (human Laurent via Cursor / Local Agent, 2026-08-28 ~01:55Z). That intake is
+  ONE intake split into TWO tickets; this one carries the second and third
+  bullets of its "Desired fix" section, quoted verbatim in `source:` below.
+  BL-1224 carries the first. Nothing from the intake was dropped.
+
+  Two things need sign-off. First, the third bullet is marked "Optional" in the
+  human's own text, and it is minted here rather than dropped because it is the
+  half that would have made last night's diagnosis mechanical instead of a
+  by-hand timestamp correlation - but it is the human's call whether an
+  optional bullet earns a slice at all. Second, the log fix is scoped to
+  appending rather than to the larger change of routing the whole restart
+  through start_operator_runtime.sh. That larger change would fix the log as a
+  side effect and would also close a documented convention breach, but it
+  carries a behaviour question this slice must not answer (what a sync should
+  do when SWARMFORGE_SKIP_OPERATOR is set), so it is recorded as a remaining
+  slice on epic BL-539 instead.
+
+  Firm: this ticket must not change WHICH processes a sync restarts, or when.
+  Only what it leaves behind.
+description: |
+  ## What
+
+  Two forensic gaps in `swarmforge/scripts/build_freshness_cli.bb`, both in the
+  restart steps a `sync` runs.
+
+  1. `restart-operator-group!` must stop erasing `runtime.log`. After a sync,
+     the log must still hold what the previous runtime wrote, followed by the
+     replacement's own output.
+  2. `restart-handoffd-group!` must identify itself, so the resulting audit
+     line names build-freshness as the caller instead of `unknown`.
+
+  ## Why
+
+  `restart-operator-group!` spawns the replacement with
+  `(process/process {:out (str log-file) :err (str log-file)} ...)`. Passing a
+  path string to `:out` TRUNCATES - verified directly rather than assumed: a
+  file holding `PRE-EXISTING` contained only the new process's output
+  afterwards. Every sync therefore destroys the stop/start history, and syncs
+  are frequent (one per QA merge). When the 2026-08-28 phantom crash-loop was
+  investigated, the pre-restart half of the record was already gone. The
+  project's own normal entry point `start_operator_runtime.sh` gets this right
+  with a plain `>>`.
+
+  `start_handoff_daemon.sh:48` already reads `SWARMFORGE_DAEMON_START_CALLER`
+  and writes whatever it finds into the audit line. Nothing sets it, so all ten
+  daemon starts in that window read `caller=unknown`, and the only way anyone
+  tied them to build-freshness was by correlating timestamps against
+  `.swarmforge/daemon/daemon-start-audit.log` by hand. The attribution seam
+  exists; it has simply never been used.
+
+  ## How (direction, not mandate)
+
+  For the log, `start_operator_runtime.sh`'s own append redirect is the
+  reference behaviour to match. For the caller, `start_handoff_daemon.sh`
+  already defines the contract - the sync only has to set the variable it
+  reads, and the value must be distinctive enough that a reader can tell a
+  sync-initiated start from any other.
+
+  ## Constraints
+
+  - Do not change which groups a sync restarts, or the order it restarts them.
+  - Do not regress BL-433: the operator restart's graceful stop-file, its
+    deletion of `status.json` before relaunch, and its bounded settle-wait for
+    a fresh `build_sha` all stay exactly as they are.
+  - A start that no sync initiated must not be labelled as one.
+
+qa_e2e_procedure: >
+  (1) With the operator runtime up, note the last line of
+  .swarmforge/operator/runtime.log. Run
+  `bb swarmforge/scripts/build_freshness_cli.bb <root> sync`. Confirm that line
+  is STILL in runtime.log afterwards, and that the replacement runtime's own
+  startup line now follows it. (2) Run two more syncs and confirm the log keeps
+  growing rather than resetting - the failure mode is silent, so check length,
+  not just the tail. (3) Confirm the sync still reports a fresh operator
+  build_sha in its JSON output and did not take longer than before: BL-433's
+  settle-wait must be untouched. (4) Read the tail of
+  .swarmforge/daemon/daemon-start-audit.log and confirm the sync's own handoffd
+  start names build_freshness_cli as caller. (5) Run
+  `swarmforge/scripts/start_handoff_daemon.sh <root>` directly and confirm that
+  line does NOT name build_freshness_cli - the label must mean something.
+
+out_of_scope: |
+  - Everything in BL-1224: the watch mislabelling a deliberate restart as a
+    crash. Same intake, different ticket, and the one that stops the alert
+    noise. This ticket only preserves the evidence.
+  - Routing restart-operator-group! through start_operator_runtime.sh (which
+    would fix the log as a side effect, and also close the prior-runtime
+    cleanup and SWARMFORGE_SKIP_OPERATOR gaps the supervisor's own header
+    documents). Deferred with its behaviour question; recorded as a remaining
+    slice on epic BL-539.
+  - Log rotation or any retention policy for runtime.log. Appending is the ask;
+    an unbounded file is a different ticket if it ever becomes one.
+  - Setting a caller on any start site other than the sync's own.
+  - The operator disposable-LLM exit protocol (`operator.done`) and
+    freshness-cron restarts of operator_runtime_supervisor itself - both named
+    out of scope by the source intake.
+
+invariants:
+  - "No sync-initiated restart discards log lines written before it."
+  - "A daemon start is attributed to build-freshness in the start audit if and only if a sync initiated it."
+
+required_wiring:
+  - 'swarmforge/scripts/build_freshness_cli.bb::SWARMFORGE_DAEMON_START_CALLER::the sync must set the caller variable start_handoff_daemon.sh already reads; this file contains no reference to it today, which is why every sync-initiated start audits as caller=unknown'
+
+source: |
+  Operator intake
+  .swarmforge/operator/INTAKE-build-freshness-sync-vs-operator-runtime-supervisor-double-restart.md
+  (human Laurent via Cursor / Local Agent, 2026-08-28 ~01:55Z), split 1:2 with
+  BL-1224. This ticket carries the SECOND and THIRD bullets of that intake's
+  "Desired fix" section, quoted verbatim:
+
+    "`restart-operator-group!` must append to `runtime.log` (or rotate), never
+    truncate - keep stop/start audit trail."
+
+    "Optional: set `SWARMFORGE_DAEMON_START_CALLER=build_freshness_cli` on
+    handoffd restarts from sync for attribution."
+
+  And the intake's own evidence for the second, verbatim:
+
+    "Same sync calls `restart-handoffd-group!` -> `start_handoff_daemon.sh`
+    with `caller=unknown`."
+
+    "Every crash 00:34-01:46Z preceded within ~10-20s by
+    `start_handoff_daemon ... caller=unknown` in
+    `.swarmforge/daemon/daemon-start-audit.log` (10/10)."
+
+  Premise verified by the specifier before minting, not taken on report: the
+  truncation was reproduced directly under bb (a file holding PRE-EXISTING kept
+  only the new process's output after a `{:out "<path>"}` spawn);
+  start_handoff_daemon.sh:48 was read and does interpolate
+  SWARMFORGE_DAEMON_START_CALLER; build_freshness_cli.bb was grepped and
+  contains zero references to it. Backlog grepped across paused/active/hold/
+  done for an existing owner; BL-433 is the nearest prior art and fixed the
+  settle-wait, not this.
+
+notes: |
+  - "[2026-08-28] specifier: severity low - nothing misbehaves at runtime, the
+    cost is paid only by whoever investigates afterwards. Kept as its own slice
+    rather than folded into BL-1224 because the two are independent: the watch
+    fix is correct with or without the trail, and the trail is worth having
+    even if the watch fix is deferred."
+  - "[2026-08-28] specifier: IR-DRY reports two medium-confidence
+    possible-synonym findings on this feature file. Both are deliberate: the
+    audit-line pair is an assertion and its negation (scenario 03 exists
+    precisely to stop the label being hardcoded), and 'restarts the handoff
+    daemon' vs 'restarts the operator runtime' name two different subjects.
+    Resolved as accepted-by-design at mint."
