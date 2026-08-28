@@ -839,7 +839,8 @@ const DOMAINS = [
   require('./bl1179CrossVendorMemoryAdapterSteps'),
   require('./bl1192TaskScopeGateSteps'),
   require('./bl1216DuplicateIdLiveCopyContentVerdictSteps'),
-  require('./bl1248MasterMainReconcileKillSwitchSteps')
+  require('./bl1248MasterMainReconcileKillSwitchSteps'),
+  require('./bl1236ReconcileConflictPredictionSteps')
 ];
 
 function registerSteps(registry) {

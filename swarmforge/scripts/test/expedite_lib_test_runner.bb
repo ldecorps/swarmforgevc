@@ -694,6 +694,60 @@
              (str/includes? (expedite-lib/format-outstanding-summary {:items [] :parked [] :dry-run? true})
                             "nothing outstanding"))
 
+;; ── missing-verdict recovery (hotfix: claude -p exits without verdict.json) ─
+;; BL-1248 cleaner exited 0 after announcing a Monitor wait, wrote no verdict,
+;; and the driver hard-failed :no-verdict. Class of failure: stage child exits
+;; without a parseable verdict file. Process fix: one automatic re-invoke, and
+;; the stage prompt forbids Monitor/IDE waits.
+
+(assert-true "no-verdict: first missing parseable verdict recovers once"
+             (expedite-lib/should-recover-missing-verdict?
+              {:timed-out? false :overrun? false :parsed nil :attempt 0}))
+(assert-false "no-verdict: second miss does not recover (bound of one)"
+              (expedite-lib/should-recover-missing-verdict?
+               {:timed-out? false :overrun? false :parsed nil :attempt 1}))
+(assert-false "no-verdict: a parseable verdict never recovers"
+              (expedite-lib/should-recover-missing-verdict?
+               {:timed-out? false :overrun? false :parsed {:verdict "pass"} :attempt 0}))
+(assert-false "no-verdict: a timed-out stage never recovers"
+              (expedite-lib/should-recover-missing-verdict?
+               {:timed-out? true :overrun? false :parsed nil :attempt 0}))
+(assert-false "no-verdict: an overrun stage never recovers"
+              (expedite-lib/should-recover-missing-verdict?
+               {:timed-out? false :overrun? true :parsed nil :attempt 0}))
+
+(let [p (expedite-lib/stage-user-prompt
+         {:role "cleaner" :ticket "BL-1248"
+          :verdict-file "/tmp/verdict.json" :recovery? false})]
+  (assert-true "no-verdict: initial prompt names the verdict path" (str/includes? p "/tmp/verdict.json"))
+  (assert-true "no-verdict: initial prompt forbids Monitor waits" (str/includes? p "Monitor"))
+  (assert-true "no-verdict: initial prompt requires last-action write" (str/includes? p "LAST action")))
+
+(let [p (expedite-lib/stage-user-prompt
+         {:role "cleaner" :ticket "BL-1248"
+          :verdict-file "/tmp/verdict.json" :recovery? true})]
+  (assert-true "no-verdict: recovery prompt is labelled RECOVERY" (str/includes? p "RECOVERY"))
+  (assert-true "no-verdict: recovery prompt forbids Monitor" (str/includes? p "Monitor"))
+  (assert-true "no-verdict: recovery prompt still names the path" (str/includes? p "/tmp/verdict.json")))
+
+(assert= "no-verdict: finalize timeout before missing-verdict"
+         :stage-timeout
+         (:reason (expedite-lib/finalize-stage-result
+                   {:timed-out? true :overrun? false :parsed nil
+                    :role "cleaner" :exit 0 :elapsed {:overrun? false}})))
+(assert= "no-verdict: finalize missing parseable verdict"
+         {:verdict :fail :reason :no-verdict :stage "cleaner" :exit 0}
+         (expedite-lib/finalize-stage-result
+          {:timed-out? false :overrun? false :parsed nil
+           :role "cleaner" :exit 0 :elapsed {:overrun? false}}))
+(assert= "no-verdict: finalize advances a real pass"
+         :pass
+         (:verdict (expedite-lib/finalize-stage-result
+                    {:timed-out? false :overrun? false
+                     :parsed {:verdict "pass" :summary "ok"}
+                     :role "cleaner" :exit 0
+                     :elapsed {:overrun? false :elapsed-ms 1}})))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

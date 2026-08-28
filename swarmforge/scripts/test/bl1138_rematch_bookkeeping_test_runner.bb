@@ -63,7 +63,7 @@
                                        [b a] (map parse-long (str/split (str/trim (:out r)) #"\s+"))]
                                    {:ahead a :behind b}))
                   :dirty-paths! (fn [] [])
-                  :would-conflict! (fn [] true)
+                  :merge-verdict! (fn [] :conflict)
                   :tip-contains-origin! (fn [] false)
                   :rematch! (fn []
                               (let [r (sh root "git" "reset" "--hard" "origin/main")]

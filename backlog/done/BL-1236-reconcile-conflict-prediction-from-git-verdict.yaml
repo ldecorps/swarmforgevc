@@ -5,14 +5,14 @@ type: defect
 severity: critical
 status: todo
 epic: swarm-reliability
-priority: 18
-direction: agent-reported
+priority: 0
+direction: queue-jump
 depends_on: [BL-1214]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1236-reconcile-conflict-prediction-from-git-verdict.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This is the tenth reset-to-origin occurrence and the first one whose cause is
   pinned to a single line rather than reconstructed. BL-1214 shipped 2.5 hours
@@ -34,6 +34,7 @@ invariants:
 
 required_wiring:
   - 'swarmforge/scripts/handoffd.bb::master-main-reconcile-lib/::the daemon must keep asking the shared reconcile lib for the prediction rather than inlining its own check — this anchor is deliberately the stable namespace alias, not the predicate name, which this ticket may rightly rename'
+  - 'swarmforge/scripts/post_hotfix_merge_origin.bb::master-main-reconcile-lib/::the post-hotfix CLI is the SECOND entry point to the same prediction and today carries a byte-identical copy of the broken check — it must ask the shared reconcile lib too, or the reset hazard survives the fix at the entry point an operator batch runs; same stable namespace-alias anchor as the daemon entry, for the same reason'
   - 'specs/pipeline/steps/index.js::bl1236ReconcileConflictPredictionSteps::acceptance handler registered'
 
 description: |
@@ -103,6 +104,24 @@ description: |
   and BL-1214's existing merge absorbs it losslessly. **The predicate is the
   whole fix** — no new executor is needed.
 
+  ## The second entry point (specifier, added at expedite time)
+
+  `merge-tree-reports-conflict?` has TWO callers, not one. `handoffd.bb:3135`
+  is the one the incident log caught. The other is
+  `post_hotfix_merge_origin.bb:41-47` — the CLI run "after a Cursor/operator
+  batch on main" (BL-1118) — whose `would-conflict?` is byte-identical to the
+  daemon's: same legacy three-argument `git merge-tree`, same regex over the
+  merged diff, same `true`-on-`merge-base`-failure. Its `:rematch!` adapter
+  ends in `rematch-with-push-first!` → `git reset --hard origin/main`, so a
+  false prediction there destroys commits exactly as the daemon's does — and
+  it runs precisely when an operator's unpushed batch is sitting on main.
+
+  Fixing only the daemon leaves a known-broken copy of a critical data-loss
+  defect in the tree. Both callers move to the shared verdict; no executor
+  changes at either site. This is the same fix applied completely, not a
+  widening — the invariants below are stated as properties of the reconcile
+  behaviour, not of one file.
+
   ## Why severity critical
 
   Committed work is destroyed, and the loss is invisible to every ordinary
@@ -123,8 +142,16 @@ description: |
     i.e. reset. That is fail-open dressed as fail-closed: the safe default here
     is to do nothing and surface, never to reset. Distinguish "git says
     conflict" from "git could not say".
+  - **There is already an in-repo precedent — mirror it rather than inventing
+    one.** `tree_collapse_guard_lib.bb:73-80` runs `git merge-tree
+    --write-tree` for exactly this purpose, keys on `exit`, and returns `nil`
+    when "the simulation itself cannot run" — the "git could not say" case,
+    already modelled. Its docstring even names the anti-pattern: "never a
+    diff-based guess".
   - Keep the daemon asking the shared lib for the answer; do not inline a
-    second check in `handoffd.bb`.
+    second check in `handoffd.bb`. The same applies to
+    `post_hotfix_merge_origin.bb`: one shared answer, two callers, zero
+    duplicated predicates.
 
 qa_e2e_procedure: >
   (1) In a scratch clone, create a two-way divergence whose merged content is
@@ -138,7 +165,9 @@ qa_e2e_procedure: >
   confirm the existing recovery path is still taken and still logs its conflict
   line. (6) Repeat with `origin/main` made unresolvable so no verdict is
   possible, and confirm the sweep performs no reset and leaves HEAD unmoved.
-  (7) On the live repo, watch one full sweep cycle at a real two-way divergence
+  (7) Repeat step (1)-(4) against `post_hotfix_merge_origin.bb` instead of the
+  daemon sweep, and confirm that entry point also absorbs rather than resets.
+  (8) On the live repo, watch one full sweep cycle at a real two-way divergence
   and confirm `git log -g` shows no new `reset: moving to origin/main` entry.
 
 out_of_scope: |
@@ -163,6 +192,8 @@ source: |
   and backlog/evidence/BL-1236-tenth-reset-cause-pinned-20260828.md.
 
 notes: |
+  - [2026-08-28] human (Cursor): post-expedite-BL-1248 — restore active + ambulance BL-1236
+  - [2026-08-28T12:22Z] human (Cursor): /jumpq BL-1236 — queue-jump force-promote paused→active (depth was full) and route to coder.
   - [2026-08-28] specifier: this is the first of ten reset occurrences whose
     cause is pinned rather than reconstructed, because the daemon logged its
     decision one second before acting. Prior occurrences
@@ -184,3 +215,26 @@ notes: |
     less, until the predicate is fixed. Until then, anyone committing to main
     should assume a reset can follow and check `git log -g` for `reset: moving
     to origin/main` before trusting that a commit survived.
+  - [2026-08-28] specifier (expedite stage 1): AMENDED to name the second entry
+    point, `post_hotfix_merge_origin.bb`, which carries a byte-identical copy of
+    the broken `would-conflict?` and ends at the same `git reset --hard
+    origin/main`. Added scenario 05, a third `required_wiring` entry, and
+    `qa_e2e_procedure` step (7). `human_approval` is deliberately NOT reset to
+    `pending`: the boundary the human signed off is prediction-versus-executor,
+    and this amendment stays entirely on the prediction side — no executor
+    changes, the genuine-conflict path untouched, no new risk class. Applying
+    one fix at both of its call sites is that same approved fix completed, not
+    a widening. Flagged in the expedite verdict so QA and the human can
+    overrule if they read the boundary differently.
+  - [2026-08-28] specifier: `tree_collapse_guard_lib.bb:73-80` is the in-repo
+    precedent for the replacement — `merge-tree --write-tree`, keyed on `exit`,
+    returning `nil` when the simulation cannot run, with a docstring that names
+    the anti-pattern ("never a diff-based guess"). Mirror it; do not invent a
+    second shape for the same question.
+  - [2026-08-28] specifier: the `required_wiring` anchors on both `.bb` entry
+    points are the namespace alias `master-main-reconcile-lib/`, which is
+    ALREADY present at both sites. That is deliberate (the predicate's own name
+    is expected to change) but it makes the gate a weak witness: it would still
+    pass if a caller kept the require and inlined its own check anyway.
+    Architect: verify delegation by reading both call sites, not by the gate
+    going green.

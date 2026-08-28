@@ -24,7 +24,6 @@ const WIRING_SCRIPT = path.join(
   'test',
   'test_handoffd_master_main_reconcile_wiring.sh'
 );
-const SHIPPED_CONF = path.join(REPO_ROOT, 'swarmforge', 'swarmforge.conf');
 const FEATURE =
   'BL-1248 the master-main-reconcile sweep can be switched off from config, and is off until BL-1236 lands';
 

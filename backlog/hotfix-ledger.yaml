@@ -181,3 +181,10 @@
   stamp_ticket: BL-1152
   human_decision: null
   decided_at: null
+- commit: 3f4f69ec1b
+  subject: "Recover once when an expedite stage exits without verdict.json."
+  detected_at: 2026-08-28
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
