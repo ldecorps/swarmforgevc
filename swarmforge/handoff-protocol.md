@@ -599,6 +599,69 @@ BL-949, not to the task's ticket BL-935 - one of the two headers is wrong
 task: or the commit: line and re-send.
 ```
 
+## Pre-Handoff Task-Scope Gate (BL-1192)
+
+`swarm_handoff.sh` refuses a `git_handoff` send when the task's own commits
+since its last handoff carry a path that positively belongs to a
+**different** ticket than the one the `task:` header names. This widens
+BL-531's pre-QA entanglement check to **every** `type: git_handoff` hop
+(cleaner, architect, hardener, documenter, QA alike), not only the
+documenter→QA edge — the 2026-08-27 shift's ten `behavior` QA bounces, the
+measured subset (BL-596, BL-754, BL-780, BL-980, BL-1173, BL-1174) sharing
+one meta-cause: a handoff naming ticket A cited a commit whose diff vs
+`origin/main` also carried another ticket's backlog YAML or feature file,
+caught only by QA's manual BL-506 inventory five stages later.
+
+Mechanics (`task_scope_gate_lib.bb`):
+
+- **Positive identification only.** A changed path counts only when its
+  own basename names a ticket id via
+  `pipeline-stage-lib/extract-ticket-id` — the same exact-id-equality
+  extractor BL-953's coherence gate already uses, never a second parser.
+  This covers `backlog/**/*.yaml`, `backlog/evidence/*.md`,
+  `specs/features/*.feature`, and `docs/how-to/*.md` — the artifact
+  shapes that actually carry a ticket id in their own name. A functional
+  code path (`extension/src/foo.ts`) has no deterministic id in its own
+  name and is never flagged; that silence is not evidence of clean scope,
+  only of "this gate cannot see it," which is why fail-open covers it
+  structurally rather than the gate guessing.
+- **Evidence-only paths under `backlog/evidence/<task-id>-*` for the named
+  task never count as foreign overlap** — they are the task's own
+  paperwork, not entanglement.
+- **Scope is the union of each commit's own tree diff**, walked
+  first-parent from the commit most recently handed off for this exact
+  task (the durable handoff archive, never grepped/guessed) up to the
+  cited commit, but only for commits whose own message names this task's
+  ticket id. A literal `origin/main...commit` range was tried first and
+  rejected: a batch role's own branch legitimately accumulates many
+  OTHER, already-forwarded tickets' commits (batch roles process several
+  tickets per turn; `origin/main` lags local work by design), which
+  produced a false-positive avalanche (BL-1192's own architect bounce D1:
+  64 paths across ~6 tickets on a real cleaner batch turn). Scoping to
+  only this task's own tagged commits' diffs dropped that same real turn
+  to 1 path — the task's own evidence file — while still catching a
+  commit that IS tagged for this task but also touches a foreign ticket's
+  path.
+- **Fail-open is absolute**, same posture as BL-953/BL-972: no ticket id
+  in the task name, an unreadable commit, an unreadable commit-history
+  walk, or every changed path resolving to no ticket (or only the task's
+  own) all accept, unverified (logged as a warning where the caller
+  chooses to surface it).
+
+Refusal message names the task, the offending path(s), the foreign ticket
+id(s), and the fix:
+
+```text
+Cannot send git_handoff for BL-901: this task's own commits since its last
+handoff carry a path (backlog/active/BL-902-....yaml) belonging to BL-902,
+not to BL-901 - the tip is entangled with another ticket's work
+(BL-1192/BL-506). Rebuild or cherry-pick a tip-pure commit for BL-901 and
+re-send.
+```
+
+How-to: covered inline here; no dedicated how-to doc (same treatment as
+BL-953/BL-760).
+
 ## Parcel-Rollback Guard (BL-1213)
 
 `swarm_handoff.sh` refuses a `git_handoff` send when the sending branch's
