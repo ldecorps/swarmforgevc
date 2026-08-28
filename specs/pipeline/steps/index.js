@@ -837,7 +837,8 @@ const DOMAINS = [
   require('./bl1228ActivePoolFreshnessHoldAuditSteps'),
   require('./bl1230NestedGitRepoGuardSteps'),
   require('./bl1179CrossVendorMemoryAdapterSteps'),
-  require('./bl1192TaskScopeGateSteps')
+  require('./bl1192TaskScopeGateSteps'),
+  require('./bl1216DuplicateIdLiveCopyContentVerdictSteps')
 ];
 
 function registerSteps(registry) {
