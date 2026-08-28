@@ -152,6 +152,7 @@ out_of_scope: |
 invariants:
   - "No file in the unit lane declares its tests to a runner the lane does not execute — every test declared in extension/test/*.test.js is collected and run by Vitest."
   - "A test file contributing zero collected tests fails its lane; it is never allowlisted, skipped, or deleted into a pass."
+  - "A repaired file reports the same number of tests it declared under the node:test runner — a repair that silently drops assertions is a regression, not a fix."
 
 source: |
   QA note 001816 (priority 00) to specifier+coordinator, 2026-08-28T01:41:53Z:
@@ -188,3 +189,26 @@ notes: |
     deletion plus a self-executing guard test, so there is no call site whose
     absence the pre-QA gate should refuse — arming it against a string the
     implementer has not chosen yet is the BL-874 failure, not diligence."
+  - [2026-08-28] specifier: CONSOLIDATION. BL-1231 was the same defect, minted
+    the same day from the same QA note on BL-1189, and is retired as
+    superseded-by-BL-1220. This one survives because it was already
+    human-approved and re-measured its own numbers. Two things from BL-1231 are
+    carried across rather than lost: invariant 3 above (test-count preservation,
+    which BL-1220 did not state and which is the property that catches a repair
+    that quietly drops assertions), and the guard hazard in the next note. No
+    human-quoted directive existed in either ticket, so Article 5.3 is satisfied
+    without a verbatim carry.
+  - [2026-08-28] specifier: guard hazard for the implementer. Scenario 03's guard
+    must fire on a node:test IMPORT and never on the string "node:test" merely
+    appearing as data - in a fixture, an assertion message, a comment, or in the
+    guard's own source. This is the self-referential-grep trap: a guard that
+    greps for its own needle can flag the file that describes it. Anchor on the
+    import form, not the bare substring.
+  - [2026-08-28] specifier: the file count is drifting upward and must be
+    enumerated at implementation time, never taken from this ticket. Measured
+    main-lane files importing node:test: 24 (BL-1231, 2026-08-28), 25 (BL-1220 at
+    mint, same day), 27 (specifier re-measure, 2026-08-28 06:15Z). The growth is
+    itself the argument for the guard - new files keep copying the broken shape.
+    The narrative comment in the feature file says 25; treat that as the
+    mint-time snapshot, not a target. No scenario asserts a count, so none of
+    this makes the contract stale.
