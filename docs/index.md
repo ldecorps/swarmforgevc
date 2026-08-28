@@ -26,6 +26,7 @@ expects them, and are not migrated or rewritten here.
 
 *Task-oriented: recipes to accomplish a specific goal.*
 
+- [What NOT to do when tweaking the swarm](how-to/BL-644-what-not-to-do-when-tweaking-the-swarm.md) — eighteen anti-patterns observed causing real damage on 2026-07-25, grouped by what they break; companion to the [green-suites-that-proved-nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) explanation doc (BL-644).
 - [Bringing Up a Second Swarm on Windows via WSL2](how-to/BL-091-wsl2-second-swarm-bringup.md)
 - [Headless Secondary Swarms on a Raspberry Pi or VPS](how-to/BL-101-pi-vps-secondary-swarm-bringup.md)
 - [Stripping an oversized blob from role-branch history](how-to/BL-105-history-strip.md)
