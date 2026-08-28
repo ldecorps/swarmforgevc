@@ -77,6 +77,7 @@ test('landPilotedTicket writes scopedCrap evidence naming src paths on successfu
       receipt = r;
     },
     getLandedCommit: () => 'b'.repeat(40),
+    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
   });
   assert.equal(outcome.landed, true);
@@ -126,6 +127,7 @@ test('landPilotedTicket refuses missing CRAP evidence when extension/src was in 
       calls.receipt += 1;
     },
     getLandedCommit: () => 'c'.repeat(40),
+    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
   });
   assert.equal(outcome.landed, false);
@@ -169,6 +171,7 @@ test('landPilotedTicket lands without scopedCrap evidence when only non-src exte
       receipt = r;
     },
     getLandedCommit: () => 'd'.repeat(40),
+    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
   });
   assert.equal(outcome.landed, true);
@@ -213,6 +216,7 @@ test('landPilotedTicket refuses crap-violation before move', async () => {
       calls.receipt += 1;
     },
     getLandedCommit: () => 'a'.repeat(40),
+    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-26T00:00:00.000Z',
   });
   assert.equal(outcome.landed, false);
