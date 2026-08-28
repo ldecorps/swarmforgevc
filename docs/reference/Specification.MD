@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1214: the shared master-main reconcile
+ladder's `:ff-absorb` execution (`absorb-with-merge!` in
+`master_main_reconcile_lib.bb`, consumed by `handoffd.bb`, `swarm_heal.bb`,
+and `post_hotfix_merge_origin.bb`) now attempts one plain 3-way `git merge
+--no-edit origin/main` between the failed fast-forward and the reset
+fallback. A non-conflicting two-way divergence is now absorbed losslessly
+via a real 2-parent merge commit instead of being discarded by `git reset
+--hard origin/main` — the plan already said "absorb", but every executor
+could previously only fast-forward, so a genuine divergence always fell
+through to the reset regardless of content. A real conflict still aborts
+cleanly (no `MERGE_HEAD` left behind) and falls back to today's reset
+recovery, byte-for-byte unchanged. Composes with BL-1198's push-before-reset
+into one ladder: fast-forward → push → 3-way merge → reset. This defect had
+fired in production and discarded four committed commits, including the
+human's own approval of this ticket. No new extension command or setting.
+Acceptance:
+`specs/features/BL-1214-reconcile-absorbs-non-conflicting-two-way-divergence-with-a-real-merge.feature`.
+How-to: `docs/how-to/BL-1214-ff-absorb-attempts-real-merge-before-reset.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1202: the BL-570/BL-1124 pre-commit
 property-suite guard (`check_property_suite_drift.sh`) now reports its
 BL-1124 shared-repo canary verdict on every exit path of the suite run it
