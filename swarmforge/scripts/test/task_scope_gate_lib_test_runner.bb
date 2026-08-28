@@ -114,6 +114,21 @@
   (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))]
     (sh! root "git" "update-ref" "refs/remotes/origin/main" sha)))
 
+;; Records a completed handoff for task-name citing commit - the durable
+;; boundary last-handoff-commit reads back (salvage-lib/latest-item-handoffs).
+;; A single-role roles.tsv (root doubles as that role's own worktree) is
+;; enough; only the archive shape and header fields matter to the reader.
+(defn- record-handoff! [root task-name commit]
+  (let [roles-tsv (fs/path root ".swarmforge" "roles.tsv")]
+    (when-not (fs/exists? roles-tsv)
+      (fs/create-dirs (fs/parent roles-tsv))
+      (spit (str roles-tsv) (str/join "\t" ["cleaner" "cleaner" (str root) "session" "Cleaner" "claude" "task"]) )
+      (spit (str roles-tsv) "\n" :append true))
+    (let [completed-dir (fs/path root ".swarmforge" "handoffs" "inbox" "completed")]
+      (fs/create-dirs completed-dir)
+      (spit (str (fs/path completed-dir (str "00_" (System/nanoTime) "_from_coder_to_cleaner_for_cleaner.handoff")))
+            (str "task: " task-name "\ncommit: " commit "\nto: cleaner\nfrom: coder\n")))))
+
 ;; scenario 01 (qa_e2e_procedure step 2): a commit entangling two tickets
 ;; is refused, naming the foreign ticket and the conflicting path.
 (with-fixture [root]
@@ -152,16 +167,49 @@
                 {:root root :task-name "BL-1174-fixture" :commit canonical})]
     (assert-false "own evidence: not blocked" (task-scope-gate-lib/blocked? result))))
 
-;; scenario 03/04 (fail-open): origin/main does not exist at all -> warn,
-;; allow, never block.
+;; scenario 03/04 (fail-open): the cited commit does not resolve at all ->
+;; warn, allow, never block.
 (with-fixture [root]
-  (commit! root "backlog/active/BL-1185-x.yaml" "id: BL-1185\n" "BL-1174-fixture: would-be entanglement")
-  (let [canonical (:out (sh! root "git" "rev-parse" "HEAD"))
-        result (task-scope-gate-lib/findings-for-git-handoff
-                {:root root :task-name "BL-1174-fixture" :commit canonical})]
-    (assert-false "no origin/main: not blocked" (task-scope-gate-lib/blocked? result))
-    (assert-true "no origin/main: a warning is present" (some? (:warning result)))
-    (assert-includes "no origin/main: warning names the task" (:warning result) "BL-1174-fixture")))
+  (let [result (task-scope-gate-lib/findings-for-git-handoff
+                {:root root :task-name "BL-1174-fixture" :commit "0000000000000000000000000000000000000000"})]
+    (assert-false "unreadable commit: not blocked" (task-scope-gate-lib/blocked? result))
+    (assert-true "unreadable commit: a warning is present" (some? (:warning result)))
+    (assert-includes "unreadable commit: warning names the task" (:warning result) "BL-1174-fixture")))
+
+;; BL-1192 architect bounce D1: a batch role's sibling-ticket commits
+;; interleaved in the SAME turn (each tagged with THEIR OWN ticket id) must
+;; contribute nothing, even though they sit in the first-parent chain since
+;; this task's own last handoff - this is the empirically-verified fix for
+;; the false-positive avalanche (BL-1192-architect-bounce-20260828.md).
+(with-fixture [root]
+  (commit! root "backlog/active/BL-1174-own.yaml" "id: BL-1174\n" "BL-1174-fixture: coder's own first commit")
+  (let [first-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (record-handoff! root "BL-1174-fixture" first-commit)
+    ;; A sibling ticket's own commit, processed in the same batch turn -
+    ;; tagged with ITS OWN id, never BL-1174's.
+    (commit! root "backlog/active/BL-1185-sibling.yaml" "id: BL-1185\n" "BL-1185-fixture: unrelated sibling ticket in the same batch turn")
+    ;; This task's own follow-up commit, further down the same branch.
+    (commit! root "backlog/evidence/BL-1174-cleaner-pass.md" "notes\n" "BL-1174-fixture: cleaner pass evidence")
+    (let [canonical (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (task-scope-gate-lib/findings-for-git-handoff
+                  {:root root :task-name "BL-1174-fixture" :commit canonical})]
+      (assert-false "batch sibling excluded: not blocked" (task-scope-gate-lib/blocked? result))
+      (assert= "batch sibling excluded: no findings" [] (:findings result)))))
+
+;; The positive case in the same shape: a commit genuinely tagged for THIS
+;; task that ALSO touches a foreign ticket's path is still caught in full -
+;; the narrower scope must not lose the gate's actual purpose.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-1174-own.yaml" "id: BL-1174\n" "BL-1174-fixture: coder's own first commit")
+  (let [first-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (record-handoff! root "BL-1174-fixture" first-commit)
+    (commit! root "backlog/active/BL-1185-sibling.yaml" "id: BL-1185\n" "BL-1185-fixture: unrelated sibling ticket in the same batch turn")
+    (commit! root "backlog/active/BL-1185-y.yaml" "id: BL-1185\n" "BL-1174-fixture: accidentally also touches BL-1185")
+    (let [canonical (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (task-scope-gate-lib/findings-for-git-handoff
+                  {:root root :task-name "BL-1174-fixture" :commit canonical})]
+      (assert-true "own-commit entanglement still caught: blocked" (task-scope-gate-lib/blocked? result))
+      (assert= "own-commit entanglement still caught: finding" [{:path "backlog/active/BL-1185-y.yaml" :ticket-id "BL-1185"}] (:findings result)))))
 
 ;; task name resolving to no ticket id at all -> no findings, no warning
 ;; (nothing to compare against, the ordinary case, not a fact-read failure).

@@ -5,9 +5,9 @@
 // (never a reimplementation) via
 // specs/pipeline/steps/lib/bl1192TaskScopeGateCli.sh, which mirrors
 // test_swarm_handoff_sync_deliver.sh's own real-fixture conventions
-// (fake tmux, a real roles.tsv, a real mailbox skeleton, a real origin/main
-// ref) - so a refusal or an acceptance observed here is the actual send
-// path, not a unit-level approximation.
+// (fake tmux, a real roles.tsv, a real mailbox skeleton) - so a refusal or
+// an acceptance observed here is the actual send path, not a unit-level
+// approximation.
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -17,8 +17,8 @@ const FEATURE = 'Pre-handoff task-scope gate refuses entangled git_handoffs';
 
 const CLI = path.join(__dirname, 'lib', 'bl1192TaskScopeGateCli.sh');
 
-function runGate(sender, taskTicket, foreignTicket, originMode, evidenceOnly) {
-  const args = [CLI, sender, taskTicket, foreignTicket, originMode];
+function runGate(sender, taskTicket, foreignTicket, mode, evidenceOnly) {
+  const args = [CLI, sender, taskTicket, foreignTicket, mode];
   if (evidenceOnly) args.push('evidence');
   const out = execFileSync('bash', args, { encoding: 'utf8', timeout: 30000 });
   return JSON.parse(out.trim().split('\n').pop());
@@ -31,36 +31,28 @@ function registerSteps(registry) {
     ctx.bl1192 = {};
   });
 
-  scoped(/^origin\/main is reachable from the sender's checkout$/, (ctx) => {
-    ctx.bl1192.originMode = 'real';
-  });
-
-  scoped(/^origin\/main cannot be resolved from the sender checkout$/, (ctx) => {
-    ctx.bl1192.originMode = 'unreadable';
-  });
-
   // ── scenario 01: outline over foreign/no-foreign ─────────────────────────
 
-  scoped(/^a commit whose tree diff vs origin\/main includes paths for ticket "?([A-Za-z0-9-]+)"?$/, (ctx, foreignTicket) => {
+  scoped(/^a commit tagged for the task whose own diff includes paths for ticket "?([A-Za-z0-9-]+)"?$/, (ctx, foreignTicket) => {
     ctx.bl1192.foreignTicket = foreignTicket;
   });
 
   scoped(/^the coder sends a git_handoff for task ticket "([^"]+)" citing that commit$/, (ctx, taskTicket) => {
     const st = ctx.bl1192;
     st.taskTicket = taskTicket;
-    st.result = runGate('coder', taskTicket, st.foreignTicket, st.originMode || 'real');
+    st.result = runGate('coder', taskTicket, st.foreignTicket, 'real');
   });
 
   scoped(/^the documenter sends a git_handoff for task ticket "([^"]+)" citing that commit$/, (ctx, taskTicket) => {
     const st = ctx.bl1192;
     st.taskTicket = taskTicket;
-    st.result = runGate('documenter', taskTicket, st.foreignTicket || 'NONE', st.originMode || 'real', st.evidenceOnly);
+    st.result = runGate('documenter', taskTicket, st.foreignTicket || 'NONE', 'real', st.evidenceOnly);
   });
 
   scoped(/^the cleaner sends a git_handoff for task ticket "([^"]+)" citing that commit$/, (ctx, taskTicket) => {
     const st = ctx.bl1192;
     st.taskTicket = taskTicket;
-    st.result = runGate('cleaner', taskTicket, st.foreignTicket, st.originMode || 'real');
+    st.result = runGate('cleaner', taskTicket, st.foreignTicket, 'real');
   });
 
   scoped(/^the send is (refused|accepted)$/, (ctx, outcome) => {
@@ -93,22 +85,46 @@ function registerSteps(registry) {
 
   // ── scenario 04: evidence-only paths for the named task ──────────────────
 
-  scoped(/^a commit whose tree diff vs origin\/main touches only backlog\/evidence for the named task$/, (ctx) => {
+  scoped(/^a commit tagged for the task whose own diff touches only backlog\/evidence for the named task$/, (ctx) => {
     ctx.bl1192.evidenceOnly = true;
     ctx.bl1192.foreignTicket = 'NONE';
   });
 
-  // ── scenario 05: unreadable origin/main ──────────────────────────────────
+  // ── scenario 05: an unresolvable cited commit ────────────────────────────
 
-  scoped(/^the coder sends a git_handoff for task ticket "([^"]+)" citing any commit$/, (ctx, taskTicket) => {
+  scoped(/^the coder sends a git_handoff for task ticket "([^"]+)" citing an unresolvable commit$/, (ctx, taskTicket) => {
     const st = ctx.bl1192;
     st.taskTicket = taskTicket;
-    st.result = runGate('coder', taskTicket, 'NONE', st.originMode || 'unreadable');
+    st.result = runGate('coder', taskTicket, 'NONE', 'unresolvable');
   });
 
   scoped(/^a warning records that the scope check could not run$/, (ctx) => {
     const st = ctx.bl1192;
     assert.match(st.result.stderr, /TASK_SCOPE WARNING/, `expected a TASK_SCOPE warning, got: ${st.result.stderr}`);
+  });
+
+  // ── scenario 06: batch-sibling exclusion (architect bounce D2) ──────────
+
+  scoped(/^the task's own first commit was already handed off once$/, () => {
+    // Declarative - the CLI driver's "batch" mode always records the
+    // task's own first commit as a completed handoff before building the
+    // sibling and follow-up commits, mirroring last-handoff-commit's own
+    // durable-archive contract.
+  });
+
+  scoped(/^a sibling ticket's own commit lands on the same branch in between, tagged with its own id$/, (ctx) => {
+    ctx.bl1192.foreignTicket = 'BL-1185';
+  });
+
+  scoped(/^the task's own follow-up commit lands after it, touching only its own paths$/, () => {
+    // Declarative - the CLI driver's "batch" mode always writes the task's
+    // own evidence file as the final, cited commit.
+  });
+
+  scoped(/^the cleaner sends a git_handoff for task ticket "([^"]+)" citing the follow-up commit$/, (ctx, taskTicket) => {
+    const st = ctx.bl1192;
+    st.taskTicket = taskTicket;
+    st.result = runGate('cleaner', taskTicket, st.foreignTicket, 'batch');
   });
 }
 
