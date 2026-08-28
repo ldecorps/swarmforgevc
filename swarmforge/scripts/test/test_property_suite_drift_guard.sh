@@ -317,4 +317,53 @@ rm -f "$MARKER" "${MARKER}.child" "$ROOT/../bl1202_out_$$"
 git -C "$ROOT" reset -q HEAD~1 --hard
 rm -rf "$ROOT/extension"
 
+# ── 16 (hardener, BL-1202): a SIGHUP kill is caught ONLY by the standalone
+#    `trap ... EXIT` line, never by `trap on_interrupt INT TERM` - the guard
+#    traps INT/TERM explicitly, but not HUP, so a HUP delivery (a plausible
+#    real shape for "the foreground git commit was killed": a closing
+#    terminal or a dying parent process group sends HUP, not always TERM)
+#    relies entirely on bash's own behavior of still running a registered
+#    EXIT trap on an untrapped fatal signal. Verified live (2026-08-28): a
+#    2-line bash script with only `trap ... EXIT` and no HUP trap DOES run
+#    its EXIT trap on `kill -HUP`, exit status 129. Removing the guard's
+#    standalone EXIT trap line left scenarios 01-15 all still green (they
+#    only ever exercise TERM), so this scenario is what actually pins that
+#    line as load-bearing rather than redundant with on_interrupt.
+stage extension/src/pipelineBoard.ts
+MARKER16="$ROOT/../bl1202_marker16_$$"
+rm -f "$MARKER16"
+MUTATING_SLEEP_16=(bash -c '
+  git -C "'"$ROOT"'" -c user.email=t@t -c user.name=t commit -q --allow-empty -m mutated-by-fixture-16
+  echo $$ > "'"$MARKER16"'"
+  sleep 30
+')
+(
+  cd "$ROOT"
+  exec bash "$GUARD" "${MUTATING_SLEEP_16[@]}" >"$ROOT/../bl1202_out16_$$" 2>&1
+) &
+GUARD_PID_16=$!
+
+DEADLINE=$((SECONDS + 10))
+while [[ ! -s "$MARKER16" ]] && (( SECONDS < DEADLINE )); do
+  sleep 0.05
+done
+[[ -s "$MARKER16" ]] || fail "16: fake suite never started (marker never appeared)"
+
+kill -HUP "$GUARD_PID_16" 2>/dev/null || true
+set +e
+wait "$GUARD_PID_16"
+ST16=$?
+set -e
+
+OUT16="$(cat "$ROOT/../bl1202_out16_$$" 2>/dev/null || true)"
+
+[[ "$ST16" -ne 0 ]] || fail "16: a HUP-killed guard must exit non-zero, got $ST16: $OUT16"
+echo "$OUT16" | grep -q 'BL-1124: shared repo refs/bare changed' \
+  || fail "16: expected the canary to still be reported on a HUP-killed run, got: $OUT16"
+pass "16: a SIGHUP kill (caught only by the standalone EXIT trap) still reports the BL-1124 canary verdict"
+
+rm -f "$MARKER16" "$ROOT/../bl1202_out16_$$"
+git -C "$ROOT" reset -q HEAD~1 --hard
+rm -rf "$ROOT/extension"
+
 echo "ALL PASS"
