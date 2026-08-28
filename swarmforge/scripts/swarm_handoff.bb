@@ -17,6 +17,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "required_stages_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "review_forward_evidence_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "parcel_rollback_guard_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -364,6 +365,21 @@
                :reroute-reason (get headers "reroute_reason")
                :received-commit (review-forward-evidence-gate-lib/received-commit-for-task
                                   (project-root) sender task-name)}))
+        ;; BL-1213 parcel-rollback gate: refuses a git_handoff whose branch
+        ;; tip holds pre-parcel content for a path the ticket's accepted
+        ;; parcel commit changed, with no revert of it on this branch (see
+        ;; parcel_rollback_guard_lib.bb). Same fail-open-on-unreadable-facts
+        ;; posture as the coherence gate above.
+        parcel-rollback-result
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (parcel-rollback-guard-lib/findings-for-git-handoff
+           {:root (project-root) :sender sender :task-name task-name :canonical canonical}))
+        _ (when-let [warning (:warning parcel-rollback-result)]
+            (binding [*out* *err*]
+              (println (str "PARCEL_ROLLBACK WARNING: " warning))))
+        parcel-rollback-block
+        (when (parcel-rollback-guard-lib/blocked? parcel-rollback-result)
+          parcel-rollback-result)
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -388,7 +404,10 @@
                                  (into (pointer-gate-errors type to task-name canonical)))
                              review-forward-evidence-block?
                              (conj (review-forward-evidence-gate-lib/refusal-message
-                                    {:sender sender :task-name task-name :commit canonical}))))
+                                    {:sender sender :task-name task-name :commit canonical}))
+                             parcel-rollback-block
+                             (conj (parcel-rollback-guard-lib/refusal-message
+                                    {:task-name task-name :findings (:findings parcel-rollback-block)}))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
