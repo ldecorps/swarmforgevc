@@ -212,9 +212,31 @@ notes: |
     choice task_commit_coherence_gate_lib.bb already documents making for
     this identical reason. Re-verified: unit + acceptance both still 100%
     green after the fix.
+  - "[2026-08-28] coder: architect bounce round 2 D1
+    (backlog/evidence/BL-1192-architect-bounce-round2-20260828.md) -
+    correctness defect, the mandated `abandoned_commits` override was
+    entirely unimplemented. `findings-for-git-handoff` never read the
+    ticket's own YAML at all. Implemented: `abandoned-commits-for-ticket`
+    (reuses `pre_qa_gate_gather_lib.bb/find-ticket-yaml-content` +
+    `pre_qa_gate_lib.bb/read-abandoned-commits`, never a second parser) and
+    `effective-base`, which resolves `origin/main` as the walk's base
+    instead of `last-handoff-commit` when that commit is recorded
+    abandoned for this task, fail-open (a warning, never a block) when
+    origin/main itself cannot be resolved. Added two fixture scenarios
+    reproducing the real failure shape empirically: `rev-list base..commit`
+    never errors on a non-descendant base (verified directly against git),
+    so the actual defect is that an unbounded, disconnected abandoned base
+    re-discovers OLD, already-landed history tagged for this same task from
+    an earlier iteration - not that the rebuild's own commit goes missing.
+    Non-vacuity proven by hand: disabled the override, confirmed both new
+    assertions fail (the old landed entanglement resurfaces), restored,
+    re-confirmed green. Verified: task_scope_gate_lib_test_runner.bb ALL
+    PASS (now including the two new scenarios); acceptance feature 8/8;
+    test_swarm_handoff_sync_deliver.sh PASS."
 
 assigned_to: coder
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: b033583c08, evidence: backlog/evidence/BL-1192-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: dff356cc18, evidence: backlog/evidence/BL-1192-qa-bounce-20260828.md }
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 7a3773c711, evidence: backlog/evidence/BL-1192-architect-bounce-round2-20260828.md }
