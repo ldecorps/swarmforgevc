@@ -1,5 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1192: `swarm_handoff.sh` refuses a
+`git_handoff` send — on every hop, not only the documenter→QA edge BL-531
+already covers — when the task's own commits since its last handoff carry
+a path that positively belongs to a different ticket than the one the
+`task:` header names (`task_scope_gate_lib.bb`). Identification is
+positive-only, via the same exact-id-equality extractor BL-953 uses,
+restricted to path shapes that actually carry a ticket id in their own
+name (`backlog/**`, `specs/features/**`, `docs/how-to/**`); a functional
+code path is never flagged, and fail-open covers that silence structurally.
+Scope is the union of this task's own tagged commits' tree diffs, walked
+from the last handoff recorded for this exact task — a literal
+`origin/main...commit` range was tried and rejected for a false-positive
+avalanche on a batch role's own accumulated sibling-ticket commits.
+Backstops the dominant 2026-08-27 shift bounce class (ten `behavior`
+bounces, six measured as entangled tips) at the hop where it first
+appears instead of riding the pipeline to QA. Fail-open is absolute on any
+unreadable fact, same posture as BL-953/BL-972. No new extension command
+or setting. Acceptance:
+`specs/features/BL-1192-pre-handoff-task-scope-gate.feature`. Mechanics:
+`swarmforge/handoff-protocol.md` Pre-Handoff Task-Scope Gate section.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1217: RC health/repair
 (`swarmforge/scripts/remote_control_health_lib.bb`) now derives desired
 remote-control state from the effective pack config, not the persisted
