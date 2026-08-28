@@ -117,6 +117,7 @@ expects them, and are not migrated or rewritten here.
 - [Reconcile import skips the property-suite guard](how-to/BL-1121-reconcile-import-skips-property-suite-guard.md) — byte-identical mid-merge import → `skip-reconcile-import`; env override stays recovery-only (BL-1121).
 - [Property-suite fixtures must not mutate shared main](how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md) — canary bare/HEAD around the property lane; refuse reset-to-origin when ahead (BL-1124).
 - [Worktree drift guard — WORKTREE_DRIFT_DETECTED](how-to/BL-1195-worktree-drift-guard.md) — `ready_for_next.bb` refuses unexplained tracked-content drift with no in-progress task to explain it; master-resident roles exempt (BL-1195).
+- [Parcel-rollback guard on git_handoff sends](how-to/BL-1213-parcel-rollback-guard.md) — refuses a send whose branch tip silently reverted a path to pre-parcel content, with no revert explaining it; ticket-scoped, fail-open on unreadable facts (BL-1213).
 - [Local Agent Telegram turn reliability](how-to/BL-1126-local-agent-telegram-turn-reliability.md) — fast-path probes skip Ollama; real turns stream progress and abort cleanly (BL-1126).
 - [Local Ollama mono vs forge under CPU](how-to/BL-1142-local-ollama-mono-vs-forge-cpu.md) — durable decision: mono-router depth 1; uncapped / qwen-forge substitutes refused (BL-1142).
 - [Cold-swap day-shift to Ollama Qwen mono-router](how-to/BL-1143-cold-swap-day-shift-ollama-qwen.md) — verified pack switch + rollback; no qwen-forge thrash (BL-1143).
