@@ -52,18 +52,46 @@ description: >
   Why the switch and not just the fix: BL-1236 IS the fix (its
   merge-tree-reports-conflict? greps git merge-tree CONTENT for the word
   "CONFLICT", which this repo's backlog prose contains constantly, so the
-  predicate fires on ordinary activity rather than on rare divergence). But
-  BL-1236 sits in backlog/paused/ with human_approval: pending, so it cannot
-  be promoted, routed, or worked - while the sweep it describes keeps
-  running on every restart. This ticket is deliberately independent of
-  BL-1236 so the bleeding stops on the earlier of the two.
+  predicate fires on ordinary activity rather than on rare divergence). At
+  mint BL-1236 sat in backlog/paused/ with human_approval: pending, so it
+  could not be promoted, routed, or worked, and this ticket was made
+  deliberately independent of it so the bleeding stopped on the earlier of
+  the two.
+
+  THAT PREMISE HAS EXPIRED - BL-1236 LANDED FIRST (deprecator freshness
+  amendment, specifier stage of the expedite re-run, 2026-08-28 ~17:05).
+  871f2fa85 replaced the text-search predicate with git merge-tree
+  --write-tree's own exit-code verdict at BOTH call sites that carried it,
+  2b3c796d1 merged it, and 112027d99 closed the ticket into backlog/done/.
+  The condition this switch names for turning itself back on is therefore
+  already satisfied on the day the switch ships.
+
+  The switch is still wanted and is still UNBUILT on main: grepping
+  master_main_reconcile_enabled over origin/main's swarmforge/ and
+  extension/ returns nothing, so BL-1236's landing did not incidentally
+  deliver a lever. Two independent reasons to finish it rather than retire
+  it. First, the value of an operator-facing on/off switch for a sweep that
+  rewrites refs does not depend on which defect prompted it - BL-1236 fixed
+  one predicate, it did not make the sweep non-destructive. Second,
+  BL-1236's fix has never run in production: the swarm is down under the
+  BL-1191 ops hold, so the corrected predicate is untested against live
+  traffic, and the next start-swarm rearms a sweep with thirteen realised
+  commit losses behind it and zero production runs of its fix in front of
+  it.
 
   What is wanted: a config key master_main_reconcile_enabled, consulted
   before the sweep does anything, failing closed to disabled on every value
   that is not an explicit affirmative, shipped set to false with BL-1236
-  named as the condition for turning it back on, and a daemon log line when
-  a tick skips the sweep by config (a silently-absent sweep is how nobody
-  notices it is still on, or still off, months later). The key name is
+  named as the condition for turning it back on - and, per the freshness
+  amendment above, that conf comment must ALSO record that BL-1236 has now
+  landed and that the flip is BL-1251's operator decision, so the shipped
+  comment does not read as a standing invitation to enable the sweep
+  unreviewed. The literal token "BL-1236" stays in the conf and the line
+  stays an active `config master_main_reconcile_enabled false`, so scenario
+  04 and its step handler are unchanged by this wording change. And a
+  daemon log line when a tick skips the sweep by config (a silently-absent
+  sweep is how nobody notices it is still on, or still off, months later).
+  The key name is
   specified because it is an operator-facing contract; mirror BL-920's
   escalation-threshold parse in master_main_reconcile_lib.bb (parse-
   escalation-threshold, line ~398) for the parse.
@@ -88,9 +116,20 @@ constraints: >
   Out of scope / firm lines:
 
   - Do NOT fix the conflict predicate here. That is BL-1236, it is a
-    different slice, and widening this one would make the stopgap wait on
-    the approval that is blocking the fix - the exact coupling this ticket
-    exists to break.
+    different slice, and it has ALREADY LANDED (871f2fa85, closed
+    112027d99) - so there is nothing left here to fix and any predicate
+    change in this parcel is now a straight out-of-scope diff, not merely
+    a scope widening. At mint this line read "widening this one would make
+    the stopgap wait on the approval that is blocking the fix"; that
+    coupling is gone, the boundary is not.
+  - Do NOT flip the shipped value to true in this parcel, even though
+    BL-1236 has landed and the conf comment's stated re-enable condition is
+    therefore satisfied. Re-arming a sweep with thirteen realised commit
+    losses, on the day its fix landed and before that fix has run in
+    production even once, is an operator decision - it is BL-1251, minted
+    alongside this amendment with human_approval: pending. Shipping OFF is
+    the reversible direction and costs one config line to undo, which is
+    the whole point of building a switch.
   - Do NOT default the key to enabled, and do not treat an absent key as
     enabled. The dangerous state must be reachable only by an explicit
     operator affirmative; absent, empty and malformed all mean off.
@@ -199,6 +238,64 @@ notes: >
   constraint forbidding its removal and per scenario 05). BL-1236 will touch
   the same lib when it is approved, so prefer not to run the two
   concurrently - sequence this one first, since it is the unblocked half.
+
+  DEPRECATOR FRESHNESS ADJUDICATION - specifier stage, expedite re-run,
+  2026-08-28 ~17:05 (Article 3.6). Outcome: AMEND (not retire, not confirm
+  unchanged). Trigger: this run re-verified the ticket's premises rather
+  than assuming them, and found the central one dead - BL-1236, described
+  throughout as blocked in paused/ with human_approval: pending, had landed
+  and closed on origin/main while this branch sat 18 commits behind it. Not
+  retired, because the deliverable is still unbuilt on main and its value
+  never depended on BL-1236 (see the description). Amended in four places,
+  none of which changes the built behaviour, so b8af2ba56 remains on-spec
+  and this is a confirm-not-rebuild for the coder:
+  (a) description - the expired premise replaced with the landing evidence
+      (871f2fa85 / 2b3c796d1 / 112027d99) and the two reasons to finish.
+  (b) constraints - the predicate-boundary rationale re-grounded (the
+      coupling it cited is gone, the boundary is not), and a new firm line
+      forbidding the flip-to-true in this parcel.
+  (c) the shipped conf COMMENT must now record that BL-1236 has landed and
+      point at BL-1251 for the flip. Without this the parcel would ship a
+      comment reading "RE-ENABLE CONDITION: flip to true once BL-1236 has
+      landed, not before" into a tree where BL-1236 HAS landed - a standing
+      invitation to re-arm the sweep unreviewed. Scenario 04's Then-clause
+      and its step handler are deliberately untouched: the handler asserts
+      only an active `config master_main_reconcile_enabled false` line plus
+      the literal token "BL-1236" somewhere in the conf, both of which the
+      new wording keeps.
+  (d) scenario 04's RETIRE-WITH pointer was ORPHANED and is re-pointed. It
+      read "RETIRE-WITH: BL-1236", and BL-1236 closed without retiring it -
+      the exact BL-982/BL-983 shape BL-1006 exists to prevent, caught here
+      only because the freshness check ran. Its owner is now BL-1251.
+  human_approval stays approved: the approved deliverable (a switch,
+  shipped OFF, failing closed, BL-1236 named as the re-enable condition) is
+  unchanged. The one decision the landing newly raises - whether to flip it
+  on - is deliberately NOT taken here; it is carried to the human as
+  BL-1251 with human_approval: pending, so the amendment narrows nothing
+  and decides nothing on their behalf.
+
+  MERGE HAZARD FOR THE CODER, READ BEFORE TOUCHING CODE. This branch is 18
+  commits behind origin/main (merge-base 2d1d905d4) and those 18 include
+  BL-1236, which edits master_main_reconcile_lib.bb - the same file this
+  ticket edits. The mint's orthogonality note assumed this ticket would
+  sequence FIRST; it did not. A `git merge-tree --write-tree HEAD
+  origin/main` simulation at 17:05 reports content conflicts in exactly two
+  files, specs/pipeline/steps/index.js (both sides register new step
+  handlers) and swarmforge/scripts/test/master_main_reconcile_lib_test_runner.bb
+  (both sides add cases). master_main_reconcile_lib.bb itself AUTO-merges,
+  which is the dangerous one: an auto-merge of this file is precisely where
+  a silent drop hides, so after merging, diff every file this ticket owns
+  against BOTH parents rather than trusting a clean exit. Merge before
+  working, never reset --hard.
+
+  UNCOMMITTED WORK PRESENT AT STAGE START, NOT MINE, NOT SWEPT. The
+  previous run's cleaner stage died without a verdict (it blocked on a
+  Monitor notification) and left one edit uncommitted:
+  specs/pipeline/steps/bl1248MasterMainReconcileKillSwitchSteps.js loses the
+  now-unused SHIPPED_CONF constant. Verified genuinely dead - the file has
+  no other reference to it, scenario 04 reads its path from the Gherkin
+  step argument instead. It is on-spec cleaner work; finish and commit it
+  rather than restarting from a clean tree, and do not sweep it.
 
 approval_context: >
   This is your own 12:16Z directive returned as a ticket, because it had no

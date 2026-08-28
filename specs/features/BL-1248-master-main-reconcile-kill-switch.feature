@@ -5,11 +5,20 @@ Feature: BL-1248 the master-main-reconcile sweep can be switched off from config
   greps git merge-tree's CONTENT diff for the word "CONFLICT", which this
   repo's backlog prose contains constantly, so it fires on ordinary activity.
   Twelve resets have discarded local ahead commits, one of them destroying a
-  human ruling three minutes after it was committed. BL-1236 is the real fix
-  and is blocked on a human approval; the human's standing directive
-  (2026-08-28 12:16Z) is to disable the sweep until it lands. No lever exists
-  today: handoffd wires master-main-reconcile-sweep! unconditionally into its
-  cadence block and swarmforge.conf carries no enable key.
+  human ruling three minutes after it was committed. The human's standing
+  directive (2026-08-28 12:16Z) is to disable the sweep until BL-1236 lands.
+  No lever exists: handoffd wires master-main-reconcile-sweep!
+  unconditionally into its cadence block and swarmforge.conf carries no
+  enable key.
+
+  BL-1236 has since LANDED (871f2fa85, closed 112027d99) - it was blocked on
+  a human approval when this feature was written, and that sentence is no
+  longer true, so it is corrected here rather than left standing (BL-1006).
+  Its landing does not retire this feature: the lever itself is still
+  unbuilt, an on/off switch for a ref-rewriting sweep is worth having
+  whichever defect prompted it, and the corrected predicate has not yet run
+  in production. What the landing DOES change is who decides the shipped
+  value - see scenario 04's marker below.
 
   # IR-DRY: the checker flags `Given the config sets "..." to "false"` as a
   # near-duplicate across scenarios 02, 03 and 05. It is deliberately NOT
@@ -48,12 +57,17 @@ Feature: BL-1248 the master-main-reconcile sweep can be switched off from config
     Then the daemon log records that the reconcile sweep was skipped by config
 
   # BL-1248 master-main-reconcile-kill-switch-04
-  # RETIRE-WITH: BL-1236. This scenario pins a deliberately TEMPORARY state -
-  # the shipped conf holding the sweep off - so it is red-when-correct: it goes
-  # red the day an operator legitimately flips the switch on after BL-1236
-  # lands. Whoever ships that flip retires this scenario (retire, never reword;
-  # BL-1006). It is kept executable despite that cost because it is the only
-  # gate on "shipped OFF", which is this ticket's entire deliverable - the
+  # RETIRE-WITH: BL-1251 (re-pointed 2026-08-28; it read BL-1236, and BL-1236
+  # closed without retiring this scenario - the orphaned-marker failure
+  # BL-1006 exists to prevent, caught by the freshness check rather than by
+  # any gate). This scenario pins a deliberately TEMPORARY state - the shipped
+  # conf holding the sweep off - so it is red-when-correct: it goes red the
+  # day an operator legitimately flips the switch on. BL-1236 landing has
+  # SATISFIED the condition the conf names, so that day is now reachable at
+  # any time; BL-1251 carries the flip decision to the human and owns
+  # retiring this scenario when they say on (retire, never reword). It is
+  # kept executable despite that cost because it is the only gate on
+  # "shipped OFF", which is this ticket's entire deliverable - the
   # required_wiring substring check would pass on a commented-out key.
   Scenario: the shipped config disables the sweep
     When the shipped "swarmforge/swarmforge.conf" is read
