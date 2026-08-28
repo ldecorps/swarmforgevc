@@ -939,7 +939,10 @@ export interface PollAdapters {
   // ticket (redirectToRole's own 'no-pane' result previously just reported
   // "not delivered" and dropped the text). Returns whether the note was
   // successfully queued; a failure is logged by the adapter, never thrown.
-  enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>;
+  // BL-1203: updateId (the inbound message's own identity) lets the
+  // adapter dedupe a re-processed answer without keying on its text -
+  // optional so every pre-BL-1203 fixture keeps working unchanged.
+  enqueueRoleAnswerNote?: (role: string, text: string, updateId?: number) => Promise<boolean>;
   // BL-426 slice 1: transcribes a coordinator Operator-topic voice note's
   // audio (already-resolved fileId) to text. Optional so every PollAdapters
   // fixture written before BL-426 keeps working unchanged - missing means
@@ -1968,10 +1971,11 @@ async function captureRoleAnswer(
   role: string,
   delivered: boolean,
   answerText: string,
-  enqueueRoleAnswerNote: ((role: string, text: string) => Promise<boolean>) | undefined,
-  clearRolePendingQuestion: ((role: string) => Promise<void>) | undefined
+  enqueueRoleAnswerNote: ((role: string, text: string, updateId?: number) => Promise<boolean>) | undefined,
+  clearRolePendingQuestion: ((role: string) => Promise<void>) | undefined,
+  updateId?: number
 ): Promise<void> {
-  const captured = delivered || (await enqueueRoleAnswerNote?.(role, answerText)) === true;
+  const captured = delivered || (await enqueueRoleAnswerNote?.(role, answerText, updateId)) === true;
   if (captured) {
     await clearRolePendingQuestion?.(role);
   }
@@ -2012,7 +2016,7 @@ async function deliverAskAnswer(
   if (role !== undefined) {
     const result = adapters.redirectToRole ? await adapters.redirectToRole(role, answerLabel) : ({ kind: 'no-pane' } as SteerDeliveryResult);
     emitSteeringTelemetry(adapters, result.kind);
-    await captureRoleAnswer(role, result.kind === 'delivered', answerLabel, adapters.enqueueRoleAnswerNote, adapters.clearRolePendingQuestion);
+    await captureRoleAnswer(role, result.kind === 'delivered', answerLabel, adapters.enqueueRoleAnswerNote, adapters.clearRolePendingQuestion, updateId);
     await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
     return 'posted';
   }
@@ -2360,7 +2364,7 @@ async function processSteeringUpdate(
   // pane queues a note into the role's own inbox (Leg 2). Marker clears
   // once the answer is captured.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
-    await captureRoleAnswer(decision.role, result.kind === 'delivered', forwardedText, enqueueRoleAnswerNote, clearRolePendingQuestion);
+    await captureRoleAnswer(decision.role, result.kind === 'delivered', forwardedText, enqueueRoleAnswerNote, clearRolePendingQuestion, update.update_id);
   }
   // Optional adapter: absent means no receipt (pre-receipt behavior).
   if (notifyRoleTopic) {
