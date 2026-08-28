@@ -55,6 +55,7 @@ export default defineConfig({
       './test/helpers/tmpDirSetup.js',
       './test/helpers/envRestoreGuardSetup.js',
       './test/helpers/contentionBudgetSetup.js',
+      './test/helpers/gitEnvGuardSetup.js',
     ],
     // BL-422: an unbounded `vitest run` sizes its worker pool to the CPU
     // count (20 on the reference host) with no per-worker heap limit - one
