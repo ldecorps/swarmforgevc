@@ -11,6 +11,7 @@ severity: high
 # AND to BL-1098's silent-revert predicate, and its only defence today is a
 # reviewer diffing a parcel commit path by path.
 status: todo
+assigned_to: coder
 epic: swarm-reliability
 priority: 6
 direction: swarm-reported
