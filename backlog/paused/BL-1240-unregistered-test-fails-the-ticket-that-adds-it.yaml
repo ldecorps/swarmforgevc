@@ -12,7 +12,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1240-unregistered-test-fails-the-ticket-that-adds-it.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One choice needs sign-off: WHERE the check fires. A send-time check in
   swarm_handoff.bb sits beside the existing pre-QA wiring gate and needs no
