@@ -798,6 +798,7 @@ function moveAndRecordReceipt(
   ticketId: string,
   declaration: string,
   deps: PilotAcceptanceGateDeps,
+  landedCommit: string,
   claimsCheck: CommitClaimsCheckOutcome,
   duplicationCheck: CrossFileDuplicationCheckOutcome,
   crapCheck: PilotScopedCrapCheckOutcome,
@@ -812,18 +813,6 @@ function moveAndRecordReceipt(
   multiWorktreeFixture?: MultiworktreeFixtureMetadata,
   producerCrosscheck?: ProducerCrosscheckMetadata
 ): PilotLandOutcome {
-  // Captured before the move: if getLandedCommit() itself fails (e.g. no
-  // HEAD yet), nothing has moved or been written yet either.
-  const landedCommit = deps.getLandedCommit();
-
-  // BL-1215: verify the commit actually reached origin/main BEFORE
-  // anything moves or is written - a refused land here is exactly as
-  // inert as every other refusal reason in this gate.
-  const originLanding = checkOriginLanding(landedCommit, deps);
-  if ('refusal' in originLanding) {
-    return originLanding.refusal;
-  }
-
   const move = deps.moveTicketToDone(ticketId);
   if (!move.moved || !move.destination) {
     return {
@@ -1032,10 +1021,25 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
       ? contractRun.runResult.multiWorktreeFixture ?? fixtureGate.fixture.metadata
       : undefined;
 
+  // Captured before the move: if getLandedCommit() itself fails (e.g. no
+  // HEAD yet), nothing has moved or been written yet either.
+  const landedCommit = deps.getLandedCommit();
+
+  // BL-1215: verify the commit actually reached origin/main BEFORE
+  // anything moves or is written - a refused land here follows the SAME
+  // check-then-dispatch shape as every other refusal-capable gate above,
+  // rather than living inside moveAndRecordReceipt (whose own job, per
+  // its name, is the move and the receipt - not a fail-closed gate).
+  const originLanding = checkOriginLanding(landedCommit, deps);
+  if ('refusal' in originLanding) {
+    return originLanding.refusal;
+  }
+
   return moveAndRecordReceipt(
     ticketId,
     contract.declaration,
     deps,
+    landedCommit,
     claims.claimsCheck,
     duplication.duplicationCheck,
     crap.crapCheck,
