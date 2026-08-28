@@ -146,3 +146,7 @@ required_wiring:
   - 'extension/src/tools/telegram-front-desk-bot.ts::asked_at_ms::the recorded answer must carry the asked_at_ms of the question it answers, or nothing downstream can pair them'
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 8b939d7cf1, evidence: backlog/evidence/BL-1201-architect-bounce-20260828.md }
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 8b939d7cfd, evidence: backlog/evidence/BL-1201-architect-bounce-20260828.md }
