@@ -188,3 +188,10 @@
   stamp_ticket: null
   human_decision: null
   decided_at: null
+- commit: 70c5e0e5b0
+  subject: "After no-verdict recovery, bounce the same stage instead of failing the ticket."
+  detected_at: 2026-08-28
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
