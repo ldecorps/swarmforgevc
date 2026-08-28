@@ -103,3 +103,14 @@ notes: |
   - [2026-08-27] specifier: minted while confirm-promoting BL-1190 past a
     false hold from this exact extractor bug. depends_on BL-1173 (done) —
     Independent per INVEST once BL-1173 shipped, which it already has.
+  - "[2026-08-28] specifier: a SIBLING false-positive branch, found
+    adjudicating BL-1216's hold. `deprecate-check.js` also holds on `ticket
+    claims superseded/retired/obsolete without a backlog/done/ closure`, and
+    that branch has the same co-occurrence-is-not-subject defect this ticket
+    fixes in `loadRetiredTokens`: it fires when a ticket NARRATES someone
+    else's retirement rather than claiming its own. BL-1216's description
+    recounts three tickets being wrongly retired by a bad resolution and was
+    held for it; BL-1228 quotes the trigger words while describing this very
+    branch and is held too. Both were confirm-promoted by hand. Same
+    function, same shape — fold this branch into this slice if it stays
+    small, or split it out, but do not let it be re-found a third time."
