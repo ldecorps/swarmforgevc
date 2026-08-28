@@ -36,13 +36,17 @@
 #
 # What THIS file adds instead: proof that swarm_heal.bb's real adapters
 # are correctly wired to the primitive end-to-end (previously untested at
-# any level), and the ticket's own explicit regression guard — a genuine
-# divergence must still resolve exactly as it did before this ticket, via
-# the unchanged reset recovery, once the (now-mandatory) push attempt is
-# rejected. test_handoffd_master_main_reconcile_wiring.sh already proves
-# this same guard for handoffd.bb's own call site (its "scenario 02");
-# this file is the swarm_heal.bb sibling. post_hotfix_merge_origin.bb's
-# real adapters remain untested by any file (out of scope for this pass —
+# any level), and (BL-1214 update, architect bounce D2) the regression
+# guard for a genuine two-way divergence once a push attempt is rejected —
+# a NON-conflicting divergence (disjoint paths on each side) now merges
+# losslessly via the real :merge3! (BL-1214), preserving BOTH sides,
+# rather than the pre-BL-1214 reset-and-discard. §2 below asserts exactly
+# that. test_handoffd_master_main_reconcile_wiring.sh already proves the
+# same for handoffd.bb's own call site (its "scenario 02", updated the
+# same way); this file is the swarm_heal.bb sibling. A genuinely
+# CONFLICTING divergence (same path, incompatible content) is a different
+# scenario - not exercised here; post_hotfix_merge_origin.bb's real
+# adapters remain untested by any file (out of scope for this pass —
 # flagged separately, see hardener evidence).
 #
 # HONEST LIMIT, CONFIRMED BY HAND-MUTATION (do not read this file's own
@@ -130,11 +134,13 @@ fi
 pass "§1: the commit stays local and unpushed (the ordinary push-sweep's job, not heal!'s :noop path)"
 
 # ═══════════════════════════════════════════════════════════════════════
-# §2 — the ticket's own regression guard: a GENUINE two-way divergence.
-# Reaching :rematch! now means a push was attempted and (correctly, and
-# unavoidably for a real fork - see header) rejected; the existing
-# reset-to-origin recovery must still fire exactly as it did before this
-# ticket, discarding the local-only commit that has no home on origin.
+# §2 (BL-1214 update) — a GENUINE, NON-CONFLICTING two-way divergence
+# (disjoint paths on each side). Reaching this path means a push was
+# attempted and (correctly, and unavoidably for a real fork - see header)
+# rejected, then a real 3-way merge (:merge3!) absorbs the divergence
+# losslessly instead of the pre-BL-1214 reset-and-discard: BOTH the
+# origin-landed commit and the local-only commit stay reachable, and
+# local main's tip becomes a 2-parent merge commit.
 # ═══════════════════════════════════════════════════════════════════════
 
 # A second clone lands an independent commit directly on origin, so the
@@ -151,23 +157,31 @@ ORIGIN_SHA="$(git -C "$CLONE2" rev-parse HEAD)"
 
 echo "another local-only commit" > "$ROOT/local-only-2.txt"
 git -C "$ROOT" add local-only-2.txt
-git -C "$ROOT" commit -q -m "local-only commit 2 (this must be discarded — genuine divergence)"
-DISCARDABLE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+git -C "$ROOT" commit -q -m "local-only commit 2 (must be preserved by a lossless merge — non-conflicting divergence, BL-1214)"
+PRESERVED_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 
 set +e
 HEAL_OUT2="$(bb "$SWARM_HEAL" "$ROOT" 2>&1)"
 set -e
 
-CURRENT_SHA="$(git -C "$ROOT" rev-parse HEAD)"
-if [[ "$CURRENT_SHA" != "$ORIGIN_SHA" ]]; then
+if ! git -C "$ROOT" merge-base --is-ancestor "$ORIGIN_SHA" main 2>/dev/null; then
   echo "$HEAL_OUT2" >&2
-  fail "§2: expected local main to land exactly on origin's tip ($ORIGIN_SHA) after a rejected push + reset; got $CURRENT_SHA"
+  fail "§2: expected origin's landed commit ($ORIGIN_SHA) to be reachable from local main after the absorb; it is not"
 fi
-pass "§2: after a genuinely rejected push, the existing reset-to-origin recovery still lands local main on origin's real tip"
+pass "§2: after a genuinely rejected push, the origin-landed commit is reachable from local main"
 
-if git -C "$ROOT" merge-base --is-ancestor "$DISCARDABLE_SHA" main 2>/dev/null; then
-  fail "§2: the local-only commit from the genuinely diverging branch is STILL reachable from main - the reset never actually discarded it"
+if ! git -C "$ROOT" merge-base --is-ancestor "$PRESERVED_SHA" main 2>/dev/null; then
+  echo "$HEAL_OUT2" >&2
+  fail "§2: expected the local-only commit ($PRESERVED_SHA) to STILL be reachable from main - a non-conflicting divergence must be merged, never discarded (BL-1214)"
 fi
-pass "§2: the genuinely-diverging local-only commit is discarded by the reset, as designed (regression guard: push-first does not weaken real-divergence recovery)"
+pass "§2: the local-only commit from the non-conflicting divergence is preserved, not discarded"
+
+PARENT_COUNT="$(git -C "$ROOT" rev-list --parents -n 1 main | wc -w)"
+PARENT_COUNT=$(( PARENT_COUNT - 1 ))
+if [[ "$PARENT_COUNT" -ne 2 ]]; then
+  echo "$HEAL_OUT2" >&2
+  fail "§2: expected local main's tip to be a 2-parent merge commit, got $PARENT_COUNT parent(s)"
+fi
+pass "§2: local main's tip is a real 2-parent merge commit, not a rewrite of local history (regression guard: push-first composes with BL-1214's real-merge absorb, never a discard for a non-conflicting divergence)"
 
 echo "ALL PASS"
