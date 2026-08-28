@@ -1960,13 +1960,20 @@ async function answerIfAskAlreadyClosed(callbackQuery: TelegramCallbackQuery, de
 
 // BL-607 architect bounce 2 (shared): captures a role's answer via
 // whichever leg actually landed it - the live-pane delivery already
-// attempted by the caller, or the dormant-pane queue - and clears the
-// per-role pending marker ONLY when one of the two actually captured it.
-// Neither leg capturing (no live pane AND the queue attempt itself
-// failed) must leave the marker set, or the answer is silently lost with
-// no trace. Both the button-tap path (deliverAskAnswer) and the free-text
-// path (processSteeringUpdate) hit this exact same invariant, so it lives
-// here once instead of twice.
+// attempted by the caller, or the dormant-pane queue.
+//
+// BL-1201 architect bounce D1: the pending-question marker clears
+// IMMEDIATELY only for the live-pane leg (delivered=true) - that leg
+// never touches role-answers/<role>.json or its askedAtMs correlator at
+// all, so there is nothing left to consult later and clearing right away
+// is correct. The dormant/file leg does NOT clear it here anymore:
+// enqueueRoleAnswerNote already stamps the currently-pending question's
+// askedAtMs onto the answer file at THIS moment, and clearing the marker
+// in the same breath made deliverRoleAnswer's own "delivered" verdict
+// structurally unreachable - the marker was always already gone by the
+// time anything could check the pairing. deliverRoleAnswer
+// (telegram-front-desk-bot.ts) is now the ONLY thing that clears it for
+// this leg, once it has confirmed the pairing.
 async function captureRoleAnswer(
   role: string,
   delivered: boolean,
@@ -1975,10 +1982,11 @@ async function captureRoleAnswer(
   clearRolePendingQuestion: ((role: string) => Promise<void>) | undefined,
   updateId?: number
 ): Promise<void> {
-  const captured = delivered || (await enqueueRoleAnswerNote?.(role, answerText, updateId)) === true;
-  if (captured) {
+  if (delivered) {
     await clearRolePendingQuestion?.(role);
+    return;
   }
+  await enqueueRoleAnswerNote?.(role, answerText, updateId);
 }
 
 // BL-483: the tapped option's label rides back through postToBridge exactly
