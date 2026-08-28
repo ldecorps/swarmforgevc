@@ -17,7 +17,11 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1229-pilot-gate-deps-contract-cannot-silently-outgrow-its-test-stubs.feature
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  RULED 2026-08-28: take the stronger line — connect contract to stub so the
+  next widening costs one clear failure, not twenty-two crashes. Missing
+  deps members must never be silently defaulted.
 approval_context: >
   One thing needs sign-off: how much to change. The minimum repair is to add
   the missing member to ten stubs, which fixes today's 22 crashes and leaves
