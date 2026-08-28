@@ -57,5 +57,24 @@ notes: |
     than sitting beside it. No scope, acceptance or invariant changed. Merge
     main and re-read the YAML before your handoff so the gate reads the
     corrected line from your own checkout, which is where it looks.
+  - "[2026-08-28] coder: architect bounce D1
+    (backlog/evidence/BL-1179-architect-bounce-20260828.md) - both declared
+    invariants had no property test. Added
+    extension/test/agentMemoryVendorAdapters.property.test.js: P1 encodes
+    invariant 1 (an unsupported pair never transfers and always names a
+    reason; a supported pair is never refused at the matrix step) against
+    generated runtime-token pairs, including arbitrary strings to exercise
+    the fail-closed unrecognised-runtime path. P2 encodes invariant 2 (a
+    supported pair delegates verbatim to runMemoryTransferForRole, never a
+    second payload format) via an injected capture/inject spy comparing the
+    call sequence and outcome against a direct call. Non-vacuity proven by
+    hand: broke the matrix's both-unsupported branch and separately made
+    the delegation reformat its result; confirmed the relevant test(s) fail
+    on each break, then restored and re-confirmed green. Verified:
+    agentMemoryVendorAdapters.test.js 15/15 unchanged; property file 3/3;
+    acceptance feature 3/3."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: invariant-unencoded, commit: dc1714bf3d, evidence: backlog/evidence/BL-1179-architect-bounce-20260828.md }
