@@ -1,5 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1213: `swarm_handoff.sh` refuses a
+`git_handoff` send whose branch tip holds pre-parcel content for a path
+the ticket's own accepted parcel commit changed, with no revert of that
+commit on the branch explaining the rollback — catches a bulk
+restore-from-sibling repair silently reverting landed work in a way three
+existing checks (commit log, deletion-diff quarantine lift, BL-1098's
+silent-revert predicate) all read clean on. Ticket-scoped (only the
+parcel commit's own touched paths), fail-open on unreadable facts, a
+legitimate BL-490/BL-495 revert stays legal. No new extension command or
+setting. Acceptance:
+`specs/features/BL-1213-forward-refused-when-branch-rolled-back-a-parcel.feature`.
+How-to: `docs/how-to/BL-1213-parcel-rollback-guard.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1198: `main` rematch/reset path
 attempts `git push origin main` once before any of its three
 `git reset --hard origin/main` call sites fires — push succeeds (no real
