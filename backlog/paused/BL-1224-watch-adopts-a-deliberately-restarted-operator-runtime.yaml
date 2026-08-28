@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1224-watch-adopts-a-deliberately-restarted-operator-runtime.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted from operator intake
   .swarmforge/operator/INTAKE-build-freshness-sync-vs-operator-runtime-supervisor-double-restart.md
