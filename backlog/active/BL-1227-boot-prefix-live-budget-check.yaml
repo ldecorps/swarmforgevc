@@ -14,7 +14,7 @@ severity: high
 priority: 2
 direction: pipeline-reported
 depends_on: []
-assigned_to: ""
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, qa]
 stage_skip_reasons:
