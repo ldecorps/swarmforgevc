@@ -54,6 +54,39 @@ function contentAt(runGit: GitReader, rev: string, filePath: string): string | n
   return res.status === 0 ? res.stdout : null;
 }
 
+/**
+ * BL-1208: true when `filePath`'s bounced content already existed,
+ * byte-identical, at some commit STRICTLY BEFORE the bounced commit's own
+ * immediate parent - i.e., the branch's own history held this exact
+ * content before it was lost, and the bounced commit put it back rather
+ * than authoring it new. Only ever called when the immediate parent
+ * lacked the path at all (gatherBounceRevertFacts's own precondition) -
+ * a file merely EDITED (present in both parent and bounced) is never a
+ * restoration candidate by this check; only an add-back is.
+ *
+ * Deliberately scoped to the BOUNCED BRANCH'S OWN history, never a
+ * sibling branch's tip: a sibling branch could coincidentally hold
+ * identical content for reasons that have nothing to do with this
+ * commit's own provenance (two roles independently authoring the same
+ * trivial fix), which would launder a genuine violation into a false
+ * withheld remedy - invariant 2's forbidden outcome. The branch's own
+ * prior history is the one signal that is provably about THIS content's
+ * OWN past on THIS branch, not a coincidence elsewhere.
+ */
+function existedIdenticallyBeforeLoss(
+  runGit: GitReader,
+  commit: string,
+  filePath: string,
+  bouncedContent: string
+): boolean {
+  const log = runGit(['log', '--format=%H', `${commit}^`, '--', filePath]);
+  if (log.status !== 0) {
+    return false;
+  }
+  const priorCommits = log.stdout.split('\n').filter((line) => line.length > 0);
+  return priorCommits.some((priorCommit) => contentAt(runGit, priorCommit, filePath) === bouncedContent);
+}
+
 export function gatherBounceRevertFacts(
   opts: { commit: string; by: string },
   runGit: GitReader
@@ -77,7 +110,17 @@ export function gatherBounceRevertFacts(
     const bounced = contentAt(runGit, opts.commit, filePath);
     const parent = contentAt(runGit, `${opts.commit}^`, filePath);
     const tip = contentAt(runGit, branch, filePath);
-    return { path: filePath, tipMatchesBounced: tip === bounced, bouncedDiffersFromParent: bounced !== parent };
+    // BL-1208: only an add-back (bounced present, parent absent) is even a
+    // candidate for "restored rather than authored" - gating the extra git
+    // IO here keeps it off every ordinary edit/delete case.
+    const restoredFromEarlierHistory =
+      bounced !== null && parent === null && existedIdenticallyBeforeLoss(runGit, opts.commit, filePath, bounced);
+    return {
+      path: filePath,
+      tipMatchesBounced: tip === bounced,
+      bouncedDiffersFromParent: bounced !== parent,
+      restoredFromEarlierHistory,
+    };
   });
   return { commit: opts.commit, branch, commitResolves, branchResolves, ancestorOfMain, files };
 }
