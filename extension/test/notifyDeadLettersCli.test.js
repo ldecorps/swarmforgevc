@@ -21,6 +21,14 @@ function mkdirp(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+// BL-1219: every fixture role in this file seeds worktreeName "master" -
+// mailboxDir/buildRoleInboxes therefore resolve its real mailbox under a
+// per-role handoffs/<role>/ subdirectory, never the fossil flat
+// handoffs/inbox/ this file used to write to directly.
+function roleInboxNewDir(root, role) {
+  return path.join(root, '.swarmforge', 'handoffs', role, 'inbox', 'new');
+}
+
 // Real git root + real roles.tsv + a real .handoff.dead file under the
 // role's own inbox/new - the exact shape buildRoleInboxes/listDeadLetters
 // (production code, unchanged) reads. bindOperatorTopic controls whether
@@ -33,7 +41,7 @@ function mkFixtureWithDeadLetter(role, deadLetterName, headerLines, bindOperator
   mkdirp(path.join(root, '.swarmforge'));
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `${role}\tmaster\t${root}\tswarmforge-${role}\t${role}\tclaude\ttask\n`);
 
-  const inboxNewDir = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new');
+  const inboxNewDir = roleInboxNewDir(root, role);
   mkdirp(inboxNewDir);
   fs.writeFileSync(path.join(inboxNewDir, deadLetterName), headerLines);
 
@@ -95,7 +103,7 @@ test('BL-353: a new dead letter is announced into the reserved Operator topic', 
   assert.equal(result.sent, true);
   assert.equal(result.newCount, 1);
   const state = JSON.parse(fs.readFileSync(STATE_PATH(root), 'utf8'));
-  assert.deepEqual(state.announcedFilePaths, [path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new', '00_a.handoff.dead')]);
+  assert.deepEqual(state.announcedFilePaths, [path.join(roleInboxNewDir(root, 'coder'), '00_a.handoff.dead')]);
 });
 
 test('BL-353: the SAME dead letter is never re-announced on the next sweep', async () => {
@@ -148,7 +156,7 @@ test('BL-353: a SECOND, genuinely new dead letter after the first was announced 
   const first = await runCli(root, DELIVER_ENV);
   assert.equal(first.sent, true);
   fs.writeFileSync(
-    path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new', '01_b.handoff.dead'),
+    path.join(roleInboxNewDir(root, 'coder'), '01_b.handoff.dead'),
     'type: note\nrecipient: coder\ntask: BL-901-demo\n'
   );
   const second = await runCli(root, DELIVER_ENV);
