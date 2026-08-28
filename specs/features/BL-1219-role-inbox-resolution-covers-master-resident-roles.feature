@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=b00e8dbbd73360e15f8d67ee74c68cd842241d2f3b37680e7858af55fd37c8ef
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-28T03:21:11.880340684Z","feature_name":"role inbox resolution covers master-resident roles as well as worktree roles","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1219-role-inbox-resolution-covers-master-resident-roles.feature","background_hash":"afee37b336732e4d9be5ce089c1a3fdbcda0e6aa277f5b8e0582d167eae3bfad","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each role resolves to the mailbox its mail is actually delivered to","scenario_hash":"e59c3028effe79382771284e3962b294bed6950449900db64f012b23142926ae","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-28T03:21:11.880340684Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: role inbox resolution covers master-resident roles as well as worktree roles
 
   A role's mailbox location depends on how that role is seated. Worktree
