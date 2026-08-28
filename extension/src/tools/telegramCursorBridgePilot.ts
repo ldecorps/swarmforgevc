@@ -103,6 +103,9 @@ export function gatePilotAgainstExpediteLock(repoRoot: string): PilotGateResult 
  * downgrading a ticket's own guardrail gap to a non-blocking nit.
  * BL-753: an unreachable acceptance step handler is an untested-behavior
  * flag until the claim question is answered — never a cosmetic dead-code nit.
+ * BL-755: a multi-branch parser needs one distinct test per arm.
+ * BL-751: a new arm added to an existing multi-branch dispatch must be
+ * diffed against its siblings' shared gating pattern before pass.
  * BL-758: per-hat reinject of live swarmforge/roles/<role>.prompt — not a
  * mega-brief that only says "wear every hat".
  */
@@ -229,6 +232,14 @@ export function composePilotExpeditorPrompt(ticket: string): string {
     'A multi-branch parser (cond / case / if-else with ≥3 arms) needs one',
     'distinct test per arm before pass — not only the branch the ticket',
     'narrates. Untested arms are untested-parser-branch defects.',
+    '',
+    'REVIEW HATS (hardener during /pilot) — BL-751:',
+    'A new arm added to an existing multi-branch dispatch (cond / case /',
+    'if-else) whose other arms already share a gating pattern (a timeout,',
+    'grace period, or guard condition applied uniformly) must be diffed',
+    'against those siblings before pass. A shared pattern silently dropped',
+    'on the new arm is a defect candidate, not a style nit — flag it for an',
+    'explicit decision (follow the pattern or document the deviation).',
     '',
     'Isolation (same as BL-567):',
     '- Work only in `.worktrees/expedite-' + normalized + '` on branch `expedite/' + normalized + '`.',

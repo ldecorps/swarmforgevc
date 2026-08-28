@@ -1,0 +1,16 @@
+# DRAFT — parked out of the *.feature glob (BL-233), permanently non-executable.
+# BL-751 is a /pilot review-hat process ticket: it adds guidance text to
+# composePilotExpeditorPrompt (extension/src/tools/telegramCursorBridgePilot.ts)
+# and swarmforge/roles/hardender.prompt telling a human/agent reviewer to diff
+# a new dispatch branch against its siblings' gating pattern before passing it.
+# There is no runtime decision surface to assert against — the "behavior" is a
+# reviewer's judgement call, verified by the existing golden-string tests over
+# the prompt text (see backlog/evidence/BL-751-hardener-pass-20260827.md). An
+# automated scenario over prose guidance would be dishonest (either it greps
+# for words, which is green whether or not a reviewer actually applies the
+# rule, or it has no live behavior to exercise at all) — same reasoning as
+# verification-only-chore-carries-no-executable-gate. This file exists only so
+# the pre-QA acceptance-contract gate has a real, parseable, zero-scenario
+# feature to resolve.
+
+Feature: BL-751 pilot review-hat text is prose guidance, judged by its golden-string tests

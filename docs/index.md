@@ -78,6 +78,7 @@ expects them, and are not migrated or rewritten here.
 - [Unreachable step handlers are untested-behavior flags](how-to/BL-753-pilot-unreachable-step-handler-untested-behavior.md) — BL-753: registered-but-never-matched APS patterns refuse /pilot land; review hats ask the claim question
 - [Multi-branch parsers need one test per arm](how-to/BL-755-pilot-multi-branch-parser-needs-per-arm-tests.md) — BL-755: ≥3-arm cond/case/if-else refuses land when any arm lacks a distinct exercising test
 - [Per-hat role prompt reinject on /pilot](how-to/BL-758-pilot-inject-role-prompts-per-hat.md) — BL-758: composePilotStagePrompt + verdict path/hash evidence; land refuses pilot-hat-prompt-missing
+- [A new dispatch branch must be diffed against its siblings' gating pattern](how-to/BL-751-pilot-new-dispatch-branch-diffed-against-siblings.md) — BL-751: hardener/`/pilot` review hat flags a shared timeout/grace-period/guard pattern silently dropped on a new arm
 - [Residual-word allowlist survives backlog stage moves](how-to/BL-694-residual-word-allowlist-survives-stage-moves.md) — basename under active/paused/hold only (BL-694).
 - [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).
 - [stage_skip_reasons flow-style is readable](how-to/BL-661-stage-skip-reasons-flow-style.md) — flow + block parse; malformed comma surfaced (BL-661; see BL-754).
