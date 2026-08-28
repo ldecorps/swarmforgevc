@@ -127,7 +127,9 @@ description: |
   second instances cost a full re-run to find. **Grep for the sibling before declaring
   it fixed.**
 
-acceptance: |
+acceptance: specs/features/BL-644-what-not-to-do-when-tweaking-the-swarm.feature.draft
+
+acceptance_prose: |
   Documenter's judgement on shape; minimum:
 
   1. Every entry carries the concrete evidence — the command, the measurement, or the
