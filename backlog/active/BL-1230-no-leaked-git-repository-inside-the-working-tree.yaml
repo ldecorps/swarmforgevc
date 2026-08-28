@@ -172,5 +172,23 @@ notes: |
     artifact this ticket exists to catch and leaves it behind. The Given names
     a repo-relative path because that is what the check reports; it is not an
     instruction to write there.
+  - "[2026-08-28] coder: architect bounce D1
+    (backlog/evidence/BL-1230-architect-bounce-20260828.md) - both declared
+    invariants had no property test. Re-added the injectable `readdir` seam
+    to findNestedGitRepositories (the cleaner's own design, reverted by
+    fcaf21c7c4 pending this rework so first authorship of the property test
+    stays with the coder per BL-654) and added
+    extension/test/nestedGitRepoGuard.property.test.js: P1 encodes invariant
+    1 (reported set equals exactly the .git DIRECTORY paths outside
+    node_modules/.worktrees, never root's own) against generated tree
+    layouts; P2 encodes invariant 2 (the call never mutates its input) by
+    handing the walk live node references and diffing a JSON snapshot
+    before/after. Non-vacuity proven by hand: broke the root-.git exemption
+    and separately mutated an entry mid-walk, confirmed both properties fail
+    on each break, then restored and re-confirmed green. Verified:
+    nestedGitRepoGuard.test.js 12/12 unchanged; property file 3/3."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: invariant-unencoded, commit: 3c9cdbc65c, evidence: backlog/evidence/BL-1230-architect-bounce-20260828.md }

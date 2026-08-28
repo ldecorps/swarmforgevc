@@ -40,7 +40,10 @@ const SKIP_DIR_NAMES = new Set(['node_modules', '.worktrees']);
  * internals are not this guard's business).
  *
  * `readdir` is an injectable seam (defaults to `fs.readdirSync`) so tests can
- * simulate an unreadable directory without real filesystem permissions.
+ * simulate an unreadable directory without real filesystem permissions, and
+ * (BL-1230 D1, architect bounce) so the property test can generate arbitrary
+ * tree layouts and assert both declared invariants without touching the
+ * real filesystem.
  */
 function findNestedGitRepositories(root, { readdir = fs.readdirSync } = {}) {
   const violations = [];
