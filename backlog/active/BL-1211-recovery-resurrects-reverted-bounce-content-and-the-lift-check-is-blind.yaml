@@ -21,7 +21,7 @@ acceptance: specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounc
 
 required_wiring:
   - 'extension/src/tools/quarantine-lift-check.ts::quarantineLiftCheck::the lift verdict must have a production caller; correct-and-tested with no CLI is the BL-419 shape, and the incident this ticket was filed for was a lift performed by hand'
-  - 'extension/src/tools/quarantine-lift-check.ts::filterRecoveryPaths::the recovery half needs the same operator-reachable entry point; a recovery that cannot consult the filter still resurrects bounced content'
+  - 'extension/src/tools/recovery-filter-check.ts::filterRecoveryPaths::the recovery half needs the same operator-reachable entry point; a recovery that cannot consult the filter still resurrects bounced content. Path corrected 2026-08-28: mint pinned both verbs to quarantine-lift-check.ts while the ticket text explicitly left co-hosting to the implementer, so the gate refused a correct implementation'
 
 invariants:
   - "A recovery never resurrects content a revert on that same branch deliberately removed: whatever a restore-from-sibling brings back is filtered by the branch's own revert history, so recovering a collapsed branch cannot undo its bounces."
@@ -287,3 +287,22 @@ bounce_count: 2
 bounce_history:
   - { at: 2026-08-28, by: cleaner, blamed: coder, class: behavior, commit: a96b3a10f0, evidence: backlog/evidence/BL-1211-cleaner-bounce-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: c914c40443, evidence: backlog/evidence/BL-1211-architect-bounce-20260828.md }
+  - [2026-08-28] specifier: spec-gap corrected, no rebuild. The documenter's
+    pre-QA wiring gate refused this parcel because required_wiring entry 2
+    named `quarantine-lift-check.ts` for `filterRecoveryPaths`, which lives in
+    the sibling CLI `recovery-filter-check.ts` the coder built after the
+    architect bounce. The implementation is correct and needs no change; the
+    YAML was wrong. Verified independently before amending: the documenter
+    worktree's `recovery-filter-check.ts` contains `filterRecoveryPaths` 4x
+    and `quarantine-lift-check.ts` contains it 0x.
+  - [2026-08-28] specifier: mint-time lesson, worth generalising. This ticket
+    said in its own notes that "hosting both verbs in one CLI is direction,
+    not mandate" - and then pinned both required_wiring entries to one file
+    anyway. A wiring anchor is a literal substring match, so it silently
+    converts a stated non-mandate into a hard one, and the gate fires on the
+    documenter, five stages downstream of the decision. When a ticket leaves
+    a hosting choice open, anchor to the function name in whatever file
+    exports it, or split the entry when the slice ships, but never pin an
+    optional location. Same family as BL-874 (placeholder patterns) and
+    BL-960 (quoting); this is the third distinct way a required_wiring entry
+    can be unmatchable by construction.
