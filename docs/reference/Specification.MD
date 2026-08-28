@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1202: the BL-570/BL-1124 pre-commit
+property-suite guard (`check_property_suite_drift.sh`) now reports its
+BL-1124 shared-repo canary verdict on every exit path of the suite run it
+guards — green, red, or the guard itself being killed mid-run (SIGINT/
+SIGTERM/SIGHUP), not only on a normal return — via an idempotent
+`report_canary_once()` installed on `EXIT`/`INT`/`TERM` traps. The suite now
+runs as the leader of its own process group so a kill can take the whole
+group down by pgid before the canary is asserted; no process the guard
+started can outlive it. Fixes the gap the 2026-08-27 19:37 incident exposed:
+a client-side timeout killing the foreground `git commit` skipped the canary
+entirely and left the suite's background processes rewriting the
+`swarmforge-cleaner` branch ref unreaped. Every short-circuit above the point
+a real suite run starts (path skip, BL-1121 reconcile-import skip, the
+`SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` override, toolchain-missing) is
+unchanged and leaves the traps a no-op. No new extension command or setting.
+Acceptance:
+`specs/features/BL-1202-shared-repo-canary-reports-on-every-exit-path.feature`.
+How-to: `docs/how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md`
+(updated) and `docs/how-to/BL-570-property-suite-drift-guard.md` (updated).)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1204: `/redeploy frontdesk` and
 `/redeploy all` are wired to their real modules — both existed,
 unit-tested and green, but nothing in `extension/src` imported either one,

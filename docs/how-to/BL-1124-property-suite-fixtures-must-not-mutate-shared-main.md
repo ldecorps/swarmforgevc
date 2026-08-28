@@ -66,6 +66,23 @@ Also keep `origin/main...HEAD` to BL-1124 product/docs/evidence (guard
 scripts, APS, how-to, ticket YAML). Hitchhiked tips belong under
 `abandoned_commits`.
 
+## Canary fires on every exit path, including a kill (BL-1202)
+
+`check_property_suite_drift.sh` originally asserted the BL-1124 canary only
+after the guarded suite returned (green or red). A foreground `git commit`
+killed mid-run (e.g. a client-side timeout) skipped the canary entirely and
+left the suite's own background processes running — the 2026-08-27 19:37
+incident that rewrote the `swarmforge-cleaner` branch ref with fixture
+commits. The guard now runs the suite as the leader of its own process
+group and installs an idempotent `report_canary_once()` on `EXIT`/`INT`/
+`TERM` traps, so the canary verdict is reported and the suite's whole
+process group is killed by pgid on every ending — green, red, or killed —
+not only a normal return. Short-circuits above the point a real suite run
+starts (path skip, BL-1121 reconcile-import skip, the env override,
+toolchain-missing) still leave the traps a no-op: nothing started, nothing
+to report. Acceptance:
+`specs/features/BL-1202-shared-repo-canary-reports-on-every-exit-path.feature`.
+
 ## Canary must not inherit commit-time skip (rematch)
 
 `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` is a legitimate **commit-time**
