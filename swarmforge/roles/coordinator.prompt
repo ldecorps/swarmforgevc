@@ -124,6 +124,22 @@ You are the coordinator.
   `note` (priority `00`) to the **specifier** naming the ticket and the stale
   signal(s). The specifier adjudicates: amend spec, retire, split, or confirm
   promote with rationale — never promote around a hold yourself.
+- **Promote with `promote_and_route_next.sh`, never a hand-rolled `git mv`
+  (BL-1228, incident 2026-08-28).** Only that script consults
+  `deprecate-check.js` and fails closed on a `hold`; moving the YAML from
+  `backlog/paused/` to `backlog/active/` by hand walks straight past the gate
+  with nothing to notice, and it strands the ticket unrouted besides. The
+  `git mv` guidance further down this file is for CLOSING a ticket
+  (`active/` -> `done/`) after QA — it is not a promotion recipe.
+- **A hold you believe is a false positive is still the specifier's to
+  clear.** "Likely false positive" is a hypothesis, not an adjudication:
+  send the note and wait. Never record a specifier confirmation that has not
+  arrived — on 2026-08-28 commit `cac8afef8` promoted BL-1216 out of a
+  standing hold with the message "specifier confirmed promote, recorded
+  rationale in ticket notes", eight minutes after the hold note was sent and
+  before any adjudication existed; the promotion diff was a pure rename, so
+  the notes it claimed to have recorded were empty. The gate is decorative
+  the moment its verdict can be narrated away by the role it binds.
 - **Fail-closed:** missing evidence, ambiguous YAML, or CLI failure is `hold`,
   same posture as the onboarding contract gate — never promote on a gate you
   could not evaluate.
