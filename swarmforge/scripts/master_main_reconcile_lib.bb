@@ -699,6 +699,49 @@
       {:success true :outcome :pushed}
       (reset!))))
 
+;; ── BL-1214: :ff-absorb execution tries a real merge before resetting ─────
+;; `absorb-dispatch-plan` resolves a genuine two-way divergence (behind>0,
+;; ahead>0, no predicted conflict) to :ff-absorb, but every executor of
+;; that plan ran ONLY `git merge --ff-only --no-edit origin/main` - a
+;; two-way divergence can never fast-forward, whatever its content, so
+;; that merge always failed and fell straight to a reset/rematch,
+;; discarding the local-only commit outright even when it would have
+;; merged losslessly. Shared here (all three call sites already load-file
+;; this lib) rather than three independent copies of the same ladder.
+(defn absorb-with-merge!
+  "Orchestrates fast-forward -> real 3-way merge -> fallback for
+   :ff-absorb execution. adapters:
+     :ff!       (fn [] -> {:success bool}) - the EXISTING
+                `git merge --ff-only --no-edit origin/main` attempt,
+                unchanged.
+     :merge!    (fn [] -> {:success bool ...}) - a REAL 3-way
+                `git merge --no-edit origin/main` (never --ff-only),
+                attempted only when the fast-forward above failed.
+     :abort!    (fn [] -> _) - `git merge --abort`, called ONLY when
+                :merge! above was attempted and failed (BL-1120: this
+                function only ever aborts a merge it started itself -
+                never speculatively, never on the ff! path).
+     :fallback! (fn [] -> map) - the EXISTING conflict-recovery path
+                (rematch/reset), called only when BOTH ff! and merge!
+                failed; its return value passes through completely
+                unchanged, so no caller-visible contract changes on the
+                genuine-conflict path (constraint: that path must keep
+                behaving exactly as it does today).
+   Returns {:success true :outcome :ff} when the fast-forward alone
+   already resolved everything (unchanged from before this ticket);
+   {:success true :outcome :merged} when the 3-way merge absorbed a
+   non-conflicting divergence losslessly (the new case this ticket
+   adds); else fallback!'s own result, verbatim."
+  [{:keys [ff! merge! abort! fallback!]}]
+  (let [ff-result (ff!)]
+    (if (:success ff-result)
+      {:success true :outcome :ff}
+      (let [merge-result (merge!)]
+        (if (:success merge-result)
+          {:success true :outcome :merged}
+          (do (abort!)
+              (fallback!)))))))
+
 ;; Self-healing across transitions, mirroring push_sweep_lib.bb's own
 ;; sweep!: reaching :up-to-date or a successful :should-reconcile always
 ;; clears persisted state (surfaced reason, tick count, AND escalated flag),

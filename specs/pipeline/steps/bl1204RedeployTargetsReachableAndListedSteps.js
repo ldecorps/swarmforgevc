@@ -78,55 +78,85 @@ async function waitForMarker(markerPath) {
 }
 
 function registerSteps(registry) {
-  scoped(registry, /^the Cursor bridge is accepting Telegram commands$/, (ctx) => {
-    ctx.bl1204 = { root: mkFixtureRoot() };
-  });
+  // BL-1204 architect bounce D1 (5th BL-971-shape occurrence this session):
+  // the Background runs for EVERY scenario in this feature, including "The
+  // help message lists exactly the redeploy targets" - which never touches
+  // a fixture root at all. Creating one here leaked it unconditionally on
+  // that scenario. The fixture root is only ever needed by the redeploy-
+  // target Outline scenario, so it is created lazily in that scenario's own
+  // first step below instead - the Background stays a no-op placeholder so
+  // the shared step text still matches for every scenario.
+  scoped(registry, /^the Cursor bridge is accepting Telegram commands$/, () => {});
 
   scoped(registry, /^the operator sends "\/redeploy (\S+)"$/, (ctx, target) => {
-    const st = ctx.bl1204;
-    st.target = target;
-    // Decision layer: the SAME parse used live (operatorDangerTier looks
-    // only at the base verb "/redeploy", which is why frontdesk/all were
-    // already correctly gated pre-fix - the gap was entirely below this).
-    const fullText = `/redeploy ${target}`;
-    st.tier = operatorDangerTier(fullText);
-    st.decision = decideOperatorVerbConfirm(fullText, undefined);
+    const st = (ctx.bl1204 = { root: mkFixtureRoot() });
+    // Hardener: this step's own body can throw (assert.ok(spec, ...) below,
+    // a mutated Examples value being the live case a BL-113 Gherkin mutant
+    // exercises) BEFORE the "Then" step ever runs - and this step's root
+    // is only ever cleaned up by that LATER step's own finally. A throw
+    // here therefore leaked st.root with nothing downstream to catch it
+    // (confirmed live: 3/3 mutated-target Gherkin mutants each leaked a
+    // real /tmp/bl1204-acceptance-* dir before this try/catch was added).
+    // Clean up and rethrow so the scenario still fails loud.
+    try {
+      st.target = target;
+      // Decision layer: the SAME parse used live (operatorDangerTier looks
+      // only at the base verb "/redeploy", which is why frontdesk/all were
+      // already correctly gated pre-fix - the gap was entirely below this).
+      const fullText = `/redeploy ${target}`;
+      st.tier = operatorDangerTier(fullText);
+      st.decision = decideOperatorVerbConfirm(fullText, undefined);
 
-    // Execution layer: real script + real spawn, one script per target so
-    // a misroute to the wrong one is directly observable.
-    const spec = TARGET_SCRIPT[target];
-    assert.ok(spec, `unexpected target "${target}" in this scenario's own Examples table`);
-    const marker = path.join(st.root, `${target}.marker`);
-    writeStubScript(st.root, spec.scriptName, marker);
-    st.executeResult = executeOperatorVerb(st.root, '/redeploy', target);
-    st.marker = marker;
-    st.startPattern = spec.startPattern;
+      // Execution layer: real script + real spawn, one script per target so
+      // a misroute to the wrong one is directly observable.
+      const spec = TARGET_SCRIPT[target];
+      assert.ok(spec, `unexpected target "${target}" in this scenario's own Examples table`);
+      const marker = path.join(st.root, `${target}.marker`);
+      writeStubScript(st.root, spec.scriptName, marker);
+      st.executeResult = executeOperatorVerb(st.root, '/redeploy', target);
+      st.marker = marker;
+      st.startPattern = spec.startPattern;
+    } catch (err) {
+      fs.rmSync(st.root, { recursive: true, force: true });
+      throw err;
+    }
   });
 
   scoped(registry, /^the command is accepted as a soft-confirm redeploy for (\S+)$/, async (ctx, target) => {
     const st = ctx.bl1204;
-    assert.equal(st.target, target);
-    assert.equal(st.tier, 'soft', `expected /redeploy ${target} to gate as soft-confirm, got tier=${st.tier}`);
-    assert.equal(st.decision.action, 'prompt-confirm', `expected a prompt-confirm decision, got: ${JSON.stringify(st.decision)}`);
-    assert.equal(st.decision.verb, '/redeploy');
-    assert.equal(st.decision.args, target);
-    // The execute-time dispatch must reach THIS target's own module, not
-    // silently fall through to the plain cursor-bridge redeploy (today's
-    // bug shape) - executeOperatorVerb's return value is built synchronously
-    // (right after spawn() hands back a pid), so this half is reliable with
-    // no race.
-    assert.match(st.executeResult.text, st.startPattern, `expected the real dispatch to reach ${target}'s own module, got: ${st.executeResult.text}`);
-    // BL-1204 cleaner bounce D1: the three redeploy modules spawn their
-    // script `detached: true` + `child.unref()` - a deliberate fire-and-
-    // forget so the bridge-bouncing redeploy never blocks the caller - so
-    // the marker file the script writes lands asynchronously, not by the
-    // time executeOperatorVerb returns. A synchronous read here raced the
-    // child process and lost almost every time (confirmed: absent
-    // immediately, present ~300ms later). Poll with a bounded timeout
-    // instead of assuming either timing.
-    await waitForMarker(st.marker);
-    assert.equal(fs.readFileSync(st.marker, 'utf8').trim(), 'ok', `expected ${target}'s own script to have actually run`);
-    fs.rmSync(st.root, { recursive: true, force: true });
+    // Hardener: the fixture root is created in the PRECEDING step (the
+    // "operator sends" step above), not here - every assertion below can
+    // throw before reaching the cleanup that used to sit only at the very
+    // end, which leaked st.root on any failing assertion (the same
+    // cross-step "throw before cleanup" hazard as the Given-validation
+    // fixture-leak class; here the hazard is WITHIN a single step's own
+    // assertion sequence). try/finally guarantees the root is removed
+    // whether this step's assertions pass or a mutant makes one throw.
+    try {
+      assert.equal(st.target, target);
+      assert.equal(st.tier, 'soft', `expected /redeploy ${target} to gate as soft-confirm, got tier=${st.tier}`);
+      assert.equal(st.decision.action, 'prompt-confirm', `expected a prompt-confirm decision, got: ${JSON.stringify(st.decision)}`);
+      assert.equal(st.decision.verb, '/redeploy');
+      assert.equal(st.decision.args, target);
+      // The execute-time dispatch must reach THIS target's own module, not
+      // silently fall through to the plain cursor-bridge redeploy (today's
+      // bug shape) - executeOperatorVerb's return value is built synchronously
+      // (right after spawn() hands back a pid), so this half is reliable with
+      // no race.
+      assert.match(st.executeResult.text, st.startPattern, `expected the real dispatch to reach ${target}'s own module, got: ${st.executeResult.text}`);
+      // BL-1204 cleaner bounce D1: the three redeploy modules spawn their
+      // script `detached: true` + `child.unref()` - a deliberate fire-and-
+      // forget so the bridge-bouncing redeploy never blocks the caller - so
+      // the marker file the script writes lands asynchronously, not by the
+      // time executeOperatorVerb returns. A synchronous read here raced the
+      // child process and lost almost every time (confirmed: absent
+      // immediately, present ~300ms later). Poll with a bounded timeout
+      // instead of assuming either timing.
+      await waitForMarker(st.marker);
+      assert.equal(fs.readFileSync(st.marker, 'utf8').trim(), 'ok', `expected ${target}'s own script to have actually run`);
+    } finally {
+      fs.rmSync(st.root, { recursive: true, force: true });
+    }
   });
 
   scoped(registry, /^the operator asks for help$/, (ctx) => {
