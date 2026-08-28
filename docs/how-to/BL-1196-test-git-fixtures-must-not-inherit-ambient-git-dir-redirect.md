@@ -25,6 +25,7 @@ instead of just catching the aftermath.
 | `extension/vitest.config.mjs` | Adds `gitEnvGuardSetup.js` to the unit lane's `setupFiles`, alongside `tmpDirSetup.js` / `envRestoreGuardSetup.js`. |
 | `extension/vitest.properties.config.mjs` | Same registration in the property lane — this is where the original leak was reported. |
 | `extension/test/gitEnvGuard.test.js` | Unit test on the exported strip, plus an integration-shaped decoy/target repo test proving an inherited `GIT_DIR` no longer hijacks a spawn. |
+| `swarmforge/scripts/check_property_suite_drift.sh` | `unset -v GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE` right before it launches the suite (or a test-injected command) — the shell-fixture enforcement site a Vitest `setupFile` can never reach (added 2026-08-28, see amendment below). |
 
 ## Why a central setup file, not a 60-file migration
 
@@ -55,15 +56,42 @@ init` repos directly rather than through the shared fixture, marked
 exemption from BL-1039's shared-fixture convention, not a gap in this
 ticket's guard.
 
+## Amendment (2026-08-28): `GIT_INDEX_FILE` and a second enforcement site
+
+The original fix stripped only `GIT_DIR`/`GIT_WORK_TREE`. The same day, a
+second, related incident (see
+`backlog/evidence/hardener-noticed-coder-process-explosion-20260828.md`)
+traced the actual root cause: **git itself**, not a stray operator shell,
+exports `GIT_DIR`/`GIT_INDEX_FILE` (both absolute, `GIT_WORK_TREE` unset)
+into every hook it runs for a commit made from a linked worktree.
+`GIT_INDEX_FILE` is the only one of the three set at all in the
+master-checkout presentation of the same defect.
+
+Two changes, per the original doc's own stated widen-only-if-implicated
+condition:
+
+1. `stripAmbientGitDirRedirect()` now also deletes `GIT_INDEX_FILE`.
+2. A **second enforcement site**: `check_property_suite_drift.sh` (the
+   suite launcher a pre-commit hook invokes) now runs `unset -v GIT_DIR
+   GIT_WORK_TREE GIT_INDEX_FILE` immediately before launching the suite (or
+   a test-injected command). A Vitest `setupFile` only covers code running
+   inside Vitest — it cannot reach a shell fixture the suite shells out to
+   (mkdtemp + `git init` + `git commit`), which is exactly the vector this
+   closes.
+
+Confirmed non-vacuous the strong way: reverting the shell-launcher scrub
+reproduced real damage (the outer commit hung on lock contention from a
+corrupted worktree) rather than a clean assertion failure.
+
 ## What this does not cover
 
-- The shell-lane equivalent (`swarmforge/scripts/test/expedite_fixture.sh`
-  and other Babashka/shell test fixtures) is out of scope — tracked
-  separately as BL-1200.
-- Other `GIT_*` plumbing variables (`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
-  `GIT_COMMON_DIR`, etc.) are not stripped here — only `GIT_DIR` and
-  `GIT_WORK_TREE`, the two vars every existing guard in this codebase has
-  ever needed to clear.
+- The shell-lane equivalent for OTHER shell/Babashka test fixtures (not the
+  suite-launcher enforcement site added above) — tracked separately as
+  BL-1200.
+- Other `GIT_*` plumbing variables beyond `GIT_DIR`, `GIT_WORK_TREE`, and
+  `GIT_INDEX_FILE` (e.g. `GIT_OBJECT_DIRECTORY`, `GIT_COMMON_DIR`) are not
+  stripped — widen only if a future incident actually implicates one, per
+  this ticket's own precedent.
 
 ## Acceptance
 
