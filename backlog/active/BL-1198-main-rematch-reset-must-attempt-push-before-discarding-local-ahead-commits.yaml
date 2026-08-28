@@ -142,3 +142,6 @@ notes: |
     already done and is not part of this ticket's own deliverable."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: QA, blamed: coder, class: acceptance, commit: 2f2977cff0, evidence: backlog/evidence/BL-1198-bounce-20260828.md }
