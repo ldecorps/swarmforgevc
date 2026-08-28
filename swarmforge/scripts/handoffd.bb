@@ -2571,17 +2571,17 @@
       (when (zero? exit) (json/parse-string out true)))
     (catch Exception _ nil)))
 
-;; Wraps architecture + not-done burndown renders with briefing_email_lib.bb's
-;; pure diagram-section-from-sources (BL-896 F4: previously build-diagram-
-;; section directly - this combining step, which is what actually makes the
-;; "each source fails open independently" claim below true, had nothing a
-;; unit test could exercise in isolation until it moved into the lib file
-;; alongside build-diagram-section, testable the same way). BL-260
-;; render-unavailable-degradation-04: nil/empty still produce a clear
-;; no-diagram note, never a crash. Each source fails open independently;
-;; whichever succeeds still ships.
+;; BL-1184: shift-velocity chart — same JSON contract, independent shell-out.
+(defn briefing-shift-velocity-json []
+  (try
+    (let [cli-path (node-tool-path "render-briefing-shift-velocity.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
+      (when (zero? exit) (json/parse-string out true)))
+    (catch Exception _ nil)))
+
 (defn briefing-diagram-section []
-  (briefing-email-lib/diagram-section-from-sources briefing-diagrams-json briefing-burndown-json))
+  (briefing-email-lib/diagram-section-from-sources
+   briefing-diagrams-json briefing-burndown-json briefing-shift-velocity-json))
 
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
