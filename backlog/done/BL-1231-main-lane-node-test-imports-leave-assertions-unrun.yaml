@@ -8,7 +8,7 @@ severity: high
 # crashing assertions hid here for a day precisely because the lane cannot see
 # into them. Not critical: the assertions do run and pass under `node --test`,
 # so the code they cover is not unverified, only ungated.
-status: todo
+status: done
 epic: code-quality-gates
 priority: 30
 direction: swarm-reported
@@ -149,3 +149,28 @@ notes: |
     0 on an allowlisted red; the main lane has no allowlist and a different
     failure shape. Either can land first. Expect both to touch files in
     extension/test/ but not the same ones."
+
+closed_as: superseded-by-BL-1220
+
+retirement_note: |
+  [2026-08-28] specifier, Consolidation Authority (N:1 merge). This ticket and
+  BL-1220 are the same defect: main-lane test files declaring their tests to
+  node:test, so Vitest collects nothing from them. Both were minted on
+  2026-08-28 from the same QA note on BL-1189's pass. BL-1220 was destroyed by
+  the `main`-reset incident, recovered, and this ticket was minted as a re-mint
+  without noticing the recovery had succeeded.
+
+  BL-1220 survives: it was already human-approved (the expensive half), it
+  re-measured its own file count independently, and it carries the fuller
+  provenance including why the architect's earlier property-lane-only grep
+  (BL-1206) never saw the main-lane set.
+
+  Carried across to BL-1220 rather than dropped:
+  - This ticket's invariant "reports the same test count it reported under the
+    node:test runner" is now BL-1220 invariant 3.
+  - This ticket's "the guard fires on a node:test IMPORT and never on the string
+    appearing as data" is pinned as an implementer hazard in BL-1220's notes.
+
+  Nothing here was quoted from a human, so Article 5.3's verbatim-survival
+  constraint is satisfied. Its acceptance scenarios are RETIRED, not reworded -
+  BL-1220's own scenarios are the coverage.

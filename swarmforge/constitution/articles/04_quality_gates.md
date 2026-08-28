@@ -25,17 +25,14 @@
   below.
 
 ## 4.4 Complete Review Inventory — One Bounce Per Review Pass
-- A reviewing role never bounces at the FIRST defect (**first-failure stop**,
-  BL-590) — finish the full checklist, send **one** bounce with **every**
-  defect. Complete means run-or-blocked (never assumed-clean): a blocked
-  check is recorded BLOCKED BY its blocker, never passing/omitted. One
-  evidence file, items `D1..Dn` (class, blamed role, remediation pointer); a
-  clean sweep records NONE and is COMMITTED (forward names that commit,
-  never the bare received hash — BL-536, gate BL-806). Multi-stage blame:
-  bounce to the EARLIEST role, inventory travels, each stage clears its own
-  items. Spec gaps leave by `note` (priority `00`, specifier+coordinator —
-  never a parcel). BL-532 sibling deferral and `rule_proposal` are unchanged
-  exceptions; a fix introducing new defects is a legitimate new bounce.
+- A reviewing role never bounces at the FIRST defect (BL-590) — finish the
+  full checklist, send **one** bounce with **every** defect, run-or-blocked
+  (never assumed-clean). One evidence file, items `D1..Dn`; a clean sweep
+  records NONE and is COMMITTED (forward names that commit, never the bare
+  received hash — BL-536). Multi-stage blame: bounce to the EARLIEST role,
+  inventory travels. Spec gaps leave by `note` (priority `00`), never a
+  parcel. See **complete-review-inventory-amendment-2026-07-27.md** §"4.4
+  full text" for the full pre-trim wording.
 
 ## 4.5 Changed-Path Unit Test Gate — BL-1164
 - **reference/changed-path-unit-test-gate-amendment-2026-08-27.md**.
