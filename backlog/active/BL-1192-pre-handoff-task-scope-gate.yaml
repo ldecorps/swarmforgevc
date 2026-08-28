@@ -10,6 +10,9 @@ priority: 30
 direction: swarm-proposed
 depends_on: []
 mutation_cost: medium
+abandoned_commits:
+  - b033583c08
+  - 4478c3bb6a
 acceptance: specs/features/BL-1192-pre-handoff-task-scope-gate.feature
 
 approval_context: >
@@ -183,8 +186,22 @@ notes: |
     ranges) is now doubly required - the corrected spec names two ranges
     explicitly, so a fixture that cannot tell them apart cannot gate this at
     all. Keep that finding open against the rebuild.
+  - [2026-08-28] coder: QA bounce D1 (backlog/evidence/BL-1192-qa-bounce-20260828.md)
+    found the cited commit 4478c3bb6a entangled with BL-1211's own still-
+    disputed (architect-bounced, bounce_count 2) work, in a version that
+    actively conflicted with a different in-flight copy of the same BL-1211
+    files QA had already seen on another branch this session. Rebuilt as a
+    tip-pure commit containing only BL-1192's own 9 paths; verified in an
+    isolated git-worktree checkout (task_scope_gate_lib_test_runner.bb all
+    pass, acceptance feature 8/8). b033583c08 (the earlier architect-bounced
+    cite) and 4478c3bb6a are recorded above as abandoned_commits per the
+    bounce's own remedy instruction - deliberately dropped, not lost work.
+    D2 (acceptance fixture cannot distinguish the two ranges) remains open;
+    not addressed by this rebuild, left for the next stage per the
+    specifier's note.
 
-bounce_count: 1
+assigned_to: coder
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: b033583c08, evidence: backlog/evidence/BL-1192-architect-bounce-20260828.md }
-assigned_to: coder
+  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: dff356cc18, evidence: backlog/evidence/BL-1192-qa-bounce-20260828.md }
