@@ -169,3 +169,5 @@ notes: |
     hardener 18:26 (role branch, above), specifier 19:31 (master checkout
     detached, BL-1200). This ticket is approved and paused; what it needs is
     a promotion slot, not another ticket."
+
+assigned_to: coder

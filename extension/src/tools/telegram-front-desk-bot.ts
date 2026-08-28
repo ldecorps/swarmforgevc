@@ -1633,6 +1633,20 @@ export function roleAnswerFilePointerPath(role: string): string {
   return path.join('.swarmforge', 'operator', 'role-answers', `${role}.json`);
 }
 
+// BL-1201 architect bounce (minor): reuses the PRE-EXISTING
+// roleAwaitingAnswerPath/readRoleAwaitingAnswer (above, BL-607) rather
+// than a second path/read convention for the identical file - only the
+// `asked_at_ms` field they didn't previously need to expose is added
+// here, via this narrower read.
+function readRoleAwaitingAskedAtMs(targetPath: string, role: string): number | undefined {
+  try {
+    const raw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(targetPath, role), 'utf8')) as { asked_at_ms?: number };
+    return raw.asked_at_ms;
+  } catch {
+    return undefined;
+  }
+}
+
 export function composeRoleAnswerNoteMessage(role: string, text: string): string {
   return fitsInlineInRoleAnswerNote(text) ? text : `answer ready: ${roleAnswerFilePointerPath(role)}`;
 }
@@ -1650,6 +1664,17 @@ interface RoleAnswerFileRecord {
   // history is what a true "has this identity been captured before"
   // check needs.
   seenUpdateIds?: number[];
+  // BL-1201: the asked_at_ms of role_ask.bb's role-awaiting question that
+  // was pending at the moment this answer was captured - undefined only
+  // when no question was pending at capture time (degrades to "never
+  // matches", the fail-closed default; see deliverRoleAnswer). The two
+  // files then name the same question via the SAME literal value, with no
+  // translation step between role_ask.bb's Babashka writer and this one.
+  askedAtMs?: number;
+  // BL-1201: set only by deliverRoleAnswer, once, on a confirmed match -
+  // a consumed answer must stop presenting itself as fresh, but the text
+  // is never destroyed (constraint: moved aside or marked, never deleted).
+  consumedAt?: string;
 }
 
 const ROLE_ANSWER_SEEN_UPDATE_IDS_LIMIT = 100;
@@ -1681,6 +1706,15 @@ function writeRoleAnswerFile(
   const abs = path.join(targetPath, roleAnswerFilePointerPath(role));
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   const record: RoleAnswerFileRecord = { text, recordedAt: new Date().toISOString() };
+  // BL-1201: stamp the CURRENTLY-pending question's correlator, read at
+  // the moment the human's answer is captured - not at delivery time,
+  // which could be arbitrarily later. undefined (no question pending
+  // right now) is recorded as-is; deliverRoleAnswer treats an undefined
+  // askedAtMs as never matching, fail-closed.
+  const askedAtMs = readRoleAwaitingAskedAtMs(targetPath, role);
+  if (askedAtMs !== undefined) {
+    record.askedAtMs = askedAtMs;
+  }
   if (updateId !== undefined) {
     record.updateId = updateId;
     const seen = [...(previousSeenUpdateIds ?? []), updateId];
@@ -1689,6 +1723,52 @@ function writeRoleAnswerFile(
     record.seenUpdateIds = previousSeenUpdateIds;
   }
   fs.writeFileSync(abs, JSON.stringify(record));
+}
+
+export type DeliverRoleAnswerResult =
+  | { kind: 'delivered'; text: string }
+  | { kind: 'mismatch' }
+  | { kind: 'already-consumed' }
+  | { kind: 'no-answer' };
+
+// BL-1201: the sole consumption path for a role-answers file - a role
+// "told an answer is ready" must go through this, never read the file
+// directly, so the pairing/consumed checks cannot be bypassed. Invariant
+// 1: never consumes an answer whose askedAtMs cannot be matched to the
+// role's OWN currently-pending question (read fresh here, not cached -
+// the pending question may have changed since the answer was captured).
+// Invariant 2: no answer text is destroyed - a mismatch or an
+// already-consumed answer is left exactly as found; a confirmed match
+// marks consumedAt in place rather than deleting the record.
+//
+// BL-1201 architect bounce D1: this is the ONLY thing that clears
+// role-awaiting/<role>.json for the dormant/file capture leg -
+// captureRoleAnswer (telegramFrontDeskBotCore.ts) no longer clears it
+// immediately at capture time for that leg (only the live-pane delivery
+// leg still does, since that leg never touches this file at all). Clearing
+// at capture, before any consumer had a chance to check the pairing, is
+// exactly what made deliverRoleAnswer's own "delivered" verdict
+// unreachable - the correlator has to survive until something actually
+// consumes it.
+export function deliverRoleAnswer(targetPath: string, role: string): DeliverRoleAnswerResult {
+  const answer = readRoleAnswerFile(targetPath, role);
+  if (!answer) {
+    return { kind: 'no-answer' };
+  }
+  if (answer.consumedAt !== undefined) {
+    return { kind: 'already-consumed' };
+  }
+  const askedAtMs = readRoleAwaitingAskedAtMs(targetPath, role);
+  // Fail-closed: an answer captured with no question pending (askedAtMs
+  // undefined) never matches, even if a question later becomes pending -
+  // undefined has no defined identity to correlate against.
+  if (answer.askedAtMs === undefined || askedAtMs === undefined || answer.askedAtMs !== askedAtMs) {
+    return { kind: 'mismatch' };
+  }
+  const answerAbs = path.join(targetPath, roleAnswerFilePointerPath(role));
+  fs.writeFileSync(answerAbs, JSON.stringify({ ...answer, consumedAt: new Date().toISOString() }));
+  clearRoleAwaitingAnswer(targetPath, role);
+  return { kind: 'delivered', text: answer.text };
 }
 
 // BL-607 dormant-pane leg (leg 2): the role's pane is dormant, so the
