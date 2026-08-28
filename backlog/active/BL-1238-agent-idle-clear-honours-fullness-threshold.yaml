@@ -192,3 +192,20 @@ notes: |
     idle-clear/ready-for-next shell suites
     (test_idle_clear_conf_parsing.sh, test_ready_for_next_rotate_home.sh,
     test_ready_for_next_no_promotion.sh) all still ALL PASS unchanged."
+  - "[2026-08-28] coder: architect bounce D1
+    (backlog/evidence/BL-1238-bounce-20260828.md) - confirmed exactly as
+    the architect diagnosed: this session's own ~/.zshenv prepends a real
+    tmux ahead of the fixture's $FAKE_BIN, and ready_for_next_task.sh's
+    zsh shebang sources it unconditionally even via process/exec, so
+    scenario 01 failed for a host-environment reason, not a defect in
+    the pure decision (which the bounce confirmed correct). Fixed by
+    setting ZDOTDIR to an empty mktemp dir for the whole test run - the
+    zsh -f equivalent for this indirect (shebang, not direct zsh -f -c)
+    invocation shape, matching test_bl1069_tmux_server_version.sh's own
+    documented convention for the identical hazard class. Verified live,
+    not merely by code review: reverted the ZDOTDIR fix, confirmed
+    scenario 01 fails exactly as the bounce reproduced it; restored,
+    confirmed ALL PASS across 3 repeated runs."
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 924afae8b, evidence: backlog/evidence/BL-1238-bounce-20260828.md }
