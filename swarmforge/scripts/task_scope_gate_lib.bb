@@ -120,9 +120,19 @@
           (salvage-lib/header-field "commit")))
 
 (defn- commit-message-names-task? [root commit task-ticket-id]
-  (let [msg (git! root "log" "-1" "--format=%B" commit)]
-    (and (zero? (:exit msg))
-         (str/includes? (:out msg) task-ticket-id))))
+  ;; SUBJECT-only, exact id equality via pipeline-stage-lib's own
+  ;; multi-id extractor - the same choice BL-953's task_commit_coherence_
+  ;; gate_lib.bb already made and documented (commit-ticket-ids), for the
+  ;; identical reason its own doc-comment states here: a full-body
+  ;; substring/grep over-matches a commit whose SUBJECT belongs to one
+  ;; ticket but whose body prose merely mentions this task's id in passing
+  ;; (e.g. "decouple unlanded BL-1192 gate wiring" inside a BL-1227-subject
+  ;; commit) - discovered live when this gate blocked its own author's
+  ;; send on exactly that shape.
+  (let [subj (git! root "log" "-1" "--format=%s" commit)]
+    (and (zero? (:exit subj))
+         (some #(= task-ticket-id %)
+               (pipeline-stage-lib/extract-ticket-ids (:out subj))))))
 
 (defn- own-commit-diff [root commit]
   (let [diff (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" commit)]
