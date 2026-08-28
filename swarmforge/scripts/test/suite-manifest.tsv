@@ -106,6 +106,7 @@ orphan_claim_sweep_lib_test_runner.bb	standing
 orphan_janitor_lib_test_runner.bb	standing		
 orphan_sweep_enumeration_unavailable_test_runner.bb	standing		
 pipeline_stage_lib_test_runner.bb	standing		
+parcel_rollback_guard_lib_test_runner.bb	standing		
 pre_qa_gate_gather_lib_acceptance_contract_test_runner.bb	standing		
 pre_qa_gate_gather_lib_acceptance_pointer_test_runner.bb	standing		
 pre_qa_gate_lib_test_runner.bb	standing		
