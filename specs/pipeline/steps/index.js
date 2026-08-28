@@ -811,16 +811,12 @@ const DOMAINS = [
   require('./bl1170PostmortemOperatorVerbFailureClassLearnSteps'),
   require('./bl1185WorkNoteMissingTaskHeaderSteps'),
   require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
-  require('./bl718BubbleTalkMirrorSteps'),
-  require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl1188PipelineGridLiveStageParitySteps'),
-  require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps'),
   require('./bl1200GitEnvGuardSteps'),
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
   require('./bl1195WorktreeTrackedContentDriftSteps'),
   require('./bl1199PackSwitchBubbleTunnelSteps'),
-  require('./bl1186DeprecatorIdentifyUnusedNotifySteps'),
-  require('./bl592SpecTreeOnLiveConsoleWithEpicTierSteps')
+  require('./bl1186DeprecatorIdentifyUnusedNotifySteps')
 ];
 
 function registerSteps(registry) {
