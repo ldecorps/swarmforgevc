@@ -139,3 +139,6 @@ notes: |
   - [2026-08-28] specifier: severity medium, deliberately. This wastes tokens
     and time on every idle boundary but breaks nothing, loses no work and
     degrades no safety signal — it does not meet the bar for high.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 992be2290a, evidence: backlog/evidence/BL-1238-bounce-20260828.md }
