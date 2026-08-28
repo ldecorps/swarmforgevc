@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 35
 direction: pipeline-note
 depends_on: []
