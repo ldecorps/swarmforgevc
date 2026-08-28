@@ -120,3 +120,6 @@ notes: >
   sitting: a prose move plus one check invocation). Small (5 scenarios, 3
   invariants). Testable (every scenario is externally observable and the e2e
   procedure includes a hand-run non-vacuity step).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 002a4c672, evidence: backlog/evidence/BL-1227-qa-bounce-20260828.md }
