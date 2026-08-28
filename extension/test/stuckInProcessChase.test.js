@@ -194,9 +194,29 @@ test('REGRESSION: buildRoleInboxes resolves per-worktree inbox paths from roles.
   const specifier = inboxes.find((i) => i.role === 'specifier');
   assert.equal(
     specifier.inboxNewDir,
-    path.join(target, '.swarmforge', 'handoffs', 'inbox', 'new'),
-    'master roles use the project root worktree, never a per-role handoffs/<role>/ layout'
+    path.join(target, '.swarmforge', 'handoffs', 'specifier', 'inbox', 'new'),
+    // BL-1219: master-resident roles share ONE physical checkout, so each
+    // gets its own <role> subdirectory under handoffs/ - the fossil flat
+    // <root>/.swarmforge/handoffs/inbox/ is nobody's real mailbox and must
+    // never be what a master-resident role resolves to (that was the bug:
+    // it made dead-letter announcement blind to specifier/coordinator mail).
+    'master-resident roles get their own handoffs/<role>/ mailbox, matching handoff_lib.bb/mailbox-base-dir'
   );
+});
+
+test('BL-1219: buildRoleInboxes never resolves a master-resident role to the fossil flat handoffs/inbox/ directory', () => {
+  const target = mkTmpDir('sfvc-target-');
+  fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'roles.tsv'),
+    `coordinator\tmaster\t${target}\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n`
+  );
+
+  const [coordinator] = buildRoleInboxes(target, ['coordinator']);
+
+  const fossilInboxNew = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'new');
+  assert.notEqual(coordinator.inboxNewDir, fossilInboxNew);
+  assert.equal(coordinator.inboxNewDir, path.join(target, '.swarmforge', 'handoffs', 'coordinator', 'inbox', 'new'));
 });
 
 test('buildRoleInboxes returns an empty list when roles.tsv is missing, instead of throwing', () => {
