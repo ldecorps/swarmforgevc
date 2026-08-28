@@ -1,5 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1203: front-desk bot's
+`enqueueRoleAnswerNote` dedups steering-answer delivery by the inbound
+Telegram `update_id`, never by answer text — a replayed `update_id` already
+in the role's bounded (last 100) `seenUpdateIds` history is dropped, a
+legacy call that omits `update_id` never dedupes. `writeRoleAnswerFile` now
+writes the `.swarmforge/operator/role-answers/<role>.json` pointer file
+unconditionally on every delivery, so a pointer note always names the
+answer it announces instead of a stale earlier one. Fixes 40 duplicate
+priority-00 notes replayed into the specifier's mailbox in one day. No new
+extension command or setting. Acceptance:
+`specs/features/BL-1203-role-answer-notes-are-delivered-once.feature`.
+How-to: `docs/how-to/BL-1203-role-answer-notes-delivered-once.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1205: `swarm_handoff.sh` refuses a
 `git_handoff` to any recipient — ticket or not — when merging the cited
 commit into that recipient's own branch would mass-delete its tracked
