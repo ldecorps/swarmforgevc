@@ -1,5 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1204: `/redeploy frontdesk` and
+`/redeploy all` are wired to their real modules — both existed,
+unit-tested and green, but nothing in `extension/src` imported either one,
+so `executeOperatorVerb`'s `/redeploy` branch silently fell through to
+the plain cursor-bridge redeploy while reporting success. Now dispatched
+via each module's own parser (`parseFrontDeskRedeployCommand` /
+`parseAllRedeployCommand`) and listed in help, with an executable parity
+invariant (every accepted target is listed, every listed target is
+accepted). The acceptance step handler for this feature was hardened
+across three fixture-leak shapes found over the ticket's bounce history.
+`/redeploy` and `/redeploy miniapp` unchanged. No new extension command or
+setting. Acceptance:
+`specs/features/BL-1204-redeploy-targets-are-reachable-and-listed.feature`.
+How-to: `docs/how-to/BL-1204-redeploy-frontdesk-and-all-are-reachable.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1219: `buildRoleInboxes`
 (`extension/src/watchdog/chaserMonitor.ts`), the resolver dead-letter
 announcement (and the other consumers of role-inbox resolution) uses to
