@@ -120,7 +120,7 @@ function runAbsorb(ctx) {
     :fetch! (fn [] nil)
     :rev-counts! (fn [] {:ahead 1 :behind @behind-atom})
     :dirty-paths! (fn [] [])
-    :would-conflict! (fn [] ${conflict ? 'true' : 'false'})
+    :merge-verdict! (fn [] ${conflict ? ':conflict' : ':clean'})
     :tip-contains-origin! (fn [] ${conflict ? 'false' : 'true'})
     :merge! (fn []
               (if ${conflict ? 'true' : 'false'}

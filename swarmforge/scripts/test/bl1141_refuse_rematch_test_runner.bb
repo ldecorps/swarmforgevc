@@ -30,7 +30,7 @@
                 :fetch! (fn [] (swap! calls conj :fetch))
                 :rev-counts! (fn [] @counts)
                 :dirty-paths! (fn [] [])
-                :would-conflict! (fn [] true)
+                :merge-verdict! (fn [] :conflict)
                 :tip-contains-origin! (fn [] false)
                 :rematch! (fn []
                             (swap! calls conj :rematch)
@@ -64,7 +64,7 @@
                 :fetch! (fn [] nil)
                 :rev-counts! (fn [] {:ahead 0 :behind 2})
                 :dirty-paths! (fn [] [])
-                :would-conflict! (fn [] true)
+                :merge-verdict! (fn [] :conflict)
                 :tip-contains-origin! (fn [] false)
                 :merge! (fn [] {:success true})
                 :abort! (fn [] nil)
@@ -110,7 +110,7 @@
                                      [b a] (map parse-long (str/split (str/trim (:out r)) #"\s+"))]
                                  {:ahead a :behind b}))
                 :dirty-paths! (fn [] [])
-                :would-conflict! (fn [] true)
+                :merge-verdict! (fn [] :conflict)
                 :tip-contains-origin! (fn [] false)
                 :rematch! (fn []
                             (let [r (sh root "git" "reset" "--hard" "origin/main")]

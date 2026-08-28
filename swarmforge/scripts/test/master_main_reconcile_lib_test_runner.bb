@@ -806,6 +806,77 @@
                :fallback! (fn [] (swap! ff-order conj :fallback!-should-not-run) {:success false})})]
   (assert= "bl1214 invariant 2: ff success calls nothing else at all" [:ff] @ff-order))
 
+;; ── BL-1236: merge-verdict classifies git merge-tree --write-tree's exit
+;;    code alone - never a diff read over merged content ─────────────────
+
+(assert= "merge-verdict: exit 0 -> clean"
+         :clean (master-main-reconcile-lib/merge-verdict 0))
+(assert= "merge-verdict: exit 1 -> conflict"
+         :conflict (master-main-reconcile-lib/merge-verdict 1))
+(assert= "merge-verdict: exit 2 (simulation could not run) -> unavailable"
+         :unavailable (master-main-reconcile-lib/merge-verdict 2))
+(assert= "merge-verdict: exit 128 (e.g. unresolvable ref) -> unavailable"
+         :unavailable (master-main-reconcile-lib/merge-verdict 128))
+(assert= "merge-verdict: nil exit (adapter never ran) -> unavailable, never clean"
+         :unavailable (master-main-reconcile-lib/merge-verdict nil))
+
+;; ── BL-1236: absorb-dispatch-plan's new verdict-unavailable? never
+;;    authorises a reset - checked after noop (an up-to-date/already-
+;;    containing-origin tip needs no verdict at all) but before every
+;;    branch whose eventual fallback is a reset (ff-absorb, refuse-rematch)
+;;    or the replay-bookkeeping rematch ────────────────────────────────────
+
+(assert= "absorb-dispatch-plan: unavailable verdict on a genuine two-way divergence blocks rather than attempting ff-absorb"
+         :verdict-unavailable
+         (master-main-reconcile-lib/absorb-dispatch-plan
+          {:merge-head-present? false :behind 2 :ahead 1
+           :tip-contains-origin? false :would-conflict? false
+           :absorb-would-conflict? false :verdict-unavailable? true}))
+(assert= "absorb-dispatch-plan: unavailable verdict on ahead=0 behind>0 also blocks, not ff-absorb"
+         :verdict-unavailable
+         (master-main-reconcile-lib/absorb-dispatch-plan
+          {:merge-head-present? false :behind 3 :ahead 0
+           :tip-contains-origin? false :would-conflict? false
+           :absorb-would-conflict? false :verdict-unavailable? true}))
+(assert= "absorb-dispatch-plan: unavailable verdict is irrelevant once tip already contains origin - stays noop"
+         :noop
+         (master-main-reconcile-lib/absorb-dispatch-plan
+          {:merge-head-present? false :behind 3 :ahead 1
+           :tip-contains-origin? true :would-conflict? false
+           :absorb-would-conflict? false :verdict-unavailable? true}))
+(assert= "absorb-dispatch-plan: unavailable verdict is irrelevant when nothing is behind - stays noop"
+         :noop
+         (master-main-reconcile-lib/absorb-dispatch-plan
+          {:merge-head-present? false :behind 0 :ahead 0
+           :tip-contains-origin? false :would-conflict? false
+           :absorb-would-conflict? false :verdict-unavailable? true}))
+(assert= "absorb-dispatch-plan: a foreign in-progress merge still wins over an unavailable verdict"
+         :skip-human-merge-in-progress
+         (master-main-reconcile-lib/absorb-dispatch-plan
+          {:merge-head-present? true :behind 2 :ahead 1
+           :tip-contains-origin? false :would-conflict? false
+           :absorb-would-conflict? false :verdict-unavailable? true}))
+(assert= "absorb-dispatch-plan: an omitted verdict-unavailable? key (production default) never blocks a genuine clean divergence"
+         :ff-absorb
+         (master-main-reconcile-lib/absorb-dispatch-plan
+          {:merge-head-present? false :behind 2 :ahead 1
+           :tip-contains-origin? false :would-conflict? false
+           :absorb-would-conflict? false}))
+
+;; ── BL-1236: an unavailable verdict is reported through its own reason,
+;;    never folded into "conflict", and is not treated as designed rematch
+;;    recovery (so it surfaces a note through handle-blocked!, same shape
+;;    as "dirty") ────────────────────────────────────────────────────────
+
+(assert= "merge-failure-reason: :verdict-unavailable outcome maps to its own reason, not conflict"
+         "verdict-unavailable" (master-main-reconcile-lib/merge-failure-reason :verdict-unavailable))
+(assert-true "rematch-owner-recovery?: verdict-unavailable is NOT a designed rematch recovery"
+             (not (master-main-reconcile-lib/rematch-owner-recovery? "verdict-unavailable")))
+(let [msg (master-main-reconcile-lib/surface-message {:behind 7 :reason :verdict-unavailable})]
+  (assert-true "surface-message: verdict-unavailable names itself, not a conflict"
+               (clojure.string/includes? msg "verdict unavailable"))
+  (assert-true "surface-message: verdict-unavailable stays within the 80-char note limit" (<= (count msg) 80)))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")
