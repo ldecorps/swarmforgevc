@@ -46,7 +46,7 @@ export default defineConfig({
     // env-restore guard) - a property test's mkTmpDir() calls were never
     // swept and a leaked process.env key had nothing to catch it. Same two
     // setupFiles, same paths, as vitest.config.mjs.
-    setupFiles: ['./test/helpers/tmpDirSetup.js', './test/helpers/envRestoreGuardSetup.js'],
+    setupFiles: ['./test/helpers/tmpDirSetup.js', './test/helpers/envRestoreGuardSetup.js', './test/helpers/gitEnvGuardSetup.js'],
     include: ['test/**/*.property.test.js'],
     testTimeout: 20000,
     // BL-871 QA bounce D2 follow-up (2026-08-11): raising per-test timeouts
