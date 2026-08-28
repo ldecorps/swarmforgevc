@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0cd53113c501dcb6408e8fb4848905da9c3ca7b6682d73a46823c9877016fcf0
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-28T01:55:45.307157377Z","feature_name":"BL-1213 a forward is refused when the branch rolled back an accepted parcel's landed content","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1213-forward-refused-when-branch-rolled-back-a-parcel.feature","background_hash":"5b15bc516381da5add274bf13b5c96b4aed7d5e162053d19d7451e23bd2e726f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the tip's content and the branch's revert history decide the send","scenario_hash":"1d33cfbc8b62414b086823566dac71d8218415fdc3ce2c1f560561ceef63d042","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-08-28T01:55:45.307157377Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1213 a forward is refused when the branch rolled back an accepted parcel's landed content
 
   A role branch can reach its tip holding the content a path had BEFORE an
