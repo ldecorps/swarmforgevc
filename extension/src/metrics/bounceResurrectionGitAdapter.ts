@@ -65,6 +65,35 @@ const BY_ROLE_TRAILER = /^By (\S+)\.\s*$/m;
  * coordinator does instead of ordinary pipeline authorship (Article 1.1),
  * so a coordinator byline is never itself an authorization.
  */
+// A pipeline-role byline (never "coordinator" - Article 1.1) is the only
+// shape that counts as a deliberate authorization.
+function pipelineRoleTrailer(commitMessage: string): string | null {
+  const role = BY_ROLE_TRAILER.exec(commitMessage)?.[1];
+  return role && role !== 'coordinator' && isKnownBounceRole(role) ? role : null;
+}
+
+// Whether THIS SINGLE commit's own change to `path` is the authorization
+// findAuthoredBackBy is looking for: its content at `commit` matches
+// `bouncedContent` byte-for-byte, and its own message carries a pipeline
+// role's "By <role>." trailer. Split out of findAuthoredBackBy so each
+// function's own cyclomatic complexity (and therefore CRAP) stays low.
+function authorshipAt(
+  runGit: GitReader,
+  commit: string,
+  path: string,
+  bouncedContent: string
+): { commit: string; role: string } | null {
+  if (contentAt(runGit, commit, path) !== bouncedContent) {
+    return null;
+  }
+  const msg = runGit(['log', '-1', '--format=%B', commit]);
+  if (msg.status !== 0) {
+    return null;
+  }
+  const role = pipelineRoleTrailer(msg.stdout);
+  return role ? { commit, role } : null;
+}
+
 function findAuthoredBackBy(
   runGit: GitReader,
   bouncedCommit: string,
@@ -78,17 +107,9 @@ function findAuthoredBackBy(
   }
   const commits = log.stdout.split('\n').filter((line) => line.length > 0);
   for (const commit of commits) {
-    if (contentAt(runGit, commit, path) !== bouncedContent) {
-      continue;
-    }
-    const msg = runGit(['log', '-1', '--format=%B', commit]);
-    if (msg.status !== 0) {
-      continue;
-    }
-    const match = BY_ROLE_TRAILER.exec(msg.stdout);
-    const role = match?.[1];
-    if (role && role !== 'coordinator' && isKnownBounceRole(role)) {
-      return { commit, role };
+    const found = authorshipAt(runGit, commit, path, bouncedContent);
+    if (found) {
+      return found;
     }
   }
   return null;
