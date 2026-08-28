@@ -64,3 +64,58 @@ and a decision the human made by hand.
 3. **A downstream handoff carried a dead hash.** The reset silently invalidated
    a commit id already in flight in a `note`. Any note naming a commit is a
    dangling reference the moment this fires; the sender has to re-send.
+
+---
+
+# Twelfth occurrence, 13 minutes later — a human ruling destroyed in transit
+
+Same actor, same turn, and this one had a consequence the previous eleven did
+not: it destroyed a human decision on its way into code.
+
+Reflog:
+
+    5a4528936 main@{2026-08-28 13:03:00 +0100}: reset: moving to origin/main
+
+Twelve commits became unreachable, including all seven restored 21 minutes
+earlier by the eleventh occurrence's cherry-picks. New casualties:
+
+| Commit | Content |
+|---|---|
+| `fb0a63d31` | the eleventh occurrence's own evidence file |
+| `11f7c7539` | BL topic record for BL-1207 |
+| `5a614f1b7` | BL topic record for BL-1244 |
+| `3a3181e52` | BL-1244 `human_approval: approved` — a real human tap |
+| `3a6222f15` | Mint BL-1244 |
+| `133596717` | **BL-1230 amended for the human's ruling** |
+| `22395f139` | restore of the destroyed 2026-08-28 answer record |
+
+Three human decisions have now been discarded by this sweep in one hour: the
+BL-1242 and BL-1243 approval taps (twice each, across both occurrences) and the
+BL-1244 tap. A reset does not distinguish agent bookkeeping from a decision a
+person made by hand.
+
+## The consequence, which is the point
+
+`133596717` carried the human's ruling — "Exempt git-ignored dirs (tmp/) by
+construction", asked and answered while BL-1230 was at architect review — into
+BL-1230's spec, feature file and invariant 1. It was committed at 13:00:39 and
+destroyed at 13:03:00. BL-1230 was merged by QA and closed at 13:04:03.
+
+The guard that shipped therefore has `SKIP_DIR_NAMES = {node_modules,
+.worktrees}` and no ignore exemption: it reports the architect's own scratch
+fixtures and turns that worktree's suite red, which is precisely what the human
+ruled against. Nobody did anything wrong — the coder built against the contract
+as it stood, the architect reviewed it, QA gated and landed it. The ruling
+simply was not there any more when they read it.
+
+Carried forward by **BL-1246**, minted the same day, since a closed ticket is
+not the place to describe unbuilt work.
+
+## What this adds to BL-1236's case
+
+The prior occurrences cost bookkeeping and re-work. This one shows the sweep
+can silently revert a human's decision mid-pipeline and let the pipeline
+complete, green, around the hole — with no bounce, no conflict, and no signal
+to anyone that the contract changed underneath them. Restoration by cherry-pick
+is not a mitigation either: everything restored at 12:52 was destroyed again at
+13:03, eleven minutes later.
