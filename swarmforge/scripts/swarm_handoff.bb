@@ -398,11 +398,11 @@
         (when (tree-collapse-guard-lib/blocked? tree-collapse-result)
           tree-collapse-result)
         ;; BL-1192 task-scope gate: refuses a git_handoff whose cited
-        ;; commit's diff vs origin/main carries a path positively
-        ;; belonging to a DIFFERENT ticket than the task's own - every
-        ;; hop, not only the QA edge BL-531 already covers (see
-        ;; task_scope_gate_lib.bb). Same fail-open posture; a warning on
-        ;; an unreadable origin/main or diff never blocks on its own.
+        ;; commit's own commits since this task's last handoff carry a path
+        ;; positively belonging to a DIFFERENT ticket than the task's own -
+        ;; every hop, not only the QA edge BL-531 already covers (see
+        ;; task_scope_gate_lib.bb). Same fail-open posture; a warning on an
+        ;; unreadable commit history never blocks on its own.
         task-scope-result
         (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
           (task-scope-gate-lib/findings-for-git-handoff
