@@ -1,0 +1,154 @@
+id: BL-1230
+title: "a fixture left a git repository at backlog/.git, so every git command run from the backlog directory silently resolves to an empty repo, and no hygiene check can see it"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal that is already live. `cd backlog && git
+# rev-parse --show-toplevel` answers `.../backlog`, in the directory where the
+# coordinator runs its git mv bookkeeping. Not critical: verified 2026-08-28
+# that the parent repo still tracks all 4845 backlog paths and `git status
+# --short backlog/` is clean, so nothing has been lost or shadowed yet.
+status: todo
+epic: code-quality-gates
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1230-no-leaked-git-repository-inside-the-working-tree.feature
+human_approval: pending
+approval_context: >
+  One thing needs sign-off: whether the check may ever remove what it finds.
+  This ticket says no — it reports, a human removes. That is deliberately
+  conservative, and it means a leak keeps failing the check until someone
+  acts. The argument for letting it clean up is that the artifact is
+  self-evidently garbage; the argument against is that "delete a .git
+  directory you found" is a bad capability to build, and the swarm's own rule
+  is never to delete what you did not create. Recommendation is report-only;
+  the call is the human's.
+
+  Firm and not up for negotiation: the exemption list is by construction, not
+  by path-matching a blocklist. `.worktrees/<role>/.git` and repositories
+  under `node_modules` are legitimate; anything else nested in the tree is
+  reported. A check that has to be told about each new leak location will be
+  wrong the first time a leak lands somewhere new.
+
+  Not in question: the live instance. Verified 2026-08-28 — backlog/.git is a
+  real repository directory dated 2026-08-27 16:51, with no remote, no refs,
+  no commits ("your current branch 'master' does not have any commits yet")
+  and 3338 backlog files staged in its index.
+
+  NOTE: this ticket does not remove backlog/.git. Per the swarm's
+  never-delete-what-you-did-not-create rule that is a human action, and it is
+  the first thing to do — before or independently of building the guard.
+description: |
+  ## What
+
+  A check reports any git repository nested inside the working tree that git
+  itself did not put there, naming the path and saying what it does — that a
+  git command run from that directory resolves to it rather than to the
+  repository root. Worktree gitfiles under `.worktrees/` and repositories
+  under `node_modules` are exempt by construction. The check reports only; it
+  removes nothing.
+
+  ## How (direction, not mandate)
+
+  `extension/test/` already holds a family of repo-hygiene guards
+  (`repoCreationGuard`, `liveRepoDerivationGuard`, `tempDirTrapGuard` and
+  siblings) and a new sibling is the obvious home, since the suite that runs
+  them is itself the call site. Note that `repoCreationGuard` (BL-1039) does
+  NOT cover this: it scans test SOURCE TEXT for `git init` call shapes to stop
+  per-scenario repo creation. This is a working-tree artifact check — a
+  different question asked of a different thing — so it is a sibling, not a
+  widening.
+
+  ## Why
+
+  A `.git` directory is the one artifact git will never report. It is neither
+  tracked nor untracked; `git status` is silent, `git clean` will not remove
+  it, and `git check-ignore` names no rule because git simply never considers
+  it. Every hygiene check the repo has looks at tracked content, untracked
+  content, or source text, and this is none of those.
+
+  What it does do is change what `git` means inside that directory. Verified
+  2026-08-28:
+
+  - `backlog/.git` is a repository directory, created 2026-08-27 16:51.
+  - It has no remote, no refs and no commits — `git --git-dir=backlog/.git log`
+    reports "your current branch 'master' does not have any commits yet".
+  - Its index holds 3338 backlog files, so something ran `git init` followed by
+    an add with its cwd set to `backlog/`.
+  - `cd backlog && git rev-parse --show-toplevel` returns
+    `/home/carillon/swarmforgevc/backlog`, not the repository root.
+
+  That last line is the defect. `backlog/` is where the coordinator does its
+  bookkeeping — `git mv` between `active/`, `done/` and `hold/` — and where
+  the specifier drains intake. Any script or agent that runs git with a cwd
+  under `backlog/` reads an empty repository and gets a confidently wrong
+  answer: no history, no commits, nothing tracked.
+
+  Nothing has been lost yet, and that is luck rather than design: git does not
+  convert an already-tracked directory into a gitlink, so the parent still
+  tracks all 4845 backlog paths and reports the tree clean. The next such leak
+  may land in a directory whose contents are not already tracked, and then it
+  becomes a gitlink and the contents disappear from the parent.
+
+  ## Constraints
+
+  - Report only. Never delete, move, or rewrite a nested repository — that is
+    a human action, per the swarm's never-delete-what-you-did-not-create rule.
+  - Exempt by construction, not by blocklist — see approval_context.
+  - Do not change `repoCreationGuard`'s source-text scan; this is a sibling.
+
+qa_e2e_procedure: >
+  (1) In a scratch checkout, run `git init` inside a tracked subdirectory, run
+  the check, and confirm it reports that path and explains the redirect.
+  (2) Confirm `git status --short` on that same checkout is clean, so the
+  check is demonstrably catching something git cannot — run both and put the
+  pair in the evidence file. (3) Confirm the reported directory still exists
+  after the check ran. (4) Confirm `.worktrees/<role>/.git` and any repository
+  under `node_modules` are not reported. (5) On a checkout with no nested
+  repository, confirm the check reports nothing. (6) Against the live repo,
+  confirm the check reports `backlog/.git` for as long as it is present.
+
+out_of_scope: |
+  - Removing the live `backlog/.git`. A human action, and the first thing to
+    do — see approval_context. This ticket builds the check that would have
+    caught it.
+  - Identifying which fixture created it. Suspected to be the same fixture
+    family as BL-1196/BL-1200 (a fixture running git against a live path
+    rather than a temp one), but not proven, and the guard is worth having
+    regardless of which one it was.
+  - The temp-directory leak class — fixtures that create a temp root and
+    never remove it. That is BL-1226, a different failure with a different
+    detection; this one lands inside the tracked tree.
+  - `repoCreationGuard`'s source-text scan for `git init` call shapes
+    (BL-1039). Unchanged.
+
+invariants:
+  - "A git repository nested inside the working tree is reported unless git itself created it there — the .worktrees/ gitfiles and repositories under node_modules — and the exemption is by construction, never a blocklist of known leak paths."
+  - "The check never deletes, moves, or rewrites a nested repository; a reported leak is still present after the check runs."
+
+source: |
+  Architect note to specifier+coordinator, 2026-08-28 (priority 00): "Found:
+  backlog/.git nested repo (leaked fixture?), created 08-27. Unticketed."
+  Verified independently by the specifier the same day; measurements in the
+  description.
+
+notes: |
+  - "[2026-08-28] specifier: confirmed no data loss at mint — `git ls-files
+    backlog/` returns 4845 paths and `git status --short backlog/` is empty,
+    so the parent repo's tracking is intact. Recorded because the obvious
+    worry on reading this ticket is that backlog content had been swallowed,
+    and it has not been. The exposure is future git commands, not past ones."
+  - "[2026-08-28] specifier: deliberately NOT folded into BL-1226 (temp-dir
+    cleanup for step handlers) or BL-1039's repoCreationGuard. BL-1226 is
+    about roots left in /tmp; BL-1039 scans test source text for `git init`
+    call shapes. Neither looks at the working tree for a repository that is
+    already there, which is why a leak dated 2026-08-27 was still undetected
+    the next day and was found by eye rather than by a gate."
+  - "[2026-08-28] specifier: I did not remove backlog/.git. The swarm's rule
+    is never to delete what you did not create, and an unexplained repository
+    with 3338 staged paths is exactly the artifact worth a human's look before
+    it disappears — its index is the only remaining evidence of what created
+    it."
