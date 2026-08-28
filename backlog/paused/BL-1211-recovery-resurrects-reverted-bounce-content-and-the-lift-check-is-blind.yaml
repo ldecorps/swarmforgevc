@@ -22,6 +22,7 @@ acceptance: specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounc
 invariants:
   - "A recovery never resurrects content a revert on that same branch deliberately removed: whatever a restore-from-sibling brings back is filtered by the branch's own revert history, so recovering a collapsed branch cannot undo its bounces."
   - "A quarantine lift can fail in BOTH directions - on content that went missing and on content that came back. An empty deletion diff against a sibling is necessary and never sufficient, because a branch restored from that sibling scores zero by construction."
+  - "Refusal turns on AUTHORSHIP, not byte-identity: content re-introduced by a recorded post-revert decision on that branch passes even when byte-identical to what the revert removed, and content with no such record is refused even when its content is correct."
 
 description: >
   Severity rationale is in the comment above the field. Root-caused
@@ -81,10 +82,23 @@ description: >
   The lift half: the check must be able to refuse on content that
   RETURNED, not only on content that went missing - comparing the
   candidate's content against what reverts on that branch removed,
-  and distinguishing a byte-identical resurrection (refuse) from
-  genuinely different work answering the bounce (allow). The
-  identical-vs-different comparison is the discriminator; it is
-  cheap and it is exactly the check that settled this at mint.
+  and distinguishing a byte-identical resurrection carrying no
+  authorization (refuse) from a re-introduction that some
+  post-revert commit on that branch deliberately authored and
+  recorded (allow).
+
+  AMENDED 2026-08-28, and this correction is the point of the
+  amendment. An earlier draft made byte-identity itself the
+  discriminator - "identical content refuses, different content
+  passes". BL-1189 falsified that. Coder's re-fix 739ca994e
+  reinstated reverted files "verbatim from the original e8e14057e
+  diff (byte-identical ... confirmed via diff)", deliberately, with
+  the rationale in its commit message, and the architect reviewed
+  and passed it. A content-identity check would refuse exactly that
+  commit - the false refusal the constraints below already warn
+  against. Identity is the TRIGGER that demands a recorded
+  authorization; it is never the refusal itself. Evidence:
+  backlog/evidence/BL-1189-specifier-ruling-resurrected-property-test-20260828.md
 
 constraints: >
   Out of scope / firm lines:
@@ -104,7 +118,10 @@ constraints: >
   - Scenario 04 is not optional and must not be collapsed into 03. A
     check that refuses whenever reverted paths reappear would block
     every legitimate re-fix, since a re-fix touches the same paths by
-    definition. Identical content refuses; different content passes.
+    definition. Unauthorized content refuses; authored-and-recorded
+    content passes, INCLUDING when byte-identical - see the amendment
+    note in the description. Do not implement the discriminator as a
+    content comparison alone.
   - Not in scope: cleaning the currently-affected branch. Removing
     the resurrected BL-1189 content from `swarmforge-architect` is
     the architect's own operational step on their own bounce, already
@@ -141,7 +158,16 @@ qa_e2e_procedure: >
      Build it as a real re-fix, not as an unrelated edit - same
      files, same ticket, new work - since a naive path-based check
      passes every other shape of this test and fails only this one.
-  6. Cross-check the two invariants do not fight: run scenarios 01
+  6. Scenario 05, added by the 2026-08-28 amendment: a verbatim,
+     BYTE-IDENTICAL reinstatement carried by a post-revert commit that
+     deliberately re-authors it with a recorded rationale must LIFT.
+     Build it from the real shape - coder's 739ca994e reinstating
+     e8e14057e content verbatim - not an unrelated edit. A check that
+     refuses this is the false-refusal failure, and it is what a naive
+     content-identity implementation produces by default. Confirm
+     non-vacuity by removing the authorizing commit from the fixture
+     and asserting the same content is then refused.
+  7. Cross-check the two invariants do not fight: run scenarios 01
      and 02 against one fixture where a recovery and a bounce revert
      both apply, and confirm the recovery's filtering is what makes
      the lift check pass, rather than the two independently agreeing
