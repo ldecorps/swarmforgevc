@@ -27,7 +27,7 @@ required_wiring:
   - "swarmforge/scripts/swarm_handoff.bb::parcel_rollback_guard_lib.bb::the git_handoff send is the ONLY chokepoint every hop crosses, and a predicate that is fully unit-tested but never consulted here leaves e52261521's exact path open and this ticket's value at zero. The four existing gates in this file (ticket_close_guard_lib.bb, duplicate_chain_guard_lib.bb, pre_qa_gate_lib.bb, task_commit_coherence_gate_lib.bb) are the precedent shape to follow, including their warn-and-send posture on unreadable facts."
   - "specs/pipeline/steps/index.js::bl1213::the acceptance runner throws on any scenario lacking a step handler, so this ticket's handlers must be registered in the same parcel as the behaviour (BL-233). Substring anchor only - the handler file's exact name is the implementer's call."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two rulings are wanted, and neither is the predicate itself.
 
