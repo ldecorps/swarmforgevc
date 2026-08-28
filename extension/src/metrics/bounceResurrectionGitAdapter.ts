@@ -94,34 +94,52 @@ function findAuthoredBackBy(
   return null;
 }
 
-function bouncedCommitPaths(runGit: GitReader, bouncedCommit: string): string[] {
+// null (not []) distinctly signals "this commit could not be resolved at
+// all" - collapsing that into the same empty-array shape as "resolved,
+// touched nothing" is exactly the D1 defect: a caller cannot tell "no
+// bounced content to check" from "cannot tell whether there is bounced
+// content to check" and silently treats them the same.
+function bouncedCommitPaths(runGit: GitReader, bouncedCommit: string): string[] | null {
   const res = runGit(['diff-tree', '--no-commit-id', '--name-only', '-r', '-m', '--first-parent', bouncedCommit]);
   if (res.status !== 0) {
-    return [];
+    return null;
   }
   return res.stdout.split('\n').filter((line) => line.length > 0);
+}
+
+export interface BounceResurrectionGathering {
+  facts: BounceResurrectionFact[];
+  /** Tickets whose recorded bounce commit could not be resolved at all - see quarantineLiftCheck's fail-closed posture on this. */
+  unresolvedTickets: string[];
 }
 
 /**
  * One BounceResurrectionFact per (recorded bounce for this role, path that
  * bounce touched), evaluated against `candidateRef` (a sibling, for a
  * recovery; the branch tip, for a lift check). A bounce whose commit
- * cannot be resolved is skipped, not a fact - fails open per this repo's
- * own send-time-gate posture (parcel_rollback_guard_lib.bb's identical
- * choice), never wedging a recovery or a lift on unrelated git corruption.
+ * cannot be resolved contributes no facts but IS named in
+ * unresolvedTickets - callers decide for themselves whether that is
+ * "nothing to check" (filterRecoveryPaths: fails open, matching this
+ * repo's own send-time-gate posture) or "cannot rule out a resurrection"
+ * (quarantineLiftCheck: fails closed - see its own doc comment).
  */
 export function gatherBounceResurrectionFacts(
   targetPath: string,
   by: string,
   candidateRef: string,
   runGit?: GitReader
-): BounceResurrectionFact[] {
+): BounceResurrectionGathering {
   const git = runGit ?? execGitReader(targetPath);
   const branch = bouncingBranchForRole(by);
   const records: BounceRecord[] = readBounceRecords(targetPath).filter((r) => r.by === by);
   const facts: BounceResurrectionFact[] = [];
+  const unresolvedTickets: string[] = [];
   for (const record of records) {
     const paths = bouncedCommitPaths(git, record.commit);
+    if (paths === null) {
+      unresolvedTickets.push(record.ticket);
+      continue;
+    }
     for (const path of paths) {
       const bouncedContent = contentAt(git, record.commit, path);
       if (bouncedContent === null) {
@@ -132,13 +150,16 @@ export function gatherBounceResurrectionFacts(
       facts.push({ ticket: record.ticket, path, bouncedContent, candidateContent, authoredBackBy });
     }
   }
-  return facts;
+  return { facts, unresolvedTickets };
 }
 
 /**
  * Invariant 1: which of `candidatePaths` (paths a sibling-restore would
  * otherwise bring back verbatim) a recovery should actually restore -
  * every unauthorized resurrection held back, every other path present.
+ * Fails open on an unresolvable bounce record (matches every other
+ * send-time gate in this codebase): a recovery is not the final gate -
+ * quarantineLiftCheck below is the backstop, and it fails closed.
  */
 export function filterRecoveryPaths(
   targetPath: string,
@@ -147,9 +168,8 @@ export function filterRecoveryPaths(
   candidatePaths: string[],
   runGit?: GitReader
 ): RecoveryFilterDecision[] {
-  const facts = gatherBounceResurrectionFacts(targetPath, by, siblingRef, runGit).filter((f) =>
-    candidatePaths.includes(f.path)
-  );
+  const { facts: allFacts } = gatherBounceResurrectionFacts(targetPath, by, siblingRef, runGit);
+  const facts = allFacts.filter((f) => candidatePaths.includes(f.path));
   const decided = decideRecoveryFilter(facts);
   const decidedPaths = new Set(decided.map((d) => d.path));
   // Every candidate path this branch's recorded bounces never touched at
@@ -159,8 +179,30 @@ export function filterRecoveryPaths(
   return [...decided, ...untouched];
 }
 
-/** Invariants 2/3: can this branch's quarantine be lifted right now. */
+/**
+ * Invariants 2/3: can this branch's quarantine be lifted right now.
+ *
+ * BL-1211 cleaner bounce D1: fails CLOSED on an unresolvable bounce
+ * record - the opposite posture from filterRecoveryPaths and every other
+ * send-time gate in this codebase. Those gates fail open because
+ * refusing on an unrelated git hiccup would wedge the pipeline; this
+ * check runs at quarantine-lift time, a low-frequency, high-stakes
+ * decision where an unresolvable bounce record is exactly the shape an
+ * unauthorized-resurrection incident would produce if the bounce store
+ * or git history were disturbed. "Nothing to check against" here means
+ * "nothing stops the resurrection," not "nothing to worry about."
+ */
 export function quarantineLiftCheck(targetPath: string, by: string, branchRef?: string, runGit?: GitReader): QuarantineLiftVerdict {
   const branch = branchRef ?? bouncingBranchForRole(by);
-  return decideQuarantineLift(gatherBounceResurrectionFacts(targetPath, by, branch, runGit));
+  const { facts, unresolvedTickets } = gatherBounceResurrectionFacts(targetPath, by, branch, runGit);
+  const verdict = decideQuarantineLift(facts);
+  if (unresolvedTickets.length === 0 || !verdict.granted) {
+    return verdict;
+  }
+  return {
+    granted: false,
+    refusedTickets: [...new Set(unresolvedTickets)],
+    refusedPaths: [],
+    authorizedBy: [],
+  };
 }

@@ -211,20 +211,69 @@ test('BL-1211 scenario 05: a verbatim reinstatement deliberately authored by a p
 
   // Non-vacuity: remove the authorizing commit from the fixture history by
   // building the same content WITHOUT it (a coordinator-authored commit
-  // instead) - confirm it is then refused.
-  const rootUnauthorized = mkIncidentFixture().root;
+  // instead) - confirm it is then refused. Builds its OWN
+  // bounced-then-reverted pair (never reuses `bounced` from the fixture
+  // above) - two independently-created fixture repos are not guaranteed
+  // to produce byte-identical commit SHAs for their own distinct commit
+  // sequences (git hashes include an author/committer timestamp at
+  // second granularity), so cross-repo SHA reuse here was flaky - cleaner
+  // bounce D1, confirmed reproducible 3/8 runs in a loop.
+  const unauthorizedFixture = mkIncidentFixture();
+  const rootUnauthorized = unauthorizedFixture.root;
+  const bouncedUnauthorized = unauthorizedFixture.bounced;
   commitFile(rootUnauthorized, 'src/thing.ts', 'bounced content\n', 'recovery: restore', 'coordinator');
   appendBounceRecordIfNew(rootUnauthorized, {
     ticket: 'BL-1189',
     producingRole: 'coder',
     ticketType: 'defect',
     failureClass: 'behavior',
-    commit: bounced,
+    commit: bouncedUnauthorized,
     by: 'architect',
     at: new Date().toISOString(),
   });
   const verdictUnauthorized = quarantineLiftCheck(rootUnauthorized, 'architect');
   assert.equal(verdictUnauthorized.granted, false);
+});
+
+// ── D1 fix: quarantineLiftCheck fails CLOSED on an unresolvable bounce ────
+
+test('BL-1211 cleaner bounce D1: quarantineLiftCheck refuses (fails closed) when a recorded bounce commit cannot be resolved at all', () => {
+  const root = mkTmpDir('sfvc-bl1211-unresolvable-');
+  copySeededRepoInto(root);
+  git(root, ['checkout', '-q', '-b', 'swarmforge-architect']);
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1189',
+    producingRole: 'coder',
+    ticketType: 'defect',
+    failureClass: 'behavior',
+    commit: 'deadbeef00', // never a real commit in this repo
+    by: 'architect',
+    at: new Date().toISOString(),
+  });
+
+  const verdict = quarantineLiftCheck(root, 'architect');
+
+  assert.equal(verdict.granted, false, `expected a fail-closed refusal, got: ${JSON.stringify(verdict)}`);
+  assert.deepEqual(verdict.refusedTickets, ['BL-1189']);
+});
+
+test('BL-1211 cleaner bounce D1 (contrast): filterRecoveryPaths still fails OPEN when a recorded bounce commit cannot be resolved (recovery is not the final gate)', () => {
+  const root = mkTmpDir('sfvc-bl1211-unresolvable-recovery-');
+  copySeededRepoInto(root);
+  git(root, ['checkout', '-q', '-b', 'swarmforge-architect']);
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1189',
+    producingRole: 'coder',
+    ticketType: 'defect',
+    failureClass: 'behavior',
+    commit: 'deadbeef00',
+    by: 'architect',
+    at: new Date().toISOString(),
+  });
+
+  const decisions = filterRecoveryPaths(root, 'architect', 'main', ['src/some-candidate.ts']);
+
+  assert.deepEqual(decisions, [{ path: 'src/some-candidate.ts', restore: true }]);
 });
 
 // ── cross-check: recovery filtering is what makes the lift check pass ────
