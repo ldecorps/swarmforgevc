@@ -272,3 +272,23 @@ notes: |
     merging QA's current tip or origin/main does not. Build the gate against
     that shape. Evidence:
     backlog/evidence/BL-592-specifier-disposition-revert-recurrence-owner-and-dead-remedy-20260828.md
+  - [2026-08-28] FIFTH occurrence (coder, BL-1200 broadcast 6bc23c7def, declined
+    + restored 1a376039b) - the second poisoned hash, as predicted. Same owner,
+    no new ticket. It carried one REQUIREMENT-SHARPENING fact, so read this
+    before building the gate: coder found a regression from its OWN earlier
+    merge resolution. Resolving docsTree.test.js during the BL-751 merge, the
+    conflict markers bracketed only the appended BL-592 block; the region ABOVE
+    them auto-merged with no marker and silently took QA's older test bodies,
+    dropping ticketsInMilestone(...) and its three call sites. A clean
+    `git diff HEAD` on a UU-resolved file proves nothing - the silent revert
+    hides in the UNMARKED region of the same file.
+    REQUIREMENT: compare tip content against pre-parcel content for EVERY path
+    in the parcel, never only the paths that conflicted. A gate scoped to
+    conflicted paths would have missed this occurrence entirely.
+  - [2026-08-28] Do NOT act on the "merge 779a036e5 forward" remedy repeated in
+    the older evidence files: that commit is reachable from no ref (BL-1214
+    reset casualty) and its content is already on main and QA's tip. The live
+    poison is the historical broadcast HASHES 1188f29a17 and 6bc23c7def.
+    Evidence:
+    backlog/evidence/BL-592-specifier-disposition-revert-recurrence-owner-and-dead-remedy-20260828.md
+
