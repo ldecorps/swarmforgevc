@@ -2506,6 +2506,98 @@ test('BL-607: enqueueRoleAnswerNote falls back to a file pointer for a short mul
   assert.equal(stored.text, multilineAnswer);
 });
 
+// ── BL-1203: idempotency keyed on inbound message identity, not content ──
+// 40 replays of one answer batch reached the specifier's mailbox in a
+// single day - re-processing of the SAME inbound update queued a fresh
+// note every time. The fix: enqueueRoleAnswerNote takes an optional
+// updateId and refuses to queue a second note for an updateId it already
+// captured for that role, while two GENUINELY different updateIds - even
+// with byte-identical text - both still queue (constraint: "must key on
+// the identity of the inbound message, not on its text").
+
+function listOutboxFiles(root) {
+  return fs.readdirSync(path.join(root, '.swarmforge', 'handoffs', 'outbox'));
+}
+
+test('BL-1203: enqueueRoleAnswerNote with the same updateId twice queues only one note', async () => {
+  const root = swarmHandoffFixture();
+
+  const first = await enqueueRoleAnswerNote(root, 'specifier', 'use staging please', 42);
+  const second = await enqueueRoleAnswerNote(root, 'specifier', 'use staging please', 42);
+
+  assert.equal(first, true);
+  assert.equal(second, true, 'a duplicate delivery of an already-captured answer still reports success, just queues nothing new');
+  assert.equal(listOutboxFiles(root).length, 1, 'the second call for the same updateId must not queue a second note');
+});
+
+test('BL-1203: enqueueRoleAnswerNote with the same updateId twice, long-form pointer answer, still queues only one note', async () => {
+  const root = swarmHandoffFixture();
+  const longAnswer = 'please use the staging environment for this deploy, not production, since we are still validating the migration'.repeat(2);
+
+  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 7);
+  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 7);
+
+  assert.equal(listOutboxFiles(root).length, 1);
+});
+
+test('BL-1203: two DIFFERENT updateIds with byte-identical text both queue - identity, never content, is the key', async () => {
+  const root = swarmHandoffFixture();
+
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 100);
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 101);
+
+  assert.equal(listOutboxFiles(root).length, 2, 'two genuinely separate answers with the same words must both be delivered');
+});
+
+test('BL-1203: a caller with no updateId (legacy call shape) is never deduped against itself or anything else', async () => {
+  const root = swarmHandoffFixture();
+
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging');
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging');
+
+  assert.equal(listOutboxFiles(root).length, 2, 'omitting updateId must not accidentally dedupe unrelated calls');
+});
+
+// A legacy (no-updateId) call sits BETWEEN two identity-keyed calls -
+// writeRoleAnswerFile's own history-preservation branch
+// (`else if (previousSeenUpdateIds?.length)`) must carry the prior
+// seenUpdateIds forward even though the legacy call itself contributes no
+// new id. Without that branch, the interleaved legacy call silently wipes
+// the dedup history, and the LATER repeat of updateId 1 reads as unseen -
+// queuing a third note instead of being recognized as the duplicate it is.
+test('BL-1203: a legacy call interleaved between identity-keyed calls does not erase prior dedup history', async () => {
+  const root = swarmHandoffFixture();
+
+  await enqueueRoleAnswerNote(root, 'specifier', 'first answer', 1);
+  await enqueueRoleAnswerNote(root, 'specifier', 'unrelated legacy nudge');
+  await enqueueRoleAnswerNote(root, 'specifier', 'first answer', 1);
+
+  assert.equal(
+    listOutboxFiles(root).length,
+    2,
+    'the replayed updateId 1 must still be recognized as a duplicate after an interleaved legacy call - only the first two calls should have queued'
+  );
+});
+
+// Invariant 2: "a note that names an answer file names a file whose
+// recorded answer is the one the note announces." Previously
+// writeRoleAnswerFileIfNeeded skipped writing entirely for a short,
+// inline-fitting answer - so an earlier long-form answer's stale file
+// content (and mtime) survived untouched underneath a brand new short
+// answer's own note. The file must now always reflect the latest capture.
+test('BL-1203: the pointer file is refreshed even for a short, inline-fitting answer (invariant 2)', async () => {
+  const root = swarmHandoffFixture();
+  const longAnswer = 'please use the staging environment for this deploy, not production, since we are still validating the migration'.repeat(2);
+  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 1);
+  const staleStored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
+  assert.equal(staleStored.text, longAnswer);
+
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 2);
+
+  const freshStored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
+  assert.equal(freshStored.text, 'use staging', 'the pointer file must be refreshed to the latest captured answer, never left stale');
+});
+
 // ── ensureRoleTopics (BL-425 slice 1 provision-role-topics-01) ───────────
 
 function fakeCreateSequential(startId = 100) {
