@@ -134,3 +134,7 @@ notes: >
   suites, acceptance feature 7/7). b283239757 and its QA-side revert
   778991d218 are recorded above as abandoned_commits per the bounce's own
   remedy instruction — deliberately dropped, not lost work.
+
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 002a4c672, evidence: backlog/evidence/BL-1227-qa-bounce-20260828.md }
