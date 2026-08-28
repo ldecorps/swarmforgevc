@@ -119,6 +119,7 @@ expects them, and are not migrated or rewritten here.
 - [Worktree drift guard — WORKTREE_DRIFT_DETECTED](how-to/BL-1195-worktree-drift-guard.md) — `ready_for_next.bb` refuses unexplained tracked-content drift with no in-progress task to explain it; master-resident roles exempt (BL-1195).
 - [Parcel-rollback guard on git_handoff sends](how-to/BL-1213-parcel-rollback-guard.md) — refuses a send whose branch tip silently reverted a path to pre-parcel content, with no revert explaining it; ticket-scoped, fail-open on unreadable facts (BL-1213).
 - [Tree-collapse guard on git_handoff sends](how-to/BL-1205-tree-collapse-guard.md) — refuses a send whose merge would mass-delete the recipient branch's tracked files; every hop, no ticket id required, fail-open on unreadable facts (BL-1205).
+- [Role-answer notes are delivered once](how-to/BL-1203-role-answer-notes-delivered-once.md) — front-desk bot dedups steering-answer delivery by inbound `update_id`, never by text; pointer file always matches the announced answer (BL-1203).
 - [Local Agent Telegram turn reliability](how-to/BL-1126-local-agent-telegram-turn-reliability.md) — fast-path probes skip Ollama; real turns stream progress and abort cleanly (BL-1126).
 - [Local Ollama mono vs forge under CPU](how-to/BL-1142-local-ollama-mono-vs-forge-cpu.md) — durable decision: mono-router depth 1; uncapped / qwen-forge substitutes refused (BL-1142).
 - [Cold-swap day-shift to Ollama Qwen mono-router](how-to/BL-1143-cold-swap-day-shift-ollama-qwen.md) — verified pack switch + rollback; no qwen-forge thrash (BL-1143).

@@ -145,3 +145,5 @@ notes: |
     which is why the defect survived unnoticed: the component that runs
     constantly (the daemon) is correct, and the blind one only runs on a
     sweep."
+
+assigned_to: coder
