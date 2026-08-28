@@ -285,3 +285,4 @@ approval_context: >
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-28, by: cleaner, blamed: coder, class: behavior, commit: a96b3a10f0, evidence: backlog/evidence/BL-1211-cleaner-bounce-20260828.md }
+assigned_to: coder
