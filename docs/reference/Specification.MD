@@ -1,23 +1,5 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 28, 2026 (BL-1216: a `DUPLICATE-ID` finding from
-the backlog hygiene gate (`duplicate-id-violations`/`format-violation`,
-`swarmforge/scripts/backlog_hygiene_lib.bb`) now names every colliding
-path's pool and lifecycle class (`path [pool/live-or-terminal]` —
-`paused`/`active` are `live`, `hold`/`done` are `terminal`), states whether
-the colliding files' contents are byte-identical (`CONTENT IDENTICAL`) or
-not (`CONTENT DIFFERS` — fail-closed: an unreadable file is always reported
-as differing, never as identical), and, when exactly one colliding copy
-sits in a live pool, names that path with `keep: <path>`. Before this fix
-the finding read only the ids and raw paths, so resolving a collision meant
-opening every file by hand and guessing which copy was still in the
-pipeline — the 2026-08-27 incident this ticket was filed for got both
-wrong at once. The content read is injectable (`read-fn`, default `slurp`)
-per this project's inject-side-effects rule; `format-violation`'s existing
-single-arg callers are unaffected (2-arity default). No new extension
-command or setting — Babashka backlog tooling. Acceptance:
-`specs/features/BL-1216-duplicate-id-finding-names-the-live-copy-and-flags-divergence.feature`.)
-Prior entry —
 **Last Updated:** August 28, 2026 (BL-1217: RC health/repair
 (`swarmforge/scripts/remote_control_health_lib.bb`) now derives desired
 remote-control state from the effective pack config, not the persisted
