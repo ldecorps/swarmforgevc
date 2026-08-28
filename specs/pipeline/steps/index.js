@@ -824,7 +824,8 @@ const DOMAINS = [
   require('./bl1195WorktreeTrackedContentDriftSteps'),
   require('./bl1186DeprecatorIdentifyUnusedNotifySteps'),
   require('./bl1214AbsorbWithMergeSteps'),
-  require('./bl1219RoleInboxResolutionSteps')
+  require('./bl1219RoleInboxResolutionSteps'),
+  require('./bl1202GuardExitPathSteps')
 ];
 
 function registerSteps(registry) {
