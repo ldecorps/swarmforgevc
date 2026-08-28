@@ -888,6 +888,50 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
   assert.match(help, /\/log/i);
 });
 
+// BL-1204's own required invariant: "every redeploy target the bridge
+// accepts is listed in the help message, and every target the help
+// message lists is accepted." Derived from each module's REAL parser
+// function, never a second hand-typed list of accepted strings duplicating
+// the help text itself - that shape would pass unchanged on the original
+// broken tree (frontdesk/all's parsers already existed and worked; only
+// the help text and the execute-time dispatch were missing). This test
+// fails the moment either side drifts from the other.
+test('BL-1204: every redeploy target the bridge accepts is listed in help, and every listed target is accepted', () => {
+  const { parseRedeployCommand } = require('../out/tools/telegramCursorBridgeRedeploy');
+  const { parseMiniAppRedeployCommand } = require('../out/tools/telegramCursorBridgeMiniAppRedeploy');
+  const { parseFrontDeskRedeployCommand } = require('../out/tools/telegramCursorBridgeFrontDeskRedeploy');
+  const { parseAllRedeployCommand } = require('../out/tools/telegramCursorBridgeAllRedeploy');
+
+  const acceptedTargets = [
+    { helpPrefix: '/redeploy', command: '/redeploy', accepts: parseRedeployCommand },
+    { helpPrefix: '/redeploy miniapp', command: '/redeploy miniapp', accepts: parseMiniAppRedeployCommand },
+    { helpPrefix: '/redeploy frontdesk', command: '/redeploy frontdesk', accepts: parseFrontDeskRedeployCommand },
+    { helpPrefix: '/redeploy all', command: '/redeploy all', accepts: parseAllRedeployCommand },
+  ];
+
+  for (const target of acceptedTargets) {
+    assert.equal(
+      target.accepts(target.command),
+      true,
+      `${target.command} must be accepted by its own module's real parser`
+    );
+  }
+
+  const help = formatHelpMessage();
+  const redeployLines = help.split('\n').filter((line) => line.startsWith('/redeploy'));
+  assert.equal(
+    redeployLines.length,
+    acceptedTargets.length,
+    `expected exactly ${acceptedTargets.length} /redeploy help lines (one per accepted target), got:\n${redeployLines.join('\n')}`
+  );
+  for (const target of acceptedTargets) {
+    assert.ok(
+      redeployLines.some((line) => line === target.helpPrefix || line.startsWith(`${target.helpPrefix} —`)),
+      `help message must list "${target.helpPrefix}"`
+    );
+  }
+});
+
 // ── poll backoff ─────────────────────────────────────────────────────────
 
 test('cursor bridge: DEFAULT_POLL_BACKOFF matches the documented poll backoff defaults', () => {

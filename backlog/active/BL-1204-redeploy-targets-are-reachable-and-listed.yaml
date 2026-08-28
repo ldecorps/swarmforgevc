@@ -4,6 +4,7 @@ milestone: M8
 type: defect
 severity: high
 status: todo
+assigned_to: coder
 epic: swarm-reliability
 priority: 14
 direction: swarm-reported
