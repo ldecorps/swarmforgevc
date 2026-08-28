@@ -1,0 +1,137 @@
+id: BL-1250
+title: "The expeditor's role-agent probe counts the launcher and the agent, so every healthy 8-pack restart reports degraded"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 20
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1250-expeditor-role-agent-probe-counts-roles.feature
+
+invariants:
+  - "A fully healthy pack of N roles is observed as exactly N role agents: the probe counts roles, so the number of processes a single role happens to run - launcher, agent, or any future wrapper - never changes the observed count."
+
+description: >
+  Severity rationale: medium - real and reproducible, contained to a report.
+  It destroys nothing, but it disables a health signal by making it cry wolf
+  on every run.
+
+  probe-liveness in swarmforge/scripts/expedite_cli.bb computes
+  :role-agents by counting every process whose argv contains
+  <root>/.swarmforge/launch/. A launched role contributes TWO such
+  processes, not one:
+
+      zsh    <root>/.swarmforge/launch/specifier.sh
+      claude --settings <root>/.swarmforge/launch/specifier.claude-settings.json
+
+  expected-live-set in swarmforge/scripts/expedite_lib.bb declares
+  :role-agents 8, so a healthy eight-role pack observes 16, live-set-delta
+  returns a non-empty map, and restart-stack! reports :degraded. This is not
+  a race and not a stale-process artifact: it is arithmetic, and it happens
+  on every healthy restart of a standing pack.
+
+  Measured rather than reasoned, on 2026-08-28 at 14:31 BST, on a pack that
+  was in fact completely healthy - one tmux server answering with all eight
+  role sessions, handoffd and its supervisor both up:
+
+      pgrep -af "<root>/.swarmforge/launch/"   -> 16 processes, 8 zsh + 8 claude
+      distinct role settings files             -> 8
+      that run's own report                    -> role-agents expected 8, observed 16
+                                                  outcome: degraded
+
+  Why it matters more than a cosmetic count. The code comment above the
+  three-outcome cond says the split exists so a half-started swarm is not
+  reported as a broken start path, because that "would send a human to debug
+  the wrong thing". A verdict that reads degraded on every healthy run sends
+  a human to debug the wrong thing every time, and - worse - is
+  indistinguishable from the genuine half-launch it was built to catch. The
+  signal that would have to be trusted to detect a real short stack is the
+  one being falsified.
+
+  What is wanted: the observed role-agent count equals the number of roles
+  actually up, so a healthy pack yields an empty delta and an :ok outcome.
+  How the count is derived is the coder's call; the needle must not assume
+  any particular number of processes per role.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT change expected-live-set's value of 8 to 16 to make the delta
+    empty. That hides the defect behind a constant, ties the expectation to
+    today's launcher shape, and would report a pack running only its eight
+    launchers with no agents at all as healthy.
+  - Do NOT weaken live-set-delta into asserting health. Its docstring is
+    explicit that an empty map means "matched what we expected" and never
+    "we asserted health"; that contract stays.
+  - Do NOT touch the tmux-servers, handoffd or handoffd-supervisor probes.
+    One probe, one fix. See notes for a separate unexplained observation
+    about the tmux count that this ticket deliberately does not scope.
+  - Do NOT keep the root-scoped needle discipline from BL-782 by accident -
+    keep it on purpose. Whatever needle replaces the current one must still
+    be scoped to this project root, or the probe will count every swarm on
+    the host again.
+  - Do NOT reintroduce a socket-file glob for liveness. The note above
+    tmux-servers-answering warns that this reintroduces BL-567's original
+    false positive, and that warning still stands.
+
+qa_e2e_procedure: >
+  1. Scenario 01: drive the probe against a recorded process table holding a
+     healthy eight-role pack - eight launcher lines and eight agent lines -
+     and assert the observed role-agent count is 8 and the delta is empty.
+     Use the EXPEDITE_PROBE_FILE seam or a recorded ps fixture; do not
+     launch a swarm.
+  2. Scenario 02, the one that proves the fix is not vacuous: the same
+     eight-role table with two roles' agents removed, leaving their
+     launchers. Assert the observed count is 6 and the delta is non-empty.
+     A fix that simply halved the count would pass scenario 01 and fail
+     this one.
+  3. Scenario 03: a table for a pack of a different size, asserting the
+     count still equals the number of roles. This is the invariant's gate
+     and stops the fix hard-coding a division by two.
+  4. Scenario 04: assert the needle is still root-scoped, by including in
+     the recorded table a role process belonging to a DIFFERENT project
+     root and asserting it is not counted (BL-782).
+  5. The invariant carries a coder-authored property test per BL-654: for a
+     generated pack of N roles, each with an arbitrary number of processes
+     of its own, the observed count is always N.
+  6. Do not restart a real swarm to verify any of this.
+
+notes: >
+  Minted 2026-08-28 ~14:45 BST by the specifier, from a live occurrence: the
+  BL-1248 expedite run at 14:30 reported restart outcome degraded, which was
+  read as a half-launch until the pack was checked directly and found whole.
+  Verified at mint that no ticket owns this; the arithmetic was confirmed
+  against the running host rather than inferred from the source alone.
+
+  An unexplained companion observation, recorded but deliberately NOT
+  scoped: that same report also read tmux-servers expected 1, observed 0,
+  while the sole socket under .swarmforge/tmux/ answered list-sessions with
+  all eight sessions two minutes later. The socket and the sessions were
+  both created at 14:30:19, before the probe ran at about 14:30:36, so a
+  simple ordering race does not obviously explain it and no mechanism was
+  established. It is left out of this slice because a defect nobody has
+  reproduced is not a defect anybody can gate - the role-agent half is
+  proven arithmetic and stands alone. If it recurs with a mechanism, mint it
+  separately.
+
+  Related, none of which own this: BL-567 (the expeditor), BL-782 (the
+  root-scoped needle discipline this must preserve), BL-1249 (the restart
+  phase's missing hold check, found in the same pass).
+
+  Orthogonality: touches probe-liveness in
+  swarmforge/scripts/expedite_cli.bb, and expected-live-set in
+  swarmforge/scripts/expedite_lib.bb only if the coder chooses to. BL-1249
+  touches restart-stack! in the same CLI file. Do not run the two
+  concurrently; either order is fine.
+
+approval_context: >
+  Approving this authorises correcting one count in the expeditor's liveness
+  probe so a healthy restart stops reporting itself as degraded. Small and
+  self-contained; the reason it is worth your tap rather than silent is that
+  it currently makes the expeditor's restart verdict useless as a signal,
+  and that verdict is what would tell you a swarm came up short.
