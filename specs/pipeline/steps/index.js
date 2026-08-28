@@ -832,6 +832,7 @@ const DOMAINS = [
   require('./bl1215OriginMainLandGateSteps'),
   require('./bl1211QuarantineLiftAuthorshipSteps'),
   require('./bl1217RcConfigGateSteps'),
+  require('./bl1207AbandonedLockLivenessSteps'),
   require('./bl1227BootPrefixLiveBudgetCheckSteps'),
   require('./bl1228ActivePoolFreshnessHoldAuditSteps')
 ];
