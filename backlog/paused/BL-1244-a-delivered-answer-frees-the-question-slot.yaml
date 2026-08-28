@@ -1,0 +1,149 @@
+id: BL-1244
+title: "an answer short enough to ride inline in the note never clears the pending marker, so the role's next clarifying question is refused on a question already answered"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that silently disables a role's only clarifying-question
+# channel - the same symptom GH-26 rated high, reached by a different cause -
+# and it fires on the COMMON delivery path, not an edge case. Not critical:
+# nothing is lost or corrupted, the role keeps working, and a role that knows
+# the CLI exists can clear the marker itself in one command.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: agent-reported
+depends_on: [BL-1201]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1244-a-delivered-answer-frees-the-question-slot.feature
+
+human_approval: pending
+approval_context: >
+  This one needs no ruling on policy - the behaviour is plainly wrong - but it
+  does need your sign-off on WHERE the fix goes, because the obvious place is
+  the one BL-1201 deliberately vacated. Clearing the marker at capture time is
+  what BL-1201's architect bounce D1 REMOVED: it made deliverRoleAnswer's own
+  "delivered" verdict structurally unreachable, since the marker was always
+  gone before anything could confirm the pairing. So the fix must not simply
+  put that back.
+
+  Three directions that do not regress it, in my order of preference: (1) the
+  delivery leg confirms the pairing and clears the marker itself once the note
+  is successfully enqueued - the note IS the delivery, so that is the honest
+  moment; (2) the inline note carries the consume instruction, so the role
+  runs deliver-role-answer.js and the existing path clears it; (3) leave the
+  mechanism alone and rely on every role's prompt to say so. I recommend
+  against (3) alone - the specifier prompt now says it (landed 2026-08-28),
+  but a rule that only works when six prompts all remember it is not a fix.
+
+  Firm either way: the pairing must still be confirmed before the slot opens.
+  An answer recorded against a different question, or no answer at all, must
+  leave the slot shut - that guarantee is BL-1201's and this ticket must not
+  spend it.
+
+description: |
+  ## What
+
+  An answer that has been delivered to a role frees that role's question slot,
+  without weakening the pairing check that decides whether it should.
+
+  ## Why
+
+  `role_ask.bb` permits one pending question per role and records it at
+  `.swarmforge/operator/role-awaiting/<role>.json`. Per BL-1201's architect
+  bounce D1, `captureRoleAnswer` (`telegramFrontDeskBotCore.ts:1977`) clears
+  that marker ONLY on the live-pane leg; on the dormant/file leg it enqueues
+  the answer note and deliberately leaves the marker for `deliverRoleAnswer`
+  (`telegram-front-desk-bot.ts:1770`) to clear once it has confirmed the
+  pairing. `deliverRoleAnswer` runs from exactly one place: the CLI
+  `extension/out/tools/deliver-role-answer.js`, which a role must invoke.
+
+  Nothing invokes it, and nothing tells the role to. When the answer is short
+  enough to ride inline in the note, the role receives the answer text, acts
+  on it, and never learns there is anything to consume.
+
+  Verified live 2026-08-28, end to end:
+
+  - 12:51:11 the specifier asked a question; marker written,
+    `asked_at_ms: 1787917871729`.
+  - 12:54:43 the human tapped an option; the answer was recorded at
+    `.swarmforge/operator/role-answers/specifier.json` with the matching
+    `askedAtMs`, and delivered as a `note` whose entire payload was the answer
+    text: "Exempt git-ignored dirs (tmp/) by construction".
+  - 13:01 — seven minutes and one acted-upon answer later — the marker was
+    still present, unmodified since 12:51:11, and the answer file still had
+    `consumedAt: null`. The slot was shut on a question already answered.
+  - Running `node extension/out/tools/deliver-role-answer.js --role specifier`
+    returned `{"kind":"delivered"}`, stamped `consumedAt`, and cleared the
+    marker. The mechanism works; nothing was reaching it.
+
+  A tapped option label is almost always short enough to ride inline, so this
+  is the ordinary path. The specifier only noticed because it happened to be
+  writing this ticket at the time.
+
+  ## The gate shape this is an instance of
+
+  BL-1237, BL-1240 and BL-1241 were one defect shape: a gate whose refusal
+  reaches someone with no action available, after the condition accumulated
+  invisibly. This is the fourth. The condition accumulates with every answered
+  question; the refusal lands on the role's next question; and the action that
+  clears it is a CLI the role is never told about.
+
+  ## Constraints
+
+  - The pairing must still be confirmed before the slot opens. A mismatched
+    answer, or no answer, leaves the slot shut (BL-1201's guarantee).
+  - Do not restore the capture-time clear BL-1201's D1 bounce removed.
+  - `deliverRoleAnswer` stays the only reader of `role-answers/<role>.json`;
+    nothing else consumes that file directly (BL-1201 D2).
+
+qa_e2e_procedure: >
+  (1) Raise a question with role_ask.bb and confirm the marker exists.
+  (2) Answer it with a short reply (a tapped option label) so it rides inline
+  in the note, and confirm the role receives that text. (3) Without running
+  any CLI by hand, confirm the marker is gone and
+  `role-answers/<role>.json` carries `consumedAt`. (4) Raise a second question
+  and confirm it is accepted rather than refused already-pending. (5) Record
+  an answer whose askedAtMs does not match the pending question and confirm
+  the slot stays shut and the marker is untouched. (6) With a question pending
+  and no answer recorded at all, confirm a second ask is still refused.
+
+out_of_scope: |
+  - The case where the answer never reached `role-answers/` at all - the human
+    answers while the swarm is down, so no bot records anything and
+    deliverRoleAnswer has nothing to pair. That leaves the role with no move
+    whatsoever and is BL-1245, a separate mechanism.
+  - GH-26's undeliverable-drop path. Already shipped, unchanged.
+  - BL-1201's correlator itself: recording askedAtMs, refusing a mismatch, and
+    retiring a consumed answer. In flight, and this ticket depends on it
+    landing rather than touching it.
+  - Any expiry or timeout on a pending question. A question the human has not
+    answered must stay pending however long that takes.
+
+invariants:
+  - "An answer that has been delivered to a role leaves that role able to raise its next question."
+  - "The slot never opens on an answer whose askedAtMs does not match the pending question, nor when no answer has been recorded at all."
+
+source: |
+  Observed and verified by the specifier 2026-08-28 while working the
+  architect's priority-00 note on BL-1230, using its own BL-1230 exemption
+  question as the live case. Timeline and file evidence in the description.
+
+notes: |
+  - [2026-08-28] specifier: `depends_on: [BL-1201]` is a SEQUENCING dependency,
+    not a bundle. BL-1201 is active and is rewriting the exact two functions
+    this ticket changes (`captureRoleAnswer`, `deliverRoleAnswer`); promoting
+    both at once is the concurrent-work-orthogonality collision the
+    coordinator is meant to avoid. Nothing here should be built into BL-1201's
+    parcel.
+  - [2026-08-28] specifier: GH-26 (done) is the nearest neighbour and does NOT
+    cover this. It fixes the marker left behind when deliverRoleQuestion drops
+    an UNDELIVERABLE question - bot running, topic id missing. Here the
+    question was delivered AND answered AND the answer reached the role. Same
+    wedge, third distinct cause.
+  - [2026-08-28] specifier: the consume step is now written into
+    swarmforge/roles/specifier.prompt so the next role to hit this has a move
+    before the fix ships (BL-798 - that prose is mine and landed with this
+    mint). It is a stopgap, not the fix: five other role prompts say nothing,
+    and a mechanism that works only while six prompts all remember it is not a
+    mechanism.
