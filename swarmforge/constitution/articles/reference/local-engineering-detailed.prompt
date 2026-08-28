@@ -236,3 +236,65 @@ How-to: `docs/how-to/BL-769-android-jvm-unit-suite.md`.
   and `npm ci` do not. Recover with `git restore -- package-lock.json`, never
   `git stash` (stash is repo-wide across every worktree). Reported by the
   hardener from a live GH-26 near-miss.
+
+## Tech Stack — full text (boot-inlined article, pre-BL-1227 trim)
+
+`local-engineering.prompt`'s own "Tech Stack" section, verbatim, before
+BL-1227 compressed it:
+
+## Tech Stack
+- Language: TypeScript.
+- Platform: Visual Studio Code extension (standard VS Code Extension API). Must
+  also work in Cursor (a VS Code fork) — target the standard API only; nothing
+  Cursor-specific.
+- Standard scaffold (yo code / generator-code): normal package.json manifest,
+  activation events, contributed commands.
+- UI tiles render in a VS Code Webview.
+- Node.js APIs (child_process, etc.) are available in the extension host for
+  shelling out to tmux and git.
+- Target OS: macOS and Linux only. Do not write Windows-specific code; the swarm
+  substrate depends on tmux.
+
+## Architecture Rules 6-7, Testability Boundary, Key Integration Surface — exact pre-BL-1227 wording
+
+`local-engineering.prompt`'s own text, verbatim, immediately before BL-1227
+compressed it (superseding the "pre-amendment"/BL-858 wordings above, which
+are older still):
+
+6. Epics have icons on TWO distinct surfaces — never one implementation
+   assumed to cover both: PWA/fleet-console/bot-avatar carry the owned
+   orchestra FORM marks, still musical (`docs/branding/icon-system.md` §4d);
+   Telegram topic icons draw from the WHOLE stock
+   `getForumTopicIconStickers` set, not only its performance glyphs, which
+   capped the pool far below the live epic count. Each must exist in the
+   live set and collide with no other icon table. See
+   **local-engineering-detailed.prompt** for the pre-amendment wording and
+   BL-449/BL-946 rationale.
+7. Interface vs incarnation — two naming layers, deliberately. Architecture
+   names the INTERFACES (**messaging**, **host agent**); everyday speech
+   names the live INCARNATIONS (**Telegram**, **Cursor**). The phone app is
+   **Bubble** (native Android under `android/`; BL-707) — do not introduce a
+   parallel brand in new prose. A proposal to rename identifiers/files to
+   erase Telegram/Cursor "for purity" is OUT OF POLICY absent a real second
+   incarnation AND a shim plan (human directive 2026-07-30). See
+   **local-engineering-detailed.prompt** for the full doc-style guidance and
+   the intake this rule came from.
+
+## Testability Boundary — Bubble (Android) (BL-769)
+Unsuitable boundary also includes the **Android device surface**. **Pure
+logic** (no `android.*` type in the signature) → plain-JUnit JVM suite
+(`./gradlew :app:testDebugUnitTest`, no emulator). **Device-surface
+behavior** → a recorded manual procedure in the ticket; never ship a Bubble
+feature file with no runnable binding. Robolectric/`androidTest` deliberately
+not adopted. See **local-engineering-detailed.prompt** for the full rule
+text. How-to: `docs/how-to/BL-769-android-jvm-unit-suite.md`.
+
+## Key Integration Surface
+Prove these against a real swarm install, in order, before UI polish: launch
+via `./swarm`; discover the tmux socket and enumerate sessions/windows/panes;
+tail a pane live into a webview tile; send keystrokes INTO a pane (fiddliest
+cross-platform piece — tackle early); read `.swarmforge/` state for the
+holding stage; open a PR via git + GitHub CLI/API. Anything undoable from
+outside the swarm machinery is a candidate fork change (normal backlog), not
+an ad-hoc workaround. See **local-engineering-detailed.prompt** for the full
+pre-trim wording.

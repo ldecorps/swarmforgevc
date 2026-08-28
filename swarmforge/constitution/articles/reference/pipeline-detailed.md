@@ -256,3 +256,51 @@ daemon **halts the whole swarm** after three consecutive chase observations (~15
 that pattern — alerting on **Telegram** (standing Operator topic) **and email**, then running `kill_all_swarm.sh`. This is
 deliberate: burning tokens on an idle loop has no upside. Fix the idle path,
 then relaunch with `./swarm`.
+
+## Mono-router idle/open-slots intro, Aged-note rotation heading, Endless-loop, expeditor — exact pre-BL-1227 wording
+
+`swarmforge/PIPELINE.md`'s own text, verbatim, immediately before BL-1227
+compressed it:
+
+## Mono-router idle and open slots
+
+**Scope: `config rotation router` packs only.** On a standing pack (every
+role has its own pane) nothing below applies — `rotate_to_role.sh` there
+respawns the FIRST roles.tsv pane, i.e. a colleague, not a resident (BL-931).
+
+Mono-router packs keep **one resident** process (usually **coder** as home)
+that rotates other pipeline roles in on demand, with the coordinator as a
+separate always-on pane. On `NO_TASK`: STOP (no re-poll/`/loop`); rotate to
+**specifier** if root intakes exist; else if a slot is open and paused work
+exists, send **one** `note` asking the coordinator to promote+route, then
+idle for a wake — promotion stays coordinator-owned.
+
+### Aged-note rotation (BL-576), `rule_proposal` actionability (BL-795), and non-home stranding after QA merge-up (BL-550)
+
+A solo `note` to a dormant role stays non-actionable until
+`note_actionable_after_ms` (default 20 min) ages it in, to avoid broadcast
+thrash on a five-role merge-up — a directed `rule_proposal` is different, it
+is actionable immediately. A non-home **router-pack** role must `rotate_to_role.sh <home>`
+proactively once its inbox is empty after a merge-up note, or it strands
+(tool backstop: `ROTATE_HOME`, not `NO_TASK`). Full mechanics for all three:
+**pipeline-detailed.md**, `swarmforge/handoff-protocol.md`,
+`docs/how-to/BL-576-aged-note-actionability-mono-router.md`.
+
+## Endless-loop hard stop
+
+A repeated `ready_for_next` → `NO_TASK` spin (the pane keeps changing, so
+ordinary stuck-activity detection never fires) makes the handoff daemon
+**halt the whole swarm** after three consecutive chase observations (~15s) —
+alerting on Telegram and email, then `kill_all_swarm.sh`. Deliberate: burning
+tokens on an idle loop has no upside. Fix the idle path, then `./swarm`.
+
+## Same gates, no machinery: the expeditor (BL-567)
+
+When the defect is IN the swarm's own delivery machinery, the fix cannot ride
+the pipeline it is repairing. `swarmforge/scripts/expedite.sh <BL-id>` walks
+ONE ticket through the same role hats and gates with the stack stopped,
+reading only durable git data. It parks active work to `backlog/hold/` first
+(never `paused/`) and a failed restart never retracts a QA-stamped verdict.
+Full mechanics: **pipeline-detailed.md**,
+`docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`,
+`docs/explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md`.

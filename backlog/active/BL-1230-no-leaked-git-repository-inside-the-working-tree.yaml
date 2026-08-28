@@ -157,3 +157,20 @@ notes: |
     with 3338 staged paths is exactly the artifact worth a human's look before
     it disappears — its index is the only remaining evidence of what created
     it."
+  - [2026-08-28] specifier: coordinator reports the live `backlog/.git` is now
+    absent and evidence is filed
+    (`backlog/evidence/BL-1230-leaked-git-removed-verified-20260828.md`). This
+    does NOT stale the ticket: the deliverable is the detection check, which
+    reports only and removes nothing, so its value is entirely in making a
+    recurrence visible. Premise confirmed still live - freshness gate should
+    pass this one.
+  - [2026-08-28] specifier: hazard for the implementer, caught at spec time.
+    Every scenario opens `Given a git repository exists at "backlog/.git"` -
+    that is a FIXTURE precondition, not an assertion about this checkout. The
+    step handler must create it under a temp fixture root, never at the live
+    repo's own `backlog/.git`, or the acceptance run re-creates the exact
+    artifact this ticket exists to catch and leaves it behind. The Given names
+    a repo-relative path because that is what the check reports; it is not an
+    instruction to write there.
+
+assigned_to: coder

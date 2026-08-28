@@ -12,7 +12,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1232-shift-velocity-chart-readable.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The intake delegated the Y-axis remediation shape to the specifier. The shape
   chosen here is soft-cap plus clipped-peak callout (not a broken axis, not a log
