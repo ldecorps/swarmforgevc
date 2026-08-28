@@ -20,6 +20,12 @@ Feature: BL-1211 restoring a collapsed branch never resurrects content a bounce 
   check must be able to fail on content that came back - not only on content
   that went missing.
 
+  What separates the two cases is authorship, not byte-identity. A correct
+  re-fix may reinstate removed content verbatim and deliberately; that must
+  lift. Content that merely reappeared, with no commit standing behind it,
+  must not. Identity is what makes the question worth asking, never the
+  answer to it.
+
   Background:
     Given a review branch that bounced a ticket and reverted that ticket's content out
 
@@ -34,6 +40,7 @@ Feature: BL-1211 restoring a collapsed branch never resurrects content a bounce 
   Scenario: the lift check refuses a branch carrying content a bounce removed
     Given the recovered branch has an empty deletion diff against its siblings
     And it carries content identical to what a revert on it removed
+    And no commit after that revert authored the content back
     When the quarantine lift check runs
     Then the lift is refused
     And the refusal names the ticket whose bounced content came back
@@ -51,3 +58,11 @@ Feature: BL-1211 restoring a collapsed branch never resurrects content a bounce 
     And that work differs from the content the revert removed
     When the quarantine lift check runs
     Then the lift is granted
+
+  # BL-1211 quarantine-lift-cannot-restore-reverted-bounce-content-05
+  Scenario: a verbatim reinstatement that a later commit deliberately authored still lifts
+    Given a commit after the revert reinstated the removed content deliberately
+    And the reinstated content is byte-identical to what the revert removed
+    When the quarantine lift check runs
+    Then the lift is granted
+    And the lift cites the commit that authored the content back

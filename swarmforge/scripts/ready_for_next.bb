@@ -9,7 +9,6 @@
 (load-file (str (fs/path (fs/parent *file*) "reference_freshness_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "worktree_drift_lib.bb")))
 
 
 ;; BL-640: pre-turn freshness guard. ready_for_next.sh is the one entry

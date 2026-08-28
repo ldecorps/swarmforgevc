@@ -72,4 +72,34 @@ plumbing (verified above via targeted vitest + acceptance runs instead).
 - `node specs/pipeline/cli.js specs/features/BL-592-spec-tree-on-live-console-with-epic-tier.feature` — 8/8 pass.
 - `grep -rn "dedupePrimaryWorkingTicket\|bl1189LiveScreenOnePrimaryWorkingTicket"` across the repo (excluding node_modules/.git/out) — no remaining references.
 
+## Correction (same session, later merge-up for BL-1199)
+
+The subsequent QA merge-up (`b8a11849f8`, BL-1199) carries a **specifier
+ruling** (`0e810b458`, `backlog/evidence/BL-1189-specifier-ruling-
+resurrected-property-test-20260828.md`) that **lifts the BL-1189 hold** and
+**ratifies** the property test and step handler this evidence file
+describes deleting — it supersedes the architect's caveat note this
+cleanup acted on. The ruling's finding: the byte-identical reinstatement
+was a deliberate, architect-reviewed re-fix (`739ca994e`), not an
+unauthorized resurrection; BL-1211's own discriminator was amended from
+"identical content refuses" to "unauthorized content refuses" specifically
+because this case falsified the former.
+
+This does **not** mean my deletion left the branch wrong: QA's own BL-1199
+pass note (`963f57e38`, folded into the same merge tip, written concurrently
+with — not after — the ruling) independently confirms
+`dedupePrimaryWorkingTicket` still has 0 hits in source on QA's line
+("BL-1189 correctly still held"), and `git grep` across the full `b8a11849f`
+tree finds zero source/step/property-test files for BL-1189 — only
+evidence-file prose. QA's current authoritative tip carries **no** BL-1189
+implementation content at all (neither source nor tests); the ruling's
+instruction was for documenter to re-forward the full ticket, which had not
+yet reached QA as of this tip. So this branch, carrying none of it either,
+still matches QA's current line — just no longer for the reason ("bounced,
+don't restore") originally recorded above. Restoring only the test/step
+files here (without the source they call) would have reintroduced the
+exact orphaned-require breakage this evidence file fixed. Left as-is;
+BL-1189's real re-forward is presumably in flight elsewhere in the
+pipeline, not cleaner's to chase.
+
 By cleaner.
