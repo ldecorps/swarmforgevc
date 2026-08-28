@@ -1,5 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1215: `/pilot`'s acceptance-contract
+landing gate (`extension/src/tools/pilotAcceptanceGate.ts`) now refuses to
+move a ticket into `backlog/done/` unless its implementation commit is
+reachable from `origin/main` — immediately before the yaml move,
+`checkOriginMainLanding` (`extension/src/tools/pilot-acceptance-gate.ts`)
+fetches `origin/main` fresh and checks ancestry via `git merge-base
+--is-ancestor`. Fails CLOSED: an unfetchable remote, no remote configured,
+or an unresolvable commit are all treated as not-landed, the deliberate
+mirror of the commit-claims check's fails-OPEN posture (BL-729) — "done" was
+previously a fact about local `HEAD` alone, and an expedition's work could
+pass acceptance and get a receipt while remaining unpushed (BL-1158 failed
+in exactly this shape the same day). A refused land is inert (no yaml move,
+no receipt) and never pushes — a human or the pilot must push and re-run.
+No new extension command or setting. Acceptance:
+`specs/features/BL-1215-pilot-land-gate-verifies-the-implementation-reached-origin-main.feature`.
+How-to: `docs/how-to/BL-727-pilot-acceptance-contract-gate.md` origin/main
+landing check section.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1208: the BL-954 bounce-revert check
 (`decideBounceRevertVerdict`, `extension/src/quality/bounceRevertVerdict.ts`)
 offered a ready-to-paste `git revert --no-edit <commit>` remedy whenever a
