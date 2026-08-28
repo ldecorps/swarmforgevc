@@ -155,6 +155,24 @@ function isTicketActive(targetPath: string, ticketId: string): boolean {
   return readBacklogFolders(targetPath).active.some((item) => item.id.toUpperCase() === needle);
 }
 
+// Extracted from resolveResidentHeldTicketMeta (hardener pass, BL-1189):
+// isolates the "shape the returned meta from its parts" construction from
+// the eligibility gate above, so each half stays independently testable and
+// legible rather than one function mixing a decision with a payload build.
+function buildResidentHeldTicketMeta(
+  ticketId: string,
+  item: ReturnType<typeof lookupBacklogItemById>,
+  claimEnteredAtMs: number | undefined,
+  parcelCount: number | undefined
+): ResidentHeldTicketMeta {
+  return {
+    ticketId: item?.id ?? ticketId,
+    ...(item?.title !== undefined ? { ticketTitle: item.title } : {}),
+    ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}),
+    ...(parcelCount !== undefined ? { heldParcelCount: parcelCount } : {}),
+  };
+}
+
 export function resolveResidentHeldTicketMeta(targetPath: string, modelRole: string): ResidentHeldTicketMeta {
   const { earliest: claim, heldParcelCount } = readInProcessClaimsForRole(targetPath, modelRole);
   const ticketId =
@@ -166,12 +184,7 @@ export function resolveResidentHeldTicketMeta(targetPath: string, modelRole: str
   const claimEnteredAtMs = claim?.claimEnteredAtMs;
   const parcelCount = heldParcelCount > 1 ? heldParcelCount : undefined;
   const item = lookupBacklogItemById(targetPath, ticketId);
-  return {
-    ticketId: item?.id ?? ticketId,
-    ...(item?.title !== undefined ? { ticketTitle: item.title } : {}),
-    ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}),
-    ...(parcelCount !== undefined ? { heldParcelCount: parcelCount } : {}),
-  };
+  return buildResidentHeldTicketMeta(ticketId, item, claimEnteredAtMs, parcelCount);
 }
 
 export function resolveResidentHeldTicketMetaForRoles(
