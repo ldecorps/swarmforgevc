@@ -31,6 +31,15 @@ export interface BounceRevertFileFact {
   path: string;
   tipMatchesBounced: boolean;
   bouncedDiffersFromParent: boolean;
+  /**
+   * BL-1208: true only when the adapter positively established that the
+   * bounced commit's content at this path already existed, byte-identical,
+   * at an earlier point in the SAME branch's own history before this
+   * commit's immediate parent lost it - a restoration, not authorship.
+   * Optional (absent/undefined on every pre-BL-1208 caller) so the default
+   * is always "not established" - never inferred from liveness alone.
+   */
+  restoredFromEarlierHistory?: boolean;
 }
 
 export interface BounceRevertFacts {
@@ -64,13 +73,20 @@ export function decideBounceRevertVerdict(facts: BounceRevertFacts): BounceRever
   if (facts.ancestorOfMain) {
     return { ...base, verdict: 'breach-report' };
   }
-  const liveFiles = facts.files.filter((f) => f.tipMatchesBounced && f.bouncedDiffersFromParent).map((f) => f.path);
+  const liveFiles = facts.files.filter((f) => f.tipMatchesBounced && f.bouncedDiffersFromParent);
   if (liveFiles.length > 0) {
+    // BL-1208 invariant 1: a destructive remedy is offered only where the
+    // check positively established AUTHORSHIP, never merely liveness. When
+    // every live path was restored (not authored), withhold the remedy -
+    // but invariant 2: this NEVER becomes a clean verdict; the finding and
+    // every live path are still reported unchanged, whatever is decided
+    // about the remedy.
+    const anyAuthored = liveFiles.some((f) => !f.restoredFromEarlierHistory);
     return {
       ...base,
       verdict: 'violation',
-      liveFiles,
-      remedy: `on ${facts.branch}: git revert --no-edit ${facts.commit}`,
+      liveFiles: liveFiles.map((f) => f.path),
+      remedy: anyAuthored ? `on ${facts.branch}: git revert --no-edit ${facts.commit}` : null,
     };
   }
   return { ...base, verdict: 'clean' };
