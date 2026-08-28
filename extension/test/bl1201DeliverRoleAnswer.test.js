@@ -5,7 +5,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   deliverRoleAnswer,
   roleAnswerFilePointerPath,
-  roleAwaitingFilePointerPath,
+  roleAwaitingAnswerPath,
   enqueueRoleAnswerNote,
 } = require('../out/tools/telegram-front-desk-bot');
 
@@ -15,7 +15,7 @@ const {
 // tests in telegramFrontDeskBotCli.test.js.
 
 function writeAwaiting(root, role, record) {
-  const abs = path.join(root, roleAwaitingFilePointerPath(role));
+  const abs = roleAwaitingAnswerPath(root, role);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, JSON.stringify(record));
 }
@@ -31,7 +31,12 @@ function readAnswer(root, role) {
 }
 
 function awaitingExists(root, role) {
-  return fs.existsSync(path.join(root, roleAwaitingFilePointerPath(role)));
+  return fs.existsSync(roleAwaitingAnswerPath(root, role));
+}
+
+function roleTsvFixture(root) {
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), 'specifier\tsession\t' + root + '\tswarmforge-specifier\tspecifier\tclaude\ttask\n');
 }
 
 // ── scenario 01: mismatch is refused, pending question stays pending ──────
@@ -124,25 +129,36 @@ test('BL-1201: no recorded answer at all reports no-answer, never throws', () =>
 
 // ── recording side: enqueueRoleAnswerNote stamps the correlator ───────────
 
-test('BL-1201: enqueueRoleAnswerNote stamps the currently-pending question\'s askedAtMs onto the recorded answer', async () => {
+test('BL-1201: enqueueRoleAnswerNote stamps the currently-pending question\'s askedAtMs onto the recorded answer, WITHOUT clearing the pending marker', async () => {
   const root = mkTmpDir('sfvc-bl1201-');
   writeAwaiting(root, 'specifier', { question: 'q', asked_at_ms: 777 });
-  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
-  fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), 'specifier\tsession\t' + root + '\tswarmforge-specifier\tspecifier\tclaude\ttask\n');
+  roleTsvFixture(root);
   await enqueueRoleAnswerNote(root, 'specifier', 'use staging please');
   const stored = readAnswer(root, 'specifier');
   assert.equal(stored.text, 'use staging please');
   assert.equal(stored.askedAtMs, 777);
-  // With the correlator now matching the still-pending question, delivery
-  // succeeds end to end.
+  // BL-1201 architect bounce D1: the marker must SURVIVE the capture
+  // event itself - only deliverRoleAnswer clears it, once called.
+  assert.equal(awaitingExists(root, 'specifier'), true, 'the pending marker must still exist right after capture');
+});
+
+test('BL-1201 architect bounce D1, the real production sequence: capture then deliver (no intervening clear) succeeds end to end', async () => {
+  const root = mkTmpDir('sfvc-bl1201-');
+  writeAwaiting(root, 'specifier', { question: 'q', asked_at_ms: 777 });
+  roleTsvFixture(root);
+  // The REAL captureRoleAnswer sequence for the dormant/file leg: just
+  // enqueueRoleAnswerNote - no clearRoleAwaitingAnswer call in between
+  // (that was the bug; fixed by moving the clear into deliverRoleAnswer
+  // itself, telegramFrontDeskBotCore.ts's captureRoleAnswer).
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging please');
   const result = deliverRoleAnswer(root, 'specifier');
-  assert.equal(result.kind, 'delivered');
+  assert.equal(result.kind, 'delivered', `expected delivered, got: ${JSON.stringify(result)}`);
+  assert.equal(awaitingExists(root, 'specifier'), false, 'deliverRoleAnswer must be the one to clear the marker');
 });
 
 test('BL-1201: enqueueRoleAnswerNote records no askedAtMs when nothing is pending, so delivery later refuses fail-closed', async () => {
   const root = mkTmpDir('sfvc-bl1201-');
-  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
-  fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), 'specifier\tsession\t' + root + '\tswarmforge-specifier\tspecifier\tclaude\ttask\n');
+  roleTsvFixture(root);
   await enqueueRoleAnswerNote(root, 'specifier', 'use staging please');
   const stored = readAnswer(root, 'specifier');
   assert.equal(stored.askedAtMs, undefined);

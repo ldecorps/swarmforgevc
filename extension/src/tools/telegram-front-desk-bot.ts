@@ -1633,25 +1633,15 @@ export function roleAnswerFilePointerPath(role: string): string {
   return path.join('.swarmforge', 'operator', 'role-answers', `${role}.json`);
 }
 
-// BL-1201: role_ask.bb's own awaiting-question marker
-// (.swarmforge/operator/role-awaiting/<role>.json), read-only from this
-// side - never written or cleared here except by deliverRoleAnswer below
-// on a CONFIRMED match, so role_ask.bb's own single-pending-question
-// contract stays exactly as it is.
-export function roleAwaitingFilePointerPath(role: string): string {
-  return path.join('.swarmforge', 'operator', 'role-awaiting', `${role}.json`);
-}
-
-interface RoleAwaitingRecord {
-  question?: string;
-  asked_at_ms?: number;
-  options?: unknown;
-}
-
-function readRoleAwaitingRecord(targetPath: string, role: string): RoleAwaitingRecord | undefined {
-  const abs = path.join(targetPath, roleAwaitingFilePointerPath(role));
+// BL-1201 architect bounce (minor): reuses the PRE-EXISTING
+// roleAwaitingAnswerPath/readRoleAwaitingAnswer (above, BL-607) rather
+// than a second path/read convention for the identical file - only the
+// `asked_at_ms` field they didn't previously need to expose is added
+// here, via this narrower read.
+function readRoleAwaitingAskedAtMs(targetPath: string, role: string): number | undefined {
   try {
-    return JSON.parse(fs.readFileSync(abs, 'utf8')) as RoleAwaitingRecord;
+    const raw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(targetPath, role), 'utf8')) as { asked_at_ms?: number };
+    return raw.asked_at_ms;
   } catch {
     return undefined;
   }
@@ -1721,9 +1711,9 @@ function writeRoleAnswerFile(
   // which could be arbitrarily later. undefined (no question pending
   // right now) is recorded as-is; deliverRoleAnswer treats an undefined
   // askedAtMs as never matching, fail-closed.
-  const awaiting = readRoleAwaitingRecord(targetPath, role);
-  if (awaiting?.asked_at_ms !== undefined) {
-    record.askedAtMs = awaiting.asked_at_ms;
+  const askedAtMs = readRoleAwaitingAskedAtMs(targetPath, role);
+  if (askedAtMs !== undefined) {
+    record.askedAtMs = askedAtMs;
   }
   if (updateId !== undefined) {
     record.updateId = updateId;
@@ -1750,6 +1740,16 @@ export type DeliverRoleAnswerResult =
 // Invariant 2: no answer text is destroyed - a mismatch or an
 // already-consumed answer is left exactly as found; a confirmed match
 // marks consumedAt in place rather than deleting the record.
+//
+// BL-1201 architect bounce D1: this is the ONLY thing that clears
+// role-awaiting/<role>.json for the dormant/file capture leg -
+// captureRoleAnswer (telegramFrontDeskBotCore.ts) no longer clears it
+// immediately at capture time for that leg (only the live-pane delivery
+// leg still does, since that leg never touches this file at all). Clearing
+// at capture, before any consumer had a chance to check the pairing, is
+// exactly what made deliverRoleAnswer's own "delivered" verdict
+// unreachable - the correlator has to survive until something actually
+// consumes it.
 export function deliverRoleAnswer(targetPath: string, role: string): DeliverRoleAnswerResult {
   const answer = readRoleAnswerFile(targetPath, role);
   if (!answer) {
@@ -1758,17 +1758,16 @@ export function deliverRoleAnswer(targetPath: string, role: string): DeliverRole
   if (answer.consumedAt !== undefined) {
     return { kind: 'already-consumed' };
   }
-  const awaiting = readRoleAwaitingRecord(targetPath, role);
+  const askedAtMs = readRoleAwaitingAskedAtMs(targetPath, role);
   // Fail-closed: an answer captured with no question pending (askedAtMs
   // undefined) never matches, even if a question later becomes pending -
   // undefined has no defined identity to correlate against.
-  if (answer.askedAtMs === undefined || awaiting?.asked_at_ms === undefined || answer.askedAtMs !== awaiting.asked_at_ms) {
+  if (answer.askedAtMs === undefined || askedAtMs === undefined || answer.askedAtMs !== askedAtMs) {
     return { kind: 'mismatch' };
   }
   const answerAbs = path.join(targetPath, roleAnswerFilePointerPath(role));
   fs.writeFileSync(answerAbs, JSON.stringify({ ...answer, consumedAt: new Date().toISOString() }));
-  const awaitingAbs = path.join(targetPath, roleAwaitingFilePointerPath(role));
-  fs.rmSync(awaitingAbs, { force: true });
+  clearRoleAwaitingAnswer(targetPath, role);
   return { kind: 'delivered', text: answer.text };
 }
 
