@@ -157,3 +157,5 @@ notes: |
 
 required_wiring:
   - 'swarmforge/scripts/check_property_suite_drift.sh::trap ::the exit-path handler must be installed in the guard that actually runs, not only defined in the sourced lib — a cleanup path nothing installs is the BL-419 shape this gate exists for'
+
+assigned_to: coder
