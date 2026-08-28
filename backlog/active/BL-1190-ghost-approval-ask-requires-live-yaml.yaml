@@ -56,6 +56,7 @@ source: |
   + Cursor forensics, 2026-08-27 ~12:48 BST).
 
 notes: |
+  - "[2026-08-27 23:30] coordinator: promotion HOLD — deprecator freshness gate: depends_on (BL-582) done but description still names retired surface(s) Mint, Expedite. Left in paused/ for specifier adjudication."
   - [2026-08-27] Minted while repairing BL-1186 ghost approval; systemic slice.
   - [2026-08-27] specifier: Article 3.6 freshness gate held on
     `depends_on: [BL-582]` (done) + "retired surface: Mint" — verified FALSE
