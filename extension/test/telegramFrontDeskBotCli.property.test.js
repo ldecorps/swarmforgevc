@@ -150,23 +150,30 @@ test(
   'property (BL-1203 invariant 1): a role receives at most one note per inbound answer identity across an arbitrary replay sequence',
   async () => {
     const root = ensureSharedRoot();
-    await fc.assert(
-      fc.asyncProperty(fc.array(roleAnswerCallArb, { minLength: 1, maxLength: 4 }), async (calls) => {
-        resetMutableFixtureState(root);
-        for (const call of calls) {
-          await enqueueRoleAnswerNote(root, 'specifier', call.text, call.updateId);
-        }
-        const distinctUpdateIds = new Set(calls.map((c) => c.updateId));
-        assert.equal(
-          outboxFileCount(root),
-          distinctUpdateIds.size,
-          `expected exactly ${distinctUpdateIds.size} queued note(s) for ${distinctUpdateIds.size} distinct updateId(s) in ${JSON.stringify(calls)}, got ${outboxFileCount(root)}`
-        );
-      }),
-      { numRuns: 10 }
-    );
-    fs.rmSync(root, { recursive: true, force: true });
-    sharedRoot = undefined;
+    try {
+      await fc.assert(
+        fc.asyncProperty(fc.array(roleAnswerCallArb, { minLength: 1, maxLength: 4 }), async (calls) => {
+          resetMutableFixtureState(root);
+          for (const call of calls) {
+            await enqueueRoleAnswerNote(root, 'specifier', call.text, call.updateId);
+          }
+          const distinctUpdateIds = new Set(calls.map((c) => c.updateId));
+          assert.equal(
+            outboxFileCount(root),
+            distinctUpdateIds.size,
+            `expected exactly ${distinctUpdateIds.size} queued note(s) for ${distinctUpdateIds.size} distinct updateId(s) in ${JSON.stringify(calls)}, got ${outboxFileCount(root)}`
+          );
+        }),
+        { numRuns: 10 }
+      );
+    } finally {
+      // BL-1203 D1 (architect bounce, 20260828): a property failure must
+      // not leak this fixture root, and must not hand a stale, already-
+      // removed sharedRoot to the SECOND property test below
+      // (ensureSharedRoot only rebuilds when sharedRoot is falsy).
+      fs.rmSync(root, { recursive: true, force: true });
+      sharedRoot = undefined;
+    }
   },
   60000
 );
@@ -175,29 +182,32 @@ test(
   'property (BL-1203 invariant 2): the pointer file always holds the text of the last genuinely-new-updateId capture, never a stale earlier one',
   async () => {
     const root = ensureSharedRoot();
-    await fc.assert(
-      fc.asyncProperty(fc.array(roleAnswerCallArb, { minLength: 1, maxLength: 4 }), async (calls) => {
-        resetMutableFixtureState(root);
-        const seen = new Set();
-        let lastNewText;
-        for (const call of calls) {
-          await enqueueRoleAnswerNote(root, 'specifier', call.text, call.updateId);
-          if (!seen.has(call.updateId)) {
-            seen.add(call.updateId);
-            lastNewText = call.text;
+    try {
+      await fc.assert(
+        fc.asyncProperty(fc.array(roleAnswerCallArb, { minLength: 1, maxLength: 4 }), async (calls) => {
+          resetMutableFixtureState(root);
+          const seen = new Set();
+          let lastNewText;
+          for (const call of calls) {
+            await enqueueRoleAnswerNote(root, 'specifier', call.text, call.updateId);
+            if (!seen.has(call.updateId)) {
+              seen.add(call.updateId);
+              lastNewText = call.text;
+            }
           }
-        }
-        const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
-        assert.equal(
-          stored.text,
-          lastNewText,
-          `expected the pointer file to hold "${lastNewText}" (the last genuinely-new capture) for ${JSON.stringify(calls)}, got "${stored.text}"`
-        );
-      }),
-      { numRuns: 10 }
-    );
-    fs.rmSync(root, { recursive: true, force: true });
-    sharedRoot = undefined;
+          const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
+          assert.equal(
+            stored.text,
+            lastNewText,
+            `expected the pointer file to hold "${lastNewText}" (the last genuinely-new capture) for ${JSON.stringify(calls)}, got "${stored.text}"`
+          );
+        }),
+        { numRuns: 10 }
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+      sharedRoot = undefined;
+    }
   },
   60000
 );
