@@ -1,0 +1,147 @@
+id: BL-1219
+title: "buildRoleInboxes resolves every role to <worktreePath>/.swarmforge/handoffs/inbox, which is a fossil directory for the two master-resident roles, so dead-letter announcement is silently blind to the coordinator's and specifier's real mailboxes"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety/health signal. Dead-lettered mail to the two
+# master-resident roles is never announced and never refused - it is not
+# seen at all - so the signal reports all-clear while mail rots.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1219-role-inbox-resolution-covers-master-resident-roles.feature
+human_approval: pending
+approval_context: >
+  No design question — the correct behaviour is not in doubt, and a correct
+  reference implementation already exists in this repo. Flagged for approval
+  only because the fix touches a helper shared by three consumers, one of
+  which (the watchdog chaser monitor) may be dead in production since BL-146
+  moved chase decisions into the Babashka daemon.
+
+  What needs your call is scope: fix the shared resolver and let all
+  consumers inherit it (specced), or fix only the proven-live dead-letter
+  path and leave the panel alone. Specced as the former because a resolver
+  that is wrong for two of eight roles is wrong wherever it is called, and
+  leaving it half-fixed preserves the trap for the next caller.
+description: |
+  ## What
+
+  Role inbox resolution on the TypeScript side must locate a role's REAL
+  mailbox for master-resident roles (`specifier`, `coordinator`) as well as
+  worktree roles, so every consumer of that resolution — dead-letter
+  announcement above all — sees their mail.
+
+  ## Why
+
+  `buildRoleInboxes` (`extension/src/watchdog/chaserMonitor.ts`) maps every
+  role to `path.join(entry.worktreePath, '.swarmforge', 'handoffs', 'inbox')`.
+  For a worktree role that is correct. For a master-resident role,
+  `roles.tsv` gives `worktreePath` as the repo root, so it resolves to
+  `<root>/.swarmforge/handoffs/inbox/` — which is NOT where their mail
+  lives. Their real mailbox is `<root>/.swarmforge/handoffs/<role>/inbox/`.
+
+  On this host the difference is stark: the directory it scans holds ten
+  stale `.chase.json` sidecars, none newer than 2026-07-09, while the
+  coordinator's real inbox holds 2776 completed handoffs.
+
+  ## The observed failure
+
+  A QA-to-coordinator handoff dead-lettered on 2026-08-25 21:25:36Z and is
+  STILL sitting unannounced in
+  `.swarmforge/handoffs/coordinator/inbox/new/` as
+  `00_20260825T212536Z_001456_from_QA_to_coordinator_for_coordinator.handoff.dead`
+  (zero bytes). `dead-letter-notify-state.json` lists exactly two announced
+  paths, both under `.worktrees/coder/`, and the state file's own mtime is
+  2026-08-25 23:24 — an hour AFTER the file appeared. So the sweep ran and
+  did not see it.
+
+  The clean discriminator: the second announced path is
+  `13_20260825T212533Z_000637_from_specifier_to_coder_for_coder.handoff.dead`,
+  created at 21:25:33Z — three seconds before the one that was missed. One
+  sweep, same instant, worktree role announced and master-resident role
+  invisible. That is a scan-coverage gap, not a notifier bug.
+
+  ## This is not what BL-1114 fixed
+
+  BL-1114 ("dead-letter quarantine must not be silent", done, QA-passed
+  2026-08-24) made the announce/escalate behaviour correct, and its invariant
+  1 requires every new `.dead` to be announced with a reason or recorded as a
+  named refusal — never a silent no-op. The file above was created the day
+  AFTER that landed and got neither. BL-1114's fix is not defective: the
+  announcement path can only act on what the scan hands it, and the scan
+  never hands it these two roles. Do not reopen BL-1114.
+
+  ## How (direction, not mandate)
+
+  A correct per-role resolver already exists on the Babashka side and is what
+  the live daemon uses: `handoff-lib/mailbox-dir`, called via
+  `role-inboxes-for-chase` in `handoffd.bb`, which is why the daemon has
+  never had this blind spot. The TypeScript helper is a hand-mirrored
+  reimplementation of the same mapping that drifted. Prefer making the TS
+  side agree with that mapping over inventing a third one.
+
+  Per the shared engineering rule on constants mirrored across a language
+  boundary no import can bridge, the two implementations should be pinned by
+  a test asserting they agree for BOTH role shapes — a comment saying "kept
+  in sync" is not a gate, and this drift is exactly what that rule predicts.
+
+  ## Constraints
+
+  - Worktree roles' resolution must not change. Their current paths are
+    correct and are what the two announced entries prove.
+  - Do not migrate or delete the fossil `<root>/.swarmforge/handoffs/inbox/`
+    directory in this ticket; it is stale state, and sweeping it is a
+    separate decision. Only stop treating it as two roles' mailbox.
+  - The already-dead-lettered file above must not be silently swallowed by
+    the fix: after the fix, a sweep must announce it (or record a named
+    refusal for it).
+
+qa_e2e_procedure: >
+  (1) With the swarm stopped, run the dead-letter notify sweep and confirm it
+  now reports the existing coordinator `.dead` file from 2026-08-25 —
+  announced, or refused with a recorded named reason. (2) Seed a fixture
+  `*.handoff.dead` into BOTH `.swarmforge/handoffs/specifier/inbox/new/` and
+  a worktree role's inbox; run the sweep once and confirm both appear, and
+  that the worktree one behaves exactly as it does today. (3) Confirm the
+  fossil directory `<root>/.swarmforge/handoffs/inbox/` is no longer scanned
+  as any role's mailbox and its ten stale 2026-07-09 sidecars produce no
+  announcements. (4) Re-run the sweep and confirm no duplicate announcement
+  for anything already announced — the dedup on announcedFilePaths still
+  holds across the newly visible paths.
+
+out_of_scope: |
+  - Recovering the CONTENT of the 2026-08-25 dead letter. It is zero bytes;
+    there is nothing to recover, and its neighbours (seq 001453 BL-598, seq
+    001455 BL-669) both reached backlog/done/, so no bookkeeping is known to
+    be outstanding from it.
+  - Cleaning the fossil <root>/.swarmforge/handoffs/inbox/ directory.
+  - Reopening BL-1114, whose fix is sound.
+  - Whether the watchdog chaser monitor is still live at all after BL-146
+    moved chase decisions to the daemon. Worth knowing, but a separate
+    question from this resolver being wrong.
+
+invariants:
+  - "Role inbox resolution returns the role's real mailbox for every role in roles.tsv, whatever its worktree shape."
+  - "A newly dead-lettered handoff is visible to the notify sweep regardless of whether its owning role is master-resident or worktree-backed."
+
+source: |
+  Found by the specifier on 2026-08-28 during a routine NO_TASK check of
+  inbox/new/*.dead (a standing habit after the oversized-note quarantine
+  case). Verified, not inferred: roles.tsv gives specifier and coordinator
+  worktreePath = repo root; buildRoleInboxes joins worktreePath +
+  .swarmforge/handoffs/inbox; that directory holds only pre-2026-07-09
+  sidecars while .swarmforge/handoffs/coordinator/inbox/completed holds 2776
+  entries; dead-letter-notify-state.json announced two worktree paths and not
+  the coordinator one created three seconds earlier in the same burst.
+
+notes: |
+  - "[2026-08-28] specifier: the Babashka daemon is NOT affected — handoffd.bb's
+    role-inboxes-for-chase goes through handoff-lib/mailbox-dir, a real
+    per-role resolver. This is a TypeScript-side-only drift from that mapping,
+    which is why the defect survived unnoticed: the component that runs
+    constantly (the daemon) is correct, and the blind one only runs on a
+    sweep."

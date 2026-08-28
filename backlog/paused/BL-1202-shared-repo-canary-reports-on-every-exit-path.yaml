@@ -1,0 +1,159 @@
+id: BL-1202
+title: "The shared-repo canary is skipped when the guarded property-suite run is killed, so the corruption it exists to report goes unreported"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 18
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1202-shared-repo-canary-reports-on-every-exit-path.feature
+human_approval: approved
+approval_context: >
+  This is the detector half. BL-1200 and BL-1196 stop test fixtures writing
+  into the live repository; this ticket is about the guard that was built to
+  REPORT such a write and stayed silent while one happened. Both halves are
+  wanted, neither blocks the other, and they touch different files.
+
+  What is worth the human eye is the second scenario. Making the canary fire
+  on a killed run is uncontroversial. Also requiring that a killed run leave
+  no suite process still able to write means the guard must own the suite as
+  a process group and take it down, not merely stop waiting for it. That is
+  the half that actually prevented nothing today: the canary firing late
+  would have reported corruption that was still ongoing. If the preference
+  is to ship only the reporting half now, say so and scenario 02 is split
+  out rather than silently dropped.
+
+  The ticket names a shell trap as the mechanism because the guard is a bash
+  script and a trap is how bash runs code on an abnormal exit; required_wiring
+  is anchored to that word. If a different mechanism is preferred, the wiring
+  entry must be amended in the same breath or it will block the handoff to QA
+  against a string nobody will write.
+description: |
+  ## What
+
+  `swarmforge/scripts/check_property_suite_drift.sh` must report its BL-1124
+  shared-repo canary verdict on every exit path of the run it guards, and
+  must not leave the guarded suite still running once the guard itself is
+  gone.
+
+  ## Why
+
+  The guard already does the right thing in the two cases it anticipated. It
+  snapshots the live checkout at line 121, runs the suite, and at line 145
+  asserts the snapshot is unchanged, under a comment that reads
+  "Always assert canary after a real suite run (green or red)."
+
+  Green and red are not the only ways a run ends. The file contains no trap
+  (`grep -n trap` on it returns nothing). The suite is invoked inside a
+  command substitution, `OUT="$(run_default_suite 2>&1)"` at line 132, and
+  `run_default_suite` at line 97 is the full unscoped
+  `(cd extension && npm run test:properties)`. When the foreground
+  `git commit` that fired the hook is killed, the guard dies at that line:
+  the canary is never reached, and the suite's own children are not reaped
+  and keep running.
+
+  That is not hypothetical. On 2026-08-27 19:37-19:38 the cleaner committed a
+  DRY refactor touching `extension/src/`, the hook chain ran the unscoped
+  suite, a client-side 120s timeout killed the foreground commit, and the
+  suite's surviving background processes rewrote the `swarmforge-cleaner`
+  branch ref with fixture commits until its tip was a commit named "seed",
+  divorced from the real merge `d5bf9f5dc`. `git reflog show swarmforge-cleaner`
+  held roughly 2900 entries of that pattern. The canary built to catch exactly
+  this reported nothing, because it sat after the line the kill landed on.
+
+  ## How (direction, not mandate)
+
+  Install the canary assertion on the guard shell exit path, so it runs
+  whether the suite returned green, returned red, or the guard was killed
+  mid-run; and make the guard own the suite process group so the same exit
+  path takes the suite down with it. In bash that means a trap plus a
+  process-group signal; the ticket does not prescribe the exact signals or
+  ordering, and does not ask for a rewrite of how the suite is invoked
+  beyond what those two properties need.
+
+  ## Constraints
+
+  - The existing pass and fail behaviours are unchanged: a green run with a
+    clean canary still exits 0, a mutated checkout still exits 1 with the
+    BL-1124 message, and the exit-127 toolchain-missing skip and the
+    `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` override still short-circuit
+    before any of this.
+  - The BL-1121 reconcile-import skip still returns before the suite runs;
+    a path that never started a suite has no canary to report and must not
+    start printing one.
+  - The reporting path must not itself be able to hang the hook. A canary
+    that blocks on a dying child is a worse outcome than the silence it
+    replaces.
+  - Do not widen the guard trigger or scope the suite differently here.
+    That the guard runs the whole unscoped property suite for any staged
+    `extension/src/` path is a real cost, and it is a different ticket.
+
+qa_e2e_procedure: >
+  (1) In a scratch clone, stage an `extension/src/` path, run the guard with
+  an injected fake suite command that mutates the checkout ref and then exits
+  0; confirm the guard exits non-zero with the BL-1124 message. Repeat with
+  the fake suite exiting non-zero; confirm the same. (2) Repeat with a fake
+  suite that mutates the ref and then sleeps; kill the guard process from
+  outside while it is in that sleep, and confirm the canary verdict is still
+  reported. This is the scenario that is red before the fix. (3) After the
+  same kill, confirm no process started by that fake suite is still running
+  (check by process group, not by name). (4) Confirm the three
+  short-circuits are untouched: `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1`
+  exits 0 without running anything, a staged path outside the trigger set
+  prints skip-paths and exits 0, and a command that does not exist still
+  takes the exit-127 skip. (5) Run
+  `swarmforge/scripts/test/test_property_suite_drift_guard.sh` and confirm it
+  is no worse than its pre-change baseline.
+
+out_of_scope: |
+  - BL-1200 and BL-1196, the two halves that stop fixtures writing into the
+    live repository at all. This ticket assumes a fixture can still misbehave
+    and is about the guard noticing.
+  - BL-782, `test_expedite_cli.sh`'s 28 pre-existing failures. Same family of
+    fixtures, different defect; do not gate this on that suite going green.
+  - Rescoping which staged paths trigger the guard, or making the suite it
+    runs narrower than the full `npm run test:properties`. Real cost, named
+    in the constraints above, separate ticket.
+  - Recovering the branch refs that today's incident already corrupted, and
+    the master checkout that is currently detached. Live ops, surfaced
+    separately; this ticket is the detector.
+  - Any change to `bl1124_snapshot` or `bl1124_assert_unchanged` themselves
+    in `property_suite_shared_repo_guard.sh`. They behave correctly; the
+    defect is that one of them is not reached.
+
+invariants:
+  - "The guard reports its shared-repo canary verdict on every path by which a started suite run ends, including paths the guard did not choose."
+  - "No process the guard started outlives the guard."
+
+source: |
+  Cleaner note 000039 to specifier (priority 00), 2026-08-27:
+  "BL-1188: property-suite guard corrupted branch ref, see evidence/".
+  Full trace, written by the cleaner during recovery:
+  .worktrees/cleaner/backlog/evidence/BL-1188-cleaner-branch-corruption-property-suite-20260827.md.
+  The cleaner deliberately surfaced it as a note rather than a bounce: it is
+  a machinery defect, not a defect in BL-1188's own coder or cleaner work,
+  and the cleaner explicitly left the triage to the specifier rather than
+  minting anything itself.
+
+  Every line number and quoted comment in the description above was re-read
+  from `swarmforge/scripts/check_property_suite_drift.sh` at mint time
+  (97, 121, 132, 143, 145) and the absence of a trap confirmed by grep, not
+  taken from the note.
+
+notes: |
+  - "[2026-08-27] specifier: the cleaner's evidence offers the root cause as
+    best-effort and names BL-782 as the likely fixture. That attribution is
+    NOT carried into this ticket, because it does not matter here: whichever
+    fixture did the writing, the guard must report it. Scoping this ticket
+    to one suspected writer would rebuild the same blind spot."
+  - "[2026-08-27] specifier: the cleaner recovered by re-committing with
+    SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 and said in the evidence that
+    this was BL-1121 recovery exemption use, not a standing recipe. Recorded
+    so a later reader does not mistake it for the sanctioned path."
+
+required_wiring:
+  - 'swarmforge/scripts/check_property_suite_drift.sh::trap ::the exit-path handler must be installed in the guard that actually runs, not only defined in the sourced lib — a cleanup path nothing installs is the BL-419 shape this gate exists for'

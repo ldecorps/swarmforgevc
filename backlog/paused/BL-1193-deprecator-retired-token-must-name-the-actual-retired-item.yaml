@@ -11,7 +11,7 @@ depends_on: [BL-1173]
 mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1193-deprecator-retired-token-must-name-the-actual-retired-item.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Discovered adjudicating BL-1190's Article 3.6 freshness HOLD (2026-08-27).
   `node extension/out/tools/deprecate-check.js . BL-1190` returned
