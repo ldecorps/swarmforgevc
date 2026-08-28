@@ -1,5 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1228: active-pool freshness/hold
+divergence audit — `active-pool-freshness-audit.ts` reports every
+`backlog/active/` ticket whose own `deprecate-check.js` verdict (Article
+3.6) is not exactly `allow`; report-only, never moves/creates/deletes/
+rewrites a backlog file, fail-closed on a missing/crashing/unparseable/
+unrecognised verdict. Wired into `promote_and_route_next.sh` after a
+successful promotion, so every legitimate promotion surfaces any ticket
+that got into `active/` by another path — the gap a hand-rolled `git mv`
+(`main` commit `cac8afef8`, 2026-08-28) walked past unnoticed. A periodic
+sweep independent of promotions was considered and deliberately deferred
+(human ruling at mint), not an oversight. Acceptance:
+`specs/features/BL-1228-active-pool-freshness-hold-divergence-audit.feature`.
+How-to:
+`docs/how-to/BL-1228-active-pool-freshness-hold-divergence-audit.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1217: RC health/repair
 (`swarmforge/scripts/remote_control_health_lib.bb`) now derives desired
 remote-control state from the effective pack config, not the persisted
