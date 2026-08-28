@@ -14,9 +14,9 @@
 // role's own worktree row names.
 
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -26,8 +26,15 @@ const TASK_NAME = 'BL-1213-fixture';
 const TICKET_ID = 'BL-1213';
 const FEATURE_NAME = "BL-1213 a forward is refused when the branch rolled back an accepted parcel's landed content";
 
+// BL-1213 hardening: this file's Given steps never removed ctx.root - every
+// acceptance run leaked a real fixture git repo into /tmp (confirmed: 180+
+// stragglers accumulated before this fix). mkSocketFixtureRoot's own
+// process.on('exit') backstop (BL-948) covers the throw-before-cleanup case
+// with no further code here - no socket is built by this fixture, but the
+// helper is this repo's general fixture-root convention, not socket-only
+// (see its own docstring).
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function git(cwd, args) {
