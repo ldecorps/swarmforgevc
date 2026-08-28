@@ -221,11 +221,90 @@ priority: 5
                      {:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-new.yaml"
                       :others [{:path "paused/BL-4242-one-slug.yaml"}]}))))
 
+;; ── BL-1216: pool classification + content verdict ─────────────────────────
+
+(assert= "path-pool reads the pool segment from an absolute or relative path"
+         "active" (backlog-hygiene-lib/path-pool "/repo/backlog/active/BL-1-x.yaml"))
+(assert= "path-pool reads a bare relative path" "hold"
+         (backlog-hygiene-lib/path-pool "hold/BL-1-x.yaml"))
+(assert= "path-pool is nil for a path naming no known pool" nil
+         (backlog-hygiene-lib/path-pool "backlog/BL-1-x.yaml"))
+
+(assert= "active and paused classify as live" "live"
+         (backlog-hygiene-lib/pool-classification "active"))
+(assert= "paused classifies as live" "live"
+         (backlog-hygiene-lib/pool-classification "paused"))
+(assert= "hold and done classify as terminal" "terminal"
+         (backlog-hygiene-lib/pool-classification "hold"))
+(assert= "done classifies as terminal" "terminal"
+         (backlog-hygiene-lib/pool-classification "done"))
+(assert= "an unrecognized pool classifies as nil" nil
+         (backlog-hygiene-lib/pool-classification "nope"))
+
+(assert= "content-verdict reports identical for byte-identical content, injected reader"
+         "CONTENT IDENTICAL"
+         (backlog-hygiene-lib/content-verdict "a" ["b"] {"a" "same" "b" "same"}))
+(assert= "content-verdict reports differs when content differs, injected reader"
+         "CONTENT DIFFERS"
+         (backlog-hygiene-lib/content-verdict "a" ["b"] {"a" "same" "b" "different"}))
+(assert= "content-verdict reports differs — never identical — when the other file is unreadable"
+         "CONTENT DIFFERS"
+         (backlog-hygiene-lib/content-verdict "a" ["b"] {"a" "same"}))
+(assert= "content-verdict reports differs when the subject itself is unreadable"
+         "CONTENT DIFFERS"
+         (backlog-hygiene-lib/content-verdict "a" ["b"] {"b" "same"}))
+(assert= "content-verdict requires every other to match, not just one"
+         "CONTENT DIFFERS"
+         (backlog-hygiene-lib/content-verdict "a" ["b" "c"] {"a" "same" "b" "same" "c" "nope"}))
+
+(assert=
+ "format-violation for duplicate-id: exactly one live copy is named to keep, pools and content verdict are stated"
+ "DUPLICATE-ID BL-4242  backlog/active/BL-4242-x.yaml [active/live]  also: backlog/hold/BL-4242-x.yaml [hold/terminal]  (CONTENT DIFFERS; duplicate ticket id — refuse at mint; keep: backlog/active/BL-4242-x.yaml)"
+ (backlog-hygiene-lib/format-violation
+  {:kind :duplicate-id :id "BL-4242" :path "backlog/active/BL-4242-x.yaml"
+   :others [{:path "backlog/hold/BL-4242-x.yaml"}]}
+  (fn [p] (get {"backlog/active/BL-4242-x.yaml" "a" "backlog/hold/BL-4242-x.yaml" "b"} p))))
+
+(assert=
+ "format-violation for duplicate-id: a collision confined to live pools names no copy to keep"
+ "DUPLICATE-ID BL-4242  backlog/active/BL-4242-x.yaml [active/live]  also: backlog/paused/BL-4242-x.yaml [paused/live]  (CONTENT IDENTICAL; duplicate ticket id — refuse at mint)"
+ (backlog-hygiene-lib/format-violation
+  {:kind :duplicate-id :id "BL-4242" :path "backlog/active/BL-4242-x.yaml"
+   :others [{:path "backlog/paused/BL-4242-x.yaml"}]}
+  (fn [_] "same")))
+
 (assert=
  "a missing local backlog root fails closed (never an empty corpus)"
  true
  (boolean (:error (backlog-hygiene-lib/read-local-id-index
                    "/tmp/bl1105-no-such-backlog-root"))))
+
+;; BL-1216: a ticket file that cannot be read no longer aborts the whole
+;; corpus scan when its id is still recoverable from its filename — it
+;; still surfaces in the index (a real collision is still caught), so the
+;; unreadable-hold-copy scenario reports DUPLICATE-ID + CONTENT DIFFERS
+;; instead of a corpus-wide refusal.
+(let [root (str (fs/create-temp-dir {:prefix "bl1216-unreadable-idx-"}))]
+  (fs/create-dirs (fs/path root "paused"))
+  (fs/create-dirs (fs/path root "hold"))
+  (spit (str (fs/path root "paused" "BL-9999-live.yaml")) "id: BL-9999\n")
+  (let [unreadable (str (fs/path root "hold" "BL-9999-terminal.yaml"))]
+    (spit unreadable "id: BL-9999\n")
+    (fs/set-posix-file-permissions unreadable "---------")
+    (assert=
+     "read-local-id-index still indexes an unreadable ticket by its filename id, no corpus-wide failure"
+     ["BL-9999"]
+     (keys (:ok (backlog-hygiene-lib/read-local-id-index root))))
+    (fs/set-posix-file-permissions unreadable "rw-r--r--")))
+
+(assert=
+ "ticket-id-from-filename recovers the id from the <ID>-slug.yaml convention"
+ "BL-1216"
+ (#'backlog-hygiene-lib/ticket-id-from-filename "/tmp/x/BL-1216-example.yaml"))
+(assert=
+ "ticket-id-from-filename is nil when the name doesn't fit the convention"
+ nil
+ (#'backlog-hygiene-lib/ticket-id-from-filename "/tmp/x/notes.txt"))
 
 ;; ── BL-1027: dangling acceptance pointer at mint ───────────────────────────
 
