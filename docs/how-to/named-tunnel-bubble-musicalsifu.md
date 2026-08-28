@@ -136,6 +136,35 @@ Mini App link:
 echo "https://bubble.musicalsifu.com/resident-spy?token=$(cat .swarmforge/operator/bridge-token)"
 ```
 
+## Liveness is asserted, not assumed (BL-1199)
+
+A pack switch used to accept `launch_resident_spy_tunnel.sh`'s zero exit
+code as proof the named tunnel was running, and `./swarm status` rendered
+only one tunnel row (`cloudflare-tunnel`, sourced from
+`.swarmforge/operator/tunnel.pid` — the **editor** tunnel, `code tunnel` /
+`swarmforge-ops`). Nothing observed
+`.swarmforge/operator/resident-spy-cloudflared.pid` at all. The failure
+mode this produced: the named tunnel process died minutes after launch,
+and the operator's own `./swarm status` kept reporting `cloudflare-tunnel
+UP` — truthfully describing a completely different tunnel.
+
+Both call sites now share one "is the named tunnel live?" predicate
+(pidfile + `kill -0`), in `named_tunnel_liveness_lib.bb`:
+
+- **Ancillary start** re-reads the recorded pid after launch and confirms
+  the process is actually alive before reporting success — one bounded
+  relaunch attempt (`launch_resident_spy_tunnel.sh` is already idempotent)
+  before a loud, named failure.
+- **`./swarm status`** now renders the two tunnels as two separate rows —
+  `vscode-tunnel` and `bubble-cloudflared` — so a live editor tunnel can
+  never render as Bubble being up.
+- **A root with no named tunnel configured** reports "not configured", not
+  "down" — an absent tunnel is not a fault.
+
+No network probe is in this gate deliberately — it stays pid-based,
+deterministic, and offline. Reaching Cloudflare is never a precondition for
+a passing check.
+
 ## Tunnel ownership and orphan reaping (BL-857)
 
 The production tunnel name has **exactly one owner**. This closed a real
