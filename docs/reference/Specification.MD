@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1217: RC health/repair
+(`swarmforge/scripts/remote_control_health_lib.bb`) now derives desired
+remote-control state from the effective pack config, not the persisted
+launch script alone — `expected-rc-name` returns `nil` (same as an
+unflagged script) whenever `config remote_control off` is set, regardless
+of what the launch script itself carries, so a deliberate off is
+immediately honored on scripts already on disk rather than only affecting
+new launches. New pure predicates `remote-control-off-in-conf-text?` and
+`remote-control-configured-off?` (fail open to "on" on an unreadable conf).
+No new status or predicate: `classify` already mapped a `nil` expected name
+to `:off`, already excluded from `actionable?`, so every repair path
+(`swarm_ensure.bb`, `remote_control_health.bb`, `remote_control_respawn.bb`)
+inherits the gate through that one shared seam with zero call-site changes.
+Config-on and absent-config behavior is byte-for-byte unchanged. Sibling
+BL-1218 (unticketed here) covers the launch-script-write half of the same
+intake. No new extension command or setting. Acceptance:
+`specs/features/BL-1217-rc-repair-gates-on-config-not-only-the-launch-script.feature`.
+How-to: `docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md`
+config-gates-repair section.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1215: `/pilot`'s acceptance-contract
 landing gate (`extension/src/tools/pilotAcceptanceGate.ts`) now refuses to
 move a ticket into `backlog/done/` unless its implementation commit is
