@@ -172,3 +172,5 @@ notes: |
     BL-1189 and BL-592 are back in `backlog/hold/` — the repair 779a036e5
     made was undone with it (see
     [coordinator-false-identical-content-claim] evidence and BL-1216)."
+
+assigned_to: coder

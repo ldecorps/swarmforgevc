@@ -1,0 +1,182 @@
+id: BL-1224
+title: "the operator-runtime watch counts a build-freshness sync's deliberate restart as a crash, so a busy merge night reads as a crash loop and burns the whole restart budget on phantom deaths"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: operator-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1224-watch-adopts-a-deliberately-restarted-operator-runtime.feature
+human_approval: pending
+approval_context: >
+  Minted from operator intake
+  .swarmforge/operator/INTAKE-build-freshness-sync-vs-operator-runtime-supervisor-double-restart.md
+  (human Laurent via Cursor / Local Agent, 2026-08-28 ~01:55Z). That intake is
+  ONE intake split into TWO tickets; this one carries the first bullet of its
+  "Desired fix" section, quoted verbatim in `source:` below. BL-1225 carries
+  the other two. Nothing from the intake was dropped.
+
+  One decision needs sign-off. The human's own bullet offers three shapes for
+  this fix, in their words: adopt the new pid without `:crashed`; or have sync
+  go only through `start_operator_runtime.sh` and notify the watch; or reset
+  attempts on intentional restart. This ticket picks the FIRST, and the reason
+  is that it needs no cooperation from whoever did the restarting: the pidfile
+  already distinguishes the two cases, so the watch stops being wrong even if a
+  fourth thing restarts the runtime tomorrow. The second shape was also read as
+  a signalling contract between two processes that would have to be maintained;
+  the third resets a budget rather than stopping the miscount that spends it.
+
+  Firm and not up for negotiation: an adoption must never mask a genuine crash.
+  A tracked pid that died with the pidfile still naming it, or naming nothing,
+  or naming a live but unrelated process (pid reuse), is a crash and is
+  restarted exactly as today. That is invariant 1 and scenario 01's whole job.
+description: |
+  ## What
+
+  When the operator-runtime watch finds its tracked pid gone, it must consult
+  the runtime pidfile before calling it a crash. If the pidfile now names a
+  DIFFERENT, live `operator_runtime.bb` process, somebody else restarted the
+  runtime deliberately: adopt that pid and carry on. If it names the dead pid,
+  names nothing, or names a live process that is not our runtime, it is a real
+  crash and nothing about today's bounded-restart behaviour changes.
+
+  ## Why
+
+  `check-one!` (`front_desk_supervisor_lib.bb:272`) asks only whether the
+  tracked `:pid` is alive. A replaced pid and a dead pid are indistinguishable
+  to that question, so every deliberate restart is logged `crashed`,
+  announced to the human as "operator runtime restarted (pid N, attempt K)",
+  and charged against the give-up budget.
+
+  The coordinator runs `bb build_freshness_cli.bb <root> sync` after every QA
+  merge (`coordinator.prompt`), and that sync's `restart-operator-group!` stops
+  the live runtime and starts a fresh one itself. On a busy merge night the
+  watch therefore sees a crash roughly every few minutes, none of them real.
+  Observed in `.swarmforge/operator/operator-runtime-supervisor.log` on
+  2026-08-28: crashed/started pairs at 00:49Z, 00:56Z, 01:01Z, 01:03Z, 01:10Z,
+  `gave-up after 5 attempt(s)` at 01:19Z, `re-armed` at 01:34Z, then the climb
+  restarting at 01:42Z and 01:46Z. `runtime.log` shows "operator-runtime
+  started" twice at 01:46:13Z and 01:46:45Z - the sync's start, then the
+  watch's. There was no OOM and no uncaught tick exception; the process was
+  killed externally, on purpose, every time.
+
+  Two costs. The human is trained to ignore a restart announcement, which is
+  the one signal that matters when the runtime really does start crash-looping.
+  And the give-up cooldown leaves the runtime genuinely unwatched for its
+  duration, having spent the budget on deaths that were not failures.
+
+  ## How (direction, not mandate)
+
+  `operator_runtime_watch_lib.bb` already owns the two pieces this needs and
+  nothing else has to learn anything: `read-pid` reads the pidfile, and
+  `runtime-alive?`/`pid-alive?` is the one true "is this genuinely our runtime"
+  predicate that already rules out pid reuse by checking the command line. The
+  natural seat for the decision is `decide`, before it delegates to
+  `check-one-fn` - which keeps `check-one!` itself untouched, and it is shared
+  by five supervisors that must not change behaviour.
+
+  There is a direct precedent in that same state machine to follow rather than
+  invent around: BL-1154's `voluntary-build-stale-started-entry` exists because
+  a voluntary build-stale roll is not a crash and must not consume the crash
+  budget. This is the same shape for a different non-crash.
+
+  ## Constraints
+
+  - Do not change `check-one!`'s behaviour for any other supervisor.
+  - Do not change what `healthy?` means - `swarm_ensure.bb` and
+    `swarm_status.bb` both delegate to it, and BL-993's architect bounce was
+    specifically about not growing a second, diverging liveness check.
+  - No new liveness predicate. Adoption uses the existing one.
+  - An adoption is not an incident, so it does not reach the human channel -
+    but it must be visible in the watch's own log and status file, or a real
+    post-mortem cannot tell an adoption from a tick that did nothing.
+
+qa_e2e_procedure: >
+  (1) With the swarm up and the operator runtime healthy, note the pid in
+  .swarmforge/operator/runtime.pid and the current attempt count in
+  operator-runtime-supervisor.status.json. Run
+  `bb swarmforge/scripts/build_freshness_cli.bb <root> sync` and wait past one
+  watch interval (15s default). Confirm the supervisor log records an adoption
+  naming the new pid, records no `crashed`, sends no Telegram announcement, and
+  leaves the attempt count where it was; confirm status.json now tracks the
+  sync's pid. (2) Repeat the sync three more times in quick succession and
+  confirm the attempt counter still has not moved and no `gave-up` appears -
+  this is the crash-loop cluster the ticket exists to stop. (3) Kill the live
+  operator runtime with `kill -9` and leave the pidfile naming it; confirm the
+  watch still reports `crashed`, restarts it through start_operator_runtime.sh,
+  and still announces to the human - the genuine path is unchanged. (4) Kill it
+  and delete runtime.pid; confirm `crashed` again, not an adoption. (5) Kill it,
+  then write an unrelated live pid (e.g. `$$` of a sleep) into runtime.pid;
+  confirm `crashed`, not an adoption - pid reuse must not be adopted.
+
+out_of_scope: |
+  - Everything in BL-1225: runtime.log truncation and the
+    SWARMFORGE_DAEMON_START_CALLER attribution. Same intake, different ticket.
+  - Whether build_freshness_cli.bb should restart the operator runtime at all,
+    or how often the coordinator syncs. This ticket makes the watch correct
+    about restarts it did not perform; it does not reduce their number.
+  - Routing restart-operator-group! through start_operator_runtime.sh. That is
+    a real gap - the supervisor's own header documents that entry point as the
+    only correct one, and the direct `bb operator_runtime.bb` spawn skips its
+    prior-runtime cleanup, its append-mode logging and its
+    SWARMFORGE_SKIP_OPERATOR gate - but it carries a behaviour question this
+    slice must not answer (what a sync should do when the operator is
+    deliberately skipped). Recorded as a remaining slice on epic BL-539.
+  - The other five supervisors that share check-one!. Only the operator-runtime
+    watch is in scope.
+  - Freshness-cron restarts of the supervisor process itself, and the operator
+    disposable-LLM exit protocol (`operator.done`) - both named out of scope by
+    the source intake.
+
+invariants:
+  - "A vanished tracked pid is counted as a crash unless the pidfile names a different, live operator_runtime.bb process."
+  - "An adoption never starts a process and never consumes a restart attempt."
+  - "Every adoption is visible in the watch's own log and status file."
+
+source: |
+  Operator intake
+  .swarmforge/operator/INTAKE-build-freshness-sync-vs-operator-runtime-supervisor-double-restart.md
+  (human Laurent via Cursor / Local Agent, 2026-08-28 ~01:55Z), split 1:2 with
+  BL-1225. This ticket carries the FIRST bullet of that intake's "Desired fix"
+  section, quoted verbatim:
+
+    "Supervisor must not treat a deliberate build-freshness (or
+    `start_operator_runtime.sh`) restart as a crash / attempt-counter bump -
+    e.g. adopt the new pid without `:crashed`, or have sync go only through
+    `start_operator_runtime.sh` and notify the watch, or reset attempts on
+    intentional restart."
+
+  The intake's symptom line, also verbatim:
+
+    "`operator_runtime_supervisor` announces `operator runtime restarted (pid
+    ..., attempt N)` in clusters, climbs to attempt 5, gives up, cools down,
+    re-arms. Looks like a crash loop. It is not."
+
+  Premise verified by the specifier before minting, not taken on report:
+  front_desk_supervisor_lib.bb:272 is a bare `(not (pid-alive? (:pid entry)))`
+  -> `:crashed`; build_freshness_cli.bb's restart-operator-group! kills the
+  runtime and spawns a replacement itself; and the live
+  operator-runtime-supervisor.log carries the exact crashed/started/gave-up/
+  re-armed cluster the intake describes. Backlog grepped across
+  paused/active/hold/done for an existing owner - BL-433, BL-993, BL-1043,
+  BL-1088 and BL-1154 all touch this machinery and none owns this miscount.
+
+notes: |
+  - "[2026-08-28] specifier: severity held at medium, matching the human's own
+    urgency read, despite the give-up cooldown leaving the runtime unwatched
+    for up to 15 minutes. The runtime is alive throughout - the crash is
+    phantom - so no outage results; what is lost is alert credibility and
+    repair headroom. Not high, and deliberately not expedited (Article 3.2.4):
+    this is a noise defect, and the expedite lane is for faults that degrade
+    live behaviour."
+  - "[2026-08-28] specifier: IR-DRY reports two medium-confidence
+    possible-synonym findings on this feature file. Both are deliberate and
+    should not be collapsed: 'no start command is run' vs 'the start command is
+    run once' is an assertion and its negation across the adoption/crash split,
+    and 'the watch has recorded 3 restart attempts' (Given) vs 'the recorded
+    restart attempts are still 3' (Then) is setup versus the assertion that the
+    setup survived. Resolved as accepted-by-design at mint."
