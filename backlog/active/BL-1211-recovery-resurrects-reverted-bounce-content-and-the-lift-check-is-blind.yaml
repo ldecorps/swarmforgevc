@@ -325,9 +325,30 @@ approval_context: >
   24/24; acceptance feature 8/8. 173bb2422f recorded above as
   abandoned_commits - deliberately dropped, not lost work.
 
+  [2026-08-28] coder: architect bounce round 2 D1
+  (backlog/evidence/BL-1211-architect-bounce-round2-20260828.md) - all
+  three declared invariants had no property test despite
+  bounceResurrectionVerdict.ts being exactly the pure policy module this
+  project's fast-check idiom targets. Added
+  extension/test/bounceResurrectionVerdict.property.test.js: P1 encodes
+  invariants 1 & 3 (isUnauthorizedResurrection is true iff byte-identical
+  to the bounced content AND nothing authored it back; decideRecoveryFilter
+  holds back exactly those paths) and P2 encodes invariant 2
+  (decideQuarantineLift refuses iff any generated fact is an unauthorized
+  resurrection, naming every offending ticket and path). Generator note:
+  candidateContent is DERIVED from bouncedContent (same/different/null
+  modes), not drawn independently - the same generator-must-reach-deep-
+  state fix as BL-1201's property test this same pass, applied here before
+  it could bite. Non-vacuity proven by hand twice: disabled the authorship
+  check (all 3 tests failed) and separately disabled the refusal branch
+  (2 of 3 failed); restored and recompiled between each. Verified: tsc
+  --noEmit clean; bounceResurrection.test.js + bl1211OperatorCli.test.js
+  24/24 unchanged; property file 3/3; acceptance feature 8/8.
+
 assigned_to: coder
-bounce_count: 3
+bounce_count: 4
 bounce_history:
   - { at: 2026-08-28, by: cleaner, blamed: coder, class: behavior, commit: a96b3a10f0, evidence: backlog/evidence/BL-1211-cleaner-bounce-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: c914c40443, evidence: backlog/evidence/BL-1211-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 42b5cd4dd, evidence: backlog/evidence/BL-1211-qa-bounce-20260828.md }
+  - { at: 2026-08-28, by: architect, blamed: coder, class: invariant-unencoded, commit: 03b18f6823, evidence: backlog/evidence/BL-1211-architect-bounce-round2-20260828.md }
