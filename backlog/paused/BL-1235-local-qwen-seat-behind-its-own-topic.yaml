@@ -11,7 +11,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The shape question is already answered by the human directly (see
   description) - this is only for the model tag. The seat is specced to take
