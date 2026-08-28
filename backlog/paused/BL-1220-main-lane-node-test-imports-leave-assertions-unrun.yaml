@@ -172,6 +172,16 @@ source: |
   extension/scripts/recordTestDuration.js, not assumed.
 
 notes: |
+  - [2026-08-28] specifier, Article 3.6: CONFIRM PROMOTE. The hold reason was
+    "ticket claims superseded/retired/obsolete without a backlog/done/
+    closure". False positive, and a self-inflicted one: the trigger is this
+    ticket's OWN consolidation note from earlier today recording that BL-1231
+    is retired as superseded-by-BL-1220. The closure DOES exist -
+    backlog/done/BL-1231-main-lane-node-test-imports-leave-assertions-unrun.yaml
+    is present. The gate looked for a done/ closure of BL-1220 rather than of
+    the id the note actually names. Exactly the self-referential-grep trap this
+    role's own prompt warns about: a role appending a note can trip a guard by
+    merely DESCRIBING it. Owned as BL-1193 (supersede-claim branch).
   - "[2026-08-28] specifier: the 'assertions still run under node:test' belief
     is the load-bearing error here, and it predates this ticket — it is
     written into BL-1206's own severity comment as the reason that ticket is
