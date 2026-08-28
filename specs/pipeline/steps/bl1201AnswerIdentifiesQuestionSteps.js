@@ -2,10 +2,13 @@
 
 // BL-1201: step handlers for "a role never consumes a human answer it
 // cannot match to its own pending question". Drives the REAL
-// deliverRoleAnswer/roleAnswerFilePointerPath/roleAwaitingFilePointerPath
-// (extension/out/tools/telegram-front-desk-bot) against real fixture
-// files - the same on-disk shapes role_ask.bb and the front-desk bot
-// itself read and write.
+// deliverRoleAnswer/roleAnswerFilePointerPath/roleAwaitingAnswerPath/
+// enqueueRoleAnswerNote (extension/out/tools/telegram-front-desk-bot)
+// against real fixture files - the same on-disk shapes role_ask.bb and
+// the front-desk bot itself read and write. Scenario 03 drives the REAL
+// capture sequence (enqueueRoleAnswerNote then deliverRoleAnswer, no
+// intervening clear) per the architect's own D1 finding - a hand-written
+// answer fixture alone does not exercise that production wiring.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -42,8 +45,9 @@ function registerSteps(registry) {
       ctx.bl1201 = {
         root: mkFixtureRoot(),
         deliverRoleAnswer: mod.deliverRoleAnswer,
+        enqueueRoleAnswerNote: mod.enqueueRoleAnswerNote,
         roleAnswerFilePointerPath: mod.roleAnswerFilePointerPath,
-        roleAwaitingFilePointerPath: mod.roleAwaitingFilePointerPath,
+        roleAwaitingAnswerPath: mod.roleAwaitingAnswerPath,
         role: 'specifier',
       };
     }
@@ -51,7 +55,7 @@ function registerSteps(registry) {
   }
 
   function writeAwaiting(st, record) {
-    const abs = path.join(st.root, st.roleAwaitingFilePointerPath(st.role));
+    const abs = st.roleAwaitingAnswerPath(st.root, st.role);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, JSON.stringify(record));
   }
@@ -63,7 +67,7 @@ function registerSteps(registry) {
   }
 
   function awaitingExists(st) {
-    return fs.existsSync(path.join(st.root, st.roleAwaitingFilePointerPath(st.role)));
+    return fs.existsSync(st.roleAwaitingAnswerPath(st.root, st.role));
   }
 
   scoped(/^a role has a pending question recorded$/, (ctx) => {
@@ -124,10 +128,20 @@ function registerSteps(registry) {
   });
 
   // ── scenario 03: matching answer is consumed normally ────────────────────
+  // Drives the REAL production capture sequence - enqueueRoleAnswerNote
+  // (which stamps askedAtMs from the awaiting marker written by the
+  // Background above, and does NOT clear it) followed by deliverRoleAnswer
+  // - rather than a hand-written answer fixture, per the architect's own
+  // D1 finding that a hand-written fixture never exercises the real wiring.
 
-  scoped(/^a recorded answer identifies that same pending question$/, (ctx) => {
+  scoped(/^a recorded answer identifies that same pending question$/, async (ctx) => {
     const st = ensureFixture(ctx);
-    writeAnswer(st, { text: 'archive under handoffs root', recordedAt: '2026-08-27T18:00:00Z', askedAtMs: st.askedAtMs });
+    fs.mkdirSync(path.join(st.root, '.swarmforge'), { recursive: true });
+    fs.writeFileSync(
+      path.join(st.root, '.swarmforge', 'roles.tsv'),
+      `${st.role}\tsession\t${st.root}\tswarmforge-${st.role}\t${st.role}\tclaude\ttask\n`
+    );
+    await st.enqueueRoleAnswerNote(st.root, st.role, 'archive under handoffs root');
   });
 
   scoped(/^the answer is delivered to the role$/, (ctx) => {
