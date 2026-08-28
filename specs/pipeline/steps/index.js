@@ -818,6 +818,7 @@ const DOMAINS = [
   require('./bl1198RematchPushFirstSteps'),
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
   require('./bl1213ParcelRollbackGuardSteps'),
+  require('./bl1205HandoffRefusesAMassDeletionForwardSteps'),
   require('./bl1199PackSwitchBubbleTunnelSteps'),
   require('./bl1195WorktreeTrackedContentDriftSteps'),
   require('./bl1186DeprecatorIdentifyUnusedNotifySteps'),
