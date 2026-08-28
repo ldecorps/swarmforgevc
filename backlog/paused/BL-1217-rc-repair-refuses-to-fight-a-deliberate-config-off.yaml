@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1217-rc-repair-gates-on-config-not-only-the-launch-script.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Needs sign-off on ONE design choice: which of the intake's three offered
   directions this slice takes. It takes direction 2 (config wins at
