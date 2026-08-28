@@ -74,3 +74,12 @@ without lying about the peak:
 - How-to: `docs/how-to/BL-1184-briefing-shift-velocity-chart.md`
 - Closed parent: `backlog/done/BL-1184-briefing-shift-velocity.yaml`
 - Evidence: `backlog/evidence/INTAKE-shift-velocity-chart-unreadable-20260828.jpg`
+
+---
+
+**Dispositioned 2026-08-28 by specifier:** minted as **BL-1232**
+(`backlog/paused/BL-1232-shift-velocity-chart-readable.yaml`,
+acceptance `specs/features/BL-1232-shift-velocity-chart-readable.feature`).
+One intake, one ticket — no merge, no split. All three locked human decisions
+carried into the ticket verbatim; Y-axis remediation shape chosen per locked
+decision 3 = soft cap with clipped-peak callout.
