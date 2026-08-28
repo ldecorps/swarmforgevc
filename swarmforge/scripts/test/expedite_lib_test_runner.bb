@@ -695,10 +695,11 @@
                             "nothing outstanding"))
 
 ;; ── missing-verdict recovery (hotfix: claude -p exits without verdict.json) ─
-;; BL-1248 cleaner exited 0 after announcing a Monitor wait, wrote no verdict,
-;; and the driver hard-failed :no-verdict. Class of failure: stage child exits
-;; without a parseable verdict file. Process fix: one automatic re-invoke, and
-;; the stage prompt forbids Monitor/IDE waits.
+;; BL-1248 cleaner/hardender exited 0 after parking on Monitor/background work,
+;; wrote no verdict, and the driver hard-failed :no-verdict. Class of failure:
+;; stage child exits without a parseable verdict. Process fix: one automatic
+;; re-invoke, then — if still missing — BOUNCE back to the same stage (bounce
+;; bound absorbs repeats) instead of crashing the whole ticket out.
 
 (assert-true "no-verdict: first missing parseable verdict recovers once"
              (expedite-lib/should-recover-missing-verdict?
@@ -721,31 +722,42 @@
           :verdict-file "/tmp/verdict.json" :recovery? false})]
   (assert-true "no-verdict: initial prompt names the verdict path" (str/includes? p "/tmp/verdict.json"))
   (assert-true "no-verdict: initial prompt forbids Monitor waits" (str/includes? p "Monitor"))
+  (assert-true "no-verdict: initial prompt forbids standing by" (str/includes? p "stand by"))
   (assert-true "no-verdict: initial prompt requires last-action write" (str/includes? p "LAST action")))
 
 (let [p (expedite-lib/stage-user-prompt
-         {:role "cleaner" :ticket "BL-1248"
+         {:role "hardender" :ticket "BL-1248"
           :verdict-file "/tmp/verdict.json" :recovery? true})]
   (assert-true "no-verdict: recovery prompt is labelled RECOVERY" (str/includes? p "RECOVERY"))
-  (assert-true "no-verdict: recovery prompt forbids Monitor" (str/includes? p "Monitor"))
+  (assert-true "no-verdict: recovery forbids standing by" (str/includes? p "stand by"))
+  (assert-true "no-verdict: recovery requires pass|bounce|fail" (str/includes? p "pass"))
   (assert-true "no-verdict: recovery prompt still names the path" (str/includes? p "/tmp/verdict.json")))
 
 (assert= "no-verdict: finalize timeout before missing-verdict"
          :stage-timeout
          (:reason (expedite-lib/finalize-stage-result
                    {:timed-out? true :overrun? false :parsed nil
-                    :role "cleaner" :exit 0 :elapsed {:overrun? false}})))
-(assert= "no-verdict: finalize missing parseable verdict"
+                    :role "cleaner" :exit 0 :elapsed {:overrun? false} :attempt 0})))
+(assert= "no-verdict: finalize attempt-0 miss still fails (recovery gate owns that path)"
          {:verdict :fail :reason :no-verdict :stage "cleaner" :exit 0}
          (expedite-lib/finalize-stage-result
           {:timed-out? false :overrun? false :parsed nil
-           :role "cleaner" :exit 0 :elapsed {:overrun? false}}))
+           :role "cleaner" :exit 0 :elapsed {:overrun? false} :attempt 0}))
+(let [r (expedite-lib/finalize-stage-result
+         {:timed-out? false :overrun? false :parsed nil
+          :role "hardender" :exit 0 :elapsed {:overrun? false} :attempt 1})]
+  (assert= "no-verdict: after recovery, miss bounces (does not crash the ticket)"
+           :bounce (:verdict r))
+  (assert= "no-verdict: bounce reason remains no-verdict" :no-verdict (:reason r))
+  (assert= "no-verdict: bounce retargets the SAME stage" "hardender" (:target r))
+  (assert= "no-verdict: bounce class names the abandonment"
+           "no-verdict-abandoned" (:class r)))
 (assert= "no-verdict: finalize advances a real pass"
          :pass
          (:verdict (expedite-lib/finalize-stage-result
                     {:timed-out? false :overrun? false
                      :parsed {:verdict "pass" :summary "ok"}
-                     :role "cleaner" :exit 0
+                     :role "cleaner" :exit 0 :attempt 0
                      :elapsed {:overrun? false :elapsed-ms 1}})))
 
 ;; ── report ────────────────────────────────────────────────────────────────

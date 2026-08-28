@@ -740,10 +740,11 @@
      :timeout-ms budget}))
 
 ;; ── missing-verdict recovery ──────────────────────────────────────────────
-;; Observed: expedite cleaner (BL-1248) exited 0 after announcing a Monitor wait
-;; and never wrote verdict.json; the driver hard-failed :no-verdict. The class
-;; is "child exits without a parseable verdict" — not a content fail. One
-;; automatic re-invoke closes the hole; a second miss still fails closed.
+;; Observed: expedite cleaner/hardender (BL-1248) exited 0 after parking on
+;; Monitor/background work and never wrote verdict.json. One re-invoke closes
+;; the first hole; a second miss used to hard-fail the whole ticket. Now the
+;; second miss bounces back to the SAME stage so the bounce bound absorbs
+;; repeats instead of crashing the expedition out.
 
 (defn should-recover-missing-verdict?
   "Pure: one re-invoke when the child exited without a parseable verdict and
@@ -755,33 +756,39 @@
        (zero? (or attempt 0))))
 
 (defn stage-user-prompt
-  "Pure: the claude -p user message. Forbids Monitor/IDE waits so a stage cannot
-   park on a notification that never arrives in offline expedite."
+  "Pure: the claude -p user message. Forbids Monitor/IDE/background standby so a
+   stage cannot park on a notification that never arrives in offline expedite."
   [{:keys [role ticket verdict-file recovery?]}]
   (if recovery?
     (str "RECOVERY: previous " role " session for " ticket
          " exited without writing " verdict-file
-         ". Write the stage verdict JSON to that path NOW."
-         " Do not wait on Monitor, background jobs, or IDE notifications."
-         " Run any remaining checks in the foreground, then write the verdict and exit.")
+         ". Write a pass, bounce, or fail verdict JSON to that path NOW."
+         " Do not stand by for background jobs, Monitor, or IDE notifications."
+         " Reap or wait in the foreground, then write the verdict and exit.")
     (str "You are the " role " for " ticket
          ". Your task is appended to your system prompt."
          " Write your stage verdict as JSON to " verdict-file
          " as your LAST action before the process exits."
-         " Do not wait on Monitor, background jobs, or IDE notifications"
+         " Do not stand by for Monitor, background jobs, or IDE notifications"
          " — run checks in the foreground.")))
 
 (defn finalize-stage-result
   "Pure: map a finished stage invoke onto the driver's verdict record.
-   Timeout / overrun beat a missing file; missing parseable JSON is :no-verdict."
-  [{:keys [timed-out? overrun? parsed role exit elapsed]}]
+   Timeout / overrun beat a missing file. Missing parseable JSON on attempt 0
+   is :fail/:no-verdict (the runner recovers before finalize). After recovery
+   (attempt >= 1) a still-missing verdict is a same-stage :bounce so the ticket
+   is not crashed out on one abandoned session."
+  [{:keys [timed-out? overrun? parsed role exit elapsed attempt]}]
   (cond
     (or timed-out? overrun?)
     {:verdict :fail :reason :stage-timeout :stage role :elapsed elapsed
      :killed? (boolean timed-out?)}
 
     (nil? parsed)
-    {:verdict :fail :reason :no-verdict :stage role :exit exit}
+    (if (pos? (or attempt 0))
+      {:verdict :bounce :reason :no-verdict :target role :stage role :exit exit
+       :class "no-verdict-abandoned"}
+      {:verdict :fail :reason :no-verdict :stage role :exit exit})
 
     :else
     (assoc parsed :stage role :exit exit :elapsed elapsed

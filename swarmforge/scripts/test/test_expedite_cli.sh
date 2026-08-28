@@ -413,7 +413,10 @@ check "no-verdict: cleaner invoked twice (miss then recover)" \
   "$(grep -c '^cleaner$' "$RNV/.swarmforge/expedite-fixture/ran.log")" "2"
 contains "no-verdict: driver logs the recovery" "$OUTNV" "no-verdict recovery"
 
-# Permanent miss: every cleaner attempt writes nothing -> still :no-verdict after one retry.
+# Permanent miss: every cleaner attempt writes nothing.
+# After recovery, miss becomes a same-stage bounce (not an immediate ticket fail).
+# Default bounce bound 3 => 4 stage entries × (recover + bounce attempt) = 8 cleaner runs,
+# then bounce-bound-exhausted.
 RNV2="$(mkfix tnv2 --active BL-567)"
 cat > "$RNV2/stage-runner-never-verdict.sh" <<'SH'
 #!/usr/bin/env bash
@@ -434,9 +437,11 @@ OUTNV2="$(EXPEDITE_STAGE_RUNNER="$RNV2/stage-runner-never-verdict.sh" \
           EXPEDITE_STOP_CMD=./stop-swarm.sh EXPEDITE_START_CMD=./start-swarm.sh \
           bb "$CLI" "$RNV2" BL-567 --no-restart 2>&1)"; EXITNV2=$?
 check "no-verdict permanent: exits non-zero" "$EXITNV2" "1"
-contains "no-verdict permanent: names no-verdict" "$OUTNV2" "no-verdict"
-check "no-verdict permanent: cleaner tried twice then stopped" \
-  "$(grep -c '^cleaner$' "$RNV2/.swarmforge/expedite-fixture/ran.log")" "2"
+contains "no-verdict permanent: recovers at least once" "$OUTNV2" "no-verdict recovery"
+contains "no-verdict permanent: bounces rather than hard-failing the first double-miss" "$OUTNV2" "bounce cleaner"
+contains "no-verdict permanent: eventually exhausts the bounce bound" "$OUTNV2" "EXHAUSTED"
+check "no-verdict permanent: cleaner re-entered via bounce bound (8 invokes)" \
+  "$(grep -c '^cleaner$' "$RNV2/.swarmforge/expedite-fixture/ran.log")" "8"
 check "no-verdict permanent: ticket not done" \
   "$(ls "$RNV2/backlog/done/" | wc -l | tr -d ' ')" "0"
 

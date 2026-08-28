@@ -548,8 +548,8 @@
    contract rather than a parallel one.
 
    Missing-verdict recovery: if the child exits without a parseable verdict and
-   was not timed out, re-invoke once with a RECOVERY prompt (Monitor waits are
-   forbidden on both attempts)."
+   was not timed out, re-invoke once with a RECOVERY prompt. A second miss
+   finalizes as a same-stage bounce (bounce bound), not a hard ticket fail."
   [{:keys [project-root ticket stage-timeout-ms]} {:keys [dir]} role task stage-dir]
   (let [prompt-file (compose-prompt! role task (fs/path stage-dir "prompt.md"))
         _ (spit (str (fs/path stage-dir "task.txt")) task)
@@ -582,7 +582,8 @@
             :parsed parsed
             :role role
             :exit exit
-            :elapsed elapsed}))))))
+            :elapsed elapsed
+            :attempt attempt}))))))
 
 (defn drive-stages!
   "Walk the chain, honouring bounces. Bounce accounting and the meaning of
@@ -603,8 +604,8 @@
               stage-dir (fs/path run-dir (format "%02d-%s" idx stage))
               _ (write-progress! run-dir ticket stage :running (str "stage " (inc idx) "/" (count stages)))
               task (str "Ticket " ticket ". You are the " stage " stage of an offline expedited run. "
-                        "Run checks in the foreground; never wait on Monitor or IDE notifications; "
-                        "write verdict.json as your last action before exit."
+                        "Run checks in the foreground; never stand by for Monitor, background jobs, or IDE notifications; "
+                        "write a pass/bounce/fail verdict.json as your last action before exit."
                         (when-let [b (seq (get @bounces stage))]
                           (str " This is a rework after " (count b) " bounce(s): "
                                (str/join "; " (map :reason b)))))
