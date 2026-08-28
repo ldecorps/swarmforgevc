@@ -23,7 +23,7 @@ invariants:
   - "Trial start and end same-role model switches transfer agent memory (BL-1178)."
 
 required_wiring:
-  - "model steward trial lifecycle::nominate seat assess promote/revert::day window"
+  - 'swarmforge/scripts/model_steward_cli.bb::trial::the steward CLI must expose the trial lifecycle; verified absent today so this anchor is non-vacuous (BL-874)'
   - "specs/pipeline/steps/index.js::bl1182DayLongBobTrialLifecycleSteps::acceptance handler registered"
 
 description: |
@@ -44,5 +44,28 @@ source: |
   .swarmforge/operator/INTAKE-best-of-breed-swarm-model-trials.md. Epic BL-1180 child.
 
 notes: |
+  - [2026-08-28] specifier, Article 3.6 / size-gate adjudication: JUSTIFY, do
+    not split. The slice_size_envelope gate banded this high on the four verbs
+    in the title (nominate, seat, assess, promote-or-revert). Checked against
+    INVEST rather than against the band: 5 scenarios and 3 invariants are both
+    inside this role's own stated caps, and all three depends_on entries are
+    landed (BL-1181 and BL-1178 in backlog/done/, BL-556 in
+    done/M5-cost-intelligence-backend-flexibility/), so Independent passes.
+    The decisive argument against splitting is that the four verbs are one
+    state machine, not four deliverables: a seat you can arm but never assess,
+    or an assessment with nothing seated, are half-mechanisms, and the split
+    would make each child depend on an UNBUILT sibling - which Independent
+    forbids more strongly than the size band suggests. The ticket is also
+    already human-approved at this shape.
+  - [2026-08-28] specifier: fixed a real defect found while assessing the size
+    gate. required_wiring row 1 was
+    `model steward trial lifecycle::nominate seat assess promote/revert::day
+    window` - the PATH segment was prose, not a file path. pre_qa_gate_lib.bb
+    reads the path and substring-matches the pattern, with no expansion step,
+    so that row could never match and would have hard-blocked the documenter's
+    forward to QA on a wiring-absent refusal - the BL-874 shape exactly.
+    Replaced with an anchor that is both real and non-vacuous: `trial` does not
+    currently appear in swarmforge/scripts/model_steward_cli.bb (verified,
+    count 0), so it can only match once the lifecycle actually ships there.
   - [2026-08-27] specifier: minted; one operating day = calendar/shift-aligned
     day locked against swarm_shift_lib in implementation notes if needed.

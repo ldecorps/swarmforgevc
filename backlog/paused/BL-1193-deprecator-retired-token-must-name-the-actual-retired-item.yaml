@@ -100,6 +100,16 @@ source: |
   HOLD on BL-1190, 2026-08-27 (coordinator note, priority 00).
 
 notes: |
+  - [2026-08-28] specifier, Article 3.6: CONFIRM PROMOTE. Hold reason was
+    "stale premise: depends_on done but description still names retired
+    surface(s): backlog_hygiene_lib.bb, Mint". Verified the opposite:
+    swarmforge/scripts/backlog_hygiene_lib.bb is 18KB, live, and load-file'd by
+    both backlog_epic_milestone_audit.bb and specifier_backlog_hygiene_gate.bb
+    - the latter run by this role today. Nothing there is retired. The hold is
+    the very loadRetiredTokens false positive THIS ticket fixes: the extractor
+    grabbed "Mint" as a retired token from a doc table row whose RETIRED marker
+    actually names `type: bug`. A checker holding the ticket that repairs it is
+    the strongest possible argument for promoting it.
   - [2026-08-27] specifier: minted while confirm-promoting BL-1190 past a
     false hold from this exact extractor bug. depends_on BL-1173 (done) —
     Independent per INVEST once BL-1173 shipped, which it already has.
