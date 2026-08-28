@@ -12,7 +12,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1234-property-allowlist-gate-recognises-every-red.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Reported by the coder as a priority-00 note. Reproduced and characterised
   before minting: the gate is correct for exactly one failing file and wrong
