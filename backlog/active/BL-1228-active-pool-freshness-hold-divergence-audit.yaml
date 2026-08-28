@@ -180,3 +180,5 @@ notes: |
     (`promote_and_route_next.sh` is the only enforcing path, and nothing
     compares pool against verdict). Treat the hold as adjudicated CONFIRM
     PROMOTE and promote without a second specifier round-trip."
+
+assigned_to: coder

@@ -1,0 +1,143 @@
+id: BL-1235
+title: "A local qwen seat answers in its own dedicated messaging topic, leaving cursor's host topic and front desk untouched"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 12
+direction: human-requested
+depends_on: [BL-1082]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature
+
+human_approval: approved
+approval_context: >
+  The shape question is already answered by the human directly (see
+  description) - this is only for the model tag. The seat is specced to take
+  its model id from configuration and verify it against the endpoint at seat
+  time, rather than hardcoding one, because no Qwen3-Coder ~14B build could be
+  confirmed to exist. Confirm the tag to configure (qwen2.5-coder:14b is the
+  realistic reading) or correct it.
+
+invariants:
+  - "The local seat answers only in its own dedicated topic — cursor's host topic and the front desk are never served by it."
+  - "A seat that cannot answer says why in its own topic; it never fails silently and never hands the turn to another seat."
+
+required_wiring:
+  - 'extension/src/tools/telegramCursorBridgeCore.ts::QWEN_LOCAL::the new subject id must exist alongside CURSOR_REMOTE and BUBBLE, in the module that resolves a topic to a seat'
+  - 'specs/pipeline/steps/index.js::bl1235LocalQwenSeatSteps::acceptance handler registered'
+
+description: |
+  ## What
+
+  Stand up a **third** host-agent seat, backed by a local model served through
+  ollama, reachable **only** in its own dedicated messaging topic. Cursor is
+  not moved, not wrapped, and not made selectable — it keeps the usual host
+  topic and the front desk exactly as today.
+
+  ## The human directive (2026-08-28, verbatim)
+
+  > To be clear, cursor stays behind the usual host topic and front desk.
+  >
+  > I want local qwen only behind its dedicated one:
+  > https://t.me/c/4415865297/41004
+
+  That link resolves to chat `4415865297`, topic `41004`. The topic already
+  exists — this ticket binds a seat to it, it does not create it.
+
+  ## Why this is small
+
+  The pull/serve half is already built. BL-1082 shipped
+  `node out/tools/named-model.js pull|serve <model-id>` over
+  `extension/src/swarm/modelServing.ts`, which probes the endpoint at
+  `http://127.0.0.1:11434` and reports `healthy` / `missing` / `unhealthy`.
+  So provisioning this host is an operational RUN, not a build, and what
+  remains is one seat: a subject id, a topic binding, and a turn loop.
+
+  Note ollama is not currently installed on this host (`which ollama` finds
+  nothing, and the endpoint does not answer), so the first thing anyone will
+  hit is the endpoint-down path — which is why scenario 03 exists rather than
+  being left as an edge case.
+
+  ## How (direction, not mandate)
+
+  `telegramCursorBridgeCore.ts` already carries the pattern: a subject id
+  constant (`CURSOR_BRIDGE_SUBJECT_ID = 'CURSOR_REMOTE'`,
+  `BUBBLE_SUBJECT_ID = 'BUBBLE'`) resolved against
+  `.swarmforge/operator/cursor-bridge-topic-map.json`, which today reads
+  `{"8435": "CURSOR_REMOTE", "11810": "BUBBLE"}`. A third entry mapping
+  `41004` to a new `QWEN_LOCAL` subject is the shape to follow — a sibling of
+  what is there, not a new mechanism.
+
+  The turn loop then sends the topic's message to the local endpoint and posts
+  the completion back into the same topic.
+
+  ## The model tag is configuration, not a constant
+
+  The intake asked to verify the exact tag. It could not be verified here and
+  should not be guessed into a constant:
+
+  - No `qwen3-coder` ~14B build could be confirmed. Qwen3-Coder's smallest
+    published build is 30B-A3B, so a ~14B build of it is unlikely to exist;
+    `qwen2.5-coder:14b` is the realistic reading of the ask.
+  - Registry lookups are not possible from this host — every
+    `registry.ollama.ai/v2/library/<name>/tags/list` probe returns 404 — and
+    ollama is not installed to ask locally.
+  - Prior packs here already run `qwen2.5-coder:7b-instruct`
+    (`swarmforge/packs/local-model-mono-router.conf`).
+
+  So the seat reads its model id from configuration and checks it against the
+  endpoint's catalogue at seat time. Scenario 04 makes a configured-but-absent
+  model a visible refusal rather than a silent fallback. This keeps the ticket
+  correct whichever tag is finally chosen.
+
+  ## Architecture note
+
+  This is a genuine SECOND host-agent incarnation, which is exactly the
+  condition local-engineering rule 7 requires before the interface/incarnation
+  split earns a second name. It does not license renaming Cursor identifiers —
+  that remains out of policy.
+
+qa_e2e_procedure: >
+  (1) `node extension/out/tools/named-model.js pull <configured-model>` then
+  `serve <configured-model>`; confirm the endpoint reports healthy. (2) Post a
+  message in topic 41004 and confirm the reply comes back in that topic and is
+  visibly from the local model. (3) Post in the usual host topic and in the
+  front desk; confirm both are still answered by cursor and that the local seat
+  did not respond. (4) Stop the endpoint, post again in 41004, and confirm the
+  topic shows the actual failure reason - not a bare status code, not silence.
+  (5) Configure a model the endpoint does not hold, post again, and confirm the
+  topic names it unavailable and no other seat answers in its place.
+
+out_of_scope: |
+  - Moving, wrapping, or replacing cursor anywhere. Explicitly refused by the
+    human directive above.
+  - Installing ollama on this host, and choosing the final model tag - both are
+    operational runs over BL-1082's shipped pull/serve path, not builds.
+  - Staffing pipeline ROLES with a local model. That is the separate
+    local-model pack family (BL-1143 cold-swap, BL-1140 bake-off,
+    BL-1127 evidence bar) and is not what this topic is for.
+  - Renaming Telegram/Cursor identifiers for interface purity.
+
+source: |
+  backlog/INTAKE-operator-question-1787897102620.md (operator-relayed human
+  question, 2026-08-28T06:05Z), plus the human's own clarification the same day
+  answering the specifier's role_ask - quoted verbatim in the description.
+
+notes: |
+  - [2026-08-28] specifier: the intake said "behind the front-desk Telegram
+    topic", which I read as ambiguous and asked about. The human's answer
+    corrected the premise rather than picking one of my three options: it is
+    NOT the front desk, it is a dedicated topic, and cursor keeps both of its
+    current surfaces. The directive is quoted verbatim in the description
+    because a consolidation may never drop a human sentence (Article 5.3).
+  - [2026-08-28] specifier: scoped to one slice only after verifying BL-1082's
+    pull/serve path actually shipped - named-model.js exposes pull and serve,
+    and modelServing.ts owns the endpoint probe. Had that been unbuilt, this
+    would have needed a 1:N split with the provisioning half first; it does
+    not, so it stays one sitting.
+  - [2026-08-28] specifier: I could not verify the model tag the intake asked me
+    to verify, and deliberately did not guess it into a constant. The finding is
+    recorded in the description; the ticket is correct for whichever tag is
+    chosen.
