@@ -11,7 +11,11 @@ depends_on: []
 mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1228-active-pool-freshness-hold-divergence-audit.feature
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  RULED 2026-08-28: promotion-time call site in promote_and_route_next.sh
+  (recommended). Audit fails closed and reports only — never moves tickets
+  out of active/.
 approval_context: >
   One thing needs sign-off: the call site. This ticket wires the sweep into
   `promote_and_route_next.sh`, so every legitimate promotion surfaces any

@@ -16,7 +16,12 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1230-no-leaked-git-repository-inside-the-working-tree.feature
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  RULED 2026-08-28: report-only — the check never deletes a nested .git.
+  Human removes leaks. Live backlog/.git removed by human the same day
+  (empty fixture, no remote/refs/commits; parent tracking of backlog/
+  verified intact before and after).
 approval_context: >
   One thing needs sign-off: whether the check may ever remove what it finds.
   This ticket says no — it reports, a human removes. That is deliberately
