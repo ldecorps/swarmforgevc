@@ -9,6 +9,8 @@ priority: 25
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
+abandoned_commits:
+  - a984721f18
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1216-duplicate-id-finding-names-the-live-copy-and-flags-divergence.feature
 human_approval: approved
@@ -172,6 +174,17 @@ notes: |
     while `backlog-pools` and `other-holders` exist exactly as the How
     section assumes. The gap is unchanged and unbuilt. A later gate pass may
     promote on this rationale without re-deriving it."
+  - "[2026-08-28] coder: QA bounce D1
+    (backlog/evidence/BL-1216-qa-bounce-20260828.md) found the cited commit
+    a984721f18 entangled with BL-1192/BL-1207/BL-1211's own in-flight work -
+    fourth occurrence this pass of the same branch-wide condition (BL-1227,
+    BL-1192, BL-1201). Rebuilt tip-pure: coder/hardener/documenter content
+    (backlog_hygiene_lib.bb, its test runner including the hardener's
+    zero-live-count fixture, bl1216DuplicateIdLiveCopyContentVerdictSteps.js,
+    the cleaner's own evidence file, the Specification.MD entry) reapplied
+    isolated to BL-1216's own scope. Verified: backlog_hygiene_lib_test_runner.bb
+    all pass; acceptance feature 8/8. a984721f18 recorded above as
+    abandoned_commits - deliberately dropped, not lost work."
 
 assigned_to: coder
 bounce_count: 1
