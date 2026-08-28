@@ -1,0 +1,151 @@
+id: BL-1231
+title: "24 main-lane test files declare their tests to node:test, so Vitest collects nothing from them and the unit lane gates commits without ever running their assertions"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal, live and load-bearing. These are not obscure
+# files - they include the pilot acceptance gate's own tests, and BL-1229's 22
+# crashing assertions hid here for a day precisely because the lane cannot see
+# into them. Not critical: the assertions do run and pass under `node --test`,
+# so the code they cover is not unverified, only ungated.
+status: todo
+epic: code-quality-gates
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1231-main-lane-node-test-imports-leave-assertions-unrun.feature
+human_approval: pending
+approval_context: >
+  One thing needs sign-off: which runner wins. This ticket converts the 24
+  files to declare their tests to Vitest, because Vitest is what the unit lane
+  runs and a gate that cannot see a file is not a gate. The alternative is to
+  teach the lane to run `node --test` for these files as a second pass, which
+  keeps them untouched but leaves the repo with two test dialects on purpose.
+  Conversion is the recommendation; the call is the human's, and it decides
+  the shape of the whole slice.
+
+  Firm and not up for negotiation: the assertions must survive. A conversion
+  that drops, skips, or rewrites an assertion to make a file collect is a
+  regression dressed as a repair — scenario 03 exists to pin that, comparing
+  the post-repair test count against what the file reported under
+  `node --test`.
+
+  Not in question: the numbers, which were measured rather than grepped. 25
+  files match a naive search for `node:test`; Vitest reports exactly 24 of
+  them as "No test suite found". The 25th,
+  `test/benchmarkNodeTestEvaluator.test.js`, contains the string as DATA (it
+  benchmarks the node:test runner) and collects perfectly well. That gap
+  between 25 and 24 is why scenario 05 exists.
+description: |
+  ## What
+
+  The 24 main-lane files that currently report "No test suite found" declare
+  their tests to the runner the unit lane actually uses, and contribute
+  collected tests with their assertions intact. A guard fails if a main-lane
+  file reintroduces the `node:test` import. A file that merely contains the
+  string `node:test` as data is not a violation, and the property lane is
+  untouched.
+
+  ## How (direction, not mandate)
+
+  The files are plain CommonJS using `test(...)` and `node:assert/strict`;
+  Vitest supplies a compatible global `test`, so the smallest change is
+  dropping the `node:test` import rather than rewriting assertions.
+  `test/benchmarkNodeTestEvaluator.test.js` is already in exactly that shape
+  and can serve as the reference. The guard belongs with the existing
+  repo-hygiene guard family under `extension/test/`, whose suite is its own
+  call site.
+
+  ## Why
+
+  The unit lane is Vitest, and Vitest collects nothing from a file that
+  declares its tests through `node:test`. It does not error usefully — it
+  reports the file as a failed suite with "No test suite found", which reads
+  like one more entry in a standing-red count rather than "these assertions
+  never ran."
+
+  Measured 2026-08-28 by running Vitest over the set and reading its own
+  output: 24 files affected. They are not peripheral — the set includes
+  `pilotAcceptanceGate.test.js`, `crossFileDuplicationCheck.test.js`,
+  `multiBranchParserCoverageCheck.test.js` and
+  `perHatRolePromptEvidenceCheck.test.js`, the tests for the pilot land gate
+  itself.
+
+  The cost is already demonstrated. BL-1229 records 22 assertions across ten
+  files that were throwing `deps.checkOrphanedAuthoredDocs is not a function`
+  rather than asserting. That defect landed on 2026-08-27 and was still
+  undetected a day later, because the lane that would have caught it cannot
+  see into these files at all. Finding it required running each file by hand
+  under `node --test`.
+
+  BL-1206 covers the property lane, where the same import shape is handled
+  by a standing allowlist that keeps the drift gate exiting 0. The main lane
+  has no allowlist; nothing marks these 24 as known, and nothing distinguishes
+  them from a genuine regression.
+
+  ## Constraints
+
+  - Assertions must survive the repair — see approval_context and scenario 03.
+  - The guard keys on the IMPORT, never on the string appearing as data.
+  - Do not touch the property lane or its allowlist; that is BL-1206.
+  - Do not fix BL-1229's deps-stub crashes here. Ten of those files are in
+    this set, and repairing collection will make those 22 crashes newly
+    visible in the unit lane — that is the correct outcome, and BL-1229 is
+    where they get fixed.
+
+qa_e2e_procedure: >
+  (1) From `extension/`, run the unit lane over the 24 files and confirm zero
+  occurrences of "No test suite found". (2) For three of them, record the test
+  count reported by `node --test <file>` before the repair and by the unit
+  lane after, and confirm they match — put both numbers in the evidence file.
+  (3) Reintroduce the `node:test` import in one file, run the guard, confirm
+  it fails naming that file, then revert. (4) Confirm the guard passes on
+  `test/benchmarkNodeTestEvaluator.test.js`, which contains the string as data.
+  (5) Confirm the guard passes on a property-lane file that imports
+  `node:test`, and that
+  `swarmforge/scripts/property_suite_standing_allowlist.tsv` is unchanged.
+  (6) Expect BL-1229's crashes to become visible in the unit lane once this
+  lands; record the count rather than treating it as a regression of this work.
+
+out_of_scope: |
+  - BL-1229's `checkOrphanedAuthoredDocs` deps-stub crashes. Ten of this set's
+    files carry them; making them visible is this ticket's job, fixing them is
+    BL-1229's.
+  - BL-1206's property-lane allowlist drain, and the allowlist itself.
+  - Any change to what the affected tests assert.
+  - `test/benchmarkNodeTestEvaluator.test.js`, which already collects
+    correctly and is the reference shape, not a subject.
+
+invariants:
+  - "Every file in the repaired set reports at least one collected test to the unit lane, and reports the same test count it reported under the node:test runner."
+  - "The guard fires on a node:test IMPORT and never on the string appearing as data, and never on a property-lane file."
+
+source: |
+  Surfaced by QA closing BL-1189 on 2026-08-28
+  (backlog/evidence/BL-1189-qa-pass-20260828.md item 2): "this main-lane
+  instance (a larger, structurally identical but distinct set) was never
+  surfaced ... Sent as a note to specifier+coordinator". Recorded again as
+  out_of_scope on BL-1229 the same day before being minted here.
+
+notes: |
+  - "[2026-08-28] specifier: measured, not grepped. A naive search for
+    `node:test` matches 25 files; Vitest reports exactly 24 as 'No test suite
+    found'. The 25th is test/benchmarkNodeTestEvaluator.test.js, which
+    contains the string as data because it benchmarks that runner, and which
+    collects correctly because it uses the Vitest global. Scenario 05 and the
+    second invariant exist because of that one file — the same DATA-is-not-a-
+    call distinction repoCreationGuard (BL-1039) already had to learn."
+  - "[2026-08-28] specifier: this subject was drafted once before, as
+    BL-1220, and destroyed before commit by the BL-1214 reset bug; its id was
+    recycled by other work within the hour. Only the APS artifacts survived,
+    in tmp/BL-1220-main-lane-node-test-imports-leave-assertions-unrun.ir.json
+    and its .dry.json sibling (2026-08-28 02:50), and scenarios 01, 02, 04 and
+    06 here are recovered from that draft. Do not delete those two tmp files
+    until this ticket lands."
+  - "[2026-08-28] specifier: sibling of BL-1206, not a widening of it. BL-1206
+    drains the property lane's standing allowlist, where the drift gate exits
+    0 on an allowlisted red; the main lane has no allowlist and a different
+    failure shape. Either can land first. Expect both to touch files in
+    extension/test/ but not the same ones."

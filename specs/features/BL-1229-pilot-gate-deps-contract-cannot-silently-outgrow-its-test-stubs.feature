@@ -41,6 +41,12 @@ Feature: Widening the pilot land-gate deps contract cannot silently strand its t
     Then the run fails
     And the run does not report a land verdict
 
+  # BL-1229 pilot-gate-deps-contract-stubs-05
+  Scenario: The production contract is not weakened to accommodate the stubs
+    When the pilot land-gate deps contract is inspected
+    Then "checkOrphanedAuthoredDocs" is still a required member
+    And the land path calls it without guarding on its presence
+
   # BL-1229 pilot-gate-deps-contract-stubs-04
   Scenario Outline: A stub supplying the whole contract drives the gate to a real verdict
     Given a test builds a complete deps stub whose orphan-docs check returns <orphan outcome>
