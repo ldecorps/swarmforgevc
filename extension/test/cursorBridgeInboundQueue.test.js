@@ -82,3 +82,26 @@ test('inbound queue: drain removes the renamed-aside "draining" file on the norm
     `expected the "0." toString(36) prefix to be sliced off the random suffix, got: ${randomSuffix}`
   );
 });
+
+const { readFrontDeskPollHeartbeatMs, frontDeskPollHeartbeatPath } = require('../out/tools/cursorBridgeInboundQueue');
+
+test('front-desk feeder heartbeat: missing file reads as null', () => {
+  const opDir = tmpOpDir();
+  assert.equal(readFrontDeskPollHeartbeatMs(opDir), null);
+});
+
+test('front-desk feeder heartbeat: valid lastHeartbeatMs is returned', () => {
+  const opDir = tmpOpDir();
+  const file = frontDeskPollHeartbeatPath(opDir);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ lastHeartbeatMs: 12345 }));
+  assert.equal(readFrontDeskPollHeartbeatMs(opDir), 12345);
+});
+
+test('front-desk feeder heartbeat: malformed JSON reads as null', () => {
+  const opDir = tmpOpDir();
+  const file = frontDeskPollHeartbeatPath(opDir);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'not-json');
+  assert.equal(readFrontDeskPollHeartbeatMs(opDir), null);
+});
