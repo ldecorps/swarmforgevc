@@ -29,21 +29,23 @@ summarizes it and must not diverge. See **02-handoffs-detailed.md**
 for the full pre-trim wording.
 
 ## 2.3 Sending Rules
-Use `swarm_handoff.sh` only (never write `inbox/new/` directly — no
-wake-up that way). No-Op Rule: don't forward a commit with no functional
-change (narrow meta-churn exemption; see `handoff-protocol.md`). Never
-write reserved/audit headers. See **02-handoffs-detailed.md**.
+Use `swarm_handoff.sh` only (never write `inbox/new/` directly — no wake-up
+that way). No-Op Rule: don't forward a commit with no functional change
+(narrow meta-churn exemption; see `handoff-protocol.md`). Never write
+reserved/audit headers. See **02-handoffs-detailed.md** for the
+full pre-trim wording.
 
 ## 2.4 Receiving Rules
 Use `ready_for_next.sh` to receive work (checks `in_process/` first). Batch
 roles (cleaner, hardener) process multiple parcels at once. A parcel stuck
 in `inbox/new/` >10 minutes: the coordinator must chase it. See
-**02-handoffs-detailed.md**.
+**02-handoffs-detailed.md** for the full pre-trim wording.
 
 ## 2.5 Merge-Up Protocol
 The full sequence (QA broadcast → land on `main` → coordinator bookkeeping)
-is stated in `PIPELINE.md` steps 5–6 — not repeated here. Draft-format
-mechanics: 2.2/2.3 above. See **02-handoffs-detailed.md**.
+is stated in `PIPELINE.md` steps 5–6, same boot prefix — not repeated here.
+`swarm_handoff.sh`'s draft-format mechanics for it are 2.2/2.3 above. See
+**02-handoffs-detailed.md** for this section's pre-trim wording.
 
 ## 2.6 Multi-Ticket Batch Forwards Carry Every Ticket ID
 - A `git_handoff` names ONE ticket. When a batch role's committed work

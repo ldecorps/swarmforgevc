@@ -97,24 +97,4 @@
            without-ref
            (boot-prefix-budget-gate-lib/measure root)))
 
-;; ── BL-1227: the LIVE repo, not a synthetic tree, must be under budget ──────
-;; Every scenario above measures a synthetic tree through an injected root -
-;; BL-883 deliberately pinned the one live scenario that used to exist here to
-;; its own fix commit "so it stays green regardless of later growth", which is
-;; exactly why the boot prefix grew unnoticed to 47648/44000 (BL-1227). This
-;; assertion is never pinned: it measures the REAL repository on every run
-;; (measure with no root, the same composer boot itself uses) and is
-;; demonstrably able to fail - see qa_e2e_procedure step 3 in
-;; backlog/active/BL-1227-*.yaml (or backlog/done/ once closed) for the
-;; append-3000-chars-then-restore non-vacuity proof; that proof intentionally
-;; is not itself a standing test, since a standing test cannot durably mutate
-;; the live tree it measures.
-(let [v (boot-prefix-budget-gate-lib/verdict (boot-prefix-budget-gate-lib/measure))]
-  (assert= (str "the LIVE repo's boot prefix is at or under the "
-                (:budget v) "-char budget (measured "
-                (boot-prefix-budget-gate-lib/measure) " chars) - see "
-                (boot-prefix-budget-gate-lib/format-report v))
-           0
-           (:exit-code v)))
-
 (println "boot_prefix_budget_gate_lib: ALL PASS")

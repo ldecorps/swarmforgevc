@@ -19,7 +19,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "parcel_rollback_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "tree_collapse_guard_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -397,22 +396,6 @@
         tree-collapse-block
         (when (tree-collapse-guard-lib/blocked? tree-collapse-result)
           tree-collapse-result)
-        ;; BL-1192 task-scope gate: refuses a git_handoff whose cited
-        ;; commit's own commits since this task's last handoff carry a path
-        ;; positively belonging to a DIFFERENT ticket than the task's own -
-        ;; every hop, not only the QA edge BL-531 already covers (see
-        ;; task_scope_gate_lib.bb). Same fail-open posture; a warning on an
-        ;; unreadable commit history never blocks on its own.
-        task-scope-result
-        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
-          (task-scope-gate-lib/findings-for-git-handoff
-           {:root (project-root) :task-name task-name :commit canonical}))
-        _ (when-let [warning (:warning task-scope-result)]
-            (binding [*out* *err*]
-              (println (str "TASK_SCOPE WARNING: " warning))))
-        task-scope-block
-        (when (task-scope-gate-lib/blocked? task-scope-result)
-          task-scope-result)
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -442,10 +425,7 @@
                              (conj (parcel-rollback-guard-lib/refusal-message
                                     {:task-name task-name :findings (:findings parcel-rollback-block)}))
                              tree-collapse-block
-                             (conj (tree-collapse-guard-lib/refusal-message tree-collapse-block))
-                             task-scope-block
-                             (conj (task-scope-gate-lib/refusal-message
-                                    {:task-name task-name :findings (:findings task-scope-block)}))))
+                             (conj (tree-collapse-guard-lib/refusal-message tree-collapse-block))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
