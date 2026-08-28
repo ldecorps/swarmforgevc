@@ -17,7 +17,7 @@ depends_on: [BL-1175]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1206-drain-the-node-test-import-entries-from-the-property-allowlist.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Raised by the architect as an undiagnosed live red ("Vitest 'No test suite
   found' hits 14+ property test files, untracked"). It is diagnosed and it is
