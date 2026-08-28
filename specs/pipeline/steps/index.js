@@ -841,7 +841,8 @@ const DOMAINS = [
   require('./bl1179CrossVendorMemoryAdapterSteps'),
   require('./bl1222PropertySuiteGuardGitEnvScrubSteps'),
   require('./bl1238AgentIdleClearFullnessSteps'),
-  require('./bl1242MergeBranchWorkDeletionSteps')
+  require('./bl1242MergeBranchWorkDeletionSteps'),
+  require('./bl1247ReconcileSweepKillSwitchSteps')
 ];
 
 function registerSteps(registry) {
