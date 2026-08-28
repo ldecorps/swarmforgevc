@@ -2558,6 +2558,27 @@ test('BL-1203: a caller with no updateId (legacy call shape) is never deduped ag
   assert.equal(listOutboxFiles(root).length, 2, 'omitting updateId must not accidentally dedupe unrelated calls');
 });
 
+// A legacy (no-updateId) call sits BETWEEN two identity-keyed calls -
+// writeRoleAnswerFile's own history-preservation branch
+// (`else if (previousSeenUpdateIds?.length)`) must carry the prior
+// seenUpdateIds forward even though the legacy call itself contributes no
+// new id. Without that branch, the interleaved legacy call silently wipes
+// the dedup history, and the LATER repeat of updateId 1 reads as unseen -
+// queuing a third note instead of being recognized as the duplicate it is.
+test('BL-1203: a legacy call interleaved between identity-keyed calls does not erase prior dedup history', async () => {
+  const root = swarmHandoffFixture();
+
+  await enqueueRoleAnswerNote(root, 'specifier', 'first answer', 1);
+  await enqueueRoleAnswerNote(root, 'specifier', 'unrelated legacy nudge');
+  await enqueueRoleAnswerNote(root, 'specifier', 'first answer', 1);
+
+  assert.equal(
+    listOutboxFiles(root).length,
+    2,
+    'the replayed updateId 1 must still be recognized as a duplicate after an interleaved legacy call - only the first two calls should have queued'
+  );
+});
+
 // Invariant 2: "a note that names an answer file names a file whose
 // recorded answer is the one the note announces." Previously
 // writeRoleAnswerFileIfNeeded skipped writing entirely for a short,
