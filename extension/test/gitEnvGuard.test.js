@@ -9,6 +9,14 @@ const { stripAmbientGitDirRedirect } = require('./helpers/gitEnvGuard');
 // GIT_WORK_TREE redirect so every test file's own local, unguarded
 // `git(cwd, args)` helper resolves against the cwd it was given, not
 // whatever repo those vars silently point at.
+//
+// BL-1039-EXEMPT: the integration-shaped test below needs two repositories
+// with PROVABLY ZERO commit history each - `sharedRepoFixture.js`'s shared
+// template always carries one seeded 'init' commit, which would make the
+// "the decoy repository gains no new commits" assertion (a literal empty
+// `git log --oneline --all`) fail even on correct code. Two lightweight
+// `git init`s, no commits beyond the one this test itself makes - not the
+// repeated-per-scenario cost BL-1039 was built to remove.
 
 function git(cwd, args, env) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
