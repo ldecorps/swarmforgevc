@@ -20,7 +20,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1205-handoff-refuses-a-mass-deletion-forward.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   This is the containment half of a defect whose cause and detection halves
   are already ticketed and paused: BL-1196 and BL-1200 stop test fixtures
