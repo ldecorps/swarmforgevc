@@ -825,7 +825,8 @@ const DOMAINS = [
   require('./bl1186DeprecatorIdentifyUnusedNotifySteps'),
   require('./bl1214AbsorbWithMergeSteps'),
   require('./bl1219RoleInboxResolutionSteps'),
-  require('./bl1202GuardExitPathSteps')
+  require('./bl1202GuardExitPathSteps'),
+  require('./bl1208RestorationNotAuthorshipSteps')
 ];
 
 function registerSteps(registry) {
