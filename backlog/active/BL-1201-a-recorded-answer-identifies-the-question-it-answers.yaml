@@ -9,8 +9,6 @@ priority: 15
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
-abandoned_commits:
-  - b6709aa6ff
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1201-a-recorded-answer-identifies-the-question-it-answers.feature
 human_approval: approved

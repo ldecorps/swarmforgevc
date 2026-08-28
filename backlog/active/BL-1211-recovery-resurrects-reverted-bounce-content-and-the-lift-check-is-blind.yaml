@@ -16,8 +16,6 @@ priority: 20
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
-abandoned_commits:
-  - 173bb2422f
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounce-content.feature
 
