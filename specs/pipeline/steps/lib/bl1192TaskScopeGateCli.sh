@@ -84,6 +84,43 @@ if [[ "$MODE" == "unresolvable" ]]; then
   git -C "$ROOT" commit -q -m "${TASK_TICKET}-fixture: own ticket work"
   record_handoff "${TASK_TICKET}-fixture" "abcdef1234abcdef1234abcdef1234abcdef1234"
   CITED_SHORT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+elif [[ "$MODE" == "abandoned" ]]; then
+  # BL-1192 D2 (architect bounce round 2): exercises the abandoned_commits
+  # override end to end via the REAL swarm_handoff.sh, not only the
+  # isolated bb-lib fixture (task_scope_gate_lib_test_runner.bb's own
+  # "abandoned base -> no findings" scenario) - mirrors that fixture's
+  # exact shape: an earlier, ALREADY-LANDED commit on origin/main is itself
+  # entangled with the foreign ticket (old history, irrelevant to the
+  # current rebuild); a disconnected branch attempt is the entangled tip
+  # QA bounced; the rebuild returns to origin/main and records that
+  # disconnected attempt as abandoned. A correct override walks from
+  # origin/main and never re-discovers the old landed entanglement; the
+  # send must be ACCEPTED with no findings.
+  mkdir -p "$ROOT/backlog/active"
+  printf 'id: %s\n' "$TASK_TICKET" > "$ROOT/backlog/active/${TASK_TICKET}-fixture.yaml"
+  printf 'id: %s\n' "$FOREIGN_TICKET" > "$ROOT/backlog/active/${FOREIGN_TICKET}-fixture.yaml"
+  git -C "$ROOT" add -A
+  git -C "$ROOT" commit -q -m "${TASK_TICKET}-fixture: earlier landed work, entangled with ${FOREIGN_TICKET}"
+  ORIGIN_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+  git -C "$ROOT" update-ref refs/remotes/origin/main "$ORIGIN_SHA"
+
+  git -C "$ROOT" checkout -q --orphan disconnected
+  git -C "$ROOT" commit -q --allow-empty -m disconnected-root
+  mkdir -p "$ROOT/backlog/active"
+  printf 'id: %s\n' "$TASK_TICKET" > "$ROOT/backlog/active/${TASK_TICKET}-fixture.yaml"
+  printf 'id: %s\n' "$FOREIGN_TICKET" > "$ROOT/backlog/active/${FOREIGN_TICKET}-fixture.yaml"
+  git -C "$ROOT" add -A
+  git -C "$ROOT" commit -q -m "${TASK_TICKET}-fixture: entangled attempt on a disconnected branch"
+  ABANDONED_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+  ABANDONED_SHORT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+  record_handoff "${TASK_TICKET}-fixture" "$ABANDONED_COMMIT"
+
+  git -C "$ROOT" checkout -q main
+  git -C "$ROOT" reset -q --hard "$ORIGIN_SHA"
+  printf 'id: %s\nabandoned_commits:\n  - %s\n' "$TASK_TICKET" "$ABANDONED_SHORT" > "$ROOT/backlog/active/${TASK_TICKET}-fixture.yaml"
+  git -C "$ROOT" add -A
+  git -C "$ROOT" commit -q -m "${TASK_TICKET}-fixture: tip-pure rebuild off origin/main, records abandonment"
+  CITED_SHORT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 elif [[ "$MODE" == "batch" ]]; then
   mkdir -p "$ROOT/backlog/active" "$ROOT/backlog/evidence"
   printf 'id: %s\n' "$TASK_TICKET" > "$ROOT/backlog/active/${TASK_TICKET}-fixture.yaml"

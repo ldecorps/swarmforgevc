@@ -126,6 +126,29 @@ function registerSteps(registry) {
     st.taskTicket = taskTicket;
     st.result = runGate('cleaner', taskTicket, st.foreignTicket, 'batch');
   });
+
+  // ── scenario 07: abandoned_commits override, driven end to end (architect
+  // bounce round 2 D2) ──────────────────────────────────────────────────
+
+  scoped(/^an earlier commit on origin\/main is already entangled with ticket "([^"]+)"$/, (ctx, foreignTicket) => {
+    // Declarative - the CLI driver's "abandoned" mode always seeds
+    // origin/main with a commit entangling the task and foreign tickets
+    // together, mirroring the bb-lib fixture's own "earlier landed work"
+    // setup exactly.
+    ctx.bl1192.foreignTicket = foreignTicket;
+  });
+
+  scoped(/^a disconnected rebuild attempt repeats that same entanglement and was cited once$/, () => {
+    // Declarative - the CLI driver's "abandoned" mode always builds this
+    // as a disconnected orphan branch and records it as the last-handoff
+    // commit before the rebuild.
+  });
+
+  scoped(/^the cleaner sends a git_handoff for task ticket "([^"]+)" citing a tip-pure rebuild that records the disconnected attempt as abandoned$/, (ctx, taskTicket) => {
+    const st = ctx.bl1192;
+    st.taskTicket = taskTicket;
+    st.result = runGate('cleaner', taskTicket, st.foreignTicket, 'abandoned');
+  });
 }
 
 module.exports = { registerSteps };
