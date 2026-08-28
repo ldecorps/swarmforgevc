@@ -130,6 +130,8 @@
              ;; BL-958: the tmux server is gone while role metadata is still
              ;; present — one control-plane row instead of per-role DOWN.
              :control-plane-missing "control-plane-missing"
+             ;; BL-1199: an absent named tunnel is not a fault - never DOWN.
+             :not-configured "NOT_CONFIGURED"
              "????")
         up (or uptime "-")
         det (when (and detail (not (str/blank? (str detail))))
