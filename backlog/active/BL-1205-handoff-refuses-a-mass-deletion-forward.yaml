@@ -159,3 +159,6 @@ qa_e2e_procedure: >
   commit deleting a single directory: it must send. Finally, re-run the first
   case addressed to QA and to the hardener in turn - both must refuse,
   proving the guard is not the QA-edge gate.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 0666e82db4, evidence: backlog/evidence/BL-1205-architect-bounce-20260828.md }
