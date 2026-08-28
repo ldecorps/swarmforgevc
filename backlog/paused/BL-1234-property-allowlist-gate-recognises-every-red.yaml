@@ -107,6 +107,12 @@ source: |
   "property allowlist gate: missing newline bug false-refuses all-allowlisted reds".
 
 notes: |
+  - [2026-08-28] specifier: SECOND independent report of this defect, from the
+    hardener ("property-suite-guard allowlist matcher broken, blocks commits"),
+    arriving ~15 minutes after the coder's. Two roles hit it in one morning,
+    which corroborates the severity call: the allowlist names five files, so
+    the two-or-more case is the only case that occurs in practice. Not a
+    duplicate ticket - recorded here as a second data point.
   - [2026-08-28] specifier: the coder's diagnosis was correct as sent and is
     reproduced verbatim above rather than restated - the note named the
     mechanism (missing newline) and the symptom (false refusal of
