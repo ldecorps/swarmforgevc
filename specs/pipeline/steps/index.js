@@ -368,6 +368,7 @@ const DOMAINS = [
   require('./bl635RecordBounceByRoleSteps'),
   require('./bl647RotationRouterLivenessSteps'),
   require('./bl572EpicReorderConsoleSteps'),
+  require('./bl592SpecTreeOnLiveConsoleWithEpicTierSteps'),
   require('./bl648RelaunchResumeOrphanClaimsSteps'),
   require('./bl649SwarmStartApprovalsAnnouncementSteps'),
   require('./bl672EpicMakeTopPrioritySteps'),
@@ -812,12 +813,13 @@ const DOMAINS = [
   require('./bl1171DisasterClassCorrelationStructuredEscalationSteps'),
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
+  require('./bl1188PipelineGridLiveStageParitySteps'),
+  require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps'),
   require('./bl1200GitEnvGuardSteps'),
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
-  require('./bl1188PipelineGridLiveStageParitySteps'),
-  require('./bl592SpecTreeOnLiveConsoleWithEpicTierSteps'),
   require('./bl1199PackSwitchBubbleTunnelSteps'),
-  require('./bl1195WorktreeTrackedContentDriftSteps')
+  require('./bl1195WorktreeTrackedContentDriftSteps'),
+  require('./bl1186DeprecatorIdentifyUnusedNotifySteps')
 ];
 
 function registerSteps(registry) {
