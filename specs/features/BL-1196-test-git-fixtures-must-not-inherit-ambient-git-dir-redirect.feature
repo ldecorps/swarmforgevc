@@ -21,11 +21,25 @@ Feature: test-suite git fixtures never let an inherited GIT_DIR/GIT_WORK_TREE re
   # already redirected by an inherited ambient var, which is why this
   # recurred after BL-1124 shipped.
   #
+  # AMENDED 2026-08-28, after two further occurrences on the hardener branch.
+  # The ambient value does not come from a stray operator shell — git exports
+  # it into every hook it runs. Measured in an isolated scratch repo: a commit
+  # made from a LINKED WORKTREE runs pre-commit with GIT_DIR and
+  # GIT_INDEX_FILE both set to absolute paths inside that worktree's gitdir
+  # (GIT_WORK_TREE is not set), and check_property_suite_drift.sh passes that
+  # environment straight into `npm run test:properties` with no scrubbing. A
+  # fixture doing mkdtemp + `git init` + `git commit` under it writes the
+  # triggering ROLE's branch ref and clobbers that worktree's index, which is
+  # exactly the observed damage. GIT_INDEX_FILE is therefore now in the
+  # stripped set, under the original scope's own condition for widening.
+  #
   # Fix shape (structural, not a per-file migration): one shared test-setup
-  # module strips GIT_DIR/GIT_WORK_TREE from process.env once, before any test
-  # in a file runs — closing every existing and future local `git()` helper's
-  # exposure in one place, the same way BL-1039 already closed it for
-  # sharedRepoFixture.js callers specifically.
+  # module strips GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE from process.env once,
+  # before any test in a file runs — closing every existing and future local
+  # `git()` helper's exposure in one place, the same way BL-1039 already
+  # closed it for sharedRepoFixture.js callers specifically — plus the same
+  # scrub where the guard script launches the suite, which is the only one of
+  # the two that also covers shell fixtures the suite shells out to.
 
   Background:
     Given the shared git-env guard module is loaded
@@ -45,3 +59,17 @@ Feature: test-suite git fixtures never let an inherited GIT_DIR/GIT_WORK_TREE re
     When a test spawns "git rev-parse --show-toplevel" with cwd set to the target repository and no explicit env override
     Then the reported toplevel is the target repository
     And the decoy repository gains no new commits
+
+  # BL-1196 index-redirect-stripped-03
+  Scenario: Loading the guard strips an inherited index redirect
+    Given the process environment has GIT_INDEX_FILE set to another repository's index path
+    When the git-env guard runs
+    Then GIT_INDEX_FILE is no longer set in the process environment
+
+  # BL-1196 hook-environment-does-not-reach-fixture-writes-04
+  Scenario: A fixture commit made under a worktree hook environment leaves that worktree untouched
+    Given a git repository with a linked worktree checked out on its own branch
+    And the environment a pre-commit hook receives from a commit in that worktree
+    When a fixture creates a temporary directory under that environment and runs "git init" and "git commit" in it
+    Then the linked worktree's branch still points at the commit it pointed at before
+    And the linked worktree's index is unchanged

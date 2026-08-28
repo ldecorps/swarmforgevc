@@ -1,0 +1,4099 @@
+{
+  "schemaVersion": 1,
+  "dateIso": "2026-08-28",
+  "agents": [
+    {
+      "role": "coordinator+specifier",
+      "tokens": {
+        "value": 1063089,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-29T00:00:00.000Z",
+              "value": 477647
+            },
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 559917
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 1575210
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 1027152
+            },
+            {
+              "periodStart": "2026-08-21T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 1707939
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 1095082
+            },
+            {
+              "periodStart": "2026-08-24T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-25T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-26T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 1372052
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 1063089
+            }
+          ],
+          "currentValue": 1063089,
+          "priorValue": 1372052,
+          "delta": -308963,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 197.38537079999944,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-29T00:00:00.000Z",
+              "value": 74.20718900000006
+            },
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 66.05885179999999
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 247.4652512999996
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 168.0786725000003
+            },
+            {
+              "periodStart": "2026-08-21T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 258.05136169999963
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 164.02013894999985
+            },
+            {
+              "periodStart": "2026-08-24T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-25T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-26T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 223.83334980000006
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 197.38537079999944
+            }
+          ],
+          "currentValue": 197.38537079999944,
+          "priorValue": 223.83334980000006,
+          "delta": -26.44797900000063,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "coder",
+      "tokens": {
+        "value": 872373,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-29T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 1092862
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 509948
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 2182364
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 1802815
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 1023367
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 690917
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 872373
+            }
+          ],
+          "currentValue": 872373,
+          "priorValue": 690917,
+          "delta": 181456,
+          "direction": "up"
+        }
+      },
+      "costUsd": {
+        "value": 284.3086268999996,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-29T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 77.08932704999994
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 55.80583049999998
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 239.1752400000005
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 375.94261350000033
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 266.6726114999998
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 151.5685064999997
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 284.3086268999996
+            }
+          ],
+          "currentValue": 284.3086268999996,
+          "priorValue": 151.5685064999997,
+          "delta": 132.74012039999988,
+          "direction": "up"
+        }
+      }
+    },
+    {
+      "role": "cleaner",
+      "tokens": {
+        "value": 298335,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 64092
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 50107
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 131351
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 346738
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 183255
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 147309
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 298335
+            }
+          ],
+          "currentValue": 298335,
+          "priorValue": 147309,
+          "delta": 151026,
+          "direction": "up"
+        }
+      },
+      "costUsd": {
+        "value": 110.6473081499999,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 12.552695999999997
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 9.834703800000002
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 29.546693849999997
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 86.2044867
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 44.09417895000002
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 27.938314799999986
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 110.6473081499999
+            }
+          ],
+          "currentValue": 110.6473081499999,
+          "priorValue": 27.938314799999986,
+          "delta": 82.70899334999991,
+          "direction": "up"
+        }
+      }
+    },
+    {
+      "role": "architect",
+      "tokens": {
+        "value": 369160,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 201972
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 207838
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 460389
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 963616
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 640565
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 609168
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 369160
+            }
+          ],
+          "currentValue": 369160,
+          "priorValue": 609168,
+          "delta": -240008,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 102.07379714999999,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 24.84957750000001
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 20.653015799999977
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 54.95659755000004
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 167.97800654999975
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 79.27759319999996
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 83.08270605000013
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 102.07379714999999
+            }
+          ],
+          "currentValue": 102.07379714999999,
+          "priorValue": 83.08270605000013,
+          "delta": 18.991091099999863,
+          "direction": "up"
+        }
+      }
+    },
+    {
+      "role": "hardender",
+      "tokens": {
+        "value": 444067,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 285834
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 250683
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 437864
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 974593
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 584588
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 496982
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 444067
+            }
+          ],
+          "currentValue": 444067,
+          "priorValue": 496982,
+          "delta": -52915,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 175.51651425000014,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 38.695883399999985
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 37.01795459999998
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 73.82188095000002
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 358.6737739499992
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 184.1417902499999
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 106.40092095000018
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 175.51651425000014
+            }
+          ],
+          "currentValue": 175.51651425000014,
+          "priorValue": 106.40092095000018,
+          "delta": 69.11559329999996,
+          "direction": "up"
+        }
+      }
+    },
+    {
+      "role": "documenter",
+      "tokens": {
+        "value": 317782,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 190062
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 47196
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 137663
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 244843
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 205328
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 54410
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 317782
+            }
+          ],
+          "currentValue": 317782,
+          "priorValue": 54410,
+          "delta": 263372,
+          "direction": "up"
+        }
+      },
+      "costUsd": {
+        "value": 63.15255255000004,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 24.811937249999993
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 7.4091747
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 22.714916849999994
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 60.192421649999936
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 35.972270999999935
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 6.604651799999999
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 63.15255255000004
+            }
+          ],
+          "currentValue": 63.15255255000004,
+          "priorValue": 6.604651799999999,
+          "delta": 56.54790075000004,
+          "direction": "up"
+        }
+      }
+    },
+    {
+      "role": "QA",
+      "tokens": {
+        "value": 613206,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-29T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 277153
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 37086
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 253609
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 567321
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 494934
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 115196
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 613206
+            }
+          ],
+          "currentValue": 613206,
+          "priorValue": 115196,
+          "delta": 498010,
+          "direction": "up"
+        }
+      },
+      "costUsd": {
+        "value": 123.90649110000017,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-29T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-07-30T00:00:00.000Z",
+              "value": 33.935996100000004
+            },
+            {
+              "periodStart": "2026-07-31T00:00:00.000Z",
+              "value": 3.5853208499999996
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 37.12427639999998
+            },
+            {
+              "periodStart": "2026-08-22T00:00:00.000Z",
+              "value": 104.62689930000002
+            },
+            {
+              "periodStart": "2026-08-23T00:00:00.000Z",
+              "value": 67.78774650000003
+            },
+            {
+              "periodStart": "2026-08-27T00:00:00.000Z",
+              "value": 17.156784749999996
+            },
+            {
+              "periodStart": "2026-08-28T00:00:00.000Z",
+              "value": 123.90649110000017
+            }
+          ],
+          "currentValue": 123.90649110000017,
+          "priorValue": 17.156784749999996,
+          "delta": 106.74970635000017,
+          "direction": "up"
+        }
+      }
+    }
+  ],
+  "topExpensiveTickets": [
+    {
+      "ticketId": "GH-22",
+      "costUsd": 532.8712937999996
+    },
+    {
+      "ticketId": "BL-657",
+      "costUsd": 388.1235149999998
+    },
+    {
+      "ticketId": "BL-523",
+      "costUsd": 220.8579257999999
+    },
+    {
+      "ticketId": "BL-1071",
+      "costUsd": 20.28896275
+    },
+    {
+      "ticketId": "BL-1215",
+      "costUsd": 19.949690550000003
+    }
+  ],
+  "flowBalance": {
+    "speccedPerDay": {
+      "value": 0,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-06-29T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-06-30T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-07-01T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-02T00:00:00.000Z",
+            "value": 416
+          },
+          {
+            "periodStart": "2026-07-03T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-04T00:00:00.000Z",
+            "value": 17
+          },
+          {
+            "periodStart": "2026-07-05T00:00:00.000Z",
+            "value": 26
+          },
+          {
+            "periodStart": "2026-07-06T00:00:00.000Z",
+            "value": 20
+          },
+          {
+            "periodStart": "2026-07-07T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-08T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 41
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 36
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 33
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 35
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 43
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 40
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 14
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 48
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 38
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 30
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 49
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 20
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-11T00:00:00.000Z",
+            "value": 6
+          },
+          {
+            "periodStart": "2026-08-12T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-08-13T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-14T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-15T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-08-16T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-08-17T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-18T00:00:00.000Z",
+            "value": 17
+          },
+          {
+            "periodStart": "2026-08-19T00:00:00.000Z",
+            "value": 31
+          },
+          {
+            "periodStart": "2026-08-20T00:00:00.000Z",
+            "value": 34
+          },
+          {
+            "periodStart": "2026-08-21T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-22T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-23T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-24T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-25T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-26T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-27T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-28T00:00:00.000Z",
+            "value": 0
+          }
+        ],
+        "currentValue": 0,
+        "priorValue": 0,
+        "delta": 0,
+        "direction": "flat"
+      }
+    },
+    "closedPerDay": {
+      "value": 3,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-06-29T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-06-30T00:00:00.000Z",
+            "value": 15
+          },
+          {
+            "periodStart": "2026-07-01T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-07-02T00:00:00.000Z",
+            "value": 421
+          },
+          {
+            "periodStart": "2026-07-03T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-05T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-06T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-07T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-08T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 32
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 54
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 42
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 18
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 36
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 25
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 42
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 50
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 12
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 6
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 17
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 14
+          },
+          {
+            "periodStart": "2026-08-11T00:00:00.000Z",
+            "value": 6
+          },
+          {
+            "periodStart": "2026-08-12T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-08-13T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-14T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-08-15T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-08-16T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-08-17T00:00:00.000Z",
+            "value": 12
+          },
+          {
+            "periodStart": "2026-08-18T00:00:00.000Z",
+            "value": 15
+          },
+          {
+            "periodStart": "2026-08-19T00:00:00.000Z",
+            "value": 38
+          },
+          {
+            "periodStart": "2026-08-20T00:00:00.000Z",
+            "value": 31
+          },
+          {
+            "periodStart": "2026-08-21T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-08-22T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-23T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-08-24T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-08-25T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-08-26T00:00:00.000Z",
+            "value": 32
+          },
+          {
+            "periodStart": "2026-08-27T00:00:00.000Z",
+            "value": 40
+          },
+          {
+            "periodStart": "2026-08-28T00:00:00.000Z",
+            "value": 3
+          }
+        ],
+        "currentValue": 3,
+        "priorValue": 40,
+        "delta": -37,
+        "direction": "down"
+      }
+    },
+    "rework": {
+      "roundsPerClose": {
+        "QA": {
+          "value": 1.4807692307692308,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-08-14",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-21",
+                "value": 1.4807692307692308
+              }
+            ],
+            "currentValue": 1.4807692307692308,
+            "priorValue": 0,
+            "delta": 1.4807692307692308,
+            "direction": "up"
+          }
+        },
+        "architect": {
+          "value": 0.625,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-08-14",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-21",
+                "value": 0.625
+              }
+            ],
+            "currentValue": 0.625,
+            "priorValue": 0,
+            "delta": 0.625,
+            "direction": "up"
+          }
+        },
+        "cleaner": {
+          "value": 0.019230769230769232,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-08-14",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-21",
+                "value": 0.019230769230769232
+              }
+            ],
+            "currentValue": 0.019230769230769232,
+            "priorValue": 0,
+            "delta": 0.019230769230769232,
+            "direction": "up"
+          }
+        },
+        "hardender": {
+          "value": 0.009615384615384616,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-08-14",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-21",
+                "value": 0.009615384615384616
+              }
+            ],
+            "currentValue": 0.009615384615384616,
+            "priorValue": 0,
+            "delta": 0.009615384615384616,
+            "direction": "up"
+          }
+        },
+        "specifier": {
+          "value": 0.04807692307692308,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-08-14",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-21",
+                "value": 0.04807692307692308
+              }
+            ],
+            "currentValue": 0.04807692307692308,
+            "priorValue": 0,
+            "delta": 0.04807692307692308,
+            "direction": "up"
+          }
+        },
+        "unattributed": {
+          "value": 0,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-08-14",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-21",
+                "value": 0
+              }
+            ],
+            "currentValue": 0,
+            "priorValue": 0,
+            "delta": 0,
+            "direction": "flat"
+          }
+        }
+      },
+      "bouncesPerDay": {
+        "QA": [
+          {
+            "periodStart": "2026-08-22",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-08-23",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-08-24",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-08-25",
+            "value": 71
+          },
+          {
+            "periodStart": "2026-08-26",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-08-27",
+            "value": 40
+          },
+          {
+            "periodStart": "2026-08-28",
+            "value": 4
+          }
+        ],
+        "architect": [
+          {
+            "periodStart": "2026-08-22",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-23",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-24",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-08-25",
+            "value": 12
+          },
+          {
+            "periodStart": "2026-08-26",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-27",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-08-28",
+            "value": 7
+          }
+        ],
+        "cleaner": [
+          {
+            "periodStart": "2026-08-22",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-23",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-24",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-25",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-26",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-27",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-28",
+            "value": 2
+          }
+        ],
+        "hardender": [
+          {
+            "periodStart": "2026-08-22",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-23",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-24",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-25",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-26",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-27",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-28",
+            "value": 0
+          }
+        ],
+        "specifier": [
+          {
+            "periodStart": "2026-08-22",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-23",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-24",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-25",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-26",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-08-27",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-28",
+            "value": 0
+          }
+        ],
+        "unattributed": [
+          {
+            "periodStart": "2026-08-22",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-23",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-24",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-25",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-26",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-27",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-28",
+            "value": 0
+          }
+        ]
+      },
+      "maxRounds": {
+        "ticket": "BL-588",
+        "rounds": 12,
+        "by": "QA"
+      }
+    }
+  },
+  "reliability": {
+    "chases": {
+      "value": 17,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 231
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 432
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 178
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 186
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 814
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 6061
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 710
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 928
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 6180
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 33993
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 24286
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 22416
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 20300
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 19192
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 7168
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 189
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 89
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 125
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 63
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 111
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-11T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-12T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-13T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-14T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-15T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-16T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-17T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-18T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-19T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-20T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-21T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-22T00:00:00.000Z",
+            "value": 261
+          },
+          {
+            "periodStart": "2026-08-23T00:00:00.000Z",
+            "value": 754
+          },
+          {
+            "periodStart": "2026-08-24T00:00:00.000Z",
+            "value": 878
+          },
+          {
+            "periodStart": "2026-08-25T00:00:00.000Z",
+            "value": 2583
+          },
+          {
+            "periodStart": "2026-08-26T00:00:00.000Z",
+            "value": 749
+          },
+          {
+            "periodStart": "2026-08-27T00:00:00.000Z",
+            "value": 5052
+          },
+          {
+            "periodStart": "2026-08-28T00:00:00.000Z",
+            "value": 17
+          }
+        ],
+        "currentValue": 17,
+        "priorValue": 5052,
+        "delta": -5035,
+        "direction": "down"
+      }
+    },
+    "nudges": {
+      "value": 5,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 411
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 18
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 41
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 32
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 132
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 198
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 315
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 108
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 419
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 841
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 861
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 771
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 316
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 328
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 234
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 98
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 65
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 24
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-11T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-12T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-13T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-14T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-15T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-16T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-17T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-18T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-19T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-20T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-21T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-22T00:00:00.000Z",
+            "value": 70
+          },
+          {
+            "periodStart": "2026-08-23T00:00:00.000Z",
+            "value": 1384
+          },
+          {
+            "periodStart": "2026-08-24T00:00:00.000Z",
+            "value": 380
+          },
+          {
+            "periodStart": "2026-08-25T00:00:00.000Z",
+            "value": 228
+          },
+          {
+            "periodStart": "2026-08-26T00:00:00.000Z",
+            "value": 102
+          },
+          {
+            "periodStart": "2026-08-27T00:00:00.000Z",
+            "value": 194
+          },
+          {
+            "periodStart": "2026-08-28T00:00:00.000Z",
+            "value": 5
+          }
+        ],
+        "currentValue": 5,
+        "priorValue": 194,
+        "delta": -189,
+        "direction": "down"
+      }
+    },
+    "respawns": {
+      "value": 7,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 114
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 154
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 854
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 711
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 849
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 767
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 826
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 459
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 51
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 6
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-11T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-12T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-13T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-14T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-15T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-16T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-17T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-18T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-19T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-20T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-21T00:00:00.000Z",
+            "value": 609
+          },
+          {
+            "periodStart": "2026-08-22T00:00:00.000Z",
+            "value": 621
+          },
+          {
+            "periodStart": "2026-08-23T00:00:00.000Z",
+            "value": 140
+          },
+          {
+            "periodStart": "2026-08-24T00:00:00.000Z",
+            "value": 103
+          },
+          {
+            "periodStart": "2026-08-25T00:00:00.000Z",
+            "value": 20
+          },
+          {
+            "periodStart": "2026-08-26T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-27T00:00:00.000Z",
+            "value": 209
+          },
+          {
+            "periodStart": "2026-08-28T00:00:00.000Z",
+            "value": 7
+          }
+        ],
+        "currentValue": 7,
+        "priorValue": 209,
+        "delta": -202,
+        "direction": "down"
+      }
+    },
+    "failedDeliveries": {
+      "value": 0,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-08-28T00:00:00.000Z",
+            "value": 0
+          }
+        ],
+        "currentValue": 0,
+        "priorValue": null,
+        "delta": null,
+        "direction": "unknown"
+      }
+    },
+    "daemonRestarts": {
+      "value": 0,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-08-21T00:00:00.000Z",
+            "value": 31
+          },
+          {
+            "periodStart": "2026-08-22T00:00:00.000Z",
+            "value": 6
+          },
+          {
+            "periodStart": "2026-08-23T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-24T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-25T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-08-26T00:00:00.000Z",
+            "value": 34
+          },
+          {
+            "periodStart": "2026-08-27T00:00:00.000Z",
+            "value": 167
+          },
+          {
+            "periodStart": "2026-08-28T00:00:00.000Z",
+            "value": 0
+          }
+        ],
+        "currentValue": 0,
+        "priorValue": 167,
+        "delta": -167,
+        "direction": "down"
+      }
+    }
+  },
+  "resourceAnomalies": [],
+  "resourceSamplesObserved": true,
+  "suiteDurationTrend": {
+    "hasLocalData": true,
+    "dailySeries": [
+      {
+        "periodStart": "2026-07-09T00:00:00.000Z",
+        "value": 9419.129032258064
+      },
+      {
+        "periodStart": "2026-07-10T00:00:00.000Z",
+        "value": 7435.39705882353
+      },
+      {
+        "periodStart": "2026-07-11T00:00:00.000Z",
+        "value": 12062.506493506493
+      },
+      {
+        "periodStart": "2026-07-12T00:00:00.000Z",
+        "value": 12766.266666666666
+      },
+      {
+        "periodStart": "2026-07-13T00:00:00.000Z",
+        "value": 13656.25925925926
+      },
+      {
+        "periodStart": "2026-07-14T00:00:00.000Z",
+        "value": 12221.966666666667
+      },
+      {
+        "periodStart": "2026-07-15T00:00:00.000Z",
+        "value": 29255.77049180328
+      },
+      {
+        "periodStart": "2026-07-16T00:00:00.000Z",
+        "value": 12040.358974358975
+      },
+      {
+        "periodStart": "2026-07-17T00:00:00.000Z",
+        "value": 9324.752577319588
+      },
+      {
+        "periodStart": "2026-07-18T00:00:00.000Z",
+        "value": 8661.5
+      },
+      {
+        "periodStart": "2026-07-19T00:00:00.000Z",
+        "value": 8924.47619047619
+      },
+      {
+        "periodStart": "2026-07-22T00:00:00.000Z",
+        "value": 14282.329896907217
+      },
+      {
+        "periodStart": "2026-07-23T00:00:00.000Z",
+        "value": 9792.072727272727
+      },
+      {
+        "periodStart": "2026-07-24T00:00:00.000Z",
+        "value": 9635
+      },
+      {
+        "periodStart": "2026-07-25T00:00:00.000Z",
+        "value": 10112.243243243243
+      },
+      {
+        "periodStart": "2026-07-26T00:00:00.000Z",
+        "value": 10085
+      },
+      {
+        "periodStart": "2026-07-27T00:00:00.000Z",
+        "value": 10277.191489361701
+      },
+      {
+        "periodStart": "2026-07-28T00:00:00.000Z",
+        "value": 12471
+      },
+      {
+        "periodStart": "2026-07-29T00:00:00.000Z",
+        "value": 10997.6
+      },
+      {
+        "periodStart": "2026-07-30T00:00:00.000Z",
+        "value": 11338.2
+      },
+      {
+        "periodStart": "2026-07-31T00:00:00.000Z",
+        "value": 11908
+      },
+      {
+        "periodStart": "2026-08-01T00:00:00.000Z",
+        "value": 13155
+      },
+      {
+        "periodStart": "2026-08-22T00:00:00.000Z",
+        "value": 18249.763157894737
+      },
+      {
+        "periodStart": "2026-08-23T00:00:00.000Z",
+        "value": 15988.797752808989
+      },
+      {
+        "periodStart": "2026-08-24T00:00:00.000Z",
+        "value": 14720.588235294117
+      },
+      {
+        "periodStart": "2026-08-25T00:00:00.000Z",
+        "value": 16997
+      },
+      {
+        "periodStart": "2026-08-26T00:00:00.000Z",
+        "value": 21630.958333333332
+      },
+      {
+        "periodStart": "2026-08-27T00:00:00.000Z",
+        "value": 57626.348837209305
+      },
+      {
+        "periodStart": "2026-08-28T00:00:00.000Z",
+        "value": 20516.714285714286
+      }
+    ],
+    "trend": {
+      "series": [
+        {
+          "periodStart": "2026-07-09T00:00:00.000Z",
+          "value": 9419.129032258064
+        },
+        {
+          "periodStart": "2026-07-10T00:00:00.000Z",
+          "value": 7435.39705882353
+        },
+        {
+          "periodStart": "2026-07-11T00:00:00.000Z",
+          "value": 12062.506493506493
+        },
+        {
+          "periodStart": "2026-07-12T00:00:00.000Z",
+          "value": 12766.266666666666
+        },
+        {
+          "periodStart": "2026-07-13T00:00:00.000Z",
+          "value": 13656.25925925926
+        },
+        {
+          "periodStart": "2026-07-14T00:00:00.000Z",
+          "value": 12221.966666666667
+        },
+        {
+          "periodStart": "2026-07-15T00:00:00.000Z",
+          "value": 29255.77049180328
+        },
+        {
+          "periodStart": "2026-07-16T00:00:00.000Z",
+          "value": 12040.358974358975
+        },
+        {
+          "periodStart": "2026-07-17T00:00:00.000Z",
+          "value": 9324.752577319588
+        },
+        {
+          "periodStart": "2026-07-18T00:00:00.000Z",
+          "value": 8661.5
+        },
+        {
+          "periodStart": "2026-07-19T00:00:00.000Z",
+          "value": 8924.47619047619
+        },
+        {
+          "periodStart": "2026-07-22T00:00:00.000Z",
+          "value": 14282.329896907217
+        },
+        {
+          "periodStart": "2026-07-23T00:00:00.000Z",
+          "value": 9792.072727272727
+        },
+        {
+          "periodStart": "2026-07-24T00:00:00.000Z",
+          "value": 9635
+        },
+        {
+          "periodStart": "2026-07-25T00:00:00.000Z",
+          "value": 10112.243243243243
+        },
+        {
+          "periodStart": "2026-07-26T00:00:00.000Z",
+          "value": 10085
+        },
+        {
+          "periodStart": "2026-07-27T00:00:00.000Z",
+          "value": 10277.191489361701
+        },
+        {
+          "periodStart": "2026-07-28T00:00:00.000Z",
+          "value": 12471
+        },
+        {
+          "periodStart": "2026-07-29T00:00:00.000Z",
+          "value": 10997.6
+        },
+        {
+          "periodStart": "2026-07-30T00:00:00.000Z",
+          "value": 11338.2
+        },
+        {
+          "periodStart": "2026-07-31T00:00:00.000Z",
+          "value": 11908
+        },
+        {
+          "periodStart": "2026-08-01T00:00:00.000Z",
+          "value": 13155
+        },
+        {
+          "periodStart": "2026-08-22T00:00:00.000Z",
+          "value": 18249.763157894737
+        },
+        {
+          "periodStart": "2026-08-23T00:00:00.000Z",
+          "value": 15988.797752808989
+        },
+        {
+          "periodStart": "2026-08-24T00:00:00.000Z",
+          "value": 14720.588235294117
+        },
+        {
+          "periodStart": "2026-08-25T00:00:00.000Z",
+          "value": 16997
+        },
+        {
+          "periodStart": "2026-08-26T00:00:00.000Z",
+          "value": 21630.958333333332
+        },
+        {
+          "periodStart": "2026-08-27T00:00:00.000Z",
+          "value": 57626.348837209305
+        },
+        {
+          "periodStart": "2026-08-28T00:00:00.000Z",
+          "value": 20516.714285714286
+        }
+      ],
+      "currentValue": 20516.714285714286,
+      "priorValue": 57626.348837209305,
+      "delta": -37109.63455149502,
+      "direction": "down"
+    },
+    "warn": false
+  },
+  "costPerTicket": {
+    "average": {
+      "value": 9.022820700000002,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-02T00:00:00.000Z",
+            "value": 8.469524187500001
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 376.86460979999976
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 388.1235149999998
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 8.131539165000003
+          },
+          {
+            "periodStart": "2026-08-27T00:00:00.000Z",
+            "value": 9.022820700000002
+          }
+        ],
+        "currentValue": 9.022820700000002,
+        "priorValue": 8.131539165000003,
+        "delta": 0.8912815349999992,
+        "direction": "up"
+      }
+    },
+    "sampleCount": 34,
+    "excludedCount": 1225,
+    "series": [
+      {
+        "periodStart": "2026-07-02T00:00:00.000Z",
+        "value": 8.469524187500001
+      },
+      {
+        "periodStart": "2026-07-16T00:00:00.000Z",
+        "value": 376.86460979999976
+      },
+      {
+        "periodStart": "2026-07-23T00:00:00.000Z",
+        "value": 388.1235149999998
+      },
+      {
+        "periodStart": "2026-07-30T00:00:00.000Z",
+        "value": 8.131539165000003
+      },
+      {
+        "periodStart": "2026-08-27T00:00:00.000Z",
+        "value": 9.022820700000002
+      }
+    ],
+    "basis": "Average of each DELIVERED ticket's total cost, summed across every role that held it (BL-312's non-double-counted totals). Includes rework: every bounce/re-hold's usage counts toward the ticket, not just its first pass. Excludes usage outside any recorded holding window ('unattributed') and tickets with no priced model available for any of their usage - those are counted separately (see excluded count), never as $0."
+  },
+  "topExpensiveOriginsByHorizon": {
+    "3h": [
+      {
+        "key": {
+          "role": "coder",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 1
+      },
+      {
+        "key": {
+          "role": "front-desk-operator",
+          "trigger": "reap"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 0
+      },
+      {
+        "key": {
+          "role": "cleaner",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 4,
+        "unknownCostCount": 4
+      },
+      {
+        "key": {
+          "role": "architect",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 3,
+        "unknownCostCount": 3
+      },
+      {
+        "key": {
+          "role": "coordinator",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 1
+      }
+    ],
+    "24h": [
+      {
+        "key": {
+          "role": "cleaner",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 52,
+        "unknownCostCount": 52
+      },
+      {
+        "key": {
+          "role": "coder",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 52,
+        "unknownCostCount": 52
+      },
+      {
+        "key": {
+          "role": "architect",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 49,
+        "unknownCostCount": 49
+      },
+      {
+        "key": {
+          "role": "hardender",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 41,
+        "unknownCostCount": 41
+      },
+      {
+        "key": {
+          "role": "specifier",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 17,
+        "unknownCostCount": 17
+      }
+    ],
+    "7d": [
+      {
+        "key": {
+          "role": "front-desk-operator",
+          "trigger": "reap"
+        },
+        "costUsd": 0.4137152,
+        "invocationCount": 42,
+        "unknownCostCount": 4
+      },
+      {
+        "key": {
+          "role": "coordinator",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 177,
+        "unknownCostCount": 177
+      },
+      {
+        "key": {
+          "role": "specifier",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 59,
+        "unknownCostCount": 59
+      },
+      {
+        "key": {
+          "role": "coder",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 221,
+        "unknownCostCount": 221
+      },
+      {
+        "key": {
+          "role": "cleaner",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 171,
+        "unknownCostCount": 171
+      }
+    ]
+  },
+  "originCostTrendSeries": [
+    {
+      "key": {
+        "role": "coordinator",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1787286581838,
+          "bucketEndMs": 1787308181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787308181838,
+          "bucketEndMs": 1787329781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787329781838,
+          "bucketEndMs": 1787351381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787351381838,
+          "bucketEndMs": 1787372981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787372981838,
+          "bucketEndMs": 1787394581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787394581838,
+          "bucketEndMs": 1787416181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787416181838,
+          "bucketEndMs": 1787437781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787437781838,
+          "bucketEndMs": 1787459381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787459381838,
+          "bucketEndMs": 1787480981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787480981838,
+          "bucketEndMs": 1787502581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787502581838,
+          "bucketEndMs": 1787524181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787524181838,
+          "bucketEndMs": 1787545781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787545781838,
+          "bucketEndMs": 1787567381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787567381838,
+          "bucketEndMs": 1787588981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787588981838,
+          "bucketEndMs": 1787610581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787610581838,
+          "bucketEndMs": 1787632181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787632181838,
+          "bucketEndMs": 1787653781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787653781838,
+          "bucketEndMs": 1787675381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787675381838,
+          "bucketEndMs": 1787696981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787696981838,
+          "bucketEndMs": 1787718581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787718581838,
+          "bucketEndMs": 1787740181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787740181838,
+          "bucketEndMs": 1787761781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787761781838,
+          "bucketEndMs": 1787783381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787783381838,
+          "bucketEndMs": 1787804981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787804981838,
+          "bucketEndMs": 1787808581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787808581838,
+          "bucketEndMs": 1787812181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787812181838,
+          "bucketEndMs": 1787815781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787815781838,
+          "bucketEndMs": 1787819381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787819381838,
+          "bucketEndMs": 1787822981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787822981838,
+          "bucketEndMs": 1787826581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787826581838,
+          "bucketEndMs": 1787830181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787830181838,
+          "bucketEndMs": 1787833781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787833781838,
+          "bucketEndMs": 1787837381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787837381838,
+          "bucketEndMs": 1787840981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787840981838,
+          "bucketEndMs": 1787844581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787844581838,
+          "bucketEndMs": 1787848181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787848181838,
+          "bucketEndMs": 1787851781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787851781838,
+          "bucketEndMs": 1787855381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787855381838,
+          "bucketEndMs": 1787858981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787858981838,
+          "bucketEndMs": 1787862581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787862581838,
+          "bucketEndMs": 1787866181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787866181838,
+          "bucketEndMs": 1787869781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787869781838,
+          "bucketEndMs": 1787873381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787873381838,
+          "bucketEndMs": 1787876981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787876981838,
+          "bucketEndMs": 1787880581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787880581838,
+          "bucketEndMs": 1787881481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787881481838,
+          "bucketEndMs": 1787882381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787882381838,
+          "bucketEndMs": 1787883281838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787883281838,
+          "bucketEndMs": 1787884181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787884181838,
+          "bucketEndMs": 1787885081838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885081838,
+          "bucketEndMs": 1787885981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885981838,
+          "bucketEndMs": 1787886881838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787886881838,
+          "bucketEndMs": 1787887781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787887781838,
+          "bucketEndMs": 1787888681838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787888681838,
+          "bucketEndMs": 1787889581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787889581838,
+          "bucketEndMs": 1787890481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787890481838,
+          "bucketEndMs": 1787891381838,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "front-desk-operator",
+        "trigger": "reap",
+        "script": "launch_front_desk_operator.sh"
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1787286581838,
+          "bucketEndMs": 1787308181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787308181838,
+          "bucketEndMs": 1787329781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787329781838,
+          "bucketEndMs": 1787351381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787351381838,
+          "bucketEndMs": 1787372981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787372981838,
+          "bucketEndMs": 1787394581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787394581838,
+          "bucketEndMs": 1787416181838,
+          "costUsd": 0.3467882
+        },
+        {
+          "bucketStartMs": 1787416181838,
+          "bucketEndMs": 1787437781838,
+          "costUsd": 0.044656
+        },
+        {
+          "bucketStartMs": 1787437781838,
+          "bucketEndMs": 1787459381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787459381838,
+          "bucketEndMs": 1787480981838,
+          "costUsd": 0.022271
+        },
+        {
+          "bucketStartMs": 1787480981838,
+          "bucketEndMs": 1787502581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787502581838,
+          "bucketEndMs": 1787524181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787524181838,
+          "bucketEndMs": 1787545781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787545781838,
+          "bucketEndMs": 1787567381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787567381838,
+          "bucketEndMs": 1787588981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787588981838,
+          "bucketEndMs": 1787610581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787610581838,
+          "bucketEndMs": 1787632181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787632181838,
+          "bucketEndMs": 1787653781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787653781838,
+          "bucketEndMs": 1787675381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787675381838,
+          "bucketEndMs": 1787696981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787696981838,
+          "bucketEndMs": 1787718581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787718581838,
+          "bucketEndMs": 1787740181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787740181838,
+          "bucketEndMs": 1787761781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787761781838,
+          "bucketEndMs": 1787783381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787783381838,
+          "bucketEndMs": 1787804981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787804981838,
+          "bucketEndMs": 1787808581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787808581838,
+          "bucketEndMs": 1787812181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787812181838,
+          "bucketEndMs": 1787815781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787815781838,
+          "bucketEndMs": 1787819381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787819381838,
+          "bucketEndMs": 1787822981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787822981838,
+          "bucketEndMs": 1787826581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787826581838,
+          "bucketEndMs": 1787830181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787830181838,
+          "bucketEndMs": 1787833781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787833781838,
+          "bucketEndMs": 1787837381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787837381838,
+          "bucketEndMs": 1787840981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787840981838,
+          "bucketEndMs": 1787844581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787844581838,
+          "bucketEndMs": 1787848181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787848181838,
+          "bucketEndMs": 1787851781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787851781838,
+          "bucketEndMs": 1787855381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787855381838,
+          "bucketEndMs": 1787858981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787858981838,
+          "bucketEndMs": 1787862581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787862581838,
+          "bucketEndMs": 1787866181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787866181838,
+          "bucketEndMs": 1787869781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787869781838,
+          "bucketEndMs": 1787873381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787873381838,
+          "bucketEndMs": 1787876981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787876981838,
+          "bucketEndMs": 1787880581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787880581838,
+          "bucketEndMs": 1787881481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787881481838,
+          "bucketEndMs": 1787882381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787882381838,
+          "bucketEndMs": 1787883281838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787883281838,
+          "bucketEndMs": 1787884181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787884181838,
+          "bucketEndMs": 1787885081838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885081838,
+          "bucketEndMs": 1787885981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885981838,
+          "bucketEndMs": 1787886881838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787886881838,
+          "bucketEndMs": 1787887781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787887781838,
+          "bucketEndMs": 1787888681838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787888681838,
+          "bucketEndMs": 1787889581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787889581838,
+          "bucketEndMs": 1787890481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787890481838,
+          "bucketEndMs": 1787891381838,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "specifier",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1787286581838,
+          "bucketEndMs": 1787308181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787308181838,
+          "bucketEndMs": 1787329781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787329781838,
+          "bucketEndMs": 1787351381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787351381838,
+          "bucketEndMs": 1787372981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787372981838,
+          "bucketEndMs": 1787394581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787394581838,
+          "bucketEndMs": 1787416181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787416181838,
+          "bucketEndMs": 1787437781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787437781838,
+          "bucketEndMs": 1787459381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787459381838,
+          "bucketEndMs": 1787480981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787480981838,
+          "bucketEndMs": 1787502581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787502581838,
+          "bucketEndMs": 1787524181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787524181838,
+          "bucketEndMs": 1787545781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787545781838,
+          "bucketEndMs": 1787567381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787567381838,
+          "bucketEndMs": 1787588981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787588981838,
+          "bucketEndMs": 1787610581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787610581838,
+          "bucketEndMs": 1787632181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787632181838,
+          "bucketEndMs": 1787653781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787653781838,
+          "bucketEndMs": 1787675381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787675381838,
+          "bucketEndMs": 1787696981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787696981838,
+          "bucketEndMs": 1787718581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787718581838,
+          "bucketEndMs": 1787740181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787740181838,
+          "bucketEndMs": 1787761781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787761781838,
+          "bucketEndMs": 1787783381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787783381838,
+          "bucketEndMs": 1787804981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787804981838,
+          "bucketEndMs": 1787808581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787808581838,
+          "bucketEndMs": 1787812181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787812181838,
+          "bucketEndMs": 1787815781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787815781838,
+          "bucketEndMs": 1787819381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787819381838,
+          "bucketEndMs": 1787822981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787822981838,
+          "bucketEndMs": 1787826581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787826581838,
+          "bucketEndMs": 1787830181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787830181838,
+          "bucketEndMs": 1787833781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787833781838,
+          "bucketEndMs": 1787837381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787837381838,
+          "bucketEndMs": 1787840981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787840981838,
+          "bucketEndMs": 1787844581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787844581838,
+          "bucketEndMs": 1787848181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787848181838,
+          "bucketEndMs": 1787851781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787851781838,
+          "bucketEndMs": 1787855381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787855381838,
+          "bucketEndMs": 1787858981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787858981838,
+          "bucketEndMs": 1787862581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787862581838,
+          "bucketEndMs": 1787866181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787866181838,
+          "bucketEndMs": 1787869781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787869781838,
+          "bucketEndMs": 1787873381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787873381838,
+          "bucketEndMs": 1787876981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787876981838,
+          "bucketEndMs": 1787880581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787880581838,
+          "bucketEndMs": 1787881481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787881481838,
+          "bucketEndMs": 1787882381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787882381838,
+          "bucketEndMs": 1787883281838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787883281838,
+          "bucketEndMs": 1787884181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787884181838,
+          "bucketEndMs": 1787885081838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885081838,
+          "bucketEndMs": 1787885981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885981838,
+          "bucketEndMs": 1787886881838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787886881838,
+          "bucketEndMs": 1787887781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787887781838,
+          "bucketEndMs": 1787888681838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787888681838,
+          "bucketEndMs": 1787889581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787889581838,
+          "bucketEndMs": 1787890481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787890481838,
+          "bucketEndMs": 1787891381838,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "coder",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1787286581838,
+          "bucketEndMs": 1787308181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787308181838,
+          "bucketEndMs": 1787329781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787329781838,
+          "bucketEndMs": 1787351381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787351381838,
+          "bucketEndMs": 1787372981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787372981838,
+          "bucketEndMs": 1787394581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787394581838,
+          "bucketEndMs": 1787416181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787416181838,
+          "bucketEndMs": 1787437781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787437781838,
+          "bucketEndMs": 1787459381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787459381838,
+          "bucketEndMs": 1787480981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787480981838,
+          "bucketEndMs": 1787502581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787502581838,
+          "bucketEndMs": 1787524181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787524181838,
+          "bucketEndMs": 1787545781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787545781838,
+          "bucketEndMs": 1787567381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787567381838,
+          "bucketEndMs": 1787588981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787588981838,
+          "bucketEndMs": 1787610581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787610581838,
+          "bucketEndMs": 1787632181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787632181838,
+          "bucketEndMs": 1787653781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787653781838,
+          "bucketEndMs": 1787675381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787675381838,
+          "bucketEndMs": 1787696981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787696981838,
+          "bucketEndMs": 1787718581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787718581838,
+          "bucketEndMs": 1787740181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787740181838,
+          "bucketEndMs": 1787761781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787761781838,
+          "bucketEndMs": 1787783381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787783381838,
+          "bucketEndMs": 1787804981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787804981838,
+          "bucketEndMs": 1787808581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787808581838,
+          "bucketEndMs": 1787812181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787812181838,
+          "bucketEndMs": 1787815781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787815781838,
+          "bucketEndMs": 1787819381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787819381838,
+          "bucketEndMs": 1787822981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787822981838,
+          "bucketEndMs": 1787826581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787826581838,
+          "bucketEndMs": 1787830181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787830181838,
+          "bucketEndMs": 1787833781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787833781838,
+          "bucketEndMs": 1787837381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787837381838,
+          "bucketEndMs": 1787840981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787840981838,
+          "bucketEndMs": 1787844581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787844581838,
+          "bucketEndMs": 1787848181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787848181838,
+          "bucketEndMs": 1787851781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787851781838,
+          "bucketEndMs": 1787855381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787855381838,
+          "bucketEndMs": 1787858981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787858981838,
+          "bucketEndMs": 1787862581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787862581838,
+          "bucketEndMs": 1787866181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787866181838,
+          "bucketEndMs": 1787869781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787869781838,
+          "bucketEndMs": 1787873381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787873381838,
+          "bucketEndMs": 1787876981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787876981838,
+          "bucketEndMs": 1787880581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787880581838,
+          "bucketEndMs": 1787881481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787881481838,
+          "bucketEndMs": 1787882381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787882381838,
+          "bucketEndMs": 1787883281838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787883281838,
+          "bucketEndMs": 1787884181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787884181838,
+          "bucketEndMs": 1787885081838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885081838,
+          "bucketEndMs": 1787885981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885981838,
+          "bucketEndMs": 1787886881838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787886881838,
+          "bucketEndMs": 1787887781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787887781838,
+          "bucketEndMs": 1787888681838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787888681838,
+          "bucketEndMs": 1787889581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787889581838,
+          "bucketEndMs": 1787890481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787890481838,
+          "bucketEndMs": 1787891381838,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "cleaner",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1787286581838,
+          "bucketEndMs": 1787308181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787308181838,
+          "bucketEndMs": 1787329781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787329781838,
+          "bucketEndMs": 1787351381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787351381838,
+          "bucketEndMs": 1787372981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787372981838,
+          "bucketEndMs": 1787394581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787394581838,
+          "bucketEndMs": 1787416181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787416181838,
+          "bucketEndMs": 1787437781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787437781838,
+          "bucketEndMs": 1787459381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787459381838,
+          "bucketEndMs": 1787480981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787480981838,
+          "bucketEndMs": 1787502581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787502581838,
+          "bucketEndMs": 1787524181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787524181838,
+          "bucketEndMs": 1787545781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787545781838,
+          "bucketEndMs": 1787567381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787567381838,
+          "bucketEndMs": 1787588981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787588981838,
+          "bucketEndMs": 1787610581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787610581838,
+          "bucketEndMs": 1787632181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787632181838,
+          "bucketEndMs": 1787653781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787653781838,
+          "bucketEndMs": 1787675381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787675381838,
+          "bucketEndMs": 1787696981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787696981838,
+          "bucketEndMs": 1787718581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787718581838,
+          "bucketEndMs": 1787740181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787740181838,
+          "bucketEndMs": 1787761781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787761781838,
+          "bucketEndMs": 1787783381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787783381838,
+          "bucketEndMs": 1787804981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787804981838,
+          "bucketEndMs": 1787808581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787808581838,
+          "bucketEndMs": 1787812181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787812181838,
+          "bucketEndMs": 1787815781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787815781838,
+          "bucketEndMs": 1787819381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787819381838,
+          "bucketEndMs": 1787822981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787822981838,
+          "bucketEndMs": 1787826581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787826581838,
+          "bucketEndMs": 1787830181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787830181838,
+          "bucketEndMs": 1787833781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787833781838,
+          "bucketEndMs": 1787837381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787837381838,
+          "bucketEndMs": 1787840981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787840981838,
+          "bucketEndMs": 1787844581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787844581838,
+          "bucketEndMs": 1787848181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787848181838,
+          "bucketEndMs": 1787851781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787851781838,
+          "bucketEndMs": 1787855381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787855381838,
+          "bucketEndMs": 1787858981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787858981838,
+          "bucketEndMs": 1787862581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787862581838,
+          "bucketEndMs": 1787866181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787866181838,
+          "bucketEndMs": 1787869781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787869781838,
+          "bucketEndMs": 1787873381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787873381838,
+          "bucketEndMs": 1787876981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787876981838,
+          "bucketEndMs": 1787880581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787880581838,
+          "bucketEndMs": 1787881481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787881481838,
+          "bucketEndMs": 1787882381838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787882381838,
+          "bucketEndMs": 1787883281838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787883281838,
+          "bucketEndMs": 1787884181838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787884181838,
+          "bucketEndMs": 1787885081838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885081838,
+          "bucketEndMs": 1787885981838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787885981838,
+          "bucketEndMs": 1787886881838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787886881838,
+          "bucketEndMs": 1787887781838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787887781838,
+          "bucketEndMs": 1787888681838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787888681838,
+          "bucketEndMs": 1787889581838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787889581838,
+          "bucketEndMs": 1787890481838,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1787890481838,
+          "bucketEndMs": 1787891381838,
+          "costUsd": 0
+        }
+      ]
+    }
+  ],
+  "hostLoad": {
+    "severe": false,
+    "ratio": 0.196,
+    "sustainedMinutes": 0
+  }
+}
