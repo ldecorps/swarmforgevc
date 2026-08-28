@@ -20,6 +20,16 @@ const leafArb = fc.oneof(
   fc.record({ name: fc.stringMatching(/^[a-zA-Z0-9_-]{1,8}$/), type: fc.constant('file') })
 );
 
+// A real directory can never hold two entries with the same name - every
+// sibling array is generated via fc.uniqueArray keyed on `name` (never
+// plain fc.array), or a duplicate-name collision corrupts the fixture's
+// path-keyed lookup (buildFixture below) with an invalid state no real
+// filesystem could produce, generating spurious counterexamples unrelated
+// to the guard under test.
+function uniqueChildren(childArb, maxLength) {
+  return fc.uniqueArray(childArb, { selector: (c) => c.name, maxLength });
+}
+
 function dirArb(depth) {
   const childArb =
     depth <= 0
@@ -27,14 +37,14 @@ function dirArb(depth) {
       : fc.oneof(
           { arbitrary: leafArb, weight: 3 },
           { arbitrary: fc.record({ name: fc.constant('.git'), type: fc.constant('gitDir'), children: fc.constant([]) }), weight: 2 },
-          { arbitrary: fc.record({ name: fc.constant('node_modules'), type: fc.constant('dir'), children: fc.array(childArbAtDepth(depth - 1), { maxLength: 3 }) }), weight: 1 },
-          { arbitrary: fc.record({ name: fc.constant('.worktrees'), type: fc.constant('dir'), children: fc.array(childArbAtDepth(depth - 1), { maxLength: 3 }) }), weight: 1 },
+          { arbitrary: fc.record({ name: fc.constant('node_modules'), type: fc.constant('dir'), children: uniqueChildren(childArbAtDepth(depth - 1), 3) }), weight: 1 },
+          { arbitrary: fc.record({ name: fc.constant('.worktrees'), type: fc.constant('dir'), children: uniqueChildren(childArbAtDepth(depth - 1), 3) }), weight: 1 },
           { arbitrary: dirArb(depth - 1), weight: 2 }
         );
   return fc.record({
     name: fc.stringMatching(/^[a-zA-Z0-9_-]{1,8}$/),
     type: fc.constant('dir'),
-    children: fc.array(childArb, { maxLength: 4 }),
+    children: uniqueChildren(childArb, 4),
   });
 }
 
@@ -45,8 +55,8 @@ function childArbAtDepth(depth) {
 // The generated forest under root: an array of top-level entries (root's
 // OWN .git is added separately by the caller, never generated here, so the
 // generator can never accidentally produce the one entry that must NOT be
-// reported).
-const forestArb = fc.array(dirArb(2), { minLength: 0, maxLength: 4 });
+// reported). Unique by name for the same reason as every sibling array above.
+const forestArb = uniqueChildren(dirArb(2), 4);
 
 /** Builds an injectable readdir() over the generated forest, plus the exact
  *  set of relative .git-DIRECTORY paths the invariant says must be reported
