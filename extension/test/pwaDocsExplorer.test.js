@@ -13,7 +13,7 @@ const PWA_DIR = path.join(__dirname, '..', '..', 'pwa');
 
 function fakeBacklog() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     board: { active: [], paused: [], doneByMilestone: {} },
@@ -28,7 +28,7 @@ function fakeBacklog() {
 
 function fakeDocsTree(overrides = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     vision: [
@@ -36,7 +36,7 @@ function fakeDocsTree(overrides = {}) {
       { id: 'architectureDiagram', title: 'Architecture', kind: 'mermaid', content: 'graph TD; A-->B;' },
     ],
     milestones: [
-      { milestone: 'M4', tickets: [{ id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1 }] },
+      { milestone: 'M4', epics: [{ epicKey: '(no epic)', tickets: [{ id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1 }] }] },
     ],
     tickets: [
       {
@@ -124,6 +124,38 @@ test('drilling into a milestone lists its tickets with folder-authoritative stat
   const milestoneButton = [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0);
   click(dom, milestoneButton);
   assert.match(explorer(dom).textContent, /BL-100.*cost telemetry.*\[done\]/);
+});
+
+// milestoneTicketCount/milestoneAllTickets reduce() over milestoneEpics(m) -
+// every existing fixture in this file gives each milestone exactly ONE epic,
+// which cannot discriminate a real sum/concat from a "just use the first
+// epic" bug. This drills a milestone with TWO epics of DIFFERENT sizes.
+test('a milestone with two epics sums ticket counts across both and lists tickets from both when drilled into (BL-592)', async () => {
+  const tree = fakeDocsTree();
+  tree.milestones = [
+    {
+      milestone: 'M4',
+      epics: [
+        {
+          epicKey: '(no epic)',
+          tickets: [
+            { id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1 },
+            { id: 'BL-101', title: 'cost telemetry two', status: 'done', priority: 1 },
+          ],
+        },
+        { epicKey: 'swarmforge-console', title: 'Console', trackerId: 'BL-341', tickets: [{ id: 'BL-592', title: 'spec tree', status: 'todo', priority: 116 }] },
+      ],
+    },
+  ];
+  const dom = renderDashboard(tree);
+  await flush();
+  const milestoneButton = [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0);
+  assert.match(milestoneButton.textContent, /M4 \(3\)/, 'the root milestone count must sum tickets across BOTH epics (2 + 1), not just the first');
+  click(dom, milestoneButton);
+  const text = explorer(dom).textContent;
+  assert.match(text, /BL-100/, 'ticket from the first epic must be listed');
+  assert.match(text, /BL-101/, 'a second ticket from the first epic must also be listed');
+  assert.match(text, /BL-592/, 'ticket from the SECOND epic must also be listed - proves concatenation, not a first-epic-only bug');
 });
 
 test('drilling into a ticket shows its prose description (docs-drilldown-01)', async () => {

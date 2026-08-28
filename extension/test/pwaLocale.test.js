@@ -12,7 +12,7 @@ const PWA_DIR = path.join(__dirname, '..', '..', 'pwa');
 
 function fakeBacklog(overrides = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     board: {
@@ -32,13 +32,13 @@ function fakeBacklog(overrides = {}) {
 
 function fakeDocsTree(overrides = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     vision: [
       { id: 'specification', title: 'Specification', kind: 'markdown', content: 'English prose.', contentFr: 'Prose française.' },
     ],
-    milestones: [{ milestone: 'M4', tickets: [{ id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1 }] }],
+    milestones: [{ milestone: 'M4', epics: [{ epicKey: '(no epic)', tickets: [{ id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1 }] }] }],
     tickets: [
       {
         id: 'BL-100',
@@ -249,7 +249,7 @@ test('bilingual-03: documentation content and ticket title/description display i
 test('BL-253 labels-localized-05: the implemented / not-yet-implemented labels render in French once toggled', async () => {
   const tree = fakeDocsTree();
   tree.tickets[0].implemented = true;
-  tree.milestones[0].tickets[0].implemented = true;
+  tree.milestones[0].epics[0].tickets[0].implemented = true;
   const dom = renderDashboard({ docsTree: tree });
   await flush();
   click(dom, toggle(dom));
@@ -293,8 +293,8 @@ function untranslatedFixtureTree() {
   // objects (docsTree.ts's MilestoneTicketSummary) that carry no titleFr
   // at all in the base fixture - mirrors BL-253's own labels-localized-05
   // test needing to set `implemented` there too for the SAME reason.
-  tree.milestones[0].tickets[0].titleFr = tree.tickets[0].titleFr;
-  tree.milestones[0].tickets[0].titleFrUntranslated = true;
+  tree.milestones[0].epics[0].tickets[0].titleFr = tree.tickets[0].titleFr;
+  tree.milestones[0].epics[0].tickets[0].titleFrUntranslated = true;
   return tree;
 }
 
@@ -473,7 +473,7 @@ test('board ticket titles switch to titleTranslations.fr in FR mode and back to 
 
 test('BL-230 fallback-03: a board ticket with no titleTranslations for the active locale falls back to its source title', async () => {
   const backlog = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     board: { active: [{ id: 'BL-101', title: 'untranslated ticket', status: 'active', swarm: 'primary' }], paused: [], doneByMilestone: {} },
@@ -502,7 +502,7 @@ test('BL-230 source-unchanged-04: the source locale always shows the authored ti
 
 test('BL-230 add-language-05: a locale added to window.LOCALES joins the toggle cycle and board titles resolve against it, with no app.js change', async () => {
   const backlog = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     board: {
