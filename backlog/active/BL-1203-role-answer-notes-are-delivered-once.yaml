@@ -158,6 +158,7 @@ notes: |
     'Mine - leave it, I will reattach main myself' — is a genuine, distinct
     human reply and arrived through the same path, so the path is not
     uniformly broken and must not be disabled wholesale."
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 105e2cc8db, evidence: backlog/evidence/BL-1203-architect-bounce-20260828.md }
+  - { at: 2026-08-28, by: QA, blamed: documenter, class: behavior, commit: d68863442e, evidence: backlog/evidence/BL-1203-bounce-20260828.md }
