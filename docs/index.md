@@ -99,6 +99,7 @@ expects them, and are not migrated or rewritten here.
 - [Slice size envelope at promotion](how-to/BL-634-slice-size-envelope-at-promotion.md) — declared estimate over p90 or high band requires split-or-justify before coder starts (BL-634).
 - [Deprecator freshness-gate CLI before promote](how-to/BL-1173-deprecator-freshness-gate-cli.md) — `deprecate-check.js` allow|hold; promote fails closed (BL-1173 / Article 3.6).
 - [Run `/deprecate` soft verbs](how-to/BL-1174-deprecate-operator-verbs-scan-docs.md) — dry ranks orphan conf flags; confirm retires one into `docs/deprecated/` + index link; check wraps BL-1173; hard-tier only (BL-1174).
+- [Run the deprecator identify-unused scan](how-to/BL-1186-deprecator-identify-unused-notify.md) — ranks trailing-90-day usage-ledger entries unused/seldom, queues a human notification; read-only, hard-tier only (BL-1186).
 - [Portable agent-memory capture and inject](how-to/BL-1177-portable-agent-memory-payload-capture-inject.md) — schema-versioned payload + fail-closed inject for same-role model swap (BL-1177; epic BL-1176).
 - [Wire agent-memory into hot-swap and trial boundaries](how-to/BL-1178-wire-agent-memory-into-hot-swap-and-trial.md) — BL-1177 capture/inject on BL-235 model switch and trial start/end (BL-1178).
 - [BoB starting cast — steward cherry-pick export and apply](how-to/BL-1181-bob-starting-cast-cherry-pick-apply.md) — ModelFactory overlay apply; memory transfer on model change (BL-1181 / epic BL-1180).
