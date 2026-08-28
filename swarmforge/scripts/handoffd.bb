@@ -741,6 +741,16 @@
 (def chase-sweep-once-only?
   (some #{"--chase-sweep-once"} *command-line-args*))
 
+;; BL-1247: same one-shot-and-exit posture as --sweep-once/--chase-sweep-
+;; once above, for the master-main-reconcile sweep specifically - --sweep-
+;; once deliberately does not include it, and the full daemon loop only
+;; reaches it on its own real cadence. An acceptance scenario proving the
+;; kill switch's "off means it writes nothing" needs to fire exactly one
+;; reconcile tick deterministically, against a real diverged fixture repo,
+;; without a background process or a wall-clock wait.
+(def reconcile-sweep-once-only?
+  (some #{"--reconcile-sweep-once"} *command-line-args*))
+
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
 (defn pid-alive? [pid]
@@ -3277,18 +3287,36 @@
       (log! "master-main-reconcile-escalation-email" (name reason))
       (catch Exception e (log! "master-main-reconcile-escalation-email-error" (.getMessage e))))))
 
+;; BL-1247: human-ruled kill switch (2026-08-28, after the thirteenth
+;; reset-to-origin occurrence destroyed committed work) - read FRESH on
+;; every tick, never cached at daemon start, so the human can throw the
+;; switch without restarting the swarm. Off means the sweep does not run
+;; AT ALL: master-main-reconcile-lib/sweep! (the only function with any
+;; write path - merge!, the rematch-onto-origin escape, escalate!) is
+;; never called. A minimal READ-ONLY divergence check still runs and is
+;; logged even while off, so the operator's eyes stay on what the sweep
+;; would have seen (qa_e2e_procedure step 2) - "off" is a refusal to act,
+;; not silence.
+(defn- master-main-reconcile-conf-text! []
+  (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+       (catch Exception _ nil)))
+
 (defn master-main-reconcile-sweep! []
   (try
-    (master-main-reconcile-lib/sweep!
-     (str daemon-dir)
-     (master-main-reconcile-escalation-threshold)
-     {:rev-counts! push-sweep-rev-counts!
-      :dirty-paths! master-main-reconcile-dirty-paths!
-      :merge-changed-paths! master-main-reconcile-merge-changed-paths!
-      :merge! master-main-reconcile-merge!
-      :surface! master-main-reconcile-surface!
-      :escalate! master-main-reconcile-escalate!
-      :log! (fn [& parts] (apply log! parts))})
+    (if-not (master-main-reconcile-lib/reconcile-enabled? (master-main-reconcile-conf-text!))
+      (let [{:keys [ahead behind]} (master-main-reconcile-lib/drift-report (push-sweep-rev-counts!))]
+        (log! "master-main-reconcile" "skipped-disabled"
+              (str "ahead=" ahead " behind=" behind " (BL-1247: master_main_reconcile_enabled is off)")))
+      (master-main-reconcile-lib/sweep!
+       (str daemon-dir)
+       (master-main-reconcile-escalation-threshold)
+       {:rev-counts! push-sweep-rev-counts!
+        :dirty-paths! master-main-reconcile-dirty-paths!
+        :merge-changed-paths! master-main-reconcile-merge-changed-paths!
+        :merge! master-main-reconcile-merge!
+        :surface! master-main-reconcile-surface!
+        :escalate! master-main-reconcile-escalate!
+        :log! (fn [& parts] (apply log! parts))}))
     (catch Exception e
       (log! "master-main-reconcile-sweep-error" (.getMessage e)))))
 
@@ -3881,6 +3909,11 @@
       (do
         (try (chase-sweep! roles socket) (catch Exception e (log! "chase-sweep-once-error" (.getMessage e))))
         (log! "chase-sweep-once done"))
+
+      reconcile-sweep-once-only?
+      (do
+        (try (master-main-reconcile-sweep!) (catch Exception e (log! "reconcile-sweep-once-error" (.getMessage e))))
+        (log! "reconcile-sweep-once done"))
 
       :else
       (let [claim (claim-pid-file!)]
