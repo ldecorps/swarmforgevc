@@ -13,6 +13,7 @@ severity: critical
 # corruption itself (that is BL-1196/BL-1200's lane) but for the total absence
 # of anything that stops it spreading once it exists.
 status: todo
+assigned_to: coder
 epic: swarm-reliability
 priority: 5
 direction: swarm-reported
