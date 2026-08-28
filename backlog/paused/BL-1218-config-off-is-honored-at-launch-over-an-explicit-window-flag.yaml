@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1218-config-off-is-honored-over-an-explicit-window-flag.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Needs sign-off on the collision rule, because there are two defensible
   answers and the intake explicitly allows either.
