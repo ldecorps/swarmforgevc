@@ -11,7 +11,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1243-live-screen-per-pane-activity-signal.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The build is cheap and the operator already ruled on cost, so what needs your
   sign-off is the MAPPING, which the intake deliberately left open ("whatever
