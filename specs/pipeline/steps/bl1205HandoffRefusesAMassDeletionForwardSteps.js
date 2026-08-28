@@ -103,6 +103,20 @@ function combinedOutput(result) {
   return `${result.stdout}\n${result.stderr}`;
 }
 
+// BL-1205 D1 (architect bounce, 20260828): ctx.root is a real 200-file git
+// repo created under os.tmpdir() - removed here, in a finally, at every
+// scenario's terminal Then step (some scenarios' last step differs from
+// others', so this is called from all four exit points below; idempotent
+// via force:true, so a scenario that reaches more than one of them never
+// double-fails on the second call). Matches engineering.prompt's BL-971
+// guardrail: "removed in a finally, never only after the last assertion".
+function cleanupFixtureState(ctx) {
+  if (ctx.root) {
+    fs.rmSync(ctx.root, { recursive: true, force: true });
+    ctx.root = undefined;
+  }
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE_NAME);
 
@@ -186,15 +200,22 @@ function registerSteps(registry) {
   // ── Then ─────────────────────────────────────────────────────────────
 
   scoped(/^the send is refused$/, (ctx) => {
-    const out = combinedOutput(ctx.result);
-    if (ctx.result.status !== 2) {
-      throw new Error(`expected the send to be refused (exit 2), got exit ${ctx.result.status}: ${out}`);
-    }
-    if (!/HANDOFF INVALID/.test(out)) {
-      throw new Error(`expected a HANDOFF INVALID report, got: ${out}`);
-    }
-    if (!/BL-1205/.test(out)) {
-      throw new Error(`expected the refusal to cite BL-1205, got: ${out}`);
+    try {
+      const out = combinedOutput(ctx.result);
+      if (ctx.result.status !== 2) {
+        throw new Error(`expected the send to be refused (exit 2), got exit ${ctx.result.status}: ${out}`);
+      }
+      if (!/HANDOFF INVALID/.test(out)) {
+        throw new Error(`expected a HANDOFF INVALID report, got: ${out}`);
+      }
+      if (!/BL-1205/.test(out)) {
+        throw new Error(`expected the refusal to cite BL-1205, got: ${out}`);
+      }
+    } finally {
+      // Scenario 03's outline ends here; scenario 01 continues to the
+      // path-count assertion below, which needs no further fs access -
+      // cleaning up now is safe either way (idempotent).
+      cleanupFixtureState(ctx);
     }
   });
 
@@ -206,9 +227,15 @@ function registerSteps(registry) {
   });
 
   scoped(/^the send succeeds$/, (ctx) => {
-    const out = combinedOutput(ctx.result);
-    if (ctx.result.status === 2) {
-      throw new Error(`expected the send to succeed, but it was refused: ${out}`);
+    try {
+      const out = combinedOutput(ctx.result);
+      if (ctx.result.status === 2) {
+        throw new Error(`expected the send to succeed, but it was refused: ${out}`);
+      }
+    } finally {
+      // Scenarios 02/05 end here; scenario 04 continues to the warning
+      // assertion below, which needs no further fs access.
+      cleanupFixtureState(ctx);
     }
   });
 
