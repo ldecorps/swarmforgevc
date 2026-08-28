@@ -1,5 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1186: deprecator identify-unused
+scan — `deprecate-identify-unused.js <root>` classifies trailing-90-day
+usage-ledger entries `unused` (0 hits) or `seldom` (1-2 hits), queues a
+human notification under `.swarmforge/deprecator/pending-notifications/`;
+read-only, never auto-retires; fails open with an honest empty report when
+no ledger exists; hard-tier seats only (Article 3.6). Sibling of BL-1174's
+`/deprecate`. Acceptance:
+`specs/features/BL-1186-deprecator-identify-unused-notify.feature`.
+How-to: `docs/how-to/BL-1186-deprecator-identify-unused-notify.md`.)
+Prior entry —
 **Last Updated:** August 27, 2026 (BL-666: budget-aware shift governor at
 BL-660 shift boundaries — anchor-calibrated burn projection chooses
 full/SHORT/CHEAP/SKIP with announced arithmetic; BL-664 walker burn meter;
