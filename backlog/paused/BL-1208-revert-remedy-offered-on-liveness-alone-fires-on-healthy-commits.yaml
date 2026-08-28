@@ -1,0 +1,240 @@
+id: BL-1208
+title: "record-bounce.js answers any commit whose content is live with a ready-to-paste `git revert`, so a wrong --commit turns into a destructive instruction against healthy work - it fired on the recovery commit that had just restored 13 silently-lost files"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal, not a swarm-down or data-loss event (yet).
+# The bounce revert check IS a safety mechanism - BL-954 built it so an
+# unreverted bounce could never pass silently - and its failure posture on a
+# healthy commit is to emit a confident destructive command. It fired today on
+# 0bf05774a, whose revert would have re-deleted the 13 files that commit had
+# just recovered. Not critical only because nothing followed the remedy: the
+# architect recognised it and reported it instead.
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1208-revert-remedy-requires-authorship-not-liveness.feature
+
+invariants:
+  - "A destructive remedy is never emitted on evidence that cannot tell a defect introduction from a restoration: the `git revert` instruction is offered only where the check positively established that this commit AUTHORED the live content, never merely that the content is live."
+  - "Withholding the remedy never becomes a clean verdict: BL-954's no-silent-clean property survives the fix - a commit whose bounced content is live still reports a non-clean finding naming every live path, whatever it decides about offering the remedy."
+
+description: >
+  Severity rationale is in the comment above the field: a safety
+  mechanism whose failure mode is a confident destructive
+  instruction. Reproduced at mint, read-only, from the shared
+  checkout.
+
+  What happens. `record-bounce.js --commit <hex> --by <role>` runs
+  the BL-954 bounce revert check, which asks one question of the
+  bouncing branch `swarmforge-<by>`: is the commit's content still
+  live at the tip? `decideBounceRevertVerdict`
+  (extension/src/quality/bounceRevertVerdict.ts) computes
+  `liveFiles = files.filter(f => f.tipMatchesBounced && f.bouncedDiffersFromParent)`
+  and, when that list is non-empty, returns verdict `violation` with
+  `remedy: "on <branch>: git revert --no-edit <commit>"`.
+
+  That inference is sound only if the named commit introduced the
+  content being complained about. Nothing establishes this. The two
+  conjuncts are equally true of every healthy commit on the branch -
+  a commit that changed a file, whose change is still there. So the
+  tool takes the caller's word that `--commit` names a bounced defect
+  commit, validates only that the argument is hex (`USAGE` in
+  extension/src/tools/recordBounceArgs.ts documents no other
+  precondition), and answers a wrong hash with a destructive command.
+
+  Reproduced. Calling the adapter directly against 0bf05774a, the
+  commit that recovered 13 files an earlier recovery had silently
+  dropped:
+
+    verdict : violation
+    remedy  : on swarmforge-architect: git revert --no-edit 0bf05774a
+    liveFiles (13): backlog/active/BL-1184-briefing-shift-velocity.yaml,
+      backlog/active/BL-428-decrap-preexisting-high-crap-on-touch.yaml,
+      backlog/evidence/BL-592-coder-pass-20260827.md,
+      backlog/paused/BL-1190-ghost-approval-ask-requires-live-yaml.yaml,
+      extension/src/bridge/specTreeUiHtml.ts,
+      extension/swarmforge-vc.code-workspace, and 7 more
+
+  Those are exactly the 13 paths the recovery restored. Following
+  the remedy would re-delete every one of them - including
+  extension/src/bridge/specTreeUiHtml.ts, BL-592's implementation,
+  the file whose disappearance started the whole thread - and would
+  re-create the invisible variant of the loss that took two rounds
+  of evidence to detect (see the evidence files named in notes).
+
+  Why the ordering rules out the obvious guard. One might check
+  "is this commit recorded as bounced?" - but `main` in
+  extension/src/tools/record-bounce.ts calls
+  `appendBounceRecordIfNew` BEFORE `runBounceRevertCheck`,
+  deliberately, so the record is durable before branch state is
+  examined (BL-954 invariant 3). By the time the check runs the
+  commit is always in the store. The store cannot discriminate.
+
+  The design already knows how to be careful and simply has no
+  guard here. It has three: `undeterminable` for an unresolvable
+  commit, `undeterminable` for an unresolvable branch, and
+  `breach-report` for a commit already on main, which the code
+  comments call "NEVER a revert instruction, even with content
+  live". That last one is this exact concern, handled for one
+  special case. Every scenario in bounceRevertCheck.test.js and
+  bl954BounceRevertCheckInvariants.property.test.js assumes the
+  commit under test IS a bounced commit; none covers a healthy or
+  restoring commit.
+
+  Fix wanted, in direction only. Distinguish authorship from
+  liveness. A commit that only puts back content which already
+  exists identically elsewhere - on a sibling review branch, or at
+  an earlier point in the branch's own history - restored it rather
+  than authored it, and must not be answered with a revert. The
+  discriminating fact belongs in the adapter
+  (extension/src/metrics/bounceRevertGitAdapter.ts), which does the
+  git IO; src/quality/ is the dependency-gate's policy zone and
+  takes no IO (BL-259 hard gate), so the verdict function consumes
+  the new fact rather than gathering it.
+
+  Invariant 2 is the trap to design against, and it points the
+  opposite way from invariant 1. The safe direction is to withhold
+  the REMEDY, not to reclassify the finding as clean: BL-954 exists
+  because a silent clean is the worse failure, and a restoration
+  detector that is even slightly over-broad would start clearing
+  real unreverted bounces. Scenario 03 is that guard - content that
+  also happens to appear on a sibling branch must not clear a bounce
+  the commit genuinely authored.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reorder `appendBounceRecordIfNew` and
+    `runBounceRevertCheck`. The record landing first is BL-954
+    invariant 3, deliberate and tested: the bounce record must be
+    durable whatever the check does. This ticket does not touch that
+    ordering, and a fix that depends on reversing it is the wrong
+    fix.
+  - Do NOT solve this by removing or softening the violation verdict
+    in general. The BL-954 behaviour is correct for its intended
+    input and must survive unchanged (scenario 02): an unreverted
+    bounce still reports a violation and still offers the revert.
+  - Do NOT gather git facts inside src/quality/. That directory is
+    the dependency-gate's policy zone, no-io-from-policy, a BL-259
+    hard gate and a previously-bounced architect finding on this very
+    file pair. New facts are gathered in src/metrics/ and passed in.
+  - Do NOT weaken the already-on-main `breach-report` path (scenario
+    04) - it is BL-954's invariant 2 and is independently correct.
+  - Not in scope: whether the architect's invocation was itself a
+    misuse. It may well have been. A safety tool whose answer to a
+    wrong argument is a confident destructive command is defective
+    in its failure posture regardless of what prompted the argument,
+    and that posture is what this ticket fixes. Do not close this by
+    documenting the precondition alone - a docs-only fix leaves the
+    destructive output exactly as it is.
+  - Sibling, not a widening: BL-1205 covers the transport half of
+    this incident cluster (a git_handoff whose MERGE would
+    mass-delete the recipient's files). Different surface, different
+    code, different trigger. Do not fold this into it or modify its
+    deliverables.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline, read-only, from the shared checkout - confirm
+     the misfire still reproduces before crediting the fix:
+     `node -e "const {bounceRevertCheck}=require('./extension/out/metrics/bounceRevertGitAdapter');
+     console.log(bounceRevertCheck({repoRoot:process.cwd(),commit:'0bf05774a',by:'architect'}))"`.
+     Expect verdict `violation`, a `git revert` remedy, and 13
+     liveFiles. Record the full output. Do NOT run the remedy.
+  2. Scenario 01 post-fix: the same invocation offers NO revert
+     instruction, still reports a non-clean verdict, and still names
+     all 13 paths. Both halves matter - a fix that silences the
+     finding fails invariant 2 as surely as the current behaviour
+     fails invariant 1.
+  3. Scenario 02 regression: an unreverted bounce fixture still
+     reports `violation` with the revert command naming commit and
+     branch. Run the existing bounceRevertCheck.test.js and
+     bl954BounceRevertCheckInvariants.property.test.js suites green -
+     they encode BL-954's contract and none of them may be edited to
+     accommodate this change. If one must change, stop and route a
+     note rather than editing it.
+  4. Scenario 03, the false-clean guard, run as an explicit red/green
+     pair: build a fixture where the bounced commit genuinely
+     authored the live content AND that content also exists on a
+     sibling review branch. It must still report `violation` with the
+     remedy. Then confirm the detector is not vacuous by removing the
+     sibling copy and seeing the verdict unchanged.
+  5. Scenario 04 regression: a commit already an ancestor of main
+     reports `breach-report` with no remedy, for both the local-main
+     and origin-main-only cases (BL-891's two refs).
+  6. Confirm the recovery is still intact at the end of the run:
+     `git ls-tree -r --name-only swarmforge-architect | wc -l` and an
+     empty deletion diff against both swarmforge-hardender and main,
+     per the procedure in the evidence file. Nothing in this ticket's
+     verification may leave those 13 files at risk.
+
+notes: >
+  Source: architect note handoff
+  00_20260827T203334Z_001135_from_architect_to_specifier_coordinator,
+  verbatim: "record-bounce.js false \"violation\" on recovery
+  0bf05774a, see evidence". Sent to specifier + coordinator at
+  priority 00.
+
+  Specifier verification at mint, independent of the note: read
+  decideBounceRevertVerdict
+  (extension/src/quality/bounceRevertVerdict.ts) and the adapter
+  (extension/src/metrics/bounceRevertGitAdapter.ts); reproduced the
+  verdict read-only by calling bounceRevertCheck in-process rather
+  than through record-bounce.js, so nothing was written to the bounce
+  store; confirmed the 13 liveFiles are exactly the 13 paths the
+  recovery restored; confirmed 0bf05774a appears in no bounce store,
+  only in handoff messages and evidence; confirmed the
+  append-before-check ordering in record-bounce.ts rules out a
+  store-based guard; confirmed USAGE documents no precondition on
+  --commit beyond hex; and confirmed no existing scenario in either
+  bounce-revert test file covers a healthy or restoring commit. The
+  architect's report is correct.
+
+  Evidence for the incident this landed on:
+  backlog/evidence/architect-recovery-froze-a-silent-file-loss-20260827.md
+  (the 13-file freeze, its recovery in 0bf05774a, and the verified
+  empty deletion diff that lifted the quarantine) and
+  backlog/evidence/swarmforge-architect-branch-tree-collapse-20260827.md
+  (the original 9,680-file hazard and root cause).
+
+  Related as siblings in the same incident cluster, neither modified
+  here: BL-1205 (critical - the transport gate, a git_handoff whose
+  merge would mass-delete the recipient's tracked files) and BL-1206
+  (the 13 property files' collection failure - a different 13, no
+  relation beyond the coincidence of number).
+
+  Orthogonality for the coordinator: touches
+  extension/src/metrics/bounceRevertGitAdapter.ts,
+  extension/src/quality/bounceRevertVerdict.ts, their two test files
+  and this ticket's feature file. Disjoint from BL-1205 (swarm
+  handoff transport), BL-1206 (property lane) and BL-1207 (cursor
+  bridge test). Safe to co-activate with all three.
+
+approval_context: >
+  One call to say the word on, and one thing I want to be plain
+  about.
+
+  The call: severity high, which puts it in the Article 3.2.4
+  expedite lane ahead of non-expedited work. I read it as a broken
+  safety signal - the check is a safety mechanism and its failure
+  mode is a confident destructive command - and it has now fired
+  once, on the most sensitive possible target. I did not call it
+  critical because nothing followed the remedy and no data was lost:
+  the architect recognised it and reported it. If you would rather
+  it queue normally, say medium and it queues on priority 20.
+
+  The thing to be plain about: the architect may simply have passed
+  the wrong hash, and I have deliberately NOT scoped an
+  investigation into that. I am treating the misfire as the defect
+  because a tool that answers a bad argument with `git revert
+  --no-edit <hash>` is dangerous no matter how the argument got
+  there, and because the same output would reach anyone who fat-
+  fingers a hash. If you would rather this be closed as operator
+  error with a documentation fix, that is your call to make and I
+  will retire the ticket - but I would push back once: a docs-only
+  fix leaves the destructive output unchanged for the next person.

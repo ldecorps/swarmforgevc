@@ -1,0 +1,143 @@
+id: BL-1206
+title: "Thirteen property files fail collection because they import test from node:test; BL-1175 allowlisted them and landed, so the repair it deferred is untracked"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and contained. The 13 files' assertions do run and pass under
+# node:test's own runner, and check_property_suite_drift.sh exits 0 on an
+# allowlisted red, so nothing is blocked and nothing is silently wrong in
+# production code. What is wrong is that 13 files sit permanently outside the
+# lane that is supposed to gate them, with an allowlist rationale ("pending
+# fix") that points at a ticket which has already landed.
+status: todo
+epic: code-quality-gates
+priority: 25
+direction: swarm-reported
+depends_on: [BL-1175]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1206-drain-the-node-test-import-entries-from-the-property-allowlist.feature
+human_approval: approved
+approval_context: >
+  Raised by the architect as an undiagnosed live red ("Vitest 'No test suite
+  found' hits 14+ property test files, untracked"). It is diagnosed and it is
+  not untracked, so this ticket is deliberately narrower than the note that
+  prompted it: all 13 affected files are already on BL-1175's standing
+  allowlist, the gate the swarm actually runs
+  (check_property_suite_drift.sh) exits 0 on them, and BL-1175's own
+  description already names the fix ("green after vitest-globals fix"). The
+  architect grepped for the error string rather than the allowlist, which is
+  why it read as untracked.
+
+  What is genuinely open, and what this ticket is for: BL-1175 shipped the
+  allowlist and landed, so its 27 rows now say "pending fix" against a closed
+  ticket and no ticket owns the fixing. This drains the 13 rows that share one
+  mechanical cause and leaves the other 14 alone.
+
+  What is worth the human's eye is scenario 03. These 13 files have never
+  actually been collected by Vitest, so conversion may reveal a genuine
+  failure in one of them. The ticket deliberately does NOT require all 13 to
+  go green: a file that fails on its own merits after conversion stays
+  allowlisted with its rationale corrected to the real reason. If the
+  preference is that all 13 must be green or the ticket bounces, say so and
+  scenario 03 inverts. Forcing green under time pressure is how the 27-row
+  allowlist got written in the first place.
+invariants:
+  - "No file in the vitest property lane takes its `test` binding from node:test - the lane's globals are the single source of it."
+  - "A file leaves the standing allowlist only by passing under the property lane, never by being deleted from the list while still red."
+required_wiring:
+  - "swarmforge/scripts/property_suite_standing_allowlist.tsv::test/hostActivityFeed.property.test.js::the 14 entries with unrelated causes must survive this change - guards against draining the list wholesale"
+  - "specs/pipeline/steps/index.js::bl1206DrainTheNodeTestImportEntriesFromThePropertyAllowlistSteps::acceptance handler registered"
+description: |
+  ## What
+
+  Remove `const { test } = require('node:test');` from the 13 property-lane
+  files that carry it, so `test` resolves to the binding
+  `vitest.properties.config.mjs` already provides via `globals: true`, and
+  drop from `swarmforge/scripts/property_suite_standing_allowlist.tsv` each
+  file that passes once collected.
+
+  The 13, measured 2026-08-27:
+
+      test/alertTelemetry.property.test.js
+      test/bl1146HostQueueEnqueueNext.property.test.js
+      test/bl1147ProbeLegacyTopicAdoption.property.test.js
+      test/bl1150OutageFailoverCliLoadFileSafe.property.test.js
+      test/bl669OutageFailoverSteward.property.test.js
+      test/bl733ProducerCrosscheck.property.test.js
+      test/bl735PilotAcceptanceExecution.property.test.js
+      test/bl782LivenessProbesScopedToRoot.property.test.js
+      test/crossFileDuplicationCheck.property.test.js
+      test/pilotAcceptanceGate.property.test.js
+      test/pilotScopedCrapEvidence.property.test.js
+      test/resolveMutationConcurrency.property.test.js
+      test/shellEntryPointDriveCheck.property.test.js
+
+  ## Why
+
+  `vitest.properties.config.mjs` includes `test/**/*.property.test.js` and
+  sets `globals: true`. A file that instead imports `test` from `node:test`
+  registers with node:test's runner, which Vitest's collector cannot see.
+  Reproduced on `test/alertTelemetry.property.test.js`: node:test executes
+  every case and prints TAP `ok`, and in the same run Vitest reports
+  `Error: No test suite found in file ...` and fails the file. The assertions
+  pass and the file fails simultaneously, so the lane gates nothing here.
+
+  BL-1175 met this under time pressure — a stuck BL-605 parcel — and chose
+  the allowlist over the repair, which was the right call then. But it has
+  since landed, so all 27 rows now read "pre-existing; tracked under BL-1175
+  pending fix" against a closed ticket. An allowlist that outlives its ticket
+  stops being a deferral and becomes the permanent state.
+
+  ## How (direction, not mandate)
+
+  The 229 property files that do NOT import node:test already use the bare
+  `test(name, fn)` the lane's globals supply, and all 13 of these use plain
+  `test(name, fn)` too — no subtests, no `t` argument, no node:test options —
+  so this should be a deletion of one line per file rather than a rewrite.
+  `require('node:assert/strict')` is runner-agnostic and stays.
+
+  Convert, run the lane, and let the result decide each row: a file that
+  passes leaves the allowlist, a file that fails on its own merits stays with
+  its rationale rewritten to the real reason (scenario 03). Do not force a
+  file green to empty the list.
+
+  ## Out of scope
+
+  The other 14 allowlist rows. They are red for unrelated reasons and are
+  named in scenario 04 precisely so a wholesale drain of the file is caught.
+
+  Whatever is re-flipping `core.bare` on the shared repository during property
+  runs — BL-1124 / BL-1196 / BL-1200 / BL-1202.
+
+notes: >
+  Minted from the architect's priority-00 note of 2026-08-27 20:02Z, "Vitest
+  'No test suite found' hits 14+ property test files, untracked - see note"
+  (evidence: architect-vitest-node-test-no-suite-found-20260827.md in the
+  architect worktree). The note's diagnosis of the mechanism is correct and is
+  carried into this ticket. Its "untracked" and "live, currently-red
+  condition" framings are not: the files are allowlisted and the gate passes.
+  The count differs too — the note says "at least 14", the grep finds 13.
+
+  Bookkeeping inconsistency noticed while confirming this and NOT fixed here,
+  since backlog pool moves are the coordinator's: BL-1175's YAML sits in
+  backlog/done/ while its own `status:` field still reads `todo`.
+
+  IR-DRY: four medium-confidence possible-synonym findings reviewed, none
+  edited. Three are deliberate opposites (passes/still fails, not listed/still
+  listed) and the fourth pairs a Given with a When. The outline's "<file> is
+  still listed" and scenario 03's "that file is still listed" were left
+  distinct on purpose: one names a file, the other refers to the subject its
+  Given bound.
+
+qa_e2e_procedure: >
+  (1) From extension/, run `grep -l "require('node:test')"
+  test/*.property.test.js` and confirm it returns nothing. (2) Run
+  `npm run test:properties` and confirm each converted file appears in
+  Vitest's own reported file list rather than under "Failed Suites" with
+  "No test suite found". (3) Read
+  swarmforge/scripts/property_suite_standing_allowlist.tsv and confirm every
+  converted file that passed is gone, every converted file that still fails is
+  present with a rationale naming its actual failure, and all 14 unrelated
+  rows are unchanged. (4) Run swarmforge/scripts/check_property_suite_drift.sh
+  and confirm it still exits 0.

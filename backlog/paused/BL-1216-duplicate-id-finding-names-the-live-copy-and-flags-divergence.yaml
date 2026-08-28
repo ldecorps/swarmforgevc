@@ -1,0 +1,153 @@
+id: BL-1216
+title: "a DUPLICATE-ID finding names neither the live-lifecycle copy nor whether the colliding files differ, so resolving one is a blind guess"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 25
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1216-duplicate-id-finding-names-the-live-copy-and-flags-divergence.feature
+human_approval: approved
+approval_context: >
+  One thing needs sign-off: whether the gate should recommend a survivor at
+  all, or only report the two facts and leave the choice entirely to the
+  resolver. This ticket takes the stronger line — a collision spanning a live
+  pool and a terminal pool has exactly one defensible survivor, and saying so
+  is the whole point — but that is a judgment about how prescriptive a gate
+  finding should be, and it is the human's to make.
+
+  Firm and not up for negotiation: the content verdict fails CLOSED. An
+  unreadable colliding file is reported as differing, never as identical.
+  Reporting silence as agreement is the precise shape of the incident that
+  produced this ticket.
+
+  Not in question: that the gap is real. Verified by reading
+  swarmforge/scripts/backlog_hygiene_lib.bb, whose :duplicate-id branch emits
+  only the ids and the raw paths, and by the 2026-08-27 incident below.
+description: |
+  ## What
+
+  When the backlog hygiene gate emits a DUPLICATE-ID finding, every path it
+  names carries the backlog pool it sits in and whether that pool is LIVE
+  (`active/`, `paused/`) or TERMINAL (`hold/`, `done/`); and the finding
+  states whether the colliding files' contents are identical or differ. When
+  exactly one of the colliding copies is in a live pool, the finding names
+  that copy as the one to keep.
+
+  ## How (direction, not mandate)
+
+  `duplicate-id-violations` and `violation-message` in
+  `swarmforge/scripts/backlog_hygiene_lib.bb` are already pure over the
+  corpus indexes; pool classification is a pure function of the path that
+  `backlog-pools` in the same file already enumerates. The content
+  comparison is the only new I/O — read it through an injected reader seam
+  so the check stays unit-testable with no real corpus, consistent with this
+  project's inject-side-effects-not-env-bypasses rule.
+
+  ## Why
+
+  The finding today reads `DUPLICATE-ID BL-1188  <path>  also: <path>
+  (duplicate ticket id — refuse at mint)`. It reports that a collision
+  exists and nothing else. The two facts a resolver actually needs to act —
+  which copy is in the pipeline, and whether the copies agree — are both
+  absent, so resolving a duplicate means opening both files by hand and
+  hoping.
+
+  On 2026-08-27 a resolver got both wrong at once. `main` commit `bc70ee853`
+  (human, message "test2", 788 insertions, zero deletions) added `hold/`
+  copies of six live tickets plus a `done/` copy of a seventh. Commit
+  `f8a41c1e2` then resolved the resulting collisions by deleting the
+  `active/` and `paused/` originals in favour of those copies, asserting
+  "Confirmed identical content at the new location before removing the stale
+  duplicate." That assertion was false for BL-1188 (missing `bounce_count:
+  4` and four rounds of real bounce history), BL-1189 (missing
+  `bounce_count: 2`), and BL-592 (an early draft with no `invariants:`, no
+  `required_wiring:`, no `notes:`). The architect caught it by diffing the
+  pairs by hand and reported it as a note; `779a036e5` restored those three.
+
+  Content was only half of it. The four whose contents genuinely were
+  byte-identical were left where the resolution had put them, and the pool
+  moved underneath them: BL-644 and BL-751 went `active/` → `hold/`, BL-1200
+  went `paused/` → `hold/`, and BL-1196 — a `type: defect` still carrying
+  `status: todo` — went `paused/` → `done/`. Per Article 3.1 nothing
+  auto-promotes out of `hold/`, so identical content bought four live
+  tickets a silent exit from the pipeline. A finding that had said "keep the
+  live copy" would have prevented every one of these, in both halves.
+
+  ## Constraints
+
+  - Do not change WHICH collisions are reported. This ticket changes only
+    what a finding says about a collision it already reports.
+  - Do not make the gate move, delete, or rewrite any backlog file. It
+    reports; a human or the coordinator acts.
+  - No real corpus in unit tests — the content read goes through an injected
+    seam.
+
+qa_e2e_procedure: >
+  (1) In a scratch checkout, place the same ticket id in `backlog/active/`
+  and `backlog/hold/` with byte-identical contents; run
+  `swarmforge/scripts/specifier_backlog_hygiene_gate.sh` on the active copy
+  (absolute path) and confirm the DUPLICATE-ID line classifies both paths by
+  pool, says CONTENT IDENTICAL, and names the `active/` copy as the one to
+  keep. (2) Edit the `hold/` copy by one character and re-run; confirm the
+  same line now says CONTENT DIFFERS and still names the `active/` copy.
+  (3) Make the `hold/` copy unreadable and re-run; confirm CONTENT DIFFERS,
+  not CONTENT IDENTICAL, and that the gate does not crash. (4) Place the id
+  in `active/` and `paused/` only; confirm the finding classifies both as
+  live and names no copy to keep. (5) Confirm on a clean corpus that a
+  ticket with no collision still produces no DUPLICATE-ID finding at all.
+
+out_of_scope: |
+  - The self-duplicate FALSE POSITIVE in `other-holders` (a ticket flagged as
+    a duplicate of itself under a relative path, and against its own
+    published copy). That is BL-1194, still paused. This ticket annotates
+    whatever collisions that function reports; it does not change which ones
+    it reports.
+  - Restoring the four tickets the 2026-08-27 incident left mis-pooled
+    (BL-644, BL-751, BL-1200, BL-1196). That is backlog bookkeeping, and
+    `hold/` is human-held under Article 3.1 — see notes.
+  - Any check that a ticket's `status:` field agrees with the pool it sits
+    in (BL-1196 sits in `done/` carrying `status: todo`). A real gap, and a
+    separate slice.
+  - Pushing `main`, or anything about the unpushed state of the repair.
+
+invariants:
+  - "Every path named in a DUPLICATE-ID finding carries its backlog pool and that pool's live-or-terminal classification."
+  - "Colliding files that are not byte-identical, or that cannot be read, are never reported as identical."
+  - "When exactly one colliding copy sits in a live pool, the finding names that copy as the one to keep and no other."
+
+required_wiring:
+  - 'swarmforge/scripts/backlog_hygiene_lib.bb::CONTENT DIFFERS::the duplicate-id report must emit a content verdict; the literal being absent means the formatter never learned to compare the colliding files'
+
+source: |
+  Architect note to specifier, 2026-08-27 (priority 00): "main f8a41c1e2
+  wrongly retired BL-592/1188/1189, see b165118f0". Evidence file
+  backlog/evidence/BL-1198-architect-declines-cleaner-backlog-surgery-20260827.md
+  (commit b165118f0) carries the pair-by-pair diff table. Specifier
+  disposition of that note, including the four mis-pooled tickets the
+  architect's content-only check did not cover:
+  backlog/evidence/BL-1216-specifier-disposition-of-architect-duplicate-id-note-20260828.md
+
+notes: |
+  - "[2026-08-28] specifier: the half the architect reported (three tickets
+    retired against stale content) was already remediated on local `main` at
+    779a036e5 before this disposition; verified byte-identical to
+    swarmforge-architect's copies for all three. Nothing outstanding there.
+    This ticket exists for the gate gap that let it happen, not for the
+    repair."
+  - "[2026-08-28] specifier: four tickets from the same incident are still
+    mis-pooled and are NOT fixed by this ticket — BL-644 and BL-751
+    (`active/` → `hold/`), BL-1200 (`paused/` → `hold/`), BL-1196
+    (`paused/` → `done/`, still `status: todo`). Article 3.1 makes `hold/`
+    human-held, so only a human may move those three back; BL-1196's is
+    coordinator bookkeeping. Surfaced to the coordinator by note, not
+    actioned here."
+  - "[2026-08-28] specifier: overlaps BL-1194 in one function
+    (`other-holders`) without depending on it. BL-1194 changes which entries
+    appear in a finding; this changes what a finding says about the entries
+    it has. Either can land first; expect a small merge overlap, not a
+    blocked slice."

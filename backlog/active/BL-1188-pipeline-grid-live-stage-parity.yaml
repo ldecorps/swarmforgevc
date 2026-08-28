@@ -66,3 +66,9 @@ notes: |
   - [2026-08-27] Re-landed from orphaned 117dd0f9b; sibling BL-1189 (Live Screen).
 
 assigned_to: coder
+bounce_count: 4
+bounce_history:
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: b51f5156f1, evidence: backlog/evidence/BL-1188-architect-bounce-20260827.md }
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: b51f5156f5, evidence: backlog/evidence/BL-1188-architect-bounce-20260827.md }
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: 0bf05774ac, evidence: backlog/evidence/BL-1188-architect-bounce-20260827.md }
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: 02702972a4, evidence: backlog/evidence/BL-1188-architect-bounce-missing-live-report-fix-20260827.md }

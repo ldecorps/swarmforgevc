@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1201-a-recorded-answer-identifies-the-question-it-answers.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Caught live 2026-08-27 18:30:54Z. The coordinator delivered the specifier a
   priority-00 note reading "answer ready:

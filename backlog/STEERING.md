@@ -310,10 +310,14 @@ specifier should pick unilaterally:
   high-severity defect — raise those specific ones on their merits, with a
   written rationale each. This is legitimate; blanket-raising all twenty is not.
 
-Queued as the specifier's next `role_ask` the moment the slot frees (currently
-held by the unresolved "use staging please" question from 2026-08-01 05:53).
-This escalation takes the slot ahead of `GH-29`, which was previously first in
-line, because the human has asked for it twice.
+**RETIRED 2026-08-28 — do not raise this escalation.** Two things changed.
+The blocking "use staging please" question was answered by the human on
+2026-08-27 23:45Z — "stray keystroke, drop it" — so the specifier's `role_ask`
+slot is FREE (see
+`backlog/answers-archive/ANSWER-2026-08-27-use-staging-please-dropped.md`).
+And the escalation this paragraph queued is itself moot: the JumpQ-vs-expedite
+starvation it was written to resolve no longer occurs. The slot is not held for
+it; `GH-29` is first in line again.
 
 **Until the human answers, the coordinator's instruction is unchanged and
 narrow:** promote by the Full rank order above. Concretely — when a slot opens

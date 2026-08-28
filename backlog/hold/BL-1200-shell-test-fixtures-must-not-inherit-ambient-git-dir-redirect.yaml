@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1200-shell-test-fixtures-must-not-inherit-ambient-git-dir-redirect.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sibling of BL-1196, minted because BL-1196's approved scope is the JS half
   only (a vitest setupFiles module for extension/test/**) and cannot reach
