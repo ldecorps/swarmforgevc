@@ -30,6 +30,12 @@ hand (e.g. `d63e80320` on 2026-07-22).
 Standing allowlist: `swarmforge/scripts/property_suite_standing_allowlist.tsv`
 (one row per known red with `allowlist` or `fix` disposition and rationale).
 
+The guard also reports its BL-1124 shared-repo canary verdict on every exit
+path of the run it guards — including the guard itself being killed
+mid-run — and never leaves a suite process running once it exits. Detail:
+`docs/how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md#canary-fires-on-every-exit-path-including-a-kill-bl-1202`
+(BL-1202).
+
 ## Operator note
 
 Fix red properties before committing source/property changes, or set the
