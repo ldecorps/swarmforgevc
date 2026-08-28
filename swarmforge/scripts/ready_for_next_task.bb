@@ -13,6 +13,7 @@
 (load-file (str (fs/path (fs/parent *file*) "seat_affinity_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "seat_difficulty_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "idle_clear_fullness_cli.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -21,8 +22,13 @@
   (some #{"--idle-boundary"} *command-line-args*))
 
 (defn maybe-clear-at-idle-boundary! []
+  ;; BL-1238: opt-in (BL-089) alone is no longer sufficient - a role whose
+  ;; window is still mostly empty must not pay for a reload it doesn't
+  ;; need. idle-clear-fullness-cli/should-respawn? folds the opt-in check
+  ;; back in (it stays authoritative and first) and adds the fullness gate;
+  ;; respawn-self! itself is unchanged and stays at this exact call site.
   (when (and idle-boundary?
-             (handoff-lib/idle-clear-enabled? (handoff-lib/current-role)))
+             (idle-clear-fullness-cli/should-respawn? (handoff-lib/current-role)))
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
 
 ;; ── BL-550: non-home resident strands after a merge-up note ───────────────
