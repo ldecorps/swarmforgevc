@@ -28,6 +28,12 @@ done
 
 # BL-1124: never seed into / rename a live swarmforge checkout.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BL-1200: strip an inherited GIT_DIR/GIT_WORK_TREE BEFORE any git command
+# runs, including the bl1124 guard's own probe below - GIT_DIR overrides
+# both cwd and `git -C`, so an ambient redirect can point even that check
+# at the wrong repository.
+# shellcheck source=lib/git_env_guard.sh
+source "$SCRIPT_DIR/lib/git_env_guard.sh"
 # shellcheck source=../property_suite_shared_repo_guard.sh
 source "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh"
 if [[ -e "$DEST" ]]; then
