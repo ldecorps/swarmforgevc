@@ -826,7 +826,8 @@ const DOMAINS = [
   require('./bl1214AbsorbWithMergeSteps'),
   require('./bl1219RoleInboxResolutionSteps'),
   require('./bl1202GuardExitPathSteps'),
-  require('./bl1208RestorationNotAuthorshipSteps')
+  require('./bl1208RestorationNotAuthorshipSteps'),
+  require('./bl1196GitEnvGuardStripSteps')
 ];
 
 function registerSteps(registry) {
