@@ -813,7 +813,8 @@ const DOMAINS = [
   require('./bl718BubbleTalkMirrorSteps'),
   require('./bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps'),
   require('./bl1200GitEnvGuardSteps'),
-  require('./bl1190GhostApprovalAskRequiresLiveYamlSteps')
+  require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
+  require('./bl1188PipelineGridLiveStageParitySteps')
 ];
 
 function registerSteps(registry) {
