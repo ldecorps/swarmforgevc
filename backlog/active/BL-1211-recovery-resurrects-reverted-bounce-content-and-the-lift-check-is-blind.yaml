@@ -303,6 +303,46 @@ approval_context: >
   failed here, twice in one afternoon, with careful people running
   it. Say the word if you want it written the other way.
 
+  [2026-08-28] coder: QA bounce D1 (backlog/evidence/BL-1211-qa-bounce-20260828.md)
+  found the cited commit 173bb2422f an extreme entangled-tip case - a
+  literal merge of local main into the documenter branch, 90 changed
+  paths across roughly a dozen unrelated tickets, fifth and largest
+  occurrence this pass of the same branch-wide condition. Rebuilt
+  tip-pure from the last verified re-fix round (architect/cleaner/
+  hardener evidence: BL-1211-architect-pass-recovery-cli-20260828.md,
+  BL-1211-cleaner-recovery-cli-pass-20260828.md,
+  BL-1211-hardener-pass-20260828.md): bounceResurrectionGitAdapter.ts,
+  quarantineLiftCliArgs.ts, recoveryFilterCliArgs.ts, bounceResurrection.test.js
+  and bl1211OperatorCli.test.js carry the hardener's CRAP<=6 extraction;
+  quarantine-lift-check.ts, recovery-filter-check.ts and the feature/steps
+  were already present unchanged. Re-applied the documenter's how-to doc,
+  docs/index.md entry and Specification.MD paragraph, isolated to their
+  own BL-1211 hunks. The required_wiring typo this ticket's own spec-gap
+  note flagged was already corrected in this worktree's copy. Verified:
+  tsc --noEmit clean; bounceResurrection.test.js + bl1211OperatorCli.test.js
+  24/24; acceptance feature 8/8. 173bb2422f recorded above as
+  abandoned_commits - deliberately dropped, not lost work.
+
+  [2026-08-28] coder: architect bounce round 2 D1
+  (backlog/evidence/BL-1211-architect-bounce-round2-20260828.md) - all
+  three declared invariants had no property test despite
+  bounceResurrectionVerdict.ts being exactly the pure policy module this
+  project's fast-check idiom targets. Added
+  extension/test/bounceResurrectionVerdict.property.test.js: P1 encodes
+  invariants 1 & 3 (isUnauthorizedResurrection is true iff byte-identical
+  to the bounced content AND nothing authored it back; decideRecoveryFilter
+  holds back exactly those paths) and P2 encodes invariant 2
+  (decideQuarantineLift refuses iff any generated fact is an unauthorized
+  resurrection, naming every offending ticket and path). Generator note:
+  candidateContent is DERIVED from bouncedContent (same/different/null
+  modes), not drawn independently - the same generator-must-reach-deep-
+  state fix as BL-1201's property test this same pass, applied here before
+  it could bite. Non-vacuity proven by hand twice: disabled the authorship
+  check (all 3 tests failed) and separately disabled the refusal branch
+  (2 of 3 failed); restored and recompiled between each. Verified: tsc
+  --noEmit clean; bounceResurrection.test.js + bl1211OperatorCli.test.js
+  24/24 unchanged; property file 3/3; acceptance feature 8/8.
+
 assigned_to: coder
 bounce_count: 4
 bounce_history:
