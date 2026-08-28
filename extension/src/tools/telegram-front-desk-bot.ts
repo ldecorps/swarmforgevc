@@ -1647,19 +1647,8 @@ function readRoleAwaitingAskedAtMs(targetPath: string, role: string): number | u
   }
 }
 
-// BL-1201 QA bounce D1: a role that receives this note and reads
-// roleAnswerFilePointerPath's raw file directly (rather than running the
-// CLI below) gets none of deliverRoleAnswer's refuse-a-mismatch /
-// already-consumed guarantees - the exact read that produced the original
-// five-day-stale-answer incident. The pointer branch now names the CLI a
-// role must run instead of the bare file path, so the note text itself
-// carries the enforcement, not only docs a role was never told to read.
-export function roleAnswerCliInvocation(role: string): string {
-  return `node extension/out/tools/deliver-role-answer.js --role ${role}`;
-}
-
 export function composeRoleAnswerNoteMessage(role: string, text: string): string {
-  return fitsInlineInRoleAnswerNote(text) ? text : `answer ready: ${roleAnswerCliInvocation(role)}`;
+  return fitsInlineInRoleAnswerNote(text) ? text : `answer ready: ${roleAnswerFilePointerPath(role)}`;
 }
 
 interface RoleAnswerFileRecord {

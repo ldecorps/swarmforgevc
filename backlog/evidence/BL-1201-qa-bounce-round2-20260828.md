@@ -1,0 +1,60 @@
+# BL-1201 — QA bounce round 2, 20260828
+
+(First bounce today, unrelated defect, is
+`backlog/evidence/BL-1201-qa-bounce-20260828.md` — `deliverRoleAnswer`
+unreachable from the real note-delivery path; that chain was re-fixed and
+this is a second, independent parcel reaching QA afterward.)
+
+## D1 — entangled tip: cited commit carries BL-1192/1207/1211's foreign paths (BL-506 tip-purity violation, third occurrence this pass)
+
+1. **Failing command:**
+   ```
+   env -u GIT_DIR -u GIT_WORK_TREE git diff --name-only origin/main...b6709aa6ff
+   ```
+
+2. **Commit hash:** `b6709aa6ff` (documenter's `docs(BL-1201): update how-to
+   for QA D1 re-fix, add Specification entry`), received via `git_handoff`
+   payload `merge_and_process documenter b6709aa6ff`.
+
+3. **First error excerpt** — beyond BL-1201's own scope
+   (`docs/how-to/BL-1201-*.md`, `extension/src/tools/deliver-role-answer.ts`,
+   `docs/reference/Specification.MD`, `docs/index.md`), the diff also
+   carries complete, separately-in-flight content for **BL-1192**
+   (`task_scope_gate_lib.bb` + test runner, its feature/steps,
+   `swarm_handoff.bb`, `handoff-protocol.md` — same set bounced this pass in
+   `backlog/evidence/BL-1192-qa-bounce-20260828.md`), **BL-1207**
+   (`specs/pipeline/steps/bl1207AbandonedLockLivenessSteps.js`), and
+   **BL-1211** (`bounceResurrectionGitAdapter.ts`, `quarantineLiftCliArgs.ts`,
+   `recovery-filter-check.ts`, `recoveryFilterCliArgs.ts`,
+   `bl1211OperatorCli.test.js`, `bounceResurrection.test.js`,
+   `specs/features/BL-1211-*.feature`, `bl1211QuarantineLiftAuthorshipSteps.js`
+   — same ticket already documented as still architect-bounced,
+   `bounce_count: 2`, `status: todo`, in
+   `backlog/evidence/BL-1192-qa-bounce-20260828.md`).
+
+   This is the **third** parcel this QA pass (after BL-1227, BL-1192) to
+   cite a commit entangled with the same cluster of unfinished tickets —
+   confirming this is a branch-wide condition on `swarmforge-coder`, not
+   three independent mistakes. A branch-wide `note` to coordinator +
+   specifier is being sent separately in this same pass.
+
+4. **Failure class:** `behavior` (same "entangled tip" class, BL-506).
+
+5. **Expected vs observed:** Expected — a `git_handoff` naming `BL-1201`
+   cites a commit whose diff vs `origin/main` touches only BL-1201's own
+   paths. Observed — the cited commit carries three other tickets' work,
+   one of which (BL-1211) is independently confirmed still disputed
+   (unresolved architect bounce) in its own ticket record.
+
+## Other checks this pass
+
+- BL-1201's own content not independently re-verified — **BLOCKED BY D1**,
+  same reasoning as `backlog/evidence/BL-1192-qa-bounce-20260828.md`: not
+  QA's call to resolve BL-1211/BL-1192/BL-1207's disputed content on
+  BL-1201's behalf.
+
+## Remediation
+
+Coder: rebuild a tip-pure `BL-1201`-only commit on `origin/main` and
+re-send. See the branch-wide `note` (priority `00`, to specifier +
+coordinator) sent this same pass for the systemic finding.
