@@ -3,6 +3,7 @@ title: "Deprecator identifies unused/seldom-used functionality and notifies huma
 milestone: M8
 type: feature
 status: todo
+assigned_to: coder
 epic: deprecator
 priority: 1
 direction: queue-jump
