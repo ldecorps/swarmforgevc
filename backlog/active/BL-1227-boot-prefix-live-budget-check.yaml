@@ -4,18 +4,23 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  RULED 2026-08-28: (1) fix now — the gate is failing today (47648/44000),
+  so constitution/article amendments are blocked until trimmed. (2) leave a
+  live-repo check that can go red on later growth — reversing BL-883's pin
+  is the point; 44000/51200 budgets stay, no rule text deleted.
 severity: high
 priority: 2
 direction: pipeline-reported
 depends_on: []
-assigned_to: ""
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, qa]
 stage_skip_reasons:
   cleaner: "prose-move plus one check wiring; no code to refactor"
   architect: "no new architecture — the BL-433 split mechanism BL-618, BL-858 and BL-883 already ran, under the same composer and the same budget"
-  hardender: "the char-count, non-vacuity and verbatim-move scenarios are the whole verification surface; the only new logic is one check invocation"
+  hardener: "the char-count, non-vacuity and verbatim-move scenarios are the whole verification surface; the only new logic is one check invocation"
   documenter: "the change IS documentation restructuring; pointers to absorbed prose are acceptance-gated in the parcel itself"
 
 approval_context: >
