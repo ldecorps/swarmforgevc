@@ -120,19 +120,25 @@
           (salvage-lib/header-field "commit")))
 
 (defn- commit-message-names-task? [root commit task-ticket-id]
-  ;; SUBJECT-only, exact id equality via pipeline-stage-lib's own
-  ;; multi-id extractor - the same choice BL-953's task_commit_coherence_
-  ;; gate_lib.bb already made and documented (commit-ticket-ids), for the
-  ;; identical reason its own doc-comment states here: a full-body
-  ;; substring/grep over-matches a commit whose SUBJECT belongs to one
-  ;; ticket but whose body prose merely mentions this task's id in passing
-  ;; (e.g. "decouple unlanded BL-1192 gate wiring" inside a BL-1227-subject
-  ;; commit) - discovered live when this gate blocked its own author's
-  ;; send on exactly that shape.
+  ;; SUBJECT-only, PRIMARY (first-mentioned) ticket id only - via
+  ;; pipeline-stage-lib's single-match extract-ticket-id, never
+  ;; extract-ticket-ids' every-mention variant. Two over-match shapes,
+  ;; both caught live sending this very rebuild: (1) a full-body
+  ;; substring/grep matches a commit whose SUBJECT belongs to one ticket
+  ;; but whose body prose merely mentions this task's id in passing (e.g.
+  ;; "decouple unlanded BL-1192 gate wiring" inside a BL-1227-subject
+  ;; commit) - fixed by reading %s, not %B. (2) even SUBJECT-only,
+  ;; extract-ticket-ids' every-id-in-text behavior still matches a
+  ;; subject like "BL-1227: ...decouple unlanded BL-1192 gate wiring",
+  ;; which names BL-1227 as its own commit's ticket but mentions BL-1192
+  ;; in passing within the same line - fixed by using the single-match,
+  ;; first-token-wins extractor (the PRIMARY id a "TICKET: description"
+  ;; subject names), matching this task_commit_coherence_gate_lib.bb's own
+  ;; different, multi-id "does the subject name several tickets"
+  ;; question intentionally does NOT reuse.
   (let [subj (git! root "log" "-1" "--format=%s" commit)]
     (and (zero? (:exit subj))
-         (some #(= task-ticket-id %)
-               (pipeline-stage-lib/extract-ticket-ids (:out subj))))))
+         (= task-ticket-id (pipeline-stage-lib/extract-ticket-id (:out subj))))))
 
 (defn- own-commit-diff [root commit]
   (let [diff (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" commit)]
