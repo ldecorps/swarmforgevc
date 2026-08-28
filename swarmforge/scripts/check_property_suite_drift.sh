@@ -97,6 +97,66 @@ run_default_suite() {
   (cd extension && npm run test:properties)
 }
 
+# BL-1202: the guard must report its BL-1124 canary verdict on EVERY exit
+# path of the run it guards - green, red, AND a kill mid-run (the foreground
+# `git commit` being killed by a client-side timeout, the incident this
+# ticket exists for) - and must not leave the suite's own process group
+# running once the guard itself is gone. BEFORE/SUITE_PID are set only once
+# a real suite run actually starts (right before it starts); every
+# short-circuit above this point never touches them, so the EXIT/INT/TERM
+# traps below are a no-op for a path that never started a suite (a path
+# with nothing to report must not start printing one).
+BEFORE=""
+SUITE_PID=""
+CANARY_DONE=0
+CANARY_RESULT=0
+
+# Idempotent: the first caller (either the normal post-suite path below, or
+# the trap on an abnormal exit) computes and reports the verdict; every
+# later call (the OTHER of those two, whichever runs second) is a fast
+# no-op returning the same verdict, so the message and the process-group
+# kill each happen exactly once. Never blocks indefinitely on a dying
+# child (constraint: the report path must not itself hang the hook) - the
+# grace-then-force kill loop below is bounded.
+report_canary_once() {
+  if (( CANARY_DONE )); then
+    return "$CANARY_RESULT"
+  fi
+  CANARY_DONE=1
+  [[ -n "$BEFORE" ]] || return 0
+
+  if [[ -n "$SUITE_PID" ]]; then
+    kill -TERM -- "-$SUITE_PID" 2>/dev/null || true
+    local waited
+    for waited in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 -- "-$SUITE_PID" 2>/dev/null || break
+      sleep 0.05
+    done
+    kill -KILL -- "-$SUITE_PID" 2>/dev/null || true
+  fi
+
+  set +e
+  bl1124_assert_unchanged "$REPO_ROOT" "$BEFORE"
+  CANARY_RESULT=$?
+  set -e
+  if (( CANARY_RESULT != 0 )); then
+    echo "Commit rejected: property suite mutated the shared checkout (BL-1124)." >&2
+  fi
+  return "$CANARY_RESULT"
+}
+
+# A caught INT/TERM (the guard itself being killed mid-run) must still
+# report the canary and take the suite process group down with it - then
+# exit non-zero, same as any other abnormal end to a started run. The
+# explicit exit here also fires the EXIT trap below, which is a no-op by
+# then (report_canary_once's own idempotency guard).
+on_interrupt() {
+  report_canary_once || true
+  exit 1
+}
+trap on_interrupt INT TERM
+trap 'report_canary_once || true' EXIT
+
 if [[ "${SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD:-}" == "1" ]]; then
   warn_override
   exit 0
@@ -117,24 +177,39 @@ fi
 
 echo "property-suite-guard: run" >&2
 
+if ! default_toolchain_ready && (( $# == 0 )); then
+  warn_skipped
+  exit 0
+fi
+
 # BL-1124: canary the live checkout before fixtures run.
 BEFORE="$(bl1124_snapshot "$REPO_ROOT")"
 
-set +e
+# BL-1202: run the suite as the leader of its OWN process group (job
+# control enabled just for the background launch, both on Linux and macOS
+# bash), redirected to a temp file rather than a command substitution, so
+# report_canary_once (from either the normal path below or a kill trap)
+# can address that whole group by pgid and `wait` can be interrupted by a
+# caught signal without losing the suite's own exit status.
+SUITE_OUT_FILE="$(mktemp)"
+set -m
 if (( $# > 0 )); then
-  OUT="$("$@" 2>&1)"
-  STATUS=$?
+  "$@" >"$SUITE_OUT_FILE" 2>&1 &
 else
-  if ! default_toolchain_ready; then
-    warn_skipped
-    exit 0
-  fi
-  OUT="$(run_default_suite 2>&1)"
-  STATUS=$?
+  run_default_suite >"$SUITE_OUT_FILE" 2>&1 &
 fi
+SUITE_PID=$!
+set +m
+
+set +e
+wait "$SUITE_PID"
+STATUS=$?
 set -e
+OUT="$(cat "$SUITE_OUT_FILE" 2>/dev/null || true)"
+rm -f "$SUITE_OUT_FILE"
 
 if (( STATUS == 127 )); then
+  CANARY_DONE=1
   warn_skipped
   [[ -n "$OUT" ]] && echo "$OUT" >&2
   exit 0
@@ -142,12 +217,11 @@ fi
 
 # Always assert canary after a real suite run (green or red).
 set +e
-bl1124_assert_unchanged "$REPO_ROOT" "$BEFORE"
+report_canary_once
 CANARY=$?
 set -e
 if (( CANARY != 0 )); then
   [[ -n "$OUT" ]] && echo "$OUT" >&2
-  echo "Commit rejected: property suite mutated the shared checkout (BL-1124)." >&2
   exit 1
 fi
 
