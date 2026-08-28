@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1201: a recorded human answer at
+`.swarmforge/operator/role-answers/<role>.json` now carries the
+`asked_at_ms` of the question it answers — the same correlator
+`role_ask.bb` already stamps into `role-awaiting/<role>.json` — and
+`deliverRoleAnswer` (`extension/src/tools/telegram-front-desk-bot.ts`)
+refuses a mismatch (including no question currently pending) instead of
+handing the answer over; a confirmed match marks the record
+`consumedAt` in place (never deleted) so it cannot present itself as
+fresh a second time. Reached live 2026-08-27 when a five-day-old,
+already-consumed answer was forwarded as a fresh pointer note because
+nothing recorded which question it belonged to. QA's own D1 bounce on
+this ticket caught that the pointer note text itself (`composeRoleAnswerNoteMessage`)
+still named the raw file path, unchanged, so the fix was reachable only
+from a test or from documentation — never from the note a role actually
+receives; `roleAnswerCliInvocation` now composes the CLI invocation and
+the pointer note names it directly (`answer ready: node
+extension/out/tools/deliver-role-answer.js --role <role>`) instead of the
+bare path. `deliver-role-answer.js` prints `delivered` / `mismatch` /
+`already-consumed` / `absent`. The inline-note path (answers short enough
+to ride in the note itself) is unchanged. No new extension command or
+setting — operator/role-substrate tooling. Acceptance:
+`specs/features/BL-1201-a-recorded-answer-identifies-the-question-it-answers.feature`.
+How-to: `docs/how-to/BL-1201-a-recorded-answer-identifies-the-question-it-answers.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1192: `swarm_handoff.sh` refuses a
 `git_handoff` send — on every hop, not only the documenter→QA edge BL-531
 already covers — when the task's own commits since its last handoff carry

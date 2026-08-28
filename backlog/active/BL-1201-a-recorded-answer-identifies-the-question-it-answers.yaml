@@ -9,6 +9,8 @@ priority: 15
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
+abandoned_commits:
+  - b6709aa6ff
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1201-a-recorded-answer-identifies-the-question-it-answers.feature
 human_approval: approved
@@ -141,13 +143,25 @@ notes: |
     into a Background. Scenario 02 deliberately has no pending question, so a
     shared 'a role has a pending question recorded' would change what it
     asserts."
+  - "[2026-08-28] coder: QA round-2 bounce D1
+    (backlog/evidence/BL-1201-qa-bounce-round2-20260828.md) found the cited
+    commit b6709aa6ff entangled with BL-1192/BL-1207/BL-1211's own
+    in-flight work (third occurrence this pass, same branch-wide condition
+    as BL-1227 and BL-1192). Rebuilt tip-pure: the functional D1 re-fix
+    (deliver-role-answer.ts, telegram-front-desk-bot.ts,
+    telegramFrontDeskBotCli.test.js) was already present on this branch
+    unchanged from the earlier merge; only the how-to doc and the
+    Specification.MD entry needed re-applying. Verified: full CLI/Core
+    suites 732/732, acceptance feature 3/3. b6709aa6ff recorded above as
+    abandoned_commits - deliberately dropped, not lost work."
 
 required_wiring:
   - 'extension/src/tools/telegram-front-desk-bot.ts::asked_at_ms::the recorded answer must carry the asked_at_ms of the question it answers, or nothing downstream can pair them'
 
 assigned_to: coder
-bounce_count: 3
+bounce_count: 4
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 8b939d7cf1, evidence: backlog/evidence/BL-1201-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 8b939d7cfd, evidence: backlog/evidence/BL-1201-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 098b4d07bf, evidence: backlog/evidence/BL-1201-qa-bounce-20260828.md }
+  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 709c613d3, evidence: backlog/evidence/BL-1201-qa-bounce-round2-20260828.md }
