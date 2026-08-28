@@ -41,3 +41,23 @@ answer; the research below is already done, do not repeat it.
 Mint against the answer, set `epic:` (likely the local-model epic BL-1143 sits
 in), and spec ollama provisioning as in-scope unless the human says it already
 runs elsewhere.
+
+---
+
+## DISPOSITIONED 2026-08-28 — minted as BL-1235
+
+Human answered the parked question directly, correcting the premise rather
+than picking one of the three offered options:
+
+> To be clear, cursor stays behind the usual host topic and front desk.
+>
+> I want local qwen only behind its dedicated one:
+> https://t.me/c/4415865297/41004
+
+So it is **not** the front desk: a dedicated topic (chat `4415865297`, topic
+`41004`), with cursor keeping both of its current surfaces untouched.
+
+Minted `backlog/paused/BL-1235-local-qwen-seat-behind-its-own-topic.yaml`
+(acceptance `specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature`).
+One intake, one ticket. The model tag remains unverifiable from this host and
+is specced as configuration rather than guessed into a constant.
