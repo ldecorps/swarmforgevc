@@ -58,6 +58,13 @@ mkdir -p "$FAKE_BIN"
 TMUX_LOG="$ROOT/tmux-calls.log"
 : > "$TMUX_LOG"
 export TMUX_LOG
+# BL-1238: idle_clear_fullness_cli.bb reads this role's own pane via
+# $TMUX_PANE (the process runs inside its own pane in production) and a
+# real `capture-pane -p -t "$TMUX_PANE" -S -400` call - faked here to
+# return a full 400-line window, so this file's existing scenarios (which
+# predate the fullness gate and assert on opt-in alone) still observe the
+# "well past threshold" case, matching qa_e2e_procedure step 1's own setup.
+export TMUX_PANE="%1"
 cat > "$FAKE_BIN/tmux" <<'TMUX'
 #!/usr/bin/env bash
 echo "$*" >> "$TMUX_LOG"
@@ -65,6 +72,10 @@ if [[ "$1 $2" == "-S" ]]; then :; fi
 for ((i=1; i<=$#; i++)); do
   if [[ "${!i}" == "display-message" ]]; then
     echo "%1"
+    exit 0
+  fi
+  if [[ "${!i}" == "capture-pane" ]]; then
+    for j in $(seq 1 400); do echo "line $j"; done
     exit 0
   fi
 done

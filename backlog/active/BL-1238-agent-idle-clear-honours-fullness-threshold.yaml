@@ -139,6 +139,59 @@ notes: |
   - [2026-08-28] specifier: severity medium, deliberately. This wastes tokens
     and time on every idle boundary but breaks nothing, loses no work and
     degrades no safety signal — it does not meet the bar for high.
+  - "[2026-08-28] coder: implemented. Pure decision in new
+    idle_clear_fullness_lib.bb (resolve-fullness mirrors BL-141's
+    resolveContextFullness contract exactly - telemetry wins when present,
+    else proxy, else :unavailable with a nil percent, never a guessed
+    number; should-idle-clear? folds both invariants into one predicate).
+    IO half in new idle_clear_fullness_cli.bb: reads the SAME setting key
+    (swarmforge.contextClear.fullnessThresholdPercent) from a workspace
+    .vscode/settings.json override or extension/package.json's own
+    declared default, never a second number; proxy fullness comes from
+    this role's OWN pane via $TMUX_PANE (the process runs inside its own
+    pane, so no role->session/window/pane lookup is needed the way the
+    external extension-host side requires), calibrated against the same
+    400-line CONTEXT_CLEAR_PROXY_FULL_AT_LINE_COUNT constant
+    extension/src/extension.ts uses (a plain literal, cross-referenced by
+    comment - babashka cannot import the .ts file). Wired into both
+    required_wiring anchors (ready_for_next_task.bb and
+    ready_for_next_batch.bb's own maybe-clear-at-idle-boundary!) -
+    respawn-self! itself unchanged at both call sites, only the
+    surrounding condition changed. No telemetry source exists on the
+    agent side today (matches contextFullness.ts's own documented
+    reality: no backend reports it), so telemetry-percent is always nil
+    here and proxy always decides - the pure lib's telemetry branch is
+    still fully exercised by its own unit tests and by acceptance
+    scenario 03, ready for a future source with no interface change.
+
+    Non-vacuity proven by hand: broke the threshold comparison in the
+    pure lib, confirmed both idle_clear_fullness_lib_test_runner.bb and
+    the acceptance feature fail exactly as expected; restored, re-
+    confirmed green both layers.
+
+    Test-environment finding, not a BL-1238 regression: this session's
+    sandbox sources ~/.zshenv unconditionally prepending ~/.local/bin
+    (which has a real tmux) ahead of any fixture PATH override, and
+    ready_for_next_task.sh is a #!/usr/bin/env zsh wrapper that re-sources
+    .zshenv on its own re-exec - so swarmforge/scripts/test/
+    test_idle_clear_respawn.sh's fake-tmux fixture loses to the real tmux
+    binary partway through the done_with_current_task.bb -> zsh-exec ->
+    ready_for_next_task.bb chain. Confirmed this is pre-existing and
+    unrelated to this change: reverted every BL-1238 file via a temporary
+    git stash and re-ran the SAME test against unmodified HEAD - it fails
+    identically (respawn-self's own tmux calls hit the same shadowed
+    PATH). Extended that test's fixture with the capture-pane fake +
+    TMUX_PANE export it will need once this environment issue is fixed
+    elsewhere (out of this ticket's scope), but could not verify it green
+    in this session. Verified instead via: (a) an isolated `bb -e` call
+    against the real idle_clear_fullness_cli.bb outside the zsh-exec
+    chain, which correctly read the fake tmux and computed 100% proxy
+    fullness; (b) idle_clear_fullness_lib_test_runner.bb ALL PASS; (c)
+    the acceptance feature 9/9 (which drives should-respawn? via a plain
+    bash CLI, no zsh wrapper in the chain); (d) the three OTHER existing
+    idle-clear/ready-for-next shell suites
+    (test_idle_clear_conf_parsing.sh, test_ready_for_next_rotate_home.sh,
+    test_ready_for_next_no_promotion.sh) all still ALL PASS unchanged."
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 992be2290a, evidence: backlog/evidence/BL-1238-bounce-20260828.md }

@@ -8,7 +8,15 @@
 # same commit attempt whenever pre-commit passed - see the note in
 # swarmforge/git-hooks/pre-commit for why the message-naming check can only
 # be enforced here, not there.
+#
+# BL-1242: check_merge_deletion.sh is commit-msg-only for the same reason -
+# it only fires on a merge (MERGE_HEAD present) and needs the finalized
+# message to apply its ticket-naming exemption. No longer a single `exec`:
+# both guards must run every time, so a real failure from either is never
+# masked by the other's exit code.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-exec "$REPO_ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$1"
+
+"$REPO_ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$1"
+"$REPO_ROOT/swarmforge/scripts/check_merge_deletion.sh" "$1"
