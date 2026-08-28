@@ -18,11 +18,29 @@ function gitInit(dir) {
   execFileSync('git', ['init', '-q'], { cwd: dir });
 }
 
+// Fixture-root hygiene (BL-971/BL-529 pattern): every root the Background
+// creates is registered for removal at process exit, and each new Background
+// removes the previous scenario's root eagerly, so neither a passing nor a
+// throwing scenario leaves a tmp dir behind.
+const fixtureRoots = [];
+function registerFixtureRoot(root) {
+  fixtureRoots.push(root);
+}
+process.on('exit', () => {
+  for (const root of fixtureRoots) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a repository working tree$/, (ctx) => {
+    if (ctx.bl1230 && ctx.bl1230.root) {
+      fs.rmSync(ctx.bl1230.root, { recursive: true, force: true });
+    }
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1230-tree-'));
+    registerFixtureRoot(root);
     gitInit(root);
     ctx.bl1230 = { root };
   });

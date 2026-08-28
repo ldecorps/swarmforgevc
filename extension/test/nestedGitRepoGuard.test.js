@@ -114,6 +114,22 @@ test('BL-1230: multiple leaks are each reported independently', () => {
   assert.deepEqual(violations, ['backlog/.git', 'docs/.git']);
 });
 
+// A leaked repository's own internals are not walked - the walk must stop
+// at the `.git` boundary rather than falling through to the generic
+// isDirectory() recursion. Not descending never produces a SECOND
+// violation on its own (a real repo's internals rarely contain a literal
+// `.git`-named directory), so this plants one by hand: a mutant that drops
+// the `continue` after handling a `.git` entry reports BOTH the outer leak
+// and this planted inner one; the correct code reports only the outer one.
+test('BL-1230: a leaked repository\'s own internals are never walked', () => {
+  const root = mkTmpDir('bl1230-nodescend-');
+  gitInit(root);
+  gitInit(path.join(root, 'backlog'));
+  fs.mkdirSync(path.join(root, 'backlog', '.git', 'modules', 'x', '.git'), { recursive: true });
+  const violations = findNestedGitRepositories(root);
+  assert.deepEqual(violations.map((v) => v.path), ['backlog/.git']);
+});
+
 test('BL-1230: an unreadable directory does not crash the walk', () => {
   const root = mkTmpDir('bl1230-unreadable-');
   gitInit(root);
