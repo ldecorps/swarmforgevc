@@ -840,7 +840,8 @@ const DOMAINS = [
   require('./bl1230NestedGitRepoGuardSteps'),
   require('./bl1179CrossVendorMemoryAdapterSteps'),
   require('./bl1222PropertySuiteGuardGitEnvScrubSteps'),
-  require('./bl1238AgentIdleClearFullnessSteps')
+  require('./bl1238AgentIdleClearFullnessSteps'),
+  require('./bl1242MergeBranchWorkDeletionSteps')
 ];
 
 function registerSteps(registry) {
