@@ -52,4 +52,40 @@ source: |
 notes: |
   - [2026-08-27] specifier: minted from root intake drain.
 
+  - [2026-08-28] specifier adjudication of the coordinator's lost-QA-close note
+    (.swarmforge/operator/NOTE-BL-1170-lost-close-commit-20260828.md):
+    CONFIRM-CLOSE. The work SHIPPED and is live on main; only the bookkeeping
+    close commit 0f3a58b71 was lost from main's line. Do NOT force-route to
+    the coder - that would duplicate-rebuild shipped work, exactly as the
+    coordinator suspected. Coordinator to move active/ -> done/ (Article
+    1.1/3.3; not mine to do).
+  - [2026-08-28] specifier: evidence for the close, checked by CONTENT and
+    deliberately not by ancestry, because 0f3a58b71 is genuinely not an
+    ancestor of main. (1) Both declared required_wiring anchors resolve on
+    main: /postmortem dispatches at telegramCursorOperatorExec.ts:762-763 over
+    an import of formatPostmortemReply/runOperatorPostmortem, and
+    bl1170PostmortemOperatorVerbFailureClassLearnSteps is registered in
+    specs/pipeline/steps/index.js. (2) The feature file and step handler are
+    present on main and byte-identical to the QA-approved tree (24caed6d3c).
+    (3) git diff 24caed6d3c main over this ticket's paths is +34/-0 - main is
+    strictly AHEAD and nothing was deleted; none of the 34 added lines
+    mentions postmortem, so they are unrelated later work. (4) The
+    implementation is substantive, not a stub: operatorPostmortem.ts is 333
+    lines on main and the dispatch is a thin wrapper over it, which is this
+    project's own stated convention. (5) The step handler drives the REAL
+    compiled module (out/tools/operatorPostmortem), not fakes, so the
+    acceptance is not green-over-fakes. This is the OPPOSITE shape to the
+    BL-1196 false positive the coordinator rightly guarded against: there a
+    ticket was pooled to done/ but never built; here the build is
+    demonstrably on main and only the paperwork is missing.
+  - [2026-08-28] specifier: incidental finding for BL-1220, recorded here so it
+    is not lost. This ticket's QA evidence records its unit lane as
+    `node --test test/operatorPostmortem.test.js` (5/5 PASS), and
+    extension/test/operatorPostmortem.test.js is confirmed to declare its
+    tests to node:test - so those 5 assertions passed under node --test at QA
+    time and are NOT collected by the Vitest unit lane today. This does not
+    weaken the close (the 4/4 acceptance run is independent and drives the
+    real module), but it is a concrete instance of BL-1220's defect landing on
+    shipped, QA-approved work.
+
 assigned_to: coder
