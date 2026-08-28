@@ -1,5 +1,9 @@
 'use strict';
 
+// BL-1039-EXEMPT: the behavior under test IS ad hoc nested `git init` calls
+// (BL-1230's whole subject is catching an unexpected nested repository); the
+// shared seeded fixture is a single pinned repo shape and cannot stand in for
+// the varying nested/non-nested layouts each scenario here builds.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -115,12 +119,16 @@ test('BL-1230: an unreadable directory does not crash the walk', () => {
   gitInit(root);
   const locked = path.join(root, 'locked');
   fs.mkdirSync(locked);
-  fs.chmodSync(locked, 0o000);
-  try {
-    assert.deepEqual(findNestedGitRepositories(root), []);
-  } finally {
-    fs.chmodSync(locked, 0o755);
-  }
+  const realReaddir = fs.readdirSync;
+  const readdir = (dir, opts) => {
+    if (dir === locked) {
+      const err = new Error('EACCES: permission denied');
+      err.code = 'EACCES';
+      throw err;
+    }
+    return realReaddir(dir, opts);
+  };
+  assert.deepEqual(findNestedGitRepositories(root, { readdir }), []);
 });
 
 // BL-1038-EXEMPT: proves the guard against the real repository (readdirSync
