@@ -244,4 +244,126 @@ echo "$OUT13" | grep -q 'pipelineBoard.property.test.js' \
   || fail "13: must name failing property file, got: $OUT13"
 pass "13: guard still refuses silent unallowlisted reds"
 
+# ── 14/15 (BL-1202): the guard is killed mid-run — canary still reported,
+#    and no process the suite started outlives the guard ─────────────────
+# The fake suite mutates the live checkout ref (simulating the incident:
+# fixture children rewriting a real branch ref) then sleeps, so the guard
+# can be killed from outside while it is still "in the suite". A marker
+# file records the fake suite's own PID so scenario 15 can confirm nothing
+# in its process group survives the kill.
+stage extension/src/pipelineBoard.ts
+MARKER="$ROOT/../bl1202_marker_$$"
+rm -f "$MARKER" "${MARKER}.child"
+MUTATING_SLEEP=(bash -c '
+  git -C "'"$ROOT"'" -c user.email=t@t -c user.name=t commit -q --allow-empty -m mutated-by-fixture
+  echo $$ > "'"$MARKER"'"
+  # A grandchild in the SAME process group, so scenario 15 can prove the
+  # whole group (not just the direct child) is reaped by pgid.
+  (sleep 30) &
+  echo $! > "'"$MARKER"'.child"
+  sleep 30
+')
+(
+  cd "$ROOT"
+  # exec replaces this subshell's own process image with the guard itself,
+  # so GUARD_PID below is the guard's REAL pid - without it, GUARD_PID
+  # would be the wrapping subshell, and a SIGTERM to it would never reach
+  # the guard, since a subshell's default signal disposition does not
+  # forward to its own children.
+  exec bash "$GUARD" "${MUTATING_SLEEP[@]}" >"$ROOT/../bl1202_out_$$" 2>&1
+) &
+GUARD_PID=$!
+
+# Wait for the fake suite to actually be running (marker written) before
+# killing the guard - a fixed sleep here would race the fork/exec above.
+DEADLINE=$((SECONDS + 10))
+while [[ ! -s "$MARKER" ]] && (( SECONDS < DEADLINE )); do
+  sleep 0.05
+done
+[[ -s "$MARKER" ]] || fail "14: fake suite never started (marker never appeared)"
+CHILD_PID="$(cat "$MARKER")"
+
+kill -TERM "$GUARD_PID" 2>/dev/null || true
+set +e
+wait "$GUARD_PID"
+ST14=$?
+set -e
+
+OUT14="$(cat "$ROOT/../bl1202_out_$$" 2>/dev/null || true)"
+
+[[ "$ST14" -ne 0 ]] || fail "14: a killed guard must exit non-zero, got $ST14: $OUT14"
+echo "$OUT14" | grep -q 'BL-1124: shared repo refs/bare changed' \
+  || fail "14: expected the canary to still be reported on a killed run, got: $OUT14"
+pass "14: killing the guard mid-run still reports the BL-1124 canary verdict"
+
+# BL-1202 invariant 2: no process the guard started outlives the guard -
+# checked by process group (the direct child AND its own grandchild), not
+# by name, per the ticket's own qa_e2e_procedure step 3.
+DEADLINE=$((SECONDS + 5))
+while { kill -0 "$CHILD_PID" 2>/dev/null || kill -0 "$(cat "${MARKER}.child" 2>/dev/null || echo 0)" 2>/dev/null; } \
+      && (( SECONDS < DEADLINE )); do
+  sleep 0.05
+done
+if kill -0 "$CHILD_PID" 2>/dev/null; then
+  fail "15: fake suite's own process ($CHILD_PID) is still running after the guard was killed"
+fi
+GRANDCHILD_PID="$(cat "${MARKER}.child" 2>/dev/null || echo "")"
+if [[ -n "$GRANDCHILD_PID" ]] && kill -0 "$GRANDCHILD_PID" 2>/dev/null; then
+  fail "15: fake suite's grandchild ($GRANDCHILD_PID, same process group) is still running after the guard was killed"
+fi
+pass "15: no process the guard started (by process group) outlives a killed guard"
+
+rm -f "$MARKER" "${MARKER}.child" "$ROOT/../bl1202_out_$$"
+git -C "$ROOT" reset -q HEAD~1 --hard
+rm -rf "$ROOT/extension"
+
+# ── 16 (hardener, BL-1202): a SIGHUP kill is caught ONLY by the standalone
+#    `trap ... EXIT` line, never by `trap on_interrupt INT TERM` - the guard
+#    traps INT/TERM explicitly, but not HUP, so a HUP delivery (a plausible
+#    real shape for "the foreground git commit was killed": a closing
+#    terminal or a dying parent process group sends HUP, not always TERM)
+#    relies entirely on bash's own behavior of still running a registered
+#    EXIT trap on an untrapped fatal signal. Verified live (2026-08-28): a
+#    2-line bash script with only `trap ... EXIT` and no HUP trap DOES run
+#    its EXIT trap on `kill -HUP`, exit status 129. Removing the guard's
+#    standalone EXIT trap line left scenarios 01-15 all still green (they
+#    only ever exercise TERM), so this scenario is what actually pins that
+#    line as load-bearing rather than redundant with on_interrupt.
+stage extension/src/pipelineBoard.ts
+MARKER16="$ROOT/../bl1202_marker16_$$"
+rm -f "$MARKER16"
+MUTATING_SLEEP_16=(bash -c '
+  git -C "'"$ROOT"'" -c user.email=t@t -c user.name=t commit -q --allow-empty -m mutated-by-fixture-16
+  echo $$ > "'"$MARKER16"'"
+  sleep 30
+')
+(
+  cd "$ROOT"
+  exec bash "$GUARD" "${MUTATING_SLEEP_16[@]}" >"$ROOT/../bl1202_out16_$$" 2>&1
+) &
+GUARD_PID_16=$!
+
+DEADLINE=$((SECONDS + 10))
+while [[ ! -s "$MARKER16" ]] && (( SECONDS < DEADLINE )); do
+  sleep 0.05
+done
+[[ -s "$MARKER16" ]] || fail "16: fake suite never started (marker never appeared)"
+
+kill -HUP "$GUARD_PID_16" 2>/dev/null || true
+set +e
+wait "$GUARD_PID_16"
+ST16=$?
+set -e
+
+OUT16="$(cat "$ROOT/../bl1202_out16_$$" 2>/dev/null || true)"
+
+[[ "$ST16" -ne 0 ]] || fail "16: a HUP-killed guard must exit non-zero, got $ST16: $OUT16"
+echo "$OUT16" | grep -q 'BL-1124: shared repo refs/bare changed' \
+  || fail "16: expected the canary to still be reported on a HUP-killed run, got: $OUT16"
+pass "16: a SIGHUP kill (caught only by the standalone EXIT trap) still reports the BL-1124 canary verdict"
+
+rm -f "$MARKER16" "$ROOT/../bl1202_out16_$$"
+git -C "$ROOT" reset -q HEAD~1 --hard
+rm -rf "$ROOT/extension"
+
 echo "ALL PASS"
