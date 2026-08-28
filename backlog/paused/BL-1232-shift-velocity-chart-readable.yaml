@@ -1,0 +1,147 @@
+id: BL-1232
+title: "Briefing shift-velocity chart is unreadable — outlier-crushed Y axis, colliding date labels, one gap eating the plot"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-behaviour-trends
+priority: 6
+direction: human-requested
+depends_on: [BL-1184]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1232-shift-velocity-chart-readable.feature
+
+human_approval: pending
+approval_context: >
+  The intake delegated the Y-axis remediation shape to the specifier. The shape
+  chosen here is soft-cap plus clipped-peak callout (not a broken axis, not a log
+  Y): the axis fits the body of the series, and any day above the cap is drawn as
+  a distinct marker sitting on the cap line carrying its true value as text, so
+  the peak is never silently erased. Confirm that shape, or name the alternative.
+  Everything else follows the intake verbatim: metric untouched, non-linear time
+  axis kept, rendering only.
+
+invariants:
+  - "No series value is silently dropped or flattened — a value above the Y cap renders as a clipped marker carrying its true value."
+  - "For any series length, no two rendered date labels are anchored closer together than the minimum label gap."
+  - "The change is presentation-only — every plotted value equals the landedMax the series carries, and the time axis stays non-linear."
+
+required_wiring:
+  - 'extension/src/metrics/shiftVelocityChart.ts::pickLabelIndicesByPixelGap::the chart must call the shared pixel-gap label picker, not re-pick index thirds locally'
+  - 'extension/src/metrics/briefingChartSvgCommon.ts::export function pickLabelIndicesByPixelGap::the picker lives in the module both briefing charts can reach, not private to one chart'
+  - 'specs/pipeline/steps/index.js::bl1232ShiftVelocityChartReadableSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  The shift-velocity chart shipped by BL-1184 lands in every morning briefing as
+  "Shift velocity — max tickets landed per 8h" and is effectively unreadable for
+  the activity that matters. Evidence:
+  `backlog/evidence/INTAKE-shift-velocity-chart-unreadable-20260828.jpg`.
+
+  Three visible failures, two of which share one root cause:
+
+  1. **Y scale crushed by one outlier.** A single ~415 peak forces the axis to
+     ~0-500, so ordinary days (roughly under 30) sit as a flat line on the floor.
+     The subtitle promises "recent detail"; the plot delivers none.
+  2. **X-axis date labels collide.** Labels are picked by series index (`0`, mid,
+     last) with no minimum pixel gap, so the early dates stack on the same strip
+     of pixels and cannot be read.
+  3. **One gap swallows the right half.** After the dense early cluster a
+     near-zero line stretches across most of the plot width.
+
+  **Root cause of 2 and 3 is the same:** `nonLinearTimeX` takes the log of RAW
+  AGE IN MILLISECONDS — `log(1 + age) / log(1 + maxAge)`. Over a 30-day series
+  the day-old point lands at ~16% of the plot width and today at 100%, so the
+  single most recent hop consumes ~84% of the plot and every other day is packed
+  into the leftmost sixth. Index-picked labels then land on top of each other
+  because the first two are only ~3% of the width apart. The warp is not merely
+  aggressive, it is unnormalized.
+
+  ## Why it matters
+
+  This is a shipped observability signal that conveys no usable information. It
+  goes out daily. Contained to one chart in one email — hence `severity: medium`,
+  not `high`.
+
+  ## What must be true when this is done
+
+  Ordinary days are visually resolvable, the peak is still findable on the chart
+  (not only named in the subtitle), date labels are readable, and the day-to-day
+  shape occupies the plot instead of one hop consuming it. See the feature file.
+
+  ## How (direction, not mandate)
+
+  - **Y axis — soft cap with clipped-peak callout.** Derive a robust body bound
+    from the series (a high percentile, or a multiple of the median). When the
+    peak materially exceeds that bound, set the axis maximum from the bound and
+    clip: an over-cap day is drawn at the cap line with a marker distinct from
+    the ordinary dot, carrying its true value as text. When the peak does NOT
+    materially exceed the body, behave exactly as today — axis covers the true
+    peak, nothing clipped, no markers. The subtitle keeps naming the peak.
+  - **X labels — pixel spacing.** Add `pickLabelIndicesByPixelGap` to
+    `briefingChartSvgCommon.ts` (named here so the wiring gate can anchor on a
+    literal; the burndown chart is a later candidate caller, not this ticket's
+    job) and call it from the chart. Direction: always keep the most recent day,
+    then greedily accept candidates that clear the gap from an already-picked
+    neighbour. The gap should be at least the rendered width of a `YYYY-MM-DD`
+    label at font-size 11 monospace (~72px), not a magic smaller number.
+  - **Warp — normalize before the log.** Warp on age RELATIVE to the span, e.g.
+    `log(1 + k * age / maxAge) / log(1 + k)`, so recent days still get more room
+    without one hop owning the plot. Oldest stays leftmost, newest rightmost,
+    mapping stays monotonic.
+
+  ## Contracts this ticket must not move
+
+  - The metric is locked: max tickets landed per rolling 8h window per calendar
+    day. The renderer plots `landedMax` as received and computes no aggregation.
+  - The non-linear time axis stays non-linear. `hasNonLinearTimeSpacing` must
+    still report true for long history, so BL-1184's own scenario
+    `non-linear-time-axis-04` stays green. Do not flatten the warp to linear
+    while fixing failure 3.
+
+qa_e2e_procedure: >
+  (1) From `extension/`, `npm run compile`, then run
+  `node out/tools/render-briefing-shift-velocity.js <repo-root>` against the live
+  repo and open the PNG. (2) Ordinary days are visually resolvable — the line is
+  not flat on the floor. (3) The 415-class peak is still findable: the subtitle
+  names it AND a clipped marker on the plot carries its value. (4) No two date
+  labels overlap. (5) Oldest date leftmost, newest rightmost, and no single
+  day-to-day gap eats more than half the plot width. (6) Send or dry-run the
+  briefing and confirm the chart section still ships unchanged alongside the
+  burndown and architecture diagrams. (7) Re-run BL-1184's acceptance scenarios
+  and confirm `non-linear-time-axis-04` is still green.
+
+out_of_scope: |
+  - Changing the 8h window, the aggregation, or the lifecycle adapter (BL-1184).
+  - Removing the non-linear time axis.
+  - Reworking the burndown or architecture briefing charts. Only the shared
+    label picker lands in `briefingChartSvgCommon.ts`; wiring the burndown chart
+    to it is a separate ticket if anyone wants it.
+  - The `/tmp` fixture leak in `bl1184BriefingShiftVelocitySteps.js` (owned as
+    BL-1226).
+
+source: |
+  backlog/INTAKE-briefing-shift-velocity-chart-readable.md (human Laurent via
+  Cursor, 2026-08-28 ~06:43 BST). One intake, one ticket.
+
+notes: |
+  - [2026-08-28] specifier: minted from the intake. The intake listed three
+    failures; failures 2 and 3 are one root cause (unnormalized log-of-raw-ms
+    warp), verified by arithmetic against nonLinearTimeX: for a 30-day series
+    the age-1-day point maps to x = padL + 0.157 * plotW while age-0 maps to the
+    right edge. That is why this is one ticket and not three - a label-spacing
+    fix alone would still leave the warp packing the labels, and shipping half a
+    readable chart is not a valuable increment.
+  - [2026-08-28] specifier: Y-axis shape is the specifier's call per the intake's
+    locked decision 3. Chose soft-cap plus clipped callout over a broken axis
+    (a break glyph in SVG is fiddly and reads badly at email PNG scale) and over
+    a log Y (it would make ordinary days readable but misrepresent ratios in a
+    chart whose whole point is comparing shift sizes).
+  - [2026-08-28] specifier: `pickLabelIndicesByPixelGap` is named in the spec
+    only so `required_wiring` can anchor on a literal that will exist - BL-874
+    shape. The algorithm behind the name is the implementer's.
+  - [2026-08-28] specifier: BL-1006 sweep done - only BL-1184's feature file
+    touches this chart, and it carries no boundary assertion this ticket
+    falsifies. Its scenario 04 is guarded here instead, by scenario 05.
