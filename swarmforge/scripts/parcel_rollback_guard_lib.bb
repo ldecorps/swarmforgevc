@@ -123,8 +123,12 @@
    both, and a missing/no-op recorded commit (no parcel yet received)
    yields {:findings []} silently, not a warning."
   [{:keys [root sender task-name canonical]}]
-  (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)]
-    (if-let [parcel-commit (received-parcel-commit-for-task root sender task-name)]
+  (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
+        parcel-commit (received-parcel-commit-for-task root sender task-name)
+        unreadable-warning (delay {:warning (str "parcel-rollback check could not run for " task-ticket-id
+                                                  " (parcel commit " parcel-commit " unreadable) - send allowed, unverified (BL-1213)")})]
+    (if-not parcel-commit
+      {:findings []}
       (if-let [parcel-full-sha (full-sha root parcel-commit)]
         (if-let [paths (changed-paths root parcel-commit)]
           (let [reverted? (revert-of-commit-on-branch? root canonical parcel-commit parcel-full-sha)
@@ -134,11 +138,8 @@
                                :when (path-rolled-back? {:tip-blob tip-blob :parent-blob parent-blob :reverted? reverted?})]
                            {:path path :parcel-commit parcel-commit})]
             {:findings (vec findings)})
-          {:warning (str "parcel-rollback check could not run for " task-ticket-id
-                         " (parcel commit " parcel-commit " unreadable) - send allowed, unverified (BL-1213)")})
-        {:warning (str "parcel-rollback check could not run for " task-ticket-id
-                       " (parcel commit " parcel-commit " unreadable) - send allowed, unverified (BL-1213)")})
-      {:findings []})))
+          @unreadable-warning)
+        @unreadable-warning))))
 
 (defn blocked? [{:keys [findings]}]
   (boolean (seq findings)))
