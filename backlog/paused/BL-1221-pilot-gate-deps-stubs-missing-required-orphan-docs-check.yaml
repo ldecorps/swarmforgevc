@@ -1,0 +1,128 @@
+id: BL-1221
+title: "landPilotedTicket gained a required deps member that no test stub supplies, so sixteen files throw before reaching their assertions"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and contained. The production wiring is correct
+# (pilot-acceptance-gate.ts supplies the dep), so nothing ships broken; the
+# damage is 16 test files that throw instead of asserting, and the coverage
+# they were believed to provide for landPilotedTicket's land path. Loud, not
+# silent — which is why this is medium and BL-1220 is high.
+status: todo
+epic: code-quality-gates
+priority: 25
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1221-pilot-gate-deps-stubs-missing-required-orphan-docs-check.feature
+human_approval: approved
+approval_context: >
+  Narrow by choice. The mechanical fix is to give the test deps stubs the
+  member the contract requires, and that is all this ticket asks for.
+
+  The structural question it deliberately does NOT answer: `landPilotedTicket`
+  declares its deps as a TypeScript interface, while the stubs that satisfy it
+  are hand-written plain JavaScript object literals in `.js` test files, so
+  adding a required member to the interface can never fail a compile. That is
+  how this reached `main` and sat there. A guard that checks every required
+  deps member is present in the stub factories would close the class, but it
+  needs type introspection or a generated fixture and is a different, larger
+  slice. Named in out_of_scope so it is a decision, not an oversight — say if
+  you would rather have that instead of, or as well as, this.
+description: |
+  ## What
+
+  Supply `checkOrphanedAuthoredDocs` in the `deps` stubs of the 16
+  `extension/test` files that call `landPilotedTicket`, so those tests reach
+  their assertions instead of throwing
+  `deps.checkOrphanedAuthoredDocs is not a function`.
+
+  A stub returning a benign "no orphans" outcome is the expected default. Any
+  test whose subject is the orphan-docs check itself should stub it to the
+  outcome that test needs — this ticket is about the 16 stubs being complete,
+  not about adding new coverage of the check's behaviour.
+
+  ## Why
+
+  BL-757 (`2ed133333`, "real-tree docs orphan gate on suite and /pilot land")
+  added a required member to the deps contract and a caller for it:
+
+      src/tools/pilotAcceptanceGate.ts:246   checkOrphanedAuthoredDocs: () => OrphanDocsLandCheckOutcome;
+      src/tools/pilotAcceptanceGate.ts:609   const orphanDocsCheck = deps.checkOrphanedAuthoredDocs();
+
+  Production is wired correctly — `src/tools/pilot-acceptance-gate.ts:197`
+  supplies it. The test stubs were never updated, and
+  `grep -rn checkOrphanedAuthoredDocs extension/test/` returns **nothing**:
+  not one of the 16 files that call `landPilotedTicket` provides it. Line 609
+  is unconditional, so every one of them throws there.
+
+  Nothing catches this. The contract is a TypeScript interface; the stubs are
+  object literals in plain `.js` test files, so no compile step ever compares
+  them. The gap is therefore invisible until the tests run, and it has been
+  absorbed into the standing unit red since BL-757 landed.
+
+  ## How (direction, not mandate)
+
+  If the 16 stubs are near-identical, a shared stub factory the files call is
+  preferable to 16 hand-edits, on the same "make file #17 safe too" reasoning
+  BL-1196 was minted on. If they differ materially, edit them in place; do not
+  force a shared helper that distorts what individual tests are asserting.
+
+  ## Constraints
+
+  - Do not change `pilotAcceptanceGate.ts`'s deps contract, make the member
+    optional, or guard the call site with a truthiness check. The production
+    contract is correct; the stubs are what is behind.
+  - Do not weaken any test's existing assertions to get it green.
+
+qa_e2e_procedure: >
+  (1) `grep -rn "checkOrphanedAuthoredDocs" extension/test/` returns a hit for
+  each of the 16 files that call `landPilotedTicket` — before the fix it
+  returns nothing at all. (2) `cd extension && npx vitest run
+  test/unreachableStepHandlerCheck.test.js test/pilotAcceptanceGate.test.js`
+  — neither reports `deps.checkOrphanedAuthoredDocs is not a function`.
+  (3) Run all 16 files and confirm none fails with that message; the ten that
+  also carry BL-1220's node:test defect will still fail to COLLECT until that
+  ticket lands, and that is expected — check them by the absence of this
+  error, not by a green verdict. (4) Confirm the production call site
+  `src/tools/pilot-acceptance-gate.ts:197` is unchanged and
+  `pilotAcceptanceGate.ts`'s deps member is still required, not optional.
+  (5) `npm run compile` clean.
+
+out_of_scope: |
+  - Making the deps-contract/stub divergence structurally impossible (a guard
+    asserting every required member of the interface appears in the stub
+    factories). The real fix for the class, a different and larger slice, and
+    the subject of this ticket's approval_context.
+  - BL-1220's node:test collection defect. Ten of these 16 files carry both;
+    each is independently landable and neither blocks the other.
+  - Adding behavioural coverage for `checkOrphanedAuthoredDocs` itself, or for
+    the orphan-docs land gate BL-757 built. This ticket restores the stubs, it
+    does not test the gate.
+  - The `docs/deprecated/` directory that `constitutionDocCitations.test.js`
+    cites but which does not exist. Adjacent in the same standing red and in
+    the same orphan-docs neighbourhood, but a separate cause.
+
+invariants:
+  - "Every test stub satisfying landPilotedTicket's deps supplies every member the contract declares required — a test fails on its own assertion, never on a missing dep."
+
+source: |
+  QA note 001816 (priority 00) to specifier+coordinator, 2026-08-28T01:41:53Z,
+  item 3 of the standing-red diagnosis in
+  backlog/evidence/BL-1189-qa-pass-20260828.md. QA attributed it to BL-757 and
+  confirmed it pre-existing on origin/main.
+
+  Specifier verified independently before minting: the required member and its
+  unconditional call site at pilotAcceptanceGate.ts:246/609, the production
+  supplier at pilot-acceptance-gate.ts:197, zero occurrences of the name
+  anywhere under extension/test/, the 16 calling files, and the origin commit
+  2ed133333 via `git log -S`.
+
+notes: |
+  - "[2026-08-28] specifier: the 16 files were found by grepping for
+    landPilotedTicket callers rather than by collecting the failure messages,
+    so the set includes files whose failure is currently MASKED by BL-1220 —
+    they never collect, so they never reach line 609 to throw. Fixing BL-1220
+    first will make those ten start reporting this error. Whichever ticket
+    lands second sees the full set; neither is wrong in the meantime."

@@ -1,0 +1,117 @@
+id: BL-1227
+title: "Boot prefix 3648 chars over budget a fourth time (47648/44000) and no check can ever catch it — BL-883 pinned the last live scenario to its own fix commit"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 2
+direction: pipeline-reported
+depends_on: []
+assigned_to: ""
+mutation_cost: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "prose-move plus one check wiring; no code to refactor"
+  architect: "no new architecture — the BL-433 split mechanism BL-618, BL-858 and BL-883 already ran, under the same composer and the same budget"
+  hardender: "the char-count, non-vacuity and verbatim-move scenarios are the whole verification surface; the only new logic is one check invocation"
+  documenter: "the change IS documentation restructuring; pointers to absorbed prose are acceptance-gated in the parcel itself"
+
+approval_context: >
+  Two things need sign-off. (1) Whether to fix this at all right now, given the
+  backlog depth — the argument for yes is that the gate is FAILING today, so
+  every constitution or article amendment is blocked until it is trimmed, and
+  the specifier prompt requires a paired add-and-trim in the same commit.
+  (2) The second half — leaving behind a check that measures the LIVE repo.
+  BL-883 deliberately pinned the last live scenario so it could not go red on
+  later growth, which is precisely why this is the fourth occurrence; reversing
+  that decision means a future amendment CAN turn a lane red. That is the
+  intended alarm, but it is a real cost and it is the human's call. What is
+  firm: the 44000 budget and 51200 cap values do not change, and no rule text
+  is deleted — only moved.
+
+description: >
+  WHAT: the stable boot prefix every agent pays on respawn measures 47648
+  chars against a 44000 budget — 3648 over. Move enough prose out of the
+  boot-inlined files into swarmforge/constitution/articles/reference/ to land
+  at or under 42000, and leave behind a check that measures the REAL
+  repository so the next overrun surfaces on its own.
+
+  WHY: this is the fourth overrun (BL-618, BL-858, BL-883 all closed) and the
+  recurrence has a single identifiable cause. BL-858 had a live scenario that
+  went red when the prefix grew. BL-883's fix PINNED that scenario to its own
+  fix commit, in its own words "so it stays green regardless of later growth",
+  and every remaining test in boot_prefix_budget_gate_lib_test_runner.bb and
+  boot_prefix_budget_gate_property_runner.bb measures a synthetic tree through
+  an injected root. No git hook and no CI workflow invokes the gate. The only
+  enforcement left is a line in the specifier prompt asking a human to run the
+  script by hand — which is how the prefix reached 3648 over unnoticed. A trim
+  alone has now been shipped three times and regressed three times; shipping a
+  fourth trim with nothing watching would be knowingly buying the fifth.
+
+  MEASURED (2026-08-28): gate reports "FAIL — measured 47648 chars, budget
+  44000". Growth since BL-883 landed (2026-08-12) is +115 lines into
+  boot-inlined articles, chiefly Article 3.6 deprecator gate (03_backlog.md
+  +40) and workflow.prompt (+33); 01_roles +7, 04_quality_gates +19,
+  engineering.prompt +27, local-engineering.prompt +16, project.prompt +6.
+
+  SCOPE: swarmforge/constitution.prompt, the top-level files directly under
+  swarmforge/constitution/articles/ (NOT reference/), and swarmforge/PIPELINE.md
+  are the boot-inlined set; reference/ bodies never enter the prefix.
+
+  HOW (direction, not mandate): the largest boot-inlined files are
+  workflow.prompt (7489 bytes), engineering.prompt (6535),
+  local-engineering.prompt (6321), PIPELINE.md (6101) and 03_backlog.md (6049),
+  and each already has a paired reference/ elaboration to absorb prose into, so
+  the established BL-433 split mechanism applies unchanged. WHERE the live
+  check is wired — a new standing row in swarmforge/scripts/test/
+  suite-manifest.tsv, a git hook on the boot-inlined paths, or CI — is
+  deliberately left to the implementer; the requirement is only that it
+  measures the real repository, runs without anyone remembering to invoke it,
+  and is demonstrably able to fail. No required_wiring is declared for exactly
+  this reason: naming a call site that does not yet exist would arm the pre-QA
+  gate against a string nobody will write (BL-874).
+
+  CONSTRAINT: the two halves are inseparable and must land in one commit — a
+  live check cannot land green until the trim lands with it, which is also why
+  this stays one ticket rather than splitting under INVEST-Small.
+
+invariants:
+  - "No normative rule text is lost: every passage removed from a boot-inlined article appears verbatim in exactly one file under articles/reference/, and its slim article retains a pointer naming that file."
+  - "Headroom is bought by moving prose, never by weakening a gate: the 44000 budget and 51200 cap values are unchanged, and no reference/ file body enters the boot prefix."
+  - "The surviving check measures the LIVE repository and is demonstrably able to fail: it is not pinned to a fix commit and not limited to synthetic injected roots, and a tree over budget makes it exit non-zero."
+
+acceptance: specs/features/BL-1227-boot-prefix-live-budget-check.feature
+
+qa_e2e_procedure: >
+  1. On the parcel commit, run swarmforge/scripts/boot_prefix_budget_gate.sh
+     with no argument (real repo). Confirm it prints ok and the measured size
+     is at most 42000 — not merely at most 44000.
+  2. Confirm the check is reachable without hand-invocation: run the standing
+     verification entry point the parcel wired it into and confirm the live
+     budget check appears among the checks that ran.
+  3. Prove non-vacuity by hand, the BL-1208 way: append ~3000 chars of filler
+     to a boot-inlined article, re-run the entry point from step 2, and confirm
+     it FAILS naming the measured size; then restore the article and confirm it
+     passes again. A check that stays green through this step has not shipped.
+  4. For each passage the diff removed from a boot-inlined article, grep
+     articles/reference/ for it and confirm exactly one verbatim copy exists
+     and the slim article names that file.
+  5. Confirm git diff shows no change to the literals 44000 or 51200.
+
+notes: >
+  Surfaced 2026-08-28 by the specifier while running the BL-859 budget gate as
+  the required step before a constitution change, and found unowned: no ticket
+  in backlog/active/, paused/ or hold/ covers it. Full detection detail and the
+  BL-883 pinning evidence are recorded in
+  backlog/evidence/BL-1214-ninth-reset-occurrence-caught-mid-turn-20260828.md,
+  written for a different defect in the same window.
+
+  INVEST at mint: Independent (no unbuilt sibling; the BL-433 split mechanism
+  and the BL-859 gate both already shipped). Negotiable (the trim targets and
+  the live check's placement are direction only). Valuable (the failing gate
+  today blocks every constitution and article amendment). Estimable (one
+  sitting: a prose move plus one check invocation). Small (5 scenarios, 3
+  invariants). Testable (every scenario is externally observable and the e2e
+  procedure includes a hand-run non-vacuity step).
