@@ -472,4 +472,14 @@ if [[ -f "$SCRIPT_DIR/pipeline_stage_cli.bb" ]]; then
   bb "$SCRIPT_DIR/pipeline_stage_cli.bb" "$ROOT" sync >/dev/null 2>&1 || true
 fi
 
+# BL-1228: after a successful promotion, surface any ticket ALREADY in
+# backlog/active/ under a standing freshness hold (the BL-419 shape a
+# hand-rolled promotion that bypasses this script would otherwise leave
+# unreported indefinitely). Report only - never gates or reverts THIS
+# promotion, which has already landed; output is left visible, not
+# suppressed, so a coordinator/human watching this run sees it.
+if [[ -f "$SCRIPT_DIR/active_pool_freshness_audit.sh" ]]; then
+  "$SCRIPT_DIR/active_pool_freshness_audit.sh" "$ROOT" || true
+fi
+
 echo "Promote+route complete for $ID"

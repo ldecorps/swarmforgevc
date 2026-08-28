@@ -157,3 +157,5 @@ notes: |
     with 3338 staged paths is exactly the artifact worth a human's look before
     it disappears — its index is the only remaining evidence of what created
     it."
+
+assigned_to: coder
