@@ -945,6 +945,8 @@ export function formatHelpMessage(): string {
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
     '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
     '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
+    '/redeploy frontdesk — soft confirm, then bounce the front desk (bridge + bot)',
+    '/redeploy all — soft confirm, then bounce cursor bridge, front desk, and mini app bridge',
     '/pause — soft confirm; freeze new promotion until /resume (in-flight continues; useful on flaky data)',
     '/resume — soft confirm; allow promotion again',
     '/syncenv /compile /pull — soft confirm (one Confirm tap)',

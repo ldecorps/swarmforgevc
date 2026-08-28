@@ -275,3 +275,66 @@ test('BL-698: drain-agents reports when no socket', () => {
   const result = executeOperatorVerb(root, '/drain-agents');
   assert.match(result.text, /drain-agents:/);
 });
+
+// BL-1204: /redeploy frontdesk and /redeploy all were parsed and gated
+// (operatorDangerTier's base-verb lookup already soft-confirms them, since
+// both share the /redeploy base) but executeOperatorVerb's own '/redeploy'
+// branch never dispatched to their modules - args fell straight through to
+// the plain cursor-bridge redeploy. These two prove the execute-time wiring
+// specifically, real script + real spawn, same convention as the kill-all/
+// drain-swarm tests above (never the module-level tests in
+// telegramCursorBridgeRedeployTargets.test.js, which only prove the
+// modules work in isolation, never that anything calls them).
+
+test('BL-1204: executeOperatorVerb(/redeploy, "frontdesk") dispatches to the front desk redeploy module', () => {
+  const root = mkTmpDir('bl1204-fd-');
+  const scriptDir = path.join(root, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptDir, { recursive: true });
+  fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
+  const marker = path.join(root, 'frontdesk.marker');
+  fs.writeFileSync(
+    path.join(scriptDir, 'redeploy_front_desk.sh'),
+    `#!/usr/bin/env bash\necho ok > "${marker}"\nexit 0\n`,
+    'utf8'
+  );
+  fs.chmodSync(path.join(scriptDir, 'redeploy_front_desk.sh'), 0o755);
+  const result = executeOperatorVerb(root, '/redeploy', 'frontdesk');
+  assert.match(result.text, /Front desk redeploy started/i);
+  // The plain cursor-bridge redeploy script must NOT have been the one
+  // dispatched - misrouting to it (today's bug) would silently bounce the
+  // wrong runtime while reporting success.
+  assert.doesNotMatch(result.text, /this bridge/i);
+});
+
+test('BL-1204: executeOperatorVerb(/redeploy, "all") dispatches to the all-targets redeploy module', () => {
+  const root = mkTmpDir('bl1204-all-');
+  const scriptDir = path.join(root, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptDir, { recursive: true });
+  fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
+  const marker = path.join(root, 'all.marker');
+  fs.writeFileSync(
+    path.join(scriptDir, 'redeploy_all_telegram.sh'),
+    `#!/usr/bin/env bash\necho ok > "${marker}"\nexit 0\n`,
+    'utf8'
+  );
+  fs.chmodSync(path.join(scriptDir, 'redeploy_all_telegram.sh'), 0o755);
+  const result = executeOperatorVerb(root, '/redeploy', 'all');
+  assert.match(result.text, /All Telegram redeploy started/i);
+});
+
+test('BL-1204: /redeploy and /redeploy miniapp are unchanged by the frontdesk/all wiring', () => {
+  const root = mkTmpDir('bl1204-regress-');
+  const scriptDir = path.join(root, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptDir, { recursive: true });
+  fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
+  fs.writeFileSync(
+    path.join(scriptDir, 'redeploy_cursor_bridge.sh'),
+    '#!/usr/bin/env bash\nexit 0\n',
+    'utf8'
+  );
+  fs.chmodSync(path.join(scriptDir, 'redeploy_cursor_bridge.sh'), 0o755);
+  const plain = executeOperatorVerb(root, '/redeploy');
+  assert.match(plain.text, /this bridge/i);
+  const mini = executeOperatorVerb(root, '/redeploy', 'miniapp');
+  assert.match(mini.text, /mini app/i);
+});
