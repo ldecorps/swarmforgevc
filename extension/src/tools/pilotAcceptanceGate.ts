@@ -226,6 +226,14 @@ export type CommitClaimsCheckOutcome =
   | { checked: true; commitsChecked: number; unsupported?: UnsupportedCommitClaim }
   | { checked: false };
 
+// BL-1215: unlike every other checked/unchecked outcome shape in this file,
+// this one has NO "not checked" case - an origin/main that cannot be read
+// is refused, never waved through with a warning (fails CLOSED, the
+// deliberate mirror image of CommitClaimsCheckOutcome's fails-OPEN
+// posture). `reason` names why, for both the not-landed and
+// origin-unreadable cases alike, so the refusal text never has to guess.
+export type OriginMainLandingCheckOutcome = { reachable: true } | { reachable: false; reason: string };
+
 export interface PilotAcceptanceGateDeps {
   readAcceptanceDeclaration: (ticketId: string) => string | undefined;
   readRequiredWiring?: (ticketId: string) => string[] | undefined;
@@ -250,6 +258,11 @@ export interface PilotAcceptanceGateDeps {
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
   getLandedCommit: () => string;
+  // BL-1215: is `commit` (the run's own implementation commit, from
+  // getLandedCommit above) reachable from origin/main right now. No
+  // network in unit tests - a real seam, injected the same way as every
+  // other check in this deps interface.
+  checkOriginMainLanding: (commit: string) => OriginMainLandingCheckOutcome;
   now: () => string;
 }
 
@@ -280,10 +293,12 @@ export interface PilotLandRefusal {
     | 'unreachable-step-handler'
     | 'untested-parser-branch'
     | 'pilot-hat-prompt-missing'
+    | 'commit-not-on-origin-main'
     | 'move-failed';
   reason: string;
   unmatchedStep?: string;
   failingScenario?: string;
+  unlandedCommit?: string;
   claimCommit?: string;
   claimIdentifier?: string;
   claimSentence?: string;
@@ -752,6 +767,30 @@ function requireProducerCrosscheck(
   return { crosscheck: assessment.metadata };
 }
 
+// BL-1215: "done" is a fact about origin/main, not about local HEAD alone.
+// Fails CLOSED - the deliberate mirror of checkClaims' fails-OPEN posture
+// above: an origin/main that cannot be read is treated as not-landed,
+// never waved through with a warning, because silence about origin/main
+// is exactly the defect this closes (BL-1158). Never a push - refusal
+// only; landing the commit is a human/pilot's own next step.
+function checkOriginLanding(
+  commit: string,
+  deps: PilotAcceptanceGateDeps
+): { refusal: PilotLandRefusal } | { ok: true } {
+  const outcome = deps.checkOriginMainLanding(commit);
+  if (!outcome.reachable) {
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'commit-not-on-origin-main',
+        reason: `refuses land: implementation commit ${commit} is not reachable from origin/main (${outcome.reason}) - push it and re-run`,
+        unlandedCommit: commit,
+      },
+    };
+  }
+  return { ok: true };
+}
+
 // Step 4: a green contract with every claim supported (or unreadable
 // history) has only the move itself left to fail - versus the landed
 // outcome with its written receipt.
@@ -776,6 +815,14 @@ function moveAndRecordReceipt(
   // Captured before the move: if getLandedCommit() itself fails (e.g. no
   // HEAD yet), nothing has moved or been written yet either.
   const landedCommit = deps.getLandedCommit();
+
+  // BL-1215: verify the commit actually reached origin/main BEFORE
+  // anything moves or is written - a refused land here is exactly as
+  // inert as every other refusal reason in this gate.
+  const originLanding = checkOriginLanding(landedCommit, deps);
+  if ('refusal' in originLanding) {
+    return originLanding.refusal;
+  }
 
   const move = deps.moveTicketToDone(ticketId);
   if (!move.moved || !move.destination) {
