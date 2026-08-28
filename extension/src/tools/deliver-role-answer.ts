@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 /**
- * BL-1201 architect bounce D2 / QA bounce D1: the sole entry point a role
- * should ever use to act on an "answer ready: node
- * extension/out/tools/deliver-role-answer.js --role <role>" note - never
- * reading .swarmforge/operator/role-answers/<role>.json directly, which is
- * exactly what let a
+ * BL-1201 architect bounce D2: the sole entry point a role should ever use
+ * to act on a "answer ready: .swarmforge/operator/role-answers/<role>.json"
+ * note - never reading that file directly, which is exactly what let a
  * five-day-old, already-consumed answer get handed to the specifier as if
  * it answered a live, unrelated question. Runs deliverRoleAnswer, which
  * refuses a mismatch or an already-consumed answer instead of reporting a
