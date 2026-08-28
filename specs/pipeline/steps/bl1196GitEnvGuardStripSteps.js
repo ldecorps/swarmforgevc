@@ -112,6 +112,104 @@ function registerSteps(registry) {
       ctx.bl1196 = null;
     }
   });
+
+  // ── scenario 03: GIT_INDEX_FILE joins the stripped set ──────────────────
+
+  scoped(/^the process environment has GIT_INDEX_FILE set to another repository's index path$/, (ctx) => {
+    ctx.bl1196.savedGitIndexFile = process.env.GIT_INDEX_FILE;
+    process.env.GIT_INDEX_FILE = '/some/other/repo/.git/index';
+  });
+
+  scoped(/^GIT_INDEX_FILE is no longer set in the process environment$/, (ctx) => {
+    const st = ctx.bl1196;
+    try {
+      assert.equal('GIT_INDEX_FILE' in process.env, false, `expected GIT_INDEX_FILE to be stripped, got: ${process.env.GIT_INDEX_FILE}`);
+    } finally {
+      if (st.savedGitIndexFile === undefined) delete process.env.GIT_INDEX_FILE; else process.env.GIT_INDEX_FILE = st.savedGitIndexFile;
+      ctx.bl1196 = null;
+    }
+  });
+
+  // ── scenario 04: the worktree hook environment does not reach fixture
+  //    writes - drives the REAL check_property_suite_drift.sh end to end,
+  //    as the actual pre-commit hook for a real commit made from a real
+  //    linked worktree, so the ambient GIT_DIR/GIT_INDEX_FILE the hook
+  //    receives is git's own, not manually exported. This is the exact
+  //    methodology the specifier measured in an isolated scratch repo -
+  //    never run against this repo itself.
+
+  const DRIFT_SCRIPT = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
+
+  scoped(/^a git repository with a linked worktree checked out on its own branch$/, (ctx) => {
+    const root = fs.realpathSync(mkSocketFixtureRoot('bl1196-hook-main-'));
+    git(root, ['init', '-q', '-b', 'main']);
+    git(root, ['config', 'user.email', 't@t']);
+    git(root, ['config', 'user.name', 't']);
+    git(root, ['commit', '-q', '--allow-empty', '-m', 'seed']);
+    const wtPath = `${root}-wt`;
+    git(root, ['worktree', 'add', '-q', '-b', 'bl1196-hook-branch', wtPath]);
+
+    const fixtureScript = path.join(root, 'rogue-fixture.sh');
+    fs.writeFileSync(
+      fixtureScript,
+      '#!/usr/bin/env bash\nset -e\nD="$(mktemp -d)"\ngit -C "$D" init -q\n' +
+        'git -C "$D" -c user.email=t@t -c user.name=t commit -q --allow-empty -m rogue\nexit 0\n',
+      { mode: 0o755 },
+    );
+
+    const hooksDir = path.join(root, '.git', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    const hookPath = path.join(hooksDir, 'pre-commit');
+    fs.writeFileSync(
+      hookPath,
+      `#!/usr/bin/env bash\nset -e\nbash "${DRIFT_SCRIPT}" "${fixtureScript}"\n`,
+      { mode: 0o755 },
+    );
+
+    ctx.bl1196 = { root, wtPath: fs.realpathSync(wtPath), fixtureScript, hookPath };
+  });
+
+  scoped(/^the environment a pre-commit hook receives from a commit in that worktree$/, (ctx) => {
+    const st = ctx.bl1196;
+    fs.writeFileSync(path.join(st.wtPath, 'extension_src_marker.ts'), 'export const x = 1;\n');
+    fs.mkdirSync(path.join(st.wtPath, 'extension', 'src'), { recursive: true });
+    fs.writeFileSync(path.join(st.wtPath, 'extension', 'src', 'bl1196fixture.ts'), 'export const x = 1;\n');
+    git(st.wtPath, ['add', '-A']);
+    st.beforeHead = git(st.wtPath, ['rev-parse', 'HEAD']);
+  });
+
+  scoped(/^a fixture creates a temporary directory under that environment and runs "git init" and "git commit" in it$/, (ctx) => {
+    const st = ctx.bl1196;
+    // The real commit itself triggers the real pre-commit hook, which
+    // shells out to the REAL check_property_suite_drift.sh with the rogue
+    // fixture as its injectable suite command (BL-1196's own test-injection
+    // seam) - exercising the actual production scrub, not a re-implementation.
+    git(st.wtPath, ['commit', '-q', '-m', 'real commit that triggers the hook']);
+  });
+
+  scoped(/^the linked worktree's branch still points at the commit it pointed at before$/, (ctx) => {
+    const st = ctx.bl1196;
+    const afterHead = git(st.wtPath, ['rev-parse', 'HEAD']);
+    const afterParent = git(st.wtPath, ['rev-parse', 'HEAD^']);
+    assert.notEqual(afterHead, st.beforeHead, 'the real commit itself must have gone through');
+    assert.equal(afterParent, st.beforeHead, `expected exactly one commit past ${st.beforeHead}, got HEAD^=${afterParent} (a rogue fixture commit would land as an extra ancestor)`);
+    st.afterHead = afterHead;
+  });
+
+  scoped(/^the linked worktree's index is unchanged$/, (ctx) => {
+    const st = ctx.bl1196;
+    try {
+      const status = git(st.wtPath, ['status', '--short']);
+      assert.equal(status, '', `expected a clean tree after the real commit, got: ${status}`);
+      const treeFile = git(st.wtPath, ['show', `${st.afterHead}:extension/src/bl1196fixture.ts`]);
+      assert.match(treeFile, /export const x = 1;/, 'the real commit tree must contain the file actually staged, not a fixture-clobbered index');
+    } finally {
+      fs.rmSync(st.wtPath, { recursive: true, force: true });
+      releaseSocketFixtureRoot(st.root);
+      fs.rmSync(st.root, { recursive: true, force: true });
+      ctx.bl1196 = null;
+    }
+  });
 }
 
 module.exports = { registerSteps };
