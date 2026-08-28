@@ -833,7 +833,9 @@ const DOMAINS = [
   require('./bl1211QuarantineLiftAuthorshipSteps'),
   require('./bl1217RcConfigGateSteps'),
   require('./bl1227BootPrefixLiveBudgetCheckSteps'),
-  require('./bl1228ActivePoolFreshnessHoldAuditSteps')
+  require('./bl1228ActivePoolFreshnessHoldAuditSteps'),
+  require('./bl1230NestedGitRepoGuardSteps'),
+  require('./bl1179CrossVendorMemoryAdapterSteps')
 ];
 
 function registerSteps(registry) {
