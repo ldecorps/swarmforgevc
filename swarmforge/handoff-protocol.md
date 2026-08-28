@@ -599,6 +599,70 @@ BL-949, not to the task's ticket BL-935 - one of the two headers is wrong
 task: or the commit: line and re-send.
 ```
 
+## Parcel-Rollback Guard (BL-1213)
+
+`swarm_handoff.sh` refuses a `git_handoff` send when the sending branch's
+tip holds content byte-identical to what a path held **before** the
+ticket's own accepted parcel commit changed it, with no revert of that
+commit on this branch explaining the rollback. This is the send-time
+backstop for the 2026-08-27 `e52261521` incident: a bulk restore-from-
+sibling repair, done to rebuild a collapsed tree from verified on-disk
+content, happened to restore seven paths to their pre-BL-592 bytes on
+three role branches at once. Three existing defences all read clean on
+this shape — `git log --oneline` shows a "recovery: ..." subject, not a
+revert; the deletion-diff quarantine lift returns zero (every path is
+present, only its content is stale); and BL-1098's silent-revert
+predicate excuses it by construction (its `tip-matches-newest-authoring?`
+conjunct is satisfied — after a bulk restore, the tip DOES match its
+newest authoring commit). The loss was rediscovered five separate times
+across five worktrees, one file at a time, by hand.
+
+Mechanics (`parcel_rollback_guard_lib.bb`):
+
+- **Ticket-scoped, not tree-wide.** Only the paths the ticket's own
+  accepted parcel commit touched (via `diff-tree`) are checked — seven
+  blob comparisons in the live incident, never a full-tree walk.
+- **Discriminator is content, not ancestry or authorship.** For each
+  touched path, the branch tip's blob is compared against the parcel
+  commit's **parent** blob for that path. Byte-identical means the
+  parcel's own change to that path is gone, regardless of which commit
+  most recently touched the path or how clean the tree diff reads — the
+  same distinction BL-1098's predicate does not draw. The parcel commit
+  being an ancestor of the branch proves nothing (it is an ancestor of
+  every damaged branch in the source incident, and the content is still
+  gone from all three) — ancestry is never consulted.
+- **A legitimate revert stays legal.** A `git revert` / `git revert -m 1`
+  of the parcel commit reachable on this branch since it landed explains
+  the rollback and is never a finding — BL-490/BL-495 bounce reverts must
+  keep working. Later work authoring genuinely different content for the
+  same path is likewise never a finding; only an unexplained return to
+  the exact pre-parcel bytes is.
+- **Fail-open on unreadable facts**, same posture as the other three
+  send-time gates in `swarm_handoff.bb` (`ticket_close_guard_lib.bb`,
+  `duplicate_chain_guard_lib.bb`, `task_commit_coherence_gate_lib.bb`): an
+  unreadable parcel commit warns (`PARCEL_ROLLBACK WARNING` to stderr)
+  and the send proceeds — a gate against silent destruction of landed
+  work must never itself wedge every hop in the swarm on an unrelated git
+  hiccup. No recorded parcel commit at all (a fresh task with nothing yet
+  received) is silent, not a warning — that is the ordinary case.
+- Applies to `git_handoff` sends only; a `note` from the same branch
+  records no finding.
+
+Refusal message names the task, every rolled-back path, and the accepted
+commit whose content was lost:
+
+```text
+Cannot send git_handoff for BL-901: this branch's tip holds pre-parcel
+content for one path (extension/src/docs/docsTree.ts) - accepted commit
+e5cf2a3af changed it but no revert of that commit explains the rollback
+on this branch (BL-1213). If this is a deliberate BL-490/BL-495 bounce
+revert, revert the parcel commit properly; otherwise the branch has
+silently lost landed work and needs the content restored before this
+send.
+```
+
+How-to: `docs/how-to/BL-1213-parcel-rollback-guard.md`.
+
 ## Bounce Revert Verification (BL-954)
 
 A bounce requires the bouncing role to remove the bounced commit's content
