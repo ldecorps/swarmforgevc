@@ -739,6 +739,54 @@
      :elapsed-ms elapsed
      :timeout-ms budget}))
 
+;; ── missing-verdict recovery ──────────────────────────────────────────────
+;; Observed: expedite cleaner (BL-1248) exited 0 after announcing a Monitor wait
+;; and never wrote verdict.json; the driver hard-failed :no-verdict. The class
+;; is "child exits without a parseable verdict" — not a content fail. One
+;; automatic re-invoke closes the hole; a second miss still fails closed.
+
+(defn should-recover-missing-verdict?
+  "Pure: one re-invoke when the child exited without a parseable verdict and
+   was not timed out / over budget. `attempt` is 0-based."
+  [{:keys [timed-out? overrun? parsed attempt]}]
+  (and (not timed-out?)
+       (not overrun?)
+       (nil? parsed)
+       (zero? (or attempt 0))))
+
+(defn stage-user-prompt
+  "Pure: the claude -p user message. Forbids Monitor/IDE waits so a stage cannot
+   park on a notification that never arrives in offline expedite."
+  [{:keys [role ticket verdict-file recovery?]}]
+  (if recovery?
+    (str "RECOVERY: previous " role " session for " ticket
+         " exited without writing " verdict-file
+         ". Write the stage verdict JSON to that path NOW."
+         " Do not wait on Monitor, background jobs, or IDE notifications."
+         " Run any remaining checks in the foreground, then write the verdict and exit.")
+    (str "You are the " role " for " ticket
+         ". Your task is appended to your system prompt."
+         " Write your stage verdict as JSON to " verdict-file
+         " as your LAST action before the process exits."
+         " Do not wait on Monitor, background jobs, or IDE notifications"
+         " — run checks in the foreground.")))
+
+(defn finalize-stage-result
+  "Pure: map a finished stage invoke onto the driver's verdict record.
+   Timeout / overrun beat a missing file; missing parseable JSON is :no-verdict."
+  [{:keys [timed-out? overrun? parsed role exit elapsed]}]
+  (cond
+    (or timed-out? overrun?)
+    {:verdict :fail :reason :stage-timeout :stage role :elapsed elapsed
+     :killed? (boolean timed-out?)}
+
+    (nil? parsed)
+    {:verdict :fail :reason :no-verdict :stage role :exit exit}
+
+    :else
+    (assoc parsed :stage role :exit exit :elapsed elapsed
+           :verdict (keyword (or (:verdict parsed) "fail")))))
+
 ;; ── BL-1026: the stated-budget mirror gate ────────────────────────────────
 ;; `default-stage-timeout-ms` above is the code. Four places OUTSIDE the code
 ;; also state it - two usage comments a user reads with `--help` in mind, two
