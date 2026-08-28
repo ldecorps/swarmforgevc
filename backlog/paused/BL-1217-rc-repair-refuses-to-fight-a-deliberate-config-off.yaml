@@ -1,0 +1,167 @@
+id: BL-1217
+title: "RC health/repair reads the persisted launch script as desired state, so `config remote_control off` is ignored and every repair path respawns to restore a connection the human deliberately switched off"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: fleet-topology
+priority: 20
+direction: operator-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1217-rc-repair-gates-on-config-not-only-the-launch-script.feature
+human_approval: approved
+approval_context: >
+  Needs sign-off on ONE design choice: which of the intake's three offered
+  directions this slice takes. It takes direction 2 (config wins at
+  classify/repair time), and deliberately leaves direction 1 (config wins at
+  launch-script write) to its sibling BL-1218.
+
+  The reason to prefer 2 here, rather than 1 alone: direction 1 only fixes
+  scripts written AFTER the flip. Every launch script already on disk stays
+  stale, so a pack flipped to off today keeps getting repaired until each
+  role is next rewritten. Direction 2 makes a deliberate off effective
+  immediately, on the existing scripts, which is what the human asked for.
+  The intake itself allows the hybrid; landing both tickets IS the hybrid.
+
+  Firm and not up for negotiation: when config says off, the verdict is
+  report-and-leave-alone. Not a quieter repair, not a warning that still
+  respawns, not an Operator judgment call (the intake's locked decision 4
+  says deterministic config gate).
+description: |
+  ## What
+
+  When the effective pack config says `remote_control off`, no RC repair path
+  may respawn, re-attach, or otherwise act to restore a Claude remote-control
+  session for that seat. It reports the seat as off and leaves it alone. When
+  config says on (or says nothing — today's default), every existing BL-514 /
+  BL-898 repair behaviour is preserved byte-for-byte.
+
+  ## Why
+
+  `remote_control_health_lib.bb` derives desired state from ONE source: the
+  persisted launch script. `expected-rc-name` reads that script, and `classify`
+  maps a nil result to `:off`. That is the only way a seat is ever considered
+  off.
+
+  So `config remote_control off` is not a desired-state switch at all — it only
+  controls auto-INJECT at launch (if a window line omits `--remote-control`,
+  the launcher declines to add one). The standing `swarmforge.conf` and
+  `packs/full-forge.conf` shape names `--remote-control` explicitly on every
+  Claude window line. With those, flipping the config to off changes nothing
+  the health check can see: `expected-rc-name` still returns a name, `classify`
+  still says `:degraded` (or `:session-dead` on a `/rc failed` footer streak),
+  `actionable?` still says true, and `./swarm ensure` / `remote_control_health.bb
+  --fix` respawn the pane to "restore" a cloud session the human switched off
+  on purpose.
+
+  The operator's framing: config must gate both desired state and repair. Do
+  not fight a deliberate off.
+
+  ## How (direction, not mandate)
+
+  The lib's own design already points at the seam. `actionable?` is documented
+  as the ONE predicate every repair path shares, precisely so a new
+  repair-worthiness rule reaches all callers at once rather than growing a
+  second parallel check. The narrowest change consistent with that is to make
+  the desired-state derivation config-aware — an effective `remote_control off`
+  yields no expected RC name, so `classify` returns the `:off` it already has
+  and `actionable?` is already false for it. No new status, no new predicate,
+  and `swarm_ensure.bb`, `remote_control_health.bb --fix`, and any sibling
+  repair path inherit the gate without individually opting in.
+
+  `coordinator_config_lib.bb`'s `raw-config-value` is the existing shared pure
+  reader for a `config <key> <value>` line (already reused outside the
+  coordinator, by `launch_contract_lib.bb`'s pack-contract checks) and is the
+  obvious way to read the key without inventing a second parser. Use it or
+  something equally shared — but do not hand-roll a third conf reader.
+
+  ## Constraints
+
+  - Config off must not be reported as a fault. `:off` is a healthy terminal
+    state and must not make `remote_control_health.bb` exit non-zero.
+  - Absent config keeps today's behaviour (on). A pack that never mentions
+    `remote_control` must be indistinguishable from today.
+  - Deterministic. The gate is a config read, never an Operator/LLM judgment.
+  - Do not change what `:degraded` and `:session-dead` MEAN, or the idle-safe
+    respawn mechanics, for the config-on case.
+
+qa_e2e_procedure: >
+  (1) On a pack whose window lines carry explicit `--remote-control`, set
+  `config remote_control off`, kill one Claude seat's cloud session so its
+  footer reports `/rc failed`, and run `./swarm ensure` and
+  `remote_control_health.bb --fix`: confirm BOTH report the seat off, neither
+  respawns the pane, and the exit status is success rather than a fault.
+  (2) Flip the same pack to `config remote_control on` with no other change
+  and repeat: confirm the degraded seat IS repaired exactly as it is today,
+  and that a `/rc failed` streak still produces BL-898's `:session-dead`
+  repair. (3) Remove the `remote_control` line entirely and repeat: behaviour
+  must be identical to (2), proving absent-means-on. (4) Grep the repair
+  paths for a second, ungated respawn route — `swarm_ensure.bb`,
+  `remote_control_health.bb`, `remote_control_respawn.bb`,
+  `orphan_agent_reaper_sweep_lib.bb` — and confirm each is covered by the
+  single gate rather than needing its own copy.
+
+out_of_scope: |
+  - Making `config remote_control off` strip an explicit `--remote-control`
+    from newly written launch scripts. That is direction 1 of the same
+    intake and is minted separately as BL-1218; landing both is the intake's
+    hybrid.
+  - Cursor Remote and non-Claude phone paths, already OFF under BL-1108.
+  - Changing the Claude CLI's own reconnect behaviour.
+  - Removing the human's ability to enable RC when config says on.
+  - Any new daemon. The intake's locked decision 3 prefers extending the
+    existing BL-514 / BL-898 / ensure machinery.
+
+invariants:
+  - "When effective config says remote_control off, no repair path respawns or re-attaches a seat — reporting only."
+  - "When config says on or is absent, every BL-514/BL-898 repair decision is byte-for-byte what it is today."
+  - "Desired RC state has exactly one source of truth; no repair path may consult the launch script alone once config disagrees with it."
+
+source: |
+  Raw intake backlog/INTAKE-remote-control-config-gates-repair.md (human via
+  Cursor, 2026-08-28 ~00:46 BST). This ticket is the REPAIR half of a 1:N
+  split of that intake; the launch half is BL-1218. The intake's operator
+  directives are preserved verbatim in the notes of both tickets.
+
+  Premise verified before minting, not assumed: remote_control_health_lib.bb
+  line 55 `expected-rc-name` reads the launch script via `launch-script-path`
+  and nothing else; `classify` (line ~125) maps `(nil? expected)` to `:off`;
+  `actionable?` (line 246) is `#{:degraded :session-dead}` and takes only a
+  status, with no config input anywhere. `config remote_control off` is set
+  by ten packs (cursor-forge, cursor-mono-router, and the mono-router
+  variants) while swarmforge.conf and packs/full-forge.conf name
+  `--remote-control` explicitly on every Claude window line — which is the
+  exact shape that makes the flag survive an off.
+
+notes: |
+  - "[2026-08-28] specifier: operator directives from the source intake,
+    preserved VERBATIM per Article 5.3 (a consolidation never drops a human
+    sentence) — this ticket is one half of a 1:N split, so both directives
+    are carried here in full and again in BL-1218:
+
+      1. 'Switch off the Claude remote connections via config.'
+      2. 'The swarm will try to fix connections it considers failed: make
+         this read the config and only fix the connection if the conf says
+         they should be up & running.'
+
+    Locked human decisions, also verbatim:
+
+      1. 'Claude remote connections must be switchable off via config.'
+      2. 'Auto-repair of \"failed\" RC is wanted only when config says those
+         connections should be up; otherwise leave them alone.'
+      3. 'Prefer extending BL-514 / BL-898 / ensure machinery over a new
+         daemon.'
+      4. 'Deterministic config gate — not an LLM Operator judgment call.'
+
+    Directive 2 and locked decision 2 are THIS ticket's core. Directive 1 and
+    locked decision 1 are carried by BL-1218; both are recorded here so
+    neither ticket can be read in isolation and lose half the ask."
+  - "[2026-08-28] specifier: no required_wiring declared, deliberately. The
+    conf key literal `remote_control` ALREADY appears in this lib's header
+    comments, so any pattern naming it would match at any commit and gate
+    nothing (a vacuous anchor). The real call-site risk — one repair path
+    left ungated — is instead covered by invariant 3, by qa_e2e_procedure
+    step 4, and structurally by gating at the shared `actionable?` seam that
+    every caller already routes through."

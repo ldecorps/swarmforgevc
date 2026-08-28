@@ -1,0 +1,147 @@
+id: BL-1218
+title: "`config remote_control off` only suppresses auto-inject, so a window line naming `--remote-control` explicitly still launches a Claude remote session the config says should be off"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: fleet-topology
+priority: 30
+direction: operator-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1218-config-off-is-honored-over-an-explicit-window-flag.feature
+human_approval: approved
+approval_context: >
+  Needs sign-off on the collision rule, because there are two defensible
+  answers and the intake explicitly allows either.
+
+  This slice takes "config wins, silently": with `config remote_control off`,
+  an explicit `--remote-control` on a window line is not persisted into the
+  launch script. The alternative the intake also offers is "error loudly
+  until the window line is cleaned" — refuse to launch rather than quietly
+  override the more specific instruction.
+
+  Recommended as specced (config wins) because the standing swarmforge.conf
+  and packs/full-forge.conf name the flag on EVERY Claude window line, so the
+  loud-error variant would make `config remote_control off` unusable on the
+  default packs without first hand-editing seven window lines — which is the
+  friction the human is asking to remove. Say so if you want the loud variant
+  instead; it is a small change to scenario 02 and to nothing else.
+description: |
+  ## What
+
+  When the effective pack config says `remote_control off`, a Claude seat is
+  launched without a remote-control flag even if its window line names one
+  explicitly, and the persisted launch script records that. When config says
+  on, or says nothing, launch behaviour is exactly what it is today.
+
+  ## Why
+
+  `config remote_control on|off` today governs only auto-INJECT: when a Claude
+  window line omits `--remote-control`, the launcher adds one if the default
+  is on and skips it if off (covered by test_remote_control_launch.sh 01/02).
+  It has no effect at all on a window line that names the flag itself.
+
+  Both the standing `swarmforge.conf` and `packs/full-forge.conf` name
+  `--remote-control` explicitly on every Claude window line. So on exactly the
+  packs a human is most likely to be running, setting `remote_control off`
+  switches nothing off: the seats still launch with remote control, still
+  register cloud sessions, and the persisted launch script — the artifact the
+  health check treats as desired state — still records the flag.
+
+  That stale script is also what makes the repair half (BL-1218's sibling
+  BL-1217) necessary. Fixing launch alone leaves every script already on disk
+  wrong until its role is next rewritten; fixing repair alone leaves seats
+  still launching with RC on. The intake's own preferred direction 3 is both,
+  and that is what these two tickets are.
+
+  ## How (direction, not mandate)
+
+  The flag is decided while the launch script is composed, in the same place
+  the auto-inject default is already consulted — so the natural shape is to
+  extend that one decision from "add a flag when absent and default is on" to
+  "the effective config decides, whether or not the window line names a flag",
+  rather than adding a second, later stripping pass over composed scripts.
+
+  ## Constraints
+
+  - Absent config keeps today's behaviour (on). A pack that never mentions
+    `remote_control` must be indistinguishable from today.
+  - Non-Claude seats are untouched; they already report RC off under BL-1108.
+  - The human can still enable RC when config says on — this removes no
+    ability, it only makes off mean off.
+  - Whatever is persisted must be what the health check then reads, so the
+    launch script and the config never disagree for a freshly written seat.
+
+qa_e2e_procedure: >
+  (1) On a pack whose Claude window lines carry explicit `--remote-control`,
+  set `config remote_control off`, launch the swarm, and confirm no Claude
+  seat registers a claude.ai/code session, no pane banner prints an RC URL,
+  and each persisted launch script contains no `--remote-control`.
+  (2) Run the RC health report against that same swarm and confirm every
+  Claude seat reads off — proving launch and health now agree with no stale
+  script left behind. (3) Flip to `config remote_control on`, relaunch, and
+  confirm the flags are back and sessions register exactly as today.
+  (4) Remove the `remote_control` line entirely, relaunch, and confirm the
+  result is identical to (3), proving absent-means-on. (5) Confirm a window
+  line with NO flag under config on still gets one auto-injected, i.e.
+  test_remote_control_launch.sh 01/02's existing behaviour is intact.
+
+out_of_scope: |
+  - Gating the repair paths on config. That is direction 2 of the same
+    intake, minted separately as BL-1217; landing both is the intake's
+    hybrid direction 3.
+  - Rewriting launch scripts that already exist on disk at the moment the
+    config is flipped. This slice governs what is written at launch; making
+    an already-written stale script harmless is exactly what BL-1217 does.
+  - Cursor Remote and non-Claude phone paths, already OFF under BL-1108.
+  - Changing the Claude CLI's own remote-control behaviour.
+
+invariants:
+  - "A seat launched under config remote_control off carries no remote-control flag, whatever its window line says."
+  - "A persisted launch script never disagrees with the config that was effective when it was written."
+  - "With config on or absent, launch composition is byte-for-byte what it is today."
+
+source: |
+  Raw intake backlog/INTAKE-remote-control-config-gates-repair.md (human via
+  Cursor, 2026-08-28 ~00:46 BST). This ticket is the LAUNCH half of a 1:N
+  split of that intake; the repair half is BL-1217. The intake's operator
+  directives are preserved verbatim in the notes of both tickets.
+
+  Premise verified before minting, not assumed: `remote_control` is read in
+  swarmforge/scripts/swarmforge.sh (not swarmforge.sh at the repo root, as
+  the intake's shorthand suggested); ten packs set `config remote_control
+  off` (cursor-forge, cursor-mono-router, and the mono-router variants) while
+  swarmforge.conf and packs/full-forge.conf name `--remote-control`
+  explicitly on all seven Claude window lines.
+
+notes: |
+  - "[2026-08-28] specifier: operator directives from the source intake,
+    preserved VERBATIM per Article 5.3 (a consolidation never drops a human
+    sentence) — this ticket is one half of a 1:N split, so both directives
+    are carried here in full and again in BL-1217:
+
+      1. 'Switch off the Claude remote connections via config.'
+      2. 'The swarm will try to fix connections it considers failed: make
+         this read the config and only fix the connection if the conf says
+         they should be up & running.'
+
+    Locked human decisions, also verbatim:
+
+      1. 'Claude remote connections must be switchable off via config.'
+      2. 'Auto-repair of \"failed\" RC is wanted only when config says those
+         connections should be up; otherwise leave them alone.'
+      3. 'Prefer extending BL-514 / BL-898 / ensure machinery over a new
+         daemon.'
+      4. 'Deterministic config gate — not an LLM Operator judgment call.'
+
+    Directive 1 and locked decision 1 are THIS ticket's core. Directive 2 and
+    locked decision 2 are carried by BL-1217; both are recorded here so
+    neither ticket can be read in isolation and lose half the ask."
+  - "[2026-08-28] specifier: the intake offered three directions and said
+    'specifier picks'. The pick is direction 3, the hybrid, delivered as two
+    INVEST-sized slices rather than one oversized ticket: BL-1218 (this,
+    direction 1, launch) and BL-1217 (direction 2, repair). They are
+    independent — either is valuable and testable alone — so neither
+    declares depends_on the other."

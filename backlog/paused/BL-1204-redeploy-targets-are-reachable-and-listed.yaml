@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1204-redeploy-targets-are-reachable-and-listed.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   The ticket assumes the capability is WANTED and should be wired back. That
   is the assumption worth your eye, because the opposite reading is
