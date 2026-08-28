@@ -147,3 +147,21 @@ notes: |
 required_wiring:
   - 'swarmforge/scripts/test/expedite_fixture.sh::git_env_guard.sh::the fixture that fired must source the guard itself — a hand-run test never reaches the suite runner'
   - 'swarmforge/scripts/test/run_bb_suite.sh::git_env_guard.sh::the standing suite entry point must source the guard so every spawned test is clean'
+  - "[2026-08-27 18:40] specifier: FOURTH role hit by this root cause today,
+    and the second whose branch was left unusable. Architect note 001123 —
+    'architect HEAD collapsed to 3 paths, blocks BL-592 bounce revert'; its
+    own evidence is
+    .worktrees/architect/backlog/evidence/BL-592-architect-worktree-anomaly-20260827.md.
+    swarmforge-architect's tip (9d2af028c) carries a THREE-path tree
+    (extension/src/a.ts, src/thing.ts, swarmforge/swarmforge.conf) while the
+    real BL-592 review history is still a genuine ancestor — a run of
+    init/seed commits collapsed the tracked tree. Confirmed by the specifier
+    with the redirect cleared: the branch tip is now ee19bde0e 'fixture:
+    initial', whose tree is stage-runner-hung.sh, start-swarm-broken.sh,
+    stop-swarm-lying.sh and friends — fixture files, and grep puts all three
+    of those names in test_expedite_cli.sh and expedite_fixture.sh, THIS
+    ticket's exact two call sites. No scope change needed; the scope is
+    already right. What is needed is a promotion slot. Day's tally: coder
+    18:10 (property fixture, BL-1196), hardener 18:26 (swarmforge-hardender,
+    45 junk commits), architect 18:40 (swarmforge-architect, tree collapsed,
+    bounce revert blocked), specifier 19:31 (master checkout detached)."
