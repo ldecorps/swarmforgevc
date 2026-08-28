@@ -273,6 +273,22 @@ priority: 5
    :others [{:path "backlog/paused/BL-4242-x.yaml"}]}
   (fn [_] "same")))
 
+;; Hardener: the converse of the two-live case above — a collision confined
+;; to TERMINAL pools (hold + done, zero live copies) must also name no copy
+;; to keep. sole-live-keep's own guard is `(= 1 (count live))`, so a mutant
+;; loosening that to `(<= 1 (count live))` is caught by the two-live test
+;; above, but a mutant loosening it to `(>= 0 (count live))` or otherwise
+;; mishandling the zero-live count needs THIS fixture to be seen at all —
+;; two live copies and zero live copies are different code paths through
+;; the same guard, and neither existing test exercises zero.
+(assert=
+ "format-violation for duplicate-id: a collision confined to terminal pools names no copy to keep"
+ "DUPLICATE-ID BL-4242  backlog/hold/BL-4242-x.yaml [hold/terminal]  also: backlog/done/BL-4242-x.yaml [done/terminal]  (CONTENT DIFFERS; duplicate ticket id — refuse at mint)"
+ (backlog-hygiene-lib/format-violation
+  {:kind :duplicate-id :id "BL-4242" :path "backlog/hold/BL-4242-x.yaml"
+   :others [{:path "backlog/done/BL-4242-x.yaml"}]}
+  (fn [p] (get {"backlog/hold/BL-4242-x.yaml" "a" "backlog/done/BL-4242-x.yaml" "b"} p))))
+
 (assert=
  "a missing local backlog root fails closed (never an empty corpus)"
  true
