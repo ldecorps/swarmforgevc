@@ -64,10 +64,25 @@ description: >
   named as the condition for turning it back on, and a daemon log line when
   a tick skips the sweep by config (a silently-absent sweep is how nobody
   notices it is still on, or still off, months later). The key name is
-  specified because it is an operator-facing contract; where the parse and
-  the guard live is the coder's call, though mirroring BL-920's
-  escalation-threshold parse in master_main_reconcile_lib.bb is the obvious
-  seam.
+  specified because it is an operator-facing contract; mirror BL-920's
+  escalation-threshold parse in master_main_reconcile_lib.bb (parse-
+  escalation-threshold, line ~398) for the parse.
+
+  Guard placement is NOT free, and the obvious seam is the wrong one
+  (corrected at specifier stage of the expedite run, 2026-08-28; the mint
+  had named the handoffd call site and that contradicts this ticket's own
+  firm constraint below). handoffd.bb:3280 injects :surface! and :escalate!
+  INTO master-main-reconcile-lib/sweep!, so the human-notification paths
+  fire from inside the very call at line 4063. Guarding that call site would
+  silence drift logging, dirty-blocked surfacing and escalation along with
+  the reconcile - the exact "going quiet about divergence" the constraints
+  forbid. Put the guard instead at the :should-reconcile branch inside
+  sweep! (lib line ~790), skipping only ((:merge! adapters)) - which is the
+  destructive path, the one dispatching BL-1214's absorb/reset plans - and
+  logging the config skip there. Everything above that branch (rev-counts,
+  drift-report, the drift log line, :up-to-date, :dirty-blocked and its
+  surface!/escalate!) keeps running untouched. Scenario 05 gates this: it
+  fails if the guard is put at the call site.
 
 constraints: >
   Out of scope / firm lines:
@@ -105,11 +120,18 @@ qa_e2e_procedure: >
   4. Scenario 04: read the shipped swarmforge/swarmforge.conf and assert the
      key is present, set to false, and carries BL-1236 as the named
      condition for re-enabling.
-  5. Both invariants carry coder-authored property tests per BL-654:
+  5. Scenario 05, the anti-overreach case: in a fixture whose local main and
+     origin have diverged with local changes blocking a merge, switch OFF and
+     run a tick, then assert the drift log line AND the surfaced divergence
+     note are both still produced. This is the scenario that fails if the
+     guard was placed at handoffd's call site instead of at the
+     :should-reconcile branch, so do not accept a green here that was
+     obtained by asserting only the absence of a reset.
+  6. Both invariants carry coder-authored property tests per BL-654:
      invariant 1 fuzzes tick state and asserts main reachability is never
      reduced while off; invariant 2 fuzzes the config value and asserts
      disabled for every string but the affirmative.
-  6. Do not verify any part of this against the live repo checkout. The
+  7. Do not verify any part of this against the live repo checkout. The
      behaviour under test is the one that destroys commits.
 
 notes: >
@@ -129,6 +151,40 @@ notes: >
   backlog/evidence/BL-1236-tenth-reset-cause-pinned-20260828.md and
   BL-1236-eleventh-reset-occurrence-mid-turn-20260828.md.
 
+  Specifier stage of the expedite run, 2026-08-28 - amendment record. Every
+  premise the mint asserted was re-verified and all held (handoffd.bb:4063
+  unconditional wiring, sweep! at 3280 with no guard, conf carrying only
+  BL-920's escalation-threshold at line 335, no master_main_reconcile_enabled
+  anywhere in swarmforge/ or extension/src/). Three changes were made, none
+  altering what the human approved (a switch, shipped OFF, failing closed,
+  BL-1236 named as the re-enable condition), so human_approval stays
+  approved:
+  (a) The guard-placement contradiction was resolved. The mint named
+      handoffd's call site as the guard seam while the constraints forbid
+      suppressing surfacing/escalation - but :surface! and :escalate! are
+      injected into master-main-reconcile-lib/sweep! and fire from inside
+      that same call, so the named seam would have breached the named
+      constraint. The description now directs the guard to the
+      :should-reconcile branch, skipping only ((:merge! adapters)). Left
+      unresolved this was a near-certain architect bounce or a silent
+      breach of a firm line.
+  (b) Scenario 05 was added to make that constraint executable - it was a
+      firm line with no gate, and it is the scenario that fails if the guard
+      lands at the call site. qa_e2e_procedure step 5 covers it; the old
+      step 5 renumbered to 6, old 6 to 7.
+  (c) Scenario 04 was marked RETIRE-WITH: BL-1236 in the feature file. It
+      pins the deliberately temporary shipped-OFF state, so it is
+      red-when-correct per BL-1006 and goes red the day an operator
+      legitimately flips the switch on. It is kept executable anyway because
+      it is the only gate on "shipped OFF" - required_wiring's substring
+      check would pass on a commented-out key. BL-1236 does not currently
+      scope this retirement; whoever ships the flip owns it.
+  The IR-DRY checker's one near-duplicate finding (the config-sets-false
+  Given, shared by scenarios 02/03/05) was reviewed and deliberately NOT
+  extracted to Background: scenario 01 parameterises that same key across
+  five values including true, so hoisting one value would contradict the
+  outline. Rationale recorded in the feature file so it is not re-litigated.
+
   Restart context for the coordinator: the swarm is currently DOWN and the
   restart is blocked by the BL-1191 ops hold
   (.swarmforge/operator/INTAKE-bl1191-pilot-cleanup-gate-before-restart.md,
@@ -136,11 +192,13 @@ notes: >
   is no live bleeding this minute - but a restart rearms it, which is why
   this should land before start-swarm rather than after.
 
-  Orthogonality: touches swarmforge/swarmforge.conf,
-  swarmforge/scripts/master_main_reconcile_lib.bb and the guard at
-  handoffd.bb's sweep call site. BL-1236 will touch the same lib when it is
-  approved, so prefer not to run the two concurrently - sequence this one
-  first, since it is the unblocked half.
+  Orthogonality: touches swarmforge/swarmforge.conf and
+  swarmforge/scripts/master_main_reconcile_lib.bb (both the parse and the
+  guard live in the lib - see the guard-placement paragraph in the
+  description; handoffd.bb's call site is deliberately left ALONE, per the
+  constraint forbidding its removal and per scenario 05). BL-1236 will touch
+  the same lib when it is approved, so prefer not to run the two
+  concurrently - sequence this one first, since it is the unblocked half.
 
 approval_context: >
   This is your own 12:16Z directive returned as a ticket, because it had no
