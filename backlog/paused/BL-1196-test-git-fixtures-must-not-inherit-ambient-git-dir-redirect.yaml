@@ -11,8 +11,30 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1196-test-git-fixtures-must-not-inherit-ambient-git-dir-redirect.feature
-human_approval: approved
+human_approval: pending
 approval_context: >
+  RE-APPROVAL ASKED 2026-08-28, after the defect fired twice more. Two things
+  changed and nothing else: (a) GIT_INDEX_FILE joins the stripped variables —
+  this is the widening the previously-approved out_of_scope pre-authorised in
+  its own words ("widen only if a future incident actually implicates one"),
+  and the 2026-08-28 incident implicates it directly; (b) a second enforcement
+  site is added, an env scrub where check_property_suite_drift.sh launches the
+  suite. (b) is the genuinely new element and the one worth your eye: it is a
+  one-line change at a boundary, and it is what protects the SHELL fixtures the
+  JS suite shells out to — the writer in BL-1200's half — which a vitest
+  setupFile can never reach. If you would rather ship only the setupFile half
+  now, say so and (b) is split out rather than silently dropped.
+
+  Also worth knowing before you judge urgency: this ticket was never built. It
+  reached backlog/done/ on 2026-08-27 as a by-product of a duplicate-pool
+  sweep, not through the pipeline (status: todo, no implementing commit in any
+  ref, the specified guard file authored nowhere). It is being resurrected, not
+  re-opened after a failed attempt. Severity is deliberately left at high
+  rather than raised: every occurrence so far was recoverable with no data
+  loss. The argument for critical, if you want it, is that it now fires
+  unattended on ordinary commits and a role that does not notice forwards a
+  corrupted branch.
+
   Discovered 2026-08-27: coder sent a priority-00 note ("New defect: property
   fixture git() leaks GIT_DIR, corrupts main repo") the same morning the
   coordinator independently hit the identical failure shape live in its own
@@ -92,13 +114,30 @@ description: |
     from setting either var explicitly afterward for its own purposes.
 
 qa_e2e_procedure: >
-  (1) Unit test on the exported strip function: set GIT_DIR/GIT_WORK_TREE,
-  call it, assert both are gone. (2) Integration-shaped test: seed a decoy
-  repo and a target repo in temp dirs, point GIT_DIR at the decoy, run a
-  plain `git rev-parse --show-toplevel` with cwd=target and no explicit env,
-  confirm it reports the target and the decoy gains no commits. (3) Grep both
-  vitest config files for the new setupFiles entry (required_wiring below).
-  (4) Confirm sampleResourcesCli.test.js still passes unmodified.
+  (1) Unit test on the exported strip function: set GIT_DIR, GIT_WORK_TREE and
+  GIT_INDEX_FILE, call it, assert all three are gone. (2) Integration-shaped
+  test: seed a decoy repo and a target repo in temp dirs, point GIT_DIR at the
+  decoy, run a plain `git rev-parse --show-toplevel` with cwd=target and no
+  explicit env, confirm it reports the target and the decoy gains no commits.
+  (3) The vector as it actually occurs, in a scratch clone only — never
+  against this repo: create a linked worktree, install a pre-commit hook that
+  records `env | grep ^GIT_`, commit from the worktree, and confirm GIT_DIR
+  and GIT_INDEX_FILE are present and absolute. Then, with exactly that
+  environment exported, run a fixture-shaped mkdtemp + `git init` + `git
+  commit` and confirm the scratch worktree's branch ref and index are
+  unchanged. This is the scenario that is red before the fix. (4) Grep both
+  vitest config files for the new setupFiles entry and
+  check_property_suite_drift.sh for the invocation-site scrub (required_wiring
+  below). (5) Confirm sampleResourcesCli.test.js still passes unmodified, and
+  that a test which deliberately sets GIT_DIR itself mid-test still works —
+  the guard strips an INHERITED value once at load, it does not forbid a test
+  setting one afterward. (6) Confirm the guard's three short-circuits are
+  untouched: SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1, skip-paths, and the
+  exit-127 toolchain-missing skip.
+
+  Do NOT verify any part of this by running the full property suite against a
+  live worktree. That is firing the weapon to inspect the wound; scope any
+  real run to a single file with an explicit vitest invocation.
 
 out_of_scope: |
   - Migrating any of the ~60 existing per-file git() helpers to a shared
@@ -169,3 +208,50 @@ notes: |
     hardener 18:26 (role branch, above), specifier 19:31 (master checkout
     detached, BL-1200). This ticket is approved and paused; what it needs is
     a promotion slot, not another ticket."
+  - "[2026-08-28] specifier — ROOT CAUSE FOUND, and it is not what this ticket
+    was minted on. The redirect source is git's own hook environment, not an
+    operator shell: a commit from a LINKED WORKTREE runs pre-commit with
+    absolute GIT_DIR and GIT_INDEX_FILE naming that worktree's gitdir, and
+    check_property_suite_drift.sh passes that environment straight into
+    `npm run test:properties` unscrubbed. Measured in an isolated scratch repo,
+    not inferred; a child that cd's outside the repo entirely still resolved to
+    the worktree gitdir and reported HEAD -> refs/heads/<branch>. This explains
+    every observation the earlier notes could not: why it fires on routine work
+    nobody chose to run, why the branch ref and index are hit but the working
+    tree is spared (GIT_WORK_TREE is not among the vars git sets), and why the
+    master-checkout half (BL-1200) looked like a different bug — from the main
+    checkout GIT_DIR is unset and GIT_INDEX_FILE is relative."
+  - "[2026-08-28] specifier — FALSE CLOSURE. This ticket sat in backlog/done/
+    while unbuilt. It was moved there by coordinator commit f8a41c1e2, a sweep
+    of 'stale duplicate source paths', and a later specifier pass confirmed the
+    POOL was consistent without ever asking whether the WORK had happened —
+    the check compared where two copies of the file agreed, which is a
+    different question. Verified 2026-08-28: status is still todo, no commit in
+    any ref (git log --all and the reflog, by path) ever authored
+    extension/test/helpers/gitEnvGuardSetup.js, and neither vitest config
+    registers it. The ~60 per-file git() helpers this ticket deliberately left
+    untouched were left untouched on the promise of a central guard that was
+    never written, so they have been unprotected the whole time. The only
+    GIT_DIR/GIT_WORK_TREE stripping that exists is opt-in
+    (sharedRepoFixture.js), and GIT_INDEX_FILE is stripped nowhere in the
+    repository."
+  - "[2026-08-28] specifier — FOURTH and FIFTH occurrences, by a fourth role.
+    Hardener note 000926 (priority 00) plus evidence commit 62da72445: a
+    routine BL-1189 correction touching extension/src/* tripped the guard and
+    hijacked refs/heads/swarmforge-hardender to an unrelated fixture 'seed'
+    commit, TWICE in a row, ~38 init/seed/promote/close commits deep in the
+    reflog on the first. Recovered both times by git update-ref to the last
+    real commit plus a mixed reset; working tree confirmed untouched before
+    and after each. The hardener correctly declined to re-run the suite to
+    reproduce. Running total: coder 08-27 18:10, hardener 08-27 18:26,
+    specifier 08-27 19:31 (master, BL-1200), hardener 08-28 ~02:30 x2 — five
+    hits, four roles, two days, and the prevention was in done/ the whole
+    time. The BL-1200 property test cannot catch this: its own test name
+    scopes it to 'a decoy named only by GIT_DIR/GIT_WORK_TREE'."
+  - "[2026-08-28] specifier — the acceptance feature file was amended in the
+    same pass to add the two new scenarios (GIT_INDEX_FILE in the stripped
+    set; the linked-worktree hook environment). No step handlers exist for any
+    of this ticket's scenarios, since it was never built — the coder must land
+    handlers for all four in the same parcel or the acceptance runner throws
+    on the unmatched step (BL-233)."
+
