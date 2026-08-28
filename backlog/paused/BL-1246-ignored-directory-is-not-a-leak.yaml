@@ -1,0 +1,136 @@
+id: BL-1246
+title: "the shipped nested-git guard reports repositories inside git-ignored directories, against the human's ruling, and turns the architect's own worktree suite red with no move available to it"
+milestone: M8
+type: defect
+severity: high
+# high: a live red on a role's own suite, with no action available to whoever
+# hits it - the guard is report-only by ruling and the never-delete rule
+# reserves removal to a human. It is also a human ruling that did not reach
+# the code. Not critical: the guard is correct about everything else, nothing
+# is lost, and only worktrees that did git-fixture work are affected.
+status: todo
+epic: code-quality-gates
+priority: 25
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1230-no-leaked-git-repository-inside-the-working-tree.feature
+
+human_approval: pending
+approval_context: >
+  You already ruled on this - "Exempt git-ignored dirs (tmp/) by
+  construction", 2026-08-28, asked and answered while BL-1230 was at architect
+  review. What needs your sign-off is only that a NEW ticket is the right
+  vehicle: the amendment I committed to BL-1230 was destroyed by a
+  reset-to-origin minutes later, and BL-1230 reached QA, landed and closed
+  without it. A closed ticket is not the place to describe unbuilt work, so
+  the ruling is carried here instead. Nothing about the ruling itself is
+  re-opened, and if you would rather BL-1230 were reopened than a new ticket
+  minted, say so and I will do that instead.
+
+  Firm, from your original ruling and unchanged: the exemption is derived from
+  git's own ignore rules, never from a list of scratch paths. A leak in a
+  TRACKED directory - backlog/.git, the incident BL-1230 was filed for - is
+  still reported exactly as it is today.
+
+description: |
+  ## What
+
+  A git repository inside a directory this working tree's git IGNORES is not
+  reported by the leaked-repository check. A repository in a tracked directory
+  still is.
+
+  ## Why
+
+  BL-1230 shipped a guard whose exemptions are `node_modules` and
+  `.worktrees/` (`extension/test/helpers/nestedGitRepoGuard.js`,
+  `SKIP_DIR_NAMES`). Its live call site walks the checkout it runs in, so in
+  `.worktrees/architect` it reports `tmp/bl532-smoke/.git` (2026-07-23) and
+  `tmp/evilmerge/.git` (2026-07-24) and the test fails. Both are real git
+  fixtures an architect built for BL-571/BL-954 merge-drop forensics.
+
+  `tmp/` is where workflow.prompt directs every role to put scratch, `git
+  check-ignore -v tmp/evilmerge` answers `.gitignore:11:/tmp/`, and `git
+  ls-files tmp` returns zero paths. So nothing tracked can be swallowed there
+  and no bookkeeping runs from there - the two things that made `backlog/.git`
+  a defect do not apply.
+
+  The human was asked exactly this while BL-1230 was at architect review, and
+  ruled: "Exempt git-ignored dirs (tmp/) by construction". The amendment
+  carrying that ruling into the spec was committed at 13:00:39 and destroyed
+  by a reset-to-origin at 13:03:00 (BL-1236, twelfth occurrence); BL-1230
+  landed and closed at 13:04 built against the pre-ruling contract.
+
+  ## The gate shape this is an instance of
+
+  BL-1237, BL-1240, BL-1241 - a gate whose refusal reaches someone with no
+  action available. Here the red lands on whoever runs the suite in a worktree
+  that did git-fixture work; the guard is report-only by ruling, and the
+  swarm's never-delete-what-you-did-not-create rule reserves removal to a
+  human. There is no move. That is why the ruling went the way it did.
+
+  ## How (direction, not mandate)
+
+  Ask git, do not match a path. `git check-ignore` is the obvious source of
+  truth and it must be asked about the DIRECTORY that CONTAINS the nested
+  `.git`, never about the `.git` path itself - git never considers a `.git`
+  path against ignore rules, so `check-ignore tmp/evilmerge/.git` tells you
+  nothing while `check-ignore tmp/evilmerge` answers.
+
+  The guard currently takes an injectable `readdir` seam and its property test
+  drives synthetic trees with no filesystem or repository behind them. An
+  ignore predicate needs the same treatment or that test cannot express an
+  ignored directory at all.
+
+  ## Constraints
+
+  - Derived by construction from git's ignore rules; never a list of known
+    scratch paths (the human's own firm constraint, twice stated).
+  - A repository in a tracked directory is still reported, unchanged.
+  - Report only. The check still never deletes, moves, or rewrites anything.
+  - Do not touch repoCreationGuard's source-text scan (BL-1039).
+
+qa_e2e_procedure: >
+  (1) In a scratch checkout, git init inside a tracked subdirectory and
+  confirm the check still reports it. (2) Add a directory to .gitignore, git
+  init inside it, and confirm nothing is reported for it. (3) With BOTH
+  present at once, confirm the tracked one is reported and the ignored one is
+  not - the exemption must not widen into silence. (4) Confirm
+  .worktrees/<role>/.git and repositories under node_modules are still not
+  reported. (5) Against the live repo, run the check from
+  .worktrees/architect and confirm it now passes with
+  tmp/bl532-smoke/.git and tmp/evilmerge/.git still present on disk.
+
+out_of_scope: |
+  - Removing the two live fixtures. Under this ruling they need no removal;
+    they are legitimate scratch.
+  - Anything else BL-1230 shipped. The guard is correct about tracked
+    directories and this ticket must not weaken it.
+  - The reset that destroyed the amendment. Owned by BL-1236.
+
+invariants:
+  - "A git repository nested inside the working tree is reported unless the tree legitimately contains it — git's own worktree gitfiles, anything under node_modules, and anything inside a directory this working tree's git ignores — and every exemption is derived by construction, never from a list of known leak paths."
+  - "The exemption never silences a real leak beside it: with a repository in a tracked directory and one in an ignored directory both present, the tracked one is still reported."
+
+source: |
+  Human ruling 2026-08-28, raised via role_ask.bb by the specifier after the
+  architect's priority-00 note that the built guard was firing on live
+  scratch; answered verbatim "Exempt git-ignored dirs (tmp/) by construction".
+  Answer archived at backlog/answers-archive/ANSWER-BL-1230-exempt-git-ignored-dirs.md.
+  Original ticket: BL-1230 (backlog/done/).
+
+notes: |
+  - [2026-08-28] specifier: the acceptance pointer is BL-1230's OWN feature
+    file, because that file is the durable contract for this check and should
+    not be forked. The two additions it needs are parked in
+    specs/features/BL-1246-ignored-directory-is-not-a-leak.feature.draft -
+    one extra Examples row on scenario -02 (whose title widens with it) and a
+    new scenario -06. Move them into the live .feature file in the SAME parcel
+    as their step handlers; a scenario with no handler makes the acceptance
+    runner throw (BL-233).
+  - [2026-08-28] specifier: nothing BL-1230 built was wrong. It was correct
+    against the contract as it stood when it was built, and the amendment that
+    would have changed that contract was destroyed between my commit and QA's
+    merge. If a bounce is ever charged against a role for this, it belongs on
+    the amendment's timing, not on the work.

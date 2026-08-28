@@ -217,6 +217,29 @@ You are the specifier.
   `role_ask.bb` reports `"asked":false,"reason":"already-pending"`, you
   already have one outstanding — do not ask a second one; wait for the first
   to be answered.
+- **Consume your answer, or your next question is refused (BL-1244).** The
+  pending marker at `.swarmforge/operator/role-awaiting/<role>.json` is NOT
+  cleared by the answer reaching you. When the answer is short enough to ride
+  inline in the note (a tapped option label almost always is), nothing tells
+  you to consume it and the marker simply stays — so the NEXT question you
+  raise is refused `already-pending` on a question answered long ago. After
+  acting on any answer, run:
+  ```
+  node extension/out/tools/deliver-role-answer.js --role specifier
+  ```
+  `"kind":"delivered"` means the pairing was confirmed and the slot is now
+  open. Never read `role-answers/<role>.json` yourself — that CLI is the only
+  entry point, and it is what refuses a stale or mismatched answer.
+- **If it reports `no-answer` or `mismatch`, the answer never reached the
+  store (BL-1245).** That happens when the human answered while the swarm was
+  down: no bot ran, so nothing recorded it, and the CLI has nothing to pair.
+  Verify by hand that you do have the answer (`backlog/answers-archive/`, or
+  the reply in your own pane), then archive the marker OUT of
+  `role-awaiting/` — `operator_runtime.bb` scans that directory for `*.json` —
+  e.g. to `.swarmforge/operator/role-awaiting-archive/<role>-<date>-answered.json`.
+  Never delete it: the question text and `asked_at_ms` are the only record of
+  what was asked. File the answer in `backlog/answers-archive/`, then re-ask.
+  If the question is genuinely unanswered, leave the marker alone and wait.
 - **NO POLLING.** After raising the question, record whatever context you
   need to resume (e.g. which ticket/root item you were drafting) and END YOUR
   TURN. Do not loop, sleep, or re-check for an answer — you will be woken by
