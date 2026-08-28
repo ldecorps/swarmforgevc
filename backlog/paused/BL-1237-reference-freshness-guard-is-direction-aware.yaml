@@ -12,7 +12,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1237-reference-freshness-guard-is-direction-aware.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One thing needs sign-off: whether to fix this now or wait. The cleaner is
   blocked right now, and the block clears on its own if QA passes BL-1227 (in
