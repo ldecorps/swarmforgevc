@@ -490,6 +490,49 @@ test('main(): lands in-process on a green run, moving the yaml and writing a rec
   assert.equal(receipt.landedCommit, output.receipt.landedCommit);
 });
 
+// Hardener (BL-1215): the sibling of the green-run test above, through the
+// SAME full main() orchestration - only pilotAcceptanceGateCli.test.js's
+// own checkOriginMainLanding unit tests exercised the reachable:false path
+// before this, so landPilotedTicket's own checkOriginLanding branch (the
+// code that actually WITHHOLDS the move) had no vitest-visible coverage of
+// its own (the acceptance feature's fake-deps step handler covers it, but
+// under node:test, invisible to this project's v8/CRAP tooling). Real git
+// throughout - a genuine origin remote, a commit pushed as the shared base,
+// then a SECOND local-only commit this run's HEAD points at, never pushed.
+test('main(): refuses in-process, writing nothing, when the run commit never reached origin/main', async () => {
+  const root = mkRepo();
+  initGitRepo(root);
+  fs.mkdirSync(path.join(root, 'specs', 'features'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'specs', 'features', 'fixture.feature'), 'Feature: fixture\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'specs', 'pipeline'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'specs', 'pipeline', 'runnerAdapter.js'),
+    "module.exports = { runPipeline: () => Promise.resolve({ success: true, output: 'ok' }) };",
+    'utf8'
+  );
+  writeTicketYaml(root, 'BL-FIX', ['acceptance: specs/features/fixture.feature']);
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'shared base'], { cwd: root });
+  addOriginAndPushHead(root);
+  // The run's OWN implementation commit, made after the push above - HEAD
+  // now points at it, but origin/main still only knows the shared base.
+  fs.writeFileSync(path.join(root, 'implementation.txt'), 'the fix', 'utf8');
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'implement the fix (never pushed)'], { cwd: root });
+  const localOnlyCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+
+  const { exitCode, output } = await runCli(['BL-FIX'], root);
+
+  assert.equal(exitCode, 1);
+  assert.equal(output.landed, false);
+  assert.equal(output.reasonKind, 'commit-not-on-origin-main');
+  assert.equal(output.unlandedCommit, localOnlyCommit);
+  assert.match(output.reason, new RegExp(localOnlyCommit));
+  assert.equal(fs.existsSync(path.join(root, 'backlog', 'active', 'BL-FIX-fixture.yaml')), true, 'the yaml must stay in active/, never move to done/ on refusal');
+  assert.equal(fs.existsSync(path.join(root, 'backlog', 'done', 'BL-FIX-fixture.yaml')), false);
+  assert.equal(fs.existsSync(path.join(root, '.swarmforge', 'expedite', 'BL-FIX')), false, 'no receipt directory at all - the refusal must precede any write');
+});
+
 // End-to-end (BL-729): a green acceptance contract still refuses the land
 // when the run's own commit history carries an unsupported claim - the
 // ticket's own e2e QA procedure, step 2.

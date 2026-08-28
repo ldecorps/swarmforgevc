@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-741, BL-747, BL-753, BL-755, BL-757, BL-758)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-741, BL-747, BL-753, BL-755, BL-757, BL-758, BL-1215)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -314,6 +314,34 @@ At each hat change and bounce-back:
 **Remediation when refused:** reinject the live role prompt and record path +
 hash on the stage verdict — do not silent-bypass.
 
+## Origin/main landing check (BL-1215)
+
+The gate captured local `HEAD` and moved the ticket YAML on that fact alone —
+nothing anywhere asked whether the implementation commit existed on the
+durable remote. An expedition could pass its own acceptance contract, write
+a passing receipt, and mark its ticket done, while the implementation stayed
+reachable only from a worktree or an unpushed local branch (BL-1158 failed
+in exactly this shape the same day).
+
+Immediately before the yaml move (after every other land gate, using the
+same commit `getLandedCommit()` already captures for the receipt):
+
+1. Fetch `origin/main` fresh, then check whether the landed commit is an
+   ancestor of it (`checkOriginMainLanding`).
+2. Refuse (`reasonKind: 'commit-not-on-origin-main'`) when it is not — the
+   refusal names the unlanded commit. A refused land is inert: no yaml
+   move, no receipt.
+3. **Fails CLOSED** — the deliberate mirror of the commit-claims check's
+   fails-OPEN posture (BL-729, above). An unfetchable `origin/main`, no
+   remote configured, or an unresolvable commit are all `reachable: false`,
+   never waved through with a warning. Treating silence about `origin/main`
+   as success is the defect this closes.
+4. The gate never pushes. A refusal tells a human (or the pilot) to push
+   and re-run; landing the commit remains their next step, not the gate's.
+
+**Remediation when refused:** push the named commit to `origin/main` and
+re-run the gate — do not silent-bypass.
+
 ## Why
 
 A live pipeline run has two independent places that execute a ticket's
@@ -433,6 +461,15 @@ run, and no gate ever noticed.
   `specs/features/BL-758-pilot-inject-role-prompts-per-hat.feature`
 - Per-hat role prompt how-to:
   [BL-758](BL-758-pilot-inject-role-prompts-per-hat.md)
+- Origin/main landing check (BL-1215), pure decision:
+  `extension/src/tools/pilotAcceptanceGate.ts` → `checkOriginLanding`
+- Origin/main landing git-backed dep (fetch + ancestry check):
+  `extension/src/tools/pilot-acceptance-gate.ts` → `checkOriginMainLanding`
+- Origin/main landing step handlers:
+  `specs/pipeline/steps/bl1215OriginMainLandGateSteps.js`
+- Origin/main landing tests: `extension/test/pilotAcceptanceGateCli.test.js`
+- Origin/main landing acceptance:
+  `specs/features/BL-1215-pilot-land-gate-verifies-the-implementation-reached-origin-main.feature`
 
 ## Out of scope
 
@@ -485,3 +522,6 @@ run, and no gate ever noticed.
   (companion remaining-work BL-754)
 - BL-758 — reinject live role prompts at each hat; refuse land when stage
   verdicts omit `role_prompt_path` / `role_prompt_sha256`
+- BL-1215 — refuse land when the implementation commit is not reachable
+  from `origin/main`; fails CLOSED on an unreadable remote (mirrors BL-729's
+  fails-OPEN posture in the opposite direction)
