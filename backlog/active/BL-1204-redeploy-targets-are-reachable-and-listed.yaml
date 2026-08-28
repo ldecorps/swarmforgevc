@@ -139,3 +139,5 @@ notes: |
     BL-751's scope. Only the direction of the defect differs from its note,
     and that difference is what decides the fix — hence the correction is
     recorded here rather than left to the coder to rediscover."
+
+assigned_to: coder
