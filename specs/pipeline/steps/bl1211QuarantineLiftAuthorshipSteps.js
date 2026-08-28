@@ -284,6 +284,57 @@ function registerSteps(registry) {
       cleanupFixtureRoot(ctx);
     }
   });
+
+  // ── scenario 08: the operator-facing recovery-filter CLI (architect
+  // bounce D1) - drives the REAL compiled CLI
+  // (extension/out/tools/recovery-filter-check.js) as a subprocess.
+
+  const RECOVERY_CLI = path.join(REPO_ROOT, 'extension', 'out', 'tools', 'recovery-filter-check.js');
+
+  function runRecoveryCli(root, by, sibling, paths) {
+    const result = { status: 0, stdout: '' };
+    try {
+      result.stdout = execFileSync(
+        'node',
+        [RECOVERY_CLI, '--root', root, '--by', by, '--sibling', sibling, '--paths', paths.join(',')],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+    } catch (err) {
+      result.status = err.status ?? 1;
+      result.stdout = err.stdout ?? '';
+    }
+    return { status: result.status, decisions: JSON.parse(result.stdout) };
+  }
+
+  scoped(/^a sibling branch that still holds content a bounce removed, alongside an unrelated file$/, (ctx) => {
+    const st = ctx.bl1211;
+    git(st.root, ['checkout', '-q', '-b', 'swarmforge-hardender', 'main']);
+    commitFile(st.root, 'src/thing.ts', 'bounced content\n', 'hardender: unrelated work', 'hardener');
+    commitFile(st.root, 'src/unrelated.ts', 'unrelated\n', 'hardender: also adds unrelated.ts', 'hardener');
+    git(st.root, ['checkout', '-q', 'swarmforge-architect']);
+  });
+
+  scoped(/^an operator runs the recovery filter for that sibling against those candidate paths$/, (ctx) => {
+    const st = ctx.bl1211;
+    st.recoveryResult = runRecoveryCli(st.root, 'architect', 'swarmforge-hardender', ['src/thing.ts', 'src/unrelated.ts']);
+  });
+
+  scoped(/^the check reports the bounced path held back$/, (ctx) => {
+    const st = ctx.bl1211;
+    const thing = st.recoveryResult.decisions.find((d) => d.path === 'src/thing.ts');
+    assert.equal(thing.restore, false, `expected the bounced path held back, got: ${JSON.stringify(st.recoveryResult)}`);
+    assert.equal(st.recoveryResult.status, 1, `expected exit 1 when a path is held back, got: ${JSON.stringify(st.recoveryResult)}`);
+  });
+
+  scoped(/^the check reports the unrelated path safe to restore$/, (ctx) => {
+    const st = ctx.bl1211;
+    try {
+      const unrelated = st.recoveryResult.decisions.find((d) => d.path === 'src/unrelated.ts');
+      assert.equal(unrelated.restore, true, `expected the unrelated path restored, got: ${JSON.stringify(st.recoveryResult)}`);
+    } finally {
+      cleanupFixtureRoot(ctx);
+    }
+  });
 }
 
 module.exports = { registerSteps };
