@@ -3184,24 +3184,49 @@
       :noop
       {:success true :outcome :noop}
 
+      ;; BL-1214: both of these branches are reached (with ahead>0/ahead=0
+      ;; respectively) only when the predictive would-conflict? check found a
+      ;; genuine content conflict (absorb-dispatch-plan) - log that fact
+      ;; before recovering, so a real conflict is observably "attempted and
+      ;; reported" even though the rematch recovery below then succeeds and
+      ;; moves HEAD on. Additive only: the rematch outcome/behavior itself is
+      ;; unchanged.
       :replay-bookkeeping
-      (master-main-rematch-onto-origin! :rematched-bookkeeping :rematch-bookkeeping)
+      (do
+        (log! "master-main-reconcile" "conflict" "predicted-conflict-colliding-local-ahead")
+        (master-main-rematch-onto-origin! :rematched-bookkeeping :rematch-bookkeeping))
 
       :refuse-rematch
-      (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch)
+      (do
+        (log! "master-main-reconcile" "conflict" "predicted-conflict")
+        (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch))
 
-      ;; :ff-absorb — rematch-prepared lands only; if FF fails, rematch (BL-1141).
-      (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
-                                ["git" "merge" "--ff-only" "--no-edit" "origin/main"]
-                                {:dir (str project-root)})]
-        (cond
-          (zero? exit) {:success true}
-          mid?
-          (do
-            (when (master-main-reconcile-lib/may-abort-failed-merge? true)
-              (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)}))
-            {:success false :error (str/trim (or err "")) :outcome :refuse-rematch})
-          :else (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch))))))
+      ;; :ff-absorb — try fast-forward, then a real 3-way merge (BL-1214),
+      ;; else rematch (BL-1141).
+      (master-main-reconcile-lib/absorb-with-merge!
+       {:ff! (fn []
+               (let [{:keys [exit]} (daemon-cycle-guard-lib/sh!
+                                     ["git" "merge" "--ff-only" "--no-edit" "origin/main"]
+                                     {:dir (str project-root)})]
+                 {:success (zero? exit)}))
+        :merge! (fn []
+                  (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
+                                            ["git" "merge" "--no-edit" "origin/main"]
+                                            {:dir (str project-root)})]
+                    {:success (zero? exit) :error (str/trim (or err ""))}))
+        :abort! (fn []
+                  (when (master-main-reconcile-lib/may-abort-failed-merge? true)
+                    (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)})))
+        ;; BL-1214: fallback! only ever runs after a REAL 3-way merge! was
+        ;; attempted and conflicted (absorb-with-merge!'s own contract) - log
+        ;; that fact before recovering, so a genuine content conflict is
+        ;; observably "attempted and reported" even though the subsequent
+        ;; rematch recovery below then succeeds and moves HEAD on, exactly as
+        ;; qa_e2e_procedure step 2 specifies. Additive only: the rematch
+        ;; outcome/behavior itself is unchanged.
+        :fallback! (fn []
+                     (log! "master-main-reconcile" "conflict" "real-merge-attempted-and-aborted")
+                     (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch))}))))
 ;; Same outbound path as auto-route!/nudge-coordinator-unassigned! above:
 ;; a `note` shelled through swarm_handoff.bb (SWARMFORGE_ROLE=coordinator)
 ;; rather than a hand-written inbox file, reusing its full existing
