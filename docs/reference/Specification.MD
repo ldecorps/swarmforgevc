@@ -1,5 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1192: pre-handoff task-scope gate —
+`swarm_handoff.bb` refuses a `git_handoff` at ANY hop (not only the
+documenter→QA edge BL-531 already covers) whose cited commit's own tagged
+commits since the task's last handoff carry a path positively belonging to
+a different ticket, via the same exact-id-equality extractor BL-953's
+coherence gate uses; scope is the union of each own-tagged commit's own
+diff, never the full `origin/main...commit` range, which explodes on a
+batch role's real branch; honors `abandoned_commits:` so a deliberate
+rebuild-off-main is not mistaken for entanglement; fail-open whenever
+origin/main or the range is unreadable. Acceptance:
+`specs/features/BL-1192-pre-handoff-task-scope-gate.feature`. How-to:
+`docs/how-to/BL-1192-pre-handoff-task-scope-gate.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1228: active-pool freshness/hold
 divergence audit — `active-pool-freshness-audit.ts` reports every
 `backlog/active/` ticket whose own `deprecate-check.js` verdict (Article

@@ -131,6 +131,166 @@
     (when (< (get indicator-counts ind 0) floor)
       (report! (str "COVERAGE indicator " ind) nil "barely exercised"))))
 
+;; ── BL-1216 architect bounce D1: the three declared invariants had no
+;;    property test. Encoded here, same seeded-LCG idiom as P1 above. ───────
+
+(def id-words ["alpha" "bravo" "charlie" "delta" "echo" "foxtrot"])
+
+(defn- gen-ticket-id [s]
+  (let [[n s'] (gen-int s 9999)]
+    [(str "BL-" (+ 1000 n)) s']))
+
+;; A path in a KNOWN pool (paused/active/hold/done) or, occasionally, an
+;; "unknown" pool path (e.g. backlog/topics/) to exercise the nil-pool edge -
+;; own pool tracked directly (never re-derived via path-pool), so the
+;; property's expectation is independent of the function under test.
+(defn- gen-path [s]
+  (let [[known? s1] (gen-bool s)]
+    (if known?
+      (let [[pool s2] (gen-pick s1 backlog-hygiene-lib/backlog-pools)
+            [id s3] (gen-ticket-id s2)
+            [word s4] (gen-pick s3 id-words)]
+        [{:pool pool :path (str "backlog/" pool "/" id "-" word ".yaml")} s4])
+      (let [[id s2] (gen-ticket-id s1)]
+        [{:pool nil :path (str "backlog/topics/" id ".json")} s2]))))
+
+(defn- gen-path-set [s min-n max-n]
+  (let [[extra s1] (gen-int s (inc (- max-n min-n)))
+        n (+ min-n extra)]
+    (loop [i 0 sx s1 acc []]
+      (if (= i n)
+        [acc sx]
+        (let [[p sy] (gen-path sx)]
+          (recur (inc i) sy (conj acc p)))))))
+
+;; ── P2 (invariant 1): describe-path's pool/classification suffix always
+;;    matches path-pool/pool-classification independently applied to the
+;;    same path - checked end to end via format-violation's real output,
+;;    the same surface a role actually reads. ─────────────────────────────
+
+(defn- gen-duplicate-id-input [s]
+  (let [[subject s1] (gen-path s)
+        [others s2] (gen-path-set s1 0 3)]
+    [{:subject subject :others others} s2]))
+
+(check-all "P2 (invariant 1) every path in a DUPLICATE-ID finding carries its own pool/classification suffix"
+  gen-duplicate-id-input
+  (fn [{:keys [subject others]}]
+    (let [v {:kind :duplicate-id :id "BL-9001" :path (:path subject)
+             :others (mapv (fn [o] {:path (:path o)}) others)}
+          out (backlog-hygiene-lib/format-violation v (fn [_] "x"))]
+      (loop [candidates (cons subject others)]
+        (if (empty? candidates)
+          true
+          (let [{:keys [pool path]} (first candidates)
+                expected-suffix (str "[" (or pool "unknown") "/"
+                                      (or (backlog-hygiene-lib/pool-classification pool) "unknown") "]")]
+            (if (str/includes? out (str path " " expected-suffix))
+              (recur (rest candidates))
+              (str "expected " path " to carry suffix " expected-suffix " in " (pr-str out)))))))))
+
+;; sanity: swapping a KNOWN pool for a DIFFERENT known pool in the same
+;; generated finding changes the reported classification suffix - proves
+;; the property is reading the real per-path suffix, not matching on a
+;; constant string every generated case happens to share.
+(check-all "P2-sanity a live-pool path reports [pool/live], a terminal-pool path reports [pool/terminal]"
+  (fn [s]
+    (let [[pool s1] (gen-pick s backlog-hygiene-lib/backlog-pools)
+          [id s2] (gen-ticket-id s1)]
+      [{:pool pool :path (str "backlog/" pool "/" id "-x.yaml")} s2]))
+  (fn [{:keys [pool path]}]
+    (let [v {:kind :duplicate-id :id "BL-9001" :path path :others [{:path "backlog/paused/BL-1-sibling.yaml"}]}
+          out (backlog-hygiene-lib/format-violation v (fn [_] "x"))
+          expected-class (backlog-hygiene-lib/pool-classification pool)]
+      (if (str/includes? out (str "[" pool "/" expected-class "]"))
+        true
+        (str "expected [" pool "/" expected-class "] in " (pr-str out))))))
+
+;; ── P3 (invariant 2): content-verdict returns CONTENT IDENTICAL iff every
+;;    path in the set maps to the exact same content; any missing path or
+;;    differing content forces CONTENT DIFFERS. ───────────────────────────
+
+(def content-words ["one" "two" "three" "four" "five"])
+
+(defn- gen-content-verdict-input [s]
+  (let [[subject-path s1] (gen-path s)
+        [others s2] (gen-path-set s1 0 3)
+        [subject-readable? s3] (gen-bool s2)
+        [subject-content s4] (gen-pick s3 content-words)
+        subject-path (:path subject-path)
+        others-paths (mapv :path others)]
+    (loop [remaining others-paths sx s4 content-map (if subject-readable? {subject-path subject-content} {})]
+      (if (empty? remaining)
+        [{:subject-path subject-path :others-paths others-paths :content-map content-map} sx]
+        (let [[readable? sy] (gen-bool sx)
+              [same? sz] (gen-bool sy)
+              [other-content sw] (gen-pick sz content-words)]
+          (recur (rest remaining) sw
+                 (if readable?
+                   (assoc content-map (first remaining) (if same? subject-content other-content))
+                   content-map)))))))
+
+(check-all "P3 (invariant 2) content-verdict is CONTENT IDENTICAL iff every path maps to the exact same content"
+  gen-content-verdict-input
+  (fn [{:keys [subject-path others-paths content-map]}]
+    (let [read-fn (fn [p] (if (contains? content-map p) (get content-map p) (throw (Exception. "unreadable"))))
+          verdict (backlog-hygiene-lib/content-verdict subject-path others-paths read-fn)
+          subject-content (get content-map subject-path)
+          all-identical? (and (some? subject-content)
+                               (every? #(= subject-content (get content-map %)) others-paths))]
+      (cond
+        (and all-identical? (= verdict "CONTENT IDENTICAL")) true
+        (and (not all-identical?) (= verdict "CONTENT DIFFERS")) true
+        :else (str "expected " (if all-identical? "CONTENT IDENTICAL" "CONTENT DIFFERS") ", got " verdict)))))
+
+;; sanity: an unreadable SUBJECT (never in content-map) always forces
+;; CONTENT DIFFERS even when every other path happens to share content with
+;; each other - proves the property isn't vacuously true because the
+;; generator rarely produces an unreadable subject.
+(check-all "P3-sanity an unreadable subject always forces CONTENT DIFFERS, regardless of the others"
+  (fn [s]
+    (let [[others s1] (gen-path-set s 1 3)
+          [content s2] (gen-pick s1 content-words)]
+      [{:others-paths (mapv :path others) :content content} s2]))
+  (fn [{:keys [others-paths content]}]
+    (let [content-map (into {} (map (fn [p] [p content])) others-paths)
+          read-fn (fn [p] (if (contains? content-map p) (get content-map p) (throw (Exception. "unreadable"))))
+          verdict (backlog-hygiene-lib/content-verdict "backlog/active/BL-0-unreadable.yaml" others-paths read-fn)]
+      (if (= verdict "CONTENT DIFFERS") true (str "expected CONTENT DIFFERS, got " verdict)))))
+
+;; ── P4 (invariant 3): a DUPLICATE-ID finding names a copy to keep iff
+;;    exactly one candidate (subject + others) classifies as live, and that
+;;    named copy is exactly the live one. ──────────────────────────────────
+
+(check-all "P4 (invariant 3) keep: appears iff exactly one candidate is live, and names exactly that path"
+  gen-duplicate-id-input
+  (fn [{:keys [subject others]}]
+    (let [candidates (cons subject others)
+          live (filter #(= "live" (backlog-hygiene-lib/pool-classification (:pool %))) candidates)
+          v {:kind :duplicate-id :id "BL-9001" :path (:path subject)
+             :others (mapv (fn [o] {:path (:path o)}) others)}
+          out (backlog-hygiene-lib/format-violation v (fn [_] "x"))]
+      (cond
+        (and (= 1 (count live)) (str/includes? out (str "keep: " (:path (first live))))) true
+        (and (not= 1 (count live)) (not (str/includes? out "keep:"))) true
+        :else (str "candidates=" (pr-str candidates) " live-count=" (count live) " out=" (pr-str out))))))
+
+;; sanity: exactly two live candidates never names a keep (proves the
+;; property isn't vacuously true because the generator rarely produces
+;; exactly one live path).
+(check-all "P4-sanity two live candidates never name a keep"
+  (fn [s]
+    (let [[id1 s1] (gen-ticket-id s)
+          [id2 s2] (gen-ticket-id s1)
+          [pool1 s3] (gen-pick s2 (vec backlog-hygiene-lib/live-pools))
+          [pool2 s4] (gen-pick s3 (vec backlog-hygiene-lib/live-pools))]
+      [{:subject-path (str "backlog/" pool1 "/" id1 "-x.yaml")
+        :other-path (str "backlog/" pool2 "/" id2 "-y.yaml")} s4]))
+  (fn [{:keys [subject-path other-path]}]
+    (let [v {:kind :duplicate-id :id "BL-9001" :path subject-path :others [{:path other-path}]}
+          out (backlog-hygiene-lib/format-violation v (fn [_] "x"))]
+      (if (str/includes? out "keep:") (str "unexpected keep: in " (pr-str out)) true))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "backlog_hygiene_lib properties: " runs " runs each"))
 (if (empty? @failures)
