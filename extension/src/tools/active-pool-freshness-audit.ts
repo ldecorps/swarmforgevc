@@ -36,27 +36,46 @@ import type { FreshnessDecision } from './deprecate-check';
 // through the real CLI subprocess). Parity with the original is asserted by
 // activePoolFreshnessAudit.test.js's cross-check test (BL-897 discipline: a
 // duplicated-by-hand behavior needs a test proving both sides agree).
+const MALFORMED_VERDICT: FreshnessDecision = { decision: 'hold', reason: 'malformed deprecate-check output — fail closed' };
+
+function isBlankRaw(raw: string | null | undefined): boolean {
+  return raw === null || raw === undefined || String(raw).trim() === '';
+}
+
+function resolveHoldReason(reason: unknown): string {
+  return typeof reason === 'string' && reason.length > 0 ? reason : 'hold without reason — fail closed';
+}
+
+/** The decision-object branch alone, split out to keep interpretFreshness's own complexity low (CRAP gate). Null means "not a recognised shape" — caller falls back to MALFORMED_VERDICT. */
+function interpretParsedVerdict(parsed: unknown): FreshnessDecision | null {
+  if (parsed === null || typeof parsed !== 'object') {
+    return null;
+  }
+  const obj = parsed as { decision?: unknown; reason?: unknown };
+  if (obj.decision === 'allow') {
+    return { decision: 'allow' };
+  }
+  if (obj.decision === 'hold') {
+    return { decision: 'hold', reason: resolveHoldReason(obj.reason) };
+  }
+  return null;
+}
+
 function interpretFreshness(raw: string | null | undefined): FreshnessDecision {
-  if (raw === null || raw === undefined || String(raw).trim() === '') {
+  if (isBlankRaw(raw)) {
     return { decision: 'hold', reason: 'empty deprecate-check output — fail closed' };
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(String(raw));
   } catch {
-    return { decision: 'hold', reason: 'malformed deprecate-check output — fail closed' };
+    return MALFORMED_VERDICT;
   }
-  if (parsed !== null && typeof parsed === 'object') {
-    const obj = parsed as { decision?: unknown; reason?: unknown };
-    if (obj.decision === 'allow') {
-      return { decision: 'allow' };
-    }
-    if (obj.decision === 'hold') {
-      const reason = typeof obj.reason === 'string' && obj.reason.length > 0 ? obj.reason : 'hold without reason — fail closed';
-      return { decision: 'hold', reason };
-    }
-  }
-  return { decision: 'hold', reason: 'malformed deprecate-check output — fail closed' };
+  // `??` vs `||` here is an equivalent mutant, recorded rather than chased:
+  // interpretParsedVerdict returns only `null` or a FreshnessDecision object
+  // (never `0`, `''`, `false`, or `NaN`), so nullish-coalescing and logical-OR
+  // agree on every possible return value.
+  return interpretParsedVerdict(parsed) ?? MALFORMED_VERDICT;
 }
 
 export interface ActiveTicketRef {
@@ -146,17 +165,22 @@ export function parseArgs(argv: string[]): { root: string } | null {
   return { root };
 }
 
+/** Pure: the lines main() prints for a run's findings — split out so the CLI handler stays a thin loop (CLI main() thin-wrapper rule). */
+export function formatReport(findings: ActivePoolAuditFinding[]): string[] {
+  if (findings.length === 0) {
+    return ['active_pool_freshness_audit: clean — every backlog/active/ ticket allows'];
+  }
+  return findings.map(formatFinding);
+}
+
 export const main = makeArgsGuardedMain(
   parseArgs,
   'Usage: node active-pool-freshness-audit.js <project-root>\n',
   async ({ root }) => {
     const refs = listActiveTicketRefs(root);
     const findings = auditActivePool(root, refs, checkFreshnessViaCli);
-    for (const f of findings) {
-      console.log(formatFinding(f));
-    }
-    if (findings.length === 0) {
-      console.log('active_pool_freshness_audit: clean — every backlog/active/ ticket allows');
+    for (const line of formatReport(findings)) {
+      console.log(line);
     }
   }
 );

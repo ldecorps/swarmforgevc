@@ -10,6 +10,8 @@ const {
   formatFinding,
   resolveDeprecateCheckCliPath,
   checkFreshnessViaCli,
+  parseArgs,
+  formatReport,
 } = require('../out/tools/active-pool-freshness-audit');
 const { interpretFreshnessCliOutput } = require('../out/tools/deprecate-check');
 
@@ -67,6 +69,28 @@ test('auditActivePool fails closed on empty CLI output (missing/crashed CLI)', (
   const findings = auditActivePool('/root', refs, () => '');
   assert.equal(findings.length, 1);
   assert.equal(findings[0].ticketId, 'BL-1');
+  assert.match(findings[0].reason, /empty deprecate-check output/);
+});
+
+// BL-1228 hardening: CheckFreshnessFn's TS return type is `string`, so
+// production's own checkFreshnessViaCli never hands interpretFreshness a
+// real null/undefined - but the parity duplicate deliberately mirrors
+// deprecate-check.ts's interpretFreshnessCliOutput, whose own `string |
+// null | undefined` signature IS load-bearing there. JS enforces nothing
+// at runtime, so a differently-typed injected seam reaching this path is
+// possible; these two pin that the null/undefined branch still reports the
+// distinct "empty" reason rather than drifting to "malformed".
+test('auditActivePool fails closed with the empty-output reason when the checker returns null', () => {
+  const refs = [{ id: 'BL-1', path: 'backlog/active/BL-1-x.yaml' }];
+  const findings = auditActivePool('/root', refs, () => null);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].reason, /empty deprecate-check output/);
+});
+
+test('auditActivePool fails closed with the empty-output reason when the checker returns undefined', () => {
+  const refs = [{ id: 'BL-1', path: 'backlog/active/BL-1-x.yaml' }];
+  const findings = auditActivePool('/root', refs, () => undefined);
+  assert.equal(findings.length, 1);
   assert.match(findings[0].reason, /empty deprecate-check output/);
 });
 
@@ -146,6 +170,61 @@ test('formatFinding names the ticket, its path, and the reason', () => {
   assert.match(line, /stale premise/);
 });
 
+// BL-1228 hardening: the line's own distinguishing marker (what a human or a
+// log grep actually keys on to recognise this as a freshness-hold report,
+// as opposed to some other line naming the same ticket/path/reason
+// substrings) was previously unasserted - a mutant corrupting the marker
+// literal survived.
+test('formatFinding carries the ACTIVE-POOL-FRESHNESS-HOLD marker', () => {
+  const line = formatFinding({ ticketId: 'BL-1', path: 'backlog/active/BL-1-x.yaml', reason: 'stale premise' });
+  assert.match(line, /^ACTIVE-POOL-FRESHNESS-HOLD\b/);
+});
+
+// ── parseArgs: previously zero coverage — a mutant flipping its `if (!root)`
+// guard survived undetected. ──
+
+test('parseArgs returns the root when one argument is given', () => {
+  assert.deepEqual(parseArgs(['/some/root']), { root: '/some/root' });
+});
+
+test('parseArgs returns null when no arguments are given', () => {
+  assert.equal(parseArgs([]), null);
+});
+
+test('parseArgs returns null when the first argument is an empty string', () => {
+  assert.equal(parseArgs(['']), null);
+});
+
+test('parseArgs ignores extra arguments beyond the root', () => {
+  assert.deepEqual(parseArgs(['/some/root', 'extra']), { root: '/some/root' });
+});
+
+// ── formatReport: main()'s own print lines, extracted so the CLI handler
+// stays a thin loop over a pure function (CRAP/thin-wrapper hardening). ──
+
+test('formatReport prints the clean message when there are no findings', () => {
+  assert.deepEqual(formatReport([]), ['active_pool_freshness_audit: clean — every backlog/active/ ticket allows']);
+});
+
+test('formatReport prints one formatted line per finding, in order, and no clean message', () => {
+  const findings = [
+    { ticketId: 'BL-1', path: 'backlog/active/BL-1-x.yaml', reason: 'r1' },
+    { ticketId: 'BL-2', path: 'backlog/active/BL-2-x.yaml', reason: 'r2' },
+  ];
+  const lines = formatReport(findings);
+  assert.equal(lines.length, 2);
+  assert.deepEqual(lines, findings.map(formatFinding));
+  assert.ok(!lines.some((l) => l.includes('clean —')));
+});
+
+// BL-1038-EXEMPT: checkFreshnessViaCli's own real-CLI test below hands the
+// live repo root to it to prove the subprocess wiring is genuinely reaching
+// deprecate-check.js - a pinned fixture cannot stand in, since the whole
+// point is exercising the REAL compiled CLI this module shells out to in
+// production. It reads exactly one command's output (a nonexistent ticket
+// id, deterministic fail-closed path); cost is fixed, not a function of
+// repo size. Every other behaviour is covered above via the injected
+// checkFreshness seam against tmp fixtures.
 // ── production wiring: the real CLI subprocess, never a reimplementation ──
 
 test('resolveDeprecateCheckCliPath finds the built CLI under extension/out/tools', () => {
@@ -169,10 +248,6 @@ test('checkFreshnessViaCli returns empty (fail-closed) when the CLI is missing',
   assert.equal(checkFreshnessViaCli(root, 'BL-1'), '');
 });
 
-// BL-1038-EXEMPT: exercises the real deprecate-check.js CLI subprocess
-// against ONE fixed, nonexistent ticket id - O(1) in the repository's size
-// (a single ticket lookup, not an enumeration or history walk), the same
-// shape promote_and_route_next.sh's own real-CLI consult already takes.
 test('checkFreshnessViaCli runs the real built CLI and returns its stdout', () => {
   // Real repo root, a ticket id unlikely to exist — exercises the CLI's own
   // fail-closed "no ticket found" path deterministically, never asserting
