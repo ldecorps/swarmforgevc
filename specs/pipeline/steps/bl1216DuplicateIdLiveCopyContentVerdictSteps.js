@@ -64,12 +64,35 @@ function duplicateIdLine(output) {
   return output.split('\n').find((l) => l.startsWith('DUPLICATE-ID'));
 }
 
+// Fixture-root hygiene (BL-971/BL-529 pattern): every root the Background
+// creates is registered for removal at process exit, and each new
+// Background removes the previous scenario's roots eagerly, so neither a
+// passing nor a throwing scenario leaves a tmp dir behind.
+const fixtureRoots = [];
+function registerFixtureRoot(root) {
+  fixtureRoots.push(root);
+}
+process.on('exit', () => {
+  for (const root of fixtureRoots) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^an empty backlog corpus$/, (ctx) => {
+    if (ctx.bl1216) {
+      for (const f of ctx.bl1216.unreadableFiles || []) {
+        fs.chmodSync(f, 0o644);
+      }
+      fs.rmSync(ctx.bl1216.root, { recursive: true, force: true });
+      fs.rmSync(ctx.bl1216.published, { recursive: true, force: true });
+    }
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1216-backlog-'));
     const published = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1216-published-'));
+    registerFixtureRoot(root);
+    registerFixtureRoot(published);
     for (const pool of KNOWN_POOLS) {
       fs.mkdirSync(path.join(root, 'backlog', pool), { recursive: true });
       fs.mkdirSync(path.join(published, pool), { recursive: true });
