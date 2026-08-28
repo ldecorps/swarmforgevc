@@ -1,0 +1,247 @@
+id: BL-1213
+title: "A bulk restore-from-sibling AUTHORS the rollback, so BL-1098's silent-revert predicate excuses it by construction: e52261521 rolled BL-592's seven landed paths back to pre-parcel content on three role branches at once, every check read clean, and the damage was rediscovered one file at a time by hand"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: nothing is lost from git objects (the coder's parcel
+# commit e5cf2a3af is still an ancestor of all three branches, and main was
+# never touched), and the pipeline is moving. But this is a live fault that
+# has already destroyed landed in-flight work on BL-1188, BL-1189 and BL-592,
+# is invisible to `git log --oneline`, to the deletion-diff quarantine lift,
+# AND to BL-1098's silent-revert predicate, and its only defence today is a
+# reviewer diffing a parcel commit path by path.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1213-forward-refused-when-branch-rolled-back-a-parcel.feature
+
+invariants:
+  - "The verdict is computed from git objects and the recorded parcel commit alone - commits, their parents, their trees and their blobs - never from any working tree, so the chronically-dirty shared master checkout and a role worktree's own uncommitted drift (BL-1195) cannot change the answer."
+  - "A rollback the branch's own history explains is never refused: a BL-490/BL-495 bounce revert stays legal on every path it removes, and later work authoring genuinely different content is likewise never refused - only content byte-identical to the parcel commit's PARENT, with no revert accounting for it, is a finding."
+
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::parcel_rollback_guard_lib.bb::the git_handoff send is the ONLY chokepoint every hop crosses, and a predicate that is fully unit-tested but never consulted here leaves e52261521's exact path open and this ticket's value at zero. The four existing gates in this file (ticket_close_guard_lib.bb, duplicate_chain_guard_lib.bb, pre_qa_gate_lib.bb, task_commit_coherence_gate_lib.bb) are the precedent shape to follow, including their warn-and-send posture on unreadable facts."
+  - "specs/pipeline/steps/index.js::bl1213::the acceptance runner throws on any scenario lacking a step handler, so this ticket's handlers must be registered in the same parcel as the behaviour (BL-233). Substring anchor only - the handler file's exact name is the implementer's call."
+
+human_approval: approved
+approval_context: >
+  Two rulings are wanted, and neither is the predicate itself.
+
+  First, the posture on unreadable facts (scenario 04). The four gates already
+  in swarm_handoff.bb warn and let the send through when they cannot read what
+  they need, blocking only on a positive finding, and this ticket follows them
+  rather than inventing a second posture in the same file - the same choice
+  BL-1205 made and for the same reason. The opposite is defensible for a guard
+  against silent destruction of landed work, but a gate that fails closed on an
+  unreadable parcel commit can wedge every hop in the swarm on an unrelated git
+  hiccup. If fail-closed is preferred, say so and scenario 04 inverts.
+
+  Second, and more interesting: whether this belongs to BL-1211 instead. It is
+  the mirror image of that ticket - BL-1211 is a recovery bringing BACK content
+  a revert deliberately removed, this is a recovery TAKING AWAY content a
+  commit deliberately added - and BL-1211's own second invariant already states
+  that a lift "can fail in BOTH directions". It is minted separately because
+  the discriminators differ (BL-1211 compares against the branch's revert
+  history; this compares against the parcel commit's parent), because BL-1211
+  is a quarantine-lift check while this is a per-hop forward gate, and because
+  BL-1211 is awaiting human approval on a carefully-scoped four-scenario slice
+  that growing would invalidate. If the preference is one ticket covering both
+  directions, this one folds into BL-1211 and that ticket's approval restarts.
+
+  The lib file name parcel_rollback_guard_lib.bb is fixed by this ticket rather
+  than left to the implementer, solely so required_wiring can anchor on a
+  literal that will exist (BL-874). The mechanism behind it is the
+  implementer's call.
+
+description: |
+  ## What
+
+  A `git_handoff` must be refused when the branch it forwards holds, at its
+  tip, content byte-identical to what a path held BEFORE an accepted parcel
+  commit for a still-active ticket changed it, and no revert on that branch
+  accounts for the rollback. The refusal names every such path and the parcel
+  commit whose content was rolled back.
+
+  ## Why - three checks, all blind, verified at mint
+
+  On 2026-08-27 `e52261521` ("recovery: restore swarmforge-architect's full
+  tree tracking") rebuilt the collapsed architect tree by staging verified
+  on-disk content directly. Its own message records the premise: "Working tree
+  on disk was never affected - only git's tracking of it". For these seven
+  paths that premise was false - the on-disk content was pre-BL-592 - and the
+  recovery froze the staleness into a commit that reads as a repair.
+
+  Merge `2861d83ef` then joined that recovery to `693785c4e`, a parent that DID
+  carry BL-592, and kept the stale content. That was not git's doing: measured
+  on `docsTree.ts`, the merge base `499c9cb44` and the recovery side hold the
+  SAME blob `96a8947c`, only `693785c4e` changed the path (`2b97b9e1`), and the
+  merge result is `96a8947c` again - a resolution that discarded the sole
+  changed side, with no conflict marker and no record. The rollback then
+  propagated to `swarmforge-coder` and `swarmforge-hardender`.
+
+  The constitution already names this shape and requires the remedy by hand:
+  "A merge can silently revert already-LANDED work the sender never had ...
+  diff every merge against BOTH parents and read the deletions"
+  (engineering.prompt, BL-571/BL-958). Nothing enforces it. This ticket is that
+  rule given a chokepoint.
+
+  Measured, not inferred - all seven paths hold content byte-identical to
+  `e5cf2a3af^` on all three branches:
+
+    extension/src/docs/docsTree.ts           (schema v2 -> v1, NO_EPIC_KEY /
+                                              EpicNode / buildEpicNodes gone)
+    extension/src/bridge/bridgeServer.ts     (/spec-tree routes gone)
+    extension/src/bridge/consoleMenuUiHtml.ts (menu link gone)
+    pwa/app.js                               (milestoneEpics helpers gone)
+    extension/test/docsTree.test.js
+    extension/test/pwaDocsExplorer.test.js
+    extension/test/pwaLocale.test.js
+
+  Three separate defences read clean on this, each for its own reason:
+
+  1. `git log --oneline` on the branch shows a commit titled *recovery:
+     restore ... full tree tracking*. Reading as a repair is the point; a
+     reviewer scanning subjects has no reason to open it.
+
+  2. The deletion-diff quarantine lift
+     (`git merge-tree --write-tree <sibling> <branch>` then
+     `git diff --diff-filter=D`) returns zero. Every path is PRESENT - only
+     its content is stale - and the sibling being compared against was the
+     source of the stale content.
+
+  3. **BL-1098's silent-revert predicate excuses it by construction.**
+     `silent-revert-path?` requires `(not tip-matches-newest-authoring?)`,
+     and after a bulk restore the newest non-merge commit authoring each of
+     these paths IS `e52261521`, whose content the tip matches exactly. That
+     conjunct is deliberate - it protects the correct-reconcile shape - and a
+     bulk restore launders a rollback straight through it. BL-1098 also runs
+     only in the push sweep (`push_sweep_lib.bb`, main -> origin), so it never
+     sees a role branch at all. Two independent reasons; fixing either alone
+     would not have caught this.
+
+  A fourth check does exist and is not blind, but it is late and partial: the
+  pre-QA `required_wiring` gate. BL-592 declares
+  `extension/src/bridge/bridgeServer.ts::spec-tree` and
+  `extension/src/bridge/consoleMenuUiHtml.ts::spec-tree`, both rolled back, so
+  the documenter-to-QA send would have been refused. But that is hop six - the
+  loss rides five stages first - it fires only for paths a ticket happened to
+  declare, and it reports "wiring absent", pointing the reader at the ticket's
+  own implementation rather than at the branch that rolled it back.
+
+  The cost of having no gate is measured: BL-1188's `readLiveRoleHeldTickets`,
+  BL-1189's `dedupePrimaryWorkingTicket` and BL-592's seven paths were damaged
+  by the same event and rediscovered separately - two by architect bounces one
+  symbol at a time, the third only on a third architect pass over BL-592. Each
+  cost a bounce, a re-fix and a re-walk; BL-592's parcel is stranded on it now.
+
+  ## How (direction, not mandate)
+
+  The discriminator that works here is ticket-scoped, and it is cheap. The
+  handoff record already carries, per ticket, the `commit:` each hop forwarded,
+  so for the active ticket a branch is carrying, the accepted parcel commit P
+  is known. For each path P touched: compare the branch tip's blob against
+  `P^`'s blob for that path. Byte-identical means the parcel's change to that
+  path is gone. Then subtract the legal explanations - a revert commit on this
+  branch that removed it (BL-490/BL-495), which is the same revert-history
+  reading BL-1211's recovery filter needs.
+
+  This is deliberately NOT "tip differs from newest authoring commit": that is
+  BL-1098's question and it is the one this defect walks past. The question
+  here is whether the parcel's own change survived, which no authoring commit
+  can answer away.
+
+  Bounded by the paths P touched, not by the tree - seven blob comparisons in
+  the live instance, not 9,825.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT weaken or re-tune BL-1098's predicate. It is correct for the
+    question it asks and its escape hatch protects a real shape (discarding a
+    stale one-sided change). This ticket adds a second, differently-scoped
+    question at a different chokepoint; it does not edit the first.
+
+  - Do NOT make ancestry a criterion. `e5cf2a3af` IS an ancestor of all three
+    damaged branches and its content is gone from every one of them. Ancestry
+    proves a commit was applied, never that its effect survived - the same
+    lesson BL-1211 records.
+
+  - Do NOT resolve this by forbidding restore-from-sibling. That is how the
+    9,680-file collapse was repaired and it must stay available; this gate
+    catches the rollback downstream, it does not remove the mechanism.
+
+  - Do NOT extend the gate to paths no accepted parcel commit touched. The
+    ticket-scoped bound is what keeps it cheap and what keeps it off the
+    correct-reconcile shape; a full-tree freshness walk is a different, much
+    larger ticket and is not wanted.
+
+  - Not in scope: restoring BL-592's seven paths. That is BL-592's own
+    re-dispatch, recorded in that ticket's notes with the exact per-path
+    evidence, and it must not wait for this ticket.
+
+  - Not in scope: the tree collapse itself (BL-1205), the resurrection
+    direction and the lift check (BL-1211), and the destructive revert remedy
+    (BL-1208). This is the fourth and distinct failure in that thread, not a
+    re-report of any of them.
+
+qa_e2e_procedure: >
+  1. Reproduce the live instance before any fix, read-only, from the shared
+     checkout, and put the output in the evidence file. For each of the seven
+     paths listed in the description, with BRACED refs (an unbraced
+     `$ref:path` silently yields empty in zsh):
+     `git rev-parse "e5cf2a3af^:<path>"` and
+     `git rev-parse "swarmforge-coder:<path>"` must print the SAME blob sha,
+     on `swarmforge-coder`, `swarmforge-architect` and `swarmforge-hardender`
+     alike, while `git rev-parse "e5cf2a3af:<path>"` differs. If the branches
+     have been repaired by the time this runs, reconstruct the same shape in
+     a fixture rather than reporting the step as unrunnable.
+  2. Scenario 01 row 1: build a fixture branch that accepted a parcel commit
+     and then rolled one of its paths back to the parent blob. Sending a
+     git_handoff must be refused. Confirm non-vacuity by asserting the same
+     fixture sends cleanly once the parcel content is restored (row 3).
+  3. Scenario 01 row 2, the one most likely to be got wrong: revert the parcel
+     commit on the branch properly (BL-490/BL-495) and confirm the send is
+     ALLOWED. A gate that refuses here blocks every legitimate bounce revert
+     in the swarm, which is worse than the defect it fixes.
+  4. Scenario 01 row 4: a later commit authoring genuinely different content
+     for the same path sends cleanly - a path-based check passes every other
+     row and fails only this one.
+  5. Scenario 03: make a bulk restore commit the newest authoring commit for
+     the rolled-back path, and confirm the refusal still fires. This is the
+     exact shape BL-1098's predicate excuses; if it passes here the ticket has
+     reimplemented BL-1098 rather than fixed the gap.
+  6. Scenario 04: make the recorded parcel commit unreadable and confirm the
+     send proceeds with a warning naming the ticket - not a silent pass and
+     not a block.
+  7. Scenario 05: send a `note` from the same branch and confirm the gate
+     records no finding at all.
+
+notes: >
+  Source: architect note handoff
+  00_20260827T213429Z_001142_from_architect_to_specifier_coordinator, verbatim:
+  "BL-592 wiring still reverted post-recovery, see evidence 2885f05e4".
+  Sent to specifier + coordinator at priority 00. Evidence:
+  backlog/evidence/BL-592-architect-post-recovery-still-reverted-20260827.md,
+  the architect's third pass on BL-592 this session.
+
+  Specifier verification at mint, independent of the architect's method:
+  confirmed all seven paths hold blobs byte-identical to `e5cf2a3af^` on all
+  three role branches by blob-sha comparison with braced refs, not by grep;
+  confirmed `e5cf2a3af` is a real ancestor of all three; confirmed `main` and
+  `origin/main` never carried BL-592, so nothing landed is lost; identified
+  `e52261521` as the sole non-merge commit authoring those paths after the
+  parcel commit, and `2861d83ef` as the merge that preferred it over
+  `693785c4e`; and read `silent-revert-path?` in push_sweep_lib.bb to establish
+  that its `tip-matches-newest-authoring?` conjunct excuses this shape rather
+  than merely missing it.
+
+  Sibling tickets in the same thread, none of which covers this: BL-1205
+  (mass-deletion forward gate - path-level, blind to a content-level rollback
+  that leaves the tree full-size), BL-1211 (the resurrection direction and the
+  quarantine lift), BL-1208 (record-bounce's destructive revert remedy),
+  BL-1195 (worktree content drift with no authoring commit at all), BL-1098
+  (the push-sweep predicate this defect walks past).

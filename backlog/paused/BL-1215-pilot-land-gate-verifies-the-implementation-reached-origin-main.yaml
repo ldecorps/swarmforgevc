@@ -1,0 +1,137 @@
+id: BL-1215
+title: "the pilot acceptance gate moves a ticket to backlog/done/ on a local-HEAD fact alone, so an expedition whose work never reached origin/main still reads as done"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: operator-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1215-pilot-land-gate-verifies-the-implementation-reached-origin-main.feature
+human_approval: approved
+approval_context: >
+  Minted from the explicitly OPTIONAL follow-on clause of the operator intake
+  .swarmforge/operator/INTAKE-bl1191-pilot-cleanup-gate-before-restart.md
+  (human Laurent via Cursor, 2026-08-27 ~16:39 BST), which reads in full:
+
+    "If 'pilot claimed done but did not land on origin/main' is still an
+    unowned process gap after BL-727/BL-701, mint a separate defect. Do not
+    block this restart gate on that mint."
+
+  Two things need sign-off. First, that the gap is worth owning at all — the
+  human left that conditional, and the condition is met: verified by reading
+  extension/src/tools/pilotAcceptanceGate.ts, which contains no origin/main
+  reference, no push, and no ancestry check anywhere. Second, that the check
+  belongs in the gate rather than in a separate post-pilot verifier — the
+  intake's own checklist is a human procedure today, and folding it into the
+  gate is what makes it not-optional.
+
+  Firm and not up for negotiation: this check fails CLOSED. That is the
+  deliberate opposite of BL-729's fails-open commit-claims check, and the
+  reason is stated in the description.
+
+  NOTE: this ticket does NOT discharge that intake's restart hold. The hold
+  is a live ops gate for an independent operator and remains in place; the
+  intake file is deliberately left un-archived.
+description: |
+  ## What
+
+  Before the pilot acceptance gate moves a ticket YAML into `backlog/done/`
+  and writes a passing receipt, verify that the run's implementation commit
+  is reachable from `origin/main`. When it is not — or when `origin/main`
+  cannot be read at all — refuse the land and say which commit is missing.
+  When it is reachable, land exactly as today.
+
+  ## How (direction, not mandate)
+
+  `pilotAcceptanceGate.ts`'s land step already captures the commit through a
+  `deps.getLandedCommit()` seam before it moves anything. The natural shape
+  is a sibling seam alongside it, injected the same way, so the check is
+  unit-testable in-process with no real remote — consistent with this
+  project's inject-side-effects-not-env-bypasses rule. The CLI wrapper
+  `pilot-acceptance-gate.ts` stays a thin wrapper over it.
+
+  ## Why
+
+  "Done" is currently a fact about ONE local checkout. The gate captures
+  local `HEAD` and moves the YAML; nothing anywhere asks whether that commit
+  exists on the durable remote. So an expedition can pass its own acceptance
+  contract, write a passing receipt, mark its ticket done — and leave the
+  implementation reachable only from a worktree or an unpushed local branch.
+
+  That is not hypothetical: BL-1158 failed in exactly this shape earlier the
+  same day (implementation in worktrees and in-session, not on `origin/main`;
+  ticket not durably done; the run read as successful). The operator's own
+  words in the source intake: "Treat 'the agent said it landed' as not
+  evidence."
+
+  ## Fails CLOSED — deliberately unlike BL-729
+
+  BL-729's commit-claims check fails OPEN (`checked: false`) when a run's own
+  commit range cannot be resolved, because an unresolvable range is not
+  evidence of a defect. This check is the mirror image: an `origin/main` that
+  cannot be read is not evidence that the work landed, and treating silence
+  as success is the entire defect being fixed. Do not copy the fails-open
+  pattern from the neighbouring code — scenario 03 is the guard against
+  exactly that.
+
+  ## Constraints
+
+  - Do not change what the acceptance contract itself checks, or when the
+    gate runs. Only what must be true before it declares a land.
+  - Do not add a push. The gate verifies; it does not make the land happen.
+    A refusal tells a human (or the pilot) to push and re-run.
+  - No network in unit tests — the origin lookup goes through an injected
+    seam, never a real fetch.
+
+qa_e2e_procedure: >
+  (1) Drive a piloted ticket whose acceptance passes but whose implementation
+  commit is only on a local branch (never pushed); confirm the gate refuses,
+  names the missing commit, leaves the ticket YAML where it was, and writes
+  no passing receipt. (2) Push that same commit to origin/main and re-run;
+  confirm the gate now lands the ticket exactly as it does today, receipt
+  included. (3) Point the gate at a checkout whose origin/main is unreadable
+  (no remote configured); confirm it refuses with an origin-unreadable
+  reason rather than landing — fail-closed, not fail-open. (4) Confirm the
+  BL-729 commit-claims path still fails OPEN as it does today; this ticket
+  must not have flipped it.
+
+out_of_scope: |
+  - The restart hold in the source intake
+    (.swarmforge/operator/INTAKE-bl1191-pilot-cleanup-gate-before-restart.md).
+    That is a one-shot ops gate for an independent operator; the intake says
+    in terms not to mint a ticket for it, and it stays live and un-archived.
+  - BL-701 stage-boundary orphan cleanup and the /tmp + worktree leftover
+    half of that checklist — a different gap, not this one.
+  - Verifying BL-1191 itself.
+  - Making the land happen (pushing). Verification only.
+
+invariants:
+  - "A piloted ticket reaches backlog/done/ only when its implementation commit is reachable from origin/main."
+  - "An origin/main that cannot be read is treated as not-landed, never as landed."
+
+required_wiring:
+  - 'extension/src/tools/pilotAcceptanceGate.ts::origin/main::the land gate must actually consult origin/main; today this file contains no such reference at all, which is the defect'
+
+source: |
+  Operator intake
+  .swarmforge/operator/INTAKE-bl1191-pilot-cleanup-gate-before-restart.md
+  (human Laurent via Cursor, 2026-08-27 ~16:39 BST), section "Optional
+  specifier follow-on (not this hold)". Precedent incident named there:
+  BL-1158, same day. Gap confirmed unowned by the specifier by reading
+  extension/src/tools/pilotAcceptanceGate.ts (no origin/main, no push, no
+  ancestry check) and by grepping the backlog for an existing owner across
+  paused/active/hold/done.
+
+notes: |
+  - "[2026-08-27] specifier: the source intake is an ops HOLD that forbids
+    minting a ticket for itself ('Do not mint a new ticket for this
+    one-shot'). Only its explicitly optional follow-on clause is minted here,
+    and its condition was verified, not assumed. The intake file is
+    deliberately NOT archived: its restart gate is still live for the
+    independent operator, and archiving it would retire a gate a human is
+    waiting on. A one-line specifier-disposition pointer was appended to it
+    instead."

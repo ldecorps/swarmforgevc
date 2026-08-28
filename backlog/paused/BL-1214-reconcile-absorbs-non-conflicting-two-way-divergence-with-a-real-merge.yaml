@@ -1,0 +1,174 @@
+id: BL-1214
+title: "master-main reconcile plans :ff-absorb for a two-way divergence but can only fast-forward, so it resets the local commit away instead of merging it"
+milestone: M8
+type: defect
+severity: critical
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: swarm-reported
+depends_on: [BL-1198]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1214-reconcile-absorbs-non-conflicting-two-way-divergence-with-a-real-merge.feature
+human_approval: approved
+approval_context: >
+  Standing-lane red, pre-existing, found 2026-08-27 by the coder while
+  verifying BL-1198 and re-traced independently by the specifier by reading
+  the code. Scenario 02 of
+  swarmforge/scripts/test/test_handoffd_master_main_reconcile_wiring.sh
+  (standing lane, suite-manifest.tsv:238) fails identically with and without
+  BL-1198's fix — confirmed by the coder via a `git stash` A/B
+  (backlog/evidence/BL-1198-preexisting-two-way-divergence-reset-defect-20260827.md).
+
+  What needs sign-off is the DIRECTION, not the diagnosis: the diagnosis is
+  verified in code. Today a non-conflicting two-way divergence on local main
+  is resolved by throwing the local side away; this ticket says it should be
+  resolved by merging. That is a deliberate behaviour change to a
+  load-bearing recovery path (BL-891/919/1120/1130/1131/1135/1138/1141 all
+  landed on it), so it is worth a human "yes, merge is the right answer here"
+  before a coder starts. Everything else is firm: the mechanism, the three
+  affected runners, the two invariants, and the constraint that the
+  conflicting case must keep behaving exactly as it does today.
+description: |
+  ## What
+
+  Between the failed fast-forward and the reset fallback, attempt one plain
+  3-way `git merge --no-edit origin/main`. When it succeeds, the divergence
+  is absorbed losslessly and no reset happens. When it conflicts, abort that
+  merge cleanly and fall through to today's reset recovery, byte-for-byte
+  unchanged.
+
+  Centralize the ladder ONCE — `master_main_reconcile_lib.bb` is the natural
+  home, as it already is for BL-1198's `rematch-with-push-first!`, and all
+  three runners already `load-file` it — rather than patching three
+  independent `--ff-only`-then-reset call sites:
+  `handoffd.bb`'s `master-main-reconcile-merge!` (the `:ff-absorb` branch),
+  `swarm_heal.bb`'s inline `:merge!`/`:rematch!` pair, and
+  `post_hotfix_merge_origin.bb`'s absorb + `rematch-onto-origin!`.
+
+  ## Why
+
+  `absorb-dispatch-plan` deliberately resolves behind>0 + ahead>0 +
+  no-predicted-conflict to `:ff-absorb`. But every executor of that plan runs
+  only `git merge --ff-only --no-edit origin/main`, and a genuine two-way
+  divergence can never fast-forward — whatever its content, however
+  non-conflicting. So that merge always fails, no `MERGE_HEAD` is created,
+  and the `:else` branch falls straight to `git reset --hard origin/main`,
+  discarding the local-only commit outright. The plan says "absorb"; the
+  execution can only fast-forward, and nothing in between ever tries the one
+  operation that would actually absorb it.
+
+  This is the same "content lost with no reverting commit to blame" family as
+  BL-1098 and BL-1198, and it is the second half of the same incident: the
+  test that catches it has been red in the standing lane since the scenario
+  was written, so the loss path has been live and unowned the whole time.
+
+  ## Why this is NOT BL-1198 again (direction, not mandate)
+
+  BL-1198 adds a push attempt before the reset. That cannot save this case:
+  under a genuine two-way divergence `git push origin main` is legitimately
+  rejected too. Pushing and resetting are both wrong here; merging is right.
+  The two fixes compose into one ladder — fast-forward, then push, then
+  3-way merge, then reset — and the implementer is free to order push and
+  merge as the code makes natural, provided the reset stays last.
+
+  ## Constraints
+
+  - Do NOT weaken the conflicting-divergence path: scenario 02 is a
+    regression guard that today's reset recovery still runs exactly as it
+    does now once a real merge has actually been attempted and conflicted.
+  - Never leave a conflicted `MERGE_HEAD` behind for an operator to finish —
+    that is the designed refusal BL-1130/BL-1131/BL-1135 built
+    (`designed-recovery-is-operator-absorb?` exists to assert its absence).
+  - Never abort a merge this path did not start — reuse the existing
+    `may-abort-failed-merge?` seam (BL-1120), do not re-derive the check.
+  - Reuse the existing `absorb-dispatch-plan` decision; this ticket changes
+    how `:ff-absorb` is EXECUTED, not when it is planned.
+
+qa_e2e_procedure: >
+  (1) Run the standing shell test
+  `swarmforge/scripts/test/test_handoffd_master_main_reconcile_wiring.sh` and
+  confirm scenario 02 now passes — both the "local-only bookkeeping commit
+  STAYS reachable" assertion and the "produces a real merge commit (2
+  parents)" assertion — with no other scenario in that file regressing. This
+  is the end-to-end gate: it drives the real handoffd sweep against real git,
+  so a green here proves the fix is wired, not merely present. (2) Fixture: a
+  two-way divergence whose two sides change the SAME path incompatibly; run
+  the same path; confirm a 3-way merge is attempted, is aborted (assert
+  `.git/MERGE_HEAD` is absent and the working tree carries no conflict
+  markers afterward), and the reset-to-origin recovery completes exactly as
+  it does today. (3) Fixture: seed a `MERGE_HEAD` before the sweep runs;
+  confirm the path attempts no merge, aborts nothing, and resets nothing
+  (BL-1120 unchanged).
+
+out_of_scope: |
+  - BL-1198 (push before reset) — lands first; this ticket depends on it and
+    must not re-implement or relitigate it.
+  - Redesigning WHEN a rematch/absorb is planned (`absorb-dispatch-plan`,
+    `post-land-absorb-plan`, the ahead/behind/dirty `sync-action` logic).
+    Only how an already-planned `:ff-absorb` is executed.
+  - `post-qa-branch-sweep-ff!` (handoffd.bb ~3296): its `--ff-only` is
+    correct — it fast-forwards role worktrees and never resets. Checked; not
+    a fourth call site.
+  - Recovering any commit already lost to this path historically.
+
+invariants:
+  - "A commit on local main is never discarded by the reconcile path while a plain 3-way merge with origin/main would have preserved it without conflict."
+  - "The reconcile path never leaves a conflicted merge in progress, and never aborts a merge it did not itself start."
+
+source: |
+  Coder `note` (priority 00) to specifier + coordinator,
+  2026-08-27T22:43:56Z: "Standing test red pre-existing: 2-way-divergence
+  bookkeeping commit lost". Full investigation:
+  backlog/evidence/BL-1198-preexisting-two-way-divergence-reset-defect-20260827.md
+  (coder, on swarmforge-coder tip daefb98c6). Mechanism independently
+  re-verified by the specifier by reading master_main_reconcile_lib.bb
+  (absorb-dispatch-plan, post-land-absorb-plan, may-abort-failed-merge?),
+  handoffd.bb (master-main-reconcile-merge!), swarm_heal.bb, and
+  post_hotfix_merge_origin.bb.
+
+notes: |
+  - "[2026-08-27] specifier: minted from the coder's standing-red note.
+    Decided prod-wrong, not fixture-wrong: the failing scenario's assertions
+    ('the local-only bookkeeping commit STAYS reachable', 'produces a real
+    merge commit, never a rewrite of local history') encode the intent
+    BL-891/BL-919 wrote it for, and match this project's own
+    diverged-means-merge guardrail. The test is right; the executor is wrong."
+  - "[2026-08-27] specifier: depends_on BL-1198 is an ordering constraint,
+    not a bundling one — BL-1198 is in flight on swarmforge-coder and touches
+    the same four files. Do not promote this until BL-1198 is in
+    backlog/done/, or the two parcels will collide (Concurrent Work
+    Orthogonality)."
+  - "[2026-08-28] specifier: this defect FIRED IN PRODUCTION on `main` and
+    destroyed four committed commits. Severity raised high -> critical on the
+    schema's own definition (`critical` = swarm-down or data-loss); this is no
+    longer a standing-lane red, it is realised loss. `git reflog show main`
+    records `main@{2}: reset: moving to origin/main`, and the branches had
+    genuinely diverged (`git merge-base --is-ancestor 9fcce267a 07f4283a3`
+    reports NOT an ancestor), so this is the exact two-way case the ticket
+    describes: plan says absorb, executor reset. Destroyed, newest first:
+    07f4283a3 `Approve BL-1214: record human_approval`, 23f154cd4 `Approve
+    BL-1215: record human_approval`, 09f46574c `BL topic record for BL-1198`,
+    779a036e5 `Correct BL-891 fixup: restore BL-1188/1189/592 with real
+    content, not stale`. An earlier `main@{11}: reset: moving to origin/main`
+    shows this is not a one-off."
+  - "[2026-08-28] specifier: the sharpest fact for anyone weighing this
+    ticket's priority — the reset destroyed the HUMAN'S OWN APPROVAL OF THIS
+    TICKET. 07f4283a3 flipped BL-1214 `human_approval: pending` -> `approved`
+    and 23f154cd4 did the same for BL-1215. Both flips are gone; both tickets
+    read `pending` on `main` again and cannot promote, and the human will be
+    re-asked for an approval they already gave. The specifier must not flip
+    the field back (schema: `approved` is written by the human, never by the
+    specifier), so it has to be re-applied from the rescue ref below or
+    re-asked."
+  - "[2026-08-28] specifier: nothing is unrecoverable — the dropped commits
+    were preserved as local refs the moment the loss was noticed:
+    `rescue/main-before-reset-20260828` -> 07f4283a3 (the full pre-reset tip,
+    containing all four), and `rescue/BL-1216-spec` -> 2c1c01bd4 (the BL-1216
+    spec, written after the reset and at risk of the next one). Recovery is a
+    cherry-pick, not a rewrite. Delete these refs only once the content is
+    reachable from `origin/main`. Collateral still live on `main`: BL-1188,
+    BL-1189 and BL-592 are back in `backlog/hold/` — the repair 779a036e5
+    made was undone with it (see
+    [coordinator-false-identical-content-claim] evidence and BL-1216)."

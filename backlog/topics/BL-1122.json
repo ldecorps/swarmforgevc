@@ -1,0 +1,1 @@
+{"id":"BL-1122","messages":[{"seq":0,"ts":1787869486398,"author":"swarm","type":"outbound","text":"BL-1122 ✅ done — \"Master-checkout drift WARNs on in-flight commits: agents git-add on main, the sweep sees index≠main, and Operator gets a false STAGED-reversion alarm\""}]}

@@ -1,0 +1,217 @@
+id: BL-1211
+title: "A branch recovery restores the very content a BL-490/BL-495 bounce revert removed, and the quarantine-lift check is structurally blind to it: an empty deletion diff is what a resurrected branch scores by construction"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal that has already fired, with a live branch
+# currently carrying the resurrected content. The quarantine lift that cleared
+# swarmforge-architect at 20:24Z used the one check that cannot see this, and
+# the branch has held byte-identical bounced BL-1189 content ever since. Not
+# critical: nothing has forwarded from it, the loss is recoverable, and the
+# content is bounced work rather than destroyed work.
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounce-content.feature
+
+invariants:
+  - "A recovery never resurrects content a revert on that same branch deliberately removed: whatever a restore-from-sibling brings back is filtered by the branch's own revert history, so recovering a collapsed branch cannot undo its bounces."
+  - "A quarantine lift can fail in BOTH directions - on content that went missing and on content that came back. An empty deletion diff against a sibling is necessary and never sufficient, because a branch restored from that sibling scores zero by construction."
+
+description: >
+  Severity rationale is in the comment above the field. Root-caused
+  and verified at mint; full evidence in
+  backlog/evidence/BL-1189-recovery-silently-undid-the-bounce-revert-20260827.md.
+
+  Two rules govern a review branch and on 2026-08-27 they
+  contradicted each other, with no check able to notice.
+
+  Rule one (BL-490/BL-495, constitution): a bounce must be reverted
+  out of the bouncing branch, and the check is that the CONTENT is
+  gone - "confirm CONTENT is gone, never by ancestry".
+
+  Rule two (the recovery procedure used for the tree collapse): a
+  recovered branch must be missing nothing relative to its siblings,
+  and the check is that merging it deletes nothing from them -
+  `git merge-tree --write-tree <sibling> <branch>` then
+  `git diff --diff-filter=D` must be empty.
+
+  A branch whose sibling still holds the bounced content cannot
+  satisfy both. Restoring everything the sibling has is precisely
+  what drives the deletion diff to zero, and it restores the bounced
+  content along with everything else. The lift check is not merely
+  weak here; it is structurally guaranteed to pass on exactly the
+  branch that has the defect.
+
+  What happened, in order. `1fcd4c167` removed 511 lines across 6
+  files - "BL-1189: revert bounced coder content out of architect
+  branch (BL-490/BL-495)", the constitutionally required step.
+  `0bf05774a`, four minutes later, restored 13 files from
+  `swarmforge-hardender` to repair the tree collapse; two of the
+  thirteen were exactly the BL-1189 files the revert had removed.
+  The hardener branch still carried them - the bounce was never its
+  concern. The deletion diff then read zero against both hardender
+  and main, and the quarantine was lifted at 20:24Z.
+
+  Verified at mint. The revert is still an ancestor
+  (`git merge-base --is-ancestor 1fcd4c167 swarmforge-architect`
+  succeeds) AND its content is present: the property test is 107
+  lines, exactly what the revert deleted, and the step handler 257.
+  Comparing `1fcd4c167^` against the branch tip for the property
+  test gives IDENTICAL, and `git log` shows no coder commit for
+  those paths after the revert. So it is the bounced content itself,
+  restored - not new work answering the bounce. That distinction is
+  the whole difficulty and it is why scenario 04 exists.
+
+  Nobody was careless. The recovery was correct in its own terms,
+  the revert was correct in its own terms, and the lift check
+  answered the question it was asked. They are simply incompatible
+  operations run in sequence, and no rule told anyone that
+  performing the second undoes the first.
+
+  Fix wanted, in direction only, in two halves matching the two
+  invariants. The recovery half: a restore-from-sibling must consult
+  what the branch's own history deliberately removed and hold those
+  paths back, so repairing a collapse cannot silently undo a bounce.
+  The lift half: the check must be able to refuse on content that
+  RETURNED, not only on content that went missing - comparing the
+  candidate's content against what reverts on that branch removed,
+  and distinguishing a byte-identical resurrection (refuse) from
+  genuinely different work answering the bounce (allow). The
+  identical-vs-different comparison is the discriminator; it is
+  cheap and it is exactly the check that settled this at mint.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT weaken either existing rule to resolve the conflict. The
+    bounce revert stays mandatory and content-checked (BL-490/BL-495),
+    and the recovery still has to restore a collapsed tree fully.
+    This ticket makes them composable; it does not pick a winner.
+  - Do NOT make ancestry a lift criterion. This incident is a live
+    demonstration of why it is worthless here: `1fcd4c167` IS an
+    ancestor of the branch and its content is fully present. Ancestry
+    proves a commit was applied, never that its effect survives.
+  - Do NOT resolve this by forbidding recovery from a sibling. That
+    is how the 9,680-file collapse was repaired and it must stay
+    available; the fix filters what comes back, it does not remove
+    the mechanism.
+  - Scenario 04 is not optional and must not be collapsed into 03. A
+    check that refuses whenever reverted paths reappear would block
+    every legitimate re-fix, since a re-fix touches the same paths by
+    definition. Identical content refuses; different content passes.
+  - Not in scope: cleaning the currently-affected branch. Removing
+    the resurrected BL-1189 content from `swarmforge-architect` is
+    the architect's own operational step on their own bounce, already
+    reported to them at priority 00, and it must not wait for this
+    ticket.
+  - Not in scope: the tree collapse itself (BL-1205) and the
+    13-file freeze. This is the third and distinct failure in that
+    thread, not a re-report of either.
+
+qa_e2e_procedure: >
+  1. Reproduce the live instance before any fix, read-only, and put
+     the output in the evidence file:
+     `git merge-base --is-ancestor 1fcd4c167 swarmforge-architect`
+     succeeds (ancestry says reverted), while
+     `git show swarmforge-architect:extension/test/bl1189LiveScreenOnePrimaryWorkingTicketInvariants.property.test.js | wc -l`
+     returns 107 (content says present). Then diff
+     `1fcd4c167^:<that path>` against the branch tip and record
+     IDENTICAL. If the architect has already cleaned the branch by
+     the time this runs, reconstruct the same shape in a fixture
+     rather than reporting the step as unrunnable.
+  2. Scenario 01: build a fixture with a branch that reverted a
+     ticket's content and a sibling that still holds it. Recover the
+     branch from the sibling. The reverted paths stay absent; every
+     other restored path is present. Check both halves - a recovery
+     that holds back too much is a new bug, not a fix.
+  3. Scenario 02: give the check a branch with an empty deletion diff
+     that carries resurrected content. It must refuse AND name the
+     ticket. Confirm non-vacuity by asserting it passes on the same
+     fixture with the content removed.
+  4. Scenario 03: a clean recovered branch lifts. This is the
+     regression guard against a check that simply always refuses.
+  5. Scenario 04, the one most likely to be got wrong: a genuine
+     re-fix touching the same paths with DIFFERENT content lifts.
+     Build it as a real re-fix, not as an unrelated edit - same
+     files, same ticket, new work - since a naive path-based check
+     passes every other shape of this test and fails only this one.
+  6. Cross-check the two invariants do not fight: run scenarios 01
+     and 02 against one fixture where a recovery and a bounce revert
+     both apply, and confirm the recovery's filtering is what makes
+     the lift check pass, rather than the two independently agreeing
+     by luck.
+
+notes: >
+  Source: architect note handoff
+  00_20260827T204443Z_001137_from_architect_to_specifier_coordinator,
+  verbatim: "BL-1188 core live-report fix missing (1fcd4c167 same
+  pattern risk on BL-1189)". Sent to specifier + coordinator at
+  priority 00. This ticket answers the second clause; the first is
+  BL-1188's own re-dispatch, recorded in that ticket's notes and not
+  duplicated here.
+
+  Specifier verification at mint: confirmed 1fcd4c167 is an ancestor
+  of swarmforge-architect while its removed content is present at the
+  exact line counts it deleted; confirmed byte-identity against
+  1fcd4c167^ rather than assuming it; confirmed no coder commit
+  touches those paths after the revert, ruling out a re-fix;
+  identified 0bf05774a's 13-file restore from swarmforge-hardender as
+  the mechanism, two of whose files are the reverted pair; and
+  re-read the previous evidence file's lift criterion to establish
+  that the deletion-diff check passes by construction on a
+  resurrected branch. Evidence:
+  backlog/evidence/BL-1189-recovery-silently-undid-the-bounce-revert-20260827.md.
+
+  Third distinct failure in one thread, all on the same branch and
+  all needing separate tickets: (1) the tree collapse itself, 79
+  paths against 9,777 - BL-1205; (2) the recovery that froze a
+  13-file loss, caught because a deletion diff was run - evidence
+  file architect-recovery-froze-a-silent-file-loss-20260827.md; (3)
+  this one, the recovery undoing a bounce revert, invisible to that
+  same deletion diff. Each was found only because someone ran a
+  check the previous act had shown was needed, which is the argument
+  for encoding this one rather than relying on the next reviewer's
+  diligence.
+
+  Related, none modified here: BL-1205 (the transport gate for
+  mass-deletion forwards), BL-1208 (record-bounce's destructive
+  remedy - the same family, a bounce-machinery safety signal that
+  misfires), BL-1189 and BL-1188 (the tickets caught up in this,
+  both still active).
+
+  Orthogonality for the coordinator: touches the recovery and
+  quarantine-lift tooling plus its tests. Disjoint from BL-1207,
+  BL-1209 and BL-1210. Shares subject matter with BL-1208 (both
+  concern bounce machinery) but not files - BL-1208 is
+  bounceRevertGitAdapter/bounceRevertVerdict, this is the
+  recovery/lift path. Sequence their merges deliberately if both go
+  active.
+
+approval_context: >
+  One call, and one thing I want to be explicit about.
+
+  The call: severity high, which puts it in the expedite lane. The
+  safety signal that lifted a quarantine is structurally unable to
+  detect this class, it has already fired once, and a live branch is
+  carrying the resurrected content right now. I did not call it
+  critical because nothing has forwarded from that branch, the
+  content is bounced work rather than destroyed work, and the
+  immediate cleanup is a separate operational step already in the
+  architect's hands.
+
+  The explicit thing: this ticket asserts that two rules we already
+  follow are mutually destructive in a specific situation, which is
+  a stronger claim than "a check has a gap". If you disagree with
+  that framing the ticket changes shape substantially - the
+  alternative reading is that recovery-from-sibling was simply the
+  wrong tool once a bounce revert existed on the branch, and the fix
+  is a procedural rule rather than a check. I prefer the check,
+  because a procedural rule is what we already had and it is what
+  failed here, twice in one afternoon, with careful people running
+  it. Say the word if you want it written the other way.
