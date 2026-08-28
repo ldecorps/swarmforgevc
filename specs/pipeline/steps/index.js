@@ -829,7 +829,9 @@ const DOMAINS = [
   require('./bl1208RestorationNotAuthorshipSteps'),
   require('./bl1196GitEnvGuardStripSteps'),
   require('./bl1201AnswerIdentifiesQuestionSteps'),
-  require('./bl1215OriginMainLandGateSteps')
+  require('./bl1215OriginMainLandGateSteps'),
+  require('./bl1211QuarantineLiftAuthorshipSteps'),
+  require('./bl1217RcConfigGateSteps')
 ];
 
 function registerSteps(registry) {
