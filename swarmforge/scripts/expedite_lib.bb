@@ -741,30 +741,58 @@
 
 ;; ── missing-verdict recovery ──────────────────────────────────────────────
 ;; Observed: expedite cleaner/hardender (BL-1248) exited 0 after parking on
-;; Monitor/background work and never wrote verdict.json. One re-invoke closes
-;; the first hole; a second miss used to hard-fail the whole ticket. Now the
-;; second miss bounces back to the SAME stage so the bounce bound absorbs
-;; repeats instead of crashing the expedition out.
+;; Monitor/background work and never wrote verdict.json. Recoveries demand a
+;; written pass|bounce|fail. A bounce without an actionable reason is refused —
+;; synthesizing "bounce because no-verdict" re-enters the same stage with no new
+;; information and burns the bounce bound in a loop.
+
+(def max-missing-verdict-recoveries 2)
 
 (defn should-recover-missing-verdict?
-  "Pure: one re-invoke when the child exited without a parseable verdict and
-   was not timed out / over budget. `attempt` is 0-based."
+  "Pure: re-invoke while recoveries remain when the child exited without a
+   parseable verdict and was not timed out / over budget. `attempt` is 0-based."
   [{:keys [timed-out? overrun? parsed attempt]}]
   (and (not timed-out?)
        (not overrun?)
        (nil? parsed)
-       (zero? (or attempt 0))))
+       (< (or attempt 0) max-missing-verdict-recoveries)))
+
+(defn bounce-payload-valid?
+  "Pure: a bounce must carry an actionable reason or defect class. Blank both,
+   or a driver-synthetic no-verdict abandonment tag, is not a bounce — it is
+   loop fuel."
+  [{:keys [reason class]}]
+  (let [r (str/trim (str (or reason "")))
+        c (str/trim (str (or class "")))
+        r-key (when (keyword? reason) (name reason))
+        synthetic? (or (= c "no-verdict-abandoned")
+                       (= r-key "no-verdict")
+                       (= (str/lower-case r) "no-verdict"))]
+    (and (not synthetic?)
+         (or (seq r) (seq c)))))
 
 (defn stage-user-prompt
   "Pure: the claude -p user message. Forbids Monitor/IDE/background standby so a
    stage cannot park on a notification that never arrives in offline expedite."
-  [{:keys [role ticket verdict-file recovery?]}]
-  (if recovery?
+  [{:keys [role ticket verdict-file recovery? attempt]}]
+  (cond
+    (and recovery? (>= (or attempt 0) 2))
+    (str "ESCALATED RECOVERY: " role " for " ticket
+         " has twice exited without writing " verdict-file
+         ". Write a pass, bounce, or fail verdict JSON to that path NOW and exit."
+         " If you bounce, include an actionable reason (what to fix) and target."
+         " Do not stand by for background jobs, Monitor, or IDE notifications."
+         " Reap stragglers; wait in the foreground only.")
+
+    recovery?
     (str "RECOVERY: previous " role " session for " ticket
          " exited without writing " verdict-file
          ". Write a pass, bounce, or fail verdict JSON to that path NOW."
+         " If you bounce, include an actionable reason and target."
          " Do not stand by for background jobs, Monitor, or IDE notifications."
          " Reap or wait in the foreground, then write the verdict and exit.")
+
+    :else
     (str "You are the " role " for " ticket
          ". Your task is appended to your system prompt."
          " Write your stage verdict as JSON to " verdict-file
@@ -774,21 +802,16 @@
 
 (defn finalize-stage-result
   "Pure: map a finished stage invoke onto the driver's verdict record.
-   Timeout / overrun beat a missing file. Missing parseable JSON on attempt 0
-   is :fail/:no-verdict (the runner recovers before finalize). After recovery
-   (attempt >= 1) a still-missing verdict is a same-stage :bounce so the ticket
-   is not crashed out on one abandoned session."
-  [{:keys [timed-out? overrun? parsed role exit elapsed attempt]}]
+   Timeout / overrun beat a missing file. Missing parseable JSON is always
+   :fail/:no-verdict — never a synthesized bounce."
+  [{:keys [timed-out? overrun? parsed role exit elapsed]}]
   (cond
     (or timed-out? overrun?)
     {:verdict :fail :reason :stage-timeout :stage role :elapsed elapsed
      :killed? (boolean timed-out?)}
 
     (nil? parsed)
-    (if (pos? (or attempt 0))
-      {:verdict :bounce :reason :no-verdict :target role :stage role :exit exit
-       :class "no-verdict-abandoned"}
-      {:verdict :fail :reason :no-verdict :stage role :exit exit})
+    {:verdict :fail :reason :no-verdict :stage role :exit exit}
 
     :else
     (assoc parsed :stage role :exit exit :elapsed elapsed

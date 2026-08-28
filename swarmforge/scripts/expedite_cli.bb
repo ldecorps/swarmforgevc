@@ -513,9 +513,11 @@
     (fs/delete verdict-file)))
 
 (defn- stage-cmd
-  [runner settings role ticket prompt-file verdict-file transcript recovery?]
-  (let [user (expedite-lib/stage-user-prompt
-              {:role role :ticket ticket :verdict-file verdict-file :recovery? recovery?})]
+  [runner settings role ticket prompt-file verdict-file transcript attempt]
+  (let [recovery? (pos? attempt)
+        user (expedite-lib/stage-user-prompt
+              {:role role :ticket ticket :verdict-file verdict-file
+               :recovery? recovery? :attempt attempt})]
     (if runner
       ["bash" runner role ticket prompt-file verdict-file transcript]
       (concat ["claude" "-p"]
@@ -547,9 +549,9 @@
    paths receive the same argv shape, so the test path exercises the real
    contract rather than a parallel one.
 
-   Missing-verdict recovery: if the child exits without a parseable verdict and
-   was not timed out, re-invoke once with a RECOVERY prompt. A second miss
-   finalizes as a same-stage bounce (bounce bound), not a hard ticket fail."
+   Missing-verdict recovery: up to two re-invokes with escalating prompts that
+   demand a written pass|bounce|fail. Still-missing after that fails closed —
+   never a synthesized bounce."
   [{:keys [project-root ticket stage-timeout-ms]} {:keys [dir]} role task stage-dir]
   (let [prompt-file (compose-prompt! role task (fs/path stage-dir "prompt.md"))
         _ (spit (str (fs/path stage-dir "task.txt")) task)
@@ -562,7 +564,7 @@
         err-file (str (fs/path stage-dir "stderr.log"))]
     (loop [attempt 0]
       (let [cmd (stage-cmd runner settings role ticket prompt-file verdict-file
-                           transcript (pos? attempt))
+                           transcript attempt)
             {:keys [exit timed-out? elapsed parsed]}
             (invoke-stage-once! {:dir dir :budget budget :started started
                                  :transcript transcript :err-file err-file
@@ -573,9 +575,10 @@
                        :parsed parsed
                        :attempt attempt})]
         (if recover?
-          (do (log! "no-verdict recovery" role "re-invoke once")
+          (do (log! "no-verdict recovery" role "attempt" (inc attempt)
+                    "of" expedite-lib/max-missing-verdict-recoveries)
               (clear-verdict-file! verdict-file)
-              (recur 1))
+              (recur (inc attempt)))
           (expedite-lib/finalize-stage-result
            {:timed-out? timed-out?
             :overrun? (:overrun? elapsed)
@@ -640,18 +643,24 @@
             :advance (recur (expedite-lib/next-stage stages stage) (inc n))
 
             :bounce
-            (let [target (or (:target res) "coder")
-                  prior (get @bounces stage [])
-                  decision (expedite-lib/bounce-decision {:stage stage :bounces prior :bound bound})]
-              (if (= :retry (:action decision))
-                (do (swap! bounces update stage (fnil conj []) (select-keys res [:reason :class]))
-                    (log! "bounce" stage "round" (:round decision) "-> re-enter" target)
-                    (recur target (inc n)))
-                (let [report (expedite-lib/exhaustion-report
-                              {:stage stage :bounces (get @bounces stage)})]
-                  (log! "EXHAUSTED" (pr-str report))
-                  {:ticket :failed :reason :bounce-bound-exhausted
-                   :exhaustion report :bounces @bounces :history @history :bound bound-info})))
+            (if-not (expedite-lib/bounce-payload-valid? res)
+              (do (log! "REFUSE bounce-without-reason" stage
+                        "- a bounce must carry an actionable reason or class")
+                  {:ticket :failed :reason :bounce-without-reason
+                   :stage stage :verdict (:verdict res)
+                   :bounces @bounces :history @history :bound bound-info})
+              (let [target (or (:target res) "coder")
+                    prior (get @bounces stage [])
+                    decision (expedite-lib/bounce-decision {:stage stage :bounces prior :bound bound})]
+                (if (= :retry (:action decision))
+                  (do (swap! bounces update stage (fnil conj []) (select-keys res [:reason :class]))
+                      (log! "bounce" stage "round" (:round decision) "-> re-enter" target)
+                      (recur target (inc n)))
+                  (let [report (expedite-lib/exhaustion-report
+                                {:stage stage :bounces (get @bounces stage)})]
+                    (log! "EXHAUSTED" (pr-str report))
+                    {:ticket :failed :reason :bounce-bound-exhausted
+                     :exhaustion report :bounces @bounces :history @history :bound bound-info}))))
 
             :fail
             {:ticket :failed :reason (or (:reason res) :stage-failed)

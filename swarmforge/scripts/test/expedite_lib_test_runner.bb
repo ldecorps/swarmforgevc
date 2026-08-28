@@ -697,16 +697,25 @@
 ;; ── missing-verdict recovery (hotfix: claude -p exits without verdict.json) ─
 ;; BL-1248 cleaner/hardender exited 0 after parking on Monitor/background work,
 ;; wrote no verdict, and the driver hard-failed :no-verdict. Class of failure:
-;; stage child exits without a parseable verdict. Process fix: one automatic
-;; re-invoke, then — if still missing — BOUNCE back to the same stage (bounce
-;; bound absorbs repeats) instead of crashing the whole ticket out.
+;; stage child exits without a parseable verdict.
+;;
+;; Process fix:
+;; - Up to two automatic recoveries (escalating prompts) that demand a written
+;;   pass|bounce|fail verdict — never "stand by".
+;; - A bounce MUST carry an actionable reason (or class). Driver-synthesized
+;;   "no-verdict" bounces are forbidden: they re-enter the same stage with no
+;;   new information and burn the bounce bound in a loop.
+;; - After recoveries are exhausted, missing verdict still fails closed.
 
-(assert-true "no-verdict: first missing parseable verdict recovers once"
+(assert-true "no-verdict: first missing parseable verdict recovers"
              (expedite-lib/should-recover-missing-verdict?
               {:timed-out? false :overrun? false :parsed nil :attempt 0}))
-(assert-false "no-verdict: second miss does not recover (bound of one)"
+(assert-true "no-verdict: second miss still recovers once more (escalation)"
+             (expedite-lib/should-recover-missing-verdict?
+              {:timed-out? false :overrun? false :parsed nil :attempt 1}))
+(assert-false "no-verdict: third miss does not recover"
               (expedite-lib/should-recover-missing-verdict?
-               {:timed-out? false :overrun? false :parsed nil :attempt 1}))
+               {:timed-out? false :overrun? false :parsed nil :attempt 2}))
 (assert-false "no-verdict: a parseable verdict never recovers"
               (expedite-lib/should-recover-missing-verdict?
                {:timed-out? false :overrun? false :parsed {:verdict "pass"} :attempt 0}))
@@ -716,6 +725,17 @@
 (assert-false "no-verdict: an overrun stage never recovers"
               (expedite-lib/should-recover-missing-verdict?
                {:timed-out? false :overrun? true :parsed nil :attempt 0}))
+
+(assert-true "bounce: reason alone is valid"
+             (expedite-lib/bounce-payload-valid? {:reason "coverage gap in parse-enabled?" :class nil}))
+(assert-true "bounce: class alone is valid"
+             (expedite-lib/bounce-payload-valid? {:reason nil :class "resume-identity"}))
+(assert-false "bounce: blank reason and class is NOT valid (loop fuel)"
+              (expedite-lib/bounce-payload-valid? {:reason "" :class nil}))
+(assert-false "bounce: synthetic no-verdict reason is NOT valid"
+              (expedite-lib/bounce-payload-valid? {:reason :no-verdict :class "no-verdict-abandoned"}))
+(assert-false "bounce: no-verdict-abandoned class alone is NOT valid"
+              (expedite-lib/bounce-payload-valid? {:reason "x" :class "no-verdict-abandoned"}))
 
 (let [p (expedite-lib/stage-user-prompt
          {:role "cleaner" :ticket "BL-1248"
@@ -727,31 +747,29 @@
 
 (let [p (expedite-lib/stage-user-prompt
          {:role "hardender" :ticket "BL-1248"
-          :verdict-file "/tmp/verdict.json" :recovery? true})]
+          :verdict-file "/tmp/verdict.json" :recovery? true :attempt 1})]
   (assert-true "no-verdict: recovery prompt is labelled RECOVERY" (str/includes? p "RECOVERY"))
   (assert-true "no-verdict: recovery forbids standing by" (str/includes? p "stand by"))
   (assert-true "no-verdict: recovery requires pass|bounce|fail" (str/includes? p "pass"))
   (assert-true "no-verdict: recovery prompt still names the path" (str/includes? p "/tmp/verdict.json")))
+
+(let [p (expedite-lib/stage-user-prompt
+         {:role "hardender" :ticket "BL-1248"
+          :verdict-file "/tmp/verdict.json" :recovery? true :attempt 2})]
+  (assert-true "no-verdict: escalated recovery names ESCALATED" (str/includes? p "ESCALATED"))
+  (assert-true "no-verdict: escalated recovery demands a real bounce reason if bouncing"
+               (str/includes? p "actionable reason")))
 
 (assert= "no-verdict: finalize timeout before missing-verdict"
          :stage-timeout
          (:reason (expedite-lib/finalize-stage-result
                    {:timed-out? true :overrun? false :parsed nil
                     :role "cleaner" :exit 0 :elapsed {:overrun? false} :attempt 0})))
-(assert= "no-verdict: finalize attempt-0 miss still fails (recovery gate owns that path)"
-         {:verdict :fail :reason :no-verdict :stage "cleaner" :exit 0}
+(assert= "no-verdict: finalize miss always fails closed (never synthesizes a bounce)"
+         {:verdict :fail :reason :no-verdict :stage "hardender" :exit 0}
          (expedite-lib/finalize-stage-result
           {:timed-out? false :overrun? false :parsed nil
-           :role "cleaner" :exit 0 :elapsed {:overrun? false} :attempt 0}))
-(let [r (expedite-lib/finalize-stage-result
-         {:timed-out? false :overrun? false :parsed nil
-          :role "hardender" :exit 0 :elapsed {:overrun? false} :attempt 1})]
-  (assert= "no-verdict: after recovery, miss bounces (does not crash the ticket)"
-           :bounce (:verdict r))
-  (assert= "no-verdict: bounce reason remains no-verdict" :no-verdict (:reason r))
-  (assert= "no-verdict: bounce retargets the SAME stage" "hardender" (:target r))
-  (assert= "no-verdict: bounce class names the abandonment"
-           "no-verdict-abandoned" (:class r)))
+           :role "hardender" :exit 0 :elapsed {:overrun? false} :attempt 2}))
 (assert= "no-verdict: finalize advances a real pass"
          :pass
          (:verdict (expedite-lib/finalize-stage-result
