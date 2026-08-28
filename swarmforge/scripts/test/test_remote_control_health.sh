@@ -91,6 +91,60 @@ status="$(bb -e "(load-file \"$LIB\")
 [[ "$status" == "off" ]] || fail "07: launch script without flag -> :off (got: $status)"
 pass "07: check-role reports :off when remote_control is disabled for the role"
 
+# ── BL-1217: effective config gates desired state, not only the launch script ──
+
+# The launch script STILL carries an explicit --remote-control (the exact
+# shape swarmforge.conf/packs/full-forge.conf ship today), but the effective
+# pack config says off - expected-rc-name must return nil regardless, and
+# check-role/actionable? must never respawn to "restore" a connection the
+# human deliberately switched off.
+printf 'claude --dangerously-skip-permissions --remote-control SwarmForge-Coder --append-system-prompt-file x\n' \
+  > "$ROOT/.swarmforge/launch/coder.sh"
+mkdir -p "$ROOT/swarmforge"
+printf 'config remote_control off\n' > "$ROOT/swarmforge/swarmforge.conf"
+
+expected="$(bb -e "(load-file \"$LIB\")
+  (println (or (remote-control-health/expected-rc-name \"$ROOT/.swarmforge\" \"coder\") \"NIL\"))")"
+[[ "$expected" == "NIL" ]] || fail "18: expected-rc-name must be nil when config says off, even though the launch script carries the flag (got: $expected)"
+pass "18: config remote_control off makes expected-rc-name nil regardless of what the launch script says"
+
+# A live agent process STILL carries the flag (config off changed nothing
+# about the running process, only the desired-state read) - classify must
+# not read that as :healthy (which would be vacuously true of an off role);
+# it must read :off, and :off must never be actionable.
+status="$(bb -e "(load-file \"$LIB\")
+  (println (name (:status (remote-control-health/check-role
+    \"$ROOT/.swarmforge\" \"sock\" \"coder\" \"swarmforge-coder\"
+    (fn [_ _] \"claude --dangerously-skip-permissions --remote-control SwarmForge-Coder --append-system-prompt-file x\")))))")"
+[[ "$status" == "off" ]] || fail "19: check-role must report :off when config says off, even with a live flagged process (got: $status)"
+pass "19: config remote_control off reports :off even while the live process still carries the flag"
+
+actionable="$(bb -e "(load-file \"$LIB\")
+  (println (remote-control-health/actionable? :off))")"
+[[ "$actionable" == "false" ]] || fail "20: :off must never be actionable - a config-off role is a healthy terminal state, not a fault"
+pass "20: :off (config-gated or script-gated alike) is never actionable - no repair path respawns it"
+
+# Flip back to on with no other change: behaviour must be BYTE-FOR-BYTE
+# identical to today (invariant 2) - the same degraded-flag-loss case still
+# repairs exactly as scenario 05 already proved.
+printf 'config remote_control on\n' > "$ROOT/swarmforge/swarmforge.conf"
+status="$(bb -e "(load-file \"$LIB\")
+  (println (name (:status (remote-control-health/check-role
+    \"$ROOT/.swarmforge\" \"sock\" \"coder\" \"swarmforge-coder\"
+    (fn [_ _] \"claude --dangerously-skip-permissions --append-system-prompt-file x\")))))")"
+[[ "$status" == "degraded" ]] || fail "21: config remote_control on must repair a flag-loss exactly as it does today (got: $status)"
+pass "21: config remote_control on preserves today's :degraded repair behaviour byte-for-byte"
+
+# Removing the remote_control line entirely must be indistinguishable from
+# explicit \"on\" (invariant 2's absent-means-on).
+rm -f "$ROOT/swarmforge/swarmforge.conf"
+status="$(bb -e "(load-file \"$LIB\")
+  (println (name (:status (remote-control-health/check-role
+    \"$ROOT/.swarmforge\" \"sock\" \"coder\" \"swarmforge-coder\"
+    (fn [_ _] \"claude --dangerously-skip-permissions --append-system-prompt-file x\")))))")"
+[[ "$status" == "degraded" ]] || fail "22: an absent remote_control config key must behave exactly like explicit on (got: $status)"
+pass "22: absent remote_control config key is indistinguishable from explicit on"
+
 # ── unit: session-url-in-capture ─────────────────────────────────────────────
 out="$(bb -e "(load-file \"$LIB\")
   (println (or (remote-control-health/session-url-in-capture nil) \"NONE\"))
