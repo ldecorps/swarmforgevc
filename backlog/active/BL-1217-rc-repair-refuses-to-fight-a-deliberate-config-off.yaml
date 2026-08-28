@@ -165,3 +165,5 @@ notes: |
     left ungated — is instead covered by invariant 3, by qa_e2e_procedure
     step 4, and structurally by gating at the shared `actionable?` seam that
     every caller already routes through."
+
+assigned_to: coder
