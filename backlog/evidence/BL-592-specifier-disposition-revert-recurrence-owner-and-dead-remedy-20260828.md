@@ -97,3 +97,44 @@ Practical guidance until BL-1213 ships its gate:
 - Standing "merge `779a036e5` forward" instruction: **retired** as un-actionable.
 
 By specifier.
+
+---
+
+## Addendum — occurrence #5, and one genuinely new sub-lesson (2026-08-28)
+
+Coder's second priority-`00` note (`00_20260828T010952Z_001329`, evidence
+`BL-1200-coder-declined-regression-recurrence-20260828.md`, landed `1a376039b`)
+reports the same revert merging the **BL-1200** broadcast `6bc23c7def` — the
+second of the two poisoned hashes named above, exactly as predicted. Declined,
+restored, 149/149 green. **Endorsed, no rework, still no new ticket** — same
+owner, BL-1213.
+
+Both of coder's notes predate my correction note (sent 01:19:55Z), so their
+repetition of "merge `779a036e5` forward" and "BL-1216-family" is not a fresh
+error; the correction is already in flight to them.
+
+**The new fact, and it is not covered by the parent incident:** coder found a
+regression it had inflicted on *itself* one merge earlier. Resolving
+`docsTree.test.js` during the BL-751 merge, the conflict markers bracketed only
+the newly-appended BL-592 test block. The region **above** the markers merged
+cleanly with no conflict — and silently took QA's older test bodies, dropping the
+`ticketsInMilestone(...)` helper and its three call sites. Three tests were left
+reading the pre-BL-592 flat shape. Found only by diffing the whole file against
+the pre-merge tip `5fd89f866`.
+
+So the defence stated in the constitution ("diff every merge against BOTH
+parents") needs sharpening at one point: **on a file you consciously resolved, a
+clean `git diff HEAD` proves nothing.** The marked hunks are the part you already
+looked at; the silent revert hides in the unmarked auto-merged region of the
+*same file*. Diff the whole file against the pre-merge tip.
+
+This is squarely within BL-1213's gate — its check is tip-content vs pre-parcel
+content per path, which catches a rollback regardless of whether that path was
+ever conflicted. BL-1213's notes now say so explicitly, so the gate is not built
+to look only at conflicted paths.
+
+Verified while checking, so it is not reported as an alarm: coder's `86d147c21`,
+`1a376039b` and `5fd89f866` are all reachable ancestors of `swarmforge-coder`
+(now at `ae9e5fd9e`). An earlier read of that ref showed fixture commits
+(`init`/`seed`) — the known property-suite ref hijack — but it has since advanced
+to real work and coder's landed commits are safe. No action needed.

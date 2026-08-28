@@ -14,7 +14,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1219-role-inbox-resolution-covers-master-resident-roles.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   No design question — the correct behaviour is not in doubt, and a correct
   reference implementation already exists in this repo. Flagged for approval
