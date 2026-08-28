@@ -16,7 +16,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1242-merge-never-silently-drops-branch-work.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Scope is deliberately one guard, modelled on the BL-901 guard that already
   exists for backlog ticket YAMLs, reusing its name-it-to-mean-it escape. What
