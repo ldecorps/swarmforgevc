@@ -123,12 +123,16 @@
 
 (defn run-post-hotfix-merge!
   "Fetch origin/main; absorb when behind under BL-1131 rematch-then-FF.
-   FF-only / noop when clean; colliding local-ahead → rematch! onto origin/main (BL-1138),
-   else surface rematch-bookkeeping. Predicted or real conflict → rematch! when wired
-   (BL-1141), else refuse-rematch without MERGE_HEAD (BL-1130). Never stash;
-   never pages operator absorb. rematch! itself attempts a push before any
-   reset (BL-1198) - this function has no visibility into that, by design."
-  [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! abort!
+   FF-only, then a real 3-way merge3! (BL-1214), then noop when clean;
+   colliding local-ahead → rematch! onto origin/main (BL-1138), else
+   surface rematch-bookkeeping. Predicted or real conflict (both merge!
+   and merge3! failed) → rematch! when wired (BL-1141), else refuse-rematch
+   without MERGE_HEAD (BL-1130). Never stash; never pages operator absorb.
+   rematch! itself attempts a push before any reset (BL-1198) - this
+   function has no visibility into that, by design. merge3! is optional
+   (nil-safe) so a caller not yet wired for BL-1214 keeps today's
+   ff-only-then-rematch behavior unchanged."
+  [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! merge3! abort!
            status-porcelain! mid-merge? would-conflict! tip-contains-origin!
            rematch!]}]
   (fetch!)
@@ -156,9 +160,22 @@
       :refuse-rematch
       (finish-refuse-rematch daemon-dir rev-counts! mid-merge? rematch!)
 
-      ;; :ff-absorb — CLI merge! is --ff-only.
-      (let [merge-res (merge!)]
-        (if (:success merge-res)
+      ;; :ff-absorb — CLI merge! is --ff-only; merge3! (BL-1214) is a real
+      ;; 3-way attempt tried before falling back to conflict recovery. On
+      ;; fallback, conflicted-paths comes from status-porcelain! (finish-
+      ;; conflict's own fallback when merge-res carries none) - it reads
+      ;; the working tree directly, so it is accurate for whichever of
+      ;; merge!/merge3! actually left the conflict.
+      (let [result (master-main-reconcile-lib/absorb-with-merge!
+                    {:ff! merge!
+                     :merge! (or merge3! (fn [] {:success false}))
+                     :abort! abort!
+                     :fallback! (fn []
+                                  ;; finish-conflict itself also aborts
+                                  ;; (BL-1130's own defensive double-abort);
+                                  ;; harmless no-op the second time.
+                                  (finish-conflict abort! status-porcelain! mid-merge? {}
+                                                   daemon-dir rev-counts! rematch!))})]
+        (if (= (:outcome result) :merged)
           (finish-ok daemon-dir rev-counts! :merged)
-          (finish-conflict abort! status-porcelain! mid-merge? merge-res
-                           daemon-dir rev-counts! rematch!))))))
+          result)))))

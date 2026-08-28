@@ -345,8 +345,12 @@ CLASH_CONTENT_AFTER="$(cat "$ROOT/clash.txt")"
 pass "reconciliation self-heals once the untracked clash is removed, without any further landing"
 
 # ── scenario D (qa_e2e_procedure 5): a genuine content conflict on an
-#    otherwise-clean tree aborts the merge and leaves no in-progress merge
-#    state - `git status` shows nothing unusual. ──────────────────────────
+#    otherwise-clean tree is attempted (never pre-emptively refused), aborts
+#    cleanly (no in-progress merge state), and the reset-to-origin recovery
+#    then completes exactly as it does today (BL-1214 qa_e2e_procedure step
+#    2 - the conflicting-divergence path is a deliberate constraint NOT to
+#    weaken: a real conflict still resolves via reset onto origin/main,
+#    same as before this ticket's :ff-absorb real-merge-attempt change). ──
 echo "root-conflict-line" >> "$ROOT/seed.txt"
 git -C "$ROOT" add seed.txt
 git -C "$ROOT" commit -q -m "root-only conflicting edit to seed.txt"
@@ -357,19 +361,22 @@ echo "origin-conflict-line" >> "$CLONE/seed.txt"
 git -C "$CLONE" add seed.txt
 git -C "$CLONE" commit -q -m "origin-only conflicting edit to seed.txt"
 git -C "$CLONE" push -q origin main
+LANDED_6_SHA="$(git -C "$CLONE" rev-parse HEAD)"
 
 wait_for_log "master-main-reconcile conflict" 20 \
   || fail "expected a genuine content conflict on an otherwise-clean tree to be attempted and reported; log: $(cat "$LOG_FILE" 2>/dev/null)"
 pass "a genuine content conflict on an otherwise-clean tree is attempted (never pre-emptively refused) and reported"
 
+wait_for_content "$ROOT/seed.txt" "origin-conflict-line" 20 \
+  || fail "expected the reset-to-origin recovery to complete exactly as it does today once the conflicting merge aborted; log: $(cat "$LOG_FILE" 2>/dev/null)"
 ROOT_HEAD_AFTER_CONFLICT="$(git -C "$ROOT" rev-parse main)"
-[[ "$ROOT_HEAD_AFTER_CONFLICT" == "$ROOT_HEAD_BEFORE_CONFLICT" ]] \
-  || fail "expected ROOT's main to stay unchanged after an aborted conflicting merge, was $ROOT_HEAD_BEFORE_CONFLICT now $ROOT_HEAD_AFTER_CONFLICT"
+[[ "$ROOT_HEAD_AFTER_CONFLICT" == "$LANDED_6_SHA" ]] \
+  || fail "expected ROOT's main to land on origin's tip via the unweakened reset recovery, was $ROOT_HEAD_BEFORE_CONFLICT now $ROOT_HEAD_AFTER_CONFLICT (want $LANDED_6_SHA)"
 [[ ! -f "$ROOT/.git/MERGE_HEAD" ]] \
   || fail "expected the aborted merge to leave no MERGE_HEAD - checkout left mid-merge"
 CONFLICT_STATUS="$(git -C "$ROOT" status --porcelain)"
 [[ -z "$CONFLICT_STATUS" ]] \
-  || fail "expected the working tree to be exactly as clean as it was before the aborted conflict, got: $CONFLICT_STATUS"
-pass "an aborted merge conflict leaves no in-progress merge state and a checkout exactly as it found it"
+  || fail "expected the working tree to be clean after the aborted conflict and completed reset recovery, got: $CONFLICT_STATUS"
+pass "an aborted merge conflict leaves no in-progress merge state, and the reset-to-origin recovery completes exactly as it does today"
 
 echo "ALL SCENARIOS PASS"

@@ -746,6 +746,66 @@
   (assert= "bl1198: reset!'s own failure result passes through verbatim"
            {:success false :error "reset failed" :outcome :rematch-bookkeeping} result))
 
+;; ── absorb-with-merge! (BL-1214) ──────────────────────────────────────────
+
+(let [merge-calls (atom 0)
+      abort-calls (atom 0)
+      fallback-calls (atom 0)
+      result (master-main-reconcile-lib/absorb-with-merge!
+              {:ff! (fn [] {:success true})
+               :merge! (fn [] (swap! merge-calls inc) {:success true})
+               :abort! (fn [] (swap! abort-calls inc))
+               :fallback! (fn [] (swap! fallback-calls inc) {:success false :outcome :should-not-happen})})]
+  (assert-true "bl1214: a successful fast-forward reports success" (:success result))
+  (assert= "bl1214: a successful fast-forward reports outcome :ff" :ff (:outcome result))
+  (assert= "bl1214: a successful fast-forward never calls merge!" 0 @merge-calls)
+  (assert= "bl1214: a successful fast-forward never calls abort!" 0 @abort-calls)
+  (assert= "bl1214: a successful fast-forward never calls fallback!" 0 @fallback-calls))
+
+(let [ff-calls (atom 0)
+      abort-calls (atom 0)
+      fallback-calls (atom 0)
+      result (master-main-reconcile-lib/absorb-with-merge!
+              {:ff! (fn [] (swap! ff-calls inc) {:success false})
+               :merge! (fn [] {:success true})
+               :abort! (fn [] (swap! abort-calls inc))
+               :fallback! (fn [] (swap! fallback-calls inc) {:success false :outcome :should-not-happen})})]
+  (assert= "bl1214: a rejected fast-forward still attempts ff! exactly once" 1 @ff-calls)
+  (assert-true "bl1214: a non-conflicting 3-way merge reports success" (:success result))
+  (assert= "bl1214: a non-conflicting 3-way merge reports outcome :merged" :merged (:outcome result))
+  (assert= "bl1214: a successful 3-way merge never calls abort!" 0 @abort-calls)
+  (assert= "bl1214: a successful 3-way merge never calls fallback!" 0 @fallback-calls))
+
+(let [abort-calls (atom 0)
+      fallback-calls (atom 0)
+      result (master-main-reconcile-lib/absorb-with-merge!
+              {:ff! (fn [] {:success false})
+               :merge! (fn [] {:success false :error "conflict"})
+               :abort! (fn [] (swap! abort-calls inc))
+               :fallback! (fn [] (swap! fallback-calls inc) {:success true :outcome :rematched-refuse})})]
+  (assert= "bl1214: a conflicting 3-way merge is aborted exactly once" 1 @abort-calls)
+  (assert= "bl1214: a conflicting 3-way merge falls through to fallback! exactly once" 1 @fallback-calls)
+  (assert= "bl1214: fallback!'s own result passes through verbatim"
+           {:success true :outcome :rematched-refuse} result))
+
+(let [result (master-main-reconcile-lib/absorb-with-merge!
+              {:ff! (fn [] {:success false})
+               :merge! (fn [] {:success false :error "conflict"})
+               :abort! (fn [] nil)
+               :fallback! (fn [] {:success false :error "reset failed" :outcome :rematch-bookkeeping})})]
+  (assert= "bl1214: fallback!'s own FAILURE result also passes through verbatim"
+           {:success false :error "reset failed" :outcome :rematch-bookkeeping} result))
+
+;; BL-1120 (invariant 2): abort! is called ONLY after this function's own
+;; merge! attempt failed, NEVER on the ff! path and never speculatively.
+(let [ff-order (atom [])
+      result (master-main-reconcile-lib/absorb-with-merge!
+              {:ff! (fn [] (swap! ff-order conj :ff) {:success true})
+               :merge! (fn [] (swap! ff-order conj :merge!-should-not-run) {:success true})
+               :abort! (fn [] (swap! ff-order conj :abort!-should-not-run))
+               :fallback! (fn [] (swap! ff-order conj :fallback!-should-not-run) {:success false})})]
+  (assert= "bl1214 invariant 2: ff success calls nothing else at all" [:ff] @ff-order))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")
