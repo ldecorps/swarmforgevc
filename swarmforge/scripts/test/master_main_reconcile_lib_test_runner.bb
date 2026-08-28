@@ -806,6 +806,100 @@
                :fallback! (fn [] (swap! ff-order conj :fallback!-should-not-run) {:success false})})]
   (assert= "bl1214 invariant 2: ff success calls nothing else at all" [:ff] @ff-order))
 
+;; ── BL-1248: parse-enabled? - fails closed to disabled on everything but
+;;    the exact literal "true" ────────────────────────────────────────────
+
+(assert-true "parse-enabled?: \"true\" enables"
+             (master-main-reconcile-lib/parse-enabled?
+              "config master_main_reconcile_enabled true"))
+(assert= "parse-enabled?: \"false\" stays disabled" false
+         (master-main-reconcile-lib/parse-enabled?
+          "config master_main_reconcile_enabled false"))
+(assert= "parse-enabled?: absent key -> disabled" false
+         (master-main-reconcile-lib/parse-enabled? ""))
+(assert= "parse-enabled?: nil conf text -> disabled" false
+         (master-main-reconcile-lib/parse-enabled? nil))
+(assert= "parse-enabled?: empty value (no third token) -> disabled" false
+         (master-main-reconcile-lib/parse-enabled?
+          "config master_main_reconcile_enabled"))
+(assert= "parse-enabled?: unrecognised value -> disabled" false
+         (master-main-reconcile-lib/parse-enabled?
+          "config master_main_reconcile_enabled banana"))
+(assert= "parse-enabled?: other conf lines present, key still absent -> disabled" false
+         (master-main-reconcile-lib/parse-enabled?
+          "config master_main_reconcile_escalation_threshold 3\nconfig active_backlog_max_depth 5"))
+(assert-true "parse-enabled?: key present among other lines -> reads correctly"
+             (master-main-reconcile-lib/parse-enabled?
+              "config active_backlog_max_depth 5\nconfig master_main_reconcile_enabled true\nconfig mutation_cooldown_days 3"))
+
+;; ── BL-1248: sweep!'s 4-arity kill switch ────────────────────────────────
+
+;; the switch off: merge! never fires on an otherwise-clean should-reconcile
+;; tick, and the skip is logged.
+(let [{:keys [calls logs adapters]} (mk-adapters {:ahead 0 :behind 22 :merge-result {:success true}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold false adapters)
+  (assert= "sweep! disabled: merge! never fires on a should-reconcile tick" 0 (:merge! @calls))
+  (assert-true "sweep! disabled: the skip is logged"
+               (some #(clojure.string/includes? % "skipped-by-config") @logs)))
+
+;; the switch off, invariant 1's own scenario: a commit reachable only from
+;; local main stays reachable - proven at this layer as "merge! (the ONE
+;; state-mutating adapter) never fires", the real-git half of the same
+;; claim proven by test_handoffd_master_main_reconcile_wiring.sh.
+(let [{:keys [calls adapters]} (mk-adapters {:ahead 3 :behind 4 :merge-result {:success true}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold false adapters)
+  (assert= "sweep! disabled: a genuine two-way divergence still never mutates" 0 (:merge! @calls)))
+
+;; the switch off does NOT suppress divergence surfacing: a dirty-blocked
+;; tick still surfaces and (past threshold) still escalates - this ticket's
+;; own firm constraint that the switch governs the reconcile action only.
+(let [{:keys [calls adapters]} (mk-adapters {:ahead 0 :behind 22
+                                              :dirty-paths #{"seed.txt"}
+                                              :merge-changed-paths #{"seed.txt"}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold false adapters)
+  (assert= "sweep! disabled: dirty-blocked still surfaces (divergence notification is not suppressed)"
+           1 (:surface! @calls))
+  (assert= "sweep! disabled: dirty-blocked never calls merge!" 0 (:merge! @calls)))
+
+(let [{:keys [calls adapters]} (mk-adapters {:ahead 0 :behind 22
+                                              :dirty-paths #{"seed.txt"}
+                                              :merge-changed-paths #{"seed.txt"}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) 1 false adapters)
+  (assert= "sweep! disabled: escalation past threshold still fires while the switch is off"
+           1 (:escalate! @calls)))
+
+;; the switch off still logs the drift line - only the reconcile ACTION is
+;; skipped, not the observability that runs before the gate.
+(let [{:keys [logs adapters]} (mk-adapters {:ahead 0 :behind 22 :merge-result {:success true}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold false adapters)
+  (assert-true "sweep! disabled: the drift line still logs ahead/behind"
+               (some #(clojure.string/includes? % "drift ahead=0 behind=22") @logs)))
+
+;; an up-to-date tick is unaffected by the switch either way - nothing to
+;; skip, since :should-reconcile is the only branch the switch guards.
+(let [{:keys [calls adapters]} (mk-adapters {:ahead 0 :behind 0})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold false adapters)
+  (assert= "sweep! disabled: an up-to-date tick still never calls merge! (nothing to skip)"
+           0 (:merge! @calls)))
+
+;; the switch explicitly on behaves like a should-reconcile tick always has.
+(let [{:keys [calls adapters]} (mk-adapters {:ahead 0 :behind 22 :merge-result {:success true}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold true adapters)
+  (assert= "sweep! explicitly enabled: reconciles exactly as before BL-1248"
+           1 (:merge! @calls)))
+
+;; the pre-existing 3-arity call site (used exhaustively above and by every
+;; other production caller besides handoffd.bb) keeps reconciling by
+;; default - the switch defaults ENABLED at this pure-lib layer; the
+;; fail-closed-to-disabled contract lives in parse-enabled? and in the
+;; shipped conf value, not in sweep!'s own arity default (BL-1248's own
+;; constraint is about the CONFIG default, never about breaking every
+;; existing caller of this lib that never heard of the switch).
+(let [{:keys [calls adapters]} (mk-adapters {:ahead 0 :behind 22 :merge-result {:success true}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold adapters)
+  (assert= "sweep! 3-arity (no enabled? arg): still reconciles, unaffected by BL-1248"
+           1 (:merge! @calls)))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")
