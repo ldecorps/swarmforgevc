@@ -1633,6 +1633,30 @@ export function roleAnswerFilePointerPath(role: string): string {
   return path.join('.swarmforge', 'operator', 'role-answers', `${role}.json`);
 }
 
+// BL-1201: role_ask.bb's own awaiting-question marker
+// (.swarmforge/operator/role-awaiting/<role>.json), read-only from this
+// side - never written or cleared here except by deliverRoleAnswer below
+// on a CONFIRMED match, so role_ask.bb's own single-pending-question
+// contract stays exactly as it is.
+export function roleAwaitingFilePointerPath(role: string): string {
+  return path.join('.swarmforge', 'operator', 'role-awaiting', `${role}.json`);
+}
+
+interface RoleAwaitingRecord {
+  question?: string;
+  asked_at_ms?: number;
+  options?: unknown;
+}
+
+function readRoleAwaitingRecord(targetPath: string, role: string): RoleAwaitingRecord | undefined {
+  const abs = path.join(targetPath, roleAwaitingFilePointerPath(role));
+  try {
+    return JSON.parse(fs.readFileSync(abs, 'utf8')) as RoleAwaitingRecord;
+  } catch {
+    return undefined;
+  }
+}
+
 export function composeRoleAnswerNoteMessage(role: string, text: string): string {
   return fitsInlineInRoleAnswerNote(text) ? text : `answer ready: ${roleAnswerFilePointerPath(role)}`;
 }
@@ -1650,6 +1674,17 @@ interface RoleAnswerFileRecord {
   // history is what a true "has this identity been captured before"
   // check needs.
   seenUpdateIds?: number[];
+  // BL-1201: the asked_at_ms of role_ask.bb's role-awaiting question that
+  // was pending at the moment this answer was captured - undefined only
+  // when no question was pending at capture time (degrades to "never
+  // matches", the fail-closed default; see deliverRoleAnswer). The two
+  // files then name the same question via the SAME literal value, with no
+  // translation step between role_ask.bb's Babashka writer and this one.
+  askedAtMs?: number;
+  // BL-1201: set only by deliverRoleAnswer, once, on a confirmed match -
+  // a consumed answer must stop presenting itself as fresh, but the text
+  // is never destroyed (constraint: moved aside or marked, never deleted).
+  consumedAt?: string;
 }
 
 const ROLE_ANSWER_SEEN_UPDATE_IDS_LIMIT = 100;
@@ -1681,6 +1716,15 @@ function writeRoleAnswerFile(
   const abs = path.join(targetPath, roleAnswerFilePointerPath(role));
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   const record: RoleAnswerFileRecord = { text, recordedAt: new Date().toISOString() };
+  // BL-1201: stamp the CURRENTLY-pending question's correlator, read at
+  // the moment the human's answer is captured - not at delivery time,
+  // which could be arbitrarily later. undefined (no question pending
+  // right now) is recorded as-is; deliverRoleAnswer treats an undefined
+  // askedAtMs as never matching, fail-closed.
+  const awaiting = readRoleAwaitingRecord(targetPath, role);
+  if (awaiting?.asked_at_ms !== undefined) {
+    record.askedAtMs = awaiting.asked_at_ms;
+  }
   if (updateId !== undefined) {
     record.updateId = updateId;
     const seen = [...(previousSeenUpdateIds ?? []), updateId];
@@ -1689,6 +1733,43 @@ function writeRoleAnswerFile(
     record.seenUpdateIds = previousSeenUpdateIds;
   }
   fs.writeFileSync(abs, JSON.stringify(record));
+}
+
+export type DeliverRoleAnswerResult =
+  | { kind: 'delivered'; text: string }
+  | { kind: 'mismatch' }
+  | { kind: 'already-consumed' }
+  | { kind: 'no-answer' };
+
+// BL-1201: the sole consumption path for a role-answers file - a role
+// "told an answer is ready" must go through this, never read the file
+// directly, so the pairing/consumed checks cannot be bypassed. Invariant
+// 1: never consumes an answer whose askedAtMs cannot be matched to the
+// role's OWN currently-pending question (read fresh here, not cached -
+// the pending question may have changed since the answer was captured).
+// Invariant 2: no answer text is destroyed - a mismatch or an
+// already-consumed answer is left exactly as found; a confirmed match
+// marks consumedAt in place rather than deleting the record.
+export function deliverRoleAnswer(targetPath: string, role: string): DeliverRoleAnswerResult {
+  const answer = readRoleAnswerFile(targetPath, role);
+  if (!answer) {
+    return { kind: 'no-answer' };
+  }
+  if (answer.consumedAt !== undefined) {
+    return { kind: 'already-consumed' };
+  }
+  const awaiting = readRoleAwaitingRecord(targetPath, role);
+  // Fail-closed: an answer captured with no question pending (askedAtMs
+  // undefined) never matches, even if a question later becomes pending -
+  // undefined has no defined identity to correlate against.
+  if (answer.askedAtMs === undefined || awaiting?.asked_at_ms === undefined || answer.askedAtMs !== awaiting.asked_at_ms) {
+    return { kind: 'mismatch' };
+  }
+  const answerAbs = path.join(targetPath, roleAnswerFilePointerPath(role));
+  fs.writeFileSync(answerAbs, JSON.stringify({ ...answer, consumedAt: new Date().toISOString() }));
+  const awaitingAbs = path.join(targetPath, roleAwaitingFilePointerPath(role));
+  fs.rmSync(awaitingAbs, { force: true });
+  return { kind: 'delivered', text: answer.text };
 }
 
 // BL-607 dormant-pane leg (leg 2): the role's pane is dormant, so the
