@@ -5,14 +5,14 @@ type: defect
 severity: critical
 status: todo
 epic: swarm-reliability
-priority: 18
-direction: agent-reported
+priority: 0
+direction: queue-jump
 depends_on: [BL-1214]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1236-reconcile-conflict-prediction-from-git-verdict.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This is the tenth reset-to-origin occurrence and the first one whose cause is
   pinned to a single line rather than reconstructed. BL-1214 shipped 2.5 hours
@@ -163,6 +163,8 @@ source: |
   and backlog/evidence/BL-1236-tenth-reset-cause-pinned-20260828.md.
 
 notes: |
+  - [2026-08-28] human (Cursor): post-expedite-BL-1248 — restore active + ambulance BL-1236
+  - [2026-08-28T12:22Z] human (Cursor): /jumpq BL-1236 — queue-jump force-promote paused→active (depth was full) and route to coder.
   - [2026-08-28] specifier: this is the first of ten reset occurrences whose
     cause is pinned rather than reconstructed, because the daemon logged its
     decision one second before acting. Prior occurrences
