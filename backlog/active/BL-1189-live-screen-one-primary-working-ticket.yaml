@@ -82,6 +82,8 @@ notes: |
     no ticket; first recorded instance if it recurs.
 
 assigned_to: coder
+abandoned_commits:
+  - { sha: 8a4e160867, on: swarmforge-coder, by: coder, reason: "coder re-reverted BL-1189's implementation (residentPaneSpy.ts/residentPaneLive.ts + tests, property test, step handler) at 02:19:04Z citing architect's earlier caveat, without having merged the specifier's ruling 0e810b458 (landed 02:14:42Z, ratifying and lifting the hold). Stale/uninformed action, not a competing adjudication -- documenter is not reverting the specifier-ratified content to match it. Flagged to coder+specifier via note to reconcile swarmforge-coder." }
 bounce_count: 2
 bounce_history:
   - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: 9b86a7810, evidence: backlog/evidence/BL-1189-architect-bounce-20260827.md }
