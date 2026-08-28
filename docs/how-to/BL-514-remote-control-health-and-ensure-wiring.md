@@ -188,6 +188,55 @@ Against the live swarm (or a fixtured tmux session):
    Confirm a genuine `:degraded` pane still repairs exactly as before —
    BL-898 must not have moved that behavior at all.
 
+## New: `config remote_control off` now gates repair, not just launch (BL-1217)
+
+Before this, `expected-rc-name` derived desired RC state from ONE source —
+the persisted launch script — so `config remote_control off` only affected
+auto-inject of `--remote-control` at *new* launch time. `swarmforge.conf`
+and `packs/full-forge.conf` already name `--remote-control` explicitly on
+every Claude window line, so flipping a running pack's config to `off`
+changed nothing the health check could see: `classify` still said
+`:degraded` (or `:session-dead`), `actionable?` still said true, and
+`./swarm ensure` / `remote_control_health.bb --fix` kept respawning the pane
+to "restore" a connection the human had deliberately switched off.
+
+`expected-rc-name` now returns `nil` — the same value it already returns for
+a script with no flag — whenever the **effective** pack config (read via
+`backlog-depth-lib/conf-file-path`: the swarm-identity-persisted conf for
+the swarm actually running, or the tracked default) sets `config
+remote_control off`, regardless of what the launch script itself says.
+`classify` already maps a `nil` expected name to `:off`, and `:off` is
+already excluded from `actionable?` — **no new status, no new predicate**.
+Every real repair path (`swarm_ensure.bb`, `remote_control_health.bb`,
+`remote_control_respawn.bb`) inherits the gate for free through this one
+shared seam; `orphan_agent_reaper_sweep_lib.bb` reaps orphaned processes and
+never respawns/repairs RC, so it needed no change.
+
+New predicates in `remote_control_health_lib.bb`:
+
+- `remote-control-off-in-conf-text?` — pure: true when conf text sets
+  `config remote_control off` (via `coordinator_config_lib/raw-config-value`,
+  the same shared `config <key> <value>` reader `launch_contract_lib.bb`
+  already reuses — never a hand-rolled third conf parser). An absent key or
+  any other value means on, unchanged from today.
+- `remote-control-configured-off?` — reads the effective conf file for
+  `project-root` and applies the predicate above. **Fails open to on**: an
+  unreadable conf file (missing, unparsable) is caught and treated as `""`,
+  never a spurious `:off`.
+
+Behaviour preserved byte-for-byte for the config-on and absent-config cases
+— this only narrows when `expected-rc-name` returns `nil`, it does not
+change what `:degraded`/`:session-dead` mean or the idle-safe respawn
+mechanics for either. `config remote_control off` reported by an actionable
+check is never a fault: `:off` keeps exiting 0, matching the "Non-Claude" row
+in the `./swarm ensure` table above.
+
+This slice deliberately does not touch what a *newly written* launch script
+contains — a pack flipped to `off` today keeps its already-written scripts
+carrying `--remote-control`, they're just no longer treated as desired
+state. Stripping the flag at write time is the sibling ticket BL-1218 (same
+source intake, direction 1); landing both is the intake's hybrid.
+
 ## Related
 
 `docs/how-to/BL-536-provider-auth-error-auto-respawn.md` — a different,
