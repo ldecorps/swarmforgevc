@@ -176,6 +176,14 @@
                                   ;; harmless no-op the second time.
                                   (finish-conflict abort! status-porcelain! mid-merge? {}
                                                    daemon-dir rev-counts! rematch!))})]
-        (if (= (:outcome result) :merged)
-          (finish-ok daemon-dir rev-counts! :merged)
+        ;; BL-1214 architect bounce D1: absorb-with-merge! returns :outcome
+        ;; :ff for the ordinary, most common case (a plain fast-forward, no
+        ;; divergence at all) - not :merged, which is only the NEW
+        ;; non-conflicting-two-way-divergence case this ticket adds. Treat
+        ;; every :success true outcome uniformly, or an ordinary
+        ;; fast-forward success falls into the bare-passthrough branch below
+        ;; (no :ok?/:exit key, deadlock marker never cleared) and the CLI
+        ;; reports it as a failure (exit 1) instead of success (exit 0).
+        (if (:success result)
+          (finish-ok daemon-dir rev-counts! (:outcome result))
           result)))))
