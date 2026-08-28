@@ -166,4 +166,5 @@ notes: |
 bounce_count: 2
 bounce_history:
   - { at: 2026-08-27, by: hardender, blamed: coder, class: behavior, commit: dfd885f9f4, evidence: backlog/evidence/BL-1195-hardener-bounce-20260828.md }
+  - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: fae547cc21, evidence: backlog/evidence/BL-1195-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 58e6f7d92c, evidence: backlog/evidence/BL-1195-architect-bounce-20260828.md }

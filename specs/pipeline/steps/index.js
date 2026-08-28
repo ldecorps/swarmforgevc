@@ -819,6 +819,7 @@ const DOMAINS = [
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
   require('./bl1195WorktreeTrackedContentDriftSteps'),
   require('./bl1199PackSwitchBubbleTunnelSteps'),
+  require('./bl1213ParcelRollbackGuardSteps'),
   require('./bl1186DeprecatorIdentifyUnusedNotifySteps'),
   require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps')
 ];
