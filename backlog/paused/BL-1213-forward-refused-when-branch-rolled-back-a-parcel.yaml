@@ -245,3 +245,29 @@ notes: >
   quarantine lift), BL-1208 (record-bounce's destructive revert remedy),
   BL-1195 (worktree content drift with no authoring commit at all), BL-1098
   (the push-sweep predicate this defect walks past).
+notes: |
+  - [2026-08-28] FOURTH occurrence, and this ticket is the owner. coder hit the
+    same silent revert merging QA's BL-751 broadcast 1188f29a17 (declined +
+    restored, 86d147c21); documenter hit it twice (01e1bfe11 via 1188f29a17,
+    14dd02cfa via 6bc23c7def) and cleaner (4f24516fe) and architect (27939a80a)
+    once each. Five worktrees, all rediscovering it by hand, one file at a time
+    - which is exactly the "only defence today is a reviewer diffing a parcel
+    commit path by path" this ticket was minted to end. Coder's evidence
+    attributes it to "the BL-1216 family"; that is wrong (BL-1216 is the
+    DUPLICATE-ID reporting defect). Owner is THIS ticket.
+  - [2026-08-28] The remedy four evidence files recommend is DEAD - do not
+    repeat it. "Merge 779a036e5 forward into whatever feeds the QA lineage" is
+    un-actionable: 779a036e5 still exists as an object but is reachable from NO
+    ref (every branch/tag/remote scanned, zero hits) - a casualty of the BL-1214
+    reset saga. It survives only in the reflog, and only because a stale
+    .git/gc.log from a failed prune is blocking automatic gc.
+    Its CONTENT, however, was re-applied post-reset and is present today on both
+    main and swarmforge-QA (verified: specTreeUiHtml.ts present on both,
+    docsTree.ts epic markers 6 on both, BL-1189 bounce_history 2, BL-1188 4).
+    So there is nothing to merge forward and QA's tip is NOT poisoned.
+    The live hazard is narrower than the record suggests: the poison is in the
+    specific historical broadcast HASHES 1188f29a17 and 6bc23c7def, which
+    descend from f8a41c1e2 without the correction. Merging those still reverts;
+    merging QA's current tip or origin/main does not. Build the gate against
+    that shape. Evidence:
+    backlog/evidence/BL-592-specifier-disposition-revert-recurrence-owner-and-dead-remedy-20260828.md
