@@ -195,3 +195,10 @@
   stamp_ticket: null
   human_decision: null
   decided_at: null
+- commit: 5de352ed1d
+  subject: "Refuse synthesized no-verdict bounces; recover twice with escalated prompts."
+  detected_at: 2026-08-28
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
