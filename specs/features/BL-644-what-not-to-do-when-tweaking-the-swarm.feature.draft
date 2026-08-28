@@ -1,0 +1,12 @@
+# DRAFT — parked out of the *.feature glob (BL-233), permanently non-executable.
+# BL-644 is a doc-only how-to guide (required_stages: [documenter, qa]; every
+# code-touching stage is skipped in the ticket YAML). Its deliverable is prose
+# under docs/how-to/, judged by the documenter's own written acceptance
+# checklist in the ticket, not by an automated scenario — see
+# verification-only-chore-carries-no-executable-gate: an executable gate over
+# prose content is dishonest (either it greps for words, which is green
+# whether or not the doc is actually correct, or it reads a live runtime path
+# that rots). This file exists only so the pre-QA acceptance-contract gate has
+# a real, parseable, zero-scenario feature to resolve.
+
+Feature: BL-644 what-not-to-do guide is documentation-only, judged by prose acceptance

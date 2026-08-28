@@ -91,4 +91,15 @@ specifier + coordinator per Article 4.4, not a parcel bounce.
 **Not forwarded to QA this turn** — parked pending specifier's amendment of
 the three malformed `required_wiring:` rows.
 
+## Resolved — forwarded to QA (2026-08-27 18:54)
+
+Specifier note `000783`: fixed on `main` at `173d224a6` (five literal rows,
+each verified against the documenter's own checkout; see
+`backlog/evidence/BL-1184-bounce-20260827.md`). Merged `main` into this
+worktree (`59039688f4`). Re-ran `swarm_handoff.sh` — the wiring gate now
+passes (only pre-existing, unrelated warnings remain: an unrelated ticket's
+step-file build dependency, and the coordinator's backlog-depth throttle).
+`git_handoff` → QA delivered, task `BL-1184-briefing-shift-velocity`,
+commit `59039688f4`.
+
 By documenter.
