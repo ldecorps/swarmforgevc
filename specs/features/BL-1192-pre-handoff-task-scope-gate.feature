@@ -71,3 +71,15 @@ Feature: Pre-handoff task-scope gate refuses entangled git_handoffs
     And the task's own follow-up commit lands after it, touching only its own paths
     When the cleaner sends a git_handoff for task ticket "BL-1174" citing the follow-up commit
     Then the send is accepted
+
+  # BL-1192 task-scope-gate-07 (architect bounce round 2 D2: the acceptance
+  # fixture previously could not distinguish "walk from last-handoff" from
+  # "walk from origin/main under the abandoned_commits override" - this
+  # scenario drives the real swarm_handoff.sh end to end with a
+  # disconnected rebuild, mirroring task_scope_gate_lib_test_runner.bb's own
+  # "abandoned base -> no findings" fixture at the acceptance level.
+  Scenario: a deliberate rebuild off origin/main honours its own recorded abandonment
+    Given an earlier commit on origin/main is already entangled with ticket "BL-1185"
+    And a disconnected rebuild attempt repeats that same entanglement and was cited once
+    When the cleaner sends a git_handoff for task ticket "BL-1174" citing a tip-pure rebuild that records the disconnected attempt as abandoned
+    Then the send is accepted
