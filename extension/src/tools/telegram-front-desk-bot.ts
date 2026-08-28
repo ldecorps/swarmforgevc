@@ -1637,13 +1637,58 @@ export function composeRoleAnswerNoteMessage(role: string, text: string): string
   return fitsInlineInRoleAnswerNote(text) ? text : `answer ready: ${roleAnswerFilePointerPath(role)}`;
 }
 
-function writeRoleAnswerFileIfNeeded(targetPath: string, role: string, text: string): void {
-  if (fitsInlineInRoleAnswerNote(text)) {
-    return;
+interface RoleAnswerFileRecord {
+  text: string;
+  recordedAt: string;
+  updateId?: number;
+  // BL-1203: every updateId already captured for this role, most-recent
+  // last, bounded so this never grows unbounded over the role's lifetime.
+  // A single `updateId` field alone is not enough to dedupe correctly - a
+  // NEWER, DIFFERENT answer overwrites it, so a REPLAY of an OLDER
+  // updateId (e.g. id 1, then id 2, then id 1 again) would read as
+  // "never seen" and queue a second note for id 1. The full bounded
+  // history is what a true "has this identity been captured before"
+  // check needs.
+  seenUpdateIds?: number[];
+}
+
+const ROLE_ANSWER_SEEN_UPDATE_IDS_LIMIT = 100;
+
+function readRoleAnswerFile(targetPath: string, role: string): RoleAnswerFileRecord | undefined {
+  const abs = path.join(targetPath, roleAnswerFilePointerPath(role));
+  try {
+    return JSON.parse(fs.readFileSync(abs, 'utf8')) as RoleAnswerFileRecord;
+  } catch {
+    return undefined;
   }
+}
+
+// BL-1203 invariant 2: "a note that names an answer file names a file
+// whose recorded answer is the one the note announces." Previously this
+// only wrote when the answer did NOT fit inline, so a fresh short answer
+// left an earlier long-form answer's file stale underneath it - always
+// write, unconditionally, so the file is always the CURRENT capture. The
+// dedup history (seenUpdateIds) is threaded through and appended to
+// separately from `text`/`recordedAt`, which always reflect only the
+// LATEST capture regardless of history length.
+function writeRoleAnswerFile(
+  targetPath: string,
+  role: string,
+  text: string,
+  updateId: number | undefined,
+  previousSeenUpdateIds: number[] | undefined
+): void {
   const abs = path.join(targetPath, roleAnswerFilePointerPath(role));
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, JSON.stringify({ text, recordedAt: new Date().toISOString() }));
+  const record: RoleAnswerFileRecord = { text, recordedAt: new Date().toISOString() };
+  if (updateId !== undefined) {
+    record.updateId = updateId;
+    const seen = [...(previousSeenUpdateIds ?? []), updateId];
+    record.seenUpdateIds = seen.slice(-ROLE_ANSWER_SEEN_UPDATE_IDS_LIMIT);
+  } else if (previousSeenUpdateIds?.length) {
+    record.seenUpdateIds = previousSeenUpdateIds;
+  }
+  fs.writeFileSync(abs, JSON.stringify(record));
 }
 
 // BL-607 dormant-pane leg (leg 2): the role's pane is dormant, so the
@@ -1659,8 +1704,25 @@ function writeRoleAnswerFileIfNeeded(targetPath: string, role: string, text: str
 // must never become, a row in roles.tsv). Never throws - a failed queue
 // is logged and reported false, the same "adapter never throws out of the
 // poll cycle" convention this file uses throughout.
-export async function enqueueRoleAnswerNote(targetPath: string, role: string, text: string): Promise<boolean> {
-  writeRoleAnswerFileIfNeeded(targetPath, role, text);
+// BL-1203: idempotent by updateId (the identity of the inbound message
+// that produced this answer), NEVER by text - two genuinely separate
+// answers with identical wording must both be delivered (constraint). A
+// caller that omits updateId (legacy call shape) never dedupes - only a
+// present updateId already present in this role's bounded seen-history
+// short-circuits (checking only the single most-recently-recorded
+// updateId is not enough - a replay interleaved with a DIFFERENT newer
+// answer would read as unseen; see writeRoleAnswerFile's own note).
+export async function enqueueRoleAnswerNote(
+  targetPath: string,
+  role: string,
+  text: string,
+  updateId?: number
+): Promise<boolean> {
+  const existing = readRoleAnswerFile(targetPath, role);
+  if (updateId !== undefined && existing?.seenUpdateIds?.includes(updateId)) {
+    return true;
+  }
+  writeRoleAnswerFile(targetPath, role, text, updateId, existing?.seenUpdateIds);
   const message = composeRoleAnswerNoteMessage(role, text);
   const draftDir = path.join(targetPath, 'tmp');
   fs.mkdirSync(draftDir, { recursive: true });
@@ -2375,7 +2437,7 @@ function buildPollAdapters(
       clearRoleAwaitingAnswer(targetPath, role);
       return Promise.resolve();
     },
-    enqueueRoleAnswerNote: (role, text) => enqueueRoleAnswerNote(targetPath, role, text),
+    enqueueRoleAnswerNote: (role, text, updateId) => enqueueRoleAnswerNote(targetPath, role, text, updateId),
     // BL-568: suppress ordinary steers while a menu-answer poll is live.
     roleMenuBlocked: async (role) => {
       const map = readPollMap(targetPath);
