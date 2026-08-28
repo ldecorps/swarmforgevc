@@ -94,6 +94,7 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, cro
       calls.commit += 1;
       return 'a'.repeat(40);
     },
+    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-07-31T00:00:00.000Z',
   };
 }
