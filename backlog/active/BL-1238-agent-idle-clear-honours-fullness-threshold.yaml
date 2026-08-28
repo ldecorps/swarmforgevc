@@ -5,23 +5,21 @@ type: defect
 severity: medium
 status: todo
 epic: swarm-reliability
-priority: 20
-direction: human
+priority: 0
+direction: queue-jump
 depends_on: [BL-141, BL-089]
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1238-agent-idle-clear-honours-fullness-threshold.feature
 
 human_approval: approved
 approval_context: >
-  The decision itself is already locked by the human and is not in question.
-  What needs sign-off is the behaviour when no fullness reading can be
-  obtained at all. Scenario 04 chooses DO NOT CLEAR, on the reading that the
-  stated intent is to avoid paying for a reload that is not needed, so an
-  unknown fullness should not buy one. The opposite default (clear when
-  unsure, matching today's unconditional behaviour) is defensible if you would
-  rather a role never get stuck in a bloated window because a reading failed.
-  Confirm which way you want it.
+  Locked human decisions (Cursor 2026-08-28): (1) idle-clear at NO_TASK only
+  when context is at least 75% full — intent: do not pay for a reload when
+  it is not needed. (2) When no fullness reading can be obtained, DO NOT
+  CLEAR (Scenario 04). Human confirmed 2026-08-28 ~08:05 BST: "When fullness
+  cant be read, default to do not clear indeed."
 
 invariants:
   - "No idle-clear respawn happens below the configured fullness threshold, on any code path that can respawn a role at an idle boundary."
@@ -41,6 +39,10 @@ description: |
   > if** their current context is **at least 75% full**.
 
   > **Intent (verbatim):** do **not** pay for a reload when it is not needed.
+
+  **Unavailable reading (locked 2026-08-28 ~08:05 BST, human via Cursor):**
+  when no fullness reading can be obtained, **do not clear** — same intent
+  (Scenario 04). Do not fall back to today's unconditional clear.
 
   ## What is wrong
 
@@ -116,6 +118,10 @@ source: |
   sentences are preserved in this ticket's description above.
 
 notes: |
+  - [2026-08-28T07:05Z] human (Cursor): unavailable fullness reading → do not
+    clear (confirms Scenario 04; locks approval_context open judgement).
+  - [2026-08-28T07:03Z] human (Cursor): /jumpq BL-1238 — queue-jump force-promote
+    paused→active (depth was full 9/9) and route to coder. Depends BL-141/BL-089 done.
   - [2026-08-28] specifier: the intake's claimed gap verified before minting,
     not taken on trust. `maybe-clear-at-idle-boundary!` is quoted above from
     `ready_for_next_task.bb` as it stands; `ready_for_next_batch.bb` defines
