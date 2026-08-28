@@ -10,9 +10,6 @@ priority: 30
 direction: swarm-proposed
 depends_on: []
 mutation_cost: medium
-abandoned_commits:
-  - b033583c08
-  - 4478c3bb6a
 acceptance: specs/features/BL-1192-pre-handoff-task-scope-gate.feature
 
 approval_context: >

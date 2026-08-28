@@ -16,8 +16,6 @@ priority: 20
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
-abandoned_commits:
-  - 173bb2422f
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounce-content.feature
 
@@ -350,5 +348,5 @@ bounce_count: 4
 bounce_history:
   - { at: 2026-08-28, by: cleaner, blamed: coder, class: behavior, commit: a96b3a10f0, evidence: backlog/evidence/BL-1211-cleaner-bounce-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: c914c40443, evidence: backlog/evidence/BL-1211-architect-bounce-20260828.md }
-  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 42b5cd4dd, evidence: backlog/evidence/BL-1211-qa-bounce-20260828.md }
+  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 42b5cd4ddb, evidence: backlog/evidence/BL-1211-qa-bounce-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: invariant-unencoded, commit: 03b18f6823, evidence: backlog/evidence/BL-1211-architect-bounce-round2-20260828.md }

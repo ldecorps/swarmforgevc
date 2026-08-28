@@ -213,3 +213,6 @@ approval_context: >
   separately tested.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: QA, blamed: documenter, class: behavior, commit: c22b9c6906, evidence: backlog/evidence/BL-1207-qa-bounce-20260828.md }

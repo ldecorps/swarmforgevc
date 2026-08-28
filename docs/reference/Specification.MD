@@ -1,47 +1,5 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 28, 2026 (BL-1211: a branch recovery no longer
-resurrects content a same-branch BL-490/BL-495 bounce revert deliberately
-removed, and the quarantine-lift check can now fail on content that came
-back, not only on content that went missing —
-`gatherBounceResurrectionFacts`/`decideQuarantineLift`/`decideRecoveryFilter`
-(`extension/src/metrics/bounceResurrectionGitAdapter.ts`) turn the refusal
-on **authorship**, not byte-identity: content re-introduced by a recorded
-post-revert commit on the branch passes even when byte-identical to what
-the revert removed, and content with no such record is refused even when
-its bytes are correct. `filterRecoveryPaths` is the recovery-direction half
-(a sibling-restore never brings back a reverted path unless a later commit
-authored it back); `quarantineLiftCheck` is the production lift-verdict
-caller. Architect bounce D1 added the operator-facing entry points this
-first cut shipped without: `extension/src/tools/quarantine-lift-check.ts`
-and `extension/src/tools/recovery-filter-check.ts`, so an operator can
-reach either verdict without writing code — both fail closed (refuse,
-never report clean) when the branch's bounce history cannot be resolved.
-Root-caused from the 2026-08-27 incident where `1fcd4c167`'s bounce revert
-of 511 lines was silently undone four minutes later by a tree-collapse
-recovery restoring from a sibling branch. No new extension command or
-setting. Acceptance:
-`specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounce-content.feature`.
-How-to: `docs/how-to/BL-1211-quarantine-lift-authorship-check.md`.)
-Prior entry —
-**Last Updated:** August 28, 2026 (BL-1216: a `DUPLICATE-ID` finding from
-the backlog hygiene gate (`duplicate-id-violations`/`format-violation`,
-`swarmforge/scripts/backlog_hygiene_lib.bb`) now names every colliding
-path's pool and lifecycle class (`path [pool/live-or-terminal]` —
-`paused`/`active` are `live`, `hold`/`done` are `terminal`), states whether
-the colliding files' contents are byte-identical (`CONTENT IDENTICAL`) or
-not (`CONTENT DIFFERS` — fail-closed: an unreadable file is always reported
-as differing, never as identical), and, when exactly one colliding copy
-sits in a live pool, names that path with `keep: <path>`. Before this fix
-the finding read only the ids and raw paths, so resolving a collision meant
-opening every file by hand and guessing which copy was still in the
-pipeline — the 2026-08-27 incident this ticket was filed for got both
-wrong at once. The content read is injectable (`read-fn`, default `slurp`)
-per this project's inject-side-effects rule; `format-violation`'s existing
-single-arg callers are unaffected (2-arity default). No new extension
-command or setting — Babashka backlog tooling. Acceptance:
-`specs/features/BL-1216-duplicate-id-finding-names-the-live-copy-and-flags-divergence.feature`.)
-Prior entry —
 **Last Updated:** August 28, 2026 (BL-1201: a recorded human answer at
 `.swarmforge/operator/role-answers/<role>.json` now carries the
 `asked_at_ms` of the question it answers — the same correlator
@@ -66,26 +24,33 @@ setting — operator/role-substrate tooling. Acceptance:
 `specs/features/BL-1201-a-recorded-answer-identifies-the-question-it-answers.feature`.
 How-to: `docs/how-to/BL-1201-a-recorded-answer-identifies-the-question-it-answers.md`.)
 Prior entry —
-**Last Updated:** August 28, 2026 (BL-1192: `swarm_handoff.sh` refuses a
-`git_handoff` send — on every hop, not only the documenter→QA edge BL-531
-already covers — when the task's own commits since its last handoff carry
-a path that positively belongs to a different ticket than the one the
-`task:` header names (`task_scope_gate_lib.bb`). Identification is
-positive-only, via the same exact-id-equality extractor BL-953 uses,
-restricted to path shapes that actually carry a ticket id in their own
-name (`backlog/**`, `specs/features/**`, `docs/how-to/**`); a functional
-code path is never flagged, and fail-open covers that silence structurally.
-Scope is the union of this task's own tagged commits' tree diffs, walked
-from the last handoff recorded for this exact task — a literal
-`origin/main...commit` range was tried and rejected for a false-positive
-avalanche on a batch role's own accumulated sibling-ticket commits.
-Backstops the dominant 2026-08-27 shift bounce class (ten `behavior`
-bounces, six measured as entangled tips) at the hop where it first
-appears instead of riding the pipeline to QA. Fail-open is absolute on any
-unreadable fact, same posture as BL-953/BL-972. No new extension command
-or setting. Acceptance:
-`specs/features/BL-1192-pre-handoff-task-scope-gate.feature`. Mechanics:
-`swarmforge/handoff-protocol.md` Pre-Handoff Task-Scope Gate section.)
+**Last Updated:** August 28, 2026 (BL-1192: pre-handoff task-scope gate —
+`swarm_handoff.bb` refuses a `git_handoff` at ANY hop (not only the
+documenter→QA edge BL-531 already covers) whose cited commit's own tagged
+commits since the task's last handoff carry a path positively belonging to
+a different ticket, via the same exact-id-equality extractor BL-953's
+coherence gate uses; scope is the union of each own-tagged commit's own
+diff, never the full `origin/main...commit` range, which explodes on a
+batch role's real branch; honors `abandoned_commits:` so a deliberate
+rebuild-off-main is not mistaken for entanglement; fail-open whenever
+origin/main or the range is unreadable. Acceptance:
+`specs/features/BL-1192-pre-handoff-task-scope-gate.feature`. How-to:
+`docs/how-to/BL-1192-pre-handoff-task-scope-gate.md`.)
+Prior entry —
+**Last Updated:** August 28, 2026 (BL-1228: active-pool freshness/hold
+divergence audit — `active-pool-freshness-audit.ts` reports every
+`backlog/active/` ticket whose own `deprecate-check.js` verdict (Article
+3.6) is not exactly `allow`; report-only, never moves/creates/deletes/
+rewrites a backlog file, fail-closed on a missing/crashing/unparseable/
+unrecognised verdict. Wired into `promote_and_route_next.sh` after a
+successful promotion, so every legitimate promotion surfaces any ticket
+that got into `active/` by another path — the gap a hand-rolled `git mv`
+(`main` commit `cac8afef8`, 2026-08-28) walked past unnoticed. A periodic
+sweep independent of promotions was considered and deliberately deferred
+(human ruling at mint), not an oversight. Acceptance:
+`specs/features/BL-1228-active-pool-freshness-hold-divergence-audit.feature`.
+How-to:
+`docs/how-to/BL-1228-active-pool-freshness-hold-divergence-audit.md`.)
 Prior entry —
 **Last Updated:** August 28, 2026 (BL-1217: RC health/repair
 (`swarmforge/scripts/remote_control_health_lib.bb`) now derives desired

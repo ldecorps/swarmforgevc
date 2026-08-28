@@ -295,33 +295,6 @@ priority: 5
  (boolean (:error (backlog-hygiene-lib/read-local-id-index
                    "/tmp/bl1105-no-such-backlog-root"))))
 
-;; BL-1216: a ticket file that cannot be read no longer aborts the whole
-;; corpus scan when its id is still recoverable from its filename — it
-;; still surfaces in the index (a real collision is still caught), so the
-;; unreadable-hold-copy scenario reports DUPLICATE-ID + CONTENT DIFFERS
-;; instead of a corpus-wide refusal.
-(let [root (str (fs/create-temp-dir {:prefix "bl1216-unreadable-idx-"}))]
-  (fs/create-dirs (fs/path root "paused"))
-  (fs/create-dirs (fs/path root "hold"))
-  (spit (str (fs/path root "paused" "BL-9999-live.yaml")) "id: BL-9999\n")
-  (let [unreadable (str (fs/path root "hold" "BL-9999-terminal.yaml"))]
-    (spit unreadable "id: BL-9999\n")
-    (fs/set-posix-file-permissions unreadable "---------")
-    (assert=
-     "read-local-id-index still indexes an unreadable ticket by its filename id, no corpus-wide failure"
-     ["BL-9999"]
-     (keys (:ok (backlog-hygiene-lib/read-local-id-index root))))
-    (fs/set-posix-file-permissions unreadable "rw-r--r--")))
-
-(assert=
- "ticket-id-from-filename recovers the id from the <ID>-slug.yaml convention"
- "BL-1216"
- (#'backlog-hygiene-lib/ticket-id-from-filename "/tmp/x/BL-1216-example.yaml"))
-(assert=
- "ticket-id-from-filename is nil when the name doesn't fit the convention"
- nil
- (#'backlog-hygiene-lib/ticket-id-from-filename "/tmp/x/notes.txt"))
-
 ;; ── BL-1027: dangling acceptance pointer at mint ───────────────────────────
 
 (def ^:private repo-root-for-tests

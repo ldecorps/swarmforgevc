@@ -9,8 +9,6 @@ priority: 15
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
-abandoned_commits:
-  - b6709aa6ff
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1201-a-recorded-answer-identifies-the-question-it-answers.feature
 human_approval: approved
@@ -184,5 +182,5 @@ bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 8b939d7cf1, evidence: backlog/evidence/BL-1201-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 8b939d7cfd, evidence: backlog/evidence/BL-1201-architect-bounce-20260828.md }
   - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 098b4d07bf, evidence: backlog/evidence/BL-1201-qa-bounce-20260828.md }
-  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 709c613d3, evidence: backlog/evidence/BL-1201-qa-bounce-round2-20260828.md }
+  - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: d6b84eea33, evidence: backlog/evidence/BL-1201-qa-bounce-round2-20260828.md }
   - { at: 2026-08-28, by: architect, blamed: coder, class: invariant-unencoded, commit: 8f125f661f, evidence: backlog/evidence/BL-1201-architect-bounce-round3-20260828.md }

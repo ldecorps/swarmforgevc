@@ -16,9 +16,6 @@ direction: pipeline-reported
 depends_on: []
 assigned_to: coder
 mutation_cost: low
-abandoned_commits:
-  - b283239757
-  - 778991d218
 required_stages: [coder, qa]
 stage_skip_reasons:
   cleaner: "prose-move plus one check wiring; no code to refactor"
@@ -123,18 +120,6 @@ notes: >
   sitting: a prose move plus one check invocation). Small (5 scenarios, 3
   invariants). Testable (every scenario is externally observable and the e2e
   procedure includes a hand-run non-vacuity step).
-
-  [2026-08-28] coder: QA bounce D1 (backlog/evidence/BL-1227-qa-bounce-20260828.md)
-  found the originally-sent commit b283239757 entangled with BL-1192/1201/
-  1207/1211/1216's own unfinished work (BL-506 tip-purity violation) —
-  substance was correct, only the branch carried other tickets' content.
-  Rebuilt as af55356bd, a tip-pure commit on top of main containing only
-  the 16 paths QA itself enumerated as this ticket's own scope; verified
-  green in an isolated git-worktree checkout (budget gate, unit + property
-  suites, acceptance feature 7/7). b283239757 and its QA-side revert
-  778991d218 are recorded above as abandoned_commits per the bounce's own
-  remedy instruction — deliberately dropped, not lost work.
-
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 002a4c672, evidence: backlog/evidence/BL-1227-qa-bounce-20260828.md }

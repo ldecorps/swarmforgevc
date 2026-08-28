@@ -9,8 +9,6 @@ priority: 25
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
-abandoned_commits:
-  - a984721f18
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1216-duplicate-id-finding-names-the-live-copy-and-flags-divergence.feature
 human_approval: approved
