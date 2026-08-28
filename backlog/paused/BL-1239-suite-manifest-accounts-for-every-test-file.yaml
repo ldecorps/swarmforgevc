@@ -1,0 +1,137 @@
+id: BL-1239
+title: "The Babashka suite refuses to run: 39 test files are absent from suite-manifest.tsv and 3 of the manifest's own rows register nothing"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 15
+direction: agent-reported
+depends_on: [BL-973, BL-724]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1239-suite-manifest-accounts-for-every-test-file.feature
+
+human_approval: approved
+approval_context: >
+  Sign-off needed on one judgement the backfill cannot avoid making. Each of
+  the 39 files must be placed in a lane, and "excluded" requires a stated
+  reason - but the manifest's own rules say a FAILING test is not a reason to
+  exclude, it belongs in the standing lane reported red. So if any of the 39
+  is currently red, this ticket puts it in standing and the suite goes red on
+  work nobody here authored. Confirm that is what you want (the alternative -
+  parking reds as excluded - is explicitly against the manifest's stated
+  contract, so I have not proposed it). Expect the true count to differ from
+  39 by the time this is worked: it grew by roughly 6 a day while unowned.
+
+invariants:
+  - "Every file under swarmforge/scripts/test/ appears in exactly one manifest lane, and every manifest row names a file that exists."
+
+required_wiring:
+  - 'swarmforge/scripts/test/suite-manifest.tsv::test_wsl_bootstrap.sh::the oldest unregistered file, 2026-07-09, is the one an incremental fix is most likely to skip; if this row is absent the backfill was partial'
+  - 'specs/pipeline/steps/index.js::bl1239SuiteManifestAccountedSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/run_bb_suite.sh` refuses to run:
+
+      FAIL: not in the manifest: agent_process_marker_lib_test_runner.bb - add a row
+      FAIL: not in the manifest: bl1053_local_provider_routing_test_runner.bb - add a row
+      ... 39 lines on main, 49 in QA's worktree
+
+  Nothing runs. Not one test. The engineering rules make this suite the ONLY
+  gate for Babashka and shell code — mutation, CRAP and DRY are not wired for
+  that lane — so while it refuses, QA has no way to gate any change to
+  `swarmforge/scripts/`.
+
+  ## Three manifest rows register nothing
+
+  Lines 409-411 have the ticket id where the filename belongs:
+
+      BL-780     bl780_rotation_actionability_ordering            ...
+      BL-780     bl780_rotation_actionability_ordering_property   ...
+      BL-1167    bl1167_same_model_seat_mutation_sweep            ...
+
+  The first column must be a filename; the second must be `standing` or
+  `excluded`. These name no file, so they register nothing — and
+  `test_bl780_rotation_actionability_ordering.sh` is still in the missing 39.
+  Somebody tried to register it, the manifest accepted the row, and nothing
+  said otherwise. Fixing these is part of the current broken state, not a
+  separate cleanup.
+
+  ## Why 39, and why this is a backfill rather than a bug hunt
+
+  Measured by first-appearance date:
+
+      2026-07-09   1
+      2026-08-23   4     <- the manifest gate itself landed 2026-08-23 (BL-973)
+      2026-08-24   7
+      2026-08-25   6
+      2026-08-26  12
+      2026-08-27   5
+      2026-08-28   3
+
+  38 of the 39 arrived on or after the day the gate started enforcing, at
+  roughly six a day, continuously. So these are not old orphans the rollout
+  forgot; they are new files, each added by a ticket that never wrote its row,
+  with nothing failing at the time. **That accumulation is a separate defect
+  and is BL-1240's, not this one's.** This ticket is the backfill that gets
+  the suite running again.
+
+  ## How (direction, not mandate)
+
+  - Place each file in the lane it belongs in. Default to `standing`; use
+    `excluded` only for the manifest's own stated reasons — slow, manual, or
+    live-only — with the required date and reason.
+  - Read the manifest's header rules before choosing: "It is failing" is NOT a
+    reason to exclude. A red test goes in `standing` and is reported red.
+  - Repair the three malformed rows to name their actual files, and make the
+    inventory check reject a row whose first column is not an existing test
+    file, so the next malformed row is loud instead of silent.
+  - Re-derive the list rather than working from the 39 above — run the runner
+    and take its output. The number will have moved.
+
+qa_e2e_procedure: >
+  (1) Run `swarmforge/scripts/test/run_bb_suite.sh` on the parcel commit and
+  confirm it gets past the inventory check and actually runs tests — before
+  this ticket it exits with 39 FAIL lines and runs nothing. (2) Confirm the
+  count of rows equals the count of files under `swarmforge/scripts/test/`
+  matching the discovery globs, with no file in two lanes. (3) For every row
+  in the `excluded` lane, confirm both a date and a reason are present and the
+  reason is slow, manual or live-only — not "failing". (4) Add a throwaway
+  test file, re-run, and confirm the inventory check names it; delete it.
+  (5) Add a row whose first column is a ticket id rather than a filename,
+  re-run, and confirm the check now fails and names that row; remove it.
+  (6) Report the suite's pass/fail result honestly — a suite that runs and
+  reports reds satisfies this ticket; a suite that cannot run does not.
+
+out_of_scope: |
+  - Fixing whatever tests turn out to be red once the suite can run. This
+    ticket makes the suite runnable; the reds it then reports are their own
+    tickets, and hiding them behind `excluded` is forbidden by the manifest's
+    own rules.
+  - Preventing the drift from re-accumulating. That is BL-1240, split out of
+    this same QA note deliberately: a backfill and a new gate are different
+    sittings and the backfill must not wait on the gate.
+  - The `init` commit `e6777fa15` (2026-08-27, 95 files, 12806 deletions,
+    ancestor of main) noticed while investigating. Its manifest deletions were
+    restored and its deleted tickets are present in `backlog/done/`, so it is
+    not the cause here; leaked-repo artefacts are BL-1230's.
+
+source: |
+  QA `note` (priority 00) to specifier+coordinator, 2026-08-28T06:51:05Z:
+  "run_bb_suite.sh blocked: suite-manifest.tsv drift, 49 unreg. files,
+  unticketed". Reproduced on main by the specifier before minting (39 there;
+  QA's worktree carries more from parcels in flight).
+
+notes: |
+  - [2026-08-28] specifier: reproduced rather than taken on trust. Ran
+    `run_bb_suite.sh` on main, captured the 39 names, confirmed all 39 are
+    tracked (none is untracked scratch), and dated each by its adding commit.
+  - [2026-08-28] specifier: the malformed rows were found by asking which rows
+    have a lane that is neither `standing` nor `excluded` — three, all with
+    the ticket id in column 1. Worth remembering as a manifest smell test.
+  - [2026-08-28] specifier: split 1:N from the QA note with BL-1240 under the
+    Consolidation Authority. This half is the unblock and should go first;
+    BL-1240 is the reason it will not be needed again.

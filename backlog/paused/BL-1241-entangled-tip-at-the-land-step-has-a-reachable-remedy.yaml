@@ -1,0 +1,155 @@
+id: BL-1241
+title: "An entangled tip at the land step is bounced to an author who cannot act on it, so three parcels can be refused in one pass with no move available to anyone"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 16
+direction: agent-reported
+depends_on: [BL-506, BL-1192]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.feature
+
+human_approval: approved
+approval_context: >
+  This ticket deliberately does NOT choose the remedy, because the choice is
+  yours and the options differ in cost. (a) Land the siblings first, in
+  dependency order, when they are themselves approved - cheapest, but does
+  nothing when a sibling is genuinely unfinished. (b) Have the land step build
+  a tip-pure commit by replaying only the ticket's own paths onto origin/main -
+  powerful, and the most machinery. (c) Give roles a per-ticket branch off
+  origin/main so entanglement cannot form - the real fix, but it contradicts
+  the one-worktree-per-role rule in Article 1 and would need an Article 5
+  amendment. My preference is (a) with (b) as the fallback, and (c) recorded
+  as the thing worth doing if this recurs after (a). Say which you want before
+  this is built; the scenarios gate the OUTCOME, not the mechanism, so any of
+  the three satisfies them.
+
+invariants:
+  - "A parcel is never refused with an outcome its recipient has no action available to satisfy."
+  - "A commit is not landed while another ticket's unreviewed work is an ancestor of it."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1241EntangledTipRemedySteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  Two facts that are each fine alone and jointly produce a deadlock:
+
+  1. A role works on one long-lived branch (Article 1, worktree per role) and
+     holds several tickets at once — the coder held ten parcels on
+     2026-08-28. So ticket A's commit routinely has tickets B..E's unlanded
+     work as ancestors. That is what pipelining looks like.
+  2. Landing such a commit would put B..E's unreviewed work on `main`, which
+     the BL-506 inventory correctly refuses.
+
+  The refusal is then delivered as a bounce to the parcel's author. **No role
+  can remove commits that are ancestors of its own branch.** So the bounce
+  names no action its recipient can take, and the parcel stalls.
+
+  ## The incident
+
+  2026-08-28, QA bounced **three parcels in one pass** — BL-1227, BL-1192,
+  BL-1201 — all for entanglement on the same coder branch, all back to the
+  coder. QA's analysis was careful and correct about the condition: for
+  `b283239757` it listed 35 changed paths, attributed each to its ticket, and
+  checked each introducing commit's ancestry individually rather than assuming.
+  BL-1227's own scope it verified as correct and complete.
+
+  So a parcel that is right, reviewed by a reviewer who was right, was refused
+  with an instruction nobody can carry out. That is the defect.
+
+  ## What this is NOT
+
+  - Not a criticism of the bounces. Under the definition available at the
+    time they were the conservative call, and landing entangled work silently
+    is worse.
+  - Not BL-1192. That gate answers "did this author work outside the ticket?"
+    at send time, and its range was corrected on 2026-08-28 precisely so it
+    stops conflating the two questions. This ticket owns the other question:
+    what the LAND step does when the answer is a legitimate yes.
+  - Not tip-purity rematch (BL-1144), which is about rebuilding a tip QA has
+    already decided to land.
+
+  ## How (direction, not mandate)
+
+  The scenarios gate the outcome, not the mechanism: the parcel is not landed,
+  the entangled siblings are named, the outcome goes to someone who can act,
+  and the parcel's hard-won approval is not thrown away. Three mechanisms
+  reach that outcome; see approval_context, and pick one before building.
+
+  Whichever is chosen, scenario 04 is the one that must not be traded away.
+  Making an approved parcel repeat six stages because of a sibling's state
+  turns one stalled ticket into six wasted passes.
+
+qa_e2e_procedure: >
+  (1) On a scratch clone, build a branch where ticket A's commit has ticket B's
+  unlanded work as an ancestor, approve A, and run the land step; confirm A is
+  not landed and the outcome names B. (2) Confirm the outcome is not addressed
+  to A's author, and that following the action it names removes the
+  entanglement — actually perform it and confirm A then lands. (3) Confirm A's
+  approval record survives step 1 and that A is not sent back through earlier
+  stages. (4) Build a branch where A's commit has only A's own unlanded work as
+  ancestors and confirm it lands unchanged. (5) Re-run the 2026-08-28 shape:
+  three approved parcels on one branch, entangled with each other, and confirm
+  the sequence terminates with all three landed rather than all three bounced.
+
+out_of_scope: |
+  - BL-1192's send-time gate and its range. Corrected separately on
+    2026-08-28; this ticket must not re-open it.
+  - Reversing the 2026-08-28 bounces of BL-1227, BL-1192 and BL-1201. Those
+    are QA's verdicts to revisit with the corrected basis, not this ticket's.
+  - Changing the one-worktree-per-role rule. Option (c) in approval_context
+    would need an Article 5 amendment and is recorded, not assumed.
+
+source: |
+  QA `note` (priority 00) to specifier+coordinator, 2026-08-28T06:56:53Z:
+  "swarmforge-coder entangled 3x: BL-1227/1192/1201 bounced, tip-purity
+  broken". Evidence: `.worktrees/QA/backlog/evidence/BL-1227-qa-bounce-20260828.md`
+  and its BL-1192 and BL-1201 siblings. Architect's falsification of the
+  origin/main range: `backlog/evidence/BL-1192-architect-bounce-20260828.md`.
+
+notes: |
+  - [2026-08-28] specifier: this is the third instance today of one shape - a
+    gate correct about its condition, firing on a role that cannot act on it,
+    having let the condition accumulate invisibly first. BL-1237 (cleaner
+    blocked by a freshness guard with a no-op remedy) and BL-1240 (suite
+    manifest drift landing on QA at six files a day) are the others. Three in
+    one shift is a pattern in how gates get specified here, not three
+    coincidences, and it is worth naming as such before a fourth.
+  - [2026-08-28] specifier: invariant 1 is the general form of that pattern
+    and is deliberately phrased to be checkable against any gate, not just
+    this one.
+  - [2026-08-28] specifier: MATERIAL UPDATE, hours after minting - remedy (b)
+    is PARTLY BUILT ALREADY, which changes the approval question. The coder
+    escaped BL-1227's entanglement the same morning by rebuilding tip-pure off
+    `origin/main` (`af55356bd`) and recording `abandoned_commits:
+    [b283239757, 778991d218]` on the ticket, which `pre_qa_gate_lib.bb`'s
+    ancestry check already honours as a documented override
+    (`backlog-schema.md`, `read-abandoned-commits`). So the move exists; what
+    does not exist is a land step that NAMES it. Read the approval question as
+    "should the land step direct this existing move, and to whom?" rather than
+    "should we build a rebuild mechanism from nothing". That makes (b)
+    substantially cheaper than the approval_context above implies, and it is
+    now my recommendation over (a).
+  - [2026-08-28] specifier: the same rebuild also breaks BL-1192's corrected
+    range, because the walk assumes descent that the rebuild deliberately
+    severs. BL-1192 was amended the same day to require the abandonment
+    override. Anyone building THIS ticket should check that a chosen remedy
+    does not trip a sibling gate the same way - that failure mode has now
+    appeared twice in one morning.
+  - [2026-08-28] specifier: PROSE HALF IS MINE, and no gate will chase me for
+    it (BL-798). Whatever remedy is chosen has to be written into
+    `swarmforge/roles/QA.prompt` or the land step will not follow it, and that
+    file is the specifier's to land on `main` - not a pipeline deliverable.
+    I have deliberately NOT armed a required_wiring entry on QA.prompt: that
+    check pins the file to the PARCEL commit, so it would refuse the
+    documenter-to-QA handoff whenever the branch has not merged `main`, which
+    is a false block rather than a check. I cannot write the prose yet because
+    the remedy is the open approval question. When the human answers, I land
+    the QA.prompt amendment on `main` myself, in the same pass, and record the
+    commit here. If this note is still the last word on that when the ticket
+    activates, the prose has not been written and someone should say so.
