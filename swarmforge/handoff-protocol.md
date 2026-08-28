@@ -765,6 +765,25 @@ the dependency-gate's no-io-from-policy boundary, same as `coChange.ts` /
 - The bouncing branch is derived from the recorded `--by` role as
   `swarmforge-<by>` — the same field BL-635 already made mandatory on
   every `record-bounce` call.
+- **A `violation` remedy requires established authorship, not liveness
+  alone (BL-1208).** "Content is live at the tip" and "this commit
+  authored that content" are not the same fact — true of every healthy
+  commit that changed a file, not just a bounced defect. This fired for
+  real on a recovery commit that had just restored 13 files an earlier
+  incident had silently dropped; the offered `git revert` would have
+  re-deleted every one of them. The adapter now gathers one extra fact
+  per live file, `restoredFromEarlierHistory`: true only when the bounced
+  commit ADDED the path (its immediate parent lacked it entirely — a
+  plain edit is never a candidate) AND that exact byte-identical content
+  already existed at some strictly earlier commit in the **same bouncing
+  branch's own history** — deliberately never a sibling branch's tip,
+  since a sibling could coincidentally hold identical content for
+  unrelated reasons and launder a genuine violation into a false withheld
+  remedy. `decideBounceRevertVerdict` withholds `remedy` (sets it `null`)
+  only when *every* live file is so established; the `violation` verdict
+  and every `liveFiles` path are still reported exactly as before either
+  way — invariant 2 (no-silent-clean) is unchanged, only the destructive
+  instruction is withheld.
 
 This is the entrance-side companion to the **push sweep's** `is_qa_ancestor.sh`
 check ("QA ancestor is bounce-aware", BL-952, below): BL-952 blocks an
