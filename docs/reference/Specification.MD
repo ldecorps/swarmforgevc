@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1211: a branch recovery no longer
+resurrects content a same-branch BL-490/BL-495 bounce revert deliberately
+removed, and the quarantine-lift check can now fail on content that came
+back, not only on content that went missing —
+`gatherBounceResurrectionFacts`/`decideQuarantineLift`/`decideRecoveryFilter`
+(`extension/src/metrics/bounceResurrectionGitAdapter.ts`) turn the refusal
+on **authorship**, not byte-identity: content re-introduced by a recorded
+post-revert commit on the branch passes even when byte-identical to what
+the revert removed, and content with no such record is refused even when
+its bytes are correct. `filterRecoveryPaths` is the recovery-direction half
+(a sibling-restore never brings back a reverted path unless a later commit
+authored it back); `quarantineLiftCheck` is the production lift-verdict
+caller. Architect bounce D1 added the operator-facing entry points this
+first cut shipped without: `extension/src/tools/quarantine-lift-check.ts`
+and `extension/src/tools/recovery-filter-check.ts`, so an operator can
+reach either verdict without writing code — both fail closed (refuse,
+never report clean) when the branch's bounce history cannot be resolved.
+Root-caused from the 2026-08-27 incident where `1fcd4c167`'s bounce revert
+of 511 lines was silently undone four minutes later by a tree-collapse
+recovery restoring from a sibling branch. No new extension command or
+setting. Acceptance:
+`specs/features/BL-1211-quarantine-lift-cannot-restore-reverted-bounce-content.feature`.
+How-to: `docs/how-to/BL-1211-quarantine-lift-authorship-check.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1216: a `DUPLICATE-ID` finding from
 the backlog hygiene gate (`duplicate-id-violations`/`format-violation`,
 `swarmforge/scripts/backlog_hygiene_lib.bb`) now names every colliding
