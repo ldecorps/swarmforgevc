@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1208: the BL-954 bounce-revert check
+(`decideBounceRevertVerdict`, `extension/src/quality/bounceRevertVerdict.ts`)
+offered a ready-to-paste `git revert --no-edit <commit>` remedy whenever a
+bounced commit's content was still live at the bouncing branch's tip — true
+of every healthy commit that changed a file, not only a bounced defect. It
+fired for real on a recovery commit that had just restored 13 files an
+earlier incident had silently dropped; following the remedy would have
+re-deleted every one of them. The adapter
+(`extension/src/metrics/bounceRevertGitAdapter.ts`) now gathers one extra
+fact per live file — `restoredFromEarlierHistory`, true only when the
+bounced commit added the path (never a plain edit) and that exact content
+already existed at some earlier point in the same bouncing branch's own
+history, never a sibling branch's — and the remedy is withheld (set to
+`null`) only when every live file is so established. The `violation`
+verdict and every `liveFiles` path are still reported unchanged either way;
+no-silent-clean survives untouched. No new extension command or setting —
+fork/operator-substrate tooling under `extension/src/tools/`. Acceptance:
+`specs/features/BL-1208-revert-remedy-requires-authorship-not-liveness.feature`.
+How-to: `docs/how-to/BL-1208-bounce-revert-remedy-requires-authorship-not-liveness.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1214: the shared master-main reconcile
 ladder's `:ff-absorb` execution (`absorb-with-merge!` in
 `master_main_reconcile_lib.bb`, consumed by `handoffd.bb`, `swarm_heal.bb`,
