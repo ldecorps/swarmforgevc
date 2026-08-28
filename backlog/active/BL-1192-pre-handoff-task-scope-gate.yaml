@@ -58,12 +58,44 @@ description: |
   guard. It arms on **every** `type: git_handoff` (all hops), not only the
   QA edge.
 
-  Compare `git diff --name-only origin/main...<commit>`. For each changed path,
-  if it positively belongs to a ticket id (backlog YAML basename, feature file
-  basename, or other deterministic path→id mapping the implementer documents),
-  and that id is not the task's ticket id, emit a finding. Evidence-only paths
-  under `backlog/evidence/<task-id>-*` for the named task do not count as
-  foreign overlap.
+  ## The range — CORRECTED 2026-08-28, this is a spec fix, read it
+
+  This ticket originally said "Compare `git diff --name-only
+  origin/main...<commit>`". **That mandate is wrong and must not be
+  implemented.** The architect falsified it empirically against the very
+  incident this ticket is modelled on: run over documenter tip `dd5b4c332`,
+  that range yields **68 findings across 25 unrelated tickets**, drowning the
+  one real signal (BL-1185) in routine backlog churn from every ticket that
+  landed on the long-lived branch since it last synced with `origin/main`.
+  Armed at every hop, it would refuse the majority of legitimate handoffs in
+  this repo.
+
+  The cause is that `origin/main...<commit>` answers a different question than
+  the one this gate asks. **Two ranges, two purposes, and they must not be
+  conflated:**
+
+  - **"Did the author of THIS parcel do work outside its ticket?"** — the
+    question this send-time gate asks. Its range is the paths introduced
+    **since the task's own most recent ancestor handoff commit**, not since
+    `origin/main`. Everything older is a sibling ticket's work the author
+    inherited by working on a shared role branch, which is normal pipelining,
+    not a scope violation. Use this range.
+
+  - **"Would landing this commit put unreviewed work on `main`?"** — a real
+    and different question, correctly asked against `origin/main...<commit>`,
+    but only at the land step, and its remedy is not a bounce (see BL-1241).
+    Explicitly not this ticket's.
+
+  For each changed path in the corrected range, if it positively belongs to a
+  ticket id (backlog YAML basename, feature file basename, or other
+  deterministic path→id mapping the implementer documents), and that id is not
+  the task's ticket id, emit a finding. Evidence-only paths under
+  `backlog/evidence/<task-id>-*` for the named task do not count as foreign
+  overlap.
+
+  Before shipping, re-run the architect's falsification check against
+  `dd5b4c332` under the corrected range and record the finding count. A range
+  that still explodes has not been fixed, whatever the unit tests say.
 
   Fail-open when `origin/main` cannot be resolved, git diff fails, or no
   foreign ticket can be positively identified — same posture as BL-953.
@@ -93,6 +125,31 @@ notes: |
   outcome for shift 2026-08-27. Dominant behavior-bounce class this shift;
   hardener dwell and coordinator chase signals deferred — BL-596 in-flight and
   BL-594 trend series already track rotation/chase dynamics.
+  - [2026-08-28] specifier: SPEC DEFECT, mine, corrected above. The
+    architect bounced this ticket blaming the coder for not implementing the
+    `origin/main...<commit>` range this spec mandated. The coder deviated
+    because the mandated range does not work, and the architect's own
+    falsification (68 findings, 25 tickets, on dd5b4c332) proves it. The
+    coder's instinct was right even though its chosen substitute range was
+    not justified by the BL-953 precedent it cited. Blame for D1 belongs to
+    this spec; the D1 remediation the architect proposed - scope to paths
+    introduced since the task's own most recent ancestor handoff - is now
+    the specified mechanism.
+  - [2026-08-28] specifier: the same wrong range is in live use by hand.
+    QA's manual BL-506 inventory ran `git diff --name-only
+    origin/main...b283239757` and bounced BL-1227, BL-1192 and BL-1201 as
+    entangled on 2026-08-28. Those bounces were made in good faith against
+    the definition this spec supplied, and QA's evidence is careful - it
+    checked each introducing commit's ancestry individually. The verdicts
+    are QA's to revisit, not mine to overturn; QA and the coordinator have
+    been told the basis changed. See BL-1241 for what the land step should
+    do with a tip that is genuinely entangled, since bouncing it to the
+    coder cannot work - a coder cannot remove commits that are ancestors of
+    its own branch.
+  - [2026-08-28] specifier: D2 (acceptance fixture cannot distinguish the two
+    ranges) is now doubly required - the corrected spec names two ranges
+    explicitly, so a fixture that cannot tell them apart cannot gate this at
+    all. Keep that finding open against the rebuild.
 
 bounce_count: 1
 bounce_history:
