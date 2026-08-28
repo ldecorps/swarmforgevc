@@ -153,14 +153,45 @@
 (defn- has-in-process-parcel? []
   (boolean (seq (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
 
+;; BL-1195 D1 re-bounce (architect, 2026-08-28): the coder's first fix
+;; (unioning every master-resident role's in_process mailbox into the
+;; exemption) only widened WHICH mailbox counts as "has a parcel" - it
+;; still refuses whenever NEITHER master-resident role has a dispatched
+;; parcel at all, which is hardener's own reproduction verbatim (Article
+;; 1.2 spec/prompt drafting has no handoff parcel to check for in the
+;; first place). A wider union is the wrong shape of fix: commit_integrity_
+;; lib.bb's own header names the shared `master` checkout as a genuinely
+;; concurrent, multi-writer surface by DESIGN - "coordinator bookkeeping,
+;; the BL-topic-record writer, QA's fast-forward, the specifier, and
+;; operator_file_question.bb all commit into ONE git index with no
+;; isolation" - not just the coordinator/specifier pair, and several of
+;; those writers (spec/prompt drafting, backlog bookkeeping) have no
+;; handoff parcel to point at even in principle. A per-role "does an
+;; in_process parcel explain this diff?" check cannot distinguish a
+;; legitimate concurrent writer's own WIP from real unexplained drift on
+;; that surface - there is no parcel-shaped signal to widen toward.
+;; Exempting master-resident worktrees from this guard entirely keeps the
+;; ticket's own explicit constraint ("must not false-flag a role's own
+;; legitimate in-progress edits") true by construction, at the cost of not
+;; catching a BL-1195-shaped incident if it recurs specifically inside the
+;; shared master checkout - the same tradeoff the ticket's own architect
+;; review named as option (a) and every other guard in this codebase that
+;; already special-cases master (check_branch_namespace.bb,
+;; post_qa_branch_sweep_lib.bb, pre_qa_gate_gather_lib.bb) already accepts
+;; for the same structural reason. Every OTHER pipeline role's own
+;; dedicated `.worktrees/<role>`, exclusively written by that one role,
+;; keeps this guard's full original detection value - only the
+;; master-resident carve-out changes.
 (defn- enforce-worktree-drift-guard! []
   (let [root (dispatch-lib/git-root)]
     (when root
-      (let [drift (worktree-drift-lib/unexplained-drift
-                   {:modified-paths (modified-tracked-paths root)
-                    :has-in-progress-task? (has-in-process-parcel?)})]
-        (when (worktree-drift-lib/drift-detected? drift)
-          (dispatch-lib/exit! 2 (worktree-drift-lib/drift-report drift)))))))
+      (let [role-info (handoff-lib/load-role-info (handoff-lib/current-role) root)]
+        (when-not (= (:worktree-name role-info) "master")
+          (let [drift (worktree-drift-lib/unexplained-drift
+                       {:modified-paths (modified-tracked-paths root)
+                        :has-in-progress-task? (has-in-process-parcel?)})]
+            (when (worktree-drift-lib/drift-detected? drift)
+              (dispatch-lib/exit! 2 (worktree-drift-lib/drift-report drift)))))))))
 
 (enforce-worktree-drift-guard!)
 
