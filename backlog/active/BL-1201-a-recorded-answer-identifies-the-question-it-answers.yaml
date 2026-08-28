@@ -144,3 +144,5 @@ notes: |
 
 required_wiring:
   - 'extension/src/tools/telegram-front-desk-bot.ts::asked_at_ms::the recorded answer must carry the asked_at_ms of the question it answers, or nothing downstream can pair them'
+
+assigned_to: coder

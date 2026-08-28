@@ -1,5 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1219: `buildRoleInboxes`
+(`extension/src/watchdog/chaserMonitor.ts`), the resolver dead-letter
+announcement (and the other consumers of role-inbox resolution) uses to
+find each role's mailbox, now resolves the two master-resident roles
+(`specifier`, `coordinator`) to their real mailbox
+(`<root>/.swarmforge/handoffs/<role>/inbox/`) instead of the fossil
+`<root>/.swarmforge/handoffs/inbox/` their `roles.tsv` `worktreePath` used
+to resolve to. Worktree-role resolution is unchanged. Brings the TS
+resolver into agreement with the Babashka daemon's own
+`handoff-lib/mailbox-dir`, which never had this blind spot — a dead
+letter to either master-resident role was silently unscanned and never
+announced. No new extension command or setting. Acceptance:
+`specs/features/BL-1219-role-inbox-resolution-covers-master-resident-roles.feature`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1203: front-desk bot's
 `enqueueRoleAnswerNote` dedups steering-answer delivery by the inbound
 Telegram `update_id`, never by answer text — a replayed `update_id` already

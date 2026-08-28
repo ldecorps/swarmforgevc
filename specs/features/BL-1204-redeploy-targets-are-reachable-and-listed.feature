@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=cdd9fd839d4d853dcf8b6ef5e339f05ed5dae71710f59db536ee092827333071
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-28T03:17:59.159302493Z","feature_name":"every redeploy target the bridge accepts is reachable from Telegram and listed in help","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1204-redeploy-targets-are-reachable-and-listed.feature","background_hash":"36626372e2b3e5cde6a745955f46fbf0e34b6707bd45838e0588b3c73f404e4e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A built redeploy target is reachable from Telegram","scenario_hash":"7e857760dd0be0292ce8333c59365b5a7022b3443699cbc2bd9963fabc06b8ea","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-28T03:17:59.159302493Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: every redeploy target the bridge accepts is reachable from Telegram and listed in help
 
   # BL-1204 (epic swarm-reliability). Read from the working tree on
