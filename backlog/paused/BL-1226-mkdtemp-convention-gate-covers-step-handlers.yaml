@@ -1,0 +1,175 @@
+id: BL-1226
+title: "The mkTmpDir convention gate scans only extension/test, so specs/pipeline/steps - 436 of 821 handlers creating a temp root, 277 of them removing it nowhere at all - has no fixture-cleanup gate and the leak class recurs there one handler at a time"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 40
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1226-mkdtemp-convention-gate-covers-step-handlers.feature
+
+required_wiring:
+  - 'extension/src/tools/pilotMkdtempConventionCheck.ts::specs/pipeline/steps::the check must classify step-handler paths as in scope; this file names only extension/test today, which is the whole defect'
+  - 'specs/pipeline/steps/index.js::bl1226StepHandlerMkdtempGateSteps::acceptance handler registered'
+
+invariants:
+  - "The gate scans only paths the parcel TOUCHED. An untouched file is never read, never scanned and can never fail the gate - so widening scope can never turn a parcel red for code it did not write."
+  - "A fixture root is detected by its ROUTE, not by how its base path is spelled: any mkdtemp outside the required helper is a violation whether the base is os.tmpdir(), require('os').tmpdir(), a '/tmp' literal or a module-level constant."
+
+approval_context: >
+  Needs sign-off on one scoping decision, because it is the difference
+  between a shippable slice and an unshippable one.
+
+  The architect proposed a CI gate over specs/pipeline/steps/*.js
+  asserting that every fixture root's removal is reachable from every
+  scenario path that can create it. Taken literally and repo-wide that
+  gate is red on day one for 277 handlers that remove their root
+  nowhere at all, plus 92 more that remove it outside a finally -
+  measured 2026-08-28, not estimated. So this ticket enforces the same
+  property on TOUCHED paths only, through the existing BL-743
+  touched-path check, and leaves the legacy population alone.
+
+  What is firm: touched-path scope, the shared-helper route as the
+  enforcement mechanism, and no legacy migration in this slice.
+
+  What needs a decision: whether leaving 277 already-leaking handlers
+  ungated forever is acceptable, or whether a separate migration slice
+  should be minted now against the shared helper and its adopters. The
+  /tmp census on this host (24774 bl* dirs, dominated by
+  bl1039-seed-template- at 19418 and bl695- at 1419) says the cost is
+  real but concentrated in a handful of prefixes, which is why a
+  targeted migration is plausible and a 277-file sweep is not.
+
+description: >
+  What is wrong. BL-743 built a touched-path mkdtemp convention check -
+  `assessPilotMkdtempConvention` in
+  extension/src/tools/pilotMkdtempConventionCheck.ts, wired into
+  /pilot land through `checkMkdtempConvention` in commitClaimGitReader.ts
+  and pilotAcceptanceGate.ts. It refuses a parcel that introduces a
+  fixture root outside the shared helper, which is what keeps
+  extension/test from leaking /tmp directories.
+
+  Its scope constant is `EXT_TEST_JS_RE = /^extension\/test\/.*\.js$/`.
+  specs/pipeline/steps/ is not in it. That directory is the largest
+  fixture-creating population in the repository: 436 of 821 step
+  handlers call mkdtempSync, 434 of them without the shared
+  socketFixtureRoot helper, and 277 of those contain no rmSync and no
+  helper reference anywhere in the file - they create a temp root and
+  remove it nowhere. A further 92 remove it but from no finally.
+  (Measured 2026-08-28 against main.)
+
+  Why it matters. Every fixture-leak defect the swarm has caught in
+  this directory was caught by a human reading a diff - the architect
+  counts five in one session (BL-1205, BL-1213, BL-1203, BL-1204 twice).
+  A reviewer catching a class one instance at a time is the signal that
+  the class has no gate. The extension/test lane has one and does not
+  recur; this lane has none and does.
+
+  There is also a detection hole to avoid inheriting. The existing
+  detector's pattern is anchored to one spelling -
+  `mkdtempSync(path.join(os.tmpdir()`. In the steps lane that spelling
+  covers 424 of the 436 call sites; the other 12 reach the same place
+  via `require('os').tmpdir()`, `require('node:os').tmpdir()`, a bare
+  '/tmp' literal, or a module-level base constant. Reusing the detector
+  unchanged would ship a gate with a twelve-file blind spot on day one.
+
+  How (direction, not mandate). The cheapest shape is to widen the
+  check's scope classification to touched `specs/pipeline/steps/**/*.js`
+  and, in that lane, treat any mkdtemp call outside the exempt shared
+  helper as a violation - route-based rather than spelling-based, which
+  closes the hole above without maintaining a list of base expressions.
+  specs/pipeline/steps/lib/socketFixtureRoot.js is the exemption, the
+  same way helpers/tmpDir.js is in the extension/test lane. Expect the
+  self-exemption problem that lane already hit: at least one step file
+  carries the pattern inside a string literal as test DATA, and a
+  scanner that flags its own fixtures makes the gate unsatisfiable.
+
+  Why the shared helper is the required route rather than a reachability
+  analysis. The architect's property - removal reachable from every path
+  that can create the root - is the right property, but proving it
+  statically over arbitrary JavaScript is not tractable and a gate that
+  tried would be both unsound and unmaintainable. socketFixtureRoot
+  delivers the property by construction: it tracks every root it hands
+  out and removes the stragglers on process exit, throw paths included.
+  Enforcing the route gets the property without deriving it.
+
+  Out of scope, deliberately. The 434 existing handlers are not
+  migrated here and are not gated here - see invariant 1 and
+  approval_context.
+
+qa_e2e_procedure: >
+  1. Baseline the blind spot before the fix. From the repo root run
+     `grep -l 'mkdtempSync' specs/pipeline/steps/*.js | wc -l` and
+     `comm -23 <(grep -l 'mkdtempSync' specs/pipeline/steps/*.js | sort)
+     <(grep -l 'socketFixtureRoot' specs/pipeline/steps/*.js | sort) | wc -l`.
+     Record both. They are context for scenario 03, not a pass condition -
+     these files must still be green after the fix.
+  2. Scenario 01, red/green pair. Point the check at a scratch step
+     handler that creates a root with a raw mkdtemp and list it as
+     touched; confirm the gate refuses and names the file AND the line
+     number. Then route the same handler through mkSocketFixtureRoot and
+     confirm it passes. A gate that only ever refuses is not evidence.
+  3. Scenario 03 is the load-bearing one - run it against the LIVE tree,
+     not a fixture. Invoke the gate with a touched-path list that
+     contains one clean file and no legacy handler, and confirm zero
+     violations and zero legacy files in `scannedPaths`. If any of the
+     434 legacy handlers appears in scannedPaths, the slice has silently
+     become a repo-wide gate and must bounce.
+  4. Scenario 04, one row at a time. For each base expression in the
+     Examples table, write a scratch handler using exactly that spelling
+     and confirm the verdict matches the table. `require('os').tmpdir()`
+     and the '/tmp' literal are the rows that fail if the coder reused
+     the BL-743 pattern unchanged - check those two first.
+  5. Scenario 05: confirm socketFixtureRoot.js itself classifies exempt
+     by listing it as touched and confirming no violation, then confirm
+     a non-.js path under specs/pipeline/ classifies out-of-scope.
+  6. Whole-gate regression: run the extension/test lane's own guard
+     (`cd extension && npx vitest run test/tmpDirMigrationGuard.test.js`)
+     and confirm the widened check did not change that lane's verdicts.
+
+notes: |
+  Provenance. Architect rule_proposal (scope engineering) received by
+  the specifier 2026-08-28 as
+  50_20260828T022907Z_001162_from_architect_to_specifier. Body: "CI gate
+  over specs/pipeline/steps/*.js: every mkdtempSync/mkTmp fixture root's
+  removal must be reachable from EVERY scenario path that can create it,
+  not just one terminal step." Rationale: "BL-971 fixture-cleanup
+  violated 5x in one session (BL-1205, BL-1213, BL-1203, BL-1204 x2),
+  each caught by hand via architect review. A structural gate catches
+  the class, not one instance at a time."
+
+  Not appended to engineering.prompt, and why. The RULE the proposal
+  restates is already in force there - the BL-971 clause, "A fixture dir
+  from fs.mkdtempSync is removed in a finally, never only after the last
+  assertion". The proposal's actual ask is a mechanism to enforce it, so
+  it is minted rather than enshrined. Appending it would also have cost
+  boot-prefix budget the article does not have.
+
+  One divergence worth knowing but NOT in this slice's scope: that
+  BL-971 clause says "in a finally", while this repository's actual
+  convention (BL-948 socketFixtureRoot) is a process-exit backstop, not
+  a finally. The helper's own docstring records why - 236 of 287 step
+  files had no finally at all as of 2026-08-18. Reconciling the article
+  text with the shipped convention is a separate judgment, and a
+  boot-inlined article edit needing the budget gate.
+
+  Orthogonality flag for the coordinator. BL-1209 (paused, defect,
+  code-quality-gates) changes the SAME file - it fixes
+  loadRawMkdtempGuard resolving its detector through the subject root.
+  Neither blocks the other and depends_on is deliberately empty per
+  INVEST-I, but do not run both concurrently.
+
+  Prior disposition on the same class:
+  backlog/evidence/BL-1213-specifier-disposition-fixture-leak-report-20260828.md
+  declined a per-handler ticket and said that if the class is worth
+  fixing it is worth fixing as one slice against the helper and its
+  adopters. This is the gate half of that. The migration half is the
+  open question in approval_context.
+
+source: |
+  Architect rule_proposal, scope engineering, 2026-08-28. Disposition:
+  minted as this ticket rather than appended to engineering.prompt.
