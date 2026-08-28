@@ -148,3 +148,23 @@ notes: |
     than a widening of BL-1206. Deliberately NOT folded in here: fixing the
     stubs is worth doing whether or not the lane ever collects these files,
     and bundling them would fail INVEST-Independent for both."
+  - "[2026-08-28] specifier: this subject was ALREADY drafted once, as
+    BL-1221, and destroyed before it could be committed — the BL-1214 reset
+    bug, in the same window that ate spec commit 1c2ce143c. Only the APS
+    artifacts survived, in tmp/BL-1221-pilot-gate-deps-stubs-missing-required-orphan-docs-check.ir.json
+    and its .dry.json sibling (both 2026-08-28 02:50). Recovering them found
+    one guard this ticket had missed, now folded in as scenario 05: the
+    production contract must not be WEAKENED to accommodate the stubs. That
+    matters because the cheapest way to stop 22 crashes is to make the land
+    path tolerate a missing dep, which would silently disable the orphan-docs
+    check in production and turn a test-only defect into a real one. Credit
+    to the destroyed draft; do not delete those two tmp files until this
+    ticket lands."
+  - "[2026-08-28] specifier: the ids BL-1220/BL-1221 that draft used were
+    recycled by other tickets within the hour, which is why nothing survives
+    under those names. Noted, not ticketed: backlog/done/M0/ occupied the
+    whole BL-12xx range and is absent from the working tree, so every id
+    minted in the 1200s collides with a retired M0 id in history. The
+    hygiene gate cannot see it — it compares the local and published
+    corpora, and M0 is in neither — so this is latent rather than firing.
+    Duplicate-id detection is already owned by BL-1105 and BL-1194."
