@@ -157,7 +157,7 @@ expects them, and are not migrated or rewritten here.
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
 - [Pages deploy timeout headroom and workflow action majors](how-to/BL-641-pages-deploy-timeout-and-action-majors.md) — 20m deploy timeout; action version majors pinned (BL-641).
-- [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md) — BL-727 contract execution, BL-729 commit-claim, BL-731 multi-worktree fixture, BL-733 producer crosscheck, BL-735 acceptance-execution, BL-737 cross-file duplication, BL-741 scoped CRAP, BL-747 shell entry-point drive, BL-753 unreachable step-handler gate
+- [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md) — BL-727 contract execution, BL-729 commit-claim, BL-731 multi-worktree fixture, BL-733 producer crosscheck, BL-735 acceptance-execution, BL-737 cross-file duplication, BL-741 scoped CRAP, BL-747 shell entry-point drive, BL-753 unreachable step-handler gate, BL-1215 origin/main landing check
 - [QA changed-path unit test inventory](how-to/BL-1164-qa-changed-path-unit-test-gate.md) — Article 4.5: run mapped unit/wiring tests per changed production path; bounce uncovered to coder (BL-1164).
 - [Probe legacy topic adoption paths](how-to/BL-1147-probe-legacy-topic-adoption.md) — BL-1147 read-only probe for BL-294 auto-open, cursor Host re-adopt, and map scrub candidates
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)

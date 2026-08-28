@@ -302,5 +302,3 @@ notes: |
     an hour earlier would erase their decision. It keeps the coverage this
     ticket does not reach (nested shell fixture, short-circuits unchanged) and
     is now a small acceptance slice on top of a landed scrub."
-
-assigned_to: coder
