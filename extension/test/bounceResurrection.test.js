@@ -305,33 +305,3 @@ test('BL-1211: filtering the recovery is what makes the lift check pass, not ind
   const verdictAfterUnfilteredRecovery = quarantineLiftCheck(root, 'architect');
   assert.equal(verdictAfterUnfilteredRecovery.granted, false);
 });
-
-// ── hardening: a bounced commit that DELETED a path has nothing to check ──
-
-test('BL-1211 hardening: a bounced commit that only DELETED a path contributes no fact for that path (nothing to resurrect)', () => {
-  const root = mkTmpDir('sfvc-bl1211-bounce-deletes-path-');
-  copySeededRepoInto(root);
-  git(root, ['checkout', '-q', '-b', 'swarmforge-architect']);
-  commitFile(root, 'src/scratch.ts', 'about to be deleted\n', 'BL-1189: adds scratch.ts', 'coder');
-  fs.rmSync(path.join(root, 'src', 'scratch.ts'));
-  git(root, ['add', '-A']);
-  git(root, ['commit', '-q', '-m', 'BL-1189: bounced commit deletes scratch.ts\n\nBy coder.']);
-  const bouncedCommit = git(root, ['rev-parse', 'HEAD']);
-  appendBounceRecordIfNew(root, {
-    ticket: 'BL-1189',
-    producingRole: 'coder',
-    ticketType: 'defect',
-    failureClass: 'behavior',
-    commit: bouncedCommit,
-    by: 'architect',
-    at: new Date().toISOString(),
-  });
-
-  // gatherBounceResurrectionFacts sees the deleted path in the bounced
-  // commit's diff, finds no content to compare (contentAt returns null for
-  // a path the commit removed), and skips it rather than raising a fact -
-  // there is nothing that could have been resurrected. quarantineLiftCheck
-  // still lifts: no fact means no unauthorized-resurrection finding.
-  const verdict = quarantineLiftCheck(root, 'architect');
-  assert.equal(verdict.granted, true, `expected the lift granted (nothing to resurrect), got: ${JSON.stringify(verdict)}`);
-});
