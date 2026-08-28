@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1203-role-answer-notes-are-delivered-once.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Filed with the mechanism NOT established, deliberately, because the
   measurement is unambiguous and the cost is being paid every twenty minutes

@@ -10,6 +10,7 @@ priority: 25
 direction: queue-jump
 depends_on: []
 mutation_cost: low
+acceptance: specs/features/BL-751-bl646-pilot-missed-severity-asymmetry.feature.draft
 source: |
   Found during BL-723 (pilot-tonight quality review), hardener viewpoint
   pass, 2026-07-30/31. Companion remaining-work ticket: BL-750.
