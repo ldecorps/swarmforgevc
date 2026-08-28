@@ -816,7 +816,8 @@ const DOMAINS = [
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
   require('./bl1188PipelineGridLiveStageParitySteps'),
   require('./bl592SpecTreeOnLiveConsoleWithEpicTierSteps'),
-  require('./bl1199PackSwitchBubbleTunnelSteps')
+  require('./bl1199PackSwitchBubbleTunnelSteps'),
+  require('./bl1195WorktreeTrackedContentDriftSteps')
 ];
 
 function registerSteps(registry) {

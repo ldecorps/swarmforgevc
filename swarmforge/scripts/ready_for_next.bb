@@ -9,6 +9,7 @@
 (load-file (str (fs/path (fs/parent *file*) "reference_freshness_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "worktree_drift_lib.bb")))
 
 
 ;; BL-640: pre-turn freshness guard. ready_for_next.sh is the one entry
@@ -127,6 +128,72 @@
       (dispatch-lib/exit! 2 (supersede-lib/refusal-exit-message verdict)))))
 
 (enforce-supersede-guard!)
+
+;; BL-1195: pre-turn worktree-drift guard. Same posture as BL-640/BL-1084
+;; above - runs BEFORE dispatch decides task vs batch, against THIS
+;; worktree's own root (dispatch-lib/git-root, not project-root - a
+;; master-resident role's own worktree IS the shared checkout, and every
+;; other role's worktree is its own separate git root). Degrades to a
+;; silent pass on any git hiccup (no git root, `git diff` failing) - it
+;; only ever refuses when it can positively name real drift, same posture
+;; as the reference-freshness guard above.
+(defn- modified-tracked-paths [root]
+  (let [result (sh/sh "git" "-C" (str root) "diff" "--name-only" "HEAD")]
+    (if (zero? (:exit result))
+      (remove str/blank? (str/split-lines (:out result)))
+      [])))
+
+;; "In-progress" means already RESUMED (in_process), not merely queued
+;; (new/) - a role that has not yet dequeued anything has no legitimate
+;; reason to have modified a tracked file at all, which is exactly
+;; scenario 01's own premise; peek-candidate-task-names above deliberately
+;; widens to new/ too (it is answering a different question - which task
+;; name would explain a supersede match), so this guard reads in_process/
+;; directly rather than reusing it.
+(defn- has-in-process-parcel? []
+  (boolean (seq (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
+
+;; BL-1195 D1 re-bounce (architect, 2026-08-28): the coder's first fix
+;; (unioning every master-resident role's in_process mailbox into the
+;; exemption) only widened WHICH mailbox counts as "has a parcel" - it
+;; still refuses whenever NEITHER master-resident role has a dispatched
+;; parcel at all, which is hardener's own reproduction verbatim (Article
+;; 1.2 spec/prompt drafting has no handoff parcel to check for in the
+;; first place). A wider union is the wrong shape of fix: commit_integrity_
+;; lib.bb's own header names the shared `master` checkout as a genuinely
+;; concurrent, multi-writer surface by DESIGN - "coordinator bookkeeping,
+;; the BL-topic-record writer, QA's fast-forward, the specifier, and
+;; operator_file_question.bb all commit into ONE git index with no
+;; isolation" - not just the coordinator/specifier pair, and several of
+;; those writers (spec/prompt drafting, backlog bookkeeping) have no
+;; handoff parcel to point at even in principle. A per-role "does an
+;; in_process parcel explain this diff?" check cannot distinguish a
+;; legitimate concurrent writer's own WIP from real unexplained drift on
+;; that surface - there is no parcel-shaped signal to widen toward.
+;; Exempting master-resident worktrees from this guard entirely keeps the
+;; ticket's own explicit constraint ("must not false-flag a role's own
+;; legitimate in-progress edits") true by construction, at the cost of not
+;; catching a BL-1195-shaped incident if it recurs specifically inside the
+;; shared master checkout - the same tradeoff the ticket's own architect
+;; review named as option (a) and every other guard in this codebase that
+;; already special-cases master (check_branch_namespace.bb,
+;; post_qa_branch_sweep_lib.bb, pre_qa_gate_gather_lib.bb) already accepts
+;; for the same structural reason. Every OTHER pipeline role's own
+;; dedicated `.worktrees/<role>`, exclusively written by that one role,
+;; keeps this guard's full original detection value - only the
+;; master-resident carve-out changes.
+(defn- enforce-worktree-drift-guard! []
+  (let [root (dispatch-lib/git-root)]
+    (when root
+      (let [role-info (handoff-lib/load-role-info (handoff-lib/current-role) root)]
+        (when-not (= (:worktree-name role-info) "master")
+          (let [drift (worktree-drift-lib/unexplained-drift
+                       {:modified-paths (modified-tracked-paths root)
+                        :has-in-progress-task? (has-in-process-parcel?)})]
+            (when (worktree-drift-lib/drift-detected? drift)
+              (dispatch-lib/exit! 2 (worktree-drift-lib/drift-report drift)))))))))
+
+(enforce-worktree-drift-guard!)
 
 ;; BL-226: this receive helper's sole job is dispatch. Promoting paused
 ;; items into backlog/active/ is the coordinator's exclusive duty
