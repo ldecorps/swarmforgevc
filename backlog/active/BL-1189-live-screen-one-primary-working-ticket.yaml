@@ -87,10 +87,16 @@ notes: |
     uninformed action, not a competing adjudication — documenter is not
     reverting the specifier-ratified content to match it. Flagged to
     coder+specifier via note to reconcile swarmforge-coder.
+  - [2026-08-28] abandoned_commits also declares 90b6864346
+    (swarmforge-cleaner, by cleaner, 02:20:37Z): same race — cleaner deleted
+    the step handler/property test citing the same stale architect caveat,
+    also without having merged 0e810b458. Same disposition as coder's
+    8a4e160867 above; both flagged in one note to coder+cleaner+specifier.
 
 assigned_to: coder
 abandoned_commits:
   - 8a4e160867
+  - 90b6864346
 bounce_count: 2
 bounce_history:
   - { at: 2026-08-27, by: architect, blamed: coder, class: behavior, commit: 9b86a7810, evidence: backlog/evidence/BL-1189-architect-bounce-20260827.md }
