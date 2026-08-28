@@ -242,7 +242,6 @@ approval_context: >
   failed here, twice in one afternoon, with careful people running
   it. Say the word if you want it written the other way.
 
-assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-28, by: cleaner, blamed: coder, class: behavior, commit: a96b3a10f0, evidence: backlog/evidence/BL-1211-cleaner-bounce-20260828.md }
