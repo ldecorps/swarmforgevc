@@ -828,7 +828,8 @@ const DOMAINS = [
   require('./bl1202GuardExitPathSteps'),
   require('./bl1208RestorationNotAuthorshipSteps'),
   require('./bl1196GitEnvGuardStripSteps'),
-  require('./bl1201AnswerIdentifiesQuestionSteps')
+  require('./bl1201AnswerIdentifiesQuestionSteps'),
+  require('./bl1211QuarantineLiftAuthorshipSteps')
 ];
 
 function registerSteps(registry) {
