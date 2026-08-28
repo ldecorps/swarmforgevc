@@ -2,18 +2,17 @@
 
 ## Startup Tools
 - Required quality tools are **pinned**, not floating (bumping a pin is a
-  human commit, never an agent action). TypeScript: mutation
-  `stryker-mutator`, DRY `jscpd` (both pinned in package.json), CRAP =
-  coverage × cyclomatic complexity (`scripts/quality/`). Babashka/Clojure and
-  Kotlin/Android both have NO mutation/CRAP/DRY wired (BL-472 deferred /
-  Bubble Kotlin gap) — gated ONLY by their own unit-test suite
-  (`swarmforge/scripts/test/`; `android/gradlew :app:testDebugUnitTest` — see
-  the local article's "Testability Boundary — Bubble"); a hardening pass on
-  either must record the degraded fallback, never imply mutation/CRAP/DRY
-  ran. APS tools pinned at `accaa33d503340c56513ef387258f8da929ba902`
+  human commit, never an agent action): TypeScript mutation
+  `stryker-mutator`, DRY `jscpd`, CRAP = coverage × cyclomatic complexity.
+  Babashka/Clojure and Kotlin/Android have NO mutation/CRAP/DRY wired
+  (BL-472 deferred) — gated only by their own unit-test suite; a hardening
+  pass on either records the degraded fallback, never implies
+  mutation/CRAP/DRY ran. APS tools pinned at
+  `accaa33d503340c56513ef387258f8da929ba902`
   (github.com/unclebob/Acceptance-Pipeline-Specification); prefer Babashka
   APS tools over Go, never reimplement APS commands. See
-  **engineering-detailed.prompt** for the full pre-trim wording.
+  **engineering-detailed.prompt** §"Startup Tools" for the full pre-trim
+  wording.
 
 ## Design And Testability
 - Work in small increments; prefer the simplest design that supports current
@@ -33,28 +32,17 @@
   **engineering-detailed.prompt** — read on demand, not on every boot.
 
 ## Test Speed And Isolation
-- Keep the unit suite in seconds — no real timers, use fakes for fs/network/
-  tmux/VS Code API/timers. Stub `process.cwd()`/`os.homedir()` (never
-  `process.chdir()` under mutation). Shell tests: `env -u SWARMFORGE_CONFIG`
-  before fixture confs.
-- Target **stock macOS `/bin/bash` 3.2**, not Homebrew bash: under `set -u` it
-  raises `unbound variable` expanding `"${arr[@]}"` on an EMPTY array (fixed
-  only in 4.4). Write `${arr[@]+"${arr[@]}"}` instead (BL-801).
-- Never `kill()` the test process, `chmod` for failure simulation, or diff
-  shared globals (`/tmp`, broad `ps` patterns, live runtime paths) — redirect
-  through env seams. Pin fixture clocks; daemon wiring tests override
-  hardcoded timeouts via env seams and redirect a backgrounded daemon's
-  stdout/stderr to a file. See **engineering-detailed.prompt**.
-- An `Unhandled Error`/`Unhandled Rejection` in `test:properties` output
-  fails the lane unless it is the known benign `[vitest-worker]: Timeout
-  calling "onTaskUpdate"` artifact — grep and allowlist exactly that
-  message. See **engineering-detailed.prompt** (BL-871).
-- A fixture dir from `fs.mkdtempSync` is removed in a `finally`, never only
-  after the last assertion — a throw or bounce otherwise leaks it forever. And
-  a generated fixture matching the suite's OWN discovery glob is swept by
-  prefix BEFORE the run, not merely cleaned up after: nothing traps SIGKILL,
-  so a killed run leaves it for the next run to collect as a false red. See
-  **engineering-detailed.prompt** (BL-971).
+- Keep the unit suite in seconds — fakes for fs/network/tmux/VS Code
+  API/timers, never real timers. Stub `process.cwd()`/`os.homedir()`
+  (never `process.chdir()` under mutation). Target stock macOS `/bin/bash`
+  3.2, not Homebrew bash (BL-801: `${arr[@]+"${arr[@]}"}` under `set -u`).
+  Never `kill()` the test process, `chmod` for failure simulation, or diff
+  shared globals — redirect through env seams. The known-benign
+  `[vitest-worker]: Timeout calling "onTaskUpdate"` (BL-871) is the only
+  allowlisted `test:properties` unhandled error. A `fs.mkdtempSync` fixture
+  dir is removed in a `finally` and swept by prefix BEFORE the run too
+  (BL-971 — a killed run traps nothing). See **engineering-detailed.prompt**
+  §"Test Speed And Isolation" for the full pre-trim wording.
 
 ## Acceptance Pipeline
 - APS pinned (see Startup Tools). Features in `specs/features/`; pipeline in
@@ -82,25 +70,18 @@
   full pre-trim wording.
 
 ## Guardrails
-- No hand-edited mutation/Gherkin-mutation manifests; no unrelated local
-  changes/generated artifacts committed. Unexplained session-start reverts:
-  `git restore --source=HEAD --staged --worktree -- <paths>` first, never
-  `git stash` (the `swarmforge/scripts/` case is BL-373 hot-sync — restore
-  and log recurrence, don't re-diagnose). `extension/out/` is gitignored —
-  compile before relying on it. Never commit mutation caches; mailbox
-  dequeue is idempotent; quarantine corrupt handoffs at every hop; GitHub
-  Actions never interpolates `${{ }}` in `run:` bodies. Bounded retries with
-  backoff; max-wait deadlines on lock loops; absolutize CLI paths before
-  `cd`; three-way drop/deliver/fail gates with idempotent side effects.
-  Strip/escape external text in structured files. A gate blocks on
-  dropped-work EVIDENCE (touched paths/diff content), never on a ticket id
-  merely named in a commit subject (4 QA blocks in one day; BL-972). A
-  console screen must show the server's actual
+- No hand-edited mutation manifests; no unrelated local/generated artifacts
+  committed. Unexplained session-start reverts: `git restore
+  --source=HEAD --staged --worktree -- <paths>`, never `git stash`
+  (BL-373). `extension/out/` is gitignored — compile before relying on it.
+  Idempotent mailbox dequeue; quarantine corrupt handoffs; never
+  interpolate `${{ }}` in GitHub Actions `run:` bodies. Bounded retries;
+  max-wait deadlines on lock loops; absolutize CLI paths before `cd`. A
+  gate blocks on dropped-work EVIDENCE, never a ticket id merely named in a
+  commit subject (BL-972). A console screen shows the server's actual
   failure reason, never a bare HTTP status (BL-572/BL-662). A constant
-  mirrored by hand across a language boundary no import can bridge (here
-  TS ↔ Babashka) needs a test asserting both literals agree — a "kept in
-  sync" comment is not a gate, and drift fails silently (BL-897). A merge
-  can silently revert already-LANDED work the sender never had — the BL-954
-  sender-tip diff reads clean: diff every merge against BOTH parents and
-  read the deletions (BL-571/BL-958). See
-  **engineering-detailed.prompt** for full incident narratives on each rule.
+  mirrored across a language boundary needs a test asserting both literals
+  agree (BL-897). A merge can silently revert already-landed work — diff
+  every merge against BOTH parents (BL-571/BL-958/BL-954). See
+  **engineering-detailed.prompt** §Guardrails for the full pre-trim text
+  and every incident narrative.

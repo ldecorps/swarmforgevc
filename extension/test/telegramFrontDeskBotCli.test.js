@@ -2470,7 +2470,7 @@ test('BL-607: enqueueRoleAnswerNote falls back to a file pointer + writes the fu
 
   assert.equal(ok, true);
   const content = readQueuedOutboxNote(root);
-  assert.match(content, /^message: answer ready: .*specifier\.json$/m);
+  assert.match(content, /^message: answer ready: .*--role specifier$/m);
   const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
   assert.equal(stored.text, longAnswer);
 });
@@ -2500,7 +2500,7 @@ test('BL-607: enqueueRoleAnswerNote falls back to a file pointer for a short mul
 
   assert.equal(ok, true);
   const content = readQueuedOutboxNote(root);
-  assert.match(content, /^message: answer ready: .*specifier\.json$/m);
+  assert.match(content, /^message: answer ready: .*--role specifier$/m);
   assert.doesNotMatch(content, /\n\S*rename/, 'the 2nd line of the answer must never leak into the queued draft as a bogus header');
   const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
   assert.equal(stored.text, multilineAnswer);

@@ -52,46 +52,21 @@
   trend baseline, the coordinator lowers `active_backlog_max_depth`: drop to
   `1` if **degraded** (signals elevated, pipeline moving), `0` if **severe**
   (stalled/transport down). Restore the prior cap once signals normalize —
-  never leave the throttle engaged after recovery. See
-  **03-backlog-detailed.md** for the full pre-trim wording (operator
-  directive 2026-07-09).
+  never leave the throttle engaged after recovery (operator directive
+  2026-07-09). See **03-backlog-detailed.md**.
 
 ## 3.6 Deprecator Freshness Gate (operator directive 2026-08-27)
-- Before EVERY promotion of a paused item into `backlog/active/` — the same
+- Before EVERY promotion of a paused item into `backlog/active/` — same
   sites as the onboarding contract gate (BL-262) — the coordinator MUST run
-  a **deprecator freshness check** on the candidate ticket.
-- **Fail-closed:** on `hold`, do NOT promote. Surface the reason to the
-  specifier (note, priority `00`) — never silently skip or guess.
-- **Stale premise signals** (any one is enough to hold):
-  - `.swarmforge/superseded/<task>` exists for the ticket id.
-  - Ticket notes or description claim `superseded-by` / `retired` / `obsolete`
-    without a matching `backlog/done/` closure.
-  - All `depends_on` tickets are in `backlog/done/` but the description or
-    acceptance still references modules, verbs, conf keys, or behaviours
-    marked RETIRED or superseded in living docs or code.
-  - A repeated `spec-gap` bounce on the same ticket (see
-    `.swarmforge/bounces/`) — the premise may be obsolete.
-- **When the gate holds:** the specifier adjudicates — amend spec, retire
-  ticket, split ticket, or confirm promote with recorded rationale. Dead logic
-  is removed, not re-shipped; feature scenarios are **retired** (never
-  reworded); affected docs move to `docs/deprecated/` (documenter).
-- **CLI path (when shipped):** prefer
-  `node extension/out/tools/deprecate-check.js <root> <BL-id>` over the manual
-  checklist; until then the coordinator uses the checklist in
-  `coordinator.prompt`. CLI failure fails closed — same posture as BL-262.
-- **Ordering:** sits after the onboarding contract gate and before Article
-  3.2.4 expedited-defect ordering. Expedite never bypasses freshness.
-- **Model capability (must-have, operator 2026-08-27):** deprecator
-  **execution** — freshness adjudication, `/deprecate` / `/deprecate dry`
-  judgment passes, and any retirement decision — MUST run on a model that
-  reasons well **across many documents at once** (tickets, specs, living
-  docs, code surfaces). This is not optional polish.
-  - On packs with `--seat-tier`: only a **hard** seat may claim or run the
-    judgment; easy-tier and weak/local-only seats **refuse** and surface
-    "needs hard-tier multi-document reasoner."
-  - Tickets that build or run deprecator work carry `mutation_cost: high`
-    so BL-1001 never spills them to easy seats.
-  - A weak seat must not guess amend/retire/confirm — escalate to a hard
-    seat or the human.
-- Adoption record: **deprecator-freshness-gate-amendment-2026-08-27.md**.
+  a fail-closed **deprecator freshness check**: on `hold`, do NOT promote,
+  surface the reason to the specifier (note, priority `00`). The specifier
+  then adjudicates (amend, retire, split, or confirm); retirement removes
+  dead logic, retires (never rewords) feature scenarios, and moves affected
+  docs to `docs/deprecated/`.
+- **Model must-have:** deprecator execution (freshness adjudication,
+  `/deprecate` judgment, retirement decisions) runs only on a hard-tier
+  model that reasons well across many documents; easy/weak seats refuse.
+- Full stale-premise signal list, CLI path, gate ordering, and seat-tier
+  mechanics: **03-backlog-detailed.md** §3.6 "Deprecator Freshness Gate —
+  full text". Adoption record: **deprecator-freshness-gate-amendment-2026-08-27.md**.
   Intake: `backlog/archive/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.
