@@ -825,6 +825,12 @@
 (assert= "parse-enabled?: unrecognised value -> disabled" false
          (master-main-reconcile-lib/parse-enabled?
           "config master_main_reconcile_enabled banana"))
+(assert= "parse-enabled?: trailing garbage after true is malformed, not affirmative" false
+         (master-main-reconcile-lib/parse-enabled?
+          "config master_main_reconcile_enabled true true"))
+(assert= "parse-enabled?: case variant True is not the exact token" false
+         (master-main-reconcile-lib/parse-enabled?
+          "config master_main_reconcile_enabled True"))
 (assert= "parse-enabled?: other conf lines present, key still absent -> disabled" false
          (master-main-reconcile-lib/parse-enabled?
           "config master_main_reconcile_escalation_threshold 3\nconfig active_backlog_max_depth 5"))
