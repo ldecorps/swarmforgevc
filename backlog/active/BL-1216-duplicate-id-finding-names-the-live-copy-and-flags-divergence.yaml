@@ -185,8 +185,30 @@ notes: |
     isolated to BL-1216's own scope. Verified: backlog_hygiene_lib_test_runner.bb
     all pass; acceptance feature 8/8. a984721f18 recorded above as
     abandoned_commits - deliberately dropped, not lost work."
+  - "[2026-08-28] coder: architect bounce D1
+    (backlog/evidence/BL-1216-architect-bounce-20260828.md) - all three
+    declared invariants had no property test. Extended
+    backlog_hygiene_lib_property_runner.bb (this project's Babashka
+    property idiom - fast-check has no Babashka/Clojure port, per the
+    shared Engineering Rules' documented gap) with P2-P4 plus their own
+    non-vacuity sanity checks: P2 (invariant 1) checks every path in a
+    real DUPLICATE-ID finding string carries its own pool/classification
+    suffix; P3 (invariant 2) checks content-verdict against generated
+    {path->content} maps including unreadable paths; P4 (invariant 3)
+    checks a keep: is named iff exactly one candidate classifies as live.
+    Self-caught generator gap: P2/P4's first draft computed the 'expected'
+    live/terminal split via pool-classification itself, making a break in
+    that SAME function invisible to the property (checked, then fixed by
+    tracking each generated path's pool directly in the generator instead
+    of re-deriving it). Non-vacuity proven by hand three times: broke
+    describe-path's suffix (P2 failed, 600/900 assertions), disabled
+    content-verdict's fail-closed check (P3 failed), and widened
+    sole-live-keep's guard to <= (P4 failed); restored after each. Verified:
+    backlog_hygiene_lib_test_runner.bb ALL PASS unchanged; property runner
+    ALL PROPERTIES HOLD; acceptance feature 8/8."
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-28, by: QA, blamed: coder, class: behavior, commit: 7bb2f56a43, evidence: backlog/evidence/BL-1216-qa-bounce-20260828.md }
+  - { at: 2026-08-28, by: architect, blamed: coder, class: invariant-unencoded, commit: 5d97948f44, evidence: backlog/evidence/BL-1216-architect-bounce-20260828.md }
