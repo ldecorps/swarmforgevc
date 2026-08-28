@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=754de408e035892683088d124faf5db047d8aaae51f6fc87b91a343cf05c7206
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-27T23:35:23.748256269Z","feature_name":"a pack switch or ensure cycle never leaves the Bubble named tunnel dead and undetected","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1199-pack-switch-must-not-leave-bubble-tunnel-unreachable-and-undetected.feature","background_hash":"27d8a1a1f584f40819a9c3573f9741e295656863ddd35106b890372076c1c7f5","implementation_hash":"unknown","scenarios":[{"index":1,"name":"Swarm status reports the editor tunnel and the named tunnel as separate rows","scenario_hash":"4c6c2da5d89513e6871e6d836bb8fd5e54dc86c6346d4858246558e228b723c0","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-27T23:35:23.748256269Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a pack switch or ensure cycle never leaves the Bubble named tunnel dead and undetected
 
   # BL-1199 (epic swarm-reliability). 2026-08-27 19:16 BST, operator intake
