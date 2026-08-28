@@ -822,7 +822,8 @@ const DOMAINS = [
   require('./bl1204RedeployTargetsReachableAndListedSteps'),
   require('./bl1199PackSwitchBubbleTunnelSteps'),
   require('./bl1195WorktreeTrackedContentDriftSteps'),
-  require('./bl1186DeprecatorIdentifyUnusedNotifySteps')
+  require('./bl1186DeprecatorIdentifyUnusedNotifySteps'),
+  require('./bl1214AbsorbWithMergeSteps')
 ];
 
 function registerSteps(registry) {

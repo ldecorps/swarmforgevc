@@ -57,6 +57,18 @@
        (post-hotfix-merge-origin-lib/conflicted-paths-from-status
         (:out (sh root "git" "status" "--porcelain=v1")))})))
 
+;; BL-1214: a REAL 3-way merge, tried only when merge-origin! above
+;; (--ff-only) failed - absorbs a non-conflicting two-way divergence
+;; losslessly instead of falling straight to rematch-onto-origin!.
+(defn- merge3-origin! [root]
+  (let [r (sh root "git" "merge" "--no-edit" "origin/main")]
+    (if (zero? (:exit r))
+      {:success true}
+      {:success false
+       :conflicted-paths
+       (post-hotfix-merge-origin-lib/conflicted-paths-from-status
+        (:out (sh root "git" "status" "--porcelain=v1")))})))
+
 (defn- push-onto-origin! [root]
   (let [r (sh root "git" "push" "origin" "main")]
     {:success (zero? (:exit r)) :error (str/trim (:err r))}))
@@ -81,6 +93,7 @@
    :would-conflict! (fn [] (would-conflict? root))
    :rematch! (fn [] (rematch-onto-origin! root))
    :merge! (fn [] (merge-origin! root))
+   :merge3! (fn [] (merge3-origin! root))
    :abort! (fn [] (sh root "git" "merge" "--abort"))
    :status-porcelain! (fn [] (:out (sh root "git" "status" "--porcelain=v1")))
    :mid-merge? (fn [] (mid-merge? root))})
