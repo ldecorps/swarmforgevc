@@ -174,3 +174,6 @@ notes: |
     instruction to write there.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: invariant-unencoded, commit: 3c9cdbc65c, evidence: backlog/evidence/BL-1230-architect-bounce-20260828.md }
