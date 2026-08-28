@@ -49,3 +49,30 @@ ones where picking the wrong copy loses real information; BL-644 needs the
 `active/` copy (already at QA) kept, the `paused/` draft discarded.
 
 By documenter.
+
+## Addendum (documenter, same session, ~30 min later)
+
+Merged main (tip `34a57c838` at merge time) to pick up the specifier's
+adjudication (`backlog/evidence/specifier-adjudication-duplicate-ticket-pools-20260828.md`).
+Resolved the git-flagged conflicts (BL-1190, BL-1203, BL-1204, two `topics/*.json`)
+by taking `main`'s side per the ruling. Left BL-644/BL-751/BL-1200 alone
+per the ruling (pool fix is coordinator/human's call) — BL-751 and BL-1200
+did land in `hold/` per that merge; BL-644 stayed duplicated as instructed.
+
+**The ruling's own pool table already reads stale for BL-1188/BL-1189**: by
+the time I checked, `main` (which is moving fast — several other agents
+landing commits concurrently) carries `backlog/hold/BL-1188-...yaml` and
+`backlog/hold/BL-1189-...yaml`, last touched by the ORIGINAL stale `bc70ee853`
+("test2") commit — not the `active/` pool with real bounce history the
+ruling described. My own worktree's `active/` copies (bounce_count 4 and 2
+respectively, real evidence-file-linked bounce_history) have simply not
+reached `main` yet — BL-1188/BL-1189 are still mid-pipeline, not yet
+QA-approved. I did not delete either `hold/` duplicate myself: given the
+ruling table already proved unreliable within the same session, and `main`
+is moving too fast to chase reliably from here, this is left for
+coordinator/specifier's next pass rather than resolved unilaterally again.
+BL-1188 and BL-1189 are proceeding to QA normally on my own branch's real
+content (same posture the ruling gave BL-644: "your content is correct and
+should ride the pipeline normally").
+
+By documenter.
