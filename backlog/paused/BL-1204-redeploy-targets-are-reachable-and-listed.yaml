@@ -1,0 +1,141 @@
+id: BL-1204
+title: "/redeploy frontdesk and /redeploy all are dark: both modules exist, nothing imports them, and the help text and unit suite disagree about it"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1204-redeploy-targets-are-reachable-and-listed.feature
+human_approval: approved
+approval_context: >
+  The ticket assumes the capability is WANTED and should be wired back. That
+  is the assumption worth your eye, because the opposite reading is
+  available: if /redeploy frontdesk and /redeploy all were deliberately
+  withdrawn, then the correct fix is the mirror image — delete the two
+  orphaned modules, delete their direct test file, and RETIRE the two help
+  assertions in telegramCursorBridgeCore.test.js rather than satisfy them.
+  Say which and the scope flips cleanly; the scenarios are written so that
+  only one of the two readings can pass.
+
+  Not asserted anywhere in this ticket: how the wiring came to be missing.
+  git log -S over the core file returned contradictory results minutes apart
+  while a fixture harness was rewriting refs in this repository and git gc
+  was reporting "failed to run prune". I am not willing to state a cause
+  from readings that unstable, and nothing here depends on one. If you
+  already know whether this was withdrawn on purpose, that answer is worth
+  more than any amount of further archaeology.
+description: |
+  ## What
+
+  A redeploy target the bridge ships must be reachable from Telegram, and
+  the help message must list exactly the targets the bridge accepts.
+
+  ## The measurement
+
+  Read from the working tree on 2026-08-27 at 20:05 BST, three consecutive
+  times, stable across all three:
+
+  - `extension/src/tools/telegramCursorBridgeFrontDeskRedeploy.ts` exists.
+  - `extension/src/tools/telegramCursorBridgeAllRedeploy.ts` exists.
+  - Nothing in `extension/src` imports either module. Grepping the two
+    module names across the whole source tree returns no hit.
+  - `telegramCursorBridgeCore.ts` contains neither `redeploy frontdesk` nor
+    `redeploy all` — no confirm branch and no help line for either.
+  - Its `formatHelpMessage` is the live help path (called from
+    `telegramCursorBridgeLive.ts:919`) and lists only `/redeploy` and
+    `/redeploy miniapp`.
+  - `extension/test/telegramCursorBridgeCore.test.js` still asserts both of
+    the missing help lines, so the unit suite carries a standing red.
+  - `extension/test/telegramCursorBridgeRedeployTargets.test.js` exercises
+    the two orphaned modules directly and passes.
+
+  So an operator typing `/redeploy frontdesk` or `/redeploy all` reaches no
+  handler at all, while the modules that would serve those commands sit in
+  the tree, tested and green.
+
+  ## Why it stayed invisible
+
+  This is the BL-419 shape: a mechanism built, unit-tested, green, and wired
+  into none of the places it was built for. The direct module test is what
+  made it invisible — it proves the parser works, never that anything calls
+  it. The one test that WOULD have caught it, the help-text assertion, has
+  been failing into a suite already carrying reds, where a standing red
+  reads as background noise rather than as this exact defect.
+
+  ## How (direction, not mandate)
+
+  Restore the call sites so both targets reach their modules and appear in
+  help, and add the parity check the invariant below names, so the next
+  target cannot ship half-wired. The two modules and the shell scripts they
+  drive are believed intact — confirm that before rewriting either.
+
+  ## Constraints
+
+  - Do not fix the red by editing the test to match today's help text. That
+    turns a true report of a dark feature into a false report of a healthy
+    one, and is the single most likely wrong move here.
+  - `/redeploy` and `/redeploy miniapp` must keep working exactly as they do
+    now, including their confirm behaviour.
+  - The parity check belongs where a missing call site fails it. A parity
+    assertion written over the help string alone, with no reference to what
+    the bridge actually accepts, would pass on today's broken tree.
+
+qa_e2e_procedure: >
+  (1) Grep extension/src for imports of telegramCursorBridgeFrontDeskRedeploy
+  and telegramCursorBridgeAllRedeploy and confirm each has at least one real
+  import outside its own test — a module nothing imports is this ticket's
+  whole defect, so this is the first step, not the last. (2) In a live
+  bridge against a scratch target, send /redeploy frontdesk and confirm a
+  soft confirm is offered and, on confirm, the front desk supervisor
+  actually bounces. (3) Same for /redeploy all across cursor bridge, front
+  desk and mini app bridge. (4) Send /help and confirm every accepted
+  redeploy target appears, and that no listed target is unaccepted. (5) Run
+  the extension unit suite and confirm telegramCursorBridgeCore.test.js is
+  green WITHOUT its two help assertions having been weakened or deleted —
+  diff that file and check. (6) Confirm /redeploy and /redeploy miniapp are
+  unchanged.
+
+out_of_scope: |
+  - Establishing how the wiring went missing. Attempted and abandoned: the
+    repository's own history reads were unstable during an active fixture
+    corruption window. Do not spend a parcel on it.
+  - The fixture corruption itself — BL-1196, BL-1200 and BL-1202 cover the
+    writer and the detector. This ticket is one of its casualties, not
+    another report of it.
+  - The 38 test files still on `require('node:test')` that Vitest cannot
+    instrument, flagged by the hardener in the same pass. Real, repo-wide,
+    unrelated to whether these two verbs are wired.
+  - The boot-prompt exit-code failure in telegramCursorBridgeCli.test.js,
+    reported in the same hardener note. Different file, different symptom,
+    not investigated here and not fixed by this ticket.
+
+invariants:
+  - "Every redeploy target the bridge accepts is listed in the help message, and every target the help message lists is accepted."
+
+source: |
+  Hardener note 000901 to specifier and coordinator, 2026-08-27 19:38Z:
+  "BL-751 handoff 7ba98cb150 corrupted (BL-1124-class). See hardener
+  evidence." The corruption half of that note is already covered by BL-1196,
+  BL-1200 and BL-1202 and is not re-ticketed. The hardener's separately
+  flagged unrelated red — .worktrees/hardender/backlog/evidence/
+  BL-751-hardener-pass-20260827.md, section "Unrelated pre-existing red
+  found during the coverage run" — is this ticket.
+
+  The hardener read it as "BL-710 shipped these verbs without updating the
+  static help text". Checked at spec time and it is the other way round: the
+  help text is missing and so is every call site, while the modules that
+  serve the verbs are present. The hardener also confirmed the failure is
+  live on origin/main and grepped the backlog for it without finding a
+  ticket; both re-confirmed here.
+
+notes: |
+  - "[2026-08-27] specifier: the hardener was right that this is unticketed
+    and live, and right to flag it separately rather than fix it inside
+    BL-751's scope. Only the direction of the defect differs from its note,
+    and that difference is what decides the fix — hence the correction is
+    recorded here rather than left to the coder to rediscover."
