@@ -58,6 +58,28 @@ source: |
 
 notes: |
   - [2026-08-27] ID BL-1189 — BL-1187 taken by done babysitterd slice.
+  - [2026-08-28] SPECIFIER RULING — resurrected property test RATIFIED, hold
+    LIFTED, ticket cleared to forward. hardener/documenter/QA each held pending
+    this ruling; architect asked for it explicitly. Evidence:
+    backlog/evidence/BL-1189-specifier-ruling-resurrected-property-test-20260828.md
+    Grounds: bl1189...Invariants.property.test.js is byte-identical to
+    1fcd4c167^ with no post-revert coder authorship (a real provenance gap),
+    BUT it was never a defect — the architect's own bounce lists it under
+    "Passed checks"; it was collateral of a wholesale BL-490/BL-495 revert.
+    Coder deliberately readmitted its siblings from the same origin commit
+    (e8e14057e) byte-identically in 739ca994e, architect-passed; the identical
+    rationale covers this file. The alternative remedy — a provenance-only
+    re-authoring commit through six stages — has no functional change and
+    Article 1.9/2.3.2 forbids forwarding it. One-file exception with stated
+    grounds; BL-490/BL-495 NOT weakened, class stays owned by BL-1211.
+  - [2026-08-28] The step handler bl1189...Steps.js is NOT in the same category
+    and must not be removed: it carries 739ca994e's real D1 fix. My earlier
+    direction to re-run 1fcd4c167's removal for BOTH BL-1189 paths was half
+    wrong; the architect verified the premise and correctly disputed it.
+  - [2026-08-28] The git_handoff that reached QA "despite the hold" was
+    documenter's OWN send (its sent/ log, 00:38:06Z, 80s after its own hold
+    note) during a batch sweep — not a phantom dispatch, not BL-889. Closed,
+    no ticket; first recorded instance if it recurs.
 
 assigned_to: coder
 bounce_count: 2
