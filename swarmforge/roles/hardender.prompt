@@ -2066,3 +2066,47 @@ You are the hardender.
   origin/main` produced byte-identical PASS output on both scenarios. The
   `bl1198` property check over fake `:push!`/`:reset!` adapters is the real
   existence proof, and its non-vacuity run flags an always-reset mutant.
+
+## A fake-runner test for a `status !== 0` guard needs non-empty MATCHING stdout on the failing call — empty stdout collapses both branches (rule_proposal 2026-08-28, accepted)
+- Proposer's rule, verbatim: "A fake-runGit test for a status!==0 guard needs
+  non-empty matching stdout on the failing call - empty stdout parses to []
+  either way, hiding the guard's removal. Hand-delete the guard first to
+  verify."
+- The failure shape: a fail-safe guard reads `if (r.status !== 0) return
+  <safe default>`, and the path BELOW it parses `r.stdout` — split lines,
+  drop empties. Hand the fake an empty `stdout` and that parse yields `[]`,
+  which flows to the very same safe default. The two branches AGREE on that
+  input, so deleting the guard changes nothing observable and the test still
+  passes over a guard that is no longer there. Green, correctly named for the
+  fail-safe, pinning nothing. The coincidence is not bad luck: empty stdout
+  and a failed call both mean "nothing found", so a guard's safe default and
+  its unguarded parse converge by default — this is the COMMON case, not the
+  exotic one.
+- Mechanics: give the failing call a payload that would drive the WRONG
+  outcome if the guard were gone — for a `log` whose output feeds later
+  lookups, a real-looking commit hash whose downstream `show` DOES match, so
+  the unguarded path reaches a positive finding the assertion forbids. Then
+  hand-delete the guard, confirm the test goes RED, and restore it; a fake
+  payload never verified that way is a guess. Generalizes past git to any
+  faked subprocess adapter returning `{status, stdout}`. Note WHY the fake is
+  unavoidable here: no real fixture can make a resolvable-parent `git log`
+  fail, so the direct fake is the only route to the branch — which is exactly
+  why its payload has to be chosen, not defaulted to `''`.
+- **Distinct from its three neighbours in this file, and the difference is
+  WHICH ingredient defeats the test.** "Check that a test's FIXTURE has not
+  already satisfied the very condition the test claims to prove" (BL-328) is
+  defeated by SETUP; "Confirm the new assertion goes RED against the pre-fix
+  code" (BL-1018) is defeated by a too-weak ASSERTION; the unreachable-branch
+  rule (BL-1198) is defeated by PRODUCTION DISPATCH, and has no remedy at
+  all. Here setup, assertion, and reachability are all sound — the defeat
+  lives in the fake's RETURN PAYLOAD, one field wide, and the fix is to
+  change data rather than structure.
+- Evidence (proposed by the hardender, 2026-08-28, BL-1208, commit
+  `ce8549b55`; verified while accepting): `existedIdenticallyBeforeLoss`'s
+  `log.status !== 0` fail-safe had no test reaching it. The first fake-runGit
+  test returned `{status: 128, stdout: ''}` for `log` and stayed green after
+  the guard was hand-deleted. Fixed by returning the stale commit hash in
+  that same failed call's stdout — its `show` lookup resolves to the matching
+  `content`, so an unguarded parse reports `restoredFromEarlierHistory: true`
+  against an assertion demanding `false`. Deleting the guard then flipped it
+  red, which is what made the test real.

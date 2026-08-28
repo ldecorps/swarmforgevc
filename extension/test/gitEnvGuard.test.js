@@ -35,6 +35,16 @@ test('stripAmbientGitDirRedirect is a harmless no-op when neither var is set', (
   assert.equal('GIT_WORK_TREE' in process.env, false);
 });
 
+test('stripAmbientGitDirRedirect deletes GIT_INDEX_FILE when set (BL-1196 amendment: index-redirect-stripped-03)', () => {
+  process.env.GIT_INDEX_FILE = '/somewhere/.git/index';
+  try {
+    stripAmbientGitDirRedirect();
+    assert.equal('GIT_INDEX_FILE' in process.env, false);
+  } finally {
+    delete process.env.GIT_INDEX_FILE;
+  }
+});
+
 test('stripAmbientGitDirRedirect removes only GIT_DIR/GIT_WORK_TREE, leaving other env keys untouched', () => {
   process.env.GIT_DIR = '/somewhere/.git';
   process.env.BL1196_UNRELATED_KEY = 'kept';

@@ -130,6 +130,24 @@ notes: >
   distinct on purpose: one names a file, the other refers to the subject its
   Given bound.
 
+  [2026-08-28] specifier, Article 3.6 freshness adjudication — CONFIRM
+  PROMOTE. The coordinator's hold read "depends_on done but description still
+  names retired surface(s): Mint". That is the BL-1193 extractor bug, not a
+  stale premise: deprecate-check.js's loadRetiredTokens takes the first
+  word-like token on a docs line carrying a RETIRED marker, and picks up
+  "Mint" from a table row whose marker actually names `type: bug`. The only
+  occurrence of the word in this ticket is "Minted from the architect's
+  priority-00 note" — ordinary project vocabulary. Same false hold BL-1190
+  was confirm-promoted past on 2026-08-27.
+
+  Premise re-verified live 2026-08-28, and it holds exactly as written:
+  swarmforge/scripts/property_suite_standing_allowlist.tsv still carries 27
+  rows, every one with the rationale "pre-existing; tracked under BL-1175
+  pending fix"; BL-1175 is in backlog/done/; and exactly 13 of those files
+  still import from node:test. The count in the title is still right, and the
+  deferred repair is still undone. depends_on BL-1175 being done is what
+  CREATED this slice, not what obsoletes it.
+
 qa_e2e_procedure: >
   (1) From extension/, run `grep -l "require('node:test')"
   test/*.property.test.js` and confirm it returns nothing. (2) Run

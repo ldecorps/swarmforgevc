@@ -1,0 +1,150 @@
+id: BL-1229
+title: "BL-757 widened landPilotedTicket's deps contract and ten hand-built test stubs were never updated, so 22 assertions crash instead of asserting"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and contained. The production deps wiring is correct — the gate
+# itself supplies checkOrphanedAuthoredDocs at every live call site. What is
+# broken is the gate's OWN test coverage: 22 assertions across 10 files throw
+# before they assert anything, so the pilot land-gate is far less tested than
+# its file count suggests. Nothing in production misbehaves today, which is why
+# this is not high; but the safety signal is degraded, which is why it is not low.
+status: todo
+epic: code-quality-gates
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1229-pilot-gate-deps-contract-cannot-silently-outgrow-its-test-stubs.feature
+human_approval: pending
+approval_context: >
+  One thing needs sign-off: how much to change. The minimum repair is to add
+  the missing member to ten stubs, which fixes today's 22 crashes and leaves
+  the next contract widening free to do exactly this again. This ticket takes
+  the stronger line — make the connection between contract and stub exist, so
+  the eleventh file and the next added member cost one failure instead of
+  twenty-two — but that touches ten test files rather than patching them, and
+  the extra scope is the human's to approve.
+
+  Firm and not up for negotiation: a missing deps member must not be filled
+  in with a silent default. That converts a loud crash into a test that
+  passes while exercising nothing, which is strictly worse than the bug —
+  the whole reason this went unnoticed is that nothing was shouting.
+
+  Not in question: the numbers. Measured 2026-08-28 by running each file
+  under `node --test`: 10 files, 22 occurrences of
+  "deps.checkOrphanedAuthoredDocs is not a function". The architect's note
+  said 9 tests; the real figure is larger.
+description: |
+  ## What
+
+  Every test that builds a deps object for `landPilotedTicket` supplies the
+  complete contract, and the 22 assertions currently crashing on a missing
+  member run and report real verdicts. Widening the contract in future costs
+  one clear failure naming the missing member, not one crash per test file.
+  A member that is absent is never silently defaulted.
+
+  ## How (direction, not mandate)
+
+  `landPilotedTicket` in `extension/src/tools/pilotAcceptanceGate.ts` declares
+  the contract (`checkOrphanedAuthoredDocs` at line 246, consumed at 609);
+  `extension/src/tools/pilot-acceptance-gate.ts` supplies it correctly at the
+  live call site. Only the test-side stubs are stale. A single shared
+  test-deps factory that files override selectively is the obvious shape, but
+  any construction that makes an incomplete stub fail once and loudly
+  satisfies this.
+
+  ## Why
+
+  BL-757 added `checkOrphanedAuthoredDocs` to the deps contract and landed
+  correctly — production wiring is present at every live call site. The test
+  files build their stubs by hand, in JavaScript, so an omitted member is
+  invisible until the production code reaches that key and throws
+  `deps.checkOrphanedAuthoredDocs is not a function`.
+
+  Measured on 2026-08-28, running each file under `node --test`:
+
+  | file | crashing assertions |
+  |---|---|
+  | test/pilotAcceptanceGate.test.js | 8 |
+  | test/pilotAcceptanceGate.property.test.js | 3 |
+  | test/crossFileDuplicationCheck.test.js | 2 |
+  | test/pilotScopedCrapCheck.test.js | 2 |
+  | test/pilotScopedCrapEvidence.property.test.js | 2 |
+  | test/perHatRolePromptEvidenceCheck.test.js | 1 |
+  | test/multiBranchParserCoverageCheck.test.js | 1 |
+  | test/shellEntryPointDriveCheck.test.js | 1 |
+  | test/bl733ProducerCrosscheck.property.test.js | 1 |
+  | test/unreachableStepHandlerCheck.test.js | 1 |
+
+  Sixteen files reference `landPilotedTicket` and not one of them stubs
+  `checkOrphanedAuthoredDocs`; the six that do not crash simply never reach
+  the call. That is the point — which files break is an accident of which
+  code path each assertion happens to drive, so the blast radius of the next
+  widening is unpredictable as well as unbounded.
+
+  Reported twice, independently, and ticketed neither time: QA surfaced it
+  closing BL-1189 on 2026-08-28 ("these test files' own `mkDeps()` stub was
+  never updated to supply it ... untracked") and the architect sent a
+  priority-`00` note the same night.
+
+  ## Constraints
+
+  - Do not change the production deps contract or its live wiring. Both are
+    correct; this is a test-side repair.
+  - No silent defaults for a missing member — see approval_context.
+  - Do not convert these files away from `node:test`. That is a separate,
+    larger gap (see notes) and mixing the two would make both unreviewable.
+
+qa_e2e_procedure: >
+  (1) From `extension/`, run each of the ten named files under
+  `node --test <file>` and confirm zero occurrences of
+  "is not a function" for any deps member. (2) Confirm the assertion counts
+  went UP, not just the failures down — a stub repair that skips or deletes
+  the previously-crashing assertions is not a fix; compare each file's
+  reported test count against the table in the description. (3) Add a
+  throwaway required member to the deps contract, run the files, and confirm
+  the omission is reported once and names that member; remove it afterwards.
+  (4) Build a deps stub omitting `checkOrphanedAuthoredDocs`, drive the gate,
+  and confirm it fails rather than reporting a land verdict. (5) Confirm
+  `extension/src/tools/pilot-acceptance-gate.ts` line 197 is unchanged, so
+  the live wiring was not disturbed.
+
+out_of_scope: |
+  - The 25 non-property `test/*.test.js` files that import from `node:test`
+    and so are never collected by Vitest ("No test suite found"). That is
+    the main-lane sibling of BL-1206 and is why these 22 crashes were
+    invisible in the normal lane; see notes. A separate slice.
+  - BL-1206's own property-lane allowlist drain.
+  - Any change to what the orphan-docs check itself decides (BL-757, done).
+  - The six landPilotedTicket files that do not currently crash — they get
+    the same complete stub, but no behaviour of theirs is in question.
+
+invariants:
+  - "A test-built deps stub that does not satisfy the full landPilotedTicket contract fails loudly; a missing member is never silently defaulted."
+  - "Adding a member to the deps contract produces one failure naming that member, regardless of how many test files build a stub."
+
+source: |
+  Architect note to specifier+coordinator, 2026-08-28 04:09Z (priority 00):
+  "unticketed: 9 pilot-gate tests crash, missing checkOrphanedAuthoredDocs".
+  Independently surfaced by QA closing BL-1189 the same day —
+  backlog/evidence/BL-1189-qa-pass-20260828.md items 3 and "both untracked" —
+  and observed again in backlog/evidence/BL-1198-qa-pass-20260828.md as a
+  standing property red.
+
+notes: |
+  - "[2026-08-28] specifier: the architect's note said 9 tests; measured, it
+    is 10 files and 22 assertions. Counted by running each file individually
+    under `node --test` and grepping for the TypeError, because Vitest cannot
+    collect these files at all (they import from `node:test`) and reports
+    them as 'No test suite found' — the crashes never surface in the normal
+    lane. Recorded so nobody re-derives it."
+  - "[2026-08-28] specifier: that collection gap is the reason this went
+    unnoticed for a day, and it is itself unticketed — 25 non-property
+    `test/*.test.js` files import from `node:test`. BL-1206 covers only the
+    14 `*.property.test.js` files and their allowlist; the main lane has no
+    allowlist and a different failure shape, so it is a sibling slice rather
+    than a widening of BL-1206. Deliberately NOT folded in here: fixing the
+    stubs is worth doing whether or not the lane ever collects these files,
+    and bundling them would fail INVEST-Independent for both."
