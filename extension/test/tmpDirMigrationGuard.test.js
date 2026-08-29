@@ -97,16 +97,22 @@ test('finds violations nested several directories deep, not just at the top leve
 });
 
 // ── BL-771 shared-tmpdir-helper-02: the guard was not weakened to go green ─
-// Pins the exempt list to exactly its three documented, load-bearing entries
-// (tmpDir.js's own real call site plus this guard's two fixture-string test
-// files) - a green migration-complete gate bought by widening this list
-// instead of migrating the offending file would be a false pass.
+// Pins the exempt list to exactly its five documented, load-bearing entries
+// (tmpDir.js's own real call site, this guard's two fixture-string test
+// files, and BL-1209's sibling pilotMkdtempConventionCheck guard's own two
+// fixture-string test files, same shape) - a green migration-complete gate
+// bought by widening this list instead of migrating the offending file
+// would be a false pass. Any addition here must be a file whose raw-call
+// TEXT is fixture DATA proving a detector works, never executable code
+// that itself leaks a temp dir.
 
-test('the exempt list is exactly the three documented paths - nothing was added to buy a green scan', () => {
+test('the exempt list is exactly the five documented paths - nothing was added to buy a green scan', () => {
   assert.deepEqual(SELF_EXEMPT_RELATIVE_PATHS, [
     'helpers/tmpDir.js',
     'tmpDirMigrationGuard.test.js',
     'tmpDirMigrationGuard.property.test.js',
+    'pilotMkdtempConventionCheck.test.js',
+    'pilotMkdtempConventionCheck.property.test.js',
   ]);
 });
 
