@@ -12,7 +12,7 @@ severity: high
 # is lost, and recovery itself still works - only its measurement is dark.
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 40
 direction: swarm-reported
 depends_on: [BL-1262]
