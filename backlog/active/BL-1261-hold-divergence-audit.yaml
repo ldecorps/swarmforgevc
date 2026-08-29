@@ -187,3 +187,6 @@ notes: |
     scenario 03 exists to draw. None folded away."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: QA, blamed: documenter, class: behavior, commit: d6579fc162, evidence: backlog/evidence/BL-1261-hold-divergence-audit-qa-bounce-20260829.md }

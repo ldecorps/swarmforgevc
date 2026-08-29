@@ -135,8 +135,12 @@ function registerSteps(registry) {
   });
 
   scoped(/^the diagram list from local-engineering\.prompt's Diagrams section$/, (ctx) => {
-    const diagramsSection = ctx.diagramsSection;
-    ctx.diagramsSectionList = diagramsSection;
+    const localEng = ctx.localEngContent || readLocalEngPrompt();
+    ctx.localEngContent = localEng;
+    const diagramsSection = localEng.match(/## Diagrams \(this project\)([\s\S]*?)(?=## |$)/);
+    assert.ok(diagramsSection, 'Could not find Diagrams section in local-engineering.prompt');
+    ctx.diagramsSection = diagramsSection[1];
+    ctx.diagramsSectionList = diagramsSection[1];
   });
 
   scoped(/^they are compared$/, (ctx) => {
