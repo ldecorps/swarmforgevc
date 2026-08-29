@@ -500,13 +500,58 @@
     (spit (str out-path) system-prompt)
     (str out-path)))
 
+(defn- parse-verdict-file
+  "Nil when timed out, absent, or unparseable — never throws into the driver."
+  [verdict-file timed-out?]
+  (when (and (not timed-out?) (fs/exists? verdict-file))
+    (try (json/parse-string (slurp verdict-file) true) (catch Exception _ nil))))
+
+(defn- clear-verdict-file!
+  "Drop a stale/partial verdict before a recovery re-invoke."
+  [verdict-file]
+  (when (fs/exists? verdict-file)
+    (fs/delete verdict-file)))
+
+(defn- stage-cmd
+  [runner settings role ticket prompt-file verdict-file transcript attempt]
+  (let [recovery? (pos? attempt)
+        user (expedite-lib/stage-user-prompt
+              {:role role :ticket ticket :verdict-file verdict-file
+               :recovery? recovery? :attempt attempt})]
+    (if runner
+      ["bash" runner role ticket prompt-file verdict-file transcript]
+      (concat ["claude" "-p"]
+              (when settings ["--settings" settings])
+              ["--append-system-prompt-file" prompt-file
+               "--dangerously-skip-permissions"
+               user]))))
+
+(defn- invoke-stage-once!
+  "Spawn one stage child. Returns {:exit :timed-out? :elapsed :parsed}."
+  [{:keys [dir budget started transcript err-file cmd verdict-file]}]
+  (let [{:keys [exit timed-out?]}
+        (apply sh-bounded {:dir dir
+                           :extra-env {"ANTHROPIC_API_KEY" "" "ANTHROPIC_AUTH_TOKEN" ""}}
+               budget transcript err-file cmd)
+        elapsed (expedite-lib/stage-timeout-verdict {:started-at-ms started
+                                                     :now-ms (now-ms)
+                                                     :timeout-ms budget})]
+    {:exit exit
+     :timed-out? timed-out?
+     :elapsed elapsed
+     :parsed (parse-verdict-file verdict-file timed-out?)}))
+
 (defn run-stage!
   "One stage. Returns {:verdict :pass|:bounce|:fail ...}.
 
    The stage runner is a seam: EXPEDITE_STAGE_RUNNER replaces spawning claude,
    so every scenario can seed a gate outcome without a model in the loop. Both
    paths receive the same argv shape, so the test path exercises the real
-   contract rather than a parallel one."
+   contract rather than a parallel one.
+
+   Missing-verdict recovery: up to two re-invokes with escalating prompts that
+   demand a written pass|bounce|fail. Still-missing after that fails closed —
+   never a synthesized bounce."
   [{:keys [project-root ticket stage-timeout-ms]} {:keys [dir]} role task stage-dir]
   (let [prompt-file (compose-prompt! role task (fs/path stage-dir "prompt.md"))
         _ (spit (str (fs/path stage-dir "task.txt")) task)
@@ -515,40 +560,33 @@
         settings (settings-path project-root role)
         started (now-ms)
         runner (System/getenv "EXPEDITE_STAGE_RUNNER")
-        cmd (if runner
-              ["bash" runner role ticket prompt-file verdict-file transcript]
-              (concat ["claude" "-p"]
-                      (when settings ["--settings" settings])
-                      ["--append-system-prompt-file" prompt-file
-                       "--dangerously-skip-permissions"
-                       (str "You are the " role " for " ticket
-                            ". Your task is appended to your system prompt."
-                            " Write your stage verdict as JSON to " verdict-file ".")]))
         budget (or stage-timeout-ms expedite-lib/default-stage-timeout-ms)
-        err-file (str (fs/path stage-dir "stderr.log"))
-        {:keys [exit timed-out?]}
-        (apply sh-bounded {:dir dir
-                           :extra-env {"ANTHROPIC_API_KEY" "" "ANTHROPIC_AUTH_TOKEN" ""}}
-               budget transcript err-file cmd)
-        elapsed (expedite-lib/stage-timeout-verdict {:started-at-ms started
-                                                     :now-ms (now-ms)
-                                                     :timeout-ms budget})
-        parsed (when (and (not timed-out?) (fs/exists? verdict-file))
-                 (try (json/parse-string (slurp verdict-file) true) (catch Exception _ nil)))]
-    (cond
-      ;; ENFORCED, not merely observed: the child is already destroyed by the
-      ;; time we get here. `:overrun?` is kept as a second signal for a stage
-      ;; that returned right on the boundary.
-      (or timed-out? (:overrun? elapsed))
-      {:verdict :fail :reason :stage-timeout :stage role :elapsed elapsed
-       :killed? (boolean timed-out?)}
-
-      (nil? parsed)
-      {:verdict :fail :reason :no-verdict :stage role :exit exit}
-
-      :else
-      (assoc parsed :stage role :exit exit :elapsed elapsed
-             :verdict (keyword (or (:verdict parsed) "fail"))))))
+        err-file (str (fs/path stage-dir "stderr.log"))]
+    (loop [attempt 0]
+      (let [cmd (stage-cmd runner settings role ticket prompt-file verdict-file
+                           transcript attempt)
+            {:keys [exit timed-out? elapsed parsed]}
+            (invoke-stage-once! {:dir dir :budget budget :started started
+                                 :transcript transcript :err-file err-file
+                                 :cmd cmd :verdict-file verdict-file})
+            recover? (expedite-lib/should-recover-missing-verdict?
+                      {:timed-out? timed-out?
+                       :overrun? (:overrun? elapsed)
+                       :parsed parsed
+                       :attempt attempt})]
+        (if recover?
+          (do (log! "no-verdict recovery" role "attempt" (inc attempt)
+                    "of" expedite-lib/max-missing-verdict-recoveries)
+              (clear-verdict-file! verdict-file)
+              (recur (inc attempt)))
+          (expedite-lib/finalize-stage-result
+           {:timed-out? timed-out?
+            :overrun? (:overrun? elapsed)
+            :parsed parsed
+            :role role
+            :exit exit
+            :elapsed elapsed
+            :attempt attempt}))))))
 
 (defn drive-stages!
   "Walk the chain, honouring bounces. Bounce accounting and the meaning of
@@ -568,7 +606,9 @@
         (let [idx (count @history)
               stage-dir (fs/path run-dir (format "%02d-%s" idx stage))
               _ (write-progress! run-dir ticket stage :running (str "stage " (inc idx) "/" (count stages)))
-              task (str "Ticket " ticket ". You are the " stage " stage of an offline expedited run."
+              task (str "Ticket " ticket ". You are the " stage " stage of an offline expedited run. "
+                        "Run checks in the foreground; never stand by for Monitor, background jobs, or IDE notifications; "
+                        "write a pass/bounce/fail verdict.json as your last action before exit."
                         (when-let [b (seq (get @bounces stage))]
                           (str " This is a rework after " (count b) " bounce(s): "
                                (str/join "; " (map :reason b)))))
@@ -603,18 +643,24 @@
             :advance (recur (expedite-lib/next-stage stages stage) (inc n))
 
             :bounce
-            (let [target (or (:target res) "coder")
-                  prior (get @bounces stage [])
-                  decision (expedite-lib/bounce-decision {:stage stage :bounces prior :bound bound})]
-              (if (= :retry (:action decision))
-                (do (swap! bounces update stage (fnil conj []) (select-keys res [:reason :class]))
-                    (log! "bounce" stage "round" (:round decision) "-> re-enter" target)
-                    (recur target (inc n)))
-                (let [report (expedite-lib/exhaustion-report
-                              {:stage stage :bounces (get @bounces stage)})]
-                  (log! "EXHAUSTED" (pr-str report))
-                  {:ticket :failed :reason :bounce-bound-exhausted
-                   :exhaustion report :bounces @bounces :history @history :bound bound-info})))
+            (if-not (expedite-lib/bounce-payload-valid? res)
+              (do (log! "REFUSE bounce-without-reason" stage
+                        "- a bounce must carry an actionable reason or class")
+                  {:ticket :failed :reason :bounce-without-reason
+                   :stage stage :verdict (:verdict res)
+                   :bounces @bounces :history @history :bound bound-info})
+              (let [target (or (:target res) "coder")
+                    prior (get @bounces stage [])
+                    decision (expedite-lib/bounce-decision {:stage stage :bounces prior :bound bound})]
+                (if (= :retry (:action decision))
+                  (do (swap! bounces update stage (fnil conj []) (select-keys res [:reason :class]))
+                      (log! "bounce" stage "round" (:round decision) "-> re-enter" target)
+                      (recur target (inc n)))
+                  (let [report (expedite-lib/exhaustion-report
+                                {:stage stage :bounces (get @bounces stage)})]
+                    (log! "EXHAUSTED" (pr-str report))
+                    {:ticket :failed :reason :bounce-bound-exhausted
+                     :exhaustion report :bounces @bounces :history @history :bound bound-info}))))
 
             :fail
             {:ticket :failed :reason (or (:reason res) :stage-failed)

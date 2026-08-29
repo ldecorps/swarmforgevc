@@ -513,6 +513,146 @@
 
 (non-vacuity-check-bl1198-push-before-reset)
 
+;; ── BL-1248 invariant 1 (coder-authored first, per BL-654): "While the
+;;    switch is off, no code path reachable from the handoff daemon cadence
+;;    tick can move, reset, or discard a commit reachable from local main -
+;;    the switch is a guarantee about refs, not merely a skipped function
+;;    call." At this pure-decision layer sweep! is proven against
+;;    (:merge! is the SOLE state-mutating adapter, documented at its own
+;;    adapter-injected orchestration comment above) that claim reduces to:
+;;    merge! NEVER fires when enabled?=false, over the SAME generator
+;;    (gen-scenario) invariants 1-3 already use, so every behind/dirty/
+;;    merge-changed combination those invariants reach is reached here too
+;;    (generator-reach floor, not merely asserted) - including scenarios
+;;    that WOULD reconcile with the switch on (oracle-should-mutate? true),
+;;    which is exactly the case a guard that merely skips-when-convenient
+;;    could get wrong. The real-git half of this claim (a commit genuinely
+;;    still reachable by `git merge-base --is-ancestor` after a real tick)
+;;    is proven concretely by test_handoffd_master_main_reconcile_wiring.sh
+;;    against a real fixture repo with the switch off. ───────────────────
+(defn- run-sweep-disabled-with-scenario [{:keys [behind dirty-paths merge-changed-paths merge-success?]}]
+  (let [merge-calls (atom 0)
+        adapters {:rev-counts! (fn [] {:ahead 0 :behind behind})
+                  :dirty-paths! (fn [] dirty-paths)
+                  :merge-changed-paths! (fn [] merge-changed-paths)
+                  :merge! (fn [] (swap! merge-calls inc)
+                              (if merge-success? {:success true} {:success false :error "conflict"}))
+                  :surface! (fn [_msg] nil)
+                  :escalate! (fn [_payload] nil)
+                  :log! (fn [& _parts] nil)}]
+    (master-main-reconcile-lib/sweep! (mk-tmp) single-tick-threshold false adapters)
+    {:merge-calls @merge-calls}))
+
+(check-all "master_main_reconcile_lib BL-1248 invariant 1: with the switch off, merge! (the sole state-mutating adapter) never fires - no scenario, including one that WOULD reconcile with the switch on, can move/reset/discard a commit"
+  gen-scenario
+  (fn [scenario]
+    (let [{:keys [merge-calls]} (run-sweep-disabled-with-scenario scenario)]
+      (if (pos? merge-calls)
+        (str "KILL-SWITCH BREACH: switch is off but merge! fired " merge-calls
+             " time(s) for scenario " (pr-str scenario)
+             " (oracle-should-mutate?=" (oracle-should-mutate? scenario) ")")
+        true))))
+
+;; Non-vacuity: a mutant guard that skips :merge! only when it happens to
+;; already be a no-op (behind=0) but calls straight through to :merge!
+;; whenever a real reconcile would have fired - i.e. a guard that looks
+;; like a kill switch but only ever "skips" the cases that were already
+;; harmless, exactly the "merely a skipped function call, not a guarantee"
+;; failure shape invariant 1's own wording warns against.
+(defn- mutant-guard-only-skips-noop! [dir adapters]
+  (let [{:keys [behind]} ((:rev-counts! adapters))
+        dirty-paths ((:dirty-paths! adapters))
+        merge-changed-paths ((:merge-changed-paths! adapters))
+        overlap? (boolean (seq (set/intersection (set dirty-paths) (set merge-changed-paths))))]
+    (when (and (pos? behind) (not overlap?))
+      ((:merge! adapters)))))
+
+(defn- non-vacuity-check-bl1248-invariant-1 []
+  (let [reconcilable-scenario {:behind 22 :dirty-paths #{} :merge-changed-paths #{} :merge-success? true}
+        merge-calls (atom 0)
+        adapters {:rev-counts! (fn [] {:ahead 0 :behind 22})
+                  :dirty-paths! (fn [] #{})
+                  :merge-changed-paths! (fn [] #{})
+                  :merge! (fn [] (swap! merge-calls inc) {:success true})
+                  :surface! (fn [_msg] nil)
+                  :log! (fn [& _parts] nil)}]
+    (mutant-guard-only-skips-noop! (mk-tmp) adapters)
+    (if (and (oracle-should-mutate? reconcilable-scenario) (pos? @merge-calls))
+      (println "non-vacuity confirmed: invariant 1 would flag a guard that only skips already-harmless ticks but still merges a genuinely reconcilable one while off")
+      (do (println (str "NON-VACUITY FAILURE (bl1248 guard-only-skips-noop mutant): expected a breach, got merge-calls=" @merge-calls))
+          (System/exit 1)))))
+
+(non-vacuity-check-bl1248-invariant-1)
+
+;; ── BL-1248 invariant 2 (coder-authored first, per BL-654): "Any config
+;;    value other than the explicit affirmative leaves the sweep off -
+;;    absent, empty, malformed and unrecognised all fail closed to
+;;    disabled, so the dangerous state is never reachable by accident."
+;;    Fuzzes the config VALUE (BL-654 generator-reach: the pool is weighted
+;;    so the one enabling value, "true", is exactly as likely to be drawn as
+;;    any single disabling value - not buried under a wide arbitrary-string
+;;    draw that would make the one dangerous case vanishingly rare to
+;;    exercise) plus whether the key line is present at all, plus random
+;;    surrounding noise lines (other real conf keys), plus surrounding
+;;    whitespace - an independent oracle (byte-exact "true", nothing else)
+;;    predicts enabled? without calling parse-enabled? itself. ───────────
+(def enabled-value-pool ["true" "false" "" "banana" "True" "TRUE" "1" "yes" "true " " true" "true true"])
+(def noise-line-pool ["config active_backlog_max_depth 5"
+                       "config master_main_reconcile_escalation_threshold 3"
+                       "# a comment line"
+                       ""])
+
+(defn gen-enabled-conf [s]
+  (let [[present? s1] (gen-bool s)
+        [value s2] (gen-pick s1 enabled-value-pool)
+        [before-lines s3] (gen-subset s2 noise-line-pool)
+        [after-lines s4] (gen-subset s3 noise-line-pool)
+        key-line (when present? (str "config master_main_reconcile_enabled " value))
+        conf-text (clojure.string/join "\n" (concat before-lines (when key-line [key-line]) after-lines))]
+    [{:present? present? :value value :conf-text conf-text} s4]))
+
+;; Independent oracle: never calls parse-enabled? - the exact byte-for-byte
+;; literal "true" as the sole value token is the ONLY affirmative;
+;; everything else, including a value that merely CONTAINS "true"
+;; ("true " with trailing space becomes token "true" after whitespace
+;; split, so that one IS an affirmative once tokenized - "true true" is NOT,
+;; its first token is "true" but it has an extra token, restated below
+;; matching the tokenizing contract, not a raw string-equality contract).
+(defn- oracle-enabled? [{:keys [present? value]}]
+  (and present?
+       (= ["true"] (clojure.string/split (clojure.string/trim value) #"\s+"))))
+
+(check-all "master_main_reconcile_lib BL-1248 invariant 2: any config value other than the sole exact token \"true\" fails closed to disabled - absent, empty, malformed and unrecognised all disable"
+  gen-enabled-conf
+  (fn [{:keys [conf-text] :as scenario}]
+    (let [actual (master-main-reconcile-lib/parse-enabled? conf-text)
+          expected (oracle-enabled? scenario)]
+      (if (not= expected actual)
+        (str "FAIL-CLOSED BREACH: conf-text " (pr-str conf-text) " expected enabled?=" expected " got " actual)
+        true))))
+
+;; Non-vacuity: a mutant that enables on ANY non-blank value (a substring/
+;; truthy check instead of an exact-match check) - exactly the bug
+;; invariant 2 exists to prevent (a near-affirmative like "True" or "1"
+;; silently reaching the dangerous state).
+(defn- mutant-parse-enabled-truthy? [conf-text]
+  (boolean
+   (when-let [line (some->> (clojure.string/split-lines (or conf-text ""))
+                             (filter #(clojure.string/starts-with? % "config master_main_reconcile_enabled"))
+                             first)]
+     (not (clojure.string/blank? (clojure.string/trim (subs line (count "config master_main_reconcile_enabled"))))))))
+
+(defn- non-vacuity-check-bl1248-invariant-2 []
+  (let [scenario {:present? true :value "banana" :conf-text "config master_main_reconcile_enabled banana"}
+        actual (mutant-parse-enabled-truthy? (:conf-text scenario))
+        expected (oracle-enabled? scenario)]
+    (if (not= expected actual)
+      (println "non-vacuity confirmed: invariant 2 would flag a mutant that treats any non-blank value as truthy (accepts \"banana\")")
+      (do (println (str "NON-VACUITY FAILURE (bl1248 truthy mutant): expected a breach, got expected=" expected " actual=" actual))
+          (System/exit 1)))))
+
+(non-vacuity-check-bl1248-invariant-2)
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "master_main_reconcile_lib property: " runs " runs"))
 (if (empty? @failures)

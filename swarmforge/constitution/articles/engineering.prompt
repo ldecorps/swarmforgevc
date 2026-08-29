@@ -82,6 +82,11 @@
   failure reason, never a bare HTTP status (BL-572/BL-662). A constant
   mirrored across a language boundary needs a test asserting both literals
   agree (BL-897). A merge can silently revert already-landed work — diff
-  every merge against BOTH parents (BL-571/BL-958/BL-954). See
+  every merge against BOTH parents (BL-571/BL-958/BL-954). A shell chain
+  of N independent guards must NOT run under `set -e` — the first failure
+  aborts the rest and masks their violations (Article 4.4's shape, in a
+  gate); use `set -uo pipefail`, capture each status (`guard || st=$?`),
+  exit the combined status, each guard keeping its own `set -euo
+  pipefail` (BL-1242/BL-1252). See
   **engineering-detailed.prompt** §Guardrails for the full pre-trim text
   and every incident narrative.

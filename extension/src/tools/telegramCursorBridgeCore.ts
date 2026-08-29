@@ -362,14 +362,38 @@ export const CURSOR_BRIDGE_CLI_USAGE =
 
 /**
  * When the Host bridge shares the front-desk bot token it must not call
- * getUpdates. Default to inbound-queue mode unless an exclusive
- * CURSOR_BRIDGE_BOT_TOKEN is configured (or the flag explicitly forces).
+ * getUpdates *while the front desk is actually feeding the on-disk queue*.
+ * Default to inbound-queue mode unless an exclusive CURSOR_BRIDGE_BOT_TOKEN
+ * is configured (or the flag explicitly forces) — but a dead feeder must
+ * never leave the bridge draining an empty queue forever (Host goes silent
+ * while Telegram holds /pilot and the bridge heartbeat still looks healthy).
  */
-export function shouldUseCursorBridgeInboundQueue(env: {
-  CURSOR_BRIDGE_INBOUND_QUEUE?: string;
-  CURSOR_BRIDGE_BOT_TOKEN?: string;
-  TELEGRAM_BOT_TOKEN?: string;
+export const DEFAULT_FRONT_DESK_FEEDER_STALL_MS = 90_000;
+
+export function isFrontDeskInboundFeederLive(input: {
+  lastHeartbeatMs: number | null | undefined;
+  nowMs: number;
+  stallMs?: number;
 }): boolean {
+  const hb = input.lastHeartbeatMs;
+  if (hb == null || !Number.isFinite(hb)) {
+    return false;
+  }
+  const stall = input.stallMs ?? DEFAULT_FRONT_DESK_FEEDER_STALL_MS;
+  return input.nowMs - hb <= stall;
+}
+
+export function shouldUseCursorBridgeInboundQueue(
+  env: {
+    CURSOR_BRIDGE_INBOUND_QUEUE?: string;
+    CURSOR_BRIDGE_BOT_TOKEN?: string;
+    TELEGRAM_BOT_TOKEN?: string;
+  },
+  opts?: { feederLive?: boolean }
+): boolean {
+  if (opts?.feederLive === false) {
+    return false;
+  }
   const flag = env.CURSOR_BRIDGE_INBOUND_QUEUE?.trim();
   if (flag === '1') {
     return true;

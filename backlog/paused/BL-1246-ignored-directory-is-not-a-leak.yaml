@@ -17,7 +17,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1230-no-leaked-git-repository-inside-the-working-tree.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   You already ruled on this - "Exempt git-ignored dirs (tmp/) by
   construction", 2026-08-28, asked and answered while BL-1230 was at architect

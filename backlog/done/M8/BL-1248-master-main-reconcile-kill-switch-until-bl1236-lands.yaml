@@ -1,0 +1,308 @@
+id: BL-1248
+title: "Config kill switch for the master-main-reconcile sweep, shipped OFF until BL-1236 lands - the human directed disabling it and no lever exists"
+milestone: M8
+type: defect
+severity: critical
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 5
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1248-master-main-reconcile-kill-switch.feature
+
+required_wiring:
+  - 'swarmforge/swarmforge.conf::master_main_reconcile_enabled::the operator-facing switch must be documented and shipped in the conf, not only readable from code'
+  - 'swarmforge/scripts/master_main_reconcile_lib.bb::master_main_reconcile_enabled::the pure lib must parse the key, mirroring how it parses master_main_reconcile_escalation_threshold'
+
+invariants:
+  - "While the switch is off, no code path reachable from the handoff daemon cadence tick can move, reset, or discard a commit reachable from local main: the switch is a guarantee about refs, not merely a skipped function call."
+  - "Any config value other than the explicit affirmative leaves the sweep off - absent, empty, malformed and unrecognised all fail closed to disabled, so the dangerous state is never reachable by accident."
+
+description: >
+  Severity rationale: critical - data loss, already realised twelve times.
+  The reconcile sweep has discarded local ahead commits repeatedly; on
+  2026-08-28 it destroyed a human ruling three minutes after it was
+  committed and one minute before QA merged, so BL-1230 shipped and closed
+  against the pre-ruling contract with no bounce and no signal. This ticket
+  is the stopgap that stops the bleeding, and it also gates a restart: the
+  sweep does not fire while the swarm is down, so the next start-swarm is
+  exactly when the hazard rearms.
+
+  The human directive this ticket exists to execute, verbatim from
+  .swarmforge/operator/role-answers/specifier.json (recorded 2026-08-28
+  12:16:17Z, in answer to the specifier role_ask asking what stops the reset
+  bleeding until BL-1236 lands):
+
+  > Disable the master-main-reconcile sweep until BL-1236 lands
+
+  Verified at mint that the directive cannot be carried out today, rather
+  than assumed: handoffd.bb wires (run-sweep! "master-main-reconcile-sweep"
+  #(master-main-reconcile-sweep!)) unconditionally into its cadence block at
+  line 4063, master-main-reconcile-sweep! at line 3280 has no enable guard,
+  and grepping swarmforge.conf for "reconcile" finds only BL-920's
+  escalation-threshold key. There is no enable/disable key anywhere:
+  grep -rn "master_main_reconcile_enabled" over swarmforge/ and
+  extension/src/ returns nothing. A backlog grep across paused, active, hold
+  and done found no ticket owning this either, so the directive has been sat
+  unexecuted since 12:16Z.
+
+  Why the switch and not just the fix: BL-1236 IS the fix (its
+  merge-tree-reports-conflict? greps git merge-tree CONTENT for the word
+  "CONFLICT", which this repo's backlog prose contains constantly, so the
+  predicate fires on ordinary activity rather than on rare divergence). At
+  mint BL-1236 sat in backlog/paused/ with human_approval: pending, so it
+  could not be promoted, routed, or worked, and this ticket was made
+  deliberately independent of it so the bleeding stopped on the earlier of
+  the two.
+
+  THAT PREMISE HAS EXPIRED - BL-1236 LANDED FIRST (deprecator freshness
+  amendment, specifier stage of the expedite re-run, 2026-08-28 ~17:05).
+  871f2fa85 replaced the text-search predicate with git merge-tree
+  --write-tree's own exit-code verdict at BOTH call sites that carried it,
+  2b3c796d1 merged it, and 112027d99 closed the ticket into backlog/done/.
+  The condition this switch names for turning itself back on is therefore
+  already satisfied on the day the switch ships.
+
+  The switch is still wanted and is still UNBUILT on main: grepping
+  master_main_reconcile_enabled over origin/main's swarmforge/ and
+  extension/ returns nothing, so BL-1236's landing did not incidentally
+  deliver a lever. Two independent reasons to finish it rather than retire
+  it. First, the value of an operator-facing on/off switch for a sweep that
+  rewrites refs does not depend on which defect prompted it - BL-1236 fixed
+  one predicate, it did not make the sweep non-destructive. Second,
+  BL-1236's fix has never run in production: the swarm is down under the
+  BL-1191 ops hold, so the corrected predicate is untested against live
+  traffic, and the next start-swarm rearms a sweep with thirteen realised
+  commit losses behind it and zero production runs of its fix in front of
+  it.
+
+  What is wanted: a config key master_main_reconcile_enabled, consulted
+  before the sweep does anything, failing closed to disabled on every value
+  that is not an explicit affirmative, shipped set to false with BL-1236
+  named as the condition for turning it back on - and, per the freshness
+  amendment above, that conf comment must ALSO record that BL-1236 has now
+  landed and that the flip is BL-1251's operator decision, so the shipped
+  comment does not read as a standing invitation to enable the sweep
+  unreviewed. The literal token "BL-1236" stays in the conf and the line
+  stays an active `config master_main_reconcile_enabled false`, so scenario
+  04 and its step handler are unchanged by this wording change. And a
+  daemon log line when a tick skips the sweep by config (a silently-absent
+  sweep is how nobody notices it is still on, or still off, months later).
+  The key name is
+  specified because it is an operator-facing contract; mirror BL-920's
+  escalation-threshold parse in master_main_reconcile_lib.bb (parse-
+  escalation-threshold, line ~398) for the parse.
+
+  Guard placement is NOT free, and the obvious seam is the wrong one
+  (corrected at specifier stage of the expedite run, 2026-08-28; the mint
+  had named the handoffd call site and that contradicts this ticket's own
+  firm constraint below). handoffd.bb:3280 injects :surface! and :escalate!
+  INTO master-main-reconcile-lib/sweep!, so the human-notification paths
+  fire from inside the very call at line 4063. Guarding that call site would
+  silence drift logging, dirty-blocked surfacing and escalation along with
+  the reconcile - the exact "going quiet about divergence" the constraints
+  forbid. Put the guard instead at the :should-reconcile branch inside
+  sweep! (lib line ~790), skipping only ((:merge! adapters)) - which is the
+  destructive path, the one dispatching BL-1214's absorb/reset plans - and
+  logging the config skip there. Everything above that branch (rev-counts,
+  drift-report, the drift log line, :up-to-date, :dirty-blocked and its
+  surface!/escalate!) keeps running untouched. Scenario 05 gates this: it
+  fails if the guard is put at the call site.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT fix the conflict predicate here. That is BL-1236, it is a
+    different slice, and it has ALREADY LANDED (871f2fa85, closed
+    112027d99) - so there is nothing left here to fix and any predicate
+    change in this parcel is now a straight out-of-scope diff, not merely
+    a scope widening. At mint this line read "widening this one would make
+    the stopgap wait on the approval that is blocking the fix"; that
+    coupling is gone, the boundary is not.
+  - Do NOT flip the shipped value to true in this parcel, even though
+    BL-1236 has landed and the conf comment's stated re-enable condition is
+    therefore satisfied. Re-arming a sweep with thirteen realised commit
+    losses, on the day its fix landed and before that fix has run in
+    production even once, is an operator decision - it is BL-1251, minted
+    alongside this amendment with human_approval: pending. Shipping OFF is
+    the reversible direction and costs one config line to undo, which is
+    the whole point of building a switch.
+  - Do NOT default the key to enabled, and do not treat an absent key as
+    enabled. The dangerous state must be reachable only by an explicit
+    operator affirmative; absent, empty and malformed all mean off.
+  - Do NOT remove or comment out the sweep call site. The sweep must stay
+    wired and switchable, so that turning it back on after BL-1236 lands is
+    a one-line config edit rather than a code revert.
+  - Do NOT touch the push-sweep, post-qa-branch-sweep, main-sync-deadlock
+    sweep or any other member of the same cadence block. One sweep, one
+    switch.
+  - The switch governs the reconcile sweep only; it must not suppress the
+    escalation or surfacing paths that tell a human main and origin have
+    diverged. Going quiet about divergence is a different failure from
+    declining to act on it.
+
+qa_e2e_procedure: >
+  1. Scenario 01: for each of the five values (true, false, absent, empty,
+     the word banana) run one daemon cadence tick against a fixture root and
+     assert the sweep ran only for true. Fixture, not the live repo.
+  2. Scenario 02, the one that matters: in a fixture repo, put local main
+     one commit ahead of origin with that commit reachable from no other
+     ref, switch off, run a tick, and assert the commit is still reachable
+     from main afterwards - by rev-list, not by the absence of a log line.
+     Then flip the switch on and confirm the fixture is one that WOULD have
+     been reset, so the off case is not vacuously green.
+  3. Scenario 03: assert the skip log line is present with the switch off
+     and absent with it on.
+  4. Scenario 04: read the shipped swarmforge/swarmforge.conf and assert the
+     key is present, set to false, and carries BL-1236 as the named
+     condition for re-enabling.
+  5. Scenario 05, the anti-overreach case: in a fixture whose local main and
+     origin have diverged with local changes blocking a merge, switch OFF and
+     run a tick, then assert the drift log line AND the surfaced divergence
+     note are both still produced. This is the scenario that fails if the
+     guard was placed at handoffd's call site instead of at the
+     :should-reconcile branch, so do not accept a green here that was
+     obtained by asserting only the absence of a reset.
+  6. Both invariants carry coder-authored property tests per BL-654:
+     invariant 1 fuzzes tick state and asserts main reachability is never
+     reduced while off; invariant 2 fuzzes the config value and asserts
+     disabled for every string but the affirmative.
+  7. Do not verify any part of this against the live repo checkout. The
+     behaviour under test is the one that destroys commits.
+
+notes: >
+  Source: the human answer above, recorded at 2026-08-28 12:16:17Z and
+  consumed at 12:17:07Z, to a specifier role_ask. Minted 2026-08-28 ~13:45
+  BST after establishing that the directive appeared only in transport
+  artifacts (the answer record, telegram-ask-messages.json, the cursor
+  bridge log) and in no ticket - i.e. it had been answered but never turned
+  into work. The role_ask marker directory is empty, so the slot is free and
+  this is not a re-ask.
+
+  Related, none of which own this switch: BL-1236 (defect/critical,
+  LANDED and CLOSED - 871f2fa85 / 2b3c796d1 / 112027d99; still named in
+  the conf as the original re-enable condition, with the live flip owned
+  by BL-1251); BL-1214 (done - the reconcile reset itself); BL-1198
+  (push before discarding local ahead commits); BL-1215 (pilot land
+  gate); BL-1251 (paused, human_approval pending - the flip decision
+  now that BL-1236 has landed). Evidence for the twelve occurrences:
+  backlog/evidence/BL-1236-tenth-reset-cause-pinned-20260828.md and
+  BL-1236-eleventh-reset-occurrence-mid-turn-20260828.md.
+
+  Specifier stage of the expedite run, 2026-08-28 - amendment record. Every
+  premise the mint asserted was re-verified and all held (handoffd.bb:4063
+  unconditional wiring, sweep! at 3280 with no guard, conf carrying only
+  BL-920's escalation-threshold at line 335, no master_main_reconcile_enabled
+  anywhere in swarmforge/ or extension/src/). Three changes were made, none
+  altering what the human approved (a switch, shipped OFF, failing closed,
+  BL-1236 named as the re-enable condition), so human_approval stays
+  approved:
+  (a) The guard-placement contradiction was resolved. The mint named
+      handoffd's call site as the guard seam while the constraints forbid
+      suppressing surfacing/escalation - but :surface! and :escalate! are
+      injected into master-main-reconcile-lib/sweep! and fire from inside
+      that same call, so the named seam would have breached the named
+      constraint. The description now directs the guard to the
+      :should-reconcile branch, skipping only ((:merge! adapters)). Left
+      unresolved this was a near-certain architect bounce or a silent
+      breach of a firm line.
+  (b) Scenario 05 was added to make that constraint executable - it was a
+      firm line with no gate, and it is the scenario that fails if the guard
+      lands at the call site. qa_e2e_procedure step 5 covers it; the old
+      step 5 renumbered to 6, old 6 to 7.
+  (c) Scenario 04 was marked RETIRE-WITH: BL-1236 in the feature file. It
+      pins the deliberately temporary shipped-OFF state, so it is
+      red-when-correct per BL-1006 and goes red the day an operator
+      legitimately flips the switch on. It is kept executable anyway because
+      it is the only gate on "shipped OFF" - required_wiring's substring
+      check would pass on a commented-out key. BL-1236 does not currently
+      scope this retirement; whoever ships the flip owns it.
+  The IR-DRY checker's one near-duplicate finding (the config-sets-false
+  Given, shared by scenarios 02/03/05) was reviewed and deliberately NOT
+  extracted to Background: scenario 01 parameterises that same key across
+  five values including true, so hoisting one value would contradict the
+  outline. Rationale recorded in the feature file so it is not re-litigated.
+
+  Restart context for the coordinator: the swarm is currently DOWN and the
+  restart is blocked by the BL-1191 ops hold
+  (.swarmforge/operator/INTAKE-bl1191-pilot-cleanup-gate-before-restart.md,
+  ninth reading). The sweep cannot fire while the daemon is down, so there
+  is no live bleeding this minute - but a restart rearms it, which is why
+  this should land before start-swarm rather than after.
+
+  Orthogonality: touches swarmforge/swarmforge.conf and
+  swarmforge/scripts/master_main_reconcile_lib.bb (both the parse and the
+  guard live in the lib - see the guard-placement paragraph in the
+  description; handoffd.bb's call site is deliberately left ALONE, per the
+  constraint forbidding its removal and per scenario 05). BL-1236 already
+  edited the same lib and landed first; this branch merged origin/main
+  (fb72a0698) before the conf-comment fix, so the concurrency hazard the
+  mint named is resolved rather than outstanding.
+
+  DEPRECATOR FRESHNESS ADJUDICATION - specifier stage, expedite re-run,
+  2026-08-28 ~17:05 (Article 3.6). Outcome: AMEND (not retire, not confirm
+  unchanged). Trigger: this run re-verified the ticket's premises rather
+  than assuming them, and found the central one dead - BL-1236, described
+  throughout as blocked in paused/ with human_approval: pending, had landed
+  and closed on origin/main while this branch sat 18 commits behind it. Not
+  retired, because the deliverable is still unbuilt on main and its value
+  never depended on BL-1236 (see the description). Amended in four places,
+  none of which changes the built behaviour, so b8af2ba56 remains on-spec
+  and this is a confirm-not-rebuild for the coder:
+  (a) description - the expired premise replaced with the landing evidence
+      (871f2fa85 / 2b3c796d1 / 112027d99) and the two reasons to finish.
+  (b) constraints - the predicate-boundary rationale re-grounded (the
+      coupling it cited is gone, the boundary is not), and a new firm line
+      forbidding the flip-to-true in this parcel.
+  (c) the shipped conf COMMENT must now record that BL-1236 has landed and
+      point at BL-1251 for the flip. Without this the parcel would ship a
+      comment reading "RE-ENABLE CONDITION: flip to true once BL-1236 has
+      landed, not before" into a tree where BL-1236 HAS landed - a standing
+      invitation to re-arm the sweep unreviewed. Scenario 04's Then-clause
+      and its step handler are deliberately untouched: the handler asserts
+      only an active `config master_main_reconcile_enabled false` line plus
+      the literal token "BL-1236" somewhere in the conf, both of which the
+      new wording keeps.
+  (d) scenario 04's RETIRE-WITH pointer was ORPHANED and is re-pointed. It
+      read "RETIRE-WITH: BL-1236", and BL-1236 closed without retiring it -
+      the exact BL-982/BL-983 shape BL-1006 exists to prevent, caught here
+      only because the freshness check ran. Its owner is now BL-1251.
+  human_approval stays approved: the approved deliverable (a switch,
+  shipped OFF, failing closed, BL-1236 named as the re-enable condition) is
+  unchanged. The one decision the landing newly raises - whether to flip it
+  on - is deliberately NOT taken here; it is carried to the human as
+  BL-1251 with human_approval: pending, so the amendment narrows nothing
+  and decides nothing on their behalf.
+
+  MERGE HAZARD - RESOLVED this pass. fb72a0698 already merged origin/main
+  (including BL-1236) into expedite/BL-1248; HEAD is d98131ace with the
+  conf comment updated. Re-verified this Cursor-as-expeditor specifier
+  pass (2026-08-28 ~18:50): `git merge-base --is-ancestor 871f2fa85 HEAD`
+  and `112027d99` both true; `master_main_reconcile_enabled` still ABSENT
+  on origin/main; worktree clean. The mint's "sequence this one first"
+  assumption is historical.
+
+  Cursor-as-expeditor specifier pass, 2026-08-28 ~18:50: re-verified
+  premises at HEAD after the prior automated expedite failed without a
+  durable verdict.json for this stage. Stale Related/Orthogonality notes
+  that still described BL-1236 as paused/pending were amended above;
+  deliverable and human_approval unchanged. No further feature/scenario
+  change.
+
+approval_context: >
+  This is your own 12:16Z directive returned as a ticket, because it had no
+  lever and no owner: there is no enable/disable key for this sweep anywhere
+  in the tree, so "disable it" could not be done as a config edit. Approving
+  this authorises building the switch and shipping it OFF, with BL-1236
+  named as the condition for turning it back on.
+
+  Two calls to say the word on if you disagree: (1) the switch ships
+  defaulted OFF and fails closed, so an absent key disables the sweep for
+  everyone, not only here - say so if you would rather it default ON and be
+  disabled only by this repo's conf. (2) It is scoped as a pure stopgap and
+  deliberately does NOT fix the conflict predicate, so that it cannot be
+  delayed by BL-1236's own pending approval. Severity critical: twelve
+  realised commit losses, one of them a human ruling.

@@ -164,10 +164,31 @@
     (and (or (str/includes? s "rematch") (str/includes? s "refuse"))
          (not (re-find #"(?i)finish this merge in an editor|resolve.*(in|with).*editor" s)))))
 
-(defn merge-tree-reports-conflict?
-  "True when `git merge-tree` output names a content/add conflict."
-  [merge-tree-out]
-  (boolean (re-find #"(?i)changed in both|CONFLICT|added in both" (or merge-tree-out ""))))
+;; BL-1236: the predicate this replaces (`merge-tree-reports-conflict?`)
+;; case-insensitively grepped the CONTENT of the legacy three-argument
+;; `git merge-tree`'s unified-diff output for words like "CONFLICT" - so
+;; any merged file whose own text happened to contain that word (this
+;; repo's ticket/evidence prose does, constantly) read as a predicted
+;; conflict. Ten resets discarded committed work this way, one destroying
+;; a human's approval tap. `git merge-tree --write-tree <a> <b>` (git
+;; >= 2.38) gives an actual machine-readable VERDICT instead: exit 0 is a
+;; clean merge, exit 1 is a genuine conflict, anything else means the
+;; simulation itself could not run - never a diff to read. Mirrors the
+;; in-repo precedent, tree_collapse_guard_lib.bb:73-80, which already keys
+;; on exit alone for exactly this reason ("never a diff-based guess").
+(defn merge-verdict
+  "Classify a `git merge-tree --write-tree <a> <b>` invocation's exit code
+   into git's own verdict for the merge: :clean, :conflict, or
+   :unavailable (the simulation itself could not run - a git failure,
+   never treated as \"conflict\"). An unavailable verdict must never
+   authorise a reset (BL-1236 invariant 3) - callers dispatch it to its
+   own non-destructive plan branch, same as merge-head-present? or a
+   dirty-path overlap."
+  [exit-code]
+  (case (int (or exit-code -1))
+    0 :clean
+    1 :conflict
+    :unavailable))
 
 ;; BL-1131: rematch-then-FF land — behind=0 without operator absorb merge.
 (defn prepublish-rematch-plan
@@ -195,10 +216,20 @@
 
 (defn absorb-dispatch-plan
   "Single absorb decision for handoffd + post_hotfix runners.
-   Prefer land noop/replay, then BL-1130 refuse-rematch, else :ff-absorb.
-   Never returns an operator content-conflict absorb."
+   Prefer land noop/replay, then BL-1236 verdict-unavailable, then BL-1130
+   refuse-rematch, else :ff-absorb. Never returns an operator
+   content-conflict absorb.
+   BL-1236: `verdict-unavailable?` (true when the merge-tree simulation
+   itself could not run, distinct from a genuine reported conflict) is
+   checked AFTER noop - a divergence that needs no merge at all (already
+   up to date, or nothing behind) is safe regardless of what the verdict
+   would have been - but BEFORE every branch that could otherwise plan an
+   :ff-absorb (whose fallback is a reset) or a rematch: an unavailable
+   answer must never be treated as license to attempt the merge and reset
+   on failure. Callers execute :verdict-unavailable as a pure block/surface,
+   same shape as :dirty-blocked - never a git write."
   [{:keys [merge-head-present? behind ahead tip-contains-origin?
-           would-conflict? absorb-would-conflict?] :as ctx}]
+           would-conflict? absorb-would-conflict? verdict-unavailable?] :as ctx}]
   (let [conflict? (or would-conflict? absorb-would-conflict?)
         bl1130 (automated-absorb-plan
                 (assoc ctx :would-conflict? conflict?
@@ -208,6 +239,7 @@
     (cond
       (= bl1130 :skip-human-merge-in-progress) :skip-human-merge-in-progress
       (= land :noop) :noop
+      verdict-unavailable? :verdict-unavailable
       (= land :replay-bookkeeping) :replay-bookkeeping
       (= bl1130 :refuse-rematch) :refuse-rematch
       :else :ff-absorb)))
@@ -363,7 +395,10 @@
       (if (<= (count rematch-bk) 80) rematch-bk "BL-1135: rematch bookkeeping onto origin/main")
       :human-merge-in-progress
       (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
-        (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted")))))
+        (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted"))
+      :verdict-unavailable
+      (let [msg (str "BL-1236: merge verdict unavailable, " behind " behind origin - not reset")]
+        (if (<= (count msg) 80) msg "BL-1236: merge verdict unavailable - not reset")))))
 
 (defn surface-draft-lines
   "A `note` to the coordinator only - reconciling the master checkout's own
@@ -424,6 +459,30 @@
                     parse-long)]
     (if (and n (pos? n)) n escalation-default-threshold)))
 
+;; ── BL-1248: config kill switch ──────────────────────────────────────────
+;; Fails closed BY CONSTRUCTION, not by enumerating bad values: the ONLY
+;; token that enables is the exact literal "true" as the key's sole value.
+;; Absent (no matching line), empty (no third token), malformed ("banana"),
+;; and even the negative-looking "false" all fall through the same single
+;; `=` check to disabled - there is no separate "explicitly false" branch to
+;; forget, mirroring parse-escalation-threshold's own degrade-to-default
+;; shape but with "disabled" as the one and only fallback rather than a
+;; degrade-to-a-default-number.
+(defn parse-enabled?
+  "Pure: `config master_main_reconcile_enabled <value>` from conf text.
+   Only the exact value \"true\" enables the sweep - the line must tokenize
+   to exactly 3 whitespace-separated tokens (`config`, the key, one value
+   token); trailing garbage after the value ('true true') is malformed, not
+   an affirmative, and falls through to disabled like any other malformed
+   line."
+  [conf-text]
+  (boolean
+   (when-let [line (some->> (str/split-lines (or conf-text ""))
+                             (filter #(str/starts-with? % "config master_main_reconcile_enabled"))
+                             first)]
+     (let [tokens (str/split (str/trim line) #"\s+")]
+       (and (= 3 (count tokens)) (= "true" (nth tokens 2)))))))
+
 (defn next-block-state
   "Advance the persisted per-episode block state for one blocked tick with
    `reason` (\"dirty\" or \"conflict\"). A reason that differs from the
@@ -449,12 +508,17 @@
 
 (defn merge-failure-reason
   "Map merge! outcome to persisted block reason. BL-1135: rematch outcomes
-   stay distinct from conflict (Operator needs-a-human absorb paging)."
+   stay distinct from conflict (Operator needs-a-human absorb paging).
+   BL-1236: :verdict-unavailable stays distinct from both - it is neither
+   a reported conflict nor a designed rematch recovery, so it must not be
+   routed through rematch-owner-recovery?'s silent-state-only path; it
+   goes through handle-blocked! like \"dirty\", surfacing a note."
   [outcome]
   (case (or outcome :conflict)
     :human-merge-in-progress "human-merge-in-progress"
     :refuse-rematch "refuse-rematch"
     :rematch-bookkeeping "rematch-bookkeeping"
+    :verdict-unavailable "verdict-unavailable"
     "conflict"))
 
 (defn rematch-owner-recovery?
@@ -764,8 +828,14 @@
 ;; so a LATER, unrelated block always surfaces - and, on its own schedule,
 ;; escalates - fresh rather than being silently suppressed by a stale flag
 ;; from a resolved episode (BL-920 invariant 2).
+;; BL-1248: `enabled?` is an optional 4th arg, defaulting to true, so every
+;; PRE-EXISTING 3-arg call site (this lib's own extensive unit/property
+;; suites, none of which own the kill switch) keeps behaving exactly as
+;; before with zero edits - only handoffd.bb's own call site, and this
+;; ticket's own new tests, need to reach the 4-arg form.
 (defn sweep!
-  [daemon-dir threshold adapters]
+  ([daemon-dir threshold adapters] (sweep! daemon-dir threshold true adapters))
+  ([daemon-dir threshold enabled? adapters]
   (let [state (read-state daemon-dir)
         counts ((:rev-counts! adapters))
         {:keys [ahead behind]} (drift-report counts)]
@@ -804,9 +874,20 @@
                                                        :overlapping-paths (overlapping-paths dirty-paths merge-changed-paths)})))
 
         :should-reconcile
-        (let [result ((:merge! adapters))]
-          (if (:success result)
-            (do
-              ((:log! adapters) "master-main-reconcile" "reconciled")
-              (write-state! daemon-dir {}))
-            (handle-merge-failure! daemon-dir state adapters behind handle-blocked! result)))))))
+        (if-not enabled?
+          ;; BL-1248: the ONLY branch this switch guards - the sole
+          ;; state-mutating adapter (:merge!) is never invoked while off.
+          ;; Everything above (drift log, dirty-paths/merge-changed-paths
+          ;; computation, :up-to-date and :dirty-blocked's own :surface!/
+          ;; :escalate! divergence-notification paths) already ran
+          ;; unconditionally above this branch and stays that way - the
+          ;; switch governs the reconcile action only, never the
+          ;; surfacing/escalation paths that tell a human main and origin
+          ;; have diverged (this ticket's own firm constraint).
+          ((:log! adapters) "master-main-reconcile" "skipped-by-config")
+          (let [result ((:merge! adapters))]
+            (if (:success result)
+              (do
+                ((:log! adapters) "master-main-reconcile" "reconciled")
+                (write-state! daemon-dir {}))
+              (handle-merge-failure! daemon-dir state adapters behind handle-blocked! result)))))))))
