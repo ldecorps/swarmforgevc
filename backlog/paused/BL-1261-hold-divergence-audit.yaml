@@ -70,10 +70,11 @@ description: |
   The other 13 were put there by expeditor parks. Seven by the BL-1248 run
   (`cc9419fdb`, `caee35c5e` — BL-1179, BL-1207, BL-1211, BL-1222, BL-1228,
   BL-1230, BL-1238), committed and never returned; six by the BL-1237 run
-  (BL-1233, BL-1234, BL-1242, BL-1244, BL-1247, BL-1249), still staged and
-  uncommitted in the shared `main` checkout.
+  (BL-1233, BL-1234, BL-1242, BL-1244, BL-1247, BL-1249), which sat staged and
+  uncommitted for a while and were committed at `44514c664` to clear a
+  dirty-reconcile deadlock. All 13 are now durably held.
 
-  FIVE of them have a live parcel in a mailbox right now:
+  A SNAPSHOT at 2026-08-29T02:00Z — five of them had a live parcel:
 
   | ticket  | parcel sits in                                |
   |---------|-----------------------------------------------|
@@ -83,9 +84,14 @@ description: |
   | BL-1244 | cleaner and hardener `in_process` batch dirs  |
   | BL-1249 | architect `in_process`                        |
 
+  **That set moves.** By 02:12Z it was four — BL-1238's parcel had left QA's
+  mailbox. The divergence is a live relation between two changing things, not
+  a fixed list, which is exactly why it needs a check rather than a one-off
+  cleanup. Do not treat the table above as an expected output.
+
   Meanwhile `backlog/active/` contains exactly one ticket. Every depth-cap
   decision, dispatch-gap sweep and bookkeeping pass is reading a backlog that
-  says one thing is in flight while five parcels move.
+  says one thing is in flight while several parcels move.
 
   ## How this surfaced
 
@@ -136,11 +142,27 @@ qa_e2e_procedure: |
      unresolved and does NOT print a clean verdict (invariant 2).
   5. Diff the backlog and every mailbox before and after a run: byte-identical
      (invariant 1).
-  6. On the live swarm, run it as it stands today. It must report the five
-     tickets listed in the description, with BL-1244 found in a batch
-     subdirectory. If it reports fewer than five, the parcel scan is the bug.
+  6. On the live swarm, run it as it stands today, and cross-check its output
+     by hand rather than against the description's snapshot: for each ticket
+     in `backlog/hold/`, grep every role's `inbox/new` and `inbox/in_process`
+     (descending into `batch_*`) and confirm the audit's set matches yours
+     exactly. The count changes as parcels land, so a number from the
+     description is not a pass criterion. What IS a pass criterion: any
+     held ticket you can find a parcel for must appear in the report, and a
+     parcel nested in a `batch_*` directory must not be the one it misses.
 
 notes: |
+  - "[2026-08-29] specifier: AMENDED shortly after minting, before routing.
+    Two things went stale within twenty minutes. (1) The six BL-1237-run parks
+    were committed at `44514c664`, so 'staged and uncommitted' was no longer
+    true and all 13 are now durably held. (2) The live-parcel set dropped from
+    five to four as BL-1238's parcel left QA. The original
+    `qa_e2e_procedure` step 6 said 'if it reports fewer than five, the parcel
+    scan is the bug' — that assertion would have produced a FALSE bounce
+    against a correct implementation the moment any parcel landed. Replaced
+    with a hand cross-check that does not depend on a count. This is the
+    BL-1006 shape caught on my own ticket: a moving measurement frozen into a
+    pass criterion."
   - "[2026-08-29] specifier, on minting: the expeditor is NOT at fault for
     failing to un-park. `expedite_lib.bb` parks to hold/ deliberately and
     `parked-report` explicitly declines to promote back, citing Article 3.1.

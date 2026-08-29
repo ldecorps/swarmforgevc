@@ -207,4 +207,28 @@ notes: |
     Re-confirmed at 01:51Z that the guard still refuses the specifier seat, so
     this ticket remains the block on its own repair.
 
+  - [2026-08-29] specifier: FACTUAL CORRECTION to the occurrence note above,
+    which says "there is no direction in which this refusal is satisfiable".
+    Measured: `git rev-list --left-right --count main...origin/main` is
+    `41 47`. Because `freshest-main-ref` picks by whole-repo ahead-count,
+    `origin/main` wins only while origin is ahead; syncing local `main` with
+    `origin/main` flips the count, the ref becomes `main`, and the worktree
+    matches it by definition. So the refusal IS satisfiable — by exactly one
+    action, which the refused role is not permitted to perform (landing on
+    `main` is QA's, Article 1.8/BL-247; the specifier works on `main` for spec
+    and prompt files only). That is a sharper defect than "unsatisfiable", not
+    a softer one: the guard's stated remedy, "Merge main", is not the action
+    that clears it, and the action that does clear it belongs to someone else.
+    Whatever this ticket builds should make the refusal name a remedy the
+    RECEIVING role can perform, per invariant 2.
+  - [2026-08-29] specifier: the block is now self-feeding. Three answered
+    notes cannot be dequeued because the guard exits before dispatch, so the
+    chaser keeps re-firing on them — chase counts at 1 and 2 and climbing.
+    A guard that stops a seat receiving also stops it clearing its queue,
+    which manufactures the evidence that the seat is stalled. Evidence:
+    `backlog/evidence/BL-1237-seat-block-now-generates-false-chase-traffic-20260829.md`.
+
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: architect, blamed: coder, class: behavior, commit: e82aac52f4, evidence: backlog/evidence/BL-1237-reference-freshness-guard-is-direction-aware-bounce-20260829.md }
