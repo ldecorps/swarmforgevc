@@ -34,7 +34,10 @@ malformed JSON is treated as **hold** — never as allow.
   another ticket's disposition, is not a claim about this one and does not
   hold. The hold reason names the field the claim was found in.)
 - All `depends_on` are done, but the description still names **RETIRED**
-  surfaces (`retiredSurfaceHits`)
+  surfaces (`retiredSurfaceHits`; BL-1193: a retired token is extracted only
+  when it is the item the `RETIRED` marker's own line actually
+  predicates — mapping, predication, or announcement shape, taken adjacent
+  to the marker — never a merely co-occurring earlier word on the same line)
 - Repeated spec-gap bounces on the same ticket
 
 Expedited-defect ordering never bypasses this gate.
@@ -119,4 +122,7 @@ above) — measured over the live paused pool, 27 held tickets dropped to 9,
 zero newly held; BL-1267 shipped the discharge path above (a recorded
 adjudication clears the gate; no currently-held ticket was retroactively
 discharged by that parcel — clearing the live backlog is adjudication work
-for the specifier, ticket by ticket).
+for the specifier, ticket by ticket); BL-1193 narrowed the retired-token
+branch the same way — over the live docs tree the extractor's yield dropped
+from four tokens (none actually retired) to the one genuine referent,
+`type: bug`.
