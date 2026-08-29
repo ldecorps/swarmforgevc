@@ -12,7 +12,7 @@ severity: high
 # merge dropping whole new files rather than hunks.
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 40
 direction: swarm-reported
 depends_on: []

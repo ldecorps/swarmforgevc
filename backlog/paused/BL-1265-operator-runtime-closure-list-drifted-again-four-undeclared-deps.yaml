@@ -10,7 +10,7 @@ severity: medium
 # louder. No live operator behaviour is broken.
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 35
 direction: swarm-reported
 depends_on: []

@@ -9,7 +9,7 @@ severity: low
 # shape that contradicts the optional field its own interface declares.
 status: todo
 epic: swarmforge-console
-human_approval: pending
+human_approval: approved
 priority: 20
 direction: swarm-reported
 depends_on: []

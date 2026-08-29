@@ -12,7 +12,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1266-reference-freshness-ref-selection-is-per-path.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Nothing here is controversial in direction - QA raised it, and the mechanism
   is one function replaced. The one thing worth a human eye is the SEVERITY
