@@ -840,7 +840,6 @@ const DOMAINS = [
   require('./bl1222PropertySuiteGuardGitEnvScrubSteps'),
   require('./bl1238AgentIdleClearFullnessSteps'),
   require('./bl1242MergeBranchWorkDeletionSteps'),
-  require('./bl1247ReconcileSweepKillSwitchSteps'),
   require('./bl1192TaskScopeGateSteps'),
   require('./bl1216DuplicateIdLiveCopyContentVerdictSteps'),
   require('./bl1248MasterMainReconcileKillSwitchSteps'),
@@ -849,7 +848,8 @@ const DOMAINS = [
   require('./bl1249RestartHonoursPauseMarkerSteps'),
   require('./bl1233LauncherGuardAmbientGitEnvSteps'),
   require('./bl1234PropertyAllowlistGateSteps'),
-  require('./bl1244DeliveredAnswerFreesQuestionSlotSteps')
+  require('./bl1244DeliveredAnswerFreesQuestionSlotSteps'),
+  require('./bl1237ReferenceFreshnessDirectionSteps')
 ];
 
 function registerSteps(registry) {
