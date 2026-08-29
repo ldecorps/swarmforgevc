@@ -156,12 +156,6 @@ function splitSentences(text: string): string[] {
 }
 
 /**
- * The narrowed generic-claim predicate: a claim about THIS ticket, or null.
- * A structured disposition field carrying a claim word is one by definition -
- * the field describes the ticket it sits on. Everywhere else the claim has to
- * be bound to the ticket by the sentence carrying it.
- */
-/**
  * A claim word inside a filename, a wiring anchor or a hyphenated compound is
  * naming a SURFACE, not stating a disposition: `BL-1263-stale-assertions-are-
  * retired-...feature` is a path, and "the retired-type guard" is a thing the
@@ -189,6 +183,12 @@ function matchProseClaim(sentence: string): RegExpMatchArray | null {
   return null;
 }
 
+/**
+ * The narrowed generic-claim predicate: a claim about THIS ticket, or null.
+ * A structured disposition field carrying a claim word is one by definition -
+ * the field describes the ticket it sits on. Everywhere else the claim has to
+ * be bound to the ticket by the sentence carrying it.
+ */
 export function findSelfClaim(yamlText: string, ticketId: string): SelfClaim | null {
   const ownId = normalizeTicketId(ticketId);
   for (const field of splitTopLevelFields(yamlText)) {
