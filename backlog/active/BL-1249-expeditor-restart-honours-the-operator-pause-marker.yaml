@@ -149,4 +149,42 @@ approval_context: >
   the stack down, and blocking the whole run would take that away. Say so
   if you would rather a hold refuse the entire expedite.
 
+notes: |
+  - "[2026-08-29] hardener: expedite_lib_test_runner.bb ALL PASS. Acceptance
+    feature 8/8 against the real expedite_cli.bb --restart-only path.
+    Non-vacuity confirmed by hand: flipped restart-hold-verdict's
+    `(not (:active parsed))` branch to a bare `false`, confirmed test
+    \"1249: active false is not held (explicit inactive)\" goes red
+    (active false wrongly read as held); restored and re-confirmed ALL
+    PASS. Both files (expedite_lib.bb, expedite_cli.bb) are inside the
+    BL-149 mutation cooldown window (freshly authored, 0.33 days) - no
+    full mutation run this pass, per the cooldown gate.
+
+    extension/test/bl1249RestartHoldNeverRendersLikeNoRestart.property.test.js
+    (BL-654 invariant 1, drives the real expedite_cli.bb over 25
+    generated marker shapes) genuinely PASSED - confirmed from its own
+    TAP output (\"ok 1 - BL-1249/BL-654 invariant 1: a held restart
+    report never matches a --no-restart report\", 3.26s, real subprocess
+    runs) - but `npm run test:properties` (vitest) reports the FILE as
+    failed collection (\"No test suite found\") because the file imports
+    `test` from `node:test` rather than using vitest's own global, and
+    nothing in this repo's actual test commands ever invokes `node
+    --test`. This is NOT a BL-1249 defect: 15 property files share the
+    identical `require('node:test')` shape, all 15 are in the same
+    failed-collection list, and this exact class - assertions that run
+    under node:test's own eager execution but are never collected by the
+    runner actually invoked - is already diagnosed and disposed in
+    backlog/evidence/specifier-disposition-qa-standing-red-note-20260828.md
+    (BL-1206, property lane, human-approved; BL-1220/BL-1221 for the
+    unit/pilot-gate siblings). BL-1206 enumerates 13 files by name; this
+    file is likely one of the 1-2 not yet on that list (measured 15
+    present at mint) - flagging via note rather than silently absorbing
+    it or fixing it myself, since BL-1206's scope is not mine to widen.
+    Full property-lane run (`npm run test:properties`, via detach_job.sh
+    - exceeds the 2-minute foreground ceiling): 27 of 255 files failed,
+    all matching this same already-disposed standing-red set (BL-1206/
+    BL-1220/BL-1221 node:test-collection class, and BL-1221's
+    checkOrphanedAuthoredDocs stub gap) - none naming any file this
+    ticket touches."
+
 assigned_to: coder
