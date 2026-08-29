@@ -112,9 +112,18 @@ function countLiveInbox() {
   }
 }
 
+const FEATURE_NAME = 'the deprecator freshness gate honours a recorded specifier adjudication';
+
 function registerSteps(registry) {
+  // BL-425 scoping, and not optional here: BL-1268's handler file registers
+  // the SAME generic step texts ("the deprecator freshness check runs for
+  // that ticket", "the decision is ...") for the same CLI, and unscoped
+  // registrations resolve first-match across every file. Unscoped, this
+  // file's registration won BL-1268's scenarios and answered them with THIS
+  // ticket's fixture. Scoped, each feature resolves its own.
+  const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE_NAME);
   // ── Background ──────────────────────────────────────────────────────
-  registry.define(/^the Article 3\.6 deprecator freshness gate is in force$/, (ctx) => {
+  scoped(/^the Article 3\.6 deprecator freshness gate is in force$/, (ctx) => {
     const cli = cliModule();
     for (const name of ['deprecateCheck', 'readAdjudication', 'applyAdjudication', 'computeTicketFingerprint']) {
       if (typeof cli[name] !== 'function') {
@@ -126,7 +135,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^a paused ticket the freshness check holds on its ticket text$/, (ctx) => {
+  scoped(/^a paused ticket the freshness check holds on its ticket text$/, (ctx) => {
     const root = ensureRoot(ctx);
     const decision = cliModule().deprecateCheck(root, TICKET_ID);
     if (decision.decision !== 'hold') {
@@ -136,7 +145,7 @@ function registerSteps(registry) {
   });
 
   // ── 01 / 02 / 03 ────────────────────────────────────────────────────
-  registry.define(
+  scoped(
     /^a recorded adjudication for that ticket's current content with outcome "([a-z_]+)"$/,
     (ctx, outcome) => {
       const root = ensureRoot(ctx);
@@ -150,12 +159,12 @@ function registerSteps(registry) {
     }
   );
 
-  registry.define(/^the ticket content is amended after the adjudication was recorded$/, (ctx) => {
+  scoped(/^the ticket content is amended after the adjudication was recorded$/, (ctx) => {
     fs.appendFileSync(ticketPath(ensureRoot(ctx)), 'notes: |\n  amended after the adjudication\n');
   });
 
   // ── 04 / 05 ─────────────────────────────────────────────────────────
-  registry.define(/^an adjudication record for that ticket that cannot be read or parsed$/, (ctx) => {
+  scoped(/^an adjudication record for that ticket that cannot be read or parsed$/, (ctx) => {
     const root = ensureRoot(ctx);
     const target = cliModule().adjudicationRecordPath(root, TICKET_ID);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -163,7 +172,7 @@ function registerSteps(registry) {
     ctx.bl1267Record = { path: target };
   });
 
-  registry.define(/^no adjudication record exists for that ticket$/, (ctx) => {
+  scoped(/^no adjudication record exists for that ticket$/, (ctx) => {
     const root = ensureRoot(ctx);
     const target = cliModule().adjudicationRecordPath(root, TICKET_ID);
     if (fs.existsSync(target)) {
@@ -171,11 +180,11 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the deprecator freshness check runs for that ticket$/, (ctx) => {
+  scoped(/^the deprecator freshness check runs for that ticket$/, (ctx) => {
     ctx.bl1267Decision = cliModule().deprecateCheck(ensureRoot(ctx), TICKET_ID);
   });
 
-  registry.define(/^the decision is "?(allow|hold)"?$/, (ctx, expected) => {
+  scoped(/^the decision is "?(allow|hold)"?$/, (ctx, expected) => {
     if (ctx.bl1267Decision.decision !== expected) {
       throw new Error(
         `expected ${expected}, got ${ctx.bl1267Decision.decision} (${ctx.bl1267Decision.reason || 'no reason'})`
@@ -183,7 +192,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the allow names the adjudication record$/, (ctx) => {
+  scoped(/^the allow names the adjudication record$/, (ctx) => {
     const reason = ctx.bl1267Decision.reason || '';
     if (!reason.includes(ctx.bl1267Record.path)) {
       throw new Error(`the allow does not name the record it came from: ${reason || '(no reason at all)'}`);
@@ -193,21 +202,21 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the reason names the adjudication as no longer matching the ticket$/, (ctx) => {
+  scoped(/^the reason names the adjudication as no longer matching the ticket$/, (ctx) => {
     const reason = ctx.bl1267Decision.reason || '';
     if (!/no longer matches the ticket content/.test(reason) || !reason.includes(ctx.bl1267Record.path)) {
       throw new Error(`the reason does not name the stale adjudication: ${reason}`);
     }
   });
 
-  registry.define(/^the reason names the unusable adjudication rather than treating it as allow$/, (ctx) => {
+  scoped(/^the reason names the unusable adjudication rather than treating it as allow$/, (ctx) => {
     const reason = ctx.bl1267Decision.reason || '';
     if (!/unusable adjudication record/.test(reason) || !reason.includes(ctx.bl1267Record.path)) {
       throw new Error(`the reason does not name the unusable record: ${reason}`);
     }
   });
 
-  registry.define(/^the reason is the stale-premise reason the gate produced before this slice$/, (ctx) => {
+  scoped(/^the reason is the stale-premise reason the gate produced before this slice$/, (ctx) => {
     if (ctx.bl1267Decision.reason !== ctx.bl1267OriginalReason) {
       throw new Error(
         `the no-record path changed the reason: "${ctx.bl1267Decision.reason}" vs "${ctx.bl1267OriginalReason}"`
@@ -216,12 +225,12 @@ function registerSteps(registry) {
   });
 
   // ── 06: the real promotion script ───────────────────────────────────
-  registry.define(/^a fixture project root containing that paused ticket$/, (ctx) => {
+  scoped(/^a fixture project root containing that paused ticket$/, (ctx) => {
     initFixtureRepo(ensureRoot(ctx));
     ctx.bl1267LiveInboxBefore = countLiveInbox();
   });
 
-  registry.define(/^the fixture ticket's adjudication record is "([a-z_]+)"$/, (ctx, adjudication) => {
+  scoped(/^the fixture ticket's adjudication record is "([a-z_]+)"$/, (ctx, adjudication) => {
     if (adjudication === 'absent') {
       return;
     }
@@ -233,7 +242,7 @@ function registerSteps(registry) {
     });
   });
 
-  registry.define(/^promote_and_route_next\.sh is run against that fixture root for that ticket$/, (ctx) => {
+  scoped(/^promote_and_route_next\.sh is run against that fixture root for that ticket$/, (ctx) => {
     const root = ensureRoot(ctx);
     try {
       execFileSync('bash', [PROMOTE_SCRIPT, TICKET_ID, root], {
@@ -247,7 +256,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the fixture ticket ends in "(paused|active)"$/, (ctx, folder) => {
+  scoped(/^the fixture ticket ends in "(paused|active)"$/, (ctx, folder) => {
     const root = ensureRoot(ctx);
     const other = folder === 'active' ? 'paused' : 'active';
     if (!fs.existsSync(ticketPath(root, folder))) {
