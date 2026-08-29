@@ -1,93 +1,362 @@
 {
   "models": [
-    { "provider": "anthropic", "model": "claude-sonnet-5", "status": "certified", "context_window": 200000, "cost_class": "medium",
-      "known_limitations": ["Prefer structured tool use over free-form shell when both work"] },
-    { "provider": "anthropic", "model": "claude-opus-4-8", "status": "certified", "context_window": 200000, "cost_class": "high",
-      "known_limitations": ["Same-provider fallback for opus-class outages (BL-669)"] },
-    { "provider": "openai", "model": "gpt-5.3-codex", "status": "certified", "context_window": 128000, "cost_class": "medium",
-      "known_limitations": ["Codex-leaning; weaker on long multi-role planning without a scorecard"] },
-    { "provider": "cerebras", "model": "llama-3.3-70b", "status": "candidate", "context_window": 32000, "cost_class": "low",
-      "known_limitations": ["Not certified for production role assignment", "Smaller context window than swarm defaults"] },
-    { "provider": "cursor", "model": "auto", "status": "candidate", "context_window": 200000, "cost_class": "medium",
-      "known_limitations": ["Routing target is host-chosen; do not pin as a production default without certify"] },
-    { "provider": "mistral", "model": "mistral-medium-3.5", "status": "candidate", "context_window": 200000, "cost_class": "medium",
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5",
+      "status": "certified",
+      "context_window": 200000,
+      "cost_class": "medium",
+      "known_limitations": [
+        "Prefer structured tool use over free-form shell when both work"
+      ]
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-8",
+      "status": "certified",
+      "context_window": 200000,
+      "cost_class": "high",
+      "known_limitations": [
+        "Same-provider fallback for opus-class outages (BL-669)"
+      ]
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.3-codex",
+      "status": "certified",
+      "context_window": 128000,
+      "cost_class": "medium",
+      "known_limitations": [
+        "Codex-leaning; weaker on long multi-role planning without a scorecard"
+      ]
+    },
+    {
+      "provider": "cerebras",
+      "model": "llama-3.3-70b",
+      "status": "candidate",
+      "context_window": 32000,
+      "cost_class": "low",
+      "known_limitations": [
+        "Not certified for production role assignment",
+        "Smaller context window than swarm defaults"
+      ]
+    },
+    {
+      "provider": "cursor",
+      "model": "auto",
+      "status": "candidate",
+      "context_window": 200000,
+      "cost_class": "medium",
+      "known_limitations": [
+        "Routing target is host-chosen; do not pin as a production default without certify"
+      ]
+    },
+    {
+      "provider": "mistral",
+      "model": "mistral-medium-3.5",
+      "status": "candidate",
+      "context_window": 200000,
+      "cost_class": "medium",
       "underlying_name": "mistral-vibe-cli-latest",
       "trace": "vibe-config alias=mistral-medium-3.5 name=mistral-vibe-cli-latest input_price=1.5 output_price=7.5 auto_compact_threshold=200000",
-      "known_limitations": ["Alias over vibe CLI latest — re-check underlying_name on price/name drift"] }
+      "known_limitations": [
+        "Alias over vibe CLI latest \u2014 re-check underlying_name on price/name drift"
+      ]
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3.6-flash",
+      "status": "candidate",
+      "context_window": 262144,
+      "cost_class": "low",
+      "known_limitations": [
+        "Token Plan Lite SEA Anthropic-compat; Personal ToS interactive-only; 7-day credit window"
+      ]
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3.7-plus",
+      "status": "candidate",
+      "context_window": 262144,
+      "cost_class": "low",
+      "known_limitations": [
+        "Token Plan Lite SEA; Personal ToS interactive-only; 7-day credit window"
+      ]
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3.7-max",
+      "status": "candidate",
+      "context_window": 262144,
+      "cost_class": "medium",
+      "known_limitations": [
+        "Token Plan Lite SEA; Personal ToS interactive-only; 7-day credit window"
+      ]
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3.8-max",
+      "status": "candidate",
+      "context_window": 983616,
+      "cost_class": "medium",
+      "known_limitations": [
+        "Token Plan Lite SEA Anthropic-compat; Personal ToS interactive-only; 7-day credit window"
+      ]
+    }
   ],
-
   "capabilities": {
     "anthropic/claude-sonnet-5": {
-      "coding_quality": { "score": 0.95 },
-      "protocol_compliance": { "score": 0.98 },
-      "tool_usage": { "score": 0.93 },
-      "autonomy": { "score": 0.9 },
-      "cost_latency": { "score": 0.7 }
+      "coding_quality": {
+        "score": 0.95
+      },
+      "protocol_compliance": {
+        "score": 0.98
+      },
+      "tool_usage": {
+        "score": 0.93
+      },
+      "autonomy": {
+        "score": 0.9
+      },
+      "cost_latency": {
+        "score": 0.7
+      }
     },
     "anthropic/claude-opus-4-8": {
-      "coding_quality": { "score": 0.93 },
-      "protocol_compliance": { "score": 0.95 },
-      "tool_usage": { "score": 0.91 },
-      "autonomy": { "score": 0.9 },
-      "cost_latency": { "score": 0.55 }
+      "coding_quality": {
+        "score": 0.93
+      },
+      "protocol_compliance": {
+        "score": 0.95
+      },
+      "tool_usage": {
+        "score": 0.91
+      },
+      "autonomy": {
+        "score": 0.9
+      },
+      "cost_latency": {
+        "score": 0.55
+      }
     },
     "openai/gpt-5.3-codex": {
-      "coding_quality": { "score": 0.92 },
-      "protocol_compliance": { "score": 0.9 },
-      "tool_usage": { "score": 0.88 },
-      "autonomy": { "score": 0.85 },
-      "cost_latency": { "score": 0.75 }
+      "coding_quality": {
+        "score": 0.92
+      },
+      "protocol_compliance": {
+        "score": 0.9
+      },
+      "tool_usage": {
+        "score": 0.88
+      },
+      "autonomy": {
+        "score": 0.85
+      },
+      "cost_latency": {
+        "score": 0.75
+      }
     },
     "cerebras/llama-3.3-70b": {
-      "coding_quality": { "score": 0.6 },
-      "protocol_compliance": { "score": 0.55 },
-      "tool_usage": { "score": 0.5 },
-      "autonomy": { "score": 0.5 },
-      "cost_latency": { "score": 0.95 }
+      "coding_quality": {
+        "score": 0.6
+      },
+      "protocol_compliance": {
+        "score": 0.55
+      },
+      "tool_usage": {
+        "score": 0.5
+      },
+      "autonomy": {
+        "score": 0.5
+      },
+      "cost_latency": {
+        "score": 0.95
+      }
     },
     "cursor/auto": {
-      "coding_quality": { "score": 0.9 },
-      "protocol_compliance": { "score": 0.85 },
-      "tool_usage": { "score": 0.9 },
-      "autonomy": { "score": 0.85 },
-      "cost_latency": { "score": 0.7 }
+      "coding_quality": {
+        "score": 0.9
+      },
+      "protocol_compliance": {
+        "score": 0.85
+      },
+      "tool_usage": {
+        "score": 0.9
+      },
+      "autonomy": {
+        "score": 0.85
+      },
+      "cost_latency": {
+        "score": 0.7
+      }
     }
   },
-
   "role_matrix": {
     "architect": [
-      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.95, "evidence": "recruiter-scorecard:seed-architect-01" },
-      { "provider": "anthropic", "model": "claude-opus-4-8", "score": 0.94, "evidence": "BL-669:incumbent-architect-fallback" },
-      { "provider": "openai", "model": "gpt-5.3-codex", "score": 0.9, "evidence": "recruiter-scorecard:seed-architect-02" }
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "score": 0.95,
+        "evidence": "recruiter-scorecard:seed-architect-01"
+      },
+      {
+        "provider": "anthropic",
+        "model": "claude-opus-4-8",
+        "score": 0.94,
+        "evidence": "BL-669:incumbent-architect-fallback"
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-5.3-codex",
+        "score": 0.9,
+        "evidence": "recruiter-scorecard:seed-architect-02"
+      },
+      {
+        "provider": "qwen",
+        "model": "qwen3.7-plus",
+        "score": 0.72,
+        "evidence": "operator-onboard:token-plan-lite-anthropic-20260829"
+      }
     ],
     "coder": [
-      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.95, "evidence": "recruiter-scorecard:seed-coder-01" },
-      { "provider": "openai", "model": "gpt-5.3-codex", "score": 0.92, "evidence": "recruiter-scorecard:seed-coder-02" },
-      { "provider": "cursor", "model": "auto", "score": 0.9, "evidence": "recruiter-scorecard:seed-coder-cursor-01" }
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "score": 0.95,
+        "evidence": "recruiter-scorecard:seed-coder-01"
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-5.3-codex",
+        "score": 0.92,
+        "evidence": "recruiter-scorecard:seed-coder-02"
+      },
+      {
+        "provider": "cursor",
+        "model": "auto",
+        "score": 0.9,
+        "evidence": "recruiter-scorecard:seed-coder-cursor-01"
+      },
+      {
+        "provider": "qwen",
+        "model": "qwen3.7-plus",
+        "score": 0.72,
+        "evidence": "operator-onboard:token-plan-lite-anthropic-20260829"
+      }
     ],
     "cleaner": [
-      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.9, "evidence": "recruiter-scorecard:seed-cleaner-01" }
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "score": 0.9,
+        "evidence": "recruiter-scorecard:seed-cleaner-01"
+      },
+      {
+        "provider": "qwen",
+        "model": "qwen3.6-flash",
+        "score": 0.7,
+        "evidence": "operator-onboard:token-plan-lite-anthropic-20260829"
+      }
     ],
     "QA": [
-      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.93, "evidence": "recruiter-scorecard:seed-qa-01" }
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "score": 0.93,
+        "evidence": "recruiter-scorecard:seed-qa-01"
+      },
+      {
+        "provider": "qwen",
+        "model": "qwen3.7-plus",
+        "score": 0.72,
+        "evidence": "operator-onboard:token-plan-lite-anthropic-20260829"
+      }
     ],
     "hardender": [
-      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.91, "evidence": "recruiter-scorecard:seed-hardender-01" }
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "score": 0.91,
+        "evidence": "recruiter-scorecard:seed-hardender-01"
+      },
+      {
+        "provider": "qwen",
+        "model": "qwen3.7-plus",
+        "score": 0.72,
+        "evidence": "operator-onboard:token-plan-lite-anthropic-20260829"
+      }
     ],
     "documenter": [
-      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.85, "evidence": "recruiter-scorecard:seed-documenter-01" },
-      { "provider": "cursor", "model": "auto", "score": 0.88, "evidence": "recruiter-scorecard:seed-documenter-cursor-01" }
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "score": 0.85,
+        "evidence": "recruiter-scorecard:seed-documenter-01"
+      },
+      {
+        "provider": "cursor",
+        "model": "auto",
+        "score": 0.88,
+        "evidence": "recruiter-scorecard:seed-documenter-cursor-01"
+      },
+      {
+        "provider": "qwen",
+        "model": "qwen3.7-plus",
+        "score": 0.72,
+        "evidence": "operator-onboard:token-plan-lite-anthropic-20260829"
+      }
     ],
     "specifier": [
-      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.96, "evidence": "recruiter-scorecard:seed-specifier-01" }
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "score": 0.96,
+        "evidence": "recruiter-scorecard:seed-specifier-01"
+      },
+      {
+        "provider": "qwen",
+        "model": "qwen3.7-plus",
+        "score": 0.72,
+        "evidence": "operator-onboard:token-plan-lite-anthropic-20260829"
+      }
     ]
   },
-
   "adapters": {
-    "anthropic/claude-sonnet-5": { "adapter_id": "generic", "production_default": true },
-    "anthropic/claude-opus-4-8": { "adapter_id": "generic", "production_default": true },
-    "openai/gpt-5.3-codex": { "adapter_id": "generic", "production_default": true },
-    "cerebras/llama-3.3-70b": { "adapter_id": "generic", "production_default": false },
-    "cursor/auto": { "adapter_id": "generic", "production_default": false }
+    "anthropic/claude-sonnet-5": {
+      "adapter_id": "generic",
+      "production_default": true
+    },
+    "anthropic/claude-opus-4-8": {
+      "adapter_id": "generic",
+      "production_default": true
+    },
+    "openai/gpt-5.3-codex": {
+      "adapter_id": "generic",
+      "production_default": true
+    },
+    "cerebras/llama-3.3-70b": {
+      "adapter_id": "generic",
+      "production_default": false
+    },
+    "cursor/auto": {
+      "adapter_id": "generic",
+      "production_default": false
+    },
+    "qwen/qwen3.6-flash": {
+      "adapter_id": "generic",
+      "production_default": false
+    },
+    "qwen/qwen3.7-plus": {
+      "adapter_id": "generic",
+      "production_default": false
+    },
+    "qwen/qwen3.7-max": {
+      "adapter_id": "generic",
+      "production_default": false
+    },
+    "qwen/qwen3.8-max": {
+      "adapter_id": "generic",
+      "production_default": false
+    }
   }
 }

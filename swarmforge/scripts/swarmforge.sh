@@ -1828,7 +1828,12 @@ export OPENAI_BASE_URL='${lm_url}'
 "
   fi
   if [[ "$agent" == "claude" ]]; then
-    if role_uses_openrouter "$role"; then
+    if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" ]]; then
+      # Token Plan Anthropic-compat (Claude Code → SEA apps/anthropic). Prefer
+      # over OpenRouter / first-party Max when the Qwen wrapper opted in.
+      # Key arrives via pane -e as QWEN_API_KEY (BL-130); never written here.
+      billing_guard="${qwen_lib_source}"$'\nqwen_guard_map_anthropic_compat || exit 1\n'
+    elif role_uses_openrouter "$role"; then
       # OpenRouter-backed claude role: do NOT unset the auth token (that unset
       # is what forces subscription auth for every other claude role). Point the
       # harness at OpenRouter's Anthropic-compatible endpoint ("Anthropic Skin")
