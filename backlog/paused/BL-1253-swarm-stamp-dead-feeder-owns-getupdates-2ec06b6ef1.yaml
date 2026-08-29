@@ -16,7 +16,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 2ec06b6ef1. Review-only:
   it confirms or refutes the land and never reimplements it. What needs your

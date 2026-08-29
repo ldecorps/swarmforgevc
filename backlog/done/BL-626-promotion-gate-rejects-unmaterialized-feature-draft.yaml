@@ -2,7 +2,7 @@ id: BL-626
 title: "Promotion gate: refuse to promote a ticket whose `acceptance:` points at a feature file that does not exist (typically still a `.feature.draft`)"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: code-quality-gates
 human_approval: approved
 severity: medium
@@ -207,3 +207,42 @@ notes: |
     that merely says "blocked" would be fake acceptance here).
   - No new friction on the happy path: a resolving acceptance must promote in
     the same number of steps as before.
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with human_approval:
+  approved and a promotable status — i.e. fully eligible for the coordinator
+  to pick up — while the behaviour it specifies is ALREADY SHIPPED AND LIVE.
+  Promoting it would have sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - swarmforge/scripts/promotion_gates_lib.bb:338 carries the gate itself —
+    "── gate: acceptance executable at promotion (BL-626) ──" — and line 400
+    lists acceptance (BL-626) among the declarations it checks;
+    backlog_hygiene_lib.bb:27 defers the pointer decision to it, and
+    promote_and_route_next.sh is the live caller.
+  - swarmforge/scripts/test/bl626_acceptance_executable_property_runner.bb is
+    the ticket's own named property runner, next to
+    promotion_gates_lib_test_runner.bb.
+  - specs/pipeline/steps/bl626PromotionGateSteps.js shells the REAL
+    swarmforge/scripts/promotion_gates_cli.bb; index.js:567 registers it.
+  - specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft
+    .feature is LIVE.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  "Retire, never reword" applies to a retired BEHAVIOUR; here only the TICKET
+  is stale and the behaviour is live. Deleting the scenarios would remove live
+  coverage, and specs/pipeline/runtime.js throws on a scenario whose handler is
+  gone — the gate would redden. See the paused-pool zombie-ticket check:
+  (1) an implementation file headed with the ticket's own id, and
+  (2) that ticket's handler registered in specs/pipeline/steps/index.js.
+  Both present ⇒ shipped ⇒ retire, do not build.

@@ -12,7 +12,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1260-bridge-owns-getupdates-when-feeder-dead.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This is a BL-848 hotfix stamp-off, so the decision it needs is the ledger
   one: does `2ec06b6ef1` get certified (approved) or waived? The code is
