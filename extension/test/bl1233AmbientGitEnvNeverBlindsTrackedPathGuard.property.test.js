@@ -30,7 +30,6 @@
 // copy a path it should have refused.
 
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
 const fc = require('fast-check');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
