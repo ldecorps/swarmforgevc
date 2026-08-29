@@ -155,3 +155,5 @@ notes: |
     report; the coder attribution to git rename detection is not asserted here
     because the deletions are equally explained by QA bounce reverts
     propagating, and the guard is correct either way.
+
+assigned_to: coder
