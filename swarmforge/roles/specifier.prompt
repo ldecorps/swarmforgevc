@@ -171,6 +171,20 @@ You are the specifier.
     `.feature.draft`, which no `*.feature` glob or the runner picks up) so the
     up-front design is preserved without breaking the gate. Do NOT ship a
     feature file whose scenarios outrun the built code.
+  - **A retirement/chore ticket still needs an `acceptance:` pointer (BL-1251,
+    2026-08-29)**: the BL-761 acceptance-contract gate fails CLOSED on an
+    ABSENT declaration, and it arms at the documenter->QA hop — the LAST one.
+    A ticket whose deliverable is retiring a scenario has no scenarios of its
+    own, so it is exactly the shape that reaches that gate with nothing to
+    declare, after all six stages of work are already spent. Point
+    `acceptance:` at the feature file the ticket RETIRES FROM: the contract it
+    must satisfy is that file post-retirement (the retired scenario gone,
+    every remaining one still resolving), and the same declaration earns
+    BL-1276's task-scope exemption for the path. Say in the ticket that the
+    pointer is not a claim of ownership over the other ticket's contract.
+    BL-1251 hit this after reaching the documenter; the gate reads the ticket
+    from the SENDER'S checkout, so amending it on `main` also requires a
+    priority-`00` note telling the holder to merge and re-read.
   - **Slice-boundary assertions are the NEXT slice's to retire (BL-1006)**:
     BL-233's mirror image. When slice A's spec says "X does not happen yet —
     that is slice B", never freeze that boundary into an executable
