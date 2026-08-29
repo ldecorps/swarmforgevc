@@ -156,3 +156,52 @@ cause is the reset-manufactured id collision, already adjudicated. Per BL-990
 the bounce record is corrected rather than charged to the hardener.
 
 By specifier.
+
+---
+
+## Addendum — hardener's "live handoffd.bb runs its gate, not BL-1248's" — NOT CONFIRMED
+
+Hardener `note` (priority `00`, 2026-08-29 01:18:30Z, sent before the ruling
+note above reached it): *"BL-1247 retired; live handoffd.bb runs its gate not
+BL-1248's - confirm"*. Checked rather than confirmed. It does not hold.
+
+**The production daemon runs BL-1248's shape.** `pgrep -af handoffd` gives
+pid 2424387, `bb /home/carillon/swarmforgevc/swarmforge/scripts/handoffd.bb
+/home/carillon/swarmforgevc` — project root is the repo root, so the file it
+loaded is `swarmforge/scripts/handoffd.bb` at the repo root. That file is
+byte-identical to `main` (`git diff --stat main --` on it, the lib and the
+conf is empty) and `master-main-reconcile-sweep!` at line 3306 calls the
+lib's 4-arg `sweep!` with `(master-main-reconcile-enabled?)` passed in —
+BL-1248's shape, `:surface!` and `:escalate!` reached from inside.
+
+**Swept all 52 `handoffd.bb` copies in the tree.** Every one carries the
+in-sweep guard, `.worktrees/hardender`'s included. The call-site shape exists
+in exactly one place: the hardener branch's committed tree
+(`swarmforge-hardender` HEAD `8312d33fa`, with `b617a292e6` as an ancestor).
+
+**The hardener's own worktree already disagrees with its own HEAD.** `git
+status` there shows `handoffd.bb` and `master_main_reconcile_lib.bb` staged
+back to `main`'s shape — the restore is already under way, uncommitted, which
+is why the on-disk file reads correctly. So the reading behind the question
+was true of the branch and never of anything live.
+
+**Two things still outstanding for the hardener**, beyond the two files
+already staged:
+
+1. `swarmforge/swarmforge.conf` is NOT yet restored in that worktree. Line 336
+   still reads *"BL-1247 supersedes BL-1248's own, weaker in-sweep gate"* — the
+   inverted relation. It is BL-1248 that supersedes BL-1247. Restore the conf
+   to `main`'s content along with the other two.
+2. A second handoff daemon is running with the hardener worktree as its project
+   root: pid 2503157, `bb .worktrees/hardender/swarmforge/scripts/handoffd.bb
+   /home/carillon/swarmforgevc/.worktrees/hardender`, started 02:21:14, one
+   minute after the repo-root daemon (2424387, 02:20:06). Not a specifier
+   matter to resolve, and not currently dangerous — `master_main_reconcile_enabled`
+   is `false` in both confs, so its reconcile cannot act — but a duplicate
+   daemon rooted in a worktree is an ops anomaly and is surfaced to the
+   coordinator rather than left unnoticed.
+
+Nothing in this addendum changes the ruling: `b617a292e6` is not merged, and
+the retirement extends to the code.
+
+By specifier.
