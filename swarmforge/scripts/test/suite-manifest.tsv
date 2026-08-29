@@ -5,6 +5,13 @@
 # disagree. suite_inventory_cli.bb fails if the tree and this file diverge.
 #
 # Columns, tab-separated: file<TAB>lane<TAB>date<TAB>reason
+# Column 1 must NAME A TEST FILE - test_*.sh or *_test_runner.bb, directly in
+# this directory. BL-1239: three rows put the ticket id there and pushed the
+# filename to column 3; they registered nothing while looking like a
+# registration. The inventory gate now rejects such a row by name. A property
+# runner has its own lane and is never a suite member, so it is not a legal
+# column-1 value either.
+#
 #   lane "standing" - run by run_bb_suite.sh. date and reason are empty.
 #   lane "excluded" - NOT run. Both date (YYYY-MM-DD) and reason are
 #                     REQUIRED. Legitimate reasons are slow, manual, or
@@ -19,6 +26,7 @@ acceptance_contract_gate_lib_test_runner.bb	standing
 acceptance_pointer_gate_lib_test_runner.bb	standing		
 acp_session_lib_test_runner.bb	standing		
 actively_processing_test_runner.bb	standing		
+agent_process_marker_lib_test_runner.bb	standing		
 agent_runtime_test_runner.bb	standing		
 ambulance_lib_test_runner.bb	standing		
 aps_equivalence_cli_test_runner.bb	standing		
@@ -35,10 +43,20 @@ batch_claim_progress_lib_test_runner.bb	standing
 batch_claim_progress_sweep_test_runner.bb	standing		
 bb_load_closure_agreement_test_runner.bb	standing		
 bl1049_provider_env_scrub_test_runner.bb	standing		
+bl1053_local_provider_routing_test_runner.bb	standing		
 bl1081_acp_snapshot_agreement_test_runner.bb	standing		
+bl1097_router_dispatch_trail_test_runner.bb	standing		
+bl1138_rematch_bookkeeping_test_runner.bb	standing		
+bl1141_refuse_rematch_test_runner.bb	standing		
+bl556_evaluate_ingest_test_runner.bb	standing		
+bl568_menu_blocked_test_runner.bb	standing		
+bl615_orphaned_claim_progress_test_runner.bb	standing		
+bl682_mistral_vibe_routing_test_runner.bb	standing		
+bl691_ambulance_gaps_test_runner.bb	standing		
 bl911_rotation_recompose_test_runner.bb	standing		
 bl931_rotate_pack_router_gate_test_runner.bb	standing		
 bl962_merge_adjudication_test_runner.bb	standing		
+bob_starting_cast_test_runner.bb	standing		
 boot_prefix_budget_gate_lib_test_runner.bb	standing		
 bounded_delete_sweep_lib_test_runner.bb	standing		
 bounded_run_lib_test_runner.bb	standing		
@@ -64,37 +82,44 @@ cursor_bridge_supervisor_test_runner.bb	standing
 cursor_seat_guard_lib_test_runner.bb	standing		
 daemon_alarm_test_runner.bb	standing		
 daemon_cycle_guard_lib_test_runner.bb	standing		
+daemon_log_freshness_pulse_lib_test_runner.bb	standing		
 disk_space_lib_test_runner.bb	standing		
 dispatch_gap_test_runner.bb	standing		
 dropped_parcel_test_runner.bb	standing		
-landed_but_open_test_runner.bb	standing		
 duplicate_chain_guard_lib_test_runner.bb	standing		
+expedite_announce_lib_test_runner.bb	standing		
 expedite_lib_test_runner.bb	standing		
 fixture_reaper_lib_test_runner.bb	standing		
 fleet_telegram_creds_lib_test_runner.bb	standing		
 flow_watchdog_test_runner.bb	standing		
 front_desk_supervisor_lib_test_runner.bb	standing		
+gh25_role_ask_escalation_test_runner.bb	standing		
 gherkin_lint_gate_lib_test_runner.bb	standing		
 handoff_lib_test_runner.bb	standing		
 handoff_wake_session_test_runner.bb	standing		
 hardening_debt_ledger_lib_test_runner.bb	standing		
 harness_env_scrub_lib_test_runner.bb	standing		
 harness_env_scrub_test_runner.bb	standing		
+headroom_cap_raise_lib_test_runner.bb	standing		
 host_switchover_doctor_lib_test_runner.bb	standing		
 hotfix_certification_lib_test_runner.bb	standing		
+idle_clear_fullness_lib_test_runner.bb	standing		
+land_step_lib_test_runner.bb	standing		
+landed_but_open_test_runner.bb	standing		
 launch_contract_test_runner.bb	standing		
 llm_cost_ledger_lib_test_runner.bb	standing		
 loop_detect_lib_test_runner.bb	standing		
 mailbox_intake_dedup_test_runner.bb	standing		
 markdown_to_html_test_runner.bb	standing		
 master_checkout_drift_lib_test_runner.bb	standing		
+master_checkout_integrity_lib_test_runner.bb	standing		
 master_main_reconcile_lib_test_runner.bb	standing		
-post_qa_branch_sweep_lib_test_runner.bb	standing		
 migrate_gherkin_test_runner.bb	standing		
 model_factory_test_runner.bb	standing		
 model_steward_test_runner.bb	standing		
 mono_router_lib_test_runner.bb	standing		
 mutation_cooldown_test_runner.bb	standing		
+named_tunnel_liveness_lib_test_runner.bb	standing		
 node_tool_bringup_lib_test_runner.bb	standing		
 operator_lib_test_runner.bb	standing		
 operator_memory_lib_test_runner.bb	standing		
@@ -105,8 +130,11 @@ orphan_claim_lib_test_runner.bb	standing
 orphan_claim_sweep_lib_test_runner.bb	standing		
 orphan_janitor_lib_test_runner.bb	standing		
 orphan_sweep_enumeration_unavailable_test_runner.bb	standing		
-pipeline_stage_lib_test_runner.bb	standing		
+outage_failover_test_runner.bb	standing		
 parcel_rollback_guard_lib_test_runner.bb	standing		
+pipeline_stage_lib_test_runner.bb	standing		
+post_hotfix_merge_origin_lib_test_runner.bb	standing		
+post_qa_branch_sweep_lib_test_runner.bb	standing		
 pre_qa_gate_gather_lib_acceptance_contract_test_runner.bb	standing		
 pre_qa_gate_gather_lib_acceptance_pointer_test_runner.bb	standing		
 pre_qa_gate_lib_test_runner.bb	standing		
@@ -118,34 +146,39 @@ prompt_engine_test_runner.bb	standing
 provider_auth_observe_lib_test_runner.bb	standing		
 provider_compat_lib_test_runner.bb	standing		
 provider_outage_evidence_lib_test_runner.bb	standing		
+push_sweep_ahead_range_lib_test_runner.bb	standing		
 push_sweep_lib_test_runner.bb	standing		
 rate_limit_cooldown_gate_test_runner.bb	standing		
 reference_freshness_lib_test_runner.bb	standing		
 remote_wakeup_test_runner.bb	standing		
 required_stages_test_runner.bb	standing		
 rescue_lib_test_runner.bb	standing		
+retirement_registry_lib_test_runner.bb	standing		
 review_forward_evidence_gate_lib_test_runner.bb	standing		
+role_ask_escalation_lib_test_runner.bb	standing		
 role_lifecycle_lib_test_runner.bb	standing		
+rotation_telemetry_lib_test_runner.bb	standing		
 routing_manifest_lib_test_runner.bb	standing		
 sandbox_sweep_lib_test_runner.bb	standing		
 seat_affinity_lib_test_runner.bb	standing		
+seat_difficulty_lib_test_runner.bb	standing		
+self_heal_telemetry_lib_test_runner.bb	standing		
 shell_quote_lib_test_runner.bb	standing		
 single_role_repair_lib_test_runner.bb	standing		
 standing_rule_violations_files_test_runner.bb	standing		
 standing_rule_violations_lib_test_runner.bb	standing		
 stuck_escalation_email_lib_test_runner.bb	standing		
 suite_inventory_lib_test_runner.bb	standing		
+supersede_lib_test_runner.bb	standing		
 support_lib_test_runner.bb	standing		
 swarm_detach_lib_test_runner.bb	standing		
 swarm_identity_lib_test_runner.bb	standing		
+swarm_shift_lib_test_runner.bb	standing		
 swarm_socket_lib_test_runner.bb	standing		
 swarm_status_lib_test_runner.bb	standing		
-supersede_lib_test_runner.bb	standing		
-rotation_telemetry_lib_test_runner.bb	standing		
-self_heal_telemetry_lib_test_runner.bb	standing		
 sync_worktree_scripts_lib_test_runner.bb	standing		
 task_commit_coherence_gate_lib_test_runner.bb	standing		
-tree_collapse_guard_lib_test_runner.bb	standing		
+task_scope_gate_lib_test_runner.bb	standing		
 telegram_topic_lib_test_runner.bb	standing		
 test_agent_runtime_inject_mock.sh	standing		
 test_agent_runtime_lib.sh	standing		
@@ -157,21 +190,28 @@ test_autonomous_swarm_pack.sh	standing
 test_availability_ledger_lib.sh	standing		
 test_babysitter_check.sh	standing		
 test_babysitter_nudge_resident.sh	standing		
+test_babysitterd_heartbeat_pulses.sh	standing		
 test_babysitterd_lifecycle.sh	standing		
 test_backlog_depth_cli.sh	standing		
 test_backlog_depth_conf.sh	standing		
 test_backlog_depth_conf_path_cli.sh	standing		
 test_backlog_depth_pack_override.sh	standing		
 test_batch_claim_progress_sidecar.sh	standing		
+test_bl1023_expedite_bookkeep.sh	standing		
 test_bl1028_promotion_obeys_integrity_refusal.sh	standing		
 test_bl1033_property_runner_temp_root_survives_a_throw.sh	standing		
 test_bl1049_provider_env_scrub.sh	excluded	2026-08-23	live-only: correlated with the 2026-08-22 wipe of all 8 live tmux sessions when run from an agent pane; run from a detached host shell with env -u TMUX
 test_bl1061_tunnel_reap_enumerates_full_command_lines.sh	standing		
 test_bl1069_tmux_server_version.sh	standing		
 test_bl1097_router_refuses_dispatched_ticket.sh	standing		
+test_bl1154_build_stale_not_crash_giveup_budget.sh	standing		
+test_bl1159_bridge_child_survives_without_crash_giveup_loop.sh	standing		
+test_bl1162_start_stop_swarm_cron_lifecycle.sh	standing		
 test_bl648_resident_boot_role_override.sh	standing		
 test_bl657_harness_env_scrub_wiring.sh	standing		
 test_bl657_wait_for_ready_sustained_check.sh	standing		
+test_bl736_lifecycle_help.sh	standing		
+test_bl780_rotation_actionability_ordering.sh	standing		
 test_bl785_freshness_deliberate_stop.sh	standing		
 test_bl937_portable_mapfile_replacement.sh	standing		
 test_bl976_keyless_alert_lib.sh	standing		
@@ -203,13 +243,16 @@ test_daemon_heartbeat_portable_stat.sh	standing
 test_daemon_log_freshness.sh	standing		
 test_dispatch_gap_autoroute.sh	standing		
 test_dispatch_lib_receive_mode.sh	standing		
+test_done_with_current_arg_rejection.sh	standing		
 test_effective_backlog_depth_cli.sh	standing		
 test_ensure_commit_size_guard.sh	standing		
 test_expedite_cli.sh	standing		
 test_expedite_qa_verdict_store.sh	standing		
 test_finish_shift_lib.sh	standing		
 test_fleet_telegram_creds_lib.sh	standing		
+test_freshness_announce_normalize.sh	standing		
 test_freshness_stop_marker_lib.sh	standing		
+test_front_desk_giveup_one_email_per_episode.sh	standing		
 test_front_desk_supervisor_bl622_refusal.sh	standing		
 test_front_desk_supervisor_fleet_creds.sh	standing		
 test_front_desk_supervisor_liveness.sh	standing		
@@ -231,6 +274,7 @@ test_handoffd_briefing_email_wiring.sh	standing
 test_handoffd_briefing_generation_wiring.sh	standing		
 test_handoffd_canary_sweep.sh	standing		
 test_handoffd_chase_sweep_wiring.sh	standing		
+test_handoffd_closing_ceremony_gate_wiring.sh	standing		
 test_handoffd_closing_context_clear_wiring.sh	standing		
 test_handoffd_cooldown_sweep_wiring.sh	standing		
 test_handoffd_dead_letter_notify_wiring.sh	standing		
@@ -240,6 +284,7 @@ test_handoffd_lifecycle_snapshot_wiring.sh	standing
 test_handoffd_master_checkout_drift_wiring.sh	standing		
 test_handoffd_master_main_reconcile_wiring.sh	standing		
 test_handoffd_notify_verified.sh	standing		
+test_handoffd_one_shot_flags_parse.sh	standing		
 test_handoffd_pause_auto_resume_wiring.sh	standing		
 test_handoffd_pause_suppresses_outbound_wakes.sh	standing		
 test_handoffd_per_recipient_delivery.sh	standing		
@@ -266,6 +311,7 @@ test_is_qa_ancestor_expedite_store.sh	standing
 test_is_qa_ancestor_yaml_store.sh	standing		
 test_issue_intake_loop.sh	standing		
 test_kill_all_swarm_vitest_reap.sh	excluded	2026-08-23	live-only: invokes kill_all_swarm.sh for real; safe only from a detached host shell with env -u TMUX (2026-08-22 session wipe)
+test_kill_pipeline_copilot_scope.sh	standing		
 test_launch_front_desk.sh	standing		
 test_launch_negotiation_relay.sh	standing		
 test_launch_onboarder.sh	standing		
@@ -273,8 +319,11 @@ test_launch_resident_spy_named_tunnel.sh	standing
 test_launch_resident_spy_tunnel_operator_root_refusal.sh	standing		
 test_lean_ledger_bb_wiring.sh	standing		
 test_lifecycle_script_scope.sh	excluded	2026-08-23	live-only: invokes kill_all_swarm.sh for real; safe only from a detached host shell with env -u TMUX (2026-08-22 session wipe)
+test_local_coder_battery.sh	standing		
+test_local_model_seat.sh	standing		
 test_mailbox_intake_idempotent.sh	standing		
 test_mailbox_only_delivery.sh	standing		
+test_merge_deletion_guard.sh	standing		
 test_migrate_branch_names.sh	standing		
 test_migrate_gherkin_to_features.sh	standing		
 test_migrate_shared_mailbox.sh	standing		
@@ -282,6 +331,7 @@ test_model_factory_cli.sh	standing
 test_model_factory_runtime_wiring.sh	standing		
 test_model_steward_cli.sh	standing		
 test_mutation_cooldown_gate.sh	standing		
+test_named_tunnel_liveness_ancillary_start.sh	standing		
 test_negotiation_relay_supervisor_tick.sh	standing		
 test_onboarder_supervisor_ignores_old_heartbeat.sh	standing		
 test_onboarder_supervisor_tick.sh	standing		
@@ -291,6 +341,7 @@ test_operator_file_question.sh	standing
 test_operator_reply_outbox_id.sh	standing		
 test_operator_runtime_babysitterd_watchdog.sh	standing		
 test_operator_runtime_bl647_rotation_liveness.sh	standing		
+test_operator_runtime_bl653_escalation_driven.sh	standing		
 test_operator_runtime_bl763_cursor_bridge_watchdog.sh	standing		
 test_operator_runtime_control_lost.sh	standing		
 test_operator_runtime_disk_space_sweep.sh	standing		
@@ -316,11 +367,16 @@ test_project_socket_id_lib.sh	standing
 test_promote_and_route_next_no_limit_depth.sh	standing		
 test_promote_and_route_next_priority.sh	standing		
 test_prompt_engine_lib.sh	standing		
+test_property_suite_drift_guard.sh	standing		
 test_provision_autonomous_host.sh	standing		
 test_provision_primary_host.sh	standing		
+test_push_sweep_ahead_range.sh	standing		
 test_quiet_period_gate_cli.sh	standing		
+test_qwen_credential_name_invariant.sh	standing		
+test_qwen_launch_guard_lib.sh	standing		
 test_ready_for_next_no_promotion.sh	standing		
 test_ready_for_next_rotate_home.sh	standing		
+test_recover_miniapp_bridge.sh	standing		
 test_redo_from.sh	standing		
 test_reexpedite_from_wip.sh	standing		
 test_reference_freshness_guard.sh	standing		
@@ -334,6 +390,7 @@ test_reroute.sh	standing
 test_rescue_orphaned_work.sh	standing		
 test_reset_worktrees_align_main.sh	standing		
 test_resume_on_start.sh	standing		
+test_retirement_readdition_guard.sh	standing		
 test_role_ask.sh	standing		
 test_role_lifecycle_cli.sh	standing		
 test_rotate_pack_router_gate.sh	standing		
@@ -347,13 +404,14 @@ test_seat_affinity_lib.sh	standing
 test_second_swarm_pack.sh	standing		
 test_setup_bubble_named_tunnel.sh	standing		
 test_shell_fixture_dispatch_isolation.sh	standing		
+test_shell_test_discovery.sh	standing		
+test_shift_schedule_applier.sh	standing		
 test_shipped_confs_no_coordinator_window.sh	standing		
 test_sidecar_no_orphan.sh	standing		
 test_sidecar_tolerant_completion.sh	standing		
 test_smoke_check_stabilize_two_pack.sh	standing		
 test_start_ancillary_services_cursor_bridge_gate.sh	standing		
 test_start_ancillary_services_freshness_cron.sh	standing		
-test_stop_swarm_freshness_cron.sh	standing		
 test_start_ancillary_services_operator_watch_gate.sh	standing		
 test_start_handoff_daemon.sh	standing		
 test_start_stop_bridge_headless.sh	standing		
@@ -361,8 +419,9 @@ test_start_stop_cursor_bridge.sh	standing
 test_stop_ancillary_services_onboarder_dual_clear.sh	standing		
 test_stop_ancillary_services_tunnel_orphan_reap.sh	standing		
 test_stop_operator_runtime_watch_first.sh	standing		
-test_support_runtime_tick.sh	standing		
+test_stop_swarm_freshness_cron.sh	standing		
 test_supersede_guard.sh	standing		
+test_support_runtime_tick.sh	standing		
 test_swarm_ensure.sh	standing		
 test_swarm_handoff_daemon_backup.sh	standing		
 test_swarm_handoff_sync_deliver.sh	standing		
@@ -373,6 +432,7 @@ test_swarm_launch_pack_guard.sh	standing
 test_swarm_launcher_mutation_cost_prepass.sh	standing		
 test_swarm_outlives_launcher.sh	standing		
 test_swarm_socket_not_in_tmp.sh	excluded	2026-08-23	live-only: drives kill_all_swarm.sh against a real tmux socket; safe only from a detached host shell with env -u TMUX (2026-08-22 session wipe)
+test_swarm_status_bubble_tunnel_row.sh	standing		
 test_swarm_status_operator_runtime.sh	standing		
 test_swarmforge_pack_export.sh	standing		
 test_swarmforge_pid_guard.sh	standing		
@@ -384,28 +444,15 @@ test_tool_miss_heal_hook_wiring.sh	standing
 test_tunnel_ownership_lib.sh	standing		
 test_unpark_front_desk.sh	standing		
 test_upstream_drift_check_cli.sh	standing		
+test_worktree_drift_guard.sh	standing		
+test_worktree_drift_guard_master_resident_exempt.sh	standing		
+test_wsl_bootstrap.sh	standing		
 ticket_close_guard_lib_test_runner.bb	standing		
 ticket_status_lib_test_runner.bb	standing		
 tool_miss_heal_lib_test_runner.bb	standing		
+tree_collapse_guard_lib_test_runner.bb	standing		
 untracked_collision_clear_lib_test_runner.bb	standing		
 upstream_drift_check_lib_test_runner.bb	standing		
 wake_attribution_lib_test_runner.bb	standing		
+wake_dedup_lib_test_runner.bb	standing		
 worktree_drift_lib_test_runner.bb	standing		
-test_worktree_drift_guard.sh	standing		
-test_worktree_drift_guard_master_resident_exempt.sh	standing		
-bl1097_router_dispatch_trail_test_runner.bb	standing		
-bl1137_cwd_scoped_mute_property_runner.bb	standing		
-test_local_coder_battery.sh	standing		
-bl568_menu_blocked_test_runner.bb	standing		
-bl691_ambulance_gaps_test_runner.bb	standing		
-test_shell_test_discovery.sh	standing		
-role_ask_escalation_lib_test_runner.bb	standing		
-gh25_role_ask_escalation_test_runner.bb	standing		
-bl1138_rematch_bookkeeping_test_runner.bb	standing		
-bl615_orphaned_claim_progress_test_runner.bb	standing		
-test_done_with_current_arg_rejection.sh	standing		
-test_bl1162_start_stop_swarm_cron_lifecycle.sh	standing		
-bl1162_swarmforge_cron_property_runner.sh	standing		
-BL-780	bl780_rotation_actionability_ordering	test_bl780_rotation_actionability_ordering.sh	unit
-BL-780	bl780_rotation_actionability_ordering_property	bl780_rotation_actionability_ordering_property_runner.bb	property
-BL-1167	bl1167_same_model_seat_mutation_sweep	bl1167_same_model_seat_mutation_sweep.sh	mutation
