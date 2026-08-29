@@ -29,13 +29,22 @@ near-affirmatives (`1`, `yes`) all stay disabled.
 When a tick skips the action, the daemon log records
 `master-main-reconcile skipped-by-config`.
 
-## Shipped default
+## Current state
 
-This repo ships the key **off** (`false`). The conf comment names BL-1236
-as the original re-enable condition. BL-1236 has landed; whether to flip
-the switch back on is a separate operator decision tracked as **BL-1251** —
-do not flip to `true` casually after thirteen realised commit losses and
-before the corrected predicate has live production ticks behind it.
+The key is **on** (`true`). It shipped **off**, naming BL-1236 as the
+re-enable condition; BL-1236 landed, and BL-1251 — the operator decision
+this ticket deliberately deferred rather than taking on the human's behalf —
+re-armed it on 2026-08-29 (`cce70d985`) after a live clean-tree absorb
+proved the corrected predicate and cleared a durable skipped-by-config
+deadlock that was parking coordinator bookkeeping. The conf comment records
+the decision in place of the original condition. BL-1251 also retired
+scenario 04 of this ticket's own feature file, which had asserted the
+shipped value was `false` — a scenario that is red-when-correct the moment
+the flip lands, per its own `RETIRE-WITH` marker naming BL-1251 as retirer.
+
+Flipping it back to `false` again remains available via the same conf line,
+for the same reasons this section originally listed: a known predicate bug,
+an unpushed ahead set to keep, or an ops hold forbidding a destructive tick.
 
 ## What it does not silence
 

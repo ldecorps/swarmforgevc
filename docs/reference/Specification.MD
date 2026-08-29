@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1251: the master-main-reconcile kill
+switch (BL-1248) is re-armed — `config master_main_reconcile_enabled true`
+in `swarmforge/swarmforge.conf` — following the operator's 2026-08-29 ON
+decision (`cce70d985`) after a live clean-tree absorb proved BL-1236's
+corrected conflict predicate and cleared a durable skipped-by-config
+deadlock that was parking coordinator bookkeeping. BL-1248 scenario 04,
+which asserted the shipped value was `false`, is RETIRED rather than
+reworded (its own `RETIRE-WITH` marker named this ticket as retirer); the
+Feature title and the step-handler `FEATURE` constant were re-tensed
+together, since the ticket warns they are a matched pair that unbinds every
+scenario in the file if only one changes. Flagged, not fixed here: the
+feature file's `acceptance-mutation-manifest` stamp now describes the
+pre-retirement file — BL-1251 carries no hardener stage
+(`required_stages: [coder, documenter, qa]`) to re-run the gherkin-mutator,
+so QA re-running it (or routing the file to a hardener pass) is still
+outstanding. See
+`docs/how-to/BL-1248-master-main-reconcile-kill-switch.md`. Acceptance:
+`specs/features/BL-1248-master-main-reconcile-kill-switch.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1193: the Article 3.6 freshness gate's
 retired-token extractor (`loadRetiredTokens` in `deprecate-check.ts`) now
 names the item a `RETIRED` marker actually retires, not the first word-like

@@ -20,7 +20,19 @@ depends_on: [BL-1248, BL-1276]
 retires:
   - specs/features/BL-1248-master-main-reconcile-kill-switch.feature
 mutation_cost: low
+
+# BL-761 acceptance-contract gate (added 2026-08-29, after the documenter hit it):
+# this points at the feature file BL-1251 RETIRES FROM, not at a contract of its
+# own. A retirement chore has no scenarios of its own, and the gate fails CLOSED
+# on an absent declaration at the documenter->QA hop - so with no pointer this
+# parcel could not reach QA after all six stages were already spent. The contract
+# BL-1251 must satisfy IS this file post-retirement: scenario 04 gone, every
+# remaining scenario still resolving against the step registry. Verified against
+# the documenter's own commit: with this line the gate returns 0 findings,
+# without it exactly 1. It is NOT a claim that BL-1251 owns BL-1248's contract.
+acceptance: specs/features/BL-1248-master-main-reconcile-kill-switch.feature
 required_stages: [coder, documenter, qa]
+abandoned_commits: [0c0d245869, 7023c8381d, b4f4104517, 1b480dadf0, e566c7faa3, 5e5b420c44, 50f8c5332d, fb588fa887, 1ef491f0c7, d4083e78e0, 4ba1d0c9e6, bf7895a35d, 79e3cbf449, 6f5752d069, 67d0c18c1f, 487278e7d3, adf16cd3e2, 858c280425, a5b065e0ca, 938ce576de, 7fb91b6539, 1017d776b0, 11bb0ede83, 75de17decd, 6b7ad7ee7e, 54c17b6972, dbcf59fb7c, cfd1eeec9b, db56560eed, efa2848e27, 1baa878730, 175e24b119, 20e6ddd230, 9664aab11c, 205fdd36fb, 05f3221150, 8521d22d5c, b8c4c43f63, 985dbcf597, 9747e6c1df, 7ccc2f2232, c5bb4810a2, 43d181069e, ae503cbe67, f134036766, b06b75cde9, 3c07857a58, 670473039e, 9296711a77, 5bf354adc9, 795d79a2f9, f85514f2e5]
 assigned_to: coder
 
 description: >
@@ -223,6 +235,29 @@ notes: >
   above is this ticket's declaration. Evidence:
   backlog/evidence/BL-1251-handoff-blocked-by-task-scope-gate-20260829.md.
 
+  [2026-08-29] specifier: AMENDED IN FLIGHT - added the acceptance: pointer
+  above. The documenter reported (note, priority 00) that this ticket has no
+  acceptance: field and pre_qa_gate therefore fails closed on the QA handoff.
+  Verified rather than assumed, by running the real gate from the documenter's
+  own worktree against its own tip 7023c8381d: exactly 1 finding,
+  :acceptance-contract "declaration is unreadable at the cited commit (absent,
+  inline Gherkin, or naming a feature file that does not exist there)". Adding
+  the pointer takes it to 0 findings, so every step in BL-1248's post-retirement
+  feature file resolves against the step registry at that commit - the
+  retirement did not strand a handler.
+
+  Two things this run also settled. The task-scope gate produces NO finding at
+  this hop, so the BL-1248 feature path is not a second block here despite the
+  documenter's checkout not yet carrying BL-1276's fix. And the gate reads the
+  ticket YAML from the SENDER'S OWN CHECKOUT (find-ticket-yaml-content, "on THIS
+  checkout"), never from main - so landing this amendment is not enough on its
+  own. The documenter must merge main and re-read before re-sending, which is
+  the BL-317/BL-325 procedure and has been sent as a priority-00 note.
+
+  Nothing the documenter built is wrong and nothing needs rebuilding: this was
+  a spec defect of mine (a ticket minted with no acceptance contract), not a
+  workmanship defect, and the parcel re-sends unchanged once main is merged.
+
 approval_context: >
   A decision for you, not a build request. BL-1248 is about to ship a config
   switch that disables the master-main-reconcile sweep, with a comment
@@ -268,3 +303,22 @@ coordinator_notes: |
     this turn; promotion_gates_cli.bb select does not know about a by-hand
     specifier override, so it can't compare BL-1251 against other candidates
     automatically. Top candidate for the NEXT open slot, promote by hand.
+
+  - "[2026-08-29] QA, BL-1241 entangled-tip rebuild. The documenter's handed-off
+    commit (0c0d245869) carried the coder's long-lived branch ancestry, which
+    still runs back through the SAME stale BL-1246/step-scoping tangle
+    BL-1273's and BL-1193's QA passes already found (my rebuilds fixed the
+    landed tips, not the worktree branches that were already built on top of
+    the tangle before I intervened). Neither sibling is any more landable now:
+    BL-1246 is still active/unresolved, and the step-scoping fix is now
+    BL-1277's own work, still sitting in backlog/paused/ (not even promoted).
+    One addition to the pattern this time: the abandoned lineage also carried
+    a now-STALE BL-1277 mint (11bb0ede8, the pre-amendment 12/14-collision
+    count) that origin/main has already superseded with the specifier's
+    corrected 15/17-collision version - confirmed by diff, not assumed, so
+    this was left behind deliberately rather than rescued. Rebuilt tip-pure:
+    cherry-picked BL-1251's two plain, cleanly-scoped commits (coder
+    4ba1d0c9e6, documenter 7023c8381d - each verified via git show --stat to
+    touch only BL-1251's own files) onto the already-landed post-BL-1193 HEAD.
+    abandoned_commits records the full superseded chain. git diff --stat
+    origin/main HEAD confirmed exactly BL-1251's own five files."
