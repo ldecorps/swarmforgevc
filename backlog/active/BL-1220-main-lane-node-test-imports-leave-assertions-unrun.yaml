@@ -12,6 +12,7 @@ severity: high
 status: todo
 epic: code-quality-gates
 priority: 25
+assigned_to: coder
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
