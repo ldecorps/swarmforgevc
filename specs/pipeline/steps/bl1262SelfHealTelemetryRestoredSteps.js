@@ -18,13 +18,6 @@ const EXTENSION_DIR = path.join(REPO_ROOT, 'extension');
 
 const FEATURE_NAME = 'BL-1262 the self-heal telemetry implementation is present at main, and the tests that import it run';
 
-const RESTORED_PATHS = [
-  'extension/src/metrics/selfHealTelemetry.ts',
-  'extension/src/metrics/selfHealTelemetryStore.ts',
-  'swarmforge/scripts/self_heal_telemetry_cli.bb',
-  'swarmforge/scripts/test/self_heal_telemetry_lib_test_runner.bb',
-];
-
 const TEST_FILES = ['test/selfHealTelemetry.test.js', 'test/selfHealTelemetry.property.test.js'];
 
 // The commit just before the drop (8562094f8) is the last point these
@@ -38,22 +31,14 @@ function git(...args) {
   return execFileSync('git', ['-C', REPO_ROOT, ...args], { encoding: 'utf8' });
 }
 
-function pathExistsAtRef(ref, relPath) {
-  const res = spawnSync('git', ['-C', REPO_ROOT, 'cat-file', '-e', `${ref}:${relPath}`]);
-  return res.status === 0;
-}
-
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE_NAME);
 
   scoped(/^the four files BL-597 shipped are absent from main$/, () => {
-    // Documented precondition, verified against the pre-drop commit's
-    // successor lineage rather than the live `main` ref (which this
-    // parcel may already have moved past by the time this runs) - true
-    // for every commit between the drop and this restoration.
-    for (const relPath of RESTORED_PATHS) {
-      if (pathExistsAtRef(PRE_DROP_COMMIT, relPath)) continue; // sanity only
-    }
+    // Background precondition marker only - documents why this ticket
+    // was minted. No assertion: after the restoration merges, the files
+    // are no longer absent, so a hard check would fail against the live
+    // repo. The scenarios below verify the restoration itself.
   });
 
   scoped(/^the restoration lands$/, () => {
