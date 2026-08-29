@@ -1,7 +1,6 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
 const { runNightClosingCeremony } = require('../out/tools/night-closing-ceremony-run');
 
 function makeDeps(over = {}) {
