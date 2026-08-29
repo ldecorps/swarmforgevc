@@ -5745,6 +5745,10 @@ role still boots, on the prompt it already had. Scoped to the two named
 drivers only: `respawn-self!`'s idle-clear re-exec path stays stale,
 flagged by the architect as inert today (idle-clear is off everywhere on
 this swarm) and left for the specifier to judge as a possible follow-up.
+(Since resolved: BL-1238, 2026-08-29, gated this same path on the
+extension host's own fullness threshold — see "Per-role idle context
+clearing" above. This recompose-staleness note refers only to prompt
+recomposition, not the fullness gate, and remains open on its own.)
 See the new "Mono-router rotation recomposes the role prompt from
 current sources (BL-911)" section in `swarmforge/handoff-protocol.md`.);
 Previously August 17, 2026 (BL-906: swarm stamp-off certifying the
@@ -7371,6 +7375,21 @@ Agents are unreliable pollers — that's the whole problem. A single watchdog in
 
 ### Per-role idle context clearing
 
+**Last Updated:** August 29, 2026 (BL-1238: the agent-side NO_TASK idle-clear
+respawn — `ready_for_next_task.bb` for task-mode roles, `ready_for_next_batch.bb`'s
+own copy for batch-mode roles (cleaner, hardener) — now honours the SAME
+fullness threshold as the extension-host path below instead of respawning
+unconditionally on every idle boundary. Before this fix the agent side paid
+a full boot-prefix reload at every NO_TASK regardless of how much of the
+window was actually free — exactly the cost the fullness gate exists to
+avoid. Reuses BL-141's `resolveContextFullness` contract (telemetry wins
+when present, else a line-count proxy, else `:unavailable`) and the same
+`swarmforge.contextClear.fullnessThresholdPercent` setting, so the two
+paths cannot disagree about whether a role is full; an unavailable reading
+never clears (fail-closed, per the locked human decision). No telemetry
+source exists on the agent side today, so the proxy reading always decides
+in practice.)
+
 To prevent context window exhaustion during long swarm runs, individual roles can be configured to clear their session context at idle boundaries. This is useful for roles that don't need cross-parcel context (e.g., hardener, documenter) to reduce token accumulation:
 
 - **Per-role opt-in flag:** configured via an optional token on the `window` line in `swarmforge.conf` (e.g., `window hardener claude hardender idle-clear`). Absent means OFF; default for every role is disabled.
@@ -7380,6 +7399,7 @@ To prevent context window exhaustion during long swarm runs, individual roles ca
 - **State preservation:** only session context is cleared; durable inbox/outbox state, in-process audit trails, and handoffs are completely unaffected
 - **Safety:** clearing never interrupts in-flight work, pending human input, or graceful bounces. Roles with the flag disabled (most roles, including specifier and coordinator) continue as before with accumulating context.
 - **Cost tradeoff:** enabled roles lose in-session short-term coherence between parcels, trading that for reduced token cost. Roles that need cross-parcel recall should keep the flag disabled.
+- **Agent-side parity (BL-1238):** the extension host isn't the only clearer — a role's own `ready_for_next_task.bb`/`ready_for_next_batch.bb` re-exec at a `NO_TASK` idle boundary honours the identical opt-in flag and fullness threshold, so the two triggers cannot disagree about whether a role is full.
 
 This is safe because the protocol is already context-free between parcels — every handoff body says "re-read your role and constitution," and durable state (backlog, handoffs, messages) lives on disk.
 
