@@ -143,6 +143,91 @@
   (assert-true "the report is tagged for easy grep/alerting"
                (str/starts-with? report "STALE_REFERENCE_ELABORATION:")))
 
+;; ── BL-1266: stale-paths-multi-ref / fresh-multi-ref? / report ─────────────
+;; Invariant 1: verdict computed per path from that path's own history in
+;; each ref, never from a repo-wide count. Invariant 2: every ref that
+;; carries a path is consulted, and a refusal is never suppressed because a
+;; different ref happened to agree. Invariant 3: a refusal names the
+;; specific ref whose amendment is missing.
+
+(assert= "identical content on every ref is fresh, no stale entries"
+         []
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"a.prompt" "sha-a"}
+          {"main" {"a.prompt" "sha-a"} "origin/main" {"a.prompt" "sha-a"}}))
+
+(assert-true "identical content on every ref reports fresh-multi-ref?"
+             (reference-freshness-lib/fresh-multi-ref?
+              {"a.prompt" "sha-a"}
+              {"main" {"a.prompt" "sha-a"} "origin/main" {"a.prompt" "sha-a"}}))
+
+(assert= "missing only origin/main's amendment is reported against origin/main, even though main agrees with the worktree"
+         [{:path "a.prompt" :ref "origin/main"}]
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"a.prompt" "old-sha"}
+          {"main" {"a.prompt" "old-sha"} "origin/main" {"a.prompt" "new-sha"}}))
+
+(assert= "missing only local main's amendment is reported against main, even though origin/main agrees with the worktree"
+         [{:path "a.prompt" :ref "main"}]
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"a.prompt" "old-sha"}
+          {"main" {"a.prompt" "new-sha"} "origin/main" {"a.prompt" "old-sha"}}))
+
+(assert= "missing both refs' amendments on the same path reports both, sorted"
+         [{:path "a.prompt" :ref "main"} {:path "a.prompt" :ref "origin/main"}]
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"a.prompt" "old-sha"}
+          {"main" {"a.prompt" "main-sha"} "origin/main" {"a.prompt" "origin-sha"}}))
+
+(assert= "content absorbed via ancestry from BOTH refs is allowed even though the refs disagree with each other"
+         []
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"a.prompt" "worktree-own-sha"}
+          {"main" {"a.prompt" "main-sha"} "origin/main" {"a.prompt" "origin-sha"}}
+          {["main" "a.prompt"] true ["origin/main" "a.prompt"] true}))
+
+(assert= "absorbed from main but not origin/main - still stale against the one not absorbed"
+         [{:path "a.prompt" :ref "origin/main"}]
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"a.prompt" "worktree-own-sha"}
+          {"main" {"a.prompt" "main-sha"} "origin/main" {"a.prompt" "origin-sha"}}
+          {["main" "a.prompt"] true ["origin/main" "a.prompt"] false}))
+
+(assert= "a (ref, path) pair absent from the ancestry map defaults to false - fail closed"
+         [{:path "a.prompt" :ref "main"}]
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"a.prompt" "worktree-old-sha"}
+          {"main" {"a.prompt" "main-new-sha"}}
+          {}))
+
+(assert= "a repository with no origin/main is judged against main alone"
+         []
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"a.prompt" "sha-a"}
+          {"main" {"a.prompt" "sha-a"}}))
+
+(assert= "a path present only in the worktree is never reported"
+         []
+         (reference-freshness-lib/stale-paths-multi-ref
+          {"worktree-only.prompt" "sha-x"}
+          {"main" {}}))
+
+(let [report (reference-freshness-lib/staleness-report-multi-ref
+              [{:path "a.prompt" :ref "origin/main"}])]
+  (assert-true "the multi-ref report names the stale path"
+               (str/includes? report "a.prompt"))
+  (assert-true "the multi-ref report names the SPECIFIC missing ref, not a generic 'main'"
+               (str/includes? report "origin/main"))
+  (assert-true "the multi-ref report's remedy names origin/main to merge"
+               (str/includes? report "Merge origin/main"))
+  (assert-true "the multi-ref report is tagged for easy grep/alerting"
+               (str/starts-with? report "STALE_REFERENCE_ELABORATION:")))
+
+(let [report (reference-freshness-lib/staleness-report-multi-ref
+              [{:path "a.prompt" :ref "main"} {:path "b.prompt" :ref "origin/main"}])]
+  (assert-true "a report spanning both refs names both remedies"
+               (str/includes? report "Merge main and origin/main")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 
 (if (seq @failures)
