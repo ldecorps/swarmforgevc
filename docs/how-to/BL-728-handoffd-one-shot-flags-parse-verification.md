@@ -20,7 +20,7 @@ EOF while reading, expected ) to match (
 
 The entire script is unusable — including every one-shot CLI flag whose
 `-main` cond branches never become reachable (`--poll-once`, `--sweep-once`,
-`--chase-sweep-once`, `--startup-notify-only`,
+`--chase-sweep-once`, `--reconcile-sweep-once`, `--startup-notify-only`,
 `--print-preferred-rotate-target`).
 
 BL-611 productization (`9bc8de790`) introduced this regression; the durable
