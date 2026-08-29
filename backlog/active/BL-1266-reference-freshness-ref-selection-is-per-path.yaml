@@ -186,3 +186,5 @@ notes: |
     false; the remedy is `--force`, never closing the ticket. Owning fix is
     BL-1223. Evidence for the identical earlier case:
     `backlog/evidence/BL-1237-route-refusal-is-a-false-dispatch-trail-20260829.md`.
+
+assigned_to: coder
