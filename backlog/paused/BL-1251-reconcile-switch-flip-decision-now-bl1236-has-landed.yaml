@@ -190,3 +190,8 @@ coordinator_notes: |
     without promoting: active/ is at the effective cap of 7, no slot open.
     Capacity, not inaction (BL-798 invariant 3). Top candidate for the next
     open slot.
+  - [2026-08-29] coordinator: second nudge for this candidate. deprecate-check.js
+    now ALSO holds it (stale premise: retired-token false-pos on "Mint" — same
+    class as BL-1193/BL-1220). Sent to specifier for adjudication (commit
+    00_20260829T140239Z_003160). Still not a slot-open case either — active/
+    remains at cap. Clearing on both grounds, not inaction.
