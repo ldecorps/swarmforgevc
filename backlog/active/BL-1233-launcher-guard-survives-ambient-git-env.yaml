@@ -159,3 +159,5 @@ notes: |
     content is preserved and tagged, so this is not a defect - but it is why
     `out_of_scope` names the stash explicitly rather than leaving a dangling
     entry for someone to chase.
+
+assigned_to: coder
