@@ -194,3 +194,71 @@ approval_context: >
   regression proof (move the guard, watch the gate go red) rather than a
   committed mutant. Say so if you would rather that be automated, which is
   more durable but noticeably more parcel.
+
+deprecator_adjudication: |
+  ADJUDICATED 2026-08-29 by the specifier, on the coordinator's freshness
+  HOLD (note, priority 00: "BL-1256 freshness HOLD likely false-pos (notes
+  ref BL-1247, adjudicate)"). Article 3.6 outcome 1 — AMEND, then promote.
+
+  ## The HOLD's own trigger was a false positive
+
+  The gate held on this ticket's notes: referencing BL-1247-reconcile-sweep-
+  kill-switch, which is retired. That reference is a correct historical
+  pointer, not a stale premise, and the retirement it describes is now
+  durable: no BL-1247-reconcile* YAML remains anywhere under backlog/, and
+  the only BL-1247 artefacts in the tree are the UNRELATED live ticket's
+  (specs/features/BL-1247-property-generator-domain-agreement.feature and
+  index.js:847 bl1247PropertyGeneratorDomainAgreementSteps) — exactly the
+  id collision this ticket's notes already warn about. Nothing to amend
+  there.
+
+  ## But three real stale claims were found that the gate did NOT flag
+
+  Checked by hand rather than trusting the gate's reason:
+
+  1. WRONG COMMIT. The ticket credited the guard move to b617a292e6. That
+     commit is a 36-line append to the retired ticket's own YAML ("BL-1247:
+     record merge-completion hardening note") and changes no code. The real
+     guard-move-plus---reconcile-sweep-once commit is 0a754dad5. Two
+     same-night BL-1247 hardener commits, easily transposed.
+  2. "NOT MERGED" IS FALSE. 0a754dad5 is an ancestor of main AND of every
+     role branch; so is its hand-written revert a6f3717b5. The original
+     "on swarmforge-hardender, NOT merged and not to be merged" described
+     a state that no longer holds, and "do not merge or cherry-pick" was
+     therefore unactionable as written. This makes the ticket's case
+     STRONGER, not weaker: the wrong guard placement actually reached main
+     and scenario 05 never moved.
+  3. CONF ALREADY FLIPPED. master_main_reconcile_enabled now reads true
+     (swarmforge.conf:345), flipped out of band while this ticket sat
+     paused; the original constraint read as if the switch were still off.
+     Restated to forbid changing it in either direction.
+
+  All three are corrected in description:, constraints: and
+  qa_e2e_procedure: above. None of them changes the WORK.
+
+  ## The core defect is verified FRESH — promote
+
+  Re-checked against the tree today, not taken from the ticket's own prose:
+
+  - specs/pipeline/steps/bl1248MasterMainReconcileKillSwitchSteps.js:93
+    runDivergenceStillSurfaced still calls master-main-reconcile-lib/sweep!
+    directly (line 106) with a hand-passed false over fake adapters, never
+    reaching handoffd.bb. The blindness is exactly as described.
+  - The correct guard placement is intact on main: handoffd.bb:3308 passes
+    (master-main-reconcile-enabled?) INTO sweep! as its 3rd arg, with
+    :surface! and :escalate! still injected as adapters. So the thing
+    gated is healthy and this ticket really does change only the GATE.
+  - The fixture the "How" section points at exists and is executable:
+    swarmforge/scripts/test/test_handoffd_master_main_reconcile_wiring.sh.
+  - --reconcile-sweep-once is absent from handoffd.bb today (a6f3717b5
+    removed it with the guard move), so the affordance is genuinely still
+    missing and must be written.
+  - Not already shipped: no bl1256 handler is registered in
+    specs/pipeline/steps/index.js and no source file carries the id.
+  - Both required_wiring entries parse cleanly through
+    pre-qa-gate-lib/parse-wiring-entry, both paths exist, and the pattern
+    is the literal "BL-1256" the ticket instructs the implementer to write
+    — a fixed string, not a placeholder.
+
+  Verdict: PROMOTE. The premise holds; only its supporting citations were
+  stale, and they are corrected above so the next gate pass is cheap.
