@@ -28,10 +28,42 @@
 //     tree from another checkout is the exact "cost grows with repo size"
 //     shape BL-1038 exists to refuse, multiplied by however many worktrees
 //     the repo happens to have at the time (BL-1039 wire-of-refs family).
+//   - a repository inside a directory this working tree's git IGNORES
+//     (BL-1246, human ruling 2026-08-28 "Exempt git-ignored dirs (tmp/) by
+//     construction"). `tmp/` is where workflow.prompt directs every role to
+//     put scratch, so a role's git fixtures legitimately live there: nothing
+//     tracked can be swallowed and no bookkeeping runs from there, which are
+//     the two things that made backlog/.git a defect. Derived from git's own
+//     ignore rules, never from a list of scratch paths - and asked about the
+//     directory CONTAINING the nested `.git`, because git never considers a
+//     `.git` path against ignore rules at all, so asking about
+//     `tmp/evilmerge/.git` tells you nothing while `tmp/evilmerge` answers.
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const SKIP_DIR_NAMES = new Set(['node_modules', '.worktrees']);
+
+/**
+ * Does this working tree's git ignore `dir`? Fail-closed: only a clean exit 0
+ * ("this path is ignored") exempts. Exit 1 is "not ignored"; anything else -
+ * git missing, not a repository, a spawn failure - is not an answer, and an
+ * unanswered question must never silence a leak.
+ *
+ * Asked lazily, once per candidate leak rather than once per directory
+ * walked: the walk visits thousands of directories and finds a nested `.git`
+ * essentially never, so this costs one spawn per report, not per node.
+ */
+function gitIgnoresDirectory(root, absoluteDir) {
+  const relative = path.relative(root, absoluteDir);
+  if (relative === '' || relative.startsWith('..')) {
+    return false; // the working tree root itself is never "ignored"
+  }
+  const result = spawnSync('git', ['-C', root, 'check-ignore', '--quiet', '--', relative], {
+    stdio: 'ignore',
+  });
+  return result.error === undefined && result.status === 0;
+}
 
 /**
  * Every `.git` directory nested under root, other than root's own. Does not
@@ -43,15 +75,18 @@ const SKIP_DIR_NAMES = new Set(['node_modules', '.worktrees']);
  * simulate an unreadable directory without real filesystem permissions, and
  * (BL-1230 D1, architect bounce) so the property test can generate arbitrary
  * tree layouts and assert both declared invariants without touching the
- * real filesystem.
+ * real filesystem. `isIgnored` is the same kind of seam for the BL-1246
+ * ignore predicate, which otherwise needs a real repository behind it - a
+ * synthetic tree cannot express an ignored directory without it.
  */
-function findNestedGitRepositories(root, { readdir = fs.readdirSync } = {}) {
+function findNestedGitRepositories(root, { readdir = fs.readdirSync, isIgnored } = {}) {
   const violations = [];
-  walk(root, root, violations, readdir);
+  const ignores = isIgnored ?? ((absoluteDir) => gitIgnoresDirectory(root, absoluteDir));
+  walk(root, root, violations, readdir, ignores);
   return violations;
 }
 
-function walk(root, dir, violations, readdir) {
+function walk(root, dir, violations, readdir, isIgnored) {
   let entries;
   try {
     entries = readdir(dir, { withFileTypes: true });
@@ -64,7 +99,9 @@ function walk(root, dir, violations, readdir) {
       if (full === path.join(root, '.git')) {
         continue; // the working tree's own repository - not a leak
       }
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() && !isIgnored(dir)) {
+        // BL-1246: asked about `dir`, the directory CONTAINING this `.git`,
+        // never about `full` - git does not answer for a `.git` path.
         const rel = path.relative(root, full).split(path.sep).join('/');
         violations.push({
           path: rel,
@@ -79,9 +116,9 @@ function walk(root, dir, violations, readdir) {
       continue;
     }
     if (entry.isDirectory()) {
-      walk(root, path.join(dir, entry.name), violations, readdir);
+      walk(root, path.join(dir, entry.name), violations, readdir, isIgnored);
     }
   }
 }
 
-module.exports = { findNestedGitRepositories };
+module.exports = { findNestedGitRepositories, gitIgnoresDirectory };
