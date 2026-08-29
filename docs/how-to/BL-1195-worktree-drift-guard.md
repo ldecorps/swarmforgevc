@@ -8,10 +8,12 @@ own worktree — uncommitted, with no commit anywhere (local or on any
 branch) that authored the change. The coder caught it only because it
 happened to notice unexpected diff content before starting work; nothing
 structural would have caught it otherwise, and the parcel could have been
-forwarded with a shipped fix silently missing again. The root-cause
-mechanism is still unknown — BL-373's launcher-cp guard already covers this
-exact file set, so this is not that same mechanism, or that guard has a gap
-this incident exposes.
+forwarded with a shipped fix silently missing again. **Root cause found and
+fixed by [BL-1233](BL-1233-launcher-guard-survives-ambient-git-env.md):**
+BL-373's launcher-cp guard covers this exact file set but was fully
+defeated by an ambient `GIT_DIR`/`GIT_WORK_TREE` in the launcher's
+environment, which made its tracked-path query answer for the wrong repo
+and silently copy over tracked files instead of leaving them to git.
 
 ## What the guard does
 
