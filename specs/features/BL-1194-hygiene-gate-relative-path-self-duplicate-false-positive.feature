@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=af297c78942ef4b9ff845dc4fd1f54ba73ec4376ae01cac4cf24a0f82f594136
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-29T11:44:41.409894697Z","feature_name":"the hygiene gate's duplicate-id check never counts the subject as another holder of its own id","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1194-hygiene-gate-relative-path-self-duplicate-false-positive.feature","background_hash":"b1b04f44aada98dd90e25779c50b822dea85a80a7eb8996e97e5521ee6575049","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A genuine duplicate is still caught regardless of the path form used to invoke the gate","scenario_hash":"f93c593b90d7afb944ba419021706bf6847194495bd34592e5f5e7402f4b14dc","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-29T11:44:41.409894697Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the hygiene gate's duplicate-id check never counts the subject as another holder of its own id
 
   # BL-1194 (epic deprecator; discovered 2026-08-27 while minting BL-1193,
