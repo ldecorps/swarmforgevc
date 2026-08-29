@@ -135,3 +135,5 @@ notes: |
   - [2026-08-28] specifier: split 1:N from the QA note with BL-1240 under the
     Consolidation Authority. This half is the unblock and should go first;
     BL-1240 is the reason it will not be needed again.
+
+assigned_to: coder
