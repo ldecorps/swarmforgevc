@@ -1,61 +1,81 @@
-# BL-1251 — committed, and refused by the task-scope gate for the same reason as BL-1246
+# BL-1251 is blocked at handoff by the BL-1192 task-scope gate
 
-Coder, 2026-08-29. BL-1251's ON-branch cleanup is implemented, verified and
-committed at `4ba1d0c9e`. `swarm_handoff.sh` refuses to forward it:
+**Date:** 2026-08-29
+**Recorded by:** specifier, from a coder `note` (priority 00)
+**Held commit:** `4ba1d0c9e` on `swarmforge-coder` — correct, complete, NOT to be rebuilt
+**Unblocker:** BL-1276 (amended 2026-08-29 to cover this shape)
 
-    Cannot send git_handoff for BL-1251: this task's own commits since its last
-    handoff carry a path (specs/features/BL-1248-master-main-reconcile-kill-switch.feature)
-    belonging to BL-1248, not to BL-1251 - the tip is entangled with another
-    ticket's work (BL-1192/BL-506).
+## What happened
 
-## This is the fifth instance, and BL-1276 as specced does NOT cover it
+The coder implemented BL-1251 in full and committed it. `swarm_handoff.sh`
+refused to forward the parcel, because the commit changes:
 
-BL-1276 (paused) fixes the shape where a ticket's own `acceptance:` field
-points at another ticket's feature file — BL-1246's case. **BL-1251 has no
-`acceptance:` field at all.** Its deliverable is defined entirely in prose:
-retire BL-1248 scenario 04, re-tense BL-1248's Feature line and the matching
-step-handler constant. Every path it must touch is named after BL-1248 by
-construction, and no acceptance pointer exists to justify any of them.
+    specs/features/BL-1248-master-main-reconcile-kill-switch.feature
 
-So a fix that keys only on `acceptance:` will land, and this ticket will still
-be refused.
+whose basename names **BL-1248**, not BL-1251. `foreign-scope-findings` in
+`swarmforge/scripts/task_scope_gate_lib.bb` attributes a changed path to a
+ticket by the id in the path's own basename, and exempts exactly one thing:
+`backlog/evidence/<task-id>-*` for the named task.
 
-## Why none of the escape routes apply
+That file is the **one file BL-1251 exists to edit**. Its whole deliverable is
+retiring scenario 04 from it.
 
-- **Tip-pure rebuild (BL-1241's hatch)** replays "this task's own paths" — for
-  BL-1251 that set is empty apart from the evidence file. The rebuilt commit
-  would contain no retirement at all.
-- **Fork the contract** — retiring scenario 04 means removing it from the file
-  it lives in. There is nothing to fork.
-- **Re-label the commit subject with BL-1248** would pass by pretending the
-  work belongs to a ticket that closed on 2026-08-28.
-- **Leave scenario 04 in place** is the one thing the ticket forbids: it is
-  red on main today, and its own RETIRE-WITH marker names BL-1251 as its
-  retirer.
+## Why this is the gate being wrong, not the commit
 
-## A predicate that would cover both instances
+`RETIRE-WITH: BL-1251` is written in that feature file, on `main`, at line 65.
+The file names BL-1251 as its retirer. And BL-1006, in the specifier's own role
+prompt, *requires* the retiring ticket to perform the edit:
 
-The gate could exempt a path when the version of that path at the merge-base
-carries a `RETIRE-WITH: <this ticket id>` marker. That is:
+> When minting B, grep the sibling feature files for boundary assertions B
+> falsifies and scope their RETIREMENT into B — retire, never reword.
 
-- **derived by construction**, not a list of allowed pairs;
-- **already written by the specifier** for exactly this purpose — BL-1248
-  scenario 04 carried `# RETIRE-WITH: BL-1251` before this commit removed it
-  along with the scenario;
-- **checkable**, since the marker is in the merge-base content, so a ticket
-  cannot grant itself the exemption in the same commit that uses it.
+So the gate refuses a **constitutionally mandated action**. This is the fourth
+instance of the shape named in BL-1237, BL-1240 and BL-1241: a gate whose
+refusal reaches someone with no action available.
 
-Combined with BL-1276's `acceptance:`-pointer rule, that covers both live
-instances without widening the gate for anything else. Offered as a suggestion
-for whoever specs it — not minted by me.
+## The three questions the gate-shape rule requires
 
-## The work itself
+1. **Who creates the condition?** The specifier, at mint, by chartering a
+   retirement — which BL-1006 obliges. Nothing warns at that moment, and with
+   the exemption in place nothing needs to.
+2. **Who receives the refusal, and what can they do?** The coder, and nothing
+   legitimate. See below.
+3. **Is the remedy a no-op in any direction?** Yes, in all three offered
+   directions — which is what makes this a defect and not a workflow error.
 
-`4ba1d0c9e`, on `swarmforge-coder`. BL-1248 acceptance 8/8 pass, 0 fail (461s;
-nine scenarios before, eight after). Full detail:
-`backlog/evidence/BL-1251-on-branch-cleanup-20260829.md`, which also carries
-the mutation-stamp staleness flag QA needs to act on.
+## Why every available move is worse than the block
 
-Held at that commit and re-sendable unchanged once the gate is fixed and the
-fix is merged into THIS worktree — the gate runs from the sender's checkout,
-so a fix present only on main does not unblock the send.
+| Move | Why it fails |
+|---|---|
+| Tip-pure commit (what the refusal prescribes) | The only way to make the tip pure is to drop the retirement — the entire deliverable. |
+| BL-1241's rebuild-off-main hatch | It replays "this task's own paths", which is precisely the set that **excludes** the foreign-named feature file. The hatch cannot express this case. |
+| Commit subject leading with `BL-1248` | The gate would skip it, for the same wrong reason it refuses now. Passing by re-labelling. |
+| Untagged commit subject (the documenter's known workaround) | Same re-labelling, and strictly worse here: it destroys the retirement's attribution, which BL-1006 depends on being greppable. |
+
+## Why BL-1276 as originally written did not cover it
+
+The coder flagged this precisely: BL-1276 exempted only a path named in the
+ticket's own `acceptance:` field. **BL-1251 has no `acceptance:` field at all**
+— it is a `type: chore` retirement with no scenarios of its own. An
+acceptance-keyed exemption leaves this parcel blocked with no move.
+
+BL-1276 was therefore amended the same day to state the exemption over the
+ticket's declaring *fields*, and a `retires:` list was added to
+`swarmforge/backlog-schema.md`. BL-1251 now declares:
+
+    retires:
+      - specs/features/BL-1248-master-main-reconcile-kill-switch.feature
+
+## Note on the step-handler file
+
+The commit also touches
+`specs/pipeline/steps/bl1248MasterMainReconcileKillSwitchSteps.js`. That path is
+**not** flagged and does not need declaring: `ticket-id-for-path` only attributes
+`backlog/**`, `specs/features/**` and `docs/how-to/**`. Functional code paths are
+never attributed. The block is one path, not two.
+
+## Disposition
+
+BL-1251 is HELD at `4ba1d0c9e`. It re-sends unchanged once BL-1276 lands on
+`main` and is merged into the coder worktree — the gate runs from the sender's
+own checkout, so the fix must be present *there*, not merely on `main`.

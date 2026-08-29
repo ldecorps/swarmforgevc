@@ -6,11 +6,16 @@
 # roles.tsv, a real mailbox skeleton), because this ticket changes exactly one
 # predicate inside the gate that driver already exercises.
 #
-# Usage: bl1276AcceptanceExemptionCli.sh <task-ticket> <declared-acceptance|NONE> <changed-path> <ticket-mode>
+# Usage: bl1276AcceptanceExemptionCli.sh <task-ticket> <declaration|NONE> <changed-path> <ticket-mode>
+#   declaration: "acceptance: <path>" or "retires: <path>" or NONE - the
+#                ticket's own declaration of a path belonging to another ticket
 #   ticket-mode: landed          - the ticket is committed on main with the declared value
 #                working-copy    - main carries the declared value; an UNCOMMITTED
 #                                  working copy declares <changed-path> instead
 #                unresolvable    - the ticket exists on no ref and in no working tree
+#                landed-unmerged - the declaration is landed on main ONLY, and the
+#                                  cited commit sits on a sender branch that has
+#                                  never merged it (qa_e2e step 4)
 # Prints one JSON line: {"exitCode":N,"delivered":bool,"stderr":"..."}
 
 set -uo pipefail
@@ -56,15 +61,25 @@ TMUX
 chmod +x "$FAKE_BIN/tmux"
 
 write_ticket() {
-  # $1 = acceptance value or NONE
-  local acceptance="$1"
+  # $1 = "acceptance: <path>" | "retires: <path>" | NONE
+  # Written in each field's REAL yaml shape - acceptance: a single scalar,
+  # retires: a list - so the fixture exercises the accessor as it is actually
+  # fed, not a normalised stand-in.
+  local declaration="$1"
+  local field="${declaration%%:*}"
+  local value="${declaration#*: }"
   mkdir -p "$ROOT/backlog/active"
   {
     printf 'id: %s\n' "$TASK_TICKET"
     printf 'title: "fixture"\n'
-    if [[ "$acceptance" != "NONE" ]]; then
-      printf 'acceptance: %s\n' "$acceptance"
+    if [[ "$declaration" != "NONE" ]]; then
+      if [[ "$field" == "retires" ]]; then
+        printf 'retires:\n  - %s\n' "$value"
+      else
+        printf 'acceptance: %s\n' "$value"
+      fi
     fi
+    printf 'status: todo\n'
   } > "$ROOT/backlog/active/${TASK_TICKET}-fixture.yaml"
 }
 
@@ -74,6 +89,15 @@ if [[ "$TICKET_MODE" != "unresolvable" ]]; then
   write_ticket "$DECLARED"
   git -C "$ROOT" add -A
   git -C "$ROOT" commit -q -m "seed: land the ${TASK_TICKET} ticket"
+fi
+
+# qa_e2e step 4: the sender's branch never merges the landed declaration, so a
+# gate reading the sender's own tree would see no declaration at all.
+if [[ "$TICKET_MODE" == "landed-unmerged" ]]; then
+  git -C "$ROOT" checkout -q -b sender-branch
+  rm -f "$ROOT/backlog/active/${TASK_TICKET}-fixture.yaml"
+  git -C "$ROOT" add -A
+  git -C "$ROOT" commit -q -m "sender branch: forked before the declaration landed"
 fi
 
 # The commit the handoff cites: tagged for the task, touching the path under
@@ -87,7 +111,7 @@ CITED_SHORT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 # Scenario 02: the sender's UNCOMMITTED working copy claims a different
 # contract than the one that landed. The gate must ignore it.
 if [[ "$TICKET_MODE" == "working-copy" ]]; then
-  write_ticket "$CHANGED_PATH"
+  write_ticket "acceptance: $CHANGED_PATH"
 fi
 
 # Scenario 03: no ticket anywhere - not on a ref, not in the working tree.
