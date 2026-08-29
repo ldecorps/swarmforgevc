@@ -223,3 +223,10 @@ coordinator_notes: |
     class as BL-1193/BL-1220). Sent to specifier for adjudication (commit
     00_20260829T140239Z_003160). Still not a slot-open case either — active/
     remains at cap. Clearing on both grounds, not inaction.
+  - [2026-08-29] coordinator: third nudge. Specifier has now durably CONFIRM
+    PROMOTEd this ticket (commit 6ac07c49d, false-pos on "Mint" as suspected)
+    — the freshness hold is cleared. But the slot this nudge fired for was
+    filled by BL-1273 (already-dispatched work, restored to active) before
+    this turn; promotion_gates_cli.bb select does not know about a by-hand
+    specifier override, so it can't compare BL-1251 against other candidates
+    automatically. Top candidate for the NEXT open slot, promote by hand.

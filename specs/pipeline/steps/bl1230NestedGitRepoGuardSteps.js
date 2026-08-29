@@ -81,6 +81,25 @@ function registerSteps(registry) {
     gitInit(path.join(ctx.bl1230.root, dirName, 'some-pkg'));
   });
 
+  // BL-1246: the exemption is git's own answer, so the fixture writes a real
+  // .gitignore and lets `git check-ignore` decide - a fixture that stubbed
+  // the predicate would prove only that the seam is wired.
+  scoped(/^a repository inside the git-ignored directory "([^"]+)" exists$/, (ctx, dirName) => {
+    const bare = dirName.replace(/\/$/, '');
+    fs.writeFileSync(path.join(ctx.bl1230.root, '.gitignore'), `/${bare}/\n`);
+    gitInit(path.join(ctx.bl1230.root, bare, 'evilmerge'));
+  });
+
+  scoped(/^nothing inside "([^"]+)" is reported$/, (ctx, dirName) => {
+    const bare = dirName.replace(/\/$/, '');
+    const inside = ctx.bl1230.violations.filter((v) => v.path === bare || v.path.startsWith(`${bare}/`));
+    assert.deepEqual(
+      inside,
+      [],
+      `the ignored directory ${bare} must be exempt, but these were reported: ${JSON.stringify(inside)}`
+    );
+  });
+
   scoped(/^no git repository is nested inside the working tree$/, (ctx) => {
     fs.mkdirSync(path.join(ctx.bl1230.root, 'backlog', 'active'), { recursive: true });
     fs.writeFileSync(path.join(ctx.bl1230.root, 'backlog', 'active', 'BL-1-x.yaml'), 'id: BL-1\n');
