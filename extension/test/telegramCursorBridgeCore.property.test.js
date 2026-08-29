@@ -28,15 +28,22 @@ const tokenArb = fc.oneof(
   fc.string({ minLength: 1, maxLength: 20 })
 );
 
-test('property: shouldUseCursorBridgeInboundQueue only skips the queue (returns false) when explicitly forced off or an exclusive token is configured', () => {
+test('property: shouldUseCursorBridgeInboundQueue only skips the queue (returns false) when explicitly forced off, exclusive token, or dead feeder', () => {
   fc.assert(
-    fc.property(flagArb, tokenArb, (flag, token) => {
+    fc.property(flagArb, tokenArb, fc.constantFrom(undefined, true, false), (flag, token, feederLive) => {
       const env = { CURSOR_BRIDGE_INBOUND_QUEUE: flag, CURSOR_BRIDGE_BOT_TOKEN: token };
-      const result = shouldUseCursorBridgeInboundQueue(env);
+      const opts = feederLive === undefined ? undefined : { feederLive };
+      const result = shouldUseCursorBridgeInboundQueue(env, opts);
       const forcedOn = flag?.trim() === '1';
       const forcedOff = flag?.trim() === '0';
       const hasExclusiveToken = Boolean(token?.trim());
 
+      // Dead feeder is always justification to own getUpdates — queue mode is
+      // deaf without a live front-desk fan-out writer.
+      if (feederLive === false) {
+        assert.equal(result, false, 'a dead inbound feeder must never leave the bridge on the empty queue');
+        return;
+      }
       if (forcedOn) {
         assert.equal(result, true, 'an explicit "1" must always win, even with an exclusive token configured');
         return;

@@ -1,0 +1,150 @@
+id: BL-1249
+title: "The expeditor restarts the swarm without consulting any hold marker - it restarted against a live human 'hold restart' directive on 2026-08-28"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 6
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1249-expeditor-restart-honours-pause-marker.feature
+
+required_wiring:
+  - 'swarmforge/scripts/expedite_cli.bb::control-pause::the restart phase must actually read the operator pause marker; a guard that is documented but never consults the file leaves the defect intact'
+
+invariants:
+  - "A restart the expeditor declines is never silent and is never reported as --no-restart was: the run report names the hold and the marker that caused it, so a still-down swarm can never be read as one that came up."
+  - "The hold check fails closed on doubt but not on absence: an absent marker means no hold and the restart proceeds, while a marker that exists and cannot be read as a definite not-active - malformed, truncated, unparseable - holds the restart."
+
+description: >
+  Severity rationale: high - a live fault that overrode a standing human
+  directive, and it rearmed a known data-loss path. Not critical because
+  this occurrence destroyed nothing; the next one may not be so lucky.
+
+  What happened, observed rather than reported. On 2026-08-28 at 10:54Z the
+  human answered a specifier role_ask with a directive recorded verbatim in
+  backlog/answers-archive/ANSWER-2026-08-28-restart-gate-hold-do-not-push.md:
+
+  > Hold restart, do not push, wait for QA
+
+  A restart was independently blocked by the ops hold in
+  .swarmforge/operator/INTAKE-bl1191-pilot-cleanup-gate-before-restart.md,
+  which has said "restart is BLOCKED until the independent check is green"
+  across eleven readings. At 14:30 BST an expedite.sh run for BL-1248 ran
+  ./start-swarm.sh anyway and brought the whole pack up - tmux server, eight
+  role sessions created 14:30:19, handoffd and its supervisor. Nobody
+  decided this; the expeditor's teardown does it every run.
+
+  The mechanism, verified in the source at mint. restart-stack!
+  (swarmforge/scripts/expedite_cli.bb, the "restart (non-blocking)" section)
+  runs (or $EXPEDITE_START_CMD "./start-swarm.sh") whenever no-restart? and
+  dry-run? are both false, and consults nothing else: grepping the expedite
+  scripts for control-pause, restart-hold and restart_hold returns nothing.
+  The only lever is the caller passing --no-restart, which is a property of
+  the invocation, not of the operator's standing state - so a hold recorded
+  on the host is invisible to every expedite run that does not happen to be
+  launched with the flag.
+
+  The irony is worth recording because it is the reason this went unnoticed:
+  the expeditor is precisely the mechanism the human's own decision named as
+  the path that honours the hold, since it walks one ticket through the
+  gates with the stack stopped. Its final phase is what broke the hold.
+
+  What is wanted: before the restart phase acts, the expeditor reads the
+  operator pause marker .swarmforge/operator/control-pause.json - the same
+  marker the BL-1191 gate's own checklist item 3 already treats as the
+  restart-blocking signal - and, when a hold is in force, declines to run
+  the start command and says so loudly in the run report and the closing
+  summary. Where the check lives and how the marker is parsed are the
+  coder's call.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT make declining quiet. restart-stack! already documents three
+    outcomes for good reason ("collapsing them would send a human to debug
+    the wrong thing"); a hold is a FOURTH, distinct from :not-attempted,
+    which today means the caller passed --no-restart. Reusing
+    :not-attempted for a hold would report an operator-blocked restart as a
+    caller-chosen one and is exactly the failure this ticket exists to fix.
+  - Do NOT let the hold change the ticket verdict. The section comment on
+    restart-stack! is right that the start path may itself be under repair,
+    so the restart phase reports and never gates; a hold must report and
+    never gate either.
+  - Do NOT extend the check to any other phase. The expeditor still stops
+    the swarm, parks, and drives its stages while a hold is in force - a
+    hold blocks bringing the stack back UP, not doing the work. Widening
+    this to refuse the whole run would make an ops hold block the one
+    mechanism that can deliver work while the swarm is down.
+  - Do NOT invent a new marker file or a new hold format. The marker exists
+    and is already the recognised signal; this ticket teaches one caller to
+    read it.
+  - Do NOT change what writes the marker. Setting it is the operator's
+    action and is deliberately left alone here (see notes).
+
+qa_e2e_procedure: >
+  1. Scenario 01: against a fixture root with a marker whose active flag is
+     true, run the restart phase with a stubbed EXPEDITE_START_CMD that
+     writes a sentinel file. Assert the sentinel does not exist - the start
+     command was not merely reported as skipped, it did not run.
+  2. Scenario 02: the same fixture, asserting the reported outcome is the
+     hold outcome and NOT the not-attempted outcome, and that the report
+     names the marker path. Then run again with --no-restart and assert the
+     two outcomes are distinguishable in the report, so a reader can tell an
+     operator hold from a caller's flag.
+  3. Scenario 03 (Outline): marker absent, marker inactive, marker holding,
+     marker present but malformed, marker present but truncated. Assert the
+     start command runs for exactly the first two. The malformed and
+     truncated rows are the fail-closed half of invariant 2 and must not be
+     dropped as edge cases - they are the behaviour.
+  4. Scenario 04: with a hold in force, assert the ticket verdict of a run
+     whose stages all passed is still a pass. A hold must not retract
+     completed work.
+  5. Invariant 1 carries a coder-authored property test per BL-654: over
+     generated report shapes, a held restart never renders identically to a
+     --no-restart one.
+  6. Do not exercise any of this against the live repo or the live host
+     marker. The behaviour under test starts a swarm.
+
+notes: >
+  Minted 2026-08-28 ~14:45 BST by the specifier after finding the breach
+  while taking the eleventh reading of the BL-1191 restart gate. Verified at
+  mint that no ticket owns this: grepping backlog/paused, active, hold and
+  done for expedite-plus-restart, restart-hold and control-pause matched
+  only BL-1248, which mentions a restart for an unrelated reason.
+
+  The companion gap, deliberately NOT bundled: today's hold was never
+  written into control-pause.json at all. It lived in an intake document and
+  a role-answer file, so even a correctly-guarded expeditor would have
+  restarted. Fixing the code without that is still a strict improvement -
+  an operator who does set the marker is currently ignored - but whoever
+  runs the BL-1191 gate should know that setting the marker is the other
+  half, and it is an operator procedure question rather than a code slice.
+  Named here rather than merged so this ticket stays one sitting.
+
+  Related, none of which own this: BL-567 (the expeditor itself), BL-1030
+  and BL-1024 (earlier corrections to the same run's initiation and
+  deferral reporting), BL-1248 (the ticket this run was expediting, still
+  todo - the run failed at coder with no-verdict). The restart it performed
+  also rearmed the master-main-reconcile sweep that BL-1236 pins as broken,
+  which is why this reads as urgent rather than tidy.
+
+  Orthogonality: touches restart-stack! in
+  swarmforge/scripts/expedite_cli.bb. BL-1250 touches probe-liveness in the
+  same file. Do not run the two concurrently; either order is fine.
+
+approval_context: >
+  An automated path overrode your 10:54Z "hold restart" directive today.
+  Approving this authorises teaching the expeditor's final phase to read
+  .swarmforge/operator/control-pause.json and refuse to start the swarm
+  while a hold is in force, reporting the refusal loudly instead of quietly.
+
+  One call to say the word on if you disagree: the hold is scoped to the
+  restart phase ONLY - the expeditor still stops the swarm and drives its
+  stages while held, because that is the mechanism that delivers work with
+  the stack down, and blocking the whole run would take that away. Say so
+  if you would rather a hold refuse the entire expedite.

@@ -373,6 +373,89 @@ check "BL-1023d: sibling stays in active/ (nothing parked before refuse)" \
   "$(ls "$RM/backlog/active/" | tr -d '\n')" "BL-590-fixture.yaml"
 unset EXPEDITE_PROBE_FILE
 
+# ── no-verdict recovery: first cleaner exit writes no verdict, second does ──
+# Mirrors BL-1248: claude -p exited 0 after a Monitor wait with no verdict.json.
+echo "no-verdict recovery"
+RNV="$(mkfix tnv --active BL-567)"
+cat > "$RNV/stage-runner-no-verdict-once.sh" <<'SH'
+#!/usr/bin/env bash
+# argv: <role> <ticket> <prompt-file> <verdict-file> <transcript>
+set -euo pipefail
+ROLE="$1"; TICKET="$2"; PROMPT="$3"; VERDICT="$4"; TRANSCRIPT="$5"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+mkdir -p "$ROOT/.swarmforge/expedite-fixture"
+echo "$ROLE" >> "$ROOT/.swarmforge/expedite-fixture/ran.log"
+ATTEMPTS="$ROOT/.swarmforge/expedite-fixture/${ROLE}.attempts"
+n=0
+[[ -f "$ATTEMPTS" ]] && n="$(cat "$ATTEMPTS")"
+n=$((n + 1))
+echo "$n" > "$ATTEMPTS"
+echo "stage $ROLE attempt $n for $TICKET" > "$TRANSCRIPT"
+# First cleaner call: exit 0, no verdict (the Monitor-wait failure class).
+if [[ "$ROLE" == "cleaner" && "$n" -eq 1 ]]; then
+  echo "waiting on Monitor; will finalize later" > "$TRANSCRIPT"
+  exit 0
+fi
+DIRECTIVE="$ROOT/.swarmforge/expedite-fixture/$ROLE.verdict"
+if [[ -f "$DIRECTIVE" ]]; then
+  cat "$DIRECTIVE" > "$VERDICT"
+else
+  echo '{"verdict":"pass"}' > "$VERDICT"
+fi
+SH
+chmod +x "$RNV/stage-runner-no-verdict-once.sh"
+OUTNV="$(EXPEDITE_STAGE_RUNNER="$RNV/stage-runner-no-verdict-once.sh" \
+         EXPEDITE_STOP_CMD=./stop-swarm.sh EXPEDITE_START_CMD=./start-swarm.sh \
+         bb "$CLI" "$RNV" BL-567 --no-restart 2>&1)"; EXITNV=$?
+check "no-verdict: recovery run exits 0" "$EXITNV" "0"
+check "no-verdict: ticket reaches done/" "$(ls "$RNV/backlog/done/" | tr -d '\n')" "BL-567-fixture.yaml"
+check "no-verdict: cleaner invoked twice (miss then recover)" \
+  "$(grep -c '^cleaner$' "$RNV/.swarmforge/expedite-fixture/ran.log")" "2"
+contains "no-verdict: driver logs the recovery" "$OUTNV" "no-verdict recovery"
+
+# Permanent miss: every cleaner attempt writes nothing.
+# Two recoveries then fail closed — never a synthetic bounce (that would loop).
+RNV2="$(mkfix tnv2 --active BL-567)"
+cat > "$RNV2/stage-runner-never-verdict.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+ROLE="$1"; TICKET="$2"; PROMPT="$3"; VERDICT="$4"; TRANSCRIPT="$5"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+mkdir -p "$ROOT/.swarmforge/expedite-fixture"
+echo "$ROLE" >> "$ROOT/.swarmforge/expedite-fixture/ran.log"
+echo "stage $ROLE for $TICKET - no verdict" > "$TRANSCRIPT"
+# Only cleaner withholds; earlier stages must pass so we reach cleaner.
+if [[ "$ROLE" != "cleaner" ]]; then
+  echo '{"verdict":"pass"}' > "$VERDICT"
+fi
+exit 0
+SH
+chmod +x "$RNV2/stage-runner-never-verdict.sh"
+OUTNV2="$(EXPEDITE_STAGE_RUNNER="$RNV2/stage-runner-never-verdict.sh" \
+          EXPEDITE_STOP_CMD=./stop-swarm.sh EXPEDITE_START_CMD=./start-swarm.sh \
+          bb "$CLI" "$RNV2" BL-567 --no-restart 2>&1)"; EXITNV2=$?
+check "no-verdict permanent: exits non-zero" "$EXITNV2" "1"
+contains "no-verdict permanent: recovers" "$OUTNV2" "no-verdict recovery"
+contains "no-verdict permanent: names no-verdict fail" "$OUTNV2" "no-verdict"
+absent "no-verdict permanent: does NOT synthesize a bounce loop" "$OUTNV2" "bounce cleaner"
+check "no-verdict permanent: cleaner tried thrice (initial + 2 recoveries)" \
+  "$(grep -c '^cleaner$' "$RNV2/.swarmforge/expedite-fixture/ran.log")" "3"
+check "no-verdict permanent: ticket not done" \
+  "$(ls "$RNV2/backlog/done/" | wc -l | tr -d ' ')" "0"
+
+# Reason-less bounce from a stage must fail closed, not re-enter.
+RNV3="$(mkfix tnv3 --active BL-567)"
+cat > "$RNV3/.swarmforge/expedite-fixture/cleaner.verdict" <<'JSON'
+{"verdict":"bounce","target":"coder"}
+JSON
+OUTNV3="$(EXPEDITE_STAGE_RUNNER="$RNV3/stage-runner.sh" \
+          EXPEDITE_STOP_CMD=./stop-swarm.sh EXPEDITE_START_CMD=./start-swarm.sh \
+          bb "$CLI" "$RNV3" BL-567 --no-restart 2>&1)"; EXITNV3=$?
+check "bounce-without-reason: exits non-zero" "$EXITNV3" "1"
+contains "bounce-without-reason: names the refusal" "$OUTNV3" "bounce-without-reason"
+check "bounce-without-reason: coder was NOT re-entered" \
+  "$(grep -c '^coder$' "$RNV3/.swarmforge/expedite-fixture/ran.log")" "1"
+
 # ── report ─────────────────────────────────────────────────────────────────
 echo
 if [[ "$fails" -eq 0 ]]; then

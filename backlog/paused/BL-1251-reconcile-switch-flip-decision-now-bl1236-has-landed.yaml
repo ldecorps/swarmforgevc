@@ -1,0 +1,137 @@
+id: BL-1251
+title: "Decide whether to re-arm the master-main-reconcile sweep now that BL-1236 has landed, and retire BL-1248 scenario 04 if so"
+milestone: M8
+type: chore
+severity: medium
+status: blocked
+epic: swarm-reliability
+human_approval: approved
+priority: 5
+direction: pipeline-note
+depends_on: [BL-1248]
+mutation_cost: low
+required_stages: [coder, documenter, qa]
+
+description: >
+  BL-1248 ships a config kill switch for the master-main-reconcile sweep,
+  set to false, naming BL-1236 as the condition for turning it back on.
+  BL-1236 landed BEFORE BL-1248 did (871f2fa85, merged 2b3c796d1, closed
+  112027d99, all on origin/main 2026-08-28), so the shipped switch arrives
+  with its own stated re-enable condition already satisfied. This ticket
+  owns the resulting decision and the cleanup that follows it. It exists
+  because BL-1248's specifier stage refused to take the decision on the
+  human's behalf mid-parcel: flipping a destructive sweep back on is not an
+  amendment's call.
+
+  Why it is not simply "flip it on". The sweep has discarded committed work
+  thirteen times. BL-1236 fixes ONE cause - a conflict predicate that
+  grepped git merge-tree's content diff for the word "CONFLICT" and so fired
+  on this repo's ordinary backlog prose - by trusting merge-tree
+  --write-tree's own exit code instead. It does not make the sweep
+  non-destructive, and as of minting it has never run in production: the
+  swarm is down under the BL-1191 ops hold, so the corrected predicate has
+  zero live ticks behind it. The switch exists precisely so this is a
+  reviewed decision rather than a default.
+
+  Two outcomes, both concrete:
+
+  ON - the human decides to re-arm. Flip the conf to
+  `config master_main_reconcile_enabled true`. RETIRE BL-1248 scenario 04
+  ("the shipped config disables the sweep") - retire, never reword; it
+  asserts the shipped value is false, so it is red-when-correct the moment
+  the flip lands, and BL-1248's own feature file carries a RETIRE-WITH
+  marker pointing at THIS ticket. Re-tense the BL-1248 Feature narrative and
+  the conf comment so neither states a false present. Note that the
+  BL-1248 feature title and step-handler FEATURE constant are a matched
+  pair - changing one without the other unbinds every scenario in the file.
+
+  OFF - the human decides to leave it disabled for now. Then the conf
+  comment must name the NEW condition (e.g. a stated number of clean live
+  ticks, or a date to revisit), because "until BL-1236 lands" has expired
+  and a switch whose stated condition is already met is a switch nobody can
+  reason about. Scenario 04 stays as it is and this ticket closes. A
+  reasoned OFF is a real outcome, not a deferral.
+
+constraints: >
+  - Do NOT flip the switch without a recorded human answer. The whole point
+    of BL-1248 was to make re-arming a deliberate act; doing it here on a
+    guess reproduces the failure it was built to prevent.
+  - Do NOT reword BL-1248 scenario 04 to make it pass under the ON outcome.
+    Retire it. Its successor coverage is the ON-path behaviour BL-1248
+    scenario 01 already gates (value "true" -> sweep runs).
+  - Do NOT reopen BL-1236 or touch its predicate. It is landed and closed.
+  - Do NOT promote this ticket before BL-1248 is in backlog/done/. There is
+    no switch to flip until then, which is why it is minted status: blocked.
+
+qa_e2e_procedure: >
+  Written once the human's answer is known, because the two outcomes have
+  different deliverables and speccing both up front would be guessing. The
+  fixed part, true under either outcome: read the shipped
+  swarmforge/swarmforge.conf and assert its master_main_reconcile_enabled
+  line matches the recorded decision, and assert the conf comment's stated
+  re-enable condition is one that has NOT already expired. Under ON,
+  additionally assert BL-1248 scenario 04 is gone from
+  specs/features/BL-1248-master-main-reconcile-kill-switch.feature and that
+  the acceptance runner is green (a retired scenario must take its step
+  handlers with it, or leave them unreferenced but harmless - the runner
+  throws on a MISSING handler, never on a spare one).
+
+notes: >
+  Minted 2026-08-28 ~17:10 by the specifier stage of the BL-1248 expedite
+  re-run, as the "split" outcome of an Article 3.6 deprecator freshness
+  adjudication on BL-1248. Full adjudication record is in BL-1248's notes.
+
+  This ticket discharges an ORPHANED RETIRE-WITH marker. BL-1248 scenario 04
+  was written red-when-correct on purpose and marked "RETIRE-WITH: BL-1236".
+  BL-1236 then ran the full chain and closed without retiring it - exactly
+  the BL-982/BL-983 shape BL-1006 exists to prevent, where a slice-boundary
+  assertion names its successor and the successor ships without honouring
+  it. It was caught here only because the freshness check ran; no gate
+  detects it, since the acceptance runner throws on a missing handler and is
+  perfectly happy to run a stale assertion. The marker in BL-1248's feature
+  file has been re-pointed at BL-1251.
+
+  status: blocked is deliberate and is the field that enforces the
+  sequencing: per backlog-schema.md, blocked is the only status
+  promote_and_route_next.sh acts on, and it refuses the candidate. The
+  stated condition to clear it, kept here verbatim as the schema requires:
+  BL-1248 must be in backlog/done/ (there is no switch to flip until it
+  lands) AND the human must have answered the approval_context question
+  below. The coordinator may clear this status once both hold; it is not a
+  human-only park, so it belongs in status: blocked rather than
+  backlog/hold/.
+
+  INVEST note, recorded rather than glossed: this slice depends on an
+  UNBUILT sibling (BL-1248, in flight), which is the one letter it does not
+  cleanly pass. It is minted anyway because the alternative is worse - the
+  retirement obligation and the flip decision would otherwise have no owner
+  at all, which is the failure mode that produced this ticket. The
+  dependency is made explicit and enforced (depends_on plus status:
+  blocked) rather than left implicit.
+
+approval_context: >
+  A decision for you, not a build request. BL-1248 is about to ship a config
+  switch that disables the master-main-reconcile sweep, with a comment
+  saying "turn this back on once BL-1236 lands". BL-1236 landed this
+  afternoon, before BL-1248 did - so the switch arrives with its stated
+  re-enable condition already met, and someone reading the conf would be
+  invited to flip it on immediately.
+
+  The question: re-arm the sweep now, or leave it off for a while?
+
+  What is firm either way: the switch itself ships, it ships OFF in BL-1248,
+  and it fails closed. Nothing here re-opens that.
+
+  Context for the call. Arguments for ON: BL-1236 replaced the broken
+  text-search conflict predicate with git's own merge-tree exit code at both
+  call sites, which is the cause pinned to ten of the thirteen resets; the
+  sweep does useful work when it is not misfiring. Arguments for OFF: the
+  fix has never run in production (the swarm is down under the BL-1191
+  hold), thirteen realised losses include six human approval taps and two
+  closures, and the cost of waiting is only that main and origin drift while
+  a human is told about it - the surfacing and escalation paths stay live
+  while the switch is off, by BL-1248's own design.
+
+  If you say OFF, please also say what the new condition should be (a number
+  of clean live ticks, a date, or "ask me again") - "until BL-1236 lands"
+  has expired and the conf should not carry a condition that is already met.

@@ -600,6 +600,56 @@ test('runCursorBridgePollOnce in inbound-queue mode with an empty queue does not
   assert.equal(next.pollFailures, 0);
 });
 
+test('runCursorBridgePollOnce: resolveUseInboundQueue false owns getUpdates even when useInboundQueue was true', async () => {
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 10, cursorTopicId: 55 });
+  const session = createMockCursorBridgeAgentSession(root);
+  let getUpdatesCalls = 0;
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: true,
+      resolveUseInboundQueue: () => false,
+      pollTimeoutSeconds: 0,
+      getUpdates: async (_token, offset) => {
+        getUpdatesCalls += 1;
+        assert.equal(offset, 10);
+        return {
+          success: true,
+          updates: [
+            {
+              update_id: 11,
+              message: {
+                message_id: 1,
+                text: '/pilot BL-1248',
+                from: { id: 42 },
+                chat: { id: -100 },
+                message_thread_id: 55,
+              },
+            },
+          ],
+        };
+      },
+      post: async () => {},
+    },
+    { updateOffset: 10, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(getUpdatesCalls, 1);
+  assert.ok(next.state.updateOffset >= 12);
+});
+
 test('runCursorBridgePollOnce in inbound-queue mode advances the offset past the HIGHEST drained update_id, not just the count', async () => {
   const { appendCursorBridgeInboundUpdate } = require('../out/tools/cursorBridgeInboundQueue');
   const root = mkRoot();
