@@ -436,12 +436,42 @@
   [p]
   (last (str/split (str p) #"/")))
 
+(defn- backlog-relative
+  "BL-1194: strip any prefix up to and including the nearest backlog pool
+   directory (paused|active|hold|done), leaving `<pool>/<filename>`. Pure
+   string operation — no filesystem access — so the same id+file compares
+   equal regardless of whether it was spelled as a working-directory-relative
+   path (the documented invocation), an absolute checkout path (what
+   `read-local-id-index` always produces), or a git-relative published path
+   (what `read-published-id-index-from-git` always produces). Falls back to
+   the input itself when no pool segment is present, so a test fixture that
+   passes bare relative paths still round-trips."
+  [p]
+  (or (second (re-find #"(?:^|/)((?:paused|active|hold|done)/[^/]+)$" (str p)))
+      (str p)))
+
 (defn- other-holders
   [id subject-path local-index published-index]
-  (let [local (->> (get local-index id [])
-                   (remove #(= (:path %) (str subject-path))))
-        local-names (set (map #(path-basename (:path %)) local))
-        ;; Same checkout often appears in both corpora; keep one entry.
+  (let [;; BL-1194 bug #1: the local corpus index is always built from an
+        ;; ABSOLUTE backlog-root, so every local entry is absolute; a subject
+        ;; passed by a working-directory-relative path (the documented
+        ;; invocation) never string-equals its own absolute entry and was
+        ;; never excluded. Normalize both sides to a pool-relative form
+        ;; before comparison so the subject's own entry is excluded
+        ;; regardless of how the caller spelled its path.
+        subject-norm (backlog-relative subject-path)
+        local (->> (get local-index id [])
+                   (remove #(= (backlog-relative (:path %)) subject-norm)))
+        subject-basename (path-basename subject-path)
+        ;; BL-1194 bug #2: the published-side "same checkout" dedup was
+        ;; deriving its exclusion set from OTHER local holders (after
+        ;; subject removal) — empty for the ordinary case of one local
+        ;; holder — so a published entry that was simply the subject's own
+        ;; already-committed copy was never filtered. Include the subject's
+        ;; OWN basename in the exclusion set so its own published copy is
+        ;; recognized as "this ticket", not as another holder.
+        local-names (into #{subject-basename}
+                          (map #(path-basename (:path %)) local))
         pub (->> (get published-index id [])
                  (remove #(contains? local-names (path-basename (:path %)))))]
     (vec (concat local pub))))
