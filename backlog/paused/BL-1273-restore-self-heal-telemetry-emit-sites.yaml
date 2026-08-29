@@ -1,0 +1,231 @@
+id: BL-1273
+title: "BL-597's five self-heal telemetry emit sites were dropped by merge 2e37477ec: nothing in production writes self-heal-<YYYY-MM>.jsonl, handoff_lib.bb load-files the lib without calling it, and the how-to doc still claims the sites exist"
+type: defect
+severity: high
+# high: a landed, QA-approved, documented measurement surface produces zero
+# data in production. Every recovery the swarm performs - stale-build
+# recompile, supervisor respawn, kill_all, rotation respawn, claim-heal -
+# goes unrecorded, so the trend BL-597 exists to surface is permanently
+# flat and reads as "a healthy swarm that self-heals rarely". A false
+# green on a reliability signal is a broken safety signal, which is the
+# high band. Not critical: no swarm is down, no data the swarm depends on
+# is lost, and recovery itself still works - only its measurement is dark.
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 40
+direction: swarm-reported
+depends_on: [BL-1262]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1273-restore-self-heal-telemetry-emit-sites.feature
+
+approval_context: >
+  Needs sign-off on one judgement only: this restores the five emit sites
+  verbatim in intent from BL-597's own commit 70c81c0ed, on the assumption
+  that their loss was accidental. The evidence for "accidental" is in the
+  description - the removing commit 2e37477ec is a merge whose subject is
+  about an unrelated ticket (BL-1185) and which carries no rationale for
+  dropping them. If a human instead recalls a deliberate decision to stop
+  emitting from these hosts, this ticket is wrong and the correct fix is
+  the mirror image: retire BL-597's KNOWN_EMIT_HOSTS expectations and move
+  the how-to doc to docs/deprecated/. Firm either way: the tree and the
+  doc must agree, and half-wiring (handoff_lib.bb load-files the lib and
+  never calls it) is not an acceptable resting state.
+
+required_wiring:
+  - "swarmforge/scripts/front_desk_supervisor.bb::append-self-heal-event!::the stale-build-recompile and supervisor-respawn emits; this file has zero references at mint, so a vacuous match is impossible"
+  - "swarmforge/scripts/handoffd.bb::append-self-heal-event!::the claim-heal emit on the orphaned-in_process resume path; zero references at mint"
+  - "swarmforge/scripts/handoff_lib.bb::append-self-heal-event!::the rotation-respawn emit; this file already load-files the lib at line 48 and never calls it, so the load-file string would match vacuously - the call name is the only honest anchor"
+  - "swarmforge/scripts/kill_pipeline_swarm.sh::self_heal_telemetry_cli.bb::the kill_all emit, which shells the CLI rather than load-filing the lib; anchored on the CLI filename BL-1262 restores, zero references at mint"
+
+invariants:
+  - "A host that load-files self_heal_telemetry_lib.bb also calls append-self-heal-event!: a load with no call is a dead dependency, not a partial restoration, and is the state handoff_lib.bb is in at mint."
+  - "A telemetry append failure never changes whether the self-heal it observes runs, what it does, or the exit status of its host - the emit is an observer at an existing prose-log site, never a step the recovery depends on."
+
+description: >
+  Severity rationale is in the comment above the field. Root-caused, the
+  dropping merge identified by hash, and every restoration site verified
+  to still exist at HEAD before mint.
+
+  What happened. BL-597 ("trend self-heal events with structured telemetry
+  and pure aggregator") landed at commit 70c81c0ed on 2026-08-27 09:58
+  with five production emit sites - the writers for the log its aggregator
+  reads. Fifty-eight minutes later, merge 2e37477ec ("Merge tip-pure
+  BL-1185 hardener rematch into hardender branch") silently dropped them.
+  Its subject names an unrelated ticket and it carries no rationale; the
+  hunks simply did not survive the merge. This is the same failure mode
+  recorded in BL-1192, BL-1201, BL-1216, BL-1211 and BL-1262, differing
+  only in that this merge dropped HUNKS inside surviving files rather than
+  whole files, which is why no missing-module error ever surfaced it.
+
+  What is dark right now, verified at HEAD (4a305061a2):
+
+      front_desk_supervisor.bb   0 references (was 3: load-file + 2 emits)
+      handoffd.bb                0 references (was 2: load-file + 1 emit)
+      handoff_lib.bb             load-file present, emit call GONE
+      kill_pipeline_swarm.sh     0 references (was 1: CLI invocation)
+
+  Repo-wide, the only callers of append-self-heal-event! are the lib that
+  defines it, the CLI wrapper, its test runner, and the property test that
+  asserts the call sites exist. Zero production writers. So
+  .swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl is never appended to,
+  aggregateSelfHealCounts always aggregates an empty ledger, and the trend
+  reads as a swarm that never self-heals - which is precisely the reading
+  BL-597 was built to make impossible.
+
+  handoff_lib.bb is the worst of the four. It still load-files
+  self_heal_telemetry_lib.bb at line 48 and never calls into it: a live
+  dependency edge carrying no behaviour. That is the same "half-present is
+  worse than absent" shape BL-1262 recorded for the surviving lib, one
+  layer up.
+
+  The five sites and their surviving anchors. Every anchor below is the
+  prose-log line the emit sat against, and all five are present at HEAD -
+  the emit is re-inserted beside its anchor, no new detection path:
+
+      stale-build-recompile  front_desk_supervisor.bb  log! "stale-build-detected"
+      supervisor-respawn     front_desk_supervisor.bb  the :started case arm
+      claim-heal             handoffd.bb               in-process-resume-steps
+      rotation-respawn       handoff_lib.bb            append-rotation-event!
+      kill_all               kill_pipeline_swarm.sh    log "kill_all_swarm SUCCESS"
+
+  Why this is not BL-1262. BL-1262 restores four whole files dropped by a
+  different merge (3ba3a444b) - the READING half: the aggregator, the
+  store, the CLI, the lib test runner. Its constraints say in terms
+  "restores the four files it names and nothing else", and the architect
+  bounced the cleaner (evidence
+  backlog/evidence/BL-1262-restore-self-heal-telemetry-files-dropped-by-a-merge-bounce-20260829.md)
+  for adding these very integration points to it, ruling: "Create a
+  separate ticket". This is that ticket. BL-1262 must land first because
+  the kill_pipeline_swarm.sh site shells self_heal_telemetry_cli.bb, one
+  of the four files BL-1262 restores - hence depends_on.
+
+  Fix wanted, in direction only. The five emits are recoverable verbatim
+  from 70c81c0ed and their event maps are quoted there; whether the coder
+  lifts them unchanged or re-derives them against today's neighbours is
+  the coder's call. What is not negotiable is that all five land, that
+  handoff_lib.bb stops load-filing a lib it does not call, and that the
+  restored sites satisfy the property test that already exists rather than
+  the property test being relaxed to suit a partial restoration.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT relax, narrow or delete
+    extension/test/selfHealTelemetry.property.test.js, and do not remove
+    any entry from its KNOWN_EMIT_HOSTS list. That list is the surviving
+    evidence of which hosts emitted; editing it to match a reduced
+    restoration converts a visible defect into an invisible one - the same
+    line BL-1262's constraints draw around the same file.
+  - Do NOT amend docs/how-to/BL-597-trend-self-heal-events.md to stop
+    claiming the emits happen at the existing prose-log sites. That
+    sentence is correct about the design and wrong only about today's
+    tree; restoring the emits is what makes it true again. The documenter
+    stage verifies the doc reads true at the parcel commit - it does not
+    rewrite the mechanism away.
+  - Do NOT change what the telemetry measures. No new event type, no
+    changed :type / :subject / :reason vocabulary, no touching
+    self_heal_telemetry_lib.bb's contents, no change to the aggregator or
+    the trend computation. Those are BL-597's and it is done.
+  - Do NOT add a detector. Each emit sits at a site that ALREADY logs a
+    prose line for the same event; if a site's prose log has moved or gone
+    since 70c81c0ed, report it rather than inventing a new place to
+    observe from.
+  - This ticket is NOT the systemic fix for merges dropping work. That is
+    BL-1242, with BL-1241, BL-1211, BL-1257 and BL-1272 adjacent. Do not
+    widen this slice into merge-machinery work.
+  - Do not re-run or re-verify BL-597's original acceptance beyond what
+    the restored property test asserts. BL-597 is done; this is casualty
+    recovery, not a re-delivery.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline, recorded in the evidence file before any change:
+     `grep -rn "append-self-heal-event!" swarmforge/scripts/*.bb
+     swarmforge/scripts/*.sh` at the merge-base returns hits only in
+     self_heal_telemetry_lib.bb and self_heal_telemetry_cli.bb - no
+     recovery host. And `grep -c self_heal_telemetry
+     swarmforge/scripts/handoff_lib.bb` is 1 (the dead load-file).
+  2. Confirm the dropping merge is the one claimed: `git show 2e37477ec
+     -- swarmforge/scripts/front_desk_supervisor.bb` shows the load-file
+     and both emits removed, and `git show -s --format=%s 2e37477ec`
+     names BL-1185, not BL-597.
+  3. Scenario 01: at the parcel commit, each of the four hosts contains
+     its emit, verified one host at a time.
+  4. Scenario 02: `grep -n self_heal_telemetry
+     swarmforge/scripts/handoff_lib.bb` shows both the load-file AND a
+     call - no host load-files the lib without calling it.
+  5. Scenario 03: from extension/, the property suite's own command runs
+     selfHealTelemetry.property.test.js and its invariant1 and
+     invariant1-property tests both PASS - not merely collect. This is
+     the test that is red on main today and is the ticket's headline
+     observable.
+  6. Scenario 04 (the live end-to-end, run last): with the swarm up, take
+     a byte count of
+     .swarmforge/telemetry/self-heal-$(date -u +%Y-%m).jsonl (absent
+     counts as zero), trigger one real recovery whose emit this ticket
+     restores - `swarmforge/scripts/kill_pipeline_swarm.sh` is the
+     cheapest, it emits kill_all on the SUCCESS path - and confirm the
+     file grew by exactly one line whose `type` is `kill_all`. This is
+     the only step that proves a production writer exists; steps 3-5 all
+     pass over a tree that could still never execute.
+  7. Regression: the full unit suite's failure count drops by exactly the
+     selfHealTelemetry property failures and by nothing else. No other
+     test file changes status in either direction, and no recovery path
+     changes its exit status.
+
+notes: >
+  Source: documenter spec-gap note handoff
+  00_20260829T123449Z_000946_from_documenter_to_specifier, verbatim:
+  "spec-gap BL-597 doc claims self-heal emit sites gone; see BL-1262 doc
+  evid". Raised while the documenter held BL-1262, on finding that
+  docs/how-to/BL-597-trend-self-heal-events.md states each event is
+  appended "at the same site that already logs the prose line" while no
+  such site exists in the tree.
+
+  The architect's ruling this ticket discharges, verbatim from
+  backlog/evidence/BL-1262-restore-self-heal-telemetry-files-dropped-by-a-merge-bounce-20260829.md:
+  "Create a separate ticket (or amend BL-597 if it's still open) to
+  address the missing integration points. The property test failure is a
+  real defect, but it's not the defect this ticket owns." BL-597 is in
+  backlog/done/M8/ and is not open, so this is the separate ticket.
+
+  Specifier verification at mint. Did not take the documenter's claim or
+  the architect's account on trust. Grepped append-self-heal-event!
+  repo-wide: four hits, none a production host. Counted references per
+  host at 70c81c0ed, 8562094f8, 3ba3a444b, de1ce5da3 and HEAD, which
+  bounds the loss to the 09:58-10:55 window on 2026-08-27 and rules out
+  BL-1262's merge 3ba3a444b as the cause - the two losses are genuinely
+  separate events an hour apart. Then found the removing commit with
+  `git log --diff-merges=first-parent -S`, which returns 2e37477ec, a
+  merge, with the hunks visible in its diff. Also confirmed all five
+  prose-log anchors still exist at HEAD (front_desk_supervisor.bb:287
+  and its :started arm, handoffd.bb:399, handoff_lib.bb:992,
+  kill_pipeline_swarm.sh:326), so the restoration has somewhere to go and
+  the ticket cannot bounce for a vanished insertion point.
+
+  Also verified this is untracked: grepped backlog/{active,paused,hold}
+  for self-heal and for the four host filenames. BL-1262 is the only live
+  ticket in the area and explicitly excludes these sites; BL-1265 names
+  self_heal_telemetry_lib.bb only as an operator_runtime closure entry,
+  which this ticket does not touch.
+
+  Specifier's own mint defect, recorded because the next reader deserves
+  it: BL-1262 was minted by me on the same day and I established the
+  four-file loss without ever asking whether a production WRITER of the
+  ledger survived. My own role prompt carries that exact rule from BL-298
+  - a slice that reads a shared store has a live data dependency, and the
+  writer must be confirmed at spec time. Applying it once to BL-1262
+  would have found this hour earlier and in one ticket. The rule was not
+  missing; it was not run.
+
+  Related, none modified here: BL-597 (origin of the lost code, done),
+  BL-1262 (the reading half, active, must land first), BL-1242 (the
+  systemic prevention, active).
+
+  Orthogonality for the coordinator: touches
+  swarmforge/scripts/front_desk_supervisor.bb, handoffd.bb,
+  handoff_lib.bb and kill_pipeline_swarm.sh. These are high-traffic
+  swarm-machinery files, so unlike BL-1262 this is NOT collision-free by
+  construction - check no concurrent parcel holds handoffd.bb or
+  handoff_lib.bb before promoting.
