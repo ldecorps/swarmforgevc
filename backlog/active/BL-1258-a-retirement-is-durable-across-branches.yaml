@@ -205,4 +205,74 @@ deprecator_adjudication: |
   Verdict: PROMOTE. The defect is fresh; only its incident narrative had
   aged, and that is corrected above.
 
+notes: >
+  [2026-08-29] coder: implemented. Took approval_context's two open
+  questions as: (1) REFUSE, not warn - the approved acceptance contract
+  already says so ("the merge is refused" in every scenario, none
+  "warned"), matching BL-1256/BL-1223's own precedent that an approved
+  feature file settles an open prose fork. (2) the record's home is a git
+  ref, `refs/retirement/registry` (retirement_registry_lib.bb), never a
+  commit on any branch - every role worktree in this swarm is a `git
+  worktree` of the SAME repository, sharing one object database and ref
+  namespace directly, so a ref update is visible to every worktree the
+  instant it happens, with no merge, no checkout, regardless of which
+  branch that worktree's own HEAD points at. This is the literal answer
+  to "a record on main is invisible to a branch that has not merged it" -
+  not a mitigation, a different storage location the failure mode cannot
+  reach. Verified directly (retirement_registry_lib_test_runner.bb): a
+  worktree on a never-synced branch reads a just-written registry
+  immediately.
+
+  check_retirement_readdition.sh is check_merge_deletion.sh's (BL-1242)
+  addition-side twin, wired into the SAME commit-msg hook, same escape
+  hatch (naming the retired ticket id in the commit message confirms a
+  deliberate un-retirement) - the refused role always has a move: delete
+  the retired paths on their own branch (cheapest), or name the id.
+
+  Non-obvious fixture lesson recorded in test_retirement_readdition_guard.sh's
+  own comments: a plain forward delete-commit on the target does NOT
+  reproduce a one-sided add at all - git's ordinary 3-way merge resolves
+  "one side deleted, other side unchanged" as the deletion winning,
+  regardless of merge direction, for free. The real incident's actual
+  mechanism was a RESET erasing the mint from the target's own ancestry
+  ("the 2026-08-28 13:38:41 reconcile reset destroyed the mint before it
+  ever got there" - this ticket's own description) - only a reset (or
+  equivalently, a target branch whose history never included the mint at
+  all) changes the merge-base enough to produce a genuine one-sided add.
+  Scenario 04's two Outline rows exercise both actual routes.
+
+  Registered the real, live incident this ticket was filed about:
+  BL-1247-reconcile-sweep-kill-switch's three artefacts (backlog YAML,
+  feature file, step handler - never master_main_reconcile_lib.bb or
+  swarmforge.conf, which legitimately remain live under BL-1248) are now
+  in the registry, verified readable from a completely separate worktree
+  (.worktrees/architect) with no merge. Re-verified qa_e2e_procedure step
+  5 fresh: none of the three paths exist anywhere in this checkout today.
+
+  The specifier's own retirement ritual (swarmforge/roles/specifier.prompt
+  deprecator section) still needs updating to CALL retirement_registry_cli.bb
+  register for future retirements - per this ticket's own notes, that
+  prose half is the specifier's to land, deliberately not required_wiring
+  here (a parcel-pinned check would false-block the documenter's handoff).
+
+  Verified: retirement_registry_lib_test_runner.bb ALL PASS (including the
+  cross-worktree, no-merge-required round trip);
+  test_retirement_readdition_guard.sh ALL PASS (8 scenarios, including two
+  real `git merge --no-ff` runs through the installed hook);
+  test_ticket_deletion_guard.sh and test_merge_deletion_guard.sh ALL PASS
+  unchanged (their own hook-installation fixtures updated to also copy the
+  new guard/lib, or their scenario 09/08 real-commit-with-hooks-installed
+  tests would have failed on a missing script); test_commit_size_guard.sh
+  unchanged. New acceptance feature (bl1258RetirementDurabilitySteps.js)
+  5/5, driving the real guard and CLI end to end, including a real
+  cross-worktree registry read for scenario 03's own "readable from a
+  branch that never carried the artefacts."
+
+  No src/*.ts touched - no CRAP/DRY/Stryker concern (Babashka has neither
+  wired, per BL-472). No property test: the invariant is about where one
+  record lives and whether one specific git operation (merge) can
+  reintroduce specific paths - a small closed set of shapes, already
+  exhaustively covered by the acceptance scenarios and the shell guard's
+  own 8 scenarios.
+
 assigned_to: coder

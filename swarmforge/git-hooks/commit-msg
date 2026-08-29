@@ -11,15 +11,16 @@
 #
 # BL-1242: check_merge_deletion.sh is commit-msg-only for the same reason -
 # it only fires on a merge (MERGE_HEAD present) and needs the finalized
-# message to apply its ticket-naming exemption. No longer a single `exec`:
-# both guards must run every time, so a real failure from either is never
-# masked by the other's exit code. That requires NOT using `set -e` across
-# the two calls: under it, a failing first call would abort the script
-# before the second ever ran, hiding a real check_merge_deletion.sh
-# violation behind check_ticket_deletion.sh's - the exact first-failure-
-# stop shape Article 4.4 exists to forbid, and a role fixing only the
-# reported violation would be blindsided by the other on its next attempt.
-# Each call's own body still runs under its own `set -euo pipefail`.
+# message to apply its ticket-naming exemption. BL-1258:
+# check_retirement_readdition.sh is its addition-side sibling, same
+# posture. No longer a single `exec`: every guard must run every time, so
+# a real failure from any one is never masked by another's exit code. That
+# requires NOT using `set -e` across the calls: under it, a failing
+# earlier call would abort the script before a later one ever ran, hiding
+# a real violation behind an earlier one's - the exact first-failure-stop
+# shape Article 4.4 exists to forbid, and a role fixing only the reported
+# violation would be blindsided by another on its next attempt. Each
+# call's own body still runs under its own `set -euo pipefail`.
 set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
@@ -27,5 +28,6 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 status=0
 "$REPO_ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$1" || status=$?
 "$REPO_ROOT/swarmforge/scripts/check_merge_deletion.sh" "$1" || status=$?
+"$REPO_ROOT/swarmforge/scripts/check_retirement_readdition.sh" "$1" || status=$?
 
 exit "$status"
