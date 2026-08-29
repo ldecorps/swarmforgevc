@@ -1,5 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1209: `assessPilotMkdtempConvention`
+(`extension/src/tools/pilotMkdtempConventionCheck.ts`) resolves its
+raw-mkdtemp detector from the TOOL's own location, not the subject root it
+is handed — `RAW_MKDTEMP_PATTERN`/`findRawMkdtempLines` now live in
+`extension/src/tools/rawMkdtempDetector.ts`, with
+`extension/test/helpers/rawMkdtempGuard.js` re-exporting them for the test
+helper, so the check works against any root instead of throwing
+`MODULE_NOT_FOUND` against every root but this repo's own. The detector also
+loads lazily, on the first in-scope path, so a call with nothing to scan
+does no work and cannot fail. This closes a standing red in the main unit
+lane: `pilotAcceptanceGateCli.test.js`'s claim-refused-land case had failed
+with `MODULE_NOT_FOUND` since BL-743 landed on 2026-08-26 because it drove
+the compiled CLI against a `/tmp` fixture root. The check's own test also
+stops writing a scratch file into the live collected test tree
+(`extension/test/pilotMkdtempConventionCheck.test.js` used to point itself
+at the live repo and leave a `bl743-assess-<pid>.test.js` behind, the exact
+BL-971 killed-run leftover shape), building fixture roots through the
+shared `mkTmpDir` helper instead. No user-facing command or setting;
+internal test/CLI tooling correctness only. Acceptance:
+`specs/features/BL-1209-mkdtemp-check-resolves-its-detector-from-the-tool-not-the-subject.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1251: the master-main-reconcile kill
 switch (BL-1248) is re-armed — `config master_main_reconcile_enabled true`
 in `swarmforge/swarmforge.conf` — following the operator's 2026-08-29 ON

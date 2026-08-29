@@ -51,6 +51,29 @@ test('assessPilotMkdtempConvention flags raw mkdtemp in touched test file', () =
   assert.equal(outcome.violations[0].line, 2);
 });
 
+// BL-1209 hardener finding: this check's own EXEMPT_REPO_PATHS omitted the
+// two test files THIS ticket itself introduced - pilotMkdtempConventionCheck
+// .test.js and its property sibling both carry RAW_CALL_FILE/RAW_LINE fixture
+// strings (test DATA proving the detector works), and without the exemption
+// a ticket that so much as touches this check's OWN test file would have the
+// real /pilot land gate refuse the land over a "violation" that is not
+// executable code at all. Mirrors rawMkdtempGuard.js's identical
+// SELF_EXEMPT_RELATIVE_PATHS discipline for the whole-tree guard.
+test('touching this check\'s own fixture-string test files is never itself a violation', () => {
+  for (const rel of [
+    'extension/test/pilotMkdtempConventionCheck.test.js',
+    'extension/test/pilotMkdtempConventionCheck.property.test.js',
+  ]) {
+    const root = fixtureRootWith(rel, RAW_CALL_FILE);
+    assert.deepEqual(assessPilotMkdtempConvention(root, [rel]), {
+      checked: true,
+      testFilesScanned: 0,
+      violations: [],
+      scannedPaths: [],
+    });
+  }
+});
+
 test('a touched test file using the shared helper is scanned and reported clean', () => {
   const rel = 'extension/test/subject.test.js';
   const root = fixtureRootWith(rel, SHARED_HELPER_FILE);
@@ -61,6 +84,23 @@ test('a touched test file using the shared helper is scanned and reported clean'
     violations: [],
     scannedPaths: [rel],
   });
+});
+
+test('a touched path that no longer exists on disk is skipped, not read', () => {
+  const root = mkTmpDir('bl1209-subject-');
+  const rel = 'extension/test/renamed-away.test.js';
+  // Deliberately never written - a commit's touched-file list can name a
+  // path a LATER commit renamed or deleted; the check must skip it rather
+  // than throw trying to fs.readFileSync a path that is not there.
+  let loads = 0;
+  const outcome = assessPilotMkdtempConvention(root, [rel], {
+    loadDetector: () => {
+      loads += 1;
+      return { findRawMkdtempLines: () => [] };
+    },
+  });
+  assert.deepEqual(outcome, { checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] });
+  assert.equal(loads, 0, 'a nonexistent path must not load the detector either');
 });
 
 test('the subject root needs no detector of its own', () => {
