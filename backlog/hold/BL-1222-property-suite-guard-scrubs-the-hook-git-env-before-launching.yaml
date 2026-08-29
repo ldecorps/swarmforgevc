@@ -202,5 +202,23 @@ notes: |
     will exercise this script's decision block. Different files, so not a
     conflict, but they share the shell test harness. Rule 3 is the
     coordinator's call; flagging it so the choice is made deliberately."
+  - "[2026-08-28] coder: confirmed the scrub is still present at
+    check_property_suite_drift.sh:204 (unset -v GIT_DIR GIT_WORK_TREE
+    GIT_INDEX_FILE, right before the suite launches) - nothing to restore.
+    Built the coverage this ticket owes: two new scenarios (17-18) in
+    swarmforge/scripts/test/test_property_suite_drift_guard.sh (a real
+    'fake main' gitdir as GIT_DIR/GIT_INDEX_FILE, not a fabricated path,
+    so an un-scrubbed run would actually be able to write into it), plus
+    the acceptance feature's own step handlers
+    (bl1222PropertySuiteGuardGitEnvScrubSteps.js +
+    lib/bl1222PropertySuiteGuardGitEnvScrubCli.sh) driving the real guard
+    script end to end for all 5 scenarios (01, 03, and outline 04's three
+    short-circuit rows). Scenario 02 stayed retired per the specifier's
+    note - not reworded, not rebuilt. Non-vacuity proven by hand at both
+    layers: disabled the scrub line, confirmed shell scenarios 17-18 AND
+    acceptance scenarios 01/03 all fail naming the leaked env vars or the
+    moved HEAD; restored, re-confirmed ALL PASS both layers. Verified:
+    test_property_suite_drift_guard.sh ALL PASS (18 scenarios); acceptance
+    feature 5/5."
 
 assigned_to: coder
