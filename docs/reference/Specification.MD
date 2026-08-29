@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1241: an entangled tip at the land
+step — a parcel that passes every gate for its own ticket, but whose commit
+carries another ticket's unlanded work as an ancestor, an ordinary
+consequence of Article 1's one-worktree-per-role branches — used to be
+bounced to the parcel's author, who has no way to remove an ancestor commit.
+It fired five times in two days (BL-1227, BL-1192, BL-1201, BL-1238,
+BL-1247) and stalled every parcel it touched. Fixed:
+`swarmforge/scripts/land_step_cli.bb` over `land_step_lib.bb`, run by QA in
+place of the author bounce — lands already-landable siblings first when
+that alone clears the entanglement, otherwise rebuilds a tip-pure commit for
+this ticket only, replayed onto current `origin/main` in a dedicated linked
+worktree (reusing BL-1192's own-paths walk directly, never a second
+implementation), and records `abandoned_commits:` on the ticket so BL-1192's
+and `pre_qa_gate_lib.bb`'s ancestry walks read the severed descent
+correctly. An unclean replay is a `note` (priority `00`) to the specifier,
+never a bounce. The approval stands throughout — no earlier stage is
+re-entered. `swarmforge/roles/QA.prompt` carries the directive prose
+(landed by the specifier, BL-798). No new extension command or setting.
+Acceptance:
+`specs/features/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.feature`.
+How-to:
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1257: QA's review-time entangled-tip
 check (BL-506) hand-rolled `git diff --name-only origin/main <commit>` each
 pass — the exact range BL-1192's send-time gate had already rejected for
