@@ -101,6 +101,55 @@ description: |
   corpus on every call. Narrowing the predicate retroactively heals all 68
   ids, including the 24 paused tickets, with no backfill or migration.
 
+  ## The ruling: textual, not structural (specifier, 2026-08-29)
+
+  `approval_context` left one fork open for the coder: a textual verb-first
+  filter, or a structural discriminator. **Build the textual one.** A note
+  counts as a dispatch ONLY when it matches the verb-first
+  `spec-work-ticket-id-pattern` form the router itself emits; a note whose
+  only ticket reference is the general leading-id token never counts. Hand
+  kickoffs must adopt one of the router's forms - the BL-259 shape
+  ("BL-259 active: build ...") stops counting, deliberately.
+
+  Three reasons, in order of weight.
+
+  1. **The approved acceptance contract already says so.** Scenario 01's
+     Examples table is the ruling in four rows: `note` /
+     "Work BL-900-some-slug: read file in backlog/active" -> DISPATCHED,
+     `note` / leading-id prose -> UNDISPATCHED. No row keys on a recipient.
+     The human approved that table on 2026-08-28; the prose fork is resolved
+     by the executable half of the same ticket, not reopened by it.
+
+  2. **The recipient-based structural candidate violates invariant 1.** It
+     classifies by who a note was addressed to, which is a proxy for
+     "is this a dispatch", not a discriminator. Every note addressed to a
+     working role that merely REPORTS or REQUESTS dispatch state would count:
+     a QA merge-up broadcast, a bounce note, an in-flight amendment note, a
+     coordinator chase asking "do you still hold this parcel?". That is
+     invariant 1's exact prohibition, reached by a different route - and it
+     fails in the SILENT STARVATION direction, which is the direction this
+     ticket exists to remove and the one the module's stated posture forbids.
+
+  3. **A note carries no structural dispatch marker.** `task:` is the only
+     structural one, it is `git_handoff`-only, and it already counts
+     unchanged. The note allowance exists for exactly one reason - to
+     recognise the router's own emitted routing note (BL-538) - so the
+     correct rule is a whitelist of forms the router emits, which is textual
+     by construction. There is no third, better structural signal being
+     passed over here.
+
+  On the first question `approval_context` raised: the human's approval
+  settles it. The accepted residual failure is a visible, recoverable double
+  route, never a silent starve. That answer is also what dissolves the
+  hand-kickoff objection - a BL-259-shaped kickoff is not newly STARVED by
+  this ruling, it is newly DOUBLE-ROUTED, which is the failure direction
+  already chosen.
+
+  Measured on the live corpus today: 850 of 7413 note messages carry a
+  verb-first form and keep counting; 4312 lead with a bare id and stop. Every
+  real pipeline dispatch is a `git_handoff` with a `task:` header and is
+  untouched, so the double-route exposure is bounded to hand kickoffs alone.
+
   ## Constraints
 
   - Do not fix this in `route_backlog_to_coder.sh`. BL-1097's second
@@ -119,6 +168,22 @@ description: |
   - Failing loud beats failing silent, per the module's own posture. If a
     form cannot be classified, prefer answering UNDISPATCHED - a second route
     is visible and recoverable; a starved ticket is neither.
+  - Narrow the DISPATCH TRAIL only. `build-dropped-parcel-trail-index`
+    computes ONE `id` per file (`(or task message)` -> `extract-ticket-id`)
+    and feeds it to BOTH `:trail` and `:live-ids`. Narrowing at that single
+    call site would silently narrow `live-mail?` too, and for `live-mail?`
+    - "is there a parcel in this inbox right now" - the broad "does this
+    handoff mention this ticket" question is the CORRECT one. Split the two
+    derivations: `:live-ids` keeps today's semantics exactly, only `:trail`
+    narrows. This is invariant 3 reached from inside the same function
+    rather than from another module.
+  - Both verb-first forms keep counting, `Work` and `Spec`. Only
+    `route_backlog_to_coder.sh` emits one today
+    (`MSG="Work ${BASENAME}: read file in backlog/active"`), but BL-538's
+    incident note was the `Spec` form, and the constraint above is that the
+    router's routing note must keep counting. Reuse
+    `spec-work-ticket-id-pattern` as it stands; do not re-derive a narrower
+    literal from the one live emitter.
 
 qa_e2e_procedure: >
   (1) Run `bb swarmforge/scripts/dispatch_trail_cli.bb . dispatched BL-1214`
@@ -213,6 +278,38 @@ notes: |
     human's tap is not silently re-asked - `human_approval: approved` is the
     human's, recorded 2026-08-28, not a specifier-set value. The feature file
     is restored from 45e9a710d, its only revision."
+  - "[2026-08-29] specifier: the circularity has now closed on THIS ticket.
+    The coder's block note above was sent as `message: BL-1223: coder
+    blocked, needs textual-vs-structural ruling, see evidence` - leading with
+    the id, as the 80-char cap encourages. `bb
+    swarmforge/scripts/dispatch_trail_cli.bb . dispatched BL-1223` therefore
+    now prints DISPATCHED, where the earlier deliberate phrasing had kept it
+    UNDISPATCHED. No parcel exists: a mailbox sweep across every role's
+    new/ and in_process/ (master and worktrees) finds no BL-1223 handoff at
+    all. So the report that the fix is blocked is now counted as proof the
+    fix was dispatched, and `route_backlog_to_coder.sh` will refuse to
+    re-route it. Re-routing this ticket needs --force until it fixes itself.
+    This is the ticket's own thesis reproduced a third time, on itself, three
+    days after it was filed."
+  - "[2026-08-29] specifier: RULING on approval_context's second question,
+    requested by the coder's block note (evidence
+    backlog/evidence/BL-1223-coder-blocked-on-open-design-question-20260829.md,
+    coder commit b5addb09f). Build the TEXTUAL fix - see 'The ruling' in the
+    description. The coder was right to stop rather than guess: the fork
+    changes the shape of the fix and the ticket said so. Two facts the coder
+    could not see from their worktree settle it. First, the approved feature
+    file's scenario 01 already encodes the textual answer in its Examples
+    table and keys on no recipient anywhere, so the executable contract the
+    human approved had already resolved the prose fork. Second, the
+    recipient-based candidate is not merely the larger option, it is unsound:
+    it counts every merge-up broadcast, bounce, amendment and chase note
+    addressed to a working role as a dispatch, which is invariant 1's exact
+    prohibition, and it fails toward starvation rather than toward the visible
+    double route the human accepted. NO SCENARIO WAS ADDED - the acceptance
+    contract is unchanged and needs no new step handler (BL-233). Two
+    constraints were added: keep `:live-ids` broad while narrowing `:trail`
+    (they share one extraction today), and keep both `Work` and `Spec`
+    verb-first forms counting."
   - "[2026-08-29] specifier: the defect is re-verified live today, on a ticket
     minted after the measurement above. `bb swarmforge/scripts/dispatch_trail_cli.bb
     . dispatched BL-1237` prints DISPATCHED. Every one of the 15 handoffs
@@ -223,5 +320,58 @@ notes: |
     restoration. BL-1237 is a severity-high defect that hard-blocks the
     specifier and cleaner seats, so this predicate defect is now blocking the
     repair of a seat-level block."
+  - "[2026-08-29] coder: implemented per the specifier's textual ruling.
+    Added `dispatch-trail-ticket-id` in chase_sweep_lib.bb: task: (git_
+    handoff-only, structural) counts via extract-ticket-id unchanged;
+    message: (note-only) counts ONLY via spec-work-ticket-id-pattern
+    (reused as-is, not re-derived) - a bare leading-id message never
+    counts. extract-ticket-id itself is untouched; only the three call
+    sites that decide DISPATCH status now use the narrower predicate:
+    collect-dispatched-ticket-ids, newest-trail-event-ms, and
+    build-dropped-parcel-trail-index's :trail derivation (its :live-ids
+    derivation keeps the old broad extract-ticket-id unchanged, per
+    invariant 3 and the constraint to narrow :trail only).
+
+    Found and fixed one real consequence while regression-checking sibling
+    sweeps (qa_e2e_procedure step 5): unassigned-active-note-message's own
+    anti-spam design ('leads with the ticket id so the next sweep treats
+    the nudge itself as a trail') relied on the now-narrowed leading-id
+    match, so it would have started re-nudging every cycle. Gave it the
+    same fix already applied to the router's own note (BL-538): lead with
+    'Work ' so it counts under the new predicate too - not a scope
+    expansion, the identical fix this ticket's own reasoning already
+    establishes, applied to a second internal emitter with the same shape.
+
+    dispatch_gap_test_runner.bb: updated the two assertions that were
+    testing the OLD (defective) behavior (a bare leading-id note counting,
+    and the unassigned-nudge fixture using the pre-fix message format) to
+    the corrected behavior, and added two new assertions matching
+    qa_e2e_procedure (1)/(3) directly (a spec-ready note and a dropped-
+    parcel self-alarm both now answer undispatched). The suite's other two
+    pre-existing failures (top-expedited-paused-candidate, type: bug
+    ranking) are unrelated - confirmed by isolating this ticket's diff via
+    `git stash` and re-running: identical 2 failures with or without this
+    change.
+
+    Verified: dispatch_gap_test_runner.bb (2 pre-existing unrelated
+    failures only), bl719_dropped_parcel_invariants_property_runner.bb,
+    bl1097_router_no_op_origination_property_runner.bb,
+    bl1097_router_dispatch_trail_test_runner.bb,
+    bl978_trail_index_property_runner.bb (the single-pass index vs
+    per-item composition cross-check - direct evidence the three narrowed
+    call sites stay consistent with each other), dropped_parcel_test_
+    runner.bb, chase_activity_nudge_test_runner.bb - ALL PASS/HOLD, no
+    regression. New acceptance feature (bl1223DispatchEvidenceIsADispatch
+    Steps.js) 6/6, driving the real dispatch_trail_cli.bb (scenario 01),
+    a real dispatch-gap-items call (scenario 02), and the real
+    route_backlog_to_coder.sh end to end (scenario 03, mirroring
+    test_bl1097_router_refuses_dispatched_ticket.sh's own fixture shape).
+
+    No src/*.ts touched - no CRAP/DRY/Stryker concern (Babashka has
+    neither wired, per BL-472). No property test: the invariant is a
+    textual classification rule over a small closed set of handoff
+    shapes, already exhaustively covered by the acceptance scenarios and
+    the existing bl978/bl1097 property runners that already generate
+    across this exact surface and continue to hold.
 
 assigned_to: coder
