@@ -432,6 +432,34 @@ function referentAfter(text: string): string | undefined {
 }
 
 /**
+ * The referent for ONE marker occurrence, or undefined if this marker
+ * retires nothing (used in prose, or naming a marker being explained). The
+ * three shapes are checked in order and are mutually exclusive by
+ * construction - a line matching (a) never falls through to (b) or (c),
+ * even when (a) matched but named no referent, matching the original
+ * three-branch continue-on-match control flow exactly.
+ */
+function referentForMarker(before: string, after: string): string | undefined {
+  // (a) mapping: `<referent>` → RETIRED..., allowing the marker to open a
+  // quoted span of its own (`→ \`RETIRED-TICKET-TYPE …\``).
+  const mapping = before.match(/(->|=>|→|⇒|=)\s*`?\s*$/);
+  if (mapping) {
+    return referentBefore(before.slice(0, before.length - mapping[0].length));
+  }
+  // (b) predication: <referent> is|was|are|were|now RETIRED
+  const predication = before.match(/\b(?:is|was|are|were|been|now)\b[\s`*_]*$/i);
+  if (predication) {
+    return referentBefore(before.slice(0, before.length - predication[0].length));
+  }
+  // (c) announcement: RETIRED: <referent> / RETIRED — <referent>
+  const announcement = after.match(/^[-:—–]\s*(?!TICKET)/);
+  if (announcement) {
+    return referentAfter(after.slice(announcement[0].length));
+  }
+  return undefined;
+}
+
+/**
  * The tokens a line's RETIRED marker(s) actually retire. Pure: one line in,
  * zero or more referents out - the BL-654 property target for this ticket's
  * declared invariant.
@@ -443,38 +471,10 @@ export function extractRetiredReferents(line: string): string[] {
   while ((marker = markerRe.exec(line)) !== null) {
     const before = line.slice(0, marker.index);
     const after = line.slice(marker.index + marker[0].length);
-
-    // (a) mapping: `<referent>` → RETIRED..., allowing the marker to open a
-    // quoted span of its own (`→ \`RETIRED-TICKET-TYPE …\``).
-    const mapping = before.match(/(->|=>|→|⇒|=)\s*`?\s*$/);
-    if (mapping) {
-      const referent = referentBefore(before.slice(0, before.length - mapping[0].length));
-      if (referent) {
-        referents.push(referent);
-      }
-      continue;
+    const referent = referentForMarker(before, after);
+    if (referent) {
+      referents.push(referent);
     }
-
-    // (b) predication: <referent> is|was|are|were|now RETIRED
-    const predication = before.match(/\b(?:is|was|are|were|been|now)\b[\s`*_]*$/i);
-    if (predication) {
-      const referent = referentBefore(before.slice(0, before.length - predication[0].length));
-      if (referent) {
-        referents.push(referent);
-      }
-      continue;
-    }
-
-    // (c) announcement: RETIRED: <referent> / RETIRED — <referent>
-    const announcement = after.match(/^[-:—–]\s*(?!TICKET)/);
-    if (announcement) {
-      const referent = referentAfter(after.slice(announcement[0].length));
-      if (referent) {
-        referents.push(referent);
-      }
-    }
-    // Anything else - the word used in prose, or as part of a marker name
-    // being explained - retires nothing on this line.
   }
   return referents;
 }
