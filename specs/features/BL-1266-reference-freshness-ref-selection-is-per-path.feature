@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ec0feb1340b1c1b566fb4b6839ee1ce7b43018b231407975ba38d8cd6650f3ff
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-29T09:53:49.077126364Z","feature_name":"The reference-freshness guard asks about every ref, per path","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1266-reference-freshness-ref-selection-is-per-path.feature","background_hash":"de20b0ab93e07466d0e0de695d6927c895507d67edbffc17d90dc1e2c157b007","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A missing amendment is caught whichever ref carries it","scenario_hash":"73ff38d518b93e0d1ad2f368ee5118052739328af9ae66d8b6a4cdf66ab76a41","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-29T09:53:49.077126364Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The reference-freshness guard asks about every ref, per path
   BL-640's pre-turn guard refuses a role's turn when its copy of
   swarmforge/constitution/articles/reference/ is missing an amendment. BL-1237
