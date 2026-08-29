@@ -87,6 +87,14 @@ function ranStages(root) {
   }
 }
 
+// Shared by "QA is not stamped" and "the report does not record the
+// boundary as passed" - both mean the same thing (no QA-hat verdict was
+// ever recorded), whichever Then-wording the scenario uses.
+function assertQaDidNotRun(ctx) {
+  const stages = ranStages(ctx.bl1255.root);
+  assert.ok(!stages.includes('QA'), `QA must not have run; ran: ${stages.join(',')}`);
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -163,10 +171,7 @@ function registerSteps(registry) {
     assert.match(ctx.bl1255.last.out, /PRE_QA_GATE_FAIL/, ctx.bl1255.last.out);
   });
 
-  scoped(/^QA is not stamped$/, (ctx) => {
-    const stages = ranStages(ctx.bl1255.root);
-    assert.ok(!stages.includes('QA'), `QA must not have run; ran: ${stages.join(',')}`);
-  });
+  scoped(/^QA is not stamped$/, assertQaDidNotRun);
 
   scoped(/^the boundary passes$/, (ctx) => {
     assert.doesNotMatch(ctx.bl1255.last.out, /REFUSE required-wiring-gate/, ctx.bl1255.last.out);
@@ -185,10 +190,7 @@ function registerSteps(registry) {
     );
   });
 
-  scoped(/^the report does not record the boundary as passed$/, (ctx) => {
-    const stages = ranStages(ctx.bl1255.root);
-    assert.ok(!stages.includes('QA'), `QA must not have run; ran: ${stages.join(',')}`);
-  });
+  scoped(/^the report does not record the boundary as passed$/, assertQaDidNotRun);
 }
 
 module.exports = { registerSteps };
