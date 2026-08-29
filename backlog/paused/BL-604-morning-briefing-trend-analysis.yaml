@@ -63,3 +63,5 @@ notes: |
     sweep and this turn — active/ is back at the effective cap of 7. Clearing
     this nudge on capacity, not inaction; BL-604 remains eligible for the
     next open slot.
+  - [2026-08-29] coordinator: second nudge, same story. Slot filled by BL-1274
+    before this turn. Still capacity, not inaction.
