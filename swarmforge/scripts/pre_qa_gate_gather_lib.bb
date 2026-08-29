@@ -161,12 +161,27 @@
       (vec (distinct (remove str/blank? (str/split-lines (:out res))))))))
 
 (defn commit-touched-paths
-  "Paths changed by full-sha. Uses `git diff-tree -m` so merge commits list
-   each parent's contribution (name-only without -m is blind to merges).
-   nil when the commit cannot be read."
+  "BL-1269: this is the BL-972 EVIDENCE question - what full-sha itself
+   contributed, not everything reachable through it. `git diff-tree -m`
+   alone (without --cc) lists EACH PARENT's own contribution separately, so
+   a routine 'merge main into <branch>' commit is credited with the whole
+   main-side changeset - on 559d9bd19a, 104 paths under plain -m vs. 4
+   under the combined diff, and those 4 are the merge's own content.
+   `--cc` prunes any path whose hunk agrees with at least one parent,
+   leaving only what the merge itself introduced - the SAME primitive
+   merge-introduces-nothing-unique? below already trusts for the identical
+   question ('did this merge contribute anything of its own'), just
+   returning paths instead of a blank/non-blank verdict. Ordinary
+   single-parent commits are unaffected (-m/--cc are merge-only concepts).
+   nil when the commit cannot be read.
+   This is the ONLY caller of this function (BL-1269 qa_e2e_procedure step
+   6) - if a second caller ever needs 'everything touched, including a
+   parent's own prior content', it must call `git diff-tree -m` directly
+   without --cc rather than repurposing this one, since the two questions
+   have different right answers."
   [project-root full-sha]
   (git-name-only-paths project-root
-                       ["diff-tree" "-r" "--name-only" "-m" "--no-commit-id" full-sha]))
+                       ["diff-tree" "-r" "--name-only" "-m" "--cc" "--no-commit-id" full-sha]))
 
 (defn- merge-base-with-main
   "merge-base of cited-commit against main or origin/main, or nil."

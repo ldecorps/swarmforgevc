@@ -48,11 +48,16 @@ description: >
   git needed for what they assert)" - which is right for 01 and precisely
   wrong for 05.
 
-  Demonstrated against a real change, not hypothesised. Hardener commit
-  b617a292e6 (on swarmforge-hardender, NOT merged and not to be merged -
-  see the adjudication below) moves the guard to handoffd's call site,
-  leaving the off path with a drift log line and neither :surface! nor
-  :escalate!. It also leaves the lib's 4-arg arity in place "exercised by
+  Demonstrated against a real change, not hypothesised. Commit 0a754dad5
+  ("BL-1247: kill switch for the master-main reconcile sweep") moves the
+  guard to handoffd's call site, leaving the off path with a drift log
+  line and neither :surface! nor :escalate!. That change LANDED - it is an
+  ancestor of main and of every role branch - and was undone only by a
+  hand-written revert, a6f3717b5 ("Revert BL-1247-reconcile-sweep-kill-
+  switch call site to shipped BL-1248 shape"). Scenario 05 was green
+  before it landed, green while it was on main, and green after the
+  revert: the wrong guard placement reached main and the gate never
+  moved. It also leaves the lib's 4-arg arity in place "exercised by
   this lib's own tests", so scenario 05 would have stayed green over an
   arity production no longer calls. BL-1248's own qa_e2e_procedure step 5
   warns against exactly this - "do not accept a green here that was
@@ -65,7 +70,7 @@ description: >
   real git repo with a real bare origin and a real handoffd process,
   memoized once per ctx. The natural shape is to re-point scenario 05's
   off-path assertions at that fixture and add the surfacing and escalation
-  checks to it. One affordance is missing and b617a292e6 supplies it as
+  checks to it. One affordance is missing and 0a754dad5 supplies it as
   prior art: a --reconcile-sweep-once one-shot flag on handoffd.bb, the
   same posture as the existing --sweep-once and --chase-sweep-once, so a
   single reconcile tick fires deterministically without a background
@@ -80,11 +85,20 @@ constraints: >
     This ticket changes the GATE, not the thing gated. A diff touching
     master_main_reconcile_lib.bb's reconcile decision or handoffd.bb's
     guard is out of scope, not a scope widening.
-  - Do NOT flip master_main_reconcile_enabled to true, in the shipped conf
-    or in any non-fixture path. That decision is BL-1251.
-  - Do NOT merge or cherry-pick b617a292e6. It is retired work built
-    against a ticket superseded by BL-1248; only the --reconcile-sweep-once
-    idea is reusable, and it is cheaper to write fresh than to untangle.
+  - Do NOT change master_main_reconcile_enabled in the shipped conf or in
+    any non-fixture path, in EITHER direction. As of 2026-08-29 it already
+    reads true (swarmforge.conf:345) - it was flipped out of band while
+    this ticket sat paused, so the ticket's original "do not flip it to
+    true" no longer describes the tree. The value is still not this
+    ticket's to set; BL-1251 (blocked) owns that decision. Set the switch
+    explicitly inside the fixture, never by inheriting the shipped conf.
+  - Do NOT re-apply 0a754dad5's handoffd.bb change, and do not revert its
+    revert. It is retired work built against a ticket superseded by
+    BL-1248; it already landed on main once and a6f3717b5 correctly put
+    the guard back. Only the --reconcile-sweep-once idea is reusable, and
+    since a6f3717b5 removed that flag along with the guard move, it is not
+    in the tree today - read it at 0a754dad5 and write it fresh rather
+    than untangling that commit.
   - Do NOT weaken BL-1248's scenario 05 Gherkin. Its Given/When/Then text
     is right; only the handler behind it is blind. Retire nothing, reword
     nothing in that feature file beyond what a re-pointed handler requires.
@@ -115,7 +129,7 @@ qa_e2e_procedure: >
      header both contain that name and would trip a naive grep.
   5. The regression proof that this ticket is worth its parcel - do this one
      by hand, do not automate it into the suite - take a scratch copy of
-     handoffd.bb, move the guard to the call site as b617a292e6 does, and
+     handoffd.bb, move the guard to the call site as 0a754dad5 does, and
      confirm scenarios 01 and 02 go RED. If they stay green the gate is
      still blind and the ticket is not done. Discard the scratch copy.
   6. The declared invariant carries a coder-authored property test per
@@ -131,7 +145,9 @@ notes: >
   durable defect in the episode: the documenter's two questions were both
   answered NO (BL-1248's shape stands; the duplicate conf key was a merge
   artifact of the retired ticket's own conf block, not a defect on main -
-  git grep finds exactly one occurrence at swarmforge.conf:352).
+  git grep finds exactly one occurrence, at swarmforge.conf:345 as of
+  2026-08-29 - re-verified during the freshness adjudication below, still
+  exactly one).
 
   Related: BL-1248 (done, M8 - the kill switch itself, shipped OFF; its
   scenario 05 is the blind gate this ticket fixes); BL-1247-reconcile-
@@ -154,21 +170,6 @@ notes: >
   one-shot flag only) swarmforge/scripts/handoffd.bb. Nothing else active
   touches these.
 
-approval_context: >
-  A gate that has never been able to fail is not evidence, and this one
-  guards the switch protecting against thirteen realised commit losses. It
-  was found because a real change walked straight through it this week.
-
-  Two calls worth your word. (1) Scope is deliberately the GATE only - the
-  shipped kill switch behaviour is untouched, so this cannot re-open a
-  settled design. Say so if you would rather it also carry the
-  --reconcile-sweep-once flag as a permanent daemon affordance rather than
-  a test-only one. (2) qa_e2e_procedure step 5 asks for a by-hand
-  regression proof (move the guard, watch the gate go red) rather than a
-  committed mutant. Say so if you would rather that be automated, which is
-  more durable but noticeably more parcel.
-
-notes: >
   [2026-08-29] coder: implemented per the direction section, taking call
   (1) as a test-only flag (same posture as the pre-existing --sweep-once/
   --chase-sweep-once, not committing to a permanent daemon affordance) and
@@ -213,7 +214,9 @@ notes: >
   Non-vacuity (qa_e2e_procedure step 5), by hand: temporarily moved the
   guard in handoffd.bb's master-main-reconcile-sweep! to the call site
   (`(when (master-main-reconcile-enabled?) (sweep! ...))`, mirroring
-  b617a292e6's shape - not merged or cherry-picked, hand-written fresh and
+  0a754dad5's shape (the specifier's adjudication above corrects the
+  original citation of b617a292e6, a same-night unrelated hardener
+  commit) - not merged or cherry-picked, hand-written fresh and
   discarded after). Ran test_handoffd_master_main_reconcile_wiring.sh
   against the mutated file: FAILed (red) at "expected the reconcile sweep
   to log a config-skip while the switch is off" - the mutation silenced
@@ -235,3 +238,137 @@ notes: >
   appropriate encoding per the ticket's own qa_e2e_procedure item 6 (a
   property shape is not natural here - the invariant is about how a
   handler is WRITTEN, not a range of inputs a generator would draw from).
+
+coordinator_notes: >
+  2026-08-29 (coordinator): deprecator freshness gate HOLDs this ticket at
+  promotion ("claims superseded/retired/obsolete without a backlog/done/
+  closure"). Likely a false positive: the superseded/retired language in
+  this ticket's own notes/description refers to BL-1247-reconcile-sweep-
+  kill-switch (a DIFFERENT, already-retired ticket named as background),
+  not to BL-1256 itself. Sent priority-00 note to specifier for
+  adjudication (amend/retire/split/confirm) per Article 3.6; not yet
+  answered. This has now blocked 4 consecutive open promotion slots across
+  BL-1244/BL-1233/BL-1234/BL-1237 closes. Not promoting around the hold.
+
+  UPDATE: specifier has since adjudicated (see deprecator_adjudication:
+  below) — verdict PROMOTE, confirmed again by note "HOLD was false-pos,
+  spec amended, MAY PROMOTE." Re-ran promote_and_route_next.sh: STILL
+  HOLDs. Root cause found by reading
+  extension/src/tools/deprecate-check.ts: evaluateDeprecatorFreshness()'s
+  STALE_CLAIM_RE check only asks `facts.doneClosureExists`, i.e. whether
+  THIS ticket's own id has a backlog/done/ YAML — never whether the
+  RETIRED SURFACE IT NAMES is durably closed, and it has no field at all
+  for a recorded specifier adjudication overriding the naive regex hit.
+  So any ticket whose text legitimately mentions a retired sibling ticket
+  (exactly this ticket's case) fails this check forever, regardless of
+  adjudication — the gate has no coded escape hatch for Article 3.6's own
+  "confirm promote" outcome. Filed a role_ask on this (coordinator) but
+  one was already pending, so it queued behind that; not hand-promoting
+  around the gate per BL-1228 discipline. This is a gate defect worth its
+  own ticket (deprecate-check.js needs to consult a recorded adjudication,
+  not just re-derive the same false positive every run).
+
+approval_context: >
+  A gate that has never been able to fail is not evidence, and this one
+  guards the switch protecting against thirteen realised commit losses. It
+  was found because a real change walked straight through it this week.
+
+  Two calls worth your word. (1) Scope is deliberately the GATE only - the
+  shipped kill switch behaviour is untouched, so this cannot re-open a
+  settled design. Say so if you would rather it also carry the
+  --reconcile-sweep-once flag as a permanent daemon affordance rather than
+  a test-only one. (2) qa_e2e_procedure step 5 asks for a by-hand
+  regression proof (move the guard, watch the gate go red) rather than a
+  committed mutant. Say so if you would rather that be automated, which is
+  more durable but noticeably more parcel.
+
+deprecator_adjudication: |
+  ADJUDICATED 2026-08-29 by the specifier, on the coordinator's freshness
+  HOLD (note, priority 00: "BL-1256 freshness HOLD likely false-pos (notes
+  ref BL-1247, adjudicate)"). Article 3.6 outcome 1 — AMEND, then promote.
+
+  ## The HOLD's own trigger was a false positive
+
+  The gate held on this ticket's notes: referencing BL-1247-reconcile-sweep-
+  kill-switch, which is retired. That reference is a correct historical
+  pointer, not a stale premise, and the retirement it describes is now
+  durable: no BL-1247-reconcile* YAML remains anywhere under backlog/, and
+  the only BL-1247 artefacts in the tree are the UNRELATED live ticket's
+  (specs/features/BL-1247-property-generator-domain-agreement.feature and
+  index.js:847 bl1247PropertyGeneratorDomainAgreementSteps) — exactly the
+  id collision this ticket's notes already warn about. Nothing to amend
+  there.
+
+  ## But three real stale claims were found that the gate did NOT flag
+
+  Checked by hand rather than trusting the gate's reason:
+
+  1. WRONG COMMIT. The ticket credited the guard move to b617a292e6. That
+     commit is a 36-line append to the retired ticket's own YAML ("BL-1247:
+     record merge-completion hardening note") and changes no code. The real
+     guard-move-plus---reconcile-sweep-once commit is 0a754dad5. Two
+     same-night BL-1247 hardener commits, easily transposed.
+  2. "NOT MERGED" IS FALSE. 0a754dad5 is an ancestor of main AND of every
+     role branch; so is its hand-written revert a6f3717b5. The original
+     "on swarmforge-hardender, NOT merged and not to be merged" described
+     a state that no longer holds, and "do not merge or cherry-pick" was
+     therefore unactionable as written. This makes the ticket's case
+     STRONGER, not weaker: the wrong guard placement actually reached main
+     and scenario 05 never moved.
+  3. CONF ALREADY FLIPPED. master_main_reconcile_enabled now reads true
+     (swarmforge.conf:345), flipped out of band while this ticket sat
+     paused; the original constraint read as if the switch were still off.
+     Restated to forbid changing it in either direction.
+
+  All three are corrected in description:, constraints: and
+  qa_e2e_procedure: above. None of them changes the WORK.
+
+  ## The core defect is verified FRESH — promote
+
+  Re-checked against the tree today, not taken from the ticket's own prose:
+
+  - specs/pipeline/steps/bl1248MasterMainReconcileKillSwitchSteps.js:93
+    runDivergenceStillSurfaced still calls master-main-reconcile-lib/sweep!
+    directly (line 106) with a hand-passed false over fake adapters, never
+    reaching handoffd.bb. The blindness is exactly as described.
+  - The correct guard placement is intact on main: handoffd.bb:3308 passes
+    (master-main-reconcile-enabled?) INTO sweep! as its 3rd arg, with
+    :surface! and :escalate! still injected as adapters. So the thing
+    gated is healthy and this ticket really does change only the GATE.
+  - The fixture the "How" section points at exists and is executable:
+    swarmforge/scripts/test/test_handoffd_master_main_reconcile_wiring.sh.
+  - --reconcile-sweep-once is absent from handoffd.bb today (a6f3717b5
+    removed it with the guard move), so the affordance is genuinely still
+    missing and must be written.
+  - Not already shipped: no bl1256 handler is registered in
+    specs/pipeline/steps/index.js and no source file carries the id.
+  - Both required_wiring entries parse cleanly through
+    pre-qa-gate-lib/parse-wiring-entry, both paths exist, and the pattern
+    is the literal "BL-1256" the ticket instructs the implementer to write
+    — a fixed string, not a placeholder.
+
+  Verdict: PROMOTE. The premise holds; only its supporting citations were
+  stale, and they are corrected above so the next gate pass is cheap.
+
+  ## The CLI will keep answering hold — that is a gate defect, not a re-hold
+
+  Coordinator note 2026-08-29: "adjudicated PROMOTE but gate CLI still
+  HOLDs (no done closure)". Expected, and it does not reopen this
+  adjudication. deprecate-check.js recomputes from ticket text on every
+  call and reads no record of any adjudication, so Article 3.6's fourth
+  outcome — confirm promote — has nothing it can change. The generic-claim
+  branch matches the deprecation words in this very adjudication block, so
+  writing the verdict down guarantees the hold is now permanent.
+
+  This is the same wall BL-1190 hit on 2026-08-27 and cleared the same
+  way: confirm-promote accepted, the CLI's answer set aside, promoted by
+  hand. Do that here. The scripted path (promote_and_route_next.sh) cannot
+  express a discharge and will keep refusing; that is not the coordinator
+  promoting around a hold, it is the coordinator executing an adjudication
+  the constitution authorises and the tooling cannot yet record.
+
+  Ticketed so it stops recurring: BL-1267 (the missing discharge path) and
+  BL-1268 (the generic-claim branch that fires on citations), both paused
+  2026-08-29, both defect/high, epic deprecator.
+
+assigned_to: coder

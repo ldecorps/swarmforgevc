@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5e9ff7cee1ca84090e0b7b2bbbafdc6671fb78a9cadf04b00b77f8fe663aa273
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-29T08:14:50.045020963Z","feature_name":"BL-1255 an expedited ticket is refused on absent required_wiring, exactly as the live pipeline refuses it","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1255-expedite-runs-the-required-wiring-gate.feature","background_hash":"fe0545cad649b878833c9f2b9342633990afd7f29712f54e7b70aac63e089a21","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a wiring entry that cannot be satisfied refuses the run and names itself","scenario_hash":"20e7a433f5f3548d367c2f0b5d04d7d2e04466daeab0128ba84a8a676de66791","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-29T08:14:50.045020963Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1255 an expedited ticket is refused on absent required_wiring, exactly as the live pipeline refuses it
 
   The required_wiring gate (pre_qa_gate_lib) is reached from ONE place:
