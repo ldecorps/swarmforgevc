@@ -15,6 +15,15 @@ source: |
   Human, 2026-07-23, filing BL-579/BL-580: "make sure the documenter keep
   these up to date."
 
+coordinator_notes: |
+  2026-08-29 (coordinator): handoffd's open-slot nudge named this ticket as
+  the candidate, but it is not top of queue per Article 3.2.4 — expedited
+  defects (severity high) rank ahead of it: BL-1256 (priority 5, currently
+  HELD by the deprecator freshness gate pending specifier fix), BL-1266
+  (priority 17), BL-1209 (priority 35). Not promoting BL-581 this turn;
+  eligible on its own merits (deps BL-579/BL-580 both done) once the
+  expedited queue ahead of it clears or is exhausted.
+
 description: |
   ## Problem
 

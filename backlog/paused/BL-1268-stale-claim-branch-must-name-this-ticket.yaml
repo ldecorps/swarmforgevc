@@ -1,0 +1,142 @@
+id: BL-1268
+title: "The freshness gate's generic-claim branch holds on any prose mention of a deprecation, so a quarter of the paused pool is held for correctly citing other tickets"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: deprecator
+human_approval: approved
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1268-stale-claim-branch-must-name-this-ticket.feature
+
+required_wiring:
+  - 'extension/src/tools/deprecate-check.ts::BL-1268::the narrowed generic-claim predicate must be marked with this ticket id at the site it changes, so the change is greppable where it lands'
+  - 'specs/pipeline/steps/index.js::bl1268::the step handler must be registered in the step registry or the acceptance runner never runs these scenarios'
+
+invariants:
+  - "A ticket that names another ticket's disposition never holds on the generic-claim branch; a ticket that claims its own still does."
+  - "Narrowing the predicate never turns a genuine self-claim into an allow: every paused ticket the branch holds today is re-checked, and each is either still held or shown to be a cross-reference to another ticket."
+
+description: >
+  Severity rationale: high - a broken safety signal. A gate that holds a
+  quarter of its input for correct bookkeeping teaches its readers to
+  disbelieve it, and a signal nobody believes protects nothing.
+
+  What is wrong. extension/src/tools/deprecate-check.ts holds a candidate
+  when STALE_CLAIM_RE matches anywhere in the ticket YAML text and no
+  backlog/done/ closure exists for that ticket id. The regex is a bare
+  word-boundary alternation over four deprecation words, tested against
+  the whole file. It cannot distinguish "this ticket has been stood down"
+  from "this ticket explains why some OTHER ticket was" - and a ticket's
+  notes: field is exactly where such cross-references belong, so the
+  predicate treats correct bookkeeping as a stale premise. The
+  closure-exists escape only ever clears a ticket that is itself finished,
+  which a paused candidate never is, so for the population the gate
+  actually runs against the branch reduces to a substring search.
+
+  Measured, not estimated. Running the CLI over every paused ticket on
+  2026-08-29: 29 of 114 answer hold, and 24 of those name this one branch.
+  The held set includes the deprecator epic BL-1172 and every ticket
+  carrying a specifier's recorded adjudication - so the act of writing an
+  adjudication down is itself sufficient to make that ticket's hold
+  permanent.
+
+  The false positives are not edge cases. BL-1256's hold fired on notes
+  that cite a different, already-stood-down ticket as background; the
+  coordinator's own hold record calls it "likely a false positive" and the
+  adjudication confirmed it was. That adjudication also found three
+  genuinely stale claims in the same ticket that the gate did not flag -
+  wrong commit hash, a "not merged" assertion that had stopped being true,
+  and a conf value flipped out of band. A predicate loud on citations and
+  silent on stale facts is worse than no predicate, because it consumes
+  the specifier attention that would have caught the real ones.
+
+  How (direction, not mandate). Anchor the branch to a claim about THIS
+  ticket rather than a bare substring anywhere in the file: a structured
+  field such as closed_as, or a claim word bound to this ticket's own id.
+  Prose naming another ticket's disposition is not a claim about this one.
+  The reason string should name the field the claim was found in, so the
+  adjudicating specifier can check it in one look instead of grepping the
+  whole ticket - the cost of the current reason is most of the minutes
+  BL-1256's adjudication took.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT touch the token-extractor branch. loadRetiredTokens and
+    collectRetiredSurfaceHits are BL-1193's, minted and awaiting sign-off;
+    a diff there is out of scope, not a scope widening. The two tickets fix
+    different branches of the same file and neither subsumes the other.
+  - Do NOT add a discharge path. Making an adjudication clear a hold is
+    BL-1267's job. This ticket only narrows what earns a hold in the first
+    place, and the two are independent: either can ship first.
+  - Do NOT weaken the supersede-marker signal or the fail-closed posture.
+    BL-1173's other holds and its CLI-failure behaviour stay exactly as
+    they are.
+  - Do NOT clear the currently held tickets as part of this parcel.
+    Whichever of them stop holding once the predicate is narrowed stop on
+    their own; the ones that still hold are adjudication work for the
+    specifier under Article 3.6, ticket by ticket.
+  - Do NOT verify by re-running the gate over a fixture pool only. The
+    number that matters is over the live paused pool, and it is a
+    before/after count, not a spot check.
+
+qa_e2e_procedure: >
+  1. Build the CLI. Construct a fixture ticket whose only claim words sit
+     in a notes line citing a different ticket, and confirm the check
+     answers allow. Then move the same words into a closed_as field naming
+     the fixture ticket itself and confirm it answers hold.
+  2. Non-vacuity for step 1: confirm the fixture ticket that now holds
+     answers allow once a backlog/done/ closure exists for it, so the
+     hold-case green is not coming from a fixture that holds unconditionally.
+  3. Confirm a ticket whose only claim words appear inside a recorded
+     deprecator adjudication answers allow. This is the case that makes the
+     current branch self-defeating and it is the one most likely to be lost.
+  4. Confirm the hold reason names the field the claim was found in, not
+     merely that a claim exists.
+  5. The count that decides the ticket: run the CLI over every file in
+     backlog/paused/ before and after the change and record both held
+     counts and both held ID lists in the evidence file. Every ticket that
+     stops holding must be shown to be a cross-reference to another
+     ticket - walk the list, do not sample it - and no ticket may start
+     holding that did not hold before.
+  6. Confirm no ticket that carries a genuine self-claim stopped holding.
+     If the after-list contains none of the before-list's genuine
+     self-claims, the predicate was widened into uselessness rather than
+     narrowed, and that is a fail even with every scenario green.
+
+notes: >
+  Source: the specifier's audit of the paused pool while adjudicating
+  BL-1256's freshness hold on 2026-08-29, prompted by the coordinator's
+  priority-00 note reporting that the hold could not be cleared.
+
+  Related: BL-1173 (done, M8 - shipped the gate and this branch); BL-1193
+  (paused - the token-extractor branch of the same CLI); BL-1267 (paused -
+  the discharge path, independent of this one); BL-1256 and BL-1190 (the
+  two incidents); BL-1172 (the epic tracker).
+
+  Trap-resistance, deliberate: this YAML avoids the four words the branch
+  matches and declares depends_on empty, so the gate it repairs does not
+  hold the ticket that repairs it. The words appear in the feature file,
+  which the CLI does not read. Future editors of this file should keep
+  them out of it. BL-1173 is a real predecessor but is already shipped, so
+  citing it in prose rather than depends_on loses nothing and keeps the
+  depends_on-gated branches disarmed.
+
+approval_context: >
+  A gate that fires on a quarter of its input for correct bookkeeping is
+  training its readers to wave it through, which is how the three genuinely
+  stale facts in BL-1256 got past everyone until a full hand adjudication.
+
+  One call worth your word. The fix narrows the branch to claims about the
+  candidate itself, which means a ticket that quietly assumes a
+  stood-down premise without ever saying so about itself will no longer be
+  caught here at all. That detection belongs to the specifier's Article 3.6
+  reading and to the token-extractor branch, not to a substring search -
+  but say so if you would rather keep a broad prose signal and instead
+  route it somewhere it does not block promotion, such as an advisory line
+  the way orthogonality already works.

@@ -164,3 +164,48 @@ notes: |
     same pass once they are, and record the commit here. If this note is still
     the last word when the ticket reaches QA, the prose was never written and
     someone should say so rather than pass it.
+
+deprecator_adjudication: |
+  ADJUDICATED 2026-08-29 by the specifier, on the coordinator's freshness HOLD
+  (note, priority 00: "BL-1257 freshness HOLD (likely BL-1268 class);
+  adjudicate?"). Article 3.6 outcome 4 — CONFIRM PROMOTE, no amendment needed.
+
+  ## The HOLD's trigger is a false positive
+
+  Reason: "ticket claims superseded/retired/obsolete without a backlog/done/
+  closure". Exactly one claim word appears in this ticket, at notes line 127,
+  in "BL-1247's tip additionally carries a real retired-ticket resurrection" —
+  a citation of ANOTHER ticket's disposition, not a claim about BL-1257. That
+  is the BL-1268 defect (paused 2026-08-29), and the absent discharge path is
+  BL-1267. Until BL-1267 ships this confirm-promote cannot be recorded where
+  the CLI reads it; the coordinator promotes by hand, as with BL-1190,
+  BL-1256 and BL-1258.
+
+  ## Every premise re-verified against the tree today, not read off the ticket
+
+  1. The send-time gate IS corrected as described.
+     swarmforge/scripts/task_scope_gate_lib.bb lines 48-70 carry the BL-1192
+     architect-bounce header the ticket quotes, verbatim, including the
+     b033583c08 measurement (64 paths across ~6 tickets under
+     origin/main...commit; 1 under the implemented scope). The implemented
+     basis is the union of each commit's own tree diff, walked first-parent
+     from salvage-lib/latest-item-handoffs, restricted to commits whose
+     message names the task id. The ticket's characterisation is accurate.
+  2. The review-time seat is STILL uncorrected. swarmforge/roles/QA.prompt
+     contains zero matches for entangl, BL-506, task_scope or out-of-scope.
+     There is still no wording the correction could live in and nothing
+     pointing the seat at the shared library.
+  3. The lag that drives the false positives is not merely still present, it
+     has grown: git rev-list --left-right --count main...origin/main reads
+     37 0 as of this adjudication — local main is 37 commits ahead and
+     origin/main is behind by all of them. Every parcel reviewed against
+     origin/main this shift inherits that whole span as apparent foreign scope.
+  4. depends_on: [BL-1192] is satisfied — backlog/done/M8/BL-1192-pre-handoff-
+     task-scope-gate.yaml.
+  5. Not already shipped: no bl1257 handler is registered in
+     specs/pipeline/steps/index.js.
+
+  Verdict: PROMOTE. Nothing in this ticket had aged; the hold is entirely an
+  artefact of the gate's own predicate.
+
+assigned_to: coder
