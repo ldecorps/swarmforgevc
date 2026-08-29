@@ -7,28 +7,33 @@
 const fs = require('fs');
 const path = require('path');
 
-const RAW_MKDTEMP_PATTERN = /mkdtempSync\(\s*path\.join\(\s*os\.tmpdir\(\)/;
-
-// Pure: given one file's own text, the 1-indexed line numbers containing a
-// raw call. Unit-testable directly against a fixture string - no filesystem
-// needed for THIS function's own tests.
-function findRawMkdtempLines(text) {
-  return text
-    .split('\n')
-    .map((line, i) => (RAW_MKDTEMP_PATTERN.test(line) ? i + 1 : null))
-    .filter((n) => n !== null);
-}
+// BL-1209: the pure detector moved to src/tools/rawMkdtempDetector.ts, where
+// the tool's own logic lives, because the pilot check used to require THIS
+// file out of whatever root it was handed - so it could only ever run against
+// this repository. Re-exported here rather than duplicated: two copies of a
+// pattern across a boundary no import bridges is precisely the drift trap the
+// engineering rules call out, and every existing consumer of this helper keeps
+// the same names.
+const { RAW_MKDTEMP_PATTERN, findRawMkdtempLines } = require('../../out/tools/rawMkdtempDetector');
 
 // Paths (relative to testDir) that legitimately contain the raw pattern's
 // literal TEXT and must never be flagged: tmpDir.js's own real call site,
-// and this guard's own test file, whose fixture STRINGS deliberately
-// contain the pattern as test DATA (not executable code) to prove the
-// scanner detects it - a scan that flagged its own fixtures would make the
+// and any guard test file whose fixture STRINGS deliberately contain the
+// pattern as test DATA (not executable code) to prove a detector actually
+// detects it - a scan that flagged its own fixtures would make the
 // migration-complete gate (scenario 03) permanently unsatisfiable.
+//
+// BL-1209: pilotMkdtempConventionCheck.test.js and its property sibling
+// carry the same shape - RAW_CALL_FILE/RAW_LINE fixture strings proving
+// assessPilotMkdtempConvention flags a raw call - and were omitted here
+// when that ticket added them, so the real-tree scan (scenario 03) flagged
+// its own sibling guard's fixtures as violations.
 const SELF_EXEMPT_RELATIVE_PATHS = [
   'helpers/tmpDir.js',
   'tmpDirMigrationGuard.test.js',
   'tmpDirMigrationGuard.property.test.js',
+  'pilotMkdtempConventionCheck.test.js',
+  'pilotMkdtempConventionCheck.property.test.js',
 ];
 
 // Impure: walks every .js file under testDir (recursively), skipping the

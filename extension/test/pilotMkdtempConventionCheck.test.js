@@ -9,6 +9,7 @@ const {
   PILOT_RAW_MKDTEMP_REFUSAL,
 } = require('../out/tools/pilotMkdtempConventionCheck');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 test('isExtensionTestJsPath accepts extension test js and skips fixtures', () => {
   assert.equal(isExtensionTestJsPath('extension/test/foo.test.js'), true);
@@ -16,25 +17,134 @@ test('isExtensionTestJsPath accepts extension test js and skips fixtures', () =>
   assert.equal(isExtensionTestJsPath('extension/src/foo.js'), false);
 });
 
-test('assessPilotMkdtempConvention flags raw mkdtemp in touched test file', () => {
-  const root = path.join(__dirname, '..', '..');
-  const rel = `extension/test/bl743-assess-${process.pid}.test.js`;
-  const abs = path.join(root, rel);
+// BL-1209: a fixture root, NOT the live repository. This test used to point
+// the check at `path.join(__dirname, '..', '..')` and write a scratch
+// `bl743-assess-<pid>.test.js` into the collected test tree to give the scan
+// something to find - it had to, because the check required its detector out
+// of whatever root it was handed, so only the real repo worked. That scratch
+// file matched the suite's own discovery glob, so a run killed before its
+// `finally` left behind a file the next run collected as an empty red.
+// The detector is now the tool's own, so an ordinary fixture root works and
+// nothing is written into the live tree at all.
+function fixtureRootWith(relativePath, contents) {
+  const root = mkTmpDir('bl1209-subject-');
+  const abs = path.join(root, relativePath);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(
-    abs,
-    "const fs = require('fs'); const os = require('os'); const path = require('path');\n" +
-      "const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'x-'));\n",
-    'utf8'
-  );
-  try {
-    const outcome = assessPilotMkdtempConvention(root, [rel]);
-    assert.equal(outcome.checked, true);
-    assert.equal(outcome.violations.length, 1);
-    assert.equal(outcome.violations[0].file, rel);
-  } finally {
-    fs.unlinkSync(abs);
+  fs.writeFileSync(abs, contents, 'utf8');
+  return root;
+}
+
+const RAW_CALL_FILE =
+  "const fs = require('fs'); const os = require('os'); const path = require('path');\n" +
+  "const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'x-'));\n";
+
+const SHARED_HELPER_FILE =
+  "const { mkTmpDir } = require('./helpers/tmpDir');\n" + "const dir = mkTmpDir('x-');\n";
+
+test('assessPilotMkdtempConvention flags raw mkdtemp in touched test file', () => {
+  const rel = 'extension/test/subject.test.js';
+  const root = fixtureRootWith(rel, RAW_CALL_FILE);
+  const outcome = assessPilotMkdtempConvention(root, [rel]);
+  assert.equal(outcome.checked, true);
+  assert.equal(outcome.violations.length, 1);
+  assert.equal(outcome.violations[0].file, rel);
+  assert.equal(outcome.violations[0].line, 2);
+});
+
+// BL-1209 hardener finding: this check's own EXEMPT_REPO_PATHS omitted the
+// two test files THIS ticket itself introduced - pilotMkdtempConventionCheck
+// .test.js and its property sibling both carry RAW_CALL_FILE/RAW_LINE fixture
+// strings (test DATA proving the detector works), and without the exemption
+// a ticket that so much as touches this check's OWN test file would have the
+// real /pilot land gate refuse the land over a "violation" that is not
+// executable code at all. Mirrors rawMkdtempGuard.js's identical
+// SELF_EXEMPT_RELATIVE_PATHS discipline for the whole-tree guard.
+test('touching this check\'s own fixture-string test files is never itself a violation', () => {
+  for (const rel of [
+    'extension/test/pilotMkdtempConventionCheck.test.js',
+    'extension/test/pilotMkdtempConventionCheck.property.test.js',
+  ]) {
+    const root = fixtureRootWith(rel, RAW_CALL_FILE);
+    assert.deepEqual(assessPilotMkdtempConvention(root, [rel]), {
+      checked: true,
+      testFilesScanned: 0,
+      violations: [],
+      scannedPaths: [],
+    });
   }
+});
+
+test('a touched test file using the shared helper is scanned and reported clean', () => {
+  const rel = 'extension/test/subject.test.js';
+  const root = fixtureRootWith(rel, SHARED_HELPER_FILE);
+  const outcome = assessPilotMkdtempConvention(root, [rel]);
+  assert.deepEqual(outcome, {
+    checked: true,
+    testFilesScanned: 1,
+    violations: [],
+    scannedPaths: [rel],
+  });
+});
+
+test('a touched path that no longer exists on disk is skipped, not read', () => {
+  const root = mkTmpDir('bl1209-subject-');
+  const rel = 'extension/test/renamed-away.test.js';
+  // Deliberately never written - a commit's touched-file list can name a
+  // path a LATER commit renamed or deleted; the check must skip it rather
+  // than throw trying to fs.readFileSync a path that is not there.
+  let loads = 0;
+  const outcome = assessPilotMkdtempConvention(root, [rel], {
+    loadDetector: () => {
+      loads += 1;
+      return { findRawMkdtempLines: () => [] };
+    },
+  });
+  assert.deepEqual(outcome, { checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] });
+  assert.equal(loads, 0, 'a nonexistent path must not load the detector either');
+});
+
+test('the subject root needs no detector of its own', () => {
+  const rel = 'extension/test/subject.test.js';
+  const root = fixtureRootWith(rel, RAW_CALL_FILE);
+  assert.equal(
+    fs.existsSync(path.join(root, 'extension', 'test', 'helpers', 'rawMkdtempGuard.js')),
+    false,
+    'the fixture must not contain the tool\'s detector, or it proves nothing'
+  );
+  assert.equal(assessPilotMkdtempConvention(root, [rel]).checked, true);
+});
+
+test('nothing in scope: a successful empty result, and the detector is never loaded', () => {
+  const root = fixtureRootWith('extension/test/subject.test.js', RAW_CALL_FILE);
+  let loads = 0;
+  const outcome = assessPilotMkdtempConvention(root, ['src/foo.ts', 'docs/x.md', 'backlog/active/BL-1.yaml'], {
+    loadDetector: () => {
+      loads += 1;
+      return { findRawMkdtempLines: () => [] };
+    },
+  });
+  assert.deepEqual(outcome, { checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] });
+  // Non-vacuity for the invariant: not merely "did not fail", but "did not load".
+  assert.equal(loads, 0, 'the detector was loaded for a call with nothing in scope');
+});
+
+test('the detector is loaded once, however many paths are in scope', () => {
+  const root = mkTmpDir('bl1209-subject-');
+  const paths = ['extension/test/a.test.js', 'extension/test/b.test.js', 'extension/test/c.test.js'];
+  for (const rel of paths) {
+    const abs = path.join(root, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, RAW_CALL_FILE, 'utf8');
+  }
+  let loads = 0;
+  const outcome = assessPilotMkdtempConvention(root, paths, {
+    loadDetector: () => {
+      loads += 1;
+      return { findRawMkdtempLines: () => [1] };
+    },
+  });
+  assert.equal(outcome.testFilesScanned, 3);
+  assert.equal(loads, 1);
 });
 
 test('landPilotedTicket refuses raw-mkdtemp-outside-helper before move', async () => {

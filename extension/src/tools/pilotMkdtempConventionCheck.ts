@@ -1,7 +1,16 @@
 /**
  * BL-743: mkTmpDir convention check for /pilot land. Scans touched
  * extension/test/*.js for raw mkdtempSync outside helpers/tmpDir.js using the
- * same detector as tmpDirMigrationGuard.test.js (rawMkdtempGuard.js).
+ * same detector as tmpDirMigrationGuard.test.js.
+ *
+ * BL-1209: that detector is resolved from the TOOL, never from the subject
+ * root this check is handed. It used to `require(<repoRoot>/extension/test/
+ * helpers/rawMkdtempGuard)`, which is a SwarmForge-VC artifact existing in
+ * exactly one repository - so the check ran only against the root that
+ * happens to contain it and threw MODULE_NOT_FOUND against any other. It also
+ * threw EAGERLY, on the first line, so a call whose touched paths contained
+ * nothing it would ever scan failed just as hard as one with real work.
+ * `repoRoot` now keeps only its real job: reading the subject's files.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -19,13 +28,20 @@ export type PilotMkdtempConventionCheckOutcome =
 
 const EXT_TEST_JS_RE = /^extension\/test\/.*\.js$/;
 
+// Mirrors rawMkdtempGuard.js's SELF_EXEMPT_RELATIVE_PATHS (extension/test/-
+// relative there; repo-relative here). A ticket that touches one of this
+// check's OWN fixture-string test files - including this check's own -
+// must not have this gate refuse the land over a raw-mkdtemp "violation"
+// that is test DATA, not executable code.
 const EXEMPT_REPO_PATHS = new Set([
   'extension/test/helpers/tmpDir.js',
   'extension/test/tmpDirMigrationGuard.test.js',
   'extension/test/tmpDirMigrationGuard.property.test.js',
+  'extension/test/pilotMkdtempConventionCheck.test.js',
+  'extension/test/pilotMkdtempConventionCheck.property.test.js',
 ]);
 
-type RawMkdtempGuard = {
+export type RawMkdtempDetector = {
   findRawMkdtempLines: (text: string) => number[];
 };
 
@@ -40,13 +56,34 @@ export function isExtensionTestJsPath(relativePath: string): boolean {
   return true;
 }
 
-function loadRawMkdtempGuard(repoRoot: string): RawMkdtempGuard {
+/**
+ * The tool's own detector, resolved relative to THIS module. Loaded lazily so
+ * a call with nothing in scope does no work at all (invariant 2) - and
+ * injectable, so a test can prove it was never reached on that path rather
+ * than merely observing that nothing failed.
+ */
+function loadRawMkdtempDetector(): RawMkdtempDetector {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return require(path.join(repoRoot, 'extension', 'test', 'helpers', 'rawMkdtempGuard'));
+  return require('./rawMkdtempDetector');
 }
 
 function isExemptTestPath(relativePath: string): boolean {
   return EXEMPT_REPO_PATHS.has(relativePath.replace(/\\/g, '/'));
+}
+
+/**
+ * The repo-relative, forward-slashed path if this touched path is in this
+ * check's scope (an extension/test/*.js file, not exempt, and it actually
+ * exists at repoRoot) - undefined otherwise. Combines all three "should we
+ * even look at this path" checks into one so the caller loop stays a single
+ * decision.
+ */
+function inScopePath(repoRoot: string, relativePath: string): string | undefined {
+  if (!isExtensionTestJsPath(relativePath) || isExemptTestPath(relativePath)) {
+    return undefined;
+  }
+  const repoRelative = relativePath.replace(/\\/g, '/');
+  return fs.existsSync(path.join(repoRoot, repoRelative)) ? repoRelative : undefined;
 }
 
 /**
@@ -55,23 +92,22 @@ function isExemptTestPath(relativePath: string): boolean {
  */
 export function assessPilotMkdtempConvention(
   repoRoot: string,
-  touchedRelativePaths: string[]
+  touchedRelativePaths: string[],
+  { loadDetector = loadRawMkdtempDetector }: { loadDetector?: () => RawMkdtempDetector } = {}
 ): PilotMkdtempConventionCheckOutcome {
-  const guard = loadRawMkdtempGuard(repoRoot);
   const scannedPaths: string[] = [];
   const violations: MkdtempViolation[] = [];
+  let detector: RawMkdtempDetector | undefined;
   for (const rel of touchedRelativePaths) {
-    if (!isExtensionTestJsPath(rel) || isExemptTestPath(rel)) {
+    const repoRelative = inScopePath(repoRoot, rel);
+    if (!repoRelative) {
       continue;
     }
-    const repoRelative = rel.replace(/\\/g, '/');
-    const abs = path.join(repoRoot, repoRelative);
-    if (!fs.existsSync(abs)) {
-      continue;
-    }
+    // Loaded on the first path actually in scope, never before it.
+    detector = detector ?? loadDetector();
     scannedPaths.push(repoRelative);
-    const text = fs.readFileSync(abs, 'utf8');
-    for (const line of guard.findRawMkdtempLines(text)) {
+    const text = fs.readFileSync(path.join(repoRoot, repoRelative), 'utf8');
+    for (const line of detector.findRawMkdtempLines(text)) {
       violations.push({ file: repoRelative, line });
     }
   }
