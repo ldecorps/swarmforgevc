@@ -2,7 +2,7 @@ id: BL-1062
 title: "Two property tests demand that an UNSEEDED random draw covered every value of a small space - bl968 fails ~16% of runs and bl948 ~2.3%, on correct code, and neither red says anything about the code under test"
 milestone: M8
 type: defect
-severity: medium
+severity: high
 status: todo
 epic: code-quality-gates
 priority: 60
@@ -87,6 +87,43 @@ qa_e2e_procedure: >
   regress materially.
 
 notes: >
+  RE-ADJUDICATED AND UNPARKED 2026-08-29 (specifier). This ticket was parked
+  into `backlog/debt/` on 87c3ede59 with eighteen siblings. That folder is
+  read by NO promotion script - `grep -rn "backlog/debt"` over `swarmforge/`
+  and `extension/src/` returns nothing - so a ticket filed there can never be
+  promoted, only rediscovered by hand. Meanwhile the flake it describes went
+  on blocking the commit path: the shared pre-commit hook (BL-570
+  `check_property_suite_drift.sh`) runs the WHOLE property suite and refuses
+  any commit touching `extension/src/*` or a `*.property.test.js` when a
+  non-allowlisted file is red, and
+  `test/bl968MaterializedGuardSensitivity.property.test.js` is NOT on
+  `property_suite_standing_allowlist.tsv`. A ~16%-per-run lottery on that
+  file is therefore a ~16%-per-attempt commit refusal for every parcel in the
+  repo, which is why severity is raised medium -> high here: it is a live
+  fault degrading behaviour, not a contained test-hygiene defect.
+
+  RECURRENCE 2026-08-29: a coder mid-parcel (the BL-1249 `node:test` import
+  sweep, ~24 modified test files) was blocked by exactly this and reported it
+  as "bl968+bl955 property flakes block commits; guard override needed. Not
+  BL-1234." The coder is right that it is not BL-1234 (that is the allowlist
+  MATCHER bug); bl968 here is this ticket. Verified at spec time on
+  cf3f8a2-era main: all three named files pass both in isolation and in a
+  full-suite run, consistent with seed-luck rather than a standing red.
+
+  bl955 IS NOT ADDED TO THIS TICKET'S SCOPE, DELIBERATELY.
+  `test/bl955ForwardingAnnotationInvariants.property.test.js` invariant 1 has
+  the same SHAPE (reachability floors asserted after an unseeded fast-check
+  run) but not the same arithmetic: 4 surfaces drawn over `numRuns: 120`
+  against a floor of 8 each is Binomial(120, 1/4) with mean 30 and sd 4.74 -
+  P(fail) ~ 4e-6 across all four - and the photo floor of 30 over
+  Binomial(120, 1/2) is ~2e-8. Those floors are satisfiable by a wide margin,
+  so the file is NOT an instance of this ticket's defect and folding it in
+  would break the INVEST-Small cut for a cause not yet demonstrated. If a
+  verbatim bl955 red is produced, spec it separately. One hypothesis worth
+  testing first: BL-1234's rejection line concatenates unlisted filenames
+  with no separator, so "bl968...bl955..." may be one garbled string that was
+  read as two files.
+
   PROVENANCE. QA `note` 00_20260822T134343Z_000879: "Property lane flaky under
   worktree load: bl857,796,643,968,948 - investigate". Split 1:4 under the
   specifier's Consolidation Authority; this ticket carries the two files whose
