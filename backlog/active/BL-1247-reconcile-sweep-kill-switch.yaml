@@ -1,0 +1,189 @@
+id: BL-1247
+title: "the master-main reconcile sweep has no off switch, so a mechanism known to destroy committed work cannot be stopped while its fix is built"
+milestone: M8
+type: defect
+severity: critical
+# critical: the sweep makes committed work unreachable and has now done so
+# thirteen times in two days, destroying a human ruling in transit and a
+# ticket's own close commit. Its fix (BL-1236) is not built. Until it is,
+# there is no way to stop the loss - that absence is what this ticket is.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1247-reconcile-sweep-kill-switch.feature
+
+required_wiring:
+  - 'swarmforge/swarmforge.conf::master_main_reconcile_enabled::the operator-facing switch must ship in the conf, set off per the human ruling — a switch the daemon reads but the conf never mentions is one nobody can find'
+
+human_ruling: |
+  RULED 2026-08-28 12:16Z, asked via role_ask after the thirteenth reset
+  occurrence, answered verbatim:
+
+    "Disable the master-main-reconcile sweep until BL-1236 lands"
+
+  Recorded in .swarmforge/operator/role-answers/specifier.json and relayed
+  independently by the coordinator as a priority-00 note. The ruling is the
+  authorisation for this ticket; it is not reopened by it.
+
+description: |
+  ## What
+
+  A setting decides whether handoffd's master-main reconcile sweep runs. Set
+  off, the sweep does not run and nothing in the daemon resets, rematches,
+  merges or otherwise rewrites `main` — a divergence is simply left for a
+  human or for BL-1236. The daemon still records, each tick it skips, that it
+  skipped and what divergence it declined to act on.
+
+  ## Why
+
+  `handoffd.bb`'s reconcile sweep decides between absorbing a two-way
+  divergence with a merge and resetting local `main` onto `origin/main`. That
+  decision turns on a conflict prediction which BL-1236 has pinned to a single
+  broken line: it text-searches the merged CONTENT for the word "CONFLICT", so
+  ordinary backlog prose reads as a conflict and the reset path is taken for
+  merges git resolves cleanly.
+
+  The consequence is measured, not theorised. Thirteen reset-to-origin
+  occurrences on 2026-08-27 and 2026-08-28, each making committed local work
+  unreachable. The twelfth destroyed a human ruling four minutes after it was
+  committed and before the pipeline could read it (BL-1246 exists only to
+  carry that ruling back). The thirteenth destroyed BL-1230's close commit and
+  two topic records, and the hand-built recovery sweep that followed silently
+  missed all three — evidence in
+  `backlog/evidence/BL-1236-thirteenth-reset-occurrence-lossy-recovery-20260828.md`.
+
+  BL-1236 fixes the prediction, but it is unbuilt and pending approval, and
+  every tick until it lands is another chance to lose work. There is currently
+  no way to stop the sweep short of stopping the daemon, which stops the swarm
+  with it. The human ruled that it be turned off in the meantime.
+
+  ## How (direction, not mandate)
+
+  The repo already has the shape: `config required_stages_routing_enabled true`
+  in `swarmforge/swarmforge.conf` is a boolean the daemon consults. A key named
+  `master_main_reconcile_enabled` following that precedent, shipped set off,
+  is the obvious fit — but where the guard sits (the daemon's sweep entry
+  point, or the lib's decision function) is the implementer's call, provided
+  no write path survives it.
+
+  Two judgment calls are made here rather than asked, because the ruling is
+  unambiguous about its goal and every tick costs:
+
+  1. **Off means the sweep does not run at all**, not "runs but declines to
+     write". The narrower reading would be defensible, but the switch is
+     temporary and BL-1236 restores the whole mechanism correctly; the simplest
+     thing that satisfies the ruling is to not run it. Scenario -03 keeps the
+     operator's eyes on the divergence so "off" is not "silent".
+  2. **The switch fails closed.** An absent, empty or unreadable setting leaves
+     the sweep OFF. This is the same posture BL-1236 declares in its own third
+     invariant — an answer git could not give must never authorise a reset —
+     applied one level up: an answer the CONF could not give must not authorise
+     one either. It also means the shipped default is safe even if a conf line
+     is lost to the very reset this switch exists to prevent.
+
+  ## Constraints
+
+  - Off is a refusal to act. No fallback write, no "safer" reset, no partial
+    absorb — `main` is left exactly as the tick found it.
+  - Read the setting fresh on each tick, not once at daemon start, so the
+    human can throw the switch without restarting the swarm.
+  - Do not change the sweep's behaviour when the switch is on. This ticket adds
+    a gate in front of the existing mechanism; it does not fix, tune, or
+    re-scope the mechanism itself.
+  - Do not touch the conflict prediction. That is BL-1236's, and this ticket
+    must still be correct after BL-1236 lands.
+
+qa_e2e_procedure: >
+  (1) With the switch off and local main deliberately diverged two ways from
+  origin/main, record `git rev-parse main` and the output of `git rev-list
+  --left-right --count main...origin/main`, let at least two sweep ticks fire,
+  and confirm `main` is unmoved and every pre-tick commit is still reachable
+  from HEAD. (2) Confirm the daemon log for those ticks says the sweep was
+  skipped and names the divergence it saw. (3) Comment the conf key out
+  entirely and repeat (1) — absent must behave exactly as off. (4) Make the
+  conf unreadable to the daemon and repeat (1) — unreadable must behave as off
+  too. (5) With the daemon still running from (1), set the switch on, let a
+  tick fire, and confirm the sweep runs as it does today; then set it back off
+  without restarting and confirm the next tick skips again. (6) Confirm
+  `swarmforge/swarmforge.conf` ships with the key present and set off.
+
+out_of_scope: |
+  - The conflict prediction itself. Owned by BL-1236; this ticket is the
+    stopgap that buys time for it, and must not pre-empt or partially
+    implement it.
+  - Turning the sweep back on. Flipping the conf line to on belongs to
+    BL-1236's landing, not here — this ticket ships it off and says so.
+  - Recovering the commits the thirteen resets already destroyed. Bookkeeping
+    already in hand; see the evidence file named above.
+  - Any change to the reset/rematch executor path (BL-1198, BL-1214).
+
+invariants:
+  - "While the sweep is off, no daemon code path resets, rematches, merges or otherwise rewrites main — off is a refusal to act, never a fallback to a different write."
+  - "An absent, empty or unreadable setting leaves the sweep off; an unavailable answer never authorises a destructive write."
+  - "The setting is read fresh on each sweep tick, never cached at daemon start, so throwing the switch takes effect without restarting the daemon."
+
+source: |
+  Human ruling 2026-08-28 12:16Z via role_ask.bb, answered verbatim "Disable
+  the master-main-reconcile sweep until BL-1236 lands", after the coordinator's
+  priority-00 note reporting BL-1230 stranded in backlog/active/ with its close
+  commit destroyed. Recorded in
+  .swarmforge/operator/role-answers/specifier.json and archived at
+  backlog/answers-archive/ANSWER-BL-1247-disable-reconcile-sweep.md.
+
+notes: |
+  - [2026-08-28] specifier: no human_approval gate on this one deliberately.
+    The ruling IS the authorisation and it is unambiguous about the goal; the
+    two open details (off means not-running, and fail-closed on an absent key)
+    are decided in the description under stated rationale rather than sent back
+    for a second round trip while work is still being destroyed. Both choices
+    are the conservative one. If the human wants either reversed, amend.
+  - [2026-08-28] specifier: expedited by Article 3.2.4 (defect, severity
+    critical) and priority 10 puts it ahead of BL-1236 (18) within the
+    expedited set. That ordering is intended — the stopgap should land first;
+    it is cheap, and it stops the loss while the real fix is built.
+  - [2026-08-28] specifier: IR-DRY leaves three medium possible-synonym
+    findings, all of them the Scenario Outline's `<setting>` placeholder
+    against the concrete `on`/`off` its sibling scenarios pin. Reviewed and
+    left as-is; that is the shape of the feature, not accidental drift.
+  - "[2026-08-28] coder: implemented. Pure kill switch
+    (master-main-reconcile-lib/reconcile-enabled?, master_main_reconcile_lib.bb):
+    `config master_main_reconcile_enabled <bool>` from conf text, fail-
+    CLOSED for every shape but the literal \"true\" - absent, empty,
+    malformed, unreadable (nil conf-text) all degrade to off. Wired at the
+    DAEMON entry point (handoffd.bb's master-main-reconcile-sweep!, read
+    fresh via a plain slurp every call, never cached): off means
+    master-main-reconcile-lib/sweep! - the only function with any write
+    path (merge!, the rematch-onto-origin escape, escalate!) - is never
+    called at all, satisfying \"off means the sweep does not run\" per
+    the ticket's own stated judgment call. A separate READ-ONLY divergence
+    check (the existing push-sweep-rev-counts! adapter) still runs and is
+    logged even while off, so the operator's eyes stay on what the sweep
+    would have seen. Added `--reconcile-sweep-once`, the same one-shot-
+    and-exit flag shape this file already uses for --sweep-once/
+    --chase-sweep-once, so the switch is acceptance-testable
+    deterministically against a real diverged fixture without a
+    background process or wall-clock wait. swarmforge.conf ships the key
+    present and set off, per the ruling.
+
+    Regression note: test_handoffd_chase_sweep_wiring.sh's scenario 01
+    fails on unmodified HEAD too (checked directly via a temporary git
+    stash) - pre-existing, unrelated to this change.
+
+    Non-vacuity proven by hand twice: (1) broke reconcile-enabled? to
+    always return true (fail-open), confirmed all 6 new fail-closed unit
+    tests fail; (2) forced the daemon's own gate to always take the
+    disabled branch, confirmed 2 of 7 acceptance scenarios fail through
+    the REAL daemon end to end (the \"on\" cases correctly expect it to
+    run). Restored and re-confirmed green after each.
+
+    Verified: master_main_reconcile_lib_test_runner.bb ALL PASS (new
+    reconcile-enabled? tests + all pre-existing); master_main_reconcile_lib_property_runner.bb
+    ALL PROPERTIES HOLD unchanged; acceptance feature 7/7, driving the
+    real handoffd.bb against a real bare-origin + diverged-clone fixture
+    (genuine ahead=1/behind=1, not simulated)."
+
+assigned_to: coder
