@@ -1,5 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1245: when the answer never reached
+the answer store — the human answered while the swarm was down, so nothing
+recorded anything and `deliverRoleAnswer` has nothing to pair — the asking
+role had no move whatsoever. Fixed: `role_ask.bb` gained a `resolve` verb
+(`bb swarmforge/scripts/role_ask.bb resolve <role> "<reason>"`) that reopens
+the role's own pending slot with a mandatory stated reason. The resolve
+preserves the question text, `asked_at_ms`, and reason in
+`role-awaiting-archive/` (never a `.json` inside `role-awaiting/` —
+`operator_runtime.bb` scans that directory for `*.json` and would read the
+preserved copy back as live state). Blank reason refused, slot stays shut.
+Does not change `clearRoleAwaitingAnswer` or GH-26's undeliverable path.
+Acceptance:
+`specs/features/BL-1245-role-reopens-its-own-question-slot.feature`. How-to:
+`docs/how-to/BL-1245-role-reopens-its-own-question-slot.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1194: the duplicate-id check in
 `specifier_backlog_hygiene_gate.bb` / `backlog_hygiene_lib.bb` (BL-1105) had
 two self-identity gaps that reported a ticket as a duplicate of itself — bug
