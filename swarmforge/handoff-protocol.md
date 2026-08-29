@@ -628,6 +628,24 @@ Mechanics (`task_scope_gate_lib.bb`):
 - **Evidence-only paths under `backlog/evidence/<task-id>-*` for the named
   task never count as foreign overlap** — they are the task's own
   paperwork, not entanglement.
+- **Paths the task's own ticket DECLARES are not foreign** (BL-1276). A
+  ticket's landed YAML may name another ticket's path as part of its own
+  deliverable, in either of two declaring fields: `acceptance:` (a defect
+  against a shipped check amends that check's durable contract rather than
+  forking it in two) and `retires:` (a retirement ticket, by construction,
+  edits the superseded ticket's `.feature` file — BL-1006 requires exactly
+  this, so without the exemption the gate refuses a constitutionally
+  mandated edit). Only the EXACT declared path string is exempt: declaring
+  `specs/features/BL-1248-switch.feature` does not exempt
+  `backlog/active/BL-1248-switch.yaml`, and the exemption never widens to
+  "any path of a ticket I reference". The declaration is read from the
+  ticket as LANDED (freshest of `main`/`origin/main`), never from the
+  sender's working copy, so a specifier amendment is honoured without the
+  sender merging first. A ticket that cannot be resolved on any ref grants
+  NO exemption, and the refusal must say the exemption could not be
+  evaluated rather than prescribing a rebuild that would not help. The
+  `RETIRE-WITH: <id>` comment convention inside a feature file is
+  documentation only and is never read by this gate.
 - **Scope is the union of each commit's own tree diff**, walked
   first-parent from the commit most recently handed off for this exact
   task (the durable handoff archive, never grepped/guessed) up to the

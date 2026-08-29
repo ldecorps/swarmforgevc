@@ -1,7 +1,8 @@
 'use strict';
 
-// BL-1276: step handlers for "a ticket's own declared acceptance contract is
-// not another ticket's work". Drives the REAL swarm_handoff.bb end to end
+// BL-1276: step handlers for "a ticket's own declared paths are not another
+// ticket's work" - the exemption covers every declaring field (acceptance:
+// and retires:), read through the gate's one declared-paths accessor. Drives the REAL swarm_handoff.bb end to end
 // through specs/pipeline/steps/lib/bl1276AcceptanceExemptionCli.sh, which
 // mirrors BL-1192's own fixture conventions - this ticket changes one
 // predicate inside the gate that driver already exercises, so an acceptance or
@@ -10,12 +11,15 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-const FEATURE = "A ticket's own declared acceptance contract is not another ticket's work";
+// Matched pair with the Feature: line of
+// specs/features/BL-1276-a-tickets-own-declared-paths-are-not-foreign.feature.
+const FEATURE = "A ticket's own landed declarations are not another ticket's work";
 
 const CLI = path.join(__dirname, 'lib', 'bl1276AcceptanceExemptionCli.sh');
 
 // The Examples table writes the two shapes in prose; the fixture needs paths.
 const DECLARED_ALIASES = {
+  'no declaration of that path': 'NONE',
   'no acceptance contract': 'NONE',
 };
 
@@ -35,9 +39,17 @@ function registerSteps(registry) {
     ctx.bl1276 = { ticketMode: 'landed' };
   });
 
-  scoped(/^the landed ticket "([^"]+)" declares its acceptance contract as (.+)$/, (ctx, ticket, declared) => {
-    ctx.bl1276.taskTicket = ticket;
+  // The Examples column carries the declaration in its real yaml shape -
+  // "acceptance: <path>" or "retires: <path>" - so the scenario names the
+  // FIELD, not merely a path, and the retires: half is genuinely exercised.
+  scoped(/^the landed ticket for the task declares (.+)$/, (ctx, declared) => {
+    ctx.bl1276.taskTicket = ctx.bl1276.taskTicket || 'BL-1246';
     ctx.bl1276.declared = declared.trim();
+  });
+
+  scoped(/^the task's ticket is read from the freshest landed ref, never the sender's working copy$/, () => {
+    // Background restatement of the contract scenario 02 measures; the
+    // fixture lands every declaration on main before the cited commit.
   });
 
   scoped(
@@ -51,8 +63,8 @@ function registerSteps(registry) {
     }
   );
 
-  scoped(/^the ticket "([^"]+)" cannot be resolved on any landed ref or in the working tree$/, (ctx, ticket) => {
-    ctx.bl1276.taskTicket = ticket;
+  scoped(/^the ticket for the task cannot be resolved on any landed ref or in the working tree$/, (ctx) => {
+    ctx.bl1276.taskTicket = 'BL-1246';
     ctx.bl1276.declared = 'NONE';
     ctx.bl1276.ticketMode = 'unresolvable';
   });
@@ -61,10 +73,9 @@ function registerSteps(registry) {
     ctx.bl1276.changedPath = changedPath.trim();
   });
 
-  scoped(/^the coder sends a git_handoff for task ticket "([^"]+)" citing that commit$/, (ctx, taskTicket) => {
+  scoped(/^the coder sends a git_handoff for that task citing that commit$/, (ctx) => {
     const st = ctx.bl1276;
-    st.taskTicket = taskTicket;
-    st.result = runGate(taskTicket, st.declared, st.changedPath, st.ticketMode);
+    st.result = runGate(st.taskTicket, st.declared, st.changedPath, st.ticketMode);
   });
 
   scoped(/^the send is (refused|accepted)$/, (ctx, outcome) => {
@@ -79,11 +90,11 @@ function registerSteps(registry) {
     assert.notEqual(result.exitCode, 0, `expected a non-zero exit; ${context}`);
   });
 
-  scoped(/^the refusal records that the acceptance-contract exemption could not be evaluated$/, (ctx) => {
+  scoped(/^the refusal records that the declared-path exemption could not be evaluated$/, (ctx) => {
     const { result } = ctx.bl1276;
     assert.match(
       result.stderr,
-      /acceptance-contract exemption could not be evaluated/,
+      /declared-path exemption could not be evaluated/,
       `the refusal did not say the exemption was unevaluable, so its recipient is sent to rebuild for the wrong reason:\n${result.stderr}`
     );
   });

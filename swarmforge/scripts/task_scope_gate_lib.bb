@@ -115,22 +115,72 @@
 ;; skipped the exemption would send its recipient off to rebuild a commit that
 ;; did not need rebuilding: the very shape this fix removes.
 
+(defn- unquote-value [value]
+  (str/replace (str/trim value) #"^[\"']|[\"']$" ""))
+
+(defn- plain-scalar
+  "The value of a single-line scalar field, or nil for a block scalar. A
+   block form (`acceptance: |`) declares no path this gate can compare
+   against - BL-922's known unreadable shape - and correctly grants nothing."
+  [value]
+  (let [v (str/trim value)]
+    (when (and (seq v)
+               (not (str/starts-with? v "|"))
+               (not (str/starts-with? v ">")))
+      (unquote-value v))))
+
 (defn declared-acceptance-path
-  "Pure: the path a ticket's own YAML declares in its `acceptance:` field, or
-   nil. Only a plain single-line pointer counts - a block scalar (`acceptance: |`)
-   declares no path this gate can compare against, which is BL-922's known
-   unreadable form and correctly grants nothing."
+  "Pure: the path a ticket's own YAML declares in its `acceptance:` field, or nil."
   [ticket-yaml]
   (some (fn [line]
           (when (str/starts-with? line "acceptance:")
-            (let [value (str/trim (subs line (count "acceptance:")))]
-              (when (and (seq value)
-                         (not= value "|")
-                         (not= value ">")
-                         (not (str/starts-with? value "|"))
-                         (not (str/starts-with? value ">")))
-                (str/replace value #"^[\"']|[\"']$" "")))))
+            (plain-scalar (subs line (count "acceptance:")))))
         (str/split-lines (or ticket-yaml ""))))
+
+(defn declared-retires-paths
+  "Pure: the paths a ticket's own YAML declares in its `retires:` list.
+   BL-1276's amendment: a retirement ticket by construction edits the
+   SUPERSEDED ticket's .feature file - BL-1006 requires exactly that ('retire,
+   never reword') - so without this the gate refuses a constitutionally
+   mandated edit. Entries are read raw, one path per line, same caution as
+   required_wiring:. The `RETIRE-WITH: <id>` comment convention inside a
+   feature file is documentation only and is deliberately NOT read here."
+  [ticket-yaml]
+  (let [lines (str/split-lines (or ticket-yaml ""))]
+    (loop [remaining (drop-while #(not (str/starts-with? % "retires:")) lines)
+           collected []
+           in-list? false]
+      (if (empty? remaining)
+        collected
+        (let [line (first remaining)]
+          (cond
+            (and (not in-list?) (str/starts-with? line "retires:"))
+            ;; `retires: path` (inline single) or `retires:` opening a list.
+            (if-let [inline (plain-scalar (subs line (count "retires:")))]
+              (recur (rest remaining) (conj collected inline) true)
+              (recur (rest remaining) collected true))
+
+            ;; A list entry belonging to this field: an indented `- value`.
+            (and in-list? (re-matches #"^\s+-\s+\S.*$" line))
+            (recur (rest remaining)
+                   (conj collected (unquote-value (str/replace line #"^\s+-\s+" "")))
+                   true)
+
+            ;; A blank or comment line inside the block does not end it.
+            (and in-list? (or (str/blank? line) (re-matches #"^\s*#.*$" line)))
+            (recur (rest remaining) collected true)
+
+            ;; Anything else at column 0 ends the field.
+            :else collected))))))
+
+(defn declared-exempt-paths
+  "Every path the ticket declares as part of its OWN deliverable, across every
+   declaring field. ONE accessor on purpose (the amendment's own wording): a
+   third declaring field later is one line here, never a new branch at the
+   call site."
+  [ticket-yaml]
+  (vec (remove nil? (cons (declared-acceptance-path ticket-yaml)
+                          (declared-retires-paths ticket-yaml)))))
 
 (defn foreign-scope-findings
   "Pure (BL-654-style property target): given the task's own ticket id and
@@ -140,16 +190,20 @@
    as its acceptance contract. Empty when task-ticket-id is nil (nothing to
    compare against) - the caller's own fail-open, not re-derived here."
   ([task-ticket-id changed-paths] (foreign-scope-findings task-ticket-id changed-paths nil))
-  ([task-ticket-id changed-paths declared-acceptance]
-   (if-not task-ticket-id
-     []
-     (vec (for [path changed-paths
-                :let [id (ticket-id-for-path path)]
-                :when (and id
-                           (not= id task-ticket-id)
-                           (not (own-evidence-path? path task-ticket-id))
-                           (not (and declared-acceptance (= path declared-acceptance))))]
-            {:path path :ticket-id id})))))
+  ([task-ticket-id changed-paths declared]
+   (let [declared-set (set (cond
+                             (nil? declared) []
+                             (string? declared) [declared]
+                             :else declared))]
+     (if-not task-ticket-id
+       []
+       (vec (for [path changed-paths
+                  :let [id (ticket-id-for-path path)]
+                  :when (and id
+                             (not= id task-ticket-id)
+                             (not (own-evidence-path? path task-ticket-id))
+                             (not (contains? declared-set path)))]
+              {:path path :ticket-id id}))))))
 
 (defn- last-handoff-commit
   "The commit most recently handed off for this exact task, per the
@@ -281,7 +335,7 @@
                   ;; working copy: an amendment the specifier landed on main is
                   ;; then honoured without the sender merging first.
                   (let [ticket-yaml (landed-ticket-lib/active-ticket-yaml-content root task-ticket-id)
-                        declared (declared-acceptance-path ticket-yaml)
+                        declared (declared-exempt-paths ticket-yaml)
                         findings (foreign-scope-findings task-ticket-id changed-paths declared)]
                     (cond-> {:findings findings}
                       ;; No ticket to read means the exemption could not be
@@ -312,8 +366,8 @@
      ;; BL-1276: never let this refusal look like a plain entanglement when
      ;; the one exemption that could have cleared it was never evaluated.
      (when acceptance-unreadable?
-       (format (str " NOTE: the acceptance-contract exemption could not be evaluated - %s's own "
-                    "ticket could not be read on main, origin/main, or in backlog/active/, so a "
-                    "path it declares as its acceptance contract was not recognised. Check the "
+       (format (str " NOTE: the declared-path exemption could not be evaluated - %s's own ticket "
+                    "could not be read on main, origin/main, or in backlog/active/, so a path it "
+                    "declares for itself (acceptance:/retires:) was not recognised. Check the "
                     "ticket is present and landed before rebuilding anything.")
                task-ticket-id)))))
