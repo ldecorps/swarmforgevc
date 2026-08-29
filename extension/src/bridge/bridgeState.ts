@@ -14,6 +14,9 @@ import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHo
 import { computeStageDwellReportForRoles, StageDwellReportResult } from '../metrics/stageDwell';
 import { loadCompletedTicketRecords } from '../metrics/reworkObservatorySource';
 import { buildBubbleHealthTrends, BubbleHealthTrendsPayload } from './bubbleHealthCore';
+import { computeTrend, TrendResult } from '../metrics/trend';
+import { TrendsBoardSeriesSource, loadPointsSafely } from '../metrics/trendsBoard';
+import { TRENDS_BOARD_SERIES } from '../metrics/trendsBoardRegistry';
 import {
   readSwarmName,
   computeAssignments,
@@ -187,5 +190,49 @@ export function buildHolisticState(targetPath: string, runLogPath: string): Holi
     swarms: [{ name: localSwarmName, isLocal: true, agents: readAgents(targetPath) }],
     doneByMilestone,
     recentActivity,
+  };
+}
+
+// BL-603: the trends board's payload - every registered BL-594 series, each
+// computed through the SHARED trend framework (computeTrend), never through
+// a second copy of the plotting math.
+//
+// Same posture as buildDeliveryMetricsState above: the loaders read
+// telemetry ledgers and git history, too expensive for the SSE poll loop, so
+// bridgeServer.ts computes this only for a direct /trends request.
+export interface TrendsBoardSeriesPayload {
+  id: string;
+  label: string;
+  producer: string;
+  /** False when the series has nothing to plot - "no data yet", not a zero. */
+  hasData: boolean;
+  trend: TrendResult;
+}
+
+export interface TrendsBoardPayload {
+  series: TrendsBoardSeriesPayload[];
+}
+
+// The registry is a parameter so a test can publish a series the shipped
+// board does not carry, proving registration is the only edit needed. The
+// loop is exhaustive over whatever registry it is handed - there is no
+// per-series branch here to keep in step.
+export function buildTrendsBoardState(
+  targetPath: string,
+  nowMs: number = Date.now(),
+  registry: TrendsBoardSeriesSource[] = TRENDS_BOARD_SERIES
+): TrendsBoardPayload {
+  const context = { targetPath, nowMs };
+  return {
+    series: registry.map((source) => {
+      const points = loadPointsSafely(source, context);
+      return {
+        id: source.id,
+        label: source.label,
+        producer: source.producer,
+        hasData: points.length > 0,
+        trend: computeTrend(points),
+      };
+    }),
   };
 }

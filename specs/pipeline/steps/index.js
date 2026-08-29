@@ -7,6 +7,7 @@
 // incrementally as tickets need their vocabulary, same as backlogSteps.
 const DOMAINS = [
   require('./backlogSteps'),
+  require('./bl603TrendsPublishedOnMiniAppSteps'),
   require('./daemonWorkflowSteps'),
   require('./launchSpawnFailureSteps'),
   require('./mailboxIntakeSteps'),

@@ -33,6 +33,8 @@ function fakeFetchImpl(metrics) {
       '/holistic': { assignments: [], swarms: [], doneByMilestone: {}, recentActivity: { recentCloses: [], recentMerges: [], currentRun: null } },
       '/metrics': metrics,
       '/burn-rate': {},
+      // BL-603: the console now also fetches the behaviour-trend board.
+      '/trends': { series: [] },
     }[url];
     if (url === '/events') {
       return Promise.reject(new Error('SSE not exercised in this test'));
