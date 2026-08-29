@@ -206,6 +206,36 @@ notes: |
     not merely by code review: reverted the ZDOTDIR fix, confirmed
     scenario 01 fails exactly as the bounce reproduced it; restored,
     confirmed ALL PASS across 3 repeated runs."
+  - "[2026-08-29] hardener: closed the batch-path coverage gap
+    required_wiring itself calls out - test_idle_clear_respawn.sh only
+    ever drove ready_for_next_task.bb (task-mode roles); nothing exercised
+    ready_for_next_batch.bb's own copy of the gate end to end. Added
+    scenarios 05/06: a batch-mode role (real done_with_current_batch.bb ->
+    ready_for_next_batch.sh chain, same ZDOTDIR/fake-tmux fixture already
+    proven for the task path) enabled+full respawns, disabled does not.
+    Non-vacuity proven by hand: broke ready_for_next_batch.bb's own gate
+    call (replaced the should-respawn? call with a literal false),
+    confirmed scenario 05 alone goes red with an empty tmux-calls log;
+    restored, re-confirmed ALL PASS (6 scenarios).
+
+    Also hand-mutated idle_clear_fullness_lib.bb's should-idle-clear?
+    twice (no Stryker/mutation tool wired for Babashka per
+    engineering.prompt): >= to > on the threshold comparison (killed by
+    the existing threshold-0-with-a-real-0%-reading test), and the
+    nil-percent guard (some? (:percent fullness)) to a bare true (kills
+    loud - the >= comparison against nil throws, which the test runner
+    surfaces as an uncaught exception rather than a silent pass). Both
+    restored and re-confirmed green.
+
+    Re-ran full suite: idle_clear_fullness_lib_test_runner.bb ALL PASS,
+    acceptance feature 9/9, test_idle_clear_respawn.sh ALL PASS (6/6, up
+    from 4), and the three sibling shell suites the coder's own note
+    named (test_idle_clear_conf_parsing.sh,
+    test_ready_for_next_rotate_home.sh,
+    test_ready_for_next_no_promotion.sh) all still ALL PASS unchanged.
+    No test/mutation processes of my own left running (confirmed via
+    pgrep post-run; unrelated live vitest processes observed belong to
+    the QA worktree, confirmed via /proc cwd, left untouched)."
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 924afae8b, evidence: backlog/evidence/BL-1238-bounce-20260828.md }

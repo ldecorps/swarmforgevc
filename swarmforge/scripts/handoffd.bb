@@ -741,16 +741,6 @@
 (def chase-sweep-once-only?
   (some #{"--chase-sweep-once"} *command-line-args*))
 
-;; BL-1247: same one-shot-and-exit posture as --sweep-once/--chase-sweep-
-;; once above, for the master-main-reconcile sweep specifically - --sweep-
-;; once deliberately does not include it, and the full daemon loop only
-;; reaches it on its own real cadence. An acceptance scenario proving the
-;; kill switch's "off means it writes nothing" needs to fire exactly one
-;; reconcile tick deterministically, against a real diverged fixture repo,
-;; without a background process or a wall-clock wait.
-(def reconcile-sweep-once-only?
-  (some #{"--reconcile-sweep-once"} *command-line-args*))
-
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
 (defn pid-alive? [pid]
@@ -3918,11 +3908,6 @@
       (do
         (try (chase-sweep! roles socket) (catch Exception e (log! "chase-sweep-once-error" (.getMessage e))))
         (log! "chase-sweep-once done"))
-
-      reconcile-sweep-once-only?
-      (do
-        (try (master-main-reconcile-sweep!) (catch Exception e (log! "reconcile-sweep-once-error" (.getMessage e))))
-        (log! "reconcile-sweep-once done"))
 
       :else
       (let [claim (claim-pid-file!)]

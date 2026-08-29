@@ -132,6 +132,22 @@ notes: >
   acceptance step handler. Disjoint from every active ticket; safe to
   co-activate with anything.
 
+  [2026-08-29] hardener: acceptance feature 6/6 (scenarios 01-03, the
+  20-consecutive-runs and 5000-draw checks included). Non-vacuity
+  confirmed by hand: swapped extension/test/support/bl593ScopeArb.js's
+  filtered nonBlankScope for a bare unfiltered fc.string({ minLength: 1,
+  maxLength: 80 }), re-ran the acceptance feature, scenarios 01 and 02
+  both went red exactly as the pre-fix description predicts (03 stayed
+  green - the fail-closed guard itself was never touched); restored and
+  re-confirmed 6/6. Separately ran the property file standalone 5x via
+  `npx vitest run test/bl593MutationRunTelemetry.property.test.js
+  --config vitest.properties.config.mjs` after a fresh compile - 5/5
+  green, consistent with the acceptance feature's own 20-consecutive
+  check. No CRAP/DRY concern (no src/*.ts touched; the merge also
+  resolved the same BL-1247/BL-1248 reconcile-sweep collision the prior
+  BL-1247-reconcile-sweep-kill-switch merge into this branch already
+  settled - see that merge commit).
+
 approval_context: >
   One call to say the word on: this is minted as a TEST defect, not a code
   defect - the fix narrows the property's generator and leaves

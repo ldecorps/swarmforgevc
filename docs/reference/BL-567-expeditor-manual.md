@@ -126,8 +126,8 @@ NN-<role>/verdict.json         the stage's verdict, enriched with driver fields
 | `ticket-id` | string | the BL id |
 | `ticket` | string | `done` or `failed` |
 | `ticket-ok?` | bool | `ticket == "done"` |
-| `restart` | object | `{outcome, exit, error, live-set-delta}` |
-| `restart-ok?` | bool | true for `ok` and `not-attempted` only |
+| `restart` | object | `{outcome, exit, error, live-set-delta}`, or `{outcome: "held", marker-path, hold-reason}` (BL-1249) |
+| `restart-ok?` | bool | true for `ok` and `not-attempted` only — `held` is not ok |
 | `exit-code` | int | the process's own exit code |
 | `failed-half` | string | `ticket`, `restart`, or absent |
 | `branch` | string | the `expedite/<BL-id>` branch used |
@@ -266,7 +266,50 @@ bar is a decoy process from a *different* root alive throughout the run.
 9. Walk the stage chain.
 10. Move the ticket yaml to `backlog/done/` on success (source must be `active/` —
     guaranteed by step 3, or the run already refused).
-11. Restart — reported, never blocking.
+11. Restart — reported, never blocking. Checks the operator's restart hold first
+    (see below); if held, the start command is not run.
+
+## Operator restart hold (BL-1249)
+
+Before the restart phase runs `EXPEDITE_START_CMD`, it reads
+`.swarmforge/operator/control-pause.json` — the same marker the BL-1191 restart
+gate treats as the restart-blocking signal — via `restart-hold-verdict` in
+`expedite_lib.bb`:
+
+| marker state | verdict | restart runs? |
+|---|---|---|
+| file absent | `:absent` (not held) | yes |
+| `active: false` (or falsy) | `:inactive` (not held) | yes |
+| `active: true`, no `untilMs`, or `untilMs` in the future | `:active` (held) | no |
+| `active: true`, `untilMs` in the past | `:inactive` (not held) | yes |
+| unreadable/unparseable JSON, non-object, or non-numeric `untilMs` | `:malformed` (held) | no |
+
+Doubt fails **closed**: only a genuinely absent marker, or one that plainly parses
+to inactive/expired, permits the restart. Everything else — including a read or
+parse failure on a file that exists — holds it.
+
+A hold reports as its own outcome, `held`, in `run.json`'s `restart.outcome`, with
+`restart.marker-path` and `restart.hold-reason` set. It is **never** collapsed into
+`not-attempted`: `not-attempted` is the caller declining via `--no-restart`/
+`--dry-run`; `held` is the operator declining via the marker. Conflating the two
+would report an operator-blocked restart as a caller-chosen one.
+
+Like `failed`/`degraded`, `held` does not retract the ticket verdict — `run-result`
+keeps `ticket`/`ticket-ok?` independent of `restart`/`restart-ok?`, so a run whose
+stages all passed still reports `ticket: "done"` even when the restart was held.
+
+The hold gates **only** the restart phase. Teardown, parking, and the stage chain
+all still run while a hold is in force — an operator hold blocks bringing the
+stack back up, not doing the work.
+
+Diagnostic, drives the real check without a full run:
+
+```
+bb swarmforge/scripts/expedite_cli.bb --restart-only <project-root> [--no-restart] [--dry-run]
+```
+
+Prints the same `restart-stack!` result a full run would produce. Refuses
+`EXPEDITE_PROBE_FILE` — it must exercise the real marker-file path, not a stub.
 
 ## Refusals
 

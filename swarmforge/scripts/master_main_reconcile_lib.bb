@@ -430,22 +430,6 @@
    escalation. Amendable via swarmforge.conf."
   3)
 
-(defn reconcile-enabled?
-  "BL-1247 kill switch, pure: `config master_main_reconcile_enabled <bool>`
-   from conf text. Fail-CLOSED (returns false, meaning the sweep does not
-   run) for every shape but the literal value \"true\" - absent, empty,
-   malformed, or unreadable (nil conf-text) all degrade to off. An
-   unavailable answer must never authorise a destructive write, same
-   posture as BL-1236's own third invariant one level up. Caller reads
-   conf-text fresh on every sweep tick (never cached at daemon start) -
-   this function's own purity is what makes that trivial to verify."
-  [conf-text]
-  (boolean
-    (some->> (str/split-lines (or conf-text ""))
-             (filter #(str/starts-with? % "config master_main_reconcile_enabled"))
-             first
-             (re-find #"\btrue\b"))))
-
 (defn parse-escalation-threshold
   "Pure: `config master_main_reconcile_escalation_threshold <n>` from conf
    text. Honors a POSITIVE integer only - absent, malformed, zero, and

@@ -102,6 +102,22 @@ one rather than asserting health. Three outcomes, kept distinct:
 | `ok` | started, live set matched |
 | `degraded` | started, came up short — the delta says what is missing |
 | `failed` | the start command itself failed |
+| `held` | the operator's pause marker was active — the start command never ran (BL-1249) |
+
+**A hold is not the same as `--no-restart`.** Before running anything, the restart
+phase reads `.swarmforge/operator/control-pause.json` — the same marker the BL-1191
+restart gate already treats as blocking. If it is active, the outcome is `held`,
+never `not-attempted`: `not-attempted` means the *caller* skipped the phase
+(`--no-restart`/`--dry-run`); `held` means the *operator* did, through a standing
+directive the caller may not even know about. The run report and closing summary
+name the marker path so a still-down swarm is never misread as one that came up.
+A hold only gates the restart phase — the expeditor still stops the swarm, parks
+siblings, and drives the ticket's stages while held; only bringing the stack back
+up is refused.
+
+An absent marker never holds. A marker that exists but cannot be read as a
+definite "not active" — malformed JSON, truncated, an unparseable `untilMs` —
+holds the restart, the same as an explicit `active: true`: doubt fails closed.
 
 Parked tickets are **reported, never re-promoted**. What you parked may be stale
 against what the run changed, so promotion stays a human decision.
