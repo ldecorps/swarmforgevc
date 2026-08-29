@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1276: the BL-1192 pre-handoff
+task-scope gate no longer refuses a ticket for editing a path its own
+landed YAML declares as part of its deliverable. `foreign-scope-findings`
+(`swarmforge/scripts/task_scope_gate_lib.bb`) attributes a changed path to
+a ticket by the id in the path's own basename and previously exempted only
+`backlog/evidence/<task-id>-*`; a ticket amending a shipped check's
+`acceptance:`-pointed feature file, or a retirement ticket editing the
+superseded ticket's feature file (`retires:`, new), was refused with no
+non-destructive move available — the retires: case is a constitutionally
+mandated edit (BL-1006: "retire, never reword"), so the gate was refusing
+work the constitution requires. Read through one `declared-exempt-paths`
+accessor shared by both fields; exact path strings only, no glob/prefix
+expansion, resolved from the ticket as LANDED (freshest of
+`main`/`origin/main`) so a specifier amendment is honoured without the
+sender merging first, and an unresolvable ticket grants no exemption. The
+`RETIRE-WITH: <id>` feature-file comment convention stays documentation
+only — never a gate input. Unblocked both parcels that had discovered this
+defect: BL-1246 (acceptance-declared) and BL-1251 (retires-declared), both
+sent unchanged from the same worktree once this landed. See
+`docs/how-to/BL-1192-pre-handoff-task-scope-gate.md` "Declared-path
+exemption". Acceptance:
+`specs/features/BL-1276-a-tickets-own-declared-paths-are-not-foreign.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1062: two property tests'
 generator-reach floors are now satisfiable by construction instead of an
 unseeded per-run lottery — `test/bl968MaterializedGuardSensitivity.property.test.js`
