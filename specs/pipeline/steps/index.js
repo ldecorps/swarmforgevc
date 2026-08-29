@@ -860,7 +860,8 @@ const DOMAINS = [
   require('./bl1241EntangledTipRemedySteps'),
   require('./bl1266ReferenceFreshnessRefSelectionSteps'),
   require('./bl1262SelfHealTelemetryRestoredSteps'),
-  require('./bl1245RoleReopensOwnQuestionSlotSteps')
+  require('./bl1245RoleReopensOwnQuestionSlotSteps'),
+  require('./bl1261HoldDivergenceAuditSteps')
 ];
 
 function registerSteps(registry) {
