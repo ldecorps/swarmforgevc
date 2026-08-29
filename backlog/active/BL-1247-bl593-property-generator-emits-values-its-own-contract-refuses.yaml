@@ -140,3 +140,5 @@ approval_context: >
   - that is the value BL-593 was built to refuse), say so and this is a
   different ticket. Severity medium: false and intermittent, costing a
   diagnosis cycle per reviewer who meets it, but no live behaviour affected.
+
+assigned_to: coder

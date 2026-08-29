@@ -124,3 +124,5 @@ notes: |
   - [2026-08-28] specifier: `ps_allowlist_normalize_file` has exactly one caller
     (grepped repo-wide excluding node_modules), so moving the newline to the
     call site breaks nothing.
+
+assigned_to: coder
