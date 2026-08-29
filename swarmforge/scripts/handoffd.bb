@@ -3301,20 +3301,13 @@
       (log! "master-main-reconcile-escalation-email" (name reason))
       (catch Exception e (log! "master-main-reconcile-escalation-email-error" (.getMessage e))))))
 
-;; BL-1247: human-ruled kill switch (2026-08-28, after the thirteenth
-;; reset-to-origin occurrence destroyed committed work) - read FRESH on
-;; every tick, never cached at daemon start, so the human can throw the
-;; switch without restarting the swarm. Off means the sweep does not run
-;; AT ALL: master-main-reconcile-lib/sweep! (the only function with any
-;; write path - merge!, the rematch-onto-origin escape, escalate!) is
-;; never called. A minimal READ-ONLY divergence check still runs and is
-;; logged even while off, so the operator's eyes stay on what the sweep
-;; would have seen (qa_e2e_procedure step 2) - "off" is a refusal to act,
-;; not silence.
-(defn- master-main-reconcile-conf-text! []
-  (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
-       (catch Exception _ nil)))
-
+;; BL-1248 (shipped on main; BL-1247 duplicated the same feature - the
+;; earlier BL-1247-reconcile-sweep-kill-switch merge into this branch
+;; already resolved this exact collision in favor of BL-1247's stricter
+;; shape, see that commit's message) - its own 4-arg sweep! call-site
+;; shape guards only the :merge! adapter inside sweep! itself, letting the
+;; drift/dirty-blocked surfacing and escalation paths above it keep
+;; running even while disabled. Superseded below.
 (defn master-main-reconcile-sweep! []
   (try
     (if-not (master-main-reconcile-lib/reconcile-enabled? (master-main-reconcile-conf-text!))

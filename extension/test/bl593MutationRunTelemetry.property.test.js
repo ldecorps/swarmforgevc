@@ -9,11 +9,12 @@ const {
 const { initMutationProgressState } = require('../out/mutation/mutationProgress');
 
 const START = Date.parse('2026-01-01T00:00:00Z');
+const { nonBlankScope } = require('./support/bl593ScopeArb');
 
 test('property: completed records always carry load-bearing scope total and incremental', () => {
   fc.assert(
     fc.property(
-      fc.string({ minLength: 1, maxLength: 80 }),
+      nonBlankScope,
       fc.integer({ min: 0, max: 5000 }),
       fc.boolean(),
       fc.integer({ min: 1, max: 32 }),
