@@ -208,4 +208,4 @@ notes: |
     confirmed ALL PASS across 3 repeated runs."
 bounce_count: 1
 bounce_history:
-  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 992be2290a, evidence: backlog/evidence/BL-1238-bounce-20260828.md }
+  - { at: 2026-08-28, by: architect, blamed: coder, class: behavior, commit: 924afae8b, evidence: backlog/evidence/BL-1238-bounce-20260828.md }
