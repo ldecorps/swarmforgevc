@@ -14,6 +14,7 @@ slice_size_envelope: low
 size_envelope_decision: "justify not split - one token extractor narrowed in one CLI, 2 scenarios, no new surface. Band declared because mutation_cost: high on this ticket is Article 3.6 seat-tier (deprecator judgment needs a hard-tier seat, BL-1001), not a size estimate. Same cause and same decision as BL-1267 and BL-1268."
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1193-deprecator-retired-token-must-name-the-actual-retired-item.feature
+abandoned_commits: [bf7895a35d, 79e3cbf449, 6f5752d069, 67d0c18c1f, 487278e7d3, adf16cd3e2, 858c280425, a5b065e0ca, 938ce576de, 1017d776b0, 6b7ad7ee7e, 54c17b6972, dbcf59fb7c, cfd1eeec9b, db56560eed, efa2848e27, 1baa878730, 175e24b119, 20e6ddd230, 9664aab11c, 205fdd36fb, 05f3221150, 8521d22d5c, b8c4c43f63, 985dbcf597, 9747e6c1df, 7ccc2f2232, c5bb4810a2, 43d181069e, ae503cbe67, f134036766, b06b75cde9, 3c07857a58, 670473039e, 9296711a77, 5bf354adc9, 795d79a2f9, f85514f2e5]
 human_approval: approved
 approval_context: >
   Discovered adjudicating BL-1190's Article 3.6 freshness HOLD (2026-08-27).
@@ -162,3 +163,20 @@ notes: |
     adjudicated. Promote it by hand. Article 3.2.4 already places it ahead of
     non-expedited work without any priority change - it is type: defect,
     severity: high - so the priority: 40 above is not what is holding it back.
+
+  - "[2026-08-29] QA, BL-1241 entangled-tip rebuild. The documenter's handed-off
+    commit (bf7895a35d) carried the SAME entangled lineage BL-1273's did (its
+    ancestry runs back through the old, now-superseded BL-1273 documenter tip)
+    - the BL-1246 and BL-1267/1268/1220/603-step-scoping siblings named in
+    BL-1273's own notes, unchanged, plus BL-1273's ORIGINAL (now-abandoned)
+    commits, which BL-1273 itself replaced with a tip-pure rebuild (see its
+    abandoned_commits). Rather than merge that stale tangle forward a second
+    time, rebuilt tip-pure again: cherry-picked BL-1193's three plain,
+    cleanly-scoped commits (coder 6b7ad7ee7e, hardener 6f5752d069, documenter
+    bf7895a35d - each verified via git show --stat to touch only BL-1193's own
+    files) directly onto my already-landed post-BL-1273 HEAD. abandoned_commits
+    records the full superseded chain (same entries BL-1273's own list carries,
+    plus BL-1193's three). git diff --stat origin/main HEAD confirmed exactly
+    BL-1193's own 8 files, nothing else. No new casualties found beyond what
+    BL-1273's QA pass already accounted for - this is the same stale tangle,
+    not a new one."
