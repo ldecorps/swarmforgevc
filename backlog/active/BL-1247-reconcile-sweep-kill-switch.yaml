@@ -187,3 +187,6 @@ notes: |
     (genuine ahead=1/behind=1, not simulated)."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: architect, blamed: cleaner, class: behavior, commit: 68a16b9ec3, evidence: backlog/evidence/BL-1247-reconcile-sweep-kill-switch-architect-bounce-20260829.md }
