@@ -281,13 +281,23 @@ ID="$(grep -E '^id:' "$SRC" | head -1 | awk '{print $2}' | tr -d '\r')"
 # BL-1173: deprecator freshness gate (Article 3.6). Fail-closed — CLI crash or
 # malformed JSON is hold, never allow. On hold the ticket stays in paused and a
 # priority-00 note reaches the specifier.
-deprecate_check_cli() {
-  local cli=""
+# BL-1267: ONE resolution of the CLI path, used by both the check and the
+# interpreter below. They used to resolve it separately and the interpreter's
+# copy was hardcoded to "$ROOT/extension/...", so against any root that is not
+# this repo itself the check ran fine and the interpreter then failed closed on
+# a missing module - a hold no adjudication could ever discharge, and the
+# reason blamed the interpreter rather than the path.
+resolve_deprecate_check_cli() {
   if [[ -f "$ROOT/extension/out/tools/deprecate-check.js" ]]; then
-    cli="$ROOT/extension/out/tools/deprecate-check.js"
+    printf '%s' "$ROOT/extension/out/tools/deprecate-check.js"
   elif [[ -f "$SCRIPT_DIR/../../extension/out/tools/deprecate-check.js" ]]; then
-    cli="$(cd "$SCRIPT_DIR/../.." && pwd)/extension/out/tools/deprecate-check.js"
+    printf '%s' "$(cd "$SCRIPT_DIR/../.." && pwd)/extension/out/tools/deprecate-check.js"
   fi
+}
+
+deprecate_check_cli() {
+  local cli
+  cli="$(resolve_deprecate_check_cli)"
   if [[ -z "$cli" || ! -f "$cli" ]]; then
     echo '{"decision":"hold","reason":"deprecate-check CLI missing — fail closed"}'
     return 0
@@ -329,7 +339,7 @@ process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
   process.stdout.write(JSON.stringify(interpretFreshnessCliOutput(raw)));
 });
-' "${ROOT}/extension/out/tools/deprecate-check.js" 2>/dev/null || echo '{"decision":"hold","reason":"interpretFreshnessCliOutput failed — fail closed"}')"
+' "$(resolve_deprecate_check_cli)" 2>/dev/null || echo '{"decision":"hold","reason":"interpretFreshnessCliOutput failed — fail closed"}')"
 FRESHNESS_DECISION="$(printf '%s' "$FRESHNESS_JSON" | sed -n 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
 FRESHNESS_REASON="$(printf '%s' "$FRESHNESS_JSON" | sed -n 's/.*"reason"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
 if [[ -z "$FRESHNESS_DECISION" || "$FRESHNESS_DECISION" == "hold" ]]; then

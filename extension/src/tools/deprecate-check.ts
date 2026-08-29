@@ -9,11 +9,40 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export type FreshnessDecision =
-  | { decision: 'allow' }
+  // BL-1267: an allow may now carry a reason - the discharge names the
+  // adjudication record it came from, so no clearance is anonymous.
+  | { decision: 'allow'; reason?: string }
   | { decision: 'hold'; reason: string };
+
+/**
+ * BL-1267: Article 3.6's four adjudication outcomes. Only confirm_promote
+ * discharges a hold; the other three change the TICKET, so the next gate run
+ * sees different text and decides again from it.
+ */
+export type AdjudicationOutcome = 'confirm_promote' | 'amend' | 'retire' | 'split';
+
+export interface AdjudicationRecord {
+  ticket: string;
+  outcome: AdjudicationOutcome;
+  adjudicated_by: string;
+  adjudicated_at: string;
+  /** Fingerprint of the ticket content this adjudication was made against. */
+  content_fingerprint: string;
+}
+
+/**
+ * What the gate found where an adjudication would live. `unusable` is NOT
+ * `absent`: a record that cannot be read or parsed is a signal that something
+ * is wrong with the discharge, and the gate is fail-closed.
+ */
+export type AdjudicationFact =
+  | { status: 'absent' }
+  | { status: 'unusable'; path: string; problem: string }
+  | { status: 'present'; path: string; record: AdjudicationRecord };
 
 export interface TicketFreshnessFacts {
   ticketId: string;
@@ -25,6 +54,8 @@ export interface TicketFreshnessFacts {
   doneClosureExists: boolean;
   retiredSurfaceHits: string[];
   specGapBounceCount: number;
+  /** BL-1267: the recorded Article 3.6 adjudication, if any. */
+  adjudication?: AdjudicationFact;
 }
 
 const STALE_CLAIM_RE = /\b(superseded-by|superseded|retired|obsolete)\b/i;
@@ -273,6 +304,19 @@ function findTicketYaml(root: string, ticketId: string, folder: 'paused' | 'acti
   return walk(base);
 }
 
+/**
+ * BL-1267: the ticket's YAML wherever it currently sits. Exported so the
+ * adjudication writer fingerprints the SAME text the gate reads, rather than
+ * carrying its own copy of the lookup that could drift from it.
+ */
+export function findTicketYamlPath(root: string, ticketId: string): string | undefined {
+  return (
+    findTicketYaml(root, ticketId, 'paused') ??
+    findTicketYaml(root, ticketId, 'active') ??
+    findTicketYaml(root, ticketId, 'done')
+  );
+}
+
 export function parseDependsOn(yamlText: string): string[] {
   const match = yamlText.match(/^depends_on:\s*\[([^\]]*)\]/m);
   if (!match) {
@@ -349,6 +393,121 @@ export function loadRetiredTokens(root: string): string[] {
   return [...tokens];
 }
 
+// ── BL-1267: the discharge path ─────────────────────────────────────────
+//
+// Article 3.6 gives the specifier four outcomes on a hold. Three of them
+// change the ticket, so the next gate run sees different text and decides
+// again from it. The fourth - confirm promote - changed nothing this CLI
+// could read, so an adjudicated ticket held forever and the only ways past it
+// were a starved promotion queue or an unattributed bypass (BL-1190,
+// BL-1256).
+//
+// The record lives OUTSIDE the ticket, under .swarmforge/deprecator/, for two
+// reasons: gate state does not belong in a human-edited artifact, and an
+// adjudication necessarily discusses the deprecation vocabulary that earned
+// the hold - writing it into the ticket would arm the generic-claim branch
+// against the very ticket it cleared.
+//
+// It is fingerprinted against the ticket content it was made against, so
+// amending the ticket afterwards re-arms the gate rather than riding a stale
+// clearance. There is deliberately NO environment variable, flag or caller
+// argument that produces an allow: a control that silences the alarm along
+// with the action is the defect, not the feature (BL-1248).
+
+const ADJUDICATION_OUTCOMES: AdjudicationOutcome[] = ['confirm_promote', 'amend', 'retire', 'split'];
+
+/** Where a ticket's adjudication record lives. */
+export function adjudicationRecordPath(root: string, ticketId: string): string {
+  return path.join(root, '.swarmforge', 'deprecator', 'adjudications', `${normalizeTicketId(ticketId)}.json`);
+}
+
+/**
+ * The fingerprint an adjudication is bound to. Content, not mtime or commit:
+ * a ticket that is rewritten byte-for-byte identically is the same ticket,
+ * and one that changes by a single character is not the one that was cleared.
+ */
+export function computeTicketFingerprint(yamlText: string): string {
+  return crypto.createHash('sha256').update(yamlText, 'utf8').digest('hex');
+}
+
+function parseAdjudicationRecord(raw: string, ticketId: string): AdjudicationRecord | string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return 'not valid JSON';
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return 'not a JSON object';
+  }
+  const record = parsed as Partial<AdjudicationRecord>;
+  for (const field of ['ticket', 'outcome', 'adjudicated_by', 'adjudicated_at', 'content_fingerprint'] as const) {
+    if (typeof record[field] !== 'string' || (record[field] as string).length === 0) {
+      return `missing or empty field '${field}'`;
+    }
+  }
+  if (!ADJUDICATION_OUTCOMES.includes(record.outcome as AdjudicationOutcome)) {
+    return `unknown outcome '${record.outcome}'`;
+  }
+  if (normalizeTicketId(record.ticket as string) !== normalizeTicketId(ticketId)) {
+    return `record names ticket ${record.ticket}, not ${normalizeTicketId(ticketId)}`;
+  }
+  return record as AdjudicationRecord;
+}
+
+/** Read the adjudication record for a ticket. Unreadable is never absent. */
+export function readAdjudication(root: string, ticketId: string): AdjudicationFact {
+  const file = adjudicationRecordPath(root, ticketId);
+  if (!fs.existsSync(file)) {
+    return { status: 'absent' };
+  }
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    return { status: 'unusable', path: file, problem: `unreadable (${(err as Error).message})` };
+  }
+  const parsed = parseAdjudicationRecord(raw, ticketId);
+  if (typeof parsed === 'string') {
+    return { status: 'unusable', path: file, problem: parsed };
+  }
+  return { status: 'present', path: file, record: parsed };
+}
+
+/**
+ * Given a hold and whatever adjudication was found, the decision that stands.
+ * Pure - it is handed the facts, never the filesystem or the environment.
+ */
+export function applyAdjudication(held: FreshnessDecision, facts: TicketFreshnessFacts): FreshnessDecision {
+  if (held.decision !== 'hold') {
+    return held;
+  }
+  const adjudication = facts.adjudication ?? { status: 'absent' };
+  if (adjudication.status === 'absent') {
+    return held;
+  }
+  if (adjudication.status === 'unusable') {
+    return hold(
+      `unusable adjudication record ${adjudication.path}: ${adjudication.problem} — fail closed (original hold: ${held.reason})`
+    );
+  }
+  const { record, path: recordPath } = adjudication;
+  if (record.outcome !== 'confirm_promote') {
+    return held;
+  }
+  const fingerprint = computeTicketFingerprint(facts.yamlText);
+  if (record.content_fingerprint !== fingerprint) {
+    return hold(
+      `adjudication ${recordPath} no longer matches the ticket content it was made against ` +
+        `(recorded ${record.content_fingerprint.slice(0, 12)}, ticket is now ${fingerprint.slice(0, 12)}) — re-adjudicate`
+    );
+  }
+  return {
+    decision: 'allow',
+    reason: `discharged by adjudication ${recordPath}: confirm_promote by ${record.adjudicated_by} at ${record.adjudicated_at}`,
+  };
+}
+
 export function countSpecGapBounces(root: string, ticketId: string): number {
   const dir = path.join(root, '.swarmforge', 'bounces');
   if (!fs.existsSync(dir)) {
@@ -409,6 +568,9 @@ export function gatherTicketFreshnessFacts(root: string, ticketId: string): Tick
     doneClosureExists: Boolean(findTicketYaml(root, id, 'done')),
     retiredSurfaceHits: collectRetiredSurfaceHits(yamlText, loadRetiredTokens(root)),
     specGapBounceCount: countSpecGapBounces(root, id),
+    // BL-1267: read once here, with the rest of the facts, so the decision
+    // function stays pure and testable against a literal.
+    adjudication: readAdjudication(root, id),
   };
 }
 
@@ -417,6 +579,13 @@ function hold(reason: string): FreshnessDecision {
 }
 
 export function evaluateDeprecatorFreshness(facts: TicketFreshnessFacts): FreshnessDecision {
+  // BL-1267: earn the verdict from the stale-premise signals first, then let
+  // a fingerprinted adjudication discharge it. This ticket adds a way to
+  // discharge a hold, never a way to avoid earning one.
+  return applyAdjudication(evaluateStalePremiseSignals(facts), facts);
+}
+
+function evaluateStalePremiseSignals(facts: TicketFreshnessFacts): FreshnessDecision {
   if (facts.supersedeMarkerPath) {
     return hold(`supersede marker present: ${facts.supersedeMarkerPath}`);
   }
@@ -469,7 +638,9 @@ function decisionFromParsed(parsed: unknown): FreshnessDecision | null {
   const decision = (parsed as { decision?: unknown }).decision;
   const reason = (parsed as { reason?: unknown }).reason;
   if (decision === 'allow') {
-    return { decision: 'allow' };
+    // BL-1267: an allow may carry the adjudication that discharged the hold;
+    // keep it so the promotion path can log WHY it was allowed to proceed.
+    return typeof reason === 'string' && reason.length > 0 ? { decision: 'allow', reason } : { decision: 'allow' };
   }
   if (decision === 'hold') {
     return hold(typeof reason === 'string' && reason.length > 0 ? reason : 'hold without reason — fail closed');
