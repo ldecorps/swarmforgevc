@@ -2,7 +2,7 @@ id: BL-652
 title: "done_with_current.sh silently ignores every argument and completes anyway: a usage probe (--help) archives the whole in-process batch"
 milestone: M8
 type: defect
-status: paused
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: medium
@@ -81,3 +81,40 @@ notes: |
   mode with a single in_process handoff.
   Prompt-rule mitigation landed with this spec commit (hardender.prompt,
   cleaner.prompt) — the ticket is the tooling fix, not the discipline.
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with human_approval:
+  approved and a promotable status — i.e. fully eligible for the coordinator
+  to pick up — while the behaviour it specifies is ALREADY SHIPPED AND LIVE.
+  Promoting it would have sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - swarmforge/scripts/done_with_current.bb:8 is headed with the fix —
+    "BL-652: refuse argv before receive-mode dispatch so a --help probe cannot
+    ..." — and the same refusal is present across done_with_current_task.bb,
+    done_with_current_batch.bb and dispatch_lib.bb.
+  - swarmforge/scripts/test/test_done_with_current_arg_rejection.sh is the
+    ticket's own named shell test.
+  - specs/pipeline/steps/bl652DoneWithCurrentArgRejectionSteps.js copies the
+    REAL swarmforge/scripts/*.bb and *.sh into a fixture worktree and runs
+    them; index.js:48 registers it.
+  - specs/features/BL-652-done-with-current-arg-rejection.feature is LIVE.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  "Retire, never reword" applies to a retired BEHAVIOUR; here only the TICKET
+  is stale and the behaviour is live. Deleting the scenarios would remove live
+  coverage, and specs/pipeline/runtime.js throws on a scenario whose handler is
+  gone — the gate would redden. See the paused-pool zombie-ticket check:
+  (1) an implementation file headed with the ticket's own id, and
+  (2) that ticket's handler registered in specs/pipeline/steps/index.js.
+  Both present ⇒ shipped ⇒ retire, do not build.

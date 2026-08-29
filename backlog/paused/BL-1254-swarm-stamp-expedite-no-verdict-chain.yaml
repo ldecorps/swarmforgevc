@@ -16,7 +16,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1254-swarm-stamp-expedite-no-verdict-chain.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   BL-848 stamp-off for THREE already-landed commits reviewed as one resulting
   state, not three tickets. That consolidation is the thing to sign off on:

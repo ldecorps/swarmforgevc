@@ -16,7 +16,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1252-commit-guard-chain-reports-every-violation.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One tradeoff needs your call, and it is the only thing I deliberately did
   not decide. `check_property_suite_drift.sh` runs `npm run test:properties`;

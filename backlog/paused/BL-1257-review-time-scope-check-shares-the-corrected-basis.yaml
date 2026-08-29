@@ -15,7 +15,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1257-review-time-scope-check-shares-the-corrected-basis.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Nothing here needs a design choice from you — the corrected basis already
   exists and is already trusted at send time, so this is making one seat use

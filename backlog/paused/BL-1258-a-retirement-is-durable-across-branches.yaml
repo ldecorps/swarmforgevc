@@ -15,7 +15,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1258-a-retirement-is-durable-across-branches.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One thing to sign off: this refuses a merge, and merge refusals are the class
   of gate that has blocked roles with no available move three times this month

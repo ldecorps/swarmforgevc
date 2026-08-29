@@ -2,7 +2,7 @@ id: BL-584
 title: "Stale approval-ask email escalation — an unanswered Approvals-topic ask emails the human a digest with a Telegram deep link to that exact message"
 milestone: M8
 type: feature
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 priority: 177
@@ -222,3 +222,42 @@ out_of_scope: |
     SECOND channel — a second Telegram message would land in the same place the
     human already missed.
   - Moving `notify_email_to`/`notify_email_from` into the pack confs.
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with `status: todo` and
+  `human_approval: approved` — i.e. fully eligible for promotion — while the
+  behaviour it specifies is ALREADY SHIPPED AND LIVE. Promoting it would have
+  sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - extension/src/notify/staleApprovalEscalation.ts is headed verbatim with
+    this ticket's own scope: "BL-584: escalate unanswered Approvals-topic asks
+    to email with a Telegram deep link."
+  - It is reached from the live front desk: extension/src/tools/telegram-front-
+    desk-bot.ts references the escalation path, and the module imports the real
+    APPROVAL_ASK_LOCATOR / blTopicStore rather than fixtures.
+  - specs/pipeline/steps/index.js:721 registers
+    bl584StaleApprovalAskEmailEscalationSteps, so the acceptance scenarios run
+    against that implementation.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  The retirement discipline "retire scenarios, never reword" applies when the
+  BEHAVIOUR is being retired; here only the TICKET is stale. These scenarios
+  are the durable, executing contract for shipped behaviour, and the runner
+  throws on a scenario with no handler — deleting them would remove live
+  coverage and break the acceptance gate. No dead logic to remove, and no doc
+  moves to docs/deprecated/, because nothing here is deprecated.
+
+  Found by the proactive half of the deprecator duty (checking old paused
+  tickets BEFORE the coordinator's promotion gate holds on them), not by a
+  coordinator freshness hold.
