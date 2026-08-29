@@ -16,6 +16,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1230-no-leaked-git-repository-inside-the-working-tree.feature
+abandoned_commits: [460a3f052b, 685a0296d6, 62ab4d2b44, 54f35abea7, 0c0d245869, 26dcc36679, 6131a66f47, 89b920e955, 7023c8381d, b4f4104517, aeb0161973, 46909817c7, 6d6f2569f7, 4c2fb609e1, 09e4cd58ad, 1b480dadf0, 6b4d36fedc, e566c7faa3, 04b637650a, f886e49a3a, e272c6b019, 5e5b420c44, 50f8c5332d, fb588fa887, 1ef491f0c7, 1c5709d238, 77a9cc5028, d4083e78e0, c0c694f153, f6d369da33, 4732a3a198, 4ba1d0c9e6, bf7895a35d, 79e3cbf449, 6f5752d069, 67d0c18c1f, 487278e7d3, adf16cd3e2, 858c280425, 1b3a0a0e51, a5b065e0ca, e7353f626c, 938ce576de, 7fb91b6539, 1017d776b0, 11bb0ede83, 75de17decd, 6b7ad7ee7e, 54c17b6972, dbcf59fb7c, cfd1eeec9b, db56560eed, efa2848e27, 1baa878730, 175e24b119, 20e6ddd230, 9664aab11c, 205fdd36fb, 05f3221150, 8521d22d5c, b8c4c43f63, 985dbcf597, 9747e6c1df, 7ccc2f2232, c5bb4810a2, 43d181069e, ae503cbe67, f134036766, b06b75cde9, 3c07857a58, 670473039e, 9296711a77, 5bf354adc9, 795d79a2f9, f85514f2e5]
 
 human_approval: approved
 approval_context: >
@@ -153,3 +154,19 @@ notes: |
     feature file, do not re-label the commit subject, do not rebuild tip-pure;
     each of those passes the gate by defeating it or by dropping the scenarios
     this ticket exists to add. The coder was right to record the block and stop.
+
+  [2026-08-29] QA, BL-1241 entangled-tip rebuild. Once forwarded, the
+  documenter's handed-off commit (460a3f052b) STILL carried the coder's
+  long-lived branch ancestry - the same stale step-scoping tangle
+  BL-1273/BL-1193/BL-1251/BL-1209's own QA passes already found (BL-1246's
+  own three commits, 3c07857a5/26dcc3667/460a3f052b, were each independently
+  clean and self-contained, verified via git show --stat; the tangle is
+  entirely from OTHER commits sharing the branch). Rebuilt tip-pure onto the
+  already-landed post-BL-1209 HEAD. Also rescued one stranded casualty found
+  in the same audit: the architect's own evidence record
+  (6d6f2569f, "Record untracked tmpDirMigrationGuard standing red found
+  reviewing BL-1209") - a real, valuable, unlanded finding (the same
+  BL-1280-tracked standing red I independently confirmed during BL-1209's
+  own QA pass) with no conflict with anything. abandoned_commits records the
+  full superseded chain. git diff --stat origin/main HEAD confirmed exactly
+  BL-1246's own nine files plus the one rescued evidence file.

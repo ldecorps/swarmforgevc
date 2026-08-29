@@ -5,7 +5,7 @@ inside it that git itself did not put there — the one artifact `git status`
 and `git clean` will never surface, because git simply never considers it.
 Report only: it never deletes, moves, or rewrites what it finds.
 
-**Last Updated:** 2026-08-28
+**Last Updated:** 2026-08-29 (BL-1246: git-ignored directories are exempt too)
 
 ## Background
 
@@ -54,6 +54,20 @@ Exempt **by construction**, never by naming a known leak path:
   same guard against its own root, so descending into every worktree's
   full checkout from another checkout would be the same "cost grows with
   repo size" shape BL-1038 exists to refuse.
+- **(BL-1246) a directory git itself ignores.** `tmp/` is where
+  `workflow.prompt` sends every role's scratch, so a role's own git
+  fixtures (e.g. a smoke-tested `git init` under `tmp/`) legitimately live
+  there — nothing tracked can be swallowed and no bookkeeping runs from it,
+  which are the two things that made the original `backlog/.git` leak a
+  defect. The exemption is derived from git itself, never a path list: the
+  guard asks `git check-ignore --quiet -- <containing-dir>` about the
+  directory that holds the nested `.git`, lazily, once per candidate leak,
+  and exempts **only** on a clean exit `0`. Exit `1` ("not ignored") still
+  reports it; anything else — git missing, the root not a repository, a
+  spawn failure — is not an answer and never silences a leak (`git
+  check-ignore`'s own exit codes: `0` ignored, `1` not ignored, `128`+
+  fatal/unusable). A repository in a **tracked** directory is reported
+  exactly as before, including when an ignored one sits right beside it.
 
 The walk never descends into a directory it reports — a leaked repository's
 own internals are not this guard's business — and an unreadable directory
@@ -66,13 +80,20 @@ contract (reporting, exemptions, no mutation) and carries the live call
 site: `findNestedGitRepositories(root)` against the real repository root,
 asserting an empty violation set. It runs in the default unit lane.
 
-`extension/test/nestedGitRepoGuard.property.test.js` encodes both
+`extension/test/nestedGitRepoGuard.property.test.js` encodes all four
 declared invariants against generated tree layouts:
 
 - **P1** — the reported set equals exactly the `.git` directory paths
   outside `node_modules`/`.worktrees`, never root's own.
 - **P2** — the walk never mutates its input (diffs a JSON snapshot of the
   live node references before/after).
+- **P3** (BL-1246) — a nested repository inside a git-ignored directory is
+  never reported, across generated trees that always carry both an
+  ignored and a tracked branch.
+- **P4** (BL-1246) — the report follows the ignore **predicate** itself,
+  not a directory name: run against a generator whose `isIgnored` answers
+  both ways, a guard that special-cased the name `tmp` instead of asking
+  git fails this even though it passes P3.
 
 ### Report-only, on purpose
 
