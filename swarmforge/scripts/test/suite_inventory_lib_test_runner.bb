@@ -78,6 +78,35 @@
                                         [{:file "test_a.sh" :lane "standing" :date "" :reason ""}
                                          {:file "test_a.sh" :lane "excluded" :date "2026-08-23" :reason "why"}]))
 
+;; BL-1239: three rows sat in the manifest with a TICKET ID in column 1 and the
+;; filename pushed to column 3. They registered nothing while looking like a
+;; registration, and one of them was an attempt to register a file the gate was
+;; still reporting missing. Column 1 must name a test file, and a row that does
+;; not is called out as a malformed row - not as a missing file, which sends the
+;; reader hunting in the wrong place.
+(assert-some "a row whose first column is a ticket id rather than a filename is named as malformed"
+             (has "first column is not a test file name: \"BL-780\"")
+             (suite-inventory-lib/check
+              #{"test_a.sh"}
+              [{:file "test_a.sh" :lane "standing" :date "" :reason ""}
+               {:file "BL-780" :lane "bl780_rotation_actionability_ordering"
+                :date "test_bl780_rotation_actionability_ordering.sh" :reason "unit"}]))
+
+(assert-none "a malformed row is not ALSO reported as a file missing from the tree"
+             (has "in the manifest but not in the tree: BL-780")
+             (suite-inventory-lib/check
+              #{"test_a.sh"}
+              [{:file "test_a.sh" :lane "standing" :date "" :reason ""}
+               {:file "BL-780" :lane "standing" :date "" :reason ""}]))
+
+;; A property runner has its own lane and is never a suite member (test-file?
+;; above). A row registering one is the same malformed-row class.
+(assert-some "a row registering a property runner is named as malformed"
+             (has "first column is not a test file name")
+             (suite-inventory-lib/check
+              #{}
+              [{:file "bl1137_cwd_scoped_mute_property_runner.bb" :lane "standing" :date "" :reason ""}]))
+
 (assert-some "an unknown lane is named"
              (has "unknown lane")
              (suite-inventory-lib/check #{"test_a.sh"}
@@ -131,7 +160,13 @@
     ;; A helper under lib/ must not be discovered: the walk is deliberately
     ;; not recursive, because lib/ holds shared helpers rather than tests.
     (spit (str (fs/path dir "lib" "test_helper.sh")) "")
-    (assert= "discovery finds exactly the two test shapes, and does not recurse into lib/"
+    ;; A DIRECTORY whose name matches the test-file? pattern must not be
+    ;; discovered as a test - discovery filters to regular files only.
+    ;; Nothing in the real tree names a directory this way today, but nothing
+    ;; stops it, and an undetected directory here would be spawned as a test
+    ;; by run_bb_suite.sh with no clear failure.
+    (fs/create-dirs (fs/path dir "test_dir_shaped.sh"))
+    (assert= "discovery finds exactly the two test shapes, and does not recurse into lib/, and excludes a directory whose name matches the test-file? pattern"
              #{"test_one.sh" "two_test_runner.bb"}
              (suite-inventory-lib/discover-test-files dir))
     (finally

@@ -74,7 +74,16 @@
       (for [f (sort (remove listed-set discovered))]
         (str "not in the manifest: " f
              " - add a row (lane standing, or excluded with a date and a reason)"))
-      (for [f (sort (remove discovered listed-set))]
+      ;; BL-1239: a row whose first column is not a test file name at all - a
+      ;; ticket id, or a property runner, which has its own lane and is never a
+      ;; suite member. Three such rows sat here registering nothing while
+      ;; looking like registrations. Called out as MALFORMED rather than as a
+      ;; missing file: "restore the file" sends the reader hunting for a file
+      ;; that was never supposed to be here.
+      (for [f (sort (remove test-file? listed-set))]
+        (str "first column is not a test file name: " (pr-str f)
+             " - column 1 must name a test_*.sh or *_test_runner.bb file"))
+      (for [f (sort (filter test-file? (remove discovered listed-set)))]
         (str "in the manifest but not in the tree: " f
              " - delete the row, or restore the file"))
       (for [f dupes]
