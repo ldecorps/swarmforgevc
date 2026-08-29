@@ -178,3 +178,6 @@ notes: >
   currently absent, so no concurrent parcel can be touching them.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: QA, blamed: coder, class: behavior, commit: 9cbd5b280e, evidence: backlog/evidence/BL-1262-qa-bounce-20260829.md }
