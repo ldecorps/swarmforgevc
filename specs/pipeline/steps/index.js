@@ -8,6 +8,7 @@
 const DOMAINS = [
   require('./backlogSteps'),
   require('./bl603TrendsPublishedOnMiniAppSteps'),
+  require('./bl1209MkdtempDetectorFromToolSteps'),
   require('./bl1193RetiredTokenAnchoredSteps'),
   require('./bl1220UnitLaneRunnerBindingSteps'),
   require('./bl1267AdjudicationDischargeSteps'),
