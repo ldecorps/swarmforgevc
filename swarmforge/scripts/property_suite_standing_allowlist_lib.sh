@@ -34,6 +34,16 @@ ps_allowlist_file_is_allowlisted() {
 }
 
 # One path per line from vitest FAIL lines (deduped).
+#
+# BL-1234: ps_allowlist_normalize_file emits its path with NO trailing
+# newline (its own contract is "normalize a path", not "decide line
+# framing") - the newline belongs here, at the one call site, so every
+# normalized path lands on its own line before sort -u sees the stream.
+# Without it, two or more failing files concatenate onto a single line,
+# sort -u treats that concatenation as ONE (unmatchable) path, and the
+# allowlist gate refuses every commit whenever 2+ allowlisted tests are red
+# - which is the only case that occurs in practice once the allowlist names
+# more than one file.
 ps_suite_extract_failing_files() {
   local output="$1"
   printf '%s\n' "$output" \
@@ -41,7 +51,7 @@ ps_suite_extract_failing_files() {
     | sed -E 's/^ FAIL  ([^ ]+).*/\1/' \
     | while IFS= read -r raw; do
         [[ -z "$raw" ]] && continue
-        ps_allowlist_normalize_file "$raw"
+        printf '%s\n' "$(ps_allowlist_normalize_file "$raw")"
       done \
     | sort -u
 }
