@@ -9,7 +9,7 @@ severity: low
 depends_on: [BL-552]
 source: "backlog/INTAKE-per-provider-api-plan-usage-view.md, drained 2026-08-29"
 
-human_approval: pending
+human_approval: approved
 approval_context: |
   This is a DISCOVERY slice: research what each provider's API can actually
   return, document it, and produce a feasibility matrix. No implementation yet.
