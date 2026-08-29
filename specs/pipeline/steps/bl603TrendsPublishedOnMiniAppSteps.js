@@ -98,9 +98,17 @@ function assertProducerModuleExists(producer) {
   }
 }
 
+const FEATURE_NAME = 'Behaviour-trend series are published on the live Mini App console';
+
 function registerSteps(registry) {
+  // BL-425 scoping: several of the step texts below are generic enough
+  // that another ticket's feature legitimately uses the same words for
+  // unrelated behaviour, and an unscoped registration resolves
+  // first-match across every handler file - so an unscoped one here can
+  // answer another feature's scenario with this ticket's context.
+  const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE_NAME);
   // ── Background ──────────────────────────────────────────────────────
-  registry.define(/^the live holistic console served over the bridge$/, (ctx) => {
+  scoped(/^the live holistic console served over the bridge$/, (ctx) => {
     const html = holisticUiModule().getHolisticUiHtml();
     if (typeof html !== 'string' || html.length === 0) {
       throw new Error('expected the holistic console to render a document');
@@ -108,7 +116,7 @@ function registerSteps(registry) {
     ctx.bl603Html = html;
   });
 
-  registry.define(/^a trends board registered on that console$/, (ctx) => {
+  scoped(/^a trends board registered on that console$/, (ctx) => {
     if (!ctx.bl603Html.includes('id="trendsBoard"')) {
       throw new Error('expected the console to carry the trendsBoard anchor');
     }
@@ -119,17 +127,17 @@ function registerSteps(registry) {
   });
 
   // ── trends-published-on-mini-app-01 ─────────────────────────────────
-  registry.define(/^the series (\S+) produced by (\S+)$/, (ctx, series, producer) => {
+  scoped(/^the series (\S+) produced by (\S+)$/, (ctx, series, producer) => {
     assertProducerModuleExists(producer);
     ctx.bl603Series = series;
     ctx.bl603Producer = producer;
   });
 
-  registry.define(/^the trends board is rendered$/, (ctx) => {
+  scoped(/^the trends board is rendered$/, (ctx) => {
     renderBoard(ctx);
   });
 
-  registry.define(/^the board shows a plot for (\S+)$/, (ctx, series) => {
+  scoped(/^the board shows a plot for (\S+)$/, (ctx, series) => {
     const found = seriesOnBoard(ctx, series);
     if (typeof found.label !== 'string' || found.label.length === 0) {
       throw new Error(`series ${series} reached the board without a label`);
@@ -139,7 +147,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^that plot was computed through the shared trend framework$/, (ctx) => {
+  scoped(/^that plot was computed through the shared trend framework$/, (ctx) => {
     const found = seriesOnBoard(ctx, ctx.bl603Series);
     const trend = found.trend;
     // computeTrend's own result shape - every key it returns, present on
@@ -160,7 +168,7 @@ function registerSteps(registry) {
   });
 
   // ── trends-published-on-mini-app-02 ─────────────────────────────────
-  registry.define(/^a registered series whose points are empty because (.+)$/, (ctx, cause) => {
+  scoped(/^a registered series whose points are empty because (.+)$/, (ctx, cause) => {
     // Both causes reach the board the same way: a loader with nothing to
     // hand over. The first cannot even load its module; the second loads
     // fine and finds an empty ledger.
@@ -180,7 +188,7 @@ function registerSteps(registry) {
     ];
   });
 
-  registry.define(/^that series reads as having no data yet$/, (ctx) => {
+  scoped(/^that series reads as having no data yet$/, (ctx) => {
     const found = seriesOnBoard(ctx, ctx.bl603Series);
     if (found.hasData !== false) {
       throw new Error(`series ${ctx.bl603Series} claims to have data when its producer supplied none`);
@@ -190,7 +198,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the board draws no plotted point for it$/, (ctx) => {
+  scoped(/^the board draws no plotted point for it$/, (ctx) => {
     const found = seriesOnBoard(ctx, ctx.bl603Series);
     if (found.trend.series.length !== 0) {
       throw new Error(
@@ -213,7 +221,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the board renders without error$/, (ctx) => {
+  scoped(/^the board renders without error$/, (ctx) => {
     if (!ctx.bl603Payload || !Array.isArray(ctx.bl603Payload.series)) {
       throw new Error('the board failed to render');
     }
@@ -225,7 +233,7 @@ function registerSteps(registry) {
   });
 
   // ── trends-published-on-mini-app-03 ─────────────────────────────────
-  registry.define(/^it offers no control that mutates swarm or backlog state$/, (ctx) => {
+  scoped(/^it offers no control that mutates swarm or backlog state$/, (ctx) => {
     const html = ctx.bl603Html;
     const start = html.indexOf('function renderTrendsBoard');
     const end = html.indexOf('function renderBacklogBoard');
@@ -251,7 +259,7 @@ function registerSteps(registry) {
   });
 
   // ── trends-published-on-mini-app-04 ─────────────────────────────────
-  registry.define(/^the series (\S+) registered after the board was written$/, (ctx, series) => {
+  scoped(/^the series (\S+) registered after the board was written$/, (ctx, series) => {
     const { TRENDS_BOARD_SERIES } = registryModule();
     ctx.bl603Series = series;
     ctx.bl603NewlyRegistered = series;
@@ -269,7 +277,7 @@ function registerSteps(registry) {
     ];
   });
 
-  registry.define(/^no exhaustive per-series list had to be edited to make it appear$/, (ctx) => {
+  scoped(/^no exhaustive per-series list had to be edited to make it appear$/, (ctx) => {
     const found = seriesOnBoard(ctx, ctx.bl603NewlyRegistered);
     if (found.hasData !== true || found.trend.currentValue !== 4) {
       throw new Error('the newly registered series did not carry its own producer data through to the board');
@@ -290,17 +298,17 @@ function registerSteps(registry) {
   });
 
   // ── trends-published-on-mini-app-05 ─────────────────────────────────
-  registry.define(/^a request for the trends board data without a bridge token$/, (ctx) => {
+  scoped(/^a request for the trends board data without a bridge token$/, (ctx) => {
     ctx.bl603ServerSource = bridgeServerSource();
   });
 
-  registry.define(/^the request is served$/, (ctx) => {
+  scoped(/^the request is served$/, (ctx) => {
     if (!ctx.bl603ServerSource.includes("url === '/trends'")) {
       throw new Error('expected /trends to be served by the bridge');
     }
   });
 
-  registry.define(/^it is refused as unauthorised$/, (ctx) => {
+  scoped(/^it is refused as unauthorised$/, (ctx) => {
     const source = ctx.bl603ServerSource;
     // /trends is a plain entry in buildJsonRoutes, which sits BEHIND the
     // generic bearer gate - it adds no bypass of its own. The public
@@ -318,7 +326,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^no trend series is readable from the static backlog dashboard$/, (ctx) => {
+  scoped(/^no trend series is readable from the static backlog dashboard$/, (ctx) => {
     const { registeredSeriesIds } = registryModule();
     const pwaDir = path.join(EXT_DIR, '..', 'pwa');
     if (!fs.existsSync(pwaDir)) {
