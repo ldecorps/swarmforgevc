@@ -2,7 +2,7 @@ id: BL-570
 title: "Property-suite drift guard: the shared pre-commit hook runs `npm run test:properties` when staged changes can invalidate a property"
 milestone: M8
 type: feature
-status: todo
+status: done
 epic: code-quality-gates
 human_approval: approved
 severity: medium
@@ -152,3 +152,49 @@ notes: |
   spec/tests/review/docs/QA stamp), BL-566 (`landed_out_of_band` retro-capture
   field). This ticket is the only one that tries to catch the drift AT commit
   time. None of them subsumes it, and it subsumes none of them.
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with `status: todo` and
+  `human_approval: approved` — i.e. fully eligible for promotion — while the
+  behaviour it specifies is ALREADY SHIPPED AND LIVE. Promoting it would have
+  sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - swarmforge/scripts/check_property_suite_drift.sh exists and is headed
+    "BL-570", implementing every constraint this ticket names: standalone
+    script mirroring check_commit_size.sh, scoped trigger (path skip),
+    fail-open when the toolchain is unavailable, an explicit override seam
+    (SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1), and an injectable suite command
+    with no *_FORCE_RESULT bypass.
+  - It is WIRED, not dead: swarmforge/git-hooks/pre-commit line 26 calls it,
+    and core.hooksPath is set to swarmforge/git-hooks, so every worktree runs
+    it — the exact out-of-band commit path this ticket targets.
+  - specs/pipeline/steps/index.js:558 registers
+    bl570PropertySuiteDriftGuardSteps, so all four scenarios in the acceptance
+    feature file execute against the real guard.
+  - Five follow-on tickets have already closed ON TOP of this guard and are in
+    backlog/done/: BL-1121 (override seam refined), BL-1124, BL-1175
+    (standing-red allowlist), BL-1196, BL-1202 (canary on every exit path).
+    Work cannot harden a guard that was never built.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  The retirement discipline "retire scenarios, never reword" applies when the
+  BEHAVIOUR is being retired; here only the TICKET is stale. These scenarios
+  are the durable, executing contract for shipped behaviour, and the runner
+  throws on a scenario with no handler — deleting them would remove live
+  coverage and break the acceptance gate. No dead logic to remove, and no doc
+  moves to docs/deprecated/, because nothing here is deprecated.
+
+  Found by the proactive half of the deprecator duty (checking old paused
+  tickets BEFORE the coordinator's promotion gate holds on them), not by a
+  coordinator freshness hold.

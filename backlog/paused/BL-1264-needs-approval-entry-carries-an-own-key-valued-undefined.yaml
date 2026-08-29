@@ -1,0 +1,137 @@
+id: BL-1264
+title: "computeNeedsApproval always writes an approvalContext key, valued undefined when the ticket has no context, so every entry carries an own key its own optional type says may be absent"
+type: defect
+severity: low
+# low: contained and cosmetic in effect. The key is serialised away by
+# JSON.stringify, so backlog.json - the artefact the static PWA reads - is
+# unaffected, and no operator sees anything wrong. What is actually broken
+# is one standing red in the suite every parcel runs, and an in-memory
+# shape that contradicts the optional field its own interface declares.
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1264-an-absent-approval-context-is-an-absent-key.feature
+
+invariants:
+  - "A field declared optional on an interface is absent from the object when it has no value, never present with the value undefined: the two are distinguishable to every strict comparison, and a producer that cannot tell them apart makes its own type a lie."
+
+description: >
+  Severity rationale is in the comment above the field.
+  Root-caused at mint.
+
+  What happens. `computeNeedsApproval`
+  (extension/src/metrics/backlogDashboard.ts:157-165) builds each
+  entry as `{ id, title, approvalContext: item.approvalContext }`.
+  When the ticket carries no `approval_context:` field, that third
+  property is present with the value `undefined`. The interface it
+  claims to satisfy, `NeedsApprovalEntry`
+  (backlogDashboard.ts:42-46), declares `approvalContext?: string` -
+  optional, meaning absent when there is nothing to say.
+
+  Why it is red. extension/test/backlogDashboard.test.js:136 asserts
+  `deepEqual(data.needsApproval, [{ id: 'BL-100', title: 'Needs a
+  look' }])` for a ticket with no approval context. The file imports
+  `node:assert/strict`, so `deepEqual` is `deepStrictEqual`, which
+  treats an own key valued `undefined` as different from an absent
+  key. The assertion is correct and describes the intended shape; the
+  producer is the half that is wrong.
+
+  Why it does not show anywhere else. `JSON.stringify` drops own keys
+  whose value is `undefined`, so backlog.json - the git-derivable
+  artefact the static backlog-dashboard PWA renders - has never
+  carried the key and never will. The defect lives entirely on the
+  in-memory path, which is why it surfaced as a unit failure and
+  nowhere in the product.
+
+  Fix wanted, in direction only. Emit the property only when there is
+  a value to emit. Whether that is a conditional spread, a builder
+  that prunes undefined, or something else is the coder's call. The
+  same file states an "explicit rather than absent" convention at
+  :63-68, but read it carefully before applying it here: it is about
+  `needsApproval` and `notDoneCount` being ALWAYS PRESENT on the
+  top-level payload so both surfaces can render an explicit no-data
+  state. It says nothing about per-entry optional fields, and this
+  entry's own type declares the opposite.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT fix this by changing the test to expect the undefined key,
+    and do not relax it from deepEqual to a looser comparison. The
+    assertion describes the shape the interface declares; the
+    producer is what moves.
+  - Do NOT make approvalContext required, and do not substitute an
+    empty string, a null, or a placeholder for a missing context.
+    Absent means absent - every consumer already treats a missing
+    context as "no context to show"
+    (pendingApprovalsAnnouncement.ts:84 returns early on a falsy
+    value), and a sentinel would change what those consumers render.
+  - Do NOT change the top-level "always present, possibly empty"
+    posture of needsApproval or notDoneCount. That convention is
+    correct, deliberate, and is not what this ticket is about.
+  - Do NOT change the schema version, the shape of backlog.json, or
+    anything the static PWA reads. The serialised artefact is
+    unaffected today and must stay byte-identical after the fix.
+  - Do not sweep other producers for the same pattern. If the coder
+    notices one, that is a note, not scope.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline, recorded before any change: from extension/,
+     `npx vitest run test/backlogDashboard.test.js` - expect the
+     needsApproval assertion at :136 to fail, and record the exact
+     diff showing the extra `approvalContext: undefined` key.
+  2. Confirm the root cause is the one claimed: read
+     backlogDashboard.ts:157-165 and :42-46 together - the
+     unconditional spread against the optional declaration - and put
+     both in the evidence file.
+  3. Scenario 01, both rows: a ticket WITHOUT an approval context
+     produces an entry whose own keys are exactly id and title, and a
+     ticket WITH one produces an entry carrying the context. Assert
+     the absence with hasOwnProperty, not with a truthiness check -
+     a truthiness check passes for both shapes and would prove
+     nothing.
+  4. Scenario 02: the serialised artefact is unchanged. Generate
+     backlog.json before and after the fix from the same fixture and
+     diff them - they must be identical, which is what confirms no
+     consumer of the file is affected.
+  5. Regression: the full unit suite's failure count drops by exactly
+     one. conciergeTick, pendingApprovalsAnnouncement,
+     pendingApprovalsAnnouncementHook and topicRouter - the other
+     readers of approvalContext - all stay green and unmodified.
+
+notes: >
+  Source: QA note handoff
+  00_20260829T024547Z_001889_from_QA_to_specifier_coordinator, verbatim:
+  "Untracked defects (7): see BL-1244-qa-pass-unrelated-reds-20260829.md".
+  The evidence file's line for this one, verbatim:
+  "`test/backlogDashboard.test.js` - `needsApproval` entries now carry
+  an `approvalContext: undefined` key the test's `assert.deepEqual`
+  doesn't expect."
+
+  Specifier verification at mint: read computeNeedsApproval and the
+  NeedsApprovalEntry declaration together and established which half
+  is wrong - the optional marker on the interface is the tiebreaker,
+  and it points at the producer. Confirmed the test's strictness by
+  reading its import (node:assert/strict, under which deepEqual is
+  deepStrictEqual and an own undefined key is fatal). Traced the
+  field's arrival to `7270c6af0` (BL-649, the swarm-start doorbell)
+  and confirmed the readers - pendingApprovalsAnnouncement.ts:84,
+  conciergeTick.ts:301, topicRouter.ts:182 - all treat a missing
+  context as nothing to render, so making it absent breaks no
+  consumer. Read the "explicit rather than absent" comment at
+  :63-68 in full to be sure it did not authorise the current shape;
+  it does not, it is about the top-level fields.
+
+  Grepped backlog/{active,paused,hold} for "backlogDashboard",
+  "approvalContext" and "needsApproval": no hits at all. Untracked
+  confirmed.
+
+  Orthogonality for the coordinator: touches
+  extension/src/metrics/backlogDashboard.ts (one function) and
+  extension/test/backlogDashboard.test.js. No live ticket names
+  either path.

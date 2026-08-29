@@ -12,7 +12,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1259-expedite-missing-verdict-recovery.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This is a BL-848 hotfix stamp-off, so the decision it needs is the ledger
   one: do these three commits get certified (approved) or waived? The code is

@@ -1,0 +1,160 @@
+id: BL-1247
+title: "BL-593 telemetry property test flakes ~30% of runs: its scope generator emits whitespace-only strings the production guard correctly refuses - narrow the generator to the contract's domain"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+human_approval: approved
+priority: 35
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1247-property-generator-domain-agreement.feature
+
+invariants:
+  - "Every value the BL-593 scope generator can emit is accepted by buildMutationRunRecord as a load-bearing scope: this property can go red only on a real contract violation, never on a domain mismatch between what the generator draws and what the guard accepts."
+
+description: >
+  Severity rationale: medium - test infrastructure, no live swarm behaviour
+  degraded, and the production code is correct. What keeps it above low is
+  that the red is FALSE and INTERMITTENT: it accuses correct code, and it
+  accuses it only sometimes, so each reviewer who meets it pays a fresh
+  diagnosis cycle. QA paid one on 2026-08-28 and recorded it as
+  "fails deterministically (ran isolated, twice, same counterexample both
+  times)" - an entirely reasonable reading of two consecutive failures at a
+  ~30% rate, and precisely the cost this ticket removes.
+
+  Root cause, measured at mint (not inferred). The property
+  "completed records always carry load-bearing scope total and incremental"
+  in extension/test/bl593MutationRunTelemetry.property.test.js draws its
+  scope from fc.string({ minLength: 1, maxLength: 80 }). fast-check 4.9.0's
+  default charset for fc.string includes the space character, so the
+  generator emits whitespace-only strings: 8 of 5000 draws, ~1 in 600.
+  requireLoadBearingMeta (extension/src/mutation/mutationRunTelemetry.ts:39)
+  rejects those - `!meta.scope || meta.scope.trim() === ''` - and throws
+  "mutation run record requires a non-empty scope". That guard is right: a
+  whitespace-only scope is exactly the not-load-bearing value BL-593 exists
+  to refuse. Confirmed directly: scope " " and "\t" both throw, "ok" builds.
+  With fast-check's default 100 runs per property the odds of drawing at
+  least one blank per run are ~15%, and the observed file-level rate is
+  higher because the file runs the property once per invocation: 6 red in 20
+  consecutive isolated runs on this host, and 8 consecutive greens in an
+  earlier batch - which is why grep-and-stare finds nothing and a single
+  re-run "confirms" whichever verdict it happens to land on.
+
+  So the defect is in the TEST, not the code under test: the generator models
+  a domain wider than the contract accepts. The property means to say "any
+  real scope round-trips"; it currently also says "any blank scope
+  round-trips", which the contract deliberately denies.
+
+  Fix wanted: narrow the generator so every value it can draw is a value the
+  contract accepts as load-bearing - a filter to non-blank, a charset without
+  whitespace, or a generator shaped like a real Stryker --mutate glob. The
+  lever is the coder's call; the constraint on which levers are legitimate is
+  below.
+
+  Sibling risk was checked at mint and is LOW, deliberately keeping this
+  slice small: ~40 property files use fc.string({ minLength: 1, ... }), but
+  sweeping src/ for the trim-blank rejection class finds mutationRunTelemetry
+  as the only THROWING guard of this shape fed by such a generator (the
+  letsTalkCore blank checks return booleans and are silence-handling, not
+  refusals). This ticket fixes the one confirmed instance and does not open a
+  repo-wide generator audit.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - The production guard is correct and stays fail-closed. Do not delete the
+    trim, do not accept a whitespace-only scope, do not add a test-only
+    bypass to requireLoadBearingMeta. Fixtures and generators move; the
+    contract does not. (Same posture as BL-974 toward BL-367's socket guard.)
+  - Do NOT "fix" the flake by pinning a fast-check seed, lowering numRuns, or
+    wrapping the call in a try/catch that tolerates the throw. Each of those
+    hides a generator/contract mismatch instead of removing it, and a pinned
+    seed would silently stop exploring the space the property exists to
+    explore. The fix narrows the generator's domain.
+  - The second property in the same file ("aborted records are never
+    classified as completed full runs") is green and untouched.
+  - No repo-wide generator audit in this parcel - see the sibling-risk
+    paragraph above. If the coder finds a second throwing consumer of this
+    shape while working, route a note rather than widening this slice.
+
+qa_e2e_procedure: >
+  1. Scenario 01: run extension/test/bl593MutationRunTelemetry.property.test.js
+     isolated, 20 consecutive times, via
+     `npx vitest run test/bl593MutationRunTelemetry.property.test.js --config
+     vitest.properties.config.mjs` from extension/. All 20 green. Record the
+     count - a single green run proves nothing here (the pre-fix file passes
+     ~70% of the time; 8 consecutive pre-fix greens were observed at mint).
+  2. Scenario 02: draw 5000 values from the generator the property uses and
+     assert buildMutationRunRecord accepts every one. Pre-fix this fails with
+     roughly 8 blanks; post-fix zero.
+  3. Scenario 03: assert the guard still throws for each blank form (single
+     space, single tab, spaces-and-newline, empty string) - the fail-closed
+     half must not have been traded away for the green.
+  4. Non-vacuity: revert only the generator change in a scratch copy and
+     confirm scenario 02 goes red again.
+
+notes: >
+  Source: QA note handoff 00_20260828T123412Z_001869 to specifier
+  ("Standing reds corroborated + 1 new"), evidence
+  backlog/evidence/QA-standing-red-corroboration-20260828.md, written while
+  verifying BL-1192 against the merged QA tip. QA correctly established that
+  no open ticket covered it (grep over backlog/ found only BL-593's own done
+  ticket) and left disposition here rather than minting - the right call.
+
+  Correction to that evidence, recorded so the next reader does not inherit
+  it: the red is NOT deterministic. Specifier measured 6 failures in 20
+  consecutive isolated runs (~30%), and separately 8 consecutive passes, on
+  the same tip with no code change between. Two consecutive failures has
+  ~9% probability at that rate, so QA's reading was a reasonable inference
+  from the sample it had, not a mistake in method. The distinction matters
+  for whoever verifies the fix: green-once is not evidence here, which is
+  why scenario 01 is specified as 20 consecutive runs.
+
+  The rest of QA's note needs no new ticket: the 38 unit-lane and ~45
+  property-lane failures it corroborated are the already-dispositioned
+  standing reds (BL-1220 collection gaps, BL-1221 checkOrphanedAuthoredDocs,
+  BL-1206, BL-654 stamp-off reds, BL-1230/BL-1246 nestedGitRepoGuard, BL-1039
+  tmp-fixture lineage) - see
+  backlog/evidence/specifier-disposition-qa-standing-red-note-20260828.md.
+  This ticket covers only the one genuinely new item.
+
+  Related: BL-593 (done - the telemetry builder and its guard, both correct);
+  BL-1175 (done - property-suite standing reds blocking unrelated commits,
+  the same lane); BL-654 (the invariant/property-test discipline this file
+  exists under).
+
+  Orthogonality for the coordinator: touches exactly two files -
+  extension/test/bl593MutationRunTelemetry.property.test.js and a new
+  acceptance step handler. Disjoint from every active ticket; safe to
+  co-activate with anything.
+
+  [2026-08-29] hardener: acceptance feature 6/6 (scenarios 01-03, the
+  20-consecutive-runs and 5000-draw checks included). Non-vacuity
+  confirmed by hand: swapped extension/test/support/bl593ScopeArb.js's
+  filtered nonBlankScope for a bare unfiltered fc.string({ minLength: 1,
+  maxLength: 80 }), re-ran the acceptance feature, scenarios 01 and 02
+  both went red exactly as the pre-fix description predicts (03 stayed
+  green - the fail-closed guard itself was never touched); restored and
+  re-confirmed 6/6. Separately ran the property file standalone 5x via
+  `npx vitest run test/bl593MutationRunTelemetry.property.test.js
+  --config vitest.properties.config.mjs` after a fresh compile - 5/5
+  green, consistent with the acceptance feature's own 20-consecutive
+  check. No CRAP/DRY concern (no src/*.ts touched; the merge also
+  resolved the same BL-1247/BL-1248 reconcile-sweep collision the prior
+  BL-1247-reconcile-sweep-kill-switch merge into this branch already
+  settled - see that merge commit).
+
+approval_context: >
+  One call to say the word on: this is minted as a TEST defect, not a code
+  defect - the fix narrows the property's generator and leaves
+  requireLoadBearingMeta's fail-closed trim exactly as it is. If you would
+  rather the contract itself accepted a whitespace-only scope (it should not
+  - that is the value BL-593 was built to refuse), say so and this is a
+  different ticket. Severity medium: false and intermittent, costing a
+  diagnosis cycle per reviewer who meets it, but no live behaviour affected.
+
+assigned_to: coder

@@ -2,7 +2,7 @@ id: BL-578
 title: "Dev-host bounce leaks a VS Code window per bounce under WSL — 'exactly one dev host' contract silently becomes one more"
 milestone: M8
 type: defect
-status: paused
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: low
@@ -82,3 +82,41 @@ out_of_scope: |
 
 notes: |
   - "[2026-08-25T16:15Z] coder: WSL powershell kill-old seam + headless-swarm refuse/--force; APS green."
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with human_approval:
+  approved and a promotable status — i.e. fully eligible for the coordinator
+  to pick up — while the behaviour it specifies is ALREADY SHIPPED AND LIVE.
+  Promoting it would have sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - extension/scripts/bounceLib.js exports all four decision functions this
+    ticket's acceptance drives — isWslPlatform, buildWindowsKillOldCommands,
+    headlessMarkerDecision, recordBounceHostCount (lines 190/199/218/234,
+    exported at 251-254) — so the WSL-aware kill-old path exists.
+  - specs/pipeline/steps/bl578DevhostBounceWslWindowLeakSteps.js requires that
+    real lib (not a fake) and start-extension-dev.js, and index.js:184
+    registers it, so the scenarios execute against the live bounce path.
+  - specs/features/BL-578-devhost-bounce-wsl-window-leak.feature is a LIVE
+    .feature (not a .draft), and swarmforge/scripts/test/
+    bl988_contract_binding_mutation_sweep.sh already runs a Gherkin mutation
+    sweep over its Outline Examples — nothing sweeps a behaviour never built.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  "Retire, never reword" applies to a retired BEHAVIOUR; here only the TICKET
+  is stale and the behaviour is live. Deleting the scenarios would remove live
+  coverage, and specs/pipeline/runtime.js throws on a scenario whose handler is
+  gone — the gate would redden. See the paused-pool zombie-ticket check:
+  (1) an implementation file headed with the ticket's own id, and
+  (2) that ticket's handler registered in specs/pipeline/steps/index.js.
+  Both present ⇒ shipped ⇒ retire, do not build.

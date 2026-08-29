@@ -12,7 +12,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1261-hold-divergence-audit.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One thing needs sign-off: the call site. The recommendation is
   `promote_and_route_next.sh`, the same site BL-1228 was ruled onto, so both
