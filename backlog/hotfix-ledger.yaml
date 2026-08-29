@@ -184,28 +184,28 @@
 - commit: 3f4f69ec1b
   subject: "Recover once when an expedite stage exits without verdict.json."
   detected_at: 2026-08-28
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1259
   human_decision: null
   decided_at: null
 - commit: 70c5e0e5b0
   subject: "After no-verdict recovery, bounce the same stage instead of failing the ticket."
   detected_at: 2026-08-28
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1259
   human_decision: null
   decided_at: null
 - commit: 5de352ed1d
   subject: "Refuse synthesized no-verdict bounces; recover twice with escalated prompts."
   detected_at: 2026-08-28
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1259
   human_decision: null
   decided_at: null
 - commit: 2ec06b6ef1
   subject: "Own getUpdates when the front-desk inbound feeder is dead."
   detected_at: 2026-08-28
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1260
   human_decision: null
   decided_at: null

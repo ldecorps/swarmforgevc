@@ -2,7 +2,7 @@ id: BL-580
 title: "Morning briefing carries a front-desk MECHANISM activity diagram (Telegram in, answer out)"
 milestone: M8
 type: feature
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: low
@@ -128,3 +128,42 @@ out_of_scope: |
     appear as single "that topic's own handler" nodes; expanding any of them
     is a separate diagram.
   - Turning DIAGRAM_FILES into a directory scan (see BL-579).
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with `status: todo` and
+  `human_approval: approved` — i.e. fully eligible for promotion — while the
+  behaviour it specifies is ALREADY SHIPPED AND LIVE. Promoting it would have
+  sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - docs/diagrams/front-desk-flow.mmd exists as the committed Mermaid source
+    this ticket asks for.
+  - specs/pipeline/steps/bl580FrontDeskMechanismBriefingDiagramSteps.js is
+    headed "BL-580" and drives the REAL renderBriefingDiagrams +
+    build-diagram-section (not a fake), and index.js:560 registers it — so
+    both acceptance scenarios execute against the live briefing path.
+  - The render/email carrier itself (extension/src/tools/render-briefing-
+    diagrams.ts, BL-260) was already in place; this ticket's own delta was the
+    front-desk diagram source plus its briefing wiring, and both are present.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  The retirement discipline "retire scenarios, never reword" applies when the
+  BEHAVIOUR is being retired; here only the TICKET is stale. These scenarios
+  are the durable, executing contract for shipped behaviour, and the runner
+  throws on a scenario with no handler — deleting them would remove live
+  coverage and break the acceptance gate. No dead logic to remove, and no doc
+  moves to docs/deprecated/, because nothing here is deprecated.
+
+  Found by the proactive half of the deprecator duty (checking old paused
+  tickets BEFORE the coordinator's promotion gate holds on them), not by a
+  coordinator freshness hold.

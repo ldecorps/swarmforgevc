@@ -2,7 +2,7 @@ id: BL-609
 title: "Resident Spy live screen: compact +/- font-size control in the header, and a slightly larger default pane text size"
 milestone: M8
 type: feature
-status: todo
+status: done
 epic: swarmforge-console
 human_approval: approved
 severity: low
@@ -160,3 +160,41 @@ approval_context: >
   Firm, not up for negotiation: no localStorage/sessionStorage (Architecture
   Rule 3); the required header elements (ticket id + title, role, model,
   entered-ago, badge) are not displaced or crowded out (BL-564).
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with human_approval:
+  approved and a promotable status — i.e. fully eligible for the coordinator
+  to pick up — while the behaviour it specifies is ALREADY SHIPPED AND LIVE.
+  Promoting it would have sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - extension/src/bridge/residentSpyPaneFontSize.ts is headed "BL-609: pure
+    pane font-size step/clamp for the Resident Spy live screen", and
+    residentSpyUiHtml.ts interpolates the same constants into the shell.
+  - specs/pipeline/steps/bl609ResidentSpyFontSizeControlSteps.js requires the
+    compiled extension/out/bridge/residentSpyPaneFontSize and
+    residentSpyUiHtml and drives the real HTML through jsdom; index.js:722
+    registers it.
+  - specs/features/BL-609-resident-spy-font-size-control.feature is LIVE.
+  - A later ticket already builds ON TOP of this mechanism —
+    specs/pipeline/steps/bl1153StickyWebFontSizeChoiceSteps.js references
+    BL-609 — which is only possible because BL-609 shipped.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  "Retire, never reword" applies to a retired BEHAVIOUR; here only the TICKET
+  is stale and the behaviour is live. Deleting the scenarios would remove live
+  coverage, and specs/pipeline/runtime.js throws on a scenario whose handler is
+  gone — the gate would redden. See the paused-pool zombie-ticket check:
+  (1) an implementation file headed with the ticket's own id, and
+  (2) that ticket's handler registered in specs/pipeline/steps/index.js.
+  Both present ⇒ shipped ⇒ retire, do not build.

@@ -2,13 +2,18 @@ id: BL-1209
 title: "assessPilotMkdtempConvention requires its own detector from <repoRoot>/extension/test/helpers/, so it throws MODULE_NOT_FOUND against any root but this one - eagerly, even with nothing in scope - and its only real test must aim at the live repo and write into the collected test tree"
 milestone: M8
 type: defect
-severity: medium
-# medium: real and contained, with no production misfire today. The CLI
-# resolves repoRoot from process.cwd(), so in every live invocation it IS the
-# tool repo and the detector is always found. What keeps it above low: the
-# only test that drives the real function has to point at the live repository
-# root and write a scratch file into the collected test tree to work at all,
-# and that file matches the suite's own discovery glob (BL-971's class).
+severity: high
+# RAISED medium -> high on 2026-08-29 (see the dated notes entry). The
+# original medium rationale rested on "no production misfire today, and the
+# cost is only paid by one awkward test". That understated it: this defect is
+# throwing in the MAIN unit lane right now. pilotAcceptanceGateCli.test.js >
+# "main(): a claim-refused land now succeeds once the claiming sentence is
+# amended out of the message" drives the compiled CLI against a /tmp fixture
+# root and has failed with MODULE_NOT_FOUND since BL-743 landed on 2026-08-26.
+# A standing red in the suite every role runs is a broken health signal, which
+# is `high` by the specifier prompt's own definition - and an unowned-looking
+# red invites normalization. The production-invocation half of the original
+# rationale still holds and is unchanged.
 status: todo
 epic: code-quality-gates
 human_approval: approved
@@ -58,11 +63,13 @@ description: >
 
   Why nothing has caught it. In production `pilot-acceptance-gate.ts`
   sets `repoRoot = resolveRepoRoot(process.cwd())`, which is always
-  the tool repo, so the detector is always found - the defect is
-  latent, not live. Every gate-level test stubs
-  `checkMkdtempConvention` with a canned `{checked: true,
-  testFilesScanned: 0, violations: [], scannedPaths: []}`, so the
-  real function is never exercised through the gate at all.
+  the tool repo, so the detector is always found - the defect never
+  misfires in a production invocation. It is NOT dormant in the test
+  lane, though: see the 2026-08-29 correction in notes. The gate's own
+  UNIT tests stub `checkMkdtempConvention` with a canned `{checked:
+  true, testFilesScanned: 0, violations: [], scannedPaths: []}`, so
+  the real function is never exercised through those. The CLI tests do
+  not stub it, and one of them is red because of it.
 
   The cost lands on the one test that does drive it.
   extension/test/pilotMkdtempConventionCheck.test.js:20 sets `root =
@@ -146,7 +153,12 @@ qa_e2e_procedure: >
   5. Regression: run tmpDirMigrationGuard.test.js and
      tmpDirMigrationGuard.property.test.js green, plus
      pilotAcceptanceGate.test.js and pilotMkdtempConventionCheck.test.js.
-     The detector's own behaviour must be provably unchanged.
+     The detector's own behaviour must be provably unchanged. Also run
+     pilotAcceptanceGateCli.test.js and confirm all 33 tests pass - the
+     "claim-refused land now succeeds once the claiming sentence is amended
+     out" case is the standing red this defect is currently causing, and it
+     must go green without that test being altered, skipped, or pointed at
+     the live repo root.
   6. Confirm the live gate still works end to end: run the pilot
      acceptance gate as normally invoked from the repo root and
      confirm the mkdtemp convention check still reports into the
@@ -193,6 +205,39 @@ notes: >
   ticket's feature file. Disjoint from BL-1207 (cursor bridge test),
   BL-1208 (bounce revert check) and BL-1205 (handoff transport).
   Safe to co-activate with all three.
+
+  [2026-08-29] FACTUAL CORRECTION and severity raise, from a QA note
+  (priority 50, 2026-08-29T03:05:06Z): "pilotAcceptanceGateCli: unset env
+  made no diff, it's BL-1209 (paused)". QA had been chasing the failure as
+  an ambient GIT_DIR/GIT_WORK_TREE leak (BL-1233's class) and ruled that out
+  by measurement - unsetting both changed nothing.
+
+  Specifier reproduced it independently before amending: from extension/,
+  with GIT_DIR and GIT_WORK_TREE unset, `npx vitest run
+  test/pilotAcceptanceGateCli.test.js` gives 1 failed / 32 passed, and the
+  failure is `Cannot find module
+  '/tmp/sfvc-pag-cli-<rand>/extension/test/helpers/rawMkdtempGuard'` thrown
+  from loadRawMkdtempGuard (pilotMkdtempConventionCheck.ts:45) via
+  assessPilotMkdtempConvention (:60) via checkMkdtempConvention
+  (commitClaimGitReader.ts:190). That is this ticket's defect exactly: the
+  detector resolved through the SUBJECT root, which here is the CLI test's
+  own /tmp fixture repo.
+
+  Two things in this ticket's own description were therefore wrong and are
+  corrected above. "The defect is latent, not live" - it is live in the test
+  lane. "Every gate-level test stubs checkMkdtempConvention, so the real
+  function is never exercised through the gate at all" - true of the gate's
+  UNIT tests, false of the CLI tests, which drive the compiled
+  out/tools/pilot-acceptance-gate.js unstubbed.
+
+  Dated: the failing case "main(): a claim-refused land now succeeds once the
+  claiming sentence is amended out of the message" was written 2026-08-01
+  (dbe047a90, BL-729) and was green until BL-743 wired the mkdtemp scan into
+  the pilot land path on 2026-08-26 (04d7f03df). So this has been red for
+  three days, and it appears in no ledger - not hardening-debt-ledger.yaml,
+  not hotfix-ledger.yaml, not STEERING.md. Severity raised medium -> high on
+  that basis; the fix direction, constraints and approval question are all
+  unchanged, so human_approval stays `approved`.
 
 approval_context: >
   One call to say the word on: whether the fix moves the detector or

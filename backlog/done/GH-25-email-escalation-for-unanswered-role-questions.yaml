@@ -2,7 +2,7 @@ id: GH-25
 title: "Email escalation for unanswered role questions (role_ask): unanswered past a threshold alerts the human via GitHub mention"
 milestone: M8
 type: feature
-status: paused
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: medium
@@ -89,3 +89,66 @@ notes: |
   the question as escalated; confirm the next tick posts nothing further.
   Then verify a fresh under-threshold marker escalates nothing and shows
   as pending in status.json.
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with human_approval:
+  approved and a promotable status — i.e. fully eligible for the coordinator
+  to pick up — while the behaviour it specifies is ALREADY SHIPPED AND LIVE.
+  Promoting it would have sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - swarmforge/scripts/role_ask_escalation_lib.bb is headed "GH-25: pure
+    decisions for unanswered role_ask escalation (GitHub mention transport).
+    Impure post/stamp/tick wiring lives in operator_runtime.bb" and exports
+    the whole decision surface this ticket specs: parse-threshold-minutes,
+    threshold-ms, escalation-due?, decide-escalation-outcome, stamp-escalated,
+    format-mention-body, question-surface-state, render-role-questions,
+    parse-ops-issue.
+  - The impure half is wired AND CALLED, not merely defined (the BL-419 shape
+    was checked for explicitly): operator_runtime.bb:2069 opens the GH-25
+    section, resolve-ask-escalation-issue reads SWARMFORGE_ASK_ESCALATION_ISSUE
+    then the swarmforge.conf ask_escalation_issue key, escalate-role-ask-
+    markers! is defined at 2120 — and line 2360 CALLS it from the tick.
+    The unconfigured-issue path degrades to a WARN log exactly as specced,
+    never a crash.
+  - swarmforge/scripts/test/gh25_role_ask_escalation_test_runner.bb is the
+    ticket's own named test runner.
+  - specs/pipeline/steps/gh25RoleAskEmailEscalationSteps.js shells the REAL
+    role_ask_escalation_lib.bb; index.js:379 registers it.
+  - specs/features/GH-25-role-ask-email-escalation.feature is LIVE.
+
+  ## One loose end, deliberately not folded in
+
+  The live specifier marker .swarmforge/operator/role-awaiting/specifier.json
+  has been pending since 2026-08-29 01:52Z with no escalated_at_ms stamp. That
+  is a RUNTIME/config observation (ops issue unconfigured, or the runtime not
+  ticking), not evidence the mechanism is absent — the code path above is
+  present and called. It is not silently absorbed into this retirement; if it
+  proves to be a real fault it is a NEW defect ticket against the configured
+  transport, not a reason to rebuild GH-25.
+
+  ## GitHub issue
+
+  Seeded from https://github.com/ldecorps/swarmforgevc/issues/25. This
+  retirement does not close that issue — issue closing is QA's step on a
+  GH-seeded ticket that lands through the pipeline, and nothing lands here.
+  The issue should be closed by hand, referencing the shipped mechanism above.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  "Retire, never reword" applies to a retired BEHAVIOUR; here only the TICKET
+  is stale and the behaviour is live. Deleting the scenarios would remove live
+  coverage, and specs/pipeline/runtime.js throws on a scenario whose handler is
+  gone — the gate would redden. See the paused-pool zombie-ticket check:
+  (1) an implementation file headed with the ticket's own id, and
+  (2) that ticket's handler registered in specs/pipeline/steps/index.js.
+  Both present ⇒ shipped ⇒ retire, do not build.

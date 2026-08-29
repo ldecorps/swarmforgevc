@@ -1,0 +1,188 @@
+id: BL-1266
+title: "The reference-freshness guard picks which ref to compare against by whole-repo commit count, so it can both miss real drift and refuse for an amendment on the ref it never read"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 17
+direction: agent-reported
+depends_on: [BL-1237]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1266-reference-freshness-ref-selection-is-per-path.feature
+
+human_approval: approved
+approval_context: >
+  Nothing here is controversial in direction - QA raised it, and the mechanism
+  is one function replaced. The one thing worth a human eye is the SEVERITY
+  call. This is not firing today: main and origin/main currently agree
+  byte-for-byte on all thirteen reference/ files, and BL-1237 removed the
+  common false-refuse. I rated it `high` anyway because the failure it leaves
+  behind is a safety gate that passes VACUOUSLY - a worktree that has genuinely
+  not merged an amendment can be allowed through - and because the condition
+  that triggers it (local main and origin/main disagreeing) is this repo's
+  normal steady state, not an exotic one: the counts are 6 / 213 as I write
+  this. If you would rather this waited behind non-expedited work, drop it to
+  `medium` and it leaves the Article 3.2.4 lane.
+
+invariants:
+  - "A path's verdict is computed from that path's own history in each ref - never from a repository-wide commit count."
+  - "Every ref that carries a reference file is consulted; a refusal is raised when the worktree is missing ANY ref's amendment, and is never suppressed because a different ref happened to agree."
+  - "Every refusal names the specific ref whose amendment is missing, and merging that named ref clears it."
+
+required_wiring:
+  - 'swarmforge/scripts/ready_for_next.bb::reference-freshness-lib/::the guard must keep asking the shared lib for the per-path verdict rather than inlining its own comparison, so the ref-selection change stays testable as pure logic'
+  - 'specs/pipeline/steps/index.js::bl1266ReferenceFreshnessRefSelectionSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  BL-1237 made the pre-turn reference-freshness guard direction-aware. It did
+  not touch how the guard chooses WHICH ref to compare against, and QA verified
+  the shipped diff leaves `freshest-main-ref` byte-for-byte unchanged
+  (`backlog/evidence/BL-1237-qa-pass-ref-selection-residual-20260829.md`):
+
+      (defn- freshest-main-ref [root]
+        (let [result (sh/sh "git" "-C" (str root) "rev-list" "--left-right" "--count"
+                             "main...origin/main")]
+          ... (if (> origin-ahead local-ahead) "origin/main" "main") ...))
+
+  That is a whole-REPOSITORY ahead-count, used as a proxy for "which ref holds
+  the newer version of each of these thirteen files". The two are different
+  questions. `origin/main` can be 200 commits ahead without touching
+  `articles/reference/` at all, while local `main` carries the one commit that
+  did.
+
+  BL-1237's new `path-ancestry-absorbed?` check does not correct this: it asks
+  its ancestry question about whichever single ref `freshest-main-ref` already
+  picked. A bad pick is inherited, not caught.
+
+  ## Two failure modes, opposite directions
+
+  **Fail-open — the one that matters.** Suppose local `main` carries a
+  reference amendment `origin/main` does not, and `origin/main` wins the count.
+  The guard reads `origin/main`'s OLDER copy. A worktree that has genuinely
+  never merged that amendment holds the same older content, the shas match, the
+  path is never even considered for the ancestry probe, and the turn is
+  ALLOWED. That is precisely the drift BL-640 exists to refuse, passing
+  silently. A safety gate that can answer "fresh" without having looked at the
+  fresher ref is not a gate.
+
+  **Fail-closed with a remedy pointing at the wrong ref.** Same setup, but the
+  worktree HAS merged the amendment. Its content differs from `origin/main`'s
+  copy; if the two refs' touching commits for that path have diverged (neither
+  an ancestor of the other) the ancestry probe returns false and the turn is
+  refused - and `staleness-report` tells the role "Merge main, then run
+  ready_for_next.sh again", naming the ref that is not the one carrying the
+  missing content. This is the shape of the 2026-08-29 incident that blocked
+  the specifier seat pre-dispatch; BL-1237 fixed the case where the picked ref
+  was right, not the case where it is wrong.
+
+  ## Why the trigger is ordinary
+
+  QA is the only role that lands on `main`, and it lands by pushing
+  `HEAD:main` straight to origin, so local `main` catches up only when the
+  master checkout next merges - the BL-640 D2 comment in `ready_for_next.bb`
+  documents this. Meanwhile the specifier commits spec and prompt files
+  directly to local `main`. The two refs disagreeing is therefore the steady
+  state, not an edge case: `git rev-list --left-right --count main...origin/main`
+  reads `6 213` at mint time. Only the ACCIDENT of which side happens to hold a
+  reference/ amendment decides whether the guard is currently lying.
+
+  ## How (direction, not mandate)
+
+  - **Stop selecting a ref.** The question the guard needs answered is per
+    path, so ask it per path, of every ref that carries the path. A worktree is
+    fresh for a path when, for each available ref, either the content matches
+    or that ref's most recent commit touching the path is already an ancestor
+    of the worktree's HEAD. Refuse when some ref fails both. Under that rule
+    `freshest-main-ref` has no caller left and the count comparison goes away
+    entirely, rather than being replaced by a smarter guess.
+  - **Keep the pure/IO split.** `reference_freshness_lib.bb` is pure decision
+    logic by contract and its docstring says so; the per-ref content and
+    ancestry facts are gathered in `ready_for_next.bb` and passed in as plain
+    maps. No `sh` calls in the lib.
+  - **Make the refusal name the ref.** `staleness-report`'s hardcoded "Merge
+    main" is the wrong sentence whenever the missing amendment is on
+    `origin/main`, and invariant 3 is not met until the named ref is the one
+    that clears it.
+  - **Do not weaken either existing case.** BL-640 scenario 03 (genuinely
+    behind, refuse) and BL-1237 scenarios 01-03 (ahead is not stale) must stay
+    green; a repository with no `origin/main` at all - the guard's own unit
+    fixtures - must still be judged against local `main` alone.
+
+qa_e2e_procedure: >
+  In a scratch clone with a remote and two worktrees. (1) Commit a reference/
+  amendment on local `main` only, and push enough unrelated commits to
+  `origin/main` that its ahead-count exceeds local main's. (2) In a worktree
+  that has NOT merged that amendment, run `ready_for_next.sh` - before this
+  ticket it is allowed (the fail-open); it must now refuse and name local
+  `main`. (3) Merge the ref the refusal names, re-run, confirm it proceeds.
+  (4) Mirror the setup: amendment on `origin/main` only, local `main` the
+  higher-counting ref, worktree lacking it - confirm the refusal fires and
+  names `origin/main`, and that merging `origin/main` clears it. (5) In a
+  worktree whose history contains BOTH refs' touching commits for a file the
+  two refs disagree on, confirm the turn is allowed and its copy of that file
+  is byte-unchanged. (6) In a clone with no `origin/main` ref, confirm the
+  guard still judges against local `main` and does not error. (7) On the live
+  swarm, confirm every seat can still run `ready_for_next.sh` with local main
+  and origin/main in their current diverged state.
+
+out_of_scope: |
+  - BL-1237's direction-awareness. It landed, QA verified it live, and this
+    ticket keeps its scenarios green rather than reopening them.
+  - Reconciling local `main` with `origin/main`, or changing how QA lands.
+    The guard must be correct while the two diverge - that divergence is
+    normal and is not this ticket's to remove.
+  - The ambient GIT_DIR/GIT_WORK_TREE fail-open that makes both sides read the
+    same tree (BL-1233 owns the launcher site). Carried forward unchanged from
+    BL-1237's own note: a fourth site is a sibling ticket, not this one.
+  - Other whole-repo-lag-as-proxy sites elsewhere in the swarm (QA's
+    entangled-tip baseline, BL-1257). Same pathology, different code; naming
+    it here is context, not scope.
+
+source: |
+  QA `note` (priority 00) to specifier, 2026-08-29T03:04:02Z: "BL-1237
+  ref-select defect unfixed: see QA evidence 288b80de3". QA approved BL-1237 on
+  its own formal contract and recorded the residual rather than bouncing a
+  well-tested fix for a gap that ticket's invariants never captured.
+  Evidence: backlog/evidence/BL-1237-qa-pass-ref-selection-residual-20260829.md
+  Originally raised by the specifier in BL-1237's own notes (2026-08-29
+  FACTUAL CORRECTION): "Whatever ancestry probe is built must be asked about
+  the ref actually selected, and the selection must stop inferring per-file
+  freshness from a whole-repo commit count."
+
+notes: |
+  - [2026-08-29] specifier: every claim verified independently before minting,
+    not taken from QA's note. `freshest-main-ref` is unchanged on `origin/main`
+    (where BL-1237 landed) and still selects by
+    `rev-list --left-right --count main...origin/main`;
+    `path-ancestry-absorbed?` is called with that single selected `ref`;
+    `staleness-report`'s remedy sentence is still the hardcoded "Merge main".
+  - [2026-08-29] specifier: confirmed NOT live at mint time. All thirteen
+    `swarmforge/constitution/articles/reference/*` files have the same most
+    recent touching commit in `main` and in `origin/main`, so there is no path
+    on which the two refs disagree today. It WAS live earlier the same day:
+    `engineering-detailed.prompt` sat at `abc603b6e` on local `main` only while
+    the counts were `41 47`, which is the state that produced the specifier
+    seat block recorded in
+    `backlog/evidence/BL-1237-guard-blocks-the-specifier-on-main-20260829.md`.
+    Origin has since received that commit.
+  - [2026-08-29] specifier: BL-1237's `qa_e2e_procedure` step (6) checks only
+    that the cleaner can take a turn; nothing in it varies the two refs against
+    each other, which is why a passing BL-1237 leaves this live. Step (7) above
+    is the successor check, and steps (1)-(2) are the ones that would have
+    caught the fail-open.
+  - [2026-08-29] specifier: no BL-1237 scenario is falsified by this ticket, so
+    there is nothing to retire under the slice-boundary rule. BL-1237's
+    scenario 03 asserts a refusal names a remedy that resolves it - this ticket
+    strengthens that assertion to name the correct ref, it does not contradict
+    it.
+  - [2026-08-29] specifier: routing warning, same as BL-1237 hit. The
+    spec-ready note announcing this ticket, and these notes, are `type: note`
+    with no `task:` header - they are not a dispatch trail. If
+    `route_backlog_to_coder.sh` refuses this id citing one, the verdict is
+    false; the remedy is `--force`, never closing the ticket. Owning fix is
+    BL-1223. Evidence for the identical earlier case:
+    `backlog/evidence/BL-1237-route-refusal-is-a-false-dispatch-trail-20260829.md`.

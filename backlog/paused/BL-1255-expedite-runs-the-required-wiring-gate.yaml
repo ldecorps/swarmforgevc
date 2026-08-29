@@ -19,7 +19,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1255-expedite-runs-the-required-wiring-gate.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two things worth your eye before this is built. (1) Severity is high on the
   grounds that a dark safety gate is worse than a noisy one - say so if you

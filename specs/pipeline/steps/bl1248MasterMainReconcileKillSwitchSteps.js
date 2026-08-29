@@ -1,29 +1,32 @@
 'use strict';
 
 // BL-1248: step handlers for "the master-main-reconcile sweep can be
-// switched off from config, and is off until BL-1236 lands". Two of the
-// five scenarios (02, the real-git "one that matters", and 03, the daemon
-// log line) drive the REAL test_handoffd_master_main_reconcile_wiring.sh
-// fixture (real git, real bare remote, real handoffd process) added by this
-// ticket, memoized once per ctx like bl925's own steps - never a parallel
-// reimplementation of that fixture's git plumbing. Scenarios 01 and 05 are
-// pure-decision-layer proofs (no real git needed for what they assert) and
-// drive master_main_reconcile_lib.bb directly via a `bb -e` one-liner, the
-// same pure adapters-injected posture as this lib's own unit test runner.
-// Scenario 04 reads the actually-shipped conf file straight off disk.
+// switched off from config, and is off until BL-1236 lands". Scenarios 02
+// (the real-git "one that matters"), 03 (the daemon log line), and 05
+// (BL-1256: re-pointed, see below) drive the REAL
+// test_handoffd_master_main_reconcile_wiring.sh fixture (real git, real
+// bare remote, real handoffd process) via bl1256ReconcileWiringFixture.js's
+// shared runner - never a parallel reimplementation of that fixture's git
+// plumbing. Scenario 01 is a pure-decision-layer proof (no real git needed
+// for what it asserts) and drives master_main_reconcile_lib.bb directly via
+// a `bb -e` one-liner, the same pure adapters-injected posture as this
+// lib's own unit test runner. Scenario 04 reads the actually-shipped conf
+// file straight off disk.
+//
+// BL-1256: scenario 05 USED to be a pure-decision-layer proof too (calling
+// sweep! directly via `bb -e` with a hand-passed disabled flag over fake
+// adapters) - that made it blind to where the guard actually sits in
+// handoffd.bb, so it stayed green for a guard moved to the daemon call
+// site, which is exactly the shape it exists to catch. Re-pointed at the
+// real daemon fixture below; the old direct-sweep! handler
+// (runDivergenceStillSurfaced) is gone.
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
+const { requireWiringPass } = require('./lib/bl1256ReconcileWiringFixture');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LIB_BB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'master_main_reconcile_lib.bb');
-const WIRING_SCRIPT = path.join(
-  REPO_ROOT,
-  'swarmforge',
-  'scripts',
-  'test',
-  'test_handoffd_master_main_reconcile_wiring.sh'
-);
 const FEATURE =
   'BL-1248 the master-main-reconcile sweep can be switched off from config, and is off until BL-1236 lands';
 
@@ -34,26 +37,6 @@ const VALUE_TO_CONF_TEXT = {
   'an empty value': 'config master_main_reconcile_enabled',
   'the word banana': 'config master_main_reconcile_enabled banana',
 };
-
-function runWiringFixture() {
-  const result = spawnSync('bash', [WIRING_SCRIPT], { encoding: 'utf8', timeout: 180000 });
-  return { status: result.status, stdout: (result.stdout || '') + (result.stderr || '') };
-}
-
-function ensureWiringResult(ctx) {
-  ctx.bl1248 = ctx.bl1248 || {};
-  if (!ctx.bl1248.wiringResult) {
-    ctx.bl1248.wiringResult = runWiringFixture();
-  }
-  return ctx.bl1248.wiringResult;
-}
-
-function requireWiringPass(ctx, description) {
-  const { stdout } = ensureWiringResult(ctx);
-  if (!stdout.includes(`PASS: ${description}`)) {
-    throw new Error(`expected wiring fixture check to pass: "${description}"\n${stdout}`);
-  }
-}
 
 // Runs sweep! (the real production function) against a should-reconcile
 // scenario (behind>0, fully clean tree) with the given conf text, and
@@ -86,34 +69,6 @@ function runSweepDecision(confText) {
   return result.stdout.trim();
 }
 
-// Runs sweep! against a diverged, blocked (overlapping-dirty) scenario with
-// the switch off, and reports whether the drift log line and the surfaced
-// divergence note both still fired - the observable meaning of "the drift
-// is still recorded" / "the divergence is still surfaced" (scenario 05).
-function runDivergenceStillSurfaced() {
-  const script = `
-(load-file "${LIB_BB.replace(/\\/g, '\\\\')}")
-(require '[babashka.fs :as fs])
-(def logs (atom []))
-(def surface-calls (atom 0))
-(def adapters {:rev-counts! (fn [] {:ahead 0 :behind 5})
-               :dirty-paths! (fn [] #{"seed.txt"})
-               :merge-changed-paths! (fn [] #{"seed.txt"})
-               :merge! (fn [] {:success true})
-               :surface! (fn [_] (swap! surface-calls inc))
-               :escalate! (fn [_] nil)
-               :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))})
-(master-main-reconcile-lib/sweep! (str (fs/create-temp-dir)) 100 false adapters)
-(def drift-recorded? (boolean (some #(clojure.string/includes? % "drift ahead=0 behind=5") @logs)))
-(println (str "drift=" drift-recorded? " surfaced=" (pos? @surface-calls)))
-`;
-  const result = spawnSync('bb', ['-e', script], { encoding: 'utf8', timeout: 30000 });
-  if (result.status !== 0) {
-    throw new Error(`bb divergence-still-surfaced script failed: ${result.stdout}\n${result.stderr}`);
-  }
-  return result.stdout.trim();
-}
-
 function registerSteps(registry) {
   registry.defineScoped(
     /^a swarmforge project root whose config is read by the handoff daemon$/,
@@ -138,11 +93,12 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the handoff daemon runs one cadence tick$/,
     (ctx) => {
-      // Scenarios 02/03 drive the real daemon (handled by their own
-      // Then-steps below, which memoize the real wiring fixture); scenarios
-      // 01/05 evaluate the pure-decision-layer outcome here, once, so
+      // Scenarios 02/03/05 drive the real daemon (handled by their own
+      // Then-steps below, which memoize the real wiring fixture); scenario
+      // 01 (the only remaining pure-decision-layer proof - BL-1256 retired
+      // 05's own use of this path) evaluates the outcome here, once, so
       // repeated Then-steps for the same scenario share one run.
-      if (ctx.bl1248.confText !== undefined && ctx.bl1248.tickOutcome === undefined) {
+      if (ctx.bl1248.scenario !== '05' && ctx.bl1248.confText !== undefined && ctx.bl1248.tickOutcome === undefined) {
         ctx.bl1248.tickOutcome = runSweepDecision(ctx.bl1248.confText);
       }
     },
@@ -234,11 +190,13 @@ function registerSteps(registry) {
   );
 
   // ── Scenario 05 ──────────────────────────────────────────────────────
+  // BL-1256: re-pointed at the real daemon fixture (see file header) - the
+  // Given no longer computes anything itself, matching scenario 02/03's own
+  // lazy-memoized-on-first-Then posture below.
   registry.defineScoped(
     /^local main and origin have diverged with local changes blocking a merge$/,
     (ctx) => {
       ctx.bl1248 = { ...(ctx.bl1248 || {}), scenario: '05' };
-      ctx.bl1248.divergenceOutcome = runDivergenceStillSurfaced();
     },
     FEATURE
   );
@@ -246,9 +204,10 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the drift between local main and origin is still recorded$/,
     (ctx) => {
-      if (!/drift=true/.test(ctx.bl1248.divergenceOutcome)) {
-        throw new Error(`BL-1248 scenario 05: expected drift to still be recorded, got "${ctx.bl1248.divergenceOutcome}"`);
-      }
+      requireWiringPass(
+        ctx,
+        'with the switch off, a real daemon tick (--reconcile-sweep-once) still surfaces the divergence it declined to reconcile (BL-1256 scenario 01)'
+      );
     },
     FEATURE
   );
@@ -256,9 +215,10 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the divergence is still surfaced to a human$/,
     (ctx) => {
-      if (!/surfaced=true/.test(ctx.bl1248.divergenceOutcome)) {
-        throw new Error(`BL-1248 scenario 05: expected the divergence to still be surfaced, got "${ctx.bl1248.divergenceOutcome}"`);
-      }
+      requireWiringPass(
+        ctx,
+        'with the switch off, a real daemon tick (--reconcile-sweep-once) still surfaces the divergence it declined to reconcile (BL-1256 scenario 01)'
+      );
     },
     FEATURE
   );
