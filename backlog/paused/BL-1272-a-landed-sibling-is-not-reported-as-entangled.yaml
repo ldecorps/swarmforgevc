@@ -1,0 +1,184 @@
+id: BL-1272
+title: "The land step names an already-landed sibling as still entangled, sending whoever reads the report to adjudicate an entanglement that no longer exists"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: agent-reported
+depends_on: [BL-1241]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1272-a-landed-sibling-is-not-reported-as-entangled.feature
+
+invariants:
+  - "A sibling is reported as landed only on positive evidence its attributed content is already on origin/main; a check that is partial or could not run reports it as entangled."
+  - "The land step's action for a given commit is unchanged by this ticket - only the reporting of siblings changes."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1272LandedSiblingSteps::acceptance handler registered'
+  - 'swarmforge/scripts/land_step_cli.bb::LANDED_SIBLING::the distinction reaches the surface QA actually reads'
+
+description: |
+  ## What is wrong
+
+  `entangled-siblings` in `swarmforge/scripts/land_step_lib.bb` walks
+  `origin/main..<cited commit>` and collects every commit whose OWN subject
+  names a different ticket. That is a positive, subject-based match over the
+  **original** cited commit's ancestry.
+
+  A tip-pure replay lands as a **new commit object**, built on the
+  then-current `origin/main`. Landing sibling A's replay therefore does not
+  remove A's *original* commit from the range walked for sibling B, when B is
+  cited at the same original tip. So B's report still prints
+  `ENTANGLED_SIBLING <A>` after A has safely landed.
+
+  ## Verified, by hand, at the literal 2026-08-28 shape
+
+  Three real tickets on one linear branch against a real bare origin, each
+  cited at the SAME original tip
+  (`backlog/evidence/BL-1241-hardener-followup-findings-20260829.md`, finding 2):
+
+  1. Ticket A: `LAND_REPLAY`, correctly names B and C. A's replay lands.
+  2. Ticket B at the same original tip: `LAND_REPLAY`, and the commit it
+     produces is genuinely tip-pure - parent is A's replay, content is B's own
+     path only, confirmed with `git show --stat`. It still prints
+     `ENTANGLED_SIBLING <A>`.
+  3. Ticket C: same - tip-pure content, but names both A and B.
+
+  The final `origin/main` tree was byte-exact: the three expected files,
+  nothing duplicated or lost.
+
+  ## What this is NOT
+
+  - **Not a content defect and not a lost commit.** Every replay commit was
+    genuinely tip-pure. BL-1241's termination invariant (its
+    `qa_e2e_procedure` step 5) holds: the sequence terminates with all three
+    landed rather than all three bounced.
+  - **Not an under-report.** The error is in the safe direction - it names a
+    sibling that no longer needs naming, never the reverse. That is why the
+    hardener recorded it rather than bouncing BL-1241.
+  - **Not BL-1241's remedy choice.** Ruled and built; this ticket does not
+    reopen it.
+
+  ## Why it is still worth fixing
+
+  `swarmforge/roles/QA.prompt` directs QA to name every entangled sibling in
+  whatever it sends, and BL-1241's own remedy routes an unresolvable
+  entanglement to the **specifier** as a priority `00` note. A stale name in
+  that note is an adjudication request for a ticket that is already settled -
+  the same false-stale signal class this repo has repeatedly paid for. Cost is
+  a human pass per stale name, on the path that only ever fires when something
+  is already going wrong.
+
+  ## How (direction, not mandate)
+
+  The discriminator must be **content**, not subjects. A sibling counts as
+  landed when the paths attributed to it between `origin/main` and the cited
+  commit are already byte-identical in `origin/main`'s tree - reusing
+  `task_scope_gate_lib.bb`'s own attribution walk, which `own-paths` already
+  delegates to.
+
+  Do **not** discriminate by grepping `origin/main`'s history for the sibling's
+  ticket id. A mere mint or spec commit names the ticket while its pipeline
+  work is still unlanded, so a subject grep would suppress a **real**
+  entanglement - turning a fail-closed check fail-open, against BL-1241
+  invariant 2. Invariant 1 above is that rule stated as a property.
+
+  Keep the decision set untouched (invariant 2): `land-plan` returns the same
+  action it returns today for the same commit. A sibling's original commit
+  object is still an ancestor even after its replay lands, and its original
+  commit may carry content the replay deliberately excluded - so flipping the
+  action to `:land` would resurrect exactly what the replay severed. This
+  ticket changes the report, not the decision.
+
+  Surface the distinction on the line QA actually reads: alongside
+  `ENTANGLED_SIBLING`, a `LANDED_SIBLING` line for a sibling resolved earlier
+  in the same sequence, so the replay decision stays explicable rather than
+  merely quieter. `entanglement-note`'s text - the priority `00` note that
+  reaches the specifier - names only the genuinely unlanded ones.
+
+qa_e2e_procedure: >
+  Rebuild the hardener's fixture: three tickets on one linear branch against a
+  real bare origin, each cited at the SAME original tip. (1) Run the land step
+  for A, land its replay. (2) Run it for B at the original tip; confirm the
+  report does NOT name A as entangled, does name C, and identifies A as already
+  landed. (3) Run it for C; confirm neither A nor B is named as entangled.
+  (4) Confirm each replay commit is still tip-pure (`git show --stat`) and the
+  final origin/main tree is byte-exact - the three expected files, nothing
+  duplicated or lost. (5) Build a fourth ticket D whose sibling E has a commit
+  on origin/main naming E but whose actual work is unlanded; confirm E is still
+  reported as entangled - the subject grep is not the discriminator. (6) Make
+  the attribution walk unreadable for one sibling and confirm it is reported as
+  entangled, not silently dropped.
+
+out_of_scope: |
+  - BL-1241's remedy choice, its replay mechanism, and its action decision.
+    Ruled and built; this ticket changes reporting only.
+  - Making `land-plan` land a cited commit whose siblings have all landed. The
+    original commit objects remain ancestors and may carry content the replay
+    excluded; that is a separate question and is not assumed here.
+  - BL-1192's send-time gate and its range.
+
+source: |
+  hardener `note` (priority 00) to specifier, 2026-08-29T08:49:47Z: "BL-1241:
+  hardener found 2 non-blocking follow-ups, see evidence". Evidence:
+  `backlog/evidence/BL-1241-hardener-followup-findings-20260829.md`, finding 2.
+  Finding 1 of that same file (QA.prompt never names `land_step_cli.bb`) was
+  already discharged before the note was sent - commit `16062880b`, landed
+  2026-08-29 09:47 - and is not part of this ticket.
+
+notes: |
+  - [2026-08-29] specifier: minted from a hardening-pass observation that was
+    correctly NOT turned into a bounce. The hardener verified it against a real
+    three-ticket fixture rather than reasoning about the code, and established
+    the safe direction of the error before judging it non-blocking. That is the
+    right disposition and this ticket exists because of it, not in spite of it.
+  - [2026-08-29] specifier: PROSE HALF IS MINE (BL-798), and no gate will chase
+    me for it. `swarmforge/roles/QA.prompt` step 2 documents the CLI's exit
+    contract by line (`LAND_CLEAN` / `LAND_REPLAY` + `ENTANGLED_SIBLING` /
+    `LAND_ESCALATE`, landed as `16062880b`). This ticket adds `LANDED_SIBLING`
+    to that contract, so QA.prompt must gain the line or QA will not know to
+    read it. I have deliberately NOT armed a `required_wiring` entry on
+    QA.prompt: that check pins the file to the PARCEL commit, so it would
+    refuse the documenter-to-QA handoff whenever the branch has not merged
+    `main` - a false block, not a check (BL-1241's own reasoning, unchanged).
+    I am not landing the prose at mint because it would document a line the CLI
+    does not yet print. I land it on `main` myself when this ticket activates,
+    in the same pass, and record the commit here. If this note is still the
+    last word on that when the ticket reaches the documenter, the prose has not
+    been written and someone should say so.
+  - [2026-08-29] specifier: must not promote until BL-1241 lands on `main` -
+    `land_step_lib.bb` and `land_step_cli.bb` exist only on BL-1241's branch as
+    of this mint, so a coder starting here first would have nothing to edit.
+    `depends_on` records that; the promotion gate is the enforcement.
+  - [2026-08-29] specifier: the IR-DRY checker reports one medium
+    possible-synonym finding between scenario 01's parameterised Given and
+    scenario 02's concrete one. Reviewed and kept: substituting the
+    `byte-identical` row makes the two step texts byte-identical, so one
+    handler pattern serves both. That is DRY, not accidental drift.
+
+notes: |
+  [2026-08-29] specifier: RENUMBERED from BL-1270, and restored from reset
+  wreckage. This ticket was minted on 2026-08-29 as BL-1270 (commit b61196293),
+  destroyed by a reconcile reset, recovered on main by 75c6d4e5f, and destroyed
+  a SECOND time by a later reset — the same stroke that also took the whole
+  paused-pool zombie sweep (9 retirements) and the BL-1271 mint. Recovered here
+  from 75c6d4e5f, whose blobs survive only because nothing has gc'd them.
+
+  Why renumbered rather than restored on its original id: while it was gone,
+  BL-1270 was legitimately re-minted for different work (per-provider API plan
+  usage discovery, 3f64b3459) and that ticket now has a topic record and a
+  recorded human_approval. Per the id-collision rule the party holding live
+  external artifacts keeps the id, so this one moves. It is NOT retired as
+  superseded — the addendum's retire-don't-renumber branch applies only when
+  the loser already shipped under another id, and this defect has never been
+  built.
+
+  Premise re-verified before restoring, not assumed:
+    - `entangled-siblings` (swarmforge/scripts/land_step_lib.bb:71) still walks
+      origin/main..commit by subject match, unchanged since 41215944a.
+    - No LANDED_SIBLING distinction exists anywhere in the tree.
+    - depends_on BL-1241 has since landed and closed, which is what makes this
+      slice implementable now.
