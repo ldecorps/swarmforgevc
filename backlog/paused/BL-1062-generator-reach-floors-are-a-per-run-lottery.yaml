@@ -1,0 +1,146 @@
+id: BL-1062
+title: "Two property tests demand that an UNSEEDED random draw covered every value of a small space - bl968 fails ~16% of runs and bl948 ~2.3%, on correct code, and neither red says anything about the code under test"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 60
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1062-generator-reach-floors-are-a-per-run-lottery.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1062::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
+
+invariants:
+  - "A declared generator-reach floor is satisfiable by construction: on a correct implementation the probability that a run fails the floor is either zero, or a bound that is computed and recorded next to the floor."
+  - "Dropping a floor is never the remedy: after the change each test still goes red when its generator genuinely stops reaching a value."
+
+description: >
+  Both tests assert, AFTER a fast-check run, that the random draw happened to
+  cover every value of a small categorical space - then fail the run when it did
+  not. fast-check draws a fresh seed per run (the failure output prints it), so
+  each run is an independent lottery against a floor a correct implementation
+  cannot guarantee.
+
+  THE ARITHMETIC, computed from the checked-in constants, not estimated:
+
+  - `test/bl968MaterializedGuardSensitivity.property.test.js` - 3 classes
+    (`git-root-resolve`, `live-repo-read`, `benign-subprocess`) drawn uniformly,
+    `NUM_RUNS = 24`, `CLASS_FLOOR = 5`. Per class, P(count <= 4) under
+    Binomial(24, 1/3) is 5.9%; across three classes roughly 16% of runs fail on
+    a correct implementation. The observed red was exactly this:
+    "reach floor: class benign-subprocess drawn 4 < 5 of 24".
+  - `test/bl948SocketFixtureInvariants.property.test.js` - 3 death shapes from
+    `fc.constantFrom('clean','throw','nonzero')`, `numRuns: 12`, asserting
+    `drawn.size === 3`. P(some shape missing) = 3*(2/3)^12 - 3*(1/3)^12 ~= 2.3%
+    per run. The observed red drew only `nonzero, throw`.
+
+  Note that this file's own comment at line 33 asserts the coverage "is modest
+  (12; every death shape is drawn by construction)". It is not by construction -
+  it is by chance, and the observed failure disproves the comment. Fixing the
+  comment without fixing the sampling would leave the flake in place.
+
+  WHY THIS IS ITS OWN TICKET AND NOT A BUDGET QUESTION. BL-1007 (paused)
+  deliberately recorded "Property-runner reachability floors likewise stay
+  absolute, never scaled". That ruling is correct and is not being reopened:
+  scaling a floor with host load would be wrong. What nobody checked is whether
+  the floors are satisfiable at the configured `numRuns` at all. They are not,
+  and no amount of host quiet changes that - these reds reproduce on a
+  completely idle box given an unlucky seed, which is precisely why the
+  reporting note's "under worktree load" diagnosis does not fit this pair.
+
+  THE FLOORS ARE LOAD-BEARING - DO NOT DELETE THEM. Each floor is what keeps its
+  property non-vacuous: bl968's own header records that break-testing proved
+  "the benign-subprocess class has real generator reach", and without the floor
+  a generator that silently stopped producing a class would pass green forever.
+  Invariant 2 exists to make deletion an explicit failure rather than a tempting
+  shortcut.
+
+  HOW (direction, not mandate). Make the coverage the floors demand reachable by
+  construction rather than sampled - for a space this small, exhaustive or
+  cycled coverage of the values with the random draw layered on top is the
+  obvious shape, and it also makes the floor assertion trivially true. Raising
+  `numRuns` until the computed failure probability is negligible is an
+  acceptable alternative ONLY if the resulting probability is computed and
+  recorded next to the floor, per invariant 1; note bl968's draws are not cheap
+  (the run took ~2s for 24 draws), so a large raise has a real cost on a lane
+  that already carries a 55s file.
+
+qa_e2e_procedure: >
+  1. At the parent commit, run each of the two files 20 times in a loop from
+  extension/ with `npx vitest run --config vitest.properties.config.mjs <file>`
+  and record how many runs go red - confirm the absence of the behaviour by
+  observing at least one red across the two files, on a QUIET host, which is
+  what establishes these are seed-luck and not contention. 2. At the parcel
+  commit, repeat the same 20-run loop for each file and confirm zero reds.
+  3. Confirm non-vacuity per invariant 2: restrict each generator so one value
+  is never drawn, and confirm the test goes red naming that value. Restore.
+  4. Confirm no floor was weakened or deleted: diff the floor constants and
+  assertions against the parent commit and confirm each value in each space is
+  still covered by a floor. 5. If the chosen route was to raise `numRuns`
+  rather than make coverage constructive, confirm the recorded probability is
+  present next to the floor and that the lane's total wall-clock did not
+  regress materially.
+
+notes: >
+  RE-ADJUDICATED AND UNPARKED 2026-08-29 (specifier). This ticket was parked
+  into `backlog/debt/` on 87c3ede59 with eighteen siblings. That folder is
+  read by NO promotion script - `grep -rn "backlog/debt"` over `swarmforge/`
+  and `extension/src/` returns nothing - so a ticket filed there can never be
+  promoted, only rediscovered by hand. Meanwhile the flake it describes went
+  on blocking the commit path: the shared pre-commit hook (BL-570
+  `check_property_suite_drift.sh`) runs the WHOLE property suite and refuses
+  any commit touching `extension/src/*` or a `*.property.test.js` when a
+  non-allowlisted file is red, and
+  `test/bl968MaterializedGuardSensitivity.property.test.js` is NOT on
+  `property_suite_standing_allowlist.tsv`. A ~16%-per-run lottery on that
+  file is therefore a ~16%-per-attempt commit refusal for every parcel in the
+  repo, which is why severity is raised medium -> high here: it is a live
+  fault degrading behaviour, not a contained test-hygiene defect.
+
+  RECURRENCE 2026-08-29: a coder mid-parcel (the BL-1249 `node:test` import
+  sweep, ~24 modified test files) was blocked by exactly this and reported it
+  as "bl968+bl955 property flakes block commits; guard override needed. Not
+  BL-1234." The coder is right that it is not BL-1234 (that is the allowlist
+  MATCHER bug); bl968 here is this ticket. Verified at spec time on
+  cf3f8a2-era main: all three named files pass both in isolation and in a
+  full-suite run, consistent with seed-luck rather than a standing red.
+
+  bl955 IS NOT ADDED TO THIS TICKET'S SCOPE, DELIBERATELY.
+  `test/bl955ForwardingAnnotationInvariants.property.test.js` invariant 1 has
+  the same SHAPE (reachability floors asserted after an unseeded fast-check
+  run) but not the same arithmetic: 4 surfaces drawn over `numRuns: 120`
+  against a floor of 8 each is Binomial(120, 1/4) with mean 30 and sd 4.74 -
+  P(fail) ~ 4e-6 across all four - and the photo floor of 30 over
+  Binomial(120, 1/2) is ~2e-8. Those floors are satisfiable by a wide margin,
+  so the file is NOT an instance of this ticket's defect and folding it in
+  would break the INVEST-Small cut for a cause not yet demonstrated. If a
+  verbatim bl955 red is produced, spec it separately. One hypothesis worth
+  testing first: BL-1234's rejection line concatenates unlisted filenames
+  with no separator, so "bl968...bl955..." may be one garbled string that was
+  read as two files.
+
+  PROVENANCE. QA `note` 00_20260822T134343Z_000879: "Property lane flaky under
+  worktree load: bl857,796,643,968,948 - investigate". Split 1:4 under the
+  specifier's Consolidation Authority; this ticket carries the two files whose
+  mechanism is identical (unseeded sampling against an absolute coverage floor)
+  and whose remediation is therefore one piece of work, not two. Siblings:
+  BL-1061 (bl857), BL-1063 (bl796), BL-1064 (bl643). Evidence:
+  backlog/evidence/BL-1061-property-lane-triage-20260822.md.
+
+  DELIBERATELY NOT FOLDED INTO BL-1007. That ticket is scoped to the UNIT lane
+  and names the property lane as explicitly out of scope; it is also about
+  wall-clock budgets, which is a different failure mode from generator
+  coverage. Folding this in would break its stated scope and its INVEST-Small
+  cut.
+
+  IR-DRY: 0 findings; no normalization needed.
+
+source: >
+  QA note 00_20260822T134343Z_000879 to specifier (via coordinator).
+  Constants read from the two test files at a7390808f; probabilities computed
+  from those constants at spec time.

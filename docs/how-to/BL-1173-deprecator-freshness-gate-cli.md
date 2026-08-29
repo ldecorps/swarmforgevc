@@ -27,7 +27,12 @@ malformed JSON is treated as **hold** — never as allow.
 ## Hold signals (any one)
 
 - `.swarmforge/superseded/<id>` marker on disk
-- Ticket YAML claims superseded/retired/obsolete without a done/ closure
+- The ticket claims **itself** superseded/retired/obsolete without a done/
+  closure (BL-1268: a structured disposition field — `status`, `closed_as`,
+  `superseded_by`, ... — or a claim word bound to a self-reference in the
+  same sentence; a claim about a DIFFERENT ticket, e.g. a notes line citing
+  another ticket's disposition, is not a claim about this one and does not
+  hold. The hold reason names the field the claim was found in.)
 - All `depends_on` are done, but the description still names **RETIRED**
   surfaces (`retiredSurfaceHits`)
 - Repeated spec-gap bounces on the same ticket
@@ -65,4 +70,8 @@ bash specs/pipeline/scripts/run_acceptance.sh \
 Acceptance: `specs/features/BL-1173-deprecator-freshness-gate-cli.feature`
 
 Related: epic BL-1172 (deprecator); sibling
-[BL-1174 `/deprecate` soft verbs](BL-1174-deprecate-operator-verbs-scan-docs.md).
+[BL-1174 `/deprecate` soft verbs](BL-1174-deprecate-operator-verbs-scan-docs.md);
+BL-1268 narrowed the generic-claim branch to a self-claim (see Hold signals
+above) — measured over the live paused pool, 27 held tickets dropped to 9,
+zero newly held; BL-1267 (paused at BL-1268's mint) is the independent
+discharge path for a recorded adjudication.

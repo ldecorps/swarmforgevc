@@ -1,0 +1,139 @@
+id: BL-1274
+title: "The bl787 named-tunnel readiness property still fails on correct code under host contention - BL-871's 2s-to-20s widening did not close it, and widening a third time is the same treadmill"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 60
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1274-named-tunnel-readiness-property-races-the-host-scheduler.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1274::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
+
+invariants:
+  - "The property's verdict on the launcher's readiness behaviour is a function of the log content the fixture supplies, never of when the host happened to schedule the fixture's subprocess."
+  - "Load-independence is not bought by weakening the assertion: the property still goes red when the launcher writes tunnel state without having observed a registration line."
+
+description: >
+  `test/bl787NamedTunnelInvariants.property.test.js` invariant 1 ("named-tunnel
+  readiness is observed from the log, never inferred from liveness alone") fails
+  intermittently on correct code, and the failure is a genuine assertion failure,
+  not an outer timeout - so no timeout value can close it.
+
+  THE MECHANISM, from the test's own line-150 comment. The fixture launches the
+  REAL `launch_resident_spy_tunnel.sh` against a fake `cloudflared` that `cat`s a
+  pre-written log data file. On the `registers = true` branch the launcher must
+  observe the registration line within its poll budget, which the fixture sets to
+  `SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS=200` x `WAIT_INTERVAL=0.1` = 20s. The
+  registration text is already on disk before the launcher starts; what the test
+  is actually racing is the host scheduling the fake cloudflared subprocess.
+  When the host loses that race the launcher exits non-zero and
+  `assert.equal(result.status, 0, ...)` fails - a red that says nothing about the
+  code under test.
+
+  THIS IS A RECURRENCE OF AN ALREADY-APPLIED FIX. BL-871 QA bounce D2
+  (2026-08-11) hit this exact assertion and widened the budget from 40 x 0.05s =
+  2s to the present 200 x 0.1s = 20s, recording that it was "comfortably inside
+  SUBPROCESS_HEAVY_TIMEOUT_MS ... but tolerant of scheduling delay under
+  contention". On 2026-08-29 it went red again WITH that 20s budget in place,
+  inside a full `test:properties` run where this file alone took 62.5s for 3
+  tests (coder evidence, `backlog/evidence/BL-1062-coder-reply-guard-rejections.md`):
+
+      FAIL test/bl787NamedTunnelInvariants.property.test.js > property (invariant 1):
+        named-tunnel readiness is observed from the log, never inferred from liveness alone
+
+  A tenfold widening bought 18 days. That is the signal that the remedy class is
+  wrong: the wall clock must come out of the verdict, not be given a larger
+  number.
+
+  WHY IT COSTS MORE THAN ONE FILE. This file is not on
+  `swarmforge/scripts/property_suite_standing_allowlist.tsv`, so a red here
+  refuses EVERY commit touching `extension/src/*` or any `*.property.test.js`,
+  repo-wide, until someone overrides the guard. It blocked a BL-1220 commit
+  attempt on 2026-08-29 - a parcel with no relationship to tunnels at all.
+
+  How (direction, not mandate). The readiness evidence already exists on disk
+  before the launcher is started; only the fake subprocess's scheduling stands
+  between the fixture and a deterministic verdict. Removing that dependency -
+  rather than tolerating it with a larger budget - is the shape of the fix. A
+  third widening is explicitly out of scope: it would restate BL-871's remedy
+  and reset the clock on the next recurrence.
+
+  SCOPE. Invariant 1 only. Invariant 3 shares this file's
+  launch-a-real-background-process shape and the same outer
+  `SUBPROCESS_HEAVY_TIMEOUT_MS`, but it asserts pidfile teardown and sets no
+  readiness poll budget, so it is not the same mechanism and is not in this
+  slice. bl968 (`BL-1062`, an unseeded reach-floor lottery) and bl955
+  (unreproduced, deliberately not folded - see the ruling below) are separate
+  tickets and separate causes.
+
+qa_e2e_procedure: >
+  1. From `extension/`, run the file in isolation 12 times:
+     `for i in $(seq 12); do npx vitest run --config vitest.properties.config.mjs
+     test/bl787NamedTunnelInvariants.property.test.js || echo "RED on run $i"; done`
+     - expect 12 green (it is already green in isolation today, so this is the
+     no-regression half, not the fix evidence).
+  2. The fix evidence is the injected-delay scenario: with the fake cloudflared
+     made to start late by a margin exceeding the pre-change readiness budget,
+     the property must still pass. Run the acceptance suite
+     (`npm run test:acceptance`) and confirm this ticket's scenarios execute
+     (`specs/pipeline/runtime.js` throws on an unregistered handler, so a silent
+     skip is not possible).
+  3. Confirm non-vacuity by hand: make the fake cloudflared emit NO registration
+     line while staying alive, and confirm the property fails. A property that
+     cannot fail on liveness-without-registration has been weakened, not fixed.
+  4. Confirm no third widening: `git diff` the readiness budget constants
+     (`SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS`, `SWARMFORGE_NAMED_TUNNEL_WAIT_INTERVAL`,
+     `SUBPROCESS_HEAVY_TIMEOUT_MS`) and confirm none increased.
+
+human_approval: pending
+
+approval_context: >
+  Raised by the coder on 2026-08-29 as part of a wider observation ("the property
+  lane's verdict is a function of host load - one defect or N flakes? the call is
+  yours"). MY RULING WAS THAT IT IS NOT ONE DEFECT, and this ticket is the part of
+  that observation that IS demonstrated.
+
+  The same wider diagnosis was already tested against evidence once, on
+  2026-08-22 (`backlog/evidence/BL-1061-property-lane-triage-20260822.md`): a QA
+  report of "property lane flaky under worktree load" over five files split 1:4
+  into four DISTINCT mechanisms, of which only one was actually load-related.
+  Today's set decomposes the same way - bl968 is BL-1062's seed lottery (load
+  independent), bl787 is this ticket, bl955 was not reproduced by either of us in
+  12 isolated runs each. Minting "the property lane's verdict is a function of
+  host load" would be an un-Estimable, un-Small ticket premised on a diagnosis
+  the evidence has now contradicted twice.
+
+  WHAT I NEED FROM YOU: nothing blocking. Flagging the feature file for review as
+  standard. The one judgement worth your eye is scenario 03 ("no budget was
+  widened to reach green") - it deliberately forecloses the cheapest fix, which
+  is what makes this a real ticket rather than a repeat of BL-871's patch.
+
+notes: |
+  bl955 (`test/bl955ForwardingAnnotationInvariants.property.test.js`) is
+  deliberately NOT folded in. Neither the coder nor I could reproduce a red (12
+  isolated runs each, 0 failures), its floors are satisfiable by a wide margin
+  (Binomial(120, 1/4) against a floor of 8 across four surfaces is P ~ 4e-6), and
+  it makes zero child_process calls so the contention mechanism here does not
+  apply. The only thing establishing a bl955 red at all is one guard extractor
+  hit in one suite run. Agreed with the coder: the NEXT occurrence is the
+  trigger, with the full guard log retained - which BL-1275 makes automatic
+  rather than a matter of someone remembering.
+
+  Coder reply in full: `backlog/evidence/BL-1062-coder-reply-guard-rejections.md`
+  (commit cd62e8de1, swarmforge-coder). My prior ruling:
+  `backlog/evidence/BL-1062-specifier-ruling-20260829.md`.
+
+  The concatenation hypothesis in that ruling is DISCONFIRMED - the guard printed
+  one filename per rejection across four separate commit attempts, exactly as
+  `ps_suite_extract_failing_files`'s `printf '%s\n' "${unlisted[@]}"` should. The
+  "bl968+bl955" phrasing was the coder's own shorthand for two attempts minutes
+  apart, not one garbled line. No ticket needed there.
+
+source: "Coder note 50_20260829T140743Z_001437 replying to the BL-1062 specifier ruling; observation raised, ticketing decision left to the specifier."
