@@ -54,6 +54,14 @@
 ;; BL-1103: one shared wall-clock-bounded runner (was a private copy here).
 (load-file (str (fs/path scripts-dir "bounded_run_lib.bb")))
 (load-file (str (fs/path scripts-dir "expedite_announce_lib.bb")))
+;; BL-1255: the SAME pure gate predicate swarm_handoff.bb's own QA-edge
+;; validate calls (pre-qa-gate-lib/evaluate) - never a second, looser copy
+;; written for the expeditor (this ticket's invariant 1). Deliberately NOT
+;; pre_qa_gate_gather_lib.bb: that file itself load-files handoff_lib.bb,
+;; which is exactly the swarm machinery expedite_lib.bb's own header forbids
+;; depending on. The gather half below is a fresh, minimal, expedite-only
+;; git-show glue - only the DECISION predicate is shared.
+(load-file (str (fs/path scripts-dir "pre_qa_gate_lib.bb")))
 
 ;; ── args ──────────────────────────────────────────────────────────────────
 
@@ -488,6 +496,79 @@
     (log! "worktree" (str dir) "on" branch)
     {:branch branch :dir (str dir)}))
 
+;; ── BL-1255: required_wiring gate at the pre-QA boundary ────────────────────
+;; The expeditor sends no handoff mail (BL-567's whole point), so
+;; swarm_handoff.bb's own required_wiring evaluation - reached from exactly
+;; one place, its `validate` on a git_handoff addressed to QA - never runs
+;; here. This reproduces that ONE boundary: right before the expeditor hands
+;; the run to the QA stage, decided with the SAME pure predicate
+;; (pre-qa-gate-lib/evaluate), fed by fresh, minimal, expedite-only gather
+;; glue (never pre_qa_gate_gather_lib.bb - it load-files handoff_lib.bb).
+;; :type/:to are forced to the exact shape a live QA-edge git_handoff arms
+;; on (pre-qa-gate-lib/gate-armed?), since the expeditor sends no draft with
+;; those headers of its own. Ancestry/acceptance-contract facts are
+;; deliberately omitted (this ticket's scope is required_wiring only, per
+;; its out_of_scope) - omitting them costs nothing: evaluate's ancestry half
+;; degrades safely to no findings on empty inputs, by the same defaulting
+;; findings-for-git-handoff itself already relies on.
+
+(defn- required-wiring-git-show [dir cited-commit path]
+  (let [{:keys [exit out]} (sh {:dir (str dir)} "git" "show" (str cited-commit ":" path))]
+    (when (zero? exit) out)))
+
+(defn- required-wiring-file-contents
+  "path -> content at cited-commit, one `git show` per distinct parsed
+   entry - mirrors pre_qa_gate_gather_lib.bb/gather-wiring-facts without
+   requiring that file (see header above). A path absent from the map is
+   either malformed (never queried) or genuinely missing at that commit;
+   pre-qa-gate-lib/evaluate tells those apart itself."
+  [dir cited-commit wiring-entries]
+  (let [paths (->> wiring-entries
+                   (keep pre-qa-gate-lib/parse-wiring-entry)
+                   (map :path)
+                   distinct)]
+    (into {}
+          (keep (fn [path]
+                  (when-let [content (required-wiring-git-show dir cited-commit path)]
+                    [path content])))
+          paths)))
+
+(defn- required-wiring-gate-check
+  "{:refused? bool :findings [...]}. Invariant 2: a check that could not be
+   completed - the ticket's own yaml unreadable on this checkout, or the
+   gather itself throwing - is refused, never recorded as passed. A ticket
+   declaring no required_wiring: at all is not refused for the absence of
+   the field (qa_e2e_procedure scenario 3)."
+  [{:keys [project-root ticket]} {:keys [dir]}]
+  (try
+    (let [yaml-file (ticket-file project-root "active" ticket)
+          yaml-content (when yaml-file (slurp (str yaml-file)))]
+      (if (nil? yaml-content)
+        {:refused? true
+         :findings [{:class :manifest :ticket-id ticket
+                     :detail "required_wiring gate: could not read this ticket's own yaml on this checkout - refusing, never recorded as passed"}]}
+        (let [cited-commit (worktree-head dir)]
+          (if (nil? cited-commit)
+            {:refused? true
+             :findings [{:class :manifest :ticket-id ticket
+                         :detail "required_wiring gate: could not read the run worktree's HEAD - refusing, never recorded as passed"}]}
+            (let [wiring-field (pre-qa-gate-lib/read-required-wiring yaml-content)
+                  wiring-entries (if (:present? wiring-field) (or (:items wiring-field) []) [])
+                  field-level-manifest-finding
+                  (when (and (:present? wiring-field) (nil? (:items wiring-field)))
+                    [{:class :manifest :ticket-id ticket
+                      :detail "required_wiring: field is present but could not be parsed (expected a flow-style [a, b] or block-style - a / - b list)"}])
+                  file-contents (required-wiring-file-contents dir cited-commit wiring-entries)
+                  result (pre-qa-gate-lib/evaluate
+                          {:type "git_handoff" :to "QA" :ticket-id ticket
+                           :wiring-entries wiring-entries :file-contents file-contents})
+                  findings (vec (concat (:findings result) field-level-manifest-finding))]
+              {:refused? (boolean (seq findings)) :findings findings})))))
+    (catch Exception e
+      {:refused? true
+       :findings [{:class :manifest :ticket-id ticket
+                   :detail (str "required_wiring gate: gather threw - refusing, never recorded as passed (" (.getMessage e) ")")}]})))
+
 ;; ── stages ────────────────────────────────────────────────────────────────
 
 (defn- settings-path [project-root role]
@@ -648,7 +729,25 @@
           ;; failed rather than ruled - see qa-hat-verdict-record.
           (record-qa-hat-verdict! opts worktree stage res)
           (case (expedite-lib/classify-verdict (:verdict res))
-            :advance (recur (expedite-lib/next-stage stages stage) (inc n))
+            :advance
+            (let [next (expedite-lib/next-stage stages stage)]
+              ;; BL-1255: the pre-QA boundary. Runs whichever stage actually
+              ;; precedes QA in THIS chain (documenter in the standard chain,
+              ;; but a roles: manifest can narrow it - stages-for still always
+              ;; keeps QA itself) - "next is QA" is the general boundary, not
+              ;; a hardcoded "stage is documenter".
+              (if (not= "QA" next)
+                (recur next (inc n))
+                (let [gate (required-wiring-gate-check opts worktree)]
+                  (if (:refused? gate)
+                    (do (doseq [f (:findings gate)]
+                          (log! (pre-qa-gate-lib/format-finding-line f)))
+                        (log! "REFUSE required-wiring-gate" stage "->" next)
+                        {:ticket :failed :reason :required-wiring-gate-refused
+                         :stage stage :verdict (:verdict res)
+                         :gate-findings (:findings gate)
+                         :bounces @bounces :history @history :bound bound-info})
+                    (recur next (inc n))))))
 
             :bounce
             (if-not (expedite-lib/bounce-payload-valid? res)
