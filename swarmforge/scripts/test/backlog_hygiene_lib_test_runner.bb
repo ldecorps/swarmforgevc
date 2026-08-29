@@ -221,6 +221,85 @@ priority: 5
                      {:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-new.yaml"
                       :others [{:path "paused/BL-4242-one-slug.yaml"}]}))))
 
+;; ── BL-1194: self-duplicate false positive (relative path + published self) ─
+;; backlog-relative normalizes any path to <pool>/<filename> form so the same
+;; file compares equal regardless of how the caller spelled it.
+
+(assert= "backlog-relative strips an absolute checkout path to pool/file"
+         "paused/BL-4242-x.yaml"
+         (backlog-hygiene-lib/backlog-relative "/abs/repo/backlog/paused/BL-4242-x.yaml"))
+(assert= "backlog-relative strips a git-relative published path to pool/file"
+         "paused/BL-4242-x.yaml"
+         (backlog-hygiene-lib/backlog-relative "backlog/paused/BL-4242-x.yaml"))
+(assert= "backlog-relative passes through a pool-relative path unchanged"
+         "paused/BL-4242-x.yaml"
+         (backlog-hygiene-lib/backlog-relative "paused/BL-4242-x.yaml"))
+(assert= "backlog-relative falls back to the input when no pool segment is present"
+         "stray/BL-4242-x.yaml"
+         (backlog-hygiene-lib/backlog-relative "stray/BL-4242-x.yaml"))
+
+;; BL-1194 bug #1: a subject passed by a working-directory-relative path was
+;; never excluded from its own absolute local-corpus entry, so every
+;; relative-path invocation reported the subject as its own duplicate.
+(assert=
+ "BL-1194 bug #1: a relative subject path is not reported as its own duplicate when the local index is absolute"
+ []
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-new.yaml"}]
+  {:ok {"BL-4242" [{:path "/abs/repo/backlog/paused/BL-4242-new.yaml"}]}}
+  {:ok {}}))
+
+;; BL-1194 bug #2: even with bug #1 worked around (absolute subject path), a
+;; published entry that was simply the subject's own already-committed copy
+;; was never recognized as "this ticket" because local-names was derived
+;; after subject removal.
+(assert=
+ "BL-1194 bug #2: a published copy of the subject's own file is not reported as another holder"
+ []
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "/abs/repo/backlog/paused/BL-4242-new.yaml"}]
+  {:ok {"BL-4242" [{:path "/abs/repo/backlog/paused/BL-4242-new.yaml"}]}}
+  {:ok {"BL-4242" [{:path "backlog/paused/BL-4242-new.yaml"}]}}))
+
+;; BL-1194 regression: a genuinely different local file under the same id is
+;; still caught, with a relative subject path.
+(assert=
+ "BL-1194 regression: genuine local duplicate is still caught with a relative subject path"
+ [{:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-new.yaml"
+   :others [{:path "/abs/repo/backlog/paused/BL-4242-old.yaml"}]}]
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-new.yaml"}]
+  {:ok {"BL-4242" [{:path "/abs/repo/backlog/paused/BL-4242-old.yaml"}]}}
+  {:ok {}}))
+
+;; BL-1194 regression: a genuinely different published file (different
+;; basename) under the same id is still caught.
+(assert=
+ "BL-1194 regression: a published entry under the same id but different basename is still reported"
+ [{:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-new.yaml"
+   :others [{:path "backlog/done/BL-4242-old.yaml"}]}]
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-new.yaml"}]
+  {:ok {}}
+  {:ok {"BL-4242" [{:path "backlog/done/BL-4242-old.yaml"}]}}))
+
+;; BL-1194 invariant 1: verdict is identical whether the subject path is
+;; relative or absolute, with both corpora carrying the subject's own copy.
+(let [rel-path "paused/BL-4242-new.yaml"
+      abs-path "/abs/repo/backlog/paused/BL-4242-new.yaml"
+      local    {:ok {"BL-4242" [{:path "/abs/repo/backlog/paused/BL-4242-new.yaml"}]}}
+      published {:ok {"BL-4242" [{:path "backlog/paused/BL-4242-new.yaml"}]}}
+      rel-result (backlog-hygiene-lib/duplicate-id-violations
+                  [{:id "BL-4242" :path rel-path}] local published)
+      abs-result (backlog-hygiene-lib/duplicate-id-violations
+                  [{:id "BL-4242" :path abs-path}] local published)]
+  (assert=
+   "BL-1194 invariant 1: verdict is identical for relative and absolute subject paths"
+   rel-result abs-result)
+  (assert=
+   "BL-1194 invariant 1: and that verdict is clean (self never counts as other)"
+   [] rel-result))
+
 ;; ── BL-1216: pool classification + content verdict ─────────────────────────
 
 (assert= "path-pool reads the pool segment from an absolute or relative path"
