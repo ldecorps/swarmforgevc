@@ -393,14 +393,7 @@ pass "an aborted merge conflict leaves no in-progress merge state, and the reset
 #    nothing reachable from the cadence tick moves, resets, or discards the
 #    local-only commit (invariant 1). Then the switch flips back ON to
 #    prove this exact fixture genuinely WOULD have reconciled, so the
-#    off-case assertion above is not vacuously green.
-#    BL-1247 (2026-08-29, human-ruled) supersedes BL-1248's own call-site
-#    wiring: handoffd.bb now gates in FRONT of sweep! via reconcile-
-#    enabled?, so master-main-reconcile-sweep! never calls sweep! at all
-#    while off, and never logs sweep!'s internal "skipped-by-config" -
-#    it logs "skipped-disabled" instead. The git-level outcome this
-#    scenario checks (main unmoved, landed file absent, switch-back-on
-#    still reconciles) is unchanged; only the log substring below moved. ─
+#    off-case assertion above is not vacuously green. ─────────────────────
 sed -i 's/^config master_main_reconcile_enabled true$/config master_main_reconcile_enabled false/' "$ROOT/swarmforge/swarmforge.conf"
 sleep 2  # let the daemon re-read the flipped config before this scenario's own state exists
 
@@ -416,9 +409,9 @@ git -C "$CLONE" add landed-switch-off.txt
 git -C "$CLONE" commit -q -m "QA lands landed-switch-off"
 git -C "$CLONE" push -q origin main
 
-wait_for_log "master-main-reconcile skipped-disabled" 20 \
+wait_for_log "master-main-reconcile skipped-by-config" 20 \
   || fail "expected the reconcile sweep to log a config-skip while the switch is off; log: $(cat "$LOG_FILE" 2>/dev/null)"
-pass "switching the sweep off is visible in the daemon log (BL-1248 scenario 03, log text updated by BL-1247's superseding call-site gate)"
+pass "switching the sweep off is visible in the daemon log (BL-1248 scenario 03)"
 
 sleep 3
 ROOT_HEAD_AFTER_SWITCH_OFF="$(git -C "$ROOT" rev-parse main)"

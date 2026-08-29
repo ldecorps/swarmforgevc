@@ -741,16 +741,6 @@
 (def chase-sweep-once-only?
   (some #{"--chase-sweep-once"} *command-line-args*))
 
-;; BL-1247: same one-shot-and-exit posture as --sweep-once/--chase-sweep-
-;; once above, for the master-main-reconcile sweep specifically - --sweep-
-;; once deliberately does not include it, and the full daemon loop only
-;; reaches it on its own real cadence. An acceptance scenario proving the
-;; kill switch's "off means it writes nothing" needs to fire exactly one
-;; reconcile tick deterministically, against a real diverged fixture repo,
-;; without a background process or a wall-clock wait.
-(def reconcile-sweep-once-only?
-  (some #{"--reconcile-sweep-once"} *command-line-args*))
-
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
 (defn pid-alive? [pid]
@@ -3272,6 +3262,18 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
+;; BL-1248: config kill switch, disabled while absent - see
+;; master_main_reconcile_lib.bb's own parse-enabled? for the fail-closed
+;; contract. Guarded inside sweep! at the :should-reconcile branch only
+;; (not here at the call site), so the drift log and the dirty-blocked/
+;; conflict surfacing+escalation paths keep running while the switch is
+;; off - this ticket's own firm constraint against silencing divergence
+;; notification along with the reconcile action.
+(defn- master-main-reconcile-enabled? []
+  (master-main-reconcile-lib/parse-enabled?
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
 ;; BL-920: a persistent block escalates to the operator - reuses the SAME
 ;; operator alert channel send-open-slot-escalation-alert! above already
 ;; established (Telegram OPERATOR topic outbox + email via daemon-alarm-
@@ -3301,29 +3303,19 @@
       (log! "master-main-reconcile-escalation-email" (name reason))
       (catch Exception e (log! "master-main-reconcile-escalation-email-error" (.getMessage e))))))
 
-;; BL-1248 (shipped on main; BL-1247 duplicated the same feature - the
-;; earlier BL-1247-reconcile-sweep-kill-switch merge into this branch
-;; already resolved this exact collision in favor of BL-1247's stricter
-;; shape, see that commit's message) - its own 4-arg sweep! call-site
-;; shape guards only the :merge! adapter inside sweep! itself, letting the
-;; drift/dirty-blocked surfacing and escalation paths above it keep
-;; running even while disabled. Superseded below.
 (defn master-main-reconcile-sweep! []
   (try
-    (if-not (master-main-reconcile-lib/reconcile-enabled? (master-main-reconcile-conf-text!))
-      (let [{:keys [ahead behind]} (master-main-reconcile-lib/drift-report (push-sweep-rev-counts!))]
-        (log! "master-main-reconcile" "skipped-disabled"
-              (str "ahead=" ahead " behind=" behind " (BL-1247: master_main_reconcile_enabled is off)")))
-      (master-main-reconcile-lib/sweep!
-       (str daemon-dir)
-       (master-main-reconcile-escalation-threshold)
-       {:rev-counts! push-sweep-rev-counts!
-        :dirty-paths! master-main-reconcile-dirty-paths!
-        :merge-changed-paths! master-main-reconcile-merge-changed-paths!
-        :merge! master-main-reconcile-merge!
-        :surface! master-main-reconcile-surface!
-        :escalate! master-main-reconcile-escalate!
-        :log! (fn [& parts] (apply log! parts))}))
+    (master-main-reconcile-lib/sweep!
+     (str daemon-dir)
+     (master-main-reconcile-escalation-threshold)
+     (master-main-reconcile-enabled?)
+     {:rev-counts! push-sweep-rev-counts!
+      :dirty-paths! master-main-reconcile-dirty-paths!
+      :merge-changed-paths! master-main-reconcile-merge-changed-paths!
+      :merge! master-main-reconcile-merge!
+      :surface! master-main-reconcile-surface!
+      :escalate! master-main-reconcile-escalate!
+      :log! (fn [& parts] (apply log! parts))})
     (catch Exception e
       (log! "master-main-reconcile-sweep-error" (.getMessage e)))))
 
@@ -3916,11 +3908,6 @@
       (do
         (try (chase-sweep! roles socket) (catch Exception e (log! "chase-sweep-once-error" (.getMessage e))))
         (log! "chase-sweep-once done"))
-
-      reconcile-sweep-once-only?
-      (do
-        (try (master-main-reconcile-sweep!) (catch Exception e (log! "reconcile-sweep-once-error" (.getMessage e))))
-        (log! "reconcile-sweep-once done"))
 
       :else
       (let [claim (claim-pid-file!)]

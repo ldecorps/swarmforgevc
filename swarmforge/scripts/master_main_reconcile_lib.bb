@@ -430,30 +430,6 @@
    escalation. Amendable via swarmforge.conf."
   3)
 
-(defn reconcile-enabled?
-  "BL-1247 kill switch, pure: `config master_main_reconcile_enabled <bool>`
-   from conf text. Fail-CLOSED (returns false, meaning the sweep does not
-   run) for every shape but the literal value \"true\" as the FIRST token
-   after the key - absent, empty, malformed, or unreadable (nil conf-text)
-   all degrade to off. An unavailable answer must never authorise a
-   destructive write, same posture as BL-1236's own third invariant one
-   level up. Caller reads conf-text fresh on every sweep tick (never cached
-   at daemon start) - this function's own purity is what makes that
-   trivial to verify.
-
-   Anchors on the value token, not `\\btrue\\b` anywhere on the line: a
-   trailing comment such as `config master_main_reconcile_enabled false #
-   flip to true once BL-1236 lands` would otherwise read the word \"true\"
-   out of the comment and flip the switch ON despite the line's own value
-   being \"false\" - the exact fail-open this switch exists to refuse."
-  [conf-text]
-  (let [line (->> (str/split-lines (or conf-text ""))
-                  (filter #(str/starts-with? % "config master_main_reconcile_enabled"))
-                  first)
-        value (when line
-                (second (re-find #"^config\s+master_main_reconcile_enabled\s+(\S+)" line)))]
-    (= value "true")))
-
 (defn parse-escalation-threshold
   "Pure: `config master_main_reconcile_escalation_threshold <n>` from conf
    text. Honors a POSITIVE integer only - absent, malformed, zero, and
@@ -839,14 +815,8 @@
 ;; BL-1248: `enabled?` is an optional 4th arg, defaulting to true, so every
 ;; PRE-EXISTING 3-arg call site (this lib's own extensive unit/property
 ;; suites, none of which own the kill switch) keeps behaving exactly as
-;; before with zero edits. BL-1247 (2026-08-29, human-ruled) supersedes
-;; BL-1248's own call-site wiring: handoffd.bb's master-main-reconcile-
-;; sweep! now gates in FRONT of this function via reconcile-enabled?,
-;; calling this 3-arg arity only when on, per BL-1247's explicit "off means
-;; the sweep does not run at all" judgment call (stricter than this
-;; function's own "runs but declines to write" 4-arg behaviour). The 4-arg
-;; form and parse-enabled? remain here, exercised by this lib's own tests,
-;; for any caller that wants the weaker in-sweep gate.
+;; before with zero edits - only handoffd.bb's own call site, and this
+;; ticket's own new tests, need to reach the 4-arg form.
 (defn sweep!
   ([daemon-dir threshold adapters] (sweep! daemon-dir threshold true adapters))
   ([daemon-dir threshold enabled? adapters]
