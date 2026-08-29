@@ -741,6 +741,18 @@
 (def chase-sweep-once-only?
   (some #{"--chase-sweep-once"} *command-line-args*))
 
+;; BL-1256: same one-shot-and-exit posture as --sweep-once/--chase-sweep-
+;; once above, for the master-main-reconcile sweep specifically - --sweep-
+;; once deliberately does not include it, and the full daemon loop only
+;; reaches it on its own real cadence. BL-1248's stay-loud gate (the switch
+;; declines to ACT but must not go quiet) can only be observed against the
+;; real daemon call site (handoffd.bb injects :surface!/:escalate! INTO
+;; sweep!; a test that calls sweep! directly proves nothing about where the
+;; guard sits) - this flag fires exactly one real reconcile tick
+;; deterministically, without a background process or a wall-clock wait.
+(def reconcile-sweep-once-only?
+  (some #{"--reconcile-sweep-once"} *command-line-args*))
+
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
 (defn pid-alive? [pid]
@@ -3908,6 +3920,11 @@
       (do
         (try (chase-sweep! roles socket) (catch Exception e (log! "chase-sweep-once-error" (.getMessage e))))
         (log! "chase-sweep-once done"))
+
+      reconcile-sweep-once-only?
+      (do
+        (try (master-main-reconcile-sweep!) (catch Exception e (log! "reconcile-sweep-once-error" (.getMessage e))))
+        (log! "reconcile-sweep-once done"))
 
       :else
       (let [claim (claim-pid-file!)]
