@@ -50,6 +50,12 @@
 - **Worktree**: `.worktrees/documenter`.
 - **Responsibilities**:
   - Updates documentation (READMEs, comments, changelogs).
+  - **Diagram currency**: when a parcel changes a mechanism that a registered
+    diagram depicts (see `local-engineering.prompt` "Diagrams" for the registry
+    and each diagram's change-trigger), updating that diagram is part of the
+    SAME parcel, not a follow-up ticket. The documenter verifies this before
+    forwarding to QA — a diagram left stale while its trigger fired is a
+    documenter-domain defect, QA-bounceable.
   - When behaviour is retired (deprecator pass, Article 3.6), moves affected
     pages to `docs/deprecated/` and links them from `docs/index.md` — living
     reference/how-to must not describe retired behaviour.

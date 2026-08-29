@@ -3,6 +3,10 @@
 // BL-1194: the hygiene gate's duplicate-id check never counts the subject as
 // another holder of its own id. Drives the REAL specifier_backlog_hygiene_gate.bb
 // against fixture corpora via the same BACKLOG_HYGIENE_* seams BL-1105 uses.
+//
+// BL-1197's feature (a narrower single-bug subset of BL-1194) was retired as
+// subsumed — the step handlers here cover both invariants, and the fix in
+// backlog_hygiene_lib.bb's other-holders addresses both bugs in one pass.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
