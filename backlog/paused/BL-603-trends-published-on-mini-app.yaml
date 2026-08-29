@@ -48,3 +48,7 @@ out_of_scope: |
   - The series instrumentation itself (the producer tickets own that).
   - The static PWA (this is the live console surface).
   - The morning-briefing analysis (BL-604 owns that consumer).
+notes: |
+  - [2026-08-29] coordinator: open-slot nudge received. Cannot promote: 8 of 9
+    dependencies unmet (BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602,
+    BL-605 not in done/). Only BL-595 is done. Blocked until dependencies clear.

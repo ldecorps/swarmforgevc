@@ -577,6 +577,7 @@ const DOMAINS = [
   require('./bl1096PerPathImportProvenanceSteps'),
   require('./bl1090LostTickBaselineDuplicateAskSteps'),
   require('./bl1105DuplicateTicketIdSteps'),
+  require('./bl1194HygieneGateSelfDuplicateSteps'),
   require('./bl1101HandAuthoredSweepSkipFailsSteps'),
   require('./bl1019SwarmStatusAgreesWithHasSessionSteps'),
   require('./bl1020StaleMonoRouterMarkerSteps'),
@@ -858,7 +859,8 @@ const DOMAINS = [
   require('./bl1257ReviewTimeScopeCheckSteps'),
   require('./bl1241EntangledTipRemedySteps'),
   require('./bl1266ReferenceFreshnessRefSelectionSteps'),
-  require('./bl1262SelfHealTelemetryRestoredSteps')
+  require('./bl1262SelfHealTelemetryRestoredSteps'),
+  require('./bl1245RoleReopensOwnQuestionSlotSteps')
 ];
 
 function registerSteps(registry) {
