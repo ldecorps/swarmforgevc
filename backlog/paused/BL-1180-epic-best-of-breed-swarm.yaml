@@ -4,16 +4,17 @@ milestone: M8
 status: todo
 type: epic
 epic: best-of-breed-swarm
-priority: 3
+priority: 0
 direction: human-requested
 depends_on: [BL-1176]
 decomposes_into: [BL-1181, BL-1182, BL-1183]
 mutation_cost: high
 human_approval: approved
 approval_context: >
-  Human Laurent via Cursor 2026-08-27 ~07:57 BST. Medium priority product loop
-  on Model Steward. Do not go live on day trials until telemetry + performance
-  assessment tools are ready. Depends on agent-memory-transfer epic BL-1176.
+  Human Laurent via Cursor 2026-08-27 ~07:57 BST. Operator 2026-08-29: raised to
+  absolute top priority (epic 0; BL-1182→1, BL-1183→2). Do not go live on day
+  trials until telemetry + performance assessment tools are ready. Depends on
+  agent-memory-transfer epic BL-1176.
 description: |
   ## Why
 

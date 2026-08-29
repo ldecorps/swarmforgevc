@@ -23,7 +23,7 @@ function fakeMetrics(overrides = {}) {
   };
 }
 
-function fakeFetchImpl(metrics) {
+function fakeFetchImpl(metrics, trends) {
   return function (url) {
     const body = {
       '/pipeline': [],
@@ -33,6 +33,8 @@ function fakeFetchImpl(metrics) {
       '/holistic': { assignments: [], swarms: [], doneByMilestone: {}, recentActivity: { recentCloses: [], recentMerges: [], currentRun: null } },
       '/metrics': metrics,
       '/burn-rate': {},
+      // BL-603: the console now also fetches the behaviour-trend board.
+      '/trends': trends || { series: [] },
     }[url];
     if (url === '/events') {
       return Promise.reject(new Error('SSE not exercised in this test'));
@@ -44,9 +46,9 @@ function fakeFetchImpl(metrics) {
   };
 }
 
-function renderWithToken(metrics) {
+function renderWithToken(metrics, trends) {
   const dom = new JSDOM(getHolisticUiHtml(), { runScripts: 'outside-only', url: 'http://127.0.0.1:9999/?token=test-token', pretendToBeVisual: true });
-  dom.window.fetch = fakeFetchImpl(metrics);
+  dom.window.fetch = fakeFetchImpl(metrics, trends);
   dom.window.eval(getHolisticUiHtml().match(/<script>([\s\S]*?)<\/script>/)[1]);
   return dom;
 }
@@ -141,4 +143,92 @@ test('a null cycle-time median renders "no closed tickets yet" rather than NaN',
   const text = dom.window.document.getElementById('metricsSection').textContent;
   assert.match(text, /no closed tickets yet/);
   assert.doesNotMatch(text, /NaN/);
+});
+
+// ── BL-603: the trends board renderer, actually executed under JSDOM ──────
+// trendsBoard.test.js only asserts on the raw HTML *source text*
+// (renderTrendsBoard is never called), so a defect in the render logic
+// itself - the wrong branch drawn, a dropped hasData check, a swapped arrow -
+// is invisible to that file no matter how green it stays. These tests drive
+// the real inline script against a non-empty /trends payload so the render
+// branches actually execute.
+
+function fakeTrend(overrides = {}) {
+  return {
+    series: [{ periodStart: '2026-08-27T00:00:00Z', value: 2 }, { periodStart: '2026-08-28T00:00:00Z', value: 5 }],
+    currentValue: 5,
+    priorValue: 2,
+    delta: 3,
+    direction: 'up',
+    ...overrides,
+  };
+}
+
+test('a series with data renders its label, producer, trend arrow and a bar chart - never the no-data paragraph', async () => {
+  const trends = {
+    series: [
+      { id: 'human-loop-reliability', label: 'Human-loop reliability', producer: 'humanLoopReliability.ts', hasData: true, trend: fakeTrend() },
+    ],
+  };
+  const dom = renderWithToken(fakeMetrics(), trends);
+  await flush();
+  await flush();
+  const board = dom.window.document.getElementById('trendsBoard');
+  const heading = board.querySelector('h4[data-series="human-loop-reliability"]');
+  assert.ok(heading, 'expected an h4 anchored to the series id');
+  assert.match(heading.textContent, /Human-loop reliability \(humanLoopReliability\.ts\) ▲/);
+  assert.ok(board.querySelector('svg'), 'expected a bar chart svg for a series with data');
+  assert.doesNotMatch(board.textContent, /no data yet/);
+});
+
+test('a series with no data renders "no data yet" and draws no chart for it - hasData governs the branch, not the point count', async () => {
+  const trends = {
+    series: [
+      // hasData:false paired with a non-"unknown" trend direction: a
+      // ternary that dropped the hasData check (and called trendArrow
+      // unconditionally) would still print an arrow here, since trendArrow
+      // itself only special-cases direction === 'unknown'. Only checking
+      // hasData distinguishes the two.
+      { id: 'human-decision-latency', label: 'Human decision latency', producer: 'humanDecisionLatency.ts', hasData: false, trend: fakeTrend({ direction: 'up' }) },
+    ],
+  };
+  const dom = renderWithToken(fakeMetrics(), trends);
+  await flush();
+  await flush();
+  const board = dom.window.document.getElementById('trendsBoard');
+  const heading = board.querySelector('h4[data-series="human-decision-latency"]');
+  assert.ok(heading, 'expected an h4 anchored to the series id');
+  // No arrow for a no-data series - hasData ? trendArrow(...) : ''.
+  assert.equal(heading.textContent, 'Human decision latency (humanDecisionLatency.ts)');
+  assert.match(board.textContent, /no data yet/);
+  assert.equal(board.querySelectorAll('svg').length, 0, 'a no-data series must draw no chart');
+});
+
+test('multiple series each render their own heading and chart in registry order, none skipped or merged', async () => {
+  const trends = {
+    series: [
+      { id: 'first-series', label: 'First', producer: 'first.ts', hasData: true, trend: fakeTrend({ direction: 'down' }) },
+      { id: 'second-series', label: 'Second', producer: 'second.ts', hasData: false, trend: emptyTrend() },
+      { id: 'third-series', label: 'Third', producer: 'third.ts', hasData: true, trend: fakeTrend({ direction: 'flat' }) },
+    ],
+  };
+  const dom = renderWithToken(fakeMetrics(), trends);
+  await flush();
+  await flush();
+  const board = dom.window.document.getElementById('trendsBoard');
+  const headings = [...board.querySelectorAll('h4')].map((h) => h.getAttribute('data-series'));
+  assert.deepEqual(headings, ['first-series', 'second-series', 'third-series']);
+  assert.match(board.querySelector('h4[data-series="first-series"]').textContent, /▼$/);
+  assert.match(board.querySelector('h4[data-series="third-series"]').textContent, /▬$/);
+  assert.equal(board.querySelectorAll('svg').length, 2, 'exactly the two hasData series draw a chart');
+});
+
+test('an empty trends payload renders "no series registered" and no chart', async () => {
+  const dom = renderWithToken(fakeMetrics(), { series: [] });
+  await flush();
+  await flush();
+  const board = dom.window.document.getElementById('trendsBoard');
+  assert.match(board.textContent, /no series registered/);
+  assert.equal(board.querySelectorAll('svg').length, 0);
+  assert.equal(board.querySelectorAll('h4').length, 0);
 });

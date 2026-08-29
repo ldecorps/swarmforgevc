@@ -177,6 +177,37 @@ notes: >
   four paths that exist in no other live ticket's scope, all of them
   currently absent, so no concurrent parcel can be touching them.
 
+
+  Specifier amendment 2026-08-29, BOOKKEEPING ONLY - nothing this ticket
+  builds, tests or sends changes, and no role needs to merge main to act
+  on it. Recorded here because the documenter raised a spec-gap while
+  holding the parcel: docs/how-to/BL-597-trend-self-heal-events.md says
+  each event is appended "at the same site that already logs the prose
+  line", and no such site exists in the tree. That is true, and it is not
+  this ticket's to fix. The five production emit sites were dropped by a
+  DIFFERENT merge (2e37477ec, 58 minutes after BL-597 landed) than the
+  one that dropped these four files (3ba3a444b), and the architect ruled
+  on 2026-08-29 that they need their own ticket. They now have one:
+  BL-1273, spec-ready in backlog/paused/ at commit bdce513aa.
+
+  Three consequences, so nobody downstream has to re-derive them:
+
+  - The constraint "do NOT amend the three docs" STANDS, unchanged and
+    for the same reason. The how-to is correct about the design and wrong
+    only about today's tree; BL-1273 is what makes it true again. The
+    documenter's pass verifies the doc, it does not rewrite the mechanism
+    out of it.
+  - extension/test/selfHealTelemetry.property.test.js will still FAIL its
+    invariant1 and invariant1-property tests after this parcel lands,
+    because those assert emit sites in front_desk_supervisor.bb,
+    handoffd.bb and handoff_lib.bb that BL-1273 owns. This is expected
+    and is NOT a defect in this parcel: restoring the two TypeScript
+    modules turns an un-collectable import error into a collectable,
+    honestly-failing test, which is the improvement. QA should not bounce
+    this parcel for that red; it is tracked, owned and named.
+  - The parcel's own scope is untouched: still the four files and nothing
+    else, still no change to front_desk_supervisor.bb or handoffd.bb.
+    The cleaner's reverted commit f9d83176d5 remains the correct state.
 assigned_to: coder
 abandoned_commits: [810450eccc]
 # 810450eccc ("restore integration points and relax acceptance step

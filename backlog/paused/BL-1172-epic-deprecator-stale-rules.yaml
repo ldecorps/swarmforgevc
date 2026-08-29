@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: deprecator
-priority: 0
+priority: 1
 direction: queue-jump
 depends_on: []
 decomposes_into: [BL-1173, BL-1174, BL-1186]
