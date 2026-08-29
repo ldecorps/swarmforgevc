@@ -1,5 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1261: an expedite park moves a ticket's
+YAML into `backlog/hold/` but not its parcel, so tickets were being built and
+gated while their backlog record said nobody may touch them. Fixed:
+`hold_divergence_audit_lib.bb` / `hold_divergence_audit_cli.bb` (pure lib +
+CLI) discover every parcel in every role's mailbox (including batch roles'
+`batch_*` subdirectories, one level deep), find the corresponding ticket
+YAML, and report tickets where the YAML is in `hold/` but the parcel exists
+in a role's mailbox. Wired into `promote_and_route_next.sh` (same site as
+BL-1228's pool audit). Reports only — never moves, promotes, or deletes a
+ticket or parcel. Fails closed: unreadable mailboxes/directories reported as
+unresolved. Acceptance:
+`specs/features/BL-1261-hold-divergence-audit.feature`. How-to:
+`docs/how-to/BL-1261-hold-divergence-audit.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1245: when the answer never reached
 the answer store — the human answered while the swarm was down, so nothing
 recorded anything and `deliverRoleAnswer` has nothing to pair — the asking
