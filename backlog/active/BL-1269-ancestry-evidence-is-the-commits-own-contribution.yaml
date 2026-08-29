@@ -159,4 +159,62 @@ approval_context: >
   which is cleaner but risks shipping a fix that does not clear the
   incident it was minted for.
 
+notes: >
+  [2026-08-29] coder: implemented per the "How" direction - the only
+  caller of pre_qa_gate_gather_lib.bb/commit-touched-paths (gather-
+  ancestry-facts, itself the only path into ancestry findings) now adds
+  `--cc` to the existing `diff-tree -r --name-only -m` invocation, the
+  SAME primitive merge-introduces-nothing-unique? already trusts for the
+  adjacent "did this merge contribute anything of its own" question.
+  Ordinary single-parent commits are unaffected (-m/--cc are merge-only).
+  Confirmed there is exactly one caller (qa_e2e_procedure step 6) and
+  documented in the function's own docstring that a future second caller
+  needing "everything touched, including a parent's own prior content"
+  must call `diff-tree -m` directly rather than repurpose this one.
+
+  Did NOT need the second-order exclusion the notes/approval_context
+  flagged as possibly necessary (bookkeeping-only park-sweep paths still
+  overlapping a parcel) - qa_e2e_procedure step 4's own fixture
+  reproduction of the BL-1249 shape (scenario 04) passes cleanly with the
+  primary fix alone: a merge whose own combined diff does not overlap the
+  parcel downgrades to a warning and the forward proceeds through the
+  real swarm_handoff.sh path, no merge of the park-sweep commit required.
+
+  Verified against real data: `git diff-tree -r -m --name-only
+  --no-commit-id 559d9bd19a` (108 paths, close to the ticket's measured
+  104 - later history) vs. the same command with `--cc` (4 paths,
+  exactly the backlog stage-move paths the ticket names) via
+  commit-touched-paths directly.
+
+  New acceptance feature (bl1269AncestryEvidenceIsTheCommitsOwnContribution
+  Steps.js) 6/6: scenarios 01-03 drive findings-for-git-handoff directly
+  against a real git fixture (structured JSON assertions - fast, no CLI
+  spawn per check); scenario 04 drives the real swarm_handoff.sh end to
+  end (same fixture pattern bl531PreQaDurabilityWiringGateSteps.js
+  established for this exact call chain), reusing its shared
+  writeAcceptanceContractFixture helper so the co-located BL-761
+  acceptance-contract gate stays silent and this suite tests ancestry
+  only. Two real fixture-construction defects found and fixed along the
+  way, worth recording since they'd bite anyone else building a similar
+  fixture: (1) a linked worktree nested inside the fixture root's own
+  working tree needs an early .gitignore entry, or every later `git add
+  -A` on the root silently tracks it as a spuriously-changing gitlink-like
+  path, polluting every diff; (2) `git merge` on a worktree branch with no
+  divergent history of its own silently fast-forwards instead of creating
+  a real merge commit even when a distinct `-m` message is given -
+  `--no-ff` is required to force a genuine 2-parent merge candidate.
+
+  Regression-checked: pre_qa_gate_lib_test_runner.bb ALL PASS (unchanged -
+  this ticket touches only the gather layer, not the pure decision layer);
+  BL-531's own suite (bl531PreQaDurabilityWiringGateSteps.js, the sibling
+  that already exercises this exact findings-for-git-handoff call chain)
+  16/16 unchanged; BL-972's own suite (the path-evidence-not-subject-
+  mentions rule this ticket restores, not redesigns) 3/3 unchanged.
+
+  No src/*.ts touched - no CRAP/DRY/Stryker concern (Babashka has neither
+  wired, per BL-472). No property test: the invariant is about which git
+  plumbing command computes evidence for one already-tested decision
+  function, not a range of inputs a generator would draw from - the
+  acceptance feature's real-git scenarios are the appropriate encoding.
+
 assigned_to: coder
