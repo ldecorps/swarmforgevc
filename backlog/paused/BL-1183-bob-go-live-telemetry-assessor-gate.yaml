@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: best-of-breed-swarm
-priority: 6
+priority: 2
 direction: human-requested
 depends_on: [BL-1182]
 mutation_cost: low
