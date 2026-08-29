@@ -1,0 +1,199 @@
+id: BL-1242
+title: "A QA merge-up silently deletes the rebuilt work of tickets QA reverted, and the only guard that refuses this covers backlog ticket YAMLs alone"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault on the merge-up path that already fired once and was
+# caught only because one role manually applied a guardrail buried in
+# engineering.prompt. Not critical: the coder aborted, nothing has actually
+# been lost, and every affected file still exists on its own branch.
+status: todo
+epic: swarm-reliability
+priority: 15
+direction: agent-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1242-merge-never-silently-drops-branch-work.feature
+
+human_approval: approved
+approval_context: >
+  Scope is deliberately one guard, modelled on the BL-901 guard that already
+  exists for backlog ticket YAMLs, reusing its name-it-to-mean-it escape. What
+  needs your sign-off is the escape rather than the refusal: naming the ticket
+  ids in the commit message allows the removal, exactly as BL-901 does. That
+  keeps a deliberate revert-propagation merge legal (the cleaner performed one
+  correctly on 2026-08-28) at the cost of a merge being allowed through by a
+  message anyone can type. The stricter alternative - requiring the removed
+  work to be re-merged before the commit is accepted - would have refused that
+  legitimate cleaner merge, so I did not spec it.
+
+invariants:
+  - "A merge commit never silently removes a path the receiving branch introduced: the removal is either accounted for in the commit message or refused."
+  - "Every refusal names a move available on the merging branch itself; a refusal whose only remedy lies on another role branch is a defect, not a gate."
+
+required_wiring:
+  - 'swarmforge/git-hooks/commit-msg::check_merge_deletion.sh::the enforcing call must live where the finalized commit message exists, the same reason BL-901 enforces its ticket-YAML check here rather than in pre-commit, and commit-msg is proven to fire on git merge --no-ff (probed 2026-08-28: commit-msg and pre-merge-commit both fire, pre-commit does not). A guard script no hook calls is the BL-419 shape. Filename fixed by this declaration.'
+  - "specs/pipeline/steps/index.js::bl1242MergeBranchWorkDeletionSteps::acceptance handler registered"
+
+description: |
+  Severity rationale is in the comment above the field. Verified at mint by
+  read-only merge simulation; nothing was merged to check.
+
+  ## What is wrong
+
+  QA bounces a parcel and, per BL-490/BL-495, reverts the bounced content out
+  of its own branch. The role rebuilds the ticket on its branch. QA then
+  approves some OTHER ticket and broadcasts a merge-up note, and the
+  constitution tells every worktree role to `git merge <qa-commit>`.
+
+  That merge carries QA reverts for the rebuilt tickets. Git resolves it as
+  "theirs deleted, ours unchanged" and drops the rebuilt files - no conflict
+  marker, no failing hook, a clean-looking merge.
+
+  `check_ticket_deletion.sh` (BL-901) already refuses precisely this shape,
+  and already has the right escape: a removal is exempt when the commit
+  message names the ticket id. But it only covers `backlog/**/*.yaml`. The
+  step handlers, libs, CLIs and test runners that make up the actual rebuilt
+  work are not covered by it or by any other guard.
+
+  ## The incident
+
+  2026-08-28. QA approved BL-1227 at `df9899feb` and broadcast a merge-up.
+  The coder attempted it, observed staged deletions across four unrelated
+  tickets, aborted, and reported (`706ac5c3d`). That was correct behaviour
+  under the engineering.prompt guardrail "diff every merge against BOTH
+  parents and read the deletions" (BL-571/BL-958).
+
+  Verified independently at mint, without merging, via
+  `git merge-tree --write-tree swarmforge-coder df9899feb` and diffing the
+  resulting tree against the branch. Seven files would be removed:
+
+      backlog/active/BL-1192-pre-handoff-task-scope-gate.yaml
+      extension/src/tools/recovery-filter-check.ts
+      specs/pipeline/steps/bl1192TaskScopeGateSteps.js
+      specs/pipeline/steps/bl1207AbandonedLockLivenessSteps.js
+      specs/pipeline/steps/bl1216DuplicateIdLiveCopyContentVerdictSteps.js
+      specs/pipeline/steps/lib/bl1192TaskScopeGateCli.sh
+      swarmforge/scripts/test/task_scope_gate_lib_test_runner.bb
+
+  One of the seven is a backlog YAML that BL-901 covers. The other six are
+  the gap.
+
+  Note the shape of the loss: `task_scope_gate_lib.bb` itself survives while
+  its CLI and test runner do not, so the branch is left half-broken rather
+  than cleanly reverted - a state no reviewer is looking for.
+
+  ## Why the existing rule is not enough
+
+  The rule that saved the coder exists, in engineering.prompt Guardrails. But
+  the merge-up instruction in workflow.prompt does not invoke it, and nothing
+  mechanically checks it. Four roles had already taken `df9899feb` when this
+  was found; they were unharmed only because they did not happen to hold the
+  rebuilt work. Relying on every role remembering a rule from a different
+  article is the same "a kept-in-sync comment is not a gate" pattern the
+  constitution rejects elsewhere.
+
+  ## Fix wanted, in direction only
+
+  A sibling guard to `check_ticket_deletion.sh`, covering the paths it does
+  not: refuse a commit that removes a path the branch itself introduced when
+  the commit message accounts for none of it, and allow it when the message
+  names the ticket ids - so a deliberate revert propagation stays legal.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT weaken BL-490/BL-495. QA reverting a bounce out of its branch stays
+    mandatory; this ticket makes the propagation visible, it does not stop it.
+  - Do NOT block the merge-up itself. A role must always have a move it can
+    make on its own branch - re-merge the rebuild commits, or name the ticket
+    ids. A guard whose only remedy is on another role branch is the exact
+    defect BL-1241 was filed for; do not reproduce it here.
+  - Do NOT extend check_ticket_deletion.sh to cover these paths by widening
+    its path predicate. Its message-naming exemption is tuned to promote and
+    close MOVES of a ticket YAML, which product paths do not have. A sibling
+    guard keeps both testable; scenario 04 gates the no-double-report boundary.
+  - Do NOT put the enforcing call in pre-commit. It does not fire on a merge
+    at all - probed 2026-08-28: `git merge --no-ff` fires pre-merge-commit and
+    commit-msg only. The message-naming escape additionally requires the
+    finalized message, which exists only in commit-msg.
+  - Not in scope: the entangled tip that caused the bounces (BL-1241), and the
+    unpushed-main window (BL-1198/BL-1214/BL-1236). This is the downstream
+    merge-up hazard, not a re-report of either.
+
+qa_e2e_procedure: >
+  1. Build a fixture repo with the hooks installed: a branch that introduces
+     a step handler and a lib, and a merge parent whose history reverted both.
+  2. Merge with a message naming no ticket - the commit is refused, and the
+     refusal names both paths, the ticket each belongs to, and the commit on
+     the branch that introduced them.
+  3. Repeat with the ticket ids in the message - the commit is allowed.
+  4. Merge a parent that removes nothing the branch introduced - allowed.
+  5. Remove a backlog ticket YAML as well and confirm it is reported once, by
+     check_ticket_deletion.sh, not by both guards.
+  6. Regression, read-only, against the live incident:
+     `git merge-tree --write-tree swarmforge-coder df9899feb` then
+     `git diff --diff-filter=D --name-only swarmforge-coder <tree>` still
+     lists the seven paths, and the new guard would refuse that merge.
+
+out_of_scope: |
+  - Repairing any branch currently affected (none is: the work is intact on
+    swarmforge-coder, and the cleaner re-merged the rebuilds after taking the
+    reverts deliberately).
+  - Any change to QA merge-up broadcast content.
+
+source: |
+  coder note handoff 00_20260828T112944Z_001379_from_coder_to_specifier_coordinator,
+  verbatim: "coder: merge df9899feb deletes 4 tickets' work, see BL-1227 commit
+  706ac5c3d". Evidence commit 706ac5c3d; independent verification recorded in
+  backlog/evidence/BL-1242-merge-up-deletes-rebuilt-work-20260828.md.
+
+notes: |
+  - [2026-08-28] specifier: minted from the coder note. Claim verified
+    independently by merge simulation before minting rather than taken on
+    report; the coder attribution to git rename detection is not asserted here
+    because the deletions are equally explained by QA bounce reverts
+    propagating, and the guard is correct either way.
+  - "[2026-08-28] coder: implemented. New check_merge_deletion.sh, sibling
+    to check_ticket_deletion.sh (BL-901), wired into the SAME commit-msg
+    hook (which no longer `exec`s the first guard, since both must run
+    every time). Fires only when MERGE_HEAD exists; diffs `git diff
+    --name-status HEAD` (HEAD is still the pre-merge tip at commit-msg
+    time, the index already holds the merged tree) for deletions,
+    excluding backlog ticket YAML paths (BL-901's own domain - never
+    double-reported). Each deleted path's owning ticket is derived from
+    the subject of the most recent commit on HEAD's OWN history that
+    touched it (`git log -1 --format=%s HEAD -- <path>`), matching this
+    repo's own commit-subject convention other guards already extract
+    from (task_commit_coherence_gate_lib.bb, task_scope_gate_lib.bb) -
+    never a path-shaped id like BL-901 uses, since most of the paths in
+    the real incident (recovery-filter-check.ts,
+    task_scope_gate_lib_test_runner.bb) carry no ticket id in their own
+    name at all. Message-naming exemption identical to BL-901's.
+
+    Regression-verified against the real incident (qa_e2e_procedure step
+    6, read-only): `git merge-tree --write-tree swarmforge-coder
+    df9899feb` still shows 6 of the original 7 paths as clean deletions
+    today (the 7th is now a conflict, this branch having since diverged
+    further); for each, `git log -1 --format=%s swarmforge-coder --
+    <path>` correctly attributes it to its real owning ticket (BL-1192,
+    BL-1211, BL-1207, BL-1216), confirming the attribution mechanism
+    against live data, not only the synthetic fixture.
+
+    Non-vacuity proven by hand: disabled the deletion check, confirmed
+    test_merge_deletion_guard.sh fails at scenario 02; restored, re-
+    confirmed ALL PASS.
+
+    Also updated test_ticket_deletion_guard.sh's own hook-installation
+    fixture to copy the new script alongside check_ticket_deletion.sh -
+    its scenario 09 (a real `git commit` with the hooks installed) would
+    otherwise fail now that commit-msg calls both guards.
+
+    Verified: test_merge_deletion_guard.sh ALL PASS (8 scenarios,
+    including two real `git merge --no-ff` runs through the installed
+    hook); test_ticket_deletion_guard.sh ALL PASS unchanged (12
+    scenarios); test_commit_size_guard.sh ALL PASS unchanged (does not
+    touch commit-msg); acceptance feature 7/7."
+
+assigned_to: coder

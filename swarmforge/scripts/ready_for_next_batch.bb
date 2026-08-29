@@ -10,6 +10,7 @@
 (load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "batch_claim_progress_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "idle_clear_fullness_cli.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_batch.bb, right after it
@@ -18,8 +19,12 @@
   (some #{"--idle-boundary"} *command-line-args*))
 
 (defn maybe-clear-at-idle-boundary! []
+  ;; BL-1238: this file's own copy of the same gate - batch roles (cleaner,
+  ;; hardener) never touch ready_for_next_task.bb, so the fullness check
+  ;; has to be wired independently here too. See that file's comment for
+  ;; the full rationale.
   (when (and idle-boundary?
-             (handoff-lib/idle-clear-enabled? (handoff-lib/current-role)))
+             (idle-clear-fullness-cli/should-respawn? (handoff-lib/current-role)))
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
 
 ;; ── BL-550: non-home resident strands after a merge-up note (batch mode) ──
