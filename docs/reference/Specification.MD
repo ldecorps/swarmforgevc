@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1244: an answer short enough to ride
+inline in a role's answer note — a tapped option label almost always is —
+never told the role there was anything to consume via
+`deliver-role-answer.js`, so the awaiting-question marker
+(`.swarmforge/operator/role-awaiting/<role>.json`) and the answer file's
+`consumedAt` stayed untouched; the role's NEXT clarifying question was
+refused as already-pending on a question already answered and acted on.
+Fixed per BL-1201's D1 constraint (do not restore the capture-time clear it
+deliberately removed): `captureRoleAnswer`
+(`extension/src/tools/telegramFrontDeskBotCore.ts`) gained an optional
+`confirmRoleAnswerDelivery` adapter, invoked only once
+`enqueueRoleAnswerNote` confirms the note was actually enqueued, and wired
+to `deliverRoleAnswer` itself (`extension/src/tools/telegram-front-desk-bot.ts`)
+— still the only reader of `role-answers/<role>.json` (BL-1201 D2), so the
+pairing check is reused verbatim: a mismatched `askedAtMs` or no recorded
+answer at all still leaves the slot shut. No new extension command or
+setting — operator/role-substrate tooling. Acceptance:
+`specs/features/BL-1244-a-delivered-answer-frees-the-question-slot.feature`.
+How-to: `docs/how-to/BL-1244-delivered-answer-frees-question-slot.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1234: the property-suite standing-red
 allowlist gate (`ps_suite_extract_failing_files` in
 `swarmforge/scripts/property_suite_standing_allowlist_lib.sh`) refused
