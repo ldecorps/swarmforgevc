@@ -56,3 +56,10 @@ out_of_scope: |
   - New instrumentation (producer tickets own the series).
   - Emailing anything the briefing does not already email; this is a section
     in the existing morning briefing, not a new message.
+
+notes: |
+  - [2026-08-29] coordinator: open-slot nudge named this candidate, but the
+    slot was filled by BL-1062 (higher-ranked eligible candidate) between the
+    sweep and this turn — active/ is back at the effective cap of 7. Clearing
+    this nudge on capacity, not inaction; BL-604 remains eligible for the
+    next open slot.
