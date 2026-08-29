@@ -20,6 +20,7 @@ human_approval: approved
 priority: 35
 direction: swarm-reported
 depends_on: []
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1209-mkdtemp-check-resolves-its-detector-from-the-tool-not-the-subject.feature

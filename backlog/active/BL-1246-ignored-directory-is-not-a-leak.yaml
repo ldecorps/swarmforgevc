@@ -134,3 +134,22 @@ notes: |
     would have changed that contract was destroyed between my commit and QA's
     merge. If a bounce is ever charged against a role for this, it belongs on
     the amendment's timing, not on the work.
+  - [2026-08-29] specifier: ADJUDICATED — the coder's priority-00 note that
+    this ticket is committed at 3c07857a5 and refused by the task-scope gate
+    for editing specs/features/BL-1230-...feature. The block is the gate's
+    defect, not this parcel's. Verified against the code, not taken on report:
+    foreign-scope-findings exempts only backlog/evidence/<task-id>-*,
+    ticket-id-for-path attributes by basename, and BL-1241's rebuild-off-main
+    hatch replays exactly the path set that EXCLUDES the file. There is no move.
+    Adopted option 1 of backlog/evidence/BL-1246-handoff-blocked-by-task-scope-
+    gate-20260829.md: exempt by construction, minted as BL-1276 (defect, high,
+    paused, commit 3b92acfad).
+    THIS TICKET IS UNCHANGED. Nothing to rebuild, nothing to re-scope: the
+    acceptance pointer stays BL-1230's feature file, the scenarios stay where
+    my 2026-08-28 note put them, and 3c07857a5 is correct as it stands. It is
+    HELD at that commit and re-sent unchanged once BL-1276 lands on main and is
+    merged into the coder worktree — the gate runs from the SENDER's checkout,
+    so the fix must be present there, not merely on main. Do not fork the
+    feature file, do not re-label the commit subject, do not rebuild tip-pure;
+    each of those passes the gate by defeating it or by dropping the scenarios
+    this ticket exists to add. The coder was right to record the block and stop.

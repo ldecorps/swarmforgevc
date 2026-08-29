@@ -32,9 +32,13 @@ export interface RecordAdjudicationArgs {
   adjudicatedAt?: string;
 }
 
+function missingRequiredArg(root?: string, ticketId?: string, outcome?: string, adjudicatedBy?: string): boolean {
+  return !root || !ticketId || !outcome || !adjudicatedBy;
+}
+
 export function parseArgs(argv: string[]): RecordAdjudicationArgs | null {
   const [root, ticketId, outcome, adjudicatedBy, adjudicatedAt] = argv;
-  if (!root || !ticketId || !outcome || !adjudicatedBy) {
+  if (missingRequiredArg(root, ticketId, outcome, adjudicatedBy)) {
     return null;
   }
   if (!OUTCOMES.includes(outcome as AdjudicationOutcome)) {
