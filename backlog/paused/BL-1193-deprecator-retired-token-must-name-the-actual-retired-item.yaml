@@ -9,6 +9,8 @@ priority: 40
 direction: swarm-reported
 depends_on: [BL-1173]
 mutation_cost: high
+slice_size_envelope: low
+size_envelope_decision: "justify not split - one token extractor narrowed in one CLI, 2 scenarios, no new surface. Band declared because mutation_cost: high on this ticket is Article 3.6 seat-tier (deprecator judgment needs a hard-tier seat, BL-1001), not a size estimate. Same cause and same decision as BL-1267 and BL-1268."
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1193-deprecator-retired-token-must-name-the-actual-retired-item.feature
 human_approval: approved
@@ -124,3 +126,15 @@ notes: |
     branch and is held too. Both were confirm-promoted by hand. Same
     function, same shape — fold this branch into this slice if it stays
     small, or split it out, but do not let it be re-found a third time."
+  Size envelope, 2026-08-29. Discharged alongside BL-1267 and BL-1268, which
+  tripped BL-634's gate for the identical reason: Article 3.6 requires every
+  deprecator build/run ticket to carry mutation_cost: high so BL-1001 keeps it
+  off an easy seat, and the size gate reads mutation_cost as a size proxy when
+  no explicit band is declared. Seat tier and slice size are different axes.
+  The true band is declared in slice_size_envelope: low.
+
+  Why not split: the change is one extractor narrowed so a RETIRED marker
+  names the item it actually retires rather than a co-occurring word. Two
+  scenarios, one predicate, no new surface. There is nothing to cut that
+  would leave two independently valuable slices.
+
