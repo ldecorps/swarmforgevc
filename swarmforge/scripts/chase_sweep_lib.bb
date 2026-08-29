@@ -850,21 +850,54 @@
           (str/split-lines header))))
 
 (defn- dispatch-ticket-ref
-  "A handoff file's own ticket reference for dispatch-gap purposes: its
-   task header (git_handoff) if present, else its message header (note) -
-   both conventionally lead with the ticket id."
+  "A handoff file's own ticket reference for the general 'does this handoff
+   MENTION this ticket' question (live-mail membership, stale-claim
+   labelling): its task header (git_handoff) if present, else its message
+   header (note) - both conventionally lead with the ticket id. Deliberately
+   broad - never narrowed for BL-1223, which is about the narrower DISPATCH
+   question only (see dispatch-trail-ticket-id below)."
   [file-path]
   (or (read-header-field file-path "task") (read-header-field file-path "message")))
 
+(defn dispatch-trail-ticket-id
+  "BL-1223: the id a handoff contributes to the DISPATCH TRAIL specifically
+   - narrower than dispatch-ticket-ref/extract-ticket-id's own general
+   'does this handoff mention this ticket' question, which a mention-only
+   note (a spec-ready announcement, a coordinator's own gap alarm) also
+   satisfies because routing notes conventionally lead with the ticket id
+   too. Measured incident: the specifier's mandated spec-ready note and the
+   coordinator's own 'no parcel in flight' self-alarm both counted as
+   dispatch evidence under the old broad match - in BL-1203's case, the
+   REPORT of a dispatch gap was itself counted as proof there was none.
+
+   `task:` is structural - only a git_handoff carries one, and its value is
+   a stable task name - so it counts via the full extractor unchanged.
+   `message:` (note-only) counts ONLY the router's own verb-first Spec/Work
+   form (spec-work-ticket-id-pattern, BL-538) - never the general leading-id
+   match a mention-only note also satisfies. Unclassifiable forms answer
+   nil (undispatched) rather than guessing - failing loud beats failing
+   silent, this module's own stated posture; a second route is visible and
+   recoverable, a starved ticket is neither."
+  [{:keys [task message]}]
+  (if (not (str/blank? task))
+    (extract-ticket-id task)
+    (when message
+      (when-let [[_ prefix digits] (re-find spec-work-ticket-id-pattern message)]
+        (str/upper-case (str prefix "-" digits))))))
+
+(defn- dispatch-trail-headers [file-path]
+  {:task (read-header-field file-path "task") :message (read-header-field file-path "message")})
+
 (defn collect-dispatched-ticket-ids
   "Scans every given directory path for .handoff files (including one level
-   of batch_* subdirectories) and returns the set of ticket ids referenced
-   in their task/message headers."
+   of batch_* subdirectories) and returns the set of ticket ids that
+   genuinely DISPATCH work per dispatch-trail-ticket-id - never a handoff
+   that merely mentions the ticket (BL-1223)."
   [dirs]
   (->> dirs
        (mapcat list-handoff-files-with-batches)
-       (keep dispatch-ticket-ref)
-       (keep extract-ticket-id)
+       (map dispatch-trail-headers)
+       (keep dispatch-trail-ticket-id)
        set))
 
 (defn- read-yaml-field [content field]
@@ -1032,11 +1065,15 @@
                         (collect-dispatched-ticket-ids scan-dirs)))
 
 (defn unassigned-active-note-message
-  "Leads with the ticket id so the next sweep treats the nudge itself as a
-   trail (no spam). Coordinator must then assign_to + route; we never set
+  "BL-1223: leads with the router's own verb-first 'Work' marker (matching
+   spec-work-ticket-id-pattern) so the next sweep still treats the nudge
+   itself as a trail (no spam) under the narrowed dispatch predicate - a
+   bare leading id (the pre-BL-1223 form) no longer counts as a dispatch,
+   which would otherwise turn this sweep's own anti-spam mechanism into a
+   spam generator. Coordinator must then assign_to + route; we never set
    assigned_to from this sweep."
   [item-id]
-  (let [msg (str item-id " active unassigned - assign_to and route it.")]
+  (let [msg (str "Work " item-id " active unassigned - assign_to and route it.")]
     (if (<= (count msg) dispatch-gap-note-max-length)
       msg
       (subs msg 0 dispatch-gap-note-max-length))))
@@ -1455,15 +1492,20 @@
 (defn newest-trail-event-ms
   "The freshest trail-event timestamp (epoch ms) for item-id across
    scan-dirs, from each matching handoff's own enqueued_at/created_at
-   header. Excludes this sweep's OWN prior nudges (BL-719 invariant 3) so a
-   still-dropped ticket stays detectably stale across repeated nudge
-   cycles, and skips any file with no parseable timestamp header at all
-   (never a false freshness signal from missing data). Returns nil when no
-   qualifying trail file exists."
+   header. BL-1223: matches via dispatch-trail-ticket-id, the SAME narrowed
+   dispatch predicate collect-dispatched-ticket-ids uses (this function's
+   own definition must stay byte-identical to build-dropped-parcel-trail-
+   index's single-pass :trail derivation, BL-978 invariant 2 - narrowing
+   one without the other would reintroduce exactly the drift-between-two-
+   copies defect BL-978 exists to prevent). Excludes this sweep's OWN prior
+   nudges (BL-719 invariant 3) so a still-dropped ticket stays detectably
+   stale across repeated nudge cycles, and skips any file with no
+   parseable timestamp header at all (never a false freshness signal from
+   missing data). Returns nil when no qualifying trail file exists."
   [item-id scan-dirs]
   (->> scan-dirs
        (mapcat list-handoff-files-with-batches)
-       (filter #(= item-id (extract-ticket-id (dispatch-ticket-ref %))))
+       (filter #(= item-id (dispatch-trail-ticket-id (dispatch-trail-headers %))))
        (remove dropped-parcel-self-nudge?)
        (keep handoff-event-ms)
        (reduce (fn [best ms] (if (or (nil? best) (> ms best)) ms best)) nil)))
@@ -1498,14 +1540,18 @@
    live-mail-dirs, reading each handoff file exactly once, producing
    {:trail {ticket-id {:newest-trail-ms ms-or-nil}} :live-ids #{ticket-id}}.
    Trail evidence comes from files under all-scan-dirs (has-trail
-   membership = any file referencing the id, self-nudges included, exactly
-   as collect-dispatched-ticket-ids counted them; newest-trail-ms = the
-   freshest enqueued_at/created_at EXCLUDING this sweep's own prior nudges
-   per BL-719 invariant 3, files with no parseable timestamp skipped, nil
-   when nothing qualifies - exactly newest-trail-event-ms's definition).
-   live-ids come from files under live-mail-dirs. A dir in both sets
-   contributes to both from the same single read; adding an active ticket
-   adds no filesystem work at all."
+   membership = dispatch-trail-ticket-id, exactly as
+   collect-dispatched-ticket-ids counts a dispatch - BL-1223: a handoff
+   that merely MENTIONS the ticket, self-nudges included, no longer
+   qualifies; newest-trail-ms = the freshest enqueued_at/created_at among
+   those same trail-qualifying files, EXCLUDING this sweep's own prior
+   nudges per BL-719 invariant 3, files with no parseable timestamp
+   skipped, nil when nothing qualifies - exactly newest-trail-event-ms's
+   definition). live-ids come from files under live-mail-dirs, keeping the
+   BROAD 'does this handoff mention this ticket' question unchanged
+   (BL-1223 invariant 3 - live-mail? is correctly broad, only :trail
+   narrows). A dir in both sets contributes to both from the same single
+   read; adding an active ticket adds no filesystem work at all."
   [all-scan-dirs live-mail-dirs]
   (let [trail-set (set (map str all-scan-dirs))
         live-set (set (map str live-mail-dirs))]
@@ -1516,22 +1562,26 @@
          (reduce
           (fn [acc file]
             (let [headers (handoff-headers file)
-                  ref (or (get headers "task") (get headers "message"))
-                  id (extract-ticket-id ref)]
-              (if-not id
+                  task (get headers "task")
+                  msg (get headers "message")
+                  ;; BL-1223: :live-ids keeps the BROAD "does this handoff
+                  ;; mention this ticket" question unchanged (invariant 3 -
+                  ;; live-mail? is correctly broad); :trail narrows to
+                  ;; dispatch-trail-ticket-id, the SAME predicate
+                  ;; collect-dispatched-ticket-ids/newest-trail-event-ms use.
+                  live-id (extract-ticket-id (or task msg))
+                  trail-id (dispatch-trail-ticket-id {:task task :message msg})
+                  acc (if (and live? live-id) (update acc :live-ids conj live-id) acc)]
+              (if-not (and trail? trail-id)
                 acc
-                (let [acc (if live? (update acc :live-ids conj id) acc)]
-                  (if-not trail?
-                    acc
-                    (let [msg (get headers "message")
-                          self-nudge? (boolean (and msg (str/includes? msg dropped-parcel-nudge-phrase)))
-                          event-ms (or (parse-instant-ms (get headers "enqueued_at"))
-                                       (parse-instant-ms (get headers "created_at")))
-                          acc (update-in acc [:trail id] #(or % {:newest-trail-ms nil}))]
-                      (if (and (not self-nudge?) event-ms)
-                        (update-in acc [:trail id :newest-trail-ms]
-                                   (fn [best] (if (or (nil? best) (> event-ms best)) event-ms best)))
-                        acc)))))))
+                (let [self-nudge? (boolean (and msg (str/includes? msg dropped-parcel-nudge-phrase)))
+                      event-ms (or (parse-instant-ms (get headers "enqueued_at"))
+                                   (parse-instant-ms (get headers "created_at")))
+                      acc (update-in acc [:trail trail-id] #(or % {:newest-trail-ms nil}))]
+                  (if (and (not self-nudge?) event-ms)
+                    (update-in acc [:trail trail-id :newest-trail-ms]
+                               (fn [best] (if (or (nil? best) (> event-ms best)) event-ms best)))
+                    acc)))))
           acc
           (list-handoff-files-with-batches dir))))
      {:trail {} :live-ids #{}}

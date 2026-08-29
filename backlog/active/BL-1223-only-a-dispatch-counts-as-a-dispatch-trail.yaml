@@ -320,5 +320,58 @@ notes: |
     restoration. BL-1237 is a severity-high defect that hard-blocks the
     specifier and cleaner seats, so this predicate defect is now blocking the
     repair of a seat-level block."
+  - "[2026-08-29] coder: implemented per the specifier's textual ruling.
+    Added `dispatch-trail-ticket-id` in chase_sweep_lib.bb: task: (git_
+    handoff-only, structural) counts via extract-ticket-id unchanged;
+    message: (note-only) counts ONLY via spec-work-ticket-id-pattern
+    (reused as-is, not re-derived) - a bare leading-id message never
+    counts. extract-ticket-id itself is untouched; only the three call
+    sites that decide DISPATCH status now use the narrower predicate:
+    collect-dispatched-ticket-ids, newest-trail-event-ms, and
+    build-dropped-parcel-trail-index's :trail derivation (its :live-ids
+    derivation keeps the old broad extract-ticket-id unchanged, per
+    invariant 3 and the constraint to narrow :trail only).
+
+    Found and fixed one real consequence while regression-checking sibling
+    sweeps (qa_e2e_procedure step 5): unassigned-active-note-message's own
+    anti-spam design ('leads with the ticket id so the next sweep treats
+    the nudge itself as a trail') relied on the now-narrowed leading-id
+    match, so it would have started re-nudging every cycle. Gave it the
+    same fix already applied to the router's own note (BL-538): lead with
+    'Work ' so it counts under the new predicate too - not a scope
+    expansion, the identical fix this ticket's own reasoning already
+    establishes, applied to a second internal emitter with the same shape.
+
+    dispatch_gap_test_runner.bb: updated the two assertions that were
+    testing the OLD (defective) behavior (a bare leading-id note counting,
+    and the unassigned-nudge fixture using the pre-fix message format) to
+    the corrected behavior, and added two new assertions matching
+    qa_e2e_procedure (1)/(3) directly (a spec-ready note and a dropped-
+    parcel self-alarm both now answer undispatched). The suite's other two
+    pre-existing failures (top-expedited-paused-candidate, type: bug
+    ranking) are unrelated - confirmed by isolating this ticket's diff via
+    `git stash` and re-running: identical 2 failures with or without this
+    change.
+
+    Verified: dispatch_gap_test_runner.bb (2 pre-existing unrelated
+    failures only), bl719_dropped_parcel_invariants_property_runner.bb,
+    bl1097_router_no_op_origination_property_runner.bb,
+    bl1097_router_dispatch_trail_test_runner.bb,
+    bl978_trail_index_property_runner.bb (the single-pass index vs
+    per-item composition cross-check - direct evidence the three narrowed
+    call sites stay consistent with each other), dropped_parcel_test_
+    runner.bb, chase_activity_nudge_test_runner.bb - ALL PASS/HOLD, no
+    regression. New acceptance feature (bl1223DispatchEvidenceIsADispatch
+    Steps.js) 6/6, driving the real dispatch_trail_cli.bb (scenario 01),
+    a real dispatch-gap-items call (scenario 02), and the real
+    route_backlog_to_coder.sh end to end (scenario 03, mirroring
+    test_bl1097_router_refuses_dispatched_ticket.sh's own fixture shape).
+
+    No src/*.ts touched - no CRAP/DRY/Stryker concern (Babashka has
+    neither wired, per BL-472). No property test: the invariant is a
+    textual classification rule over a small closed set of handoff
+    shapes, already exhaustively covered by the acceptance scenarios and
+    the existing bl978/bl1097 property runners that already generate
+    across this exact surface and continue to hold.
 
 assigned_to: coder
