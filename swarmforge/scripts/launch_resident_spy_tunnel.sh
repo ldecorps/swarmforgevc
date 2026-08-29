@@ -225,18 +225,6 @@ wait_named_ready() {
   return 1
 }
 
-# BL-1274: everything below is the ENTRY POINT's work, and it runs only when
-# this script is EXECUTED - never when it is sourced. The readiness decision
-# (wait_named_ready) is a pure function of what the log contains, but the only
-# way to reach it used to be launching a real background cloudflared and
-# racing the host to schedule it. A test that must spawn a subprocess to ask
-# "does this launcher observe readiness from the log?" is answering a question
-# about the host scheduler, not about the launcher (BL-871 widened the budget
-# 2s -> 20s for that reason and it went red again 18 days later). Sourcing this
-# file gives a caller the functions and the resolved paths without starting
-# anything, the same "main() is a thin wrapper over testable helpers" shape the
-# engineering rules require of a CLI.
-main() {
 mkdir -p "$OP"
 install_cloudflared_if_missing
 ensure_tunnel_caffeinate
@@ -275,11 +263,3 @@ fi
 
 notify_telegram_if_url_changed "$URL"
 echo "$URL"
-}
-
-# Executed, not sourced: run the entry point. `return` cannot appear outside a
-# function, so a sourced load simply falls off the end here with every function
-# and path variable defined and nothing started.
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  main "$@"
-fi

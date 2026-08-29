@@ -99,33 +99,14 @@ const noiseLineArb = fc
   .filter((s) => !s.includes('\n') && !FORBIDDEN_LOG_SUBSTRINGS.some((m) => s.includes(m)));
 const noiseLinesArb = fc.array(noiseLineArb, { maxLength: 4 });
 
-// BL-1274: this property used to launch the REAL launcher against a fake
-// cloudflared and assert it exited 0 - so its verdict depended on the host
-// scheduling that subprocess within the launcher's readiness budget. The
-// readiness evidence was already on disk before the launcher started; the only
-// thing being raced was the scheduler. BL-871 widened the budget 2s -> 20s for
-// exactly this red, and it recurred 18 days later, which is the signal that a
-// third widening is the wrong remedy class.
-//
-// The launcher now guards its entry point (BL-1274), so this property SOURCES
-// it and calls `wait_named_ready` directly against a log the fixture wrote and
-// a pid the fixture owns. The verdict is a pure function of the log content,
-// which is invariant 1's own wording, and the budget SHRINKS to 3 * 0.01s
-// because nothing is being waited for any more.
-//
-// What moved, and where it still lives: the end-to-end half - the launcher
-// echoing the hostname and writing tunnel state on success, and writing NO
-// state when readiness is never observed - is asserted by
-// swarmforge/scripts/test/test_launch_resident_spy_named_tunnel.sh (cases
-// named-01/02/03), which spawns the real launcher once rather than ten times
-// per property run. That coverage is not dropped, it is where it belongs.
-const LAUNCH_SEAM_ATTEMPTS = '3';
-const LAUNCH_SEAM_INTERVAL = '0.01';
-
-test('property (invariant 1): named-tunnel readiness is observed from the log, never inferred from liveness alone', () => {
-  fc.assert(
+test(
+  'property (invariant 1): named-tunnel readiness is observed from the log, never inferred from liveness alone',
+  () => {
+    fc.assert(
     fc.property(noiseLinesArb, fc.boolean(), fc.nat({ max: 4 }), (noiseLines, registers, insertAt) => {
       const dir = mkTmpDir('bl787-ready-prop-');
+      const binDir = path.join(dir, 'bin');
+      fs.mkdirSync(binDir, { recursive: true });
       const opDir = path.join(dir, '.swarmforge', 'operator');
       fs.mkdirSync(opDir, { recursive: true });
       registerOperatorRoot(dir);
@@ -135,58 +116,90 @@ test('property (invariant 1): named-tunnel readiness is observed from the log, n
       if (registers) {
         lines.splice(pos, 0, 'INF Registered tunnel connection connIndex=0');
       }
-      // The log the launcher will read - written by the fixture, in full,
-      // before anything is asked. No subprocess stands between this content
-      // and the verdict.
-      fs.writeFileSync(
-        path.join(opDir, 'resident-spy-cloudflared.log'),
-        lines.length ? `${lines.join('\n')}\n` : ''
-      );
+      const logDataFile = path.join(dir, 'fake-log-lines.txt');
+      fs.writeFileSync(logDataFile, lines.length ? lines.join('\n') + '\n' : '');
 
-      // A live process the fixture owns: readiness must be decided by the LOG,
-      // and this is the liveness that must not be mistaken for it.
-      const alive = spawnSync('bash', ['-c', 'sleep 30 >/dev/null 2>&1 & echo $!'], { encoding: 'utf8' });
-      const alivePid = alive.stdout.trim();
-      fs.writeFileSync(path.join(opDir, 'resident-spy-cloudflared.pid'), `${alivePid}\n`);
+      const fakeCloudflared = path.join(binDir, 'cloudflared');
+      fs.writeFileSync(
+        fakeCloudflared,
+        [
+          '#!/usr/bin/env bash',
+          'DIR="$(cd "$(dirname "$0")" && pwd)"',
+          'if [[ "$*" == *run* ]]; then',
+          `  cat "${logDataFile}" 2>/dev/null`,
+          '  sleep 30 &',
+          '  echo $! > "$DIR/cf.pid"',
+          '  wait',
+          'fi',
+          '',
+        ].join('\n')
+      );
+      fs.chmodSync(fakeCloudflared, 0o755);
+
+      const cfDir = path.join(dir, 'cloudflared-home');
+      fs.mkdirSync(cfDir, { recursive: true });
+      const configYml = path.join(cfDir, 'config.yml');
+      fs.writeFileSync(
+        configYml,
+        `tunnel: 00000000-0000-0000-0000-000000000099\ncredentials-file: ${path.join(cfDir, 'cred.json')}\ningress:\n  - hostname: bubble.example.com\n    service: http://127.0.0.1:8765\n  - service: http_status:404\n`
+      );
+      fs.writeFileSync(path.join(cfDir, 'cred.json'), '{}');
 
       try {
-        const probe = spawnSync(
-          'bash',
-          [
-            '-c',
-            `source ${JSON.stringify(LAUNCH)} ${JSON.stringify(dir)} >/dev/null 2>&1; ` +
-              `NAMED_WAIT_ATTEMPTS=${LAUNCH_SEAM_ATTEMPTS} NAMED_WAIT_INTERVAL=${LAUNCH_SEAM_INTERVAL} ` +
-              'wait_named_ready',
-          ],
-          { encoding: 'utf8', timeout: 15000, env: isolatedEnv({ HOME: dir, SWARMFORGE_SKIP_CAFFEINATE: '1' }) }
-        );
+        // BL-871 QA bounce D2 (2026-08-11): this property failed under host
+        // contention not via the outer vitest timeout but via a genuine
+        // assertion - the launcher's own poll loop, budgeted here to 40
+        // attempts * 0.05s = 2s (vs. the real launcher's own 45-attempt *
+        // 1s = 45s default; see launch_resident_spy_tunnel.sh) to keep the
+        // property fast, could not observe the fake cloudflared's
+        // already-written log content within 2s of real time under load.
+        // Widened to a 20s budget (200 * 0.1s) - still 2x faster than
+        // production's default, comfortably inside SUBPROCESS_HEAVY_TIMEOUT_MS
+        // across 10 numRuns, but tolerant of scheduling delay under
+        // contention. The outer spawnSync timeout is raised to match.
+        const result = spawnSync('bash', [LAUNCH, dir], {
+          encoding: 'utf8',
+          timeout: 30000,
+          env: isolatedEnv({
+            CLOUDFLARED: fakeCloudflared,
+            HOME: dir,
+            // BL-1061: a per-run unique name, never the production one. These
+            // fixtures spawn REAL processes whose command lines read
+            // "... run <name>", and the reap selects by that name against the
+            // HOST process table - so binding the operator's tunnel name made
+            // this suite both unpassable while it is up and able to kill it.
+            SWARMFORGE_NAMED_TUNNEL: fixtureTunnelName('bl787-ready'),
+            SWARMFORGE_NAMED_TUNNEL_HOSTNAME: 'bubble.example.com',
+            SWARMFORGE_CLOUDFLARED_CONFIG: configYml,
+            SWARMFORGE_SKIP_CAFFEINATE: '1',
+            SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS: '200',
+            SWARMFORGE_NAMED_TUNNEL_WAIT_INTERVAL: '0.1',
+          }),
+        });
 
+        const stateFile = path.join(opDir, 'resident-spy-tunnel.json');
         if (registers) {
-          assert.equal(
-            probe.status,
-            0,
-            `expected readiness when the log shows registration, got ${probe.status}: ${probe.stderr}`
-          );
+          assert.equal(result.status, 0, `expected exit 0 when the log shows registration, got ${result.status}: ${result.stderr}`);
+          assert.equal(result.stdout.trim(), 'https://bubble.example.com');
+          assert.equal(fs.existsSync(stateFile), true, 'expected tunnel state to be written when registration was observed');
         } else {
           assert.notEqual(
-            probe.status,
+            result.status,
             0,
-            'expected NOT ready when the log never shows registration - a live process alone must never count as ready'
+            `expected non-zero exit when the log never shows registration (liveness alone must not count as ready), got 0`
           );
+          assert.equal(fs.existsSync(stateFile), false, 'must never write tunnel state without observed registration');
         }
       } finally {
-        if (alivePid) {
-          try {
-            process.kill(Number(alivePid), 'SIGKILL');
-          } catch {
-            /* already gone */
-          }
-        }
+        killPidFile(path.join(opDir, 'resident-spy-cloudflared.pid'));
+        killPidFile(path.join(binDir, 'cf.pid'));
       }
     }),
-    { numRuns: 10 }
-  );
-});
+      { numRuns: 10 }
+    );
+  },
+  SUBPROCESS_HEAVY_TIMEOUT_MS
+);
 
 // ── Invariant 2 ──────────────────────────────────────────────────────────
 // "No tracked file supplies an operator-specific hostname, zone, or account
