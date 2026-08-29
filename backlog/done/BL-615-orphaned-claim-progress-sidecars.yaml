@@ -2,7 +2,7 @@ id: BL-615
 title: "Orphaned .claim-progress.json sidecars accumulate in inbox/in_process with no matching handoff"
 milestone: M8
 type: defect
-status: paused
+status: done
 epic: swarm-reliability
 severity: medium
 priority: 192
@@ -140,3 +140,40 @@ notes: |
   sweep once and verify (b) is deleted with a reap log line. Then confirm
   the 4 historical strays in the coordinator's inbox/in_process are gone on
   the live swarm after one sweep tick.
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with human_approval:
+  approved and a promotable status — i.e. fully eligible for the coordinator
+  to pick up — while the behaviour it specifies is ALREADY SHIPPED AND LIVE.
+  Promoting it would have sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - swarmforge/scripts/chase_sweep_lib.bb:640 carries the reap itself —
+    "BL-615: reap orphaned claim-progress sidecars in in_process (backstop)" —
+    alongside the BL-232/BL-615 delete of sidecars whose parent .handoff is
+    gone (line 490); salvage_lib.bb carries the companion path.
+  - swarmforge/scripts/test/bl615_orphaned_claim_progress_test_runner.bb is
+    the ticket's own named test runner.
+  - specs/pipeline/steps/bl615OrphanedClaimProgressSidecarReapSteps.js drives
+    the REAL swarmforge/scripts/done_with_current_task.bb and
+    chase_sweep_lib.bb via spawnSync; index.js:47 registers it.
+  - specs/features/BL-615-orphaned-claim-progress-sidecar-reap.feature is LIVE.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  "Retire, never reword" applies to a retired BEHAVIOUR; here only the TICKET
+  is stale and the behaviour is live. Deleting the scenarios would remove live
+  coverage, and specs/pipeline/runtime.js throws on a scenario whose handler is
+  gone — the gate would redden. See the paused-pool zombie-ticket check:
+  (1) an implementation file headed with the ticket's own id, and
+  (2) that ticket's handler registered in specs/pipeline/steps/index.js.
+  Both present ⇒ shipped ⇒ retire, do not build.
