@@ -1,0 +1,80 @@
+id: BL-1179
+title: "Cross-vendor agent-memory adapters and explicit unsupported matrix"
+milestone: M8
+type: feature
+status: todo
+epic: agent-memory-transfer
+priority: 5
+direction: human-requested
+depends_on: [BL-1177]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1179-cross-vendor-memory-adapters-unsupported-matrix.feature
+
+human_approval: approved
+approval_context: >
+  Third slice of agent-memory-transfer. BoB premise is mixed vendors; document
+  hard limits per runtime rather than silent no-ops.
+
+invariants:
+  - "Unsupported vendor pairs refuse transfer with a named matrix reason — never silent success."
+  - "Supported pairs use the portable payload from BL-1177 — not a second ad-hoc format."
+
+required_wiring:
+  - 'extension/src/tools/agentMemoryHotSwap.ts::AgentMemoryTransferApi::anti-drift anchor on the LIVE seam, not a wiring check. BL-1178 already routes the hot swap through this typed seam into agentMemoryTransfer, so adapters and the unsupported matrix must be reachable from here rather than built as an island beside it. Corrected 2026-08-28: the original entry named the prose phrase "agent memory transfer adapters" as a path, which the gate matches as a literal file and can therefore never satisfy (BL-874 shape)'
+  - "specs/pipeline/steps/index.js::bl1179CrossVendorMemoryAdapterSteps::acceptance handler registered"
+
+description: |
+  Adapters that map runtime-specific state into/out of the BL-1177 portable
+  payload where possible, plus an explicit unsupported matrix for vendor pairs
+  that cannot transfer — fail closed with a clear signal.
+
+qa_e2e_procedure: >
+  (1) Supported pair fixture → transfer succeeds via portable payload.
+  (2) Unsupported pair → refuse with matrix reason. (3) Matrix is readable
+  without running a live swap.
+
+out_of_scope: |
+  - Changing steward ranking (BoB / BL-547).
+  - Cross-role memory merge.
+
+source: |
+  .swarmforge/operator/INTAKE-agent-memory-transfer.md (2026-08-27). Epic BL-1176 child.
+
+notes: |
+  - [2026-08-27] specifier: minted from operator intake drain.
+  - [2026-08-28] specifier: required_wiring entry 1 corrected after the
+    coder's priority-00 note. It read
+    "agent memory transfer adapters::per-runtime capture/inject::unsupported matrix"
+    - the first field is matched as a literal FILE PATH, so a prose phrase
+    there can never be satisfied and would have blocked the documenter's
+    handoff to QA. This is the BL-874 shape; the coder was right to flag it
+    at the first hop rather than let it surface five stages later.
+  - [2026-08-28] specifier: BOOKKEEPING ONLY - nothing you build changes.
+    The replacement anchors the LIVE seam BL-1178 already built
+    (agentMemoryHotSwap.ts's AgentMemoryTransferApi), so it records that the
+    adapters and matrix must be reachable from the real hot-swap path rather
+    than sitting beside it. No scope, acceptance or invariant changed. Merge
+    main and re-read the YAML before your handoff so the gate reads the
+    corrected line from your own checkout, which is where it looks.
+  - "[2026-08-28] coder: architect bounce D1
+    (backlog/evidence/BL-1179-architect-bounce-20260828.md) - both declared
+    invariants had no property test. Added
+    extension/test/agentMemoryVendorAdapters.property.test.js: P1 encodes
+    invariant 1 (an unsupported pair never transfers and always names a
+    reason; a supported pair is never refused at the matrix step) against
+    generated runtime-token pairs, including arbitrary strings to exercise
+    the fail-closed unrecognised-runtime path. P2 encodes invariant 2 (a
+    supported pair delegates verbatim to runMemoryTransferForRole, never a
+    second payload format) via an injected capture/inject spy comparing the
+    call sequence and outcome against a direct call. Non-vacuity proven by
+    hand: broke the matrix's both-unsupported branch and separately made
+    the delegation reformat its result; confirmed the relevant test(s) fail
+    on each break, then restored and re-confirmed green. Verified:
+    agentMemoryVendorAdapters.test.js 15/15 unchanged; property file 3/3;
+    acceptance feature 3/3."
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: architect, blamed: coder, class: invariant-unencoded, commit: dc1714bf3d, evidence: backlog/evidence/BL-1179-architect-bounce-20260828.md }

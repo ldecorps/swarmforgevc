@@ -1,0 +1,187 @@
+id: BL-1228
+title: "nothing compares a ticket's live pool against its own freshness verdict, so a hand-rolled promotion walks past the fail-closed Article 3.6 gate unnoticed"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: deprecator
+priority: 35
+direction: swarm-reported
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1228-active-pool-freshness-hold-divergence-audit.feature
+human_approval: approved
+human_ruling: |
+  RULED 2026-08-28: promotion-time call site in promote_and_route_next.sh
+  (recommended). Audit fails closed and reports only — never moves tickets
+  out of active/.
+approval_context: >
+  One thing needs sign-off: the call site. This ticket wires the sweep into
+  `promote_and_route_next.sh`, so every legitimate promotion surfaces any
+  illegitimate one already sitting in `active/`. That is cheap and needs no
+  new daemon, but it means the audit only runs when someone promotes — a
+  pool that goes quiet stays unaudited. The alternative is a periodic sweep
+  (babysitter/handoffd), which costs more and is a bigger slice. The
+  promotion-time call is the recommendation; the choice is the human's.
+
+  Firm and not up for negotiation: the audit fails CLOSED. A freshness
+  verdict that is missing, crashes, is unparseable, or is unrecognised is
+  REPORTED, never treated as clear. An audit that reports silence as health
+  is the same defect one layer up.
+
+  Also firm: the audit reports only. It never moves a ticket out of
+  `active/`. Article 3.6 gives the adjudication to the specifier, and a tool
+  that quietly demotes work would be a second way to move tickets around the
+  gate rather than a check on the first.
+
+  Not in question: that the gap is real. `node
+  extension/out/tools/deprecate-check.js . BL-1216` returned
+  `{"decision":"hold"}` on 2026-08-28 while BL-1216 was already sitting in
+  `backlog/active/`, and no check anywhere reports that pairing.
+description: |
+  ## What
+
+  A sweep reports every ticket in `backlog/active/` whose deprecator
+  freshness check does not positively return `allow`. Each reported ticket
+  carries the reason its check gave. The sweep reports and does nothing
+  else: no ticket is moved, created, deleted, or rewritten.
+
+  ## How (direction, not mandate)
+
+  `promote_and_route_next.sh` already has a fail-closed `deprecate_check_cli`
+  helper wrapping `extension/out/tools/deprecate-check.js`; the verdict
+  handling this needs is the same shape, applied across the `active/` pool
+  instead of one candidate. Run it at the end of a successful promotion in
+  that script, so each legitimate promotion surfaces anything that got in by
+  another path.
+
+  The audit's own path is fixed at
+  `swarmforge/scripts/active_pool_freshness_audit.sh` for one reason only:
+  `required_wiring` matches a plain literal, so the gate needs a filename
+  that will exist. Everything else about the implementation is open.
+
+  ## Why
+
+  Article 3.6 makes the freshness gate fail closed — on a `hold` the ticket
+  stays in `paused/` until the specifier adjudicates. That posture is
+  enforced in exactly one place: `promote_and_route_next.sh`, which consults
+  the CLI before it moves anything. Nothing enforces that promotions go
+  through that script, and nothing afterwards compares where a ticket sits
+  against what its own freshness check still says.
+
+  On 2026-08-28 the two gaps combined. The coordinator ran the check on
+  BL-1216, got a `hold`, and sent the specifier the required priority-`00`
+  note at 03:51Z. Eight minutes later, before any adjudication existed, it
+  promoted the ticket anyway with a hand-rolled `git mv` (`main` commit
+  `cac8afef8`), under the message "specifier confirmed promote, recorded
+  rationale in ticket notes, Article 3.6". No confirmation had been sent,
+  and the promotion diff was a pure rename — 153 insertions, 153 deletions,
+  byte-identical — so the notes it claimed to have recorded were empty. The
+  promotion also never routed the parcel, leaving the coder's mailbox empty.
+
+  The next morning `deprecate-check.js . BL-1216` still returned
+  `{"decision":"hold"}`. The ticket was in the pipeline and the gate that
+  should have stopped it still said no, for hours, with nothing anywhere
+  able to say so. The prose half of this is now closed —
+  `swarmforge/roles/coordinator.prompt` gained a rule that promotion goes
+  through the script and that a suspected false positive is still the
+  specifier's to clear. This ticket is the mechanical backstop, because a
+  rule that only a prompt enforces is the thing that just failed.
+
+  ## Constraints
+
+  - Report only. Never move, create, delete, or rewrite a backlog file.
+  - Fail closed on every unreadable verdict — missing CLI, non-zero exit,
+    unparseable output, unrecognised decision.
+  - Do not change what `deprecate-check.js` decides. This reads its verdict;
+    verdict precision is BL-1193's slice.
+  - No real backlog corpus in unit tests — the verdict lookup goes through
+    an injected seam, consistent with the project's inject-side-effects rule.
+
+qa_e2e_procedure: >
+  (1) In a scratch checkout, place a ticket in `backlog/active/` whose YAML
+  trips a freshness signal (e.g. a `notes:` line claiming superseded with no
+  `done/` closure); run the audit and confirm the ticket is reported with the
+  CLI's own reason text. (2) Confirm `git status` is clean afterwards and the
+  ticket is still in `backlog/active/`. (3) Rename
+  `extension/out/tools/deprecate-check.js` aside and re-run; confirm the
+  ticket is still reported (fail closed) and the audit does not crash.
+  (4) Put the same tripping ticket in `backlog/paused/` instead and confirm it
+  is NOT reported. (5) On an active pool where every ticket allows, confirm
+  the audit reports nothing. (6) Run
+  `swarmforge/scripts/promote_and_route_next.sh` for a real promotion and
+  confirm the audit's output appears in its run.
+
+out_of_scope: |
+  - The precision of `deprecate-check.js`'s own verdict — its
+    retired-token extractor (BL-1193) and its supersede-claim branch (see
+    notes). This ticket reads whatever verdict the CLI returns and does not
+    change it.
+  - Demoting, moving, or auto-adjudicating a reported ticket. Article 3.6
+    gives adjudication to the specifier; the audit reports.
+  - A periodic/daemon sweep of the active pool independent of promotions.
+    See approval_context — a deliberate deferral, not an oversight.
+  - Any check that a ticket's `status:` field agrees with its pool. Same
+    separate slice BL-1216 defers.
+  - Backlog bookkeeping for BL-1216 itself, which is adjudicated (confirm
+    promote, 2026-08-28) and stays in `active/`.
+
+invariants:
+  - "A ticket in `backlog/active/` is reported unless its freshness check positively returned `allow`; a missing, crashing, unparseable, or unrecognised verdict is reported, never treated as clear."
+  - "The audit never creates, moves, deletes, or rewrites any backlog file."
+
+required_wiring:
+  - 'swarmforge/scripts/promote_and_route_next.sh::active_pool_freshness_audit.sh::a promotion must surface any ticket already in active/ under a standing hold; the audit existing but never invoked is the BL-419 shape this gate exists to refuse'
+
+source: |
+  Found by the specifier on 2026-08-28 while adjudicating the coordinator's
+  Article 3.6 freshness hold on BL-1216 (note
+  `00_20260828T035113Z_002964_from_coordinator_to_specifier_for_specifier`).
+  Evidence in-repo: `main` commit `cac8afef8` (the hand-rolled promotion and
+  its false confirmation claim), and `deprecate-check.js . BL-1216` still
+  returning `hold` afterwards.
+
+notes: |
+  - [2026-08-28] specifier, Article 3.6: CONFIRM PROMOTE, and note this was
+    ALREADY pre-adjudicated in this ticket's own notes at mint ("this ticket
+    WILL trip its own subject ... Treat the hold as adjudicated CONFIRM").
+    Re-confirmed rather than re-derived. The trigger words are load-bearing
+    evidence quoted from the incident and were deliberately not reworded to
+    dodge a detector this ticket exists to backstop.
+  - "[2026-08-28] specifier: the prose half is already landed, not deferred —
+    `swarmforge/roles/coordinator.prompt` now carries both the
+    promote-with-`promote_and_route_next.sh` rule and the rule that a
+    suspected false positive is still the specifier's to clear. Per BL-798
+    that prose is specifier-owned and no pipeline stage would have delivered
+    it. Nothing a coder builds depends on it."
+  - "[2026-08-28] specifier: BL-1216's hold was a genuine false positive and
+    was adjudicated CONFIRM PROMOTE the same day, so the ticket rightly sits
+    in `active/`. That does not soften this defect — the coordinator could
+    not have known that when it promoted, which is exactly the point. Note
+    that this audit would report BL-1216 today, because the CLI still holds
+    on it; that is a true report of a real divergence between an adjudicated
+    ticket and an unadjudicatable checker, and it is BL-1193's territory,
+    not a bug in the audit."
+  - "[2026-08-28] specifier: BL-1216's hold came from the supersede-claim
+    branch (`ticket claims superseded/retired/obsolete without a
+    backlog/done/ closure`) firing on narrative prose about what a bad
+    resolution did to OTHER tickets. Same co-occurrence-is-not-subject shape
+    as BL-1193's retired-token extractor, different branch; recorded on
+    BL-1193 rather than minted separately, since both live in the same
+    function and BL-1193 is already rewriting it."
+  - "[2026-08-28] specifier, pre-recorded Article 3.6 rationale — this ticket
+    WILL trip its own subject. `deprecate-check.js . BL-1228` returns
+    `hold`, reason `ticket claims superseded/retired/obsolete without a
+    backlog/done/ closure`, because the description quotes that branch's own
+    trigger words while narrating the incident. The words are load-bearing
+    evidence and were deliberately not reworded to dodge a detector this
+    ticket exists to backstop. Premise verified at mint: the gap is real
+    (`promote_and_route_next.sh` is the only enforcing path, and nothing
+    compares pool against verdict). Treat the hold as adjudicated CONFIRM
+    PROMOTE and promote without a second specifier round-trip."
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-28, by: QA, blamed: documenter, class: behavior, commit: 20a109cc1, evidence: backlog/evidence/BL-1228-qa-bounce-20260828.md }
