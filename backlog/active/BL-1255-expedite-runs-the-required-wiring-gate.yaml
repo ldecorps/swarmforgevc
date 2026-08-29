@@ -132,3 +132,46 @@ notes: |
     pilot path. This is the required_wiring half of the same class, still open.
   - [2026-08-29] specifier: checked before minting - no paused, active or held
     ticket covers the expedite path reaching pre_qa_gate_lib.
+  - [2026-08-29] coder: implemented, taking approval_context design question
+    (2) as directed - pre_qa_gate_lib.bb (pure decision) is load-file'd
+    directly by expedite_cli.bb. Deliberately did NOT load
+    pre_qa_gate_gather_lib.bb: that file itself load-files handoff_lib.bb,
+    exactly the swarm machinery expedite_lib.bb's header forbids depending
+    on. Wrote a fresh, minimal, expedite-only gather (required-wiring-
+    file-contents / required-wiring-gate-check, both in expedite_cli.bb -
+    IO/orchestration, per that file's own header) that shares only the
+    DECISION predicate (pre-qa-gate-lib/evaluate, forced to the same
+    :type/:to shape a live QA-edge git_handoff arms on) - invariant 1.
+
+    Hooked into drive-stages!'s :advance branch: the general condition is
+    "next stage is QA" (not a hardcoded "stage is documenter"), so a
+    roles: manifest narrowing the chain still gates correctly. On refusal,
+    logs each PRE_QA_GATE_FAIL finding line and returns
+    {:ticket :failed :reason :required-wiring-gate-refused ...} - no QA
+    stage runs, no QA-hat verdict is recorded.
+
+    Invariant 2 (a check that could not complete refuses, never passes):
+    ticket-yaml unreadable, worktree HEAD unreadable, or an exception
+    during gather each refuse with a distinct message naming which
+    condition fired, rather than silently proceeding.
+
+    Verified against real data (qa_e2e_procedure step 4): replayed BL-1191's
+    own required_wiring declaration
+    (`swarmforge/scripts/handoffd.bb::wake-dedup-gate::...`) through
+    pre-qa-gate-lib/evaluate against handoffd.bb's real current content -
+    refuses, confirming the shared predicate now catches exactly the
+    landed-but-unwired case that shipped unrefused on 2026-08-27/28.
+
+    test_expedite_cli.sh: 121/121 unchanged (no fixture ticket declares
+    required_wiring, so the new gate is a no-op there - confirms no
+    regression on the existing driver). expedite_lib_test_runner.bb ALL
+    PASS (untouched by this ticket). New acceptance feature
+    (bl1255ExpediteRequiredWiringGateSteps.js) 6/6, driving the real
+    expedite_cli.bb through the real expedite_fixture.sh end to end - each
+    Scenario Outline row builds a genuinely defective required_wiring
+    entry (pattern absent / path absent / unparseable) or a genuinely
+    satisfied one, on the fixture's own committed content, never a stub of
+    the gate itself. No src/*.ts touched, no CRAP/DRY/Stryker concern
+    (Babashka has neither wired, per BL-472).
+
+assigned_to: coder

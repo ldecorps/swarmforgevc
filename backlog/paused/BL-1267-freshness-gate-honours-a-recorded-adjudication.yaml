@@ -1,0 +1,166 @@
+id: BL-1267
+title: "Article 3.6's confirm-promote outcome has no representation the freshness gate can read, so an adjudicated ticket is held forever"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: deprecator
+human_approval: approved
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1267-freshness-gate-honours-a-recorded-adjudication.feature
+
+required_wiring:
+  - 'extension/src/tools/deprecate-check.ts::BL-1267::the discharge lookup must live in the CLI the promotion path actually consults, marked with this ticket id so the change is greppable at the exact site it fixes'
+  - 'specs/pipeline/steps/index.js::bl1267::the step handler must be registered in the step registry or the acceptance runner never runs these scenarios'
+
+invariants:
+  - "A recorded adjudication clears the gate only for the exact ticket content it was made against: amend the ticket after adjudicating and the check holds again."
+  - "No discharge is ambient or anonymous: every allow that came from an adjudication names the durable record it came from, and no environment variable, flag, or caller argument can produce one without that record."
+
+description: >
+  Severity rationale: high - a broken safety signal on the delivery path,
+  not a broken feature. The gate is fail-closed by design and correct to
+  be; what is missing is the discharge the constitution already promises,
+  so the only ways out today are a starved promotion queue or an
+  unattributed bypass.
+
+  What is wrong. Article 3.6 gives the specifier four outcomes when the
+  freshness gate holds a paused ticket: amend, retirement, split, or
+  confirm-promote. The first three change the ticket, so the next gate run
+  sees different text and behaves differently. The fourth changes nothing
+  the gate can see. extension/src/tools/deprecate-check.ts recomputes its
+  decision from ticket text on every call and consults no record of any
+  adjudication, so a ticket a hard-tier specifier has examined in full and
+  cleared holds again on the very next promotion attempt, and
+  swarmforge/scripts/promote_and_route_next.sh refuses fail-closed before
+  the git-mv. There is no flag, field, or file that means "a specifier
+  looked at this and it is fine".
+
+  The remedy arms the gate against itself. The natural place to record an
+  adjudication is the ticket, and an adjudication necessarily discusses the
+  deprecation vocabulary that triggered the hold. The generic-claim branch
+  matches those words anywhere in the ticket YAML, so writing the
+  adjudication down guarantees the hold becomes permanent. BL-1256 is the
+  worked example: its deprecator_adjudication block concludes PROMOTE, and
+  its presence is now itself sufficient to keep the CLI answering hold.
+
+  Observed twice, not hypothesised. BL-1190 (2026-08-27) was
+  confirm-promoted past a hold its own notes record as a false positive,
+  and reached active only because the coordinator set the gate's answer
+  aside by hand. BL-1256 (2026-08-29) repeated it: adjudicated
+  confirm-promote and committed in ea3efc18a, still answering hold, with
+  the coordinator's own coordinator_notes recording that this single hold
+  has now blocked four consecutive open promotion slots across the
+  BL-1244, BL-1233, BL-1234 and BL-1237 closes. The coordinator is right
+  not to promote around it; there is simply nothing else it can do.
+
+  How (direction, not mandate). Give confirm-promote a durable
+  representation the CLI reads, keyed by ticket id and fingerprinted
+  against the ticket content the adjudication was made against, so an
+  amendment after the fact re-arms the gate rather than riding a stale
+  clearance. Whether that record is a structured field in the ticket or a
+  file under .swarmforge/deprecator/ is the implementer's call; what is
+  not optional is that it names who adjudicated, when, and against what
+  content. Deliberately NOT a bypass switch: BL-1248's lesson is that a
+  control which silences the alarm along with the action is the defect,
+  not the feature, so an unfingerprinted allow-list or a
+  DEPRECATE_CHECK_SKIP env var is out of bounds even though either would
+  close the ticket faster.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT change what the gate holds ON. The three stale-premise signals
+    and their fail-closed posture are BL-1173's shipped behaviour and stay
+    exactly as they are; this ticket adds a way to discharge a hold, not a
+    way to avoid earning one. Narrowing the generic-claim predicate is
+    BL-1268's job and the token extractor is BL-1193's; a diff touching
+    either predicate is out of scope, not a scope widening.
+  - Do NOT introduce any discharge that is not fingerprinted to ticket
+    content, and do not add an environment variable, CLI flag, or caller
+    argument that produces an allow. Invariant 2 is the point of the
+    ticket, not decoration.
+  - Do NOT make the promote-path scenarios assert against a wrapper that
+    mirrors promote_and_route_next.sh's parse. That script already accepts
+    a project root as its second argument, so it can be driven directly
+    against a fixture. BL-1256 exists precisely because a gate asserted on
+    a re-implementation of the thing it was gating and stayed green through
+    the change it was written to refuse; do not repeat that shape here.
+  - The fixture must not deliver handoffs into the live .swarmforge/
+    mailboxes or touch the live backlog. Contain the routing side effect of
+    a successful promote inside the fixture; the durable observable this
+    ticket needs is which folder the fixture ticket ends in.
+  - Do NOT retroactively discharge the tickets currently held. Clearing the
+    live backlog is adjudication work for the specifier, done ticket by
+    ticket under Article 3.6; this ticket ships the mechanism only.
+
+qa_e2e_procedure: >
+  1. Build the CLI, then take a scratch copy of a real held ticket in a
+     fixture root and confirm the check answers hold. Record an adjudication
+     with outcome confirm-promote and confirm it answers allow, and that the
+     allow names the record it came from rather than merely omitting a
+     reason.
+  2. Non-vacuity for step 1: with the adjudication removed, the same fixture
+     ticket must answer hold with its original stale-premise reason. An
+     allow obtained from a fixture that never holds anything is not evidence.
+  3. Amend one character of the fixture ticket's content after recording the
+     adjudication and confirm the check answers hold again, naming the
+     adjudication as no longer matching. This is invariant 1 and it is the
+     property most likely to be lost to a convenient implementation.
+  4. Record adjudications with each non-confirm-promote outcome in turn and
+     confirm each still answers hold. Then corrupt the record (truncate it,
+     write invalid JSON) and confirm the check answers hold rather than
+     treating an unreadable record as absent-and-clean or as allow.
+  5. Drive the real promote_and_route_next.sh against the fixture root, once
+     with the adjudication present and once with it absent, and assert on
+     where the fixture YAML file ends up - active/ in the first case,
+     paused/ in the second. Assert on the file's location, not on a log
+     line, and confirm afterwards that no handoff reached any live mailbox.
+  6. Grep the shipped diff for any environment variable, flag, or argument
+     that can produce an allow without a fingerprinted record. Finding one
+     is a defect regardless of whether a scenario covers it.
+
+notes: >
+  Source: coordinator note (priority 00) 2026-08-29 - "BL-1256 adjudicated
+  PROMOTE but gate CLI still HOLDs (no done closure)" - plus the specifier's
+  audit of the whole paused pool while adjudicating it.
+
+  Measured 2026-08-29 by running the CLI over every paused ticket: 29 of
+  114 answer hold. That population is BL-1268's subject; this ticket is
+  about the fact that none of them can ever be cleared, whether the hold
+  was earned or not.
+
+  Related: BL-1173 (done, M8 - shipped the gate this ticket extends);
+  BL-1268 (paused - narrows the generic-claim branch, independent of this
+  one and neither subsumes the other); BL-1193 (paused - fixes the token
+  extractor, a third branch of the same CLI); BL-1190 and BL-1256 (the two
+  incidents above); BL-1172 (the epic tracker).
+
+  Trap-resistance, deliberate: this YAML avoids the four claim words the
+  generic-claim branch matches and declares depends_on empty, so the gate
+  this ticket repairs does not hold the ticket that repairs it. The words
+  themselves appear in the feature file, which the CLI does not read. This
+  is the specifier prompt's self-referential-guard rule applied to the
+  specifier; the constraint on future editors is simply not to paste those
+  words into this file. BL-1173 is a real predecessor but is already
+  shipped, so naming it in prose rather than depends_on loses nothing and
+  keeps the depends_on-gated branches disarmed.
+
+approval_context: >
+  This unblocks a promotion queue that has lost four consecutive slots to a
+  single hold the specifier already cleared, and it will keep costing slots
+  until it ships.
+
+  Two calls worth your word. (1) The discharge is deliberately
+  fingerprinted to ticket content, so amending a ticket after adjudication
+  makes it hold again and needs a fresh adjudication. That is safer and
+  noticeably more work for the specifier than a simple per-ticket
+  allow-list; say so if you would rather have the cheaper version. (2) The
+  record's home - a field in the ticket versus a file under .swarmforge/ -
+  is left to the implementer. Say so if you want it in the ticket, which
+  keeps the adjudication and its subject in one reviewable place at the
+  cost of putting gate state into the human-edited artifact.
