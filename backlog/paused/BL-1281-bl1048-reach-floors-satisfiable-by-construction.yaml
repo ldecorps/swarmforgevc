@@ -1,0 +1,157 @@
+id: BL-1281
+title: "bl1048 is BL-1062's defect a third time: nine declared reach floors over an unseeded draw, two of which fail 2.5% of runs on correct code"
+milestone: M8
+type: defect
+severity: high
+# high: matches BL-1062's own severity for the same class and the same
+# magnitude as bl948 (~2.3%). A red here refuses EVERY commit touching
+# extension/src/* or any *.property.test.js repo-wide, because the file is not
+# on the standing allowlist - so a 1-in-40 lottery blocks unrelated parcels.
+status: todo
+epic: code-quality-gates
+priority: 55
+direction: agent-reported
+depends_on: [BL-1062]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1281-bl1048-reach-floors-satisfiable-by-construction.feature
+
+invariants:
+  - "A declared reach floor is met by construction: whether the run clears it does not depend on the random seed."
+  - "Every reach floor declared before this change is still declared after it, at the same or a higher value - the floors are load-bearing and are never lowered to make a run pass."
+
+required_wiring:
+  - 'extension/test/bl1048DeliveredParcelIsNotNotStarted.property.test.js::reachFloors::the test drives BL-1062 shared helper rather than a local restatement of it'
+  - 'specs/pipeline/steps/index.js::bl1281::the acceptance handler for this feature file is registered'
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1048DeliveredParcelIsNotNotStarted.property.test.js`
+  declares NINE reach floors and then hopes an UNSEEDED `fast-check` draw
+  happened to clear them. That is BL-1062's defect exactly: the floors are
+  right, the sampling is what makes them a per-run lottery, and a red says
+  nothing about the code under test.
+
+  ## Measured, not estimated
+
+  Replayed the real generator (`ticketArb`, `fc.array(..., {minLength: 2,
+  maxLength: 6})`) and the test's own coverage-counting block over **4000
+  simulated runs** at `numRuns: 24`:
+
+  | floor | value | mean | min | miss rate |
+  |---|---|---|---|---|
+  | deliveredOnly | 8 | 15.3 | 3 | **1.15%** |
+  | openedOnly | 8 | 15.3 | 2 | **1.32%** |
+  | noParcel | 4 | 15.3 | 3 | 0.05% |
+  | bothStatesSameRole | 4 | 15.3 | 5 | 0.00% |
+  | crossRole | 6 | 27.0 | 12 | 0.00% |
+  | deliveredNote | 4 | 30.6 | 10 | 0.00% |
+  | deliveredBatched | 4 | 30.7 | 16 | 0.00% |
+  | deliveredMasterResident | 2 | 17.8 | 5 | 0.00% |
+  | closedButDelivered | 2 | 12.2 | 2 | 0.00% |
+
+  **Run-level failure on correct code: 2.50%.**
+
+  ## It is two floors, not nine
+
+  The reporting coder described it as "9 floors over 24 draws". The count of
+  floors is right and the framing is not: seven of the nine clear by a wide
+  margin and need no change at all. TWO carry the entire risk -
+  `deliveredOnly >= 8` and `openedOnly >= 8` - both keyed on a `shape` drawn
+  at p=1/6 per ticket. Rewriting all nine would be churn across six floors
+  that were never at risk, and would enlarge the diff for no behaviour.
+
+  Also worth stating plainly: coverage increments **per ticket, not per draw**.
+  Each draw carries 2-6 tickets, so a run accumulates roughly 92 ticket
+  observations, not 24. "24 draws" understates the sample by about 4x, which
+  is why the miss rates are percent-level rather than the double digits the
+  bare floor-vs-draws comparison suggests.
+
+  ## Why a sibling and not an amendment to BL-1062
+
+  BL-1062 is already at the **documenter** with its fix built, hardened and
+  documented (`85fa5d74f` construction fix, `120edac96` hardener pass,
+  `b345346ac` docs). Adding a third file to it now would force a rebuild of a
+  nearly-complete parcel from the coder - exactly the in-flight amendment
+  hazard BL-317/BL-325 exist for, and an oversize of a Small slice (BL-634).
+
+  ## How (direction, not mandate)
+
+  Reuse BL-1062's remedy rather than reinventing it: make the coverage the two
+  at-risk floors demand reachable **by construction**, floors intact, through
+  the shared helper it landed at `extension/test/helpers/reachFloors.js`
+  (`assertReachFloor`, `runsPerCell`). Iterating the `shape` space so each
+  shape receives a derived share of the run budget is the shape of the fix
+  BL-1062 already applied to bl968; the seven safe floors can keep sampling.
+
+  ## Constraints
+
+  - The floors are load-bearing. BL-1062's own helper comment says so: without
+    them "a generator that silently stopped producing a value would pass green
+    forever". Lowering a floor, deleting one, or widening a range to make the
+    run pass is not a fix (invariant 2, scenario 02).
+  - Do not add the file to `property_suite_standing_allowlist.tsv`. That trades
+    a 2.5% flake for permanent blindness, and the prior BL-1062 ruling already
+    refused that remedy for the same class.
+  - Do not blunt the shared assertion. Scenario 03 exists for that.
+
+qa_e2e_procedure: >
+  (1) Run the test at several explicit seeds and confirm the delivered-only and
+  opened-only floors are met on every one. (2) Replay the generator and the
+  coverage block over at least 2000 simulated runs and confirm a 0% run-level
+  miss rate for those two floors, against the 2.50% recorded above. (3) Read
+  the declared floors and confirm all nine are still present, none below its
+  previous value. (4) Hand the shared reach-floor assertion a coverage map
+  short on delivered-only and confirm it throws naming that value. (5) Run the
+  full `test:properties` lane and confirm bl1048 is green and no sibling
+  property test regressed. (6) Confirm the file is still absent from
+  `property_suite_standing_allowlist.tsv`.
+
+out_of_scope: |
+  - bl968 and bl948. They are BL-1062's, its fix for them is already built and
+    at the documenter, and nothing here touches them.
+  - bl955. The prior BL-1062 ruling (backlog/evidence/BL-1062-specifier-ruling-20260829.md)
+    computed its floors as satisfiable by a wide margin and deliberately did
+    not fold it in. That decision stands; this ticket does not revisit it.
+  - The other seven floors in this same file. Measured at 0.00-0.05% miss, they
+    are not defective and changing them would be churn.
+  - A repo-wide sweep for every property test that declares a sampled floor.
+    That is a real question and a different slice - it needs its own
+    measurement per file, and the one lesson this ticket already proves is
+    that a floor count is not a defect count.
+
+source: |
+  coder `note` (priority 50) to specifier, 2026-08-29T16:02:04Z: "bl1048 has
+  BL-1062's same sampled-floor defect: 9 floors over 24 draws".
+
+notes: |
+  - [2026-08-29] specifier: the coder's diagnosis is CORRECT - this is BL-1062's
+    class, demonstrated, not merely resembling it. That mattered, because the
+    standing precedent set by the BL-1062 ruling earlier today is that a
+    same-looking file is folded in only when its arithmetic is actually shown
+    to fail (bl955 was refused on exactly that test). bl1048's arithmetic does
+    fail, at 2.50%.
+  - [2026-08-29] specifier: correcting my own first measurement, because the
+    wrong number is the kind that gets quoted later. My first simulation
+    reported 15.00% run-level failure. It was wrong: I had the reach accounting
+    skip inactive tickets, but in the real test the `if (t.active) {...} else
+    {...}` block is followed by the reach block for EVERY ticket, active or
+    not. Correcting that gave 2.50% over 4000 trials. The 15% figure is
+    withdrawn and appears nowhere in this ticket's numbers.
+  - [2026-08-29] specifier: the measurement is a replay of the generator and the
+    counting block, not of the real chain, so it captures the sampling
+    distribution rather than end-to-end behaviour. That is the right instrument
+    for this defect - the floors are a function of the draw alone - but it is
+    stated so nobody reads the table as a full-suite result. Ten real runs of
+    the actual test passed 10/10, which is consistent with 2.5% (0.975^10 =
+    78%) and is why the flake was not caught by simply running it a few times.
+  - [2026-08-29] specifier: `depends_on: [BL-1062]` names a ticket that is NOT
+    yet landed, which is the one INVEST letter this slice does not cleanly
+    pass. Recorded rather than glossed, same as BL-1251: the dependency is real
+    (the fix reuses BL-1062's `reachFloors.js` helper, which lands with it), it
+    is explicit, and BL-1062 is at the documenter so it should clear shortly.
+    Promoting this before BL-1062 lands would leave the coder without the
+    helper this ticket is scoped to reuse.
+  - [2026-08-29] specifier: no `human_approval` requested - a measured defect
+    with a named remedy already built for its two siblings.
