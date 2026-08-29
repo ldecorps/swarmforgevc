@@ -1,0 +1,166 @@
+id: BL-1257
+title: "The review-time entangled-tip check measures against origin/main, a basis falsified for the send-time gate a day earlier, so parcels are bounced for paths their author never touched"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that bounced two parcels in one pass on 2026-08-29, both
+# substantially false, and it recurs on every pass while origin/main lags.
+# Not critical: no work is lost, and the bounces are recoverable verdicts.
+status: todo
+epic: swarm-reliability
+priority: 16
+direction: agent-reported
+depends_on: [BL-1192]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1257-review-time-scope-check-shares-the-corrected-basis.feature
+
+human_approval: pending
+approval_context: >
+  Nothing here needs a design choice from you — the corrected basis already
+  exists and is already trusted at send time, so this is making one seat use
+  the library the other seat uses. What is worth your sign-off is that it
+  narrows a safety check: after this, a tip carrying commits that are already
+  on local `main` no longer counts as entangled. That is correct on the
+  evidence (37 of 46 and 38 of 66 paths in the two 2026-08-29 bounces are
+  exactly that), but it does mean QA stops flagging the `main`/`origin/main`
+  divergence as a side effect of this check. Nothing else flags it either —
+  BL-891 owns it and is not moving. Say if you would rather that divergence
+  keep surfacing somewhere before this lands.
+
+invariants:
+  - "A parcel is reported entangled only for paths introduced by commits authored for its own task — never for paths that reached its branch through work the task's author did not perform."
+  - "The send-time gate and the review-time check never return opposite verdicts for the same commit and task."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1257ReviewTimeScopeCheckSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  Two checks answer the same question — *did this author work outside the
+  ticket?* — and only one of them was corrected.
+
+  The send-time gate, `swarmforge/scripts/task_scope_gate_lib.bb` (BL-1192,
+  landed 2026-08-28), abandoned the `origin/main...commit` range deliberately.
+  Its own header comment says why:
+
+  > the literal `origin/main...commit` range explodes into a false-positive
+  > avalanche on this repo's real git topology … `origin/main` lags local work
+  > by design … verified against this repo's own real cleaner batch turn,
+  > commit `b033583c08`: `origin/main...commit` showed 64 paths across ~6
+  > tickets; this scope shows 1.
+
+  It now walks first-parent from the task's last recorded handoff and counts
+  only commits whose message names the task's id.
+
+  The review-time check has no such implementation. It is hand-rolled at the QA
+  seat each pass, and `swarmforge/roles/QA.prompt` contains **no** occurrence of
+  `entangl`, `BL-506`, `out-of-scope`, `task_scope`, or any diff-baseline
+  instruction at all — so there is no wording the correction could have been
+  written into, and nothing points the seat at the shared library.
+
+  ## The incident
+
+  2026-08-29, one QA pass, two bounces, both `behavior` / BL-506 entangled tip:
+
+  | ticket | command QA ran | paths | explained by local-`main` lag | genuinely foreign |
+  |---|---|---|---|---|
+  | BL-1247 | `git diff --name-only origin/main b5f2489906` | 46 | **37** | 3 |
+  | BL-1238 | `git diff --name-only origin/main...2d68050646` | 66 | **38** | ~0 |
+
+  `git rev-list --left-right --count main...origin/main` → `28 47`. Those 28
+  local-only commits touch 43 paths; intersecting them with each tip's path
+  list produces the middle column. BL-1247's remaining 9 are its own scope and
+  its own `backlog/evidence/` paperwork, bar three. BL-1238's remaining 28 are
+  its own scope plus BL-1222 and BL-1242 — **both of which QA itself landed in
+  that same pass** (`1d5874a4d`, `b6cb7a951`).
+
+  Both parcels had already passed the corrected gate: `task_scope_gate_lib.bb`
+  is invoked from `swarm_handoff.bb`, so a blocking verdict would have refused
+  the documenter's handoff before either reached QA. Two checks, one property,
+  opposite verdicts, and the falsified one holds the veto.
+
+  ## Why it recurs for free
+
+  `origin/main` lags by design and nobody owns closing the gap (BL-891). Every
+  commit that lands on local `main` without reaching origin — a specifier mint,
+  a coordinator bookkeeping move, a night-shift approval — widens the false
+  positive for every parcel reviewed afterwards. The check gets worse the
+  longer the swarm runs.
+
+  ## How (direction, not mandate)
+
+  - **Reuse the corrected basis; do not write a second one.** The scope walk in
+    `task_scope_gate_lib.bb` already computes exactly this verdict and is
+    already tested. Give it a review-time entry point and have the QA seat call
+    that, so the two checks cannot drift apart again.
+  - **The refusal must name paths and owners, not a count.** "46 changed paths"
+    is not actionable and is what made these two bounces look decisive. Scenario
+    04 gates this.
+  - **Name the acceptance handler `bl1257ReviewTimeScopeCheckSteps`** and
+    register it in `specs/pipeline/steps/index.js`; `required_wiring` above
+    pins that literal.
+  - The `swarmforge/roles/QA.prompt` half is the **specifier's** to land on
+    `main` (BL-798), not a pipeline deliverable, and is deliberately not armed
+    as `required_wiring` — that check pins to the parcel commit and would false-
+    block the documenter's handoff. See `notes:`.
+
+qa_e2e_procedure: >
+  (1) On a scratch clone, create a local `main` ahead of `origin/main` by
+  commits touching paths unrelated to any ticket; build a branch whose only
+  own commits for task A touch A's paths; run the review-time check and confirm
+  it reports no foreign scope, and that none of the lag paths appear.
+  (2) Add one commit named for A that also touches a path owned by B; re-run
+  and confirm it reports foreign scope naming that path and naming B.
+  (3) Run the send-time gate and the review-time check on the same commit for
+  both states above and confirm the verdicts match.
+  (4) Replay the 2026-08-29 shape against the real repo: run the review-time
+  check on `b5f2489906` for `BL-1247` and on `2d68050646` for `BL-1238` and
+  confirm neither is reported entangled on lag paths alone.
+  (5) Confirm the refusal text for a real foreign path contains no bare count
+  of paths differing from `origin/main`.
+
+out_of_scope: |
+  - Reversing the 2026-08-29 bounces of BL-1238 and BL-1247. Those are QA's
+    verdicts to revisit against the corrected basis, not this ticket's to undo.
+    BL-1247's tip additionally carries a real retired-ticket resurrection
+    (BL-1258), which this ticket does not excuse.
+  - The `main`/`origin/main` divergence itself. That is BL-891, and the standing
+    human directive closes the specifier-push option
+    (`backlog/answers-archive/ANSWER-2026-08-28-restart-gate-hold-do-not-push.md`).
+    Cited here only as the mechanism that makes the baseline wrong.
+  - BL-1241. That ticket owns what the LAND step does when siblings are
+    *legitimately* entangled and the refusal reaches a role that cannot act.
+    This ticket is upstream of it and must not re-open its remedy question.
+  - Re-opening BL-1192's send-time range. It is the basis being adopted here,
+    not the thing under review.
+
+source: |
+  QA `note` (priority 00) to specifier+coordinator, 2026-08-29T01:29:56Z:
+  "2 tickets bounced this pass for entangled tip (BL-506) - see their evidence".
+  QA's own evidence: `.worktrees/QA/backlog/evidence/BL-1238-qa-bounce-20260829.md`
+  and `BL-1247-qa-bounce-20260829.md` (commits `8e59a9bf6`, `9663cc93b`).
+  Specifier's falsification arithmetic:
+  `backlog/evidence/qa-entangled-tip-origin-main-baseline-falsified-20260829.md`.
+  Prior falsification of the same range for the send-time gate:
+  `backlog/evidence/BL-1192-architect-bounce-20260828.md`.
+
+notes: |
+  - [2026-08-29] specifier: every number above was recomputed independently
+    before minting, not taken from QA's evidence — the divergence count, the
+    43-path local-only set, and both intersections. QA's raw counts reproduce
+    exactly; the attribution is the new information.
+  - [2026-08-29] specifier: this is the fourth instance of the shape BL-1241's
+    notes named on 2026-08-28 — a gate correct about its stated condition,
+    firing where the recipient cannot act, having let the condition accumulate
+    invisibly first. The variation here is that the condition itself was
+    largely not present. Worth reading the two tickets together.
+  - [2026-08-29] specifier: PROSE HALF IS MINE (BL-798). The QA.prompt section
+    describing this check does not exist at all today, so whatever is built
+    here is unreachable until that section is written, and no gate will chase
+    me for it. I have not written it yet because the entry point's name and
+    invocation are the implementer's to settle; I will land it on `main` in the
+    same pass once they are, and record the commit here. If this note is still
+    the last word when the ticket reaches QA, the prose was never written and
+    someone should say so rather than pass it.
