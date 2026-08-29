@@ -188,3 +188,5 @@ approval_context: >
   is left to the implementer. Say so if you want it in the ticket, which
   keeps the adjudication and its subject in one reviewable place at the
   cost of putting gate state into the human-edited artifact.
+
+assigned_to: coder
