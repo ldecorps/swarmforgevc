@@ -353,6 +353,13 @@
          (task-scope-gate-lib/declared-retires-paths
           "id: BL-1251\nretires:\n  - specs/features/BL-1248-switch.feature\n  - specs/features/BL-9-other.feature\nstatus: todo\n"))
 
+(assert= "declared-retires-paths does not end the list block on a blank or comment line between entries"
+         ["specs/features/BL-1248-switch.feature" "specs/features/BL-9-other.feature"]
+         (task-scope-gate-lib/declared-retires-paths
+          (str "id: BL-1251\nretires:\n  - specs/features/BL-1248-switch.feature\n"
+               "\n  # a comment explaining the second entry\n"
+               "  - specs/features/BL-9-other.feature\nstatus: todo\n")))
+
 (assert= "declared-retires-paths reads an inline single value"
          ["specs/features/BL-1248-switch.feature"]
          (task-scope-gate-lib/declared-retires-paths "retires: specs/features/BL-1248-switch.feature\n"))
