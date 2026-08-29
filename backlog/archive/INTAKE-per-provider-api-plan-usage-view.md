@@ -86,3 +86,11 @@ Acceptance direction (specifier to harden into scenarios):
 - Local burn: `extension/src/metrics/burnRate.ts`, `burnProjection.ts`
 - Current multi-provider packs: `swarmforge/packs/qwen-anthropic-forge.conf`,
   `swarmforge/packs/qwen-anthropic-mono-router.conf`
+
+---
+
+**DRAINED 2026-08-29** into `backlog/paused/BL-1270-per-provider-usage-api-discovery.yaml`
+(discovery slice; epic `quota-budget-manager`). Archived out of the backlog root
+so it is not drained twice — it was still sitting in the root after BL-1270 was
+minted, and a second specifier pass nearly re-minted it as a duplicate.
+The Anthropic leg of the feasibility matrix is pre-researched in BL-1270 notes.
