@@ -65,3 +65,54 @@
        "on-demand elaboration could contradict each other until `main` is merged:\n"
        (str/join "\n" (map #(str "  - " %) paths))
        "\nMerge main, then run ready_for_next.sh again."))
+
+;; BL-1266: freshest-main-ref picked ONE ref by comparing whole-repo
+;; ahead-counts, then asked every path about that single ref - a bad pick
+;; (the higher-counting ref can still be BEHIND on any one path) is
+;; inherited rather than caught. The question is per path, so it is asked
+;; per path, of every ref that carries the reference dir.
+
+(defn stale-paths-multi-ref
+  "worktree-shas: {rel-path -> sha}.
+   refs-shas: {ref-name -> {rel-path -> sha}} - one map per ref that carries
+   the reference dir at HEAD (e.g. {\"main\" {...}, \"origin/main\" {...}}).
+   worktree-has-ref-amendment?: {[ref-name rel-path] -> boolean} - BL-1237's
+   ancestry answer, now keyed per (ref, path): does the worktree's own HEAD
+   already contain that ref's most recent commit touching that path? A pair
+   absent from this map defaults to false - fail closed, refuse.
+
+   Returns the sorted vector of {:path rel-path :ref ref-name} entries for
+   every (path, ref) combination where the worktree's content differs from
+   that ref's copy AND has not already been absorbed via ancestry from that
+   same ref. A path is fresh only once EVERY ref that carries it is
+   satisfied - two refs disagreeing on a path never lets one satisfied ref
+   excuse the other being missing (invariant 2). A path present in a ref
+   but absent from worktree-shas entirely is reported the same as a
+   content mismatch - never merged at all."
+  ([worktree-shas refs-shas] (stale-paths-multi-ref worktree-shas refs-shas {}))
+  ([worktree-shas refs-shas worktree-has-ref-amendment?]
+   (->> (for [[ref shas] refs-shas
+              [path sha] shas
+              :when (and (not= sha (get worktree-shas path))
+                         (not (get worktree-has-ref-amendment? [ref path] false)))]
+          {:path path :ref ref})
+        (sort-by (juxt :path :ref))
+        vec)))
+
+(defn fresh-multi-ref?
+  [worktree-shas refs-shas]
+  (empty? (stale-paths-multi-ref worktree-shas refs-shas)))
+
+(defn staleness-report-multi-ref
+  "Refusal text for stale-paths-multi-ref's output - a vector of
+   {:path :ref} entries, non-empty. Names every stale path together with
+   the SPECIFIC ref whose amendment it is missing (invariant 3), and a
+   remedy that merges exactly the refs actually needed - merging a ref
+   this worktree was never missing content from is not the fix."
+  [stale]
+  (let [refs (->> stale (map :ref) distinct sort)]
+    (str "STALE_REFERENCE_ELABORATION: this worktree has not merged an amendment to the "
+         "following " reference-dir-rel " file(s) - an inlined constitution rule and its "
+         "on-demand elaboration could contradict each other until the named ref is merged:\n"
+         (str/join "\n" (map (fn [{:keys [path ref]}] (str "  - " path " (missing " ref "'s amendment)")) stale))
+         "\nMerge " (str/join " and " refs) ", then run ready_for_next.sh again.")))
