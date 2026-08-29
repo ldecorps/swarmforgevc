@@ -207,3 +207,5 @@ deprecator_adjudication: |
 
   Verdict: PROMOTE. Nothing in this ticket had aged; the hold is entirely an
   artefact of the gate's own predicate.
+
+assigned_to: coder
