@@ -1,0 +1,172 @@
+id: BL-1271
+title: "The dispatch-gap unit suite is red on main: two fixtures still expect a retired type: bug candidate to win the expedite lane"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 25
+direction: agent-reported
+depends_on: [BL-1095]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1271-dispatch-gap-suite-stale-bug-fixtures.feature
+
+invariants:
+  - "The expedite predicate stays defect-only: expedited-types in promotion_gates_lib.bb gains no ticket type, and promotion_gates_lib_test_runner.bb's assertion that a type: bug candidate is not expedited survives unchanged."
+  - "The suite goes green by correcting stale fixture data, never by deleting, renaming or weakening an assertion: every assertion name present before this ticket is still present after it."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1271DispatchGapDefectOnlySteps::acceptance handler registered, not merely written'
+  - 'swarmforge/scripts/test/dispatch_gap_test_runner.bb::top-expedited-paused-candidate-09 (BL-1271)::the retired-type guard lands in the suite that was stale'
+
+description: |
+  ## What is wrong
+
+  `bb swarmforge/scripts/test/dispatch_gap_test_runner.bb` fails, on main, with
+  exactly two failures:
+
+      FAIL: top-expedited-paused-candidate-08 (BL-900): called with no
+            epic-index (1-arity) still ranks by own priority, unchanged
+        expected: "BL-14"   actual: "BL-13"
+      FAIL: top-expedited-paused-candidate: priority breaks ties among
+            multiple expedited candidates
+        expected: "BL-14"   actual: "BL-13"
+
+  Both build their expected winner as
+  `"id: BL-14\ntype: bug\nseverity: critical\npriority: 5\n"` - two byte-identical
+  occurrences, verified present on BOTH local `main` and `origin/main` (which
+  is 98 commits ahead), at different line numbers in each; grep the literal,
+  do not trust a line number. BL-1095 retired `type: bug` from the Article 3.2.4 expedite lane:
+  `expedited-types` in `swarmforge/scripts/promotion_gates_lib.bb` is
+  `#{"defect"}` only. BL-14 is therefore no longer expedited, is filtered out
+  before ranking, and BL-13 - the sole remaining expedited candidate - is
+  correctly named.
+
+  ## Which side is wrong: the fixtures, not production
+
+  Determined by driving the predicate, not by reading the diff:
+
+  - `promotion_gates_lib.bb:189-201` declares the lane `defect`-only, with the
+    retirement stated in its own docstring.
+  - `promotion_gates_lib_test_runner.bb:62` already asserts
+    `type: bug` + `high` is NOT expedited, so the retirement is pinned at the
+    predicate.
+  - Article 3.2.4's transition clause allows dropping `bug` "only once no
+    ticket carries it"; a grep of `backlog/` outside `done/` returns zero
+    `type: bug` tickets, which is the condition BL-1095 recorded meeting.
+
+  So production is correct and stays untouched. Two fixtures were simply never
+  updated when the type they name was retired.
+
+  ## Why it went unreported for five days
+
+  `swarmforge/scripts/test/dispatch_gap_test_runner.bb` IS registered
+  `standing` in `suite-manifest.tsv` (line 68), so the standing runner is
+  meant to catch this. It cannot: `run_bb_suite.sh` runs its inventory gate
+  first and unconditionally, and that gate currently reports
+  `51 problem(s) over 430 test file(s)` and refuses the run - the defect
+  BL-1239 already owns. With the standing entry point blocked, the file only
+  ever runs by hand, and each role that runs it pays a pass establishing the
+  red is pre-existing. That is the exact cost BL-973 built the standing runner
+  to remove.
+
+  This ticket does not fix that blockage and does not need it fixed; the two
+  are independent.
+
+  ## What each stale assertion is actually for - neither is superseded
+
+  Both remain live contracts and both must survive:
+
+  - `top-expedited-paused-candidate-08 (BL-900)` pins that the 1-arity call
+    (no epic-priority index) still ranks by own priority.
+  - `priority breaks ties among multiple expedited candidates` pins the
+    own-priority tie-break WITHIN the expedited bucket.
+
+  Neither behaviour was retired - only the ticket type their fixture happens
+  to use. This is a stale literal, not a superseded scenario, so the
+  assertions are repaired rather than retired.
+
+  ## How (direction, not mandate)
+
+  Change the two fixtures' `type: bug` to a type the lane still admits, so
+  each assertion exercises the contract its name claims: both candidates
+  expedited, and the better own priority (`BL-14`, priority 5) winning over
+  `BL-13` (priority 90). Expected values stay as written.
+
+  Repairing the literal alone would leave the suite green with nothing at this
+  call site noticing if `expedited-types` were widened back - the "fixed by
+  widening the guard" failure. So add one assertion, named
+  `top-expedited-paused-candidate-09 (BL-1271)`, driving
+  `top-expedited-paused-candidate` with a `type: bug` critical candidate at
+  the best priority against a `defect` critical candidate at a worse one, and
+  asserting the defect is named. That is scenario 02, and it turns this suite
+  red again if the retirement is ever undone here.
+
+  Note for the cleaner: after the repair the two existing assertions call the
+  same 1-arity form with equal fixtures and differ only in name. That
+  duplication predates this ticket. Consolidating is a legitimate call, but
+  invariant 2 binds: if they are merged, the surviving assertion's name must
+  state BOTH contracts, and neither name may simply disappear.
+
+  Register the acceptance handlers as a new
+  `specs/pipeline/steps/bl1271DispatchGapDefectOnlySteps.js` module rather
+  than extending the existing `dispatchGapSteps.js` - this repo's registry is
+  one `blNNNN…Steps` module per ticket, and an anchor on an already-registered
+  module would be vacuous rather than a check.
+
+qa_e2e_procedure: >
+  (1) On the parcel commit run `bb swarmforge/scripts/test/dispatch_gap_test_runner.bb`
+  and confirm it reports ALL PASS with no failures. (2) Confirm
+  `git diff` touches no file under `swarmforge/scripts/promotion_gates_lib.bb`
+  and that `bb swarmforge/scripts/test/promotion_gates_lib_test_runner.bb` is
+  still green, including its "retired type: bug + high is not expedited"
+  assertion (invariant 1). (3) Diff the assertion NAMES in
+  `dispatch_gap_test_runner.bb` before and after: every name present before is
+  present after, plus `top-expedited-paused-candidate-09 (BL-1271)`
+  (invariant 2). (4) Revert-check the guard: locally widen `expedited-types`
+  to `#{"defect" "bug"}`, re-run the dispatch-gap suite, confirm it goes RED
+  on the new assertion, then discard that edit. (5) Run the acceptance
+  scenarios and confirm all three have registered handlers - the runner throws
+  on a missing one, so a silent skip is not possible.
+
+out_of_scope: |
+  - `promotion_gates_lib.bb`'s expedite predicate and any change to which
+    ticket types the lane admits. BL-1095 ruled that; this ticket assumes it.
+  - BL-1239's manifest inventory failure, which is why this red went
+    unreported. Independent and separately owned - do not fold it in, and do
+    not wait for it.
+  - The other 49 inventory problems `run_bb_suite.sh --inventory` reports.
+  - Any other red in the standing lane. This ticket names two failures in one
+    file and claims nothing about the suite as a whole, which cannot currently
+    be run end to end.
+
+source: |
+  QA `note` to specifier and coordinator, 2026-08-29T09:18:12Z:
+  "Untracked: dispatch_gap_test_runner.bb 2 stale type:bug fixtures".
+  "Untracked" here carries its usual sense in these escalations - no ticket
+  owns the failure - not git-untracked: the file is tracked and both `main`
+  and the QA worktree are clean. Both halves of the note were reproduced
+  before minting rather than taken on trust.
+
+notes: |
+  - [2026-08-29] specifier: reproduced on main, not inferred. Ran the suite
+    (2 failures, both named above), ran `run_bb_suite.sh --inventory`
+    (51 problems, run refused), grepped the whole non-done backlog for
+    `type: bug` (zero), and read `expedited-types` at its definition. The
+    disposition here turns on which side is wrong, and that is not decidable
+    from the failure text alone.
+  - [2026-08-29] specifier: prior art is BL-1112, the same class of ticket -
+    restore green for named standing unit reds, with a feature file and its
+    own step-handler module. Shipped 2026-08-27; the shape below follows it.
+  - [2026-08-29] specifier: the IR-DRY checker reports four medium findings on
+    the feature file, all between steps that differ only in a parameter value
+    (`a paused candidate <id> of type "<type>" … priority <n>`, and
+    `it names <id>`). Reviewed and kept: substituting the values makes each
+    pair byte-identical, so one handler pattern serves each group. That is DRY
+    working, not accidental drift. Unique steps fell 12 to 10 after unifying
+    the two `When` phrasings, which was real drift and was fixed.
+  - [2026-08-29] specifier: no prose half of mine here (BL-798). Nothing in
+    this ticket changes a role prompt or a constitution article - Article
+    3.2.4's transition clause already says `bug` is retired for new tickets
+    and the predicate already matches it. The deliverable is entirely code.
