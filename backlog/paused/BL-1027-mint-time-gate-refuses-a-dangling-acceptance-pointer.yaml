@@ -176,3 +176,5 @@ notes: |
   the epic row matters, not a number to assert - do not write it into a
   step handler, or the file goes red the day an epic is opened or closed
   (BL-643/BL-1005).
+
+assigned_to: coder
