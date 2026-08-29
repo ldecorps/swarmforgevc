@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const fc = require('fast-check');
+const { assertReachFloor } = require('./helpers/reachFloors');
 const { findSocketFixtureRootViolation } = require('../../specs/pipeline/steps/lib/socketFixtureRootGuard');
 const {
   mkSocketFixtureRoot,
@@ -30,7 +31,15 @@ const {
 // through the helper and then die at a generated point - a clean exit, a
 // thrown error, or a nonzero process.exit - and asserts the root is gone
 // afterwards in every case. Child spawns are real work, so the run count
-// is modest (12; every death shape is drawn by construction).
+// is modest (12 - four per death shape).
+//
+// BL-1062: that count used to be 12 UNIFORM draws from fc.constantFrom, and
+// the line above used to claim every death shape was covered "by
+// construction". It was not: P(some shape missing) = 3*(2/3)^12 - 3*(1/3)^12
+// ~= 2.3% per run, and the observed red drew only `nonzero, throw`. The shapes
+// are now iterated and the random draw layered on top, so the floor below is
+// satisfied by construction for real - and it stays, because it is what fails
+// if a shape ever stops being exercised.
 //
 // Non-vacuity proven at authoring time (2026-08-20), each break restored:
 //   - classifier's socket-reference check inverted to also match comments
@@ -88,8 +97,15 @@ test('BL-948 invariant 2 (property): a helper root is removed whatever way the s
     nonzero: 'process.exit(3);',
   };
   const drawn = new Set();
+  // BL-1062: iterate the (tiny, exhaustible) death-shape space and layer the
+  // random draw inside it, rather than sampling the space and hoping the draw
+  // covered it. Same total child spawns as before - 3 shapes x 4 runs = 12 -
+  // so the lane's wall clock is unchanged.
+  const DEATH_SHAPES = ['clean', 'throw', 'nonzero'];
+  const RUNS_PER_SHAPE = 4;
+  for (const deathShape of DEATH_SHAPES) {
   fc.assert(
-    fc.property(fc.constantFrom('clean', 'throw', 'nonzero'), (death) => {
+    fc.property(fc.constant(deathShape), (death) => {
       drawn.add(death);
       const helperPath = path.join(__dirname, '..', '..', 'specs', 'pipeline', 'steps', 'lib', 'socketFixtureRoot.js');
       const script =
@@ -107,8 +123,18 @@ test('BL-948 invariant 2 (property): a helper root is removed whatever way the s
       assert.ok(root && root.startsWith('/'), `child did not report its root, got: ${JSON.stringify(stdout)}`);
       assert.ok(!fs.existsSync(root), `expected the ${death}-death child's root to be removed, but ${root} survives`);
     }),
-    { numRuns: 12 }
+    { numRuns: RUNS_PER_SHAPE }
   );
+  }
+  // The floor STAYS (BL-1062 invariant 2): dropping it is never the remedy.
+  // It is now satisfied by construction on a correct implementation, and still
+  // goes red - naming the missing shape - if DEATH_SHAPES ever stops covering
+  // the space this assertion names. Same shared assertion bl968 uses.
+  const drawnCounts = {};
+  for (const shape of drawn) {
+    drawnCounts[shape] = 1;
+  }
+  assertReachFloor(drawnCounts, ['clean', 'throw', 'nonzero'], 1, 'death shape');
   assert.equal(drawn.size, 3, `expected every death shape drawn, got ${[...drawn].join(', ')}`);
 });
 

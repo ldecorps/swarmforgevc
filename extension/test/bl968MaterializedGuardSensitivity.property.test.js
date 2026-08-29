@@ -48,9 +48,43 @@ const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
 const { materializeCurrentPipeline, registryLoadVerdict, plantOffender } = require('./helpers/materializedRegistryGuard');
+// BL-1062: the floor assertion lives in one place, so the acceptance drives
+// the SAME function this test does rather than a restatement of it.
+const { assertReachFloor } = require('./helpers/reachFloors');
 
-const NUM_RUNS = 24;
+// BL-1062: these floors used to be asserted over 24 UNIFORM draws of
+// (class x depth), which a correct implementation cannot guarantee - per class,
+// P(count <= 4) under Binomial(24, 1/3) is 5.9%, so roughly 16% of runs went
+// red on correct code, saying nothing about the code under test. The observed
+// red was exactly that: "reach floor: class benign-subprocess drawn 4 < 5".
+//
+// The cells are now ITERATED and the remaining axes drawn randomly inside each,
+// so every cell is exercised RUNS_PER_CELL times by construction and the floors
+// below are satisfied deterministically. Same total draws as before (3 x 2 x 4
+// = 24), so the file's wall clock is unchanged - which matters on a lane that
+// already carries a 55s file.
+//
+// The floors STAY (BL-1062 invariant 2): dropping one is never the remedy.
+// Each is what fails - naming the value - if CLASSES or DEPTHS ever stops
+// covering the space its assertion names.
+// The space the iteration walks...
+const CLASSES = ['git-root-resolve', 'live-repo-read', 'benign-subprocess'];
+const DEPTHS = ['direct', 'via-lib'];
+// ...and, SEPARATELY, the space the contract requires. These are deliberately
+// two lists rather than one: a floor asserted over the same constant that
+// drives the iteration is self-referential - delete a class from CLASSES and
+// the floor stops checking for it, so the test goes green having silently
+// stopped exercising it. Found by actually running that break (BL-1062
+// qa_e2e step 3) rather than assuming, on the first version of this fix.
+const REQUIRED_CLASSES = ['git-root-resolve', 'live-repo-read', 'benign-subprocess'];
+const REQUIRED_DEPTHS = ['direct', 'via-lib'];
+const RUNS_PER_CELL = 4;
+const NUM_RUNS = CLASSES.length * DEPTHS.length * RUNS_PER_CELL;
 // Absolute reach floors over NUM_RUNS draws (asserted after the run).
+// Satisfied by construction: each class is drawn DEPTHS.length * RUNS_PER_CELL
+// = 8 times and each depth CLASSES.length * RUNS_PER_CELL = 12 times, so the
+// probability of a floor failing on a correct implementation is ZERO, not a
+// small number (invariant 1).
 const CLASS_FLOOR = 5;
 const DEPTH_FLOOR = 6;
 
@@ -95,13 +129,16 @@ function offenderSource(cls, opts) {
   return lines.join('\n') + '\n';
 }
 
-const offenderArb = fc.record({
-  cls: fc.constantFrom('git-root-resolve', 'live-repo-read', 'benign-subprocess'),
-  depth: fc.constantFrom('direct', 'via-lib'),
-  suffix: fc.integer({ min: 0, max: 999999 }),
-  repoFile: fc.constantFrom(...LIVE_REPO_FILES),
-  spawnExpr: fc.constantFrom(...BENIGN_SPAWNS),
-});
+// BL-1062: the cell (cls x depth) is fixed by the enclosing iteration; only
+// the axes that genuinely want sampling are drawn.
+const offenderArbFor = (cls, depth) =>
+  fc.record({
+    cls: fc.constant(cls),
+    depth: fc.constant(depth),
+    suffix: fc.integer({ min: 0, max: 999999 }),
+    repoFile: fc.constantFrom(...LIVE_REPO_FILES),
+    spawnExpr: fc.constantFrom(...BENIGN_SPAWNS),
+  });
 
 test(
   'BL-968 invariant 2 (generative): every planted load-time-binding module, any class, any chain depth, turns the guard red naming it',
@@ -109,8 +146,10 @@ test(
     const shared = materializeCurrentPipeline();
     const coverage = { cls: {}, depth: {} };
     try {
+      for (const cellClass of CLASSES) {
+      for (const cellDepth of DEPTHS) {
       fc.assert(
-        fc.property(offenderArb, ({ cls, depth, suffix, repoFile, spawnExpr }) => {
+        fc.property(offenderArbFor(cellClass, cellDepth), ({ cls, depth, suffix, repoFile, spawnExpr }) => {
           coverage.cls[cls] = (coverage.cls[cls] || 0) + 1;
           coverage.depth[depth] = (coverage.depth[depth] || 0) + 1;
 
@@ -171,21 +210,13 @@ test(
             planted.restore();
           }
         }),
-        { numRuns: NUM_RUNS }
+        { numRuns: RUNS_PER_CELL }
       );
+      }
+      }
 
-      for (const cls of ['git-root-resolve', 'live-repo-read', 'benign-subprocess']) {
-        assert.ok(
-          (coverage.cls[cls] || 0) >= CLASS_FLOOR,
-          `reach floor: class ${cls} drawn ${coverage.cls[cls] || 0} < ${CLASS_FLOOR} of ${NUM_RUNS}`
-        );
-      }
-      for (const depth of ['direct', 'via-lib']) {
-        assert.ok(
-          (coverage.depth[depth] || 0) >= DEPTH_FLOOR,
-          `reach floor: depth ${depth} drawn ${coverage.depth[depth] || 0} < ${DEPTH_FLOOR} of ${NUM_RUNS}`
-        );
-      }
+      assertReachFloor(coverage.cls, REQUIRED_CLASSES, CLASS_FLOOR, 'class');
+      assertReachFloor(coverage.depth, REQUIRED_DEPTHS, DEPTH_FLOOR, 'depth');
       console.log(`BL-968 sensitivity coverage over ${NUM_RUNS} draws:`, JSON.stringify(coverage));
     } finally {
       fs.rmSync(shared.root, { recursive: true, force: true });
