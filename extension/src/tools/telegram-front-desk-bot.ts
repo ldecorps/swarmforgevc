@@ -2529,6 +2529,15 @@ function buildPollAdapters(
       return Promise.resolve();
     },
     enqueueRoleAnswerNote: (role, text, updateId) => enqueueRoleAnswerNote(targetPath, role, text, updateId),
+    // BL-1244: once the note above is successfully enqueued, confirm the
+    // pairing and clear the marker right here - deliverRoleAnswer is the
+    // ONLY reader of role-answers/<role>.json (BL-1201 D2); its own
+    // mismatch/no-answer verdict is a silent no-op for this caller, which
+    // has nothing useful to do with it beyond not clearing.
+    confirmRoleAnswerDelivery: (role) => {
+      deliverRoleAnswer(targetPath, role);
+      return Promise.resolve();
+    },
     // BL-568: suppress ordinary steers while a menu-answer poll is live.
     roleMenuBlocked: async (role) => {
       const map = readPollMap(targetPath);

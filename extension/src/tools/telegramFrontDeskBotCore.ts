@@ -943,6 +943,14 @@ export interface PollAdapters {
   // adapter dedupe a re-processed answer without keying on its text -
   // optional so every pre-BL-1203 fixture keeps working unchanged.
   enqueueRoleAnswerNote?: (role: string, text: string, updateId?: number) => Promise<boolean>;
+  // BL-1244: once the dormant-pane note above is successfully enqueued,
+  // confirms the pairing against the role's currently-pending question and
+  // clears the marker if it matches (deliverRoleAnswer, injected here so
+  // this file never reads role-answers/<role>.json itself - BL-1201 D2).
+  // Optional so every pre-BL-1244 fixture keeps working unchanged; absent
+  // means the marker stays until something else (the CLI, a role prompt)
+  // clears it, the exact pre-BL-1244 behavior.
+  confirmRoleAnswerDelivery?: (role: string) => Promise<void>;
   // BL-426 slice 1: transcribes a coordinator Operator-topic voice note's
   // audio (already-resolved fileId) to text. Optional so every PollAdapters
   // fixture written before BL-426 keeps working unchanged - missing means
@@ -1974,19 +1982,36 @@ async function answerIfAskAlreadyClosed(callbackQuery: TelegramCallbackQuery, de
 // time anything could check the pairing. deliverRoleAnswer
 // (telegram-front-desk-bot.ts) is now the ONLY thing that clears it for
 // this leg, once it has confirmed the pairing.
+//
+// BL-1244: nothing ever told a role to RUN deliverRoleAnswer, so an
+// answer short enough to ride inline in the note (the common case) was
+// received and acted on, but the marker and the answer file's consumedAt
+// stayed untouched - the role's NEXT question was refused as already-
+// pending. Once the note is successfully enqueued, the note IS the
+// delivery - the honest moment to confirm the pairing and clear the
+// marker, so `confirmRoleAnswerDelivery` (deliverRoleAnswer, injected -
+// BL-1201 D2: nothing else may read role-answers/<role>.json directly)
+// runs right here. A failed enqueue never confirms: the role received
+// nothing, so nothing was delivered. A mismatch/no-answer verdict inside
+// deliverRoleAnswer is a silent no-op - the pairing check it already
+// enforces (BL-1201 invariant 1) is untouched by this ticket.
 async function captureRoleAnswer(
   role: string,
   delivered: boolean,
   answerText: string,
   enqueueRoleAnswerNote: ((role: string, text: string, updateId?: number) => Promise<boolean>) | undefined,
   clearRolePendingQuestion: ((role: string) => Promise<void>) | undefined,
-  updateId?: number
+  updateId?: number,
+  confirmRoleAnswerDelivery?: (role: string) => Promise<void>
 ): Promise<void> {
   if (delivered) {
     await clearRolePendingQuestion?.(role);
     return;
   }
-  await enqueueRoleAnswerNote?.(role, answerText, updateId);
+  const queued = await enqueueRoleAnswerNote?.(role, answerText, updateId);
+  if (queued) {
+    await confirmRoleAnswerDelivery?.(role);
+  }
 }
 
 // BL-483: the tapped option's label rides back through postToBridge exactly
@@ -2024,7 +2049,7 @@ async function deliverAskAnswer(
   if (role !== undefined) {
     const result = adapters.redirectToRole ? await adapters.redirectToRole(role, answerLabel) : ({ kind: 'no-pane' } as SteerDeliveryResult);
     emitSteeringTelemetry(adapters, result.kind);
-    await captureRoleAnswer(role, result.kind === 'delivered', answerLabel, adapters.enqueueRoleAnswerNote, adapters.clearRolePendingQuestion, updateId);
+    await captureRoleAnswer(role, result.kind === 'delivered', answerLabel, adapters.enqueueRoleAnswerNote, adapters.clearRolePendingQuestion, updateId, adapters.confirmRoleAnswerDelivery);
     await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
     return 'posted';
   }
@@ -2346,7 +2371,8 @@ async function processSteeringUpdate(
   clearRolePendingQuestion?: (role: string) => Promise<void>,
   enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>,
   roleMenuBlocked?: (role: string) => Promise<{ blocked: boolean; pollHint?: string } | undefined>,
-  humanLoopRoot?: string
+  humanLoopRoot?: string,
+  confirmRoleAnswerDelivery?: (role: string) => Promise<void>
 ): Promise<UpdateDeliveryOutcome | undefined> {
   const decision = decideSteeringAction(update, principalUserId, chatId, roleTopicMap);
   if (decision.kind === 'ignore') {
@@ -2372,7 +2398,7 @@ async function processSteeringUpdate(
   // pane queues a note into the role's own inbox (Leg 2). Marker clears
   // once the answer is captured.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
-    await captureRoleAnswer(decision.role, result.kind === 'delivered', forwardedText, enqueueRoleAnswerNote, clearRolePendingQuestion, update.update_id);
+    await captureRoleAnswer(decision.role, result.kind === 'delivered', forwardedText, enqueueRoleAnswerNote, clearRolePendingQuestion, update.update_id, confirmRoleAnswerDelivery);
   }
   // Optional adapter: absent means no receipt (pre-receipt behavior).
   if (notifyRoleTopic) {
@@ -2408,7 +2434,8 @@ async function attemptSteeringDelivery(
     adapters.clearRolePendingQuestion,
     adapters.enqueueRoleAnswerNote,
     adapters.roleMenuBlocked,
-    adapters.humanLoopRoot
+    adapters.humanLoopRoot,
+    adapters.confirmRoleAnswerDelivery
   );
 }
 

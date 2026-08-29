@@ -1047,6 +1047,101 @@ test('BL-607: a reply in a role topic, DORMANT pane, queue attempt itself FAILS 
   assert.deepEqual(cleared, [], 'neither leg captured the answer - the pending marker must survive');
 });
 
+// BL-1244: an answer short enough to ride inline in the note never told
+// the role there was anything to consume - deliverRoleAnswer (confirming
+// the pairing and clearing the marker) was never invoked by anything.
+// Once the note is successfully enqueued, confirmRoleAnswerDelivery fires
+// right there - the note IS the delivery.
+test('BL-1244: a reply in a role topic, DORMANT pane, successful enqueue - confirmRoleAnswerDelivery is invoked (the note IS the delivery)', async () => {
+  const queued = [];
+  const cleared = [];
+  const confirmed = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'use staging' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async () => ({ kind: 'no-pane' }),
+    getRolePendingQuestion: async () => true,
+    clearRolePendingQuestion: async (role) => {
+      cleared.push(role);
+    },
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return true;
+    },
+    confirmRoleAnswerDelivery: async (role) => {
+      confirmed.push(role);
+    },
+  });
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'use staging' }]);
+  assert.deepEqual(confirmed, ['specifier'], 'a successfully-enqueued note must confirm delivery immediately');
+  // Unchanged from BL-1201: this leg never calls clearRolePendingQuestion
+  // directly - only confirmRoleAnswerDelivery (deliverRoleAnswer) may
+  // clear the marker for the dormant leg, and only after confirming the
+  // pairing itself.
+  assert.deepEqual(cleared, []);
+});
+
+test('BL-1244: a reply in a role topic, DORMANT pane, FAILED enqueue - confirmRoleAnswerDelivery is never invoked (nothing was delivered)', async () => {
+  const queued = [];
+  const confirmed = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'use staging' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async () => ({ kind: 'no-pane' }),
+    getRolePendingQuestion: async () => true,
+    clearRolePendingQuestion: async () => {},
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return false;
+    },
+    confirmRoleAnswerDelivery: async (role) => {
+      confirmed.push(role);
+    },
+  });
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'use staging' }]);
+  assert.deepEqual(confirmed, [], 'a failed enqueue delivered nothing to the role - confirming would be dishonest');
+});
+
+test('BL-1244: a reply in a role topic, LIVE pane - confirmRoleAnswerDelivery is never invoked (the live leg already cleared the marker directly)', async () => {
+  const cleared = [];
+  const confirmed = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'use staging' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async () => ({ kind: 'delivered' }),
+    getRolePendingQuestion: async () => true,
+    clearRolePendingQuestion: async (role) => {
+      cleared.push(role);
+    },
+    enqueueRoleAnswerNote: async () => {
+      throw new Error('enqueueRoleAnswerNote should not be called for a live-pane delivery');
+    },
+    confirmRoleAnswerDelivery: async (role) => {
+      confirmed.push(role);
+    },
+  });
+  assert.deepEqual(cleared, ['specifier']);
+  assert.deepEqual(confirmed, [], 'the live leg never touches role-answers/<role>.json - nothing to confirm');
+});
+
 test('BL-607: a reply in a role topic with NOTHING pending stays a plain steer - never queues a note or clears any marker', async () => {
   const redirected = [];
   const queued = [];
@@ -2597,6 +2692,10 @@ function callbackFixtureAdapters(overrides = {}) {
     redirectToRole: overrides.redirectToRole,
     enqueueRoleAnswerNote: overrides.enqueueRoleAnswerNote,
     clearRolePendingQuestion: overrides.clearRolePendingQuestion,
+    // BL-1244: confirms the pairing and clears the marker once a dormant-
+    // pane note is successfully enqueued - optional, same "absent means
+    // no-op" posture as every other optional field here.
+    confirmRoleAnswerDelivery: overrides.confirmRoleAnswerDelivery,
     // BL-582: the durable diagnostic sink and the no-op explainer - both
     // optional, same "absent degrades to a no-op" posture as every other
     // optional field above.
@@ -2977,6 +3076,58 @@ test('BL-607: a tap on a role question with a DORMANT pane, queue attempt itself
   );
   assert.deepEqual(queued, [{ role: 'specifier', text: 'staging' }]);
   assert.deepEqual(cleared, [], 'neither leg captured the answer - the pending marker must survive');
+});
+
+// BL-1244 (button-tap path, mirroring the free-text path's tests above): a
+// tapped option label is almost always short enough to ride inline in the
+// note, so this IS the ordinary path for an answered role question - the
+// note being successfully enqueued must confirm delivery immediately.
+test('BL-1244: a tap on a role question, DORMANT pane, successful enqueue - confirmRoleAnswerDelivery is invoked', async () => {
+  const queued = [];
+  const confirmed = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:role-ask-specifier:0',
+      resolveAskOptions: async () => [{ label: 'staging' }, { label: 'prod' }],
+      redirectToRole: async () => ({ kind: 'no-pane' }),
+      enqueueRoleAnswerNote: async (role, text) => {
+        queued.push({ role, text });
+        return true;
+      },
+      clearRolePendingQuestion: async () => {},
+      confirmRoleAnswerDelivery: async (role) => {
+        confirmed.push(role);
+      },
+    })
+  );
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'staging' }]);
+  assert.deepEqual(confirmed, ['specifier'], 'a successfully-enqueued note must confirm delivery immediately');
+});
+
+test('BL-1244: a tap on a role question, DORMANT pane, FAILED enqueue - confirmRoleAnswerDelivery is never invoked', async () => {
+  const queued = [];
+  const confirmed = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:role-ask-specifier:0',
+      resolveAskOptions: async () => [{ label: 'staging' }, { label: 'prod' }],
+      redirectToRole: async () => ({ kind: 'no-pane' }),
+      enqueueRoleAnswerNote: async (role, text) => {
+        queued.push({ role, text });
+        return false;
+      },
+      clearRolePendingQuestion: async () => {},
+      confirmRoleAnswerDelivery: async (role) => {
+        confirmed.push(role);
+      },
+    })
+  );
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'staging' }]);
+  assert.deepEqual(confirmed, [], 'a failed enqueue delivered nothing to the role - confirming would be dishonest');
 });
 
 test('BL-607: a tap on a role question edits the ask message to show it was answered, same as an ordinary ask', async () => {
