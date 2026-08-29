@@ -280,3 +280,24 @@ deprecator_adjudication: |
 
   Verdict: PROMOTE. The premise holds; only its supporting citations were
   stale, and they are corrected above so the next gate pass is cheap.
+
+  ## The CLI will keep answering hold — that is a gate defect, not a re-hold
+
+  Coordinator note 2026-08-29: "adjudicated PROMOTE but gate CLI still
+  HOLDs (no done closure)". Expected, and it does not reopen this
+  adjudication. deprecate-check.js recomputes from ticket text on every
+  call and reads no record of any adjudication, so Article 3.6's fourth
+  outcome — confirm promote — has nothing it can change. The generic-claim
+  branch matches the deprecation words in this very adjudication block, so
+  writing the verdict down guarantees the hold is now permanent.
+
+  This is the same wall BL-1190 hit on 2026-08-27 and cleared the same
+  way: confirm-promote accepted, the CLI's answer set aside, promoted by
+  hand. Do that here. The scripted path (promote_and_route_next.sh) cannot
+  express a discharge and will keep refusing; that is not the coordinator
+  promoting around a hold, it is the coordinator executing an adjudication
+  the constitution authorises and the tooling cannot yet record.
+
+  Ticketed so it stops recurring: BL-1267 (the missing discharge path) and
+  BL-1268 (the generic-claim branch that fires on citations), both paused
+  2026-08-29, both defect/high, epic deprecator.
