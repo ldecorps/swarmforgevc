@@ -243,6 +243,75 @@ set -e
 echo "$OUT13" | grep -q 'pipelineBoard.property.test.js' \
   || fail "13: must name failing property file, got: $OUT13"
 pass "13: guard still refuses silent unallowlisted reds"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension"
+
+# ── 13b (BL-1234): TWO allowlisted standing reds together still allow ────
+# The bug this reproduces: ps_allowlist_normalize_file emits no trailing
+# newline, so two-or-more normalized paths concatenate onto one line before
+# sort -u sees them - a concatenation matches no TSV row, so the gate
+# refused every commit whenever 2+ allowlisted tests were red (the ONLY
+# case that occurs in practice once the allowlist names more than one
+# file). Scenario 11 above uses a single failing file and cannot catch
+# this - the count IS the boundary the defect lives on.
+stage extension/src/pipelineBoard.ts
+TWO_ALLOWLISTED_RED=(bash -c 'printf "%s\n" " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > x" " FAIL  test/alertTelemetry.property.test.js > y" >&2; exit 1')
+set +e
+OUT13B="$(cd "$ROOT" && bash "$GUARD" "${TWO_ALLOWLISTED_RED[@]}" 2>&1)"
+ST13B=$?
+set -e
+[[ "$ST13B" -eq 0 ]] || fail "13b: two allowlisted reds together must allow, got $ST13B: $OUT13B"
+echo "$OUT13B" | grep -q 'allowlisted-standing-reds' \
+  || fail "13b: expected allowlisted-standing-reds marker, got: $OUT13B"
+pass "13b: two allowlisted standing reds together allow the commit"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension"
+
+# ── 13c (BL-1234): FIVE allowlisted standing reds together still allow ───
+# The ticket's own example boundary (1 works, 2+ fails) - proven at the
+# TSV's actual current width, not just at two.
+stage extension/src/pipelineBoard.ts
+FIVE_ALLOWLISTED_RED=(bash -c 'printf "%s\n" \
+  " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > a" \
+  " FAIL  test/alertTelemetry.property.test.js > b" \
+  " FAIL  test/crossFileDuplicationCheck.property.test.js > c" \
+  " FAIL  test/hostActivityFeed.property.test.js > d" \
+  " FAIL  test/pilotAcceptanceGate.property.test.js > e" >&2; exit 1')
+set +e
+OUT13C="$(cd "$ROOT" && bash "$GUARD" "${FIVE_ALLOWLISTED_RED[@]}" 2>&1)"
+ST13C=$?
+set -e
+[[ "$ST13C" -eq 0 ]] || fail "13c: five allowlisted reds together must allow, got $ST13C: $OUT13C"
+echo "$OUT13C" | grep -q 'allowlisted-standing-reds' \
+  || fail "13c: expected allowlisted-standing-reds marker, got: $OUT13C"
+pass "13c: five allowlisted standing reds together allow the commit"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension"
+
+# ── 13d (BL-1234): two allowlisted + one real unlisted red - the refusal
+#    names the ACTUAL unlisted path, never a concatenation of all three ──
+stage extension/src/pipelineBoard.ts
+THREE_MIXED_RED=(bash -c 'printf "%s\n" \
+  " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > a" \
+  " FAIL  test/pipelineBoard.property.test.js > b" \
+  " FAIL  test/alertTelemetry.property.test.js > c" >&2; exit 1')
+set +e
+OUT13D="$(cd "$ROOT" && bash "$GUARD" "${THREE_MIXED_RED[@]}" 2>&1)"
+ST13D=$?
+set -e
+[[ "$ST13D" -ne 0 ]] || fail "13d: a genuine unlisted red among allowlisted ones must still block"
+echo "$OUT13D" | grep -q 'non-allowlisted files:$' \
+  || fail "13d: expected the non-allowlisted marker line, got: $OUT13D"
+# The exact unlisted path must appear on its OWN, not glued to a neighbour -
+# this is the assertion scenario 12 could not make (its concatenation bug
+# still contains the substring, since grep -q has no boundary check).
+echo "$OUT13D" | grep -qx 'test/pipelineBoard.property.test.js' \
+  || fail "13d: expected the unlisted path alone on its own line, got: $OUT13D"
+echo "$OUT13D" | grep -q 'bl632CommitTimeGuardInvariants.property.test.jstest/pipelineBoard' \
+  && fail "13d: the reported path must never be a concatenation of two normalized paths, got: $OUT13D"
+pass "13d: a genuine unlisted red is named alone, never concatenated with an allowlisted neighbour"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension"
 
 # ── 14/15 (BL-1202): the guard is killed mid-run — canary still reported,
 #    and no process the suite started outlives the guard ─────────────────
