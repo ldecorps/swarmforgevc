@@ -179,3 +179,10 @@ notes: |
     scenario 03 asserts a refusal names a remedy that resolves it - this ticket
     strengthens that assertion to name the correct ref, it does not contradict
     it.
+  - [2026-08-29] specifier: routing warning, same as BL-1237 hit. The
+    spec-ready note announcing this ticket, and these notes, are `type: note`
+    with no `task:` header - they are not a dispatch trail. If
+    `route_backlog_to_coder.sh` refuses this id citing one, the verdict is
+    false; the remedy is `--force`, never closing the ticket. Owning fix is
+    BL-1223. Evidence for the identical earlier case:
+    `backlog/evidence/BL-1237-route-refusal-is-a-false-dispatch-trail-20260829.md`.
