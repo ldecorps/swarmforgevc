@@ -18,14 +18,22 @@ const { RAW_MKDTEMP_PATTERN, findRawMkdtempLines } = require('../../out/tools/ra
 
 // Paths (relative to testDir) that legitimately contain the raw pattern's
 // literal TEXT and must never be flagged: tmpDir.js's own real call site,
-// and this guard's own test file, whose fixture STRINGS deliberately
-// contain the pattern as test DATA (not executable code) to prove the
-// scanner detects it - a scan that flagged its own fixtures would make the
+// and any guard test file whose fixture STRINGS deliberately contain the
+// pattern as test DATA (not executable code) to prove a detector actually
+// detects it - a scan that flagged its own fixtures would make the
 // migration-complete gate (scenario 03) permanently unsatisfiable.
+//
+// BL-1209: pilotMkdtempConventionCheck.test.js and its property sibling
+// carry the same shape - RAW_CALL_FILE/RAW_LINE fixture strings proving
+// assessPilotMkdtempConvention flags a raw call - and were omitted here
+// when that ticket added them, so the real-tree scan (scenario 03) flagged
+// its own sibling guard's fixtures as violations.
 const SELF_EXEMPT_RELATIVE_PATHS = [
   'helpers/tmpDir.js',
   'tmpDirMigrationGuard.test.js',
   'tmpDirMigrationGuard.property.test.js',
+  'pilotMkdtempConventionCheck.test.js',
+  'pilotMkdtempConventionCheck.property.test.js',
 ];
 
 // Impure: walks every .js file under testDir (recursively), skipping the
