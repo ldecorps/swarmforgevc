@@ -1,5 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1234: the property-suite standing-red
+allowlist gate (`ps_suite_extract_failing_files` in
+`swarmforge/scripts/property_suite_standing_allowlist_lib.sh`) refused
+every commit whenever two or more allowlisted property tests were red,
+which is the only case that occurs in practice once the allowlist names
+more than one file — reproduced live and reported independently by both the
+coder and the hardener within fifteen minutes of each other. Root cause:
+`ps_allowlist_normalize_file` emits its path with no trailing newline (its
+own contract is normalizing a path, not deciding line framing), so at its
+one call site inside the failing-files loop, two or more normalized paths
+landed on the same line before `sort -u` saw the stream; `sort -u` then
+treated that concatenation as one unmatchable path, no row in the TSV
+matched it, and the guard refused with a message naming a path that does
+not exist. A single failing file worked by accident (`sort` itself supplies
+the line's own terminator). Fixed by moving the newline to the call site so
+every normalized path lands on its own line before `sort -u` runs; the
+verdict now depends on which files failed, never on how many. No new
+extension command or setting. Acceptance:
+`specs/features/BL-1234-property-allowlist-gate-recognises-every-red.feature`.
+How-to:
+`docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1233: `sync_worktree_scripts.bb`'s
 launcher guard (BL-373) — which leaves a role worktree's git-tracked script
 paths to git rather than copying over them — was fully defeated by an
