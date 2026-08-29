@@ -3,7 +3,7 @@ title: "swarm_handoff.bb's depth warning counts directory entries, not tickets: 
 milestone: M8
 type: defect
 severity: low
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 priority: 194
@@ -76,3 +76,43 @@ out_of_scope: |
 notes: |
   Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
   wires handlers in the same commit.
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with human_approval:
+  approved and a promotable status — i.e. fully eligible for the coordinator
+  to pick up — while the behaviour it specifies is ALREADY SHIPPED AND LIVE.
+  Promoting it would have sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - swarmforge/scripts/swarm_handoff.bb:212 names the shipped handler by id —
+    "BL-683 bl683DepthWarningCountsTicketsOnly: acceptance handler registered"
+    — and backlog_depth_lib.bb / chase_sweep_lib.bb carry the counting path.
+  - swarmforge/scripts/test/bl683_backlog_folder_count_property_runner.bb is
+    the ticket's own named property runner.
+  - specs/pipeline/steps/bl683HandoffDepthWarningCountsNonTicketsSteps.js
+    drives the REAL swarm_handoff.bb, backlog_depth_lib.bb and
+    chase_sweep_lib.bb; index.js:808 registers it.
+  - specs/features/BL-683-handoff-depth-warning-counts-non-tickets.feature is
+    LIVE (a .feature.draft sibling also exists; the live file is what runs).
+  - A later ticket builds on the same counting path —
+    specs/pipeline/steps/bl1128RaiseActiveCapOnHostHeadroomSteps.js references
+    BL-683 — which is only possible because BL-683 shipped.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  "Retire, never reword" applies to a retired BEHAVIOUR; here only the TICKET
+  is stale and the behaviour is live. Deleting the scenarios would remove live
+  coverage, and specs/pipeline/runtime.js throws on a scenario whose handler is
+  gone — the gate would redden. See the paused-pool zombie-ticket check:
+  (1) an implementation file headed with the ticket's own id, and
+  (2) that ticket's handler registered in specs/pipeline/steps/index.js.
+  Both present ⇒ shipped ⇒ retire, do not build.
