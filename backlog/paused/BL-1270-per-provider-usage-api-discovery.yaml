@@ -110,3 +110,73 @@ notes: |
   The intake mentions BL-619's manual-anchor path should be kept as a fallback
   where no API exists. This slice documents which providers fall into that
   category.
+
+  ---
+  [2026-08-29] specifier: Anthropic leg pre-researched, so the discovery slice
+  starts from evidence rather than a blank page. Labelled per invariant 2 as
+  DOCUMENTED, NOT TESTED against this account - read from
+  platform.claude.com/docs/en/manage-claude/usage-cost-api.md on 2026-08-29,
+  not yet exercised with a real credential. Verifying it against this account
+  is still this slice's job.
+
+  Endpoints (raw HTTP only - the usage and cost reports are deliberately NOT
+  in any Anthropic SDK, so there is no client-library shortcut):
+    - GET https://api.anthropic.com/v1/organizations/usage_report/messages
+      Token counts. bucket_width 1m | 1h | 1d; group_by[] model, workspace_id,
+      api_key_id, service_tier, context_window, inference_geo, speed; the same
+      dimensions work as filters. Paginated (has_more / next_page). Bucket
+      caps: 1m -> 1440 max, 1h -> 168, 1d -> 31.
+    - GET https://api.anthropic.com/v1/organizations/cost_report
+      USD as decimal strings. DAILY granularity only. group_by[] workspace_id,
+      description. Priority Tier cost is excluded here and has to be read from
+      the usage endpoint instead.
+    - GET https://api.anthropic.com/v1/organizations/rate_limits
+      Reads CONFIGURED limits (this one IS in the SDKs). Pairs with the usage
+      endpoint to express headroom rather than raw consumption.
+  Auth: header x-api-key plus anthropic-version: 2023-06-01. Requires an Admin
+  API key (sk-ant-admin01-...), an org:admin OAuth token, or a personal or
+  service-account key that is NOT workspace-scoped. Workspace API keys are
+  rejected, so the swarm's ordinary ANTHROPIC_API_KEY will not work here.
+  Freshness ~5 minutes; sustained polling once per minute is supported.
+
+  Four findings that change the matrix's shape rather than just fill a row:
+
+  1. The answer to the human's question is PARTIAL, and honestly so. Neither
+     endpoint returns plan-remaining or a quota percentage - both report what
+     was CONSUMED. So "how fast the plan is being consumed" is directly
+     answerable, and "how much is left" is NOT, without a plan allowance
+     supplied from outside the API. That outside anchor already exists:
+     BL-619's manual usage-anchor. The honest architecture is live consumption
+     over a human-supplied allowance - which also gives acceptance direction 3
+     ("never fake a %") real teeth, because a percentage is precisely the
+     number no provider hands us.
+
+  2. "The Admin API is unavailable for individual accounts", quoted verbatim
+     from the doc. If this is an individual Console account rather than an
+     organization, every endpoint above is unavailable and Anthropic is an
+     honest `unsupported` row - not a defect, and not something a retry fixes.
+     Establish the account type FIRST; it decides whether the rest of the
+     Anthropic leg is reachable at all.
+
+  3. Claude Enterprise (claude.ai) organizations do not use this API at all.
+     They use the Claude Enterprise Analytics API with an Analytics API key,
+     and carry no Admin API keys. Two products, two keys - the matrix needs
+     both rows, not one Anthropic row.
+
+  4. Closest match to how this swarm actually bills: the Claude Code Analytics
+     API (platform.claude.com/docs/en/manage-claude/claude-code-analytics-api),
+     which reports per-user estimated Claude Code cost. The swarm runs Claude
+     Code seats, so that may be more representative than org-wide token
+     totals. Worth a row of its own.
+
+  [2026-08-29] specifier: stale-premise correction carried from the intake.
+  BL-619's spec-time finding that "no programmatic Anthropic account-usage read
+  was known" is FALSE as of today. The intake explicitly asked for that premise
+  to be re-checked per provider rather than assumed forever; this is the
+  re-check result for the Anthropic leg. BL-619's manual-anchor path still
+  earns its place, but as the plan-allowance anchor of finding 1 - not as a
+  substitute for a live read that turns out to exist.
+
+  Scope is unchanged by these notes - still discovery, still a document, no
+  code - so the existing human_approval stands.
+
