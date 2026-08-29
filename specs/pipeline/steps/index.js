@@ -855,7 +855,8 @@ const DOMAINS = [
   require('./bl1269AncestryEvidenceIsTheCommitsOwnContributionSteps'),
   require('./bl1223DispatchEvidenceIsADispatchSteps'),
   require('./bl1258RetirementDurabilitySteps'),
-  require('./bl1257ReviewTimeScopeCheckSteps')
+  require('./bl1257ReviewTimeScopeCheckSteps'),
+  require('./bl1241EntangledTipRemedySteps')
 ];
 
 function registerSteps(registry) {
