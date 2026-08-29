@@ -9,7 +9,9 @@
 
 # shellcheck shell=bash
 
+# OpenAI-compat (aider packs) and Anthropic-compat (Claude Code packs).
 QWEN_TOKEN_PLAN_BASE_URL='https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'
+QWEN_TOKEN_PLAN_ANTHROPIC_URL='https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic'
 
 qwen_guard_accepted_credential_names() {
   printf '%s' 'QWEN_API_KEY (or BAILIAN_TOKEN_PLAN_API_KEY or BAILIAN_CODING_PLAN_API_KEY)'
@@ -26,8 +28,23 @@ qwen_guard_apply_credential_fallbacks() {
   fi
 }
 
-# Strict branch: pack CLI targets the Token Plan endpoint. Refuse loudly when
-# no accepted credential is present.
+# Claude Code → Token Plan Anthropic-compat (docs.qwencloud.com Token Plan).
+# Does not write the key into files — only remaps pane env (BL-130).
+qwen_guard_map_anthropic_compat() {
+  qwen_guard_apply_credential_fallbacks
+  if [[ -z "${QWEN_API_KEY:-}" ]]; then
+    echo "SwarmForge: $(qwen_guard_accepted_credential_names) required for Token Plan Anthropic-compat" >&2
+    return 1
+  fi
+  export SWARMFORGE_USE_QWEN=1
+  unset ANTHROPIC_API_KEY || true
+  export ANTHROPIC_BASE_URL="$QWEN_TOKEN_PLAN_ANTHROPIC_URL"
+  export ANTHROPIC_AUTH_TOKEN="$QWEN_API_KEY"
+  return 0
+}
+
+# Strict branch: pack CLI targets the Token Plan OpenAI-compat endpoint.
+# Refuse loudly when no accepted credential is present.
 qwen_guard_require_token_plan_endpoint() {
   qwen_guard_apply_credential_fallbacks
   if [[ -n "${QWEN_API_KEY:-}" ]]; then
@@ -42,7 +59,8 @@ qwen_guard_require_token_plan_endpoint() {
 }
 
 # Soft branch: pack CLI carries no endpoint URL; only map when the env flag
-# already opted into Qwen.
+# already opted into Qwen. OpenAI-compat remap for aider; Anthropic seats use
+# qwen_guard_map_anthropic_compat from the Claude billing_guard instead.
 qwen_guard_map_if_flagged() {
   qwen_guard_apply_credential_fallbacks
   if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then

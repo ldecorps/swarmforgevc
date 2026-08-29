@@ -41,6 +41,7 @@ ancillary_provider_family_for_pack() {
   local pack="$1"
   case "$pack" in
     openrouter-*|*-openrouter*) printf '%s\n' openrouter ;;
+    qwen-anthropic*|*-qwen-anthropic*) printf '%s\n' qwen_anthropic ;;
     gemini-*) printf '%s\n' gemini ;;
     codex-*) printf '%s\n' codex ;;
     perplexity-*|qwen-*|cerebras-*|vibe-*) printf '%s\n' openai_aider ;;
@@ -49,6 +50,7 @@ ancillary_provider_family_for_pack() {
       if [[ "$pack" == *gemini* ]]; then printf '%s\n' gemini
       elif [[ "$pack" == *codex* ]]; then printf '%s\n' codex
       elif [[ "$pack" == *openrouter* ]]; then printf '%s\n' openrouter
+      elif [[ "$pack" == *qwen-anthropic* ]]; then printf '%s\n' qwen_anthropic
       elif [[ "$pack" == *perplexity* || "$pack" == *qwen* || "$pack" == *cerebras* || "$pack" == *vibe* ]]; then
         printf '%s\n' openai_aider
       else
@@ -104,6 +106,16 @@ ancillary_provider_load() {
         cerebras-*) export SWARMFORGE_USE_CEREBRAS=1 ;;
       esac
       ;;
+    qwen_anthropic)
+      ancillary_provider_source_env_file "$root/.swarmforge/qwen.env"
+      if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_TOKEN_PLAN_API_KEY:-}" ]]; then
+        export QWEN_API_KEY="$BAILIAN_TOKEN_PLAN_API_KEY"
+      fi
+      if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then
+        export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"
+      fi
+      export SWARMFORGE_USE_QWEN=1
+      ;;
     claude_direct)
       : # direct Claude subscription — no third-party routing keys
       ;;
@@ -112,6 +124,9 @@ ancillary_provider_load() {
   # Never let a stale cross-vendor key from the shell hijack a different pack.
   case "$ANCILLARY_PROVIDER_FAMILY" in
     openrouter)
+      ;;
+    qwen_anthropic)
+      unset OPENROUTER_API_KEY GEMINI_API_KEY || true
       ;;
     gemini)
       unset OPENROUTER_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN || true
@@ -137,6 +152,9 @@ ancillary_provider_load() {
         cerebras-*) export SWARMFORGE_USE_CEREBRAS=1 ;;
       esac
       ;;
+    qwen_anthropic)
+      export SWARMFORGE_USE_QWEN=1
+      ;;
   esac
 
   ANCILLARY_PROVIDER_LOADED=1
@@ -158,6 +176,16 @@ ancillary_provider_require_credentials() {
       }
       command -v claude >/dev/null 2>&1 || {
         echo "ancillary_provider: claude CLI required for OpenRouter pack" >&2
+        return 1
+      }
+      ;;
+    qwen_anthropic)
+      [[ -n "${QWEN_API_KEY:-}" ]] || {
+        echo "ancillary_provider: pack $(ancillary_provider_pack) requires QWEN_API_KEY (or BAILIAN_TOKEN_PLAN_API_KEY)" >&2
+        return 1
+      }
+      command -v claude >/dev/null 2>&1 || {
+        echo "ancillary_provider: claude CLI required for Token Plan Anthropic-compat pack" >&2
         return 1
       }
       ;;
@@ -232,6 +260,11 @@ ancillary_provider_default_model() {
     openrouter)
       printf '%s\n' "anthropic/claude-sonnet-5"
       ;;
+    qwen_anthropic)
+      if [[ "$role" == front_desk || "$role" == cleaner ]]; then printf '%s\n' "qwen3.6-flash"
+      else printf '%s\n' "qwen3.7-plus"
+      fi
+      ;;
     gemini)
       if [[ "$role" == front_desk ]]; then printf '%s\n' "gemini-2.5-flash"
       else printf '%s\n' "gemini-2.5-pro"
@@ -265,6 +298,13 @@ ancillary_provider_pane_exports() {
         "export ANTHROPIC_BASE_URL='https://openrouter.ai/api'" \
         'unset ANTHROPIC_API_KEY' \
         'export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"'
+      ;;
+    qwen_anthropic)
+      printf '%s\n' \
+        "export ANTHROPIC_BASE_URL='https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic'" \
+        'unset ANTHROPIC_API_KEY OPENROUTER_API_KEY GEMINI_API_KEY' \
+        'export ANTHROPIC_AUTH_TOKEN="$QWEN_API_KEY"' \
+        'export SWARMFORGE_USE_QWEN=1'
       ;;
     gemini)
       printf '%s\n' \
@@ -309,6 +349,7 @@ ancillary_provider_fill_tmux_env() {
   ANCILLARY_TMUX_ENV=()
   case "$ANCILLARY_PROVIDER_FAMILY" in
     openrouter) ANCILLARY_TMUX_ENV=(-e "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}") ;;
+    qwen_anthropic) ANCILLARY_TMUX_ENV=(-e "QWEN_API_KEY=${QWEN_API_KEY}" -e "SWARMFORGE_USE_QWEN=1") ;;
     gemini) ANCILLARY_TMUX_ENV=(-e "GEMINI_API_KEY=${GEMINI_API_KEY}") ;;
     codex) ANCILLARY_TMUX_ENV=(-e "OPENAI_API_KEY=${OPENAI_API_KEY}") ;;
     openai_aider)
