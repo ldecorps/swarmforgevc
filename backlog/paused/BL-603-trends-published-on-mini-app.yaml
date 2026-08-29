@@ -35,20 +35,85 @@ description: |
   Reuse, do not reinvent: trend.ts for the plotting math, the bridge's existing
   data-serving path (the same one costHealth / pipeline board already use), and
   the console's existing screen-registration pattern.
-acceptance: |
-  Specifier writes scenarios. Minimum:
-  1. A Trends screen on the live console plots each landed BL-594 series via
-     trend.ts, served over the bridge (not the static PWA).
-  2. A series whose producer has not landed shows "no data yet", never crashes
-     or fakes data.
-  3. Read-only: nothing on the screen mutates state.
-  4. Adding a future series is additive - the screen does not hardcode an
-     exhaustive list that breaks when a ninth series lands.
+acceptance: specs/features/BL-603-trends-published-on-mini-app.feature
+
+invariants:
+  - "The board never fabricates a point: a series with nothing to plot renders as absent data, and no path invents a zero, a flat line, or an interpolated value to fill the gap."
+  - "Every landed BL-594 series is reachable on the board, and registering a new one is the only edit needed to publish it - a series that exists and is unreachable is a visible gap, never a silent omission."
+
+required_wiring:
+  - "extension/src/bridge/holisticUiHtml.ts::trendsBoard::the board's DOM anchor on the live console. This spec fixes the id (mirroring the existing backlogBoard id) so the acceptance can address the board at all; the layout inside it stays the implementer's call, per the description. Zero occurrences at mint, so it cannot match vacuously."
+  - "extension/src/bridge/bridgeState.ts::computeTrend::the shared trend framework the payload must be computed through. 'Reuse, do not reinvent' is the ticket's own firm line and trend.ts is what BL-594 shipped for it; anchored on the exported function rather than the filename so a re-export cannot satisfy it. Zero occurrences at mint."
+
 out_of_scope: |
   - The series instrumentation itself (the producer tickets own that).
   - The static PWA (this is the live console surface).
   - The morning-briefing analysis (BL-604 owns that consumer).
+qa_e2e_procedure: |
+  1. Baseline, recorded before any change: grep trendsBoard in
+     extension/src/bridge/holisticUiHtml.ts and computeTrend in
+     extension/src/bridge/bridgeState.ts - both return nothing at the
+     merge-base. Both go in the evidence file.
+  2. Scenario 01: bring the bridge up, fetch the holistic console with a
+     valid token, and confirm the trends board is present with a plot for
+     each of the nine series named in the Examples table. Check the series
+     one at a time and record which had real points and which read as no
+     data - a board where all nine read no-data is a green suite over a
+     dark screen and is not a pass.
+  3. Scenario 02: the self-heal-events series is the live worked example
+     of the second cause. Its producer landed (BL-597) but has no
+     production writer until BL-1273 restores the emit sites, so it must
+     read as no data yet and must NOT draw a flat line at zero. Confirm
+     by eye on the rendered board, not only in a unit test.
+  4. Scenario 03: walk every control on the board and confirm none posts,
+     mutates or triggers anything - read-only means no write path exists,
+     not that the writes are disabled.
+  5. Scenario 05: repeat the console fetch with the token omitted and with
+     a wrong token; both must be refused. Then load the static backlog
+     dashboard and confirm no trend series is readable there - the two
+     surfaces stay separate (Architecture rule 5).
+  6. Regression: the console's existing sections - backlog board, swarm
+     panel, pipeline flow, burn rate - all still render. Adding a board
+     must not displace one.
+
 notes: |
-  - [2026-08-29] coordinator: open-slot nudge received. Cannot promote: 8 of 9
-    dependencies unmet (BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602,
-    BL-605 not in done/). Only BL-595 is done. Blocked until dependencies clear.
+  - [2026-08-29] specifier: acceptance migrated from an inline `acceptance: |`
+    block to a feature-file pointer. The inline form is unreadable by the
+    pre-QA gates (BL-922): the gates' reader captures only the acceptance:
+    LINE's own tail, so a block scalar collapses to the bare `|` indicator,
+    the BL-761 contract gate fails closed at the documenter->QA hop, and the
+    BL-880 pointer gate skips the ticket silently at every earlier hop - the
+    defect would have surfaced only after five stages of work. The human's
+    four numbered minimums are all preserved: (1) is scenario 01, (2) is
+    scenario 02, (3) is scenario 03, (4) is scenario 04, and scenario 05 adds
+    the live-vs-static-PWA boundary the description already made firm.
+  - [2026-08-29] specifier: the earlier coordinator note on this ticket -
+    "Cannot promote: 8 of 9 dependencies unmet ... Only BL-595 is done" - was
+    WRONG and is corrected here rather than left to mislead the next reader.
+    All nine dependencies are in backlog/done/; eight of them sit in the
+    `done/M8/` milestone subfolder, which a flat listing of done/ misses.
+    The real gate is not fooled: promotion_gates_lib.bb's done-ids reads
+    flat files AND <Mx>/ subfolders alike, and running it against this
+    ticket reports all nine SATISFIED. The note was a hand-check, not the
+    gate's verdict. Nothing needed fixing in the gate.
+  - [2026-08-29] specifier: producer modules confirmed present at mint, one
+    per series, so no Examples row names a surface that does not exist:
+    humanLoopReliability.ts, rotationDynamics.ts, selfHealTelemetry.ts,
+    alertTelemetry.ts, deliveryMetrics.ts, humanDecisionLatency.ts,
+    compactionCadence.ts, handoffLatency.ts, globalTokenConsumption.ts.
+  - [2026-08-29] specifier, freshness check before speccing: one premise HAS
+    gone stale since 2026-07-23 and the spec accounts for it. BL-597's
+    self-heal series has landed but is DARK - merge 2e37477ec dropped all
+    five of its production emit sites, so nothing writes its ledger and its
+    series is empty for a reason the original ticket did not anticipate.
+    BL-1273 restores those sites. This is why scenario 02 carries two causes
+    rather than the one the human's minimum (2) named: "producer has not
+    landed" and "producer landed and recorded nothing" must both degrade to
+    "no data yet", because the second is live on this console today and a
+    flat line at zero would read as "the swarm never self-heals", which is
+    exactly the false green BL-597 was built to prevent.
+  - [2026-08-29] specifier: the IR-DRY checker reports one medium-confidence
+    possible-synonym pair, "the board shows a plot for <series>" against
+    "the board shows a plot for tenth-series". That pair is the NORMALIZED
+    state, not drift: the concrete text is an instance of the parameterized
+    one and both bind to a single step handler. Do not churn on it.
