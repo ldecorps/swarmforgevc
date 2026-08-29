@@ -40,6 +40,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "salvage_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
 
 (defn- git! [root & args]
@@ -93,21 +94,62 @@
             (str/starts-with? path "docs/how-to/"))
     (pipeline-stage-lib/extract-ticket-id (fs/file-name path))))
 
+;; ── BL-1276: a ticket's own declared acceptance contract is not foreign ──
+;;
+;; The specifier writes `acceptance: specs/features/BL-<other>-....feature`
+;; deliberately: a defect filed against a shipped check amends the durable
+;; contract for that check rather than forking it in two. Before this, the one
+;; file such a ticket MUST edit was the one file this gate read as foreign, and
+;; every move its author had was worse than the block - a tip-pure commit drops
+;; the scenarios the ticket exists to add, BL-1241's rebuild hatch replays
+;; exactly the path set that excludes the file, and a re-labelled commit
+;; subject passes by pretending the work belongs to someone else. That is the
+;; refusal-with-no-available-action shape of BL-1237/BL-1240/BL-1241, and
+;; BL-1246 is the live instance it was found on.
+;;
+;; The exemption is EXACT and derived, never a pairing table: only the literal
+;; path string the ticket declares, read from the ticket's own landed YAML. Any
+;; OTHER path belonging to that same foreign ticket - its backlog YAML, its
+;; how-to - is still reported. A declaration that cannot be read grants no
+;; exemption at all, and the refusal says so, because a refusal that silently
+;; skipped the exemption would send its recipient off to rebuild a commit that
+;; did not need rebuilding: the very shape this fix removes.
+
+(defn declared-acceptance-path
+  "Pure: the path a ticket's own YAML declares in its `acceptance:` field, or
+   nil. Only a plain single-line pointer counts - a block scalar (`acceptance: |`)
+   declares no path this gate can compare against, which is BL-922's known
+   unreadable form and correctly grants nothing."
+  [ticket-yaml]
+  (some (fn [line]
+          (when (str/starts-with? line "acceptance:")
+            (let [value (str/trim (subs line (count "acceptance:")))]
+              (when (and (seq value)
+                         (not= value "|")
+                         (not= value ">")
+                         (not (str/starts-with? value "|"))
+                         (not (str/starts-with? value ">")))
+                (str/replace value #"^[\"']|[\"']$" "")))))
+        (str/split-lines (or ticket-yaml ""))))
+
 (defn foreign-scope-findings
   "Pure (BL-654-style property target): given the task's own ticket id and
    the set of changed paths, every {:path :ticket-id} pair whose path
    positively belongs to a DIFFERENT ticket - own-evidence paths for the
-   task excluded. Empty when task-ticket-id is nil (nothing to compare
-   against) - the caller's own fail-open, not re-derived here."
-  [task-ticket-id changed-paths]
-  (if-not task-ticket-id
-    []
-    (vec (for [path changed-paths
-               :let [id (ticket-id-for-path path)]
-               :when (and id
-                          (not= id task-ticket-id)
-                          (not (own-evidence-path? path task-ticket-id)))]
-           {:path path :ticket-id id}))))
+   task excluded, and (BL-1276) the exact path the task's own ticket declares
+   as its acceptance contract. Empty when task-ticket-id is nil (nothing to
+   compare against) - the caller's own fail-open, not re-derived here."
+  ([task-ticket-id changed-paths] (foreign-scope-findings task-ticket-id changed-paths nil))
+  ([task-ticket-id changed-paths declared-acceptance]
+   (if-not task-ticket-id
+     []
+     (vec (for [path changed-paths
+                :let [id (ticket-id-for-path path)]
+                :when (and id
+                           (not= id task-ticket-id)
+                           (not (own-evidence-path? path task-ticket-id))
+                           (not (and declared-acceptance (= path declared-acceptance))))]
+            {:path path :ticket-id id})))))
 
 (defn- last-handoff-commit
   "The commit most recently handed off for this exact task, per the
@@ -231,23 +273,47 @@
               (let [changed-paths (task-tagged-changed-paths root base commit task-ticket-id)]
                 (if (nil? changed-paths)
                   @unreadable-warning
-                  {:findings (foreign-scope-findings task-ticket-id changed-paths)})))))))))
+                  ;; BL-1276: the declaration is read HERE, at the one impure
+                  ;; entry point both callers share (this gate's send-time
+                  ;; caller in swarm_handoff.bb and BL-1257's review-time CLI),
+                  ;; so the two can never answer the same commit differently.
+                  ;; Read from the ticket's landed YAML, never the sender's
+                  ;; working copy: an amendment the specifier landed on main is
+                  ;; then honoured without the sender merging first.
+                  (let [ticket-yaml (landed-ticket-lib/active-ticket-yaml-content root task-ticket-id)
+                        declared (declared-acceptance-path ticket-yaml)
+                        findings (foreign-scope-findings task-ticket-id changed-paths declared)]
+                    (cond-> {:findings findings}
+                      ;; No ticket to read means the exemption could not be
+                      ;; evaluated at all. It grants nothing - and the refusal
+                      ;; SAYS so, rather than sending its recipient off to
+                      ;; rebuild a commit that may not have needed it.
+                      (nil? ticket-yaml) (assoc :acceptance-unreadable? true))))))))))))
 
 (defn blocked? [{:keys [findings]}]
   (boolean (seq findings)))
 
 (defn refusal-message
-  [{:keys [task-name findings]}]
+  [{:keys [task-name findings acceptance-unreadable?]}]
   (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
         ticket-ids (distinct (map :ticket-id findings))
         paths (map :path findings)]
-    (format (str "Cannot send git_handoff for %s: this task's own commits since its last "
-                 "handoff carry %s (%s) belonging to %s, not to %s - the tip is entangled with "
-                 "another ticket's work (BL-1192/BL-506). Rebuild or cherry-pick a tip-pure "
-                 "commit for %s and re-send.")
-          task-name
-          (if (= 1 (count paths)) "a path" (format "%d paths" (count paths)))
-          (str/join ", " paths)
-          (str/join "," ticket-ids)
-          task-ticket-id
-          task-ticket-id)))
+    (str
+     (format (str "Cannot send git_handoff for %s: this task's own commits since its last "
+                  "handoff carry %s (%s) belonging to %s, not to %s - the tip is entangled with "
+                  "another ticket's work (BL-1192/BL-506). Rebuild or cherry-pick a tip-pure "
+                  "commit for %s and re-send.")
+             task-name
+             (if (= 1 (count paths)) "a path" (format "%d paths" (count paths)))
+             (str/join ", " paths)
+             (str/join "," ticket-ids)
+             task-ticket-id
+             task-ticket-id)
+     ;; BL-1276: never let this refusal look like a plain entanglement when
+     ;; the one exemption that could have cleared it was never evaluated.
+     (when acceptance-unreadable?
+       (format (str " NOTE: the acceptance-contract exemption could not be evaluated - %s's own "
+                    "ticket could not be read on main, origin/main, or in backlog/active/, so a "
+                    "path it declares as its acceptance contract was not recognised. Check the "
+                    "ticket is present and landed before rebuilding anything.")
+               task-ticket-id)))))
