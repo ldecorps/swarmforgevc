@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1237: the reference-freshness guard
+(`ready_for_next.bb`, backed by `reference_freshness_lib.bb`) refused a
+role's turn on ANY content difference between its
+`swarmforge/constitution/articles/reference/*` copy and `main`'s, with no
+way to tell "worktree is missing a `main` amendment" (genuinely stale) from
+"worktree is ahead of `main` with its own newer work absorbed through an
+ordinary branch merge, not yet landed via QA" (routine for an in-flight
+parcel). The guard's own prescribed remedy, "merge main, then run again,"
+is a no-op in the ahead direction, so a role hit it identically every turn
+with no way to clear it. Fixed: `stale-paths` gains an optional third
+input, `{rel-path -> boolean}`, whether the worktree's own `HEAD` already
+contains (as an ancestor) `main`'s most recent commit touching that path;
+`true` allows the difference through as the worktree's own absorbed work,
+`false`/absent still fails closed exactly as before. `ready_for_next.bb`
+computes the ancestry facts via `git log -1` + `git merge-base
+--is-ancestor`, only for paths whose content actually differs; the library
+itself stays pure. BL-640's original behind-case refusal (main carries an
+amendment the worktree never merged) is unweakened. No new extension
+command or setting — pipeline dispatch tooling. Acceptance:
+`specs/features/BL-1237-reference-freshness-guard-is-direction-aware.feature`.
+How-to:
+`docs/how-to/BL-1237-reference-freshness-guard-is-direction-aware.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1244: an answer short enough to ride
 inline in a role's answer note — a tapped option label almost always is —
 never told the role there was anything to consume via

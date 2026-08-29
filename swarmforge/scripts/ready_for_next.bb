@@ -52,9 +52,8 @@
           "main"))
       "main")))
 
-(defn- main-reference-shas [root]
-  (let [ref (freshest-main-ref root)
-        list-result (sh/sh "git" "-C" (str root) "ls-tree" "-r" "--name-only" ref
+(defn- main-reference-shas [root ref]
+  (let [list-result (sh/sh "git" "-C" (str root) "ls-tree" "-r" "--name-only" ref
                             "--" reference-freshness-lib/reference-dir-rel)]
     (if (zero? (:exit list-result))
       (into {}
@@ -66,11 +65,29 @@
                   (str/split-lines (:out list-result))))
       {})))
 
+;; BL-1237: does this worktree's own HEAD already contain `ref`'s most
+;; recent commit touching `path`? true means a content difference is the
+;; worktree's OWN newer work laid on top of an amendment it has already
+;; merged - not drift. Degrades to false (fail-closed, refuse) on any git
+;; hiccup - no commit found, or the ancestry check itself errors - so a
+;; missing answer never turns into a silent allow.
+(defn- path-ancestry-absorbed? [root ref path]
+  (let [log-result (sh/sh "git" "-C" (str root) "log" "-1" "--format=%H" ref "--" path)]
+    (if (and (zero? (:exit log-result)) (not (str/blank? (str/trim (:out log-result)))))
+      (let [commit (str/trim (:out log-result))
+            anc-result (sh/sh "git" "-C" (str root) "merge-base" "--is-ancestor" commit "HEAD")]
+        (zero? (:exit anc-result)))
+      false)))
+
 (defn- enforce-reference-freshness-guard! []
   (let [root (dispatch-lib/git-root)]
     (when root
-      (let [stale (reference-freshness-lib/stale-paths (worktree-reference-shas root)
-                                                         (main-reference-shas root))]
+      (let [ref (freshest-main-ref root)
+            worktree-shas (worktree-reference-shas root)
+            main-shas (main-reference-shas root ref)
+            differing-paths (keep (fn [[path sha]] (when (not= sha (get worktree-shas path)) path)) main-shas)
+            absorbed (into {} (map (fn [path] [path (path-ancestry-absorbed? root ref path)]) differing-paths))
+            stale (reference-freshness-lib/stale-paths worktree-shas main-shas absorbed)]
         (when (seq stale)
           (dispatch-lib/exit! 2 (reference-freshness-lib/staleness-report stale)))))))
 
