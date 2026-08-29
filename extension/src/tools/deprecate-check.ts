@@ -187,12 +187,6 @@ function splitSentences(text: string): string[] {
 }
 
 /**
- * The narrowed generic-claim predicate: a claim about THIS ticket, or null.
- * A structured disposition field carrying a claim word is one by definition -
- * the field describes the ticket it sits on. Everywhere else the claim has to
- * be bound to the ticket by the sentence carrying it.
- */
-/**
  * A claim word inside a filename, a wiring anchor or a hyphenated compound is
  * naming a SURFACE, not stating a disposition: `BL-1263-stale-assertions-are-
  * retired-...feature` is a path, and "the retired-type guard" is a thing the
@@ -220,21 +214,43 @@ function matchProseClaim(sentence: string): RegExpMatchArray | null {
   return null;
 }
 
+/**
+ * Is this one prose sentence's claim word a claim about the ticket? A
+ * structured disposition field carrying a claim word is one by definition -
+ * the field describes the ticket it sits on. A prose field's claim has to be
+ * bound to the ticket by the sentence carrying it.
+ */
+function sentenceCarriesSelfClaim(sentence: string, matchIndex: number, structured: boolean, ownId: string): boolean {
+  if (structured) {
+    return !CLAIM_NEGATION_RE.test(sentence.slice(0, matchIndex));
+  }
+  return sentenceClaimsSelf(sentence, matchIndex, ownId);
+}
+
+/** Scan one YAML field's sentences for the first claim about the ticket. */
+function findClaimInField(field: YamlField, structured: boolean, ownId: string): SelfClaim | null {
+  for (const sentence of splitSentences(field.text)) {
+    const match = matchProseClaim(sentence);
+    if (!match || match.index === undefined) {
+      continue;
+    }
+    if (sentenceCarriesSelfClaim(sentence, match.index, structured, ownId)) {
+      return { field: field.name, claim: match[0] };
+    }
+  }
+  return null;
+}
+
+/**
+ * The narrowed generic-claim predicate: a claim about THIS ticket, or null.
+ */
 export function findSelfClaim(yamlText: string, ticketId: string): SelfClaim | null {
   const ownId = normalizeTicketId(ticketId);
   for (const field of splitTopLevelFields(yamlText)) {
     const structured = SELF_DISPOSITION_FIELDS.includes(field.name);
-    for (const sentence of splitSentences(field.text)) {
-      const match = matchProseClaim(sentence);
-      if (!match || match.index === undefined) {
-        continue;
-      }
-      if (structured && !CLAIM_NEGATION_RE.test(sentence.slice(0, match.index))) {
-        return { field: field.name, claim: match[0] };
-      }
-      if (!structured && sentenceClaimsSelf(sentence, match.index, ownId)) {
-        return { field: field.name, claim: match[0] };
-      }
+    const found = findClaimInField(field, structured, ownId);
+    if (found) {
+      return found;
     }
   }
   return null;
