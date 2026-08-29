@@ -94,6 +94,29 @@ description: |
   never paid for an already-refused commit. Preserve `set -e`'s crash
   safety explicitly: an unexpected non-refusal exit must still refuse.
 
+  ## Follow the pattern already proven for the sibling hook
+
+  Do not invent the aggregation shape. The hardener hit this exact defect in
+  the `commit-msg` hook while building BL-1242 and fixed it on
+  `swarmforge-hardender` at commit `61735035f`: `set -uo pipefail` across the
+  chain (no `-e`), `guard || status=$?` per call, `exit "$status"`, each guard
+  keeping its own `set -euo pipefail`. It is written up in
+  `constitution/articles/reference/engineering-detailed.prompt` under
+  "A shell chain of independent guards must not run under `set -e`", and the
+  short form is in the boot-inlined engineering.prompt Guardrails.
+
+  That is guidance, not a dependency: BL-1252 does not wait on BL-1242 landing
+  and must not be blocked on it. The pre-commit chain is broken today on its
+  own.
+
+  The same write-up carries the pinning obligation, which applies here: a
+  single-violation test passes identically before and after the fix and so
+  proves nothing. BL-1242's fix is pinned by case 09 of
+  `swarmforge/scripts/test/test_merge_deletion_guard.sh`, which trips both
+  guards at once and asserts both violations appear in one refusal. Scenario
+  01's multi-violation rows are this ticket's equivalent and are the rows that
+  actually gate the change.
+
 constraints: >
   Out of scope / firm lines:
 
@@ -155,7 +178,16 @@ notes: |
     constitutional Article 4.4 (complete review inventory, one bounce per
     pass), which this ticket applies to the mechanical gate. The observation
     itself is sound and is what the ticket rests on.
-  - [2026-08-29] specifier: no multi-guard incident is asserted. The defect is
+  - [2026-08-29] specifier: prior art confirmed after mint, from a follow-up
+    hardender rule_proposal. The identical defect in the sibling `commit-msg`
+    hook was found and fixed on swarmforge-hardender at 61735035f, verified by
+    reading that commit and its test case 09. That commit's message cites
+    Article 4.4 independently of this ticket, which corroborates the precedent
+    correction in the note above. The rule was accepted and landed on main in
+    engineering.prompt Guardrails plus engineering-detailed.prompt; scope was
+    moved from role:hardender to engineering because the actor who must obey it
+    is whoever writes a hook - here, this ticket's coder - not the hardener.
+  - [2026-08-29] specifier: no multi-guard incident is asserted for pre-commit. The defect is
     structural and was found by reading the chain, not by anyone hitting it.
     Do not go looking for an incident report that does not exist.
   - [2026-08-29] specifier: IR-DRY checker leaves 3 medium findings, all the
