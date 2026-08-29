@@ -120,4 +120,89 @@ pass "GH-26: an ordinary pending marker (no state field) still blocks, unchanged
 rm -rf "$ROOT5"
 trap - EXIT
 
+# ── BL-1245: resolve with a blank --reason is refused, the pending
+# marker is left untouched, and a subsequent ask is still refused ────────
+ROOT6="$(tmp_root)"
+trap 'rm -rf "$ROOT6"' EXIT
+AWAITING6="$ROOT6/.swarmforge/operator/role-awaiting/specifier.json"
+mkdir -p "$(dirname "$AWAITING6")"
+printf '{"question":"old question","asked_at_ms":1700000000000}' > "$AWAITING6"
+
+# blank --reason: resolve-main emits a structured "reason-required" JSON
+# and exits 2. The marker must be untouched.
+OUT8="$(bb "$CLI" "$ROOT6" --role specifier --resolve --reason "" 2>/dev/null || true)"
+echo "$OUT8" | grep -q '"resolved":false' || fail "expected resolved:false for blank reason, got: $OUT8"
+echo "$OUT8" | grep -q '"reason":"reason-required"' || fail "expected reason reason-required, got: $OUT8"
+AFTER6="$(cat "$AWAITING6")"
+[[ "$AFTER6" == '{"question":"old question","asked_at_ms":1700000000000}' ]] || fail "expected the marker untouched after a blank-reason resolve, got: $AFTER6"
+# a follow-on ask is still refused (marker still blocks)
+OUT9="$(bb "$CLI" "$ROOT6" --role specifier --question "new question")"
+echo "$OUT9" | grep -q '"asked":false' || fail "expected a follow-on ask to still be refused after a blank-reason resolve, got: $OUT9"
+echo "$OUT9" | grep -q '"reason":"already-pending"' || fail "expected reason still already-pending after blank-reason resolve, got: $OUT9"
+pass "BL-1245: a blank --reason is refused, the pending marker is untouched, a follow-on ask is still refused"
+rm -rf "$ROOT6"
+trap - EXIT
+
+# ── BL-1245: resolve with no marker reports nothing-pending, exit 0 ────
+ROOT7="$(tmp_root)"
+trap 'rm -rf "$ROOT7"' EXIT
+OUT10="$(bb "$CLI" "$ROOT7" --role specifier --resolve --reason "housekeeping")"
+echo "$OUT10" | grep -q '"resolved":false' || fail "expected resolved:false when nothing pending, got: $OUT10"
+echo "$OUT10" | grep -q '"reason":"nothing-pending"' || fail "expected reason nothing-pending, got: $OUT10"
+pass "BL-1245: resolving when nothing is pending reports nothing-pending, exit 0"
+rm -rf "$ROOT7"
+trap - EXIT
+
+# ── BL-1245: resolve with a real reason preserves the question and frees
+# the slot so a new ask is accepted ──────────────────────────────────────
+ROOT8="$(tmp_root)"
+trap 'rm -rf "$ROOT8"' EXIT
+AWAITING8="$ROOT8/.swarmforge/operator/role-awaiting/specifier.json"
+mkdir -p "$(dirname "$AWAITING8")"
+printf '{"question":"old question","asked_at_ms":1700000000000}' > "$AWAITING8"
+
+OUT11="$(bb "$CLI" "$ROOT8" --role specifier --resolve --reason "answered out of band")"
+echo "$OUT11" | grep -q '"resolved":true' || fail "expected resolved:true, got: $OUT11"
+echo "$OUT11" | grep -q '"question":"old question"' || fail "expected preserved question in output, got: $OUT11"
+echo "$OUT11" | grep -q '"asked_at_ms":1700000000000' || fail "expected preserved asked_at_ms in output, got: $OUT11"
+echo "$OUT11" | grep -q '"reason":"answered out of band"' || fail "expected reason echoed in output, got: $OUT11"
+
+# live marker is gone
+[[ ! -f "$AWAITING8" ]] || fail "expected the live marker at role-awaiting/specifier.json to be removed, but it still exists"
+
+# preserved record exists OUTSIDE role-awaiting/
+ARCHIVE_DIR="$ROOT8/.swarmforge/operator/role-awaiting-archive"
+[[ -d "$ARCHIVE_DIR" ]] || fail "expected role-awaiting-archive/ to exist, got: $(ls -la "$ROOT8/.swarmforge/operator/")"
+ARCHIVE_FILE="$ARCHIVE_DIR/specifier-1700000000000.json"
+[[ -f "$ARCHIVE_FILE" ]] || fail "expected preserved record at $ARCHIVE_FILE, got: $(ls -la "$ARCHIVE_DIR")"
+grep -q '"question":"old question"' "$ARCHIVE_FILE" || fail "expected preserved question in archive, got: $(cat "$ARCHIVE_FILE")"
+grep -q '"asked_at_ms":1700000000000' "$ARCHIVE_FILE" || fail "expected preserved asked_at_ms in archive, got: $(cat "$ARCHIVE_FILE")"
+grep -q '"reason":"answered out of band"' "$ARCHIVE_FILE" || fail "expected reason in archive, got: $(cat "$ARCHIVE_FILE")"
+
+# a new ask is accepted
+OUT12="$(bb "$CLI" "$ROOT8" --role specifier --question "new question")"
+echo "$OUT12" | grep -q '"asked":true' || fail "expected the new ask to be accepted after resolve, got: $OUT12"
+
+# and the ONLY pending question for specifier is now the new one
+NEW_AWAITING="$(cat "$AWAITING8")"
+echo "$NEW_AWAITING" | grep -q '"question":"new question"' || fail "expected the new pending marker to be the new question, got: $NEW_AWAITING"
+pass "BL-1245: resolve preserves the question in role-awaiting-archive/, frees the slot, a new ask is accepted"
+rm -rf "$ROOT8"
+trap - EXIT
+
+# ── BL-1245: the preserved record is never a .json inside role-awaiting/
+# (operator_runtime.bb scans that directory for *.json and would read it
+# back as a live marker) ────────────────────────────────────────────────
+ROOT9="$(tmp_root)"
+trap 'rm -rf "$ROOT9"' EXIT
+mkdir -p "$ROOT9/.swarmforge/operator/role-awaiting"
+printf '{"question":"old question","asked_at_ms":1700000000000}' > "$ROOT9/.swarmforge/operator/role-awaiting/specifier.json"
+bb "$CLI" "$ROOT9" --role specifier --resolve --reason "answered out of band" > /dev/null
+# role-awaiting/ must hold NO .json after the resolve
+LIVE_FILES="$(find "$ROOT9/.swarmforge/operator/role-awaiting" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
+[[ "$LIVE_FILES" -eq 0 ]] || fail "expected role-awaiting/ to hold NO .json after resolve, got $LIVE_FILES"
+pass "BL-1245: role-awaiting/ holds no .json after resolve - operator_runtime.bb's scan cannot read the preserved record back as live"
+rm -rf "$ROOT9"
+trap - EXIT
+
 echo "ALL PASS"
