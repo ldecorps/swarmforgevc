@@ -160,3 +160,111 @@ test('BL-1230 P1 non-vacuity: the property fails against a deliberately wrong ex
   assert.deepEqual(reported, ['a/.git']);
   assert.throws(() => assert.deepEqual(reported, []));
 });
+
+// ── BL-1246: the git-ignored-directory exemption ────────────────────────
+//
+// Invariant 1 widens with a fourth exemption ("anything inside a directory
+// this working tree's git ignores"), invariant 2 is new: the exemption must
+// never silence a real leak beside it.
+//
+// Generator reach: the failure both invariants guard against lives at the
+// boundary between an ignored subtree and a tracked one, so a tree with only
+// one kind reaches nothing. Every generated tree therefore CONTAINS both by
+// construction - a tracked branch and an ignored branch, each able to hold
+// leaks - rather than drawing two independent trees and hoping one of each
+// appears. The counts of leaks on either side are drawn independently and
+// both sides' non-empty states carry asserted floors, so a draw that stopped
+// producing tracked leaks (which would make invariant 2 vacuous) turns the
+// test red instead.
+
+const IGNORED_ROOT = 'tmp';
+
+// A leak-bearing subtree: `count` directories, each containing a `.git` DIR.
+function leakDirs(count, prefix) {
+  return Array.from({ length: count }, (_, i) => ({
+    name: `${prefix}${i}`,
+    type: 'dir',
+    children: [{ name: '.git', type: 'gitDir', children: [] }],
+  }));
+}
+
+/** readdir + isIgnored over a tree with one ignored branch and one tracked. */
+function buildIgnoreFixture(root, ignoredLeaks, trackedLeaks) {
+  const forest = [
+    { name: IGNORED_ROOT, type: 'dir', children: leakDirs(ignoredLeaks, 'scratch') },
+    { name: 'backlog', type: 'dir', children: leakDirs(trackedLeaks, 'leak') },
+  ];
+  const { readdir } = buildFixture(forest);
+  const expected = Array.from({ length: trackedLeaks }, (_, i) => `backlog/leak${i}/.git`).sort();
+  return {
+    readdir: (dir) => readdir(dir, root),
+    // Exactly what git would answer for this layout: everything at or below
+    // the ignored root, nothing else.
+    isIgnored: (dir) => {
+      const rel = path.relative(root, dir).split(path.sep).join('/');
+      return rel === IGNORED_ROOT || rel.startsWith(`${IGNORED_ROOT}/`);
+    },
+    expected,
+  };
+}
+
+test('BL-1246 P3: an ignored subtree is exempt and a tracked leak beside it is still reported', () => {
+  let sawIgnoredLeaks = 0;
+  let sawTrackedLeaks = 0;
+  let sawBoth = 0;
+  fc.assert(
+    fc.property(fc.nat({ max: 4 }), fc.nat({ max: 4 }), (ignoredLeaks, trackedLeaks) => {
+      const root = '/repo';
+      const { readdir, isIgnored, expected } = buildIgnoreFixture(root, ignoredLeaks, trackedLeaks);
+      const reported = findNestedGitRepositories(root, { readdir, isIgnored })
+        .map((v) => v.path)
+        .sort();
+      // Invariant 1: nothing inside the ignored directory is ever reported.
+      for (const violation of reported) {
+        assert.ok(
+          !violation.startsWith(`${IGNORED_ROOT}/`),
+          `a repository inside the ignored directory was reported: ${violation}`
+        );
+      }
+      // Invariant 2: every tracked leak is still reported, however many
+      // ignored ones sit beside it.
+      assert.deepEqual(reported, expected);
+      if (ignoredLeaks > 0) sawIgnoredLeaks += 1;
+      if (trackedLeaks > 0) sawTrackedLeaks += 1;
+      if (ignoredLeaks > 0 && trackedLeaks > 0) sawBoth += 1;
+    }),
+    { numRuns: 200 }
+  );
+  // Reachability floors, asserted rather than hoped for. The third is the one
+  // that matters: a run that never generated BOTH kinds at once would pass
+  // this property while saying nothing about invariant 2.
+  assert.ok(sawIgnoredLeaks > 40, `expected ignored leaks to be drawn, saw ${sawIgnoredLeaks}`);
+  assert.ok(sawTrackedLeaks > 40, `expected tracked leaks to be drawn, saw ${sawTrackedLeaks}`);
+  assert.ok(sawBoth > 30, `expected trees carrying BOTH kinds, saw ${sawBoth}`);
+});
+
+test('BL-1246 P4: the exemption is derived from the predicate, never from a directory name', () => {
+  // Same tree, same names, opposite answers from git: what is exempt must
+  // follow the predicate and nothing else. A guard that special-cased "tmp"
+  // would pass the property above and fail this one.
+  let sawIgnoring = 0;
+  let sawNotIgnoring = 0;
+  fc.assert(
+    fc.property(fc.integer({ min: 1, max: 4 }), fc.boolean(), (leaks, ignoring) => {
+      const root = '/repo';
+      const { readdir } = buildIgnoreFixture(root, leaks, 0);
+      const reported = findNestedGitRepositories(root, {
+        readdir,
+        isIgnored: () => ignoring,
+      })
+        .map((v) => v.path)
+        .sort();
+      const expected = Array.from({ length: leaks }, (_, i) => `${IGNORED_ROOT}/scratch${i}/.git`).sort();
+      assert.deepEqual(reported, ignoring ? [] : expected);
+      ignoring ? (sawIgnoring += 1) : (sawNotIgnoring += 1);
+    }),
+    { numRuns: 160 }
+  );
+  assert.ok(sawIgnoring > 40, `expected ignoring draws, saw ${sawIgnoring}`);
+  assert.ok(sawNotIgnoring > 40, `expected non-ignoring draws, saw ${sawNotIgnoring}`);
+});

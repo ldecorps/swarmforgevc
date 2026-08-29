@@ -27,7 +27,12 @@ Feature: A git repository leaked inside the working tree is caught, not left to 
     And the report says a git command run from that directory resolves to it
 
   # BL-1230 no-leaked-git-repository-in-working-tree-02
-  Scenario Outline: A repository git itself put there is not a leak
+  # BL-1246 widened this outcome (and this title) with the fourth exemption:
+  # the human's 2026-08-28 ruling "Exempt git-ignored dirs (tmp/) by
+  # construction". tmp/ is where every role is told to put scratch, so a git
+  # fixture there is legitimate: nothing tracked can be swallowed and no
+  # bookkeeping runs from it.
+  Scenario Outline: A repository the working tree legitimately contains is not a leak
     Given <legitimate location> exists
     When the leaked-repository check runs
     Then nothing is reported
@@ -37,6 +42,7 @@ Feature: A git repository leaked inside the working tree is caught, not left to 
       | the worktree gitfile ".worktrees/coder/.git" |
       | the repository's own root ".git"        |
       | a nested repository under "node_modules" |
+      | a repository inside the git-ignored directory "tmp/" |
 
   # BL-1230 no-leaked-git-repository-in-working-tree-03
   Scenario: The check reports without removing anything
@@ -57,3 +63,11 @@ Feature: A git repository leaked inside the working tree is caught, not left to 
     And "git status" reports the working tree clean
     When the leaked-repository check runs
     Then "backlog/.git" is reported
+
+  # BL-1230 no-leaked-git-repository-in-working-tree-06
+  Scenario: The ignored-directory exemption does not silence a real leak beside it
+    Given a git repository exists at "backlog/.git"
+    And a repository inside the git-ignored directory "tmp/" exists
+    When the leaked-repository check runs
+    Then "backlog/.git" is reported
+    And nothing inside "tmp/" is reported
