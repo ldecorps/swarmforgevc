@@ -37,22 +37,21 @@
 ;; checkout next merges it in. In that window origin/main can carry a
 ;; landed reference/ amendment local main does not yet have, and the
 ;; workflow rule "A Prior QA Bounce Is Not In Your Worktree" documents that
-;; the direction can flip - so neither ref alone is trustworthy. Compare
-;; ahead-counts and read whichever ref is actually ahead; falls back to
-;; "main" when origin/main does not exist (no remote configured - e.g. this
-;; guard's own unit fixtures) or the counts tie.
-(defn- freshest-main-ref [root]
-  (let [result (sh/sh "git" "-C" (str root) "rev-list" "--left-right" "--count"
-                       "main...origin/main")]
-    (if (zero? (:exit result))
-      (let [counts (str/split (str/trim (:out result)) #"\s+")]
-        (if (= 2 (count counts))
-          (let [[local-ahead origin-ahead] (map #(Long/parseLong %) counts)]
-            (if (> origin-ahead local-ahead) "origin/main" "main"))
-          "main"))
-      "main")))
+;; the direction can flip - so neither ref alone is trustworthy.
+;;
+;; BL-1266: a whole-repo ahead-count is not an answer to "which ref carries
+;; the newer version of THIS file" - origin/main can be 200 commits ahead
+;; without touching reference/ at all, while local main carries the one
+;; commit that did. Stop picking a single ref; consult every ref that
+;; exists (local main always, origin/main only when this repo has one - no
+;; remote configured, e.g. this guard's own unit fixtures, means main
+;; alone).
+(defn- candidate-refs [root]
+  (into ["main"]
+        (when (zero? (:exit (sh/sh "git" "-C" (str root) "rev-parse" "--verify" "--quiet" "origin/main")))
+          ["origin/main"])))
 
-(defn- main-reference-shas [root ref]
+(defn- ref-reference-shas [root ref]
   (let [list-result (sh/sh "git" "-C" (str root) "ls-tree" "-r" "--name-only" ref
                             "--" reference-freshness-lib/reference-dir-rel)]
     (if (zero? (:exit list-result))
@@ -82,14 +81,16 @@
 (defn- enforce-reference-freshness-guard! []
   (let [root (dispatch-lib/git-root)]
     (when root
-      (let [ref (freshest-main-ref root)
-            worktree-shas (worktree-reference-shas root)
-            main-shas (main-reference-shas root ref)
-            differing-paths (keep (fn [[path sha]] (when (not= sha (get worktree-shas path)) path)) main-shas)
-            absorbed (into {} (map (fn [path] [path (path-ancestry-absorbed? root ref path)]) differing-paths))
-            stale (reference-freshness-lib/stale-paths worktree-shas main-shas absorbed)]
+      (let [worktree-shas (worktree-reference-shas root)
+            refs-shas (into {} (map (fn [ref] [ref (ref-reference-shas root ref)]) (candidate-refs root)))
+            absorbed (into {}
+                           (for [[ref shas] refs-shas
+                                 [path sha] shas
+                                 :when (not= sha (get worktree-shas path))]
+                             [[ref path] (path-ancestry-absorbed? root ref path)]))
+            stale (reference-freshness-lib/stale-paths-multi-ref worktree-shas refs-shas absorbed)]
         (when (seq stale)
-          (dispatch-lib/exit! 2 (reference-freshness-lib/staleness-report stale)))))))
+          (dispatch-lib/exit! 2 (reference-freshness-lib/staleness-report-multi-ref stale)))))))
 
 (enforce-reference-freshness-guard!)
 
