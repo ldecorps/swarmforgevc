@@ -11,6 +11,7 @@ direction: pipeline-note
 depends_on: [BL-1248]
 mutation_cost: low
 required_stages: [coder, documenter, qa]
+assigned_to: coder
 
 description: >
   BL-1248 ships a config kill switch for the master-main-reconcile sweep,
