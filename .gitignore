@@ -6,6 +6,8 @@
 .swarmforge/telemetry/mutation-runs.jsonl
 # BL-596: mono-router rotation dynamics append-only telemetry.
 .swarmforge/telemetry/rotation-*.jsonl
+# BL-597: append-only self-heal telemetry for behaviour trends.
+.swarmforge/telemetry/self-heal-*.jsonl
 swarmforge/scripts/.bin/
 .worktrees/
 /tmp/
