@@ -1,5 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1193: the Article 3.6 freshness gate's
+retired-token extractor (`loadRetiredTokens` in `deprecate-check.ts`) now
+names the item a `RETIRED` marker actually retires, not the first word-like
+token earlier on the same docs line. The old regex grabbed any co-occurring
+word — a table row whose marker names `type: bug` also starts with "Mint
+hygiene", an unrelated column two over, and "Mint" is this project's own
+common vocabulary ("mint a ticket"), so the gate false-held any paused
+ticket that merely used the word. A marker now yields a referent only when
+the line predicates a retirement in one of three shapes — mapping
+(`type: bug` -> `RETIRED-...`), predication (`x` was RETIRED), or
+announcement (`RETIRED: x`) — taken ADJACENT to the marker, with a
+backtick-quoted token preferred over a bare one. Over the live docs tree
+this dropped the extracted set from four tokens (none retired) to the one
+real referent, `type: bug`. Not regressed: BL-1173's true-positive
+depends_on+RETIRED-in-ticket-text branch. See
+`docs/how-to/BL-1173-deprecator-freshness-gate-cli.md`. Acceptance:
+`specs/features/BL-1193-deprecator-retired-token-must-name-the-actual-retired-item.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1273: BL-597's five self-heal
 telemetry production emit sites — `front_desk_supervisor.bb`
 (stale-build-recompile, supervisor-respawn), `handoffd.bb` (claim-heal),
