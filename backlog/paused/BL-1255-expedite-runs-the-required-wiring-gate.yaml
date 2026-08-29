@@ -1,0 +1,134 @@
+id: BL-1255
+title: "The expeditor never runs the required_wiring gate - a piloted ticket can land a mechanism wired into nothing, with no refusal anywhere"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: nothing is broken right now and no work is being lost.
+# high, not medium: this is a safety signal that is silently dark. The gate
+# exists to refuse the BL-419 shape (a mechanism shipped and wired into zero
+# of the call sites the ticket was filed to fix), and on the pilot path -
+# which this host uses routinely - nothing evaluates it at all. The failure it
+# guards against is precisely the one the operator's 2026-08-27 restart gate
+# was filed to catch.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: pipeline-note
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1255-expedite-runs-the-required-wiring-gate.feature
+
+human_approval: pending
+approval_context: >
+  Two things worth your eye before this is built. (1) Severity is high on the
+  grounds that a dark safety gate is worse than a noisy one - say so if you
+  read a pilot-path-only gap as medium. (2) expedite_lib.bb carries a stated
+  machinery-independence rule (no require of handoff_lib.bb / mono_router_lib.bb
+  / swarm_ensure.bb). pre_qa_gate_lib.bb is a pure git-reading library, not
+  swarm machinery, so loading it does not breach that rule as written - but it
+  is the one design question this ticket turns on, and it is yours to confirm
+  rather than mine to assume.
+
+invariants:
+  - "The expedited boundary refuses on exactly the predicate the live documenter-to-QA send refuses on - one shared evaluation, never a second looser copy written for the expeditor."
+  - "A boundary evaluation that could not be completed is reported as not-run and refuses; it is never recorded as passed."
+
+required_wiring:
+  - 'swarmforge/scripts/expedite_cli.bb::pre_qa_gate_lib.bb::the expedite chain must load the same gate library swarm_handoff.bb loads, not a reimplementation'
+  - 'specs/pipeline/steps/index.js::bl1255ExpediteRequiredWiringGateSteps::acceptance handler registered'
+
+description: |
+  ## What
+
+  Make the expedite chain evaluate a ticket's `required_wiring:` entries at its
+  documenter-to-QA boundary, refusing the run - loudly, naming the offending
+  entry - when an entry is unsatisfiable, and passing otherwise.
+
+  ## Why (the gap, verified 2026-08-29)
+
+  `pre_qa_gate_lib.bb` is reached from exactly ONE place:
+  `swarm_handoff.bb`, which loads it at line 14 and applies it to a
+  `git_handoff` addressed to QA. The expeditor never sends handoff mail - the
+  swarm is stopped and it drives the role hats directly - so nothing in
+  `expedite.sh` / `expedite_cli.bb` / `expedite_lib.bb` evaluates
+  `required_wiring:` at all. Grepping for the gate across those three files
+  returns nothing. "Same gates, no machinery" (BL-567) is therefore not true
+  of this gate.
+
+  ## The evidence
+
+  BL-1191 was piloted on 2026-08-27/28 and landed on `origin/main` declaring:
+
+      swarmforge/scripts/handoffd.bb::wake-dedup-gate::daemon notify path
+      consults last fingerprint before inject
+
+  The literal `wake-dedup-gate` appears **nowhere** in `handoffd.bb`. The
+  matcher is a plain substring test (`pre_qa_gate_lib.bb`,
+  `parse-wiring-entry` + `str/includes?`), so that entry could never match -
+  the BL-874 class of unmatchable pattern - and no gate refused it anywhere in
+  the chain.
+
+  The behaviour itself did land correctly, under a different name
+  (`wake-dedup-lib/load-decision`, `wake-dedup-skip`,
+  `wake-dedup-lib/record-injection!` at handoffd.bb:1008-1016), so this
+  particular miss cost nothing. That is the point: nothing about the run
+  distinguished a correct land from an unwired one. It was found only because
+  a human had standing orders to triple-check a pilot's cleanup by hand.
+
+  ## How (direction, not mandate)
+
+  `expedite_cli.bb` already `load-file`s five sibling libraries and is where
+  orchestration steps live; `expedite_lib.bb` holds the decisions and states a
+  machinery-independence rule (no `handoff_lib.bb` / `mono_router_lib.bb` /
+  `swarm_ensure.bb`). `pre_qa_gate_lib.bb` is a pure library that reads git
+  content and decides - it is not swarm machinery - so reusing it is the
+  shape to follow. Reimplementing the predicate for the expeditor is the one
+  outcome to refuse: two copies drift, and invariant 1 exists to forbid it.
+
+  The gather half (`pre_qa_gate_gather_lib.bb`) resolves entries against the
+  commit being sent. The expedited equivalent is the stage commit at the
+  boundary; decision 3 of that library (pin to the parcel commit, never to
+  `main`) carries over unchanged.
+
+qa_e2e_procedure: >
+  (1) Take a scratch ticket declaring one required_wiring entry whose pattern
+  is absent from the cited file, and run expedite.sh against it with --dry-run
+  where possible, otherwise on a throwaway branch; confirm the run refuses at
+  the documenter-to-QA boundary, that the refusal text names the path and
+  pattern, and that no QA stamp is written. (2) Correct the pattern to a
+  literal that is present; re-run and confirm the boundary passes and the run
+  reaches QA. (3) Run a ticket declaring no required_wiring: at all; confirm it
+  is not refused for the absence of the field. (4) Replay BL-1191's own
+  declaration (handoffd.bb::wake-dedup-gate) against its landed commit and
+  confirm the chain now refuses what it accepted on 2026-08-28. (5) Confirm the
+  live pipeline path is unchanged: a documenter git_handoff to QA with an
+  absent entry is still refused by swarm_handoff.bb with the same message.
+
+out_of_scope: |
+  - Fixing BL-1191's own required_wiring entry, or re-running it. Its
+    behaviour landed correctly; the declaration is historical record and
+    rewriting a done ticket's YAML buys nothing.
+  - Auditing every already-landed ticket's required_wiring entries for
+    unmatchable patterns. That is a separate sweep and is not needed to close
+    this gap.
+  - Changing the matcher itself (substring, per BL-874/BL-960). This ticket
+    makes the existing predicate reachable from the expedite path; it does not
+    redesign it.
+  - Any other gate the expeditor may also not run. If one is found, mint it
+    separately rather than widening this slice.
+
+source: |
+  Specifier, 2026-08-29, running the operator restart gate
+  (.swarmforge/operator/INTAKE-bl1191-pilot-cleanup-gate-before-restart.md,
+  twelfth reading) against BL-1191's landed commit. That intake explicitly
+  authorises this mint: "Optional specifier follow-on (not this hold): if
+  'pilot claimed done but did not land on origin/main' is still an unowned
+  process gap after BL-727/BL-701, mint a separate defect."
+
+notes: |
+  - [2026-08-29] specifier: BL-727 ("BL-718 pilot missed unwired acceptance",
+    done/M8) closed the neighbouring half - the acceptance-pointer gate on the
+    pilot path. This is the required_wiring half of the same class, still open.
+  - [2026-08-29] specifier: checked before minting - no paused, active or held
+    ticket covers the expedite path reaching pre_qa_gate_lib.

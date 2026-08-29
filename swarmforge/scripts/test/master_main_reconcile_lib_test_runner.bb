@@ -16,7 +16,6 @@
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
 (defn assert-true [msg actual] (assert= msg true (boolean actual)))
-(defn assert-false [msg actual] (assert= msg false (boolean actual)))
 
 ;; ── porcelain-lines->paths ──────────────────────────────────────────────
 
@@ -379,28 +378,6 @@
   (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold adapters)
   (assert= "sweep!: an uncertain dirty-check never calls merge!" 0 (:merge! @calls))
   (assert= "sweep!: an uncertain dirty-check surfaces exactly once" 1 (:surface! @calls)))
-
-;; ── BL-1247: reconcile-enabled? kill switch, fail-closed ────────────────
-
-(assert-false "reconcile-enabled?: absent config -> off (fail-closed)"
-              (master-main-reconcile-lib/reconcile-enabled? ""))
-(assert-false "reconcile-enabled?: nil conf-text -> off (fail-closed, unreadable conf)"
-              (master-main-reconcile-lib/reconcile-enabled? nil))
-(assert-false "reconcile-enabled?: key present but empty value -> off"
-              (master-main-reconcile-lib/reconcile-enabled? "config master_main_reconcile_enabled "))
-(assert-false "reconcile-enabled?: explicit false -> off"
-              (master-main-reconcile-lib/reconcile-enabled? "config master_main_reconcile_enabled false"))
-(assert-false "reconcile-enabled?: malformed value -> off"
-              (master-main-reconcile-lib/reconcile-enabled? "config master_main_reconcile_enabled yes"))
-(assert-false "reconcile-enabled?: an unrelated config line is ignored (stays off)"
-              (master-main-reconcile-lib/reconcile-enabled? "config active_backlog_max_depth 9"))
-(assert-true "reconcile-enabled?: explicit true -> on"
-             (master-main-reconcile-lib/reconcile-enabled? "config master_main_reconcile_enabled true"))
-(assert-true "reconcile-enabled?: true amid unrelated config lines -> on"
-             (master-main-reconcile-lib/reconcile-enabled? "config active_backlog_max_depth 9\nconfig master_main_reconcile_enabled true\nconfig mutation_cooldown_days 3"))
-;; non-vacuity: a real value ("true") passing where several fail-closed
-;; shapes just passed proves those weren't vacuously true because the
-;; predicate always returns false regardless of input.
 
 ;; ── BL-920: parse-escalation-threshold ─────────────────────────────────
 

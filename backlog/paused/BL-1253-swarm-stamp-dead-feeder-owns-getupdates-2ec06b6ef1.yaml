@@ -1,0 +1,120 @@
+id: BL-1253
+title: "Swarm stamp-off: certify Cursor hotfix 2ec06b6ef1 (a dead front-desk feeder must not leave the bridge in queue mode)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fault it addresses (host silent, /pilot piling up in Telegram)
+# is already fixed on main; this stamp confirms or refutes the land. Not
+# high: nothing is currently broken. Not low: the ledger row stays pending
+# and an uncertified hotfix keeps surfacing until a human answers.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature
+
+human_approval: pending
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 2ec06b6ef1. Review-only:
+  it confirms or refutes the land and never reimplements it. What needs your
+  decision is the ledger row - certify or waive - which green tests must never
+  write on their own. One thing to know before you decide: the commit landed
+  under SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 (its own intake records this),
+  with the reason given as standing property reds unrelated to the change and
+  telegramCursorBridgeCore.property.test.js green. I have NOT verified that
+  claim; scenario coverage here is the landed behaviour, not the override.
+
+invariants:
+  - "This stamp-off never reimplements the hotfix - review confirms or refutes landed commit 2ec06b6ef1 only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1253DeadFeederOwnsGetUpdatesStampSteps::acceptance handler registered so the runner executes every review scenario"
+
+description: >
+  WHAT. Operator/Cursor hotfix 2ec06b6ef1 is live on main with the trailer
+  Hotfix-Certification: pending. Subject: "Own getUpdates when the front-desk
+  inbound feeder is dead."
+
+  Landed behaviour under review (do not redesign): shared-token inbound queue
+  mode is gated on front-desk poll heartbeat liveness rather than assumed.
+  extension/src/tools/cursorBridgeInboundQueue.ts gains
+  frontDeskPollHeartbeatPath / readFrontDeskPollHeartbeatMs over
+  front-desk-poll-heartbeat.json; the bridge re-evaluates liveness each poll
+  and owns getUpdates itself when the feeder is stale, absent or unparseable;
+  start_cursor_bridge.sh defaults CURSOR_BRIDGE_INBOUND_QUEUE=0 when the
+  feeder is not live.
+
+  WHY. Queue mode drained an empty file while the bridge's own heartbeat still
+  looked healthy, so the host stayed silent and /pilot piled up unanswered in
+  Telegram. Separately: an unticketed hotfix never becomes an official swarm
+  deal on green tests alone (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the landed
+  sources at 2ec06b6ef1. Open a narrow follow-up only if review finds a
+  defect; do not rewrite the bridge in this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the hotfix. This parcel confirms or
+    refutes what landed.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT redesign the feeder/queue split, the heartbeat file format, or the
+    front-desk bot itself. If review finds a design defect, that is a narrow
+    follow-up ticket, not this parcel.
+
+qa_e2e_procedure: >
+  (1) At commit 2ec06b6ef1, confirm cursorBridgeInboundQueue.ts defines
+  frontDeskPollHeartbeatPath and readFrontDeskPollHeartbeatMs, and that the
+  latter returns null for a missing or unparseable file.
+  (2) Confirm the queue-vs-getUpdates decision consults feeder liveness on
+  each poll, not once at start.
+  (3) Confirm start_cursor_bridge.sh defaults CURSOR_BRIDGE_INBOUND_QUEUE=0
+  when the feeder is not live.
+  (4) Run the extension unit tests covering the three touched test files.
+  (5) Leave Hotfix-Certification pending until the human ledger decision.
+
+out_of_scope: |
+  - Reverting or rewriting the hotfix.
+  - Any change to the front-desk bot or the heartbeat writer.
+  - Certifying the ledger row without a human decision.
+  - The standing property-suite reds referenced by the commit's override.
+  - Pushing main to origin (QA lands and pushes).
+
+source: |
+  Consolidated from two operator intakes, both archived to
+  .swarmforge/operator/archive/ pointing here.
+
+  (1) INTAKE-stamp-off-hotfix-2ec06b6ef1-dead-feeder-owns-getupdates.md
+      - VALID, and the basis of this ticket. Requested action, verbatim:
+      "Mint BL-848 stamp-off for `2ec06b6ef1`; link ledger;
+      `human_approval: pending`."
+
+  (2) INTAKE-stamp-off-hotfix-5045fae371-dead-feeder-owns-getupdates.md
+      - REFUTED, folded in here rather than minted. Requested action,
+      verbatim: "Mint BL-848 stamp-off for `5045fae371`; link ledger;
+      `human_approval: pending`." That request is deliberately NOT carried
+      out; the refutation is recorded in notes below.
+
+notes: |
+  - [2026-08-29] specifier: the second intake is refuted, not minted. It
+    describes 2ec06b6ef1's content verbatim but names SHA 5045fae371, whose
+    actual subject is "Register bounce-reason hotfix 5de352ed1d in the
+    ledger." - a ledger-bookkeeping commit with no functional change, and the
+    PARENT of 2ec06b6ef1. Its intake also claims the ledger registered
+    5045fae371 state pending; the ledger contains no such row (grep -c
+    returns 0). The same mistake shape is visible one commit chain over:
+    94496c1d07 "Register expedite no-verdict recovery hotfix 3f4f69ec1b in the
+    ledger" is the same kind of bookkeeping commit. Minting a stamp-off
+    against a ledger-registration commit would certify nothing. There is ONE
+    dead-feeder hotfix, and it is 2ec06b6ef1.
+  - [2026-08-29] specifier: ledger link is the coordinator/operator step at
+    promotion - `bb swarmforge/scripts/hotfix_ledger_update.bb . --link
+    2ec06b6ef1 BL-1253`. Recorded here so it is not lost; the ledger row is
+    still stamp_ticket null at mint.
+  - [2026-08-29] specifier: shape follows BL-1136 / BL-1113 stamp-offs.

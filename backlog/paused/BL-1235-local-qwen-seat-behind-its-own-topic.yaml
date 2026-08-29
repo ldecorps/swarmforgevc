@@ -141,3 +141,19 @@ notes: |
     to verify, and deliberately did not guess it into a constant. The finding is
     recorded in the description; the ticket is correct for whichever tag is
     chosen.
+  - [2026-08-28] human (relayed via Claude Code session on the host, not a
+    pipeline role): the open model-tag question is answered directly - use
+    qwen3:14b, not the ticket's guessed qwen2.5-coder:14b (not a pulled tag
+    on this host; the human was offered the actually-available local models,
+    qwen2.5-coder:7b-instruct and qwen3:14b, and chose qwen3:14b). Ollama is
+    now installed and verified serving on this host (portable install at
+    D:\dev\ollama, PATH/OLLAMA_MODELS wired into WSL ~/.bashrc), resolving
+    the "ollama not installed" blocker this ticket noted. qwen3:14b is
+    pulled and confirmed answering over http://127.0.0.1:11434, currently
+    via a manual `nohup ollama serve &` with no systemd unit - it will not
+    survive a WSL restart. Measured latency: this host has no dedicated GPU
+    (Intel UHD 770 integrated only, CPU-only inference) - a real turn
+    (2046-token prompt, 289-token reply) took 3m19s, ~2.8 tok/s. A Telegram
+    reply from this seat could take minutes; the turn loop should account
+    for that (e.g. an acknowledgement/typing signal) rather than assume a
+    fast round trip.
