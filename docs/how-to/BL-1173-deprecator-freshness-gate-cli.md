@@ -50,11 +50,54 @@ git-mv into `active/`. On hold:
 Coordinator prompts still carry the manual checklist as fallback until this
 CLI is the standing path.
 
+## Discharging a hold (BL-1267)
+
+Article 3.6 gives the specifier a `confirm-promote` outcome, but text alone
+changes nothing the CLI can see. Recording the adjudication does:
+
+```bash
+node extension/out/tools/record-adjudication.js <project-root> <BL-id> \
+  confirm_promote <adjudicated-by>
+```
+
+This writes `.swarmforge/deprecator/adjudications/<BL-ID>.json` — **outside**
+the ticket, never inside it, because an adjudication necessarily discusses the
+deprecation vocabulary that earned the hold, and writing it into the ticket
+would arm the generic-claim branch (above) against the very ticket it just
+cleared. The record is fingerprinted (SHA-256) against the exact ticket YAML
+text at write time:
+
+```json
+{
+  "ticket": "BL-1256",
+  "outcome": "confirm_promote",
+  "adjudicated_by": "specifier",
+  "adjudicated_at": "2026-08-29T12:00:00.000Z",
+  "content_fingerprint": "<sha256 of the ticket YAML>"
+}
+```
+
+`deprecate-check.js` reads the record before falling back to the stale-premise
+signals above:
+
+| Record state | Decision |
+| --- | --- |
+| `confirm_promote`, fingerprint matches current ticket text | Allow, naming the record it discharged from |
+| Any other outcome (`amend`, `retire`, `split`) | Hold — recording a non-confirm-promote outcome does not discharge |
+| Fingerprint does not match (ticket amended since adjudication) | Hold — names the record as stale, "re-adjudicate" |
+| Missing, truncated, or malformed record | Hold — fails closed, never treated as absent-and-clean |
+| No record at all | Hold — falls through to the stale-premise signals above |
+
+There is deliberately no bypass: no environment variable, CLI flag, or caller
+argument produces an allow. Amending the ticket after adjudication re-arms
+the gate — a fresh adjudication is required.
+
 ## Modules
 
 | Piece | Location |
 | --- | --- |
 | Pure evaluator + thin CLI | `extension/src/tools/deprecate-check.ts` |
+| Adjudication writer | `extension/src/tools/record-adjudication.ts` |
 | Promote consult | `swarmforge/scripts/promote_and_route_next.sh` |
 | Constitution | Article 3.6 — `03_backlog.md` / `03-backlog-detailed.md` |
 | Amendment | `deprecator-freshness-gate-amendment-2026-08-27.md` |
@@ -73,5 +116,7 @@ Related: epic BL-1172 (deprecator); sibling
 [BL-1174 `/deprecate` soft verbs](BL-1174-deprecate-operator-verbs-scan-docs.md);
 BL-1268 narrowed the generic-claim branch to a self-claim (see Hold signals
 above) — measured over the live paused pool, 27 held tickets dropped to 9,
-zero newly held; BL-1267 (paused at BL-1268's mint) is the independent
-discharge path for a recorded adjudication.
+zero newly held; BL-1267 shipped the discharge path above (a recorded
+adjudication clears the gate; no currently-held ticket was retroactively
+discharged by that parcel — clearing the live backlog is adjudication work
+for the specifier, ticket by ticket).
