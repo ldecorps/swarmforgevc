@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=3dd579fbd0642948c74e81ff8443a999fceb15a2da76d56d8ed9b6278dd8a6e5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-29T00:34:58.594823110Z","feature_name":"the master-main reconcile sweep can be switched off, and off means it writes nothing","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1247-reconcile-sweep-kill-switch.feature","background_hash":"a61a9d04031d98d927f97b97e6dfd711b93cb4b911b5a401bb9b156241a4af28","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The switch decides whether the sweep runs at all","scenario_hash":"1b6258e2bea049d80e36e1735bacb09d7947ab0449da578bf142da3882b1b746","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-29T00:34:58.594823110Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the master-main reconcile sweep can be switched off, and off means it writes nothing
   handoffd runs a master-main reconcile sweep every tick. Its conflict
   prediction is broken in a way BL-1236 has pinned to one line, and on

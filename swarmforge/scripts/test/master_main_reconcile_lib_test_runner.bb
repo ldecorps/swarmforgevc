@@ -402,6 +402,19 @@
 ;; shapes just passed proves those weren't vacuously true because the
 ;; predicate always returns false regardless of input.
 
+;; hardening (BL-1247): the value is the FIRST token after the key, not
+;; \btrue\b anywhere on the line - a trailing comment that merely mentions
+;; "true" must not flip an explicit "false" line to enabled. Found by hand
+;; before this test existed: `reconcile-enabled?` on
+;; "config master_main_reconcile_enabled false # flip to true once BL-1236
+;; lands" returned true pre-fix.
+(assert-false "reconcile-enabled?: explicit false with a trailing comment mentioning \"true\" stays off"
+              (master-main-reconcile-lib/reconcile-enabled?
+                "config master_main_reconcile_enabled false # flip to true once BL-1236 lands"))
+(assert-true "reconcile-enabled?: explicit true survives a trailing comment"
+             (master-main-reconcile-lib/reconcile-enabled?
+               "config master_main_reconcile_enabled true # BL-1236 has landed"))
+
 ;; ── BL-920: parse-escalation-threshold ─────────────────────────────────
 
 (assert= "parse-escalation-threshold: absent config -> default"

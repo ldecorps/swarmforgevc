@@ -185,5 +185,55 @@ notes: |
     ALL PROPERTIES HOLD unchanged; acceptance feature 7/7, driving the
     real handoffd.bb against a real bare-origin + diverged-clone fixture
     (genuine ahead=1/behind=1, not simulated)."
+  - "[2026-08-29] hardener: found and fixed a fail-open gap in the switch
+    itself before hardening the rest. `reconcile-enabled?` matched
+    `\\btrue\\b` ANYWHERE on the matched conf line, not just the value
+    token - so `config master_main_reconcile_enabled false # flip to true
+    once BL-1236 lands` (an entirely plausible edit to a line already
+    carrying a 15-line prose comment above it) read as ENABLED despite its
+    own value being \"false\". Confirmed by hand: `(reconcile-enabled?
+    \"config master_main_reconcile_enabled false # ... true\")` returned
+    true pre-fix. This is the exact fail-open the ticket's own second
+    invariant exists to forbid, introduced by the new code this ticket
+    adds - squarely in scope, not a pre-existing pattern to route
+    elsewhere. Fixed by anchoring on the first whitespace-delimited token
+    after the key (`^config\\s+master_main_reconcile_enabled\\s+(\\S+)`)
+    instead of a bare word-boundary search over the whole line; a trailing
+    comment can no longer influence the parsed value. Added 2 regression
+    tests (false-with-a-trailing-\"true\"-comment stays off,
+    true-with-a-trailing-comment still works); confirmed non-vacuously by
+    reverting only the fix and watching the new test go red (actual: true,
+    expected: false), then restoring and re-confirming green.
+
+    Full BL-113 soft Gherkin mutation over the one Scenario Outline
+    (reconcile-sweep-kill-switch-01, 4 example rows / 8 mutable cells): ran
+    once pre-fix (8/8 killed - the fix does not touch example values,
+    only the implementation, so the outline's own coverage was already
+    tight), then a `full` re-run post-fix to refresh the manifest against
+    the corrected implementation: 8/8 killed, 0 survived, 0 errors, fresh
+    timestamp recorded in the feature file's own manifest. Acceptance
+    (7/7, real handoffd.bb via --reconcile-sweep-once against a real
+    bare-origin + diverged-clone fixture) re-run clean after the fix.
+    master_main_reconcile_lib_test_runner.bb ALL PASS (8 reconcile-enabled?
+    cases now, up from 6) and master_main_reconcile_lib_property_runner.bb
+    ALL PROPERTIES HOLD, both unchanged in shape.
+
+    No wired mutation/CRAP/DRY tool covers any changed file this pass
+    (Babashka has none per engineering.prompt; Stryker scopes only
+    extension/out/**/*.js; jscpd scopes only extension/) - BL-113 Gherkin
+    mutation plus the hand-verified non-vacuous fix above is this pass's
+    full coverage, per the no-tooling-configured fallback.
+
+    Ran the standing whole-tree guards required for touching
+    specs/pipeline/steps/ (extension/test/*Guard*.test.js, excluding
+    .property. siblings): 4 of 14 failed (tempDirTrapGuard,
+    socketFixtureShortRootGuard, liveRepoDerivationGuard,
+    tmpDirMigrationGuard), all pre-existing standing reds unrelated to
+    this parcel - confirmed by reading each violation list: none names any
+    file this ticket touches (bl1247ReconcileSweepKillSwitchSteps.js,
+    its CLI script, or any swarmforge/scripts file this ticket changed).
+    Matches the already-tracked standing reds in memory
+    (temp-dir-trap-guard-property-red-untracked, and siblings for the
+    other three)."
 
 assigned_to: coder
