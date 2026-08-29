@@ -62,7 +62,13 @@
               (System/exit 0))
             (if (task-scope-gate-lib/blocked? result)
               (do
-                (println (task-scope-gate-lib/refusal-message {:task-name task-name :findings (:findings result)}))
+                ;; BL-1276: same message, same flag - the review-time check
+                ;; must never say less than the send-time gate about the same
+                ;; commit (BL-1257 invariant 2).
+                (println (task-scope-gate-lib/refusal-message
+                          {:task-name task-name
+                           :findings (:findings result)
+                           :acceptance-unreadable? (:acceptance-unreadable? result)}))
                 (System/exit 1))
               (do (println "OK") (System/exit 0)))))))))
 
