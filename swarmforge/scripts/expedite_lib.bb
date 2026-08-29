@@ -19,6 +19,7 @@
 
 (ns expedite-lib
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 ;; ── argument parsing ───────────────────────────────────────────────────────
@@ -618,6 +619,41 @@
    :still-held (vec (map :ticket parked))
    :promoted []
    :note "left in hold/ deliberately; promotion is not the expeditor's call"})
+
+;; ── BL-1249: restart hold (operator control-pause) ──────────────────────────
+;; The restart phase must decline to run the start command while
+;; .swarmforge/operator/control-pause.json — the same marker BL-1191's gate
+;; checklist already treats as the restart-blocking signal — is active.
+;; Fail-closed on doubt, fail-open only on genuine absence (invariant 2): a
+;; marker that cannot be read as a definite "not active" — malformed,
+;; truncated, unparseable — holds the restart exactly like an explicit
+;; active:true marker. Only a marker that is not there at all, or that
+;; parses and plainly says inactive/expired, permits the restart.
+
+(defn restart-hold-verdict
+  "Pure. raw-content is nil when the marker file does not exist on disk, or
+   its exact text otherwise; now-ms is the injected clock. Never throws — a
+   parse failure, or a non-object JSON value, or an untilMs that is not a
+   number, all classify as :malformed, which holds."
+  [raw-content now-ms]
+  (if (nil? raw-content)
+    {:held? false :reason :absent}
+    (let [parsed (try (json/parse-string raw-content true) (catch Exception _ ::unparseable))]
+      (cond
+        (or (= parsed ::unparseable) (not (map? parsed)))
+        {:held? true :reason :malformed}
+
+        (not (:active parsed))
+        {:held? false :reason :inactive}
+
+        (and (some? (:untilMs parsed)) (not (number? (:untilMs parsed))))
+        {:held? true :reason :malformed}
+
+        (and (:untilMs parsed) (>= now-ms (:untilMs parsed)))
+        {:held? false :reason :inactive :until-ms (:untilMs parsed)}
+
+        :else
+        {:held? true :reason :active :until-ms (:untilMs parsed)}))))
 
 ;; ── BL-1024: what the run leaves for someone else ──────────────────────────
 ;; The expeditor may not use handoffd, the mailboxes, tmux, or the coordinator
