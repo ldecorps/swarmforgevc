@@ -848,7 +848,8 @@ const DOMAINS = [
   require('./bl1249RestartHonoursPauseMarkerSteps'),
   require('./bl1233LauncherGuardAmbientGitEnvSteps'),
   require('./bl1234PropertyAllowlistGateSteps'),
-  require('./bl1244DeliveredAnswerFreesQuestionSlotSteps')
+  require('./bl1244DeliveredAnswerFreesQuestionSlotSteps'),
+  require('./bl1237ReferenceFreshnessDirectionSteps')
 ];
 
 function registerSteps(registry) {
