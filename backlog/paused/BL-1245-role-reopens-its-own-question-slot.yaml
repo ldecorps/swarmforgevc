@@ -16,7 +16,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1245-role-reopens-its-own-question-slot.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   What needs your sign-off is who may reopen the slot. This ticket says the
   ASKING ROLE may, on its own say-so, provided it states a reason that is

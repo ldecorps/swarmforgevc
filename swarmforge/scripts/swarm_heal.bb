@@ -86,7 +86,11 @@
                                               {:ahead (or ahead 0) :behind (or behind 0)}))))
                          :dirty-paths! (fn [] [])
                          :tip-contains-origin! (fn [] (zero? (:exit (sh root "git" "merge-base" "--is-ancestor" "origin/main" "HEAD"))))
-                         :would-conflict! (fn [] false)
+                         ;; BL-1236: run-post-hotfix-merge!'s adapter is
+                         ;; now merge-verdict! (a verdict keyword, not a
+                         ;; boolean) - preserves this CLI's pre-existing
+                         ;; "never predicts conflict" behavior unchanged.
+                         :merge-verdict! (fn [] :clean)
                          ;; BL-1198: attempt a push first — only reset when
                          ;; that push is rejected (genuine divergence).
                          :rematch! (fn []

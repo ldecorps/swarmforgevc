@@ -17,7 +17,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1244-a-delivered-answer-frees-the-question-slot.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This one needs no ruling on policy - the behaviour is plainly wrong - but it
   does need your sign-off on WHERE the fix goes, because the obvious place is

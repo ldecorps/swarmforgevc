@@ -34,6 +34,7 @@ const {
   isCursorResourceExhausted,
   parseCursorBridgeCliArgs,
   shouldUseCursorBridgeInboundQueue,
+  isFrontDeskInboundFeederLive,
   CURSOR_BRIDGE_CLI_USAGE,
   BUBBLE_TOPIC_NAME,
   decideEnsureBubbleTopicAction,
@@ -1090,6 +1091,46 @@ test('shouldUseCursorBridgeInboundQueue: exclusive CURSOR_BRIDGE_BOT_TOKEN owns 
     true
   );
   assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '0' }), false);
+});
+
+// Hotfix: shared-token queue mode is deaf when the front-desk feeder is dead —
+// heartbeat still ticks, /pilot piles up in Telegram, Host goes silent.
+test('isFrontDeskInboundFeederLive: missing or non-finite heartbeat is not live', () => {
+  assert.equal(isFrontDeskInboundFeederLive({ lastHeartbeatMs: null, nowMs: 100_000 }), false);
+  assert.equal(isFrontDeskInboundFeederLive({ lastHeartbeatMs: undefined, nowMs: 100_000 }), false);
+  assert.equal(isFrontDeskInboundFeederLive({ lastHeartbeatMs: Number.NaN, nowMs: 100_000 }), false);
+});
+
+test('isFrontDeskInboundFeederLive: fresh heartbeat within stall window is live', () => {
+  assert.equal(
+    isFrontDeskInboundFeederLive({ lastHeartbeatMs: 95_000, nowMs: 100_000, stallMs: 90_000 }),
+    true
+  );
+});
+
+test('isFrontDeskInboundFeederLive: heartbeat older than stall window is dead', () => {
+  assert.equal(
+    isFrontDeskInboundFeederLive({ lastHeartbeatMs: 1_000, nowMs: 100_000, stallMs: 90_000 }),
+    false
+  );
+});
+
+test('shouldUseCursorBridgeInboundQueue: dead feeder forces getUpdates even when shared/forced-on', () => {
+  assert.equal(shouldUseCursorBridgeInboundQueue({ TELEGRAM_BOT_TOKEN: 'shared' }, { feederLive: false }), false);
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '1' }, { feederLive: false }), false);
+  assert.equal(
+    shouldUseCursorBridgeInboundQueue(
+      { CURSOR_BRIDGE_BOT_TOKEN: 'exclusive', CURSOR_BRIDGE_INBOUND_QUEUE: '1' },
+      { feederLive: false }
+    ),
+    false
+  );
+});
+
+test('shouldUseCursorBridgeInboundQueue: live feeder keeps shared-token queue (BL-764)', () => {
+  assert.equal(shouldUseCursorBridgeInboundQueue({ TELEGRAM_BOT_TOKEN: 'shared' }, { feederLive: true }), true);
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '1' }, { feederLive: true }), true);
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '0' }, { feederLive: true }), false);
 });
 
 test('shouldUseCursorBridgeInboundQueue: whitespace-only env values trim to their empty/absent behavior', () => {

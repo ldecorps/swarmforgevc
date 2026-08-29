@@ -3142,15 +3142,15 @@
   (zero? (:exit (daemon-cycle-guard-lib/sh! ["git" "merge-base" "--is-ancestor" "origin/main" "HEAD"]
                                             {:dir (str project-root)}))))
 
-(defn- master-main-merge-would-conflict? []
-  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "merge-base" "HEAD" "origin/main"]
-                                                       {:dir (str project-root)})]
-    (if (not (zero? exit))
-      true
-      (let [base (str/trim out)
-            tree (daemon-cycle-guard-lib/sh! ["git" "merge-tree" base "HEAD" "origin/main"]
-                                             {:dir (str project-root)})]
-        (master-main-reconcile-lib/merge-tree-reports-conflict? (:out tree))))))
+;; BL-1236: replaces the legacy three-argument `git merge-tree base HEAD
+;; origin/main` diff-text search (merge-tree-reports-conflict?, which fired
+;; on ordinary prose) with git's own verdict from `git merge-tree
+;; --write-tree HEAD origin/main` (git >= 2.38) - exit 0/1/other, never a
+;; diff read. No merge-base call needed: --write-tree computes it itself.
+(defn- master-main-merge-verdict []
+  (let [{:keys [exit]} (daemon-cycle-guard-lib/sh! ["git" "merge-tree" "--write-tree" "HEAD" "origin/main"]
+                                                   {:dir (str project-root)})]
+    (master-main-reconcile-lib/merge-verdict exit)))
 
 (defn- master-main-rematch-onto-origin!
   "BL-1138/1141: reset --hard origin/main. Never touches foreign MERGE_HEAD.
@@ -3178,7 +3178,9 @@
 (defn- master-main-reconcile-merge! []
   (let [{:keys [ahead behind]} (push-sweep-rev-counts!)
         tip-ok? (master-main-origin-is-ancestor?)
-        conflict? (master-main-merge-would-conflict?)
+        verdict (master-main-merge-verdict)
+        conflict? (= verdict :conflict)
+        unavailable? (= verdict :unavailable)
         mid? (master-main-merge-head-present?)
         plan (master-main-reconcile-lib/absorb-dispatch-plan
               {:merge-head-present? mid?
@@ -3186,13 +3188,25 @@
                :ahead ahead
                :tip-contains-origin? tip-ok?
                :would-conflict? conflict?
-               :absorb-would-conflict? conflict?})]
+               :absorb-would-conflict? conflict?
+               :verdict-unavailable? unavailable?})]
     (case plan
       :skip-human-merge-in-progress
       {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
 
       :noop
       {:success true :outcome :noop}
+
+      ;; BL-1236 invariant 3: git could not answer whether the merge would
+      ;; conflict - never treated as "conflict" (which would fall to a
+      ;; reset), never treated as "clean" (which would attempt a merge and
+      ;; still risk a reset on that merge's own failure). Surface and leave
+      ;; local main exactly as found; the SAME non-destructive shape as
+      ;; :dirty-blocked one level up in sweep!.
+      :verdict-unavailable
+      (do
+        (log! "master-main-reconcile" "verdict-unavailable")
+        {:success false :error "verdict-unavailable" :outcome :verdict-unavailable})
 
       ;; BL-1214: both of these branches are reached (with ahead>0/ahead=0
       ;; respectively) only when the predictive would-conflict? check found a
@@ -3258,6 +3272,18 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
+;; BL-1248: config kill switch, disabled while absent - see
+;; master_main_reconcile_lib.bb's own parse-enabled? for the fail-closed
+;; contract. Guarded inside sweep! at the :should-reconcile branch only
+;; (not here at the call site), so the drift log and the dirty-blocked/
+;; conflict surfacing+escalation paths keep running while the switch is
+;; off - this ticket's own firm constraint against silencing divergence
+;; notification along with the reconcile action.
+(defn- master-main-reconcile-enabled? []
+  (master-main-reconcile-lib/parse-enabled?
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
 ;; BL-920: a persistent block escalates to the operator - reuses the SAME
 ;; operator alert channel send-open-slot-escalation-alert! above already
 ;; established (Telegram OPERATOR topic outbox + email via daemon-alarm-
@@ -3303,20 +3329,17 @@
 
 (defn master-main-reconcile-sweep! []
   (try
-    (if-not (master-main-reconcile-lib/reconcile-enabled? (master-main-reconcile-conf-text!))
-      (let [{:keys [ahead behind]} (master-main-reconcile-lib/drift-report (push-sweep-rev-counts!))]
-        (log! "master-main-reconcile" "skipped-disabled"
-              (str "ahead=" ahead " behind=" behind " (BL-1247: master_main_reconcile_enabled is off)")))
-      (master-main-reconcile-lib/sweep!
-       (str daemon-dir)
-       (master-main-reconcile-escalation-threshold)
-       {:rev-counts! push-sweep-rev-counts!
-        :dirty-paths! master-main-reconcile-dirty-paths!
-        :merge-changed-paths! master-main-reconcile-merge-changed-paths!
-        :merge! master-main-reconcile-merge!
-        :surface! master-main-reconcile-surface!
-        :escalate! master-main-reconcile-escalate!
-        :log! (fn [& parts] (apply log! parts))}))
+    (master-main-reconcile-lib/sweep!
+     (str daemon-dir)
+     (master-main-reconcile-escalation-threshold)
+     (master-main-reconcile-enabled?)
+     {:rev-counts! push-sweep-rev-counts!
+      :dirty-paths! master-main-reconcile-dirty-paths!
+      :merge-changed-paths! master-main-reconcile-merge-changed-paths!
+      :merge! master-main-reconcile-merge!
+      :surface! master-main-reconcile-surface!
+      :escalate! master-main-reconcile-escalate!
+      :log! (fn [& parts] (apply log! parts))})
     (catch Exception e
       (log! "master-main-reconcile-sweep-error" (.getMessage e)))))
 

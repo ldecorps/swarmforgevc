@@ -53,8 +53,29 @@ fi
 export TELEGRAM_BOT_TOKEN="${CURSOR_BRIDGE_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:?set CURSOR_BRIDGE_BOT_TOKEN or TELEGRAM_BOT_TOKEN}}"
 # Shared group bot with the front desk: do not compete on getUpdates — drain
 # the front-desk inbound queue instead (see cursorBridgeInboundQueue.ts).
+# But only when the front-desk feeder is actually alive; otherwise Host goes
+# silent (empty queue + healthy bridge heartbeat) while Telegram holds /pilot.
 if [[ -z "${CURSOR_BRIDGE_BOT_TOKEN:-}" ]]; then
-  export CURSOR_BRIDGE_INBOUND_QUEUE="${CURSOR_BRIDGE_INBOUND_QUEUE:-1}"
+  if [[ -z "${CURSOR_BRIDGE_INBOUND_QUEUE:-}" ]]; then
+    FD_HB="$OP_DIR/front-desk-poll-heartbeat.json"
+    feeder_live=0
+    if [[ -f "$FD_HB" ]] && command -v node >/dev/null 2>&1; then
+      feeder_live="$(node -e '
+        const fs=require("fs");
+        const stall=Number(process.env.FRONT_DESK_STALL_MS||90000);
+        try {
+          const hb=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).lastHeartbeatMs;
+          process.stdout.write(Number.isFinite(hb) && (Date.now()-hb)<=stall ? "1" : "0");
+        } catch { process.stdout.write("0"); }
+      ' "$FD_HB")"
+    fi
+    if [[ "$feeder_live" == "1" ]]; then
+      export CURSOR_BRIDGE_INBOUND_QUEUE=1
+    else
+      echo "start_cursor_bridge: front-desk feeder not live — owning getUpdates (CURSOR_BRIDGE_INBOUND_QUEUE=0)" >&2
+      export CURSOR_BRIDGE_INBOUND_QUEUE=0
+    fi
+  fi
 fi
 : "${TELEGRAM_CHAT_ID:?TELEGRAM_CHAT_ID is not set}"
 : "${TELEGRAM_PRINCIPAL_USER_ID:?TELEGRAM_PRINCIPAL_USER_ID is not set}"

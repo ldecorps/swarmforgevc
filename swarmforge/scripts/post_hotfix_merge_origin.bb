@@ -39,12 +39,15 @@
 (defn- tip-contains-origin? [root]
   (zero? (:exit (sh root "git" "merge-base" "--is-ancestor" "origin/main" "HEAD"))))
 
-(defn- would-conflict? [root]
-  (let [base (sh root "git" "merge-base" "HEAD" "origin/main")]
-    (if (not (zero? (:exit base)))
-      true
-      (let [tree (sh root "git" "merge-tree" (str/trim (:out base)) "HEAD" "origin/main")]
-        (master-main-reconcile-lib/merge-tree-reports-conflict? (:out tree))))))
+;; BL-1236: same fix as handoffd.bb's master-main-merge-verdict - this CLI
+;; carried a byte-identical copy of the broken legacy-diff-text predicate
+;; and ends at the same `git reset --hard origin/main`, so it needed the
+;; same replacement, not just the daemon. `git merge-tree --write-tree`
+;; gives git's own verdict from its exit code alone; no merge-base call
+;; needed, and a git that cannot answer is :unavailable, never "conflict".
+(defn- merge-verdict! [root]
+  (let [tree (sh root "git" "merge-tree" "--write-tree" "HEAD" "origin/main")]
+    (master-main-reconcile-lib/merge-verdict (:exit tree))))
 
 (defn- merge-origin! [root]
   ;; BL-1131: FF-only absorb after rematch-prepared lands — never open a
@@ -90,7 +93,7 @@
    :rev-counts! (fn [] (rev-counts! root))
    :dirty-paths! (fn [] (dirty-paths! root))
    :tip-contains-origin! (fn [] (tip-contains-origin? root))
-   :would-conflict! (fn [] (would-conflict? root))
+   :merge-verdict! (fn [] (merge-verdict! root))
    :rematch! (fn [] (rematch-onto-origin! root))
    :merge! (fn [] (merge-origin! root))
    :merge3! (fn [] (merge3-origin! root))
