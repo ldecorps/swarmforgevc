@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: deprecator
-human_approval: pending
+human_approval: approved
 priority: 8
 direction: swarm-reported
 depends_on: []
