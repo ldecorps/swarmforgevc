@@ -189,7 +189,13 @@
 ;; nil (never []) distinctly signals "the walk itself failed" - collapsing
 ;; that into the fail-open empty-findings shape would silently accept an
 ;; unreadable range instead of warning about it.
-(defn- task-tagged-changed-paths [root base commit task-ticket-id]
+;;
+;; BL-1241: public (not `defn-`) so land_step_lib.bb can reuse this EXACT
+;; walk with base=origin/main to compute "this task's own paths to replay"
+;; for its tip-pure rebuild - never a second implementation of the same
+;; walk. Behavior and signature unchanged from BL-1192's own shipped shape;
+;; only the `-` is dropped.
+(defn task-tagged-changed-paths [root base commit task-ticket-id]
   (let [candidates (if base
                       (let [log (git! root "rev-list" "--first-parent" (str base ".." commit))]
                         (when (zero? (:exit log))
