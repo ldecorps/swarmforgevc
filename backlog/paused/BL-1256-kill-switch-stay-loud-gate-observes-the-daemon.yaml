@@ -181,6 +181,24 @@ coordinator_notes: >
   answered. This has now blocked 4 consecutive open promotion slots across
   BL-1244/BL-1233/BL-1234/BL-1237 closes. Not promoting around the hold.
 
+  UPDATE: specifier has since adjudicated (see deprecator_adjudication:
+  below) — verdict PROMOTE, confirmed again by note "HOLD was false-pos,
+  spec amended, MAY PROMOTE." Re-ran promote_and_route_next.sh: STILL
+  HOLDs. Root cause found by reading
+  extension/src/tools/deprecate-check.ts: evaluateDeprecatorFreshness()'s
+  STALE_CLAIM_RE check only asks `facts.doneClosureExists`, i.e. whether
+  THIS ticket's own id has a backlog/done/ YAML — never whether the
+  RETIRED SURFACE IT NAMES is durably closed, and it has no field at all
+  for a recorded specifier adjudication overriding the naive regex hit.
+  So any ticket whose text legitimately mentions a retired sibling ticket
+  (exactly this ticket's case) fails this check forever, regardless of
+  adjudication — the gate has no coded escape hatch for Article 3.6's own
+  "confirm promote" outcome. Filed a role_ask on this (coordinator) but
+  one was already pending, so it queued behind that; not hand-promoting
+  around the gate per BL-1228 discipline. This is a gate defect worth its
+  own ticket (deprecate-check.js needs to consult a recorded adjudication,
+  not just re-derive the same false positive every run).
+
 approval_context: >
   A gate that has never been able to fail is not evidence, and this one
   guards the switch protecting against thirteen realised commit losses. It
