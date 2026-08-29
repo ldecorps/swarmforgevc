@@ -269,5 +269,52 @@ notes: |
     coder blocked correctly rather than guess. PROSE HALF LANDED in the same
     pass, discharging the BL-798 commitment recorded above: see
     `swarmforge/roles/QA.prompt`, commit `9c6964bf93`.
+  - "[2026-08-29] coder: implemented per the ruling's remedy (b) and the
+    QA.prompt prose landed alongside it. land_step_lib.bb: detection
+    (entangled-siblings - every commit in origin/main..commit whose OWN
+    subject names a DIFFERENT ticket, positive identification only, never
+    a guess from an unattributed commit) + replay (own-paths, reusing
+    task_scope_gate_lib.bb's OWN already-shipped walk - made public,
+    zero behaviour change, never a second implementation - based at
+    origin/main instead of the last-handoff boundary its default caller
+    uses; replay! builds the tip-pure commit in a DEDICATED linked
+    worktree, never a checkout in the caller's own possibly-dirty
+    worktree, always cleaned up, success or failure). land_step_cli.bb is
+    the thin IO wrapper QA.prompt's own BL-1241 section now names.
+
+    (a) (land approved siblings first) is not separately automated - the
+    ruling's own point is that re-running the SAME detection naturally
+    implements it: if a sibling already landed on origin/main by the time
+    the land step runs (via ordinary land traffic or an earlier land-step
+    pass), it stops appearing in `entangled-siblings` and the tip lands
+    clean, no separate code path needed. Verified by hand
+    (qa_e2e_procedure step 5, the three-way 2026-08-28 shape): three
+    tickets minted on one branch, each entangled with the other two -
+    running the land step for each in turn produces three independent
+    tip-pure replay commits, each containing only its own ticket's path,
+    each landable - the sequence terminates with all three landable
+    rather than all three bounced.
+
+    The land step never lands/pushes `origin` itself - QA's own final
+    land action (Article 1.8) stays the human-observed step; this tool
+    only produces the commit for QA to review and land. It also never
+    touches a ticket's own approval record or any `required_stages`/
+    `status:` routing field (scenario 04's own invariant), and never
+    sends a handoff of its own (scenario 03) - confirmed both
+    structurally (grepped the tool's own source) and by fixture.
+
+    Verified: land_step_lib_test_runner.bb ALL PASS (including that
+    replay! never moves the caller's own branch, never dirties its
+    working tree, and leaves no stray worktree registered);
+    task_scope_gate_lib_test_runner.bb unchanged (only one function
+    exposed, `-` dropped, zero behaviour change - re-verified ALL PASS).
+    New acceptance feature (bl1241EntangledTipRemedySteps.js) 4/4,
+    driving the real land_step_cli.bb end to end.
+
+    No src/*.ts touched, no CRAP/DRY/Stryker concern (Babashka has
+    neither wired, per BL-472). No property test: the invariants are
+    about which git objects a specific tool touches and does not touch -
+    a small closed set of shapes, already exhaustively covered by the
+    acceptance scenarios and the lib's own fixture-based unit tests.
 
 assigned_to: coder
