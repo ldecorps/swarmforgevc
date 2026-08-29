@@ -8,6 +8,8 @@ priority: 1
 direction: human-requested
 depends_on: [BL-1181, BL-1178, BL-556]
 mutation_cost: high
+slice_size_envelope: high
+size_envelope_decision: "justify not split - seating a trial without the assessment that ends it would leave a non-permanent model seated indefinitely, which is worse than not trialling. A safe alternative split IS available and is recorded in notes for the human, not taken unilaterally on an approved top-priority ticket."
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1182-day-long-bob-trial-lifecycle.feature
 
@@ -69,3 +71,33 @@ notes: |
     count 0), so it can only match once the lifecycle actually ships there.
   - [2026-08-27] specifier: minted; one operating day = calendar/shift-aligned
     day locked against swarm_shift_lib in implementation notes if needed.
+  Size envelope, 2026-08-29. This ticket tripped BL-634's gate and the trigger
+  is HONEST here, unlike BL-1193/BL-1267/BL-1268: this is not a deprecator
+  ticket, so its mutation_cost: high is a genuine cost estimate rather than an
+  Article 3.6 seat-tier declaration. The band is restated explicitly as high.
+  Decision recorded: JUSTIFY, do not split - with a caveat the human should
+  see, below.
+
+  Why justify. The lifecycle's obvious cut is nominate+seat from
+  assess+promote-or-revert. Taken naively it is unsafe: a slice that seats a
+  trial model with no assessment to end it leaves a non-permanent model in a
+  role seat indefinitely, which is a worse state than never having trialled.
+  The three declared invariants also span the whole lifecycle - outrank-or-
+  revert, evidence against silent re-trial, and memory transfer at BOTH the
+  start and end switch - so any cut splits an invariant across two slices.
+
+  The alternative I did NOT take, recorded so it is not lost. There is a safe
+  split, and it may well be the better decomposition:
+    slice A - nominate, seat, and ALWAYS revert at end of day. Complete and
+              independently valuable: time-boxed trials that always return to
+              the permanent model, yielding comparison telemetry with no
+              possibility of a stranded seat.
+    slice B - assess, and promote when the trial outranks (tie->cheap),
+              replacing slice A's unconditional revert.
+  I did not take it because this ticket is human_approval: approved and sits
+  at the top of the reprioritised best-of-breed-swarm epic, so re-scoping it
+  unilaterally is not mine to do; and I could not raise it as a question
+  because my role_ask slot is held by an older unanswered question. If the
+  coder finds the slice oversized in practice, this split is the one to ask
+  for rather than inventing a different cut.
+
