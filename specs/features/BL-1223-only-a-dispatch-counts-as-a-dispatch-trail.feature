@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-29T08:17:57.790914788Z","feature_name":"Only a message that dispatches work counts as a dispatch trail","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1223-only-a-dispatch-counts-as-a-dispatch-trail.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: Only a message that dispatches work counts as a dispatch trail
 
   The dispatch trail answers one question: has this ticket ever been handed to
