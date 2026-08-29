@@ -160,7 +160,13 @@
     ;; A helper under lib/ must not be discovered: the walk is deliberately
     ;; not recursive, because lib/ holds shared helpers rather than tests.
     (spit (str (fs/path dir "lib" "test_helper.sh")) "")
-    (assert= "discovery finds exactly the two test shapes, and does not recurse into lib/"
+    ;; A DIRECTORY whose name matches the test-file? pattern must not be
+    ;; discovered as a test - discovery filters to regular files only.
+    ;; Nothing in the real tree names a directory this way today, but nothing
+    ;; stops it, and an undetected directory here would be spawned as a test
+    ;; by run_bb_suite.sh with no clear failure.
+    (fs/create-dirs (fs/path dir "test_dir_shaped.sh"))
+    (assert= "discovery finds exactly the two test shapes, and does not recurse into lib/, and excludes a directory whose name matches the test-file? pattern"
              #{"test_one.sh" "two_test_runner.bb"}
              (suite-inventory-lib/discover-test-files dir))
     (finally
