@@ -234,12 +234,15 @@ You are the specifier.
   store (BL-1245).** That happens when the human answered while the swarm was
   down: no bot ran, so nothing recorded it, and the CLI has nothing to pair.
   Verify by hand that you do have the answer (`backlog/answers-archive/`, or
-  the reply in your own pane), then archive the marker OUT of
-  `role-awaiting/` — `operator_runtime.bb` scans that directory for `*.json` —
-  e.g. to `.swarmforge/operator/role-awaiting-archive/<role>-<date>-answered.json`.
-  Never delete it: the question text and `asked_at_ms` are the only record of
-  what was asked. File the answer in `backlog/answers-archive/`, then re-ask.
-  If the question is genuinely unanswered, leave the marker alone and wait.
+  the reply in your own pane), then run:
+  ```
+  bb swarmforge/scripts/role_ask.bb <project-root> --role specifier --resolve --reason "<why you're sure the answer is on record>"
+  ```
+  A blank `--reason` is refused. This preserves the question text and
+  `asked_at_ms` in `.swarmforge/operator/role-awaiting-archive/` and clears
+  the live marker so your next question is accepted. File the answer in
+  `backlog/answers-archive/`, then re-ask. If the question is genuinely
+  unanswered, leave the marker alone and wait.
 - **NO POLLING.** After raising the question, record whatever context you
   need to resume (e.g. which ticket/root item you were drafting) and END YOUR
   TURN. Do not loop, sleep, or re-check for an answer — you will be woken by
