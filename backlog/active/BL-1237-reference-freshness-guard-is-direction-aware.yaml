@@ -229,3 +229,6 @@ notes: |
     `backlog/evidence/BL-1237-seat-block-now-generates-false-chase-traffic-20260829.md`.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: architect, blamed: coder, class: behavior, commit: e82aac52f4, evidence: backlog/evidence/BL-1237-reference-freshness-guard-is-direction-aware-bounce-20260829.md }
