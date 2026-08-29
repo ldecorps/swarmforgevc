@@ -121,6 +121,7 @@ expects them, and are not migrated or rewritten here.
 - [Supervisor threads are not front-desk topics](how-to/BL-695-supervisor-threads-are-not-front-desk-topics.md) — SUP/unbound never write tracked topic JSON; icons stay durable off-git (BL-695).
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override; standing-red allowlist (BL-570 / BL-1175).
 - [Standing property reds do not block unrelated green commits](how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md) — explicit allowlist TSV; SKIP stays recovery-only (BL-1175).
+- [The unit-lane node:test import guard](how-to/BL-1220-unit-lane-node-test-import-guard.md) — 24 files importing `test` from `node:test` collected nothing under Vitest and ran nowhere at all; deletes the import, adds a no-allowlist standing guard (BL-1220).
 - [Thin-main CRAP-visible CLI gate](how-to/BL-534-thin-main-crap-visible-cli-gate.md) — tools `main()` must be exported and CC≤2; parcel never allowlists (BL-534).
 - [Reconcile import skips the property-suite guard](how-to/BL-1121-reconcile-import-skips-property-suite-guard.md) — byte-identical mid-merge import → `skip-reconcile-import`; env override stays recovery-only (BL-1121).
 - [Property-suite fixtures must not mutate shared main](how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md) — canary bare/HEAD around the property lane; refuse reset-to-origin when ahead (BL-1124).
