@@ -94,9 +94,17 @@ function unitLaneFiles() {
     .map((name) => path.join('test', name));
 }
 
+const FEATURE_NAME = 'main-lane test files declare their tests to the runner that actually runs them';
+
 function registerSteps(registry) {
+  // BL-425 scoping: several of the step texts below are generic enough
+  // that another ticket's feature legitimately uses the same words for
+  // unrelated behaviour, and an unscoped registration resolves
+  // first-match across every handler file - so an unscoped one here can
+  // answer another feature's scenario with this ticket's context.
+  const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE_NAME);
   // ── uncollected-file-now-runs-01 ────────────────────────────────────
-  registry.define(
+  scoped(
     /^a main-lane test file that declared its tests by importing "test" from "node:test"$/,
     (ctx) => {
       const target = path.join(TEST_DIR, WORKED_EXAMPLE);
@@ -114,19 +122,19 @@ function registerSteps(registry) {
     }
   );
 
-  registry.define(/^the unit lane runs that file$/, (ctx) => {
+  scoped(/^the unit lane runs that file$/, (ctx) => {
     ctx.bl1220Report = runUnitLane(ctx.bl1220Files);
     ctx.bl1220Counts = collectedCounts(ctx.bl1220Report);
   });
 
-  registry.define(/^the file reports at least one collected test$/, (ctx) => {
+  scoped(/^the file reports at least one collected test$/, (ctx) => {
     const [name] = Object.keys(ctx.bl1220Counts);
     if (!name || ctx.bl1220Counts[name] < 1) {
       throw new Error(`the lane collected no tests from ${ctx.bl1220Files.join(', ')}`);
     }
   });
 
-  registry.define(/^the file does not report "No test suite found"$/, (ctx) => {
+  scoped(/^the file does not report "No test suite found"$/, (ctx) => {
     const messages = (ctx.bl1220Report.testResults || []).map((f) => f.message || '').join('\n');
     if (/No test suite found/.test(messages)) {
       throw new Error(`the lane still found no test suite:\n${messages}`);
@@ -134,13 +142,13 @@ function registerSteps(registry) {
   });
 
   // ── no-main-lane-file-collects-zero-02 ──────────────────────────────
-  registry.define(/^the unit lane runs every file in the repaired set$/, (ctx) => {
+  scoped(/^the unit lane runs every file in the repaired set$/, (ctx) => {
     ctx.bl1220Files = unitLaneFiles();
     ctx.bl1220Report = runUnitLane(ctx.bl1220Files);
     ctx.bl1220Counts = collectedCounts(ctx.bl1220Report);
   });
 
-  registry.define(/^every one of them reports at least one collected test$/, (ctx) => {
+  scoped(/^every one of them reports at least one collected test$/, (ctx) => {
     const empty = Object.entries(ctx.bl1220Counts)
       .filter(([, count]) => count === 0)
       .map(([name]) => name);
@@ -154,13 +162,13 @@ function registerSteps(registry) {
   });
 
   // ── guard-rejects-reintroduced-import-03 / guard-ignores-property-lane-04 ──
-  registry.define(/^a main-lane test file that imports "test" from "node:test"$/, (ctx) => {
+  scoped(/^a main-lane test file that imports "test" from "node:test"$/, (ctx) => {
     ctx.bl1220GuardDir = makeFixtureDir();
     ctx.bl1220Offender = path.join(ctx.bl1220GuardDir, 'reintroduced.test.js');
     fs.writeFileSync(ctx.bl1220Offender, "const { test } = require('node:test');\ntest('x', () => {});\n");
   });
 
-  registry.define(/^a property-lane test file that imports "test" from "node:test"$/, (ctx) => {
+  scoped(/^a property-lane test file that imports "test" from "node:test"$/, (ctx) => {
     ctx.bl1220GuardDir = makeFixtureDir();
     fs.writeFileSync(
       path.join(ctx.bl1220GuardDir, 'outOfLane.property.test.js'),
@@ -168,11 +176,11 @@ function registerSteps(registry) {
     );
   });
 
-  registry.define(/^the unit-lane import guard runs$/, (ctx) => {
+  scoped(/^the unit-lane import guard runs$/, (ctx) => {
     ctx.bl1220Violations = guardModule().findUnitLaneNodeTestImports(ctx.bl1220GuardDir);
   });
 
-  registry.define(/^the guard fails and names that file$/, (ctx) => {
+  scoped(/^the guard fails and names that file$/, (ctx) => {
     if (ctx.bl1220Violations.length === 0) {
       throw new Error('the guard passed a file that reintroduced the import');
     }
@@ -185,7 +193,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the guard passes$/, (ctx) => {
+  scoped(/^the guard passes$/, (ctx) => {
     if (ctx.bl1220Violations.length > 0) {
       throw new Error(
         `the guard reached outside its lane: ${ctx.bl1220Violations.map((v) => v.file).join(', ')}`
