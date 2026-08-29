@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1246: the BL-1230 nested-git-repository
+guard (`extension/test/helpers/nestedGitRepoGuard.js`) exempts a repository
+inside a directory git itself ignores, carrying the human's 2026-08-28
+ruling ("exempt git-ignored dirs (`tmp/`) by construction") into the code
+after an earlier amendment holding it was destroyed by a reset minutes
+before BL-1230 landed. `tmp/` is where `workflow.prompt` sends every role's
+scratch, so a role's own git fixtures legitimately live there. Derived from
+git, never a path list: the guard asks `git check-ignore --quiet` about the
+directory containing the nested `.git` and exempts only on a clean exit
+`0` — exit `1` ("not ignored") and anything else (git missing, not a
+repository, a spawn failure) still report the leak, so an unanswerable
+check never silences one (hardener pass added the missing case: a
+non-repository root, where `check-ignore` can answer neither way). A
+repository in a **tracked** directory is reported exactly as before, even
+beside an ignored one. Report-only is unchanged — nothing is deleted,
+moved, or rewritten. See
+`docs/reference/BL-1230-nested-git-repository-guard.md`. Acceptance:
+`specs/features/BL-1230-no-leaked-git-repository-inside-the-working-tree.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1209: `assessPilotMkdtempConvention`
 (`extension/src/tools/pilotMkdtempConventionCheck.ts`) resolves its
 raw-mkdtemp detector from the TOOL's own location, not the subject root it
