@@ -176,3 +176,5 @@ notes: >
   swarmforge/scripts/test/self_heal_telemetry_lib_test_runner.bb -
   four paths that exist in no other live ticket's scope, all of them
   currently absent, so no concurrent parcel can be touching them.
+
+assigned_to: coder
