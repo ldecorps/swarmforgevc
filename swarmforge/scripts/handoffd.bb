@@ -50,7 +50,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_attribution_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_dedup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -598,12 +597,7 @@
           :let [original-name (str/replace (fs/file-name stub) #"\.error$" "")]
           :when (already-archived? role-info original-name)]
     (fs/delete stub)
-    (log! "stale-stub-cleanup" (str stub) "original-in-sent" original-name)
-    (self-heal-telemetry-lib/append-self-heal-event!
-      (str project-root)
-      {:type "claim-heal"
-       :subject (:role role-info)
-       :reason "stale outbox error stub cleaned up"})))
+    (log! "stale-stub-cleanup" (str stub) "original-in-sent" original-name)))
 
 ;; BL-617: while ANY pause is active (human-applied or the nightly
 ;; cooldown - both converge on the same control-pause.json, so ONE gate
