@@ -1,5 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1273: BL-597's five self-heal
+telemetry production emit sites — `front_desk_supervisor.bb`
+(stale-build-recompile, supervisor-respawn), `handoffd.bb` (claim-heal),
+`handoff_lib.bb` (rotation-respawn), `kill_pipeline_swarm.sh` (kill_all) —
+were silently dropped by merge `2e37477ec`, 58 minutes after BL-597 landed,
+leaving `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl` permanently
+empty and the trend BL-597 built reading as a swarm that never self-heals.
+Restored verbatim from BL-597's original commit `70c81c0ed`, re-inserted
+beside the same surviving prose-log site each one always sat against —
+no new detector, no change to what the telemetry measures.
+`handoff_lib.bb` also stops load-filing `self_heal_telemetry_lib.bb`
+without calling it. Acceptance:
+`specs/features/BL-1273-restore-self-heal-telemetry-emit-sites.feature`.
+How-to: `docs/how-to/BL-597-trend-self-heal-events.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1267: Article 3.6's confirm-promote
 outcome now has a durable representation the freshness gate CLI reads. A
 specifier adjudication is recorded with `node
@@ -8378,11 +8393,12 @@ A series with nothing to plot reads **"no data yet"** and draws nothing —
 never a zero, a flat line, or an interpolated point. This covers two
 causes deliberately indistinguishable on screen: a producer that has not
 landed a source reader (`human-decision-latency` at BL-603 mint), and one
-that landed but records nothing today (`self-heal-events`, dark until
-BL-1273 restores the five production emit sites a merge, `2e37477ec`,
-dropped after BL-597 shipped). Drawing a flat line at zero for the second
-case would read as "the swarm never self-heals" — the exact false green
-BL-597 was built to prevent.
+that landed but recorded nothing for a stretch (`self-heal-events`, dark
+between 2026-08-27 and 2026-08-29 after a merge, `2e37477ec`, silently
+dropped the five production emit sites BL-597 shipped — restored by
+BL-1273). Drawing a flat line at zero during a gap like that would read as
+"the swarm never self-heals" — the exact false green BL-597 was built to
+prevent.
 
 ### See Also
 

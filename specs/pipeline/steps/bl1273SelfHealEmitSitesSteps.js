@@ -89,6 +89,21 @@ function registerSteps(registry) {
       /append-self-heal-event!|self_heal_telemetry_cli\.bb/,
       `${ctx.bl1273.host}: the ${eventType} emit is not at its prose log line "${anchor}"`
     );
+    // "the right function near the right anchor" alone would still pass a
+    // call carrying the WRONG (or blank) :type - e.g. handoffd.bb's
+    // claim-heal call rewritten with :type "" satisfies both checks above.
+    // For the four bb sites that pass a structured {:type "..."} map, pin
+    // the literal itself. kill_pipeline_swarm.sh's CLI-shell site carries no
+    // :type map (it passes a reason string to a different action-map
+    // vocabulary, a known pre-existing divergence out of this ticket's
+    // scope per the coder's own note) so it is exempt here.
+    if (ctx.bl1273.host.endsWith('.bb')) {
+      assert.match(
+        window,
+        new RegExp(`:type\\s+"${eventType}"`),
+        `${ctx.bl1273.host}: the emit near "${anchor}" does not carry :type "${eventType}"`
+      );
+    }
   });
 
   // ── 02: no host loads the lib without calling it ────────────────────
