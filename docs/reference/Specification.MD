@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 28, 2026 (BL-1236: the master-main reconcile
+conflict predicate (`merge-tree-reports-conflict?` /
+`master_main_reconcile_lib.bb`, consumed by `handoffd.bb`'s reconcile sweep
+and, byte-identically until this fix, by `post_hotfix_merge_origin.bb`'s CLI)
+decided "would this merge conflict?" by grepping the legacy three-argument
+`git merge-tree`'s unified-diff output for words like "CONFLICT" — any
+merged file whose own prose happened to contain them (this repo's tickets
+and evidence files do, constantly) read as a predicted conflict and drove a
+`git reset --hard origin/main`, discarding already-committed work; ten
+resets fired this way, one destroying a human's approval tap three minutes
+after it landed. Both call sites now share one verdict built on `git
+merge-tree --write-tree <a> <b>`'s own exit code — the same flag
+`tree_collapse_guard_lib.bb` already uses in production — read as clean
+(`0`) / conflicted (`1`) / **unavailable** (`>= 2`, or a git too old to
+support the flag). Unavailable is the core change: previously a
+`merge-base` failure or any git error returned `true` (conflict, reset) —
+fail-open dressed as fail-closed. It is now its own surfaced,
+non-destructive outcome, never collapsed into either "conflict" (reset) or
+"clean" (attempt a merge that could itself fail and reset). The
+genuine-conflict recovery path is unchanged; reopening it was explicitly out
+of scope. No new extension command or setting — Babashka reconcile tooling.
+Acceptance:
+`specs/features/BL-1236-reconcile-conflict-prediction-from-git-verdict.feature`.
+How-to: `docs/how-to/BL-1236-reconcile-conflict-prediction-from-git-verdict.md`.)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1216: a `DUPLICATE-ID` finding from
 the backlog hygiene gate (`duplicate-id-violations`/`format-violation`,
 `swarmforge/scripts/backlog_hygiene_lib.bb`) now names every colliding

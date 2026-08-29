@@ -88,6 +88,8 @@
                  ["CURSOR_API_KEY" (System/getenv "CURSOR_API_KEY")]
                  ["CURSOR_BRIDGE_MODEL" (System/getenv "CURSOR_BRIDGE_MODEL")]
                  ["CURSOR_BRIDGE_BOOT_PROMPT" (System/getenv "CURSOR_BRIDGE_BOOT_PROMPT")]
+                 ["CURSOR_BRIDGE_INBOUND_QUEUE" (System/getenv "CURSOR_BRIDGE_INBOUND_QUEUE")]
+                 ["CURSOR_BRIDGE_BOT_TOKEN" (System/getenv "CURSOR_BRIDGE_BOT_TOKEN")]
                  ["CURSOR_RIPGREP_PATH" (System/getenv "CURSOR_RIPGREP_PATH")]])))
 
 (defn clear-poll-heartbeat! []

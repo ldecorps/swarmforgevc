@@ -14,6 +14,23 @@ local `main` is the incident that surfaced this (BL-891's own `notes:`).
 This sweep closes that gap. It is **best-effort reconciliation**, not an
 alarm — see "What it does not do" below for the one case it only reports.
 
+## Kill switch (BL-1248)
+
+Operators can disable the reconcile **action** without tearing down the
+daemon. In `swarmforge/swarmforge.conf`, set:
+
+```text
+config master_main_reconcile_enabled false
+```
+
+Only the exact value `true` enables the action; absent, empty, malformed,
+and `false` all fail closed to disabled. While off, drift logging and
+dirty-blocked / conflict surfacing+escalation still run — the switch skips
+only the `:merge!` path inside `master-main-reconcile-lib/sweep!`. A skip
+logs `master-main-reconcile skipped-by-config`. This repo ships `false`;
+re-arming after BL-1236 landed is tracked as BL-1251. Full operator recipe:
+[Disable (or re-enable) the master-main-reconcile sweep from config](BL-1248-master-main-reconcile-kill-switch.md).
+
 ## What it does
 
 Runs on the same `handoffd.bb` cadence as every other sweep (dispatch-gap,

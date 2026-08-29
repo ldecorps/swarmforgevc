@@ -76,3 +76,47 @@ that does not exist, `tmpDirMigrationGuard`, `tempDirTrapGuard`,
 `socketFixtureShortRootGuard`, `liveRepoDerivationGuard`).
 
 By specifier.
+
+---
+
+## Addendum — QA corroboration pass, same day (BL-1247 minted)
+
+QA re-ran both lanes in full against the merged QA tip while verifying BL-1192
+and recorded `backlog/evidence/QA-standing-red-corroboration-20260828.md`
+(QA worktree). It corroborates every red dispositioned above — 38 unit-lane
+files, ~45 property-lane failures, none touched by BL-1192's merge diff — and
+adds ONE item this note had not seen.
+
+**New, now ticketed as BL-1247**:
+`test/bl593MutationRunTelemetry.property.test.js`, property "completed records
+always carry load-bearing scope total and incremental", throwing
+`mutation run record requires a non-empty scope` out of
+`requireLoadBearingMeta` (`src/mutation/mutationRunTelemetry.ts:39`).
+
+Root cause measured, not inferred: the property draws scope from
+`fc.string({ minLength: 1, maxLength: 80 })`; fast-check 4.9.0's default
+charset includes the space character, so ~1 draw in 600 is whitespace-only
+(8 of 5000 measured). The guard correctly refuses those. **The production code
+is right; the generator models a wider domain than the contract accepts.**
+
+**Correction to QA's evidence, recorded here because it changes how the fix is
+verified**: QA reported the red as deterministic ("ran isolated, twice, same
+counterexample both times"). It is not — it is a ~30% per-run flake. Measured
+on the same tip with no code change between: 8 consecutive passes in one batch,
+then 6 failures in 20 consecutive isolated runs. Two consecutive failures has
+~9% probability at that rate, so QA's reading was a sound inference from its
+sample, not an error of method. The consequence is what matters: **a single
+green run is not evidence that BL-1247 is fixed**, which is why its scenario 01
+specifies 20 consecutive runs.
+
+Sibling risk swept before minting, to keep the slice small: ~40 property files
+use `fc.string({ minLength: 1, ... })`, but sweeping `src/` for the
+trim-blank rejection class finds `mutationRunTelemetry` as the only *throwing*
+guard of that shape fed by such a generator (the `letsTalkCore` blank checks
+return booleans and are silence-handling, not refusals). No repo-wide generator
+audit opened.
+
+Nothing else in QA's note needs a ticket — the remainder is this note's
+existing disposition, re-observed.
+
+By specifier.
