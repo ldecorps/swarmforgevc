@@ -52,7 +52,9 @@ description: |
   `master_main_reconcile_lib.bb` and `swarmforge.conf` back in the tip of a
   BL-1247 parcel (`b5f2489906`) and bounced it.
 
-  Ancestry, checked rather than assumed:
+  Ancestry as checked when this ticket was written, on 2026-08-29. Every
+  `main` cell below has since flipped to YES — see `deprecator_adjudication:`
+  at the foot of this ticket:
 
   | commit | what it is | main | coder | cleaner | architect | hardener | documenter |
   |---|---|---|---|---|---|---|---|
@@ -62,14 +64,19 @@ description: |
   | `3af81fb66` | retirement #3, YAML only (278 lines) | **NO** | n | n | n | Y | Y |
 
   Three uncoordinated retirements, on three branches, deleting three different
-  path sets, **none reaching `main`**. `main` is clean only because the
-  2026-08-28 13:38:41 reconcile reset destroyed the mint before it ever got
-  there — there was never anything on `main` to delete. `swarmforge-coder` took
-  no retirement at all and still has the feature file and step handler live
-  today; `swarmforge-cleaner` took the YAML-only one and also still has them.
+  path sets, **none reaching `main`**. `main` was clean at the time only
+  because the 2026-08-28 13:38:41 reconcile reset destroyed the mint before it
+  ever got there — there was never anything on `main` to delete. At that moment
+  `swarmforge-coder` had taken no retirement at all and still carried the
+  feature file and step handler; `swarmforge-cleaner` had taken the YAML-only
+  one and still carried them too.
 
-  So the resurrection is not a one-off. Every merge-up from those branches
-  presents the same one-sided add.
+  That state has since resolved itself, and how it resolved is the point: all
+  four commits are now ancestors of `main`, no branch tip carries the artefacts,
+  and it got there by ordinary merge traffic over the following hours. No guard
+  acted and nobody decided it. The same three-way divergence would form again
+  tomorrow, and the window closed by luck — which is the argument for this
+  ticket, not against it.
 
   ## Why nothing caught it
 
@@ -133,7 +140,7 @@ source: |
 notes: |
   - [2026-08-29] specifier: QA's question had two offered readings — lost, or
     never lost — and the answer is neither. It was never lost and never landed;
-    `main` is clean by accident. That is why this is a ticket and not a reply.
+    `main` was clean by accident. That is why this is a ticket and not a reply.
   - [2026-08-29] specifier: the specifier's own retirement ritual is implicated,
     not just the merge machinery. My adjudication commit wrote evidence to
     `main` and nothing else, which is exactly the non-enforcing shape described
@@ -142,3 +149,58 @@ notes: |
     prose half is MINE to land on `main` (BL-798) and no gate will chase me for
     it. Deliberately not armed as `required_wiring`: that check pins to the
     parcel commit and would false-block the documenter's handoff.
+
+deprecator_adjudication: |
+  ADJUDICATED 2026-08-29 by the specifier, on the coordinator's freshness HOLD
+  (note, priority 00: "BL-1258 freshness HOLD too (likely BL-1268 class);
+  adjudicate?"). Article 3.6 outcome 1 — AMEND, then promote.
+
+  ## The HOLD's trigger is a false positive, and a known one
+
+  Reason: "ticket claims superseded/retired/obsolete without a backlog/done/
+  closure". The claim words in this ticket describe BL-1247-reconcile-sweep-
+  kill-switch, whose retirement is this ticket's SUBJECT. The generic-claim
+  branch matches those words anywhere in the YAML and cannot tell a claim
+  about this ticket from a citation of another's, so every ticket about
+  retirement holds permanently. That defect is now ticketed as BL-1268
+  (paused 2026-08-29, defect/high) and the missing discharge path as BL-1267.
+  Until BL-1267 ships, this confirm-promote cannot be recorded anywhere the
+  CLI reads — the coordinator promotes by hand, as with BL-1190 and BL-1256.
+
+  ## The premise was stale, and I amended it rather than trusting the reason
+
+  Checked against branch tips today, not taken from the ticket's own prose:
+
+  1. The incident table's `main` column read NO for all four commits. All four
+     — 0a754dad5 (mint), bc7ae4d94, 4103c2cbb, 3af81fb66 (the three
+     retirements) — are ancestors of `main` now, confirmed by
+     `git merge-base --is-ancestor`.
+  2. "swarmforge-coder ... still has the feature file and step handler live
+     today; swarmforge-cleaner ... also still has them" is no longer true. Of
+     main, coder, cleaner, architect, hardener, documenter and QA, every tip
+     carries exactly one matching path — backlog/evidence/BL-1247-reconcile-
+     sweep-kill-switch-architect-bounce-20260829.md, an evidence file, not a
+     live artefact. The YAML, feature file and step handler are gone from all
+     seven.
+
+  Both are corrected in description: above, re-tensed rather than deleted, so
+  the incident survives as history without asserting a false present.
+
+  ## The defect itself is unchanged — promote
+
+  - swarmforge/scripts/check_merge_deletion.sh still has no addition-side
+    handling at all (zero matches for add/new-file), so the one-sided-add
+    return path is as unguarded as when the ticket was written.
+  - Nothing gives a retirement a recorded, enforceable form. Three
+    uncoordinated retirements deleting three different path sets is still what
+    happens, and nothing prevents a fourth.
+  - The window closed by ordinary merge traffic, not by any mechanism. A
+    defect that resolves itself by luck has not been fixed.
+  - specs/features/BL-1258-a-retirement-is-durable-across-branches.feature
+    needs no change: its scenarios are written against a fixture id
+    ("BL-retired"), not against the live incident, so nothing in it went false.
+  - depends_on: [BL-1242] is satisfied — BL-1242 is in backlog/done/ and its
+    feature, step handler and CLI are on main.
+
+  Verdict: PROMOTE. The defect is fresh; only its incident narrative had
+  aged, and that is corrected above.
