@@ -63,7 +63,8 @@ CONF
 
 ROOT="$(mktemp -d)"
 FOREIGN_ROOT=""
-trap 'rm -rf "$ROOT" "$FOREIGN_ROOT"' EXIT
+AMBIENT_ROOT=""
+trap 'rm -rf "$ROOT" "$FOREIGN_ROOT" "$AMBIENT_ROOT"' EXIT
 
 mk_master_fixture "$ROOT"
 (cd "$ROOT" && git init -q && git_c add -A && git_c commit -q -m init)
@@ -143,5 +144,80 @@ zsh -c "source '$FOREIGN_ROOT/swarmforge/scripts/swarmforge.sh' '$FOREIGN_ROOT';
 [[ -f "$FOREIGN_ROOT/.worktrees/coder/swarmforge/scripts/foo.bb" ]] \
   || fail "03: expected a target repo that does not track swarmforge/ to still receive the scripts, got: $(ls "$FOREIGN_ROOT/.worktrees/coder/swarmforge/scripts" 2>&1) / sync output: $(cat "$FOREIGN_SYNC_OUT")"
 pass "03: a target repository that does not git-track the swarm scripts still receives them"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BL-1233: an ambient GIT_DIR/GIT_WORK_TREE in the launching process's own
+# environment must not defeat the guard. Reproduces the live incident
+# measured against this real repo (main vs .worktrees/cleaner): `-C` does
+# NOT override GIT_DIR/GIT_WORK_TREE, so an unscrubbed query answers for
+# the AMBIENT repo instead of the destination worktree.
+# ═══════════════════════════════════════════════════════════════════════════
+
+AMBIENT_ROOT="$(mktemp -d)"
+mk_master_fixture "$AMBIENT_ROOT"
+(cd "$AMBIENT_ROOT" && git init -q && git_c add -A && git_c commit -q -m init)
+(cd "$AMBIENT_ROOT" && git worktree add -q -b coder .worktrees/coder)
+echo "coder branch's MERGED fix, not yet on main" > "$AMBIENT_ROOT/.worktrees/coder/swarmforge/scripts/foo.bb"
+(cd "$AMBIENT_ROOT/.worktrees/coder" && git_c add -A && git_c commit -q -m "coder: merge a script fix")
+BEFORE_AMBIENT_FOO="$(cat "$AMBIENT_ROOT/.worktrees/coder/swarmforge/scripts/foo.bb")"
+
+# Sanity: confirm the raw ambient leak actually defeats an unscrubbed query
+# in THIS fixture too, so a passing test below is not vacuous.
+RAW_LEAKED_TRACKED="$(GIT_DIR="$AMBIENT_ROOT/.git" GIT_WORK_TREE="$AMBIENT_ROOT" \
+  git -C "$AMBIENT_ROOT/.worktrees/coder" ls-files -- swarmforge/scripts | wc -l | tr -d ' ')"
+[[ "$RAW_LEAKED_TRACKED" == "0" ]] \
+  || fail "1233-sanity: expected the raw ambient leak to blind an unscrubbed ls-files (got $RAW_LEAKED_TRACKED tracked paths) - fixture does not reproduce the incident"
+pass "1233-sanity: the raw ambient leak reproduces in this fixture (0 tracked paths seen)"
+
+# Scenario: launch with GIT_DIR/GIT_WORK_TREE pointing at the fixture's own
+# master root (the real incident's shape - a hook/shell environment that
+# leaked the launching checkout's git vars) while syncing into the coder
+# worktree. The merged, tracked foo.bb must still survive.
+AMBIENT_SYNC_OUT="$AMBIENT_ROOT/ambient-sync.out"
+GIT_DIR="$AMBIENT_ROOT/.git" GIT_WORK_TREE="$AMBIENT_ROOT" bb \
+  "$REAL_SCRIPTS_DIR/sync_worktree_scripts.bb" \
+  "$AMBIENT_ROOT/swarmforge/scripts" \
+  "$AMBIENT_ROOT/.worktrees/coder/swarmforge/scripts" \
+  "$AMBIENT_ROOT/.worktrees/coder" \
+  "swarmforge/scripts" >"$AMBIENT_SYNC_OUT" 2>&1
+AMBIENT_EXIT=$?
+AFTER_AMBIENT_FOO="$(cat "$AMBIENT_ROOT/.worktrees/coder/swarmforge/scripts/foo.bb")"
+
+[[ "$AMBIENT_EXIT" -eq 0 ]] \
+  || fail "1233: expected the sync to succeed under an ambient env leak once scrubbed, exit=$AMBIENT_EXIT, output: $(cat "$AMBIENT_SYNC_OUT")"
+[[ "$AFTER_AMBIENT_FOO" == "$BEFORE_AMBIENT_FOO" ]] \
+  || fail "1233: expected the coder branch's merged, tracked foo.bb to survive a sync run under an ambient GIT_DIR/GIT_WORK_TREE leak; before=[$BEFORE_AMBIENT_FOO] after=[$AFTER_AMBIENT_FOO]"
+pass "1233: a git-tracked script survives the sync even with GIT_DIR/GIT_WORK_TREE ambient in the launcher's own environment"
+
+grep -q "left to git (tracked): swarmforge/scripts/foo.bb" "$AMBIENT_SYNC_OUT" \
+  || fail "1233: expected the sync to report leaving the tracked foo.bb to git even under the ambient leak, got: $(cat "$AMBIENT_SYNC_OUT")"
+pass "1233: the sync still reports what it left to git under the ambient leak (never silently right)"
+
+# Scenario: git resolves a genuinely DIFFERENT top-level than the
+# worktree-root argument named - no ambient env needed here, since the scrub
+# already neutralizes that vector end to end (proven above). This is the
+# "next vector" the backstop defends against: the CALLER passes a
+# subdirectory of the coder worktree instead of its true root. `-C` on a
+# subdirectory still correctly climbs to the real top-level, which is then
+# a real, different, resolvable path from the one asked about - the guard
+# must catch this the same way it catches an ambient-env leak.
+MISMATCH_SYNC_OUT="$AMBIENT_ROOT/mismatch-sync.out"
+set +e
+bb "$REAL_SCRIPTS_DIR/sync_worktree_scripts.bb" \
+  "$AMBIENT_ROOT/swarmforge/scripts" \
+  "$AMBIENT_ROOT/.worktrees/coder/swarmforge/scripts" \
+  "$AMBIENT_ROOT/.worktrees/coder/swarmforge" \
+  "swarmforge/scripts" >"$MISMATCH_SYNC_OUT" 2>&1
+MISMATCH_EXIT=$?
+set -e
+AFTER_MISMATCH_FOO="$(cat "$AMBIENT_ROOT/.worktrees/coder/swarmforge/scripts/foo.bb")"
+
+[[ "$MISMATCH_EXIT" -ne 0 ]] \
+  || fail "1233: expected the sync to REFUSE (non-zero exit) when git resolves a different top-level than the destination, got exit 0: $(cat "$MISMATCH_SYNC_OUT")"
+grep -q "REFUSE" "$MISMATCH_SYNC_OUT" \
+  || fail "1233: expected a loud REFUSE naming the mismatch, got: $(cat "$MISMATCH_SYNC_OUT")"
+[[ "$AFTER_MISMATCH_FOO" == "$BEFORE_AMBIENT_FOO" ]] \
+  || fail "1233: expected NOTHING to be copied on refusal; foo.bb changed to [$AFTER_MISMATCH_FOO]"
+pass "1233: a resolved-but-wrong top-level refuses loudly and copies nothing"
 
 echo "ALL PASS"
