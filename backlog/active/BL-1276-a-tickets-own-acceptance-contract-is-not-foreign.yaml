@@ -193,3 +193,5 @@ notes: |
     which also took four landed bookkeeping commits with it - the thirteenth
     occurrence). Recovered from tmp/bl1276-recover/ and pushed to origin
     immediately, because an unpushed commit on this checkout is not durable.
+
+assigned_to: coder
