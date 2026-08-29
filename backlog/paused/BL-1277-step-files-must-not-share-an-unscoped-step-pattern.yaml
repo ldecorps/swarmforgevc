@@ -34,14 +34,36 @@ description: >
   2026-08 (BL-606 shadowing BL-623) and shipped a property test pinned to
   BL-623's feature alone, so the class survived it.
 
-  A scan of `specs/pipeline/steps/` on main finds 12 distinct step patterns
-  registered unscoped by more than one file (14 unordered file pairs). Two of
-  those are the coder's own, already scoped in their worktree and landing
-  with their parcel; the other 10 predate this session. Spot-checking is not
+  A scan of `specs/pipeline/steps/` on main finds 15 distinct step patterns
+  registered unscoped by more than one file (17 unordered file pairs), and not
+  one of them is fixed anywhere on `main`. This corrects the 12/14 recorded
+  when this ticket was minted earlier on 2026-08-29, which also said "two of
+  those are the coder's own, already scoped in their worktree and landing with
+  their parcel". That premise died the same afternoon: the coder's fix
+  `205fdd36f` was entangled in the BL-1273 documenter tip, QA rebuilt that
+  parcel tip-pure (`1921de5c4`), and `205fdd36f` is now stranded on all five
+  pipeline branches carrying no ticket of its own. Its three files account for
+  5 of the 15 patterns; the 10 the coder listed as pre-existing are the rest.
+  Spot-checking is not
   reassuring: `the swarm's health is reported` resolves to `runFreshnessTest`
   in one file and `runRuntimeTickTest` in the other, and `the ambulance is
   released` throws on a non-zero CLI status in one and ignores status in the
   other. Each is a live wrong-handler binding whose current green is luck.
+
+  Two of the collisions are past luck: they are RED on `main` right now,
+  measured on 2026-08-29 rather than inferred. `specs/pipeline/steps/index.js`
+  fixes load order, and in each pair the shadowing file loads first (`bl603`
+  line 10, `bl1220` 11, `bl1267` 12, all ahead of `bl1268` 13,
+  `noSingleFileBoundsTheSuite` 220, `bl866` 535):
+
+      BL-1268-stale-claim-branch-must-name-this-ticket.feature   2/7  (was 7/7)
+      BL-378-no-single-file-bounds-the-suite.feature             3/4  (was 4/4)
+
+  Both tickets are shipped and sitting in `backlog/done/M8/`, and neither is
+  defective. What is broken is the acceptance evidence they were closed on.
+  That is the sweep half's headline observable: those two features return to
+  7/7 and 4/4 with no change to any handler's logic and no change to any
+  `.feature` file.
 
   Two halves, one property, deliberately one ticket: a guard that refuses a
   new unscoped duplicate cannot be armed while the existing collisions are
@@ -55,8 +77,21 @@ description: >
   existing `extension/test/helpers/materializedRegistryGuard.js` precedent —
   vitest discovers `extension/test/*.test.js` by glob, so no call site is
   needed. Fix the collisions the scan reports AT IMPLEMENTATION TIME rather
-  than a list frozen here, so this parcel does not collide with the coder's
-  in-flight two.
+  than a list frozen here - the count has already moved once.
+
+  `205fdd36f` is liftable prior art for three of the files (`bl1267`,
+  `bl1220`, `bl603`): it scopes them through `registry.defineScoped` with no
+  handler change and no feature-file change, and the coder measured all six
+  affected features green afterwards. Lift it or re-derive it, the coder's
+  call - but read it first rather than rediscovering those three. Recover it
+  with `git show 205fdd36f`.
+
+  Merge hazard, stated here so it is not met as a surprise conflict:
+  `205fdd36f` is an ancestor of the coder, cleaner, architect, hardender and
+  documenter branches but not of `main`. When this sweep lands and those
+  worktrees merge `main`, the same three files will have been scoped on both
+  sides. Resolve in favour of the landed sweep; never revert the sweep to
+  preserve the branch copy.
 
 constraints: >
   - The guard must run in the standard unit lane (`npm test` from
@@ -114,6 +149,19 @@ approval_context: >
   evidence every other ticket is judged on, and this makes that evidence
   unreliable in an unsignposted way. It is not swarm-down, so not critical.
 
+  Amended 2026-08-29, after the above was written, with two facts that bear on
+  the split question rather than changing it. First, the split is no longer
+  hypothetical in one direction: the coder had already scoped three of the
+  files, that work was stranded off `main` by an unrelated QA tip-pure rebuild,
+  and it is available to lift (`git show 205fdd36f`) — so the sweep half is
+  cheaper than it reads. Second, this is not purely preventive any more. Two
+  features are red on `main` today as a direct result (BL-1268 at 2/7,
+  BL-378 at 3/4, both measured), which is the strongest argument yet for
+  landing the sweep quickly, and therefore the strongest argument for the split
+  you were being asked about. I have NOT split it on my own initiative,
+  because the question was already with you; if you would rather the sweep ship
+  first and the guard follow, that answer is now worth more than it was.
+
 notes: |
   Verification done at mint (so the coder and QA need not redo it):
   - `specs/pipeline/stepRegistry.js` read in full: `define` pushes with no
@@ -124,9 +172,21 @@ notes: |
     feature name. A feature answered by another file's unscoped registration
     still resolves, so the BL-761 acceptance-contract gate reports it
     runnable. That is why no existing gate catches this class.
-  - Scan of main: 12 colliding patterns / 14 file pairs; 2 are the coder's
-    in-flight ones. The coder's evidence file says "nine" in prose but its own
-    table lists 10 patterns, which matches the scan once their 2 are excluded.
+  - Scan of main, re-run 2026-08-29 after QA stranded the coder's fix: 15
+    colliding patterns / 17 file pairs, none of them fixed on `main`. This
+    supersedes the 12/14 recorded at mint. The arithmetic reconciles with the
+    coder's evidence file once "three were mine" is read as three FILES rather
+    than three patterns: their files carry 5 of the 15 (bl1220 x
+    noSingleFileBounds = 1, bl1267 x bl1268 = 3, bl603 x bl866 = 1), and the
+    10 in their "wider sweep" table are the remainder - their prose "nine"
+    undercounts their own table by one. The scan is source-text and so is
+    exactly what invariant 2 forbids the shipped guard from being: it sizes
+    the sweep, it is not the guard's verdict.
+  - The coder's diagnosis is now durable on `main` at
+    backlog/evidence/BL-1277-coder-unscoped-step-collisions-20260829.md,
+    recovered verbatim from the stranded commit with a specifier addendum
+    recording today's re-measurement. Before this it was reachable only by
+    `git show 205fdd36f:`.
   - No existing paused/active/hold/debt ticket covers step-registry
     collisions; `backlog/debt/` checked too (it is a dead lane).
   - BL-800 (done) is the prior instance and its property test is scoped to
@@ -154,4 +214,4 @@ notes: |
   any of them is wrong — but the same failure mode is available to all nine,
   and it is silent."
 
-source: "Coder note 50_20260829T144342Z_001443_from_coder_to_specifier; evidence backlog/evidence/coder-unscoped-step-collisions-20260829.md (written in .worktrees/coder, lands with the coder's parcel)."
+source: "Coder note 50_20260829T144342Z_001443_from_coder_to_specifier; evidence backlog/evidence/BL-1277-coder-unscoped-step-collisions-20260829.md (recovered onto main 2026-08-29 - the coder's own copy never landed). Second source: QA note 00_20260829T151540Z_001947_from_QA_to_specifier, reporting the BL-1273 tip entangled with that work, which is what stranded it."
