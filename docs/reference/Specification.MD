@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1266: the pre-turn reference-freshness
+guard (BL-640/BL-1237) picked its comparison ref — `main` or `origin/main`
+— by whole-REPOSITORY ahead-count (`freshest-main-ref`), a proxy for a
+different question than "which ref holds the newer copy of this
+`articles/reference/*` file". `origin/main` can be 200 commits ahead
+without touching `reference/` at all while local `main` carries the one
+commit that did, and the two refs disagreeing is this repo's steady state
+(QA lands by pushing straight to `origin/main`; the specifier commits
+directly to local `main`). Consequences: a worktree missing a real
+amendment could be waved through (fail-open, when the picked ref happened
+to be the stale one) or refused with a remedy naming the wrong ref
+(fail-closed, blocking the specifier seat pre-dispatch on 2026-08-29).
+Fixed: `freshest-main-ref` removed entirely; `reference_freshness_lib.bb`
+gained `stale-paths-multi-ref`/`staleness-report-multi-ref`, which ask the
+ancestry question per path, of every ref that carries the reference dir
+(`candidate-refs` — always `main`, plus `origin/main` when it resolves) —
+a path is fresh only once every carrying ref is satisfied, and a refusal
+names the specific ref whose amendment is missing. Pure/IO split
+unchanged: the lib takes plain maps, `ready_for_next.bb` does the git I/O.
+No new extension command or setting. Acceptance:
+`specs/features/BL-1266-reference-freshness-ref-selection-is-per-path.feature`.
+How-to:
+`docs/how-to/BL-1266-reference-freshness-ref-selection-is-per-path.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1241: an entangled tip at the land
 step — a parcel that passes every gate for its own ticket, but whose commit
 carries another ticket's unlanded work as an ancestor, an ordinary
