@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1257: QA's review-time entangled-tip
+check (BL-506) hand-rolled `git diff --name-only origin/main <commit>` each
+pass — the exact range BL-1192's send-time gate had already rejected for
+exploding on `origin/main` lag (BL-891). On 2026-08-29 that stale basis
+bounced two already-gate-passed parcels (BL-1247, BL-1238) mostly on lag
+paths, not real foreign scope — 37 of 46 and 38 of 66 flagged paths
+respectively. Fixed: `swarmforge/scripts/task_scope_gate_cli.bb`, a thin
+IO/argv wrapper (mirroring `pre_qa_gate_cli.bb`) over the same
+`task-scope-gate-lib/findings-for-git-handoff` the send-time gate already
+calls — never a second implementation of the scope walk — so any role can
+run `task_scope_gate_cli.bb <task-name> <commit> [repo-root]` and get the
+identical verdict, printing `OK` or the same refusal text (naming every
+foreign path and its owning ticket, never a bare count). The QA-seat prose
+change that points `QA.prompt` at this CLI is the specifier's own half
+(BL-798) and remains open. No new extension command or setting. Acceptance:
+`specs/features/BL-1257-review-time-scope-check-shares-the-corrected-basis.feature`.
+How-to:
+`docs/how-to/BL-1257-review-time-scope-check-shares-the-corrected-basis.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1237: the reference-freshness guard
 (`ready_for_next.bb`, backed by `reference_freshness_lib.bb`) refused a
 role's turn on ANY content difference between its
