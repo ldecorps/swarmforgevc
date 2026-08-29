@@ -24,6 +24,7 @@ assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1209-mkdtemp-check-resolves-its-detector-from-the-tool-not-the-subject.feature
+abandoned_commits: [62ab4d2b44, 54f35abea7, 0c0d245869, 89b920e955, 7023c8381d, b4f4104517, 4c2fb609e1, 1b480dadf0, 6b4d36fedc, e566c7faa3, 04b637650a, f886e49a3a, e272c6b019, 5e5b420c44, 50f8c5332d, fb588fa887, 1ef491f0c7, 1c5709d238, 77a9cc5028, d4083e78e0, c0c694f153, f6d369da33, 4732a3a198, 4ba1d0c9e6, bf7895a35d, 79e3cbf449, 6f5752d069, 67d0c18c1f, 487278e7d3, adf16cd3e2, 858c280425, 1b3a0a0e51, a5b065e0ca, e7353f626c, 938ce576de, 7fb91b6539, 1017d776b0, 11bb0ede83, 75de17decd, 6b7ad7ee7e, 54c17b6972, dbcf59fb7c, cfd1eeec9b, db56560eed, efa2848e27, 1baa878730, 175e24b119, 20e6ddd230, 9664aab11c, 205fdd36fb, 05f3221150, 8521d22d5c, b8c4c43f63, 985dbcf597, 9747e6c1df, 7ccc2f2232, c5bb4810a2, 43d181069e, ae503cbe67, f134036766, b06b75cde9, 3c07857a58, 670473039e, 9296711a77, 5bf354adc9, 795d79a2f9, f85514f2e5]
 
 invariants:
   - "A check resolves tool-owned artifacts from the TOOL's own location, never from the subject root it was handed: the subject root is used only to read the subject's files, so the same check works against any root."
@@ -239,6 +240,20 @@ notes: >
   not hotfix-ledger.yaml, not STEERING.md. Severity raised medium -> high on
   that basis; the fix direction, constraints and approval question are all
   unchanged, so human_approval stays `approved`.
+
+  [2026-08-29] QA, BL-1241 entangled-tip rebuild. The documenter's handed-off
+  commit (62ab4d2b44) carried the coder's long-lived branch ancestry, which
+  still runs back through the SAME stale BL-1246/step-scoping tangle
+  BL-1273/BL-1193/BL-1251's own QA passes already found and rebuilt around.
+  Also carried a stale coder-side obstacle record (4732a3a198, "BL-1251 is
+  blocked at handoff by the task-scope gate; record the fifth instance") -
+  moot, since BL-1251 already shipped via my own independent rebuild; left
+  behind rather than rescued. Rebuilt tip-pure: cherry-picked BL-1209's three
+  plain, cleanly-scoped commits (coder e272c6b019, hardener 89b920e955,
+  documenter 62ab4d2b44 - each verified via git show --stat to touch only
+  BL-1209's own files) onto the already-landed post-BL-1251 HEAD.
+  abandoned_commits records the full superseded chain. git diff --stat
+  origin/main HEAD confirmed exactly BL-1209's own ten files.
 
 approval_context: >
   One call to say the word on: whether the fix moves the detector or
