@@ -72,6 +72,15 @@ A bounce re-enters the target stage carrying the reason. **It does not revert th
 branch** — reverting bounced content out of a review branch is a documented cause of
 real damage.
 
+**The required_wiring gate runs at the boundary into QA** (BL-1255), the one
+place `swarm_handoff.bb`'s own gate would have run had the ticket travelled
+by handoff mail instead. It evaluates the same pure predicate a live
+documenter→QA `git_handoff` is checked against — never a second, looser
+copy — against the run worktree's `HEAD` at that point. An unsatisfiable
+`required_wiring:` entry (or a ticket yaml/HEAD the gate cannot read) fails
+the run loudly, naming the offending entry, before QA ever sees it; a
+ticket with no `required_wiring:` field at all passes untouched.
+
 **3. Exhausting the bound means something.**
 
 The bound is **3**, and hitting it is a quality signal rather than a crash. Three
@@ -194,6 +203,7 @@ parked. Both are yours — see the OUTSTANDING block above.
 | `REFUSE teardown did not reach a clean slate: <names>` | stop the named processes by hand, then re-run. `./stop-swarm.sh` misses `babysitterd` and the Operator agent — see BL-637 |
 | `REFUSE could not create the run worktree` | remove the stale worktree, or delete the branch, then re-run |
 | `EXHAUSTED … probable-spec-defect` | route the ticket to the specifier with the named defect class; do not re-run the coder |
+| `REFUSE required-wiring-gate <stage> -> QA` | a `required_wiring:` entry could not be matched at the run worktree's `HEAD` (or the check itself could not complete) — fix the entry or the cited path and re-run; never treat the run as passed |
 
 The two stop-command `REFUSE` rows above fire before anything is parked
 (BL-1030), so there is nothing staged to check — the OUTSTANDING block says
