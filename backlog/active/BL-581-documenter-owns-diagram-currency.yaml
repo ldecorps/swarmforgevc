@@ -79,21 +79,18 @@ description: |
   actually check against the parcel in front of it, and gives QA something it
   can bounce on.
 
-acceptance: |
-  Specifier writes the scenarios. This ticket's output is prose in two
-  governance files, so acceptance is mostly structural:
+acceptance: specs/features/BL-581-documenter-owns-diagram-currency.feature
 
-  1. `01_roles.md` 1.7 names diagram currency as a documenter responsibility,
-     and says the update belongs in the same parcel as the change.
-  2. `local-engineering.prompt`'s Diagrams section lists every diagram present
-     in DIAGRAM_FILES, each with a distinct change-trigger sentence.
-  3. No wording in that section encodes a diagram COUNT (the "Both live
-     under" trap).
-  4. A check - script or documented manual step - can compare DIAGRAM_FILES
-     against the constitution list and report a mismatch. A cheap executable
-     guard is preferred over a prose instruction, since prose drift is the
-     exact failure being fixed; the specifier decides whether that is in this
-     slice or a follow-on.
+qa_e2e_procedure: >
+  (1) Read 01_roles.md section 1.7 and confirm the documenter's responsibilities
+  include diagram currency and state the update belongs in the same parcel as
+  the change. (2) Read local-engineering.prompt's Diagrams section and confirm
+  every diagram in render-briefing-diagrams.ts's DIAGRAM_FILES allowlist has an
+  entry with a distinct change-trigger sentence. (3) Confirm no wording in the
+  Diagrams section encodes a diagram count (no "Both live under" trap). (4) Run
+  a comparison of DIAGRAM_FILES against the constitution diagram list and confirm
+  they match (every diagram in one is in the other). If a script exists for (4),
+  run it; otherwise do the comparison by hand.
 
 out_of_scope: |
   - Authoring or editing the diagrams themselves (BL-579, BL-580 own their
