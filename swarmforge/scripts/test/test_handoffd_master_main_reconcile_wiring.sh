@@ -431,4 +431,92 @@ git -C "$ROOT" merge-base --is-ancestor "$LOCAL_ONLY_SWITCH_OFF_SHA" main \
   || fail "expected the local-only commit to remain reachable after reconciling with the switch back on"
 pass "flipping the switch back on reconciles this exact fixture - the off-case assertion above was not vacuously green (BL-1248 qa_e2e_procedure scenario 02)"
 
+# ── BL-1256: the stay-loud gate must run against a REAL daemon tick, not
+#    sweep! called in isolation with a hand-passed disabled flag - that is
+#    exactly the blind-gate shape this ticket exists to close (see its own
+#    feature file). Stop the persistent background daemon now (it has
+#    already proven the full cadence loop above); the remaining scenarios
+#    fire deterministic single ticks via `--reconcile-sweep-once`, a fresh
+#    `bb handoffd.bb` invocation per tick, so there is no wall-clock wait
+#    and no race with a still-running background daemon touching the same
+#    ROOT. ───────────────────────────────────────────────────────────────
+mkdir -p "$ROOT/.swarmforge/daemon"
+touch "$ROOT/.swarmforge/daemon/stop"
+wait "$DAEMON_PID" 2>/dev/null || true
+DAEMON_PID=""
+
+
+# The log lines this file already asserts on ("master-main-reconcile
+# drift ...", "master-main-reconcile-surfaced BL-891.*seed.txt") recur
+# verbatim across scenarios (scenario B above already surfaced seed.txt's
+# overlap once), so grepping the WHOLE accumulated log after a tick would
+# false-pass even if this specific tick logged nothing new. Every BL-1256
+# assertion below greps only the slice APPENDED by that one tick.
+tail_since_line() {
+  local from_line="$1"
+  tail -n "+$((from_line + 1))" "$LOG_FILE"
+}
+
+run_one_reconcile_tick() {
+  local lines_before
+  lines_before="$(wc -l < "$LOG_FILE")"
+  env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID -u RESEND_API_KEY \
+    PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" --reconcile-sweep-once
+  wait_for_content "$LOG_FILE" "reconcile-sweep-once done" 5 \
+    || fail "BL-1256: expected the one-shot tick to log its own completion; log: $(cat "$LOG_FILE" 2>/dev/null)"
+  tail_since_line "$lines_before"
+}
+
+# By the time the background daemon above stopped, the fixture's switch is
+# ON and the last reconcile reached :up-to-date (state cleared to {}) - a
+# clean slate for a fresh episode. Flip the switch off, then create the
+# SAME shape of genuine dirty-blocked divergence as scenario B above
+# (a local dirty edit overlapping a path the incoming landed commit also
+# changes), so the tick under test is a real "declined to act, must still
+# go loud" case, not a should-reconcile-but-disabled no-op.
+sed -i 's/^config master_main_reconcile_enabled true$/config master_main_reconcile_enabled false/' "$ROOT/swarmforge/swarmforge.conf"
+
+ROOT_HEAD_BEFORE_BL1256="$(git -C "$ROOT" rev-parse main)"
+echo "root-bl1256-local-edit" >> "$ROOT/seed.txt"
+
+git -C "$CLONE" pull -q origin main
+echo "origin-bl1256-changes-seed" >> "$CLONE/seed.txt"
+git -C "$CLONE" add seed.txt
+git -C "$CLONE" commit -q -m "QA lands landed-bl1256 (modifies seed.txt)"
+git -C "$CLONE" push -q origin main
+
+# ── scenario 01: one real tick still surfaces the divergence it declined
+#    to reconcile ────────────────────────────────────────────────────────
+TICK1_LOG="$(run_one_reconcile_tick)"
+
+grep -q "master-main-reconcile drift ahead=[0-9]* behind=[0-9]*" <<< "$TICK1_LOG" \
+  || fail "BL-1256 scenario 01: expected the drift line to be recorded by the one real tick; tick log: $TICK1_LOG"
+grep -q "master-main-reconcile-surfaced BL-891.*seed.txt" <<< "$TICK1_LOG" \
+  || fail "BL-1256 scenario 01: expected the divergence to be surfaced to a human by the same tick; tick log: $TICK1_LOG"
+ROOT_HEAD_AFTER_BL1256_TICK1="$(git -C "$ROOT" rev-parse main)"
+[[ "$ROOT_HEAD_AFTER_BL1256_TICK1" == "$ROOT_HEAD_BEFORE_BL1256" ]] \
+  || fail "BL-1256 scenario 01: expected no commit reachable from local main before the tick to be discarded, was $ROOT_HEAD_BEFORE_BL1256 now $ROOT_HEAD_AFTER_BL1256_TICK1"
+pass "with the switch off, a real daemon tick (--reconcile-sweep-once) still surfaces the divergence it declined to reconcile (BL-1256 scenario 01)"
+
+# ── scenario 02: a block that persists past the escalation threshold (3,
+#    master_main_reconcile_lib.bb's escalation-default-threshold) still
+#    escalates to the operator, even with the switch off. The tick above
+#    was ticks=1 of this same episode (same reason "dirty", same overlap);
+#    two more real ticks bring it to ticks=3, crossing the threshold - the
+#    escalation itself is asserted only on the tick that actually crosses
+#    it, not on the whole accumulated log. ────────────────────────────────
+run_one_reconcile_tick > /dev/null
+TICK3_LOG="$(run_one_reconcile_tick)"
+
+grep -q "master-main-reconcile-escalation dirty" <<< "$TICK3_LOG" \
+  || fail "BL-1256 scenario 02: expected a dirty block persisting past the escalation threshold to still escalate with the switch off; tick log: $TICK3_LOG"
+wait_for_content "$ROOT/.swarmforge/operator/telegram-reply-outbox.jsonl" "dirty-blocked" 5 \
+  || fail "BL-1256 scenario 02: expected the operator escalation to reach the Telegram OPERATOR-topic outbox"
+ROOT_HEAD_AFTER_BL1256_TICK3="$(git -C "$ROOT" rev-parse main)"
+[[ "$ROOT_HEAD_AFTER_BL1256_TICK3" == "$ROOT_HEAD_BEFORE_BL1256" ]] \
+  || fail "BL-1256 scenario 02: expected local main to still be untouched after 3 declined ticks, was $ROOT_HEAD_BEFORE_BL1256 now $ROOT_HEAD_AFTER_BL1256_TICK3"
+pass "with the switch off, a block that persists past the escalation threshold still escalates to the operator (BL-1256 scenario 02)"
+
+git -C "$ROOT" checkout -q -- seed.txt
+
 echo "ALL SCENARIOS PASS"

@@ -2,7 +2,7 @@ id: BL-595
 title: "Trend: human-loop reliability — approval-tap and steering-delivery success rate, and poll-degraded/409 frequency over time"
 milestone: M8
 type: feature
-status: paused
+status: done
 epic: swarm-behaviour-trends
 human_approval: approved
 severity: medium
@@ -124,3 +124,38 @@ notes: |
   also fixed a circularity: scenario 05 read "when <event> completes / then
   <event> still completes", which asserts nothing; it now performs the event
   and asserts it still succeeds. Final: 0 findings, 21 unique steps.
+
+closed_as: satisfied-by-implementation
+
+deprecator_adjudication: |
+  RETIRED by the specifier's proactive deprecator pass, 2026-08-29
+  (Article 3.6 / specifier.prompt "Deprecator duty", outcome 2 — retire).
+
+  ## Why this is retired, not built
+
+  This ticket was still sitting in backlog/paused/ with human_approval:
+  approved and a promotable status — i.e. fully eligible for the coordinator
+  to pick up — while the behaviour it specifies is ALREADY SHIPPED AND LIVE.
+  Promoting it would have sent the coder to rebuild working, hardened code.
+
+  ## Evidence checked (2026-08-29)
+
+  - extension/src/metrics/humanLoopReliability.ts is headed "BL-595: pure
+    human-loop reliability records + window aggregation", with its companion
+    humanLoopReliabilityStore.ts, and telegramFrontDeskBotCore.ts /
+    telegram-front-desk-bot.ts carry the emitting call sites.
+  - specs/pipeline/steps/bl595HumanLoopReliabilityTrendSteps.js requires the
+    compiled extension/out/metrics/humanLoopReliabilityStore and
+    humanLoopReliability — the real modules — and index.js:52 registers it.
+  - specs/features/BL-595-human-loop-reliability-trend.feature is LIVE.
+
+  ## What was deliberately NOT touched
+
+  The acceptance feature file and its step handlers stay exactly as they are.
+  "Retire, never reword" applies to a retired BEHAVIOUR; here only the TICKET
+  is stale and the behaviour is live. Deleting the scenarios would remove live
+  coverage, and specs/pipeline/runtime.js throws on a scenario whose handler is
+  gone — the gate would redden. See the paused-pool zombie-ticket check:
+  (1) an implementation file headed with the ticket's own id, and
+  (2) that ticket's handler registered in specs/pipeline/steps/index.js.
+  Both present ⇒ shipped ⇒ retire, do not build.
