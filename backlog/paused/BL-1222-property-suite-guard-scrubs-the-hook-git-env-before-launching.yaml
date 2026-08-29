@@ -220,5 +220,24 @@ notes: |
     moved HEAD; restored, re-confirmed ALL PASS both layers. Verified:
     test_property_suite_drift_guard.sh ALL PASS (18 scenarios); acceptance
     feature 5/5."
+  - "[2026-08-29] specifier, Article 3.6 deprecator adjudication (re-confirm
+    on coordinator freshness HOLD): CONFIRM PROMOTE. The hold reason is
+    'retired/superseded mentions' - the gate flagged the word 'superseded'
+    in the feature file line 24 and the ticket notes line 171. Both mentions
+    are HISTORICAL RECORDS documenting that scenario 02 was correctly retired
+    (not reworded) against BL-1196 scenario 04, per the 'retire, never reword'
+    rule. This is not a stale premise; it is documentation that the ticket
+    followed proper deprecation discipline. Re-verified every premise against
+    the live system: (1) BL-1196 scrub still present at
+    check_property_suite_drift.sh:204 (unset -v GIT_DIR GIT_WORK_TREE
+    GIT_INDEX_FILE); (2) run_default_suite() still the verbatim shape
+    '(cd extension && npm run test:properties)'; (3) pre-commit hook still
+    invokes guard at line 26; (4) feature file exists with 3 active scenarios
+    (01, 03, 04 outline with 3 rows), scenario 02 correctly retired; (5) no
+    .swarmforge/superseded marker, no bounces recorded, depends_on empty.
+    Premises hold in full. The ticket's remaining scope (coverage on this
+    script's own surface that BL-1196 does not reach) is still exactly what
+    is missing and still valid. Coder's 2026-08-28 note confirms the coverage
+    is built and verified. Ready to promote."
 
 assigned_to: coder
