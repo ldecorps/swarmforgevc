@@ -183,3 +183,10 @@ approval_context: >
   If you say OFF, please also say what the new condition should be (a number
   of clean live ticks, a date, or "ask me again") - "until BL-1236 lands"
   has expired and the conf should not carry a condition that is already met.
+
+coordinator_notes: |
+  - [2026-08-29] coordinator: open-slot nudge named this candidate as
+    promotable (specifier note confirms unblocked, decision taken). Cleared
+    without promoting: active/ is at the effective cap of 7, no slot open.
+    Capacity, not inaction (BL-798 invariant 3). Top candidate for the next
+    open slot.
