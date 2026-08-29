@@ -3,7 +3,7 @@ title: "isAbandonedAgentLock's malformed-pid table files a well-formed padded pi
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: done
 epic: code-quality-gates
 human_approval: approved
 priority: 30
@@ -216,3 +216,29 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-28, by: QA, blamed: documenter, class: behavior, commit: c22b9c6906, evidence: backlog/evidence/BL-1207-qa-bounce-20260828.md }
+
+closed_as: satisfied-by-implementation
+deprecator_adjudication: |
+  RETIRE (specifier, 2026-08-29). Article 3.6 deprecator duty, proactive pass.
+  The behaviour this ticket describes is already built, QA-approved and landed
+  on main; the ticket stayed in backlog/paused/ with a promotable status and
+  human_approval: approved, so it remained fully eligible for promotion and
+  would have sent the coder to rebuild working, hardened code.
+
+  Verified independently, not taken from a prior sweep's claim:
+    - QA approval 2c546a1404 confirmed an ancestor of local main
+      (git merge-base --is-ancestor). Local main is ahead of origin/main and is
+      the fresher ref.
+    - Implementation present: isAbandonedAgentLock, extension/src/bridge/cursorBridgeAgentSession.ts:168
+    - Acceptance handler registered in specs/pipeline/steps/index.js:
+      bl1207AbandonedLockLivenessSteps
+  How it got here: parked to hold/ by BL-1248's expedite park, then returned by the unhold sweep e5fed8dac to paused/ instead of done/ — the park moves the YAML, not the parcel, so delivery completed underneath it. BL-1261 (active) owns that divergence.
+
+  Retiring the TICKET only. The .feature file and its step handlers are left
+  untouched — the behaviour is live, and the acceptance runner throws on a
+  scenario with no handler, so deleting them would drop real coverage and
+  redden the gate.
+
+  Full sweep record, including the deliberate keeps (BL-1238 live parcel,
+  BL-1222 already in done/, BL-545 epic tracker):
+  backlog/evidence/paused-pool-zombie-sweep-20260829-third-pass.md

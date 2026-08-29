@@ -10,6 +10,8 @@ priority: 6
 direction: swarm-reported
 depends_on: []
 mutation_cost: high
+slice_size_envelope: medium
+size_envelope_decision: "justify not split - one mechanism whose halves cannot ship apart; recording an adjudication and honouring it are writer and reader of the same record, and shipping either alone is a dark path (the BL-1273/BL-298 defect class). Band declared here because mutation_cost: high on this ticket is Article 3.6 seat-tier, not a size estimate. Reasoning in notes."
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1267-freshness-gate-honours-a-recorded-adjudication.feature
 
@@ -150,6 +152,28 @@ notes: >
   shipped, so naming it in prose rather than depends_on loses nothing and
   keeps the depends_on-gated branches disarmed.
 
+
+  Size envelope, 2026-08-29. The coordinator reported this ticket blocked
+  by BL-634's slice_size_envelope gate, which requires split-or-justify.
+  Decision recorded in size_envelope_decision: JUSTIFY, do not split.
+
+  The gate fired on mutation_cost: high, but that value was set for a
+  different axis: Article 3.6 requires deprecator build and run tickets to
+  carry mutation_cost: high so BL-1001 keeps them off easy seats. It is a
+  seat-tier declaration, not a size estimate, and the gate reads it only as
+  a size proxy when no explicit band is declared. The true band is declared
+  in slice_size_envelope: medium, which the gate prefers.
+
+  Why not split. The obvious cut is "record the adjudication" from "honour
+  the recorded adjudication". Taking it would ship a writer with no reader
+  or a reader with no writer, which is precisely the defect class of
+  BL-298 and of BL-1273 minted this same day: a slice fully green over
+  fakes while the end-to-end path stays dark because nothing populates the
+  store. The fingerprint makes the coupling tighter still - the record's
+  format and the check that re-arms on amendment are the same decision, and
+  splitting them invites a first slice whose fingerprint the second cannot
+  verify. Six scenarios against one 327-line CLI plus one promote script is
+  one sitting for the hard-tier seat this ticket already requires.
 approval_context: >
   This unblocks a promotion queue that has lost four consecutive slots to a
   single hold the specifier already cleared, and it will keep costing slots
