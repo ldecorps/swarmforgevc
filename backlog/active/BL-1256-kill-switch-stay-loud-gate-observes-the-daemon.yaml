@@ -167,3 +167,71 @@ approval_context: >
   regression proof (move the guard, watch the gate go red) rather than a
   committed mutant. Say so if you would rather that be automated, which is
   more durable but noticeably more parcel.
+
+notes: >
+  [2026-08-29] coder: implemented per the direction section, taking call
+  (1) as a test-only flag (same posture as the pre-existing --sweep-once/
+  --chase-sweep-once, not committing to a permanent daemon affordance) and
+  call (2) as a by-hand proof, not automated.
+
+  Added `--reconcile-sweep-once` to handoffd.bb (one-shot-and-exit, same
+  shape as --sweep-once/--chase-sweep-once - dispatches to the existing
+  master-main-reconcile-sweep! once and exits). Added to
+  test_handoffd_one_shot_flags_parse.sh for BL-728 parse-safety coverage,
+  matching every other one-shot flag's own entry there.
+
+  Added BL-1256 scenarios 01/02 to
+  test_handoffd_master_main_reconcile_wiring.sh (per required_wiring - no
+  parallel fixture script): stops the fixture's own persistent background
+  daemon once its existing scenarios finish, then drives deterministic
+  single ticks via --reconcile-sweep-once against a fresh dirty-blocked
+  divergence with the switch off. Each assertion greps only the log slice
+  the specific tick appended (not the whole accumulated log), since the
+  same "surfaced BL-891...seed.txt" line already recurs earlier in the
+  file from scenario B - grepping the full log would have false-passed
+  regardless of whether this ticket's fix worked.
+
+  Re-pointed BL-1248 scenario 05's handler (bl1248MasterMainReconcile
+  KillSwitchSteps.js) at the real daemon fixture instead of its old
+  hand-passed-disabled-flag `bb -e` call to sweep! (runDivergenceStill
+  Surfaced, removed) - this was the actual blind gate the ticket
+  describes. Factored the shared wiring-fixture runner (memoized-per-ctx
+  spawn + PASS-line assertion) into
+  specs/pipeline/steps/lib/bl1256ReconcileWiringFixture.js so both this
+  ticket's own step handlers (bl1256KillSwitchGateDrivesTheDaemonSteps.js)
+  and BL-1248's re-pointed scenario 05 share one runner, never two
+  independent copies.
+
+  Scenario 03 (structural anti-regression) asserts on the INVOCATION SHAPE
+  - a `bb -e` script passing a literal true/false as sweep!'s 3rd
+  (enabled?) argument - via HAND_PASSED_DISABLED_SWEEP_INVOCATION, not on
+  the bare "sweep!"/"disabled" symbol names (both recur constantly in this
+  file's own prose). Inspects both bl1248MasterMainReconcileKillSwitchSteps.js
+  and bl1256KillSwitchGateDrivesTheDaemonSteps.js - the anti-regression
+  check covers the file this ticket's own fix lives in, not just new code.
+
+  Non-vacuity (qa_e2e_procedure step 5), by hand: temporarily moved the
+  guard in handoffd.bb's master-main-reconcile-sweep! to the call site
+  (`(when (master-main-reconcile-enabled?) (sweep! ...))`, mirroring
+  b617a292e6's shape - not merged or cherry-picked, hand-written fresh and
+  discarded after). Ran test_handoffd_master_main_reconcile_wiring.sh
+  against the mutated file: FAILed (red) at "expected the reconcile sweep
+  to log a config-skip while the switch is off" - the mutation silenced
+  the daemon log entirely while off, so the suite (which now includes the
+  re-pointed scenario 05 assertions) is not vacuously green. Restored the
+  original file from a backup copy and re-verified: full
+  test_handoffd_one_shot_flags_parse.sh ALL PASS, and both
+  specs/features/BL-1256-kill-switch-gate-drives-the-daemon.feature (3/3)
+  and specs/features/BL-1248-master-main-reconcile-kill-switch.feature
+  (8/9 - scenario 04 red, pre-existing and out of scope: RETIRE-WITH:
+  BL-1251, and BL-1251 already flipped the shipped conf to
+  master_main_reconcile_enabled true on main before this ticket started)
+  pass via `run_acceptance.sh`. master_main_reconcile_lib_test_runner.bb
+  ALL TESTS PASS (untouched by this ticket, sanity-checked since this
+  ticket reads that lib closely).
+
+  No src/*.ts touched - no CRAP/DRY/Stryker concern. No property test:
+  scenario 03's structural check on the invocation shape is the
+  appropriate encoding per the ticket's own qa_e2e_procedure item 6 (a
+  property shape is not natural here - the invariant is about how a
+  handler is WRITTEN, not a range of inputs a generator would draw from).

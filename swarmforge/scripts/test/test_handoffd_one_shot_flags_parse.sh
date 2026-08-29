@@ -55,4 +55,7 @@ pass "handoffd.bb reaches -main with --sweep-once (no streaming-eval parse failu
 assert_no_parse_error --chase-sweep-once "chase-sweep-once done"
 pass "handoffd.bb reaches -main with --chase-sweep-once (no streaming-eval parse failure)"
 
+assert_no_parse_error --reconcile-sweep-once "reconcile-sweep-once done"
+pass "handoffd.bb reaches -main with --reconcile-sweep-once (no streaming-eval parse failure)"
+
 echo "ALL PASS"
