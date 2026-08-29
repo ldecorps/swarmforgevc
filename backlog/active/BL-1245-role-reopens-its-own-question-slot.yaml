@@ -141,3 +141,5 @@ notes: |
     swarmforge/roles/specifier.prompt so the next role to hit this has a move
     before the verb exists (BL-798 - that prose is mine and landed with this
     mint). Replace it with the resolve command when this ships.
+
+assigned_to: coder
