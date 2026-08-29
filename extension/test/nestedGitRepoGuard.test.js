@@ -254,6 +254,23 @@ test('BL-1246: gitIgnoresDirectory asks about the containing directory', () => {
   assert.equal(gitIgnoresDirectory(root, path.dirname(root)), false);
 });
 
+test('BL-1246: gitIgnoresDirectory fails closed when git cannot answer at all', () => {
+  // No `git init` here - root is a plain directory, not a repository, so
+  // `git -C root check-ignore` cannot answer "ignored" or "not ignored" at
+  // all (it exits non-zero for a reason OTHER than "this path is not
+  // ignored"). The function's own contract is that only a clean exit 0
+  // exempts and anything else - including this unanswerable case - must
+  // never be read as "ignored". Un-mutated code passes this; mutating the
+  // guard's `result.status === 0` check to `!== 1` (accepting any status
+  // but the specific "not ignored" one) makes this fail while leaving the
+  // guard's other real-repository tests green, since those only ever
+  // observe status 0 or 1.
+  const { gitIgnoresDirectory } = require('./helpers/nestedGitRepoGuard');
+  const root = mkTmpDir('bl1246-not-a-repo-');
+  fs.mkdirSync(path.join(root, 'tmp', 'sub'), { recursive: true });
+  assert.equal(gitIgnoresDirectory(root, path.join(root, 'tmp', 'sub')), false);
+});
+
 test('BL-1246: the predicate is answered for a directory, not for the .git inside it', () => {
   // The ticket's "How" says git never considers a `.git` path against ignore
   // rules. Measured on git 2.x here that is NOT reproducible - under a rule
