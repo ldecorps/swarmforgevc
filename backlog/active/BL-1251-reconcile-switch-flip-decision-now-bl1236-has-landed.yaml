@@ -8,8 +8,29 @@ epic: swarm-reliability
 human_approval: approved
 priority: 5
 direction: pipeline-note
-depends_on: [BL-1248]
+depends_on: [BL-1248, BL-1276]
+
+# BL-1276: the exact foreign path this ticket is chartered to retire from. The
+# file carries `RETIRE-WITH: BL-1251`, and BL-1006 requires the retirer to edit
+# it ("retire, never reword"). Declared here so the pre-handoff task-scope gate
+# stops reading this ticket's own mandated deliverable as another ticket's work.
+# The step-handler file is NOT listed and does not need to be: the gate only
+# attributes backlog/**, specs/features/** and docs/how-to/** paths, so
+# specs/pipeline/steps/*.js is never flagged.
+retires:
+  - specs/features/BL-1248-master-main-reconcile-kill-switch.feature
 mutation_cost: low
+
+# BL-761 acceptance-contract gate (added 2026-08-29, after the documenter hit it):
+# this points at the feature file BL-1251 RETIRES FROM, not at a contract of its
+# own. A retirement chore has no scenarios of its own, and the gate fails CLOSED
+# on an absent declaration at the documenter->QA hop - so with no pointer this
+# parcel could not reach QA after all six stages were already spent. The contract
+# BL-1251 must satisfy IS this file post-retirement: scenario 04 gone, every
+# remaining scenario still resolving against the step registry. Verified against
+# the documenter's own commit: with this line the gate returns 0 findings,
+# without it exactly 1. It is NOT a claim that BL-1251 owns BL-1248's contract.
+acceptance: specs/features/BL-1248-master-main-reconcile-kill-switch.feature
 required_stages: [coder, documenter, qa]
 assigned_to: coder
 
@@ -184,6 +205,57 @@ notes: >
   gate has no discharge path (a confirm-promote verdict cannot be recorded
   where the gate will read it), the coordinator should promote this BY HAND
   at the next open slot rather than re-running the gate and being held again.
+
+  [2026-08-29] specifier: THE WORK IS DONE AND HELD, NOT UNSTARTED. The coder
+  implemented this ticket in full and committed it at 4ba1d0c9e on
+  swarmforge-coder - scenario 04 retired (never reworded), the Feature title
+  and the step handler's FEATURE constant re-tensed together as this ticket's
+  own warning requires, the narrative re-tensed, and scenario 04's two step
+  handlers removed with it. `swarm_handoff.sh` then REFUSED to forward it: the
+  commit edits specs/features/BL-1248-master-main-reconcile-kill-switch.feature,
+  whose basename names BL-1248, and the BL-1192 task-scope gate reads that as a
+  foreign path. It is the one file this ticket exists to edit.
+
+  DO NOT REBUILD, DO NOT FORK THE FEATURE FILE, DO NOT RE-LABEL THE COMMIT. Every
+  offered move is worse than the block: a tip-pure commit drops the retirement
+  itself; BL-1241's rebuild-off-main hatch replays only "this task's own paths",
+  the set that excludes this file; and an untagged or BL-1248-tagged subject
+  would pass by re-labelling while destroying the retirement attribution BL-1006
+  exists to keep greppable. The parcel is HELD at 4ba1d0c9e and re-sends
+  unchanged once BL-1276 lands on main AND is merged into the coder worktree
+  (the gate runs from the sender's own checkout, so the fix must be present
+  there, not merely on main).
+
+  The unblocker is BL-1276, amended today to cover this shape. As originally
+  written it exempted only a path named in the ticket's own `acceptance:` field,
+  which would NOT have covered this ticket - correctly spotted by the coder,
+  since this ticket has no `acceptance:` field at all. BL-1276 now states the
+  exemption over the ticket's declaring FIELDS, and the `retires:` list added
+  above is this ticket's declaration. Evidence:
+  backlog/evidence/BL-1251-handoff-blocked-by-task-scope-gate-20260829.md.
+
+  [2026-08-29] specifier: AMENDED IN FLIGHT - added the acceptance: pointer
+  above. The documenter reported (note, priority 00) that this ticket has no
+  acceptance: field and pre_qa_gate therefore fails closed on the QA handoff.
+  Verified rather than assumed, by running the real gate from the documenter's
+  own worktree against its own tip 7023c8381d: exactly 1 finding,
+  :acceptance-contract "declaration is unreadable at the cited commit (absent,
+  inline Gherkin, or naming a feature file that does not exist there)". Adding
+  the pointer takes it to 0 findings, so every step in BL-1248's post-retirement
+  feature file resolves against the step registry at that commit - the
+  retirement did not strand a handler.
+
+  Two things this run also settled. The task-scope gate produces NO finding at
+  this hop, so the BL-1248 feature path is not a second block here despite the
+  documenter's checkout not yet carrying BL-1276's fix. And the gate reads the
+  ticket YAML from the SENDER'S OWN CHECKOUT (find-ticket-yaml-content, "on THIS
+  checkout"), never from main - so landing this amendment is not enough on its
+  own. The documenter must merge main and re-read before re-sending, which is
+  the BL-317/BL-325 procedure and has been sent as a priority-00 note.
+
+  Nothing the documenter built is wrong and nothing needs rebuilding: this was
+  a spec defect of mine (a ticket minted with no acceptance contract), not a
+  workmanship defect, and the parcel re-sends unchanged once main is merged.
 
 approval_context: >
   A decision for you, not a build request. BL-1248 is about to ship a config

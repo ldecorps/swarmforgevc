@@ -1,0 +1,157 @@
+id: BL-1280
+title: "the whole-tree mkdtemp migration guard has been red since before BL-1209: 33 raw call sites across 24 files were never migrated to the shared helper, plus one fixture string that must not be"
+milestone: M8
+type: defect
+severity: high
+# high: a permanently-red test in the DEFAULT unit lane is a broken health
+# signal - every role has to learn that this red is "the normal one", which is
+# how a real regression hides. Not critical: no behaviour is wrong, nothing is
+# lost, and the leak it guards against is bounded to os.tmpdir() in test runs.
+status: todo
+epic: code-quality-gates
+priority: 45
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1280-mkdtemp-migration-completed-for-the-real-test-tree.feature
+
+invariants:
+  - "No migrated call site changes its temp root's observable lifetime: a root that must outlive its own test uses the per-file or per-process helper, never the per-test one."
+  - "The guard's file-level exempt list stays exactly its three documented paths; a file carrying the raw pattern as test DATA keeps that data intact rather than being exempted from scanning."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1280::the acceptance handler for this feature file is registered'
+
+description: |
+  ## What is wrong
+
+  BL-420 shipped a shared temp-dir helper (`extension/test/helpers/tmpDir.js`)
+  and a guard test that scans the REAL `extension/test` tree for raw
+  `fs.mkdtempSync(path.join(os.tmpdir(), ...))` call sites. The guard was
+  built. The migration it gates was never finished.
+
+      cd extension && npx vitest run test/tmpDirMigrationGuard.test.js
+      -> 1 failed | 10 passed
+
+  Measured on main 2026-08-29: **34 violations across 25 files**.
+
+  This is not a quarantined lane. `tmpDirMigrationGuard.test.js` is not a
+  `*.property.test.js`, and `vitest.config.mjs` excludes only that pattern -
+  so the red sits in the DEFAULT unit lane, and is not on
+  `swarmforge/scripts/property_suite_standing_allowlist.tsv` either.
+
+  ## The two kinds need opposite treatment
+
+  Triaged line by line, not in bulk:
+
+  - **33 real call sites, 24 files.** Ordinary `const root =
+    fs.mkdtempSync(...)`. 23 of those files do not import the helper yet.
+    Lifecycle audit: **0 sit in a `beforeAll`**, 1 is in a `beforeEach`, the
+    rest are in test bodies or local helper functions - so `mkTmpDir` is the
+    right variant throughout, and neither `mkSharedTmpDir` nor
+    `mkProcessTmpDir` is needed. That is what keeps this slice small.
+  - **1 fixture string.** `pilotMkdtempConventionCheck.test.js:27` writes the
+    raw pattern into a scratch file as test DATA, to prove
+    `assessPilotMkdtempConvention` detects it. Rewriting that string destroys
+    the test it belongs to.
+
+  ## Proven before minting
+
+  Applying the mechanical migration to the 24 real files in a scratch copy of
+  `extension/test` drops the guard from 34 violations to **exactly 1** - the
+  fixture string. So the real work is mechanical, and the only judgment call is
+  that single line.
+
+  ## Not BL-1209's, and not new
+
+  Every flagged line already stood unchanged at `f6d369da3`, the tip before
+  BL-1209's first commit (`e272c6b01`). BL-1209 never touches
+  `agentNotesCore.test.js`, which carries five of the violations. Verified by
+  reading both files at that commit, not inferred.
+
+  ## How (direction, not mandate)
+
+  For the 33: allocate through `mkTmpDir`, adding the helper import to the 23
+  files that lack it. For the 1: keep the planted pattern raw but non-contiguous
+  so the scanner does not match it while the written fixture stays
+  byte-identical - concatenating the literal across the `mkdtemp` boundary is
+  the smallest such change. Adding a fourth entry to the exempt list is the
+  option to avoid: `tmpDir.js`'s own comment states the list is meant to stay
+  "exactly the three documented paths", and a file-level exemption would blind
+  the guard to any future REAL violation in that file.
+
+  ## Constraints
+
+  - Do not blunt the detector to make the scan pass. Scenario 02 exists for
+    exactly that failure mode.
+  - Do not change what `pilotMkdtempConventionCheck.test.js` actually writes to
+    disk; its assertion that the checker finds one violation must still hold on
+    the same input.
+  - Preserve every existing prefix string. The helper takes the caller's prefix
+    unchanged, so no fixture directory name changes.
+
+qa_e2e_procedure: >
+  (1) Run `cd extension && npx vitest run test/tmpDirMigrationGuard.test.js` and
+  confirm 11 passed, 0 failed. (2) Drive `findRawMkdtempCallSites` against the
+  real `extension/test` tree and confirm it returns an empty array. (3) Plant a
+  raw call in a scratch tree and confirm the guard still reports it, proving the
+  detector was not blunted. (4) Read `SELF_EXEMPT_RELATIVE_PATHS` and confirm it
+  still names exactly three paths and does not name
+  `pilotMkdtempConventionCheck.test.js`. (5) Run
+  `npx vitest run test/pilotMkdtempConventionCheck.test.js` and confirm it still
+  passes, so the fixture string still exercises the checker. (6) Run the full
+  unit lane and confirm no test regressed on temp-dir lifetime - in particular
+  no test that reuses a root across cases.
+
+out_of_scope: |
+  - `specs/pipeline/steps/`. BL-1226 already owns extending the mkdtemp
+    convention gate to step handlers (436 of 821 handlers creating a temp root);
+    that is a different surface, a different mechanism, and its own ticket.
+  - BL-1209. It is in flight on the detector's resolution path and is unrelated
+    to this backlog of unmigrated sites; nothing here touches it.
+  - The property lane's separate `tempDirTrapGuard` red (shell scripts and bb
+    property runners with no EXIT trap). Different guard, different files,
+    different lane - it is not fixed or assessed here, and folding it in would
+    merge two unrelated causes.
+  - Widening the guard beyond `extension/test`.
+
+source: |
+  architect `note` (priority 00) to specifier, 2026-08-29T15:40:24Z: "Untracked
+  red: see evidence/architect-tmpdirmigrationguard-standing-red.md". The
+  evidence file was written in the architect's own worktree
+  (.worktrees/architect/backlog/evidence/architect-tmpdirmigrationguard-standing-red-20260829.md)
+  and is NOT committed on any branch, so it is not durable; its substance is
+  reproduced in this ticket, which is.
+
+notes: |
+  - [2026-08-29] specifier: the architect's evidence was accurate on every
+    checkable claim - the red, the count ("~30+ across ~20+ files" against a
+    measured 34 across 25), the pre-existing-at-f6d369da3 argument, and the
+    hypothesis that some flagged lines are fixture strings rather than real
+    usage. That last one is why this ticket triages line by line: the
+    hypothesis was right, but the proportion is 1 of 34, not "some". A bulk
+    migration would have silently corrupted that one test.
+  - [2026-08-29] specifier: the architect reported "not already ticketed" after
+    grepping for `tmpDirMigrationGuard`, `agentNotesCore`, `bl790-roles` and
+    "raw mkdtemp call sites". That conclusion holds, but the grep did miss two
+    live neighbours - BL-1226 (paused) and BL-1209 (active) - which name the
+    convention gate rather than this guard. Both are checked against and
+    excluded in out_of_scope above; neither owns this backlog of unmigrated
+    sites.
+  - [2026-08-29] specifier: no `required_wiring` armed for the 24 migrated
+    files, deliberately. The deliverable IS those edits and acceptance scenario
+    01 gates them directly by scanning the real tree; 24 path entries would add
+    no check the scan does not already make, and every extra entry is another
+    chance to arm an unmatchable pattern (BL-874, BL-960). Only the step-handler
+    registration is armed.
+  - [2026-08-29] specifier: observed while triaging, deliberately NOT scoped
+    here. `pilotMkdtempConventionCheck.test.js` plants its fixture INSIDE the
+    real tree (`extension/test/bl743-assess-<pid>.test.js`), which is the same
+    directory `tmpDirMigrationGuard.test.js` scans. Under a parallel runner the
+    scan could observe a planted file mid-test. It is not the cause of this red
+    - the 34 violations are stable and reproducible - and speculating a flake
+    into a ticket without evidence would be guessing. Recorded so the next
+    reader has it.
+  - [2026-08-29] specifier: no `human_approval` requested - a verified defect
+    with a measured fix and no open decision for the operator.

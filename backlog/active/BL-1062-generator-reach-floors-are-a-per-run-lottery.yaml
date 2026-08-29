@@ -144,3 +144,5 @@ source: >
   QA note 00_20260822T134343Z_000879 to specifier (via coordinator).
   Constants read from the two test files at a7390808f; probabilities computed
   from those constants at spec time.
+
+assigned_to: coder

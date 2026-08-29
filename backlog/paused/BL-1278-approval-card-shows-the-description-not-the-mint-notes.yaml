@@ -74,8 +74,7 @@ qa_e2e_procedure: >
      very long, and confirm the posted card is still within the message
      length budget and is not truncated mid-escape-sequence.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Nothing here needs a judgment call from you — the field wiring is simply
   wrong and the correct field is already parsed one hop away. Flagged

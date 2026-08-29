@@ -1,0 +1,177 @@
+id: BL-1279
+title: "all four front_desk_supervisor standing tests are red: each fixture hand-lists six .bb files while the supervisor load-files eight, so the subprocess dies at load and five checks pass vacuously"
+milestone: M8
+type: defect
+severity: high
+# high: four standing-suite tests are red on main, and the guards they exist to
+# gate (BL-622 duplicate-poller refusal, BL-436 fleet creds, BL-370 liveness
+# escalation, BL-303 recovery budget) are effectively untested behind a partial
+# red. Not critical: nothing is lost or corrupted and the supervisor itself is
+# unchanged - it is the coverage that is dark, not the behaviour.
+status: todo
+epic: code-quality-gates
+priority: 45
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1279-front-desk-fixtures-derive-their-bb-closure.feature
+
+invariants:
+  - "Every .bb file a front-desk supervisor fixture copies is derived from front_desk_supervisor.bb's transitive load-file closure at run time, never read from a hand-maintained list."
+  - "A fixture whose bb subprocess dies before its first assertion fails the run; no check may be reported as passed when the process under test never started."
+
+required_wiring:
+  - 'swarmforge/scripts/test/test_front_desk_supervisor_bl622_refusal.sh::copy_bb_closure::the fixture derives its copy set instead of hand-listing it'
+  - 'swarmforge/scripts/test/test_front_desk_supervisor_tick.sh::copy_bb_closure::the fixture derives its copy set instead of hand-listing it'
+  - 'swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh::copy_bb_closure::the fixture derives its copy set instead of hand-listing it'
+  - 'swarmforge/scripts/test/test_front_desk_supervisor_fleet_creds.sh::copy_bb_closure::the fixture derives its copy set instead of hand-listing it'
+  - 'specs/pipeline/steps/lib/bbFixtureClosureGate.js::front_desk_supervisor.bb::the four fixtures are enrolled in the closure guard so the list cannot rot again'
+  - 'specs/pipeline/steps/index.js::bl1279::the acceptance handler for this feature file is registered'
+
+description: |
+  ## What is wrong
+
+  Four standing-suite shell tests drive `front_desk_supervisor.bb` inside a
+  disposable fixture root, and each hand-maintains the list of `.bb` files it
+  copies there. `front_desk_supervisor.bb` `load-file`s EIGHT libs. All four
+  lists name SIX. Babashka resolves `load-file` relative to the loading file,
+  so the subprocess dies at load time - at `front_desk_supervisor.bb:98:1`,
+  the `daemon_log_freshness_pulse_lib.bb` edge - before the test reaches the
+  behaviour it means to gate.
+
+  Missing from all four lists:
+  `daemon_log_freshness_pulse_lib.bb` and `self_heal_telemetry_lib.bb`.
+
+  ## Measured on main, 2026-08-29
+
+  | test | result |
+  |---|---|
+  | `test_front_desk_supervisor_bl622_refusal.sh` | 3 FAIL of 8 checks |
+  | `test_front_desk_supervisor_tick.sh` | dies at load, exit 1 |
+  | `test_front_desk_supervisor_liveness.sh` | dies at load, exit 1 |
+  | `test_front_desk_supervisor_fleet_creds.sh` | dies at load, exit 1 |
+
+  All four are `standing` rows in `swarmforge/scripts/test/suite-manifest.tsv`,
+  so `run_bb_suite.sh` runs them and this red is visible, not hidden. It has
+  simply gone unowned - BL-1037's own commit message recorded "one pre-existing,
+  unrelated failure in test_front_desk_supervisor_tick.sh" and moved on.
+
+  ## The worse half: five checks pass vacuously
+
+  In the refusal test only the three LOG-CONTENT checks fail. The other five
+  report OK because a process that never started also exits non-zero, also
+  claims no pid file, and also writes no `received-env.json`. So the assertions
+  that survive are the ones a crash satisfies by accident, and the guards these
+  tests exist to prove - BL-622's duplicate-poller refusal, BL-436's fleet
+  creds, BL-370's liveness escalation, BL-303's recovery budget - are
+  effectively untested while three assertions carry the whole red. Invariant 2
+  is about this, not about the missing files.
+
+  ## Why it rotted, and why a hand-patch is the wrong fix
+
+  The two missing edges arrived in commits that RESTORED dropped work:
+  `daemon_log_freshness_pulse_lib.bb` in `20999b11c` (fix(BL-784)) and
+  `self_heal_telemetry_lib.bb` in `8feaa2ad2` (BL-1273). Neither updated the
+  copy-lists, because nothing makes them. BL-973 recorded this exact rot
+  happening three times before (BL-911, BL-967, BL-1029) and concluded: derive
+  the list, never hand-maintain it.
+
+  ## How (direction, not mandate)
+
+  BL-973 already shipped both halves; these four fixtures were never enrolled
+  in either.
+
+  1. `copy_bb_closure` (`swarmforge/scripts/test/lib/bb_closure_copy.sh`)
+     derives the copy set from an entry point's transitive `load-file` closure.
+     Two shell fixtures already use it. Verified for this entry point: it lands
+     exactly nine files - the supervisor plus all eight libs.
+  2. `specs/pipeline/steps/lib/bbFixtureClosureGate.js` keeps each list honest.
+     Its `FIXTURES` map holds five entries; add these four as `kind:
+     'shell-copy'` with `entry: 'front_desk_supervisor.bb'`, alongside
+     `test_lean_ledger_bb_wiring.sh` which has the same shape.
+
+  Verified before minting: replacing each hand-list with
+  `copy_bb_closure "$SRC" "$d" front_desk_supervisor.bb` turns all four green
+  (exit 0, ALL CHECKS PASSED). The control - the unmodified tests in the same
+  scratch mirror - is 3 FAIL for the refusal test and a load-time death for the
+  other three, so the copy-list is the single variable.
+
+  ## Constraints
+
+  - Derive, do not patch. Adding the two missing filenames to four lists would
+    turn everything green today and rot again on the next `load-file` edge.
+    That is the outcome BL-973 exists to prevent.
+  - Everything BL-973 shipped stays. Its five existing fixtures and the five
+    rows of its own Examples table are untouched by this ticket.
+  - No assertion may be left able to pass when the subprocess never ran
+    (invariant 2). Fixing only the copy-list satisfies the letter of the red
+    while leaving that hazard exactly where it is.
+
+qa_e2e_procedure: >
+  (1) Run each of the four tests directly and confirm exit 0 with no FAIL line.
+  (2) Run the standing suite and confirm these four report green in it, not
+  merely standalone. (3) Add a throwaway `load-file` edge to a scratch copy of
+  front_desk_supervisor.bb for a new lib, run the fixtures, and confirm the new
+  file is copied with no edit to any test - proving derivation, not a patch.
+  (4) Delete one closure file from a fixture root after it is built, run the
+  test, and confirm it fails naming the unloadable file AND reports no passed
+  checks (invariant 2). (5) Re-run BL-973's own acceptance feature and confirm
+  its five fixtures and both inventory scenarios still pass unchanged.
+  (6) Confirm `suite-manifest.tsv` still accounts for every test file in exactly
+  one lane.
+
+out_of_scope: |
+  - The supervisor's own behaviour. `front_desk_supervisor.bb` is correct and is
+    not touched; only the fixtures that drive it, and their enrolment in the
+    guard, change here.
+  - BL-973's five existing fixtures and its Examples table. This ticket carries
+    its OWN feature file rather than adding four rows to
+    `specs/features/BL-973-copy-lists-closure-derived-and-suite-completeness.feature`,
+    deliberately: editing another ticket's feature file collides with the
+    BL-1192 task-scope gate, which is what BL-1276 is currently in flight to
+    fix. Splitting the guard's contract across two feature files is the lesser
+    harm and matches BL-1276's own disposition of the same choice.
+  - Making the guard's MEMBERSHIP derived rather than hand-enumerated. BL-973
+    derived each list's CONTENTS but left WHICH fixtures are guarded as a
+    five-row Examples table, which is why four fixtures could exist unguarded
+    for months. That is a real second-order defect and a candidate follow-up,
+    but it is a different mechanism in a different file and would oversize this
+    slice (BL-634). Recorded in notes rather than folded in.
+  - The other red shell tests in the suite. This ticket is scoped to the four
+    that share this one verified cause; a different red is triaged on its own
+    evidence, never swept in by resemblance.
+
+source: |
+  QA `note` (priority 50) to specifier, 2026-08-29T15:29:21Z: "Untracked red:
+  test_front_desk_supervisor_bl622_refusal.sh, BL-784 fixture drift".
+
+notes: |
+  - [2026-08-29] specifier: QA's note said "untracked", and that word is wrong
+    in both senses - the file is tracked in git and clean, and all four tests
+    are `standing` rows in suite-manifest.tsv, so the suite does run them.
+    Recording this because the correction matters for triage: this is not an
+    unenrolled test nobody runs, it is a visible red nobody owns, which is the
+    more serious of the two. QA's "BL-784 fixture drift" half was right, and
+    incomplete: BL-784's commit added one missing edge, BL-1273's added a
+    second, and the note named only the first. Both were found by reading the
+    supervisor's `load-file` lines against each fixture's `cp` line rather than
+    by trusting either attribution.
+  - [2026-08-29] specifier: scope was decided by measurement, not resemblance.
+    All four tests were run individually; tick and liveness both die at the
+    same `front_desk_supervisor.bb:98:1` frame, fleet_creds shows the same
+    missing-artifact symptom, and the refusal test was proven green by adding
+    only the two missing libs. One cause, verified per file - which is why this
+    is one ticket and not four. A shared symptom alone would not have been
+    enough to merge them.
+  - [2026-08-29] specifier: the second-order defect, recorded so it is not lost.
+    BL-973 guards five fixtures through a hand-enumerated `FIXTURES` map and a
+    five-row Examples table. Nothing detects a sixth fixture that copies .bb
+    files and is never enrolled - which is exactly how these four rotted while
+    the guard sat green beside them. Deriving that membership (e.g. by finding
+    every fixture that builds a .bb root) would close the class rather than the
+    instance. Deliberately not folded in here; worth its own slice once this
+    one lands.
+  - [2026-08-29] specifier: no `human_approval` requested. This is a
+    straightforward defect with a verified fix and no open decision for the
+    operator - flagging it would add a wait without adding information.
