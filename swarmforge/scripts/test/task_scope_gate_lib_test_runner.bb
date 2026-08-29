@@ -303,6 +303,65 @@
                  [{:path "backlog/active/BL-1185-old.yaml" :ticket-id "BL-1185"}]
                  (:findings result))))))
 
+;; ── BL-1276: a ticket's own declared acceptance contract is not foreign ──
+
+(assert= "declared-acceptance-path reads a plain single-line pointer"
+         "specs/features/BL-1230-guard.feature"
+         (task-scope-gate-lib/declared-acceptance-path
+          "id: BL-1246\ntitle: x\nacceptance: specs/features/BL-1230-guard.feature\n"))
+
+(assert= "declared-acceptance-path strips surrounding quotes"
+         "specs/features/BL-1230-guard.feature"
+         (task-scope-gate-lib/declared-acceptance-path
+          "acceptance: \"specs/features/BL-1230-guard.feature\"\n"))
+
+(assert= "a block-scalar acceptance declares no comparable path (BL-922's unreadable form)"
+         nil
+         (task-scope-gate-lib/declared-acceptance-path "id: BL-1246\nacceptance: |\n  given a thing\n"))
+
+(assert= "no acceptance field declares nothing"
+         nil
+         (task-scope-gate-lib/declared-acceptance-path "id: BL-1246\ntitle: x\n"))
+
+(assert= "the declared feature file is not foreign"
+         []
+         (task-scope-gate-lib/foreign-scope-findings
+          "BL-1246" ["specs/features/BL-1230-guard.feature"] "specs/features/BL-1230-guard.feature"))
+
+(assert= "EXACTNESS: another path of the same foreign ticket is still foreign"
+         [{:path "backlog/active/BL-1230-guard.yaml" :ticket-id "BL-1230"}]
+         (task-scope-gate-lib/foreign-scope-findings
+          "BL-1246" ["backlog/active/BL-1230-guard.yaml"] "specs/features/BL-1230-guard.feature"))
+
+(assert= "a DIFFERENT foreign feature file is still foreign"
+         [{:path "specs/features/BL-1230-guard.feature" :ticket-id "BL-1230"}]
+         (task-scope-gate-lib/foreign-scope-findings
+          "BL-1246" ["specs/features/BL-1230-guard.feature"] "specs/features/BL-1246-own.feature"))
+
+(assert= "no declaration exempts nothing"
+         [{:path "specs/features/BL-1230-guard.feature" :ticket-id "BL-1230"}]
+         (task-scope-gate-lib/foreign-scope-findings
+          "BL-1246" ["specs/features/BL-1230-guard.feature"] nil))
+
+(assert= "the two-arity call is unchanged from BL-1192's own shape"
+         [{:path "specs/features/BL-1230-guard.feature" :ticket-id "BL-1230"}]
+         (task-scope-gate-lib/foreign-scope-findings
+          "BL-1246" ["specs/features/BL-1230-guard.feature"]))
+
+(assert-includes "an unevaluable exemption is SAID, not silently skipped"
+                 (task-scope-gate-lib/refusal-message
+                  {:task-name "BL-1246"
+                   :findings [{:path "specs/features/BL-1230-guard.feature" :ticket-id "BL-1230"}]
+                   :acceptance-unreadable? true})
+                 "acceptance-contract exemption could not be evaluated")
+
+(assert-false "a readable declaration adds no such note"
+              (str/includes?
+               (task-scope-gate-lib/refusal-message
+                {:task-name "BL-1246"
+                 :findings [{:path "backlog/active/BL-1230-guard.yaml" :ticket-id "BL-1230"}]})
+               "could not be evaluated"))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))

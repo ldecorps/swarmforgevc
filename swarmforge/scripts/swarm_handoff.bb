@@ -19,6 +19,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "parcel_rollback_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "tree_collapse_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
 
 (def usage-text
@@ -445,7 +446,14 @@
                              (conj (tree-collapse-guard-lib/refusal-message tree-collapse-block))
                              task-scope-block
                              (conj (task-scope-gate-lib/refusal-message
-                                    {:task-name task-name :findings (:findings task-scope-block)}))))
+                                    {:task-name task-name
+                                     :findings (:findings task-scope-block)
+                                     ;; BL-1276: carry the "could not evaluate
+                                     ;; the acceptance exemption" flag into the
+                                     ;; message, or the refusal reads as a plain
+                                     ;; entanglement and sends the coder off to
+                                     ;; rebuild for the wrong reason.
+                                     :acceptance-unreadable? (:acceptance-unreadable? task-scope-block)}))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
@@ -533,90 +541,13 @@
       (= "true" (coordinator-config-lib/parse-config-value
                  conf-text "required_stages_routing_enabled" "false"))))
 
-(defn- yaml-id-field [content]
-  (some (fn [line] (when (str/starts-with? line "id: ") (str/trim (subs line 4))))
-        (str/split-lines (or content ""))))
-
-;; ── BL-992: the declaration is read from the freshest REF first ─────────
-;; A pipeline role merges main only at handoff boundaries, so between the
-;; coordinator promoting a ticket on main and the sender merging, the
-;; ticket does not exist in the sender's WORKING TREE at all - measured
-;; 2026-08-20, 2 of 7 active tickets were invisible to all six pipeline
-;; worktrees, and every required_stages decision silently took the
-;; no-declaration path. The sender's local main REF is usually fresh (the
-;; data is already on the machine); the lookup was simply reading the
-;; wrong place. Either of main/origin-main can be the stale one (BL-891),
-;; so they are compared, never trusted; a root where neither resolves (the
-;; acceptance fixtures, unusual roots) falls back to the working-tree glob
-;; unchanged, and NOTHING here ever fails a send - every git hiccup
-;; degrades to the next candidate (BL-992 invariant 2).
-
-(defn- ref-resolves? [root ref]
-  (try
-    (zero? (:exit (command root "git" "rev-parse" "--verify" "--quiet" (str ref "^{commit}"))))
-    (catch Exception _ false)))
-
-(defn- declaration-refs
-  "The refs to read a declaration from, freshest first. When both main and
-   origin/main resolve, `git rev-list --left-right --count` decides which
-   is ahead; diverged or undecidable keeps local main first (the field
-   measurement's fresh side) with the other as second candidate."
-  [root]
-  (let [m? (ref-resolves? root "main")
-        o? (ref-resolves? root "origin/main")]
-    (cond
-      (and m? o?)
-      (let [r (try (command root "git" "rev-list" "--left-right" "--count" "main...origin/main")
-                   (catch Exception _ nil))
-            [l rgt] (when (and r (zero? (:exit r)))
-                      (map parse-long (str/split (str/trim (:out r)) #"\s+")))]
-        (if (and l rgt (zero? l) (pos? rgt))
-          ["origin/main" "main"]
-          ["main" "origin/main"]))
-      m? ["main"]
-      o? ["origin/main"]
-      :else [])))
-
-(defn- ticket-yaml-at-ref
-  "The ticket's yaml CONTENT at ref, matched by its OWN id: field exactly -
-   the anchored git-grep is only a cheap candidate filter; correctness
-   comes from re-checking yaml-id-field on the shown content, so a ref
-   carrying only BL-9005 can never resolve a BL-900 lookup (BL-992
-   invariant 3, same guard as the working-tree path). nil on any git
-   error, a non-matching ref, or no candidate - never throws."
-  [root ref ticket-id]
-  (try
-    (let [g (command root "git" "grep" "-l" "-E"
-                     (str "^id:[[:space:]]*" ticket-id "[[:space:]]*$")
-                     ref "--" "backlog/active")]
-      (when (zero? (:exit g))
-        (some (fn [line]
-                (let [path (second (str/split line #":" 2))
-                      s (when path (command root "git" "show" (str ref ":" path)))]
-                  (when (and s (zero? (:exit s)))
-                    (let [content (:out s)]
-                      (when (= ticket-id (yaml-id-field content)) content)))))
-              (remove str/blank? (str/split-lines (:out g))))))
-    (catch Exception _ nil)))
-
-(defn- active-ticket-yaml-content
-  "Reads the active ticket whose OWN `id:` field equals ticket-id exactly -
-   never a filename-prefix glob, which would wrongly match e.g. BL-9005's
-   file when looking up BL-900 (the same false-collision failure mode
-   ticket_status_lib.bb's own contains-ticket? already guards against).
-   BL-992: the freshest resolvable ref is consulted FIRST (a declaration
-   present on it is never invisible, whatever the sender's working tree
-   contains); the working-tree glob remains the fallback for roots with no
-   resolvable ref and for tickets not yet committed anywhere."
-  [root ticket-id]
-  (when ticket-id
-    (or (some #(ticket-yaml-at-ref root % ticket-id) (declaration-refs root))
-        (let [active-dir (fs/path root "backlog" "active")]
-          (when (fs/exists? active-dir)
-            (some (fn [f]
-                    (let [content (try (slurp (str f)) (catch Exception _ nil))]
-                      (when (= ticket-id (yaml-id-field content)) content)))
-                  (fs/glob active-dir "**.yaml")))))))
+;; ── BL-1276: the landed-declaration reader moved to landed_ticket_lib.bb ──
+;; It has a SECOND caller now - task_scope_gate_lib.bb needs the identical
+;; answer for the acceptance-contract exemption, and the send-time gate and
+;; BL-1257's review-time CLI must never disagree about it. Delegated rather
+;; than duplicated; BL-992's ref-freshness reasoning lives in that file now.
+(def ^:private yaml-id-field landed-ticket-lib/yaml-id-field)
+(def ^:private active-ticket-yaml-content landed-ticket-lib/active-ticket-yaml-content)
 
 (defn route-required-stages
   "{:recipients [...] :routing-skipped nil-or-map}. recipients is the
