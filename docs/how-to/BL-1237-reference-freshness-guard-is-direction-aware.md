@@ -71,11 +71,12 @@ bb swarmforge/scripts/ready_for_next.bb   # (or ready_for_next.sh) in the ahead 
 - The guard still only compares `swarmforge/constitution/articles/reference/*`
   content — it is not a general worktree-freshness check (see
   [Worktree drift guard](BL-1195-worktree-drift-guard.md) for that class).
-- The comparison ref itself (`main` vs `origin/main`) is chosen by
-  whole-repo ahead-count in `freshest-main-ref`, a separate mechanism this
-  ticket does not touch — that heuristic can itself pick the behind ref
-  when the two diverge on unrelated commits, which stays a distinct,
-  currently open failure mode of the same guard.
+- ~~The comparison ref itself (`main` vs `origin/main`) is chosen by
+  whole-repo ahead-count in `freshest-main-ref`~~ — fixed by BL-1266, which
+  removed `freshest-main-ref` entirely: the guard now asks the ancestry
+  question per path, of every ref that carries the reference dir, instead
+  of picking one ref by a whole-repo commit count. See
+  [BL-1266](BL-1266-reference-freshness-ref-selection-is-per-path.md).
 
 ## Acceptance
 
