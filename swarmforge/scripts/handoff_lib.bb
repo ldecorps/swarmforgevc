@@ -992,6 +992,16 @@
                 (rotation-telemetry-lib/append-rotation-event!
                  (target-root)
                  {:from from-role :to target-role :reason emit-reason})
+                ;; BL-597 emit, restored by BL-1273. Until now this file
+                ;; load-filed self_heal_telemetry_lib.bb (line 48) and never
+                ;; called into it - a live dependency edge carrying no
+                ;; behaviour. Sits beside the rotation-telemetry append that
+                ;; already observes this same successful rotate.
+                (self-heal-telemetry-lib/append-self-heal-event!
+                 (target-root)
+                 {:type "rotation-respawn"
+                  :subject "mono-router-resident"
+                  :reason "persona swap"})
                 {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
                                      (str "tmux-exit-" (:exit result)))}))))))
