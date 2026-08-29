@@ -23,6 +23,13 @@ PRE_QA_GATE_FAIL ancestry BL-531 e57a237b on swarmforge-coder
   remedy: list the sha in this ticket's `abandoned_commits:` field if dropped deliberately
 ```
 
+**Merge candidates, since a currently in-flight fix:** the blocking commit's
+path evidence is that commit's own combined-diff contribution — for a merge,
+what the merge itself introduced (`diff-tree -m --cc`), never the union of
+what each parent separately changed. A routine "merge main into `<branch>`"
+whose subject happens to name a ticket id is no longer credited with the
+whole other-side changeset it merely carried along.
+
 **How to fix:**
 
 ### Option 1: Merge the Stranded Commit
