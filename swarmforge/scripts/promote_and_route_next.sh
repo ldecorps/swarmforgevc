@@ -482,4 +482,13 @@ if [[ -f "$SCRIPT_DIR/active_pool_freshness_audit.sh" ]]; then
   "$SCRIPT_DIR/active_pool_freshness_audit.sh" "$ROOT" || true
 fi
 
+# BL-1261: after a successful promotion, surface any ticket in backlog/hold/
+# whose parcel is still moving in a role's mailbox (the expeditor park
+# divergence). Report only - never moves tickets or parcels, never gates or
+# reverts THIS promotion. Output is left visible so a coordinator/human
+# watching this run sees it.
+if [[ -f "$SCRIPT_DIR/hold_divergence_audit_cli.bb" ]]; then
+  bb "$SCRIPT_DIR/hold_divergence_audit_cli.bb" "$ROOT" || true
+fi
+
 echo "Promote+route complete for $ID"
