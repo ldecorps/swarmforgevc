@@ -147,3 +147,5 @@ notes: |
     mint). It is a stopgap, not the fix: five other role prompts say nothing,
     and a mechanism that works only while six prompts all remember it is not a
     mechanism.
+
+assigned_to: coder
