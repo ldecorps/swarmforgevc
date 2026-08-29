@@ -3,7 +3,7 @@ title: "Decide whether to re-arm the master-main-reconcile sweep now that BL-123
 milestone: M8
 type: chore
 severity: medium
-status: blocked
+status: todo
 epic: swarm-reliability
 human_approval: approved
 priority: 5
@@ -109,6 +109,54 @@ notes: >
   dependency is made explicit and enforced (depends_on plus status:
   blocked) rather than left implicit.
 
+
+  [2026-08-29] specifier: THE DECISION HAS BEEN TAKEN, so this ticket is now
+  only its own cleanup. The operator re-armed the sweep in cce70d985 ("Re-arm
+  master-main-reconcile (BL-1251 ON)"), and the conf comment records why: a
+  live clean-tree absorb proved merge-tree clean and cleared a durable
+  skipped-by-config deadlock that was parking coordinator bookkeeping. The
+  framing above - that this ticket carries the flip decision to the human -
+  is spent. Do not re-ask it. Unblocked in the same pass: status was blocked
+  on depends_on BL-1248, which sits in backlog/done/M8/. A stale block.
+
+  [2026-08-29] specifier: the ON-branch cleanup is now a LIVE RED, not
+  housekeeping. BL-1248 scenario 04 ("the shipped config disables the sweep")
+  asserts master_main_reconcile_enabled is set to "false"; the shipped conf
+  now sets it to true. Its step handler is registered at
+  specs/pipeline/steps/index.js:847 and reads the actually-shipped conf file,
+  so it executes and fails on main today. This is exactly the
+  red-when-correct retirement BL-1006 exists to prevent, and the scenario's
+  own RETIRE-WITH marker names this ticket as its retirer. Retire it, never
+  reword. The Feature: line is false in the same way and must be re-tensed -
+  "and is off until BL-1236 lands" describes a state that has ended - and
+  this ticket's own warning stands that the feature title and the
+  step-handler FEATURE constant are a matched pair.
+
+  [2026-08-29] specifier: evidence for the human, because the ON decision
+  rested on BL-1236 having made the sweep safe enough, and this ticket's own
+  description already warned that BL-1236 does not make the sweep
+  non-destructive. Measured on this host today: seven "reset: moving to
+  origin/main" reflog entries dated 2026-08-29, at least four of which
+  discarded committed work while the specifier was working through it.
+  Casualties: three whole tickets with their feature files (BL-1271, BL-1272,
+  BL-1273 - YAML and .feature both, absent from every backlog folder until
+  recovered), a recorded human_approval, two QA-passed closures that returned
+  to active/ as promotable zombies (BL-581 and BL-1262), a retirement that had
+  to be redone twice, and the operator's own 2026-08-29 epic reprioritization
+  directive destroyed and restored four times in about ninety minutes. All of
+  it was recoverable from the reflog by cherry-pick -x, so nothing was lost
+  irrecoverably; but each loss read to every downstream role as work that had
+  never been done, which is how a QA-passed ticket ends up back in active/
+  waiting to be rebuilt.
+
+  That is offered as input to what the human decides next, not as a reversal
+  of their decision - the deadlock the re-arm cleared was real. What today
+  shows is that ON and safe are still different things, and the gap between
+  them may deserve its own ticket, since the destructive fallback reset
+  survives BL-1198's push-before-reset whenever the push does not succeed.
+  That is deliberately NOT scoped here: this ticket is the flip's cleanup,
+  and widening it now is the oversized-merge BL-634 guards against.
+
 approval_context: >
   A decision for you, not a build request. BL-1248 is about to ship a config
   switch that disables the master-main-reconcile sweep, with a comment
@@ -135,3 +183,10 @@ approval_context: >
   If you say OFF, please also say what the new condition should be (a number
   of clean live ticks, a date, or "ask me again") - "until BL-1236 lands"
   has expired and the conf should not carry a condition that is already met.
+
+coordinator_notes: |
+  - [2026-08-29] coordinator: open-slot nudge named this candidate as
+    promotable (specifier note confirms unblocked, decision taken). Cleared
+    without promoting: active/ is at the effective cap of 7, no slot open.
+    Capacity, not inaction (BL-798 invariant 3). Top candidate for the next
+    open slot.

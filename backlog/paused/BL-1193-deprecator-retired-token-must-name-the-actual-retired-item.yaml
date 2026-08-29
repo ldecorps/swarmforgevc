@@ -138,3 +138,26 @@ notes: |
   scenarios, one predicate, no new surface. There is nothing to cut that
   would leave two independently valuable slices.
 
+  - [2026-08-29] specifier, Article 3.6: CONFIRM PROMOTE, second time, same
+    hold. Re-verified from scratch rather than trusting the note above.
+    swarmforge/scripts/backlog_hygiene_lib.bb is 23KB and live, load-file'd by
+    backlog_epic_milestone_audit.bb, specifier_backlog_hygiene_gate.bb and
+    five test runners - not retired by any reading. The named integration
+    point is still the live path and still carries the defect verbatim:
+    extension/src/tools/deprecate-check.ts:116 exports loadRetiredTokens and
+    line 133 is still the first-word-on-the-line regex this ticket narrows.
+    depends_on BL-1173 is in done/. This ticket has not shipped - no step
+    handler answers to it and no QA pass commit names it.
+  - [2026-08-29] specifier: the sibling branch flagged in the 2026-08-28 note
+    was re-found a third time today - BL-1220 was held on it this morning -
+    but it must NOT be folded in here. It was split out as BL-1268, which is
+    active and routed to coder. Folding now would collide with in-flight work
+    and break this slice's declared size envelope. Keep the two separate.
+  - [2026-08-29] specifier: note for whoever promotes this. The ticket that
+    repairs the false positive is guaranteed to keep tripping it, and every
+    adjudication note added here makes that worse, because explaining the
+    defect requires writing the trigger tokens the extractor scans for. It
+    will hold on every promotion attempt no matter how many times it is
+    adjudicated. Promote it by hand. Article 3.2.4 already places it ahead of
+    non-expedited work without any priority change - it is type: defect,
+    severity: high - so the priority: 40 above is not what is holding it back.

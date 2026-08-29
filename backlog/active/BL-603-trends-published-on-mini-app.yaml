@@ -37,6 +37,9 @@ description: |
   the console's existing screen-registration pattern.
 acceptance: specs/features/BL-603-trends-published-on-mini-app.feature
 
+abandoned_commits:
+  - "1607096556"
+
 invariants:
   - "The board never fabricates a point: a series with nothing to plot renders as absent data, and no path invents a zero, a flat line, or an interpolated value to fill the gap."
   - "Every landed BL-594 series is reachable on the board, and registering a new one is the only edit needed to publish it - a series that exists and is unreachable is a visible gap, never a silent omission."
@@ -117,3 +120,12 @@ notes: |
     "the board shows a plot for tenth-series". That pair is the NORMALIZED
     state, not drift: the concrete text is an instance of the parameterized
     one and both bind to a single step handler. Do not churn on it.
+  - [2026-08-29] documenter: pre-QA ancestry gate flagged 1607096556 (the
+    specifier's feature-file migration commit) stranded on swarmforge-cleaner
+    and swarmforge-coder, absent from this chain. Verified no dropped work:
+    diffed 1607096556's paused/ ticket and feature-file content byte-for-byte
+    against this chain's active/ versions (via 2a43fdce0/c92a712e4, same
+    patch-id, cherry-picked across a rescue merge) - identical except
+    `assigned_to` (specifier -> coder), which changed naturally as the
+    ticket moved through the pipeline. Recorded under abandoned_commits:
+    rather than merged, since it carries no content this chain lacks.
