@@ -59,4 +59,7 @@ bash specs/pipeline/scripts/run_acceptance.sh \
 ```
 
 Related: [Reading front-desk human-loop reliability trends](BL-595-trend-human-loop-reliability.md),
-epic BL-594 swarm-behaviour-trends.
+epic BL-594 swarm-behaviour-trends. BL-1273 restored the five production
+emit sites above after a merge (2e37477ec) silently dropped them 58 minutes
+after BL-597 landed; the sites and this doc's claim were both dark between
+2026-08-27 and 2026-08-29 and are both correct again as of BL-1273.

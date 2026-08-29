@@ -19,6 +19,7 @@ depends_on: [BL-1262]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1273-restore-self-heal-telemetry-emit-sites.feature
+abandoned_commits: [67d0c18c1f, 858c28042, a5b065e0ca, 1baa87873, b8c4c43f6, dbcf59fb7, 9747e6c1d, 43d181069]
 
 approval_context: >
   Needs sign-off on one judgement only: this restores the five emit sites
@@ -239,3 +240,31 @@ notes: >
   swarm-machinery files, so unlike BL-1262 this is NOT collision-free by
   construction - check no concurrent parcel holds handoffd.bb or
   handoff_lib.bb before promoting.
+
+  QA (2026-08-29), BL-1241 entangled-tip rebuild. The documenter's handed-off
+  commit 67d0c18c1f carried two OTHER tickets' unlanded work as ancestors,
+  neither approved/landable: (1) BL-1246 (coder commit 3c07857a5, deleting
+  specs/features/BL-1246-ignored-directory-is-not-a-leak.feature.draft as
+  part of its own draft-promotion into BL-1230's feature file) - still
+  active, blocked at the coder's own handoff by the task-scope gate, per
+  backlog/evidence/BL-1246-handoff-blocked-by-task-scope-gate-20260829.md;
+  (2) a cleaner batch "BL-1267-BL-1268-BL-1220-BL-603-step-scoping-fix"
+  (commit 205fdd36f, "Scope my three step-handler files so they stop
+  answering other features' scenarios") merged in via
+  efa2848e2/54c17b697 - BL-1267, BL-1268 and BL-1220 are ALREADY in
+  backlog/done/M8/ via a different path, and the step-scoping symptom this
+  commit fixes looks like the same one I already landed as BL-1277
+  (e3980cba2) - unclear whether 205fdd36f is redundant with BL-1277 or
+  fixes something additional; not resolved here.
+  check_merge_deletion.sh caught the BL-1246 half (a deletion of a path it
+  could not attribute to this commit message); the step-scoping half
+  carried no deletion so the guard was silent on it - only the ancestor
+  walk above surfaced it.
+  Per my own role prompt's BL-1241 procedure: neither sibling is
+  approved/landable, so I rebuilt tip-pure instead of bouncing - cherry-picked
+  the three plain, cleanly-scoped BL-1273 commits (coder 9747e6c1d, hardener
+  a5b065e0ca, documenter 67d0c18c1f - none of which individually touch a
+  foreign path) onto current origin/main. abandoned_commits records the
+  whole superseded chain. Sent the specifier a note naming both entangled
+  siblings; not re-verifying or re-diagnosing their substance here, that is
+  the specifier's/coder's call.

@@ -1,0 +1,115 @@
+id: BL-1278
+title: "The human approves from a card showing the ticket's mint provenance, because 'What it solves' is wired to notes: instead of description:"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: question-attention-path
+priority: 40
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1278-approval-card-shows-the-description-not-the-mint-notes.feature
+
+invariants:
+  - "Every card the concierge posts stays inside its message-length budget however long the ticket's description, notes and approval context are."
+
+description: >
+  `extension/src/concierge/topicRouter.ts` builds the "What it solves" line
+  of both the approval ask (line 180) and the TaskStarted card (line 104)
+  from `{ label: 'What it solves', field: 'notes' }`. But `notes:` is by
+  repo convention the ticket's mint provenance — verification records,
+  judgment calls, why a field was or was not declared — while the problem
+  statement lives in `description:`, which `backlog-schema.md` defines as
+  the ticket's detailed requirements. The human is therefore asked to
+  approve a ticket while reading its bookkeeping.
+
+  Observed live on 2026-08-29: BL-1277's approval card opened
+  "What it solves: Verification done at mint (so the coder and QA need not
+  redo it): - `specs/pipeline/stepRegistry.js` read in full…", which is that
+  ticket's `notes:` verbatim. Its actual description — the paragraph
+  explaining that two step files sharing an unscoped pattern answer each
+  other's scenarios — never reached the card at all.
+
+  The card is the human's decision surface. Every approval tap is currently
+  made against the wrong field, and the better a specifier's `notes:`
+  discipline the worse the card reads, because thorough provenance crowds
+  out the problem statement entirely.
+
+  How (direction, not mandate). `description` is ALREADY parsed —
+  `backlogReader.ts:220` assigns it from the ticket YAML (BL-117). What is
+  missing is one hop: `ticketSummariesFor` in
+  `extension/src/concierge/conciergeTick.ts` (~line 299) builds each
+  `TicketSummary` from `{title, notes, firstAcceptanceStep, approvalContext,
+  rulingOptions}` and simply never carries `description`. Add it there, then
+  let the router prefer it for "What it solves". Note `buildSummaryBody`
+  currently special-cases `field === 'notes'` to take only the first
+  paragraph — decide deliberately whether a description gets the same
+  treatment rather than inheriting it by accident.
+
+constraints: >
+  - Tickets predating this change, or genuinely carrying no `description:`,
+    must still produce a useful card — fall back to `notes:` rather than
+    posting an empty or absent line (feature scenario 02).
+  - Both call sites are in scope. Fixing only the approval ask leaves the
+    TaskStarted card reading provenance, which is the same defect on the
+    other surface.
+  - Do not change what `notes:` means or ask specifiers to write problem
+    statements into it. The field convention is correct; the wiring is not.
+
+qa_e2e_procedure: >
+  1. `cd extension && npm install && npm run compile`, then run the unit lane.
+  2. Take a real paused ticket that has BOTH a `description:` and a `notes:`
+     block — BL-1277 is one — and drive the concierge tick that posts its
+     approval ask (or the repair tool `repair-bl-topic-records`) against a
+     fixture root containing it.
+  3. Read the produced card: its "What it solves" line must be the opening
+     of that ticket's `description:`, and must NOT be its `notes:` text.
+  4. Repeat with a ticket carrying no `description:` and confirm the line
+     falls back to the notes rather than vanishing.
+  5. Confirm the same for a TaskStarted card, not only the approval ask.
+  6. Feed a ticket whose description, notes and approval context are each
+     very long, and confirm the posted card is still within the message
+     length budget and is not truncated mid-escape-sequence.
+
+human_approval: pending
+
+approval_context: >
+  Nothing here needs a judgment call from you — the field wiring is simply
+  wrong and the correct field is already parsed one hop away. Flagged
+  `pending` only because it is a new feature file, per the standing rule
+  that a feature file is not final until a human has seen it.
+
+  One thing you may want to weigh in on: whether the card should show the
+  description INSTEAD of the notes (this ticket's assumption) or show both.
+  Both risks the message-length budget, which is why the assumption is
+  "instead", with notes kept only as the fallback when there is no
+  description.
+
+notes: |
+  Verified at mint by reading the code, not inferred:
+  - topicRouter.ts:104 and :180 both hardcode `field: 'notes'` for the
+    "What it solves" label; `buildSummaryBody` (line 80) resolves it via
+    `stringPayloadField(event, field)`.
+  - `description` appears nowhere in `extension/src/concierge/` — the
+    payload genuinely cannot supply it today, so this is not a one-line
+    label swap.
+  - `TicketSummary` is built in `conciergeTick.ts`'s `ticketSummariesFor`
+    (~line 294-305) over active AND paused folders; adding one field there
+    is the whole upstream half.
+  - `backlogReader.ts:220` already does `assignIfTruthy(item, 'description',
+    parseYamlBlockScalar(content, 'description'))`, so no new parsing.
+  - No existing paused/active/hold ticket mentions the approval card fields.
+
+  IR-DRY: 3 `possible-synonym` findings remain, each one a deliberate
+  contrast the scenarios exist to draw (paused vs active ticket — the two
+  call sites; description-present vs description-absent; shows-description
+  vs falls-back-to-notes). Collapsing any of them would delete the
+  distinction under test. The repeated notes-Given is not hoisted to a
+  `Background:` because each occurrence reads as "whose notes…" attached to
+  the ticket the preceding Given established; hoisting it above that Given
+  would break the referent.
+
+source: "Observed by the specifier on 2026-08-29 while checking the concierge's own approval card for the freshly minted BL-1277 (topic record backlog/topics/BL-1277.json, commit 75de17dec)."
