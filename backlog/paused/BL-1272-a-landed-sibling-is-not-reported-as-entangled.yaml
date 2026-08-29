@@ -159,26 +159,25 @@ notes: |
     `byte-identical` row makes the two step texts byte-identical, so one
     handler pattern serves both. That is DRY, not accidental drift.
 
-notes: |
-  [2026-08-29] specifier: RENUMBERED from BL-1270, and restored from reset
-  wreckage. This ticket was minted on 2026-08-29 as BL-1270 (commit b61196293),
-  destroyed by a reconcile reset, recovered on main by 75c6d4e5f, and destroyed
-  a SECOND time by a later reset — the same stroke that also took the whole
-  paused-pool zombie sweep (9 retirements) and the BL-1271 mint. Recovered here
-  from 75c6d4e5f, whose blobs survive only because nothing has gc'd them.
+  - [2026-08-29] specifier: RENUMBERED from BL-1270, and restored from reset
+    wreckage. This ticket was minted on 2026-08-29 as BL-1270 (commit b61196293),
+    destroyed by a reconcile reset, recovered on main by 75c6d4e5f, and destroyed
+    a SECOND time by a later reset — the same stroke that also took the whole
+    paused-pool zombie sweep (9 retirements) and the BL-1271 mint. Recovered here
+    from 75c6d4e5f, whose blobs survive only because nothing has gc'd them.
 
-  Why renumbered rather than restored on its original id: while it was gone,
-  BL-1270 was legitimately re-minted for different work (per-provider API plan
-  usage discovery, 3f64b3459) and that ticket now has a topic record and a
-  recorded human_approval. Per the id-collision rule the party holding live
-  external artifacts keeps the id, so this one moves. It is NOT retired as
-  superseded — the addendum's retire-don't-renumber branch applies only when
-  the loser already shipped under another id, and this defect has never been
-  built.
+    Why renumbered rather than restored on its original id: while it was gone,
+    BL-1270 was legitimately re-minted for different work (per-provider API plan
+    usage discovery, 3f64b3459) and that ticket now has a topic record and a
+    recorded human_approval. Per the id-collision rule the party holding live
+    external artifacts keeps the id, so this one moves. It is NOT retired as
+    superseded — the addendum's retire-don't-renumber branch applies only when
+    the loser already shipped under another id, and this defect has never been
+    built.
 
-  Premise re-verified before restoring, not assumed:
-    - `entangled-siblings` (swarmforge/scripts/land_step_lib.bb:71) still walks
-      origin/main..commit by subject match, unchanged since 41215944a.
-    - No LANDED_SIBLING distinction exists anywhere in the tree.
-    - depends_on BL-1241 has since landed and closed, which is what makes this
-      slice implementable now.
+    Premise re-verified before restoring, not assumed:
+      - `entangled-siblings` (swarmforge/scripts/land_step_lib.bb:71) still walks
+        origin/main..commit by subject match, unchanged since 41215944a.
+      - No LANDED_SIBLING distinction exists anywhere in the tree.
+      - depends_on BL-1241 has since landed and closed, which is what makes this
+        slice implementable now.
