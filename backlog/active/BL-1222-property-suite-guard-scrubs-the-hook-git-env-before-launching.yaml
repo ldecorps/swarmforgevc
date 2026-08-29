@@ -1,0 +1,243 @@
+id: BL-1222
+title: "The property-suite guard hands the pre-commit hook's git environment straight to the suite, so shell fixtures it shells out to still reach the live worktree"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. The guard exists to keep a suite run from
+# touching the shared checkout, and it is the component that supplies the
+# variables making that possible. Recoverable each time so far (no data loss),
+# which is why it is not critical.
+status: todo
+epic: swarm-reliability
+priority: 18
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1222-property-suite-guard-scrubs-the-hook-git-env-before-launching.feature
+human_approval: approved
+approval_context: >
+  Split out of BL-1196's 2026-08-28 amendment rather than folded into it.
+  BL-1196 was already human-approved AND already promoted to active with a
+  coder on it, so widening its contract in place would be the BL-317/BL-325
+  worktree-staleness failure. This is the half the human has not seen.
+
+  The two are complementary, not redundant, and it is worth being clear why
+  both are wanted. BL-1196 strips the variables inside vitest, which covers
+  every JS test file. This ticket strips them one level out, where the guard
+  launches the suite, which additionally covers every SHELL fixture the suite
+  shells out to — the class that wrote 20 commits onto local main and detached
+  the master checkout in BL-1200. A vitest setupFile can never reach those.
+
+  Neither blocks the other and they touch different files. If you want only
+  one, this is the broader of the two, but BL-1196 is the one already moving.
+
+  APPROVED by you 2026-08-28 (commit 708a020b2). RESCOPED the same day, after
+  that approval and its whole commit chain were destroyed by the main-reset
+  bug and recovered from the reflog: by then the coder had already built the
+  scrub inside BL-1196's parcel, because BL-1196's own scenario 04 drives this
+  guard script end to end and cannot pass without it. So the SCRUB ships with
+  BL-1196 rather than waiting for a second six-stage run of work that is
+  already written and architect-reviewed. This ticket keeps what BL-1196 does
+  not cover — the direct assertion on the launched suite's environment, the
+  nested SHELL fixture, and the short-circuits-unchanged regression guard —
+  and is now a small acceptance slice on top of a landed change. Your approval
+  is honoured, not spent: nothing was retired and nothing shipped unseen.
+description: |
+  ## What
+
+  `swarmforge/scripts/check_property_suite_drift.sh` must not pass the
+  pre-commit hook's inherited git environment into the suite it launches.
+  Scrub `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` at the invocation, so
+  every process in that run — the vitest workers and anything they shell out
+  to — resolves git against its own working directory.
+
+  **The scrub itself landed early, with BL-1196** (coder commit `55e138201`,
+  `check_property_suite_drift.sh:204`), because BL-1196's scenario 04 drives
+  this script end to end and is red without it. Confirm it is still there
+  rather than writing it again. What this ticket owes is the coverage on this
+  script's own surface that BL-1196 does not reach: the three scenarios in the
+  feature file, their step handlers, and whatever unit coverage the shell test
+  harness needs. If the scrub has gone missing, restoring it is in scope.
+
+  ## Why
+
+  The guard runs the suite as:
+
+      run_default_suite() { (cd extension && npm run test:properties); }
+
+  with no environment handling of any kind. It is invoked from the shared
+  `swarmforge/git-hooks/pre-commit`, and git populates that hook's environment
+  itself. Measured 2026-08-28 in an isolated scratch repo, committing from a
+  linked worktree:
+
+      GIT_DIR=<main>/.git/worktrees/<name>               (absolute)
+      GIT_INDEX_FILE=<main>/.git/worktrees/<name>/index  (absolute)
+
+  `GIT_WORK_TREE` is not set, which is why the working tree survives and only
+  the ref and index are hit. A child that `cd`s outside the repository
+  entirely still resolves to that gitdir and reports
+  `HEAD -> refs/heads/<role-branch>`. So a fixture doing mkdtemp, `git init`,
+  `git commit` does not get an isolated repository: it writes the branch of
+  the very worktree whose commit triggered the guard.
+
+  That has now happened at least five times in two days across four roles,
+  including twice in a row on `swarmforge-hardender` on 2026-08-28 (hardener
+  evidence `62da72445`), each time on ordinary work nobody chose to run — the
+  guard's own trigger path is the delivery mechanism. It also explains why a
+  manual `npm run test:properties` from a clean shell is harmless: only the
+  hook path carries these variables.
+
+  ## How (direction, not mandate)
+
+  A prefix such as `env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE` on the
+  suite invocation is the obvious shape and is expected to be sufficient. The
+  ticket does not mandate it; what it requires is that no process in the
+  launched run inherits those three.
+
+  ## Constraints
+
+  - Do not change which staged paths trigger the guard, or make the suite it
+    runs narrower. Real costs, both, and both separate tickets.
+  - The three existing short-circuits must behave exactly as today:
+    `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1`, the `skip-paths` exit, and the
+    exit-127 toolchain-missing skip.
+  - The BL-1124 canary's snapshot/assert behaviour is untouched. This ticket
+    removes a cause; BL-1202 is the one that makes the canary report reliably.
+  - Do not scrub anything from the hook's own environment before the guard's
+    other checks run — only the suite launch is in scope.
+
+qa_e2e_procedure: >
+  (1) In a SCRATCH clone — never this repository — create a linked worktree,
+  install a pre-commit hook that records `env | grep ^GIT_`, and commit from
+  the worktree; confirm GIT_DIR and GIT_INDEX_FILE are present and absolute.
+  (2) With the guard pointed at a fake suite command that records its own
+  environment, confirm none of GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE reaches
+  it. (3) With a fake suite that runs mkdtemp + `git init` + `git commit`,
+  confirm the scratch worktree's branch ref and index are unchanged afterward
+  — red before the fix. (4) Confirm the same holds for a fake suite that
+  shells out to a nested script doing the same thing, which is the case a
+  vitest setupFile cannot cover. (5) Confirm the three short-circuits are
+  untouched, and that a normal green run still exits 0 and a mutated checkout
+  still exits 1 with the BL-1124 message. (6) Run
+  `swarmforge/scripts/test/test_property_suite_drift_guard.sh` and confirm it
+  is no worse than its pre-change baseline.
+
+  Do NOT verify any of this by running the real property suite against a live
+  worktree.
+
+out_of_scope: |
+  - BL-1196, the vitest setupFile guard. Complementary, independently
+    landable, already active.
+  - BL-1202, the canary-on-every-exit-path and process-group takedown. That
+    ticket assumes a fixture can still misbehave and is about reporting it;
+    this one removes the vector.
+  - BL-1200 and the ~60 per-file `git()` helpers. Not edited by this ticket;
+    making their current shape safe by construction is the whole point.
+  - Rescoping the guard's trigger set or the breadth of the suite it runs.
+
+invariants:
+  - "No process the property-suite guard launches inherits GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE from the hook that invoked the guard."
+  - "The guard's existing pass, fail and short-circuit behaviours are observable-identical to before this change."
+
+required_wiring:
+  - "swarmforge/scripts/check_property_suite_drift.sh::GIT_INDEX_FILE::the scrub must be in the guard that actually launches the suite; anchored to the variable name because any implementation must name it whatever the surrounding syntax, rather than to an identifier the implementer has not chosen yet (BL-874)"
+
+source: |
+  Split from BL-1196's 2026-08-28 amendment (see that ticket's notes). Root
+  cause established by the specifier the same day from
+  swarmforge/git-hooks/pre-commit, check_property_suite_drift.sh's
+  run_default_suite, and a direct measurement of a linked worktree's hook
+  environment in an isolated scratch repo — not inferred from the incident
+  reports. Triggering report: hardener note 000926 (priority 00) and evidence
+  commit 62da72445, two consecutive hijacks of refs/heads/swarmforge-hardender.
+  Fuller write-up:
+  backlog/evidence/BL-1196-specifier-adjudication-false-closure-and-root-cause-20260828.md
+
+notes: |
+  - "[2026-08-28] specifier: the shell half matters more than it looks. BL-1200
+    shipped a fix for shell fixtures inheriting this redirect, but that fix
+    lives in the shell test harness; a shell fixture invoked FROM the property
+    suite under the hook environment is reached by neither BL-1200's harness
+    guard nor BL-1196's vitest setupFile. This invocation-site scrub is the
+    only one of the three that covers it."
+  - "[2026-08-28] specifier: RESCOPED from implementation to acceptance. The
+    split that created this ticket, its human approval (708a020b2), its topic
+    record and BL-1196's own promotion were all destroyed by the main-reset
+    bug (BL-1214) and recovered from the reflog hours later — by which time
+    the coder had built both halves in BL-1196's parcel and the architect had
+    reviewed them. Rather than revert working, approved, reviewed code to
+    re-run it through six stages, the scrub stays with BL-1196 and this ticket
+    keeps the coverage BL-1196 does not reach. Scenario 02 was retired from
+    the feature file as superseded by BL-1196 scenario 04 (retire, never
+    reword); scenarios 01, 03 and 04 are untouched and still unbuilt."
+  - "[2026-08-28] specifier: mutation_cost stays low and severity stays high.
+    Severity is unchanged because the safety signal this describes is still
+    only half-covered until these scenarios exist; it is NOT a claim that the
+    vector is still open — the scrub is landed in BL-1196's parcel."
+  - "[2026-08-28] specifier, Article 3.6 deprecator adjudication: CONFIRM
+    PROMOTE. The coordinator's gate held with \"auto-note failed\" - a
+    fail-closed default, not a fired signal. Checked every 3.6 signal: no
+    .swarmforge/superseded marker, no bounces recorded, depends_on is empty,
+    and the ticket declares no supersession (its only \"superseded\" mentions
+    are the historical record of scenario 02 being correctly retired against
+    BL-1196 scenario 04). Then verified the premises against the live system
+    rather than trusting the absence of signals: the BL-1196 scrub IS present
+    on main at check_property_suite_drift.sh:204, exactly where this ticket
+    says to confirm it; run_default_suite is still verbatim the shape the
+    feature file quotes, `(cd extension && npm run test:properties)`; and
+    swarmforge/git-hooks/pre-commit still invokes the guard at line 26. Note
+    the scrub content is on main even though commit 55e138201 is NOT an
+    ancestor of main - it landed under BL-1196's closure, so read content, not
+    ancestry, if this is re-checked. Premise holds in full; remaining scope
+    (coverage on this script's own surface) is still exactly what is missing."
+  - "[2026-08-28] specifier: the required_wiring row anchored on GIT_INDEX_FILE
+    is currently VACUOUS - the scrub already landed with BL-1196, so it matches
+    today. Deliberately kept rather than replaced: BL-1233 establishes that the
+    launcher can silently clobber this very file with main's bytes, so a
+    regression guard on that variable is load-bearing here, not decorative."
+  - "[2026-08-28] specifier: orthogonality note for the coordinator, not a
+    freshness objection. BL-1234 (minted today) also touches the property-suite
+    guard family - property_suite_standing_allowlist_lib.sh, and its acceptance
+    will exercise this script's decision block. Different files, so not a
+    conflict, but they share the shell test harness. Rule 3 is the
+    coordinator's call; flagging it so the choice is made deliberately."
+  - "[2026-08-28] coder: confirmed the scrub is still present at
+    check_property_suite_drift.sh:204 (unset -v GIT_DIR GIT_WORK_TREE
+    GIT_INDEX_FILE, right before the suite launches) - nothing to restore.
+    Built the coverage this ticket owes: two new scenarios (17-18) in
+    swarmforge/scripts/test/test_property_suite_drift_guard.sh (a real
+    'fake main' gitdir as GIT_DIR/GIT_INDEX_FILE, not a fabricated path,
+    so an un-scrubbed run would actually be able to write into it), plus
+    the acceptance feature's own step handlers
+    (bl1222PropertySuiteGuardGitEnvScrubSteps.js +
+    lib/bl1222PropertySuiteGuardGitEnvScrubCli.sh) driving the real guard
+    script end to end for all 5 scenarios (01, 03, and outline 04's three
+    short-circuit rows). Scenario 02 stayed retired per the specifier's
+    note - not reworded, not rebuilt. Non-vacuity proven by hand at both
+    layers: disabled the scrub line, confirmed shell scenarios 17-18 AND
+    acceptance scenarios 01/03 all fail naming the leaked env vars or the
+    moved HEAD; restored, re-confirmed ALL PASS both layers. Verified:
+    test_property_suite_drift_guard.sh ALL PASS (18 scenarios); acceptance
+    feature 5/5."
+  - "[2026-08-29] specifier, Article 3.6 deprecator adjudication (re-confirm
+    on coordinator freshness HOLD): CONFIRM PROMOTE. The hold reason is
+    'retired/superseded mentions' - the gate flagged the word 'superseded'
+    in the feature file line 24 and the ticket notes line 171. Both mentions
+    are HISTORICAL RECORDS documenting that scenario 02 was correctly retired
+    (not reworded) against BL-1196 scenario 04, per the 'retire, never reword'
+    rule. This is not a stale premise; it is documentation that the ticket
+    followed proper deprecation discipline. Re-verified every premise against
+    the live system: (1) BL-1196 scrub still present at
+    check_property_suite_drift.sh:204 (unset -v GIT_DIR GIT_WORK_TREE
+    GIT_INDEX_FILE); (2) run_default_suite() still the verbatim shape
+    '(cd extension && npm run test:properties)'; (3) pre-commit hook still
+    invokes guard at line 26; (4) feature file exists with 3 active scenarios
+    (01, 03, 04 outline with 3 rows), scenario 02 correctly retired; (5) no
+    .swarmforge/superseded marker, no bounces recorded, depends_on empty.
+    Premises hold in full. The ticket's remaining scope (coverage on this
+    script's own surface that BL-1196 does not reach) is still exactly what
+    is missing and still valid. Coder's 2026-08-28 note confirms the coverage
+    is built and verified. Ready to promote."
+
+assigned_to: coder
