@@ -301,3 +301,5 @@ deprecator_adjudication: |
   Ticketed so it stops recurring: BL-1267 (the missing discharge path) and
   BL-1268 (the generic-claim branch that fires on citations), both paused
   2026-08-29, both defect/high, epic deprecator.
+
+assigned_to: coder
