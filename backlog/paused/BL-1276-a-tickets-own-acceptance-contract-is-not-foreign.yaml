@@ -1,0 +1,195 @@
+id: BL-1276
+title: "the task-scope gate refuses a ticket for editing the very feature file its own acceptance: field names, leaving the coder no move that does not either violate the spec or defeat the gate"
+milestone: M8
+type: defect
+severity: high
+# high: a live, committed, fully-tested parcel (BL-1246 at 3c07857a5) cannot be
+# forwarded, and every move available to its author is worse than the block.
+# Not critical: nothing is lost or corrupted, the gate is right about every
+# other shape, and the blocked work sits safely on the coder branch.
+status: todo
+epic: code-quality-gates
+priority: 40
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1276-a-tickets-own-acceptance-contract-is-not-foreign.feature
+
+invariants:
+  - "A parcel is never refused with an outcome its recipient has no action available to satisfy."
+  - "The exemption covers only the exact path string the ticket declares in its own acceptance: field; any other path belonging to that same foreign ticket is still reported."
+  - "The exemption is derived from the ticket's own landed declaration, never from a list of ticket-id pairs; a declaration that cannot be read grants no exemption."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1276::the acceptance handler for this feature file is registered'
+  - 'swarmforge/scripts/task_scope_gate_lib.bb::acceptance::the declared acceptance contract reaches the scope decision'
+
+description: |
+  ## What is wrong
+
+  `foreign-scope-findings` (`swarmforge/scripts/task_scope_gate_lib.bb`)
+  attributes a changed path to a ticket by the id in the path's own BASENAME,
+  and exempts exactly one thing: `backlog/evidence/<task-id>-*` for the named
+  task. Nothing else.
+
+  A ticket whose own `acceptance:` field POINTS AT another ticket's feature
+  file therefore cannot be forwarded at all. The specifier writes that pointer
+  deliberately: a defect filed against a shipped check amends the durable
+  contract for that check rather than forking it in two. So the one file the
+  ticket MUST edit is the one file the gate reads as foreign.
+
+  ## The live instance
+
+  BL-1246 - a human ruling, "Exempt git-ignored dirs (tmp/) by construction" -
+  is implemented, unit-tested 22/22, acceptance 9/9, and committed at
+  `3c07857a5` on `swarmforge-coder`. `swarm_handoff.sh` refuses it verbatim:
+
+      Cannot send git_handoff for BL-1246: this task's own commits since its
+      last handoff carry a path (specs/features/BL-1230-no-leaked-git-
+      repository-inside-the-working-tree.feature) belonging to BL-1230, not to
+      BL-1246 ... Rebuild or cherry-pick a tip-pure commit and re-send.
+
+  BL-1246's `acceptance:` field IS that file. Evidence, written by the coder
+  rather than worked around:
+  `backlog/evidence/BL-1246-handoff-blocked-by-task-scope-gate-20260829.md`.
+
+  ## Why the prescribed remedy is a no-op here
+
+  Every move the refusal offers, and every move around it, is worse:
+
+  - **Tip-pure commit**: the only way to make BL-1246's tip pure is to drop
+    the scenarios it exists to add - leaving handlers with no scenarios, or
+    scenarios with no handlers, which makes the acceptance runner throw
+    (BL-233).
+  - **BL-1241's rebuild-off-main hatch**: it replays "this task's own paths",
+    which is precisely the set that EXCLUDES the foreign-named feature file.
+    The hatch cannot express this case.
+  - **A commit subject leading with `BL-1230`**: the gate would skip it, and
+    the gate's answer would be wrong for the same reason it is wrong now. That
+    is passing by re-labelling, not by fixing.
+
+  This is the fourth instance of the shape named in BL-1237, BL-1240 and
+  BL-1241: a gate whose refusal reaches someone with no action available.
+  Invariant 1 is BL-1241's own checkable general form, reused verbatim.
+
+  ## How (direction, not mandate)
+
+  Exempt by construction, from a predicate the ticket YAML already carries:
+  a path is not foreign when the task's OWN ticket declares that exact path in
+  its `acceptance:` field. No list, no pairing table, nothing to maintain.
+
+  Read the declaration from the landed ticket, not the sender's working copy -
+  `swarm_handoff.bb`'s own `active-ticket-yaml-content` already does exactly
+  this (freshest of `main`/`origin/main` first via `declaration-refs`, exact
+  `id:` match, working-tree glob only as a last-resort fallback), and it is
+  already in the file that calls the gate. Reusing it also means an amendment
+  the specifier landed on `main` is honoured immediately, without the sender
+  merging first.
+
+  Keep `foreign-scope-findings` pure: the declared path is an input to it, the
+  read happens at the one impure entry point (`findings-for-git-handoff`) or at
+  its caller. A declaration that cannot be read grants no exemption, and the
+  refusal must SAY the exemption could not be evaluated - otherwise this fix
+  reproduces the very shape it removes, sending its recipient off to rebuild a
+  commit that did not need rebuilding.
+
+  ## Constraints
+
+  - Exactness. Only the declared path string is exempt. `backlog/active/BL-1230-*.yaml`
+    is still foreign to BL-1246 even though `specs/features/BL-1230-*.feature`
+    is not. The exemption must not widen to "any path of a ticket I reference".
+  - Everything BL-1192 shipped stays. The seven scenarios in
+    `specs/features/BL-1192-pre-handoff-task-scope-gate.feature` must still
+    pass unchanged, including the fail-open posture on an unreadable walk.
+  - No new bypass, env var, or override flag. The predicate is derived or it
+    does not exist.
+
+qa_e2e_procedure: >
+  (1) Rebuild BL-1246's literal shape in a scratch repo: a ticket whose
+  acceptance: names another ticket's feature file, and a commit tagged for it
+  that edits exactly that file; confirm the send is accepted. (2) Add a second
+  file belonging to that same foreign ticket (its backlog YAML) to the commit
+  and confirm the send is refused, naming that path and not the exempt one -
+  the exemption must not widen. (3) Point the ticket's acceptance: at its own
+  feature file, keep the foreign edit, and confirm the send is refused.
+  (4) Land an acceptance: amendment on main WITHOUT merging it into the
+  sender's branch and confirm the exemption is honoured from the landed ref.
+  (5) Make the ticket unresolvable on every ref and in the working tree, and
+  confirm the send is refused AND the refusal says the exemption could not be
+  evaluated. (6) Re-run the whole BL-1192 acceptance feature and confirm all
+  seven scenarios still pass. (7) Against the live repo, from
+  .worktrees/coder with this fix present, re-send BL-1246 at 3c07857a5 and
+  confirm it is delivered.
+
+out_of_scope: |
+  - BL-1246 itself. Its commit is correct and stays exactly as it is; this
+    ticket unblocks it, it does not rebuild it.
+  - The land step's entangled-siblings report (BL-1272) and BL-1192's range
+    walk. Different mechanism, different file; only the foreign/not-foreign
+    predicate changes here.
+  - Any general "ticket A may touch ticket B's paths" relation. The only
+    relation this ticket adds is the one the ticket YAML already states about
+    itself.
+  - Folding this ticket's scenarios into BL-1192's feature file. See notes.
+
+source: |
+  coder `note` (priority 00) to specifier, 2026-08-29T14:27:15Z: "BL-1246 done
+  3c07857a5 but handoff gate-blocked: see backlog/evidence/". Evidence:
+  `backlog/evidence/BL-1246-handoff-blocked-by-task-scope-gate-20260829.md`,
+  which recorded the block and its three options rather than working around
+  it. Option 1 of that file is the direction adopted here.
+
+notes: |
+  - [2026-08-29] specifier: this ticket has its OWN feature file rather than
+    amending `specs/features/BL-1192-pre-handoff-task-scope-gate.feature`, and
+    that is deliberate, not an oversight. Pointing its acceptance: at BL-1192's
+    file would make BL-1276 the very shape it fixes - blocked by the gate it
+    repairs, before the repair exists. (It would in fact bootstrap, because the
+    gate runs from the sender's own checkout, which would carry the fix; that
+    is too clever to rely on, and its failure mode is the coder blocked again
+    with no move.) The gate's contract is consequently across two files. That
+    is the lesser harm and I am not minting a follow-up to fold them, which
+    would be churn for no behaviour.
+  - [2026-08-29] specifier: PROSE HALF IS MINE (BL-798), and no gate will chase
+    me for it. `swarmforge/handoff-protocol.md` documents this gate under
+    "Mechanics (`task_scope_gate_lib.bb`)" as a bullet list of exemptions -
+    today "Positive identification only", the evidence-path bullet, and the
+    scope-walk bullet. This ticket adds a fourth exemption, so that list must
+    gain a bullet or the documented contract is wrong. I have deliberately NOT
+    armed a `required_wiring` entry on it: that check pins the file to the
+    PARCEL commit, so it would refuse the documenter-to-QA handoff whenever the
+    branch has not merged `main` - a false block, not a check (BL-1241 and
+    BL-1272, same reasoning). I am not landing the prose at mint because it
+    would document an exemption the code does not yet make. I land it on `main`
+    myself when this ticket activates, in the same pass, and record the commit
+    here. If this note is still the last word on it when the ticket reaches the
+    documenter, the prose has not been written and someone should say so.
+  - [2026-08-29] specifier: answered the three questions the gate-shape rule
+    requires before speccing a gate change. (1) Who creates the condition -
+    I do, at mint, when I point an acceptance: field at another ticket's
+    feature file; nothing tells me at that moment, and with this exemption in
+    place nothing needs to, because the condition stops being a condition.
+    (2) Who receives the refusal and what can they do - after this fix, a
+    genuine entanglement still refuses the sender, whose action is BL-1241's
+    rebuild hatch; that action is real for every shape that still refuses.
+    (3) Is the remedy a no-op in any direction - the unreadable-declaration
+    branch is the one place it could become one, which is why the refusal must
+    name that it could not evaluate the exemption rather than prescribing a
+    rebuild.
+  - [2026-08-29] specifier: the IR-DRY checker reports three medium
+    possible-synonym findings, all the same benign pair: the Scenario Outline's
+    parameterised Given/And against scenario 02's and 03's concrete ones.
+    Substituting the Examples row makes the step texts byte-identical, so one
+    handler pattern serves both. Reviewed and kept - DRY, not accidental drift.
+    (Identical disposition to BL-1272's own IR-DRY note.)
+  - [2026-08-29] specifier: BL-1246 is HELD at 3c07857a5 pending this ticket.
+    The coder has been told not to rebuild it, not to fork the feature file,
+    and not to re-label the commit; it re-sends unchanged once this lands on
+    main and is merged into the coder worktree (the gate runs from the sender's
+    own checkout, so the fix must be present there, not merely on main).
+  - [2026-08-29] specifier: this mint was itself destroyed once, mid-write, by
+    the master/main reconcile reset (reflog `reset: moving to origin/main`,
+    which also took four landed bookkeeping commits with it - the thirteenth
+    occurrence). Recovered from tmp/bl1276-recover/ and pushed to origin
+    immediately, because an unpushed commit on this checkout is not durable.

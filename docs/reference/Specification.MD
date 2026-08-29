@@ -1,5 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1267: Article 3.6's confirm-promote
+outcome now has a durable representation the freshness gate CLI reads. A
+specifier adjudication is recorded with `node
+extension/out/tools/record-adjudication.js <root> <BL-id> <outcome>
+<adjudicated-by>` into `.swarmforge/deprecator/adjudications/<BL-ID>.json`
+(outside the ticket, never inside it — writing the adjudication text into
+the ticket would arm BL-1268's generic-claim branch against the very ticket
+it just cleared) — SHA-256-fingerprinted against the exact ticket YAML text
+the adjudication was made against. `deprecate-check.js` now reads the record:
+`confirm_promote` with a matching fingerprint answers allow, naming the
+record it discharged from; any other outcome, a missing/corrupt/malformed
+record, or a fingerprint mismatch (the ticket was amended after
+adjudication) still answers hold. No environment variable, flag, or caller
+argument produces an allow. `promote_and_route_next.sh` also gained a single
+shared `resolve_deprecate_check_cli` — it previously resolved the freshness
+CLI path twice and disagreed against any project root other than this repo,
+turning every non-self promotion into an undischargeable
+`interpretFreshnessCliOutput failed` hold. See
+`docs/how-to/BL-1173-deprecator-freshness-gate-cli.md` "Discharging a hold"
+below the CLI section. Acceptance:
+`specs/features/BL-1267-freshness-gate-honours-a-recorded-adjudication.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-603: the BL-594 behaviour-trend series
 get their surface — a Trends board on the live holistic console publishing
 all nine, served fresh over the token-authed bridge (`GET /trends`), never
