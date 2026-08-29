@@ -1,5 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1249: the expeditor's restart phase
+(`restart-stack!` in `swarmforge/scripts/expedite_cli.bb`) now reads the
+operator's `.swarmforge/operator/control-pause.json` hold marker — the same
+marker the BL-1191 restart gate already treats as blocking — before running
+the start command, via a pure `restart-hold-verdict` in `expedite_lib.bb`.
+Fixes a live breach: on 2026-08-28 a standing human "hold restart, do not
+push, wait for QA" directive was overridden when an unrelated expedite run's
+teardown restarted the swarm anyway, because nothing in the restart phase
+consulted any hold marker — the only lever was the caller's own
+`--no-restart` flag, invisible to a run that did not happen to pass it. A
+held restart reports as a new, distinct `run.json` outcome, `held` (with
+`restart.marker-path`/`restart.hold-reason`) — never collapsed into
+`not-attempted`, which means the *caller* skipped the phase, not the
+*operator*. Fails closed on doubt: an absent marker permits the restart, but
+a marker that exists and cannot be read as a definite "not active" —
+malformed, truncated, unparseable — holds it exactly like an explicit
+`active: true`. The hold gates only the restart phase; teardown, parking,
+and the stage chain still run while held, and a held run's ticket verdict is
+unaffected (`ticket`/`ticket-ok?` stay independent of `restart`/
+`restart-ok?`). New diagnostic: `bb expedite_cli.bb --restart-only
+<project-root> [--no-restart] [--dry-run]`, which refuses
+`EXPEDITE_PROBE_FILE` so it always exercises the real marker-file path. No
+new extension command or setting. Acceptance:
+`specs/features/BL-1249-expeditor-restart-honours-pause-marker.feature`.
+How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`
+("Restart, and it does not block" / operator hold). Reference:
+`docs/reference/BL-567-expeditor-manual.md` ("Operator restart hold
+(BL-1249)"). Explanation:
+`docs/explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md`
+("Why a hold is a fourth outcome, not a `--no-restart`").)
+Prior entry —
 **Last Updated:** August 28, 2026 (BL-1236: the master-main reconcile
 conflict predicate (`merge-tree-reports-conflict?` /
 `master_main_reconcile_lib.bb`, consumed by `handoffd.bb`'s reconcile sweep

@@ -48,6 +48,24 @@ There is a pleasing consequence. When the fix *is* the start path, the restart p
 becomes the **validation** of the fix: the first real user of the thing just
 repaired, run automatically, with the expected live set as the assertion.
 
+### Why a hold is a fourth outcome, not a `--no-restart`
+
+The expeditor is meant to be the mechanism that honours a standing "hold restart"
+directive — it walks one ticket through the gates with the stack stopped. But that
+only holds if its own final phase checks for a hold before bringing the stack back
+up. BL-1249 found it did not: nothing in `restart-stack!` consulted the operator's
+`.swarmforge/operator/control-pause.json` marker, so a hold recorded on the host
+was invisible to a run launched without the caller happening to pass `--no-restart`.
+
+The fix could have folded the check into `not-attempted` — same effect, less code.
+It deliberately does not. `not-attempted` means the *caller* chose to skip the
+restart; `held` means the *operator* did, through a directive the caller may not
+even know exists. Collapsing them would let a report reading `not-attempted` be
+misread as "restart wasn't needed this time" when it actually means "an operator
+hold overrode the run" — exactly the ambiguity that let the breach go unnoticed
+until a human re-read the source. A fourth outcome costs a little code and buys a
+report that can never be misread as calmer than it is.
+
 ## It kills its own watchdog
 
 Stopping the stack kills the babysitter and the Operator. Those are exactly the two
