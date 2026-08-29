@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0443e86fd8346f6ec7bc972cc2e1037e9ae9f478b44176464f3ab1b9fb4cef73
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-29T08:36:57.962324790Z","feature_name":"The review-time entangled-tip check answers \"did this author work outside the ticket?\"","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1257-review-time-scope-check-shares-the-corrected-basis.feature","background_hash":"36cf0842c58f3901524aaee33a219ac15249bf2747678ad50f9870dbce048da6","implementation_hash":"unknown","scenarios":[{"index":2,"name":"The review-time check and the send-time gate agree","scenario_hash":"2085b13a8c1e98e7e95c7e758a0e96d0efcb865264e3bff440bb018eb7b3c3de","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-29T08:36:57.962324790Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The review-time entangled-tip check answers "did this author work outside the ticket?"
   A reviewer deciding whether a parcel's tip is entangled must measure the
   paths its own commits introduced for the named task, not everything the tip
