@@ -41,6 +41,14 @@
 
 (def scripts-dir (fs/parent (fs/canonicalize *file*)))
 (load-file (str (fs/path scripts-dir "expedite_lib.bb")))
+;; BL-1249: reuse backlog_depth_lib's own control-pause.json path resolution
+;; (resolve-identity-root — the MASTER checkout, found from any worktree)
+;; rather than re-deriving it. Only pause-marker-path is used from here; the
+;; fail-open read-pause-state/pause-active? pair is a DIFFERENT consumer's
+;; posture (the promotion-depth gate degrades a malformed marker to
+;; not-paused) and is deliberately not reused for the restart hold, which
+;; must fail closed on the same malformed marker instead.
+(load-file (str (fs/path scripts-dir "backlog_depth_lib.bb")))
 (load-file (str (fs/path scripts-dir "prompt_engine_lib.bb")))
 (load-file (str (fs/path scripts-dir "expedite_progress_lib.bb")))
 ;; BL-1103: one shared wall-clock-bounded runner (was a private copy here).
@@ -676,28 +684,57 @@
      :handoffd-supervisor (if (:handoffd-supervisor p) 1 0)
      :role-agents (or (:role-agents p) 0)}))
 
+(defn read-restart-hold-marker-raw
+  "The impure half of the BL-1249 hold check: nil for a genuinely absent
+   marker file, its exact text otherwise (a read failure on a file that
+   DOES exist — e.g. a permissions race — is folded into that text as an
+   empty string, which restart-hold-verdict classifies as :malformed, never
+   as absent)."
+  [project-root]
+  (let [p (backlog-depth-lib/pause-marker-path project-root)]
+    (when (fs/exists? p)
+      (try (slurp (str p)) (catch Exception _ "")))))
+
 (defn restart-stack!
   "The final phase. It reports; it never gates the ticket verdict. Use case 1 is
    fixing a broken swarm workflow, so the start path may itself be what was under
    repair — a verdict that depended on a clean restart would report failure on
-   completed work."
+   completed work.
+
+   BL-1249: before running anything, checks the operator's control-pause.json
+   hold. A hold is a FOURTH outcome (:held), distinct from :not-attempted —
+   :not-attempted is the CALLER declining (--no-restart/--dry-run); :held is
+   the OPERATOR declining. Collapsing them would report an operator-blocked
+   restart as a caller-chosen one, which is the exact failure this exists to
+   fix. Like :failed/:degraded, a hold does not run the start command and is
+   reported loudly (not in the restart-ok? set in expedite-lib/run-result)."
   [{:keys [project-root no-restart? dry-run?]}]
-  (if (or no-restart? dry-run?)
+  (cond
+    (or no-restart? dry-run?)
     {:outcome :not-attempted}
-    (let [cmd (or (System/getenv "EXPEDITE_START_CMD") "./start-swarm.sh")
-          {:keys [exit err]} (sh {:dir (str project-root)} "bash" "-lc" cmd)
-          delta (expedite-lib/live-set-delta (observe-live-set project-root))]
-      ;; Three outcomes, not two. :failed means the START COMMAND failed;
-      ;; :degraded means it succeeded and the swarm came up short. Collapsing
-      ;; them would report a half-started swarm as a broken start path and send
-      ;; a human to debug the wrong thing. Both are loud and neither retracts
-      ;; the ticket verdict.
-      {:outcome (cond (not (zero? exit)) :failed
-                      (seq delta) :degraded
-                      :else :ok)
-       :exit exit
-       :error (when-not (zero? exit) (str/trim (str err)))
-       :live-set-delta delta})))
+
+    :else
+    (let [marker-path (str (backlog-depth-lib/pause-marker-path project-root))
+          hold (expedite-lib/restart-hold-verdict
+                (read-restart-hold-marker-raw project-root) (now-ms))]
+      (if (:held? hold)
+        {:outcome :held
+         :marker-path marker-path
+         :hold-reason (name (:reason hold))}
+        (let [cmd (or (System/getenv "EXPEDITE_START_CMD") "./start-swarm.sh")
+              {:keys [exit err]} (sh {:dir (str project-root)} "bash" "-lc" cmd)
+              delta (expedite-lib/live-set-delta (observe-live-set project-root))]
+          ;; Three outcomes, not two. :failed means the START COMMAND failed;
+          ;; :degraded means it succeeded and the swarm came up short. Collapsing
+          ;; them would report a half-started swarm as a broken start path and send
+          ;; a human to debug the wrong thing. Both are loud and neither retracts
+          ;; the ticket verdict.
+          {:outcome (cond (not (zero? exit)) :failed
+                          (seq delta) :degraded
+                          :else :ok)
+           :exit exit
+           :error (when-not (zero? exit) (str/trim (str err)))
+           :live-set-delta delta})))))
 
 ;; ── main ──────────────────────────────────────────────────────────────────
 
@@ -785,5 +822,21 @@
   (println (json/generate-string (probe-liveness (second *command-line-args*))))
   (flush)
   (exit! 0))
+
+;; BL-1249 acceptance/diagnostics: drive the REAL restart-stack! (the operator
+;; hold check included) without running teardown, worktree creation, or the
+;; stage chain — same posture as --probe-liveness. Refuses EXPEDITE_PROBE_FILE
+;; for the same reason: the caller must exercise the real process-table path
+;; the defect hid behind, never a stub.
+(when (and (>= (count *command-line-args*) 2)
+           (= "--restart-only" (first *command-line-args*)))
+  (let [project-root (second *command-line-args*)
+        rest-args (set (drop 2 *command-line-args*))]
+    (println (json/generate-string
+              (restart-stack! {:project-root project-root
+                                :no-restart? (contains? rest-args "--no-restart")
+                                :dry-run? (contains? rest-args "--dry-run")})))
+    (flush)
+    (exit! 0)))
 
 (apply -main *command-line-args*)

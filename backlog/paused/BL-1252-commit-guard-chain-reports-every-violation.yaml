@@ -1,0 +1,199 @@
+id: BL-1252
+title: "The pre-commit guard chain aborts at the first refusing guard, so a commit violating several guards is reported one violation per attempt"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. Every guard still decides correctly and nothing
+# false-greens; the cost is serial discovery - the committer pays one commit
+# attempt per violation instead of one per commit. Not high: no live fault
+# degrades behaviour and no safety signal is broken.
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: agent-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1252-commit-guard-chain-reports-every-violation.feature
+
+human_approval: pending
+approval_context: >
+  One tradeoff needs your call, and it is the only thing I deliberately did
+  not decide. `check_property_suite_drift.sh` runs `npm run test:properties`;
+  the other three guards inspect the git index only. I spec'd completeness
+  within the cheap tier - run all three index guards, report every violation,
+  and only reach the expensive suite when those three pass. The alternative is
+  a true complete inventory across all four, which would report the property
+  drift alongside a size violation at the cost of running the full suite on a
+  commit that is already refused. I picked the cheap tier because the guard it
+  would front-load is the one BL-1202 was filed for hanging, but if you would
+  rather pay the suite to never see a second refusal, say so and I will amend.
+  The rest is firm: same refusal predicate, one refusal listing every
+  violation found.
+
+invariants:
+  - "No guard's refusal prevents another index-inspection guard from running: a committer never learns of a second violation only by fixing the first and re-attempting the commit."
+  - "The set of commits refused is exactly the set the current chain refuses; this change alters the completeness of the report, never the refusal predicate."
+  - "A guard that fails unexpectedly - crash, missing script, or any non-refusal error exit - still refuses the commit; aggregating exit codes never converts an error into a pass."
+
+required_wiring:
+  - "swarmforge/git-hooks/pre-commit::run_commit_guards.sh::the aggregating runner must be the thing the hook actually invokes. A runner shipped, unit-tested and green but never called from the hook is the BL-419 shape and leaves the chain exactly as it is today. Filename swarmforge/scripts/run_commit_guards.sh is fixed by this declaration so the pattern is a literal that will exist, not a placeholder (BL-874)."
+  - "specs/pipeline/steps/index.js::bl1252CommitGuardCompleteInventorySteps::acceptance handler registered"
+
+description: |
+  Severity rationale is in the comment above the field. Verified at mint by
+  reading the hook and each guard script; no commit was made to check.
+
+  ## What is wrong
+
+  `swarmforge/git-hooks/pre-commit` ends in four sequential commands under
+  `set -euo pipefail`:
+
+      "$REPO_ROOT/swarmforge/scripts/check_commit_size.sh" 50
+      "$REPO_ROOT/swarmforge/scripts/check_ticket_deletion.sh"
+      "$REPO_ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
+      "$REPO_ROOT/swarmforge/scripts/check_property_suite_drift.sh"
+
+  All four are independent refusals - each ends in its own `exit 1`
+  (check_commit_size.sh:47, check_ticket_deletion.sh:112,
+  check_pipeline_code_on_main.sh:117, check_property_suite_drift.sh:155 and
+  :237). Under `set -e` the first one that refuses aborts the hook, so the
+  guards after it never run.
+
+  A commit can violate more than one. A large coordinator commit on `main`
+  can exceed the 50-file size cap, remove a backlog ticket YAML, and touch
+  pipeline code, all at once. Today that is three commit attempts: fix the
+  size, re-commit, learn about the deletion, fix it, re-commit, learn about
+  the pipeline paths.
+
+  ## Why this is a defect and not a preference
+
+  Constitutional Article 4.4 already forbids exactly this shape of a
+  reviewing role: "A reviewing role never bounces at the FIRST defect
+  (BL-590) - finish the full checklist, send one bounce with every defect,
+  run-or-blocked (never assumed-clean)." The pre-commit hook is a reviewing
+  gate. It does, mechanically, the thing 4.4 exists to stop a role doing,
+  and it does it to every role on every commit.
+
+  ## The cost asymmetry that shapes the fix
+
+  The four guards are not equally cheap. `check_property_suite_drift.sh`
+  runs `npm run test:properties` (its `run_default_suite` at line 97 is
+  `(cd extension && npm run test:properties)`). The other three read the git
+  index and exit. So "just run all four and collect the failures" would
+  charge a full property-suite run to a commit already refused for being too
+  large - and that suite is the one BL-1202 was filed for, when a killed
+  `git commit` left it running unreaped.
+
+  ## Fix wanted, in direction only
+
+  Extract the chain into an aggregating runner the hook invokes. Run the
+  three index-inspection guards, collect every refusal rather than aborting
+  at the first, and emit a single refusal listing all of them. Reach the
+  property-suite guard only when those three pass, so the expensive tier is
+  never paid for an already-refused commit. Preserve `set -e`'s crash
+  safety explicitly: an unexpected non-refusal exit must still refuse.
+
+  ## Follow the pattern already proven for the sibling hook
+
+  Do not invent the aggregation shape. The hardener hit this exact defect in
+  the `commit-msg` hook while building BL-1242 and fixed it on
+  `swarmforge-hardender` at commit `61735035f`: `set -uo pipefail` across the
+  chain (no `-e`), `guard || status=$?` per call, `exit "$status"`, each guard
+  keeping its own `set -euo pipefail`. It is written up in
+  `constitution/articles/reference/engineering-detailed.prompt` under
+  "A shell chain of independent guards must not run under `set -e`", and the
+  short form is in the boot-inlined engineering.prompt Guardrails.
+
+  That is guidance, not a dependency: BL-1252 does not wait on BL-1242 landing
+  and must not be blocked on it. The pre-commit chain is broken today on its
+  own.
+
+  The same write-up carries the pinning obligation, which applies here: a
+  single-violation test passes identically before and after the fix and so
+  proves nothing. BL-1242's fix is pinned by case 09 of
+  `swarmforge/scripts/test/test_merge_deletion_guard.sh`, which trips both
+  guards at once and asserts both violations appear in one refusal. Scenario
+  01's multi-violation rows are this ticket's equivalent and are the rows that
+  actually gate the change.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT change what any guard decides. No guard script's predicate,
+    threshold, exemption or escape hatch is touched by this ticket. If the
+    set of refused commits changes at all, the change is wrong - invariant 2.
+  - Do NOT lose crash safety. `set -e` currently refuses a commit when a
+    guard dies unexpectedly or its script is missing. Collecting exit codes
+    must keep that; a guard that exits non-zero for a reason other than its
+    own refusal still refuses, and says which guard it was.
+  - Do NOT reorder the guards to make aggregation easier in a way that
+    changes which violation a committer sees first when only one is present.
+    Scenario 01's single-violation rows exist to pin that.
+  - Do NOT fold the commit-msg hook into this slice. It runs one guard today,
+    so it has nothing to aggregate; if BL-1242 lands a second guard there,
+    the runner built here should be reusable for it, but wiring commit-msg is
+    a separate ticket and not a dependency of this one.
+  - Do NOT weaken or bypass `check_property_suite_drift.sh`. Deferring it
+    behind the three cheap guards means it runs on every commit those three
+    allow - which is every commit that is going to succeed.
+
+qa_e2e_procedure: >
+  1. Build a fixture repo with the shared hooks installed via
+     `core.hooksPath swarmforge/git-hooks`.
+  2. Stage a commit that violates the size cap AND removes a backlog ticket
+     YAML without naming it. Attempt the commit: it is refused ONCE, and the
+     single refusal names both violations. Confirm no second attempt was
+     needed to surface the second violation.
+  3. Repeat with each of the three index guards violated alone: each is
+     refused and its own violation is named.
+  4. Stage a commit violating nothing: it is allowed, and the property suite
+     did run (deferring it must not silently skip it).
+  5. Stage an oversized commit and confirm `npm run test:properties` did NOT
+     run - e.g. no property-suite output and no new suite process.
+  6. Temporarily point one guard at a non-existent script (or make it exit 2)
+     and confirm the commit is refused and the refusal names that guard,
+     rather than the error being collected as a pass.
+  7. Regression: make a normal in-scope commit in a role worktree and confirm
+     nothing about the everyday commit path changed.
+
+out_of_scope: |
+  - The commit-msg hook and the pre-merge-commit hook.
+  - Any change to the four guards' own logic, thresholds or escapes.
+  - BL-1202's within-guard exit-path defect (shipped) and BL-1234's broken
+    property-suite allowlist matcher. This ticket is the cross-guard chaining
+    hazard only and is not a re-report of either.
+
+source: |
+  hardender note handoff 00_20260828T133529Z_000957_from_hardender_to_specifier,
+  verbatim: "pre-commit hook chains 4 guards under set -e, same mask BL-1242
+  fixed - ticket?"
+
+notes: |
+  - [2026-08-29] specifier: minted from the hardender note after verifying the
+    mechanism directly in swarmforge/git-hooks/pre-commit and in each of the
+    four guard scripts. The note's cited precedent is NOT carried forward:
+    BL-1242 fixed a silent deletion on the merge-up path and its ticket and
+    feature file contain no masking claim. The correct precedent is
+    constitutional Article 4.4 (complete review inventory, one bounce per
+    pass), which this ticket applies to the mechanical gate. The observation
+    itself is sound and is what the ticket rests on.
+  - [2026-08-29] specifier: prior art confirmed after mint, from a follow-up
+    hardender rule_proposal. The identical defect in the sibling `commit-msg`
+    hook was found and fixed on swarmforge-hardender at 61735035f, verified by
+    reading that commit and its test case 09. That commit's message cites
+    Article 4.4 independently of this ticket, which corroborates the precedent
+    correction in the note above. The rule was accepted and landed on main in
+    engineering.prompt Guardrails plus engineering-detailed.prompt; scope was
+    moved from role:hardender to engineering because the actor who must obey it
+    is whoever writes a hook - here, this ticket's coder - not the hardener.
+  - [2026-08-29] specifier: no multi-guard incident is asserted for pre-commit. The defect is
+    structural and was found by reading the chain, not by anyone hitting it.
+    Do not go looking for an incident report that does not exist.
+  - [2026-08-29] specifier: IR-DRY checker leaves 3 medium findings, all the
+    same deliberate parameterization of one step shape - `a staged commit that
+    violates <X>` used with a placeholder in the outline and with literals in
+    the two plain scenarios. One handler regex covers all three. Per the
+    checker's own guidance this is not accidental drift, so it is resolved as
+    reviewed-and-kept rather than normalized; folding the plain scenarios into
+    the outline would merge their distinct Then-assertions away.

@@ -1,0 +1,169 @@
+id: BL-1256
+title: "BL-1248 scenario 05 cannot fail for the reason it exists - the stay-loud gate drives the library, not the daemon, so a guard moved to handoffd's call site goes unobserved"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 5
+direction: pipeline-note
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1256-kill-switch-gate-drives-the-daemon.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1248MasterMainReconcileKillSwitchSteps.js::BL-1256::scenario 05 off-path handler must be re-pointed at the real daemon fixture and marked with this ticket id, so the change is greppable at the exact site it fixes'
+  - 'swarmforge/scripts/test/test_handoffd_master_main_reconcile_wiring.sh::BL-1256::the daemon-driven surfacing and escalation assertions live in the existing real-git fixture, never a parallel reimplementation of its plumbing'
+
+invariants:
+  - "No assertion about the switch's OFF behaviour is obtained by calling master-main-reconcile-lib/sweep! directly: every off-path assertion in this contract is made against a real handoffd tick, so moving the guard to the daemon call site turns the gate red."
+
+description: >
+  Severity rationale: high - a broken safety signal, not a broken feature.
+  The gate is green, has always been green, and would stay green through
+  the exact change it was written to refuse; the switch it guards protects
+  against thirteen realised commit losses.
+
+  What is wrong. BL-1248 ships a kill switch for the master-main-reconcile
+  sweep with a firm constraint that switching it OFF declines to ACT on
+  divergence without going QUIET about it - the drift log, the
+  dirty-blocked surfacing and the operator escalation keep running while
+  the switch is off. Because handoffd.bb injects :surface! and :escalate!
+  INTO master-main-reconcile-lib/sweep!, that constraint is entirely a
+  statement about WHERE the guard sits: inside sweep! at the
+  :should-reconcile branch (correct, skips only the destructive merge!) or
+  in front of sweep! at handoffd's call site (wrong, silences the
+  notification paths along with the reconcile). BL-1248 scenario 05 was
+  written to fail in the second case.
+
+  It cannot. Its handler, runDivergenceStillSurfaced in
+  specs/pipeline/steps/bl1248MasterMainReconcileKillSwitchSteps.js, calls
+  the library's 4-arg sweep! directly with a hand-passed disabled flag over
+  injected fake adapters. It never reaches handoffd.bb at all, so it
+  observes the decision layer and not the wiring, and it is green for every
+  guard placement in the daemon. The handler's own header records the
+  reasoning - "Scenarios 01 and 05 are pure-decision-layer proofs (no real
+  git needed for what they assert)" - which is right for 01 and precisely
+  wrong for 05.
+
+  Demonstrated against a real change, not hypothesised. Hardener commit
+  b617a292e6 (on swarmforge-hardender, NOT merged and not to be merged -
+  see the adjudication below) moves the guard to handoffd's call site,
+  leaving the off path with a drift log line and neither :surface! nor
+  :escalate!. It also leaves the lib's 4-arg arity in place "exercised by
+  this lib's own tests", so scenario 05 would have stayed green over an
+  arity production no longer calls. BL-1248's own qa_e2e_procedure step 5
+  warns against exactly this - "do not accept a green here that was
+  obtained by asserting only the absence of a reset" - and the handler
+  shipped blind anyway.
+
+  How (direction, not mandate). The infrastructure already exists and is
+  already driven by scenarios 02 and 03 of the same handler file:
+  swarmforge/scripts/test/test_handoffd_master_main_reconcile_wiring.sh, a
+  real git repo with a real bare origin and a real handoffd process,
+  memoized once per ctx. The natural shape is to re-point scenario 05's
+  off-path assertions at that fixture and add the surfacing and escalation
+  checks to it. One affordance is missing and b617a292e6 supplies it as
+  prior art: a --reconcile-sweep-once one-shot flag on handoffd.bb, the
+  same posture as the existing --sweep-once and --chase-sweep-once, so a
+  single reconcile tick fires deterministically without a background
+  process or a wall-clock wait. That flag is the ONLY reusable idea in that
+  commit; take it or better it, and take nothing else from there.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT change the guard placement, the parser, or any production
+    behaviour of the kill switch. BL-1248 shipped correctly and is closed.
+    This ticket changes the GATE, not the thing gated. A diff touching
+    master_main_reconcile_lib.bb's reconcile decision or handoffd.bb's
+    guard is out of scope, not a scope widening.
+  - Do NOT flip master_main_reconcile_enabled to true, in the shipped conf
+    or in any non-fixture path. That decision is BL-1251.
+  - Do NOT merge or cherry-pick b617a292e6. It is retired work built
+    against a ticket superseded by BL-1248; only the --reconcile-sweep-once
+    idea is reusable, and it is cheaper to write fresh than to untangle.
+  - Do NOT weaken BL-1248's scenario 05 Gherkin. Its Given/When/Then text
+    is right; only the handler behind it is blind. Retire nothing, reword
+    nothing in that feature file beyond what a re-pointed handler requires.
+  - Do NOT reimplement the fixture's git plumbing in a second script. Add
+    to test_handoffd_master_main_reconcile_wiring.sh, per the same rule the
+    existing handler header already states.
+  - Do NOT verify any part of this against the live repo checkout. The
+    behaviour under test is the one that destroys commits.
+
+qa_e2e_procedure: >
+  1. Scenario 01: in the fixture repo (real bare origin), diverge local main
+     from origin with local changes blocking the merge, set the config OFF,
+     fire exactly ONE real reconcile tick through handoffd, and assert three
+     things from durable artifacts - the drift log line is present, the
+     surfaced divergence note exists, and every commit reachable from local
+     main before the tick is still reachable after it (by rev-list, not by
+     the absence of a log line).
+  2. Non-vacuity for 01: confirm the same fixture, with the switch ON,
+     produces the surfaced note through sweep! - so the off-case green is
+     not obtained from a fixture that never surfaces anything.
+  3. Scenario 02: hold the block past the escalation threshold with the
+     switch OFF and assert the operator escalation is still raised. This is
+     a SECOND channel and a green on 01 is not a green on it.
+  4. Scenario 03: inspect the off-path step handlers and assert none drives
+     sweep! with a hand-passed disabled flag. Assert on the invocation shape
+     (a bb -e script passing a literal disabled argument), never on the bare
+     symbol name - the prose in the feature file and in the handler's own
+     header both contain that name and would trip a naive grep.
+  5. The regression proof that this ticket is worth its parcel - do this one
+     by hand, do not automate it into the suite - take a scratch copy of
+     handoffd.bb, move the guard to the call site as b617a292e6 does, and
+     confirm scenarios 01 and 02 go RED. If they stay green the gate is
+     still blind and the ticket is not done. Discard the scratch copy.
+  6. The declared invariant carries a coder-authored property test per
+     BL-654 only if a property shape is genuinely natural here; scenario 03
+     is the structural check and may be sufficient on its own. Do not
+     manufacture a property test to fill the field.
+
+notes: >
+  Source: documenter note (priority 00) 2026-08-29 raising a fix-vs-
+  retirement race on BL-1247, plus the specifier adjudication of it -
+  backlog/evidence/BL-1247-fix-vs-retirement-race-adjudication-20260829.md.
+  This ticket is the third finding in that adjudication, and the only
+  durable defect in the episode: the documenter's two questions were both
+  answered NO (BL-1248's shape stands; the duplicate conf key was a merge
+  artifact of the retired ticket's own conf block, not a defect on main -
+  git grep finds exactly one occurrence at swarmforge.conf:352).
+
+  Related: BL-1248 (done, M8 - the kill switch itself, shipped OFF; its
+  scenario 05 is the blind gate this ticket fixes); BL-1247-reconcile-
+  sweep-kill-switch (RETIRED as superseded by BL-1248, see
+  backlog/evidence/BL-1247-id-collision-adjudication-20260829.md - not to
+  be confused with BL-1247 the live BL-593 property-generator ticket, which
+  keeps the id); BL-1251 (paused, human_approval pending - the decision to
+  flip the switch on); BL-1236 (done - the conflict predicate fix).
+
+  Consolidation note: the duplicate-config-key hazard the hardener reported
+  was considered for a ticket of its own and deliberately NOT minted. A
+  first-match conf parser does silently honour the first of two identical
+  keys, but no writer in the tree produces a duplicate and none is
+  reachable on main; minting from a merge artifact would be manufacturing
+  work. Recorded in the adjudication evidence so it is not re-litigated.
+
+  Orthogonality: touches specs/pipeline/steps/bl1248MasterMainReconcile
+  KillSwitchSteps.js, swarmforge/scripts/test/test_handoffd_master_main_
+  reconcile_wiring.sh, specs/features/BL-1256-*.feature, and (for the
+  one-shot flag only) swarmforge/scripts/handoffd.bb. Nothing else active
+  touches these.
+
+approval_context: >
+  A gate that has never been able to fail is not evidence, and this one
+  guards the switch protecting against thirteen realised commit losses. It
+  was found because a real change walked straight through it this week.
+
+  Two calls worth your word. (1) Scope is deliberately the GATE only - the
+  shipped kill switch behaviour is untouched, so this cannot re-open a
+  settled design. Say so if you would rather it also carry the
+  --reconcile-sweep-once flag as a permanent daemon affordance rather than
+  a test-only one. (2) qa_e2e_procedure step 5 asks for a by-hand
+  regression proof (move the guard, watch the gate go red) rather than a
+  committed mutant. Say so if you would rather that be automated, which is
+  more durable but noticeably more parcel.

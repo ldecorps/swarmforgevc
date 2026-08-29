@@ -1,0 +1,157 @@
+id: BL-1254
+title: "Swarm stamp-off: certify the Cursor expedite no-verdict hotfix chain 3f4f69ec1b, 70c5e0e5b0, 5de352ed1d as one resulting state"
+milestone: M8
+type: defect
+severity: medium
+# medium: the crash it addresses (an expedite hard-failing a ticket because a
+# stage exited without verdict.json) is already fixed on main; this stamp
+# confirms or refutes the land. Not high: nothing is broken now. Not low:
+# three ledger rows stay pending and keep surfacing until a human answers.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1254-swarm-stamp-expedite-no-verdict-chain.feature
+
+human_approval: pending
+approval_context: >
+  BL-848 stamp-off for THREE already-landed commits reviewed as one resulting
+  state, not three tickets. That consolidation is the thing to sign off on:
+  5de352ed1d supersedes part of 70c5e0e5b0 (which made a second missing
+  verdict bounce back to the same stage; 5de352ed1d refuses exactly that
+  reasonless synthesized bounce), so certifying 70c5e0e5b0 alone would certify
+  behaviour that is no longer live. The scenarios therefore describe the state
+  at 5de352ed1d. One ticket, three ledger rows linked to it - the BL-1116
+  precedent, where five rows link to one stamp ticket. If you would rather
+  certify each commit separately, say so and I will split; the cost is a
+  scenario set for 70c5e0e5b0 that asserts superseded behaviour.
+
+invariants:
+  - "This stamp-off never reimplements the hotfixes - review confirms or refutes the landed state at 3f4f69ec1b, 70c5e0e5b0 and 5de352ed1d only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."
+  - "No scenario asserts behaviour a later commit in the chain superseded; the contract describes the resulting state at 5de352ed1d."
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1254ExpediteNoVerdictChainStampSteps::acceptance handler registered so the runner executes every review scenario"
+
+description: >
+  WHAT. Three operator/Cursor hotfixes landed on main on 2026-08-28, all with
+  Hotfix-Certification: pending, all touching the same four files
+  (expedite_lib.bb, expedite_cli.bb, expedite_lib_test_runner.bb,
+  test_expedite_cli.sh), in this order:
+
+  3f4f69ec1b "Recover once when an expedite stage exits without verdict.json."
+  70c5e0e5b0 "After no-verdict recovery, bounce the same stage instead of
+  failing the ticket."
+  5de352ed1d "Refuse synthesized no-verdict bounces; recover twice with
+  escalated prompts."
+
+  Resulting behaviour under review (do not redesign): a stage that exits
+  without a parseable verdict is re-invoked while recoveries remain
+  (max-missing-verdict-recoveries is 2), with prompts that forbid waiting on
+  background or Monitor work and require writing pass, bounce or fail as the
+  last action; a further miss fails closed. bounce-payload-valid? refuses a
+  bounce whose reason and class are both blank, and refuses the driver's own
+  synthetic no-verdict-abandoned tag - synthesizing "bounce because
+  no-verdict" re-enters the same stage with no new information and burns the
+  bounce bound in a loop.
+
+  WHY. An offline `claude -p` cleaner stage on BL-1248 parked on a Monitor
+  wait, exited 0 with no verdict.json, and the driver stamped
+  {"verdict":"fail","reason":"no-verdict"} and hard-failed the ticket
+  (evidence: .swarmforge/expedite/BL-1248/02-cleaner/transcript.jsonl, a
+  single line waiting on Monitor). Separately: an unticketed hotfix never
+  becomes an official swarm deal on green tests alone (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the landed
+  sources at 5de352ed1d. Open a narrow follow-up only if review finds a
+  defect; do not rewrite the expedite driver in this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert any of the three hotfixes.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT write a scenario asserting 70c5e0e5b0's same-stage no-verdict
+    bounce. 5de352ed1d replaced it; a contract that asserts it is red when
+    correct. Invariant 3 exists for this.
+  - Do NOT redesign the bounce bound, the expedite stage protocol, or the
+    verdict file format. A design defect found in review is a narrow follow-up
+    ticket, not this parcel.
+  - Babashka has no mutation/CRAP/DRY wired (BL-472 deferred). The hardening
+    pass records the degraded fallback explicitly and must not imply those
+    ran.
+
+qa_e2e_procedure: >
+  (1) At 5de352ed1d, confirm expedite_lib.bb defines
+  max-missing-verdict-recoveries as 2, should-recover-missing-verdict? gating
+  on it, and bounce-payload-valid?.
+  (2) Confirm bounce-payload-valid? refuses both-blank and the synthetic
+  no-verdict-abandoned class / no-verdict reason, and accepts an actionable
+  reason.
+  (3) Confirm the recovery prompt at attempt >= 2 escalates, forbids
+  Monitor/background waits, and requires the verdict as the last action.
+  (4) Run the Babashka lib and CLI suites:
+  swarmforge/scripts/test/expedite_lib_test_runner.bb and
+  swarmforge/scripts/test/test_expedite_cli.sh. Known-failing cases in
+  test_expedite_cli.sh that belong to BL-782 are pre-existing and are not
+  this parcel's to fix - record them, do not absorb them.
+  (5) Confirm no scenario in the feature file asserts the superseded
+  same-stage no-verdict bounce.
+  (6) Leave all three Hotfix-Certification rows pending until the human
+  ledger decision.
+
+out_of_scope: |
+  - Reverting or rewriting any of the three hotfixes.
+  - BL-782's standing test_expedite_cli.sh failures.
+  - BL-1248 itself, the ticket whose expedite surfaced the crash.
+  - Certifying any ledger row without a human decision.
+  - Pushing main to origin (QA lands and pushes).
+
+source: |
+  Consolidated from three operator intakes, all archived to
+  .swarmforge/operator/archive/ pointing here. Each requested action is
+  preserved verbatim below; all three are carried out by this one ticket.
+
+  (1) INTAKE-stamp-off-hotfix-3f4f69ec1b-expedite-no-verdict-recovery.md,
+      verbatim: "Mint a BL-848 **stamp-off** ticket (BL-849 / BL-1136 shape):
+      1. Confirm or refute landed commit `3f4f69ec1b` only - do not
+      reimplement. 2. Link ledger: `bb
+      swarmforge/scripts/hotfix_ledger_update.bb . --link 3f4f69ec1b BL-nnn`
+      3. `human_approval: pending` so Approvals can certify/waive after QA.
+      4. How-to sibling under `docs/how-to/` optional but preferred."
+      Also verbatim from that intake: "Green tests never write
+      `certified`/`waived` - only a recorded human decision does."
+      Ops note, verbatim: "Swarm was stopped for expedite when this landed.
+      BL-1236 expedite may still be in flight under the *old* driver process;
+      the recovery path applies to the next `expedite_cli.bb` start.
+      Reinstate after drain."
+
+  (2) INTAKE-stamp-off-hotfix-70c5e0e5b0-no-verdict-bounce.md, verbatim:
+      "Mint BL-848 stamp-off for `70c5e0e5b0`; link ledger;
+      `human_approval: pending`."
+
+  (3) INTAKE-stamp-off-hotfix-5de352ed1d-bounce-must-carry-reason.md,
+      verbatim: "Mint BL-848 stamp-off for `5de352ed1d`; link ledger;
+      `human_approval: pending`." That intake also records, verbatim:
+      "Supersedes bounce-without-reason behavior from `70c5e0e5b0`."
+
+notes: |
+  - [2026-08-29] specifier: consolidated 3:1 under Consolidation Authority
+    (BL-680) because the three commits are one chain on one code path and the
+    third supersedes part of the second - certifying 70c5e0e5b0 in isolation
+    would certify dead behaviour. Every requested action from all three
+    intakes is preserved verbatim in source: above (Article 5.3). Precedent
+    for many rows to one stamp ticket: BL-1116 carries five.
+  - [2026-08-29] specifier: order and content verified at mint by reading each
+    commit - same four files each time, chronological order 3f4f69ec1b then
+    70c5e0e5b0 then 5de352ed1d, and 5de352ed1d's diff removes 70c5e0e5b0's
+    "second miss bounces back to the SAME stage" comment and logic.
+  - [2026-08-29] specifier: ledger links are the coordinator/operator step at
+    promotion - `bb swarmforge/scripts/hotfix_ledger_update.bb . --link <sha>
+    BL-1254` for each of the three SHAs. All three rows are stamp_ticket null
+    at mint.

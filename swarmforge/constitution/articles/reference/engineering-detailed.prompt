@@ -1242,3 +1242,59 @@ before BL-1227 compressed it:
   a generated fixture matching the suite's OWN discovery glob is swept by
   prefix BEFORE the run, not merely cleaned up after: nothing traps SIGKILL,
   so a killed run leaves it for the next run to collect as a false red. (BL-971)
+
+### A shell chain of independent guards must not run under `set -e` (BL-1242/BL-1252)
+
+A hook or wrapper that invokes N independent guard scripts in sequence under
+`set -euo pipefail` runs only up to the FIRST guard that refuses. Every guard
+after it is skipped, so a change violating several guards is reported one
+violation per attempt: the committer fixes the reported one, re-runs, and is
+blindsided by the next. That is precisely the first-failure-stop shape
+constitutional **Article 4.4** forbids of a reviewing role ("never bounces at
+the FIRST defect — finish the full checklist, send one bounce with every
+defect"), reproduced in a mechanical gate, where it applies to every role on
+every commit.
+
+The shape is easy to introduce and invisible in review, because the chain
+looks correct and each guard in it IS correct. It is also easy to assert
+falsely: the `commit-msg` hook carried the comment "both guards must run every
+time, so a real failure from either is never masked by the other's exit code"
+while `set -e` silently made that untrue. A comment is not a gate.
+
+**The pattern:**
+
+```bash
+set -uo pipefail          # NOT -e across the chain
+
+status=0
+"$REPO_ROOT/.../guard_one.sh" "$@" || status=$?
+"$REPO_ROOT/.../guard_two.sh" "$@" || status=$?
+
+exit "$status"
+```
+
+Each guard script keeps its own `set -euo pipefail` internally, so dropping
+`-e` here weakens nothing inside a guard — it only stops one guard's verdict
+from cancelling another's.
+
+Two obligations come with it:
+
+1. **Do not convert an error into a pass.** Dropping `-e` means an unexpected
+   failure — a crashed guard, a missing script, a non-refusal exit — is now
+   yours to propagate. Capturing every status and exiting the combined status
+   preserves that; capturing only the statuses you expected does not.
+2. **Pin it with a test that trips two guards at once.** A single-violation
+   test passes identically before and after the fix, so it proves nothing. The
+   BL-1242 fix is pinned by case 09 of
+   `swarmforge/scripts/test/test_merge_deletion_guard.sh`, which builds a merge
+   violating both guards and asserts BOTH violations appear in one refusal.
+
+Where cost is asymmetric — one guard runs a test suite, the others read the git
+index — completeness is required within the cheap tier, and the expensive guard
+runs only once the cheap ones pass. Never pay a full suite for a change already
+refused (BL-1252; and see BL-1202 for what that suite does when its run is
+killed).
+
+Incidents: `swarmforge/git-hooks/commit-msg` (BL-1242, fixed 2026-08-28,
+commit `61735035f`); `swarmforge/git-hooks/pre-commit`, four guards chained the
+same way (BL-1252).

@@ -839,11 +839,13 @@ const DOMAINS = [
   require('./bl1179CrossVendorMemoryAdapterSteps'),
   require('./bl1192TaskScopeGateSteps'),
   require('./bl1216DuplicateIdLiveCopyContentVerdictSteps'),
-  require('./bl1248MasterMainReconcileKillSwitchSteps'),
-  require('./bl1236ReconcileConflictPredictionSteps'),
   require('./bl1222PropertySuiteGuardGitEnvScrubSteps'),
   require('./bl1238AgentIdleClearFullnessSteps'),
-  require('./bl1242MergeBranchWorkDeletionSteps')
+  require('./bl1242MergeBranchWorkDeletionSteps'),
+  require('./bl1248MasterMainReconcileKillSwitchSteps'),
+  require('./bl1236ReconcileConflictPredictionSteps'),
+  require('./bl1247PropertyGeneratorDomainAgreementSteps'),
+  require('./bl1249RestartHonoursPauseMarkerSteps')
 ];
 
 function registerSteps(registry) {
