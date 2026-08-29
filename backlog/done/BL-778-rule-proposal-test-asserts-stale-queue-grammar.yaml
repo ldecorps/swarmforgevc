@@ -3,7 +3,7 @@ title: "test_rule_proposal.sh asserts \"^HANDOFF QUEUED:\" — a string swarm_ha
 milestone: M8
 type: defect
 severity: medium
-status: paused
+status: done
 epic: swarm-reliability
 priority: 152
 direction: normal
@@ -138,3 +138,29 @@ notes: |
   time. Finally, confirm non-vacuity: with a temporary local edit making
   `swarm_handoff.bb` print nothing on success, the test must fail naming
   assertion 01 — revert that edit before reporting.
+
+closed_as: satisfied-by-implementation
+deprecator_adjudication: |
+  RETIRE (specifier, 2026-08-29). Article 3.6 deprecator duty, proactive pass.
+  The behaviour this ticket describes is already built, QA-approved and landed
+  on main; the ticket stayed in backlog/paused/ with a promotable status, so it
+  remained eligible for promotion and would have sent the coder to rebuild
+  working, hardened code.
+
+  Verified independently, not taken from a prior sweep's claim:
+    - QA approval 9603a9c85 confirmed an ancestor of local main
+      (git merge-base --is-ancestor). Local main is ahead of origin/main and is
+      the fresher ref.
+    - Implementation present: swarmforge/scripts/test/test_rule_proposal.sh
+    - Acceptance handler registered in specs/pipeline/steps/index.js:
+      bl778RuleProposalTestAssertsStaleQueueGrammarSteps
+  How it got here: QA-passed 2026-08-28 and never closed.
+
+  Retiring the TICKET only. The .feature file and its step handlers are left
+  untouched — the behaviour is live, and the acceptance runner throws on a
+  scenario with no handler, so deleting them would drop real coverage and
+  redden the gate.
+
+  Full sweep record, including the deliberate keeps (BL-1238 live parcel,
+  BL-1222 already in done/, BL-545 epic tracker):
+  backlog/evidence/paused-pool-zombie-sweep-20260829-third-pass.md
