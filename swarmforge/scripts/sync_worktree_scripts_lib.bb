@@ -36,3 +36,24 @@
    would land at."
   [{:keys [tracked-paths dest-relative-path]}]
   (not (contains? (set tracked-paths) dest-relative-path)))
+
+;; BL-1233: an ambient GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE makes
+;; `git -C worktree-root ...` answer for a DIFFERENT repo than
+;; worktree-root - `-C` does not override those variables. The scrub (in
+;; the CLI wrapper, at the git invocation itself) is the fix; this
+;; predicate is the fail-closed backstop against the next vector: before
+;; trusting a tracked-path answer, prove git actually resolved
+;; worktree-root's own top-level.
+
+(defn trustworthy-tracked-answer?
+  "Pure: both paths are ALREADY CANONICALIZED absolute strings (the CLI
+   wrapper does the filesystem call; this function does no IO). Trustworthy
+   only when git resolved a top-level at all AND it equals worktree-root's
+   own canonical path. A destination that legitimately tracks nothing under
+   rel-prefix (BL-373 scenario 03) still resolves ITS OWN top-level
+   correctly, so this never blocks that case - it only catches git
+   answering for a DIFFERENT repo (the ambient-env leak) or failing to
+   resolve at all (nil resolved-toplevel-real)."
+  [{:keys [worktree-root-real resolved-toplevel-real]}]
+  (and (some? resolved-toplevel-real)
+       (= worktree-root-real resolved-toplevel-real)))

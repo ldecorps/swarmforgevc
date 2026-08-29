@@ -44,6 +44,34 @@
           {:tracked-paths #{"swarmforge/scripts/handoffd.bb"}
            :dest-relative-path "swarmforge/profiles/handoffd.bb"}))
 
+;; ── BL-1233: trustworthy-tracked-answer? ────────────────────────────────
+;; Pure comparison on ALREADY-CANONICALIZED strings - no real filesystem,
+;; no real git, deterministic and instant like should-copy? above.
+
+(assert= "a resolved top-level matching worktree-root is trustworthy"
+         true
+         (sync-worktree-scripts-lib/trustworthy-tracked-answer?
+          {:worktree-root-real "/repo/.worktrees/cleaner"
+           :resolved-toplevel-real "/repo/.worktrees/cleaner"}))
+
+(assert= "a resolved top-level for a DIFFERENT repo (the ambient-env leak) is untrustworthy"
+         false
+         (sync-worktree-scripts-lib/trustworthy-tracked-answer?
+          {:worktree-root-real "/repo/.worktrees/cleaner"
+           :resolved-toplevel-real "/repo"}))
+
+(assert= "git failing to resolve a top-level at all is untrustworthy (fail closed, not fail open)"
+         false
+         (sync-worktree-scripts-lib/trustworthy-tracked-answer?
+          {:worktree-root-real "/repo/.worktrees/cleaner"
+           :resolved-toplevel-real nil}))
+
+(assert= "a foreign target that legitimately tracks nothing still resolves its OWN top-level correctly, and is trustworthy"
+         true
+         (sync-worktree-scripts-lib/trustworthy-tracked-answer?
+          {:worktree-root-real "/foreign/.worktrees/coder"
+           :resolved-toplevel-real "/foreign/.worktrees/coder"}))
+
 (if (empty? @failures)
   (println "sync_worktree_scripts_lib (BL-373): ALL TESTS PASSED")
   (do (println (str "sync_worktree_scripts_lib (BL-373): " (count @failures) " FAILURE(S):"))

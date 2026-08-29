@@ -19,6 +19,16 @@ Standing failures are named in
 reported failing file is allowlisted; any non-allowlisted failure still
 blocks and lists those files.
 
+**BL-1234 fix (2026-08-28):** the guard's own path extractor emitted every
+normalized failing-file path onto the same line (a missing newline at its
+one call site), so `sort -u` saw the whole set as a single, unmatchable
+concatenated string whenever **two or more** files were red — which is the
+only case that happens in practice once the allowlist names more than one
+file. A single failing file worked (`sort` itself supplied the terminator);
+two or more always refused, with a message naming a path that does not
+exist. Fixed by emitting one path per line before `sort -u` runs; the
+verdict now depends on *which* files failed, never on how many.
+
 | Want | Do |
 | --- | --- |
 | Land green work while known reds remain | Keep those files on the TSV; do not set SKIP |
