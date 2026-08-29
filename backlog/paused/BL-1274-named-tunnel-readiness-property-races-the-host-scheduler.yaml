@@ -92,8 +92,7 @@ qa_e2e_procedure: >
      (`SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS`, `SWARMFORGE_NAMED_TUNNEL_WAIT_INTERVAL`,
      `SUBPROCESS_HEAVY_TIMEOUT_MS`) and confirm none increased.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Raised by the coder on 2026-08-29 as part of a wider observation ("the property
   lane's verdict is a function of host load - one defect or N flakes? the call is

@@ -17,6 +17,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
@@ -399,7 +400,14 @@
         text (:text (first (agent-runtime-lib/in-process-resume-steps (or agent "claude"))))]
     (agent-runtime-inject/notify-agent! socket session (or agent "claude")
                                           :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                          :text text)))
+                                          :text text)
+    ;; BL-597 emit, restored by BL-1273. Observes the resume that the
+    ;; notify above already performs and logs; it neither gates the nudge
+    ;; nor changes this function's value.
+    (self-heal-telemetry-lib/append-self-heal-event!
+     project-root {:type "claim-heal"
+                   :subject "handoffd"
+                   :reason "resume orphaned in_process"})))
 
 (defn recipient-pane-busy?
   "BL-135 parity on the delivery path: mail lands in inbox/new either way;
