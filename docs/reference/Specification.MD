@@ -1,5 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1194: the duplicate-id check in
+`specifier_backlog_hygiene_gate.bb` / `backlog_hygiene_lib.bb` (BL-1105) had
+two self-identity gaps that reported a ticket as a duplicate of itself — bug
+#1, a relative-vs-absolute path mismatch in `other-holders` when the CLI was
+invoked with a relative path (the natural, documented form); bug #2, a
+stale/self published entry never recognized as "already this ticket" even
+with an absolute path. Fixed by normalizing both sides to a common comparable
+form before equality/membership checks; the subject's own id+file is never
+counted as an "other holder". Genuine cross-file duplicates still fail. No
+caller-side change required. Acceptance:
+`specs/features/BL-1194-hygiene-gate-relative-path-self-duplicate-false-positive.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1266: the pre-turn reference-freshness
 guard (BL-640/BL-1237) picked its comparison ref — `main` or `origin/main`
 — by whole-REPOSITORY ahead-count (`freshest-main-ref`), a proxy for a
