@@ -223,6 +223,16 @@ notes: >
   BL-1262 (the reading half, active, must land first), BL-1242 (the
   systemic prevention, active).
 
+  depends_on note for the coordinator, verified 2026-08-29 after mint: all
+  four of BL-1262's files are ALREADY present at main (restored by commit
+  494eb2b5c and carried in ahead of QA), so the one substantive coupling -
+  kill_pipeline_swarm.sh shelling self_heal_telemetry_cli.bb - is already
+  satisfiable in the tree. The depends_on stays because BL-1262 is still in
+  backlog/active/ awaiting QA and the BL-957 gate reads backlog/done/, which
+  is the correct posture; but if BL-1262 stalls, this ticket is being starved
+  by bookkeeping rather than by a missing file, and that is grounds to
+  reconsider the dependency rather than to wait indefinitely.
+
   Orthogonality for the coordinator: touches
   swarmforge/scripts/front_desk_supervisor.bb, handoffd.bb,
   handoff_lib.bb and kill_pipeline_swarm.sh. These are high-traffic
