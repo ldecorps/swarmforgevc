@@ -103,7 +103,16 @@ cat > "$ROOT/.gitignore" <<'GITIGNORE'
 bin/
 fake.sock
 GITIGNORE
-git -C "$ROOT" add .gitignore docs/briefings
+
+# BL-1248: the shipped swarmforge/swarmforge.conf now ships the sweep OFF
+# by default - this fixture exists to prove the reconcile mechanics
+# themselves (BL-891/919/920), so it must explicitly opt back in, exactly
+# like a real operator would via a one-line config edit. Committed (not
+# gitignored) so the working tree reads clean before the daemon starts,
+# same posture as docs/briefings above.
+mkdir -p "$ROOT/swarmforge"
+echo "config master_main_reconcile_enabled true" > "$ROOT/swarmforge/swarmforge.conf"
+git -C "$ROOT" add .gitignore docs/briefings swarmforge/swarmforge.conf
 git -C "$ROOT" commit -q -m "fixture scaffold"
 # Keep ROOT and origin in sync after the scaffold commit, so scenario 01
 # below (no local-only commits yet) is a genuine pure fast-forward - not
@@ -378,5 +387,48 @@ CONFLICT_STATUS="$(git -C "$ROOT" status --porcelain)"
 [[ -z "$CONFLICT_STATUS" ]] \
   || fail "expected the working tree to be clean after the aborted conflict and completed reset recovery, got: $CONFLICT_STATUS"
 pass "an aborted merge conflict leaves no in-progress merge state, and the reset-to-origin recovery completes exactly as it does today"
+
+# ── BL-1248 (qa_e2e_procedure scenario 02, "the one that matters"): with
+#    the switch OFF, a genuine two-way divergence is left alone entirely -
+#    nothing reachable from the cadence tick moves, resets, or discards the
+#    local-only commit (invariant 1). Then the switch flips back ON to
+#    prove this exact fixture genuinely WOULD have reconciled, so the
+#    off-case assertion above is not vacuously green. ─────────────────────
+sed -i 's/^config master_main_reconcile_enabled true$/config master_main_reconcile_enabled false/' "$ROOT/swarmforge/swarmforge.conf"
+sleep 2  # let the daemon re-read the flipped config before this scenario's own state exists
+
+mkdir -p "$ROOT/backlog/done"
+echo "switch-off-local-bookkeeping" > "$ROOT/backlog/done/BL-1248-switch-off-test.yaml"
+git -C "$ROOT" add backlog/done/BL-1248-switch-off-test.yaml
+git -C "$ROOT" commit -q -m "coordinator bookkeeping while switch is off, local-only"
+LOCAL_ONLY_SWITCH_OFF_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+
+git -C "$CLONE" pull -q origin main
+echo "landed-switch-off" > "$CLONE/landed-switch-off.txt"
+git -C "$CLONE" add landed-switch-off.txt
+git -C "$CLONE" commit -q -m "QA lands landed-switch-off"
+git -C "$CLONE" push -q origin main
+
+wait_for_log "master-main-reconcile skipped-by-config" 20 \
+  || fail "expected the reconcile sweep to log a config-skip while the switch is off; log: $(cat "$LOG_FILE" 2>/dev/null)"
+pass "switching the sweep off is visible in the daemon log (BL-1248 scenario 03)"
+
+sleep 3
+ROOT_HEAD_AFTER_SWITCH_OFF="$(git -C "$ROOT" rev-parse main)"
+[[ "$ROOT_HEAD_AFTER_SWITCH_OFF" == "$LOCAL_ONLY_SWITCH_OFF_SHA" ]] \
+  || fail "expected main to stay exactly at the local-only bookkeeping commit while the switch is off, was $LOCAL_ONLY_SWITCH_OFF_SHA now $ROOT_HEAD_AFTER_SWITCH_OFF"
+[[ ! -f "$ROOT/landed-switch-off.txt" ]] \
+  || fail "expected the landed file to be ABSENT while the switch is off - a merge happened despite the kill switch"
+git -C "$ROOT" merge-base --is-ancestor "$LOCAL_ONLY_SWITCH_OFF_SHA" main \
+  || fail "expected the local-only bookkeeping commit to remain reachable from main while the switch is off"
+pass "with the switch off, a genuine two-way divergence is left alone entirely - no merge, reset, or absorb runs, and the local-only commit stays reachable from main (BL-1248 invariant 1, real-git half)"
+
+sed -i 's/^config master_main_reconcile_enabled false$/config master_main_reconcile_enabled true/' "$ROOT/swarmforge/swarmforge.conf"
+
+wait_for_file "$ROOT/landed-switch-off.txt" 20 \
+  || fail "expected flipping the switch back on to let this exact divergence reconcile - it was never a vacuously-green fixture; log: $(cat "$LOG_FILE" 2>/dev/null)"
+git -C "$ROOT" merge-base --is-ancestor "$LOCAL_ONLY_SWITCH_OFF_SHA" main \
+  || fail "expected the local-only commit to remain reachable after reconciling with the switch back on"
+pass "flipping the switch back on reconciles this exact fixture - the off-case assertion above was not vacuously green (BL-1248 qa_e2e_procedure scenario 02)"
 
 echo "ALL SCENARIOS PASS"
