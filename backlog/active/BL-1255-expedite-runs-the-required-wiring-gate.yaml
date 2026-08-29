@@ -132,3 +132,5 @@ notes: |
     pilot path. This is the required_wiring half of the same class, still open.
   - [2026-08-29] specifier: checked before minting - no paused, active or held
     ticket covers the expedite path reaching pre_qa_gate_lib.
+
+assigned_to: coder
