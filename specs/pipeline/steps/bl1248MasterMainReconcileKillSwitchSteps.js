@@ -21,14 +21,16 @@
 // real daemon fixture below; the old direct-sweep! handler
 // (runDivergenceStillSurfaced) is gone.
 const path = require('node:path');
-const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const { requireWiringPass } = require('./lib/bl1256ReconcileWiringFixture');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LIB_BB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'master_main_reconcile_lib.bb');
-const FEATURE =
-  'BL-1248 the master-main-reconcile sweep can be switched off from config, and is off until BL-1236 lands';
+// Matched pair with the Feature: line of
+// specs/features/BL-1248-master-main-reconcile-kill-switch.feature - changing
+// one without the other unbinds every scenario in the file. Re-tensed with it
+// by BL-1251 when the operator re-armed the sweep.
+const FEATURE = 'BL-1248 the master-main-reconcile sweep can be switched off from config';
 
 const VALUE_TO_CONF_TEXT = {
   true: 'config master_main_reconcile_enabled true',
@@ -164,30 +166,12 @@ function registerSteps(registry) {
     FEATURE
   );
 
-  // ── Scenario 04 ──────────────────────────────────────────────────────
-  registry.defineScoped(
-    /^the shipped "([^"]+)" is read$/,
-    (ctx, relPath) => {
-      const filePath = path.join(REPO_ROOT, relPath);
-      ctx.bl1248 = { ...(ctx.bl1248 || {}), shippedConfText: fs.readFileSync(filePath, 'utf8') };
-    },
-    FEATURE
-  );
-
-  registry.defineScoped(
-    /^it sets "master_main_reconcile_enabled" to "false" with BL-1236 named as the condition for turning it back on$/,
-    (ctx) => {
-      const text = ctx.bl1248.shippedConfText;
-      const activeLine = /^config master_main_reconcile_enabled false$/m.test(text);
-      if (!activeLine) {
-        throw new Error('BL-1248 scenario 04: shipped conf does not ACTIVELY set the key to false (a commented-out line does not count)');
-      }
-      if (!text.includes('BL-1236')) {
-        throw new Error('BL-1248 scenario 04: shipped conf does not name BL-1236 as the re-enable condition');
-      }
-    },
-    FEATURE
-  );
+  // ── Scenario 04: RETIRED by BL-1251 ──────────────────────────────────
+  // Its two step definitions went with it. The acceptance runner throws on a
+  // MISSING handler and is perfectly happy with a spare one, so leaving them
+  // would have been harmless - but a handler asserting the sweep ships OFF
+  // would outlive the only scenario that ever asked, and be read by the next
+  // reader as a contract that still holds.
 
   // ── Scenario 05 ──────────────────────────────────────────────────────
   // BL-1256: re-pointed at the real daemon fixture (see file header) - the
