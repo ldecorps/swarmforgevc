@@ -235,5 +235,41 @@ notes: |
     Matches the already-tracked standing reds in memory
     (temp-dir-trap-guard-property-red-untracked, and siblings for the
     other three)."
+  - "[2026-08-29] hardener: resumed and completed a mid-merge of main a
+    prior session left with MERGE_HEAD present and 3 files conflicted
+    (backlog/active/BL-1242-*.yaml, specs/pipeline/steps/index.js,
+    swarmforge/scripts/handoffd.bb). Resolved handoffd.bb's
+    master-main-reconcile-sweep! in favor of THIS ticket's shape (gate
+    in front of sweep!, off means sweep! is never called) over
+    BL-1248's already-shipped shape (pass enabled? into sweep!, which
+    still runs drift/dirty-blocked/escalation while off) - BL-1248's
+    is the narrower \"runs but declines to write\" reading this
+    ticket's own description explicitly rejects. Removed the orphaned
+    master-main-reconcile-enabled? wrapper this left dead. Found and
+    fixed a genuine latent bug the merge surfaced: swarmforge.conf
+    carried a DUPLICATE master_main_reconcile_enabled key (one block
+    per ticket's commit) - both reconcile-enabled? and parse-enabled?
+    read the first matching line only, so a future BL-1251 edit to the
+    second, newer-looking block would have silently had no effect;
+    merged into one block. Updated BL-1248's own
+    test_handoffd_master_main_reconcile_wiring.sh, which hardcoded the
+    now-dead \"skipped-by-config\" log text, to expect
+    \"skipped-disabled\" instead - the git-level outcome it checks
+    (main unmoved, landed file absent, switch-back-on still reconciles)
+    is unchanged.
+
+    Re-verified after resolving: master_main_reconcile_lib_test_runner.bb
+    ALL PASS, master_main_reconcile_lib_property_runner.bb ALL
+    PROPERTIES HOLD, BL-1247 acceptance 7/7 against the real
+    handoffd.bb (re-run twice), test_handoffd_master_main_reconcile_wiring.sh
+    ALL SCENARIOS PASS (re-run after the log-text fix, via
+    swarmforge/scripts/detach_job.sh - the fixture spins up a real
+    daemon against a real bare-origin + diverged-clone repo and runs
+    past the 2-minute foreground ceiling). Standing whole-tree guards
+    for specs/pipeline/steps/ re-run post-merge: same 4 pre-existing
+    reds as before (liveRepoDerivationGuard, socketFixtureShortRootGuard,
+    tempDirTrapGuard, tmpDirMigrationGuard), grepped for every file this
+    merge touched - none match. No test/mutation processes left running
+    (confirmed via pgrep post-run, twice)."
 
 assigned_to: coder
