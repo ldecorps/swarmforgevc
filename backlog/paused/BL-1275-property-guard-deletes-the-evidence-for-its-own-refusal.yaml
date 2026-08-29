@@ -78,8 +78,7 @@ qa_e2e_procedure: >
   6. Exceed the retention bound and confirm the oldest logs are pruned while the
      most recent are kept.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Minted from the coder's 2026-08-29 observation that four different property
   files blocked five commits in one shift, each green in isolation. I ruled
