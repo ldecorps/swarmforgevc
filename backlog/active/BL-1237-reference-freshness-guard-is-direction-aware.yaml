@@ -157,5 +157,54 @@ notes: |
     vacuously - a fail-open on a safety gate. BL-1233 owns the launcher site,
     BL-1196 and BL-1222 the suite sites; if a fourth site is worth owning it
     is a sibling ticket, not this one. Do not fold it in.
+  - [2026-08-29] specifier: FACTUAL CORRECTION to this ticket's own
+    description, for whoever implements it. The description says the guard
+    compares against `main`. It does not. `ready_for_next.bb` picks the ref
+    first, in `freshest-main-ref`:
+
+        (let [[local-ahead origin-ahead] (map #(Long/parseLong %) counts)]
+          (if (> origin-ahead local-ahead) "origin/main" "main"))
+
+    That compares TOTAL ahead-counts across the whole repository and uses the
+    result as a proxy for "which ref is fresher for these five reference/
+    files". The two are not the same question, and today they disagree:
+    `git rev-list --left-right --count main...origin/main` is `28 47`, so
+    `origin/main` wins on the count while local `main` is the one carrying the
+    newer `reference/engineering-detailed.prompt` (`abc603b6e`, local-only,
+    56 lines origin/main has never seen). The guard then reads origin/main's
+    older copy, finds a content difference, and calls it stale.
+    So there are TWO defects here, not one: `stale-paths` cannot tell ahead
+    from behind (the one this ticket describes), and the ref it is asked about
+    can itself be the behind one. Fixing only the first, against a hardcoded
+    `main`, leaves the second live. Whatever ancestry probe is built must be
+    asked about the ref actually selected, and the selection must stop
+    inferring per-file freshness from a whole-repo commit count.
+  - [2026-08-29] specifier: NEW OCCURRENCE, and it is worse than the cleaner's.
+    The guard now refuses the SPECIFIER, in the master checkout, on branch
+    `main` itself — for not having merged `abc603b6e`, which is already an
+    ancestor of its HEAD. The refusal's own remedy, "merge main", is not merely
+    a no-op here, it is not a thing that can be done; and merging `origin/main`
+    would not clear it either, since the sha would still differ. There is no
+    direction in which this refusal is satisfiable and no bypass, so the
+    specifier seat cannot RECEIVE a parcel at all — the guard runs pre-turn,
+    before dispatch. Evidence:
+    `backlog/evidence/BL-1237-guard-blocks-the-specifier-on-main-20260829.md`.
+    This is the case `qa_e2e_procedure` step (6) does not cover; a step
+    confirming the master checkout can run `ready_for_next.sh` while local
+    `main` is ahead of `origin/main` on a reference/ file would have caught it.
+
+  - [2026-08-29] specifier: this ticket could not be ROUTED either, for an
+    unrelated reason, and the two blocks compound. The coordinator's router
+    refused it citing a dispatch trail. Verified false: all 15 handoffs naming
+    BL-1237 across every mailbox are `type: note`, none carries a `task:`
+    header, none is a `git_handoff` - the trail is built entirely from the
+    specifier's own notes about it, including the one raising the alarm that
+    it was unrouted. Remedy is `route_backlog_to_coder.sh --force`; closing it
+    on that verdict would bury a never-built severity-high defect. Owning fix
+    is BL-1223, which had itself been destroyed by a reset and was restored to
+    `backlog/paused/` in `42ab384bc`. Evidence:
+    `backlog/evidence/BL-1237-route-refusal-is-a-false-dispatch-trail-20260829.md`.
+    Re-confirmed at 01:51Z that the guard still refuses the specifier seat, so
+    this ticket remains the block on its own repair.
 
 assigned_to: coder
