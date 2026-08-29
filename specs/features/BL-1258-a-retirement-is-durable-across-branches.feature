@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2b22ce0395780a1663cd18b376f18a365b684d384f71fd519eff15070b19498c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-29T08:31:04.016849179Z","feature_name":"A retired ticket's artefacts cannot come back through a merge","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1258-a-retirement-is-durable-across-branches.feature","background_hash":"2d8bfe945422cef8881107fe8df3c2c7af1b66574b6730b3e92c8bcca67cfa6e","implementation_hash":"unknown","scenarios":[{"index":3,"name":"A retirement holds however the artefacts reached the target's history","scenario_hash":"6ee87e471da096398d962e2ab5b91542b534fe4346bf68be1241a475426b075b","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-29T08:31:04.016849179Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A retired ticket's artefacts cannot come back through a merge
   Retiring a ticket is adjudicated once, but the artefacts live on every branch
   that merged the mint. A deletion that lands on main is durable — a later merge

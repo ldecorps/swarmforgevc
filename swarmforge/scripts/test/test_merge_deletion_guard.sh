@@ -163,6 +163,9 @@ git -C "$ROOT" merge --abort 2>/dev/null || git -C "$ROOT" reset -q --hard "$FEA
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$TICKET_GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_merge_deletion.sh"
+cp "$SCRIPT_DIR/../check_retirement_readdition.sh" "$ROOT/swarmforge/scripts/check_retirement_readdition.sh"
+cp "$SCRIPT_DIR/../retirement_registry_cli.bb" "$ROOT/swarmforge/scripts/retirement_registry_cli.bb"
+cp "$SCRIPT_DIR/../retirement_registry_lib.bb" "$ROOT/swarmforge/scripts/retirement_registry_lib.bb"
 cp "$COMMIT_MSG_HOOK" "$ROOT/swarmforge/git-hooks/commit-msg"
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/"*
 git -C "$ROOT" checkout -q feature
