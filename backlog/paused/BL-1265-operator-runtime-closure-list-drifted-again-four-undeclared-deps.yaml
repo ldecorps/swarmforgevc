@@ -1,0 +1,154 @@
+id: BL-1265
+title: "The operator_runtime.bb fixture dependency list has drifted a seventh time: four real transitive load-file dependencies are undeclared, and the guard BL-944 built to catch it has been red ever since"
+type: defect
+severity: medium
+# medium: the guard is working exactly as designed and is reporting real
+# drift, so nothing is silently wrong today. What is wrong is that its
+# standing red has been carried rather than acted on, which is precisely
+# the state BL-944 was built to end - and while it is red it cannot report
+# the eighth drift, because a test that is already failing cannot fail
+# louder. No live operator behaviour is broken.
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 35
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1265-the-declared-closure-matches-the-real-one.feature
+
+required_wiring:
+  - "specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js::self_heal_telemetry_lib.bb::one of the four undeclared dependencies, by name; its presence in the declared list is the minimum proof the list was corrected rather than the guard relaxed"
+
+invariants:
+  - "The declared dependency list equals the real transitive closure exactly: every reachable file is declared, and every declared file is either reachable or carries a written reason for being an exception."
+
+description: >
+  Severity rationale is in the comment above the field. Root-caused
+  at mint by running the guard's own closure walk against the current
+  tree, so the four names below are measured, not guessed.
+
+  What happens. `OPERATOR_RUNTIME_BB_FILES`
+  (specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js) is the
+  hand-maintained list of Babashka files a fixture must contain for
+  operator_runtime.bb to load. BL-944 stopped that list being taken
+  on trust: it derives the real transitive `load-file` closure from
+  source and compares. The comparison lives in
+  extension/test/operatorRuntimeBbFixtureClosure.test.js, deliberately
+  in the one suite every parcel runs, because - in BL-944's own words
+  - specs/pipeline/test/ is "the exact reason this list drifted five
+  times before anyone noticed a sixth".
+
+  It has now drifted a seventh time. Running
+  `diffClosureAgainstList` against origin/main's
+  swarmforge/scripts/ gives a real closure of 34 files against a
+  declared list of 30, with zero undeclared extras and four missing:
+
+      context_telemetry_store.bb
+      role_ask_escalation_lib.bb
+      rotation_telemetry_lib.bb
+      self_heal_telemetry_lib.bb
+
+  Two tests fail on this, both correctly: the break-then-fix test,
+  whose second half asserts `after.missing` is empty, and BL-944's
+  own closure-honesty check. The two pure tests over
+  `directLoadFileDeps` and the mono_router_lib.bb reachability test
+  all pass - the walk itself is sound, it is the list that is behind.
+
+  Fix wanted, in direction only. Declare the four. The guard already
+  distinguishes a genuine dependency from a declared exception via
+  `OPERATOR_RUNTIME_BB_DECLARED_EXTRAS`; all four of these are real
+  reachable dependencies, not exceptions, so they belong in the list
+  itself.
+
+  One thing to check before assuming it is purely clerical: each of
+  the four is reachable because some file in the closure gained a
+  load-file for it. Establishing which file, for each of the four,
+  costs one grep and belongs in the evidence - if any of the four is
+  reachable only through a path that should not exist, that is worth
+  saying out loud rather than declaring away.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT fix this by adding the four to
+    OPERATOR_RUNTIME_BB_DECLARED_EXTRAS. That list is for entries
+    declared DESPITE not being reachable; these four are reachable.
+    Putting them there would make the guard green while leaving the
+    fixture list still wrong, which is the one outcome worse than the
+    current red.
+  - Do NOT weaken, skip, or delete either failing test, and do not
+    move the guard out of extension/test/. Its location is BL-944's
+    deliberate choice and the reason this drift was seen at all.
+  - Do NOT change diffClosureAgainstList or directLoadFileDeps. The
+    walk is correct; it is the declared list that moves.
+  - Do NOT remove a load-file from any .bb file to shrink the
+    closure. The closure is what it is; this ticket declares it, it
+    does not reshape it.
+  - self_heal_telemetry_lib.bb is present in the tree and reachable -
+    it is NOT one of the files BL-1262 restores. Do not conflate the
+    two tickets and do not wait on BL-1262; they are independent.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline, recorded before any change: from extension/,
+     `npx vitest run test/operatorRuntimeBbFixtureClosure.test.js` -
+     expect exactly two failures, the break-then-fix test and the
+     closure-honesty check, with the same four names in the missing
+     list. Record the four names verbatim.
+  2. Reproduce the measurement independently of vitest, so the number
+     is not an artefact of the runner: call diffClosureAgainstList
+     against swarmforge/scripts with the shipped list and print
+     missing, extra and the closure size. Expect 34 against 30, four
+     missing, zero extra. Both outputs go in the evidence file.
+  3. Establish provenance for each of the four: for every name,
+     record which file in the closure load-files it. Four greps, four
+     lines in the evidence.
+  4. Scenario 01: after the fix, missing and extra are both empty and
+     the closure size equals the declared list length.
+  5. Scenario 02, the guard is still armed: remove one entry from the
+     declared list in a scratch build and confirm the check reports
+     exactly that name as missing, then restore it. Then add a name
+     no file reaches and confirm it is reported as an undeclared
+     extra. Both directions, or the guard has not been shown to work.
+  6. Regression: the full unit suite's failure count drops by exactly
+     two, and no .bb file under swarmforge/scripts/ is modified by
+     this parcel.
+
+notes: >
+  Source: QA note handoff
+  00_20260829T024547Z_001889_from_QA_to_specifier_coordinator, verbatim:
+  "Untracked defects (7): see BL-1244-qa-pass-unrelated-reds-20260829.md".
+  The evidence file's line for this one, verbatim:
+  "`test/operatorRuntimeBbFixtureClosure.test.js` - both tests fail
+  (fixture closure check, `OPERATOR_RUNTIME_BB_FILES` mismatch)."
+
+  Specifier verification at mint: QA reported the mismatch without
+  naming what was mismatched. Rather than mint an unestimable ticket,
+  extracted origin/main's specs/pipeline/steps/lib and
+  swarmforge/scripts into a scratch tree and ran the guard's own
+  diffClosureAgainstList against it - the lib is pure JavaScript and
+  needs no build - which produced the four names and the 34-against-30
+  counts recorded above. Read the test file to confirm WHICH two of
+  its five tests fail on a missing entry (the break-then-fix test's
+  second assertion and the closure-honesty check) and which stay
+  green, which is what rules out a defect in the walk itself. Checked
+  that self_heal_telemetry_lib.bb survives in the tree, so this
+  ticket does not depend on BL-1262's restoration of the sibling CLI.
+
+  Grepped backlog/{active,paused,hold} for
+  "operatorRuntimeBbFixtureClosure" and "OPERATOR_RUNTIME_BB_FILES":
+  the only hits are BL-944 in done/M8 (the ticket that built the
+  guard) and two evidence files. Nothing live owns it. Untracked
+  confirmed.
+
+  The seventh drift is worth naming as a pattern, and it is not this
+  ticket's to fix: BL-944's comment records five drifts before a
+  sixth, and this is the seventh. A hand-maintained list that has
+  drifted seven times is a design that wants deriving rather than
+  declaring. That is a separate proposal, not a widening of this
+  slice, and is raised to the coordinator separately.
+
+  Orthogonality for the coordinator: touches
+  specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js only -
+  one list in one file. No live ticket names it.

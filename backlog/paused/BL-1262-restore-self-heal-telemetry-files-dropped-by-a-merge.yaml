@@ -1,0 +1,178 @@
+id: BL-1262
+title: "BL-597's self-heal telemetry implementation is absent from main: merge 3ba3a444b deleted four whole files, two test files and three docs still reference them, and nothing has restored them since"
+type: defect
+severity: high
+# high: a landed, QA-approved, documented mechanism is simply not in the
+# tree. Two standing test files import a module that does not exist, so the
+# unit suite carries a permanent red that masks real regressions; three
+# living docs and one done-ticket's required_wiring describe code no reader
+# can find. Not critical - no swarm is down and no data is lost, the
+# telemetry the files produce is a measurement surface - but the loss is
+# silent, dated 2026-08-19, and this is the fifth recorded instance of a
+# merge dropping whole new files rather than hunks.
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 40
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1262-self-heal-telemetry-files-are-restored-to-main.feature
+
+required_wiring:
+  - "extension/src/metrics/selfHealTelemetry.ts::aggregateSelfHealCounts::the pure per-type aggregator BL-597 shipped and BL-597's own required_wiring names; its absence is this ticket"
+  - "extension/src/metrics/selfHealTelemetryStore.ts::emitSelfHealEvent::the store half of the same pair, dropped by the same merge; anchored on an exported symbol, not the filename stem"
+  - "swarmforge/scripts/self_heal_telemetry_cli.bb::self_heal_telemetry_lib.bb::the Babashka CLI dropped by the same merge; anchored on the lib it load-files, which is present in the tree and cannot go vacuous"
+
+invariants:
+  - "A file that reaches main as part of an approved parcel is present at main until a commit deliberately removes it: a merge that leaves it absent is a defect, and the absence is detectable from main alone without consulting any branch."
+  - "No test file in the standing suite imports a module path that does not exist at the commit under test - a missing-module error is never an acceptable steady state, because it is indistinguishable from a real regression."
+
+description: >
+  Severity rationale is in the comment above the field. Root-caused,
+  the dropping merge identified by hash, and the remedy verified
+  recoverable at mint.
+
+  What happened. BL-597 ("trend self-heal events with structured
+  telemetry and pure aggregator") landed and is in backlog/done/M8/.
+  Its own required_wiring names
+  `extension/src/metrics/selfHealTelemetry.ts::aggregateSelfHealCounts`.
+  Three living docs describe it: docs/diagrams/architecture.mmd:232,
+  docs/how-to/BL-597-trend-self-heal-events.md:38, and
+  docs/reference/Specification.MD at :675 and :8038. Two test files
+  import it: extension/test/selfHealTelemetry.test.js:5 requires
+  `../out/metrics/selfHealTelemetry`, and
+  extension/test/selfHealTelemetry.property.test.js:9 imports
+  `aggregateSelfHealCounts`.
+
+  The module is not in the tree. `git cat-file -e` for it fails at
+  both `main` and `origin/main`, and it is absent from all six role
+  worktrees. The unit test fails with `Error: Cannot find module
+  '../out/metrics/selfHealTelemetry'` - not a stale build, the source
+  it compiles from is gone.
+
+  Which merge, and what else went with it. Walking origin/main's
+  first-parent chain for the last commit that still had the file
+  gives `8562094f8` ("merge: process coder 678c78735b for BL-745 on
+  hardender"). Its first-parent successor `3ba3a444b` ("merge:
+  process coder a2185e32c9 for BL-739 on hardender") does not have
+  it. Diffing those two by `--diff-filter=D` gives exactly four
+  deleted paths, all of them BL-597's, and all four are still absent
+  at origin/main today:
+
+      extension/src/metrics/selfHealTelemetry.ts
+      extension/src/metrics/selfHealTelemetryStore.ts
+      swarmforge/scripts/self_heal_telemetry_cli.bb
+      swarmforge/scripts/test/self_heal_telemetry_lib_test_runner.bb
+
+  This is a whole-file drop across a merge, the shape recorded four
+  times before (BL-1192, BL-1201, BL-1216, BL-1211) and the reason
+  BL-1242 exists. It had already been repaired once: `de1ce5da3`
+  ("fix(hardender): restore sibling tip-pure files after BL-605 QA
+  merge-up") put these files back, and `3ba3a444b` took them out
+  again. A restoration that is not itself guarded does not hold.
+
+  Note what is NOT missing. `swarmforge/scripts/self_heal_telemetry_lib.bb`
+  survives and is still reachable from operator_runtime.bb - only the
+  CLI wrapper and its test runner went. So the Babashka half is
+  half-present, which is worse than absent: the lib is live and
+  unexercised.
+
+  Fix wanted, in direction only. The four files are recoverable
+  verbatim from `8562094f8`; whether the coder restores them
+  unchanged or re-derives them against today's neighbours is the
+  coder's call, but the restored code must satisfy the two test files
+  that already exist rather than the test files being rewritten to
+  suit a reduced restoration. `selfHealTelemetry.ts` was 67 lines at
+  de1ce5da3.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT fix this by deleting extension/test/selfHealTelemetry.test.js
+    or extension/test/selfHealTelemetry.property.test.js, and do not
+    delete or relax specs/pipeline/steps/bl597TrendSelfHealEventsSteps.js.
+    Those files are the surviving evidence of what was lost; deleting
+    them would convert a visible defect into an invisible one and
+    silently retire BL-597.
+  - Do NOT amend the three docs to stop describing the mechanism.
+    The docs are correct; the tree is wrong. Restoring the code is
+    what makes them true again.
+  - This ticket restores the four files it names and nothing else. It
+    does not change what the telemetry measures, add a metric, alter
+    the trend computation, or touch self_heal_telemetry_lib.bb's
+    contents.
+  - This ticket is NOT the systemic fix for merges dropping whole
+    files. That is BL-1242 (active) and BL-1241/BL-1211/BL-1257.
+    Do not widen this slice into merge-machinery work; if the coder
+    wants a guard, it belongs in those tickets, not here.
+  - Do not re-run or re-verify BL-597's original acceptance beyond
+    what the restored tests assert. BL-597 is done; this is casualty
+    recovery, not a re-delivery.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline, recorded before any change: `git cat-file -e
+     origin/main:extension/src/metrics/selfHealTelemetry.ts` exits
+     non-zero for all four paths named in the description. From
+     extension/, `npx vitest run test/selfHealTelemetry.test.js`
+     fails with "Cannot find module '../out/metrics/selfHealTelemetry'".
+     Both go in the evidence file.
+  2. Confirm the dropping merge is the one claimed, not a
+     coincidence: `git diff --diff-filter=D --name-only 8562094f8
+     3ba3a444b` lists exactly those four paths and nothing else.
+  3. Scenario 01: after the fix, all four paths exist at the parcel
+     commit, and `git diff --diff-filter=D --name-only <merge-base>
+     HEAD` shows none of them deleted again.
+  4. Scenario 02: from extension/, `npx vitest run
+     test/selfHealTelemetry.test.js` is green, and the property
+     suite's selfHealTelemetry.property.test.js collects and runs
+     under its own command (test:properties) rather than the unit run.
+  5. Scenario 03: `bb swarmforge/scripts/self_heal_telemetry_cli.bb`
+     runs and its test runner
+     swarmforge/scripts/test/self_heal_telemetry_lib_test_runner.bb
+     passes - the Babashka half is exercised again, not merely
+     present.
+  6. Regression: the full unit suite's failure count drops by exactly
+     the selfHealTelemetry failures and by nothing else. No other
+     test file changes status in either direction.
+
+notes: >
+  Source: QA note handoff
+  00_20260829T024547Z_001889_from_QA_to_specifier_coordinator, verbatim:
+  "Untracked defects (7): see BL-1244-qa-pass-unrelated-reds-20260829.md".
+  The evidence file's own line for this one, verbatim:
+  "`test/selfHealTelemetry.test.js` - `Error: Cannot find module
+  '../out/metrics/selfHealTelemetry'` (compiled output missing/moved)."
+
+  Specifier verification at mint: QA's parenthetical guess - "compiled
+  output missing/moved" - is wrong in a way that matters. It is not a
+  build artefact. The SOURCE is gone. Confirmed by `git ls-tree -r
+  origin/main extension/src | grep -i selfheal` returning nothing, by
+  `git cat-file -e` at both mains, and by checking all six role
+  worktrees. Then found the last commit that had it (`de1ce5da3`),
+  walked origin/main's first-parent chain forward to the exact commit
+  that dropped it (`3ba3a444b`, parent `8562094f8`), and diffed those
+  two to establish that four files went, not one, and that all four
+  are still absent today. Also confirmed self_heal_telemetry_lib.bb
+  survived, which is why the closure guard in BL-1265 still reaches it.
+
+  Grepped backlog/{active,paused,hold} for a ticket covering this:
+  the only hit on "selfHealTelemetry" is BL-1234, which concerns
+  test/selfHealTelemetry.property.test.js only as a sample string in
+  the property-allowlist matcher and is a different defect entirely.
+  BL-1242, BL-1241, BL-1211 and BL-1257 all address the merge
+  MECHANISM; none restores this casualty. Untracked confirmed.
+
+  Related, none modified here: BL-597 (the origin of the lost code,
+  done), BL-1242 (the systemic prevention, active), BL-1265 (the
+  closure list, which independently names self_heal_telemetry_lib.bb -
+  the surviving lib, so the two tickets do not depend on each other).
+
+  Orthogonality for the coordinator: touches
+  extension/src/metrics/selfHealTelemetry.ts,
+  extension/src/metrics/selfHealTelemetryStore.ts,
+  swarmforge/scripts/self_heal_telemetry_cli.bb and
+  swarmforge/scripts/test/self_heal_telemetry_lib_test_runner.bb -
+  four paths that exist in no other live ticket's scope, all of them
+  currently absent, so no concurrent parcel can be touching them.

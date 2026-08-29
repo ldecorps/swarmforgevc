@@ -1,0 +1,164 @@
+id: BL-1263
+title: "Three standing unit assertions still assert behaviour three deliberate source changes replaced: cursor/auto, allows_multiple_answers, and the ambulance active-only guard have been red since their changes landed"
+type: defect
+severity: medium
+# medium: three real, contained reds. No live behaviour is wrong - in all
+# three the SOURCE is the deliberate, current, correct half and the
+# assertion is the stale one. The harm is that three permanent reds sit in
+# the one suite every parcel runs, so a genuine regression in any of
+# backendSwitch, telegramClient or telegramCursorOperatorExec arrives into
+# a file that is already failing and is indistinguishable from the noise.
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1263-stale-assertions-are-retired-to-the-behaviour-that-shipped.feature
+
+invariants:
+  - "An assertion is retired to the behaviour that actually shipped, never merely deleted: after this parcel each of the three tests still asserts the same property it was written to assert, over the current value."
+
+description: >
+  Severity rationale is in the comment above the field. All three
+  root-caused at mint, each traced to the commit whose source change
+  the assertion was never updated for.
+
+  One root, three sites. In each case a production behaviour changed
+  deliberately, the change is still correct today, and the unit
+  assertion that pinned the previous behaviour was left alone. None
+  of the three is a defect in the source.
+
+  Site 1 - extension/test/backendSwitch.test.js:104.
+  `readLaunchScriptModel` (extension/src/swarm/backendSwitch.ts:70-74)
+  maps a bare `--model auto` to a backend-qualified id: `copilot/auto`
+  for a copilot launch script, `cursor/auto` for a cursor-agent one.
+  The assertion at :104 seeds a `cursor-agent --model auto` launch
+  script and expects `readRoleModelId` to return `'auto'`. It returns
+  `'cursor/auto'`. Introduced by `f5493ccbf` ("BL-1116: stamp five
+  extension WIP hotfixes"). The copilot arm of the same mapping is
+  asserted correctly elsewhere, which is the strongest evidence the
+  qualification is the intent and this one row was simply missed.
+
+  Site 2 - extension/test/telegramClient.test.js:297.
+  `sendTelegramPoll` (extension/src/notify/telegramClient.ts:306) now
+  sends `allows_multiple_answers` in the request body, from a
+  parameter BL-568 added for menu-answer polls. The BL-466 assertion
+  at :297 is a `deepEqual` over the whole parsed body and does not
+  list that key. The file imports `node:assert/strict`, so `deepEqual`
+  is strict and an extra own key fails it.
+
+  Site 3 - extension/test/telegramCursorOperatorExec.test.js:239.
+  `engageOperatorAmbulance`
+  (extension/src/tools/telegramOperatorAmbulance.ts) gained a guard
+  marked "BL-691 D3: mirror ambulance_lib/engage-refusal - only
+  active/ may engage", which refuses any ticket that does not sit in
+  backlog/active/. The BL-698 test seeds its fixture ticket into
+  backlog/paused/ and asserts the text matches "Ambulance engaged for
+  BL-698". It now gets "Ambulance refused for BL-698 - ticket sits in
+  paused/, not active/". The sibling test at :224 seeds paused/ too,
+  but it exercises /hold, which is a paused-to-hold move and is
+  unaffected - so only the ambulance one is red.
+
+  Fix wanted, in direction only. Each assertion is realigned to the
+  behaviour that shipped: site 1 expects the qualified id, site 2
+  includes the key the body now carries, site 3 seeds its fixture
+  where the guard requires. What must not happen is that any of the
+  three is deleted, weakened to a substring match, or loosened from
+  deepEqual to a partial comparison - see constraints.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT change any of the three source behaviours. The mapping to
+    cursor/auto, the allows_multiple_answers field, and the
+    active-only ambulance guard are all deliberate and all stay. This
+    ticket only moves the assertions.
+  - Do NOT delete any of the three tests, and do not weaken them.
+    Site 2 in particular must remain a full deepEqual over the parsed
+    body - swapping it for a partial or key-subset check would stop
+    it catching the next field that appears unannounced, which is the
+    exact failure being repaired.
+  - If, on reading the code, the coder concludes that any ONE of the
+    three source behaviours is actually wrong and the assertion was
+    right, do NOT paper over it. Stop and send that site back as a
+    spec-gap note (priority 00) naming which of the three, with the
+    reasoning. The other two proceed. The specifier's mint-time
+    finding is that all three sources are correct, but that finding
+    is a reading of intent, not a proof.
+  - Do not touch the sibling assertions in the same three files that
+    are currently green, and do not reformat those files.
+  - Do not fold in any other red. The seven reds QA reported are
+    separately owned; the other six are not this ticket's.
+
+qa_e2e_procedure: >
+  1. Pre-fix baseline, recorded before any change: from extension/,
+     `npx vitest run test/backendSwitch.test.js
+     test/telegramClient.test.js test/telegramCursorOperatorExec.test.js`
+     - expect exactly three failures, one per file, matching the three
+     sites named in the description. Record the pass count alongside;
+     the fix is credited against both numbers.
+  2. Confirm each root cause is the one claimed, not a coincidence:
+     read backendSwitch.ts:70-74, telegramClient.ts:306-322 and
+     telegramOperatorAmbulance.ts's "BL-691 D3" guard, and put the
+     three source excerpts in the evidence file next to the three
+     assertions they contradict.
+  3. Scenario 01, all three rows: each named test passes, and the
+     assertion in each still compares against a value, not against a
+     regexp made permissive enough to accept both the old and the new
+     behaviour.
+  4. Scenario 02: confirm site 2 is still a whole-body deepEqual - add
+     an unexpected key to the request body in a scratch build and
+     confirm the test goes red, then remove it. That red-first step is
+     the only proof the assertion was retired rather than loosened.
+  5. Regression: the full unit suite's failure count drops by exactly
+     three. No other test file changes status in either direction, and
+     no source file outside the three named in the constraints is
+     modified.
+
+notes: >
+  Source: QA note handoff
+  00_20260829T024547Z_001889_from_QA_to_specifier_coordinator, verbatim:
+  "Untracked defects (7): see BL-1244-qa-pass-unrelated-reds-20260829.md".
+  The evidence file's three lines for these sites, verbatim:
+  "`test/backendSwitch.test.js` - `readRoleModelId` returns
+  `cursor/auto`, test expects `auto`."; "`test/telegramClient.test.js`
+  - `sendTelegramPoll` assertion failure."; and
+  "`test/telegramCursorOperatorExec.test.js` - `BL-698: ambulance
+  engage and release via execute` failure."
+
+  Specifier verification at mint: QA reported these as three separate
+  untracked items and did not root-cause them. Read each assertion
+  against the source it exercises and found the same shape under all
+  three - a deliberate source change whose own unit assertion was
+  never updated - which is why they are one ticket rather than three.
+  Site 1: found the copilot/cursor qualification at backendSwitch.ts:70-74
+  and the introducing commit by `git log -S"cursor/auto"`. Site 2:
+  found BL-568's allows_multiple_answers in the serialised body and
+  confirmed the test imports node:assert/strict, so deepEqual is
+  strict and an extra own key is fatal. Site 3: found BL-691 D3's
+  active-only refusal and confirmed the fixture seeds paused/, and
+  checked the sibling /hold test at :224 to establish why it stays
+  green - which is what rules out a broader regression in
+  executeOperatorVerb.
+
+  Grepped backlog/{active,paused,hold} for each of the three test
+  filenames and the three symbols: telegramClient hits only BL-564
+  (an epic file list), telegramCursorOperatorExec hits only
+  BL-725/841/842 (file lists), and backendSwitch hits nothing. None
+  of them owns any of these three assertions. Untracked confirmed.
+
+  Consolidated deliberately, under the specifier's consolidation
+  authority: three intake lines became one ticket because the work is
+  one kind and one sitting. Every sentence QA wrote about each site
+  is quoted verbatim above, so nothing was lost in the merge.
+
+  Orthogonality for the coordinator: touches only
+  extension/test/backendSwitch.test.js,
+  extension/test/telegramClient.test.js and
+  extension/test/telegramCursorOperatorExec.test.js - three test
+  files, no source file. BL-1244's parcel touched
+  telegramFrontDeskBotCore.ts and telegram-front-desk-bot.ts, not
+  these; there is no live ticket in either of the other two files.
