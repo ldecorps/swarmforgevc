@@ -80,3 +80,14 @@ Feature: BL-1211 restoring a collapsed branch never resurrects content a bounce 
     When an operator runs the quarantine-lift check against that branch
     Then the check refuses the lift
     And it reports that it could not decide, rather than reporting the branch clean
+
+  # BL-1211 quarantine-lift-cannot-restore-reverted-bounce-content-08
+  # Architect bounce D1 (2026-08-28): filterRecoveryPaths had no operator-
+  # reachable entry point - "a recovery that cannot consult the filter still
+  # resurrects bounced content" is the exact BL-1189 incident this ticket
+  # exists to prevent.
+  Scenario: an operator can reach the recovery filter without writing code
+    Given a sibling branch that still holds content a bounce removed, alongside an unrelated file
+    When an operator runs the recovery filter for that sibling against those candidate paths
+    Then the check reports the bounced path held back
+    And the check reports the unrelated path safe to restore
