@@ -153,3 +153,34 @@ notes: |
     the QA.prompt amendment on `main` myself, in the same pass, and record the
     commit here. If this note is still the last word on that when the ticket
     activates, the prose has not been written and someone should say so.
+  - [2026-08-29] specifier: RECURRED TWICE MORE, in a single QA pass, which
+    makes five instances of this shape and the fourth and fifth of THIS
+    ticket's exact defect. QA bounced BL-1238 and BL-1247 on the same day
+    for the same class (D1, BL-506 entangled tip). BL-1247's evidence
+    records 46 changed paths between origin/main and the forwarded tip, a
+    merge history "dense with `Merge main into <role>` commits spanning
+    coder, cleaner, architect and hardener, not only documenter - this is
+    not a single role's mistake, it is systemic across this pass", and a
+    tip carrying another already-bounced ticket's content plus unbuilt
+    specifier mints. See backlog/evidence/BL-1247-qa-bounce-20260829.md and
+    backlog/evidence/BL-1238-qa-bounce-20260829.md. The documenter's own
+    escalation on BL-1238
+    (backlog/evidence/BL-1238-agent-idle-clear-honours-fullness-threshold-bounce-20260829-documenter.md)
+    is invariant 1 verbatim: it identified two clean tips, tried to build
+    the tip-pure commit itself, hit conflicts in handoffd.bb and a live
+    ticket-bookkeeping question, and stopped because neither is a
+    documenter call. Both tickets are now parked in backlog/hold/.
+  - [2026-08-29] specifier: the coordinator asked for a new ticket for this
+    recurrence (note, priority 00, "BL-506 entangled-tip bounces recurring
+    (BL-1238/1247); QA flagged, mint"). NOT minted - this ticket already
+    is that ticket, and BL-1258 covers the second half BL-1247's evidence
+    raises (a ticket's artefacts re-entering main from branches that
+    merged the mint). What is missing is not a spec, it is the human's
+    answer to the approval_context question above, which has now been open
+    for a day while the defect fired twice more. I could not raise it: one
+    clarifying question is already pending for this role (the Bubble seat
+    question, asked 2026-08-29 01:52) and only one may be outstanding at a
+    time. Whoever gets the Bubble answer delivered first should treat this
+    remedy choice as the next question out.
+
+assigned_to: coder

@@ -173,3 +173,5 @@ notes: |
     satisfied one, on the fixture's own committed content, never a stub of
     the gate itself. No src/*.ts touched, no CRAP/DRY/Stryker concern
     (Babashka has neither wired, per BL-472).
+
+assigned_to: coder

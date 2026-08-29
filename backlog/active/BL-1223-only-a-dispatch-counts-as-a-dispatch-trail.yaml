@@ -223,3 +223,5 @@ notes: |
     restoration. BL-1237 is a severity-high defect that hard-blocks the
     specifier and cleaner seats, so this predicate defect is now blocking the
     repair of a seat-level block."
+
+assigned_to: coder
