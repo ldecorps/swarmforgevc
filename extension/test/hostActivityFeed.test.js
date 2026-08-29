@@ -1,7 +1,6 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const {
   HOST_ACTIVITY_FEED_BOUND,
   beginHostActivitySession,
@@ -13,7 +12,9 @@ const {
   __resetHostActivityFeedForTests,
 } = require('../out/bridge/hostActivityFeed');
 
-test.beforeEach(() => {
+// BL-1220: node:test hangs beforeEach off `test`; Vitest provides it as its
+// own global, so the binding moves with the import that declared it.
+beforeEach(() => {
   __resetHostActivityFeedForTests();
 });
 

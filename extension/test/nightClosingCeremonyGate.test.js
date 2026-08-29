@@ -1,7 +1,6 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
 const { evaluateGate } = require('../out/tools/night-closing-ceremony-gate');
 
 test('gate: usable closure schedule suppresses fixed morning', () => {
