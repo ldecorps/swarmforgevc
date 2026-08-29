@@ -1,0 +1,156 @@
+id: BL-1260
+title: "Swarm stamp-off: the Host bridge takes over getUpdates when the front-desk feeder goes stale — certify hotfix 2ec06b6ef1"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 40
+direction: swarm-surfaced
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1260-bridge-owns-getupdates-when-feeder-dead.feature
+
+human_approval: pending
+approval_context: >
+  This is a BL-848 hotfix stamp-off, so the decision it needs is the ledger
+  one: does `2ec06b6ef1` get certified (approved) or waived? The code is
+  already live on `main`; rejecting this ticket does not un-land it.
+
+  What specifically needs sign-off: THE STALL WINDOW, 90 seconds, and the
+  direction it fails in. When the bridge decides the front desk is dead it
+  starts calling getUpdates on the SAME bot token. If that judgement is ever
+  wrong — the front desk still polling but slow or blocked in stamping its
+  heartbeat — the result is two pollers on one token, which is the Telegram
+  409 class the bridge has been repeatedly stabilised against. So 90s is not
+  a tuning constant; it is the margin between "operator gets an answer" and
+  "both readers break". It was picked during a live outage. Confirm 90s, or
+  say what margin you want.
+
+  What is firm: that a dead feeder must be detectable at all. Before this,
+  every liveness signal was green while the operator sat unanswered. The
+  coder confirms and closes gate gaps; it does not redesign the signal or
+  replace the heartbeat with a different mechanism.
+
+invariants:
+  - "At most one process calls getUpdates on a given bot token at any moment: the bridge takes the token only while the front desk is judged not to be polling, never alongside it."
+  - "The queue-versus-getUpdates decision is re-read from the feeder signal on every poll; no path caches it for the lifetime of the process."
+  - "The stall window is the only thing separating a dead feeder from a slow one, and the bridge's response to dead is to poll the same token — so a front desk that is still polling but late to stamp must not be classified dead."
+
+required_wiring:
+  - 'extension/src/tools/telegramCursorBridgeLive.ts::resolveInboundQueueFromFeeder(opDir)::the production loop must pass the re-evaluating resolver; the legacy useInboundQueue boolean freezes the decision at startup, which IS the fault being fixed'
+  - 'extension/src/tools/cursorBridgeInboundQueue.ts::readFrontDeskPollHeartbeatMs::the reader of the feeder signal'
+  - 'extension/src/tools/telegram-front-desk-bot.ts::front-desk-poll-heartbeat.json::the WRITER of the signal this ticket reads. A reader whose writer stops existing is a dark path that silently returns dead forever, which would hand the bridge the token permanently'
+  - 'specs/pipeline/steps/index.js::bl1260BridgeGetUpdatesOwnershipSteps::acceptance handler registered'
+
+description: |
+  ## What already landed — do not rebuild it
+
+  `2ec06b6ef1` (2026-08-28 18:51, `Hotfix-Certification: pending`) added a
+  second input to the shared-token decision:
+
+  - `readFrontDeskPollHeartbeatMs(opDir)` in `cursorBridgeInboundQueue.ts` —
+    reads `lastHeartbeatMs` from `.swarmforge/operator/front-desk-poll-heartbeat.json`,
+    returning null when missing, unreadable, or not a finite number.
+  - `isFrontDeskInboundFeederLive({lastHeartbeatMs, nowMs, stallMs})` and
+    `DEFAULT_FRONT_DESK_FEEDER_STALL_MS = 90_000` in
+    `telegramCursorBridgeCore.ts`.
+  - `shouldUseCursorBridgeInboundQueue(env, opts)` gained an `opts.feederLive`
+    input: strictly `false` forces getUpdates mode, anything else keeps the
+    prior env-driven behaviour.
+  - `telegramCursorBridgeLive.ts` gained `resolveUseInboundQueue`, called on
+    every poll, alongside the retained `useInboundQueue` boolean.
+
+  ## The fault it fixes
+
+  In shared-token mode the bridge drains a queue the front desk writes. The
+  front desk stopped writing it. The bridge's own heartbeat stayed fresh and
+  its offset kept advancing, so every liveness signal read green while a
+  `/pilot` sat unanswered in Telegram. There was no signal anywhere that said
+  "the thing feeding me has stopped".
+
+  ## Why it still needs a parcel
+
+  A hotfix lands outside the pipeline by definition, so nothing has run
+  coverage, mutation, CRAP, DRY or QA's own pass over it. This is TypeScript,
+  so unlike its sibling stamp ticket BL-1259 the full tool chain does apply —
+  Stryker scoped to compiled `out/**/*.js`, never `src/**/*.ts`.
+
+  ## Where to look hardest (direction, not mandate)
+
+  **The comparison, not the constant.** `isFrontDeskInboundFeederLive` returns
+  `nowMs - hb <= stall`. Mutating `<=` to `<`, or flipping the operand order,
+  leaves a test suite green if nothing pins the boundary exactly — and the
+  boundary is where a slow-but-alive front desk lives. The Outline's
+  "exactly at the stall window" row exists for that mutant.
+
+  **The strict `=== false`.** `shouldUseCursorBridgeInboundQueue` only forces
+  getUpdates when `feederLive` is exactly `false`; `undefined` falls through to
+  the old behaviour. That is the right default — a caller that forgets the
+  signal keeps the bridge quiet rather than starting a second poller — but it
+  means a wiring regression is SILENT. It is why the resolver call site is a
+  declared `required_wiring` entry rather than a comment.
+
+  **The mirrored path.** `frontDeskPollHeartbeatPath` is defined twice, in
+  `cursorBridgeInboundQueue.ts` and in `telegram-front-desk-bot.ts`, from
+  different roots. Two spellings of one filename with no test asserting they
+  agree is the BL-897 shape: if either drifts, the reader silently reads
+  nothing, concludes "dead", and hands the bridge the token forever.
+
+out_of_scope: |
+  - Changing the stall window, or making it configurable. If the gates show
+    90s is wrong, raise it as its own ticket.
+  - Replacing the heartbeat file with a different liveness mechanism, or
+    making the front desk announce its own shutdown.
+  - Giving Bubble or any other surface its own answering seat. That is the
+    open intake `INTAKE-bubble-own-seat-parallel-answering`, awaiting a human
+    decision, and it must not be folded in here.
+  - The three expedite no-verdict hotfixes from the same day. Different
+    subsystem; they are stamped by BL-1259.
+
+qa_e2e_procedure: |
+  1. Confirm the shipped unit tests pin BOTH directions of the boundary: a
+     heartbeat exactly at the stall window is LIVE, one a millisecond past it
+     is DEAD (invariant 3). If only one side is pinned, that is a gate gap to
+     close, not a defect to report.
+  2. Confirm a missing file, an unreadable file, and a `lastHeartbeatMs` that
+     is a string or NaN all read as dead, and that none of them throws.
+  3. Confirm `shouldUseCursorBridgeInboundQueue` with `feederLive` omitted
+     behaves exactly as it did before the hotfix (queue mode), so the safe
+     default is a test, not an accident.
+  4. Grep for every construction of the bridge loop deps and confirm each
+     passes `resolveUseInboundQueue`, not only the legacy boolean — invariant
+     2 fails silently otherwise.
+  5. Live, on the real bridge: with the front desk running, confirm the bridge
+     is NOT calling getUpdates (queue mode) and Telegram returns no 409. Then
+     stop the front desk, wait past 90s, and send one operator message: the
+     bridge must answer it. Restart the front desk and confirm the bridge
+     hands the token back within one poll, still with no 409. Restore the
+     heartbeat file afterwards if the stop path removed it —
+     `stop_ancillary_services.sh` deletes it.
+
+notes: |
+  - "[2026-08-29] specifier, on minting: one of four unstamped hotfixes the
+    coordinator surfaced. Minted alone rather than folded with the other
+    three, which are a single evolving expedite fix in Babashka — different
+    subsystem, different failure class, different tool chain. Those are
+    BL-1259. Ledger row 2ec06b6ef1 links here."
+  - "[2026-08-29] specifier: checked against the prose-only-hotfix waiver rule.
+    Does NOT qualify — 223 insertions across 9 files, of which
+    telegramCursorBridgeCore.ts, cursorBridgeInboundQueue.ts and
+    telegramCursorBridgeLive.ts are production TypeScript. Minted, not waived."
+  - "[2026-08-29] specifier: verified the data dependency is live before
+    scoping, per the spec-time writer rule. `telegram-front-desk-bot.ts:293`
+    really does `atomicWrite` the heartbeat on each poll, so this is not a
+    reader with no writer (the BL-298 shape). Recorded as a `required_wiring`
+    entry so the writer's removal cannot go unnoticed."
+  - "[2026-08-29] specifier: IR-DRY reported four medium findings after one
+    revision. All four are intentional or normalizer artifacts: a placeholder
+    step matched against its own concrete values (twice), the opposed pair
+    stops/resumes stamping in the temporal scenarios, and `the bridge
+    <behaviour>` matched against `the bridge has <bridge token>` purely
+    because both normalize to `the bridge X`. An earlier revision had six
+    findings; two WERE real and were fixed — a Background line restating the
+    shared-token premise a second time, and a Then that asserted the same fact
+    twice in different tense. Those are gone."

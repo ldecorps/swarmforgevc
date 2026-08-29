@@ -1,0 +1,144 @@
+id: BL-1258
+title: "A retired ticket's artefacts stay live on every branch that merged the mint, so they re-enter main as a clean one-sided add and the retirement never holds"
+milestone: M8
+type: defect
+severity: high
+# high: a retired ticket resurrected into a parcel tip on 2026-08-29 and was
+# caught only by a reviewer reading the diff by hand. Not critical: nothing is
+# lost and the shipped replacement (BL-1248) is unaffected.
+status: todo
+epic: swarm-reliability
+priority: 15
+direction: agent-reported
+depends_on: [BL-1242]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1258-a-retirement-is-durable-across-branches.feature
+
+human_approval: pending
+approval_context: >
+  One thing to sign off: this refuses a merge, and merge refusals are the class
+  of gate that has blocked roles with no available move three times this month
+  (BL-1237, BL-1240, BL-1241). I have tried to keep this one clearable by
+  construction — the refusal names the exact paths, and deleting them on your
+  own branch is a move the refused role can always make — but you may want the
+  first version to warn rather than refuse. Say which. Also worth your view:
+  the retirement record's home. I have not named one, because a record on
+  `main` is invisible to a branch that has not merged it, which is the very
+  failure being fixed.
+
+invariants:
+  - "A retired ticket's artefacts cannot re-enter the merge target, regardless of which branch carries them or whether they ever landed there."
+  - "One ticket id has one retirement record; two branches never carry different retired path sets for the same id."
+
+description: |
+  ## What is wrong
+
+  Retirement is adjudicated in one place and enforced in none. The artefacts
+  live on every branch that merged the mint, and nothing removes them or
+  refuses their return.
+
+  A deletion that lands on the merge target is durable: a later merge from a
+  branch still holding the file resolves as delete-vs-unchanged and the file
+  stays gone. **An absence is not durable.** A branch carrying the mint
+  presents the files as a clean **one-sided add**, git takes them with no
+  conflict and no marker, and the retired ticket is back.
+
+  ## The incident
+
+  `BL-1247-reconcile-sweep-kill-switch` was adjudicated a superseded id
+  collision on 2026-08-29 (`f5a609554`) and its replacement had already shipped
+  as BL-1248. On 2026-08-29 QA found its YAML, feature file, step handler,
+  `master_main_reconcile_lib.bb` and `swarmforge.conf` back in the tip of a
+  BL-1247 parcel (`b5f2489906`) and bounced it.
+
+  Ancestry, checked rather than assumed:
+
+  | commit | what it is | main | coder | cleaner | architect | hardener | documenter |
+  |---|---|---|---|---|---|---|---|
+  | `0a754dad5` | the mint | **NO** | Y | Y | Y | Y | Y |
+  | `bc7ae4d94` | retirement #1, YAML only (189 lines) | **NO** | n | Y | n | n | n |
+  | `4103c2cbb` | retirement #2, YAML + feature + steps (338 lines) | **NO** | n | n | Y | Y | Y |
+  | `3af81fb66` | retirement #3, YAML only (278 lines) | **NO** | n | n | n | Y | Y |
+
+  Three uncoordinated retirements, on three branches, deleting three different
+  path sets, **none reaching `main`**. `main` is clean only because the
+  2026-08-28 13:38:41 reconcile reset destroyed the mint before it ever got
+  there — there was never anything on `main` to delete. `swarmforge-coder` took
+  no retirement at all and still has the feature file and step handler live
+  today; `swarmforge-cleaner` took the YAML-only one and also still has them.
+
+  So the resurrection is not a one-off. Every merge-up from those branches
+  presents the same one-sided add.
+
+  ## Why nothing caught it
+
+  `swarmforge/scripts/check_merge_deletion.sh` (BL-1242, landed 2026-08-28)
+  guards the deletion side — work silently *dropped* by a merge. Its
+  `out_of_scope` does not reach the addition side, and no other guard does.
+  QA named this gap in its own bounce evidence as "its addition-side twin".
+
+  ## How (direction, not mandate)
+
+  - **Enforce, do not just adjudicate.** A retirement that only writes
+    `backlog/evidence/` removes nothing from any branch and instructs nobody.
+    Whatever is built must make the retirement itself the enforced artefact.
+  - **A record every branch can read.** The record's home is an open question
+    (see `approval_context`): a record on `main` is invisible to a branch that
+    has not merged it, which is the failure being fixed.
+  - **Keep the refusal clearable.** The role receiving it must have a move —
+    naming the exact paths so they can be deleted on the refused branch is the
+    cheapest one. Invariant 1 of BL-1237 applies here too.
+  - **Name the acceptance handler `bl1258RetirementDurabilitySteps`** and
+    register it in `specs/pipeline/steps/index.js`; `required_wiring` pins that
+    literal.
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1258RetirementDurabilitySteps::acceptance handler registered'
+
+qa_e2e_procedure: >
+  (1) On a scratch clone, mint a ticket's artefacts on a branch, merge to the
+  target, then delete them on the target; merge the branch again and confirm
+  the merge is refused naming those paths. (2) Repeat with the artefacts never
+  having reached the target at all (the BL-1247 shape) and confirm the same
+  refusal — this is the case an absence-based check would miss. (3) Confirm a
+  branch adding a live ticket's new files merges unchanged. (4) Confirm the
+  refusal names every retired path, and that deleting them on the branch makes
+  the merge succeed — the refused role must have a move. (5) Against the real
+  repo, confirm `specs/features/BL-1247-reconcile-sweep-kill-switch.feature`
+  and `specs/pipeline/steps/bl1247ReconcileSweepKillSwitchSteps.js` cannot
+  reach `main` from `swarmforge-coder` or `swarmforge-cleaner`.
+
+out_of_scope: |
+  - Re-adjudicating the BL-1247 id collision. It stands: BL-1247 is the bl593
+    property-generator ticket, the kill switch shipped as BL-1248, and it is
+    not to be renumbered back into the pipeline
+    (`backlog/evidence/BL-1247-id-collision-adjudication-20260829.md`).
+  - The deletion side. BL-1242 owns it and landed 2026-08-28; this ticket must
+    not re-open `check_merge_deletion.sh`.
+  - Cleaning the five stale `articles/reference` or evidence artefacts now
+    sitting on architect/hardener/documenter. Those are paperwork for a bounce
+    already withdrawn and are harmless as history.
+  - QA's 2026-08-29 bounce verdicts. See BL-1257 for the separate finding that
+    the measurement behind them is falsified; neither ticket reverses them.
+
+source: |
+  QA `note` (priority 00) to specifier+coordinator, 2026-08-29T01:29:56Z, and
+  the remediation paragraph of `.worktrees/QA/backlog/evidence/BL-1247-qa-bounce-20260829.md`
+  (commit `9663cc93b`), which asked the specifier to "confirm whether the
+  BL-1247-reconcile-sweep-kill-switch retirement adjudication needs to be
+  re-applied or was never actually lost". Answer and full ancestry table:
+  `backlog/evidence/BL-1247-retirement-never-landed-on-main-20260829.md`.
+
+notes: |
+  - [2026-08-29] specifier: QA's question had two offered readings — lost, or
+    never lost — and the answer is neither. It was never lost and never landed;
+    `main` is clean by accident. That is why this is a ticket and not a reply.
+  - [2026-08-29] specifier: the specifier's own retirement ritual is implicated,
+    not just the merge machinery. My adjudication commit wrote evidence to
+    `main` and nothing else, which is exactly the non-enforcing shape described
+    above. If the built remedy gives retirement a recorded, enforceable form, the
+    `swarmforge/roles/specifier.prompt` deprecator section has to say so — that
+    prose half is MINE to land on `main` (BL-798) and no gate will chase me for
+    it. Deliberately not armed as `required_wiring`: that check pins to the
+    parcel commit and would false-block the documenter's handoff.
