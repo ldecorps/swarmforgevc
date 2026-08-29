@@ -208,4 +208,47 @@ deprecator_adjudication: |
   Verdict: PROMOTE. Nothing in this ticket had aged; the hold is entirely an
   artefact of the gate's own predicate.
 
+notes: >
+  [2026-08-29] coder: implemented per the "How" direction - added
+  task_scope_gate_cli.bb, a thin IO/argv wrapper (mirroring pre_qa_gate_
+  cli.bb's own shape) over task_scope_gate_lib.bb/findings-for-git-handoff,
+  the EXACT function swarm_handoff.bb's send-time gate already calls -
+  never a second implementation of the scope walk. Any role (QA included)
+  can now run `task_scope_gate_cli.bb <task-name> <commit> [repo-root]`
+  and get the identical verdict the send-time gate would have given,
+  printing OK (exit 0) or the same refusal-message text (exit 1) naming
+  every foreign path and its owning ticket - never a bare origin/main
+  diff count.
+
+  Verified against real data (qa_e2e_procedure step 4): replayed both
+  2026-08-29 incident commits - b5f2489906 for BL-1247-bl593-... and
+  2d68050646 for BL-1238-agent-idle-clear-... - through the new CLI.
+  Both answer OK, confirming neither is reported entangled on lag paths
+  alone, matching the specifier's own falsification arithmetic.
+
+  New acceptance feature (bl1257ReviewTimeScopeCheckSteps.js) 6/6, driving
+  both task_scope_gate_lib.bb directly (via a `bb -e` JSON call, matching
+  this session's established pattern) and the new CLI end to end against
+  real git fixtures - including scenario 03's own outline, which drives
+  BOTH the send-time gate and the review-time check on the same three
+  commit shapes and asserts they agree, the literal shape of invariant 2.
+  Fixture note for whoever extends this file: task_scope_gate_lib.bb's
+  extract-ticket-id only matches `BL-?\d+` (digits, never letters), so
+  fixture ticket ids must be numeric (BL-91001 etc.) even though the
+  feature file's own prose names them BL-alpha/BL-beta/BL-sibling -  the
+  step regexes match the feature's literal prose text; only the git
+  fixture content underneath uses the numeric ids.
+
+  task_scope_gate_lib_test_runner.bb unchanged (the lib itself untouched -
+  ALL PASS). No src/*.ts touched, no CRAP/DRY/Stryker concern (Babashka
+  has neither wired, per BL-472). No property test: the invariant is that
+  two callers of one already-tested pure function agree by construction
+  (they share it) - not a range of inputs a generator would draw from.
+
+  The specifier's own QA.prompt half (recognising this check exists and
+  calling it) is still theirs to land per this ticket's own notes -
+  deliberately not required_wiring here (a parcel-pinned check would
+  false-block the documenter's handoff whenever the branch has not merged
+  main).
+
 assigned_to: coder
