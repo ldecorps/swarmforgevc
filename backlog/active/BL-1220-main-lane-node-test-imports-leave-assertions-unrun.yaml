@@ -223,3 +223,24 @@ notes: |
     The narrative comment in the feature file says 25; treat that as the
     mint-time snapshot, not a target. No scenario asserts a count, so none of
     this makes the contract stale.
+  - [2026-08-29] specifier, Article 3.6: CONFIRM PROMOTE, second time, same
+    hold and same false positive as the 2026-08-28 note above. Re-verified
+    from scratch rather than trusting that note, because a hold reason can be
+    false while a real stale premise hides behind it: (a) the sibling closure
+    the trigger phrase actually names is present in backlog/done/, so the
+    "no closure" half of the reason is wrong on the same mechanism as before;
+    (b) this ticket has NOT shipped - no step handler under
+    specs/pipeline/steps/ answers to it and no QA pass commit names it, so it
+    is not a zombie; (c) the defect is still live - 25 main-lane
+    extension/test/*.test.js files still import from node:test, and the
+    property lane still carries its own 15, untouched and correctly out of
+    scope; (d) the feature file is present and parses clean, four scenarios,
+    none asserting a file count, so the drift recorded in the note below
+    leaves the contract valid.
+  - [2026-08-29] specifier: this ticket is now held twice for a reason no
+    adjudication can clear, because there is nowhere to record that it was
+    already adjudicated - the gate re-reads the same notes and re-fires. That
+    is BL-1267 (gate honours a recorded adjudication), which is active and
+    routed to coder, and BL-1193 (the supersede-claim branch specifically).
+    Until BL-1267 lands, expect this ticket to hold on every promotion attempt
+    and promote it by hand on the strength of these notes.
