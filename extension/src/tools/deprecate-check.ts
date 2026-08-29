@@ -552,7 +552,8 @@ export function computeTicketFingerprint(yamlText: string): string {
   return crypto.createHash('sha256').update(yamlText, 'utf8').digest('hex');
 }
 
-function parseAdjudicationRecord(raw: string, ticketId: string): AdjudicationRecord | string {
+/** Parse the raw JSON text; a syntax error or a non-object shape are both refusals. */
+function parseJsonObject(raw: string): Partial<AdjudicationRecord> | string {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -562,7 +563,11 @@ function parseAdjudicationRecord(raw: string, ticketId: string): AdjudicationRec
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return 'not a JSON object';
   }
-  const record = parsed as Partial<AdjudicationRecord>;
+  return parsed as Partial<AdjudicationRecord>;
+}
+
+/** Every field present, non-empty, and outcome one of the four Article 3.6 values. */
+function firstShapeViolation(record: Partial<AdjudicationRecord>): string | null {
   for (const field of ['ticket', 'outcome', 'adjudicated_by', 'adjudicated_at', 'content_fingerprint'] as const) {
     if (typeof record[field] !== 'string' || (record[field] as string).length === 0) {
       return `missing or empty field '${field}'`;
@@ -571,10 +576,23 @@ function parseAdjudicationRecord(raw: string, ticketId: string): AdjudicationRec
   if (!ADJUDICATION_OUTCOMES.includes(record.outcome as AdjudicationOutcome)) {
     return `unknown outcome '${record.outcome}'`;
   }
-  if (normalizeTicketId(record.ticket as string) !== normalizeTicketId(ticketId)) {
+  return null;
+}
+
+function parseAdjudicationRecord(raw: string, ticketId: string): AdjudicationRecord | string {
+  const parsed = parseJsonObject(raw);
+  if (typeof parsed === 'string') {
+    return parsed;
+  }
+  const shapeError = firstShapeViolation(parsed);
+  if (shapeError) {
+    return shapeError;
+  }
+  const record = parsed as AdjudicationRecord;
+  if (normalizeTicketId(record.ticket) !== normalizeTicketId(ticketId)) {
     return `record names ticket ${record.ticket}, not ${normalizeTicketId(ticketId)}`;
   }
-  return record as AdjudicationRecord;
+  return record;
 }
 
 /** Read the adjudication record for a ticket. Unreadable is never absent. */
@@ -600,19 +618,16 @@ export function readAdjudication(root: string, ticketId: string): AdjudicationFa
  * Given a hold and whatever adjudication was found, the decision that stands.
  * Pure - it is handed the facts, never the filesystem or the environment.
  */
-export function applyAdjudication(held: FreshnessDecision, facts: TicketFreshnessFacts): FreshnessDecision {
-  if (held.decision !== 'hold') {
-    return held;
-  }
-  const adjudication = facts.adjudication ?? { status: 'absent' };
-  if (adjudication.status === 'absent') {
-    return held;
-  }
-  if (adjudication.status === 'unusable') {
-    return hold(
-      `unusable adjudication record ${adjudication.path}: ${adjudication.problem} — fail closed (original hold: ${held.reason})`
-    );
-  }
+/**
+ * Given a PRESENT adjudication record, the discharge it earns: confirm_promote
+ * against matching content allows, anything else leaves the hold standing (a
+ * non-matching outcome unchanged, a stale fingerprint re-armed by name).
+ */
+function dischargeFromRecord(
+  held: FreshnessDecision,
+  adjudication: Extract<AdjudicationFact, { status: 'present' }>,
+  facts: TicketFreshnessFacts
+): FreshnessDecision {
   const { record, path: recordPath } = adjudication;
   if (record.outcome !== 'confirm_promote') {
     return held;
@@ -628,6 +643,22 @@ export function applyAdjudication(held: FreshnessDecision, facts: TicketFreshnes
     decision: 'allow',
     reason: `discharged by adjudication ${recordPath}: confirm_promote by ${record.adjudicated_by} at ${record.adjudicated_at}`,
   };
+}
+
+export function applyAdjudication(held: FreshnessDecision, facts: TicketFreshnessFacts): FreshnessDecision {
+  if (held.decision !== 'hold') {
+    return held;
+  }
+  const adjudication = facts.adjudication ?? { status: 'absent' };
+  if (adjudication.status === 'absent') {
+    return held;
+  }
+  if (adjudication.status === 'unusable') {
+    return hold(
+      `unusable adjudication record ${adjudication.path}: ${adjudication.problem} — fail closed (original hold: ${held.reason})`
+    );
+  }
+  return dischargeFromRecord(held, adjudication, facts);
 }
 
 export function countSpecGapBounces(root: string, ticketId: string): number {
