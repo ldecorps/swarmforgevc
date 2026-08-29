@@ -76,12 +76,31 @@ ticket, never a Bubble feature file with no runnable binding. See
 `docs/how-to/BL-769-android-jvm-unit-suite.md`.
 
 ## Diagrams (this project)
-Per the shared Diagrams rule: (1) an **architecture diagram** (extension
-host, webview(s), tmux substrate, `.swarmforge/` state, handoffd/queue
-helpers, and the channels between them), and (2) a **swarm workflow flow
-diagram** (the current parcel flow, updated in the same parcel as any
-topology change). Both live under `docs/diagrams/` as Mermaid sources. See
-**local-engineering-detailed.prompt** for the full pre-trim wording.
+Per the shared Diagrams rule, every diagram in `docs/diagrams/` is a Mermaid
+source with an explicit change-trigger. The diagram list below mirrors
+`extension/src/tools/render-briefing-diagrams.ts`'s `DIAGRAM_FILES` allowlist
+exactly — a diagram present in one and not the other is a visible defect
+(the documenter catches it before forward; QA bounces on arrival).
+
+1. **architecture.mmd** — extension host, webview(s), tmux substrate,
+   `.swarmforge/` state, handoffd/queue helpers, and the channels between
+   them. **Change-trigger**: when the extension host / webview boundary, the
+   tmux substrate relationship, or the `.swarmforge/` state layout changes.
+
+2. **swarm-flow.mmd** — the current parcel flow through the pipeline.
+   **Change-trigger**: when the pipeline topology or backlog flow changes
+   (Article 2 pipeline chain, role worktree assignments, or handoff
+   direction).
+
+3. **handoff-flow.mmd** — the handoff mechanism activity diagram (BL-579).
+   **Change-trigger**: when the handoff file lifecycle, its gates, or the
+   inbox/in_process/completed state machine changes.
+
+4. **front-desk-flow.mmd** — the front-desk mechanism (BL-580): Telegram in,
+   answer out. **Change-trigger**: when the front-desk routing, the
+   operator's restrictions, or the role-ask/answer flow changes.
+
+See **local-engineering-detailed.prompt** for the full pre-trim wording.
 
 ## Key Integration Surface
 Prove these against a real swarm install, in order, before UI polish: launch
