@@ -70,6 +70,10 @@ export function getHolisticUiHtml(): string {
       <h2>Burn rate (tokens/hr)</h2>
       <div id="burnRateSection"></div>
     </section>
+    <section>
+      <h2>Behaviour trends</h2>
+      <div id="trendsBoard"></div>
+    </section>
   </div>
 </div>
 
@@ -238,6 +242,29 @@ export function getHolisticUiHtml(): string {
     container.appendChild(table);
   }
 
+  // BL-603: presentation-only render of the /trends payload. The board maps
+  // over whatever series the payload carries - there is no per-series list
+  // here, so registering a series on the server publishes it without any
+  // edit to this renderer. A series with hasData false says "no data yet"
+  // and draws NOTHING; it never falls back to a zero or a flat line.
+  function renderTrendsBoard(trends) {
+    var container = document.getElementById('trendsBoard');
+    container.innerHTML = '';
+    var series = (trends && trends.series) || [];
+    if (series.length === 0) {
+      container.appendChild(noDataParagraph('no series registered'));
+      return;
+    }
+    series.forEach(function (s) {
+      container.appendChild(el('h4', { 'data-series': s.id }, [s.label + ' (' + s.producer + ')' + (s.hasData ? trendArrow(s.trend) : '')]));
+      if (!s.hasData) {
+        container.appendChild(noDataParagraph('no data yet'));
+        return;
+      }
+      container.appendChild(barChart(s.trend.series, 280, 50));
+    });
+  }
+
   function renderBacklogBoard(backlog, assignments, doneByMilestone) {
     var container = document.getElementById('backlogBoard');
     container.innerHTML = '';
@@ -320,13 +347,14 @@ export function getHolisticUiHtml(): string {
     });
   }
 
-  function renderAll(state, holistic, metrics, burnRate) {
+  function renderAll(state, holistic, metrics, burnRate, trends) {
     renderBacklogBoard(state.backlog, holistic.assignments, holistic.doneByMilestone);
     renderSwarmPanel(holistic.swarms);
     renderPipelineFlow(state.pipeline);
     renderRecentActivity(holistic.recentActivity, state.runLog);
     renderMetrics(metrics);
     renderBurnRate(burnRate);
+    renderTrendsBoard(trends);
     document.getElementById('status').textContent = '(updated ' + new Date().toLocaleTimeString() + ')';
   }
 
@@ -344,8 +372,9 @@ export function getHolisticUiHtml(): string {
       fetchJson('/holistic'),
       fetchJson('/metrics'),
       fetchJson('/burn-rate'),
+      fetchJson('/trends'),
     ]).then(function (results) {
-      renderAll(results[0], results[1], results[2], results[3]);
+      renderAll(results[0], results[1], results[2], results[3], results[4]);
     });
   }
 
@@ -356,10 +385,11 @@ export function getHolisticUiHtml(): string {
   // is presentation-only, no need to re-fetch it on every SSE tick since it
   // never changes via BridgeState; BL-273's /burn-rate is "live" in the
   // sense of recomputed fresh per page load/refresh, not per SSE tick).
-  function subscribeEvents(initialHolistic, initialMetrics, initialBurnRate) {
+  function subscribeEvents(initialHolistic, initialMetrics, initialBurnRate, initialTrends) {
     var holistic = initialHolistic;
     var metrics = initialMetrics;
     var burnRate = initialBurnRate;
+    var trends = initialTrends;
     fetch('/events', { headers: authHeaders() }).then(function (res) {
       var reader = res.body.getReader();
       var decoder = new TextDecoder();
@@ -374,7 +404,7 @@ export function getHolisticUiHtml(): string {
             if (chunk.indexOf('data: ') !== 0) { return; }
             try {
               var state = JSON.parse(chunk.slice(6));
-              renderAll(state, holistic, metrics, burnRate);
+              renderAll(state, holistic, metrics, burnRate, trends);
             } catch (e) { /* ignore a malformed/partial chunk */ }
           });
           return pump();
@@ -391,9 +421,9 @@ export function getHolisticUiHtml(): string {
     document.getElementById('tokenGate').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     loadOnce().then(function () {
-      return Promise.all([fetchJson('/holistic'), fetchJson('/metrics'), fetchJson('/burn-rate')]);
+      return Promise.all([fetchJson('/holistic'), fetchJson('/metrics'), fetchJson('/burn-rate'), fetchJson('/trends')]);
     }).then(function (results) {
-      subscribeEvents(results[0], results[1], results[2]);
+      subscribeEvents(results[0], results[1], results[2], results[3]);
     }).catch(function (err) {
       // Wrong/missing token often surfaces as HTTP 401 → show the gate again.
       document.getElementById('app').style.display = 'none';

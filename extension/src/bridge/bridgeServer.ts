@@ -14,6 +14,7 @@ import {
   buildHolisticState,
   buildStageDwellState,
   buildBurnRateState,
+  buildTrendsBoardState,
   buildBubbleHealthTrendsState,
   BridgeState,
 } from './bridgeState';
@@ -1891,6 +1892,13 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
     {
       matches: (url) => url === '/burn-rate',
       compute: () => buildBurnRateState(targetPath, nowMs),
+    },
+    {
+      // BL-603: the behaviour-trend board's data. Read-only, and served
+      // only here on the token-authed bridge - never from the static
+      // backlog-dashboard PWA (Architecture rule 5).
+      matches: (url) => url === '/trends',
+      compute: () => buildTrendsBoardState(targetPath, nowMs),
     },
     {
       matches: isCostRankPath,
