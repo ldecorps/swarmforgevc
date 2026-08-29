@@ -1,0 +1,166 @@
+id: BL-1233
+title: "An ambient GIT_DIR/GIT_WORK_TREE blinds BL-373's launcher guard, so every launch clobbers tracked files in every role worktree again"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 16
+direction: agent-reported
+depends_on: [BL-373]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1233-launcher-guard-survives-ambient-git-env.feature
+
+human_approval: approved
+approval_context: >
+  Raised by the cleaner as an anomaly note, not a ticket - it asked whether the
+  drift it found was a known rework or a new incident. It is new: BL-373's fix
+  is deployed and correct in isolation, but its guard fails OPEN under an
+  ambient git environment, which is the live condition on this host. Confirm
+  the fail-closed discriminator chosen here (trust the tracked-path answer only
+  when git resolved it against the destination worktree) - the constraint is
+  that a foreign target repo genuinely tracking nothing must still be served,
+  so "empty answer" alone cannot be the refusal signal.
+
+invariants:
+  - "The launcher never overwrites a path the destination worktree's own git tracks — no ambient environment and no failed query may turn that into a copy."
+  - "A tracked-path answer is trusted only when git resolved it against the destination worktree itself; otherwise the sync refuses rather than copies."
+  - "A destination whose own git legitimately tracks none of the synced paths still receives every file — failing closed must never starve a foreign target repo."
+
+required_wiring:
+  - 'swarmforge/scripts/sync_worktree_scripts.bb::GIT_INDEX_FILE::the tracked-path query must run with the ambient git environment scrubbed, at the call site that actually asks'
+  - 'specs/pipeline/steps/index.js::bl1233LauncherGuardAmbientGitEnvSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  BL-373 stopped the launcher clobbering git-tracked files in role worktrees:
+  `sync_worktree_scripts.bb` asks the destination worktree which paths it
+  tracks and leaves those to git. That guard is deployed and correct in
+  isolation. It is also **fully defeated whenever the launcher runs with an
+  ambient `GIT_DIR`/`GIT_WORK_TREE` in its environment** — which is the live
+  condition on this host.
+
+  Measured 2026-08-28 against the cleaner worktree:
+
+      # with GIT_DIR=/home/carillon/swarmforgevc/.git,
+      #      GIT_WORK_TREE=/home/carillon/swarmforgevc
+      git -C .worktrees/cleaner ls-files -- swarmforge/scripts   ->    0 paths, exit 0
+      # with those two unset
+      git -C .worktrees/cleaner ls-files -- swarmforge/scripts   -> 1142 paths, exit 0
+
+  `-C` does not save you: the ambient variables win, git answers for the OTHER
+  checkout, and the answer is an empty set. `tracked-paths` then returns `#{}`,
+  `should-copy?` says yes for every file, and the launcher copies main's bytes
+  over all 1142 tracked script files in every role worktree — the exact
+  pre-BL-373 phantom revert, at full strength, with the fix nominally shipped.
+
+  Note the failure is silent in both directions: **exit status is 0**, so
+  checking the exit code would not catch it, and the guard's own
+  "left to git (tracked)" lines simply stop being printed.
+
+  ## How it surfaced
+
+  The cleaner hit `WORKTREE_DRIFT_DETECTED` on session start with two tracked
+  paths reverted and no authoring commit, preserved the content, and asked
+  whether this was known rework or a new incident (evidence: `c6ab76dfc`,
+  `backlog/evidence/cleaner-worktree-drift-safety-gate-reversion-20260828.md`).
+  The two files it lost were themselves safety gates —
+  `check_property_suite_drift.sh` (BL-1196's env scrub, `55e138201`) and
+  `swarm_handoff.bb` (BL-1192's task-scope gate, `39d237159`/`1a016cdb0`).
+  None of those three commits is on `main`, which is precisely why main's copy
+  lacks the gates and the clobber removed them. So the mechanism that reverts
+  code silently is currently deleting the guards against reverting code
+  silently.
+
+  ## Why severity high
+
+  Every launch, every role worktree, every tracked script path — and it lands
+  on safety gates first, because gates are what tends to be merged on a role
+  branch but not yet on main. No data is lost (content is in git) and the swarm
+  keeps running, so this is not `critical`.
+
+  ## How (direction, not mandate)
+
+  Two changes, both in `sync_worktree_scripts.bb`'s query path:
+
+  - **Scrub the environment at the question.** Remove `GIT_DIR`,
+    `GIT_WORK_TREE` and `GIT_INDEX_FILE` from the environment of the
+    tracked-path git invocation, so it resolves against the destination
+    worktree. Same posture as BL-1196's scrub, different site.
+  - **Fail closed on an untrustworthy answer.** The scrub is the fix; this is
+    the backstop for the next vector. Before trusting the tracked set, prove
+    git resolved it against the destination worktree — e.g. compare the
+    canonicalized worktree root against what git reports as its top level. On
+    a mismatch, or on a non-zero exit, copy NOTHING and refuse loudly naming
+    both paths. Do not fall through to copying.
+
+    Verified discriminator: with the ambient leak, `rev-parse --show-toplevel`
+    for the cleaner worktree answers `/home/carillon/swarmforgevc`; without it,
+    `/home/carillon/swarmforgevc/.worktrees/cleaner`.
+
+  ## The constraint that makes this non-trivial
+
+  An empty tracked set is NOT by itself a fault: a foreign target repo that
+  does not track `swarmforge/` legitimately tracks none of these paths and must
+  still receive every script — that is BL-373's own third scenario and the
+  reason the copy exists at all. So the refusal must key on the answer being
+  untrustworthy, never on it being empty. Failing closed must not become
+  failing shut.
+
+qa_e2e_procedure: >
+  (1) In a role worktree, land a `swarmforge/scripts/` change on the role branch
+  that `main` does not have; confirm `git merge-base --is-ancestor <commit> main`
+  is false. (2) Launch the swarm with `GIT_DIR`/`GIT_WORK_TREE` exported at the
+  live repo, the condition measured here. (3) Confirm the worktree is still clean
+  and the change is still present — before this ticket it is reverted with no
+  commit. (4) Confirm the launcher printed its "left to git (tracked)" lines.
+  (5) Point the launcher at a scratch target repo that does not track
+  `swarmforge/` and confirm it still receives the scripts. (6) Force the
+  untrustworthy case (ambient env plus a destination whose top level differs) and
+  confirm the launcher copies nothing and names both paths in its refusal.
+  (7) Re-run BL-373's acceptance scenarios and confirm all five stay green.
+
+out_of_scope: |
+  - The test-suite and property-suite sites of the same ambient-env class —
+    BL-1196 (`active/`) and BL-1222 (`paused/`) own those. This ticket is the
+    launcher site only; do not fold them together.
+  - Finding and removing whatever exports GIT_DIR/GIT_WORK_TREE into agent
+    sessions. Worth knowing, but this ticket makes the launcher correct under a
+    hostile environment rather than assuming a clean one.
+  - Restoring the cleaner's stashed content. It is preserved at stash
+    `ba5425e373d25480cf37131bd9cfccd9dc319cdf`, tag
+    `worktree-drift-20260828T060145Z`, and HEAD's correct content is already in
+    place in that worktree — nothing to recover.
+
+source: |
+  Cleaner `note` (priority 00) to specifier+coordinator, 2026-08-28T06:02:41Z:
+  "cleaner worktree drift reverted BL-1196/BL-1192 gates, see c6ab76dfc".
+  Evidence: backlog/evidence/cleaner-worktree-drift-safety-gate-reversion-20260828.md.
+
+notes: |
+  - [2026-08-28] specifier: minted in answer to the cleaner's question. The
+    answer is NEW INCIDENT, not known rework - and the distinction matters,
+    because the constitution's guardrail tells a role finding dirty
+    `swarmforge/scripts` paths to restore and log a recurrence WITHOUT
+    re-diagnosing, on the grounds that BL-373 owns it. That advice was right
+    when BL-373 was unfixed and is now actively harmful: BL-373 IS fixed, so a
+    recurrence is no longer a known-cause repeat but evidence its guard was
+    bypassed. The cleaner was correct to escalate rather than silently restore.
+  - [2026-08-28] specifier: root cause established by measurement, not
+    inference - the two ls-files runs in the description, plus the three gate
+    commits verified absent from `main` (which is what makes main's copy the
+    de-gated one). Fail-open is in `tracked-paths`: `(if (zero? (:exit result))
+    ... #{})` returns the empty set on failure, and the empty set means
+    "copy everything".
+  - [2026-08-28] specifier: the cleaner used `git stash` where the constitution
+    prescribes `git restore --source=HEAD`. Net effect was correct and the
+    content is preserved and tagged, so this is not a defect - but it is why
+    `out_of_scope` names the stash explicitly rather than leaving a dangling
+    entry for someone to chase.
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: QA, blamed: coder, class: unit, commit: bb766be678, evidence: backlog/evidence/BL-1233-launcher-guard-survives-ambient-git-env-bounce-20260829.md }

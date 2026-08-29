@@ -1,0 +1,131 @@
+id: BL-1234
+title: "The property-suite allowlist gate concatenates its parsed paths, so it refuses every commit whenever two or more allowlisted property tests are red"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 17
+direction: agent-reported
+depends_on: [BL-1175]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1234-property-allowlist-gate-recognises-every-red.feature
+
+human_approval: approved
+approval_context: >
+  Reported by the coder as a priority-00 note. Reproduced and characterised
+  before minting: the gate is correct for exactly one failing file and wrong
+  for two or more, which is why it passed review and its own tests. The
+  allowlist currently names five files, so BL-1175's whole purpose - letting an
+  unrelated green commit through despite standing reds - has almost certainly
+  never worked in production. Nothing to decide beyond approving the slice.
+
+invariants:
+  - "The verdict depends on WHICH files failed, never on how many — an all-allowlisted set of any size is allowed, and any unlisted member refuses."
+  - "Every path the guard reports is one of the paths it parsed from the suite output — never a synthesized or concatenated string."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1234PropertyAllowlistGateSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  `ps_allowlist_normalize_file` in
+  `swarmforge/scripts/property_suite_standing_allowlist_lib.sh` ends with
+  `printf '%s' "$file"` — **no trailing newline**. It is called once per input
+  line inside the `while read` loop in `ps_suite_extract_failing_files`, so
+  every normalized path is emitted onto the same line and the whole set arrives
+  at `sort -u` as ONE string.
+
+  Reproduced 2026-08-28 against the live lib and TSV:
+
+      OUT=" FAIL  test/selfHealTelemetry.property.test.js > x
+       FAIL  test/resolveMutationConcurrency.property.test.js > y"
+      ps_suite_extract_failing_files "$OUT"
+      -> test/selfHealTelemetry.property.test.jstest/resolveMutationConcurrency.property.test.js
+
+  That concatenation matches no row in the TSV, so `ps_allowlist_file_is_allowlisted`
+  says no for it, `ps_suite_failures_all_allowlisted` returns 1, and
+  `check_property_suite_drift.sh` prints
+  `Commit rejected: property suite failed with non-allowlisted files:` followed
+  by a path that does not exist.
+
+  ## Why it survived review
+
+  The count is the whole boundary:
+
+      failing files = 1  -> allowed   (sort supplies the line terminator)
+      failing files = 2  -> REFUSED   (both allowlisted)
+      failing files = 5  -> REFUSED   (all allowlisted)
+
+  Any test or manual check that exercises a single failing file passes. The
+  standing allowlist names five files, so the real-world case is always the
+  broken one — BL-1175's stated purpose, "unrelated green commits not refused",
+  has in practice never been delivered.
+
+  ## Why severity high
+
+  This is a pre-commit gate that falsely rejects commits for every role, with a
+  message naming a path nobody can find. It is not `critical` because the
+  documented `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` override still works and
+  nothing is lost — but an agent hitting it has no way to tell a real property
+  regression from this bug, which is the part that costs turns.
+
+  ## How (direction, not mandate)
+
+  One newline. `ps_allowlist_normalize_file` has exactly one caller (verified),
+  so the terminator may go on either side — inside the normalizer, or at the
+  call site. Prefer whichever leaves the normalizer's contract honest: a
+  function named "normalize a path" arguably should not decide line framing,
+  which points at the caller. Whichever side takes it, the emitted stream must
+  be one path per line before `sort -u` sees it.
+
+  The interesting work is not the fix, it is the coverage: the existing tests
+  do not distinguish one failing file from many, and that is exactly the axis
+  the bug lives on.
+
+qa_e2e_procedure: >
+  (1) Source the lib and call `ps_suite_failures_all_allowlisted` with synthetic
+  vitest output naming one, two, and five allowlisted files; all three must
+  return 0. Before the fix, only the one-file case does. (2) Add one file NOT in
+  the TSV to the two-file case; the call must return 1 and print that file alone.
+  (3) End to end: make the real property suite red on two or more allowlisted
+  files, attempt a commit through the pre-commit hook, and confirm it is allowed
+  and the guard prints its `allowlisted-standing-reds` line. (4) Confirm a
+  genuine non-allowlisted red still refuses, and that the rejection message names
+  a real path.
+
+out_of_scope: |
+  - Fixing or draining the standing reds themselves (BL-1206 drains the
+    node:test import entries; BL-1220/BL-1231 own the node:test defect).
+  - The property suite's ambient git-environment scrub (BL-1196, BL-1222).
+  - Changing what qualifies for the allowlist, or the TSV's contents.
+
+source: |
+  Coder `note` (priority 00) to specifier+coordinator, 2026-08-28T06:10:35Z:
+  "property allowlist gate: missing newline bug false-refuses all-allowlisted reds".
+
+notes: |
+  - [2026-08-28] specifier: SECOND independent report of this defect, from the
+    hardener ("property-suite-guard allowlist matcher broken, blocks commits"),
+    arriving ~15 minutes after the coder's. Two roles hit it in one morning,
+    which corroborates the severity call: the allowlist names five files, so
+    the two-or-more case is the only case that occurs in practice. Not a
+    duplicate ticket - recorded here as a second data point.
+  - [2026-08-28] specifier: the coder's diagnosis was correct as sent and is
+    reproduced verbatim above rather than restated - the note named the
+    mechanism (missing newline) and the symptom (false refusal of
+    all-allowlisted reds) precisely.
+  - [2026-08-28] specifier: characterised the boundary before minting, because
+    "1 works, 2+ fails" is the fact that makes this ticket about coverage
+    rather than about a typo. A fix that lands without a multi-file scenario
+    would leave the same blind spot for the next edit.
+  - [2026-08-28] specifier: `ps_allowlist_normalize_file` has exactly one caller
+    (grepped repo-wide excluding node_modules), so moving the newline to the
+    call site breaks nothing.
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: QA, blamed: coder, class: unit, commit: ca3bfb0f0b, evidence: backlog/evidence/BL-1234-property-allowlist-gate-recognises-every-red-bounce-20260829.md }
