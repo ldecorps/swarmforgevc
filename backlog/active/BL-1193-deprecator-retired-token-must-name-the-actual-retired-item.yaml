@@ -8,6 +8,7 @@ epic: deprecator
 priority: 40
 direction: swarm-reported
 depends_on: [BL-1173]
+assigned_to: coder
 mutation_cost: high
 slice_size_envelope: low
 size_envelope_decision: "justify not split - one token extractor narrowed in one CLI, 2 scenarios, no new surface. Band declared because mutation_cost: high on this ticket is Article 3.6 seat-tier (deprecator judgment needs a hard-tier seat, BL-1001), not a size estimate. Same cause and same decision as BL-1267 and BL-1268."

@@ -1,0 +1,112 @@
+id: BL-1275
+title: "The property-suite guard deletes the suite output it refused a commit on, so the red is unadjudicable unless someone happened to keep the scrollback"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 65
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1275-property-guard-deletes-the-evidence-for-its-own-refusal.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1275::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
+
+invariants:
+  - "A refusal that names a failing property file also leaves that run's full suite output at a durable path, and names that path in the refusal."
+  - "Nothing the guard retains ever becomes a commitable artifact: a refused commit leaves the tracked working tree exactly as it found it."
+
+description: >
+  `swarmforge/scripts/check_property_suite_drift.sh` captures the suite run into
+  a `mktemp` file, reads it into `$OUT`, and `rm -f`s it (lines 206-221). On a
+  refusal the only surviving copy is what it echoes to stderr - i.e. terminal
+  scrollback. Nothing durable is written, and the refusal message names no path.
+
+  WHY THAT COSTS REAL ADJUDICATION. The guard refuses commits repo-wide on a red
+  in any non-allowlisted property file, so someone has to decide, afterwards,
+  whether that red was a genuine regression, a known flake, or a new mechanism.
+  That decision needs the failing assertion's own body line - and twice now
+  whether it was available has been a matter of luck:
+
+  - 2026-08-22 - the `BL-1061/1062/1063/1064` 1:4 triage was only possible
+    because QA happened to still have a 53220-byte `properties.log`. That one
+    retained file is what separated four distinct mechanisms across five files;
+    without it the report was just "flaky under worktree load".
+  - 2026-08-29 - the coder was asked for the verbatim bl955 rejection body and
+    could not supply it: "I removed the two commit logs as scratch before this
+    question reached me", and a re-capture attempt was killed mid-run
+    (`EXIT=143`). bl955 therefore stays unadjudicated, resting on nothing but
+    the extractor having once matched a FAIL line
+    (`backlog/evidence/BL-1062-coder-reply-guard-rejections.md`).
+
+  The coder's own remedy - "I will keep the full guard log next time rather than
+  sweeping it" - is a person remembering to do something a mechanism should
+  already do, on the one run nobody knows in advance is the interesting one.
+
+  CLOBBERING MATTERS AS MUCH AS RETENTION. Four different non-allowlisted files
+  refused five commit attempts in a single shift on 2026-08-29
+  (bl968 x2, bl955, bl787, across BL-603, BL-1268 and BL-1220). A single
+  fixed-name log file would have left only the last of those, which is precisely
+  the one that was NOT the open question.
+
+  How (direction, not mandate). `.swarmforge/` is the established home for
+  local, gitignored runtime state and is the obvious candidate, but the binding
+  requirements are only these: the output survives the refusal, successive
+  refusals do not overwrite each other, the refusal message tells the reader
+  where to look, and nothing lands in the tracked tree. Retention is bounded so
+  the directory cannot grow without limit.
+
+  NOT IN SCOPE. Changing WHICH reds refuse a commit (that is BL-1175's allowlist
+  mechanism), the reds themselves (BL-1062, BL-1274), or the guard's exit codes.
+  This slice changes only what survives a refusal.
+
+qa_e2e_procedure: >
+  1. Drive the guard with an injected always-red suite command (the script's
+     documented `check_property_suite_drift.sh [suite-command [args...]]` seam -
+     no env bypass) from a scratch clone, and confirm exit 1.
+  2. Confirm the refusal message names a path, and that the file at that path
+     contains the injected suite's full output, including the FAIL line.
+  3. Run the guard a second and third time with different injected outputs and
+     confirm all three logs are readable afterwards - none overwritten.
+  4. Run `git status --porcelain` in that clone after all three refusals and
+     confirm it is byte-identical to before the first run.
+  5. Drive the guard with a green injected suite and confirm no log is retained.
+  6. Exceed the retention bound and confirm the oldest logs are pruned while the
+     most recent are kept.
+
+human_approval: pending
+
+approval_context: >
+  Minted from the coder's 2026-08-29 observation that four different property
+  files blocked five commits in one shift, each green in isolation. I ruled
+  against the wider "one defect: the property lane's verdict is a function of
+  host load" framing - that diagnosis decomposed into four distinct mechanisms
+  when it was last tested against evidence on 2026-08-22, and it decomposed the
+  same way again today. This ticket is the part of the observation that is
+  genuinely COMMON to all of them, and it is a gap in the guard, not in the
+  tests.
+
+  ONE JUDGEMENT FOR YOU. This buys no green - it makes the next red
+  adjudicable rather than fixing any. I judged that worth a slice because two
+  successive triages have both turned on whether a log happened to survive, and
+  one of them lost. If you would rather absorb that cost and keep relying on
+  role discipline, reject and I will close it.
+
+notes: |
+  Verified by reading the script at `main` on 2026-08-29, not taken on report:
+  `SUITE_OUT_FILE="$(mktemp)"` (line 206), `OUT="$(cat "$SUITE_OUT_FILE" ...)"`
+  then `rm -f "$SUITE_OUT_FILE"` (lines 220-221), and the refusal at line 255
+  prints only the header and the unlisted filenames. No durable path exists
+  anywhere on the refusal path.
+
+  Distinct from BL-816 ("a parcel that observes a red unit suite must record a
+  decision"): BL-816 obliges a ROLE to record its disposition of a red it saw;
+  this obliges the GUARD to preserve the evidence that disposition would be
+  made from. Neither substitutes for the other - BL-816's record is worth much
+  less when the underlying output is already gone.
+
+source: "Coder note 50_20260829T140743Z_001437 replying to the BL-1062 specifier ruling; the coder could not supply the bl955 rejection body because the guard retained nothing."
