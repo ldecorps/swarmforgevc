@@ -558,6 +558,7 @@ const DOMAINS = [
   require('./bl570PropertySuiteDriftGuardSteps'),
   require('./bl579HandoffMechanismBriefingDiagramSteps'),
   require('./bl580FrontDeskMechanismBriefingDiagramSteps'),
+  require('./bl581DocumenterOwnsDiagramCurrencySteps'),
   require('./bl916BubbleColdStartExpandSwarmStampSteps'),
   require('./bl625OnboarderPromptsLaunchHandoffSteps'),
   require('./bl913PinnedShellClassifiedRetrySteps'),
