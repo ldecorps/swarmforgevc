@@ -3,7 +3,7 @@
 # {"version":1,"tested_at":"2026-08-28T18:47:26.632913807Z","feature_name":"BL-1248 the master-main-reconcile sweep can be switched off from config, and is off until BL-1236 lands","feature_path":"/home/carillon/swarmforgevc/.worktrees/expedite-BL-1248/specs/features/BL-1248-master-main-reconcile-kill-switch.feature","background_hash":"df93e5c6917ac730b011e29d2b8a661fbf98a732a623c01ac3dbcdb9e156d02e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the switch decides whether the sweep runs, and fails closed","scenario_hash":"e246a347a6c92572c03df3203a1dd4aedc72bffd1ea4e1b87f29a978a2073741","mutation_count":10,"result":{"Total":10,"Killed":10,"Survived":0,"Errors":0},"tested_at":"2026-08-28T18:47:26.632913807Z"}]}
 # acceptance-mutation-manifest-end
 
-Feature: BL-1248 the master-main-reconcile sweep can be switched off from config, and is off until BL-1236 lands
+Feature: BL-1248 the master-main-reconcile sweep can be switched off from config
 
   The reconcile sweep decides whether to absorb origin into local main, and
   BL-1236 pins its conflict predicate as broken: merge-tree-reports-conflict?
@@ -16,14 +16,15 @@ Feature: BL-1248 the master-main-reconcile sweep can be switched off from config
   unconditionally into its cadence block and swarmforge.conf carries no
   enable key.
 
-  BL-1236 has since LANDED (871f2fa85, closed 112027d99) - it was blocked on
-  a human approval when this feature was written, and that sentence is no
-  longer true, so it is corrected here rather than left standing (BL-1006).
-  Its landing does not retire this feature: the lever itself is still
-  unbuilt, an on/off switch for a ref-rewriting sweep is worth having
-  whichever defect prompted it, and the corrected predicate has not yet run
-  in production. What the landing DOES change is who decides the shipped
-  value - see scenario 04's marker below.
+  BL-1236 has since LANDED (871f2fa85, closed 112027d99), and the operator
+  has since re-armed the sweep (cce70d985, the ON outcome of BL-1251) after a
+  live clean-tree absorb proved merge-tree-clean and cleared a durable
+  skipped-by-config deadlock. The shipped value is therefore `true` today.
+  None of that retires this feature: the switch itself is what this ticket
+  built, an on/off lever for a ref-rewriting sweep is worth having whichever
+  defect prompted it, and every scenario below still describes what the lever
+  does. What it DID retire is the scenario that pinned the shipped value at
+  `false` - see the retirement note where scenario 04 stood.
 
   # IR-DRY: the checker flags `Given the config sets "..." to "false"` as a
   # near-duplicate across scenarios 02, 03 and 05. It is deliberately NOT
@@ -61,22 +62,17 @@ Feature: BL-1248 the master-main-reconcile sweep can be switched off from config
     When the handoff daemon runs one cadence tick
     Then the daemon log records that the reconcile sweep was skipped by config
 
-  # BL-1248 master-main-reconcile-kill-switch-04
-  # RETIRE-WITH: BL-1251 (re-pointed 2026-08-28; it read BL-1236, and BL-1236
-  # closed without retiring this scenario - the orphaned-marker failure
-  # BL-1006 exists to prevent, caught by the freshness check rather than by
-  # any gate). This scenario pins a deliberately TEMPORARY state - the shipped
-  # conf holding the sweep off - so it is red-when-correct: it goes red the
-  # day an operator legitimately flips the switch on. BL-1236 landing has
-  # SATISFIED the condition the conf names, so that day is now reachable at
-  # any time; BL-1251 carries the flip decision to the human and owns
-  # retiring this scenario when they say on (retire, never reword). It is
-  # kept executable despite that cost because it is the only gate on
-  # "shipped OFF", which is this ticket's entire deliverable - the
-  # required_wiring substring check would pass on a commented-out key.
-  Scenario: the shipped config disables the sweep
-    When the shipped "swarmforge/swarmforge.conf" is read
-    Then it sets "master_main_reconcile_enabled" to "false" with BL-1236 named as the condition for turning it back on
+  # BL-1248 master-main-reconcile-kill-switch-04 - RETIRED by BL-1251, 2026-08-29.
+  # It read: "the shipped config disables the sweep ... sets
+  # master_main_reconcile_enabled to false with BL-1236 named as the condition
+  # for turning it back on". It pinned a deliberately TEMPORARY state and was
+  # red-when-correct from the day an operator legitimately flipped the switch
+  # on. That day came: cce70d985 re-armed the sweep on the operator's decision,
+  # so the scenario asserted a state that had ended and was failing on main.
+  # Retired, never reworded - rewording it to assert `true` would invent a
+  # contract nobody agreed to, since the shipped value is now an operator's
+  # standing choice rather than this ticket's deliverable. Its own RETIRE-WITH
+  # marker named BL-1251 as its retirer, and this is that retirement.
 
   # BL-1248 master-main-reconcile-kill-switch-05
   # Gates the ticket's firm constraint that the switch declines to ACT on
