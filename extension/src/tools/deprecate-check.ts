@@ -352,6 +352,133 @@ function collectRetiredSurfaceHits(yamlText: string, retiredTokens: string[]): s
   return hits;
 }
 
+// BL-1193: what a RETIRED marker actually RETIRES, on one docs line.
+//
+// The old extractor took the first word-like token anywhere earlier on the
+// line (`/\b([a-z][a-z0-9_-]{2,})\b.*\bRETIRED\b/i`) plus any path-like
+// token anywhere on it. That conflates "co-occurs on a line with a RETIRED
+// marker" with "is the thing the marker retires". The live table row
+//
+//     | Mint hygiene (`backlog_hygiene_lib.bb`) | `type: bug` → `RETIRED-TICKET-TYPE …` |
+//
+// retires `type: bug`, and yielded "Mint" and "backlog_hygiene_lib.bb"
+// instead - so any ticket using this project's own everyday vocabulary
+// ("mint a ticket", "Mint-time gate") earned a fail-closed hold before every
+// promotion. BL-1190, BL-1193 itself and BL-1206 were all held on exactly
+// that word.
+//
+// A marker now yields a referent only when the line actually predicates the
+// retirement of something, in one of three shapes, and the referent is taken
+// ADJACENT to the marker rather than from the far end of the line:
+//
+//   (a) mapping     `type: bug` → `RETIRED-TICKET-TYPE …`
+//   (b) predication  the legacy-verb path is now RETIRED
+//   (c) announcement RETIRED: legacy-verb
+//
+// Prose that merely mentions the word - "the description still names
+// **RETIRED** behaviour", "mint `RETIRED-TICKET-TYPE`" - names nothing and
+// yields nothing, which is the honest answer for a line that retires nothing.
+
+// Words that carry no referent: the connective tissue between a thing and
+// the statement that it was retired.
+const RETIRED_STOP_WORDS = new Set([
+  'the', 'a', 'an', 'this', 'that', 'these', 'those', 'and', 'or', 'but',
+  'is', 'was', 'are', 'were', 'been', 'now', 'still', 'also', 'has', 'have',
+  'had', 'it', 'its', 'be', 'to', 'in', 'of', 'as', 'by', 'for', 'path',
+  'file', 'helper', 'module', 'entry', 'point', 'line', 'code', 'behaviour',
+  'behavior', 'marker', 'gate', 'rule', 'field', 'value', 'type',
+]);
+
+/**
+ * Is this bare token specific enough to BE a referent? An identifier-shaped
+ * token (a dot, dash or underscore in it) or a long word can name a surface;
+ * a short ordinary English word on a prose line almost never does, and
+ * accepting one is how "Mint" became a retired token in the first place.
+ */
+function looksLikeReferent(token: string): boolean {
+  if (RETIRED_STOP_WORDS.has(token.toLowerCase())) {
+    return false;
+  }
+  return /[_./-]/.test(token) || token.length >= 8;
+}
+
+/**
+ * A backticked span, or the nearest identifier-shaped bare token, on the
+ * referent side of the marker. Backticks win: the docs quote what they name.
+ */
+function referentBefore(text: string): string | undefined {
+  const quoted = [...text.matchAll(/`([^`]+)`/g)];
+  if (quoted.length > 0) {
+    return quoted[quoted.length - 1][1].trim();
+  }
+  // Walk backwards through the trailing words, skipping connectives, and
+  // take the first token that could actually name something.
+  const words = text.match(/[A-Za-z0-9_./-]+/g) ?? [];
+  for (let i = words.length - 1; i >= 0; i -= 1) {
+    if (looksLikeReferent(words[i])) {
+      return words[i];
+    }
+  }
+  return undefined;
+}
+
+function referentAfter(text: string): string | undefined {
+  const quoted = text.match(/^\s*`([^`]+)`/);
+  if (quoted) {
+    return quoted[1].trim();
+  }
+  const words = text.match(/[A-Za-z0-9_./-]+/g) ?? [];
+  return words.find((word) => looksLikeReferent(word));
+}
+
+/**
+ * The referent for ONE marker occurrence, or undefined if this marker
+ * retires nothing (used in prose, or naming a marker being explained). The
+ * three shapes are checked in order and are mutually exclusive by
+ * construction - a line matching (a) never falls through to (b) or (c),
+ * even when (a) matched but named no referent, matching the original
+ * three-branch continue-on-match control flow exactly.
+ */
+function referentForMarker(before: string, after: string): string | undefined {
+  // (a) mapping: `<referent>` → RETIRED..., allowing the marker to open a
+  // quoted span of its own (`→ \`RETIRED-TICKET-TYPE …\``).
+  const mapping = before.match(/(->|=>|→|⇒|=)\s*`?\s*$/);
+  if (mapping) {
+    return referentBefore(before.slice(0, before.length - mapping[0].length));
+  }
+  // (b) predication: <referent> is|was|are|were|now RETIRED
+  const predication = before.match(/\b(?:is|was|are|were|been|now)\b[\s`*_]*$/i);
+  if (predication) {
+    return referentBefore(before.slice(0, before.length - predication[0].length));
+  }
+  // (c) announcement: RETIRED: <referent> / RETIRED — <referent>
+  const announcement = after.match(/^[-:—–]\s*(?!TICKET)/);
+  if (announcement) {
+    return referentAfter(after.slice(announcement[0].length));
+  }
+  return undefined;
+}
+
+/**
+ * The tokens a line's RETIRED marker(s) actually retire. Pure: one line in,
+ * zero or more referents out - the BL-654 property target for this ticket's
+ * declared invariant.
+ */
+export function extractRetiredReferents(line: string): string[] {
+  const referents: string[] = [];
+  const markerRe = /\bRETIRED\b/g;
+  let marker: RegExpExecArray | null;
+  while ((marker = markerRe.exec(line)) !== null) {
+    const before = line.slice(0, marker.index);
+    const after = line.slice(marker.index + marker[0].length);
+    const referent = referentForMarker(before, after);
+    if (referent) {
+      referents.push(referent);
+    }
+  }
+  return referents;
+}
+
 export function loadRetiredTokens(root: string): string[] {
   const tokens = new Set<string>();
   const scanFile = (filePath: string) => {
@@ -365,13 +492,8 @@ export function loadRetiredTokens(root: string): string[] {
       if (!RETIRED_DOC_RE.test(line)) {
         continue;
       }
-      const pathLike = line.match(/[`'"\s]([A-Za-z0-9_./-]+\.(?:ts|js|bb|sh|md|prompt|conf))/);
-      if (pathLike) {
-        tokens.add(pathLike[1]);
-      }
-      const verb = line.match(/\b([a-z][a-z0-9_-]{2,})\b.*\bRETIRED\b/i);
-      if (verb) {
-        tokens.add(verb[1]);
+      for (const referent of extractRetiredReferents(line)) {
+        tokens.add(referent);
       }
     }
   };
