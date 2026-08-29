@@ -7,17 +7,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const RAW_MKDTEMP_PATTERN = /mkdtempSync\(\s*path\.join\(\s*os\.tmpdir\(\)/;
-
-// Pure: given one file's own text, the 1-indexed line numbers containing a
-// raw call. Unit-testable directly against a fixture string - no filesystem
-// needed for THIS function's own tests.
-function findRawMkdtempLines(text) {
-  return text
-    .split('\n')
-    .map((line, i) => (RAW_MKDTEMP_PATTERN.test(line) ? i + 1 : null))
-    .filter((n) => n !== null);
-}
+// BL-1209: the pure detector moved to src/tools/rawMkdtempDetector.ts, where
+// the tool's own logic lives, because the pilot check used to require THIS
+// file out of whatever root it was handed - so it could only ever run against
+// this repository. Re-exported here rather than duplicated: two copies of a
+// pattern across a boundary no import bridges is precisely the drift trap the
+// engineering rules call out, and every existing consumer of this helper keeps
+// the same names.
+const { RAW_MKDTEMP_PATTERN, findRawMkdtempLines } = require('../../out/tools/rawMkdtempDetector');
 
 // Paths (relative to testDir) that legitimately contain the raw pattern's
 // literal TEXT and must never be flagged: tmpDir.js's own real call site,
