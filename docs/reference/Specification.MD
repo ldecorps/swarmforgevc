@@ -1,5 +1,46 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1261: an expedite park moves a ticket's
+YAML into `backlog/hold/` but not its parcel, so tickets were being built and
+gated while their backlog record said nobody may touch them. Fixed:
+`hold_divergence_audit_lib.bb` / `hold_divergence_audit_cli.bb` (pure lib +
+CLI) discover every parcel in every role's mailbox (including batch roles'
+`batch_*` subdirectories, one level deep), find the corresponding ticket
+YAML, and report tickets where the YAML is in `hold/` but the parcel exists
+in a role's mailbox. Wired into `promote_and_route_next.sh` (same site as
+BL-1228's pool audit). Reports only — never moves, promotes, or deletes a
+ticket or parcel. Fails closed: unreadable mailboxes/directories reported as
+unresolved. Acceptance:
+`specs/features/BL-1261-hold-divergence-audit.feature`. How-to:
+`docs/how-to/BL-1261-hold-divergence-audit.md`.)
+Prior entry —
+**Last Updated:** August 29, 2026 (BL-1245: when the answer never reached
+the answer store — the human answered while the swarm was down, so nothing
+recorded anything and `deliverRoleAnswer` has nothing to pair — the asking
+role had no move whatsoever. Fixed: `role_ask.bb` gained a `resolve` verb
+(`bb swarmforge/scripts/role_ask.bb resolve <role> "<reason>"`) that reopens
+the role's own pending slot with a mandatory stated reason. The resolve
+preserves the question text, `asked_at_ms`, and reason in
+`role-awaiting-archive/` (never a `.json` inside `role-awaiting/` —
+`operator_runtime.bb` scans that directory for `*.json` and would read the
+preserved copy back as live state). Blank reason refused, slot stays shut.
+Does not change `clearRoleAwaitingAnswer` or GH-26's undeliverable path.
+Acceptance:
+`specs/features/BL-1245-role-reopens-its-own-question-slot.feature`. How-to:
+`docs/how-to/BL-1245-role-reopens-its-own-question-slot.md`.)
+Prior entry —
+**Last Updated:** August 29, 2026 (BL-1194: the duplicate-id check in
+`specifier_backlog_hygiene_gate.bb` / `backlog_hygiene_lib.bb` (BL-1105) had
+two self-identity gaps that reported a ticket as a duplicate of itself — bug
+#1, a relative-vs-absolute path mismatch in `other-holders` when the CLI was
+invoked with a relative path (the natural, documented form); bug #2, a
+stale/self published entry never recognized as "already this ticket" even
+with an absolute path. Fixed by normalizing both sides to a common comparable
+form before equality/membership checks; the subject's own id+file is never
+counted as an "other holder". Genuine cross-file duplicates still fail. No
+caller-side change required. Acceptance:
+`specs/features/BL-1194-hygiene-gate-relative-path-self-duplicate-false-positive.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1266: the pre-turn reference-freshness
 guard (BL-640/BL-1237) picked its comparison ref — `main` or `origin/main`
 — by whole-REPOSITORY ahead-count (`freshest-main-ref`), a proxy for a
