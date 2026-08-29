@@ -68,56 +68,6 @@
          []
          (reference-freshness-lib/stale-paths {} {}))
 
-;; ── BL-1237: direction-aware stale-paths (3-arity) ─────────────────────────
-;; Invariant 1: refuse only for content the worktree is MISSING relative to
-;; main - never for content it carries that main does not yet have.
-
-(assert= "a differing path the worktree has already absorbed via ancestry (AHEAD) is not stale"
-         []
-         (reference-freshness-lib/stale-paths
-          {"workflow-detailed.prompt" "worktree-own-newer-sha"}
-          {"workflow-detailed.prompt" "main-older-sha"}
-          {"workflow-detailed.prompt" true}))
-
-(assert= "a differing path the worktree has NOT absorbed (BEHIND, BL-640's own case) stays stale - scenario 03 must not weaken"
-         ["workflow-detailed.prompt"]
-         (reference-freshness-lib/stale-paths
-          {"workflow-detailed.prompt" "worktree-old-sha"}
-          {"workflow-detailed.prompt" "main-new-sha"}
-          {"workflow-detailed.prompt" false}))
-
-(assert= "a path absent from the ancestry map defaults to false - fail closed, still refused"
-         ["workflow-detailed.prompt"]
-         (reference-freshness-lib/stale-paths
-          {"workflow-detailed.prompt" "worktree-old-sha"}
-          {"workflow-detailed.prompt" "main-new-sha"}
-          {}))
-
-(assert= "the 2-arity call is unchanged - pre-BL-1237 callers keep refusing on any difference"
-         ["workflow-detailed.prompt"]
-         (reference-freshness-lib/stale-paths
-          {"workflow-detailed.prompt" "worktree-old-sha"}
-          {"workflow-detailed.prompt" "main-new-sha"}))
-
-(assert= "mixed: one path absorbed (allowed), one not (still refused) - only the genuinely-missing one is reported"
-         ["genuinely-behind.prompt"]
-         (reference-freshness-lib/stale-paths
-          {"ahead-of-main.prompt" "worktree-newer-sha" "genuinely-behind.prompt" "worktree-old-sha"}
-          {"ahead-of-main.prompt" "main-older-sha" "genuinely-behind.prompt" "main-new-sha"}
-          {"ahead-of-main.prompt" true "genuinely-behind.prompt" false}))
-
-(assert= "a path present only in the worktree is never reported even with an ancestry map supplied"
-         []
-         (reference-freshness-lib/stale-paths
-          {"worktree-only.prompt" "sha-x"}
-          {}
-          {"worktree-only.prompt" true}))
-
-(assert-true "fresh? still works via the pure 2-arity stale-paths default"
-             (reference-freshness-lib/fresh?
-              {"a" "sha-a"}
-              {"a" "sha-a"}))
-
 ;; ── sha256-hex ──────────────────────────────────────────────────────────
 
 (assert= "sha256-hex of empty string is the well-known SHA-256 empty digest"

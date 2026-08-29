@@ -24,33 +24,18 @@
     (apply str (map #(format "%02x" %) digest))))
 
 (defn stale-paths
-  "worktree-shas / main-shas: {rel-path -> content-sha256-hex}.
-   worktree-has-main-amendment?: {rel-path -> boolean}, for each path whose
-   content differs - BL-1237: whether the worktree already contains (as an
-   ancestor of its own HEAD) main's most recent commit touching that path.
-   true means the differing content is the worktree's OWN newer work on
-   top of an amendment it has already absorbed - allow (invariant 1: never
-   refuse for content the worktree carries that main does not yet have).
-   A path absent from this map (the caller had no ancestry answer, or this
-   call predates BL-1237) defaults to false - fail closed, preserving
-   BL-640's original refuse-on-any-difference behavior for the case this
-   ticket does not touch: content the worktree is genuinely MISSING.
-
-   Returns the sorted vector of rel-paths present in main-shas whose
-   content the worktree does not carry byte-identical AND has not already
-   absorbed via ancestry - the amendment drift a role has not yet merged.
-   A path present only in worktree-shas (deleted upstream, or worktree-
-   local scratch) is never reported - it is not the amendment-delivery gap
-   this invariant is about."
-  ([worktree-shas main-shas] (stale-paths worktree-shas main-shas {}))
-  ([worktree-shas main-shas worktree-has-main-amendment?]
-   (->> main-shas
-        (keep (fn [[path sha]]
-                (when (and (not= sha (get worktree-shas path))
-                           (not (get worktree-has-main-amendment? path false)))
-                  path)))
-        sort
-        vec)))
+  "worktree-shas / main-shas: {rel-path -> content-sha256-hex}. Returns the
+   sorted vector of rel-paths present in main-shas whose content the
+   worktree does not carry byte-identical (a differing sha, or a path
+   missing from worktree-shas entirely) - the amendment drift a role has
+   not yet merged. A path present only in worktree-shas (deleted upstream,
+   or worktree-local scratch) is never reported - it is not the
+   amendment-delivery gap this invariant is about."
+  [worktree-shas main-shas]
+  (->> main-shas
+       (keep (fn [[path sha]] (when (not= sha (get worktree-shas path)) path)))
+       sort
+       vec))
 
 (defn fresh?
   [worktree-shas main-shas]
