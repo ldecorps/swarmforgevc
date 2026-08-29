@@ -34,20 +34,21 @@ plainly when nothing was pending, and preserves the question it resolved —
 text, `asked_at_ms`, and the reason — where the already-pending guard can
 never read it back as live state.
 
-The resolve command is a new verb on `role_ask.bb`:
+The resolve command is a new flag pair on `role_ask.bb`'s existing CLI —
+`--resolve` plus a mandatory `--reason`:
 
 ```bash
-bb swarmforge/scripts/role_ask.bb resolve <role> "<reason>"
+bb swarmforge/scripts/role_ask.bb <project-root> --role <role> --resolve --reason "<reason>"
 ```
 
 Examples:
 
 ```bash
 # Reopen the specifier's slot after confirming the answer was on record
-bb swarmforge/scripts/role_ask.bb resolve specifier "Human answered at 10:54Z while swarm was down; answer confirmed on record"
+bb swarmforge/scripts/role_ask.bb <project-root> --role specifier --resolve --reason "Human answered at 10:54Z while swarm was down; answer confirmed on record"
 
 # Reopen with a blank reason — refused, slot stays shut
-bb swarmforge/scripts/role_ask.bb resolve coder ""
+bb swarmforge/scripts/role_ask.bb <project-root> --role coder --resolve --reason ""
 ```
 
 ## Where it lives
@@ -56,7 +57,7 @@ bb swarmforge/scripts/role_ask.bb resolve coder ""
 | --- | --- |
 | Resolve verb | `swarmforge/scripts/role_ask.bb` |
 | Marker shape (state field, never unlink) | Precedent: GH-26 undeliverable path |
-| Preserved record location | `.swarmforge/operator/role-awaiting-archive/<role>-<timestamp>-resolved.json` |
+| Preserved record location | `.swarmforge/operator/role-awaiting-archive/<role>-<asked_at_ms>.json` |
 | Pending guard (unchanged) | `operator-lib/role-ask-blocked?` in `swarmforge/scripts/operator_lib.bb` |
 | Acceptance | `specs/features/BL-1245-role-reopens-its-own-question-slot.feature` |
 | Acceptance steps | `specs/pipeline/steps/bl1245RoleReopensOwnQuestionSlotSteps.js` |
@@ -65,20 +66,20 @@ bb swarmforge/scripts/role_ask.bb resolve coder ""
 
 ```bash
 # Raise a question, confirm second ask is refused
-bb swarmforge/scripts/role_ask.bb ask specifier "Test question?"
-bb swarmforge/scripts/role_ask.bb ask specifier "Another question?"  # Should fail: already-pending
+bb swarmforge/scripts/role_ask.bb <project-root> --role specifier --question "Test question?"
+bb swarmforge/scripts/role_ask.bb <project-root> --role specifier --question "Another question?"  # Should fail: already-pending
 
 # Resolve with blank reason — refused, slot stays shut
-bb swarmforge/scripts/role_ask.bb resolve specifier ""
-bb swarmforge/scripts/role_ask.bb ask specifier "Another question?"  # Still refused
+bb swarmforge/scripts/role_ask.bb <project-root> --role specifier --resolve --reason ""
+bb swarmforge/scripts/role_ask.bb <project-root> --role specifier --question "Another question?"  # Still refused
 
 # Resolve with real reason — next ask accepted
-bb swarmforge/scripts/role_ask.bb resolve specifier "Manual recovery after swarm downtime"
-bb swarmforge/scripts/role_ask.bb ask specifier "Another question?"  # Should succeed
+bb swarmforge/scripts/role_ask.bb <project-root> --role specifier --resolve --reason "Manual recovery after swarm downtime"
+bb swarmforge/scripts/role_ask.bb <project-root> --role specifier --question "Another question?"  # Should succeed
 
 # Read preserved record
 ls .swarmforge/operator/role-awaiting-archive/
-cat .swarmforge/operator/role-awaiting-archive/specifier-*-resolved.json
+cat .swarmforge/operator/role-awaiting-archive/specifier-*.json
 
 # Confirm role-awaiting/ holds no pending file
 ls .swarmforge/operator/role-awaiting/

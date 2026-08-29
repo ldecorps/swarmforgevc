@@ -17,9 +17,11 @@ Prior entry —
 **Last Updated:** August 29, 2026 (BL-1245: when the answer never reached
 the answer store — the human answered while the swarm was down, so nothing
 recorded anything and `deliverRoleAnswer` has nothing to pair — the asking
-role had no move whatsoever. Fixed: `role_ask.bb` gained a `resolve` verb
-(`bb swarmforge/scripts/role_ask.bb resolve <role> "<reason>"`) that reopens
-the role's own pending slot with a mandatory stated reason. The resolve
+role had no move whatsoever. Fixed: `role_ask.bb` gained a `--resolve`
+flag plus mandatory `--reason`
+(`bb swarmforge/scripts/role_ask.bb <project-root> --role <role> --resolve
+--reason "<reason>"`) that reopens the role's own pending slot with a
+mandatory stated reason. The resolve
 preserves the question text, `asked_at_ms`, and reason in
 `role-awaiting-archive/` (never a `.json` inside `role-awaiting/` —
 `operator_runtime.bb` scans that directory for `*.json` and would read the
