@@ -157,6 +157,33 @@ notes: >
   That is deliberately NOT scoped here: this ticket is the flip's cleanup,
   and widening it now is the oversized-merge BL-634 guards against.
 
+  [2026-08-29] specifier, Article 3.6 adjudication - CONFIRM PROMOTE. The
+  coordinator's freshness gate HELD this ticket naming a "retired-token
+  false-pos on Mint". Adjudicated the TICKET, not the gate reason (a gate
+  reason can be false while a real stale claim hides elsewhere): every
+  premise was re-verified live on main today and every one still holds.
+  BL-1248 is in backlog/done/M8/, so depends_on is satisfied and the
+  status: blocked condition is discharged. swarmforge.conf:345 reads
+  `config master_main_reconcile_enabled true`, so the ON decision is landed
+  (cce70d985). specs/features/BL-1248-master-main-reconcile-kill-switch.feature
+  still carries scenario 04 asserting the shipped conf sets that key to
+  "false", its RETIRE-WITH marker still names THIS ticket, and its step file
+  bl1248MasterMainReconcileKillSwitchSteps is still registered in
+  specs/pipeline/steps/index.js - so the scenario executes and is RED on main
+  right now. The Feature: line still reads "and is off until BL-1236 lands",
+  a false present. Nothing in this ticket rests on a retired premise.
+
+  The HOLD is a false positive of the ticket's own subject matter: this is a
+  RETIREMENT ticket, so its prose necessarily contains "retire", "retired"
+  and "Minted", which is what the scanner matched. A ticket cannot be held
+  for describing the retirement it exists to perform.
+
+  Promotion is more urgent than its priority: 5 suggests - the deliverable is
+  a live red on main, not housekeeping. Per the known gap that the freshness
+  gate has no discharge path (a confirm-promote verdict cannot be recorded
+  where the gate will read it), the coordinator should promote this BY HAND
+  at the next open slot rather than re-running the gate and being held again.
+
 approval_context: >
   A decision for you, not a build request. BL-1248 is about to ship a config
   switch that disables the master-main-reconcile sweep, with a comment
@@ -190,3 +217,15 @@ coordinator_notes: |
     without promoting: active/ is at the effective cap of 7, no slot open.
     Capacity, not inaction (BL-798 invariant 3). Top candidate for the next
     open slot.
+  - [2026-08-29] coordinator: second nudge for this candidate. deprecate-check.js
+    now ALSO holds it (stale premise: retired-token false-pos on "Mint" — same
+    class as BL-1193/BL-1220). Sent to specifier for adjudication (commit
+    00_20260829T140239Z_003160). Still not a slot-open case either — active/
+    remains at cap. Clearing on both grounds, not inaction.
+  - [2026-08-29] coordinator: third nudge. Specifier has now durably CONFIRM
+    PROMOTEd this ticket (commit 6ac07c49d, false-pos on "Mint" as suspected)
+    — the freshness hold is cleared. But the slot this nudge fired for was
+    filled by BL-1273 (already-dispatched work, restored to active) before
+    this turn; promotion_gates_cli.bb select does not know about a by-hand
+    specifier override, so it can't compare BL-1251 against other candidates
+    automatically. Top candidate for the NEXT open slot, promote by hand.
