@@ -187,4 +187,40 @@ git -C "$ROOT" merge --no-ff -m "BL-0001 and BL-0002: revert propagation, named"
   || fail "08: naming the affected tickets must still allow the real git merge with hooks installed"
 pass "08: with the hooks installed, naming the affected tickets allows the merge"
 
+# ── 9: a merge violating BOTH guards at once (a backlog ticket YAML AND a
+#       non-YAML branch-introduced path) reports BOTH in one refusal - the
+#       commit-msg hook must not let check_ticket_deletion.sh's failure
+#       short-circuit check_merge_deletion.sh's own call ──────────────────
+mkdir -p "$ROOT/specs/pipeline/steps" "$ROOT/backlog/paused"
+echo "step 3" > "$ROOT/specs/pipeline/steps/bl0003ExampleSteps.js"
+git -C "$ROOT" add specs/pipeline/steps/bl0003ExampleSteps.js
+git -C "$ROOT" commit -q -m "BL-0003: add step handler"
+echo "id: BL-0004" > "$ROOT/backlog/paused/BL-0004-example.yaml"
+git -C "$ROOT" add backlog/paused/BL-0004-example.yaml
+git -C "$ROOT" commit -q -m "BL-0004: seed ticket yaml"
+SHARED_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+git -C "$ROOT" checkout -q -b feature3 "$SHARED_TIP"
+echo "feature3 progress" > "$ROOT/feature3-note.txt"
+git -C "$ROOT" add feature3-note.txt
+git -C "$ROOT" commit -q -m "feature3: unrelated progress"
+
+git -C "$ROOT" checkout -q -b main3 "$SHARED_TIP"
+git -C "$ROOT" rm -q specs/pipeline/steps/bl0003ExampleSteps.js backlog/paused/BL-0004-example.yaml
+git -C "$ROOT" commit -q -m "revert BL-0003/BL-0004 bounce"
+MAIN3_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+git -C "$ROOT" checkout -q feature3
+set +e
+OUT9="$(cd "$ROOT" && git -c user.email=test@test -c user.name=test merge --no-ff -m "merge main3, no ticket named" "$MAIN3_TIP" 2>&1)"
+STATUS9=$?
+set -e
+[[ "$STATUS9" -ne 0 ]] || fail "09: expected refusal when the merge violates both guards"
+echo "$OUT9" | grep -q "BL-0004-example.yaml" \
+  || fail "09: expected check_ticket_deletion.sh's own violation in the output, got: $OUT9"
+echo "$OUT9" | grep -q "bl0003ExampleSteps.js" \
+  || fail "09: expected check_merge_deletion.sh's violation too - a failing first guard call must not stop the second from running, got: $OUT9"
+pass "09: a merge violating both guards at once reports both, not just the first to run"
+git -C "$ROOT" merge --abort 2>/dev/null || true
+
 echo "ALL PASS"
