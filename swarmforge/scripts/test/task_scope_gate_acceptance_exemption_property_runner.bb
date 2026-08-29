@@ -1,6 +1,7 @@
 #!/usr/bin/env bb
-;; BL-1276: PROPERTY tests over task_scope_gate_lib.bb's acceptance-contract
-;; exemption, covering the three invariants the ticket YAML declares
+;; BL-1276: PROPERTY tests over task_scope_gate_lib.bb's declared-path
+;; exemption (acceptance: and retires: alike), covering the three invariants
+;; the ticket YAML declares
 ;; (coder-authored first, per BL-654).
 ;;
 ;;   P1 exactness - the exemption covers ONLY the exact path string the ticket
@@ -55,18 +56,31 @@
 
 ;; ── P1: exactness ───────────────────────────────────────────────────────
 (let [saw-declared (atom 0)
-      saw-sibling (atom 0)]
+      saw-sibling (atom 0)
+      saw-retires (atom 0)]
   (dotimes [_ NUM-RUNS]
     (let [task-id (rand-id)
           foreign-id (loop [c (rand-id)] (if (= c task-id) (recur (rand-id)) c))
+          declared-via (pick [:acceptance :retires])
           declared (feature-path foreign-id)
           ;; Constructed from the SAME foreign id as the declared path, so
           ;; every case tests exactness rather than sampling for it.
           sibling (pick [(yaml-path foreign-id) (howto-path foreign-id) (other-feature-path foreign-id)])
           include-sibling? (zero? (.nextInt rng 2))
           changed (cond-> [declared] include-sibling? (conj sibling))
-          findings (task-scope-gate-lib/foreign-scope-findings task-id changed declared)]
+          ;; BL-1276's amendment: the exemption is over the ticket's DECLARED
+          ;; PATHS, whichever field declared them - so the property drives the
+          ;; accessor with a real ticket yaml rather than a bare path, and both
+          ;; declaring fields are drawn.
+          ticket-yaml (if (= declared-via :acceptance)
+                        (str "id: " task-id "\nacceptance: " declared "\n")
+                        (str "id: " task-id "\nretires:\n  - " declared "\nstatus: todo\n"))
+          declared-set (task-scope-gate-lib/declared-exempt-paths ticket-yaml)
+          findings (task-scope-gate-lib/foreign-scope-findings task-id changed declared-set)]
+      (when-not (= [declared] declared-set)
+        (fail! (str "P1: the accessor did not read " declared-via "'s declaration: " (pr-str declared-set))))
       (swap! saw-declared inc)
+      (when (= declared-via :retires) (swap! saw-retires inc))
       (if include-sibling?
         (do (swap! saw-sibling inc)
             (assert= (str "the declared path is exempt and its sibling " sibling " is not")
@@ -76,7 +90,14 @@
   (when-not (> @saw-sibling 80)
     (fail! (str "P1 reach floor: sibling-bearing cases drawn only " @saw-sibling " times")))
   (when-not (> (- @saw-declared @saw-sibling) 80)
-    (fail! (str "P1 reach floor: declared-only cases drawn only " (- @saw-declared @saw-sibling) " times"))))
+    (fail! (str "P1 reach floor: declared-only cases drawn only " (- @saw-declared @saw-sibling) " times")))
+  ;; Both declaring fields must actually be drawn, or the widening is untested
+  ;; on the half that motivated it (BL-1251's retirement case).
+  (when-not (> @saw-retires 80)
+    (fail! (str "P1 reach floor: retires:-declared cases drawn only " @saw-retires " times")))
+  (when-not (> (- @saw-declared @saw-retires) 80)
+    (fail! (str "P1 reach floor: acceptance:-declared cases drawn only "
+                (- @saw-declared @saw-retires) " times"))))
 
 ;; ── P2: derived from the declaration, never from an id relation ─────────
 (let [saw-exempt (atom 0)
@@ -84,7 +105,7 @@
   (dotimes [_ NUM-RUNS]
     (let [task-id (rand-id)
           foreign-id (loop [c (rand-id)] (if (= c task-id) (recur (rand-id)) c))
-          declared (pick [(feature-path foreign-id) (feature-path task-id) nil])
+          declared (pick [[(feature-path foreign-id)] [(feature-path task-id)] []])
           changed (into [(code-path)]
                         (repeatedly (inc (.nextInt rng 3))
                                     #(pick [(feature-path foreign-id) (yaml-path foreign-id)
@@ -92,7 +113,7 @@
           findings (task-scope-gate-lib/foreign-scope-findings task-id changed declared)
           expected (vec (for [p changed
                               :let [id (task-scope-gate-lib/ticket-id-for-path p)]
-                              :when (and id (not= id task-id) (not (and declared (= p declared))))]
+                              :when (and id (not= id task-id) (not (contains? (set declared) p)))]
                           {:path p :ticket-id id}))]
       (if (seq findings) (swap! saw-foreign inc) (swap! saw-exempt inc))
       (assert= (str "the verdict is exactly the declaration-derived one for " (pr-str changed)
@@ -109,13 +130,16 @@
     (let [task-id (rand-id)
           foreign-id (loop [c (rand-id)] (if (= c task-id) (recur (rand-id)) c))
           changed [(feature-path foreign-id)]
-          findings (task-scope-gate-lib/foreign-scope-findings task-id changed nil)
+          ;; An unreadable ticket yields NO declared paths at all - the
+          ;; accessor is handed nil exactly as findings-for-git-handoff does.
+          findings (task-scope-gate-lib/foreign-scope-findings
+                    task-id changed (task-scope-gate-lib/declared-exempt-paths nil))
           message (task-scope-gate-lib/refusal-message
                    {:task-name task-id :findings findings :acceptance-unreadable? true})]
       (swap! saw inc)
       (assert= "a nil declaration exempts nothing"
                [{:path (feature-path foreign-id) :ticket-id foreign-id}] findings)
-      (when-not (str/includes? message "acceptance-contract exemption could not be evaluated")
+      (when-not (str/includes? message "declared-path exemption could not be evaluated")
         (fail! (str "P3: the refusal does not say the exemption was unevaluable: " message)))
       (when-not (str/includes? message task-id)
         (fail! (str "P3: the refusal does not name the task: " message)))))

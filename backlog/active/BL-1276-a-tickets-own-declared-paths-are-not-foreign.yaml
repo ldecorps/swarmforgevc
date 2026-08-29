@@ -1,5 +1,5 @@
 id: BL-1276
-title: "the task-scope gate refuses a ticket for editing the very feature file its own acceptance: field names, leaving the coder no move that does not either violate the spec or defeat the gate"
+title: "the task-scope gate refuses a ticket for editing the very feature file its own landed YAML declares (acceptance: or retires:), leaving the coder no move that does not either violate the spec or defeat the gate"
 milestone: M8
 type: defect
 severity: high
@@ -14,16 +14,16 @@ direction: agent-reported
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1276-a-tickets-own-acceptance-contract-is-not-foreign.feature
+acceptance: specs/features/BL-1276-a-tickets-own-declared-paths-are-not-foreign.feature
 
 invariants:
   - "A parcel is never refused with an outcome its recipient has no action available to satisfy."
-  - "The exemption covers only the exact path string the ticket declares in its own acceptance: field; any other path belonging to that same foreign ticket is still reported."
+  - "The exemption covers only the exact path strings the ticket declares in its own acceptance: or retires: fields; any other path belonging to that same foreign ticket is still reported."
   - "The exemption is derived from the ticket's own landed declaration, never from a list of ticket-id pairs; a declaration that cannot be read grants no exemption."
 
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1276::the acceptance handler for this feature file is registered'
-  - 'swarmforge/scripts/task_scope_gate_lib.bb::acceptance::the declared acceptance contract reaches the scope decision'
+  - 'swarmforge/scripts/task_scope_gate_lib.bb::declared-exempt-paths::the ticket own declared paths reach the scope decision. Name fixed here so the wiring gate has a literal to match (BL-874); everything else about the shape is the implementer call.'
 
 description: |
   ## What is wrong
@@ -33,11 +33,18 @@ description: |
   and exempts exactly one thing: `backlog/evidence/<task-id>-*` for the named
   task. Nothing else.
 
-  A ticket whose own `acceptance:` field POINTS AT another ticket's feature
-  file therefore cannot be forwarded at all. The specifier writes that pointer
-  deliberately: a defect filed against a shipped check amends the durable
-  contract for that check rather than forking it in two. So the one file the
-  ticket MUST edit is the one file the gate reads as foreign.
+  A ticket whose own landed YAML DECLARES another ticket's path as part of its
+  own deliverable therefore cannot be forwarded at all. The specifier writes
+  those declarations deliberately, and there are two kinds:
+
+  - `acceptance:` - a defect filed against a shipped check amends the durable
+    contract for that check rather than forking it in two.
+  - `retires:` - a retirement ticket, by construction, edits the SUPERSEDED
+    ticket's feature file. BL-1006 requires exactly this ("retire, never
+    reword"), so the constitution mandates the very edit the gate refuses.
+
+  Either way the one file the ticket MUST edit is the one file the gate reads
+  as foreign.
 
   ## The live instance
 
@@ -53,6 +60,25 @@ description: |
   BL-1246's `acceptance:` field IS that file. Evidence, written by the coder
   rather than worked around:
   `backlog/evidence/BL-1246-handoff-blocked-by-task-scope-gate-20260829.md`.
+
+  ## The second live instance (added 2026-08-29, and why this ticket widened)
+
+  BL-1251 - retire BL-1248 scenario 04 now the reconcile sweep is re-armed - is
+  implemented and committed at `4ba1d0c9e` on `swarmforge-coder`, and is refused
+  for editing `specs/features/BL-1248-master-main-reconcile-kill-switch.feature`.
+  That file carries `RETIRE-WITH: BL-1251` on main: it NAMES BL-1251 as its
+  retirer. BL-1251 has no `acceptance:` field at all, so an exemption keyed only
+  on `acceptance:` - which is what this ticket originally proposed - would leave
+  BL-1251 blocked with no move. That is why the predicate is now stated over the
+  ticket's declarations rather than over one field. Evidence:
+  `backlog/evidence/BL-1251-handoff-blocked-by-task-scope-gate-20260829.md`.
+
+  The retirement case is the sharper of the two: BL-1006, in the specifier's own
+  role prompt, REQUIRES the retiring ticket to edit the superseded ticket's
+  feature file ("retire, never reword"), so here the gate refuses a
+  constitutionally mandated action. The untagged-commit escape is also worse
+  here than for BL-1246, because it destroys the retirement attribution BL-1006
+  exists to keep greppable.
 
   ## Why the prescribed remedy is a no-op here
 
@@ -77,7 +103,11 @@ description: |
 
   Exempt by construction, from a predicate the ticket YAML already carries:
   a path is not foreign when the task's OWN ticket declares that exact path in
-  its `acceptance:` field. No list, no pairing table, nothing to maintain.
+  one of its declaring fields - today `acceptance:` (a single path) and
+  `retires:` (a list of paths, added to backlog-schema.md by this amendment).
+  No list of ticket pairs, no pairing table, nothing to maintain. Read both
+  fields through ONE declared-paths accessor, so that a third declaring field
+  later is a one-line addition rather than a new branch.
 
   Read the declaration from the landed ticket, not the sender's working copy -
   `swarm_handoff.bb`'s own `active-ticket-yaml-content` already does exactly
@@ -119,12 +149,22 @@ qa_e2e_procedure: >
   confirm the send is refused AND the refusal says the exemption could not be
   evaluated. (6) Re-run the whole BL-1192 acceptance feature and confirm all
   seven scenarios still pass. (7) Against the live repo, from
-  .worktrees/coder with this fix present, re-send BL-1246 at 3c07857a5 and
-  confirm it is delivered.
+  .worktrees/coder with this fix present, re-send BOTH held parcels unchanged
+  and confirm each is delivered: BL-1246 at 3c07857a5 (acceptance-declared) and
+  BL-1251 at 4ba1d0c9e (retires-declared).
 
 out_of_scope: |
-  - BL-1246 itself. Its commit is correct and stays exactly as it is; this
-    ticket unblocks it, it does not rebuild it.
+  - BL-1246 itself, and BL-1251 itself. Both commits are correct and stay
+    exactly as they are; this ticket unblocks them, it does not rebuild them.
+  - A two-sided handshake. The `RETIRE-WITH: <id>` marker inside a feature file
+    is documentation, NOT a gate input: do not build a predicate that greps it,
+    and do not require it to agree with `retires:`. The trust model is the one
+    `acceptance:` already has - the specifier writes the declaration in the
+    ticket's own landed YAML, and that is the whole authority. Grepping a
+    free-form prose comment would be fragile in exactly the way this repo has
+    been bitten by before, and the marker's existing usages are not all ticket
+    ids (one reads "whichever ticket reopens the genuine-conflict recovery
+    path").
   - The land step's entangled-siblings report (BL-1272) and BL-1192's range
     walk. Different mechanism, different file; only the foreign/not-foreign
     predicate changes here.
@@ -193,5 +233,36 @@ notes: |
     which also took four landed bookkeeping commits with it - the thirteenth
     occurrence). Recovered from tmp/bl1276-recover/ and pushed to origin
     immediately, because an unpushed commit on this checkout is not durable.
+
+  - [2026-08-29] specifier: WIDENED, and this is an amendment to a ticket that
+    was already active but not yet in flight (the coder's mailbox was empty and
+    no parcel for it had ever been dispatched, so no role was holding a stale
+    copy - the BL-317/BL-325 hazard does not apply). The coder reported a second
+    parcel blocked by this same gate, BL-1251 at 4ba1d0c9e, and correctly
+    observed that this ticket as written would NOT have covered it: BL-1251 has
+    no `acceptance:` field. Rather than serialise a sibling ticket through six
+    stages to touch the same predicate in the same function - which would also
+    have collided with this one on merge, and left BL-1251 blocked behind two
+    full ticket lifecycles - the exemption is stated over the ticket's declaring
+    FIELDS. The slice grows by one field name in one accessor, not by a second
+    mechanism, so the size envelope holds and mutation_cost stays low.
+  - [2026-08-29] specifier: PROSE HALF LANDED (BL-798), which the previous note
+    said I would do when this ticket activated. `swarmforge/backlog-schema.md`
+    now documents the new `retires:` field, and `swarmforge/handoff-protocol.md`
+    gains the fourth exemption bullet under "Mechanics
+    (`task_scope_gate_lib.bb`)". Both landed on main in the same commit as this
+    amendment; the commit is recorded below once made. The reasoning for NOT
+    arming `required_wiring` on either prose file is unchanged and still stands:
+    that check pins the file to the PARCEL commit, so it would refuse the
+    documenter-to-QA handoff whenever the branch has not merged `main` - a false
+    block, not a check.
+  - [2026-08-29] specifier: the feature file was RENAMED, from
+    `BL-1276-a-tickets-own-acceptance-contract-is-not-foreign.feature` to
+    `BL-1276-a-tickets-own-declared-paths-are-not-foreign.feature`, because the
+    old slug states a narrower contract than the ticket now carries and the name
+    is durable. This is safe precisely because nothing is built yet: no step
+    handler exists, so there is no FEATURE-constant pairing to unbind (the trap
+    BL-1251's own ticket warns about). The `acceptance:` field above points at
+    the new name.
 
 assigned_to: coder

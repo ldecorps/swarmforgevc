@@ -1,0 +1,1 @@
+{"id":"BL-1062","messages":[{"seq":0,"ts":1788017507473,"author":"swarm","type":"outbound","text":"BL-1062 🎵 in progress — Two property tests demand that an UNSEEDED random draw covered every value of a small space - bl968 fails ~16% of runs and bl948 ~2.3%, on correct code, and neither red says anything about the code under test"}]}

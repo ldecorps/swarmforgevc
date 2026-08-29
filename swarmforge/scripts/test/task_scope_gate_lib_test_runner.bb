@@ -348,12 +348,50 @@
          (task-scope-gate-lib/foreign-scope-findings
           "BL-1246" ["specs/features/BL-1230-guard.feature"]))
 
+(assert= "declared-retires-paths reads a list block"
+         ["specs/features/BL-1248-switch.feature" "specs/features/BL-9-other.feature"]
+         (task-scope-gate-lib/declared-retires-paths
+          "id: BL-1251\nretires:\n  - specs/features/BL-1248-switch.feature\n  - specs/features/BL-9-other.feature\nstatus: todo\n"))
+
+(assert= "declared-retires-paths reads an inline single value"
+         ["specs/features/BL-1248-switch.feature"]
+         (task-scope-gate-lib/declared-retires-paths "retires: specs/features/BL-1248-switch.feature\n"))
+
+(assert= "declared-retires-paths stops at the next top-level field"
+         ["specs/features/BL-1248-switch.feature"]
+         (task-scope-gate-lib/declared-retires-paths
+          "retires:\n  - specs/features/BL-1248-switch.feature\nstatus: todo\n  - not-a-retires-entry\n"))
+
+(assert= "declared-retires-paths is empty when the field is absent"
+         []
+         (task-scope-gate-lib/declared-retires-paths "id: BL-1\ntitle: x\n"))
+
+(assert= "declared-exempt-paths is ONE accessor over every declaring field"
+         ["specs/features/BL-1230-guard.feature" "specs/features/BL-1248-switch.feature"]
+         (task-scope-gate-lib/declared-exempt-paths
+          "acceptance: specs/features/BL-1230-guard.feature\nretires:\n  - specs/features/BL-1248-switch.feature\n"))
+
+(assert= "a retires: declared feature file is not foreign"
+         []
+         (task-scope-gate-lib/foreign-scope-findings
+          "BL-1251" ["specs/features/BL-1248-switch.feature"] ["specs/features/BL-1248-switch.feature"]))
+
+(assert= "EXACTNESS holds for retires: too - the sibling yaml is still foreign"
+         [{:path "backlog/active/BL-1248-switch.yaml" :ticket-id "BL-1248"}]
+         (task-scope-gate-lib/foreign-scope-findings
+          "BL-1251" ["backlog/active/BL-1248-switch.yaml"] ["specs/features/BL-1248-switch.feature"]))
+
+(assert= "a single declared path may still be passed as a bare string"
+         []
+         (task-scope-gate-lib/foreign-scope-findings
+          "BL-1246" ["specs/features/BL-1230-guard.feature"] "specs/features/BL-1230-guard.feature"))
+
 (assert-includes "an unevaluable exemption is SAID, not silently skipped"
                  (task-scope-gate-lib/refusal-message
                   {:task-name "BL-1246"
                    :findings [{:path "specs/features/BL-1230-guard.feature" :ticket-id "BL-1230"}]
                    :acceptance-unreadable? true})
-                 "acceptance-contract exemption could not be evaluated")
+                 "declared-path exemption could not be evaluated")
 
 (assert-false "a readable declaration adds no such note"
               (str/includes?
