@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 29, 2026 (BL-1261: an expedite park moves a ticket's
+**Last Updated:** August 29, 2026 (BL-603: the BL-594 behaviour-trend series
+get their surface — a Trends board on the live holistic console publishing
+all nine, served fresh over the token-authed bridge (`GET /trends`), never
+the static PWA. Registering a series is the only edit needed to publish it:
+neither the payload builder nor the console renderer holds a per-series
+list. A series with nothing to plot reads "no data yet" and draws nothing —
+never a fabricated zero or flat line, covering both a producer that has not
+landed a source reader and one that landed but recorded nothing yet
+(`self-heal-events`, dark until BL-1273 restores its production emit
+sites). See "Behaviour-Trends Board (BL-603)" below. Acceptance:
+`specs/features/BL-603-trends-published-on-mini-app.feature`. How-to:
+`docs/how-to/BL-603-trends-published-on-mini-app.md`.)
+Prior entry — August 29, 2026 (BL-1261: an expedite park moves a ticket's
 YAML into `backlog/hold/` but not its parcel, so tickets were being built and
 gated while their backlog record said nobody may touch them. Fixed:
 `hold_divergence_audit_lib.bb` / `hold_divergence_audit_cli.bb` (pure lib +
@@ -8316,6 +8328,49 @@ helpers — keep the metrics graph acyclic (same posture as BL-600 / BL-601).
 - **BL-577** — flow watchdog (stall alarms vs this latency distribution).
 - **BL-595** — human-loop reliability ledger (sibling `computeTrend` posture).
 - **BL-096** — shared `computeTrend` / `TrendResult` framework.
+
+## Behaviour-Trends Board (BL-603)
+
+The BL-594 series (BL-595–BL-602 plus the global-tokens BL-605) are
+producers; BL-603 is their surface. A Trends board on the LIVE holistic
+console (the same token-authed bridge surface as the epic-reorder and
+spec-tree screens, BL-572/BL-592) publishes all nine — never the static
+backlog-dashboard PWA, which carries only git-SHA-derivable data and has
+no bridge connectivity (Architecture rule 5). Consumer slice only: no
+instrumentation added, read-only, no write path.
+
+### Data flow
+
+`GET /trends?token=...` (`bridgeServer.ts`) computes
+`buildTrendsBoardState` (`bridgeState.ts`) fresh on every poll from the
+series registry (`extension/src/metrics/trendsBoardRegistry.ts`), each
+entry computed through the shared `computeTrend` framework
+(`trend.ts`). `renderTrendsBoard` (`holisticUiHtml.ts`) maps over
+whatever the payload carries into the console's `trendsBoard` section.
+Registering a series is the only edit needed to publish it — neither the
+payload builder nor the renderer holds a per-series list.
+
+### The honesty rule
+
+A series with nothing to plot reads **"no data yet"** and draws nothing —
+never a zero, a flat line, or an interpolated point. This covers two
+causes deliberately indistinguishable on screen: a producer that has not
+landed a source reader (`human-decision-latency` at BL-603 mint), and one
+that landed but records nothing today (`self-heal-events`, dark until
+BL-1273 restores the five production emit sites a merge, `2e37477ec`,
+dropped after BL-597 shipped). Drawing a flat line at zero for the second
+case would read as "the swarm never self-heals" — the exact false green
+BL-597 was built to prevent.
+
+### See Also
+
+- **BL-594** — swarm-behaviour-trends epic.
+- **BL-572** / **BL-592** — the epic-reorder and spec-tree live console
+  screens this board shares its bridge-token-auth posture with.
+- **BL-1273** — restores the self-heal-events production emit sites.
+- **BL-604** — the morning-briefing analysis consumer (out of scope here).
+
+How-to: `docs/how-to/BL-603-trends-published-on-mini-app.md`.
 
 ## Flow Watchdog (BL-577)
 
