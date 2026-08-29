@@ -842,6 +842,7 @@ const DOMAINS = [
   require('./bl1222PropertySuiteGuardGitEnvScrubSteps'),
   require('./bl1238AgentIdleClearFullnessSteps'),
   require('./bl1242MergeBranchWorkDeletionSteps'),
+  require('./bl1247ReconcileSweepKillSwitchSteps'),
   require('./bl1248MasterMainReconcileKillSwitchSteps'),
   require('./bl1236ReconcileConflictPredictionSteps'),
   require('./bl1247PropertyGeneratorDomainAgreementSteps'),
