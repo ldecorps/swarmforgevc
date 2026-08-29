@@ -431,6 +431,54 @@
 (assert= "16: a restart not attempted is reported as such, not as success"
          :not-attempted (:restart (expedite-lib/run-result {:ticket :done})))
 
+;; ── BL-1249: restart-hold-verdict — the operator control-pause hold ────────
+;; Pure: raw-content is nil for a genuinely absent marker, its exact text
+;; otherwise. now-ms is the injected clock (never System/currentTimeMillis
+;; here).
+
+(assert= "1249: an absent marker is not held"
+         {:held? false :reason :absent}
+         (expedite-lib/restart-hold-verdict nil 1000))
+
+(assert= "1249: active with no timer holds"
+         {:held? true :reason :active :until-ms nil}
+         (expedite-lib/restart-hold-verdict "{\"active\":true}" 1000))
+
+(assert= "1249: active false is not held (explicit inactive)"
+         {:held? false :reason :inactive}
+         (expedite-lib/restart-hold-verdict "{\"active\":false}" 1000))
+
+(assert= "1249: active true with a FUTURE untilMs holds"
+         {:held? true :reason :active :until-ms 5000}
+         (expedite-lib/restart-hold-verdict "{\"active\":true,\"untilMs\":5000}" 1000))
+
+(assert= "1249: active true with a PAST untilMs is not held"
+         {:held? false :reason :inactive :until-ms 500}
+         (expedite-lib/restart-hold-verdict "{\"active\":true,\"untilMs\":500}" 1000))
+
+(assert= "1249: active true with untilMs EXACTLY now is not held (>=, never held at the boundary)"
+         {:held? false :reason :inactive :until-ms 1000}
+         (expedite-lib/restart-hold-verdict "{\"active\":true,\"untilMs\":1000}" 1000))
+
+(assert-true "1249: unparseable JSON holds (fail-closed on doubt)"
+             (:held? (expedite-lib/restart-hold-verdict "not json{{{" 1000)))
+(assert= "1249: unparseable JSON reports :malformed, not :active"
+         :malformed (:reason (expedite-lib/restart-hold-verdict "not json{{{" 1000)))
+
+(assert-true "1249: a truncated marker (valid prefix cut short) holds, never reads as absent"
+             (:held? (expedite-lib/restart-hold-verdict "{\"active\":tr" 1000)))
+
+(assert-true "1249: an empty string (the read-failure fold) holds, never reads as absent"
+             (:held? (expedite-lib/restart-hold-verdict "" 1000)))
+
+(assert-true "1249: a non-object JSON value (an array) holds"
+             (:held? (expedite-lib/restart-hold-verdict "[1,2,3]" 1000)))
+
+(assert-true "1249: an active marker whose untilMs is not a number holds (malformed, not a crash)"
+             (:held? (expedite-lib/restart-hold-verdict "{\"active\":true,\"untilMs\":\"soon\"}" 1000)))
+(assert= "1249: ...and reports :malformed"
+         :malformed (:reason (expedite-lib/restart-hold-verdict "{\"active\":true,\"untilMs\":\"soon\"}" 1000)))
+
 (assert= "17: a matching live set yields an EMPTY delta, never a health claim"
          {} (expedite-lib/live-set-delta
              {:tmux-servers 1 :handoffd 1 :handoffd-supervisor 1 :role-agents 8}))
