@@ -10,6 +10,8 @@ priority: 8
 direction: swarm-reported
 depends_on: []
 mutation_cost: high
+slice_size_envelope: low
+size_envelope_decision: "justify not split - one predicate narrowed in one branch of one CLI, plus the re-check sweep invariant 2 already requires; 3 scenarios, no new surface. Band declared here because mutation_cost: high on this ticket is Article 3.6 seat-tier, not a size estimate. Reasoning in notes."
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1268-stale-claim-branch-must-name-this-ticket.feature
 
@@ -127,6 +129,23 @@ notes: >
   citing it in prose rather than depends_on loses nothing and keeps the
   depends_on-gated branches disarmed.
 
+
+  Size envelope, 2026-08-29. The coordinator reported this ticket blocked
+  by BL-634's slice_size_envelope gate, which requires split-or-justify.
+  Decision recorded in size_envelope_decision: JUSTIFY, do not split.
+
+  Same cause as BL-1267's: the gate fired on mutation_cost: high, which
+  Article 3.6 mandates on deprecator tickets so BL-1001 keeps them off easy
+  seats. That is a seat-tier declaration, not a size estimate. The true
+  band is declared in slice_size_envelope: low, which the gate prefers.
+
+  Why not split. There is nothing to cut. The change is one predicate in
+  one branch of one CLI, with three scenarios and no new surface; the
+  re-check of every currently-held ticket is not separable work but the
+  evidence invariant 2 already demands for the narrowing itself. A split
+  here would produce a first slice that changes a predicate with no
+  demonstration it did not turn a genuine self-claim into an allow, which
+  is the one outcome the ticket exists to prevent.
 approval_context: >
   A gate that fires on a quarter of its input for correct bookkeeping is
   training its readers to wave it through, which is how the three genuinely
