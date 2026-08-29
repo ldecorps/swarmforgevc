@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1233: `sync_worktree_scripts.bb`'s
+launcher guard (BL-373) — which leaves a role worktree's git-tracked script
+paths to git rather than copying over them — was fully defeated by an
+ambient `GIT_DIR`/`GIT_WORK_TREE` in the launcher's environment, the live
+condition on this host. `-C <worktree>` does not override those variables:
+the tracked-path query answered for whichever repo `GIT_DIR`/`GIT_WORK_TREE`
+named, returned an empty tracked set for the real worktree, and the
+launcher read "empty" as "nothing to leave to git" and copied the launching
+checkout's (often older) bytes over all ~1142 tracked script files in every
+role worktree — silently, since the copy's own exit status is `0` and the
+guard's "left to git (tracked)" lines simply stop printing. In the observed
+incident this landed on safety gates first (BL-1196's env scrub, BL-1192's
+task-scope gate), which had not yet reached `main` and so were absent from
+the copied bytes. Fixed with the same two-part shape BL-1196 already
+established at a different call site: the tracked-path git invocation now
+scrubs `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` before asking, and a new
+pure `trustworthy-tracked-answer?` (`sync_worktree_scripts_lib.bb`) is the
+fail-closed backstop — a tracked-path answer is trusted only when git
+actually resolved a top-level for the destination worktree and it equals
+that worktree's own canonicalized root; on a mismatch or an unresolved
+top-level the launcher copies nothing and refuses loudly, naming both
+paths. A foreign target repo that legitimately tracks none of these paths
+still resolves its own top-level correctly and is unaffected — the
+discriminator is a wrong or absent top-level, never an empty tracked set by
+itself. Closes the open question left in the BL-1195 worktree-drift-guard
+doc ("or that guard has a gap this incident exposes"). No new extension
+command or setting. Acceptance:
+`specs/features/BL-1233-launcher-guard-survives-ambient-git-env.feature`.
+How-to: `docs/how-to/BL-1233-launcher-guard-survives-ambient-git-env.md`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1249: the expeditor's restart phase
 (`restart-stack!` in `swarmforge/scripts/expedite_cli.bb`) now reads the
 operator's `.swarmforge/operator/control-pause.json` hold marker — the same

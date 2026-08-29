@@ -1,0 +1,225 @@
+id: BL-1223
+title: "A note that merely names a ticket is counted as proof it was dispatched: 24 of 112 paused tickets are already unroutable, and the coordinator's own 'no parcel in flight' alarm is consumed as evidence there is no gap"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1223-only-a-dispatch-counts-as-a-dispatch-trail.feature
+human_approval: approved
+approval_context: >
+  Two things are worth the human eye, and neither is the diagnosis - that is
+  measured and reproducible, not inferred.
+
+  First, the trade this makes. Narrowing what counts as dispatch evidence
+  moves the residual failure from silent starvation to an occasional double
+  route. route_backlog_to_coder.sh already picks that direction explicitly
+  for its own unreadable-trail case - "the louder failure is the safer one
+  here" - so this is consistent with the module's stated posture rather than
+  a new policy. Confirm that reading is wanted, because a double route is
+  what BL-1097 was filed to reduce.
+
+  Second, which note forms genuinely dispatch work. The router emits
+  "Work <basename>: read file in backlog/active", which must keep counting.
+  But a hand-written coordinator kickoff of the documented BL-259 shape -
+  "BL-259 active: build gated dependency-rule checker + steps" - dispatches
+  real work with no verb-first marker, and a naive verb-only rule would newly
+  starve it. If the answer is "the router's own emitted forms are the only
+  notes that count, and hand kickoffs must adopt one of them", say so and
+  this becomes a one-sitting fix; if hand kickoffs must keep working as-is,
+  the discriminator needs to be structural rather than textual and the coder
+  should know that before starting.
+description: |
+  ## What
+
+  A dispatch trail must record dispatches. A message that merely mentions a
+  ticket - announcing it, questioning it, or reporting its state - must never
+  be counted as evidence that the ticket was handed to a role.
+
+  ## The measurement
+
+  Read from the live mailboxes on 2026-08-28 at 02:10Z, by running the
+  shipped predicate over the real corpus rather than by inspection.
+
+  18855 handoffs contribute an id to the trail set: 8693 `git_handoff` and
+  10162 `note`. Of the 715 distinct ids in the set, 68 have no `git_handoff`
+  and no verb-first routing note anywhere - their entire "dispatch trail" is
+  prose that names them.
+
+  Cross-referenced against open work:
+
+  - `backlog/paused/`: 24 of 112 tickets. Every one is poisoned by the
+    specifier's own spec-ready announcement, e.g. BL-1214's
+    "BL-1214 spec ready in backlog/paused/ - human_approval pending".
+    `dispatch_trail_cli.bb . dispatched BL-1214` answers DISPATCHED, so
+    `route_backlog_to_coder.sh` will `exit 3` and refuse to route it the
+    moment it is promoted. Spot-checked live on BL-1214, BL-1196, BL-1219
+    and BL-772: all four answer DISPATCHED, none has ever been dispatched.
+  - `backlog/active/`: BL-1196, whose five mention-only notes include
+    "BL-1196 never built, wrongly in done/: move to paused/". It reads
+    DISPATCHED, so the BL-222 dispatch-gap sweep cannot see it.
+
+  `bb swarmforge/scripts/dispatch_trail_cli.bb . undispatched-active` prints
+  nothing at all today, while BL-1203 sat in `active/` with no parcel and the
+  coordinator was manually reporting the drop.
+
+  ## The circularity, which is the reason this is not merely noisy
+
+  The trigger for filing this was BL-1203. Its own life shows every step:
+
+  1. 2026-08-27T19:40Z the specifier sends the coordinator the note its role
+     prompt requires: "BL-1203 ready in paused/: role answers replay 40x/day
+     into specifier". BL-1203 is now DISPATCHED, before it is promoted.
+  2. 2026-08-28T01:25Z and 01:55Z the coordinator sends itself
+     "BL-1203 no parcel in flight - possible drop." - twice, correctly.
+  3. Each of those alarms is itself scanned as a dispatch trail. **The report
+     of the gap is counted as proof there is no gap.**
+  4. 01:56Z the coordinator routes BL-1203 by hand, out of band.
+
+  A predicate that is silenced by its own alarm cannot be trusted to be
+  quiet. Every ticket this swarm mints is born already-dispatched, because
+  the specifier's spec-ready note is mandated by the specifier role prompt
+  and the 80-character note cap makes a leading id the natural form.
+
+  ## How (direction, not mandate)
+
+  `collect-dispatched-ticket-ids` in `swarmforge/scripts/chase_sweep_lib.bb`
+  keeps every id `extract-ticket-id` finds in a handoff's `task:` or
+  `message:` header. The `task:` field is structural - only a `git_handoff`
+  carries one, and its value is a stable task name. The `message:` field is
+  free prose on a `note`. The over-match lives entirely on the prose side,
+  and `extract-ticket-id` already has a second, verb-first pattern
+  (`Spec|Work`) added by BL-538 precisely to recognise routing notes - so the
+  distinction the fix needs is half-encoded already.
+
+  Note also that nothing is stored: the trail set is recomputed from the
+  corpus on every call. Narrowing the predicate retroactively heals all 68
+  ids, including the 24 paused tickets, with no backfill or migration.
+
+  ## Constraints
+
+  - Do not fix this in `route_backlog_to_coder.sh`. BL-1097's second
+    invariant is that the router and the sweep hold one predicate, met by
+    definition rather than by discipline; a router-side filter recreates the
+    second copy that invariant exists to forbid.
+  - Do not change `extract-ticket-id` itself. Eleven other call sites depend
+    on it - the dropped-parcel sweep, the nudge path, the duplicate-chain
+    guard, `swarm_handoff.bb`, `done_with_current_task.bb` - and for them
+    "does this handoff mention this ticket" is the correct question. Only the
+    dispatch predicate needs the narrower "is this handoff a dispatch".
+  - The router's own routing note must keep counting. BL-538 is the incident:
+    a leading-only extractor missed "Spec BL-538 ..." and dispatch-gap
+    re-fired a redundant auto-route while the routing note sat in the
+    assignee's inbox.
+  - Failing loud beats failing silent, per the module's own posture. If a
+    form cannot be classified, prefer answering UNDISPATCHED - a second route
+    is visible and recoverable; a starved ticket is neither.
+
+qa_e2e_procedure: >
+  (1) Run `bb swarmforge/scripts/dispatch_trail_cli.bb . dispatched BL-1214`
+  and confirm UNDISPATCHED - before the fix it answers DISPATCHED, and
+  BL-1214 has never been dispatched. Repeat for BL-1196, BL-1219, BL-772.
+  (2) Run `bb swarmforge/scripts/dispatch_trail_cli.bb . undispatched-active`
+  and confirm it now lists the active tickets that genuinely have no parcel;
+  before the fix it printed nothing at all. Verify each listed id by hand
+  against the mailboxes before accepting the list.
+  (3) Regression on BL-538: send a routing note of the router's own form
+  ("Work BL-XXX-slug: read file in backlog/active") for a ticket with no
+  git_handoff, then confirm the same CLI answers DISPATCHED and the sweep
+  does not auto-route it.
+  (4) End to end: promote a paused ticket whose only mailbox mention is a
+  spec-ready note and confirm route_backlog_to_coder.sh emits a parcel rather
+  than exiting 3. Confirm re-running the router for a ticket that now has
+  that parcel refuses, so BL-1097's guard still holds.
+  (5) Confirm the sibling sweeps are unmoved: run the dropped-parcel and
+  nudge test runners under swarmforge/scripts/test/ and confirm no change in
+  their answers over the same corpus.
+
+out_of_scope: |
+  - Mailbox retention. 18855 trail-contributing handoffs is a cost problem
+    already filed as BL-1073; this ticket is about what the scan counts, not
+    how much it scans.
+  - `extract-ticket-id`'s own leading-token and canonicalization semantics
+    (BL-503, BL-869, and the ABL-217 glued-prefix guard). Unchanged here.
+  - BL-1396, an id in the trail set for a ticket that does not exist, from a
+    typo in an old note. Same over-matching, no separate cleanup needed - it
+    leaves the set when the predicate narrows.
+  - Whether the router should fail open or closed when the trail is
+    unreadable. Decided in BL-1097 and not reopened.
+  - BL-1100, the promotion prose-grep that starves candidates by scanning
+    ticket YAML for a hold phrase. A sibling shape - a prose match driving a
+    durable-false decision - but a different predicate, separately ticketed.
+  - Clearing the historical mention notes from the mailboxes. They are
+    evidence while this is open, and the fix does not need them gone.
+
+invariants:
+  - "A message that reports or requests a ticket's dispatch state is never itself counted as evidence that the ticket was dispatched."
+  - "The router and the dispatch-gap sweep answer from one predicate: for any ticket, a router refusal and the sweep's gap list never disagree."
+  - "Every other consumer of the shared ticket-id extractor returns an unchanged answer over the same corpus."
+
+source: |
+  Coordinator note 002934, 2026-08-28T01:57Z: "BL-1203 dispatch_trail_cli
+  false DISPATCHED (matched own note text)". Verified by the specifier the
+  same night by running the shipped predicate over the live corpus, not by
+  reading the code alone: counts, the 68-id list, and the paused/active
+  cross-reference above were all measured.
+
+  The four handoffs that make BL-1203's own case are
+  .swarmforge/handoffs/specifier/sent/00_20260827T194046Z_000789,
+  coordinator/sent/00_20260828T012513Z_002928,
+  coordinator/sent/00_20260828T015525Z_002932 (the two self-reported gap
+  alarms), and coordinator/sent/10_20260828T015657Z_002933, the hand route
+  that finally moved it.
+
+notes: |
+  - "[2026-08-28] specifier: BL-1203 itself needs no rescue - it was hand
+    routed to the coder at 01:56:57Z and is in flight. This ticket is the
+    predicate defect its stall exposed, not a re-file of it."
+  - "[2026-08-28] specifier: promote_and_route_next.sh:464 already prints a
+    message for this exact refusal, telling the operator to close the ticket
+    or re-route with --force. The message is correct about what happened and
+    wrong about why, so following its advice on one of these 24 tickets would
+    close a ticket that was never built. Worth a look from the documenter."
+  - "[2026-08-28] specifier: hardening note - chase_sweep_lib.bb is Babashka,
+    which has no mutation/CRAP/DRY wired in this repo. The .bb half is gated
+    by swarmforge/scripts/test/ only; record the degraded fallback rather
+    than implying mutation ran. The JS step handlers are normal Stryker
+    scope."
+  - "[2026-08-28] specifier: invariant 2's standing gate is BL-1097 scenario
+    03, which already asserts the router and sweep agree - it must stay
+    green rather than be duplicated here. Invariant 3's gate is the existing
+    dropped_parcel and dispatch_gap test runners under
+    swarmforge/scripts/test/."
+  - "[2026-08-28] specifier: this ticket's own spec-ready note to the
+    coordinator is deliberately phrased 'Ready in paused/: BL-1223 ...'
+    rather than leading with the id, so it does not poison BL-1223's own
+    trail. Verified: dispatch_trail_cli answers UNDISPATCHED for BL-1223 and
+    DISPATCHED for BL-1214, whose note is identical in substance and leads
+    with the id. That contrast is the defect in two commands, and it is why
+    the phrasing must not be tidied back to house style before the fix
+    lands."
+  - "[2026-08-29] specifier: THIS TICKET WAS DESTROYED AND RESTORED. All three
+    of its commits - the mint (45e9a710d), the spec-ready-phrasing note
+    (305ea632f) and the HUMAN'S APPROVAL (ecc82a685, 2026-08-28 03:04:56
+    +0100) - are reachable objects but ancestors of neither `main` nor
+    `origin/main`; a reset erased them. The file was absent from the backlog
+    entirely, so the ticket read as never-minted while its defect stayed live.
+    Restored here from ecc82a685 (the approved revision, NOT the mint) so the
+    human's tap is not silently re-asked - `human_approval: approved` is the
+    human's, recorded 2026-08-28, not a specifier-set value. The feature file
+    is restored from 45e9a710d, its only revision."
+  - "[2026-08-29] specifier: the defect is re-verified live today, on a ticket
+    minted after the measurement above. `bb swarmforge/scripts/dispatch_trail_cli.bb
+    . dispatched BL-1237` prints DISPATCHED. Every one of the 15 handoffs
+    naming BL-1237 across all mailboxes is `type: note`; none carries a
+    `task:` header and none is a `git_handoff`. BL-1237 has never been
+    dispatched to any role. The coordinator's router refused to route it on
+    that verdict (note 20260829T014516Z), which is what surfaced this
+    restoration. BL-1237 is a severity-high defect that hard-blocks the
+    specifier and cleaner seats, so this predicate defect is now blocking the
+    repair of a seat-level block."
