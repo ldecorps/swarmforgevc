@@ -1,0 +1,161 @@
+id: BL-1259
+title: "Swarm stamp-off: the expeditor recovers a stage that wrote no verdict, bounded, and never bounces on the absence itself — certify hotfixes 3f4f69ec1b, 70c5e0e5b0, 5de352ed1d"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 40
+direction: swarm-surfaced
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1259-expedite-missing-verdict-recovery.feature
+
+human_approval: pending
+approval_context: >
+  This is a BL-848 hotfix stamp-off, so the decision it needs is the ledger
+  one: do these three commits get certified (approved) or waived? The code is
+  already live on `main`. Nothing here proposes changing behaviour, and
+  rejecting this ticket does not un-land the hotfixes.
+
+  What specifically needs sign-off: THE RECOVERY BOUND, which was moved twice
+  in three hours under live pressure. 3f4f69ec1b allowed one recovery;
+  70c5e0e5b0 found one was not enough and re-entered the stage through the
+  bounce bound instead; 5de352ed1d judged that wrong, refused synthesized
+  bounces outright, and settled on two recoveries with escalating prompts.
+  Two is now a constant (`max-missing-verdict-recoveries`). It was chosen
+  while BL-1248 was failing, not from measurement, and each recovery is a full
+  headless agent invocation — so the cost of it being too high is real tokens,
+  and the cost of it being too low is a ticket abandoned mid-run. Confirm two
+  is the number you want, or say what it should be.
+
+  What is firm: refusing to synthesize a bounce. That is the load-bearing
+  correction of the three and this ticket certifies it rather than reopening
+  it. The coder confirms and closes gate gaps; it does not redesign the
+  recovery policy or rewrite the shipped tests.
+
+invariants:
+  - "The driver never synthesizes a bounce. A stage that produced no parseable verdict fails as no-verdict; no path converts that absence into a bounce that re-enters a stage."
+  - "Missing-verdict recovery is bounded by its own counter, independent of the ticket's bounce budget — a stage that never writes a verdict can never consume bounces."
+  - "A timeout or budget overrun is classified as a timeout even when the verdict file is also missing; the absence of a verdict never masks why the stage was killed."
+
+required_wiring:
+  - 'swarmforge/scripts/expedite_cli.bb::expedite-lib/should-recover-missing-verdict?::the recovery decision must stay in the shared lib so the bound is testable as pure logic, not inlined in the driver'
+  - 'swarmforge/scripts/expedite_cli.bb::expedite-lib/bounce-payload-valid?::the bounce refusal is the load-bearing correction; if the driver stops asking, synthesized bounces return silently'
+  - 'swarmforge/scripts/expedite_cli.bb::expedite-lib/finalize-stage-result::timeout-beats-missing-file ordering lives here; an inlined cond in the driver would drift from the tested one'
+  - 'specs/pipeline/steps/index.js::bl1259ExpediteMissingVerdictRecoverySteps::acceptance handler registered'
+
+description: |
+  ## What already landed — do not rebuild it
+
+  Three hotfixes on 2026-08-28, all `Hotfix-Certification: pending`, all in
+  `swarmforge/scripts/expedite_lib.bb` + `expedite_cli.bb`. They are ONE
+  evolving fix and are certified as one, because reviewing the first in
+  isolation would review code the third replaced:
+
+  - `3f4f69ec1b` 15:33 — recover once when a stage exits without `verdict.json`.
+  - `70c5e0e5b0` 18:27 — one recovery was not enough; re-enter the same stage
+    via the bounce bound.
+  - `5de352ed1d` 18:34 — that was wrong. Refuse synthesized no-verdict
+    bounces; recover twice with escalated prompts and then fail closed.
+
+  The net state is four pure functions in `expedite_lib.bb`, all called from
+  `expedite_cli.bb`:
+
+  - `should-recover-missing-verdict?` — re-invoke while recoveries remain, and
+    only when the stage was not timed out or over budget.
+  - `bounce-payload-valid?` — a bounce must carry an actionable reason or
+    defect class; blank both, or a driver-synthetic no-verdict tag, is refused.
+  - `stage-user-prompt` — normal / recovery / escalated-recovery instructions,
+    all three forbidding standby on Monitor, background jobs or IDE
+    notifications.
+  - `finalize-stage-result` — timeout and overrun beat a missing file; a
+    missing parseable verdict is always `:fail/:no-verdict`.
+
+  ## The fault they fix
+
+  Offline `claude -p` stages parked on Monitor/background waits that never
+  arrive in an offline expedite, exited 0, and wrote nothing. The driver read
+  that as an abandonment and failed the ticket. BL-1248's hardener did it
+  twice in one run.
+
+  ## Why it still needs a parcel
+
+  A hotfix lands outside the pipeline by definition, so nothing has run the
+  gates the constitution requires. Note the degraded fallback honestly: these
+  are Babashka files, and per the Engineering Rules Babashka has no
+  mutation/CRAP/DRY wired in this repo (BL-472 deferred). The `.bb` half is
+  gated by `swarmforge/scripts/test/` only — record that, do not imply a
+  mutation pass ran on it. The JS step handlers are normal Stryker scope.
+
+  ## Where to look hardest (direction, not mandate)
+
+  `bounce-payload-valid?` decides on trimmed prose and a keyword name. It is
+  the same shape that has produced survivors before: a dropped `str/trim`, a
+  case-sensitivity flip, or an `or` becoming an `and` leaves every existing
+  test green while letting a synthesized bounce through — and a synthesized
+  bounce is precisely the loop this hotfix exists to stop.
+
+  The second place is the interaction the third commit was written to sever.
+  Invariant 2 says the recovery counter and the bounce budget are separate.
+  `70c5e0e5b0` deliberately joined them and `5de352ed1d` deliberately split
+  them again; a future edit that re-joins them would restore the crash that
+  was observed live, so the split needs a test that fails when it is undone.
+
+out_of_scope: |
+  - Changing the recovery policy: the value of `max-missing-verdict-recoveries`,
+    the escalation wording, or whether a third tier exists. If the gates show
+    two is wrong, raise it as its own ticket rather than widening this one.
+  - Why stages park on Monitor/background waits at all. The prompts now forbid
+    it; making the driver detect and reap such a wait is separate work.
+  - `2ec06b6ef1`, the front-desk feeder hotfix from the same day. It is a
+    different subsystem and has its own stamp ticket, BL-1260.
+  - The expeditor's teardown restarting the swarm against a standing hold.
+    That is BL-1249 and is not touched here.
+
+qa_e2e_procedure: |
+  The fault is an agent that parks and exits silently, which cannot be
+  conjured on demand. Verify at the seam, then once for real.
+
+  1. Confirm `swarmforge/scripts/test/expedite_lib_test_runner.bb` still drives
+     `should-recover-missing-verdict?` across the bound (0 and 1 recover, 2 and
+     above do not) and `finalize-stage-result` with BOTH a timeout and a
+     missing file present, asserting `:stage-timeout` wins (invariant 3).
+  2. Confirm `bounce-payload-valid?` refuses all three refusal shapes — blank
+     reason and class, the `no-verdict-abandoned` class, and a `:no-verdict`
+     reason supplied as a keyword rather than a string (invariant 1).
+  3. Grep `expedite_cli.bb` for any path that constructs a bounce from a
+     missing verdict. There must be none; invariant 1 is the whole point.
+  4. Run `swarmforge/scripts/test/test_expedite_cli.sh` and confirm green.
+  5. Live, with the swarm stopped: run `expedite.sh` against a scratch ticket
+     with a stage stubbed to exit 0 writing nothing. Confirm the transcript
+     shows two RECOVERY invocations, the second one escalated, then a failure
+     of class no-verdict — and that the ticket's bounce count did not move.
+     Pass `--no-restart`: the expeditor's teardown otherwise restarts the
+     swarm (BL-1249), which would end the observation.
+
+notes: |
+  - "[2026-08-29] specifier, on minting: the coordinator's note named four
+    unstamped hotfixes. These three are minted as ONE stamp ticket, not three.
+    They are sequential refinements of one mechanism landed inside three
+    hours, and the second was explicitly reversed by the third — certifying
+    3f4f69ec1b on its own would gate code that no longer exists. Consolidation
+    Authority (BL-680) N:1; the fourth commit is a different subsystem and got
+    its own ticket, BL-1260. All three ledger rows link here."
+  - "[2026-08-29] specifier: checked against the prose-only-hotfix waiver rule
+    first. It does NOT qualify — the three commits add 240 + 57 + 128 lines
+    across `expedite_lib.bb` and `expedite_cli.bb`, all functional. Minted
+    rather than waived."
+  - "[2026-08-29] specifier: IR-DRY reported three medium near-duplicate
+    findings, all the same step `the stage has been recovered <n> times` at
+    different parameter values (0, 2, and the outline placeholder). Judged
+    intentional, not drift: the outline pins the bound, scenario 01 pins the
+    first-recovery prompt and scenario 03 the escalated one, so the three
+    assert different Thens and cannot be folded. Recorded rather than
+    normalized away."
+  - "[2026-08-29] specifier: the recovery bound moved twice under live
+    pressure and settled at 2 without measurement. That is called out in
+    `approval_context` deliberately — it is the one judgement in these three
+    commits a human should confirm rather than the swarm ratifying it by
+    passing gates."

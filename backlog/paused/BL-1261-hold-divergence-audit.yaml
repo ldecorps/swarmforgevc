@@ -1,0 +1,165 @@
+id: BL-1261
+title: "An expedite park moves a ticket's YAML into backlog/hold/ but not its parcel, so five tickets are being built and gated right now while their backlog record says nobody may touch them"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1261-hold-divergence-audit.feature
+
+human_approval: pending
+approval_context: >
+  One thing needs sign-off: the call site. The recommendation is
+  `promote_and_route_next.sh`, the same site BL-1228 was ruled onto, so both
+  pool audits run at the one moment the coordinator is already touching the
+  backlog. That is cheap and adds no daemon, but it means a divergence that
+  appears while nothing is being promoted goes unreported until the next
+  promotion — and this defect's own live instance appeared during an expedite,
+  which is exactly when promotion has stopped. The alternative is a periodic
+  sweep (handoffd/babysitterd), which costs more and would catch it sooner.
+
+  Firm, and not up for negotiation: the audit reports only. It never moves a
+  ticket out of `hold/`. Article 3.1 gives that call to a human, and a tool
+  that quietly promoted out of hold would be a second way around the gate
+  rather than a check on it — the same posture BL-1228 was ruled to.
+
+  Also firm: it fails closed. A mailbox it cannot read is reported unresolved,
+  never omitted as clean.
+
+invariants:
+  - "The audit reports only. No path in it moves, promotes, or deletes a ticket in any pool, or removes a parcel from any mailbox."
+  - "The audit fails closed: a mailbox or backlog directory it cannot read is reported as unresolved, never silently omitted from the report."
+  - "Parcel discovery reaches every place a parcel can sit, including one level of batch_* subdirectory — a batch role must never read as parcel-free because its parcels are nested."
+
+required_wiring:
+  - 'swarmforge/scripts/promote_and_route_next.sh::hold_divergence_audit_cli.bb::a lib and CLI with no caller is the BL-419 shape this project has already shipped once; the audit must run from a real call site'
+  - 'specs/pipeline/steps/index.js::bl1261HoldDivergenceAuditSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  `backlog/hold/` means human-held. Article 3.1 forbids auto-promotion out of
+  it and `promotion_gates_lib.bb` refuses to auto-pick from it
+  ("ticket is parked in backlog/hold/, never auto-promoted").
+
+  The expeditor parks every OTHER `active/` ticket into `hold/` at initiation
+  (`expedite_lib.bb`, `park-dir "hold"`) and then deliberately declines to
+  promote them back — `parked-report` returns the note "left in hold/
+  deliberately; promotion is not the expeditor's call". Both halves are
+  defensible on their own.
+
+  What neither half accounts for: **parking moves the YAML, not the parcel.**
+  A parcel already sitting in a role's mailbox is untouched. So the pipeline
+  goes on building, reviewing, hardening and gating a ticket whose backlog
+  record says nobody may touch it, and when QA passes it the coordinator's
+  bookkeeping looks in `active/` and finds no ticket to close.
+
+  Nothing anywhere compares the two views.
+
+  ## The live measurement (2026-08-29 ~02:00Z)
+
+  `backlog/hold/` holds 14 tickets. Exactly ONE was put there by a human:
+
+      BL-472   2c9dbd8cc  Hold BL-472: deferred tracker — not auto-promotable
+
+  The other 13 were put there by expeditor parks. Seven by the BL-1248 run
+  (`cc9419fdb`, `caee35c5e` — BL-1179, BL-1207, BL-1211, BL-1222, BL-1228,
+  BL-1230, BL-1238), committed and never returned; six by the BL-1237 run
+  (BL-1233, BL-1234, BL-1242, BL-1244, BL-1247, BL-1249), still staged and
+  uncommitted in the shared `main` checkout.
+
+  FIVE of them have a live parcel in a mailbox right now:
+
+  | ticket  | parcel sits in                                |
+  |---------|-----------------------------------------------|
+  | BL-1238 | QA `inbox/new` (from documenter)              |
+  | BL-1233 | QA `inbox/in_process` and `inbox/new`         |
+  | BL-1234 | QA `inbox/new` (documenter and coder)         |
+  | BL-1244 | cleaner and hardener `in_process` batch dirs  |
+  | BL-1249 | architect `in_process`                        |
+
+  Meanwhile `backlog/active/` contains exactly one ticket. Every depth-cap
+  decision, dispatch-gap sweep and bookkeeping pass is reading a backlog that
+  says one thing is in flight while five parcels move.
+
+  ## How this surfaced
+
+  The hardener, not a check: "BL-1238 yaml still in backlog/hold/ though
+  rebuild forwarded clean" (`note`, priority 00, 2026-08-29T01:57:33Z). It
+  noticed because it happened to look. There is no detector.
+
+  ## How (direction, not mandate)
+
+  - Compare the two views the swarm already maintains: the backlog pools, and
+    the parcels in role mailboxes. A ticket in `hold/` with a live parcel is
+    the divergence; report it with the mailbox it was found in, so whoever
+    acts does not have to re-derive it.
+  - **Reuse the batch-aware parcel scanner.** `chase_sweep_lib.bb` already
+    solved this once with `list-handoff-files-with-batches`, which descends
+    one level into `batch_*`. A fresh readdir would miss the cleaner and the
+    hardener entirely — both batch roles, and both currently holding a parcel
+    for a held ticket. Invariant 3 exists because of that specific trap.
+  - Report only. The remedy for a divergence is a decision about which pool
+    the ticket belongs in, and that is not a tool's to make.
+
+out_of_scope: |
+  - Restoring the 13 tickets currently mis-held. That is coordinator
+    bookkeeping and a human ruling on the six uncommitted ones, needed NOW and
+    not blocked on this ticket being built.
+  - Changing where the expeditor parks, or making it un-park at the end of a
+    run. That is a real sibling question — `hold/` may be the wrong
+    destination precisely because Article 3.1 makes the return trip illegal —
+    but it changes expeditor behaviour, where this ticket only observes.
+    Raise it as its own ticket rather than widening this one.
+  - The expeditor's teardown restarting the swarm against a standing hold
+    (BL-1249) and its no-verdict recovery (BL-1259). Same subsystem, different
+    defects, already ticketed.
+  - Auditing `active/` against a ticket's deprecator verdict. That is BL-1228,
+    ruled and waiting; this is its mirror image on the other pool and must not
+    absorb it.
+
+qa_e2e_procedure: |
+  1. In a scratch backlog, place a ticket in `hold/` and a parcel naming it in
+     a role's `inbox/new`. Run the audit and confirm it reports the ticket and
+     names that mailbox.
+  2. Move the same parcel into a `batch_*` subdirectory of a batch role's
+     `in_process` and re-run. It must still be reported (invariant 3). This is
+     the step that fails if the implementation rolled its own directory walk.
+  3. Confirm the three non-divergent pairings are silent: held with no parcel
+     (the BL-472 case), active with a parcel, paused with none.
+  4. Make one role's inbox unreadable and confirm the audit reports it
+     unresolved and does NOT print a clean verdict (invariant 2).
+  5. Diff the backlog and every mailbox before and after a run: byte-identical
+     (invariant 1).
+  6. On the live swarm, run it as it stands today. It must report the five
+     tickets listed in the description, with BL-1244 found in a batch
+     subdirectory. If it reports fewer than five, the parcel scan is the bug.
+
+notes: |
+  - "[2026-08-29] specifier, on minting: the expeditor is NOT at fault for
+    failing to un-park. `expedite_lib.bb` parks to hold/ deliberately and
+    `parked-report` explicitly declines to promote back, citing Article 3.1.
+    Both are correct in isolation. The defect is that nobody owns the
+    reconciliation and nothing reports it, so the two views drift silently.
+    Scoping this as an expeditor bug would have produced the wrong fix."
+  - "[2026-08-29] specifier: every number in the description was measured, not
+    inferred — `git log -1` per file in backlog/hold/ for provenance, and a
+    grep of every role's inbox/new and inbox/in_process (including batch_*
+    subdirectories) for the parcel table. Re-measurable by the same means."
+  - "[2026-08-29] specifier: the `required_wiring` call-site entry names
+    `promote_and_route_next.sh` because that is this ticket's recommendation
+    and BL-1228's ruling. If the human rules a periodic sweep instead, that
+    entry MUST be amended in the same pass — otherwise the pre-QA gate blocks
+    the documenter's handoff on a call site the ruling moved (the BL-874
+    shape, reached from the other direction)."
+  - "[2026-08-29] specifier: IR-DRY reported five medium findings, all
+    intentional or normalizer artifacts — a Given/Then pair separated only by
+    the word `still` (precondition versus postcondition), placeholders matched
+    against their own concrete values twice, and the deliberate contrast
+    between a parcel in an inbox and one nested in a batch subdirectory, which
+    scenario 03 exists to draw. None folded away."
