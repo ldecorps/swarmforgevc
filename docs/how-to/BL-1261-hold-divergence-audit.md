@@ -50,11 +50,12 @@ reported as unresolved, never silently omitted from the report.
 ## Verify
 
 ```bash
-# Run the audit by hand
-bb swarmforge/scripts/hold_divergence_audit_cli.bb
+# Run the audit by hand (backlog root is a required positional argument —
+# an empty arg list is treated as a help request and exits 0 without auditing)
+bb swarmforge/scripts/hold_divergence_audit_cli.bb .
 
-# Run property tests
-cd extension && npx vitest run bl1261HoldDivergenceAudit
+# Run property tests (own lane — the default vitest config excludes *.property.test.js)
+cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1261HoldDivergenceAudit.property.test.js
 
 # Run acceptance
 node specs/pipeline/cli.js specs/features/BL-1261-hold-divergence-audit.feature
