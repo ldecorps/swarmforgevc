@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=25b01f912b5a107e45b478e18a05f5c90c772db0c0ee1a36fafd99f882c25b32
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-29T02:32:43.146774032Z","feature_name":"The reference-freshness guard refuses only for amendments the worktree is missing","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1237-reference-freshness-guard-is-direction-aware.feature","background_hash":"06af192ddfd6d04b46217bb64ee1918b505253f31d0d80930eb7cc850cbd4ec8","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Only a worktree missing main's amendment is refused","scenario_hash":"ca634a5452775fe7e99b383a62ee8cfc5ba730952ecdf804e431065acba1ee7a","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-08-29T02:32:39.615169949Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The reference-freshness guard refuses only for amendments the worktree is missing
   BL-640's pre-turn guard refuses a role's turn when its copy of
   swarmforge/constitution/articles/reference/ differs from main's, so nobody
