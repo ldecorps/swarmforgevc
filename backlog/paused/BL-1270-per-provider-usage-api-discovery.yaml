@@ -1,0 +1,112 @@
+id: BL-1270
+title: "Per-provider API plan usage discovery — research and feasibility matrix"
+milestone: M8
+type: feature
+status: todo
+epic: quota-budget-manager
+priority: 50
+severity: low
+depends_on: [BL-552]
+source: "backlog/INTAKE-per-provider-api-plan-usage-view.md, drained 2026-08-29"
+
+human_approval: pending
+approval_context: |
+  This is a DISCOVERY slice: research what each provider's API can actually
+  return, document it, and produce a feasibility matrix. No implementation yet.
+  The intake asks for "a view of how fast each plan is being consumed" driven
+  by provider-side queries. Before building that view, we need to know what
+  each provider's API exposes (endpoints, auth, response shape, rate limits).
+
+  Scope: research only. Output is a feasibility document under docs/reference/
+  that the implementation slices will consume. UI surface (morning briefing
+  vs dashboard vs both) is deferred to the implementation slices once we know
+  what data is available.
+
+  Provider list: Anthropic/Claude, Cursor, Qwen/DashScope (Token Plan), and
+  any other provider packs currently in use (check swarmforge/packs/*.conf).
+
+description: |
+  ## Problem
+
+  The swarm runs across several billed surfaces (Cursor subscription, Anthropic
+  Claude plan, Qwen Token Plan, others). Today the human cannot see, in one
+  place, how fast each plan is being consumed. BL-619 (done) projects weekly
+  exhaustion from manually-transcribed usage anchors, but that is a local proxy,
+  not a live plan read. BL-553 (paused) is a read-only availability check over
+  existing cooldown/ledger state — it does not query provider billing APIs.
+
+  The intake requests: "Can each agent provider used by the swarm query the
+  usage for the api it is using so we can have a view on how fast the plan is
+  being consumed."
+
+  Before building the query mechanisms and UI, we need to know what each
+  provider's API actually exposes. Some providers have programmatic usage
+  endpoints; others may not. The feasibility matrix documents this.
+
+  ## Wanted behavior (discovery only)
+
+  For every provider pack currently configured or in use (check
+  swarmforge/packs/*.conf and extension/src/ for provider integrations):
+
+  1. Research whether the provider exposes a programmatic usage/billing API
+     endpoint. Check official documentation, API references, and developer
+     portals.
+
+  2. For each provider with an API, document:
+     - Endpoint URL(s)
+     - Authentication mechanism (API key, OAuth, etc.)
+     - Response shape (JSON schema or example)
+     - What data is returned (remaining quota, consumed amount, rate, billing
+       period, etc.)
+     - Rate limits on the usage API itself
+     - Any known limitations or caveats
+
+  3. For providers without a programmatic API, document:
+     - Whether a manual console/dashboard exists
+     - Whether browser automation is feasible (out of scope for this slice,
+       but note it for future work)
+     - Whether local transcript burn (existing burnRate.ts) is the only
+       available proxy
+
+  4. Produce a feasibility matrix (table or structured document) listing each
+     provider, the availability of a usage API, and a confidence level
+     (high/medium/low) that a live query can be built.
+
+  5. Recommend which providers should be prioritized for implementation based
+     on API availability and swarm usage frequency.
+
+  ## Non-goals
+
+  - Implementing the actual query mechanisms (future slices)
+  - Building the UI/view (future slices)
+  - Auto-throttling or acting on the data (out of scope per intake)
+  - Replacing BL-619's manual-anchor path (keep as fallback)
+  - Billing/invoice scraping or browser automation
+
+acceptance: specs/features/BL-1270-per-provider-usage-api-discovery.feature
+
+invariants:
+  - "Every provider pack in swarmforge/packs/*.conf is covered by the feasibility matrix — no provider is silently omitted."
+  - "The feasibility matrix distinguishes between 'API exists and was verified' vs 'API exists per documentation but not tested' vs 'no API known' — never conflates documentation with feasibility."
+
+out_of_scope: |
+  - Implementing query mechanisms for any provider.
+  - Building a UI/view (morning briefing, dashboard, or otherwise).
+  - Wiring a consumer (BL-553 QuotaManager, briefing, etc.).
+  - Auto-throttling or budget enforcement.
+
+mutation_cost: low
+notes: |
+  Discovery slices are cheap and unblock implementation work. The feasibility
+  matrix is the deliverable — a document under docs/reference/ that future
+  slices consume. This slice has no code, no tests (beyond the document itself),
+  and no wiring. It is purely research and documentation.
+
+  Provider list to research: Anthropic/Claude (Anthropic API), Cursor (Admin
+  API / Analytics API), Qwen/DashScope (Alibaba Cloud Model Studio), and any
+  others in swarmforge/packs/*.conf. Check the packs to see what is actually
+  in use — do not research providers the swarm does not use.
+
+  The intake mentions BL-619's manual-anchor path should be kept as a fallback
+  where no API exists. This slice documents which providers fall into that
+  category.
