@@ -155,45 +155,5 @@ notes: |
     report; the coder attribution to git rename detection is not asserted here
     because the deletions are equally explained by QA bounce reverts
     propagating, and the guard is correct either way.
-  - "[2026-08-28] coder: implemented. New check_merge_deletion.sh, sibling
-    to check_ticket_deletion.sh (BL-901), wired into the SAME commit-msg
-    hook (which no longer `exec`s the first guard, since both must run
-    every time). Fires only when MERGE_HEAD exists; diffs `git diff
-    --name-status HEAD` (HEAD is still the pre-merge tip at commit-msg
-    time, the index already holds the merged tree) for deletions,
-    excluding backlog ticket YAML paths (BL-901's own domain - never
-    double-reported). Each deleted path's owning ticket is derived from
-    the subject of the most recent commit on HEAD's OWN history that
-    touched it (`git log -1 --format=%s HEAD -- <path>`), matching this
-    repo's own commit-subject convention other guards already extract
-    from (task_commit_coherence_gate_lib.bb, task_scope_gate_lib.bb) -
-    never a path-shaped id like BL-901 uses, since most of the paths in
-    the real incident (recovery-filter-check.ts,
-    task_scope_gate_lib_test_runner.bb) carry no ticket id in their own
-    name at all. Message-naming exemption identical to BL-901's.
-
-    Regression-verified against the real incident (qa_e2e_procedure step
-    6, read-only): `git merge-tree --write-tree swarmforge-coder
-    df9899feb` still shows 6 of the original 7 paths as clean deletions
-    today (the 7th is now a conflict, this branch having since diverged
-    further); for each, `git log -1 --format=%s swarmforge-coder --
-    <path>` correctly attributes it to its real owning ticket (BL-1192,
-    BL-1211, BL-1207, BL-1216), confirming the attribution mechanism
-    against live data, not only the synthetic fixture.
-
-    Non-vacuity proven by hand: disabled the deletion check, confirmed
-    test_merge_deletion_guard.sh fails at scenario 02; restored, re-
-    confirmed ALL PASS.
-
-    Also updated test_ticket_deletion_guard.sh's own hook-installation
-    fixture to copy the new script alongside check_ticket_deletion.sh -
-    its scenario 09 (a real `git commit` with the hooks installed) would
-    otherwise fail now that commit-msg calls both guards.
-
-    Verified: test_merge_deletion_guard.sh ALL PASS (8 scenarios,
-    including two real `git merge --no-ff` runs through the installed
-    hook); test_ticket_deletion_guard.sh ALL PASS unchanged (12
-    scenarios); test_commit_size_guard.sh ALL PASS unchanged (does not
-    touch commit-msg); acceptance feature 7/7."
 
 assigned_to: coder

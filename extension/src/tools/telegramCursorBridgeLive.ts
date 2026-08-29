@@ -16,7 +16,7 @@ import {
   type TelegramUpdate,
 } from '../notify/telegramClient';
 import { nextUpdateOffset } from './telegramTopicDecisions';
-import { drainCursorBridgeInboundUpdates } from './cursorBridgeInboundQueue';
+import { drainCursorBridgeInboundUpdates, readFrontDeskPollHeartbeatMs } from './cursorBridgeInboundQueue';
 import {
   CURSOR_BRIDGE_TOPIC_NAME,
   BUBBLE_SUBJECT_ID,
@@ -37,6 +37,7 @@ import {
   isAuthorizedPrincipal,
   shouldResetCursorAgentSession,
   shouldUseCursorBridgeInboundQueue,
+  isFrontDeskInboundFeederLive,
   parseCursorBridgeState,
   resolveDeferredReplyTopicId,
   type CursorBridgeQueuedPrompt,
@@ -1510,14 +1511,27 @@ export interface CursorBridgeLoopDeps {
   /**
    * When true (shared-token / dual-poller mode), drain `.swarmforge/operator/cursor-bridge-inbound.jsonl`
    * written by the front desk instead of calling Telegram getUpdates.
+   * Prefer `resolveUseInboundQueue` so a dead front-desk feeder cannot leave
+   * the bridge stuck on an empty queue for the whole process lifetime.
    */
   useInboundQueue?: boolean;
+  /** Re-evaluated each poll — dead feeder → getUpdates (see shouldUseCursorBridgeInboundQueue). */
+  resolveUseInboundQueue?: () => boolean;
   /** Idle wait when the inbound queue is empty (default 1000ms). */
   inboundQueueIdleMs?: number;
   onPollFailure?: (failures: number) => Promise<void>;
   post?: PostChunksFn;
   /** Telegram transport seam for the liveness cue — never a real network call under test. */
   telegramPostFn?: TelegramPostFn;
+}
+
+function resolveInboundQueueFromFeeder(opDir: string): boolean {
+  return shouldUseCursorBridgeInboundQueue(process.env, {
+    feederLive: isFrontDeskInboundFeederLive({
+      lastHeartbeatMs: readFrontDeskPollHeartbeatMs(opDir),
+      nowMs: Date.now(),
+    }),
+  });
 }
 
 async function handleFailedPoll(
@@ -2062,8 +2076,11 @@ export async function runCursorBridgePollOnce(
 ): Promise<{ state: CursorBridgePersistedState; busy: boolean; pollFailures: number }> {
   let updates: TelegramUpdate[];
   let nextOffset = state.updateOffset;
+  const useInboundQueue = deps.resolveUseInboundQueue
+    ? deps.resolveUseInboundQueue()
+    : Boolean(deps.useInboundQueue);
 
-  if (deps.useInboundQueue) {
+  if (useInboundQueue) {
     const drained = drainCursorBridgeInboundUpdates(deps.opDir);
     updates = drained as TelegramUpdate[];
     if (updates.length === 0) {
@@ -2250,10 +2267,10 @@ export async function runCursorBridgeApp(
     statePath,
     topicMapPath,
     agentSession,
-    // Shared-token mode: front desk owns getUpdates; we drain its inbound queue.
-    // Default is queue when CURSOR_BRIDGE_BOT_TOKEN is unset — never steal updates
-    // if someone launches the CLI without start_cursor_bridge.sh.
-    useInboundQueue: shouldUseCursorBridgeInboundQueue(process.env),
+    // Shared-token mode drains the front-desk queue when the feeder is live;
+    // re-check each poll so a dead front desk cannot leave Host deaf.
+    resolveUseInboundQueue: () => resolveInboundQueueFromFeeder(opDir),
+    useInboundQueue: resolveInboundQueueFromFeeder(opDir),
     telegramPostFn: env.telegramPostFn,
     ...env.loopOverrides,
   };

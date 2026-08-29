@@ -157,3 +157,5 @@ notes: |
     vacuously - a fail-open on a safety gate. BL-1233 owns the launcher site,
     BL-1196 and BL-1222 the suite sites; if a fourth site is worth owning it
     is a sibling ticket, not this one. Do not fold it in.
+
+assigned_to: coder
