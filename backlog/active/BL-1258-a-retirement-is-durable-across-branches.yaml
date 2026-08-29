@@ -204,3 +204,5 @@ deprecator_adjudication: |
 
   Verdict: PROMOTE. The defect is fresh; only its incident narrative had
   aged, and that is corrected above.
+
+assigned_to: coder
