@@ -114,3 +114,6 @@ notes: |
     verdict; neither is a fix. Scope widened same-day from "relative path"
     to both self-identity gaps in `other-holders` — same function, same
     fix pass, no waste in one coder parcel covering both.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: architect, blamed: coder, class: invariant-unencoded, commit: a7d885dbde, evidence: backlog/evidence/BL-1194-hygiene-gate-relative-path-self-duplicate-false-positive-bounce-20260829.md }
