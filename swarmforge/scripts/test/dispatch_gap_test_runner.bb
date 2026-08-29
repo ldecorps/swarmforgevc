@@ -153,11 +153,31 @@
            #{"BL-100"}
            (chase-sweep-lib/collect-dispatched-ticket-ids [new-dir])))
 
+;; BL-1223: a note's message header falls back to the DISPATCH trail only
+;; via its router-emitted verb-first form (Spec/Work) - a bare leading-id
+;; message is a MENTION, not a dispatch (see the pair of tests just below).
 (let [tmp (mk-tmp)
       new-dir (str (fs/path tmp "new"))]
-  (write-handoff! new-dir "00_a.handoff" {:from "coordinator" :to "coder" :type "note" :message "BL-217 active, spec-complete"})
-  (assert= "collect-dispatched-ticket-ids falls back to a note's message header"
+  (write-handoff! new-dir "00_a.handoff" {:from "coordinator" :to "coder" :type "note" :message "Work BL-217 active, spec-complete"})
+  (assert= "collect-dispatched-ticket-ids falls back to a note's verb-first message header"
            #{"BL-217"}
+           (chase-sweep-lib/collect-dispatched-ticket-ids [new-dir])))
+
+;; BL-1223 qa_e2e_procedure (1)/(3): a mention-only note (spec-ready
+;; announcement, gap alarm - leading id, no verb marker) must NEVER count
+;; as dispatch evidence, however conventionally it leads with the id.
+(let [tmp (mk-tmp)
+      new-dir (str (fs/path tmp "new"))]
+  (write-handoff! new-dir "00_a.handoff" {:from "specifier" :to "coordinator" :type "note" :message "BL-1214 spec ready in backlog/paused/ - human_approval pending"})
+  (assert= "collect-dispatched-ticket-ids does NOT count a mention-only note (BL-1223)"
+           #{}
+           (chase-sweep-lib/collect-dispatched-ticket-ids [new-dir])))
+
+(let [tmp (mk-tmp)
+      new-dir (str (fs/path tmp "new"))]
+  (write-handoff! new-dir "00_a.handoff" {:from "coordinator" :to "coordinator" :type "note" :message (chase-sweep-lib/dropped-parcel-note-message "BL-1203")})
+  (assert= "collect-dispatched-ticket-ids does NOT count the coordinator's own dropped-parcel self-alarm (BL-1223, the BL-1203 incident)"
+           #{}
            (chase-sweep-lib/collect-dispatched-ticket-ids [new-dir])))
 
 (let [tmp (mk-tmp)
@@ -278,14 +298,14 @@
   (spit (str (fs/path active-dir "BL-523-demo.yaml")) "id: BL-523\ntitle: \"x\"\n")
   (write-handoff! coord-new "00_nudge.handoff"
                   {:from "coordinator" :to "coordinator" :type "note"
-                   :message "BL-523 active unassigned - assign_to and route it."})
+                   :message (chase-sweep-lib/unassigned-active-note-message "BL-523")})
   (assert= "unassigned-active-items does not re-nudge once a trail exists"
            []
            (chase-sweep-lib/unassigned-active-items active-dir [coord-new])))
 
 (assert= "unassigned-active-draft-lines address the coordinator only"
          ["type: note" "to: coordinator" "priority: 00"
-          "message: BL-523 active unassigned - assign_to and route it."]
+          "message: Work BL-523 active unassigned - assign_to and route it."]
          (chase-sweep-lib/unassigned-active-draft-lines {:id "BL-523" :assigned-to nil}))
 
 (assert= "unassigned draft never targets coder/specifier"

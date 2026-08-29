@@ -852,7 +852,8 @@ const DOMAINS = [
   require('./bl1237ReferenceFreshnessDirectionSteps'),
   require('./bl1256KillSwitchGateDrivesTheDaemonSteps'),
   require('./bl1255ExpediteRequiredWiringGateSteps'),
-  require('./bl1269AncestryEvidenceIsTheCommitsOwnContributionSteps')
+  require('./bl1269AncestryEvidenceIsTheCommitsOwnContributionSteps'),
+  require('./bl1223DispatchEvidenceIsADispatchSteps')
 ];
 
 function registerSteps(registry) {
