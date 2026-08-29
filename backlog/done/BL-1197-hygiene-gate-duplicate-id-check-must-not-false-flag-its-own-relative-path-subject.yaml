@@ -3,7 +3,7 @@ title: "specifier_backlog_hygiene_gate.bb reports DUPLICATE-ID against itself wh
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: done
 epic: swarm-reliability
 priority: 40
 direction: swarm-reported
@@ -80,3 +80,9 @@ notes: |
   - "[2026-08-27] specifier: minted in-passing; low mutation_cost, single
     function fix in backlog_hygiene_lib.bb plus a regression test proving
     scenario 02 still fires."
+  - "[2026-08-29] coder: retired as subsumed by BL-1194. BL-1194's ticket
+    covers both self-identity gaps (relative-path local mismatch AND stale
+    published self-match) in other-holders; BL-1197 covered only the first.
+    One coder parcel fixes both; BL-1197's feature file is deleted as part
+    of the same commit (this retirement). BL-1194's acceptance scenarios
+    exercise and prove BL-1197's narrower invariant too."
