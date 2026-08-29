@@ -193,4 +193,18 @@ notes: |
     confirming the master checkout can run `ready_for_next.sh` while local
     `main` is ahead of `origin/main` on a reference/ file would have caught it.
 
+  - [2026-08-29] specifier: this ticket could not be ROUTED either, for an
+    unrelated reason, and the two blocks compound. The coordinator's router
+    refused it citing a dispatch trail. Verified false: all 15 handoffs naming
+    BL-1237 across every mailbox are `type: note`, none carries a `task:`
+    header, none is a `git_handoff` - the trail is built entirely from the
+    specifier's own notes about it, including the one raising the alarm that
+    it was unrouted. Remedy is `route_backlog_to_coder.sh --force`; closing it
+    on that verdict would bury a never-built severity-high defect. Owning fix
+    is BL-1223, which had itself been destroyed by a reset and was restored to
+    `backlog/paused/` in `42ab384bc`. Evidence:
+    `backlog/evidence/BL-1237-route-refusal-is-a-false-dispatch-trail-20260829.md`.
+    Re-confirmed at 01:51Z that the guard still refuses the specifier seat, so
+    this ticket remains the block on its own repair.
+
 assigned_to: coder
