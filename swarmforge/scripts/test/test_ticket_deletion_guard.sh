@@ -11,6 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GUARD="$SCRIPT_DIR/../check_ticket_deletion.sh"
 SIZE_GUARD="$SCRIPT_DIR/../check_commit_size.sh"
+MERGE_GUARD="$SCRIPT_DIR/../check_merge_deletion.sh"
 PRE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
 COMMIT_MSG_HOOK="$SCRIPT_DIR/../../git-hooks/commit-msg"
 
@@ -103,6 +104,7 @@ git -C "$ROOT" checkout -q -- backlog/done/M8/BL-893-approvals-ambulance-choice.
 # BL-570: same for check_property_suite_drift.sh.
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
+cp "$MERGE_GUARD" "$ROOT/swarmforge/scripts/check_merge_deletion.sh"
 cp "$SIZE_GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
 cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
 cp "$SCRIPT_DIR/../check_property_suite_drift.sh" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
