@@ -85,6 +85,81 @@ description: |
   Making an approved parcel repeat six stages because of a sibling's state
   turns one stalled ticket into six wasted passes.
 
+  ## Ruling (specifier, 2026-08-29): remedy (b), performed by the land step
+
+  The approval_context asked the human to pick before this is built. The
+  question went unanswered for a day, the defect fired twice more, and the
+  coder correctly blocked rather than guess. Ruling it here so the ticket is
+  buildable; the reasons are all evidence already in this repo, not a
+  preference.
+
+  **(c) is not on the table.** This ticket's own `out_of_scope` already
+  excludes it: a per-ticket branch contradicts Article 1 and would need an
+  Article 5 amendment. Recorded as the thing worth doing if (b) also proves
+  insufficient — not assumed here.
+
+  **(a) is falsified by the fourth and fifth instances.** (a) only ever covers
+  the case where every entangled sibling is itself approved and landable. That
+  is not the shape that has actually occurred. BL-1247's evidence lists, among
+  the 46 entangled paths: unbuilt specifier mints BL-1252–1255, a local-only
+  constitution reference amendment, BL-1238's own ticket riding back in after
+  this same QA session bounced it, and the files of a `BL-1247` ticket already
+  retired for an id collision. None of those can be "landed first" in any
+  order. (a) survives only as a cheap precondition check, below.
+
+  **(b) is chosen, and it is already the de-facto practice and half the
+  machinery.** Three independent facts:
+  - QA's own remediation line in BOTH the BL-1238 and BL-1247 bounces is
+    literally "rebuild a tip-pure <ticket>-only commit on the current
+    origin/main". The reviewer who detected the condition already prescribes
+    this move.
+  - The coder performed exactly that rebuild by hand for BL-1227 on 2026-08-28
+    (`af55356bd`) and recorded `abandoned_commits: [b283239757, 778991d218]`,
+    which `pre_qa_gate_lib.bb`'s ancestry check honours as a documented
+    override (`swarmforge/backlog-schema.md`, `read-abandoned-commits`).
+  - The send-time gate has ALREADY been amended to accommodate it BY NAME:
+    `swarmforge/scripts/task_scope_gate_lib.bb` carries a 2026-08-28 comment
+    reading "a deliberate rebuild-off-main (BL-1241's own escape hatch for an
+    entangled tip) does not descend from the previously-cited commit by
+    construction", and starts its walk from `origin/main` when the base is in
+    `abandoned_commits`. Building (a) instead would leave that accommodation
+    dead code.
+
+  **Scenario 03's recipient is QA, not the parcel's author.** The author
+  demonstrably cannot act: BL-1238's documenter identified two clean tips,
+  tried to build the tip-pure commit itself, hit conflicts in `handoffd.bb`
+  plus a live ticket-bookkeeping question, and stopped because neither is a
+  documenter call
+  (`backlog/evidence/BL-1238-agent-idle-clear-honours-fullness-threshold-bounce-20260829-documenter.md`).
+  QA can: detecting the entanglement means QA has already attributed every
+  changed path to its ticket — 35 paths for `b283239757`, 46 for
+  `b5f2489906`. That attribution IS the input a replay needs. Keeping the
+  remedy at QA is also what satisfies scenario 04: no earlier stage is
+  re-entered and the approval stands.
+
+  **Order of moves at the land step** (direction, not mandate — the scenarios
+  still gate the outcome):
+  1. If every entangled sibling is itself already approved and landable, land
+     them in dependency order and re-check. This is (a), kept because it costs
+     nothing and resolves the easy case.
+  2. Otherwise replay only this ticket's own paths onto current `origin/main`
+     and land that commit, recording `abandoned_commits:` on the ticket.
+  3. Bounded: rematch once, per the BL-1144 discipline already in QA.prompt —
+     never a loop mid-gate. If the replay cannot be made clean, that is still
+     not a bounce to the author: a `note` (priority `00`) to the specifier
+     naming the conflicting paths.
+
+  **Sibling-gate check, per the 2026-08-28 note.** A chosen remedy must not
+  trip a sibling gate. (b) does not: `task_scope_gate_lib.bb` and
+  `pre_qa_gate_lib.bb` both already read `abandoned_commits` through one
+  parser. Recording that field is therefore not optional bookkeeping — it is
+  what keeps BL-1192's corrected range walk from mis-reading the severed
+  descent.
+
+  The acceptance contract is unchanged: scenarios 01-04 gate this outcome as
+  written, and no new step handler is needed beyond the one
+  `required_wiring` already names.
+
 qa_e2e_procedure: >
   (1) On a scratch clone, build a branch where ticket A's commit has ticket B's
   unlanded work as an ancestor, approve A, and run the land step; confirm A is
@@ -182,5 +257,64 @@ notes: |
     question, asked 2026-08-29 01:52) and only one may be outstanding at a
     time. Whoever gets the Bubble answer delivered first should treat this
     remedy choice as the next question out.
+  - [2026-08-29] specifier: RULED. The remedy choice is (b) - the land step
+    directs a tip-pure replay onto `origin/main`, performed by QA, with (a)
+    retained as a precondition-checked fast path and (c) left out of scope.
+    Reasons in the description's "Ruling" section above; the decisive one is
+    that `task_scope_gate_lib.bb` was already amended on 2026-08-28 to
+    accommodate this exact escape hatch by name, so (a) would leave that
+    accommodation dead. Ruled rather than asked because the role_ask slot has
+    been held by the Bubble seat question since 01:52 and only one may be
+    outstanding, while this defect fired twice more in the meantime; the
+    coder blocked correctly rather than guess. PROSE HALF LANDED in the same
+    pass, discharging the BL-798 commitment recorded above: see
+    `swarmforge/roles/QA.prompt`, commit `9c6964bf93`.
+  - "[2026-08-29] coder: implemented per the ruling's remedy (b) and the
+    QA.prompt prose landed alongside it. land_step_lib.bb: detection
+    (entangled-siblings - every commit in origin/main..commit whose OWN
+    subject names a DIFFERENT ticket, positive identification only, never
+    a guess from an unattributed commit) + replay (own-paths, reusing
+    task_scope_gate_lib.bb's OWN already-shipped walk - made public,
+    zero behaviour change, never a second implementation - based at
+    origin/main instead of the last-handoff boundary its default caller
+    uses; replay! builds the tip-pure commit in a DEDICATED linked
+    worktree, never a checkout in the caller's own possibly-dirty
+    worktree, always cleaned up, success or failure). land_step_cli.bb is
+    the thin IO wrapper QA.prompt's own BL-1241 section now names.
+
+    (a) (land approved siblings first) is not separately automated - the
+    ruling's own point is that re-running the SAME detection naturally
+    implements it: if a sibling already landed on origin/main by the time
+    the land step runs (via ordinary land traffic or an earlier land-step
+    pass), it stops appearing in `entangled-siblings` and the tip lands
+    clean, no separate code path needed. Verified by hand
+    (qa_e2e_procedure step 5, the three-way 2026-08-28 shape): three
+    tickets minted on one branch, each entangled with the other two -
+    running the land step for each in turn produces three independent
+    tip-pure replay commits, each containing only its own ticket's path,
+    each landable - the sequence terminates with all three landable
+    rather than all three bounced.
+
+    The land step never lands/pushes `origin` itself - QA's own final
+    land action (Article 1.8) stays the human-observed step; this tool
+    only produces the commit for QA to review and land. It also never
+    touches a ticket's own approval record or any `required_stages`/
+    `status:` routing field (scenario 04's own invariant), and never
+    sends a handoff of its own (scenario 03) - confirmed both
+    structurally (grepped the tool's own source) and by fixture.
+
+    Verified: land_step_lib_test_runner.bb ALL PASS (including that
+    replay! never moves the caller's own branch, never dirties its
+    working tree, and leaves no stray worktree registered);
+    task_scope_gate_lib_test_runner.bb unchanged (only one function
+    exposed, `-` dropped, zero behaviour change - re-verified ALL PASS).
+    New acceptance feature (bl1241EntangledTipRemedySteps.js) 4/4,
+    driving the real land_step_cli.bb end to end.
+
+    No src/*.ts touched, no CRAP/DRY/Stryker concern (Babashka has
+    neither wired, per BL-472). No property test: the invariants are
+    about which git objects a specific tool touches and does not touch -
+    a small closed set of shapes, already exhaustively covered by the
+    acceptance scenarios and the lib's own fixture-based unit tests.
 
 assigned_to: coder
