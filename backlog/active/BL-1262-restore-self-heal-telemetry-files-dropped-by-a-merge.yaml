@@ -178,7 +178,16 @@ notes: >
   currently absent, so no concurrent parcel can be touching them.
 
 assigned_to: coder
-bounce_count: 1
+abandoned_commits: [810450eccc]
+# 810450eccc ("restore integration points and relax acceptance step
+# handler", By coder) sits on swarmforge-coder, off this parcel's lineage.
+# Its content is identical to f5e7e3495 (which IS an ancestor, applied by
+# the cleaner) and was reverted per the architect's scope-violation bounce
+# (see backlog/evidence/BL-1262-restore-self-heal-telemetry-files-dropped-by-a-merge-bounce-20260829.md).
+# Nothing was lost: the same patch traveled forward once, then was
+# deliberately reverted. Declared here by documenter to unblock the
+# pre-QA ancestry gate on the re-delivery.
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-29, by: architect, blamed: coder, class: behavior, commit: f5e7e34958, evidence: backlog/evidence/BL-1262-restore-self-heal-telemetry-files-dropped-by-a-merge-bounce-20260829.md }
   - { at: 2026-08-29, by: QA, blamed: coder, class: behavior, commit: 9cbd5b280e, evidence: backlog/evidence/BL-1262-qa-bounce-20260829.md }
