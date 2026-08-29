@@ -58,9 +58,10 @@ function writeTicket(dir, rel, id) {
   return full;
 }
 
-function runGate(env, subjectPath) {
+function runGate(env, subjectPath, cwd) {
   const result = spawnSync('bb', [GATE, subjectPath], {
     encoding: 'utf8',
+    cwd,
     env: { ...process.env, ...env },
   });
   return {
@@ -105,19 +106,22 @@ test('BL-1194/BL-654 invariant 1: the duplicate-id verdict is identical for rela
           const rel = path.join(pool, `${ticketId}-test-slug.yaml`);
           writeTicket(fixture.root, rel, ticketId);
 
-          // Run the gate with a relative path
+          // Run the gate with a relative path (from the parent of the fixture root,
+          // so the relative path resolves correctly)
+          const cwd = path.dirname(fixture.root);
           const relEnv = {
             BACKLOG_HYGIENE_ROOT: fixture.root,
             BACKLOG_HYGIENE_PUBLISHED_ROOT: fixture.published,
           };
-          const relResult = runGate(relEnv, path.join('backlog', rel));
+          const relativePath = path.relative(cwd, path.join(fixture.root, rel));
+          const relResult = runGate(relEnv, relativePath, cwd);
 
           // Run the gate with an absolute path
           const absEnv = {
             BACKLOG_HYGIENE_ROOT: fixture.root,
             BACKLOG_HYGIENE_PUBLISHED_ROOT: fixture.published,
           };
-          const absResult = runGate(absEnv, path.join(fixture.root, rel));
+          const absResult = runGate(absEnv, path.join(fixture.root, rel), cwd);
 
           // Both must produce the same exit code and no DUPLICATE-ID error
           assert.equal(
@@ -179,11 +183,12 @@ test('BL-1194/BL-654 invariant 2: a ticket already published under its own id is
           writeTicket(fixture.published, rel, ticketId);
 
           // Run the gate on the local ticket
+          const cwd = path.dirname(fixture.root);
           const env = {
             BACKLOG_HYGIENE_ROOT: fixture.root,
             BACKLOG_HYGIENE_PUBLISHED_ROOT: fixture.published,
           };
-          const result = runGate(env, path.join(fixture.root, rel));
+          const result = runGate(env, path.join(fixture.root, rel), cwd);
 
           // The gate must NOT report a DUPLICATE-ID for the subject's own published copy
           const hasDuplicate = /DUPLICATE-ID\s+${ticketId}/.test(result.output);

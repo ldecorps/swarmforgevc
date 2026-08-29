@@ -97,3 +97,6 @@ out_of_scope: |
     own content).
   - Any change to the briefing render/attach pipeline.
   - Broadening the documenter's remit beyond diagrams.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: QA, blamed: documenter, class: acceptance, commit: c83b42cb6, evidence: backlog/evidence/BL-581-documenter-owns-diagram-currency-bounce-20260829.md }
