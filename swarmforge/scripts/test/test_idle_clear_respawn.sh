@@ -57,16 +57,35 @@ git -C "$ROOT" worktree add -q -b offrole "$OFFROLE_WT"
 install_scripts "$OFFROLE_WT"
 OFFROLE_DONE_TASK="$OFFROLE_WT/swarmforge/scripts/done_with_current_task.bb"
 
+# BL-1238 required_wiring: ready_for_next_batch.bb carries its OWN copy of
+# the same gate (batch roles - cleaner, hardener - never touch
+# ready_for_next_task.bb), and nothing else in this repo proves it fires -
+# scenarios 05/06 below are that proof.
+BATCHONROLE_WT="$ROOT/.worktrees/batchonrole"
+BATCHOFFROLE_WT="$ROOT/.worktrees/batchoffrole"
+git -C "$ROOT" worktree add -q -b batchonrole "$BATCHONROLE_WT"
+install_scripts "$BATCHONROLE_WT"
+BATCHONROLE_DONE_BATCH="$BATCHONROLE_WT/swarmforge/scripts/done_with_current_batch.bb"
+git -C "$ROOT" worktree add -q -b batchoffrole "$BATCHOFFROLE_WT"
+install_scripts "$BATCHOFFROLE_WT"
+BATCHOFFROLE_DONE_BATCH="$BATCHOFFROLE_WT/swarmforge/scripts/done_with_current_batch.bb"
+
 SOCK="$ROOT/fake.sock"
 touch "$SOCK"
 mkdir -p "$ROOT/.swarmforge/launch"
 echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
 echo "onrole launch" > "$ROOT/.swarmforge/launch/onrole.sh"
 echo "offrole launch" > "$ROOT/.swarmforge/launch/offrole.sh"
+echo "batchonrole launch" > "$ROOT/.swarmforge/launch/batchonrole.sh"
+echo "batchoffrole launch" > "$ROOT/.swarmforge/launch/batchoffrole.sh"
 
 printf 'onrole\tonrole\t%s\tswarmforge-onrole\tOnrole\tclaude\ttask\ton\n' "$ONROLE_WT" \
   > "$ROOT/.swarmforge/roles.tsv"
 printf 'offrole\toffrole\t%s\tswarmforge-offrole\tOffrole\tclaude\ttask\toff\n' "$OFFROLE_WT" \
+  >> "$ROOT/.swarmforge/roles.tsv"
+printf 'batchonrole\tbatchonrole\t%s\tswarmforge-batchonrole\tBatchonrole\tclaude\tbatch\ton\n' "$BATCHONROLE_WT" \
+  >> "$ROOT/.swarmforge/roles.tsv"
+printf 'batchoffrole\tbatchoffrole\t%s\tswarmforge-batchoffrole\tBatchoffrole\tclaude\tbatch\toff\n' "$BATCHOFFROLE_WT" \
   >> "$ROOT/.swarmforge/roles.tsv"
 
 FAKE_BIN="$ROOT/bin"
@@ -106,6 +125,17 @@ queue_task() {
   mkdir -p "$dir"
   printf 'id: %s\nfrom: specifier\nto: %s\npriority: 50\ntype: git_handoff\ntask: BL-089-test\ncommit: %s\n\npayload\n' \
     "$name" "$(basename "$(dirname "$dir")")" "$COMMIT" > "$dir/50_${name}.handoff"
+}
+
+queue_batch() {
+  # A single-item batch under in_process/batch_<name>/ - the shape
+  # done_with_current_batch.bb requires (handoff-lib/batch-dirs only
+  # recognizes a directory whose name starts with "batch_").
+  local dir="$1" name="$2"
+  local batch_dir="$dir/batch_${name}"
+  mkdir -p "$batch_dir"
+  printf 'id: %s\nfrom: specifier\nto: %s\npriority: 50\ntype: git_handoff\ntask: BL-089-test\ncommit: %s\n\npayload\n' \
+    "$name" "$(basename "$(dirname "$dir")")" "$COMMIT" > "$batch_dir/50_${name}.handoff"
 }
 
 # ── 1: enabled role, no queued work -> clears (respawns) at the idle boundary ──
@@ -150,5 +180,30 @@ OUT="$(cd "$OFFROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=offrole bb "$O
 echo "$OUT" | grep -q '^NO_TASK$' || fail "04: expected NO_TASK, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "04: disabled role must never clear, log: $(cat "$TMUX_LOG")"
 pass "04: role without the idle-clear token is untouched at the idle boundary"
+
+# ── 5: batch-mode enabled role, no queued work -> clears at the idle
+#       boundary via ready_for_next_batch.bb's OWN copy of the gate ──────
+BATCH_ON_INBOX="$BATCHONROLE_WT/.swarmforge/handoffs/inbox"
+mkdir -p "$BATCH_ON_INBOX/new" "$BATCH_ON_INBOX/in_process" "$BATCH_ON_INBOX/completed"
+queue_batch "$BATCH_ON_INBOX/in_process" "item5"
+
+: > "$TMUX_LOG"
+OUT="$(cd "$BATCHONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=batchonrole bb "$BATCHONROLE_DONE_BATCH")"
+echo "$OUT" | grep -q '^NO_TASK$' || fail "05: expected NO_TASK, got: $OUT"
+grep -q "respawn-pane" "$TMUX_LOG" || fail "05: expected a respawn-pane call for the enabled batch role, log: $(cat "$TMUX_LOG")"
+grep -q "batchonrole.sh" "$TMUX_LOG" || fail "05: expected the respawn to reference batchonrole's own launch script"
+pass "05: batch-mode enabled role clears (respawns) at the idle boundary via ready_for_next_batch.bb's own gate (BL-1238 required_wiring)"
+
+# ── 6: batch-mode disabled role -> untouched, no clear, even at the idle
+#       boundary ──────────────────────────────────────────────────────────
+BATCH_OFF_INBOX="$BATCHOFFROLE_WT/.swarmforge/handoffs/inbox"
+mkdir -p "$BATCH_OFF_INBOX/new" "$BATCH_OFF_INBOX/in_process" "$BATCH_OFF_INBOX/completed"
+queue_batch "$BATCH_OFF_INBOX/in_process" "item6"
+
+: > "$TMUX_LOG"
+OUT="$(cd "$BATCHOFFROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=batchoffrole bb "$BATCHOFFROLE_DONE_BATCH")"
+echo "$OUT" | grep -q '^NO_TASK$' || fail "06: expected NO_TASK, got: $OUT"
+grep -q "respawn-pane" "$TMUX_LOG" && fail "06: disabled batch role must never clear, log: $(cat "$TMUX_LOG")"
+pass "06: batch-mode role without the idle-clear token is untouched at the idle boundary"
 
 echo "ALL PASS"
