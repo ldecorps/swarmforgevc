@@ -324,4 +324,8 @@ if pipeline_survivor_scan "$ROOT"; then
 fi
 
 log "kill_all_swarm SUCCESS — clean slate"
+# BL-597 emit, restored by BL-1273. Shells the CLI rather than load-filing the
+# lib (this host is bash, not bb). `|| true` and the output redirect keep the
+# observer from touching this script's exit status under `set -e`.
+bb "$SCRIPT_DIR/self_heal_telemetry_cli.bb" "$ROOT" "a kill_all_swarm invocation" >/dev/null 2>&1 || true
 echo "SwarmForge stopped and cleaned. Audit: $AUDIT"
