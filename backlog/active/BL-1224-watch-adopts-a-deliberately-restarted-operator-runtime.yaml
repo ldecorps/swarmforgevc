@@ -182,3 +182,6 @@ notes: |
     setup survived. Resolved as accepted-by-design at mint."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-30, by: QA, blamed: architect, class: behavior, commit: 1ddc283639, evidence: backlog/evidence/BL-1224-bounce-20260830.md }
