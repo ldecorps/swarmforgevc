@@ -186,3 +186,9 @@ notes: |
     approved one. Nothing here is awaiting a human tap.
 
 assigned_to: coder
+abandoned_commits: [fa7d305367]
+# QA rebuilt this ticket tip-pure on 2026-08-30: fa7d305367's own change
+# (one deleted suite-manifest.tsv row + its evidence file) was isolated and
+# replayed onto origin/main, because its ancestor chain carried unlanded
+# BL-1182/BL-1232 work neither approved nor landable at the time (BL-1241).
+# See backlog/evidence/BL-1284-qa-pass-20260830.md.
