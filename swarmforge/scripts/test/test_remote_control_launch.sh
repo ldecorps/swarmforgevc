@@ -52,4 +52,54 @@ grep -q -- '--remote-control' "$CODER_SCRIPT_OFF" \
   && fail "02: config remote_control off must not inject --remote-control"
 pass "02: config remote_control off disables auto-inject"
 
+# ── BL-1218: config off must beat an EXPLICIT --remote-control on the window
+#    line. This is the row that gates that ticket: 01/02 above pass
+#    identically before and after it, because neither names the flag.
+ROOT3="$(mk_root)"
+cat > "$ROOT3/swarmforge/swarmforge.conf" <<'EOF'
+config remote_control off
+window coder claude coder --model claude-haiku-4-5-20251001 --dangerously-skip-permissions --effort low --remote-control SwarmForge-Coder
+EOF
+
+zsh -c "source '$SWARMFORGE_SH' '$ROOT3'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role coder)\""
+CODER_SCRIPT_EXPLICIT_OFF="$ROOT3/.swarmforge/launch/coder.sh"
+[[ -f "$CODER_SCRIPT_EXPLICIT_OFF" ]] || fail "03: coder launch script was not written"
+grep -q -- '--remote-control' "$CODER_SCRIPT_EXPLICIT_OFF" \
+  && fail "03: config remote_control off must strip an explicitly named --remote-control"
+# --model/--effort are parsed out of extra_cli into the settings JSON
+# (BL-319), so the rest of the window line is checked where it actually
+# lands rather than in the script text.
+grep -q -- '--dangerously-skip-permissions' "$CODER_SCRIPT_EXPLICIT_OFF" \
+  || fail "03: stripping the flag must not eat the rest of the window line"
+grep -q 'claude-haiku-4-5-20251001' "$ROOT3/.swarmforge/launch/coder.claude-settings.json" \
+  || fail "03: stripping the flag must not eat the model the window line named"
+pass "03: config remote_control off beats an explicit --remote-control on the window line"
+
+# ── config ON with an explicit flag: unchanged, and not duplicated ─────────
+ROOT4="$(mk_root)"
+cat > "$ROOT4/swarmforge/swarmforge.conf" <<'EOF'
+config remote_control on
+window coder claude coder --model claude-haiku-4-5-20251001 --dangerously-skip-permissions --effort low --remote-control SwarmForge-Coder
+EOF
+
+zsh -c "source '$SWARMFORGE_SH' '$ROOT4'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role coder)\""
+CODER_SCRIPT_ON="$ROOT4/.swarmforge/launch/coder.sh"
+grep -q -- '--remote-control SwarmForge-Coder' "$CODER_SCRIPT_ON" \
+  || fail "04: config remote_control on must keep an explicitly named flag"
+[[ "$(grep -c -- '--remote-control' "$CODER_SCRIPT_ON")" == "1" ]] \
+  || fail "04: config on must not duplicate a flag the window line already named"
+pass "04: config remote_control on leaves an explicit flag exactly as written"
+
+# ── absent config behaves exactly as on (the ticket's own constraint) ──────
+ROOT5="$(mk_root)"
+cat > "$ROOT5/swarmforge/swarmforge.conf" <<'EOF'
+window coder claude coder --model claude-haiku-4-5-20251001 --dangerously-skip-permissions --effort low --remote-control SwarmForge-Coder
+EOF
+
+zsh -c "source '$SWARMFORGE_SH' '$ROOT5'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role coder)\""
+CODER_SCRIPT_ABSENT="$ROOT5/.swarmforge/launch/coder.sh"
+grep -q -- '--remote-control SwarmForge-Coder' "$CODER_SCRIPT_ABSENT" \
+  || fail "05: an absent remote_control config must behave exactly as on"
+pass "05: absent config keeps today's behaviour"
+
 echo "ALL PASS"
