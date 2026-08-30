@@ -332,12 +332,22 @@ test('BL-464: readTicketStageMap returns an empty map for a corrupt/unparseable 
   assert.deepEqual(readTicketStageMap(tmp), {});
 });
 
-test('BL-464: readTicketStageMap reads the coordinator-persisted {ticketId: role} store', () => {
+// BL-670 changed this reader's return contract from a bare role string to a
+// {stage, status, asOf, healthDot} entry. BL-464's own guarantee - that the
+// coordinator-persisted store is what the board reads - is unchanged and still
+// what this test is for; only the shape it asserts moved. A pre-BL-670 store
+// carrying bare roles is still read (a swarm mid-upgrade must not render a
+// blank board) and reports `last-known`, the honest reading of "we know where
+// it was and nothing more".
+test('BL-464: readTicketStageMap reads the coordinator-persisted store, qualified (BL-670)', () => {
   const tmp = mkTmp();
   const dir = path.join(tmp, '.swarmforge', 'board');
   mkdirp(dir);
   fs.writeFileSync(path.join(dir, 'ticket-stage-map.json'), JSON.stringify({ 'BL-434': 'coder', 'BL-450': 'specifier' }));
-  assert.deepEqual(readTicketStageMap(tmp), { 'BL-434': 'coder', 'BL-450': 'specifier' });
+  assert.deepEqual(readTicketStageMap(tmp), {
+    'BL-434': { stage: 'coder', status: 'last-known' },
+    'BL-450': { stage: 'specifier', status: 'last-known' },
+  });
 });
 
 test('BL-464: invertTicketStageToRoleHeldTickets groups ticket ids under their role, one role per ticket by construction', () => {
