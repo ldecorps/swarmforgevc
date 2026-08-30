@@ -56,6 +56,21 @@ Feature: Stamp-off review of the Cursor expedite no-verdict hotfix chain 3f4f69e
     When the driver records the stage result
     Then the ticket is not re-entered at the same stage on that bounce
 
+  # BL-1254 expedite-no-verdict-chain-stamp-06
+  # Carried from retired BL-1259 scenario 04 (duplicate stamp-off of this same
+  # chain). finalize-stage-result's timeout-beats-missing-file ordering is
+  # shipped behaviour in this chain that scenarios 01-05 never exercise: a
+  # stage killed for overrun ALSO leaves no verdict, so without this the
+  # absence would mask why the stage was actually killed, and 01 would
+  # re-invoke a stage that must not be re-invoked.
+  Scenario: A timeout is reported as a timeout even when no verdict was written
+    Given the stage was killed for exceeding its time budget
+    And the stage wrote no parseable verdict
+    When the driver decides what to do with the finished stage
+    Then it records a failed verdict of class stage-timeout
+    And it does not record a failed verdict of class no-verdict
+    And it does not re-invoke the stage
+
   # BL-1254 expedite-no-verdict-chain-stamp-05
   Scenario: The ledger rows stay pending until a human decides
     Given the review scenarios above are green
