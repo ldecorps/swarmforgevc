@@ -1,0 +1,106 @@
+id: BL-1291
+title: "Three tests derive from the live repository with no pinned fixture and no recorded exemption, so liveRepoDerivationGuard is a standing red"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained to the test lanes. Nothing is lost or corrupted
+# and the guard still fires loudly and correctly - it is doing its job. The
+# cost is that it has been red long enough to read as background, which is how
+# a real regression behind it would be waved through (BL-816). Not high: no
+# gate is dead and no production path is touched. Not low: it is not cosmetic,
+# and it sits in the swarm's own delivery machinery.
+status: todo
+epic: code-quality-gates
+priority: 24
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "the change is three test files each adopting a pinned fixture or recording an exemption, plus one new step-handler file; there is no shared duplication to fold."
+  hardender: "no production module changes - the deliverable is test code and one step handler. Scenario 03 pins the exemption path so it cannot become a silent loophole, which is the non-vacuity check the hardener would otherwise be asked for, and it is in the acceptance contract."
+  documenter: "no living doc describes the pinned-fixture convention beyond engineering.prompt, which already states it and does not change here."
+acceptance: specs/features/BL-1291-a-live-repo-read-is-pinned-or-justified.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1291::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1291 -> 0), so the anchor cannot pass before the work is done"
+
+invariants:
+  - "A test's cost and verdict never depend on live repository content it did not establish; where a test must read live state, the reason it cannot use a pinned fixture is recorded rather than left implicit."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. The judgment
+  worth a look is per-file, and it is genuinely three different calls: for each
+  of the three violators, is the right answer a pinned fixture or a recorded
+  exemption? `docsStructureRealTree.test.js` reads as a test whose whole point
+  is the real tree, so an exemption may be correct there; `bl1243PaneActivity
+  Signal.test.js` enumerates a live directory and looks pinnable. The ticket
+  does not pre-decide, because deciding wrongly here would either weaken a real
+  test or paper over a slow one. Scenario 03 exists so that whichever way each
+  goes, an exemption has to say WHY.
+
+description: |
+  ## What is wrong
+
+  `extension/test/liveRepoDerivationGuard.test.js` (BL-1038) fails on any test
+  under `extension/test` that derives from the live repository without reading a
+  pinned fixture or recording why it cannot. Three files violate it today, so
+  the guard is a standing red in the unit lane:
+
+  - `bl1243PaneActivitySignal.test.js` - "enumerates a live repository directory
+    (cost grows with repo size)"
+  - `deprecateRetiredReferents.test.js` - "hands the live repository root to
+    production code (loadRetiredTokens), whose cost is whatever that code reads"
+  - `docsStructureRealTree.test.js` - "hands the live repository root to
+    production code (computeDocsStructure), whose cost is whatever that code
+    reads"
+
+  ## Why it matters
+
+  Such a test measures the repository rather than the code: its runtime grows
+  with the repo, and its verdict can move on state it never established. That is
+  the same "verdict depends on something other than the code under test" class
+  the pinned-fixture convention exists to close.
+
+  Worth noting for whoever picks this up: `bl1243PaneActivitySignal.test.js`
+  landed on 2026-08-30 with BL-1243, which means the guard was already red when
+  that parcel passed - the violation was added, not inherited. That is context
+  for the shared cause below, not a defect in BL-1243's own work.
+
+  ## How (direction, not mandate)
+
+  Per file, either point the derivation at a pinned fixture, or record the
+  exemption with its reason. The ticket deliberately does not pre-assign which
+  of the two each file gets - see approval_context.
+
+qa_e2e_procedure: >
+  Run the guard directly and require zero violations:
+  `cd extension && npx vitest run --config vitest.config.mjs test/liveRepoDerivationGuard.test.js`.
+  Then run the full unit lane and confirm this guard is no longer among the
+  failures. Finally confirm every scenario in the feature file resolves to a
+  registered step handler - the runner THROWS on a missing one.
+
+source: |
+  Hardener note 00_20260830T040607Z_001018_from_hardender_to_specifier
+  (priority 00): "3 standing guards red: tempDirTrap, socketFixtureShortRoot,
+  liveRepoDerivation". Split 1:3 by the specifier under Consolidation
+  Authority - three guards, three mechanisms, three violating file sets, the
+  same discipline BL-1061's property-lane triage used when it split 1:4.
+
+notes: |
+  Confirmed red at spec time, 2026-08-30, by running the three guards
+  together: 3 failed / 36 passed.
+
+  Checked before minting: BL-1112 (standing unit reds) is in done/ and names
+  different files; BL-1175 shipped the property-lane standing ALLOWLIST, which
+  covers only the property sibling of tempDirTrapGuard, not this guard;
+  BL-1240 (active) fires the SUITE-MANIFEST gate per parcel and owns
+  registration drift, not these convention guards. None of the three owns this.
+
+  The shared cause is worth stating even though it is not this ticket's to fix:
+  each guard runs at suite-run time, so a violation is reported to whoever next
+  runs the suite rather than to the author who introduced it - the same shape
+  BL-1240 is fixing for the manifest. If that per-parcel approach generalises,
+  these three are its natural next call sites.
