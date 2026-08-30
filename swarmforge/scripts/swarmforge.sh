@@ -244,6 +244,9 @@ PROMPTS_DIR="$STATE_DIR/prompts"
 DAEMON_DIR="$STATE_DIR/daemon"
 HANDOFF_DAEMON_LOG="$DAEMON_DIR/handoffd.log"
 source "$SCRIPT_DIR/project_socket_id_lib.sh"
+# BL-1218: the pure decision for a Claude seat's remote-control flag, shared
+# with its own test rather than only observable through a written script.
+source "$SCRIPT_DIR/remote_control_launch_lib.sh"
 PROJECT_SOCKET_ID="$(project_socket_id "$WORKING_DIR")"
 # BL-367: the control socket must never live in /tmp - shared scratch space
 # subject to reaping by anything on the box, and a unix socket cannot be
@@ -720,9 +723,14 @@ parse_config() {
     extra_args=(${fields[$next_field,$#fields]})
     local extra_cli="${(j: :)extra_args}"
 
-    if [[ "$agent" == "claude" && "$REMOTE_CONTROL_DEFAULT" == 1 && "$extra_cli" != *"--remote-control"* ]]; then
-      extra_cli+=" --remote-control $(remote_control_session_name_for_role "$role")"
-    fi
+    # BL-1218: the effective config decides the flag, not just whether one
+    # is auto-injected. `remote_control off` used to leave a window line
+    # that NAMED --remote-control untouched, so on the packs that name it
+    # on every Claude seat - swarmforge.conf and packs/full-forge.conf -
+    # setting off switched nothing off. Config on/absent composes exactly
+    # as before.
+    extra_cli="$(resolve_remote_control_cli "$agent" "$REMOTE_CONTROL_DEFAULT" \
+                   "$(remote_control_session_name_for_role "$role")" "$extra_cli")"
 
     if [[ "$keyword" != "window" ]]; then
       error_msg "Unknown config directive on line $line_no: $keyword"

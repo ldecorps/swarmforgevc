@@ -317,6 +317,73 @@ function registerSteps(registry) {
     }
   });
 
+  // ── 06: a timeout is reported as a timeout ──────────────────────────────
+  //
+  // Carried from retired BL-1259 (the duplicate stamp-off of this same chain).
+  // A stage killed for overrun ALSO leaves no verdict behind, so the two
+  // conditions arrive together and something has to break the tie. If the
+  // absence won, the report would say "no-verdict" about a stage that was
+  // killed, and scenario 01 would re-invoke a stage that must not be
+  // re-invoked. finalize-stage-result's ordering is what stops that, and
+  // scenarios 01-05 never exercise it.
+
+  scoped(/^the stage was killed for exceeding its time budget$/, (ctx) => {
+    ctx.bl1254 = ctx.bl1254 || {};
+    // Both spellings the driver can arrive in: killed at the deadline, and
+    // returned on its own after the budget had already elapsed.
+    ctx.bl1254.timeouts = [
+      { label: 'killed at the deadline', timedOut: true, overrun: false },
+      { label: 'over budget on return', timedOut: false, overrun: true },
+      { label: 'both', timedOut: true, overrun: true },
+    ];
+  });
+
+  scoped(/^the stage wrote no parseable verdict$/, (ctx) => {
+    // The whole point of the scenario: the SAME missing verdict scenario 01
+    // recovers from, arriving alongside a timeout.
+    ctx.bl1254.parsed = null;
+  });
+
+  scoped(/^the driver decides what to do with the finished stage$/, (ctx) => {
+    assert.equal(ctx.bl1254.parsed, null, 'the scenario must present a missing verdict');
+    ctx.bl1254.timeoutDecisions = ctx.bl1254.timeouts.map((t) => ({
+      label: t.label,
+      decision: decide('recover', {
+        attempt: 0,
+        parsed: null,
+        timedOut: t.timedOut,
+        overrun: t.overrun,
+      }),
+    }));
+  });
+
+  scoped(/^it records a failed verdict of class stage-timeout$/, (ctx) => {
+    for (const { label, decision } of ctx.bl1254.timeoutDecisions) {
+      assert.equal(decision.finalVerdict, 'fail', `${label}: not recorded as a failure`);
+      assert.equal(decision.finalReason, 'stage-timeout', `${label}: wrong failure class`);
+    }
+  });
+
+  scoped(/^it does not record a failed verdict of class no-verdict$/, (ctx) => {
+    for (const { label, decision } of ctx.bl1254.timeoutDecisions) {
+      assert.notEqual(
+        decision.finalReason,
+        'no-verdict',
+        `${label}: the absence masked why the stage was actually killed`
+      );
+    }
+  });
+
+  scoped(/^it does not re-invoke the stage$/, (ctx) => {
+    for (const { label, decision } of ctx.bl1254.timeoutDecisions) {
+      assert.equal(
+        decision.recover,
+        false,
+        `${label}: a stage killed for overrun was sent back in for another full budget`
+      );
+    }
+  });
+
   // ── 05: the ledger stays the human's to decide ──────────────────────────
 
   scoped(/^the review scenarios above are green$/, (ctx) => {

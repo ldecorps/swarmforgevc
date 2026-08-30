@@ -1,0 +1,131 @@
+id: BL-1295
+title: "A revert commit inherits its reverted ticket's subject, so the send-time scope gate blames that ticket for the revert's foreign paths and refuses the handoff"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1295-revert-subject-does-not-blame-the-reverted-ticket.feature
+
+source: "Documenter note (priority 00) 2026-08-30, BL-1240 blocked at the documenter to QA hop; evidence backlog/evidence/BL-1240-documenter-task-scope-gate-false-positive-20260830.md. Diagnosis independently re-verified by the specifier against the code and the live commits before minting."
+
+description: |
+  ## What is wrong
+
+  `task_scope_gate_lib.bb`'s `commit-message-names-task?` decides whether a
+  commit belongs to the task being sent by reading the commit SUBJECT
+  (`--format=%s`) and taking the first ticket id in it. A `git revert`
+  commit's subject is `Revert "<the original subject>"`, so it inherits the
+  reverted commit's ticket id verbatim. The gate then treats the revert as a
+  commit belonging to that ticket and scans its diff for foreign paths.
+
+  A revert of a merge undoes everything the merge carried, so its diff names
+  every path that merge touched, including other tickets' files. The gate
+  reports foreign scope on the strength of a commit that only REMOVED
+  content, and refuses the send.
+
+  ## Verified live, 2026-08-30
+
+  BL-1240 is blocked at the documenter to QA hop. Re-verified by the
+  specifier, not taken on report:
+
+  - The walk base is `a716330d9c` (`last-handoff-commit`, the cleaner's
+    forward to architect), a genuine ancestor of the tip.
+  - `3825f91cd` `Revert "Merge documenter BL-1240 0ca3bc03c0 into QA. By
+    QA."` sits inside the walk. `git log -1 --format=%s` on it yields a
+    subject whose first ticket id is BL-1240, so the predicate matches.
+  - `git diff-tree --no-commit-id --name-only -r 3825f91cd` names
+    `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`,
+    whose basename makes it foreign to BL-1240. The gate refuses.
+
+  ## No ticket field can exempt it
+
+  Checked in the code, both escapes are genuinely closed:
+
+  - `abandoned_commits` rewrites the walk's BASE only when the base itself is
+    listed (`task_scope_gate_lib.bb`, `abandoned-sha?` guarding the
+    origin/main override). The revert sits strictly inside a non-abandoned
+    base's range. Neither the base nor the revert is an ancestor of
+    `origin/main`, so rewriting the base to `origin/main` would not drop the
+    revert from the walk either.
+  - The only path exemptions are `declared-paths`: the ticket's own
+    `acceptance:` pointer plus its `retires:` list. Declaring BL-973's how-to
+    there would assert a scope claim BL-1240 does not own, so it is refused
+    as a remedy rather than used.
+
+  ## How (direction, not mandate)
+
+  The predicate already carries two recorded hardenings against over-match
+  shapes - a body substring match, and a multi-id subject - and this is the
+  third of the same kind. The natural shape is for a subject that is a revert
+  of another subject not to claim the id it merely quoted. Any approach that
+  stops a revert being attributed to the ticket it undoes is acceptable, as
+  long as scenario 02 keeps its teeth: a commit that genuinely names the task
+  and genuinely touches a foreign path must still be refused.
+
+  ## Relationship to BL-1272
+
+  Same theme, different script and different defect; not a duplicate and not
+  a dependency. BL-1272 is `land_step_lib.bb`'s `entangled-siblings`
+  over-REPORTING an already-landed sibling at QA's land step, in the safe
+  direction. This is `task_scope_gate_lib.bb` hard-REFUSING a send. Both are
+  subject-based attribution biting, which is worth noting when either is
+  designed, but they are fixed independently.
+
+invariants:
+  - "A revert commit is attributed to whoever authored the revert, never to the ticket named in the subject it inherited."
+  - "The gate's verdict is unchanged by the presence of a revert that undoes only the task's own earlier merge - a parcel refused with such a revert in range would have been refused without it."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1295RevertSubjectAttributionSteps::the three scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
+
+qa_e2e: >
+  Build a fixture repo with a parcel whose walk contains a revert of an
+  earlier merge of the same ticket, where the ONLY foreign path in the whole
+  walk appears solely inside that revert. Run the send-time gate: it must
+  allow the handoff. Then add a genuine, non-revert commit whose own subject
+  names the ticket and whose diff touches another ticket's file, and re-run:
+  it must refuse, and name that path. Finally re-run the real BL-1240
+  forward from the documenter worktree once this lands - the same
+  git_handoff that is refused today must be accepted, with no change to
+  BL-1240's own YAML.
+
+human_approval: approved
+approval_context: >
+  Sign-off on the new feature file, and one judgement worth confirming.
+
+  I refused the two available workarounds rather than using them. BL-1240
+  could be unblocked today by declaring BL-973's how-to in its `retires:`
+  list, which the gate would accept - but `retires:` means the ticket is
+  chartered to retire that path, which is false here, and the declaration
+  would sit in the durable contract permanently. Likewise `abandoned_commits`
+  would have to name a base that was not abandoned. Both would trade a
+  blocked parcel for a false statement in a ticket, so I am fixing the gate
+  instead and holding BL-1240.
+
+  The cost of that choice is that BL-1240 sits complete at the documenter
+  until this lands. If you would rather it moved sooner, the alternative is
+  to run this ticket through the expeditor rather than the normal pipeline,
+  since the defect is in the delivery machinery itself. That is a routing
+  call and I have left it to the coordinator rather than assuming it.
+
+notes: |
+  BL-1240 is blocked on this ticket. It is complete at the documenter, docs
+  verified unchanged and correct, and it is holding in_process rather than
+  being bounced or worked around - the documenter was right not to force it.
+
+  The documenter's own evidence is
+  `backlog/evidence/BL-1240-documenter-task-scope-gate-false-positive-20260830.md`
+  (currently on the documenter branch, commit 293edd0af, not yet on main).
+
+  This defect recurs on any ticket that is bounced, reverted, reworked and
+  re-forwarded - a common path, not an exotic one - so it will not stay
+  a one-ticket problem.
+
+assigned_to: coder

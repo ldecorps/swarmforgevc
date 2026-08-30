@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1295: the pre-handoff task-scope gate
+no longer blames a revert commit for the ticket whose subject it merely
+quoted. `commit-message-names-task?` (`task_scope_gate_lib.bb`) reads a
+commit's SUBJECT and takes the first ticket id in it; `git revert` writes
+the subject `Revert "<the original subject>"`, so a revert of a merge
+inherited that merge's ticket id verbatim, and its diff — naming every path
+the merge touched, since a revert of a merge undoes all of it — was scanned
+for foreign scope as if the reverted ticket had authored it, refusing the
+send. Observed live on BL-1240, blocked at the documenter-to-QA hop by
+`3825f91cd Revert "Merge documenter BL-1240 0ca3bc03c0 into QA. By QA."`,
+whose diff named `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
+— foreign to BL-1240. No ticket field could exempt it: `abandoned_commits`
+rewrites the walk's BASE only when the base itself is listed, and declaring
+the foreign path under `retires:` would assert scope BL-1240 does not own.
+New `revert-subject?` recognizes the inherited-subject shape by the
+QUOTING, not the word "Revert" alone, so a hand-written subject that merely
+begins with "Revert" stays attributed to its actual author; a revert commit
+is now excluded from `commit-message-names-task?` before the ticket-id
+match runs. The gate's refusal for a genuine foreign-scope commit is
+unchanged (scenario 02 keeps its teeth). This is the third over-match shape
+this predicate has been hardened against (after a body-substring match and
+a multi-id subject, both recorded in its own comment). Acceptance:
+`specs/features/BL-1295-revert-subject-does-not-blame-the-reverted-ticket.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1272: the land step's entangled-sibling
 report now distinguishes a sibling still unlanded from one whose own content
 is already byte-identical on `origin/main` — a tip-pure replay that lands

@@ -29,7 +29,7 @@ required_wiring:
 invariants:
   - "No control-socket fixture path can exceed swarm_socket_lib.bb's length limit on any supported OS, whatever that OS uses as its temp base - a fixture that binds on Linux but not macOS is a violation, not a platform quirk."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. The one thing
   worth knowing: this defect is INVISIBLE on Linux, which is where the swarm

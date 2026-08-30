@@ -31,7 +31,7 @@ invariants:
   - "The sweep still clears every fixture left by a run that is gone, however that run died - nothing traps SIGKILL, so a killed run always leaves its fixtures behind and the next run must still find them."
   - "No selection path can reach a cloudflared outside the OS temp directory, however the tunnel names collide."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. Two judgments
   worth a look before it goes.

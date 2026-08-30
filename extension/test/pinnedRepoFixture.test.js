@@ -2,7 +2,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { loadFileDeps, resolveScriptClosure, copyScriptClosure } = require('./helpers/pinnedRepoFixture');
+const {
+  loadFileDeps,
+  resolveDepPath,
+  resolveScriptClosure,
+  copyScriptClosure,
+} = require('./helpers/pinnedRepoFixture');
 
 // BL-1038-EXEMPT: this file must read the live scripts directory to assert the
 // closure is materially SMALLER than it - the comparison IS the test. One
@@ -87,4 +92,175 @@ test('BL-1038: a missing DEPENDENCY (not an entry point) is skipped, not thrown'
   assert.deepEqual(copied, ['a.bb'], 'the entry point is copied and the absent dependency is silently dropped');
   assert.ok(fs.existsSync(path.join(target, 'a.bb')));
   assert.ok(!fs.existsSync(path.join(target, 'missing_dep.bb')));
+});
+
+// BL-1240: unregistered_test_gate_lib.bb is the first top-level script under
+// swarmforge/scripts/ to load-file a dependency living in the test/
+// subdirectory. The closure walker kept only the basename, so the copy looked
+// for the file at the flat root, did not find it, and silently skipped it -
+// leaving every fixture-built `bb swarm_handoff.bb` invocation dead on load.
+
+test('BL-1240: a load-file into a subdirectory keeps the subdirectory', () => {
+  assert.deepEqual(
+    [
+      ...loadFileDeps(
+        '(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "test" "suite_inventory_lib.bb")))'
+      ),
+    ],
+    ['test/suite_inventory_lib.bb']
+  );
+});
+
+test('BL-1240: a dependency is resolved relative to the file that names it', () => {
+  // A script inside test/ reaching back out with ".." names the root copy, not
+  // a second one under test/.
+  const sources = {
+    'entry.bb': '(load-file (str (fs/path (fs/parent *file*) "test" "helper.bb")))',
+    'test/helper.bb': '(load-file (str (fs/path (fs/parent *file*) ".." "shared.bb")))',
+    'shared.bb': '(defn f [])',
+  };
+  assert.deepEqual(
+    [...resolveScriptClosure(['entry.bb'], (n) => sources[n])].sort(),
+    ['entry.bb', 'shared.bb', 'test/helper.bb']
+  );
+});
+
+test('BL-1240: the copy reconstructs the subdirectory a dependency lives in', () => {
+  const liveScriptsDir = mkTmpDir('bl1240-live-');
+  fs.mkdirSync(path.join(liveScriptsDir, 'test'), { recursive: true });
+  fs.writeFileSync(
+    path.join(liveScriptsDir, 'a.bb'),
+    '(load-file (str (fs/path (fs/parent *file*) "test" "sub.bb")))'
+  );
+  fs.writeFileSync(path.join(liveScriptsDir, 'test', 'sub.bb'), '(defn f [])');
+
+  const target = path.join(mkTmpDir('bl1240-target-'), 'scripts');
+  const copied = copyScriptClosure(liveScriptsDir, target, ['a.bb']);
+
+  assert.deepEqual(copied.sort(), ['a.bb', 'test/sub.bb']);
+  assert.ok(
+    fs.existsSync(path.join(target, 'test', 'sub.bb')),
+    'the dependency must land where the script that loads it looks for it'
+  );
+});
+
+test('BL-1240: the live swarm_handoff.bb closure carries its test/ dependency', () => {
+  // The regression itself, against the real tree: swarm_handoff.bb reaches
+  // unregistered_test_gate_lib.bb, which reaches test/suite_inventory_lib.bb.
+  const live = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+  const target = path.join(mkTmpDir('bl1240-handoff-'), 'scripts');
+  const copied = copyScriptClosure(live, target, ['swarm_handoff.bb']);
+
+  assert.ok(
+    copied.includes('unregistered_test_gate_lib.bb'),
+    'the gate lib must be in swarm_handoff.bb\'s closure'
+  );
+  assert.ok(
+    copied.includes('test/suite_inventory_lib.bb'),
+    'the gate lib\'s test/ dependency must be in the closure'
+  );
+  assert.ok(
+    fs.existsSync(path.join(target, 'test', 'suite_inventory_lib.bb')),
+    'and must actually land in the fixture'
+  );
+});
+
+// BL-1240 (architect bounce D1): two load-file idioms look identical to a
+// segments-before-the-filename rule and mean different anchors.
+//
+//   (fs/path (fs/parent *file*) "test" "x.bb")          -> relative to the
+//                                                          referring file
+//   (fs/path repo-root "swarmforge" "scripts" "x.bb")   -> the scripts root
+//
+// Reading the second as the first produces `test/swarmforge/scripts/x.bb`,
+// which exists nowhere, and copyScriptClosure then silently skips it — the
+// exact failure class this ticket exists to close, reintroduced for four
+// files the first blast-radius sweep missed.
+
+test('BL-1240: the repo-root "swarmforge" "scripts" idiom anchors at the scripts root', () => {
+  assert.deepEqual(
+    [
+      ...loadFileDeps(
+        '(load-file (str (fs/path repo-root "swarmforge" "scripts" "cursor_seat_guard_lib.bb")))'
+      ),
+    ],
+    ['swarmforge/scripts/cursor_seat_guard_lib.bb'],
+    'the segments are kept verbatim; the ANCHOR is what resolveDepPath decides'
+  );
+  assert.equal(
+    resolveDepPath('test/cursor_seat_guard_lib_test_runner.bb', 'swarmforge/scripts/cursor_seat_guard_lib.bb'),
+    'cursor_seat_guard_lib.bb',
+    'a scripts-root anchor must not be joined onto the referring file\'s directory'
+  );
+  // ...and the other idiom keeps meaning what it meant.
+  assert.equal(
+    resolveDepPath('unregistered_test_gate_lib.bb', 'test/suite_inventory_lib.bb'),
+    'test/suite_inventory_lib.bb'
+  );
+  assert.equal(
+    resolveDepPath('test/ambulance_lib_test_runner.bb', '../ambulance_lib.bb'),
+    'ambulance_lib.bb'
+  );
+});
+
+test('BL-1240: a scripts-root anchor reached through .. resolves the same way', () => {
+  // specs/pipeline/steps/lib's own bb drivers climb out and back in.
+  assert.equal(
+    resolveDepPath('test/x_test_runner.bb', '../../swarmforge/scripts/handoff_lib.bb'),
+    'handoff_lib.bb'
+  );
+});
+
+test('BL-1240: no load-file target in the live tree is resolved to the wrong anchor', () => {
+  // The blast-radius check the first pass got wrong, done exhaustively this
+  // time: walk every .bb in the live scripts tree and resolve every
+  // dependency it names. The mis-anchoring signature is precise - the
+  // resolved path is not there, but a file of that basename IS somewhere in
+  // the tree - so a name that exists nowhere at all (a test fixture's own
+  // "a.bb") is correctly not a finding, while `swarmforge/scripts/x.bb`
+  // resolved to `test/swarmforge/scripts/x.bb` is.
+  const live = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+  const walk = (dir, rel = '') =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory()
+        ? walk(path.join(dir, e.name), `${rel}${e.name}/`)
+        : e.name.endsWith('.bb')
+          ? [`${rel}${e.name}`]
+          : []
+    );
+
+  const all = walk(live);
+  const byBasename = new Set(all.map((f) => path.posix.basename(f)));
+  const present = new Set(all);
+  const exists = (candidate) => present.has(candidate);
+
+  const misanchored = [];
+  let multiSegment = 0;
+  for (const file of all) {
+    for (const dep of loadFileDeps(fs.readFileSync(path.join(live, file), 'utf8'))) {
+      if (dep.includes('/')) multiSegment += 1;
+      const resolved = resolveDepPath(file, dep, exists);
+      if (!present.has(resolved) && byBasename.has(path.posix.basename(resolved))) {
+        misanchored.push(`${file} -> ${dep} => ${resolved}`);
+      }
+    }
+  }
+
+  assert.deepEqual(misanchored, [], 'a load-file target resolved to the wrong anchor');
+  // Non-vacuity: the sweep really did meet the multi-segment cases it exists
+  // for, rather than passing because every dependency was a bare basename.
+  assert.ok(multiSegment > 100, `expected many multi-segment targets, saw ${multiSegment}`);
+});
+
+test('BL-1240: the live closure of a scripts-root-idiom entry point carries its dependency', () => {
+  // The architect's own repro, as a test.
+  const live = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+  const target = path.join(mkTmpDir('bl1240-idiom-'), 'scripts');
+  const copied = copyScriptClosure(live, target, ['test/cursor_seat_guard_lib_test_runner.bb']);
+
+  assert.ok(
+    copied.includes('cursor_seat_guard_lib.bb'),
+    `the dependency is missing from the closure: ${JSON.stringify(copied)}`
+  );
+  assert.ok(fs.existsSync(path.join(target, 'cursor_seat_guard_lib.bb')));
 });

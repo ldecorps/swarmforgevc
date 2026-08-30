@@ -312,7 +312,13 @@
 ;; start_handoff_daemon.sh already stops both pids before starting fresh -
 ;; reused as-is, never a second stop-then-start implementation.
 (defn- restart-handoffd-group! [project-root]
-  (let [{:keys [exit err]} (process/sh {:continue true} "bash" (str (fs/path script-dir "start_handoff_daemon.sh")) project-root)]
+  ;; BL-1225: name build-freshness as the caller so the resulting audit
+  ;; line is attributable. start_handoff_daemon.sh has always read this
+  ;; variable; nothing had ever set it.
+  (let [{:keys [exit err]} (process/sh {:continue true
+                                        :extra-env {"SWARMFORGE_DAEMON_START_CALLER"
+                                                    build-freshness-lib/daemon-start-caller}}
+                                       "bash" (str (fs/path script-dir "start_handoff_daemon.sh")) project-root)]
     (when-not (zero? exit)
       (throw (ex-info (str "start_handoff_daemon.sh failed: " err) {:step :restart-handoffd})))))
 
@@ -369,7 +375,9 @@
     (fs/delete-if-exists stop-file)
     (fs/delete-if-exists pid-file)
     (fs/delete-if-exists status-file)
-    (process/process {:out (str log-file) :err (str log-file) :dir project-root}
+    ;; BL-1225: :out as a path string TRUNCATES, so every sync erased the
+    ;; previous runtime's log. operator-log-spawn-opts appends instead.
+    (process/process (build-freshness-lib/operator-log-spawn-opts log-file project-root)
                       "bb" (str (fs/path script-dir "operator_runtime.bb")) project-root)
     (let [settled (wait-for-fresh-operator-status project-root main-sha operator-settle-timeout-ms)]
       (when-not (= (:build_sha settled) main-sha)

@@ -1,0 +1,1 @@
+{"id":"BL-1027","messages":[{"seq":0,"ts":1788082549205,"author":"swarm","type":"outbound","text":"BL-1027 ✅ done — a ticket can be written into backlog/paused/ with an acceptance: pointer to a feature file nobody wrote, and no gate notices until someone promotes it - which for two human-approved tickets never happened for a month"}]}

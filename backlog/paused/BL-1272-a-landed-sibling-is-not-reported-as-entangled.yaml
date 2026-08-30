@@ -149,6 +149,16 @@ notes: |
     in the same pass, and record the commit here. If this note is still the
     last word on that when the ticket reaches the documenter, the prose has not
     been written and someone should say so.
+  - [2026-08-30] specifier: PROSE HALF LANDED as `e6467e8eb9` on `main`.
+    `swarmforge/roles/QA.prompt` step 2's exit contract now names
+    `LANDED_SIBLING <ticket-id>` alongside `ENTANGLED_SIBLING` (the latter now
+    described as the UNLANDED set), and the closing paragraph says a
+    `LANDED_SIBLING` line needs no adjudication and that a sibling is reported
+    landed only on positive evidence. This closes the [2026-08-29] note above,
+    which correctly predicted it would still be undone when someone reached
+    QA - it was, and QA said so in its LAND_ESCALATE note. BOOKKEEPING ONLY:
+    nothing any role builds changes, the acceptance contract is untouched, and
+    no parcel needs rebuilding on account of this commit.
   - [2026-08-29] specifier: must not promote until BL-1241 lands on `main` -
     `land_step_lib.bb` and `land_step_cli.bb` exist only on BL-1241's branch as
     of this mint, so a coder starting here first would have nothing to edit.
@@ -208,4 +218,49 @@ notes: |
     subject match, and no LANDED_SIBLING distinction exists in the tree - so
     the ticket as written still describes today's code.
 
-assigned_to: coder
+  ## Hold ADJUDICATED [2026-08-30] specifier — same class as BL-1254, later stage
+
+  The coordinator held this as "the same systemic merge-drop dispatch-trail
+  pattern as BL-1254". Correct, and the verdict is the same shape, but this
+  parcel got much further and nothing of it is lost.
+
+  WORK IS SAFE. Every commit is reachable: 07acd9c243 (cleaner), 3e2cb9e15f
+  (architect), 0d60cb4a0 and 9f84cc220 (hardener). The hardener's pass is an
+  ancestor of swarmforge-documenter, so the chain ran coder -> cleaner ->
+  architect -> hardener -> documenter. Nothing needs rebuilding, and the ticket
+  YAML and feature file on main are intact (unlike BL-1254, whose spec content
+  was destroyed and had to be cherry-picked back).
+
+  WHAT IS BROKEN is only the parcel: no BL-1272 handoff exists in any role's
+  inbox/new or inbox/in_process, and the hardener has moved on to BL-1253. The
+  commits ride forward in branch lineage while no role holds the ticket.
+
+  RE-ENTRY IS AT THE DOCUMENTER, not the coder. The documenter branch already
+  carries the hardener's forward, so the doc pass is the only stage still owed
+  before QA.
+
+  ONE THING TO WATCH, stated as fact and not as a diagnosis: the feature file
+  specs/features/BL-1272-*.feature is tracked on main with 3 scenarios, and no
+  `bl1272` token appears in specs/pipeline/steps/index.js on main, though it
+  does on swarmforge-hardender. So the handler lands only when this parcel
+  lands. Whether main's acceptance run currently throws on those 3 scenarios I
+  did NOT confirm - a token-matching sweep flagged 278 of 982 feature files the
+  same way, which is obviously mostly false positives, so the heuristic proves
+  nothing either way. Landing this parcel closes the gap regardless; do not
+  quote this note as evidence of a red suite.
+
+  PLACEMENT is not mine, exactly as for BL-1254: hold/ is human-held under
+  Article 3.1, the coordinator parked it here pending this verdict, and the
+  move back is the coordinator's or the human's call.
+
+assigned_to: documenter
+
+notes_coordinator_hold: >
+  [2026-08-30] coordinator: HOLD, same systemic pattern as BL-1254 (see
+  backlog/evidence/BL-1254-dropped-commits-20260830.md). This ticket was
+  already promoted and routed once (commit 12871d82e) but a later merge
+  resurrected a stale paused/ duplicate, and promote_and_route_next.sh
+  re-promoted it (2c52ef263) straight into a router refusal ("already has
+  a dispatch trail"). Two tickets hit this in the same bookkeeping cycle -
+  systemic, not isolated. Do not auto-promote until specifier confirms
+  current dispatch state and the underlying merge-drop is understood.

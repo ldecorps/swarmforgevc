@@ -7,6 +7,10 @@ const {
   mayWriteTrackedTopicRecord,
   readSupervisorSwarmIconId,
   recordSupervisorSwarmIconId,
+  readUnboundSwarmIconId,
+  recordUnboundSwarmIconId,
+  isStorableTopicId,
+  reportMarkerRefusedToStderr,
   retireTrackedSupervisorRecords,
 } = require('../out/concierge/topicThreadKind');
 const {
@@ -169,4 +173,71 @@ test('retire does not migrate non-string swarmIconId', () => {
   fs.writeFileSync(path.join(topics, 'SUP-5.json'), JSON.stringify({ swarmIconId: 99 }));
   retireTrackedSupervisorRecords(root, topics);
   assert.equal(readSupervisorSwarmIconId(root, 'SUP-5'), undefined);
+});
+
+// BL-1210 hardening: a malformed-but-parseable store (a JSON array, not an
+// object) must fall back to an empty MAP, not be treated as-is. A read-only
+// assertion cannot discriminate this - `[]['SUP-1']` and `{}['SUP-1']` both
+// read back `undefined` - so this drives the fallback through a WRITE:
+// setting a property on an array literal is legal JS but JSON.stringify
+// silently drops it (`JSON.stringify(Object.assign([], {x:1}))` === '[]'),
+// so a recovered write on top of an unrecovered array would vanish on disk.
+test('a malformed (array) icon store recovers to an empty map, not the array, so a write on top of it survives', () => {
+  const root = mkRoot();
+  const file = path.join(root, '.swarmforge', 'topic-icons.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '[]');
+  recordUnboundSwarmIconId(root, 'role-benchmarking', '🎯');
+  assert.equal(readUnboundSwarmIconId(root, 'role-benchmarking'), '🎯');
+  const onDisk = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(Array.isArray(onDisk), false, 'the recovered store must be an object, not the malformed array');
+  assert.equal(onDisk['role-benchmarking'], '🎯');
+});
+
+// A bare JSON primitive (not an array, not an object) hits the same
+// fallback from a different direction - `typeof parsed === 'object'` is
+// false for a string, so this exercises that half of the guard rather than
+// the `!Array.isArray` half above.
+test('a malformed (primitive) icon store also recovers to an empty map', () => {
+  const root = mkRoot();
+  const file = path.join(root, '.swarmforge', 'supervisor-topic-icons.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '"not an object"');
+  recordSupervisorSwarmIconId(root, 'SUP-9', '🛰️');
+  assert.equal(readSupervisorSwarmIconId(root, 'SUP-9'), '🛰️');
+});
+
+// BL-1210: isStorableTopicId's `typeof` guard is defensive - every TYPED
+// caller already passes a string - so only a call that bypasses the type
+// system exercises it. Kept real rather than deleted: a value arriving from
+// JSON or an untyped caller is exactly the case this guard exists for.
+test('isStorableTopicId refuses a non-string id, not just a blank one', () => {
+  assert.equal(isStorableTopicId(undefined), false);
+  assert.equal(isStorableTopicId(null), false);
+  assert.equal(isStorableTopicId(42), false);
+  assert.equal(isStorableTopicId(''), false);
+  assert.equal(isStorableTopicId('   '), false);
+  assert.equal(isStorableTopicId('BL-1'), true);
+});
+
+// BL-1210: reportMarkerRefusedToStderr is a DIFFERENT event from BL-695's
+// reportUnboundThreadToStderr (constants and wording proposed in the
+// coder's own comment) - assert its own text, not just that some stderr
+// write happened.
+test('reportMarkerRefusedToStderr writes the BL-1210 refusal line, not the BL-695 tracked-record line', () => {
+  const chunks = [];
+  const original = process.stderr.write;
+  process.stderr.write = (chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  };
+  try {
+    reportMarkerRefusedToStderr('mystery-id');
+  } finally {
+    process.stderr.write = original;
+  }
+  assert.equal(chunks.length, 1);
+  assert.match(chunks[0], /mystery-id/);
+  assert.match(chunks[0], /no store will hold an icon ownership marker/);
+  assert.doesNotMatch(chunks[0], /writing no tracked topic record/);
 });

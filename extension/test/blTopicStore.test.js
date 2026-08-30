@@ -530,3 +530,61 @@ test('lastActivityMs returns the MOST RECENT ts across messages, regardless of d
   };
   assert.equal(lastActivityMs(record), 5000);
 });
+
+// ── BL-1210: the icon ownership marker survives the tracked-record boundary.
+//    BL-695 gave supervisor threads their own untracked store and left epic,
+//    standing and role ids with none, so their markers were dropped in
+//    silence. Which store the marker lands in depends on the id's kind;
+//    whether it is recorded at all does not.
+
+test('recordSwarmIconId round-trips the marker for an epic id without creating a tracked record', () => {
+  const target = mkTmp();
+  assert.equal(recordSwarmIconId(target, 'role-benchmarking', 'icon-epic', SILENT, SILENT), 'recorded');
+  assert.equal(readSwarmIconId(target, 'role-benchmarking'), 'icon-epic');
+  assert.equal(fs.existsSync(recordPath(target, 'role-benchmarking')), false);
+});
+
+test('recordSwarmIconId round-trips the marker for a standing topic id', () => {
+  const target = mkTmp();
+  assert.equal(recordSwarmIconId(target, 'OPERATOR', 'icon-bell', SILENT, SILENT), 'recorded');
+  assert.equal(readSwarmIconId(target, 'OPERATOR'), 'icon-bell');
+  assert.equal(fs.existsSync(recordPath(target, 'OPERATOR')), false);
+});
+
+test('recordSwarmIconId round-trips the marker for a role id', () => {
+  const target = mkTmp();
+  assert.equal(recordSwarmIconId(target, 'coder', 'icon-hammer', SILENT, SILENT), 'recorded');
+  assert.equal(readSwarmIconId(target, 'coder'), 'icon-hammer');
+  assert.equal(fs.existsSync(recordPath(target, 'coder')), false);
+});
+
+test('recordSwarmIconId overwrites a prior marker for a non-ticket id', () => {
+  const target = mkTmp();
+  recordSwarmIconId(target, 'role-benchmarking', 'icon-stale', SILENT, SILENT);
+  recordSwarmIconId(target, 'role-benchmarking', 'icon-fresh', SILENT, SILENT);
+  assert.equal(readSwarmIconId(target, 'role-benchmarking'), 'icon-fresh');
+});
+
+test('non-ticket markers of different kinds do not collide in the shared store', () => {
+  const target = mkTmp();
+  recordSwarmIconId(target, 'coder', 'icon-role', SILENT, SILENT);
+  recordSwarmIconId(target, 'OPERATOR', 'icon-standing', SILENT, SILENT);
+  recordSwarmIconId(target, 'role-benchmarking', 'icon-epic', SILENT, SILENT);
+  assert.equal(readSwarmIconId(target, 'coder'), 'icon-role');
+  assert.equal(readSwarmIconId(target, 'OPERATOR'), 'icon-standing');
+  assert.equal(readSwarmIconId(target, 'role-benchmarking'), 'icon-epic');
+});
+
+test('recordSwarmIconId returns recorded for a ticket id (the tracked-record path still reports)', () => {
+  const target = mkTmp();
+  assert.equal(recordSwarmIconId(target, 'BL-900', 'icon-check', SILENT, SILENT), 'recorded');
+});
+
+test('recordSwarmIconId refuses a blank id, writes nothing, and says so to its caller', () => {
+  const target = mkTmp();
+  const refused = [];
+  assert.equal(recordSwarmIconId(target, '   ', 'icon-check', SILENT, (id) => refused.push(id)), 'refused');
+  assert.deepEqual(refused, ['   ']);
+  assert.equal(readSwarmIconId(target, '   '), undefined);
+  assert.equal(fs.existsSync(path.join(target, '.swarmforge', 'topic-icons.json')), false);
+});
