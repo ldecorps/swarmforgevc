@@ -255,6 +255,19 @@ notes: >
   abandoned_commits records the full superseded chain. git diff --stat
   origin/main HEAD confirmed exactly BL-1209's own ten files.
 
+  [2026-08-30] coordinator: DROP found via handoffd's dropped-parcel alert
+  ("BL-1209 no parcel in flight - possible drop"). QA's approval handoff
+  (00_20260829T165148Z_001957_from_QA_to_coordinator, commit e4bc2169ac) sits
+  in inbox/abandoned/ with no replacement ever sent — the fix landed (verified
+  the detector no longer eager-loads from repoRoot; ran
+  pilotMkdtempConventionCheck.test.js + pilotAcceptanceGateCli.test.js, 42/42
+  green) but the ticket was never bookkept. Close is gated on a live QA
+  git_handoff/note in my mailbox (commit_integrity_cli refused with
+  CLOSE BLOCKED), so I did not force it — sent QA a priority-00 note asking
+  them to resend authorization for BL-1209. Holding this ticket open until
+  that arrives; do not re-treat this note as inaction if the nudge recurs
+  before QA responds.
+
 approval_context: >
   One call to say the word on: whether the fix moves the detector or
   just re-anchors the require. The small version keeps the detector
