@@ -30,6 +30,8 @@ const {
   FEATURE,
   BL1227_FIX_COMMIT,
   COMPOSER_INPUT_PATHS,
+  sweepStaleFixTrees,
+  STALE_FIX_TREE_MS,
 } = require('../../specs/pipeline/steps/bl1227BootPrefixLiveBudgetCheckSteps');
 
 function freshRegistry() {
@@ -116,4 +118,19 @@ test('the pinned headroom proof still proves headroom at the fix commit', () => 
 
   assert.ok(ctx.bl1227.measured <= 42000, `fix commit measured ${ctx.bl1227.measured}, expected <= 42000`);
   assert.equal(ctx.bl1227.result.status, 0, 'the fix commit is under the 44000 budget too');
+});
+
+// Every role worktree shares one os.tmpdir() and several run this feature at
+// once, so the BL-971 pre-run sweep must not collect a SIBLING run's live
+// pinned tree - only genuine leftovers of a killed run.
+test('the stale-tree sweep spares a fresh sibling run and collects an old leftover', () => {
+  const fresh = mkTmpDir('bl1227-fix-commit-');
+  const old = mkTmpDir('bl1227-fix-commit-');
+  const longAgo = Date.now() - STALE_FIX_TREE_MS - 60_000;
+  fs.utimesSync(old, longAgo / 1000, longAgo / 1000);
+
+  sweepStaleFixTrees();
+
+  assert.ok(fs.existsSync(fresh), 'a concurrent run\'s pinned tree must survive the sweep');
+  assert.ok(!fs.existsSync(old), 'a leftover older than the staleness window must be collected');
 });

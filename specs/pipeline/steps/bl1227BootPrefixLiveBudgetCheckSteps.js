@@ -57,11 +57,25 @@ const COMPOSER_INPUT_PATHS = [
 
 // BL-971: sweep by prefix BEFORE the run as well as cleaning up after it - a
 // killed run traps nothing, so the next run is what collects its leftovers.
-function sweepStaleFixTrees() {
+// AGE-BOUNDED on purpose: every role worktree shares one os.tmpdir(), and
+// several of them run this feature at once, so an unbounded prefix sweep
+// would delete a sibling run's pinned tree out from under it mid-scenario.
+// An hour is far longer than a run and far shorter than "left overnight".
+const STALE_FIX_TREE_MS = 60 * 60 * 1000;
+
+function sweepStaleFixTrees(nowMs = Date.now()) {
   const tmp = os.tmpdir();
   for (const entry of fs.readdirSync(tmp)) {
-    if (entry.startsWith(FIX_TREE_PREFIX)) {
-      fs.rmSync(path.join(tmp, entry), { recursive: true, force: true });
+    if (!entry.startsWith(FIX_TREE_PREFIX)) {
+      continue;
+    }
+    const dir = path.join(tmp, entry);
+    try {
+      if (nowMs - fs.statSync(dir).mtimeMs > STALE_FIX_TREE_MS) {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    } catch {
+      // raced with another run's own cleanup - already gone is the goal
     }
   }
 }
@@ -73,11 +87,26 @@ const fixCommitTree = lazy(() => {
   sweepStaleFixTrees();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), FIX_TREE_PREFIX));
   onAbnormalExit(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const archive = execFileSync(
-    'git',
-    ['-C', REPO_ROOT, 'archive', BL1227_FIX_COMMIT, ...COMPOSER_INPUT_PATHS],
-    { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }
-  );
+  let archive;
+  try {
+    archive = execFileSync(
+      'git',
+      // realpath, not the bare join: under a Stryker sandbox this module is
+      // reached through a sibling symlink, and `git -C` on the sandbox path
+      // is not inside a work tree.
+      ['-C', fs.realpathSync(REPO_ROOT), 'archive', BL1227_FIX_COMMIT, ...COMPOSER_INPUT_PATHS],
+      { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }
+    );
+  } catch (err) {
+    // Fail with the reason, not a bare non-zero exit: the realistic cause is
+    // a clone that cannot reach the pinned commit (shallow, or a fresh
+    // fixture tree), and "unreachable commit" is a very different remedy
+    // from "the budget regressed".
+    throw new Error(
+      `could not read the BL-1227 fix commit ${BL1227_FIX_COMMIT} from ${REPO_ROOT} ` +
+        `(scenarios 01/02 are pinned to it): ${err.message}`
+    );
+  }
   execFileSync('tar', ['-x', '-C', dir], { input: archive });
   return dir;
 });
@@ -249,4 +278,11 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps, FEATURE, BL1227_FIX_COMMIT, COMPOSER_INPUT_PATHS };
+module.exports = {
+  registerSteps,
+  FEATURE,
+  BL1227_FIX_COMMIT,
+  COMPOSER_INPUT_PATHS,
+  sweepStaleFixTrees,
+  STALE_FIX_TREE_MS,
+};
