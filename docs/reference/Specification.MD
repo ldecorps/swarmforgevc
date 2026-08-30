@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1254: BL-848 stamp-off of the Cursor
+expedite no-verdict recovery chain — three commits, `3f4f69ec1b` then
+`70c5e0e5b0` then `5de352ed1d`, reviewed as ONE resulting state because the
+third supersedes part of the second (certifying `70c5e0e5b0` in isolation
+would certify dead behaviour) — CONFIRMED. Resulting behaviour: an expedite
+stage that exits without a parseable `verdict.json` is re-invoked while
+recoveries remain (`max-missing-verdict-recoveries` = 2 in
+`swarmforge/scripts/expedite_lib.bb`), with an escalated prompt on the second
+attempt that forbids waiting on background/Monitor work and requires writing
+`pass`, `bounce`, or `fail` as the last action; a further miss fails closed.
+`bounce-payload-valid?` refuses a bounce whose `reason` and `class` are both
+blank, and refuses the driver's own synthetic `no-verdict-abandoned` tag, so
+a synthesized "bounce because no-verdict" cannot re-enter the same stage and
+burn the bounce bound in a loop. Review recorded one non-live finding rather
+than fixing it: `bounce-payload-valid?` lower-cases `reason` before comparing
+it to the synthetic tag but compares `class` exactly, an asymmetry the
+running driver never reaches (it only ever synthesizes the lowercase tag),
+pinned in `extension/test/bl1254MissingVerdictNeverBounces.property.test.js`
+as the anchor for a future fix. This stamp-off reimplements nothing; all
+three hotfix-ledger rows (`3f4f69ec1b`, `70c5e0e5b0`, `5de352ed1d`) stay
+`state: stamp-open` pending a human `certified`/`waived` decision (BL-848).
+See `docs/how-to/BL-1254-swarm-stamp-expedite-no-verdict-chain.md`.
+Acceptance: `specs/features/BL-1254-swarm-stamp-expedite-no-verdict-chain.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1253: stamp-off of Cursor hotfix
 `2ec06b6ef1` — CONFIRMED. The hotfix stops the Cursor bridge from trusting
 front-desk queue mode when the front-desk poll feeder is dead: queue mode
