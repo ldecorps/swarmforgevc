@@ -15,6 +15,15 @@
 ;; (BL-606's own architect bounce #3): a reviewer's bounce carries no
 ;; header this swarm's roles ever write, so direction comes from
 ;; sender-position, never an optional marker.
+;;
+;; BL-1293: the comparison used to be commit IDENTITY alone, and a merge is
+;; a new commit - so a bare "Merge <received> into <role-branch>", the shape
+;; this swarm produces at nearly every hop, passed while the role authored
+;; nothing. The architect forwarded BL-1224 exactly that way (and BL-1183
+;; the same session); only a human-authored QA bounce noticing a missing
+;; evidence file caught it. The gate now asks what the commit CONTRIBUTED,
+;; reusing the primitive BL-1269 already built for the sibling pre-QA
+;; ancestry gate rather than growing a second notion of it.
 
 (ns review-forward-evidence-gate-lib
   (:require [babashka.fs :as fs]
@@ -22,6 +31,9 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "required_stages_lib.bb")))
+;; BL-1293: for merge-introduces-nothing-unique? - the ONE definition of
+;; "what did this commit contribute", shared, never copied.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
 
 (def review-roles
   "The four forward-chain review roles this gate covers (approval_context
@@ -72,6 +84,28 @@
     (when-let [file (received-parcel-for-task role-info task-name)]
       (handoff-lib/header-field file "commit"))))
 
+(defn forward-introduces-nothing-own?
+  "True when commit is a MERGE (two or more parents) whose combined diff
+   against ALL its parents is empty - every line already exists in some
+   parent, so the role that made it authored nothing of its own. The second
+   fs-touching function in this file (see received-commit-for-task);
+   `blocked?` stays pure and takes the answer.
+
+   REUSES pre-qa-gate-gather-lib/merge-introduces-nothing-unique? (BL-1269),
+   which is why this gate cannot drift from its sibling. Fails open (false)
+   on a blank commit, a missing root, or a git invocation that cannot answer -
+   the gate must never strand a legitimate send."
+  [project-root commit]
+  (boolean
+   (and project-root
+        (not (str/blank? commit))
+        ;; MERGES only, the same guard no-dropped-work? applies: on a commit
+        ;; with fewer than two parents the primitive's diff-tree is empty for
+        ;; an unrelated reason (a root commit, an empty tree), and reading
+        ;; that as "introduced nothing" would refuse a legitimate send.
+        (>= (count (pre-qa-gate-gather-lib/commit-parents project-root commit)) 2)
+        (pre-qa-gate-gather-lib/merge-introduces-nothing-unique? project-root commit))))
+
 (defn blocked?
   "Pure decision (BL-654 property-tested): true only when EVERY one of -
    type is git_handoff, exactly one recipient, the send moves forward
@@ -81,8 +115,16 @@
    received-commit - holds. received-commit is the caller's own
    received-commit-for-task lookup (or nil on a fs miss, which can never
    equal a validated non-blank commit, so that failure mode also fails
-   open here)."
-  [{:keys [type sender recipients task-name commit reroute-reason received-commit]}]
+   open here).
+
+   BL-1293: the last conjunct is no longer identity alone. The forward is
+   refused when it names the received commit OR when it contributed nothing
+   of its own (introduces-nothing-own?, the caller's own
+   forward-introduces-nothing-own? lookup). Anything other than an explicit
+   true - false, nil, absent - leaves the send alone, so an unreadable or
+   unknown commit still fails open."
+  [{:keys [type sender recipients task-name commit reroute-reason received-commit
+           introduces-nothing-own?]}]
   (boolean
    (and (= type "git_handoff")
         (= 1 (count recipients))
@@ -92,15 +134,30 @@
         (str/blank? reroute-reason)
         (not (str/blank? task-name))
         (not (str/blank? commit))
-        (= commit received-commit))))
+        (or (= commit received-commit)
+            (true? introduces-nothing-own?)))))
 
 (defn refusal-message
-  [{:keys [sender task-name commit]}]
-  (format (str "Cannot send git_handoff for %s: commit %s is exactly the "
-               "commit %s already received for this task - Article 4.4 "
-               "requires a clean review pass to commit its explicit-NONE "
-               "evidence (or its fix) and forward THAT commit, never the "
-               "bare received hash. If %s legitimately cannot act on this "
-               "parcel, route it onward with a reroute_reason instead of a "
-               "same-commit forward.")
-          task-name commit commit sender))
+  "Actionable, because Article 4.4 makes an explicit committed NONE a real
+   pass and the role has to be told that is the way out: every refusal names
+   the role, the task, the commit, and the evidence to commit."
+  [{:keys [sender task-name commit introduces-nothing-own?]}]
+  (if introduces-nothing-own?
+    (format (str "Cannot send git_handoff for %s: commit %s is a merge that "
+                 "introduces nothing %s authored over its parents - a bare "
+                 "merge of the received parcel is not a review pass. Article "
+                 "4.4 requires %s to commit its own work for %s - its fix, or "
+                 "an explicit NONE evidence file under backlog/evidence/ "
+                 "naming the ticket and the role when the sweep found no "
+                 "defect - and forward THAT commit. If %s legitimately cannot "
+                 "act on this parcel, route it onward with a reroute_reason "
+                 "instead.")
+            task-name commit sender sender task-name sender)
+    (format (str "Cannot send git_handoff for %s: commit %s is exactly the "
+                 "commit %s already received for this task - Article 4.4 "
+                 "requires a clean review pass to commit its explicit-NONE "
+                 "evidence (or its fix) under backlog/evidence/ and forward "
+                 "THAT commit, never the bare received hash. If %s "
+                 "legitimately cannot act on this parcel, route it onward "
+                 "with a reroute_reason instead of a same-commit forward.")
+            task-name commit commit sender)))

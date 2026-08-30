@@ -11,6 +11,26 @@ depends_on: []
 source: "hardener rule_proposal (scope engineering, 2026-07-16, id 20260716T231815Z_000346) raised during BL-433 hardening: swarmforge.lock.json has NO Babashka tool pins, so every .bb hardening pass silently runs the degraded no-tooling fallback while the tool table implied real coverage. Specifier disposition 2026-07-16 (human ldecorps chose 'document as not-wired' over 'pin+install'): correct engineering.prompt to state the gap plainly NOW (done, same pass), and FILE this deferred tracker so 'tracked future item' is a real reference, not a dangling claim."
 
 notes: |
+  [2026-08-30T22:03Z coordinator] Fourth open-slot nudge naming this ticket
+  cleared without promotion: this nudge fired during the master-main-reconcile
+  reset window (dbcdd00722, discussed in BL-1299's own bookkeeping trail) that
+  briefly ate the coordinator's BL-1288-close/BL-1300-promote commits. By the
+  time this nudge reached me, recovery (cherry-pick -x + push) was complete
+  and the freed slot had already been filled by BL-1293 (promoted+routed to
+  coder in the same recovery pass). `backlog/active/` now holds BL-1293 +
+  BL-1300 at effective cap 2 - no slot remains open for BL-472. Re-verified
+  via `effective_backlog_depth_cli.bb` (2) and `ls backlog/active/` before
+  clearing.
+
+  [2026-08-30T21:51Z coordinator] Third open-slot nudge naming this ticket
+  cleared without promotion: capacity was open when the nudge fired, but the
+  slot was filled by BL-1300 (promoted+routed to coder same turn, before this
+  nudge's handoff was worked) via the standard post-QA-bookkeeping recheck
+  after BL-1288 closed. `backlog/active/` now holds BL-1299 + BL-1300 at
+  effective cap 2 - no slot remains open for BL-472. Re-verified via
+  `effective_backlog_depth_cli.bb` (2) and `ls backlog/active/` before
+  clearing.
+
   [2026-08-30T21:02Z coordinator] Second open-slot nudge naming this ticket
   cleared without promotion. The slot the sweep saw open (cap raised 1->2
   per STEERING.md's 2026-08-30 ~21:35 BST throughput directive) was filled
