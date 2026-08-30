@@ -11,6 +11,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { lazy } = require('./lib/lazy');
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -23,6 +25,62 @@ const CONSTITUTION_ARTICLES_DIR = path.join(REPO_ROOT, 'swarmforge', 'constituti
 const PROJECT_PROMPT = path.join(CONSTITUTION_ARTICLES_DIR, 'project.prompt');
 
 const FEATURE = 'The boot prefix budget is enforced by a check that measures the live repository';
+
+// ── BL-1300: the fix-commit Given is PINNED, not live ──────────────────────
+// Scenarios 01 and 02 both open "Given the repository at the BL-1227 fix
+// commit", and both are one-time proofs about that commit: 01 that the trim
+// brought it back under budget, 02 that it landed with headroom to spare.
+// The handler bound that Given to the live working tree instead, so 02's
+// "at most 42000" quietly became a standing ceiling 2000 chars below the
+// 44000 budget the gate, the standing runner and scenario 03's own report
+// all name. Growth into 42001..44000 then passed every check an author is
+// told to run and still failed this feature, citing a budget it was not
+// enforcing. Materializing the fix commit's tree makes the Given true and
+// leaves exactly one live, enforceable number: 44000.
+//
+// The LIVE half of BL-1227 is untouched and still asserted - scenario 03
+// drives the gate over synthetic trees around 44000, and scenario 05 runs
+// the standing entry point against the real repository and requires an
+// over-budget real repository to make it fail.
+const BL1227_FIX_COMMIT = 'af55356bde';
+const FIX_TREE_PREFIX = 'bl1227-fix-commit-';
+// prompt_engine_lib.bb's stable-bootstrap-prefix reads exactly these:
+// constitution.prompt, every top-level file in constitution/articles/
+// (subdirectories such as reference/ are on-demand, never inlined), and
+// PIPELINE.md. Extracting only these keeps the pinned tree small without
+// changing a single character the composer sees.
+const COMPOSER_INPUT_PATHS = [
+  'swarmforge/constitution.prompt',
+  'swarmforge/constitution/articles',
+  'swarmforge/PIPELINE.md',
+];
+
+// BL-971: sweep by prefix BEFORE the run as well as cleaning up after it - a
+// killed run traps nothing, so the next run is what collects its leftovers.
+function sweepStaleFixTrees() {
+  const tmp = os.tmpdir();
+  for (const entry of fs.readdirSync(tmp)) {
+    if (entry.startsWith(FIX_TREE_PREFIX)) {
+      fs.rmSync(path.join(tmp, entry), { recursive: true, force: true });
+    }
+  }
+}
+
+// Memoized: both fix-commit scenarios share one extraction, and lazy() keeps
+// it out of require time so the registry still loads from a non-repo tree
+// (BL-968).
+const fixCommitTree = lazy(() => {
+  sweepStaleFixTrees();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), FIX_TREE_PREFIX));
+  onAbnormalExit(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const archive = execFileSync(
+    'git',
+    ['-C', REPO_ROOT, 'archive', BL1227_FIX_COMMIT, ...COMPOSER_INPUT_PATHS],
+    { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }
+  );
+  execFileSync('tar', ['-x', '-C', dir], { input: archive });
+  return dir;
+});
 
 function runGate(root) {
   const args = root ? [root] : [];
@@ -64,17 +122,20 @@ function registerSteps(registry) {
   });
 
   scoped(/^the repository at the BL-1227 fix commit$/, (ctx) => {
-    // The real, current working-tree repository — this feature's own
-    // acceptance run against it IS "the fix commit" state.
-    ctx.bl1227.root = undefined;
+    ctx.bl1227.root = fixCommitTree();
   });
 
+  // Scenario 05 measures nothing through a root: its subject IS the live
+  // repository (the standing entry point must fail on a real over-budget
+  // tree), so it stays unpinned on purpose.
   scoped(/^the BL-1227 fix commit$/, (ctx) => {
     ctx.bl1227.root = undefined;
   });
 
   scoped(/^the stable prefix is composed from the real repository tree$/, (ctx) => {
-    ctx.bl1227.result = runGate(undefined);
+    // A real tree, as opposed to scenario 03's synthetic padded one - which
+    // tree is whatever the Given bound.
+    ctx.bl1227.result = runGate(ctx.bl1227.root);
     ctx.bl1227.measured = parseMeasuredSize(ctx.bl1227.result.stdout);
   });
 
@@ -188,4 +249,4 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+module.exports = { registerSteps, FEATURE, BL1227_FIX_COMMIT, COMPOSER_INPUT_PATHS };
