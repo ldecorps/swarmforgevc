@@ -186,6 +186,7 @@ import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } fr
 import { readTicketMessageMap, writeTicketMessageEntry } from '../concierge/ticketMessageMapStore';
 import { ALL_SWARM_ROLES, readRoleTopicMap, writeRoleTopicMap } from '../concierge/roleTopicMapStore';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFoldersSnapshot, TickState, epicDefinitionsFor } from '../concierge/conciergeTick';
+import { isSwarmLive, probeSwarmLiveness } from './telegramCursorOperatorLiveness';
 import { emitTickDuration } from '../metrics/humanLoopReliabilityStore';
 import { approvalRequestedEventKey } from '../events/swarmEventStream';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
@@ -3358,6 +3359,9 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     },
     readRootIntakeFiles: () => readRootIntakeFiles(targetPath),
     readBoardProjectRoot: () => targetPath,
+    // Freeze the Telegram pipeline board while the pack is asleep
+    // (finish-shift bedtime leaves seats down but keeps this phone path up).
+    isPipelineBoardAwake: () => isSwarmLive(probeSwarmLiveness(targetPath)),
     readRepoBaseUrl: () => readRepoBaseUrl(targetPath),
     // BL-1190: pre-post gate - an ApprovalRequested ask never fires for an
     // id whose yaml findTicketFilePath cannot find, closing the gap between

@@ -236,6 +236,12 @@ export interface ConciergeTickAdapters {
   // Live-wired to the front-desk targetPath; absent falls back to cwd so
   // fixtures that never set this still resolve a swarm name.
   readBoardProjectRoot?: () => string;
+  // When the pack is asleep (finish-shift / no live tmux roles), the board
+  // must freeze: no recompute, no Telegram repost, no pin re-enforce. Phone
+  // path stays up and the concierge tick still runs for Approvals / asks.
+  // Optional — absent means "awake" so every fixture built before this
+  // field existed keeps posting the board unchanged.
+  isPipelineBoardAwake?: () => boolean;
   // BL-465: the repo's GitHub base URL (e.g.
   // "https://github.com/ldecorps/swarmforgevc"), derived from the origin
   // remote - undefined when unresolvable (e.g. no git remote), in which
@@ -625,6 +631,11 @@ function heldItems(
     filename: item.filename ?? '',
     heldSinceMs: item.filename ? readHeldSinceMs?.(item.filename) : undefined,
   }));
+}
+
+/** Pure gate: absent/undefined awake adapter means refresh (legacy fixtures). */
+export function pipelineBoardShouldRefresh(awake: boolean | undefined): boolean {
+  return awake ?? true;
 }
 
 async function syncBoardIfWired(
@@ -1356,23 +1367,31 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // a skip/failure leaves an untouched entry rather than dropping it.
   const titleAgeBuckets = await syncAllTitleAgeBuckets(folders, adapters.routeAdapters.getTopicMap(), nowMs, state.titleAgeBuckets, adapters.titleAdapters);
 
-  // BL-452: the pipeline board's own sync - runs on EVERY tick (never
-  // gated on a folder-membership transition, same posture as the title-age
-  // sync above), because the change-gate that matters is the rendered TEXT,
-  // not any one ticket's transition; syncPipelineBoard owns that gate.
-  const boardSync = await syncBoardIfWired(
-    folders,
-    state.pipelineBoard,
-    adapters.boardAdapters,
-    adapters.readRoleHeldTickets,
-    adapters.readRootIntakeFiles,
-    adapters.readRepoBaseUrl,
-    nowMs,
-    doneClosedAtMs,
-    adapters.readHeldSinceMs,
-    adapters.readBoardProjectRoot
-  );
-  const pipelineBoard = await syncBoardPinIfWired(boardSync.state, adapters.boardPinAdapters);
+  // BL-452: the pipeline board's own sync - runs on EVERY tick while the
+  // pack is awake (never gated on a folder-membership transition, same
+  // posture as the title-age sync above), because the change-gate that
+  // matters is the rendered TEXT, not any one ticket's transition;
+  // syncPipelineBoard owns that gate. While asleep (finish-shift bedtime /
+  // no live roles), freeze the last posted board — the phone path still
+  // ticks for Approvals, but the board must not keep refreshing.
+  const boardAwake = pipelineBoardShouldRefresh(adapters.isPipelineBoardAwake?.());
+  const boardSync = boardAwake
+    ? await syncBoardIfWired(
+        folders,
+        state.pipelineBoard,
+        adapters.boardAdapters,
+        adapters.readRoleHeldTickets,
+        adapters.readRootIntakeFiles,
+        adapters.readRepoBaseUrl,
+        nowMs,
+        doneClosedAtMs,
+        adapters.readHeldSinceMs,
+        adapters.readBoardProjectRoot
+      )
+    : { state: state.pipelineBoard };
+  const pipelineBoard = boardAwake
+    ? await syncBoardPinIfWired(boardSync.state, adapters.boardPinAdapters)
+    : boardSync.state;
 
   // BL-434: the Approvals topic's own live roster - fed off curr.pendingApproval
   // (the SAME set this tick already derived ApprovalRequested events from),

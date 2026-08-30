@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 29, 2026 (BL-1062: two property tests'
+generator-reach floors are now satisfiable by construction instead of an
+unseeded per-run lottery — `test/bl968MaterializedGuardSensitivity.property.test.js`
+(3 classes drawn uniformly over `NUM_RUNS = 24`) failed ~16% of the time on
+correct code, and `test/bl948SocketFixtureInvariants.property.test.js` (3
+death shapes over 12 runs) ~2.3%, and neither red said anything about the
+code under test — both blocked four of this same day's own commits on a
+quiet host. Fixed by iterating the small categorical space directly and
+layering the random draw inside each cell (`RUNS_PER_CELL`), so the
+probability a floor fails on a correct implementation is zero, not merely
+small, with the same total draw count and unchanged wall clock; no floor
+was raised, weakened, or dropped (`CLASS_FLOOR`/`DEPTH_FLOOR` unchanged,
+bl948 gains a per-shape floor it did not have before). The floor logic
+lives in one shared `extension/test/helpers/reachFloors.js`
+(`assertReachFloor`, `runsPerCell`) both tests call, asserted over a
+SEPARATE `REQUIRED_CLASSES`/`REQUIRED_DEPTHS` contract list rather than
+the same constant that drives the iteration — the coder's first version
+tied the floor to the iterated list itself, so deleting a class from the
+iteration silently deleted its own check and passed green; caught by
+running the break. Hardener pass added direct unit coverage for both
+helper functions (previously exercised only indirectly through the
+property files' pass/fail outcome) and independently re-verified the
+satisfiable-by-construction claim: 5 fresh unseeded runs each, identical
+coverage every time. Acceptance:
+`specs/features/BL-1062-generator-reach-floors-are-a-per-run-lottery.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1246: the BL-1230 nested-git-repository
 guard (`extension/test/helpers/nestedGitRepoGuard.js`) exempts a repository
 inside a directory git itself ignores, carrying the human's 2026-08-28
