@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T06:17:12.686686566Z","feature_name":"Stamp-off review of the Cursor expedite no-verdict hotfix chain 3f4f69ec1b, 70c5e0e5b0, 5de352ed1d","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1254-swarm-stamp-expedite-no-verdict-chain.feature","background_hash":"8a1f44fd59b3ee6385a69558dccdeb9a86920ffb1cbd3c4c8a6c6a7f9f739ea9","implementation_hash":"unknown","scenarios":[{"index":2,"name":"A bounce must carry an actionable reason to count as a bounce","scenario_hash":"18d6aafbc87d7e9e732932f213218e544ee0178793cd934c80c995aa3796c4c9","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-30T06:16:39.741134553Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Stamp-off review of the Cursor expedite no-verdict hotfix chain 3f4f69ec1b, 70c5e0e5b0, 5de352ed1d
 
   Three operator/Cursor hotfixes landed on main in one day against the same
