@@ -2477,6 +2477,14 @@
 (defn chase-trend-briefing-section []
   (node-tool-line "chase-trend-line.js"))
 
+;; BL-604: the trend-analysis section. Same two-line shape as its nine
+;; siblings - the whole narrative lives in the compiled tool, and a tool that
+;; prints nothing (no series has two periods to compare) contributes no block,
+;; which is what keeps "absence of data is never a finding" true all the way
+;; out to the sent email rather than only inside the builder.
+(defn trend-analysis-briefing-section []
+  (node-tool-line "trend-analysis-section.js"))
+
 ;; BL-263: same shell-out pattern as needs-approval-briefing-section above -
 ;; reuses computeBacklogDashboard's own notDoneCount field unchanged, the
 ;; SAME field backlog.json/the PWA already carry, so the briefing can never
@@ -2617,6 +2625,7 @@
     :merged-blocked-digest merged-blocked-digest-briefing-section
     :stage-dwell-section stage-dwell-briefing-section
     :chase-trend-section chase-trend-briefing-section
+    :trend-analysis-section trend-analysis-briefing-section
     :not-done-count-line not-done-count-briefing-line
     :standing-rule-violations-line standing-rule-violations-briefing-line
     :suboptimality-verdict-line suboptimality-verdict-briefing-line
