@@ -128,4 +128,22 @@ notes: |
   re-forwarded - a common path, not an exotic one - so it will not stay
   a one-ticket problem.
 
+  ## Specifier adjudication 2026-08-30: parked at QA, not bounced
+
+  QA verified this ticket clean and escalated only its LANDING
+  (`swarmforge-QA:backlog/evidence/BL-1295-land-escalate-20260830.md`). The
+  work is genuinely unlanded - `revert-subject?` is absent from
+  `main:swarmforge/scripts/task_scope_gate_lib.bb` and
+  `bl1295RevertSubjectAttributionSteps` from `main:specs/pipeline/steps/index.js`
+  - and the land step's "own-paths identical to origin/main" is a false
+  report caused by BL-1297, not a description of the repository.
+
+  Nothing further is owed by this ticket or its author. The parcel stays put,
+  intact on `swarmforge-QA` and its ancestry; QA re-runs `land_step_cli.bb`
+  once BL-1297 (and then BL-1298) have landed via the expeditor. Do NOT
+  hand-roll the replay in the meantime: citing an upstream non-merge commit
+  to dodge the blind spot would silently land a PARTIAL parcel.
+
+  Evidence: backlog/evidence/BL-1295-land-escalate-specifier-adjudication-20260830.md
+
 assigned_to: coder

@@ -110,6 +110,28 @@ description: |
   name. Prompt files for the roles that run the suite (QA, hardener) get the
   corresponding line.
 
+  ## Making the contract executable (do this in THIS parcel)
+
+  `acceptance:` above points at a `.feature.draft`. No `*.feature` glob and no
+  runner picks up a `.draft`, so as written this ticket can cross all six
+  stages with **zero** of its scenarios ever executed. That was correct while
+  the slice was unbuilt; it is wrong the moment it is built — and this ticket
+  IS the slice that builds it. In the SAME commit as the implementation:
+
+  1. Rename `specs/features/BL-816-red-suite-disposition-recorded.feature.draft`
+     to `BL-816-red-suite-disposition-recorded.feature` (drop the `.draft` suffix).
+  2. Add `specs/pipeline/steps/bl816RedSuiteDispositionRecordedSteps.js`
+     and register it in `specs/pipeline/steps/index.js` under exactly that
+     name — the `required_wiring:` entry above pins it.
+  3. Repoint this ticket's `acceptance:` at the `.feature` path.
+
+  Do NOT rename the draft without landing the handler in the same commit: the
+  acceptance runner THROWS on any scenario lacking a handler (BL-233), so a
+  half-done rename turns the suite red for every other parcel in flight.
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl816RedSuiteDispositionRecordedSteps::acceptance handler registered so the runner executes this ticket's scenarios"
+
 acceptance: specs/features/BL-816-red-suite-disposition-recorded.feature.draft
 
 out_of_scope: |
@@ -156,3 +178,28 @@ notes: |
      complete disposition and forwards must pass. If the amendment is
      readable as a hard block, it has overshot what this ticket asked for and
      should be bounced.
+
+  ## Freshness + executable-contract amendment [2026-08-30] specifier
+
+  Proactive Article 3.6 check before this ticket can be promoted, not a
+  reaction to a gate. **Premise re-verified against the live tree and still
+  holds** — see the amendment commit message for what was measured. **Not a
+  zombie**: no implementation file carries this id, and no `bl816RedSuiteDispositionRecordedSteps`
+  is registered in `specs/pipeline/steps/index.js`. CONFIRM PROMOTE, with the
+  contract made executable as spelled out in `description:`.
+
+  **Why this amendment was needed at all.** BL-761's acceptance-contract gate
+  fails CLOSED only on an **ABSENT** `acceptance:` declaration. A declaration
+  that is present but aims at a non-executable `.feature.draft` passes
+  **vacuously** — every gate green, not one scenario run. Nine paused tickets
+  carried this shape when it was found; this is one of them.
+
+  **Only ONE `required_wiring:` entry, deliberately.** A second anchor on the
+  production symbol being changed was considered and rejected: a symbol that
+  already exists matches identically before and after the fix (vacuous), and
+  pinning its post-fix contents would falsely block a coder who reaches the
+  same behaviour by another route. The handler anchor is the honest gate — it
+  guarantees the scenarios RUN, and the scenarios are what assert the
+  behaviour. The handler name is fixed HERE, at mint, so the pattern is a
+  literal that will exist rather than a placeholder the gate can never match
+  (BL-874).

@@ -304,8 +304,47 @@
     (and (zero? (:exit subj))
          (subject-names-task? (:out subj) task-ticket-id))))
 
-(defn- own-commit-diff [root commit]
-  (let [diff (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" commit)]
+(defn own-commit-changed-paths
+  "The paths THIS commit changed of its own, against its FIRST parent - for
+   every commit shape. nil (never []) when the commit or its diff could not
+   be read, so a caller reads blindness as blindness rather than as a clean
+   commit.
+
+   BL-1297: the previous invocation was
+   `diff-tree --no-commit-id --name-only -r --first-parent <commit>`, which
+   reports NOTHING for a merge. git suppresses a merge's diff entirely
+   unless -m or -c/--cc is given, and --first-parent is a log/rev-list
+   traversal flag with no effect on diff-tree's own diff output. A merge is
+   the normal shape of a role's own commit - every stage does
+   `git merge <hash>` to receive a handoff, then forwards - so a parcel
+   whose only task-tagged commit was that merge reported an empty change
+   set, and empty reads as \"no foreign paths\", which PASSES. The gate
+   approved parcels it never inspected, and the land step's replay reported
+   nothing to commit on the one shape it is always given.
+
+   Diffing the first parent against the commit answers the question the
+   three callers actually ask (\"what did this commit change of its own\")
+   on merges and non-merges alike. `-m` is deliberately NOT used: it unions
+   the per-parent diffs, which attributes the merged-in branch's work to the
+   merging role - a different question, and a stricter gate than any caller
+   asked for. A single-parent commit's answer is unchanged: --first-parent
+   was already a no-op there, and the two-tree diff-tree form is the same
+   plumbing walk with the same rename-detection-off default.
+
+   A ROOT commit has no first parent; its own change is the tree it
+   introduced (`--root`), never nothing - answering nothing there would pass
+   the gate open on a foreign path exactly as the merge blind spot did."
+  [root commit]
+  (let [parent (git! root "rev-parse" "-q" "--verify" (str commit "^1^{commit}"))
+        diff (if (zero? (:exit parent))
+               (git! root "diff-tree" "--no-commit-id" "--name-only" "-r"
+                     (str/trim (:out parent)) commit)
+               ;; No first parent: either a root commit (diff against the
+               ;; empty tree) or an unreadable commit, which must stay nil.
+               (let [resolves (git! root "rev-parse" "-q" "--verify" (str commit "^{commit}"))]
+                 (if (zero? (:exit resolves))
+                   (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--root" commit)
+                   resolves)))]
     (when (zero? (:exit diff))
       (remove str/blank? (str/split-lines (:out diff))))))
 
@@ -327,7 +366,7 @@
     (when candidates
       (->> candidates
            (filter #(commit-message-names-task? root % task-ticket-id))
-           (mapcat #(own-commit-diff root %))
+           (mapcat #(own-commit-changed-paths root %))
            (remove nil?)
            distinct
            vec))))

@@ -124,7 +124,6 @@ function buildRepo(root, { withRevert, foreignCommit }) {
   git(root, 'config', 'user.name', 'test');
   git(root, 'config', 'commit.gpgsign', 'false');
   writeCommit(root, 'seed.txt', 'seed');
-  const base = git(root, 'rev-parse', 'HEAD').trim();
 
   // The task's own work, on a side branch that is then merged - so there is
   // a merge for the revert to undo. The merge also carries a FOREIGN path,
@@ -135,6 +134,14 @@ function buildRepo(root, { withRevert, foreignCommit }) {
   git(root, 'checkout', '-q', 'main');
   git(root, '-c', 'core.hooksPath=/dev/null', 'merge', '--no-ff', '-q', '-m', `Merge documenter ${TASK} into QA. By QA.`, 'work');
   const mergeSha = git(root, 'rev-parse', 'HEAD').trim();
+  // BL-1297: the walk BASE sits just after that merge, so the merge itself is
+  // not a candidate. It carries a foreign path deliberately - that is what
+  // makes REVERTING it name that path - and since BL-1297 a merge's own
+  // first-parent change is no longer invisible to the walk, so leaving the
+  // merge in range would refuse every case here and this property could no
+  // longer tell the clean parcel from the genuinely foreign one. The REVERT,
+  // which is what this ticket is about, stays in range either way.
+  const base = mergeSha;
 
   if (withRevert) {
     git(root, '-c', 'core.hooksPath=/dev/null', 'revert', '--no-edit', '-m', '1', mergeSha);
