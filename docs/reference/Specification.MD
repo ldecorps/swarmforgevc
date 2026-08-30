@@ -12,10 +12,11 @@ poll loop, no Mini App poll-rate change (the operator's own stop condition,
 checked by counting `capturePane(` call sites and confirmed unchanged).
 Mapping, ruled by a human sentence dropped in an earlier mint and now
 restored verbatim: busy → `ok` (green); alive-but-idle → `stale` (amber);
-unavailable or never captured → no per-pane signal at all, so the existing
+unavailable, meaning no capture at all → no per-pane signal, so the existing
 UI branch hides the dot rather than showing a fourth status kind. A blank
-capture (a pane that WAS captured but returned nothing) answers for itself
-with `stale` rather than falling through to the aggregate — the exact gap
+capture (a pane that WAS captured but returned nothing) is the other half of
+that and answers for itself with `stale` rather than falling through to the
+aggregate — the exact gap
 that would otherwise paint a dead pane green on the next poll. `ok` is
 never derived from the shared `isPaneActivelyProcessing` predicate a second
 time — the signal is checked to agree with it, never re-decides "busy" on

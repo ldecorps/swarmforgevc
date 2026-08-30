@@ -153,3 +153,33 @@ and invariant 1's property, which now asserts the failed-poll clause for every
 pane shape and carries its own reach floor so the clause cannot go unexercised.
 
 Acceptance 7/7, unit 8/8, property 4/4.
+
+## QA bounce, 2026-08-30 — D1-D4, and why the parcel QA read was already stale
+
+QA's inventory is correct about the commit it read (`c339946666`, the
+documenter's) and every item is already fixed on this branch. The four defects
+are the three halves of the specifier's scenario 06 plus its doc entry, and
+they were closed in `06f6feacd` — a commit made after QA's parcel left the
+coder, so QA could not have seen it. QA's own tracing says as much: the
+amendment `2f36d2270` is not an ancestor of the architect's or the hardener's
+commits, and nobody between them re-ran acceptance against the amended feature.
+
+Verified against this branch rather than assumed, item by item:
+
+| item | state here |
+|---|---|
+| D1 `resolvePaneStatusKind` never checks `err` first | fixed — `residentSpyUiHtml.ts:807`, `if (aggregateKind === 'err')` before the per-pane early return |
+| D2 scenario 06 has no step handler | fixed — the `When` handler is registered |
+| D3 the reused `Then` hardcodes the `ok` aggregate | fixed — it reads `ctx.bl1243.aggregate`, defaulting to `ok` only when a scenario supplies none |
+| D4 Specification.MD documents a fix that does not exist | the fix now exists, so the entry is true |
+
+Acceptance **7/7** on this branch, against QA's measured 6/7.
+
+**One doc inaccuracy D4's remediation note anticipated, corrected here.** The
+entry said "unavailable or never captured → no per-pane signal at all", and its
+very next sentence then says a blank capture answers `stale`. Both halves are
+about a pane with no usable text and they contradicted each other. The clause
+now reads "unavailable, meaning no capture at all → no per-pane signal", with
+the blank capture named as the other half. QA routed D4 to the coder under
+"code AND docs both defective → the earlier of the two", and this is the
+smallest correction that makes the sentence describe what ships.
