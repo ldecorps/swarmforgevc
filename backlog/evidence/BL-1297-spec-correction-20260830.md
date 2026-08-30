@@ -67,3 +67,18 @@ the same parcel as the rename (BL-233).
 
 Not recorded against the coder or the hardener: no bounce is charged for a
 defect in the spec they were given.
+
+## Why no bounce was recorded (BL-635 step deliberately skipped)
+`record-bounce.js --role` is documented as the "producing role", but
+`record-bounce.ts:88` writes it straight into the entry's `blamed` field, and
+`backlog-schema.md` defines that as "role held responsible". There is no value
+for "the spec was wrong": `--class spec-gap` classifies the failure correctly
+while `--role` still charges a pipeline role for it, and that number feeds the
+daily briefing and a live per-role bounce-rate experiment (BL-990).
+
+Recording `--role coder --class spec-gap` would therefore assert something
+false about a coder who implemented the contract faithfully, and the remedy
+BL-990 provides (`record-bounce-correction.js`) is for correcting someone
+else's already-recorded entry, not for writing a false one and immediately
+retracting it. This file is the record instead. If this shape recurs, the
+CLI's inability to express a spec-owned bounce is worth its own ticket.
