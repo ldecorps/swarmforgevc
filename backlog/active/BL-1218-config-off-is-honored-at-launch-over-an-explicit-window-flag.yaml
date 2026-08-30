@@ -145,3 +145,5 @@ notes: |
     direction 1, launch) and BL-1217 (direction 2, repair). They are
     independent — either is valuable and testable alone — so neither
     declares depends_on the other."
+
+assigned_to: coder
