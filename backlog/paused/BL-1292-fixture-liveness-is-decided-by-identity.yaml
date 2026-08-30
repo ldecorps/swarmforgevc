@@ -1,0 +1,157 @@
+id: BL-1292
+title: "bl857 inv3 decides 'did the reap kill it?' with a bare process.kill(pid,0), which a zombie and a reused pid both answer wrongly - so the invariant is red in the full lane and clean solo"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained to the property lane. Nothing is lost or
+# corrupted, and the production reap under test is not implicated - the defect
+# is in how the test ASKS. The cost is a lane whose verdict moves with host
+# business, which is how a real reap regression behind it would be waved
+# through (BL-816). Not high: no gate is dead, no production path is touched.
+# Not low: QA has hit it repeatedly and it is not cosmetic.
+status: todo
+epic: code-quality-gates
+priority: 23
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "the change is one helper in one test file plus one new step-handler file; adopting a single identity-checked helper at the existing isAlive call sites IS the de-duplication."
+  hardender: "no production module changes - the deliverable is test-harness code. Scenario 01's zombie and reused-pid rows are the non-vacuity check the hardener would otherwise be asked for, and they are in the acceptance contract."
+  documenter: "no living doc describes how these fixtures decide liveness, and no registered diagram depicts it."
+acceptance: specs/features/BL-1292-fixture-liveness-is-decided-by-identity.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1292::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1292 -> 0), so the anchor cannot pass before the work is done"
+
+invariants:
+  - "A test's answer to 'is this fixture still running?' is true only while THAT fixture is running: a zombie awaiting its reaper, and a pid reused by an unrelated process, both answer false."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. Be aware of
+  what this ticket does and does not claim.
+
+  It does NOT claim to have reproduced the red. QA's counterexample
+  ([prefixed, false], seed -436553632, path 12) was replayed directly - the
+  exact unregistered-target case, 30 iterations idle and 30 under load - and
+  passed every time. Three other hypotheses were measured and DISPROVED (see
+  notes). What is left is two mechanisms that cannot be separated without the
+  full lane, and the point of the fix is that it closes BOTH: an
+  identity-checked liveness answer is correct whether the wrong answer came
+  from a zombie or from a reused pid.
+
+  So the honest framing is: a test that asks a question it does not mean is a
+  defect on its own terms, and fixing it is worthwhile even if the flake
+  turns out to have a third cause. If you would rather hold this until someone
+  captures the failing assertion TEXT from a real lane run (which would say
+  which of the three assertions fired and halve the search), that is a
+  reasonable call - I asked QA for the counterexample and got it, and asking
+  for the assertion message is the natural next request.
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl857TunnelOwnershipInvariants.property.test.js:34`:
+
+      function isAlive(pid) {
+        try { process.kill(pid, 0); return true; } catch { return false; }
+      }
+
+  Every liveness assertion in the file routes through it (lines 149, 254, 261,
+  304, 306). `process.kill(pid, 0)` answers *"does some process with this pid
+  exist and can I signal it?"* The invariants ask *"is THIS fixture still
+  running?"* Those diverge in two ways, both of which get likelier the busier
+  the host is:
+
+  1. **Zombie.** The reap SIGKILLs a fixture whose `bash -c` launcher has
+     already exited, so the fixture is orphaned and its corpse waits on a
+     subreaper. Until it is collected, `kill(pid, 0)` still succeeds - the
+     process is dead and the test is told it is alive.
+  2. **Pid reuse.** A full property-lane run spawns thousands of processes.
+     A pid the reap just freed can be handed to an unrelated one, and the
+     check then answers about that process instead.
+
+  Both produce the SAME failure: `isAlive(targetPid)` returns `true` where the
+  invariant requires `false`. That is exactly QA's counterexample
+  `[prefixed, false]` - `registerTargetOwner: false`, so the target is
+  unregistered and MUST be reaped.
+
+  ## The production reap is not implicated
+
+  Worth stating plainly for whoever picks this up: nothing here suggests
+  `tunnel_ownership_lib.sh` reaps incorrectly. The defect is in how the test
+  asks its question. If the fix makes the red persist, THAT is the signal the
+  reap itself is at fault - and the coder should stop and report rather than
+  weakening the assertion.
+
+  ## How (direction, not mandate)
+
+  Decide liveness by identity, not by a bare pid signal: confirm the pid is
+  both signallable AND still the fixture (its command line still carries this
+  run's unique tunnel name), and treat a zombie as gone. `/proc/<pid>/cmdline`
+  is Linux-only; `ps -o args= -p <pid>` is POSIX and works on both supported
+  OSes, which is the same portability lesson BL-1061 already paid for in this
+  exact file.
+
+  Explicitly NOT the fix: a sleep or a retry window before asserting. That
+  trades a fast wrong answer for a slow one, is still wrong under enough load,
+  and taxes every passing run - the same reasoning `waitForFileSync.js`
+  records for BL-1063.
+
+qa_e2e_procedure: >
+  1. Run the whole file in the full property lane (`npm run test:properties`),
+     not solo and not with a -t filter - the filtered form is what made every
+     spec-time reproduction attempt inconclusive. Invariant 3 must be green
+     across several consecutive full runs.
+  2. Replay QA's exact counterexample against the fixed helper: seed
+     -436553632, path 12, `[prefixed, false]`.
+  3. Prove the identity check is not vacuous: hold a fixture as a zombie (kill
+     it while something delays its reaper) and confirm the helper reports it
+     gone while a bare `kill(pid,0)` still reports it alive.
+  4. Confirm invariants 1 and 2 in the same file still pass - they share the
+     helper and must not regress.
+  5. Confirm every scenario resolves to a registered step handler.
+
+source: |
+  QA note 50_20260830T034254Z_001989 (priority 50): "Untracked flaky:
+  bl857TunnelOwnershipInvariants inv3, 3/3 clean solo runs", followed by QA
+  note 50_20260830T035936Z_001997 supplying the counterexample on request:
+  "bl857 inv3 seed=-436553632 path=12 counterexample=[prefixed,false]".
+
+notes: |
+  ## Measured, and what was ruled OUT
+
+  Full triage record: `backlog/evidence/BL-1287-bl857-inv3-triage-20260830.md`
+  (written before the counterexample arrived) plus the replay below.
+
+  Reproduction attempts, ALL GREEN - this ticket does not rest on a reproduction:
+
+  - inv3 solo, idle host: 1 run.
+  - inv3 under 28 CPU burners: 3 runs.
+  - inv3 concurrent with bl787 in one fork pool: 3 runs.
+  - QA's exact `[prefixed, false]` case replayed directly against the real
+    `reap-orphans` (target unregistered, prefixed bystander): 30 iterations
+    idle, 30 under load. 0 failures.
+
+  DISPROVED, so nobody re-walks them:
+
+  1. *The fixture is not visible to `pgrep -f` yet when the reap runs.*
+     60/60 hits, zero misses, on the exact spawn shape.
+  2. *A sibling suite kills bl857's fixtures.* Every kill site in the three
+     tunnel property files and in `stop_ancillary_services.sh` is scoped to a
+     pidfile or a tunnel name. bl857's own module-load sweep is the only
+     host-wide killer and fires before its own tests.
+  3. *`old-<target>` is selected by a reap scoped to `<target>`.* It is not:
+     `run old-x` does not contain `run x`. The prefixed shape cannot make the
+     BYSTANDER assertion fire, which is why this ticket reads the
+     counterexample as pointing at the TARGET assertion.
+
+  ## Relationship to BL-1287 - different defect, same file family
+
+  BL-1287 fixes `leakedFixtureTunnelPids` selecting a live sibling's fixtures.
+  That is a real, MEASURED defect found while triaging this flake, but it bites
+  in the direction bl857-kills-bl787 and is not this. Neither ticket closes the
+  other; they can land in either order.

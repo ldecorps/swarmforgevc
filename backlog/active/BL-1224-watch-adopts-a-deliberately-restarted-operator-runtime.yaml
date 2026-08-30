@@ -182,3 +182,14 @@ notes: |
     setup survived. Resolved as accepted-by-design at mint."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-30, by: QA, blamed: architect, class: behavior, commit: 1ddc283639, evidence: backlog/evidence/BL-1224-bounce-20260830.md }
+abandoned_commits: [0de070faad, c7f2a3b667]
+# QA rebuilt this ticket tip-pure on 2026-08-30 (second time for BL-1224):
+# the re-submitted parcel's ancestor chain again carried unlanded BL-1235
+# work, neither approved nor landable (BL-1241). Isolated all five of
+# BL-1224's own commits (coder, hardener's mutation stamp, documenter's
+# original pass, architect's post-bounce review, documenter's re-pass) and
+# replayed them onto origin/main. See
+# backlog/evidence/BL-1224-qa-pass-20260830.md.

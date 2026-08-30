@@ -1,5 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
+<<<<<<< HEAD
 **Last Updated:** August 30, 2026 (BL-1183: the BoB day-long trial lifecycle
 (BL-1182) gains a go-live gate — per human directive, no production trial
 starts until telemetry and performance-assessing tools can actually decide

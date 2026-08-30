@@ -27,7 +27,7 @@ invariants:
   - "A manifest row that registers no existing file is reported as an error, never accepted silently."
 
 required_wiring:
-  - 'swarmforge/scripts/test/suite_inventory_cli.bb::suite-manifest.tsv::the per-parcel check must reuse the existing inventory logic rather than growing a second, divergent notion of what counts as registered'
+  - 'swarmforge/scripts/unregistered_test_gate_lib.bb::suite-inventory-lib/manifest-name::the per-parcel check must reuse the existing inventory logic rather than growing a second, divergent notion of what counts as registered, so it must reach the definitions in suite_inventory_lib.bb rather than restate them. AMENDED 2026-08-30: the original entry named suite_inventory_cli.bb, which reaches the manifest name only through this symbol and so never contains the literal suite-manifest.tsv that the pattern searched for'
   - 'specs/pipeline/steps/index.js::bl1240UnregisteredTestFailsAuthorSteps::acceptance handler registered'
 
 description: |
@@ -110,7 +110,36 @@ source: |
   unblocks the suite, this is the reason it will not be needed a second time.
 
 notes: |
-  - [2026-08-28] specifier: this is the same structural shape as BL-1237,
+
+  ## AMENDMENT 2026-08-30 - required_wiring entry 1 (bookkeeping only)
+  
+  Entry 1 named `swarmforge/scripts/test/suite_inventory_cli.bb` with pattern
+  `suite-manifest.tsv`. That CLI reaches the manifest name only through
+  `suite-inventory-lib/manifest-name`; the literal is defined in
+  `suite_inventory_lib.bb`. The gate read therefore found no match and failed
+  closed at the documenter->QA hop - the last one, after all six stages of work
+  were spent. Same shape as BL-874/BL-960/BL-1183.
+  
+  Re-anchored to `swarmforge/scripts/unregistered_test_gate_lib.bb` with pattern
+  `suite-inventory-lib/manifest-name`, which states the ORIGINAL intent more
+  exactly than the entry it replaces: the reuse this ticket requires is the new
+  gate lib reaching the inventory lib own definitions.
+  
+  The documenter suggested repointing the same pattern at
+  `suite_inventory_lib.bb`. That was deliberately NOT taken: the file already
+  carries that literal on `main` today, so the anchor would pass before any of
+  this ticket work is done - vacuous, the very failure BL-874 exists to prevent.
+  The re-anchored file is absent from `main`, so it cannot pass early.
+  
+  Verified at amendment time: pattern present at the parcel tip
+  (`unregistered_test_gate_lib.bb:105`), file absent on `main`. The production
+  call site is also present and verified (`swarm_handoff.bb:426`,
+  `unregistered-test-gate-lib/findings-for-git-handoff`, absent on `main`), so no
+  additional entry is needed to cover the BL-419 concern.
+  
+  **Nothing you build changes.** Acceptance, scenarios and described behaviour are
+  untouched; this only makes the wiring declaration checkable.
+    - [2026-08-28] specifier: this is the same structural shape as BL-1237,
     minted an hour earlier from a different report - a gate that is correct
     about the condition but fires on a role that cannot act on it, having
     accumulated the condition invisibly in the meantime. Worth watching for as
