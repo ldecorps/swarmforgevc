@@ -765,6 +765,29 @@ You are the hardender.
   pure-function tests existed; the mismatch surfaced only once a CLI-level
   test was written, before the checklist logic itself was ever exercised.)
 
+## Unrelated standing reds need not cost you CRAP — force the coverage write with --coverage.reportOnFailure=true (rule_proposal 2026-08-30, accepted)
+- Vitest skips writing `coverage/coverage-final.json` when ANY test fails. So
+  a lane carrying unrelated standing reds leaves `crapReport.js` with no
+  coverage to read, and it reports 0% for every file — an inflated, flagged
+  CRAP for code that is in fact well covered, caused entirely by someone
+  else's red. Verified 2026-08-30: `reportOnFailure` is a real Vitest 3.2.6
+  option and is set nowhere in this repo, so it must be passed on the CLI.
+- Rule: when reds you do not own block the coverage write, re-run with
+  `--coverage.reportOnFailure=true` and read the real report, rather than
+  recording a degraded or skipped CRAP pass.
+- **Caveat, and it is load-bearing: the forced report describes a run in which
+  some tests FAILED.** Coverage contributed by a failing test's un-run
+  assertions is missing, so for files touched by the reds the number is a
+  FLOOR, not a measurement. Say so when you record the pass. And this is a way
+  to keep measuring THROUGH someone else's red — never a reason to leave the
+  red unowned: an unowned standing red is still a defect to surface (BL-816),
+  and this flag makes it easier to ignore, which is the one thing it must not
+  be used for.
+  (Incident: BL-1235, 2026-08-30 — ~18 pre-existing unowned reds left
+  `crapReport.js` reading 0% coverage everywhere; the CLI override produced a
+  real report and let CRAP run correctly. See also the CRAP scoping rule
+  above: pass `src/*.ts` paths, never `out/*.js`.)
+
 ## Overlapping self-exclusion guards each need an ISOLATING test — a combined fixture hides one mechanism's mutant behind the other (rule_proposal 2026-08-13, accepted)
 - When a self-exclusion (or any check) is guarded by two overlapping
   mechanisms — e.g. a filename-pattern case-statement AND a pid==self
