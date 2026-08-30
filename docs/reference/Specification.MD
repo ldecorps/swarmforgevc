@@ -1,5 +1,72 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1272: the land step's entangled-sibling
+report now distinguishes a sibling still unlanded from one whose own content
+is already byte-identical on `origin/main` — a tip-pure replay that lands
+sibling A no longer causes sibling B's later report (cited at the same
+original tip) to keep printing `ENTANGLED_SIBLING A`, since B's replay is
+still a new commit built on `origin/main` and A's *original* commit remains
+an ancestor either way. `land_step_cli.bb` now prints one `LANDED_SIBLING
+<ticket-id>` line per resolved sibling alongside `ENTANGLED_SIBLING`;
+`entanglement-note`, the priority `00` note reaching the specifier for a
+genuinely unresolvable case, names only siblings still actually unlanded.
+The discriminator is content — the sibling's attributed paths already
+byte-identical on `origin/main`, reusing `task_scope_gate_lib.bb`'s own
+attribution walk — never a subject-line grep for the sibling's ticket id,
+which would falsely clear a sibling only minted or spec'd, not landed
+(BL-1241 invariant 2 stays fail-closed). `land-plan`'s action for a given
+commit is unchanged: a sibling's original commit remains an ancestor and may
+carry content its replay excluded, so the decision stays `:land`, only the
+report changes. Observed live twice in one shift before this fix (BL-1232
+landing tip-pure and still reported entangled with an already-landed
+BL-1182). See
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`.
+Acceptance:
+`specs/features/BL-1272-a-landed-sibling-is-not-reported-as-entangled.feature`.)
+Prior entry —
+**Last Updated:** August 30, 2026 (BL-1254: BL-848 stamp-off of the Cursor
+expedite no-verdict recovery chain — three commits, `3f4f69ec1b` then
+`70c5e0e5b0` then `5de352ed1d`, reviewed as ONE resulting state because the
+third supersedes part of the second (certifying `70c5e0e5b0` in isolation
+would certify dead behaviour) — CONFIRMED. Resulting behaviour: an expedite
+stage that exits without a parseable `verdict.json` is re-invoked while
+recoveries remain (`max-missing-verdict-recoveries` = 2 in
+`swarmforge/scripts/expedite_lib.bb`), with an escalated prompt on the second
+attempt that forbids waiting on background/Monitor work and requires writing
+`pass`, `bounce`, or `fail` as the last action; a further miss fails closed.
+`bounce-payload-valid?` refuses a bounce whose `reason` and `class` are both
+blank, and refuses the driver's own synthetic `no-verdict-abandoned` tag, so
+a synthesized "bounce because no-verdict" cannot re-enter the same stage and
+burn the bounce bound in a loop. Review recorded one non-live finding rather
+than fixing it: `bounce-payload-valid?` lower-cases `reason` before comparing
+it to the synthetic tag but compares `class` exactly, an asymmetry the
+running driver never reaches (it only ever synthesizes the lowercase tag),
+pinned in `extension/test/bl1254MissingVerdictNeverBounces.property.test.js`
+as the anchor for a future fix. This stamp-off reimplements nothing; all
+three hotfix-ledger rows (`3f4f69ec1b`, `70c5e0e5b0`, `5de352ed1d`) stay
+`state: stamp-open` pending a human `certified`/`waived` decision (BL-848).
+See `docs/how-to/BL-1254-swarm-stamp-expedite-no-verdict-chain.md`.
+Acceptance: `specs/features/BL-1254-swarm-stamp-expedite-no-verdict-chain.feature`.)
+Prior entry —
+**Last Updated:** August 30, 2026 (BL-1253: stamp-off of Cursor hotfix
+`2ec06b6ef1` — CONFIRMED. The hotfix stops the Cursor bridge from trusting
+front-desk queue mode when the front-desk poll feeder is dead: queue mode
+drained an already-empty file while the bridge's own heartbeat still looked
+healthy, so the host stayed silent and `/pilot` piled up unanswered in
+Telegram. `extension/src/tools/cursorBridgeInboundQueue.ts` gains
+`frontDeskPollHeartbeatPath` / `readFrontDeskPollHeartbeatMs` over
+`front-desk-poll-heartbeat.json` (returning `null` for a missing or
+unparseable file) and re-evaluates feeder liveness on EVERY poll, not once
+at start, owning `getUpdates` itself whenever the feeder reads stale, absent,
+or unparseable; `start_cursor_bridge.sh` now defaults
+`CURSOR_BRIDGE_INBOUND_QUEUE=0` when the feeder is not live at launch. This
+stamp-off review confirms or refutes landed behavior only — it reimplements
+nothing, and the hotfix ledger row (`backlog/hotfix-ledger.yaml`, commit
+`2ec06b6ef1`) stays `stamp-open` pending a human `certified`/`waived`
+decision (BL-848); green review scenarios never write that decision
+themselves. Acceptance:
+`specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1250: the expeditor's (BL-567)
 liveness probe now counts ROLES, not processes, fixing a false `degraded`
 verdict on every healthy restart. `probe-liveness` counted every process
@@ -24,6 +91,35 @@ swarm on the same host still contributes nothing to the count. See the
 updated outcome table in
 `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`.
 Acceptance: `specs/features/BL-1250-expeditor-role-agent-probe-counts-roles.feature`.)
+Prior entry —
+**Last Updated:** August 30, 2026 (BL-1240: a `git_handoff` is now refused at
+SEND TIME when its own parcel adds a file under `swarmforge/scripts/test/`
+with no row in that directory's `suite-manifest.tsv`, closing a gap where
+the BL-973 tree-wide inventory check fired only when the full standing suite
+ran — an unregistered file accumulated invisibly (measured ~6/day over 5
+days) until the suite refused to start at all, and the refusal always landed
+on QA holding a list of OTHER tickets' registration omissions it cannot
+reasonably author. The new gate is PARCEL-scoped, never tree-scoped — it
+asks only whether THIS parcel adds an unregistered file, reusing
+`task_scope_gate_lib.bb`'s own commit-walk (now a public
+`parcel-own-changed-paths` seam) rather than re-deriving one, so a parcel
+touching no test file passes even while other tickets' files sit
+unregistered elsewhere — a tree-scoped copy would have relocated the drift
+problem onto every unrelated parcel instead of ending it. Registration
+itself is asked of the SAME `suite_inventory_lib.bb` logic
+`suite_inventory_cli.bb` runs, never a second notion that could drift; a
+deleted path is never a finding. The refusal names the file and quotes the
+exact manifest row needed, so the fix is a one-edit action. Fail-open on
+every unreadable fact, matching every other send-time gate in
+`swarm_handoff.bb`. The silent-row half (a manifest row registering no real
+file) was already closed by BL-1239 and is not re-validated here,
+deliberately — a parcel merely touching the manifest must not be refused for
+another ticket's already-malformed row. See the new "Unregistered-Test
+Send-Time Gate (BL-1240)" section in `swarmforge/handoff-protocol.md` and
+`docs/how-to/BL-1240-unregistered-test-send-time-gate.md`. Acceptance:
+`specs/features/BL-1240-unregistered-test-fails-the-ticket-that-adds-it.feature`.
+Not yet landed via QA at time of this merge-up; kept here so this in-flight
+rework is not silently dropped from the record.)
 Prior entry —
 **Last Updated:** August 30, 2026 (BL-1235: a THIRD host-agent seat — a
 local model served through ollama — answers only in its own dedicated

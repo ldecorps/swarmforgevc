@@ -884,8 +884,11 @@ const DOMAINS = [
   require('./bl1243LiveScreenPerPaneActivitySteps'),
   require('./bl670PipelineBoardLastKnownStageSteps'),
   require('./bl1235LocalQwenSeatSteps'),
+  require('./bl1240UnregisteredTestFailsAuthorSteps'),
   require('./bl1250ExpediteRoleAgentCountSteps'),
   require('./bl1224WatchAdoptsRestartedRuntimeSteps'),
+  require('./bl1254ExpediteNoVerdictChainStampSteps'),
+  require('./bl1272LandedSiblingSteps'),
   require('./bl1183BobGoLiveGateSteps')
 ];
 

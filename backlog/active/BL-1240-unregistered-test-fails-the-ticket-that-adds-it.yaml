@@ -152,6 +152,7 @@ notes: |
     LAND before the backfill or it refuses every parcel on inherited drift.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-30, by: QA, blamed: coder, class: unit, commit: 5db40d59bd, evidence: backlog/evidence/BL-1240-unregistered-test-fails-the-ticket-that-adds-it-bounce-20260830.md }
+  - { at: 2026-08-30, by: architect, blamed: coder, class: behavior, commit: b82a1e856a, evidence: backlog/evidence/BL-1240-architect-bounce-20260830.md }

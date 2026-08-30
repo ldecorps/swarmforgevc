@@ -25,13 +25,28 @@ land_step_cli.bb <task-name> <commit> [repo-root]
 - **`LAND_CLEAN <commit>`** (exit 0) — no entangled sibling. QA lands the
   cited commit unchanged.
 - **`LAND_REPLAY <branch> <new-commit>`** plus one `ENTANGLED_SIBLING
-  <ticket-id>` line per sibling (exit 0) — a tip-pure commit was built on
+  <ticket-id>` line per sibling still unlanded, and one `LANDED_SIBLING
+  <ticket-id>` line per sibling whose own content is already byte-identical
+  on `origin/main` (BL-1272) (exit 0) — a tip-pure commit was built on
   `<branch>`, replayed off `origin/main`, containing only this ticket's own
   paths. QA reviews and lands `<new-commit>` — never the originally-cited
   one — and records `abandoned_commits: [<cited commit>]` on the ticket
   (`swarmforge/backlog-schema.md`'s `read-abandoned-commits`), which is what
   keeps BL-1192's and `pre_qa_gate_lib.bb`'s own ancestry walks from
   mis-reading the deliberately severed descent.
+
+  A `LANDED_SIBLING` line does not change what action `land-plan` returns —
+  the sibling's original commit remains an ancestor, and its content may
+  differ from the replay, so the action stays `:land` — only the report.
+  It exists so the `entanglement-note` reaching the specifier for a genuinely
+  unresolvable case names only siblings still actually unlanded, instead of
+  re-litigating one a prior pass already replayed clean (the BL-1272 shape:
+  two tickets cited at the same original tip, the first's replay lands, and
+  the second's report used to still print `ENTANGLED_SIBLING` for it). The
+  discriminator is content — the sibling's attributed paths already
+  byte-identical on `origin/main` — never a subject-line grep for the
+  sibling's ticket id, which would falsely clear a sibling that has only
+  been minted or spec'd, not actually landed.
 - **`LAND_ESCALATE`** plus a reason (exit 1) — detection or replay could not
   complete cleanly (a real conflict, an unreadable range). Per
   `swarmforge/roles/QA.prompt`, this is still not a bounce to the author: QA

@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T06:17:12.686686566Z","feature_name":"Stamp-off review of the Cursor expedite no-verdict hotfix chain 3f4f69ec1b, 70c5e0e5b0, 5de352ed1d","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1254-swarm-stamp-expedite-no-verdict-chain.feature","background_hash":"8a1f44fd59b3ee6385a69558dccdeb9a86920ffb1cbd3c4c8a6c6a7f9f739ea9","implementation_hash":"unknown","scenarios":[{"index":2,"name":"A bounce must carry an actionable reason to count as a bounce","scenario_hash":"18d6aafbc87d7e9e732932f213218e544ee0178793cd934c80c995aa3796c4c9","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-30T06:16:39.741134553Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Stamp-off review of the Cursor expedite no-verdict hotfix chain 3f4f69ec1b, 70c5e0e5b0, 5de352ed1d
 
   Three operator/Cursor hotfixes landed on main in one day against the same
@@ -55,6 +59,21 @@ Feature: Stamp-off review of the Cursor expedite no-verdict hotfix chain 3f4f69e
     Given a stage returns a bounce the driver refuses as reasonless
     When the driver records the stage result
     Then the ticket is not re-entered at the same stage on that bounce
+
+  # BL-1254 expedite-no-verdict-chain-stamp-06
+  # Carried from retired BL-1259 scenario 04 (duplicate stamp-off of this same
+  # chain). finalize-stage-result's timeout-beats-missing-file ordering is
+  # shipped behaviour in this chain that scenarios 01-05 never exercise: a
+  # stage killed for overrun ALSO leaves no verdict, so without this the
+  # absence would mask why the stage was actually killed, and 01 would
+  # re-invoke a stage that must not be re-invoked.
+  Scenario: A timeout is reported as a timeout even when no verdict was written
+    Given the stage was killed for exceeding its time budget
+    And the stage wrote no parseable verdict
+    When the driver decides what to do with the finished stage
+    Then it records a failed verdict of class stage-timeout
+    And it does not record a failed verdict of class no-verdict
+    And it does not re-invoke the stage
 
   # BL-1254 expedite-no-verdict-chain-stamp-05
   Scenario: The ledger rows stay pending until a human decides
