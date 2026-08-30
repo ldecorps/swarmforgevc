@@ -180,3 +180,5 @@ notes: |
     and 'the watch has recorded 3 restart attempts' (Given) vs 'the recorded
     restart attempts are still 3' (Then) is setup versus the assertion that the
     setup survived. Resolved as accepted-by-design at mint."
+
+assigned_to: coder
