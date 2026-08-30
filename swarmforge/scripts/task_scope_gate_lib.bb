@@ -305,22 +305,6 @@
            distinct
            vec))))
 
-(defn parcel-own-changed-paths
-  "BL-1240: the paths THIS parcel's own work changed — the walk above, from
-   the boundary this task last handed off at. nil (never []) when the range
-   could not be read, so a caller fails open rather than reading blindness as
-   a clean parcel.
-
-   Public because BL-1240's unregistered-test gate asks the same question of
-   the same parcel and must never answer it differently: two notions of \"what
-   this parcel changed\" on the same send path would disagree exactly where it
-   matters, on the entangled tip neither could see."
-  [root task-ticket-id commit]
-  (let [raw-base (last-handoff-commit root task-ticket-id)
-        {:keys [base unreadable?]} (effective-base root task-ticket-id raw-base)]
-    (when-not unreadable?
-      (task-tagged-changed-paths root base commit task-ticket-id))))
-
 (defn findings-for-git-handoff
   "The one impure entry point. Returns {:findings [{:path :ticket-id}]} on
    a clean read (possibly empty), or {:warning \"...\"} when the walk could
@@ -336,10 +320,11 @@
       (let [commit-check (git! root "rev-parse" "-q" "--verify" (str commit "^{commit}"))]
         (if-not (zero? (:exit commit-check))
           @unreadable-warning
-          ;; BL-1240: the same walk, through the one public seam both send-time
-          ;; gates share - an unreadable base and an unreadable range are the
-          ;; same nil, and were already the same warning here.
-          (let [changed-paths (parcel-own-changed-paths root task-ticket-id commit)]
+          (let [raw-base (last-handoff-commit root task-ticket-id)
+                {:keys [base unreadable?]} (effective-base root task-ticket-id raw-base)]
+            (if unreadable?
+              @unreadable-warning
+              (let [changed-paths (task-tagged-changed-paths root base commit task-ticket-id)]
                 (if (nil? changed-paths)
                   @unreadable-warning
                   ;; BL-1276: the declaration is read HERE, at the one impure
@@ -357,7 +342,7 @@
                       ;; evaluated at all. It grants nothing - and the refusal
                       ;; SAYS so, rather than sending its recipient off to
                       ;; rebuild a commit that may not have needed it.
-                      (nil? ticket-yaml) (assoc :acceptance-unreadable? true))))))))))
+                      (nil? ticket-yaml) (assoc :acceptance-unreadable? true))))))))))))
 
 (defn blocked? [{:keys [findings]}]
   (boolean (seq findings)))

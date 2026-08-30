@@ -68,33 +68,6 @@ updated outcome table in
 `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`.
 Acceptance: `specs/features/BL-1250-expeditor-role-agent-probe-counts-roles.feature`.)
 Prior entry —
-**Last Updated:** August 30, 2026 (BL-1240: a `git_handoff` is now refused at
-SEND TIME when its own parcel adds a file under `swarmforge/scripts/test/`
-with no row in that directory's `suite-manifest.tsv`, closing a gap where
-the BL-973 tree-wide inventory check fired only when the full standing suite
-ran — an unregistered file accumulated invisibly (measured ~6/day over 5
-days) until the suite refused to start at all, and the refusal always landed
-on QA holding a list of OTHER tickets' registration omissions it cannot
-reasonably author. The new gate is PARCEL-scoped, never tree-scoped — it
-asks only whether THIS parcel adds an unregistered file, reusing
-`task_scope_gate_lib.bb`'s own commit-walk (now a public
-`parcel-own-changed-paths` seam) rather than re-deriving one, so a parcel
-touching no test file passes even while other tickets' files sit
-unregistered elsewhere — a tree-scoped copy would have relocated the drift
-problem onto every unrelated parcel instead of ending it. Registration
-itself is asked of the SAME `suite_inventory_lib.bb` logic
-`suite_inventory_cli.bb` runs, never a second notion that could drift; a
-deleted path is never a finding. The refusal names the file and quotes the
-exact manifest row needed, so the fix is a one-edit action. Fail-open on
-every unreadable fact, matching every other send-time gate in
-`swarm_handoff.bb`. The silent-row half (a manifest row registering no real
-file) was already closed by BL-1239 and is not re-validated here,
-deliberately — a parcel merely touching the manifest must not be refused for
-another ticket's already-malformed row. See the new "Unregistered-Test
-Send-Time Gate (BL-1240)" section in `swarmforge/handoff-protocol.md` and
-`docs/how-to/BL-1240-unregistered-test-send-time-gate.md`. Acceptance:
-`specs/features/BL-1240-unregistered-test-fails-the-ticket-that-adds-it.feature`.)
-Prior entry —
 **Last Updated:** August 30, 2026 (BL-1235: a THIRD host-agent seat — a
 local model served through ollama — answers only in its own dedicated
 Telegram topic, per human directive: "cursor stays behind the usual host
