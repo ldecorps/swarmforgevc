@@ -1,0 +1,108 @@
+id: BL-1286
+title: "A tracked launcher names a pack config that was never committed, so the qwen full forge exists only as an uncommitted file on one machine"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+priority: 18
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1286-a-tracked-launcher-never-names-an-untracked-pack.feature
+
+human_approval: pending
+approval_context: >
+  Two things need your call, and neither is the gate itself.
+
+  1. The disposition of swarmforge/packs/qwen-anthropic-forge.conf. It is your
+  file, it has never been committed, and start-swarm-qwen.sh (which IS tracked)
+  names the pack it defines. Either commit it so the tracked launcher works on a
+  fresh clone, or stop naming that pack from tracked code. No agent has touched
+  it and none will under this ticket - the constitution forbids sweeping
+  ticket-less work, and committing your config unasked would be out of bounds.
+  Note it also carries provider-key guidance, which may be why it was kept out.
+
+  2. Whether the gate is worth building at all. If you would rather just commit
+  the file and move on, say so and this ticket is retired rather than built -
+  the recurrence risk is the only thing it buys.
+
+  swarmforge/scripts/wait_pipeline_drain.sh is the other stray file. Nothing in
+  the tree calls it, so it is an orphan, not a broken dependency; it is left
+  untouched and out of this ticket's scope. Tell me if you want it kept.
+
+invariants:
+  - "The gate reads the repository as committed: an untracked working-tree copy never satisfies it."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1286TrackedLauncherPackSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  `start-swarm-qwen.sh` is tracked and documents its launch as
+  `SWARMFORGE_PACK=qwen-anthropic-forge ./start-swarm-qwen.sh`.
+  `swarmforge/packs/qwen-anthropic-forge.conf` is NOT tracked, and was never
+  tracked: `git log --all` over that path is empty, and a scan of the last 40
+  reflog entries finds no commit that ever contained it. It is not reset
+  wreckage - it has simply never been committed.
+
+  Every other pack in `swarmforge/packs/` is tracked. So the qwen full forge
+  works on this one machine by accident of a working-tree file, and both a
+  fresh clone and a `git clean` (which lists it under `Would remove`) leave a
+  tracked launcher pointing at a config that is not there.
+
+  ## Why the file must not simply be deleted or committed by an agent
+
+  It is operator-authored config carrying an explicit operator ask ("cloud
+  Qwen full forge") and provider credentials guidance. Sweeping it would
+  destroy uncommitted human work, which the constitution forbids outright;
+  committing it silently is an out-of-bounds change to the operator's own
+  configuration. The DECISION - track it, or stop naming it from tracked code -
+  is the human's. What this ticket owns is the gate that stops the asymmetry
+  from recurring silently and being discovered, as it was here, only when a
+  stray-file sweep happened to look.
+
+  ## How (direction, not mandate)
+
+  A check over the committed tree that resolves every pack name appearing in
+  tracked launchers/docs to a tracked `swarmforge/packs/<name>.conf`, and
+  reports the launcher/pack pair when it cannot.
+
+constraints: >
+  - Do NOT delete, move, or commit swarmforge/packs/qwen-anthropic-forge.conf
+    as part of this ticket. Surface it; the disposition is the operator's.
+  - The gate reads committed content only. Resolving a pack name against the
+    working tree would pass today on the very machine where the defect lives.
+  - Scope is the pack-name/config pair. Broader "is every referenced file
+    tracked" auditing is not in this slice.
+
+qa_e2e_procedure: >
+  1. Run the gate on the repo as committed and confirm it names the pair
+     start-swarm-qwen.sh -> swarmforge/packs/qwen-anthropic-forge.conf.
+  2. Confirm the gate still reports it while the untracked file is present on
+     disk - that copy must not satisfy it.
+  3. In a scratch clone, commit a stub pack config and confirm the gate goes
+     clean, then remove it and confirm the report returns.
+
+out_of_scope: |
+  - Any disposition of the operator's qwen pack config itself.
+  - swarmforge/scripts/wait_pipeline_drain.sh: also untracked, but nothing
+    references it, so it is an orphan rather than a broken dependency. Left in
+    place and surfaced, not swept; already noted in BL-1277's evidence file.
+
+source: |
+  Surfaced 2026-08-30 by a priority-00 note to the specifier: "Stray untracked
+  master files: wait_pipeline_drain.sh, qwen-anthropic-forge.conf".
+
+notes: |
+  - [2026-08-30] specifier: minted after checking both stray files rather than
+    assuming they were debris. wait_pipeline_drain.sh has no caller anywhere in
+    the tree and is left alone. qwen-anthropic-forge.conf DOES have a tracked
+    caller, which is what makes it a defect rather than clutter. Neither file
+    was touched: the constitution's rule is that ticket-less changes an agent
+    did not make are surfaced, never swept.
+  - Severity low deliberately: nothing currently running is broken, because the
+    working-tree copy is present on the machine that uses it. The cost is
+    borne on a fresh clone or after a clean, which is why it stayed invisible.
