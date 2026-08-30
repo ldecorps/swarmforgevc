@@ -176,3 +176,5 @@ approval_context: >
   declared. What is worth your eye is the severity: this silently ships an
   unapproved ticket's code past a human-approval gate, which is why it is
   `high` and priority 5 rather than triaged with the ordinary defect queue.
+
+assigned_to: coder
