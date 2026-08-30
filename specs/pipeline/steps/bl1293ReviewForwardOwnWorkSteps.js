@@ -148,6 +148,16 @@ function buildForwardedCommit(ctx, shapeKey) {
       git(root, ['checkout', '-q', ROLE_BRANCH]);
       git(root, ['merge', '--no-ff', '-q', '-m', `Merge ${ctx.receivedCommit}`, ctx.receivedCommit]);
       fs.writeFileSync(path.join(root, 'parcel.txt'), 'the parcel\narchitect corrected a boundary\n');
+      // BL-1307: a real review pass commits its Article 4.4 evidence file
+      // alongside the fix - the constitution requires it unconditionally, and
+      // the sibling gate added there refuses a forward that adds none. The
+      // row's own contract is unchanged: what BL-1293 judges here is that the
+      // commit CONTRIBUTED the role's work rather than merging silently.
+      mkdirp(path.join(root, 'backlog', 'evidence'));
+      fs.writeFileSync(
+        path.join(root, 'backlog', 'evidence', `${TASK}-architect-fix.md`),
+        'D1: boundary named in the wrong layer - corrected in parcel.txt.\n',
+      );
       return commitAll(root, `fix(${TASK}): architect correction`);
     }
 

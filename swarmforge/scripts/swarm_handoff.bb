@@ -369,6 +369,19 @@
         (and (= "git_handoff" type) canonical (not (str/blank? task-name))
              (review-forward-evidence-gate-lib/forward-introduces-nothing-own?
               (project-root) canonical))
+        ;; BL-1307: and the fact neither of those two reads - whether this
+        ;; forward ADDED the role's own Article 4.4 evidence for THIS task
+        ;; over the commit it received. b7d22b9ee3 (the architect's BL-1224
+        ;; forward) resolved a real conflict, so it contributes content and
+        ;; both older facts pass it, while carrying no review output at all.
+        review-forward-received-commit
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (review-forward-evidence-gate-lib/received-commit-for-task
+           (project-root) sender task-name))
+        review-forward-carries-own-evidence?
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+           (project-root) review-forward-received-commit canonical task-name))
         review-forward-evidence-block?
         (and (= "git_handoff" type) canonical (not (str/blank? task-name))
              (review-forward-evidence-gate-lib/blocked?
@@ -379,8 +392,8 @@
                :commit canonical
                :reroute-reason (get headers "reroute_reason")
                :introduces-nothing-own? review-forward-nothing-own?
-               :received-commit (review-forward-evidence-gate-lib/received-commit-for-task
-                                  (project-root) sender task-name)}))
+               :carries-own-evidence? review-forward-carries-own-evidence?
+               :received-commit review-forward-received-commit}))
         ;; BL-1213 parcel-rollback gate: refuses a git_handoff whose branch
         ;; tip holds pre-parcel content for a path the ticket's accepted
         ;; parcel commit changed, with no revert of it on this branch (see
@@ -452,7 +465,8 @@
                              review-forward-evidence-block?
                              (conj (review-forward-evidence-gate-lib/refusal-message
                                     {:sender sender :task-name task-name :commit canonical
-                                     :introduces-nothing-own? review-forward-nothing-own?}))
+                                     :introduces-nothing-own? review-forward-nothing-own?
+                                     :carries-own-evidence? review-forward-carries-own-evidence?}))
                              parcel-rollback-block
                              (conj (parcel-rollback-guard-lib/refusal-message
                                     {:task-name task-name :findings (:findings parcel-rollback-block)}))
