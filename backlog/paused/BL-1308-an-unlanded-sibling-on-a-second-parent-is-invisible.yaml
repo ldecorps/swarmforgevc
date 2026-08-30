@@ -163,8 +163,7 @@ notes: |
   landed the original reproduction is gone, so capture it in the fixture
   first.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Minted from a QA hold, not from an intake. QA verified BL-1307's own work as
   fully green and correctly declined both to bounce it (no role in its chain
