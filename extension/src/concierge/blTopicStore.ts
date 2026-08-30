@@ -12,11 +12,15 @@ import { atomicWrite } from '../util/atomicWrite';
 import { commitScopedFile, isFileCommitted } from '../util/gitCommitScopedFile';
 import {
   UnboundThreadReporter,
+  isStorableTopicId,
+  readUnboundSwarmIconId,
+  recordUnboundSwarmIconId,
   classifyTopicThread,
   mayWriteTrackedTopicRecord,
   readSupervisorSwarmIconId,
   recordSupervisorSwarmIconId,
   reportUnboundThreadToStderr,
+  reportMarkerRefusedToStderr,
 } from './topicThreadKind';
 
 export type TopicMessageDirection = 'inbound' | 'outbound';
@@ -248,11 +252,21 @@ export function appendMessage(
 // brand-new topic, at creation time) - readRecord/atomicWrite already
 // tolerate an empty `messages` array, so this needs no special case.
 export function readSwarmIconId(targetPath: string, ticketId: string): string | undefined {
-  if (classifyTopicThread(ticketId) === 'supervisor') {
+  const kind = classifyTopicThread(ticketId);
+  if (kind === 'supervisor') {
     return readSupervisorSwarmIconId(targetPath, ticketId);
+  }
+  if (kind === 'unbound') {
+    return readUnboundSwarmIconId(targetPath, ticketId);
   }
   return readRecord(targetPath, ticketId).swarmIconId;
 }
+
+// BL-1210: what recordSwarmIconId tells its caller. 'recorded' means the
+// marker is durable and readable back; 'refused' means no store would take
+// it and NOTHING was written. A refusal is a returned value the caller must
+// handle - stderr stays a diagnostic, never the signal.
+export type IconMarkerWriteOutcome = 'recorded' | 'refused';
 
 function maybeReportUnbound(ticketId: string, reportUnbound: UnboundThreadReporter): void {
   if (classifyTopicThread(ticketId) === 'unbound') {
@@ -265,16 +279,23 @@ export function recordSwarmIconId(
   ticketId: string,
   iconId: string,
   reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr,
-  reportUnbound: UnboundThreadReporter = reportUnboundThreadToStderr
-): void {
+  reportUnbound: UnboundThreadReporter = reportMarkerRefusedToStderr
+): IconMarkerWriteOutcome {
+  if (!isStorableTopicId(ticketId)) {
+    reportUnbound(ticketId);
+    return 'refused';
+  }
   const kind = classifyTopicThread(ticketId);
   if (kind === 'supervisor') {
     recordSupervisorSwarmIconId(targetPath, ticketId, iconId);
-    return;
+    return 'recorded';
   }
   if (kind !== 'ticket') {
-    maybeReportUnbound(ticketId, reportUnbound);
-    return;
+    // BL-1210: epic / standing / role ids keep their marker in the shared
+    // untracked store. BL-695's boundary is untouched - no tracked record
+    // under backlog/topics/ is created for any of them.
+    recordUnboundSwarmIconId(targetPath, ticketId, iconId);
+    return 'recorded';
   }
   const record = readRecord(targetPath, ticketId);
   record.swarmIconId = iconId;
@@ -286,4 +307,5 @@ export function recordSwarmIconId(
   if (!committed) {
     reportCommitFailure(ticketId, filePath);
   }
+  return 'recorded';
 }
