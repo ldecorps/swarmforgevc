@@ -29,7 +29,7 @@ invariants:
   - "Local-ahead commits are discarded only when the remote REJECTED the push; a push that could not be attempted or completed (remote unreachable, no credentials, network down) never authorises a reset."
   - "When a push failure decides the outcome, that push's own error text reaches the caller's result - never replaced by the reset's error, nor by an outcome name."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. The judgment
   worth a look: what a NON-rejection push failure should do instead of
@@ -171,3 +171,27 @@ notes: |
   still an ancestor of local `main`, push, release). `main...origin/main` is
   now `0 0`. That closes the current window; it does not fix the defect, which
   will re-open it on the next daemon cycle that cannot reach the remote.
+
+occurrences:
+  - "[2026-08-30] The first loss NOT caught by the person who caused it, and the
+    first to reach a shipped ticket. Commit 16062880b (BL-1241's QA.prompt half,
+    naming land_step_cli.bb as the entangled-tip remedy) was reset away and
+    landed on no branch. BL-1241's YAML half survived, so the ticket sat in
+    backlog/done/ reading as complete while the half that gives the built CLI
+    its only caller was simply gone - precisely the BL-798 shape that prose half
+    exists to prevent. Nothing detected it: not a gate, not the ticket, not the
+    reflog. The coder happened to grep QA.prompt for land_step_cli, found zero
+    hits, and sent the specifier a priority-00 note. Re-landed as 8cceab0e3 by
+    applying that commit's patch (byte-identical; verified via git diff against
+    16062880b).
+    Two things this adds to the severity case above. First, `main` reflog shows
+    NINE resets to origin/main on this date, not seven. Second, the note that
+    every loss so far was recoverable from the reflog is true but incomplete:
+    recovery depends on somebody NOTICING, and this one was invisible for a day.
+    An audit after the fact is not a realistic backstop - `git fsck --dangling`
+    reports 873 dangling commits in this repo, so there is no practical way to
+    tell lost work from ordinary rebase and merge-up debris by inspection. A
+    sample of 60 was attempted and was worthless: it did not even contain
+    16062880b. Prevention at the push-verdict, which is what this ticket builds,
+    is the only workable fix."
+

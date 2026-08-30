@@ -12,7 +12,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1286-a-tracked-launcher-never-names-an-untracked-pack.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two things need your call, and neither is the gate itself.
 
@@ -28,9 +28,26 @@ approval_context: >
   the file and move on, say so and this ticket is retired rather than built -
   the recurrence risk is the only thing it buys.
 
-  swarmforge/scripts/wait_pipeline_drain.sh is the other stray file. Nothing in
-  the tree calls it, so it is an orphan, not a broken dependency; it is left
-  untouched and out of this ticket's scope. Tell me if you want it kept.
+  3. URGENT, and it needs your call before the other two:
+  swarmforge/scripts/wait_pipeline_drain.sh. When this ticket was minted I
+  called it a harmless orphan because nothing in the tree calls it. That was
+  WRONG, and the coordinator caught it - it is right now blocking the
+  coordinator's build sync, and it is the ONLY thing blocking it. It does not
+  need a caller to do damage: build_freshness_cli.bb's BL-629 gate reads
+  `git status --porcelain`, which lists untracked files, and anything under
+  swarmforge/scripts/ (outside scripts/test/) counts as the deployed surface.
+  So the file refuses `sync` with reason :dirty-surface simply by existing
+  untracked. Verified without side effects: the gate's own decision function
+  returns refuse? true, offending path exactly this file, and clean under
+  --override. Note the irony - the qwen pack config this ticket is NAMED for
+  does NOT block, because swarmforge/packs/ is not on the deployed surface.
+
+  Your call: commit it (it is a working BL-423 drain helper, no secrets, and
+  the day-shift bedtime path already expects it), or tell me to delete it. It
+  is your uncommitted work, so no agent will do either unasked. The
+  coordinator can keep working meanwhile with
+  `build_freshness_cli.bb <root> sync --override`, which is the sanctioned
+  escape hatch and logs itself to sync-overrides.jsonl.
 
 invariants:
   - "The gate reads the repository as committed: an untracked working-tree copy never satisfies it."
@@ -88,15 +105,33 @@ qa_e2e_procedure: >
 
 out_of_scope: |
   - Any disposition of the operator's qwen pack config itself.
-  - swarmforge/scripts/wait_pipeline_drain.sh: also untracked, but nothing
-    references it, so it is an orphan rather than a broken dependency. Left in
-    place and surfaced, not swept; already noted in BL-1277's evidence file.
+  - Building any gate for swarmforge/scripts/wait_pipeline_drain.sh. Its
+    DISPOSITION is now question 3 in approval_context (it blocks build sync),
+    but this ticket's gate stays pack-name-only: a pack-name resolver would
+    not have caught a stray script, and widening it here would break the
+    slice. If the human wants the deployed-surface case gated too, that is its
+    own ticket.
+    CORRECTION: the earlier text here called this file "an orphan rather than
+    a broken dependency", which was wrong - see notes.
 
 source: |
   Surfaced 2026-08-30 by a priority-00 note to the specifier: "Stray untracked
   master files: wait_pipeline_drain.sh, qwen-anthropic-forge.conf".
 
 notes: |
+  - [2026-08-30] specifier, CORRECTION to the note below: "no caller, so it is
+    left alone" was the wrong test and the conclusion was wrong. The
+    coordinator reported wait_pipeline_drain.sh blocking build sync; verified,
+    and it is correct. build_freshness_cli.bb's dirty-surface-paths! runs
+    `git status --porcelain` (which lists UNTRACKED files) and filters by
+    on-deployed-surface?, which is true for anything under swarmforge/scripts/
+    outside scripts/test/. So the file trips the BL-629 gate by existing, not
+    by being called. Simulated the pure gate decision rather than running
+    `sync` (a passing sync recompiles and restarts daemons): sole offending
+    path is this file, refuse? true, reason :dirty-surface, clean under
+    --override. The lesson worth keeping: for a stray file, "does anything
+    call it" is the wrong freshness question - the right one is "does any gate
+    read the working tree and does this path land on the surface it reads".
   - [2026-08-30] specifier: minted after checking both stray files rather than
     assuming they were debris. wait_pipeline_drain.sh has no caller anywhere in
     the tree and is left alone. qwen-anthropic-forge.conf DOES have a tracked

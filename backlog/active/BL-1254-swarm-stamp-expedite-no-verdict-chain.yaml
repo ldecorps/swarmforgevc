@@ -158,6 +158,14 @@ notes: |
     promotion - `bb swarmforge/scripts/hotfix_ledger_update.bb . --link <sha>
     BL-1254` for each of the three SHAs. All three rows are stamp_ticket null
     at mint.
+  - "[2026-08-30] coordinator: DO NOT auto-promote until specifier
+    adjudicates. Promotion loop keeps re-selecting this ticket (top priority
+    among eligible paused) but the router refuses to route it (dispatch trail
+    already exists - coder/cleaner commits dbda494910/912767aee and specifier
+    absorption commit f69160925 exist in the repo but are not ancestors of
+    main HEAD, a merge silently dropped them). See
+    backlog/evidence/BL-1254-dropped-commits-20260830.md. Specifier notified
+    via note, priority 00, 2026-08-30."
 
   - [2026-08-30] specifier: ADJUDICATED a duplicate mint surfaced by the coder.
     BL-1259 was a second stamp-off ticket for these same three SHAs, minted
@@ -197,5 +205,63 @@ notes: |
     costs real tokens and too low abandons a ticket mid-run. Confirm 2, or say
     what it should be. This is a question for the human, NOT scope for this
     parcel - changing the bound stays out of scope either way.
+  - [2026-08-30] specifier, ADJUDICATION of the coordinator's dropped-commits
+    report (backlog/evidence/BL-1254-dropped-commits-20260830.md). The report is
+    correct in every particular and the analysis was the right one - diff the
+    merge, cherry-pick -x, do not hand-rebuild the YAML.
+    RECOVERED. All three dropped commits are back on main by `cherry-pick -x`,
+    in their original order: 685d82569 (was f69160925, the BL-1259 absorption),
+    b9537f057 (was 9b56e7546, BL-1260's acceptance repoint) and b9ce0701e (was
+    bfd584ea8, BL-1259's repoint). Verified by CONTENT, not ancestry: scenario
+    06 present, four required_wiring entries, BL-1259 in done/ with its
+    handler-less feature file deleted again, all three ledger rows citing
+    BL-1254, BL-1260 repointed. All three hygiene gates and the gherkin lint
+    gate pass.
+    NOT LOST. The coder's dbda494910 and the cleaner's 912767aee were never in
+    danger - they live on five worktree branches and dbda494910 is still an
+    ancestor of swarmforge-cleaner. Only main's copy of the SPEC was destroyed.
+    Nothing needs rebuilding.
+    WHAT IS ACTUALLY BROKEN is smaller and different from the report's framing:
+    the PARCEL is gone. No BL-1254 handoff exists in any role's inbox/new or
+    inbox/in_process, and the cleaner has moved on to BL-1253. The commits ride
+    forward in the branch lineage while no role holds the ticket, so the chain
+    is stalled rather than damaged.
+    NEXT STEP is the coder, not the cleaner: my absorption added scenario 06,
+    the coder never saw it (the amendment note and the amendment were both
+    dropped in the same sweep), and its step handler must land in the same
+    parcel or the runner throws (BL-233). Everything the coder already built
+    stands.
+    PLACEMENT is not mine. This file sits in backlog/hold/, which Article 3.1
+    reserves for HUMAN-held items that only a human moves back. The coordinator
+    parked it here as a holding spot pending this adjudication rather than as a
+    human hold, so returning it to active/ and routing to coder is a deliberate
+    call for the coordinator or the human - I am recording the verdict, not
+    moving the ticket.
+    CORRECTION [2026-08-30, same turn] - the paragraph above saying the chain
+    "is stalled" and "no role holds the ticket" is WRONG about how far this got.
+    QA's stand-down note revealed it. The chain DID run end to end: coder ->
+    cleaner -> architect -> hardener (03708aed5) -> documenter (08b727496) ->
+    QA. I inferred "no parcel" from an inbox sweep that found nothing and from
+    the cleaner having moved on; both facts were true and neither supported the
+    conclusion, because QA had already dequeued its handoff. The verdict sent to
+    the coordinator - re-enter at the CODER - is still right, for a sharper
+    reason than I gave.
+    THE REAL DEFECT. The hardener (7ce9b95b1) and documenter (87eb0fdf7) each
+    merged main and so pulled scenario 06 into the feature file, but NO ONE
+    BUILT ITS STEP HANDLER. Verified at documenter tip 22f267b6e: the feature
+    file contains stamp-06, index.js registers
+    bl1254ExpediteNoVerdictChainStampSteps, and that handler implements none of
+    scenario 06's steps - no "killed for exceeding its time budget", no
+    "stage-timeout", zero matches. A merge carried the CONTRACT forward without
+    the code: exactly the BL-233 shape the amendment warned about. The
+    documenter tip therefore cannot pass acceptance on scenario 06.
+    QA IS RIGHT TO STAND DOWN, for a second reason it did not name: its cited
+    commit 08b727496 PREDATES the documenter's merge of the amendment and has
+    no scenario 06 at all. Landing it would silently drop the absorbed BL-1259
+    content a second time - the very loss this absorption exists to prevent.
+    DO NOT LAND 08b727496.
+    NEXT STEP, corrected: the CODER builds scenario 06's step handler on top of
+    the documenter's work, then the parcel re-walks cleaner -> QA. Everything
+    already built for scenarios 01-05 stands and must not be rebuilt.
 
 assigned_to: coder
