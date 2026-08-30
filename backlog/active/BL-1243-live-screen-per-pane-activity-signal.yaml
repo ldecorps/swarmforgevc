@@ -157,3 +157,12 @@ notes: |
     existing Then step, so only the new When needs a handler.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-30, by: QA, blamed: coder, class: behavior, commit: 1824691354, evidence: backlog/evidence/BL-1243-bounce-20260830.md }
+abandoned_commits: [c339946666, b64714f946]
+# QA rebuilt this ticket tip-pure on 2026-08-30 (second time this session):
+# the re-submitted parcel's ancestor chain carried unlanded BL-670 work,
+# neither approved nor landable (BL-1241). Isolated the coder's D1-D4 fix
+# and every subsequent stage's own evidence, replayed onto origin/main.
+# See backlog/evidence/BL-1243-qa-pass-20260830.md.
