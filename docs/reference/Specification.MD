@@ -1,5 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1281: `bl1048DeliveredParcelIsNotNotStarted.property.test.js`
+carried BL-1062's own defect a third time — nine declared reach floors
+checked against an unseeded `fast-check` draw, so whether a run cleared them
+depended on the random seed rather than the code under test. Measured, not
+assumed: replaying the real generator and coverage-counting block over 4000
+simulated runs found a 2.50% run-level failure rate on correct code, entirely
+carried by two of the nine floors (`deliveredOnly >= 8`, `openedOnly >= 8`,
+both keyed on a `shape` drawn at p=1/6 per ticket) — the other seven clear at
+0.00-0.05% miss and were left untouched, since rewriting all nine would be
+churn across floors that were never at risk. Fixed by reusing BL-1062's
+remedy rather than reinventing it: the two at-risk floors now iterate the
+`shape` space through the shared `extension/test/helpers/reachFloors.js`
+helper (`assertReachFloor`, `runsPerCell`) so each shape receives a derived
+share of the run budget and the floor is met by construction, not by luck;
+the seven safe floors keep sampling unchanged. All nine floors remain
+declared at the same or a higher value — none was lowered, deleted, or
+widened to make a run pass — and the file stays off
+`swarmforge/scripts/property_suite_standing_allowlist.tsv`, since allowlisting
+would trade a 2.5% flake for permanent blindness, the same remedy the prior
+BL-1062 ruling already refused for this class. Acceptance:
+`specs/features/BL-1281-bl1048-reach-floors-satisfiable-by-construction.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1277: two step files registering the
 same UNSCOPED step-text pattern used to silently answer each other's
 scenarios — `specs/pipeline/stepRegistry.js` resolved an unscoped
