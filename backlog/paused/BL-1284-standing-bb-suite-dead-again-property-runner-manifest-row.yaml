@@ -1,0 +1,186 @@
+id: BL-1284
+title: "The standing Babashka suite refuses to run again: BL-1276 left a property-runner row in suite-manifest.tsv, so the only gate wired for the bb/shell lane exits 1 and every red in that lane is invisible"
+milestone: M8
+type: defect
+severity: high
+# high: the ONLY standing gate for the Babashka and shell lane (no mutation,
+# CRAP or DRY tooling is wired there) runs nothing at all, so every red in that
+# lane is invisible for as long as this stands - a broken safety signal, and
+# two acceptance features are red on main because of it. Not critical: nothing
+# is lost or corrupted, the fix is the deletion of one row, and the gate is
+# right about every other row.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "the deliverable is the deletion of one data row from a TSV; there is no code to refactor and nothing to DRY."
+  architect: "no design, module boundary or invariant changes; the predicate and the gate stay exactly as BL-973 and BL-1239 built them."
+  hardender: "no production code changes, so there is nothing to cover, mutate or measure CRAP over; the two existing acceptance features are the gate and QA runs them."
+  documenter: "no mechanism changes, so no registered diagram's change-trigger fires and no living doc describes anything different afterwards."
+acceptance: specs/features/BL-1239-suite-manifest-accounts-for-every-test-file.feature
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/run_bb_suite.sh` runs the inventory gate FIRST and
+  unconditionally, and exits 1 when it fails. The gate fails right now:
+
+      $ bb swarmforge/scripts/test/suite_inventory_cli.bb
+      FAIL: first column is not a test file name:
+        "task_scope_gate_acceptance_exemption_property_runner.bb"
+        - column 1 must name a test_*.sh or *_test_runner.bb file
+      suite inventory: 1 problem(s) over 434 test file(s)
+      exit 1
+
+      $ bash swarmforge/scripts/test/run_bb_suite.sh --list
+      run_bb_suite: the suite inventory is out of date - fix it before trusting a run
+      exit 1
+
+  So the standing Babashka suite runs NOTHING. The engineering rules make that
+  suite the only gate wired for the Babashka and shell lane - there is no
+  mutation, CRAP or DRY tooling there (BL-472 deferred) - so for as long as
+  this stands, every red in that lane is invisible. This is precisely the
+  state BL-1239 was minted to clear on 2026-08-29, reintroduced one day later.
+
+  ## The offending row
+
+  Line 181 of `swarmforge/scripts/test/suite-manifest.tsv`:
+
+      task_scope_gate_acceptance_exemption_property_runner.bb	standing
+
+  Added by `6e18fb243` ("BL-1276: a ticket's own declared acceptance contract
+  is not another ticket's work.", 2026-08-29 16:45 +0100), the coder pass of a
+  ticket that has since shipped and sits in `backlog/done/`.
+
+  A property runner is not a suite member by construction. The inventory's own
+  `test-file?` predicate accepts only `test_*.sh` and `*_test_runner.bb`, and
+  BL-1239's comment in `suite_inventory_lib.bb` states the reason in place: a
+  property runner "has its own lane and is never a suite member". The tree
+  holds 136 `*_property_runner.bb` files; exactly one of them - this one - has
+  a manifest row. Removing the row puts BL-1276's runner in the same position
+  as the other 135, which is the correct and normal one; it does not leave it
+  unrun, because the property lane is driven separately
+  (`check_property_suite_drift.sh` and the property-suite guard), never by
+  `run_bb_suite.sh`.
+
+  ## Measured blast radius
+
+  - `specs/features/BL-1239-suite-manifest-accounts-for-every-test-file.feature`
+    is **2 pass / 2 fail**: scenario 01 ("The suite runs") and the `standing`
+    row of scenario 02 both fail on this one row. Verified by running the
+    feature, 2026-08-30.
+  - `specs/features/BL-973-copy-lists-closure-derived-and-suite-completeness.feature`
+    is **12/1**: scenario 04 ("every bb test file is run by a standing gate or
+    explicitly excluded") fails. Reported by the coder; this is the note this
+    ticket was minted from.
+
+  Both features drive the REAL `suite_inventory_cli.bb` over the REAL tree, so
+  both go green the moment the row goes and neither needs amending.
+
+  ## How (direction, not mandate)
+
+  Delete line 181. That is the whole change.
+
+  ## Constraints
+
+  - **Do not widen `test-file?`.** Teaching the predicate to accept
+    `*_property_runner.bb` would make 135 other property runners suddenly
+    unregistered, re-breaking the suite in the opposite direction, and would
+    fold the property lane into the standing suite - a scope change nobody
+    asked for. The predicate, `discover-test-files`, and the check's own
+    verdicts stay exactly as they are.
+  - **The discovered set does not change.** `discover-test-files` must still
+    find the same 434 files after this parcel as before it; only the manifest's
+    row count changes.
+  - **No new lane, no exclusion row.** An `excluded` row would be wrong twice
+    over: it would still fail the first-column check, and there is no decision
+    to date and justify - the file was never a suite member.
+  - **Nothing else in the manifest moves.** The inventory reports exactly one
+    problem; a parcel that touches other rows is out of scope.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/suite_inventory_cli.bb` exits 0 and reports
+  0 problems over 434 test files. (2) `bash
+  swarmforge/scripts/test/run_bb_suite.sh --list` exits 0 and names a non-empty
+  list of tests - the suite gets past the gate and would actually run.
+  (3) The full acceptance for
+  `specs/features/BL-1239-suite-manifest-accounts-for-every-test-file.feature`
+  is 4/4 (it is 2/4 before the fix). (4) The full acceptance for
+  `specs/features/BL-973-copy-lists-closure-derived-and-suite-completeness.feature`
+  is 13/13 (it is 12/1 before the fix). (5) `bb
+  swarmforge/scripts/test/suite_inventory_lib_test_runner.bb` still passes -
+  the mapped unit test for the changed path, per the BL-1164 changed-path gate.
+  (6) `git diff` for the parcel shows exactly one deleted line in
+  `swarmforge/scripts/test/suite-manifest.tsv` and no other file changed.
+  (7) `ls swarmforge/scripts/test/*_property_runner.bb | wc -l` is 136 and
+  `grep -c property_runner swarmforge/scripts/test/suite-manifest.tsv` is 1
+  (the surviving match is `test_bl1033_property_runner_temp_root_survives_a_throw.sh`,
+  a genuine `test_*.sh` whose NAME merely contains the words).
+
+out_of_scope: |
+  - **Preventing the recurrence. That is BL-1240**, which is already specced,
+    human-approved, and paused at priority 19: it fires the inventory check per
+    parcel so the author who adds an unregistered file is the one told, instead
+    of the refusal surfacing later to whoever next runs the suite. This ticket
+    restores the gate; BL-1240 stops it being broken again. Do not fold them:
+    BL-1240 is a real mechanism with its own scenarios, and folding it in here
+    would put a dead standing gate behind a medium-sized build.
+  - BL-1276 itself. It shipped, it is correct, and it stays in `backlog/done/`
+    exactly as it is. Only the stray manifest row is wrong.
+  - BL-1279 (front-desk fixtures deriving their bb closure) and BL-1271 (the
+    dispatch-gap suite's stale `type: bug` fixtures). Both are reds inside the
+    bb lane that this gate would surface once it runs again; neither is caused
+    by this row and neither is fixed here.
+  - The property lane. How `*_property_runner.bb` files get run, and whether
+    they should be gated by a standing entry point of their own, is a separate
+    question this ticket does not open.
+  - Any amendment to BL-1239's or BL-973's feature files. Both are correct as
+    written; they are red because the tree is wrong, not because the contract
+    is.
+
+source: |
+  coder `note` (priority 50) to specifier, 2026-08-30T01:29:52Z, verbatim:
+  "BL-1276 manifest row breaks suite inventory - BL-973 acceptance now 12/1."
+  The specifier verified the claim and measured the wider blast radius
+  (BL-1239's acceptance is also red, and `run_bb_suite.sh` refuses to start at
+  all) before minting.
+
+notes: |
+  - [2026-08-30] specifier: `acceptance:` points at BL-1239's feature file
+    rather than a new one of this ticket's own, and that is deliberate. The
+    contract this ticket must satisfy already exists and is already executable:
+    BL-1239 scenario 01 is literally "The suite runs", it drives the real CLI
+    and the real `run_bb_suite.sh` against the real tree, and it is red today
+    for exactly this reason. Writing a third feature file asserting the same
+    thing would be duplication, and a ticket whose deliverable is a deletion
+    has no scenarios of its own to declare. **This pointer is not a claim of
+    ownership over BL-1239's contract** - BL-1239 keeps it; this ticket is
+    measured against it. It also earns BL-1276's own declared-path exemption
+    for that path should the parcel ever need to touch it, though it should
+    not need to.
+  - [2026-08-30] specifier: `invariants:` is deliberately empty. The wrong-fix
+    risk here (widening `test-file?` instead of deleting the row) is real, but
+    it is a scope constraint, not a property quantified over the slice, and it
+    is stated under Constraints where the coder will act on it. Manufacturing
+    an invariant would oblige the coder to write a property test for the
+    deletion of one data row - worse than no field (BL-633).
+  - [2026-08-30] specifier: `required_stages: [coder, qa]` with
+    `required_stages_routing_enabled true` in `swarmforge.conf`, so four stages
+    really are skipped. That is the point: the gate is dead NOW, and every hour
+    it stays dead is an hour of bb/shell reds nobody can see. The four skip
+    reasons above are each stated; QA remains the gate and runs both acceptance
+    features plus the mapped unit test for the changed path.
+  - [2026-08-30] specifier: this is the second time in eight days that the
+    standing bb suite has been dead on main - BL-1239 cleared 39 unaccounted
+    files and three malformed rows on 2026-08-29, and one row landed the same
+    evening put it straight back. The recurrence is the argument for BL-1240,
+    not for widening this ticket; the coordinator has the promotion decision.
+  - [2026-08-30] specifier: no `human_approval` field, because this ticket
+    creates and changes no feature file - it declares an existing, already
+    approved one. Nothing here is awaiting a human tap.
