@@ -26,7 +26,7 @@ invariants:
   - "A bounce record is never written citing a commit that resolves to no commit object in the repository at write time."
   - "The three outcomes of a recorder call — record written, duplicate no-op, refused — are always distinguishable from the CLI's own output; a refusal never reads as a success."
 
-human_approval: pending
+human_approval: approved
 
 approval_context: >
   Approve if bounce telemetry is worth defending at write time. The one
