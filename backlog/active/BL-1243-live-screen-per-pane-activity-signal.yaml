@@ -13,18 +13,32 @@ acceptance: specs/features/BL-1243-live-screen-per-pane-activity-signal.feature
 
 human_approval: approved
 approval_context: >
-  The build is cheap and the operator already ruled on cost, so what needs your
-  sign-off is the MAPPING, which the intake deliberately left open ("whatever
-  the chosen honest mapping"). Concretely: which pane states map onto the three
-  existing kinds ok / stale / err, and in particular whether a genuinely idle
-  agent reads as ok (it is healthy, just not working) or as stale (nothing is
-  happening on it). I have not chosen; the scenarios gate that roles polled
-  together CAN differ and that a pane with no text of its own is never ok,
-  which any honest mapping satisfies. Say which reading you want.
+  RESOLVED 2026-08-30 by the specifier - no further human sign-off is needed and
+  the human_approval above stands unchanged. What this field originally asked:
+  which pane states map onto ok / stale / err, and in particular whether a
+  genuinely idle agent reads as ok (healthy, just not working) or as stale
+  (nothing is happening on it), with the mint saying "I have not chosen".
+
+  That question should never have been asked, because the operator had already
+  chosen. The source intake's own acceptance sketch reads, verbatim: "Idle role
+  vs busy role on the same poll: dots can disagree (busy green / processing cue;
+  quiet amber or idle - whatever the chosen honest mapping)." The mint carried
+  the operator's two-sentence ask forward but dropped that sentence, so a
+  settled decision reached the coder looking open. That is a specifier defect of
+  the Article 5.3 shape (a human sentence lost in transcription), not a coder
+  one.
+
+  RULING, now binding and gated by scenario 01: busy -> ok (green);
+  alive-but-idle -> stale (amber); unavailable or never captured -> no per-pane
+  signal at all, so the UI's existing branch hides the dot. A blank capture
+  answers for itself with stale rather than deferring to the aggregate. No
+  fourth status kind is minted, and none is needed: the operator's mapping uses
+  exactly the three that exist.
 
 invariants:
   - "A tile is never painted ok on a signal it did not derive from its own pane: an unavailable or never-captured pane is never green."
   - "The per-tile signal performs no tmux capture and no poll beyond those the Live Screen snapshot already performs."
+  - "A per-pane signal never survives a failing poll as green: when the whole-poll aggregate is err, no tile paints ok."
 
 required_wiring:
   - 'extension/src/bridge/residentPaneLive.ts::activitySignal::the field the BL-1160 UI already reads must actually be SET on the live snapshot. Verified absent 2026-08-28 - activitySignal appears only in residentSpyUiHtml.ts, so this file having no reference to it today IS the defect: a reader with no writer, the BL-419/BL-298 shape.'
@@ -86,6 +100,12 @@ constraints: >
     tile it came from (BL-1160 invariant 2).
   - Not in scope: the Bubble port of this surface, and any change to the static
     backlog-dashboard PWA. This is the LIVE holistic UI only.
+  - Invariant 3 is DEFERRAL to the freshness channel that already exists, not
+    the "second freshness channel" the line above forbids: the per-pane signal
+    yields to the aggregate's own err verdict, and no new state is computed.
+    Scope it to err ONLY - a merely stale aggregate must NOT suppress the
+    per-tile signal, or ordinary 5s poll jitter would amber all eight tiles at
+    once and erase the very distinction this ticket exists to draw.
 
 qa_e2e_procedure: >
   1. With the swarm up, open the Live Screen phone grid and confirm the dots
@@ -116,5 +136,24 @@ notes: |
     isPaneActivelyProcessing is exported from panel/agentPaneState.ts:81. The
     grep for writers of activitySignal returned only the reading file, which is
     what makes required_wiring entry 1 non-vacuous.
+  - [2026-08-30] specifier, amendment (parcel already at architect; coder and
+    cleaner stages are done). Two changes, one bookkeeping and one real:
+    (a) BOOKKEEPING - the mapping is ruled, see approval_context. It confirms
+    what the coder already built at 1a3917b40, so nothing in that commit is
+    invalidated and the open-question note that came back to me is discharged.
+    The coder was right that the mapping was forced rather than chosen; the
+    reason it was forced is that the operator had chosen it in the intake.
+    (b) REAL, a rebuild item - invariant 3 and scenario 06 are NEW. Verified in
+    the code, not supposed: residentSpyUiHtml.ts sets lastPanes only on a
+    successful poll (line 1056), while all three failure paths (1052, 1061,
+    1067) call setStatus('err') and then repaint the SAME stale lastPanes.
+    Because resolvePaneStatusKind returns pane.activitySignal before it looks
+    at anything else, a tile whose last capture was busy keeps painting green
+    for the whole outage and the err verdict never reaches it. Before this
+    ticket those tiles fell through to the aggregate and went red, so the
+    parcel introduces the regression - and it lands exactly on the intake's
+    requested outcome 3, "never misleading green", during the one event the
+    operator most needs to see on the phone. Scenario 06 reuses scenario 02's
+    existing Then step, so only the new When needs a handler.
 
 assigned_to: coder
