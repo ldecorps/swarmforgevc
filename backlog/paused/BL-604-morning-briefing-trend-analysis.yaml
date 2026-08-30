@@ -70,3 +70,7 @@ notes: |
     severity:high, ranked ahead of BL-604's ordinary priority) before this
     turn — active/ is back at the effective cap of 7. Still capacity, not
     inaction; BL-604 remains eligible for the next open slot.
+  - [2026-08-30] coordinator: fourth nudge, same story. Slot filled by
+    BL-1182 (direction:human-requested, priority 1 — ranked ahead of
+    BL-604's priority 149 in the same tier) before this turn. Still
+    capacity, not inaction.
