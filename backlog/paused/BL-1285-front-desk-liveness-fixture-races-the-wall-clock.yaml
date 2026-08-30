@@ -27,7 +27,7 @@ acceptance: specs/features/BL-1285-front-desk-liveness-fixture-does-not-race-the
 
 invariants: []
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. The one
   judgment worth a look before it goes: the gate is DELAY INJECTION (run the
