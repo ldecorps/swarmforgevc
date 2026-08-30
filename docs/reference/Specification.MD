@@ -1,5 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1280: the BL-420 mkdtemp migration to
+the shared `mkTmpDir()` helper — built but never finished — is complete for
+`extension/test`. `tmpDirMigrationGuard.test.js`'s repo-wide raw-`fs.mkdtempSync`
+scan had sat red in the DEFAULT unit lane (not a quarantined property file,
+not on the property-suite standing allowlist) since before BL-1209, with 33
+real call sites across 24 files never migrated, plus one deliberate fixture
+string in `pilotMkdtempConventionCheck.test.js` that plants the raw pattern
+as test DATA to prove the checker detects it. Triaged line by line, not in
+bulk, because that proportion (1 fixture string in 34 flagged lines) would
+have been silently corrupted by a bulk rewrite: a lifecycle audit found zero
+sites in a `beforeAll` and one in a `beforeEach`, so every real site migrates
+to `mkTmpDir` (never `mkSharedTmpDir`/`mkProcessTmpDir`) with no observable
+change to a root's lifetime, while the one fixture string keeps the exact
+bytes `pilotMkdtempConventionCheck.test.js` writes to disk by making it
+non-contiguous instead of exempting the file — a fourth entry in the guard's
+exempt list was the fix explicitly avoided, since it would blind the guard
+to any future real violation in that file. `findRawMkdtempCallSites` now
+returns empty against the real tree; planting a raw call in a scratch tree
+still gets caught, so the detector was completed, not blunted. Acceptance:
+`specs/features/BL-1280-mkdtemp-migration-completed-for-the-real-test-tree.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1279: four `front_desk_supervisor.bb`
 standing shell tests
 (`test_front_desk_supervisor_bl622_refusal.sh`/`_tick.sh`/`_liveness.sh`/
