@@ -323,6 +323,194 @@
   (assert-includes "nothing-own refusal says what was wrong with the commit" msg "merge"))
 
 
+
+;; ── BL-1307: judged by the evidence the ROLE committed for THIS task ─────
+;; BL-806 reads the commit id and BL-1293 reads what the commit contributed.
+;; Neither asks whether the role produced anything: the architect's BL-1224
+;; forward (b7d22b9ee3) resolved a real conflict in specs/pipeline/steps/
+;; index.js, so it contributes content of its own and passes both, while
+;; carrying no BL-1224 review output at all. Article 4.4 names the artifact -
+;; one evidence file per review pass, an explicit committed NONE for a clean
+;; sweep - so the fact this reads is whether the range received..forwarded
+;; ADDED that file for the task being forwarded.
+
+(assert-true "no evidence for this task in the range -> blocked, though the commit contributes"
+             (review-forward-evidence-gate-lib/blocked?
+              (assoc (base-args) :commit "cccccccccc"
+                     :introduces-nothing-own? false :carries-own-evidence? false)))
+
+(assert-false "the role's evidence for this task is in the range -> not blocked"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :commit "cccccccccc"
+                      :introduces-nothing-own? false :carries-own-evidence? true)))
+
+(assert-false "unknown evidence fact (git could not tell) -> not blocked (fail open)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :commit "cccccccccc"
+                      :introduces-nothing-own? false :carries-own-evidence? nil)))
+
+(assert-false "missing evidence WITH reroute_reason -> not blocked (marked detour still exempt)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :commit "cccccccccc" :carries-own-evidence? false
+                      :reroute-reason "cannot act, routing onward")))
+
+(assert-false "missing evidence on a BACKWARD bounce -> not blocked (direction gate unchanged)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :recipients ["cleaner"]
+                      :commit "cccccccccc" :carries-own-evidence? false)))
+
+(assert-false "missing evidence from a non-review sender -> not blocked (surface unchanged)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :sender "coder" :recipients ["cleaner"]
+                      :commit "cccccccccc" :carries-own-evidence? false)))
+
+(assert-false "missing evidence as a note -> not blocked (type gate unchanged)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :type "note" :commit "cccccccccc" :carries-own-evidence? false)))
+
+(assert-false "missing evidence with a blank task-name -> not blocked"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :task-name "" :commit "cccccccccc" :carries-own-evidence? false)))
+
+(assert-false "missing evidence with a blank commit -> not blocked"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :commit "" :carries-own-evidence? false)))
+
+(assert-true "BL-950 hop: a QA approval adding no evidence for the task -> blocked"
+             (review-forward-evidence-gate-lib/blocked?
+              (assoc (base-args) :sender "QA" :recipients ["coordinator"]
+                     :commit "cccccccccc" :carries-own-evidence? false)))
+
+(assert-true "BL-806 and BL-1293 unchanged: each still blocks on its own fact alone"
+             (and (review-forward-evidence-gate-lib/blocked?
+                   (assoc (base-args) :carries-own-evidence? true))
+                  (review-forward-evidence-gate-lib/blocked?
+                   (assoc (base-args) :commit "cccccccccc"
+                          :introduces-nothing-own? true :carries-own-evidence? true))))
+
+;; ── BL-1307: forward-carries-own-evidence? over a real repository ────────
+;; The third fs-touching function in this file; `blocked?` stays pure and
+;; takes the answer, exactly as it takes the other two.
+
+(defn- add-file! [root rel content message]
+  (fs/create-dirs (fs/parent (fs/path root rel)))
+  (spit (str (fs/path root rel)) content)
+  (git! root "add" "-A")
+  (git! root "commit" "-qm" message)
+  (git! root "rev-parse" "HEAD"))
+
+;; A role branch carrying unrelated prior content, and a received parcel on
+;; main - the BL-1224 shape, so a merge here resolves nothing by accident.
+(defn- mk-review-fixture []
+  (let [root (mk-git-repo)]
+    (git! root "checkout" "-q" "-b" "swarmforge-architect")
+    (add-file! root "architect-prior.txt" "unrelated prior content\n" "prior architect content")
+    (git! root "checkout" "-q" "main")
+    (let [received (add-file! root "parcel.txt" "the parcel\n" "cleaner parcel")]
+      (git! root "checkout" "-q" "swarmforge-architect")
+      (git! root "merge" "--no-ff" "-q" "-m" (str "Merge " received) received)
+      {:root root :received received})))
+
+(let [{:keys [root received]} (mk-review-fixture)
+      forwarded (add-file! root "backlog/evidence/BL-1224-architect-20260830.md"
+                           "D1: none. Clean sweep.\n" "architect evidence")]
+  (assert-true "an evidence file naming the task, added in the range -> true"
+               (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+                root received forwarded "BL-1224-a-parcel-that-passed-through")))
+
+(let [{:keys [root received]} (mk-review-fixture)
+      forwarded (add-file! root "backlog/evidence/BL-1224-architect-pass-20260830.md"
+                           "NONE\n" "architect NONE")]
+  (assert-true "an explicit committed NONE for the task is a pass (Article 4.4)"
+               (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+                root received forwarded "BL-1224-a-parcel-that-passed-through")))
+
+(let [{:keys [root received]} (mk-review-fixture)
+      ;; the exact b7d22b9ee3 shape: real content of its own, no evidence.
+      forwarded (add-file! root "specs/pipeline/steps/index.js"
+                           "// conflict resolved\n" "resolve conflict")]
+  (assert-false "a conflict resolution with no evidence for the task -> false"
+                (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+                 root received forwarded "BL-1224-a-parcel-that-passed-through")))
+
+(let [{:keys [root received]} (mk-review-fixture)
+      forwarded (add-file! root "backlog/evidence/BL-9999-architect-20260830.md"
+                           "D1: none.\n" "evidence for another task")]
+  (assert-false "evidence naming a DIFFERENT task never satisfies this one (batch role)"
+                (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+                 root received forwarded "BL-1224-a-parcel-that-passed-through")))
+
+(let [{:keys [root received]} (mk-review-fixture)]
+  ;; evidence committed first, THEN a merge of newer upstream work: the
+  ;; evidence commit is inside the range, so the range - not the tip commit -
+  ;; is what the gate reads.
+  (add-file! root "backlog/evidence/BL-1224-architect-20260830.md" "D1: none.\n" "architect evidence")
+  (git! root "checkout" "-q" "main")
+  (let [newer (add-file! root "unrelated-upstream.txt" "newer main work\n" "newer main work")]
+    (git! root "checkout" "-q" "swarmforge-architect")
+    (git! root "merge" "--no-ff" "-q" "-m" (str "Merge " newer) newer)
+    (assert-true "evidence in an earlier commit of the range, then a merge -> true"
+                 (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+                  root received (git! root "rev-parse" "HEAD")
+                  "BL-1224-a-parcel-that-passed-through"))))
+
+(let [{:keys [root received]} (mk-review-fixture)]
+  ;; The predecessor's evidence for the same task is already in the received
+  ;; commit - the forwarding role added nothing of its own.
+  (git! root "checkout" "-q" "main")
+  (let [received2 (add-file! root "backlog/evidence/BL-1224-cleaner-20260829.md"
+                             "D1: none.\n" "cleaner evidence")]
+    (git! root "checkout" "-q" "swarmforge-architect")
+    (git! root "merge" "--no-ff" "-q" "-m" (str "Merge " received2) received2)
+    (assert-false "the PREDECESSOR's evidence, already in the received commit, is not this role's"
+                  (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+                   root received2 (git! root "rev-parse" "HEAD")
+                   "BL-1224-a-parcel-that-passed-through")))
+  received)
+
+;; ── BL-1307 fail-open shapes (invariant 2) ──────────────────────────────
+
+(let [{:keys [root received]} (mk-review-fixture)]
+  (assert-nil "forwarding exactly the received commit -> nil (an empty range; BL-806 owns that shape)"
+              (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+               root received received "BL-1224-x"))
+  (assert-nil "an unreadable forwarded commit -> nil (fail open)"
+              (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+               root received "0000000000" "BL-1224-x"))
+  (assert-nil "an unreadable received commit -> nil (fail open)"
+              (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+               root "0000000000" received "BL-1224-x"))
+  (assert-nil "a blank received commit -> nil (fail open)"
+              (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+               root nil received "BL-1224-x"))
+  (assert-nil "a blank forwarded commit -> nil (fail open)"
+              (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+               root received "" "BL-1224-x"))
+  (assert-nil "a task name carrying no ticket id -> nil (nothing to match on)"
+              (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+               root received (git! root "rev-parse" "HEAD") "no-ticket-id-here"))
+  (assert-nil "a missing project root -> nil (fail open)"
+              (review-forward-evidence-gate-lib/forward-carries-own-evidence?
+               nil received (git! root "rev-parse" "HEAD") "BL-1224-x")))
+
+;; ── BL-1307: the refusal has to name what to write and where ────────────
+
+(let [msg (review-forward-evidence-gate-lib/refusal-message
+           {:sender "architect" :task-name "BL-1224-x" :commit "cccccccccc"
+            :introduces-nothing-own? false :carries-own-evidence? false})]
+  (assert-includes "missing-evidence refusal names the role" msg "architect")
+  (assert-includes "missing-evidence refusal names the task" msg "BL-1224-x")
+  (assert-includes "missing-evidence refusal names the commit" msg "cccccccccc")
+  (assert-includes "missing-evidence refusal names the evidence directory" msg "backlog/evidence/")
+  (assert-includes "missing-evidence refusal names the ticket id the filename must carry" msg "BL-1224")
+  (assert-includes "missing-evidence refusal says an explicit NONE is a legitimate pass" msg "NONE")
+  (assert-includes "missing-evidence refusal names Article 4.4" msg "4.4")
+  (assert-includes "missing-evidence refusal names the reroute_reason exemption" msg "reroute_reason"))
+
+(let [msg (review-forward-evidence-gate-lib/refusal-message
+           {:sender "architect" :task-name "BL-1224-x" :commit "bbbbbbbbbb"
+            :introduces-nothing-own? true :carries-own-evidence? false})]
+  (assert-includes "a bare merge still gets BL-1293's own wording, not this one" msg "merge"))
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))

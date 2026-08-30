@@ -34,6 +34,9 @@
 ;; BL-1293: for merge-introduces-nothing-unique? - the ONE definition of
 ;; "what did this commit contribute", shared, never copied.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
+;; BL-1307: extract-ticket-id - the ONE reading of "which ticket does this
+;; name", never a second regex here.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 
 (def review-roles
   "The four forward-chain review roles this gate covers (approval_context
@@ -106,6 +109,50 @@
         (>= (count (pre-qa-gate-gather-lib/commit-parents project-root commit)) 2)
         (pre-qa-gate-gather-lib/merge-introduces-nothing-unique? project-root commit))))
 
+(def evidence-dir
+  "BL-1307: where Article 4.4's review-pass evidence lives, as one literal -
+   the refusal quotes it so a role stopped by this gate is told the path."
+  "backlog/evidence/")
+
+(defn evidence-path-for-ticket?
+  "True when path is this ticket's own review-pass evidence file. Same shape
+   task_scope_gate_lib/own-evidence-path? already reads (the evidence
+   directory, basename prefixed with the ticket id and a hyphen) - a
+   BL-1224-... file never satisfies BL-1225, and a code path never satisfies
+   anything."
+  [path ticket-id]
+  (boolean (and path ticket-id
+                (str/starts-with? path evidence-dir)
+                (str/starts-with? (str (fs/file-name path)) (str ticket-id "-")))))
+
+(defn forward-carries-own-evidence?
+  "BL-1307: did the range received-commit..commit ADD evidence for this task?
+   true / false / nil, where nil means the gate could not evaluate the
+   question and the send is left alone (invariant 2). The third fs-touching
+   function in this file (see received-commit-for-task and
+   forward-introduces-nothing-own?); `blocked?` stays pure and takes the
+   answer.
+
+   nil - never false - on every unreadable or inapplicable shape: no project
+   root, a blank received or forwarded commit, a task name carrying no ticket
+   id, a git invocation that cannot answer, and an empty diff between the two
+   trees. That last one covers a forward naming the received commit itself:
+   BL-806 owns that shape with its own wording, and reporting 'no evidence'
+   for an empty range would take the refusal away from the gate that can
+   explain it."
+  [project-root received-commit commit task-name]
+  (let [ticket-id (pipeline-stage-lib/extract-ticket-id task-name)]
+    (when (and project-root ticket-id
+               (not (str/blank? received-commit))
+               (not (str/blank? commit)))
+      (let [res (daemon-cycle-guard-lib/sh!
+                 ["git" "-C" (str project-root) "diff" "--name-only"
+                  "--diff-filter=AM" (str/trim received-commit) (str/trim commit)])]
+        (when (zero? (:exit res))
+          (let [paths (remove str/blank? (str/split-lines (str (:out res))))]
+            (when (seq paths)
+              (boolean (some #(evidence-path-for-ticket? % ticket-id) paths)))))))))
+
 (defn blocked?
   "Pure decision (BL-654 property-tested): true only when EVERY one of -
    type is git_handoff, exactly one recipient, the send moves forward
@@ -122,9 +169,15 @@
    of its own (introduces-nothing-own?, the caller's own
    forward-introduces-nothing-own? lookup). Anything other than an explicit
    true - false, nil, absent - leaves the send alone, so an unreadable or
-   unknown commit still fails open."
+   unknown commit still fails open.
+
+   BL-1307: and a third fact, read the same explicit-true/explicit-false way -
+   carries-own-evidence?, the caller's own forward-carries-own-evidence?
+   lookup. Only an explicit FALSE (the range was readable and added no
+   evidence file for this task) refuses; nil and absent leave the send
+   alone."
   [{:keys [type sender recipients task-name commit reroute-reason received-commit
-           introduces-nothing-own?]}]
+           introduces-nothing-own? carries-own-evidence?]}]
   (boolean
    (and (= type "git_handoff")
         (= 1 (count recipients))
@@ -135,14 +188,16 @@
         (not (str/blank? task-name))
         (not (str/blank? commit))
         (or (= commit received-commit)
-            (true? introduces-nothing-own?)))))
+            (true? introduces-nothing-own?)
+            (false? carries-own-evidence?)))))
 
 (defn refusal-message
   "Actionable, because Article 4.4 makes an explicit committed NONE a real
    pass and the role has to be told that is the way out: every refusal names
    the role, the task, the commit, and the evidence to commit."
-  [{:keys [sender task-name commit introduces-nothing-own?]}]
-  (if introduces-nothing-own?
+  [{:keys [sender task-name commit introduces-nothing-own? carries-own-evidence?]}]
+  (cond
+    introduces-nothing-own?
     (format (str "Cannot send git_handoff for %s: commit %s is a merge that "
                  "introduces nothing %s authored over its parents - a bare "
                  "merge of the received parcel is not a review pass. Article "
@@ -153,6 +208,24 @@
                  "act on this parcel, route it onward with a reroute_reason "
                  "instead.")
             task-name commit sender sender task-name sender)
+
+    ;; BL-1307: the commit contributed something, but none of it was this
+    ;; role's review output for this task.
+    (false? carries-own-evidence?)
+    (format (str "Cannot send git_handoff for %s: commit %s carries content, "
+                 "but nothing it adds over the commit %s received for this "
+                 "task is %s's review evidence - and a resolved merge "
+                 "conflict is not a review pass. Article 4.4 requires one "
+                 "evidence file per review pass: commit %s%s-%s-<date>.md "
+                 "with items D1..Dn, or an explicit NONE when the sweep found "
+                 "no defect, and forward THAT commit. If %s legitimately "
+                 "cannot act on this parcel, route it onward with a "
+                 "reroute_reason instead.")
+            task-name commit sender sender
+            evidence-dir (or (pipeline-stage-lib/extract-ticket-id task-name) task-name)
+            sender sender)
+
+    :else
     (format (str "Cannot send git_handoff for %s: commit %s is exactly the "
                  "commit %s already received for this task - Article 4.4 "
                  "requires a clean review pass to commit its explicit-NONE "
