@@ -107,8 +107,7 @@ qa_e2e_procedure: |
   4. Restore the article (`git restore -- <path>`) and re-run step 1 to confirm
      7/7 again.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   The defect is measured and not in question: an assertion documented as a
   one-time headroom proof is re-measured live on every run, so the enforced
