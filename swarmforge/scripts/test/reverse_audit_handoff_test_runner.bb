@@ -74,6 +74,14 @@
        ["coder" "cleaner"] (reverse-hop-lib/reverse-recipients live-table "architect"))
 (check "cleaner back-one reaches coder"
        ["coder"] (reverse-hop-lib/reverse-recipients live-table "cleaner"))
+;; BL-1299 hardening: cleaner sits at pipeline index 1, where
+;; (take 1 roles) and [(nth roles 0)] happen to coincide - a back-one/back-all
+;; mixup at that index is invisible to every check above. hardender sits at
+;; index 3, where the two diverge (take 3 roles = 3 earlier roles vs the
+;; single immediately-preceding one), so this is the one that actually
+;; discriminates "one role back" from "every role back".
+(check "hardender back-one reaches only architect, not every earlier role"
+       ["architect"] (reverse-hop-lib/reverse-recipients live-table "hardender" "back-one"))
 (check "coder is first, so back-all reaches nobody"
        [] (reverse-hop-lib/reverse-recipients live-table "coder" "back-all"))
 (check "QA back-all reaches every code-worktree role before it"
