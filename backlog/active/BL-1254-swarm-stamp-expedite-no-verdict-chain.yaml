@@ -155,3 +155,5 @@ notes: |
     promotion - `bb swarmforge/scripts/hotfix_ledger_update.bb . --link <sha>
     BL-1254` for each of the three SHAs. All three rows are stamp_ticket null
     at mint.
+
+assigned_to: coder

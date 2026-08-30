@@ -114,6 +114,14 @@ notes: |
     verdict; neither is a fix. Scope widened same-day from "relative path"
     to both self-identity gaps in `other-holders` — same function, same
     fix pass, no waste in one coder parcel covering both.
+  - [2026-08-30] coordinator: fix (7efb049bb) is already an ancestor of
+    main, dragged in via the BL-1262 entanglement. QA's 2026-08-29T12:12Z
+    LAND_ESCALATE went to the specifier (blocked on unlanded BL-1262),
+    never a formal approval to coordinator. BL-1262 is now
+    backlog/done/M8/ - blocker cleared, but no QA follow-up ever notified
+    coordinator, so the ticket sat unclosed with no assigned_to. Sent QA a
+    note (00_20260830T044458Z_003215) asking it to confirm approval/landing
+    and notify coordinator so this can close.
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-29, by: architect, blamed: coder, class: invariant-unencoded, commit: a7d885dbde, evidence: backlog/evidence/BL-1194-hygiene-gate-relative-path-self-duplicate-false-positive-bounce-20260829.md }
