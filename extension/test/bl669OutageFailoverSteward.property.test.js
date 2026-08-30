@@ -5,15 +5,15 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'outage_failover_cli.bb');
 const BB = process.env.BB_BIN || '/home/carillon/.local/bin/bb';
 
 test('BL-669: mid-turn defers; idle applies; uncertified never applies', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl669-prop-'));
+  const root = mkTmpDir('bl669-prop-');
   const steward = path.join(root, 'steward');
   const factory = path.join(root, 'factory');
   const failover = path.join(root, 'failover');

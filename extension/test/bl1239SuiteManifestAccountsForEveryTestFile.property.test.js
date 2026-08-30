@@ -29,6 +29,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fc = require('fast-check');
 const { spawnSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const TEST_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test');
@@ -89,7 +90,7 @@ function buildCase(files, breakage) {
 }
 
 function runInventory(present, manifest) {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX)));
+  const dir = fs.realpathSync(mkTmpDir(FIXTURE_PREFIX));
   try {
     for (const f of present) fs.writeFileSync(path.join(dir, f), '');
     fs.writeFileSync(path.join(dir, 'suite-manifest.tsv'), manifest);

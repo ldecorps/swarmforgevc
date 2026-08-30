@@ -97,23 +97,45 @@ test('finds violations nested several directories deep, not just at the top leve
 });
 
 // ── BL-771 shared-tmpdir-helper-02: the guard was not weakened to go green ─
-// Pins the exempt list to exactly its five documented, load-bearing entries
-// (tmpDir.js's own real call site, this guard's two fixture-string test
-// files, and BL-1209's sibling pilotMkdtempConventionCheck guard's own two
-// fixture-string test files, same shape) - a green migration-complete gate
-// bought by widening this list instead of migrating the offending file
-// would be a false pass. Any addition here must be a file whose raw-call
-// TEXT is fixture DATA proving a detector works, never executable code
-// that itself leaks a temp dir.
+// Pins the exempt list to exactly its three documented, load-bearing entries
+// (tmpDir.js's own real call site and this guard's two fixture-string test
+// files) - a green migration-complete gate bought by widening this list
+// instead of migrating the offending file would be a false pass.
+//
+// BL-1280 took it back down from five. BL-1209 had added
+// pilotMkdtempConventionCheck.test.js and its property sibling because their
+// fixture STRINGS were being flagged; the objection is not that those strings
+// are innocent - they are - but that a FILE-level exemption also blinds this
+// scan to a REAL raw call either file gains later. Those two now split the
+// literal across the `mkdtempSync(` boundary instead: same bytes written to
+// disk, nothing on any line for the scan to match, and both files still
+// scanned like every other.
 
-test('the exempt list is exactly the five documented paths - nothing was added to buy a green scan', () => {
+test('the exempt list is exactly the three documented paths - nothing was added to buy a green scan', () => {
   assert.deepEqual(SELF_EXEMPT_RELATIVE_PATHS, [
     'helpers/tmpDir.js',
     'tmpDirMigrationGuard.test.js',
     'tmpDirMigrationGuard.property.test.js',
-    'pilotMkdtempConventionCheck.test.js',
-    'pilotMkdtempConventionCheck.property.test.js',
   ]);
+});
+
+// ── BL-1280: the ENOENT skip is scoped to ENOENT only ──────────────────
+// findRawMkdtempCallSites tolerates a file vanishing between readdir and
+// readFile (a sibling suite's transient fixture, BL-1280) - but only THAT
+// error. A broadened catch that swallowed every read error would also hide a
+// real permission/IO failure behind a silently-clean scan.
+
+test('a non-ENOENT read failure still throws - only a vanished file is tolerated', () => {
+  const root = mkTmpDir('sfvc-mkdtemp-guard-permission-');
+  const unreadable = path.join(root, 'unreadable.test.js');
+  fs.writeFileSync(unreadable, "fs.mkdtempSync(path.join(os.tmpdir(), 'x-'));\n");
+  fs.chmodSync(unreadable, 0o000);
+
+  try {
+    assert.throws(() => findRawMkdtempCallSites(root), (err) => err.code !== 'ENOENT');
+  } finally {
+    fs.chmodSync(unreadable, 0o644);
+  }
 });
 
 // ── BL-420 test-helpers-clean-up-tmp-dirs-03: the actual migration-complete gate ──
