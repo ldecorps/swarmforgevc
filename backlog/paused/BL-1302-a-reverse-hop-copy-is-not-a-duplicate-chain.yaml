@@ -103,8 +103,7 @@ qa_e2e_procedure: |
   4. Strip the `non-forwarding` line from a reverse copy and repeat step 2:
      the send must be refused again (absence buys no exemption).
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   The defect is measured and the direction is narrow: a non-forwarding inbound
   cannot start a competing chain, so it should not block one. Worth a human
