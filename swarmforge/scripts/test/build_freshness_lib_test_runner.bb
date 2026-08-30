@@ -255,6 +255,43 @@
            [[:record-override! ["code1"]] [:gather-settled-report]]
            @calls))
 
+
+;; ── BL-1225: a sync-initiated restart leaves a readable trail ───────────
+;;
+;; operator-log-spawn-opts is the whole fix for scenario 01. Passing a path
+;; STRING to babashka.process's :out truncates the file; only :append with
+;; an :out-file appends. Asserting the opts map here is the difference
+;; between "the restart writes to runtime.log" (true before and after) and
+;; "the restart APPENDS to runtime.log" (the thing that was broken).
+(let [opts (build-freshness-lib/operator-log-spawn-opts "/tmp/fixture/runtime.log" "/tmp/fixture")]
+  (assert= "operator-log-spawn-opts: stdout appends rather than truncating" :append (:out opts))
+  (assert= "operator-log-spawn-opts: stderr appends rather than truncating" :append (:err opts))
+  (assert= "operator-log-spawn-opts: stdout targets runtime.log"
+           "/tmp/fixture/runtime.log" (str (:out-file opts)))
+  (assert= "operator-log-spawn-opts: stderr targets the SAME file as stdout"
+           (str (:out-file opts)) (str (:err-file opts)))
+  (assert= "operator-log-spawn-opts: the spawn still runs from the project root"
+           "/tmp/fixture" (:dir opts))
+  ;; A path string in :out is exactly the truncating form this replaces, so
+  ;; it must never come back.
+  (assert-false "operator-log-spawn-opts: :out is never a bare path string"
+                (string? (:out opts))))
+
+;; handoffd-start-env is the attribution seam. start_handoff_daemon.sh
+;; already prints SWARMFORGE_DAEMON_START_CALLER into its audit line and
+;; falls back to "unknown"; nothing had ever set it.
+(assert= "daemon-start-caller: a sync-initiated start names build_freshness_cli"
+         "build_freshness_cli" build-freshness-lib/daemon-start-caller)
+;; The variable name itself is start_handoff_daemon.sh's contract, so the
+;; wiring - that the sync passes THAT name - is asserted against the CLI
+;; source rather than left to a value test that cannot see it.
+(let [cli (slurp (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "build_freshness_cli.bb")))]
+  (assert-true "restart-handoffd-group! passes SWARMFORGE_DAEMON_START_CALLER, the variable start_handoff_daemon.sh reads"
+               (re-find #"SWARMFORGE_DAEMON_START_CALLER"
+                        (or (second (re-find #"(?s)\(defn- restart-handoffd-group!(.*?)\n\n" cli)) "")))
+  (assert-true "the caller value the CLI passes comes from the lib, never a second literal"
+               (re-find #"build-freshness-lib/daemon-start-caller" cli)))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (println (str (count @failures) " FAILURE(S)"))
