@@ -128,7 +128,8 @@ qa_e2e_procedure: >
   6. Confirm `npm test` in `extension/` executes the guard (it should appear
      in the vitest file list), proving it is wired by glob and not orphaned.
 
-human_approval: approved
+human_approval: pending
+
 approval_context: >
   Firm and not seeking a decision: that the collisions are real (verified by
   reading both handlers of two pairs) and that `defineScoped` is the fix

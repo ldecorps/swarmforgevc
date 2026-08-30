@@ -873,8 +873,7 @@ const DOMAINS = [
   require('./bl1262SelfHealTelemetryRestoredSteps'),
   require('./bl1245RoleReopensOwnQuestionSlotSteps'),
   require('./bl1261HoldDivergenceAuditSteps'),
-  require('./bl1239SuiteManifestAccountedSteps'),
-  require('./bl1277UnscopedStepCollisionSteps')
+  require('./bl1239SuiteManifestAccountedSteps')
 ];
 
 function registerSteps(registry) {

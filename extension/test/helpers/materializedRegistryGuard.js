@@ -168,4 +168,4 @@ function plantOffender(pipelineDir, { registerRelPath, files }) {
   };
 }
 
-module.exports = { findExtensionRoot, materializeCurrentPipeline, registryLoadVerdict, plantOffender };
+module.exports = { materializeCurrentPipeline, registryLoadVerdict, plantOffender };

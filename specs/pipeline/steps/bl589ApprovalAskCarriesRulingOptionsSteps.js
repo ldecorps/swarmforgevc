@@ -65,20 +65,8 @@ function approvalEvent(payload) {
   };
 }
 
-// BL-1277: this file's own feature title, so the generic step text below can
-// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
-// feature being run and otherwise falls back to first-match across every
-// handler file - so an UNSCOPED registration of text another file also
-// registers hands whichever file loads first the job of answering both
-// features, silently, against the wrong fixture.
-const BL1277_FEATURE_NAME = "BL-589 An approval ask that poses a multiple-choice ruling surfaces its options as tappable choices";
-
 function registerSteps(registry) {
-  // BL-1277: registrations whose step text another handler file also
-  // registers go through here, pinned to this file's own feature.
-  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
-
-  bl1277Scoped(/^an approval ask was posted in a ticket's Telegram topic$/, (ctx) => {
+  registry.define(/^an approval ask was posted in a ticket's Telegram topic$/, (ctx) => {
     ctx.targetPath = mkTmp();
     ctx.editCalls = [];
     ctx.answered = [];
@@ -149,7 +137,7 @@ function registerSteps(registry) {
     }
   });
 
-  bl1277Scoped(/^the ticket is still pending review$/, (ctx) => {
+  registry.define(/^the ticket is still pending review$/, (ctx) => {
     ctx.recordedVerdict = undefined;
     ctx.recordedRuling = undefined;
   });

@@ -59,19 +59,7 @@ function cliBurndownLine(burndown, forecasts) {
   return text.split('\n').find((line) => line.startsWith('Burndown:'));
 }
 
-// BL-1277: this file's own feature title, so the generic step text below can
-// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
-// feature being run and otherwise falls back to first-match across every
-// handler file - so an UNSCOPED registration of text another file also
-// registers hands whichever file loads first the job of answering both
-// features, silently, against the wrong fixture.
-const BL1277_FEATURE_NAME = "The burndown shows each milestone's forecast ETA plus an overall ETA for all remaining work";
-
 function registerSteps(registry) {
-  // BL-1277: registrations whose step text another handler file also
-  // registers go through here, pinned to this file's own feature.
-  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
-
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^delivery metrics whose forecasts\.milestones carry each milestone's ETA$/, () => {
     // Nothing to fixture yet - each scenario's own Given below builds the
@@ -89,7 +77,7 @@ function registerSteps(registry) {
     ctx.surface = ctx.surface || 'PWA dashboard';
   });
 
-  bl1277Scoped(/^the burndown is rendered$/, (ctx) => {
+  registry.define(/^the burndown is rendered$/, (ctx) => {
     ctx.pwaBurndownText = renderPwaBurndown(ctx.burndown, ctx.forecasts);
     ctx.cliBurndownLine = cliBurndownLine(ctx.burndown, ctx.forecasts);
   });
