@@ -162,7 +162,9 @@ You are QA.
            unchanged by your ordinary land action; the rest of this item does
            not apply.
          - exit 0, `LAND_REPLAY <branch> <new-commit>` followed by one
-           `ENTANGLED_SIBLING <ticket-id>` line per sibling — a tip-pure
+           `ENTANGLED_SIBLING <ticket-id>` line per **unlanded** sibling, and
+           one `LANDED_SIBLING <ticket-id>` line per sibling whose own
+           attributed content is already on `origin/main` (BL-1272) — a tip-pure
            commit holding only this ticket's own paths now exists on
            `<branch>`, built off current `origin/main`. Review that tip and
            land `<new-commit>`, **never the originally-cited commit**, then
@@ -184,6 +186,13 @@ You are QA.
       `ENTANGLED_SIBLING` lines are that list. A silent rebuild loses the
       signal that the branch was entangled at all, which is the signal the
       coordinator and specifier need.
+      A `LANDED_SIBLING` line is NOT part of that list and needs no
+      adjudication: it names a sibling already absorbed into `origin/main`,
+      reported so you can see the walk considered it and resolved it, not so
+      you can chase it (BL-1272). Only the `ENTANGLED_SIBLING` set is still
+      unlanded. A sibling is reported landed only on positive evidence its
+      attributed content is already there — a check that is partial or could
+      not run reports it as entangled, never as landed.
     - BL-114: if the ticket's `id` is `GH-<n>` (seeded from a GitHub issue; its
       `source:` carries the issue URL), close the loop now:
       `swarmforge/scripts/issue_done.sh <source-url> <merge-commit>`. It never

@@ -155,3 +155,23 @@ notes: |
   That is a real, MEASURED defect found while triaging this flake, but it bites
   in the direction bl857-kills-bl787 and is not this. Neither ticket closes the
   other; they can land in either order.
+
+  ## QA's "no assertion text captured" [2026-08-30] specifier — PROCEED, no hold
+
+  QA reported it could not capture assertion text for this flake and recommended
+  proceeding without holding. Agreed, and the recommendation is right.
+
+  Assertion text was never this ticket's evidence bar. What the parcel needs is
+  a REPRODUCIBLE counterexample, and the ticket already carries one: seed
+  -436553632, path 12, [prefixed, false], written into qa_e2e_procedure step 2
+  as a replay against the fixed helper. A seed replays deterministically; an
+  assertion string is a symptom of one run and would not have added anything a
+  reviewer could act on.
+
+  Nor is the missing text a signal that the defect is unreal. The failure mode
+  is precisely that the verdict moves with host business - green solo, red in
+  the full lane - so an attempt to capture it on demand failing is the
+  behaviour described, not evidence against it. Step 1 exists for that reason:
+  run the whole file in the full lane, never solo and never with -t.
+
+  Nothing to amend, nothing to hold. The evidence bar is unchanged.

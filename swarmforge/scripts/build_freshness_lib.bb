@@ -173,3 +173,34 @@
          :gate gate
          :report ((:gather-settled-report adapters))
          :restarted (mapv name stale-groups)}))))
+
+;; ── BL-1225: what a sync-initiated restart leaves behind ────────────────
+;;
+;; Both of these are values, not actions - the CLI does the spawning. They
+;; live here so the two forensic properties are asserted by the pure test
+;; runner rather than by watching a real restart.
+
+;; babashka.process TRUNCATES when :out is a path STRING - verified
+;; directly, not assumed: a file holding "PRE-EXISTING" contained only the
+;; new process's output afterwards. Every sync therefore erased the
+;; stop/start history a post-mortem needs, and syncs are frequent (one per
+;; QA merge). :append with an :out-file is the appending form, matching
+;; what the project's own normal entry point start_operator_runtime.sh
+;; already does with a plain `>>`. stderr targets the SAME file so the
+;; interleaving a reader expects is preserved.
+(defn operator-log-spawn-opts [log-file project-root]
+  (let [file (java.io.File. (str log-file))]
+    {:out :append
+     :out-file file
+     :err :append
+     :err-file file
+     :dir (str project-root)}))
+
+;; start_handoff_daemon.sh already reads SWARMFORGE_DAEMON_START_CALLER and
+;; writes whatever it finds into its start-audit line, falling back to
+;; "unknown". The seam has existed all along and nothing ever set it, so
+;; all ten daemon starts in the 2026-08-28 crash window audited as
+;; caller=unknown and had to be tied to build-freshness by correlating
+;; timestamps by hand. Only the sync's own start sets this: a start no sync
+;; initiated must keep reading "unknown", or the label means nothing.
+(def daemon-start-caller "build_freshness_cli")
