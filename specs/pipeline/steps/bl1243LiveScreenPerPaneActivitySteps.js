@@ -84,11 +84,26 @@ function registerSteps(registry) {
   });
 
   scoped(/^its tile is not painted ok$/, (ctx) => {
-    // The aggregate is deliberately 'ok': a pane with nothing of its own must
-    // not inherit green from the poll, which is invariant 1.
-    const kind = ctx.bl1243.resolve(ctx.bl1243.pane, 'ok');
-    assert.notEqual(kind, 'ok', 'a pane with no usable text of its own was painted ok');
-    assert.notEqual(ctx.bl1243.pane.activitySignal, 'ok', 'a textless pane claimed a healthy signal of its own');
+    // Scenario 02 supplies no aggregate, so it gets 'ok' deliberately: a pane
+    // with nothing of its own must not inherit green from the poll (invariant
+    // 1). Scenario 06 reuses this Then with aggregate 'err', where the pane
+    // DOES have a healthy signal of its own and the failed poll must still win.
+    const aggregate = ctx.bl1243.aggregate ?? 'ok';
+    const kind = ctx.bl1243.resolve(ctx.bl1243.pane, aggregate);
+    assert.notEqual(kind, 'ok', `the tile was painted ok under aggregate ${aggregate}`);
+    if (aggregate === 'err') {
+      assert.equal(kind, 'err', 'a failed poll must paint err, not merely something-other-than-ok');
+    } else {
+      assert.notEqual(ctx.bl1243.pane.activitySignal, 'ok', 'a textless pane claimed a healthy signal of its own');
+    }
+  });
+
+  // ── 06 ────────────────────────────────────────────────────────────────
+  scoped(/^the poll is failing and a role pane's own last signal was ok$/, (ctx) => {
+    // The pane the last good poll captured, repainted while the poll fails.
+    ctx.bl1243.pane = paneFor('midturn-esc-footer.txt');
+    assert.equal(ctx.bl1243.pane.activitySignal, 'ok', 'the fixture must be a pane whose own last signal was ok');
+    ctx.bl1243.aggregate = 'err';
   });
 
   // ── 03 ────────────────────────────────────────────────────────────────
