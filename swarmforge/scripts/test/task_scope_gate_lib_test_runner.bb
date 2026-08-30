@@ -407,6 +407,47 @@
                  :findings [{:path "backlog/active/BL-1230-guard.yaml" :ticket-id "BL-1230"}]})
                "could not be evaluated"))
 
+
+;; ── BL-1295: a revert does not blame the ticket its subject quotes ───────
+;;
+;; `git revert` writes `Revert "<original subject>"`, so a revert of a
+;; ticket's own merge inherits that ticket's id verbatim. A revert of a
+;; MERGE undoes everything the merge carried, so its diff names other
+;; tickets' paths - and the gate refused the send on the strength of a
+;; commit that only REMOVED content. Observed live on BL-1240, blocked at
+;; the documenter to QA hop by commit 3825f91cd.
+
+(assert-true "revert-subject?: the shape git revert itself writes"
+             (task-scope-gate-lib/revert-subject? "Revert \"BL-1240: the fixture closure resolves each idiom\""))
+(assert-true "revert-subject?: a revert of a merge, the shape that caused BL-1240's block"
+             (task-scope-gate-lib/revert-subject? "Revert \"Merge documenter BL-1240 0ca3bc03c0 into QA. By QA.\""))
+(assert-true "revert-subject?: a revert of a revert is still a revert"
+             (task-scope-gate-lib/revert-subject? "Revert \"Revert \\\"BL-1240: something\\\"\""))
+(assert-true "revert-subject?: leading whitespace does not hide it"
+             (task-scope-gate-lib/revert-subject? "  Revert \"BL-1240: something\""))
+
+;; The quoting is the signal, not the word. A hand-written subject that
+;; merely starts with the word must NOT be exempted - exempting too much
+;; would let real foreign scope through, which is the failure that matters.
+(assert-false "revert-subject?: an ordinary subject that happens to start with the word is not a revert"
+              (task-scope-gate-lib/revert-subject? "Revert the bad merge by hand for BL-1240"))
+(assert-false "revert-subject?: a ticket-prefixed subject describing a revert is the ticket's own commit"
+              (task-scope-gate-lib/revert-subject? "BL-1240: revert the fixture change and redo it"))
+(assert-false "revert-subject?: an ordinary subject is not a revert" (task-scope-gate-lib/revert-subject? "BL-1240: do the thing"))
+(assert-false "revert-subject?: nil is not a revert" (task-scope-gate-lib/revert-subject? nil))
+
+(assert-true "subject-names-task?: a subject naming the task is still the task's own commit"
+             (task-scope-gate-lib/subject-names-task? "BL-1240: do the thing" "BL-1240"))
+(assert-false "subject-names-task?: a revert quoting the task's subject is NOT the task's commit"
+              (task-scope-gate-lib/subject-names-task? "Revert \"BL-1240: do the thing\"" "BL-1240"))
+(assert-false "subject-names-task?: a revert quoting ANOTHER ticket is not this task's either"
+              (task-scope-gate-lib/subject-names-task? "Revert \"BL-0999: something else\"" "BL-1240"))
+(assert-false "subject-names-task?: another ticket's subject is not this task's commit"
+              (task-scope-gate-lib/subject-names-task? "BL-0999: do the thing" "BL-1240"))
+;; The two earlier hardenings this predicate already carries must survive.
+(assert-false "subject-names-task?: a passing mention after the primary id does not claim the task (BL-1192 shape 2)"
+              (task-scope-gate-lib/subject-names-task? "BL-1227: decouple unlanded BL-1240 gate wiring" "BL-1240"))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))

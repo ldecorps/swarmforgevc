@@ -70,7 +70,7 @@ qa_e2e: >
   confirm only one getUpdates owner exists (no 409s in the bridge log) and that the
   bridge does not restart — the dead-feeder/409 classes must not reopen.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The A/B shape question is already answered by you directly (2026-08-30, option B),
   archived verbatim at
