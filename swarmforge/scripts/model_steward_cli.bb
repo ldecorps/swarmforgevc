@@ -108,7 +108,7 @@
   (println "  evaluate <provider>/<model> --role <role> --scorecard <path> [--bakeoff <path>] [--decertify-on-regression]")
   (println "  compat-docs [--out <path>]")
   (println "  trial nominate <provider>/<model> --role <role> [--evidence <path>]")
-  (println "  trial go-live --role <role> <provider>/<model>")
+  (println "  trial go-live <provider>/<model> --role <role>")
   (println "  trial status [--role <role>]")
   (println "  trial assess --role <role> [--now <iso>]")
   (System/exit 1))
