@@ -209,3 +209,13 @@ notes: |
     the ticket as written still describes today's code.
 
 assigned_to: coder
+
+notes_coordinator_hold: >
+  [2026-08-30] coordinator: HOLD, same systemic pattern as BL-1254 (see
+  backlog/evidence/BL-1254-dropped-commits-20260830.md). This ticket was
+  already promoted and routed once (commit 12871d82e) but a later merge
+  resurrected a stale paused/ duplicate, and promote_and_route_next.sh
+  re-promoted it (2c52ef263) straight into a router refusal ("already has
+  a dispatch trail"). Two tickets hit this in the same bookkeeping cycle -
+  systemic, not isolated. Do not auto-promote until specifier confirms
+  current dispatch state and the underlying merge-drop is understood.
