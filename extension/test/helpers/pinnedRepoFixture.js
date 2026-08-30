@@ -23,20 +23,56 @@
 const fs = require('fs');
 const path = require('path');
 
-// Mirrors master_checkout_drift_lib.bb's extract-load-file-basenames: the
-// `.bb` files one script load-file's. A commented-out line is never an edge -
-// several scripts carry a documentation comment showing the exact incantation
-// a caller would use.
+// The `.bb` files one script load-file's, as paths RELATIVE TO THE SCRIPT THAT
+// NAMES THEM. A commented-out line is never an edge - several scripts carry a
+// documentation comment showing the exact incantation a caller would use.
+//
+// BL-1240: this used to keep only the basename, mirroring
+// master_checkout_drift_lib.bb's extract-load-file-basenames. That held while
+// every closure lived flat in swarmforge/scripts/, and broke the moment one
+// did not: unregistered_test_gate_lib.bb load-files
+// `(fs/path (fs/parent ...) "test" "suite_inventory_lib.bb")`, the "test"
+// segment was dropped, the copy looked for the file at the flat root, did not
+// find it, and skipped it silently - so every fixture-built
+// `bb swarm_handoff.bb` died on load with a FileNotFoundException.
+//
+// A load-file line builds its path from the referring file's directory plus
+// the quoted segments that follow, so the segments before the `.bb` name are
+// part of the path, not decoration. Everything up to the name is kept and
+// normalised; `..` therefore means what it means in the script.
 function loadFileDeps(source) {
   const deps = new Set();
   for (const line of source.split('\n')) {
     if (line.trim().startsWith(';')) continue;
     if (!line.includes('load-file')) continue;
-    for (const m of line.matchAll(/"([^"]+\.bb)"/g)) {
-      deps.add(path.basename(m[1]));
-    }
+    const quoted = [...line.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+    quoted.forEach((value, i) => {
+      if (!value.endsWith('.bb')) return;
+      // The path segments immediately preceding the name: the unbroken run of
+      // quoted strings before it. A quoted string that is not a path segment
+      // (a message, a flag) would have to sit directly against the filename
+      // to be misread, and no load-file expression is written that way.
+      const segments = [];
+      for (let j = i - 1; j >= 0; j -= 1) {
+        const seg = quoted[j];
+        if (seg === '' || seg.endsWith('.bb') || seg.includes(' ')) break;
+        segments.unshift(seg);
+      }
+      deps.add(path.posix.normalize([...segments, value].join('/')));
+    });
   }
   return deps;
+}
+
+/**
+ * Where `dep`, named inside `referrer`, actually lives - both relative to the
+ * scripts directory root. A dependency that climbs out of that root cannot be
+ * copied from it, so it keeps its normalised name and is skipped by the copy
+ * exactly like any other name the reader cannot resolve.
+ */
+function resolveDepPath(referrer, dep) {
+  const dir = path.posix.dirname(referrer);
+  return path.posix.normalize(dir === '.' ? dep : `${dir}/${dep}`);
 }
 
 /**
@@ -54,7 +90,10 @@ function resolveScriptClosure(entrypoints, readSource) {
     if (seen.has(name)) continue;
     seen.add(name);
     const source = readSource(name);
-    if (source) for (const dep of loadFileDeps(source)) frontier.push(dep);
+    // Resolved against the naming file's own directory (BL-1240), so a script
+    // inside test/ reaching back out with ".." names the root copy rather
+    // than a second one under test/.
+    if (source) for (const dep of loadFileDeps(source)) frontier.push(resolveDepPath(name, dep));
   }
   return seen;
 }
@@ -83,7 +122,12 @@ function copyScriptClosure(liveScriptsDir, targetScriptsDir, entrypoints) {
       }
       continue;   // a dependency named but absent - the closure records it, the copy skips it
     }
-    fs.copyFileSync(src, path.join(targetScriptsDir, name));
+    const dest = path.join(targetScriptsDir, name);
+    // A dependency that lives in a subdirectory is copied INTO one: the script
+    // that loads it builds the path from its own location, so a flat copy is
+    // a fixture the script cannot load (BL-1240).
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
     copied.push(name);
   }
   return copied;
@@ -98,4 +142,10 @@ function copyLiveScriptClosureInto(targetScriptsDir, entrypoints) {
   return copyScriptClosure(liveScriptsDir, targetScriptsDir, entrypoints);
 }
 
-module.exports = { loadFileDeps, resolveScriptClosure, copyScriptClosure, copyLiveScriptClosureInto };
+module.exports = {
+  loadFileDeps,
+  resolveDepPath,
+  resolveScriptClosure,
+  copyScriptClosure,
+  copyLiveScriptClosureInto,
+};
