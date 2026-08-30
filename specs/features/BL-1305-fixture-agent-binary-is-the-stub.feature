@@ -27,20 +27,20 @@ Feature: An acceptance fixture never launches a real agent binary
   Background:
     Given a role-lifecycle fixture root with an agent stub written into it
 
-  # BL-1294 fixture-agent-binary-is-the-stub-01
+  # BL-1305 fixture-agent-binary-is-the-stub-01
   Scenario: The launch command names the fixture stub by a path, not a bare name
     When the fixture builds the launch command for a role
     Then the command names a path inside the fixture root
     And the command is not the bare agent name
 
-  # BL-1294 fixture-agent-binary-is-the-stub-02
+  # BL-1305 fixture-agent-binary-is-the-stub-02
   Scenario: A same-named binary earlier on PATH does not displace the stub
     Given a directory holding a different binary of the same agent name is prepended to PATH
     When the fixture launches a role agent
     Then the fixture stub is what ran
     And the binary the prepended directory holds did not run
 
-  # BL-1294 fixture-agent-binary-is-the-stub-03
+  # BL-1305 fixture-agent-binary-is-the-stub-03
   Scenario: No real agent process survives the fixture
     When the fixture scenarios have finished
     Then no process launched from the fixture root is the real agent binary

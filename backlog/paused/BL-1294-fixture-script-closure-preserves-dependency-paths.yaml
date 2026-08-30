@@ -211,3 +211,22 @@ notes: |
   Four `possible-synonym` findings, medium confidence, all reviewed and none
   acted on: three pairs are one step pattern differing only in its quoted
   argument, and `has a file at` / `has no file at` are deliberate opposites.
+
+  ## An id collision sat on this ticket all day - resolved, and it touched the approval [2026-08-30 specifier]
+
+  A second, unrelated defect was minted as BL-1294 an hour after this one
+  (07:52 vs 06:54): the acceptance-fixture agent-binary PATH-shim defect. Two
+  tickets carried this id until 2026-08-30 evening. This ticket keeps BL-1294
+  - it was minted first, it owns `backlog/topics/BL-1294.json`, and it is the
+  BL-1294 that BL-1303 and the coder-red triage evidence mean. The other has
+  been renumbered to BL-1305, YAML and feature file together.
+
+  `human_approval` here is left at `pending`, untouched. That is a deliberate
+  refusal to infer, not an oversight. Commit 2830aec113 recorded an approval
+  for "BL-1294" against the OTHER file, while the Telegram topic BL-1294 that
+  the human actually saw renders THIS ticket's title and approval context - so
+  the tap most likely belonged here. Most likely is not a tap: reading an
+  approval onto a ticket from a commit that names a different file would be
+  fabricating the human's answer. BL-1305 has been reset to `pending` for the
+  same reason, so both tickets now ask honestly and neither ships on an
+  approval that cannot be shown to be its own.

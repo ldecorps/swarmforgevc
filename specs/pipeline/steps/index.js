@@ -893,6 +893,7 @@ const DOMAINS = [
   require('./bl1235LocalQwenSeatSteps'),
   require('./bl1240UnregisteredTestFailsAuthorSteps'),
   require('./bl1250ExpediteRoleAgentCountSteps'),
+  require('./bl1253DeadFeederOwnsGetUpdatesStampSteps'),
   require('./bl1224WatchAdoptsRestartedRuntimeSteps'),
   require('./bl1254ExpediteNoVerdictChainStampSteps'),
   require('./bl1272LandedSiblingSteps'),
