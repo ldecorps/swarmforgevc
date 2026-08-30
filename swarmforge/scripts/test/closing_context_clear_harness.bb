@@ -5,8 +5,10 @@
 ;; tmux) and injected state, printing a JSON result for acceptance step
 ;; handlers to assert against.
 ;;
-;; Usage: closing_context_clear_harness.bb <idle:true|false> <closed-ticket-id|-> <last-cleared-ticket-id|->
-;;   "-" means nil (no closed ticket / never cleared before).
+;; Usage: closing_context_clear_harness.bb <idle:true|false> <closed-ticket-id|-> <last-cleared-ticket-id|-> [fullness-percent|->]
+;;   "-" means nil (no closed ticket / never cleared before / fullness unknown).
+;;   fullness defaults to 80 when omitted so legacy acceptance scenarios that
+;;   expect a clear still pass; pass "-" to assert the fail-closed unknown path.
 
 (ns closing-context-clear-harness
   (:require [babashka.fs :as fs]
@@ -19,6 +21,10 @@
 (def idle? (= "true" (nth *command-line-args* 0)))
 (def closed-ticket-id (nil-dash (nth *command-line-args* 1)))
 (def last-cleared-ticket-id (nil-dash (nth *command-line-args* 2)))
+(def fullness-percent
+  (let [raw (nth *command-line-args* 3 "80")]
+    (when-let [s (nil-dash raw)]
+      (Double/parseDouble s))))
 
 (def calls (atom []))
 
@@ -27,7 +33,8 @@
    {:idle? idle?
     :closed-ticket-id closed-ticket-id
     :last-cleared-ticket-id last-cleared-ticket-id
-    :role-name "coordinator"}
+    :role-name "coordinator"
+    :fullness-percent fullness-percent}
    {:inject-clear! (fn [] (swap! calls conj {:op "inject-clear"}))
     :inject-startup-reread! (fn [text] (swap! calls conj {:op "inject-startup-reread" :text text}))
     :record-clear! (fn [ticket-id] (swap! calls conj {:op "record-clear" :ticketId ticket-id}))}))

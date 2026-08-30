@@ -416,6 +416,26 @@ You are the specifier.
   keep the why free of apostrophes (a doubled `''` would reach the matcher
   doubled), and verify by running `parse-wiring-entry` on the finished line —
   the printed `:pattern` must be byte-identical to the target-file literal.
+- **Every `required_wiring:` entry must be ONE physical line — a wrapped entry
+  silently voids the WHOLE field (found 2026-08-30, specifier freshness pass).**
+  `read-list-field`/`parse-block-list` in `pre_qa_gate_lib.bb` accept a block
+  list only when EVERY non-blank line under the key matches `^\s+-\s+.+$`. A
+  YAML continuation line is indented but does not start with `- `, so one
+  wrapped entry makes `every?` fail and the reader returns `:items nil` —
+  `{:present? true :items nil}`, the caller-visible parse failure. This is
+  worse than the two traps above: they break one entry, this discards every
+  entry in the field at once, and the ticket reads perfectly to a human
+  because the YAML is valid and semantically right. Do NOT wrap for line
+  length — shorten the `::why` instead. Five paused tickets were caught
+  carrying this in a single pass, each armed to false-block at the
+  documenter→QA hop, the LAST one, after all six stages were already spent.
+- **Verify by running the READER, not just the parser.** `parse-wiring-entry`
+  on a hand-typed string cannot see this class of defect — the entry parses
+  fine in isolation; it is the block reader that discards it. Check the real
+  file: `bb -e '(load-file "swarmforge/scripts/pre_qa_gate_lib.bb")'` then call
+  `read-required-wiring` on the ticket's actual content and confirm `:items` is
+  a non-empty vector before you commit. `:present? true` with `:items nil` is
+  a hard failure, never "field absent".
 - **An anchor your own parcel satisfies by construction gates NOTHING — anchor
   the CONSUMER'S call, not your own declaration (BL-1235, 2026-08-30).** The
   two traps above fail CLOSED: an unmatchable pattern blocks a good parcel, and

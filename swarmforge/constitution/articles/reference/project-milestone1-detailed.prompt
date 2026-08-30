@@ -1,0 +1,104 @@
+# Project — Milestone 1 charter (shipped; preserved verbatim)
+
+Moved out of the boot-inlined `project.prompt` on 2026-08-30 to keep the
+stable boot prefix inside its 44000-char budget (BL-859/BL-1227). Nothing is
+reworded or dropped: every sentence below is the human's original Milestone-1
+charter, exactly as it stood. It is HISTORY — Milestone 1 shipped long ago and
+several of its "do NOT build these yet" items (phone app, chat integration,
+cost tracking, model/backend switching) have since been delivered as their own
+milestones. Read it for provenance, never as current scope.
+
+Two constraints it carried are still LIVE and are still stated in the
+boot-inlined articles, so nothing was lost by moving this text:
+
+- no Windows support, macOS and Linux only — `local-engineering.prompt`
+  §"Tech Stack".
+- do not modify SwarmForge itself, drive it from outside — `project.prompt`
+  §"Constraints", which keeps that bullet.
+
+The Constraints bullet that scoped the build to this milestone moved here with
+it, verbatim, because its "described above" pointed at the charter below:
+
+    - The full product vision (later milestones) is in `docs/reference/Specification.MD`
+      and `docs/explanation/Milestone Roadmap.MD`. Build ONLY Milestone 1 described above.
+      When in doubt, prefer the smaller scope.
+
+`project.prompt` keeps the live half of it - both vision documents, and the
+prefer-the-smaller-scope rule.
+
+---
+
+# Goals for this swarm run (Milestone 1 - the MVP)
+
+Build the smallest version a developer would actually use daily. Deliver these,
+and only these.
+
+## Build order: two capabilities FIRST (the dogfood-critical pair)
+
+Build these two before anything else, because together they let the developer
+start using the extension to watch its own further development:
+
+A. Run (launch) - a command to launch the swarm against a selected target by
+   shelling out to SwarmForge's ./swarm wrapper.
+B. Tiled agent panel - a webview panel showing one live terminal tile per agent
+   role, each tailing that role's tmux pane in real time, each interactive (the
+   developer can click in and type to the agent).
+
+### DOGFOOD CHECKPOINT (important)
+
+As soon as BOTH (A) launch and (B) live interactive tiles are working - even if
+rough - PAUSE and surface a clearly visible message:
+
+   "DOGFOOD CHECKPOINT REACHED - launch and tiles are functional. The developer
+    should verify by pointing the extension at its own repo before continuing."
+
+Do NOT stop the run. After surfacing this message, continue building the remaining
+Milestone 1 items below. The checkpoint is a signal to the human, not a stopping
+point - the human decides whether to take over watching via the extension itself.
+
+## Remaining Milestone 1 items (build after the pair above)
+
+1. Target selection
+   - A command to point the extension at a local target repo (a filesystem path).
+   - An "Initialize Target" command that scaffolds and commits two plain-text
+     files into the target repo: project.prompt and engineering.prompt (so they
+     travel with the repo when the swarm clones it).
+
+2. Stop
+   - A command to stop the swarm cleanly.
+
+3. Pipeline awareness
+   - Show which stage currently holds the work (read this from SwarmForge's state
+     files under .swarmforge/). A simple status line is enough.
+
+4. PR at the end
+   - When the swarm finishes, open a pull request from the swarm's dev branch
+     into the target's main branch. The human reviews and merges it in GitHub.
+
+5. Named runs
+   - Name the branch and PR after the work item. Keep a simple local log of runs.
+
+Note: target selection (item 1) is needed to exercise launch properly, so it is
+fine to build a minimal version of it alongside the dogfood pair if launch needs
+a target to point at. Keep it minimal until the pair works.
+
+# Explicitly OUT of scope (do NOT build these yet)
+
+These are planned for later milestones. Do not start them now, even if they seem
+useful - they would over-scope the MVP:
+
+- No watchdog, heartbeat, or chase logic (rely on SwarmForge's own behavior and
+  the human watching the tiles).
+- No hardened message bus (read SwarmForge's existing state; do not redesign it).
+- No completion-percentage "work tree", no backlog sync.
+- No cost tracking or model/backend switching.
+- No dynamic right-sizing of the pack (run whatever is configured).
+- No per-tile respawn or model-switch controls.
+- No remote access, phone app, or chat integration.
+- No Windows support (macOS and Linux only - SwarmForge depends on tmux).
+
+# Definition of done for this milestone
+
+A developer can: select a target repo, run the swarm, watch all agents working in
+live tiles inside VS Code, occasionally type a nudge to an agent, and end up with
+a pull request to review - all without leaving the editor.
