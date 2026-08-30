@@ -7,25 +7,30 @@ const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
-// BL-1297 declared invariants:
+// BL-1297 declared invariants (as amended 2026-08-30):
 //
-// 1. A commit's own changed paths are computed against its first parent for
-//    every commit shape; a merge never reports an empty change set merely
-//    because it is a merge.
+// 1. A merge's DELIVERED paths are its first-parent delta and are never empty
+//    merely because it is a merge; its AUTHORED paths are what differ from
+//    EVERY parent, and are empty exactly when the merge resolved nothing
+//    itself.
 // 2. An empty change set is only ever the truth, never an artefact of how the
-//    diff was invoked - the three callers sharing this walk answer the same
-//    question about the same commit identically.
+//    diff was invoked.
+// 3. Each caller reads the question its own decision needs: the land-step
+//    replay reads DELIVERED, the send-time scope gate and the
+//    unregistered-test gate read AUTHORED.
 //
-// Both drive REAL git repositories through the REAL bb libraries. Nothing
-// here re-implements the walk under test, and neither property compares the
-// answer against another `git diff-tree` invocation - the expected path set
-// is CONSTRUCTED by the generator, so the oracle is independent of the
+// The first version of this contract asserted that all three callers answer
+// the SAME question identically. That premise was false and refused every
+// forward in the pipeline the moment a branch had synced main - which is
+// always. Invariant 3 is now the opposite assertion, and `evil-merge` is the
+// shape that keeps it honest: it is the only merge whose author wrote
+// something, so it is the only merge on which AUTHORED may be non-empty.
+//
+// All three drive REAL git repositories through the REAL bb libraries.
+// Nothing here re-implements the walk under test, and no property compares
+// the answer against another `git diff-tree` invocation - both expected sets
+// are CONSTRUCTED by the generator, so the oracle is independent of the
 // command the implementation happens to choose.
-//
-// Generator reach (invariant 1's own failure shape): the shapes are drawn
-// from an explicit list, and every one of them - crucially the merge shapes,
-// which are the ONLY ones that can detect the defect - has an asserted reach
-// floor. Drawing "some random commit" would produce a merge almost never.
 //
 // Runs ONLY via `npm run test:properties`.
 
@@ -37,6 +42,8 @@ const UNREG_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'unregistered_te
 const TASK = 'BL-1174-fixture';
 const TASK_ID = 'BL-1174';
 const OTHER = 'BL-9999-other';
+const RIDER = 'extension/src/rider.ts';
+const TRUNK = 'extension/src/trunk.ts';
 
 function bbEval(script) {
   const result = spawnSync('bb', ['-e', script], { encoding: 'utf8' });
@@ -72,18 +79,20 @@ function initRepo(root) {
   return git(root, 'rev-parse', 'HEAD').trim();
 }
 
-// Every shape the pipeline actually produces, plus the two the defect hides
-// behind: a merge (the normal shape of a role's own commit) and a merge whose
-// first-parent change is GENUINELY empty - the case that separates "empty
-// because it is a merge" from "empty because nothing changed".
-const SHAPES = ['single-parent', 'merge', 'octopus-merge', 'empty-merge', 'root'];
+// Every shape the pipeline actually produces, plus the three the defect and
+// its over-correction hide behind: a clean merge (the normal shape of a
+// role's own commit, and the shape whose AUTHORED set must be empty), a merge
+// whose first-parent change is GENUINELY empty, and an evil merge - the only
+// merge whose author wrote anything.
+const SHAPES = ['single-parent', 'merge', 'octopus-merge', 'empty-merge', 'evil-merge', 'root'];
 
-// Builds `shape` at the tip of `root` under `subject`, and returns the paths
-// that commit changed against its FIRST parent - constructed, not measured.
-function buildShape(root, shape, subject, parcelPaths, trunkPath) {
+// Builds `shape` at the tip of `root` under `subject`, and returns BOTH
+// constructed answers: what the commit delivers against its first parent, and
+// what its own author wrote. Constructed, never measured.
+function buildShape(root, shape, subject, parcelPaths) {
   if (shape === 'single-parent') {
     writeCommit(root, parcelPaths, subject);
-    return parcelPaths;
+    return { delivered: parcelPaths, authored: parcelPaths };
   }
   if (shape === 'root') {
     git(root, 'checkout', '-q', '--orphan', 'bl1297-orphan');
@@ -93,23 +102,43 @@ function buildShape(root, shape, subject, parcelPaths, trunkPath) {
       if (f !== '.git') fs.rmSync(path.join(root, f), { recursive: true, force: true });
     }
     writeCommit(root, parcelPaths, subject);
-    return parcelPaths;
+    // A root commit has no parent at all, so every path in it is both.
+    return { delivered: parcelPaths, authored: parcelPaths };
   }
   if (shape === 'empty-merge') {
     // The branch and the trunk reach byte-identical content independently, so
     // the merge really does change nothing against its first parent. An empty
-    // answer here is the TRUTH, and must stay empty.
+    // answer here is the TRUTH under both semantics, and must stay empty.
     git(root, 'checkout', '-q', '-b', 'bl1297-same');
     writeCommit(root, parcelPaths, `${OTHER}: same content on the branch`, 'identical\n');
     git(root, 'checkout', '-q', 'main');
     writeCommit(root, parcelPaths, `${OTHER}: same content on the trunk`, 'identical\n');
     git(root, '-c', 'core.hooksPath=/dev/null', 'merge', '--no-ff', '-q', '--no-verify', '-m', subject, 'bl1297-same');
-    return [];
+    return { delivered: [], authored: [] };
   }
-  // merge / octopus-merge: the parcel arrives THROUGH the merge, while
-  // trunkPath is already on the first parent under another ticket's subject -
-  // so a per-parent union (-m) would name trunkPath and the first-parent diff
-  // does not. The two answers are distinguishable by construction.
+  if (shape === 'evil-merge') {
+    // The merge's OWN resolution writes `resolved` - content on neither
+    // parent. That is the merger's authorship, and the only case in which a
+    // merge's AUTHORED set may be non-empty.
+    const resolved = parcelPaths[parcelPaths.length - 1];
+    const carried = [...parcelPaths.slice(0, -1), RIDER];
+    git(root, 'checkout', '-q', '-b', 'bl1297-evil');
+    writeCommit(root, carried, `${OTHER}: ${carried.join(' ')} arriving through the merge`);
+    git(root, 'checkout', '-q', 'main');
+    writeCommit(root, [TRUNK], `${OTHER}: ${TRUNK} already on the receiving branch`);
+    git(root, '-c', 'core.hooksPath=/dev/null', 'merge', '--no-ff', '-q', '--no-verify', '--no-commit', 'bl1297-evil');
+    const full = path.join(root, resolved);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, 'resolved in the merge itself\n');
+    git(root, 'add', resolved);
+    git(root, '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '--no-verify', '-m', subject);
+    return { delivered: [...new Set([...carried, resolved])], authored: [resolved] };
+  }
+  // merge / octopus-merge: the parcel arrives THROUGH the merge, while TRUNK
+  // is already on the first parent under another ticket's subject - so a
+  // per-parent union (-m) would name TRUNK and the first-parent diff does
+  // not. The merge resolves nothing itself, so its AUTHORED set is empty:
+  // this is the ordinary receive-merge every stage is required to make.
   const branches = shape === 'octopus-merge' ? 2 : 1;
   const perBranch = [];
   for (let i = 0; i < branches; i += 1) {
@@ -122,7 +151,7 @@ function buildShape(root, shape, subject, parcelPaths, trunkPath) {
     perBranch.push(carried);
   }
   git(root, 'checkout', '-q', 'main');
-  writeCommit(root, [trunkPath], `${OTHER}: ${trunkPath} already on the receiving branch`);
+  writeCommit(root, [TRUNK], `${OTHER}: ${TRUNK} already on the receiving branch`);
   git(
     root,
     '-c',
@@ -135,7 +164,7 @@ function buildShape(root, shape, subject, parcelPaths, trunkPath) {
     subject,
     ...perBranch.map((_, i) => `bl1297-branch-${i}`)
   );
-  return [...new Set(perBranch.flat())];
+  return { delivered: [...new Set(perBranch.flat())], authored: [] };
 }
 
 const PARCEL_PATHS = () =>
@@ -146,10 +175,10 @@ const PARCEL_PATHS = () =>
 // nil (the walk could not run) is reported as the distinct marker NIL, never
 // flattened into the empty list - telling those two apart is the whole point
 // of the contract this ticket is repairing.
-function ownPaths(root, commit) {
+function ownPaths(root, commit, semantic) {
   const out = bbEval(
     `(load-file ${JSON.stringify(GATE_LIB)})
-     (let [r (task-scope-gate-lib/own-commit-changed-paths ${JSON.stringify(root)} ${JSON.stringify(commit)})]
+     (let [r (task-scope-gate-lib/own-commit-changed-paths ${JSON.stringify(root)} ${JSON.stringify(commit)} ${semantic})]
        (print (if (nil? r) "NIL" (clojure.string/join "\\n" r))))`
   );
   if (out === 'NIL') return null;
@@ -165,49 +194,119 @@ function withRoot(prefix, fn) {
   }
 }
 
-test('property (invariant 1): a commit reports its first-parent change for every commit shape', () => {
+// Reach is CONSTRUCTED, not hoped for: every shape is run once outright, and
+// the random runs add breadth on top. A purely random draw over six shapes
+// really does miss one at these run counts - this file's own first green run
+// missed `empty-merge`, which is the shape that separates an honest empty
+// answer from the defect's artefact.
+function assertReach(seen, shapes) {
+  for (const shape of shapes) {
+    assert.ok(seen[shape] > 0, `generator never reached ${shape}: ${JSON.stringify(seen)}`);
+  }
+}
+
+test('property (invariant 1): delivered is the first-parent delta, authored is what differs from every parent', () => {
   const seen = Object.fromEntries(SHAPES.map((s) => [s, 0]));
   const runCase = (shape, parcelPaths) => {
     seen[shape] += 1;
     withRoot('sfvc-bl1297-inv1-', (root) => {
       initRepo(root);
-      const expected = buildShape(root, shape, `${TASK}: the parcel`, parcelPaths, 'extension/src/trunk.ts');
+      const { delivered, authored } = buildShape(root, shape, `${TASK}: the parcel`, parcelPaths);
       const commit = git(root, 'rev-parse', 'HEAD').trim();
-      const actual = ownPaths(root, commit);
+
+      const actualDelivered = ownPaths(root, commit, ':delivered');
       assert.deepEqual(
-        [...actual].sort(),
-        [...expected].sort(),
-        `${shape} reported ${JSON.stringify(actual)}, its first-parent change is ${JSON.stringify(expected)}`
+        [...actualDelivered].sort(),
+        [...delivered].sort(),
+        `${shape} delivered ${JSON.stringify(actualDelivered)}, its first-parent change is ${JSON.stringify(delivered)}`
       );
       // The headline half, stated separately so it cannot be satisfied by a
       // shape that happens to have no paths: a merge that DID change
       // something is never empty.
-      if (expected.length > 0) {
-        assert.ok(actual.length > 0, `${shape} reported an empty change set for a commit that changed ${expected}`);
+      if (delivered.length > 0) {
+        assert.ok(
+          actualDelivered.length > 0,
+          `${shape} delivered an empty change set for a commit that changed ${delivered}`
+        );
+      }
+
+      const actualAuthored = ownPaths(root, commit, ':authored');
+      assert.deepEqual(
+        [...actualAuthored].sort(),
+        [...authored].sort(),
+        `${shape} authored ${JSON.stringify(actualAuthored)}, its own resolution is ${JSON.stringify(authored)}`
+      );
+      // "empty exactly when the merge resolved nothing itself" - stated as an
+      // iff, in both directions, because the over-correction this amendment
+      // repairs failed the second direction only.
+      assert.equal(
+        actualAuthored.length === 0,
+        authored.length === 0,
+        `${shape}'s authored set is empty for the wrong reason: ${JSON.stringify(actualAuthored)}`
+      );
+    });
+  };
+
+  for (const shape of SHAPES) runCase(shape, ['extension/src/parcel0.ts', 'extension/src/parcel7.ts']);
+
+  fc.assert(fc.property(fc.constantFrom(...SHAPES), PARCEL_PATHS(), runCase), { numRuns: 15 });
+
+  assertReach(seen, SHAPES);
+  // The shapes the defect and its over-correction hide behind carry the whole
+  // property; a run that only ever saw single-parent commits would pass
+  // against both.
+  assert.ok(seen.merge + seen['octopus-merge'] >= 2, `too few clean merge shapes: ${JSON.stringify(seen)}`);
+  assert.ok(seen['evil-merge'] >= 1, `the only merge with an author was never drawn: ${JSON.stringify(seen)}`);
+});
+
+test('property (invariant 2): an empty answer is the truth, never an artefact of the invocation', () => {
+  const seen = { emptyDelivered: 0, emptyAuthored: 0, nonEmptyAuthored: 0 };
+  const runCase = (shape, parcelPaths) => {
+    withRoot('sfvc-bl1297-inv2-', (root) => {
+      initRepo(root);
+      const { delivered, authored } = buildShape(root, shape, `${TASK}: the parcel`, parcelPaths);
+      const commit = git(root, 'rev-parse', 'HEAD').trim();
+
+      if (delivered.length === 0) seen.emptyDelivered += 1;
+      if (authored.length === 0) seen.emptyAuthored += 1;
+      else seen.nonEmptyAuthored += 1;
+
+      for (const [semantic, expected] of [
+        [':delivered', delivered],
+        [':authored', authored],
+      ]) {
+        const actual = ownPaths(root, commit, semantic);
+        // Blindness is never the empty answer. A caller that cannot tell them
+        // apart reads an unreadable commit as a clean one - the same fail-open
+        // as the merge blind spot, one door down.
+        assert.notEqual(actual, null, `${shape} under ${semantic} reported blindness for a readable commit`);
+        assert.equal(
+          actual.length === 0,
+          expected.length === 0,
+          `${shape} under ${semantic} was empty for the wrong reason: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`
+        );
       }
     });
   };
 
-  // Reach is CONSTRUCTED, not hoped for: every shape is run once outright,
-  // and the random runs below add breadth on top. A purely random draw over
-  // five shapes really does miss one at these run counts - this file's own
-  // first green run missed `empty-merge`, which is the shape that separates
-  // an honest empty answer from the defect's artefact.
-  for (const shape of SHAPES) runCase(shape, ['extension/src/parcel0.ts']);
+  for (const shape of SHAPES) runCase(shape, ['extension/src/parcel0.ts', 'extension/src/parcel7.ts']);
+  fc.assert(fc.property(fc.constantFrom(...SHAPES), PARCEL_PATHS(), runCase), { numRuns: 12 });
 
-  fc.assert(
-    fc.property(fc.constantFrom(...SHAPES), PARCEL_PATHS(), runCase),
-    { numRuns: 15 }
-  );
-  for (const shape of SHAPES) {
-    assert.ok(seen[shape] > 0, `generator never reached ${shape}: ${JSON.stringify(seen)}`);
-  }
-  // The shapes the defect hides behind carry the whole property; a run that
-  // only ever saw single-parent commits would pass against the defect.
-  assert.ok(seen.merge + seen['octopus-merge'] >= 2, `too few merge shapes: ${JSON.stringify(seen)}`);
+  assert.ok(seen.emptyDelivered > 0, `never produced a genuinely empty delivered set: ${JSON.stringify(seen)}`);
+  assert.ok(seen.emptyAuthored > 0, `never produced a genuinely empty authored set: ${JSON.stringify(seen)}`);
+  assert.ok(seen.nonEmptyAuthored > 0, `never produced a non-empty authored set: ${JSON.stringify(seen)}`);
+
+  // An unreadable commit answers nil under BOTH semantics, so neither caller
+  // can mistake a failed walk for a clean parcel.
+  withRoot('sfvc-bl1297-inv2-nil-', (root) => {
+    initRepo(root);
+    const absent = '0000000000000000000000000000000000000000';
+    assert.equal(ownPaths(root, absent, ':delivered'), null, 'an unreadable commit was not nil under :delivered');
+    assert.equal(ownPaths(root, absent, ':authored'), null, 'an unreadable commit was not nil under :authored');
+  });
 });
 
-// ── invariant 2: the three callers answer identically ──────────────────────
+// ── invariant 3: each caller reads the question its own decision needs ─────
 
 // The manifest caller 3 reads. Empty (header only) so that any test file the
 // parcel introduces is unregistered - which is how caller 3's answer becomes
@@ -234,66 +333,79 @@ function threeCallers(root, commit) {
   return out;
 }
 
-const INV2_SHAPES = ['merge', 'octopus-merge', 'empty-merge', 'single-parent'];
+const TEST_FILE = 'swarmforge/scripts/test/test_bl1297_fixture.sh';
+const INV3_SHAPES = ['merge', 'octopus-merge', 'empty-merge', 'evil-merge', 'single-parent'];
 
-test('property (invariant 2): an empty answer is the truth, and the three callers never disagree', () => {
-  const seen = { emptyTruth: 0, nonEmpty: 0, withTestFile: 0 };
+test('property (invariant 3): the land step reads delivered, the two send-time gates read authored', () => {
+  const seen = { authoredTestFile: 0, deliveredOnlyTestFile: 0, divergent: 0 };
   const runCase = (shape, addTestFile) => {
-        withRoot('sfvc-bl1297-inv2-', (root) => {
-          initRepo(root);
-          writeManifest(root);
-          git(root, 'add', 'swarmforge');
-          git(root, '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '--no-verify', '-m', `${OTHER}: manifest`);
-          // Both callers' bases are pinned to the SAME boundary, so a
-          // disagreement can only come from the walk itself: the gate reads
-          // the handoff archive (absent here, so it walks the cited commit),
-          // and the land step reads origin/main.
-          const base = git(root, 'rev-parse', 'HEAD').trim();
-          git(root, 'update-ref', 'refs/remotes/origin/main', base);
+    withRoot('sfvc-bl1297-inv3-', (root) => {
+      initRepo(root);
+      writeManifest(root);
+      git(root, 'add', 'swarmforge');
+      git(root, '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '--no-verify', '-m', `${OTHER}: manifest`);
+      // Both callers' bases are pinned to the SAME boundary, so a difference
+      // can only come from the semantic each one asks for: the gate reads the
+      // handoff archive (absent here, so it walks the cited commit), and the
+      // land step reads origin/main.
+      const base = git(root, 'rev-parse', 'HEAD').trim();
+      git(root, 'update-ref', 'refs/remotes/origin/main', base);
 
-          const parcelPaths = addTestFile
-            ? ['extension/src/parcel1.ts', 'swarmforge/scripts/test/test_bl1297_fixture.sh']
-            : ['extension/src/parcel1.ts'];
-          const expected = buildShape(root, shape, `${TASK}: the parcel`, parcelPaths, 'extension/src/trunk.ts');
-          const commit = git(root, 'rev-parse', 'HEAD').trim();
+      // The test file goes LAST, so on `evil-merge` it is the path the merge
+      // itself resolves - the one merge shape where the gates must see it.
+      const parcelPaths = addTestFile ? ['extension/src/parcel1.ts', TEST_FILE] : ['extension/src/parcel1.ts'];
+      const { delivered, authored } = buildShape(root, shape, `${TASK}: the parcel`, parcelPaths);
+      const commit = git(root, 'rev-parse', 'HEAD').trim();
 
-          if (expected.length === 0) seen.emptyTruth += 1;
-          else seen.nonEmpty += 1;
-          if (addTestFile && expected.length > 0) seen.withTestFile += 1;
+      if (authored.includes(TEST_FILE)) seen.authoredTestFile += 1;
+      if (delivered.includes(TEST_FILE) && !authored.includes(TEST_FILE)) seen.deliveredOnlyTestFile += 1;
+      if (delivered.length !== authored.length) seen.divergent += 1;
 
-          const raw = threeCallers(root, commit);
-          assert.ok(!raw.includes(':unreg-warning true'), `caller 3 could not read the parcel: ${raw}`);
+      const raw = threeCallers(root, commit);
+      assert.ok(!raw.includes(':unreg-warning true'), `caller 3 could not read the parcel: ${raw}`);
 
-          const gate = raw.match(/:gate \[([^\]]*)\]/)[1];
-          const land = raw.match(/:land \[([^\]]*)\]/)[1];
-          assert.equal(gate, land, `caller 1 and caller 2 disagree about ${shape}: ${raw}`);
+      const parse = (key) => {
+        const inner = raw.match(new RegExp(`:${key} \\[([^\\]]*)\\]`))[1];
+        return inner ? inner.split(' ').map((s) => JSON.parse(s)) : [];
+      };
 
-          const gatePaths = gate ? gate.split(' ').map((s) => JSON.parse(s)) : [];
-          assert.deepEqual([...gatePaths].sort(), [...expected].sort(), `the walk misreports ${shape}: ${raw}`);
+      // Caller 1 - the land-step replay - must be handed everything the
+      // parcel puts on the branch, or the replay silently ships a PARTIAL
+      // parcel, dropping whatever an upstream role authored.
+      assert.deepEqual([...parse('land')].sort(), [...delivered].sort(), `the land step misreads ${shape}: ${raw}`);
 
-          // Caller 3 asks the same question through the same seam: it sees
-          // the parcel's unregistered test file exactly when the parcel's own
-          // change set contains one. An empty artefact here silently ships an
-          // invisible test, which is the same fail-open one door down.
-          const expectsFinding = expected.includes('swarmforge/scripts/test/test_bl1297_fixture.sh');
-          assert.equal(
-            raw.includes('test_bl1297_fixture.sh'),
-            expectsFinding,
-            `caller 3 disagrees with the shared walk about ${shape}: ${raw}`
-          );
-        });
+      // Caller 2 - the send-time scope gate - judges the parcel's AUTHOR. A
+      // clean receive-merge authored nothing, and charging it with the
+      // tickets that rode in on it refuses every forward in the pipeline.
+      assert.deepEqual([...parse('gate')].sort(), [...authored].sort(), `the scope gate misreads ${shape}: ${raw}`);
+
+      // Caller 3 asks caller 2's question through the seam they share, and
+      // must never answer it differently.
+      // Read the gate's OWN findings (which name a file by basename), not the
+      // whole printed map: under the amended contract `:land` names delivered
+      // paths the gates must not see, so a substring check over `raw` would
+      // find the test file there and pass for the wrong reason.
+      assert.equal(
+        parse('unreg-files').includes(path.basename(TEST_FILE)),
+        authored.includes(TEST_FILE),
+        `the unregistered-test gate disagrees with the scope gate about ${shape}: ${raw}`
+      );
+    });
   };
 
-  // Same constructed reach as invariant 1: the genuinely-empty merge and the
-  // test-file case are each run outright before any random draw, because
-  // those two are exactly what this property exists to separate.
-  for (const shape of INV2_SHAPES) {
+  for (const shape of INV3_SHAPES) {
     runCase(shape, true);
     runCase(shape, false);
   }
-  fc.assert(fc.property(fc.constantFrom(...INV2_SHAPES), fc.boolean(), runCase), { numRuns: 8 });
+  fc.assert(fc.property(fc.constantFrom(...INV3_SHAPES), fc.boolean(), runCase), { numRuns: 8 });
 
-  assert.ok(seen.emptyTruth > 0, `generator never produced a genuinely empty change set: ${JSON.stringify(seen)}`);
-  assert.ok(seen.nonEmpty > 0, `generator never produced a non-empty change set: ${JSON.stringify(seen)}`);
-  assert.ok(seen.withTestFile > 0, `caller 3 was never given a test file to find: ${JSON.stringify(seen)}`);
+  // The two cases that separate the semantics are constructed, not hoped for.
+  // Without the second, every row could pass with both callers reading the
+  // same answer - which is exactly the contract this amendment replaced.
+  assert.ok(seen.authoredTestFile > 0, `the gates were never given an authored test file: ${JSON.stringify(seen)}`);
+  assert.ok(
+    seen.deliveredOnlyTestFile > 0,
+    `no case delivered a test file the merger did not author: ${JSON.stringify(seen)}`
+  );
+  assert.ok(seen.divergent > 0, `the two answers never diverged, so nothing was distinguished: ${JSON.stringify(seen)}`);
 });
