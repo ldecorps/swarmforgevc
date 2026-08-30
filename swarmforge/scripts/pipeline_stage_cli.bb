@@ -61,32 +61,6 @@
       (set (keep #(some-> (read-yaml-field (slurp (str %)) "id") str/upper-case) (fs/glob dir "**.yaml")))
       #{})))
 
-;; BL-670: how many times this ticket has been sent back, from the ticket's
-;; own `bounce_history:` - BL-635's recorder writes it and it is populated in
-;; production today, so the health dot needs no new store.
-;;
-;; The LIST is counted rather than the `bounce_count:` scalar beside it: the
-;; list is the evidence and the scalar is a summary of it, and when a summary
-;; and its evidence disagree the evidence is the one to believe. A ticket with
-;; no bounces has neither field, which counts as zero without a special case.
-(defn- bounce-count-in [yaml-text]
-  (->> (str/split-lines yaml-text)
-       (drop-while #(not (str/starts-with? % "bounce_history:")))
-       rest
-       (take-while #(re-matches #"^\s+-\s.*" %))
-       count))
-
-(defn- ticket-health-dots [project-root]
-  (let [dir (fs/path project-root "backlog" "active")]
-    (if-not (fs/exists? dir)
-      {}
-      (into {}
-            (keep (fn [f]
-                    (let [text (slurp (str f))]
-                      (when-let [id (some-> (read-yaml-field text "id") str/upper-case)]
-                        [id (pipeline-stage-lib/health-dot-for-bounces (bounce-count-in text))])))
-                  (fs/glob dir "**.yaml"))))))
-
 ;; Duplicated from chase_sweep_lib.bb's own (private) list-handoff-files/
 ;; list-batch-dirs/list-handoff-files-with-batches/read-header-field rather
 ;; than cross-namespace-coupled to them - the same small-duplication
@@ -138,75 +112,22 @@
 ;; ticket observed at two roles to a single most-downstream role, which is
 ;; the transition window this makes more common - not a new case - so
 ;; BL-464's double row cannot return through it.
-;; BL-670: the DURABLE trail (:sent) joins the two live states. A ticket
-;; nothing currently holds - every in_process and new/ box empty, which is
-;; ordinary between a forward and the next role waking - had no observation
-;; at all and fell out of the map entirely, so the board went blind on it.
-;; The sent/ trail is where it last was, it is already written for every
-;; pipeline role, and handoff_lib's mailbox-dir already resolves :sent, so
-;; this reads a store with a live writer rather than depending on new work.
-(def ^:private scanned-mailbox-states [:new :in_process :sent])
-
-;; What each mailbox state means ABOUT the ticket, which is the whole of
-;; BL-670's semantics half:
-;;   in_process - a role has opened it. It is being worked.
-;;   new        - it has been delivered to a role that has not opened it yet.
-;;   sent       - nobody holds it here; this is only where it went last.
-(def ^:private state->status
-  {:in_process pipeline-stage-lib/claimed-status
-   :new pipeline-stage-lib/in-transit-status
-   :sent pipeline-stage-lib/last-known-status})
-
-;; WHOSE stage a parcel in this state names. A parcel in a role's own inbox
-;; names that role; a parcel in its SENT box names the role it was sent TO -
-;; the trail records where the ticket went, not where it came from, and
-;; reading the mailbox owner there would park every finished ticket back on
-;; whoever last touched it.
-(defn- role-for-observation [role-info state file]
-  (if (= state :sent)
-    (some-> (read-header-field file "to") (str/split #",") first str/trim not-empty)
-    (:role role-info)))
-
-;; As-of: the parcel's own recorded time, falling back to the file's mtime.
-;; A header is preferred because it is the moment the parcel was created,
-;; which is what "as of" means to a reader; mtime is the honest fallback for
-;; an older parcel written before the header existed.
-(defn- as-of-for [file]
-  (or (read-header-field file "enqueued_at")
-      (read-header-field file "created_at")
-      (str (java.time.Instant/ofEpochMilli (fs/file-time->millis (fs/last-modified-time file))))))
-
-(defn- observations-for-state [role-info state]
-  (->> (list-handoff-files-with-batches (str (handoff-lib/mailbox-dir role-info state)))
-       (keep (fn [f]
-               (when-let [ticket-id (pipeline-stage-lib/ticket-id-from-headers
-                                     {:task (read-header-field f "task")
-                                      :message (read-header-field f "message")})]
-                 (when-let [role (role-for-observation role-info state f)]
-                   {:role role
-                    :ticket-id ticket-id
-                    :status (get state->status state)
-                    :as-of (as-of-for f)}))))))
+(def ^:private scanned-mailbox-states [:new :in_process])
 
 (defn- role-ticket-pairs-for [role-info]
-  (mapcat (fn [state] (observations-for-state role-info state)) scanned-mailbox-states))
+  (->> scanned-mailbox-states
+       (mapcat (fn [state] (list-handoff-files-with-batches (str (handoff-lib/mailbox-dir role-info state)))))
+       (map (fn [f] {:task (read-header-field f "task") :message (read-header-field f "message")}))
+       (keep pipeline-stage-lib/ticket-id-from-headers)
+       (map (fn [ticket-id] {:role (:role role-info) :ticket-id ticket-id}))))
 
 (defn compute-stage-map [project-root]
   (let [roles (handoff-lib/load-all-roles project-root)
         role-order (mapv :role roles)
-        pairs (mapcat role-ticket-pairs-for roles)
-        dots (ticket-health-dots project-root)]
-    (->> (pipeline-stage-lib/filter-active
-          (pipeline-stage-lib/reconcile-stage-entries pairs role-order)
-          (active-ticket-ids project-root))
-         ;; The dot travels WITH the stage, in the one map both consumers
-         ;; read, so the board and BL-659's completion ring cannot end up
-         ;; painting a ticket's health from two different counts.
-         (reduce-kv (fn [acc ticket-id entry]
-                      (assoc acc ticket-id
-                             (assoc entry :healthDot (get dots ticket-id
-                                                          pipeline-stage-lib/health-dot-green))))
-                    {}))))
+        pairs (mapcat role-ticket-pairs-for roles)]
+    (pipeline-stage-lib/filter-active
+     (pipeline-stage-lib/reconcile-stage-map pairs role-order)
+     (active-ticket-ids project-root))))
 
 (defn atomic-spit! [path content]
   (fs/create-dirs (fs/parent path))

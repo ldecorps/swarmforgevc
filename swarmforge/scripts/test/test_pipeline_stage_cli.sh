@@ -8,10 +8,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI="$SCRIPT_DIR/../pipeline_stage_cli.bb"
-# BL-670: the map's VALUE is now {stage, status, asOf, healthDot}, not a bare
-# role string, so these assertions match on the entry's stage field rather than
-# on the whole value. Matching a prefix keeps them indifferent to the other
-# fields, which is what lets a later ticket add one without touching this file.
 fail=0
 note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
@@ -65,7 +61,7 @@ mkdir -p "$DIR"
 printf 'from: coordinator\nto: coder\ntype: note\npriority: 10\nmessage: BL-434 promoted to active/ — starting now\n\nRe-read your role and constitution.\n\nBL-434 promoted to active/ — starting now\n' > "$DIR/10_note.handoff"
 OUT="$(run_cli report)"
 check "board-authoritative-stage-01: a note-kicked-off ticket is visible at the coder stage" \
-  '[[ "$OUT" == *"\"BL-434\":{\"stage\":\"coder\""* ]]'
+  '[[ "$OUT" == *"\"BL-434\":\"coder\""* ]]'
 rm -rf "$ROOT"
 
 # ── board-authoritative-stage-02/03: the same ticket observed in_process at
@@ -79,7 +75,7 @@ printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-46
 printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-460-tmp-sweeps\ncommit: 2234567890\n\nmerge_and_process coder 2234567890\n' > "$CLEANER_DIR/50_b.handoff"
 OUT="$(run_cli report)"
 check "board-authoritative-stage-02/03: a ticket in_process at two roles at once resolves to exactly one stage" \
-  '[[ "$OUT" == *"\"BL-460\":{\"stage\":\"cleaner\""* ]] && [[ "$OUT" != *"\"BL-460\":{\"stage\":\"coder\""* ]]'
+  '[[ "$OUT" == *"\"BL-460\":\"cleaner\""* ]] && [[ "$OUT" != *"\"BL-460\":\"coder\""* ]]'
 rm -rf "$ROOT"
 
 # ── board-authoritative-stage-04: a ticket held only via a note (never a
@@ -92,7 +88,7 @@ mkdir -p "$DIR"
 printf 'from: coordinator\nto: specifier\ntype: note\npriority: 10\nmessage: BL-450 needs a follow-up spec amendment\n\nRe-read your role and constitution.\n\nBL-450 needs a follow-up spec amendment\n' > "$DIR/10_note.handoff"
 OUT="$(run_cli report)"
 check "board-authoritative-stage-04: a note-only-held ticket (no task header anywhere) still resolves" \
-  '[[ "$OUT" == *"\"BL-450\":{\"stage\":\"specifier\""* ]]'
+  '[[ "$OUT" == *"\"BL-450\":\"specifier\""* ]]'
 rm -rf "$ROOT"
 
 # ── BL-489: the active-set id join is case-symmetric - a mis-cased
@@ -105,7 +101,7 @@ mkdir -p "$DIR"
 printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-490-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$DIR/50_a.handoff"
 OUT="$(run_cli report)"
 check "BL-489: a lower-cased backlog/active yaml id (bl-490) still resolves the held ticket" \
-  '[[ "$OUT" == *"\"BL-490\":{\"stage\":\"coder\""* ]]'
+  '[[ "$OUT" == *"\"BL-490\":\"coder\""* ]]'
 rm -rf "$ROOT"
 
 mk_fixture
@@ -116,7 +112,7 @@ mkdir -p "$DIR"
 printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-490-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$DIR/50_a.handoff"
 OUT="$(run_cli report)"
 check "BL-489: a mixed-cased backlog/active yaml id (Bl-490) still resolves the held ticket" \
-  '[[ "$OUT" == *"\"BL-490\":{\"stage\":\"coder\""* ]]'
+  '[[ "$OUT" == *"\"BL-490\":\"coder\""* ]]'
 rm -rf "$ROOT"
 
 # ── a batch role's SEVERAL simultaneously in_process tickets each survive ──
@@ -129,7 +125,7 @@ printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-1-th
 printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-2-other\ncommit: 2234567890\n\nmerge_and_process coder 2234567890\n' > "$DIR/50_b.handoff"
 OUT="$(run_cli report)"
 check "a batch role's own batch_* subdirectory tickets are all visible" \
-  '[[ "$OUT" == *"\"BL-1\":{\"stage\":\"cleaner\""* ]] && [[ "$OUT" == *"\"BL-2\":{\"stage\":\"cleaner\""* ]]'
+  '[[ "$OUT" == *"\"BL-1\":\"cleaner\""* ]] && [[ "$OUT" == *"\"BL-2\":\"cleaner\""* ]]'
 rm -rf "$ROOT"
 
 # ── a ticket referenced in_process but no longer in backlog/active/ (e.g.
@@ -157,7 +153,7 @@ check "sync writes the durable store file" '[[ -f "$ROOT/.swarmforge/board/ticke
 check "sync's own stdout matches the persisted file" \
   '[[ "$SYNC_OUT" == "$(cat "$ROOT/.swarmforge/board/ticket-stage-map.json")" ]]'
 check "the persisted store carries the reconciled map" \
-  '[[ "$(cat "$ROOT/.swarmforge/board/ticket-stage-map.json")" == *"\"BL-7\":{\"stage\":\"coder\""* ]]'
+  '[[ "$(cat "$ROOT/.swarmforge/board/ticket-stage-map.json")" == *"\"BL-7\":\"coder\""* ]]'
 # a second sync (ticket now moved on to cleaner) overwrites cleanly, never
 # leaving the stale coder entry behind - idempotent re-sync.
 CLEANER_DIR="$(role_in_process_dir cleaner)"
@@ -166,7 +162,7 @@ rm -f "$DIR/50_a.handoff"
 printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-7-thing\ncommit: 2234567890\n\nmerge_and_process coder 2234567890\n' > "$CLEANER_DIR/50_a.handoff"
 run_cli sync > /dev/null
 check "a re-sync reflects the ticket's NEW stage, dropping the stale one" \
-  '[[ "$(cat "$ROOT/.swarmforge/board/ticket-stage-map.json")" == *"\"BL-7\":{\"stage\":\"cleaner\""* ]]'
+  '[[ "$(cat "$ROOT/.swarmforge/board/ticket-stage-map.json")" == *"\"BL-7\":\"cleaner\""* ]]'
 rm -rf "$ROOT"
 
 # ── BL-1048: a DELIVERED but unopened parcel (inbox/new/) names its role ──
@@ -181,7 +177,7 @@ mkdir -p "$DIR"
 printf 'from: documenter\nto: QA\ntype: git_handoff\npriority: 50\ntask: BL-1037-thing\ncommit: cfd70ed26d\n\nmerge_and_process documenter cfd70ed26d\n' > "$DIR/50_a.handoff"
 OUT="$(run_cli report)"
 check "BL-1048-01: a delivered-but-unopened git_handoff resolves to the role whose new/ holds it" \
-  '[[ "$OUT" == *"\"BL-1037\":{\"stage\":\"QA\""* ]]'
+  '[[ "$OUT" == *"\"BL-1037\":\"QA\""* ]]'
 rm -rf "$ROOT"
 
 # ── BL-1048-01 (master-resident role): the per-role new/ subdirectory is
@@ -193,7 +189,7 @@ mkdir -p "$DIR"
 printf 'from: coordinator\nto: specifier\ntype: git_handoff\npriority: 50\ntask: BL-1043-spec\ncommit: 1234567890\n\nmerge_and_process coordinator 1234567890\n' > "$DIR/50_a.handoff"
 OUT="$(run_cli report)"
 check "BL-1048-01: a master-resident role's own new/ subdirectory is scanned too" \
-  '[[ "$OUT" == *"\"BL-1043\":{\"stage\":\"specifier\""* ]]'
+  '[[ "$OUT" == *"\"BL-1043\":\"specifier\""* ]]'
 rm -rf "$ROOT"
 
 # ── BL-1048-02: a ticket with no parcel in ANY new/ or in_process/ is
@@ -217,7 +213,7 @@ printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-10
 printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-1032-thing\ncommit: 89e04323af\n\nmerge_and_process coder 89e04323af\n' > "$CLEANER_DIR/50_b.handoff"
 OUT="$(run_cli report)"
 check "BL-1048-03: opened upstream + delivered downstream resolves to the later role only" \
-  '[[ "$OUT" == *"\"BL-1032\":{\"stage\":\"cleaner\""* ]] && [[ "$OUT" != *"\"BL-1032\":{\"stage\":\"coder\""* ]]'
+  '[[ "$OUT" == *"\"BL-1032\":\"cleaner\""* ]] && [[ "$OUT" != *"\"BL-1032\":\"coder\""* ]]'
 rm -rf "$ROOT"
 
 # ── BL-1048-03 (same role, both states): a redelivered copy alongside the
@@ -230,13 +226,8 @@ mkdir -p "$NEW_DIR" "$IP_DIR"
 printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-1040-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$IP_DIR/50_a.handoff"
 printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-1040-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$NEW_DIR/50_a.handoff"
 OUT="$(run_cli report)"
-# Exactly ONE entry, and it is the OPENED one: at a single role, "this role
-# has it open" is a truer statement than "a copy is also sitting in its inbox"
-# (BL-670). The one-row guarantee is checked by counting entries rather than by
-# matching the whole string, so the qualifier's other fields do not have to be
-# spelled out here.
 check "BL-1048-03: the same ticket delivered AND opened at one role is that role, once" \
-  '[[ "$OUT" == *"\"BL-1040\":{\"stage\":\"coder\",\"status\":\"claimed\""* ]] && [[ "$(printf %s "$OUT" | grep -o "\"stage\"" | wc -l | tr -d " ")" == "1" ]]'
+  '[[ "$OUT" == "{\"BL-1040\":\"coder\"}" ]]'
 rm -rf "$ROOT"
 
 # ── BL-1048-04: a delivered NOTE names its ticket the same way a delivered
@@ -248,7 +239,7 @@ mkdir -p "$DIR"
 printf 'from: coordinator\nto: hardender\ntype: note\npriority: 10\nmessage: BL-1045 needs a hardening pass\n\nRe-read your role and constitution.\n\nBL-1045 needs a hardening pass\n' > "$DIR/10_note.handoff"
 OUT="$(run_cli report)"
 check "BL-1048-04: a delivered-but-unopened note resolves the same way a handoff does" \
-  '[[ "$OUT" == *"\"BL-1045\":{\"stage\":\"hardender\""* ]]'
+  '[[ "$OUT" == *"\"BL-1045\":\"hardender\""* ]]'
 rm -rf "$ROOT"
 
 # ── BL-1048-05: a delivered parcel naming a ticket no longer in
@@ -274,7 +265,7 @@ printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-1046
 printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-1047-other\ncommit: 2234567890\n\nmerge_and_process coder 2234567890\n' > "$DIR/50_b.handoff"
 OUT="$(run_cli report)"
 check "BL-1048: a delivered batch_* subdirectory's tickets are all visible" \
-  '[[ "$OUT" == *"\"BL-1046\":{\"stage\":\"cleaner\""* ]] && [[ "$OUT" == *"\"BL-1047\":{\"stage\":\"cleaner\""* ]]'
+  '[[ "$OUT" == *"\"BL-1046\":\"cleaner\""* ]] && [[ "$OUT" == *"\"BL-1047\":\"cleaner\""* ]]'
 rm -rf "$ROOT"
 
 if [[ $fail -eq 0 ]]; then
