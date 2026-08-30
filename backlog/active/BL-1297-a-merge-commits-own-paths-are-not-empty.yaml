@@ -175,3 +175,5 @@ notes: |
   standing `human_approval: approved` still covers what was approved; only
   severity, priority and this record changed. Full reasoning:
   backlog/evidence/BL-1295-land-escalate-specifier-adjudication-20260830.md
+
+assigned_to: coder
