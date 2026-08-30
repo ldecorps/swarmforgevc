@@ -36,14 +36,20 @@ function withRoot(fn) {
 // empty file and multi-line content: "appends" and "truncates" agree on an
 // empty prior log, so a generator that only ever drew empty content would
 // pass against the defect.
+//
+// The weights are load-bearing, not decoration. At 1-in-7 over 24 runs the
+// empty-log case is missed about 2.5% of the time, and this file failed its
+// OWN reach floor that way in a full-lane run - a flaky commit gate, which
+// is worse than no floor at all. Weighted 2-in-7 over 40 runs the miss
+// probability is about 4 in a million.
 const PRIOR_LOG = () =>
   fc.oneof(
-    { arbitrary: fc.constant(''), weight: 1 },
+    { arbitrary: fc.constant(''), weight: 2 },
     {
       arbitrary: fc
         .array(fc.stringMatching(/^[A-Za-z0-9 _.:-]{1,40}$/), { minLength: 1, maxLength: 6 })
         .map((lines) => `${lines.join('\n')}\n`),
-      weight: 6,
+      weight: 5,
     }
   );
 
@@ -85,7 +91,7 @@ test('property (invariant 1): a sync-initiated restart never discards a log line
         assert.ok(after.length > prior.length, 'nothing was appended at all');
       });
     }),
-    { numRuns: 24 }
+    { numRuns: 40 }
   );
   assert.ok(nonEmptyPrior > 0, 'generator never produced a non-empty prior log - the only case that can detect truncation');
   assert.ok(emptyPrior > 0, 'generator never produced the empty prior log');
