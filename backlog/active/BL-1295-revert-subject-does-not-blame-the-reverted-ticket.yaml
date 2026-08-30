@@ -127,3 +127,5 @@ notes: |
   This defect recurs on any ticket that is bounced, reverted, reworked and
   re-forwarded - a common path, not an exotic one - so it will not stay
   a one-ticket problem.
+
+assigned_to: coder
