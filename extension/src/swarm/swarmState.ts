@@ -204,20 +204,29 @@ export interface TicketStageEntry {
  * predates the qualifier. An entry with no status is reported as `last-known`,
  * which is the honest reading of "we know where it was and nothing more".
  */
+function normaliseBareRoleStage(value: string): TicketStageEntry | undefined {
+  return value ? { stage: value, status: TICKET_STAGE_STATUS_LAST_KNOWN } : undefined;
+}
+
+function normaliseObjectStage(value: object): TicketStageEntry | undefined {
+  const entry = value as Partial<TicketStageEntry>;
+  if (typeof entry.stage !== 'string' || !entry.stage) {
+    return undefined;
+  }
+  return {
+    stage: entry.stage,
+    status: (entry.status as TicketStageStatus) ?? TICKET_STAGE_STATUS_LAST_KNOWN,
+    asOf: entry.asOf,
+    healthDot: entry.healthDot,
+  };
+}
+
 export function normaliseTicketStageEntry(value: unknown): TicketStageEntry | undefined {
   if (typeof value === 'string') {
-    return value ? { stage: value, status: TICKET_STAGE_STATUS_LAST_KNOWN } : undefined;
+    return normaliseBareRoleStage(value);
   }
   if (value && typeof value === 'object') {
-    const entry = value as Partial<TicketStageEntry>;
-    if (typeof entry.stage === 'string' && entry.stage) {
-      return {
-        stage: entry.stage,
-        status: (entry.status as TicketStageStatus) ?? TICKET_STAGE_STATUS_LAST_KNOWN,
-        asOf: entry.asOf,
-        healthDot: entry.healthDot,
-      };
-    }
+    return normaliseObjectStage(value);
   }
   return undefined;
 }
