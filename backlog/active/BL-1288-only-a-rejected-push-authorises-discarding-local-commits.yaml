@@ -212,3 +212,16 @@ occurrences:
 
 
 assigned_to: coder
+
+abandoned_commits: [a71af8ba58]
+# QA landed this ticket tip-pure on 2026-08-30 (BL-1241 remedy): the
+# documenter's cumulative QA-branch tip (a71af8ba58) carried unlanded BL-1299
+# work and a stray BL-1295 confirmation-note file as ancestors/co-changes,
+# neither of them BL-1288's own. land_step_cli.bb's own successful run built
+# `land-replay/BL-1288-a71af8ba58` -> 16570bc52b, tip-pure onto origin/main,
+# containing only BL-1288's own attributed paths (byte-identical to
+# a71af8ba58's own diff, independently verified). A same-args re-run hit the
+# known BL-1298 linked-worktree/leftover-branch friction (LAND_ESCALATE citing
+# BL-1295, which is misleading — BL-1295's substantive work already landed as
+# a passenger of BL-1297; only its own confirmation-note file was excluded).
+# Landed commit: 16570bc52b. See backlog/evidence/BL-1288-qa-pass-20260830.md.

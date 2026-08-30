@@ -24,6 +24,12 @@ one shared primitive (`rematch-with-push-first!` in
 - **Push is rejected (non-fast-forward)** — origin has genuinely diverged.
   Today's reset proceeds exactly as before; this is the real "colliding"
   case the reset path exists for, unchanged.
+- **Push fails for any other reason** (remote unreachable, no credentials,
+  network down, hook policy) — as of [BL-1288](BL-1288-only-a-rejected-push-authorises-discarding-local-commits.md),
+  this is no longer treated as divergence. The commits are kept and the
+  push's own error is returned as `{:success false :outcome
+  :push-unavailable :error <the push's own error>}`. Only a recognised
+  non-fast-forward rejection reaches the reset.
 
 ## Where it lives
 
@@ -58,6 +64,7 @@ push-succeeds scenario through real git.
 
 ## Related
 
+- [BL-1288 only a rejected push may authorise discarding local-ahead commits](BL-1288-only-a-rejected-push-authorises-discarding-local-commits.md)
 - [BL-1214 `:ff-absorb` attempts a real 3-way merge before resetting local main away](BL-1214-ff-absorb-attempts-real-merge-before-reset.md)
 - [BL-891 master-main reconcile](BL-891-master-main-reconcile-sweep.md)
 - [BL-1141 refuse-rematch executes live](BL-1141-bl1138-residual-refuse-rematch-not-executed.md)
