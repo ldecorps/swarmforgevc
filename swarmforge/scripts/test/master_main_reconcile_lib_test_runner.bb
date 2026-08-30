@@ -1085,6 +1085,27 @@
 (assert= "bl1288: :push-unavailable does not end as a durable deadlock" false
          (boolean (master-main-reconcile-lib/designed-end-state-is-deadlock-tripped? "push-unavailable")))
 
+;; BL-1288: the surfaced note. surface-message is a `case` with no default,
+;; so a reason with no branch THROWS inside the daemon's sweep rather than
+;; returning nil - and :push-unavailable is a reason this library now
+;; produces. "The reconcile does nothing and SAYS WHY" needs a note that
+;; exists, names the push, and fits the 80-char note limit.
+(let [msg (master-main-reconcile-lib/surface-message {:behind 3 :reason :push-unavailable})]
+  (assert-true "bl1288: :push-unavailable surfaces a note at all" (string? msg))
+  (assert-true "bl1288: the surfaced note names the push" (clojure.string/includes? msg "push"))
+  (assert-true "bl1288: the surfaced note says no reset happened" (clojure.string/includes? msg "not reset"))
+  (assert-true "bl1288: the surfaced note stays within the 80-char limit" (<= (count msg) 80)))
+(let [msg (master-main-reconcile-lib/surface-message {:behind 123456789 :reason :push-unavailable})]
+  (assert-true "bl1288: the note still fits when `behind` is long" (<= (count msg) 80)))
+
+;; And the push's reason reaches the log the operator reads, rather than
+;; stopping at the result map.
+(let [tail (master-main-reconcile-lib/merge-failure-log-tail
+            :push-unavailable "Could not resolve host: example.invalid")]
+  (assert= "bl1288: the log tail names the reason" "push-unavailable" (first tail))
+  (assert-true "bl1288: the log tail carries the push's own error"
+               (some #(= "Could not resolve host: example.invalid" %) tail)))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")

@@ -398,7 +398,15 @@
         (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted"))
       :verdict-unavailable
       (let [msg (str "BL-1236: merge verdict unavailable, " behind " behind origin - not reset")]
-        (if (<= (count msg) 80) msg "BL-1236: merge verdict unavailable - not reset")))))
+        (if (<= (count msg) 80) msg "BL-1236: merge verdict unavailable - not reset"))
+      ;; BL-1288: this `case` has no default, so a reason this library can
+      ;; itself produce and has no branch for does not surface a nil note -
+      ;; it THROWS, inside the daemon's sweep. :push-unavailable is a reason
+      ;; this library now produces, so it gets a branch here rather than
+      ;; relying on which caller happens to relabel it first.
+      :push-unavailable
+      (let [msg (str "BL-1288: push failed, not a rejection, " behind " behind - not reset")]
+        (if (<= (count msg) 80) msg "BL-1288: push failed, not a rejection - not reset")))))
 
 (defn surface-draft-lines
   "A `note` to the coordinator only - reconciling the master checkout's own
