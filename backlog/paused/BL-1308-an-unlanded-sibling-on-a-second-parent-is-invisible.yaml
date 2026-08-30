@@ -1,0 +1,179 @@
+id: BL-1308
+title: "The land step's sibling detector walks first-parent while its replay path set spans second parents, so an unlanded ticket's content can enter a replay tip that never names it"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: [BL-1241, BL-1297]
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature
+
+invariants:
+  - "Every ticket whose content the replay tip adds over origin/main is named in the same run's sibling report."
+  - "The commit set the sibling detector walks includes every commit the replay's own-path diff can draw content from."
+
+source: |
+  Found 2026-08-30 by QA while executing the BL-1241 land remedy on BL-1307's
+  documenter tip bd27e884cb. Evidence:
+  backlog/evidence/BL-1307-qa-hold-land-step-blind-spot-20260831.md (written in
+  the QA worktree). Independently re-verified by the specifier against git
+  before minting - see "Verified by hand" below.
+
+description: |
+  ## What is wrong
+
+  BL-1241's land remedy has two halves, and they answer over different sets of
+  commits.
+
+  The sibling DETECTOR, `entangled-siblings` in
+  `swarmforge/scripts/land_step_lib.bb`, gets its candidates from
+  `ancestry-commits`, which runs
+  `git rev-list --first-parent origin/main..<tip>` (land_step_lib.bb:71-72,
+  used at :165).
+
+  The replay's own-path set comes from `task-tagged-changed-paths` ->
+  `own-commit-changed-paths` under `:delivered`, which for a merge diffs it
+  against its FIRST parent (task_scope_gate_lib.bb:363-364). That is a real
+  two-tree diff, so it returns everything the merge's SECOND parent brought
+  in - regardless of which ticket authored it.
+
+  A role's forward-merge takes its subject from the ticket it is forwarding.
+  When an earlier ticket is still parked upstream and never received a tagged
+  merge of its own, its commits ride into that forward-merge on the second
+  parent. The path set pulls its files in; the detector, walking first-parent
+  only, never sees a commit whose subject names it. The detector
+  under-includes in precisely the place the path set over-includes, so the
+  safety net has a hole the exact shape of the thing it exists to catch.
+
+  The result is a replay tip that adds another ticket's content while
+  reporting no entanglement with it. Landing it as cited ships that ticket's
+  code past whatever was holding it - in the observed case, past a pending
+  human approval.
+
+  ## Verified by hand, at the literal 2026-08-30 shape
+
+  Cited tip `bd27e884cb` (BL-1307, documenter forward), specifier re-ran each
+  check rather than taking the report on trust:
+
+  - `git rev-list --first-parent origin/main..bd27e884cb` matching BL-1300's
+    commits `9553cf9354` / `3fe063d3ad` -> **0 hits**.
+  - `git merge-base --is-ancestor` for both of those commits against
+    `bd27e884cb` -> **both are ancestors**. So they are reachable, just not on
+    the first-parent walk.
+  - The land step reported `ENTANGLED_SIBLING` for BL-1288, BL-1293 and
+    BL-1299, and **never named BL-1300**.
+  - The replay tip `c251bb4b666d` contains four BL-1300 files, including
+    `extension/test/bl1300HeadroomProofIsPinned.test.js` and a +107-line change
+    to `specs/pipeline/steps/bl1227BootPrefixLiveBudgetCheckSteps.js`.
+  - `git cat-file -e origin/main:extension/test/bl1300HeadroomProofIsPinned.test.js`
+    -> **absent from origin/main**.
+  - BL-1300 carries `human_approval: pending`, deliberately held for a human
+    ruling. Landing the replay as cited would have shipped it unapproved.
+
+  ## This is not BL-1297, and not BL-1272
+
+  Both are already closed or open on neighbouring behaviour; neither covers
+  this, and merging them would lose the distinction:
+
+  - **BL-1297** (done) fixed `own-commit-changed-paths` returning *nothing*
+    for a merge. Its fix is what gives `:delivered` a real first-parent diff -
+    correct for the land step, which genuinely wants "what did this parcel put
+    on the branch". This ticket is the residual that fix leaves behind: the
+    path set now sees across the second parent, and the detector still does
+    not.
+  - **BL-1272** (paused) is the opposite direction - a sibling already landed
+    being reported as STILL entangled, a false positive. This is a false
+    NEGATIVE. Both live in `land_step_lib.bb`, so they are not orthogonal:
+    do not run them concurrently.
+
+  ## How (direction, not mandate)
+
+  Two coherent shapes. Either satisfies both invariants; pick one and make the
+  tree say which:
+
+  1. **Widen the detector to match the path set.** Give sibling detection a
+     candidate walk that reaches the commits `:delivered` can draw from -
+     i.e. stop walking first-parent for DETECTION, while leaving
+     `own-commit-changed-paths` alone. The cost to weigh is noise: a full
+     ancestry walk names more siblings, some long since landed, which is
+     exactly the false-positive pressure BL-1272 is already about.
+  2. **Narrow the replay to match the detector.** Keep the walk, and instead
+     refuse to put a path into the replay tip when that path is absent from
+     `origin/main` and not attributable to a named ticket - a fail-closed
+     escalation rather than a silent inclusion.
+
+  Shape 2 is the smaller change and fails closed, which is the posture the rest
+  of this lib already takes. Shape 1 addresses the reporting gap at its root
+  but drags BL-1272's noise problem forward. The coder and architect decide;
+  this ticket does not mandate either.
+
+notes: |
+  ## Why there is no required_wiring on this ticket [2026-08-30 specifier]
+
+  Deliberately absent, not forgotten. Per BL-1235 a `required_wiring` anchor
+  proves wiring only when it names a call from a pre-existing live consumer.
+  Both candidates here fail that test:
+
+  - `land_step_cli.bb` already calls `entangled-siblings`/`land-plan` today, so
+    any anchor on that call matches identically before and after the fix - it
+    gates nothing.
+  - An entry naming this ticket's own acceptance handler in
+    `specs/pipeline/steps/index.js` is satisfied by the parcel's own diff, the
+    exact fail-open shape BL-1235 documents.
+
+  This is a fix inside an already-wired lib; there is no new call site to
+  prove. Declaring a vacuous anchor to bank a green would be worse than
+  declaring none.
+
+  ## In-parcel obligation: the handler must land with the feature
+
+  `specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature`
+  is a live `.feature`, not a draft. Its step handler
+  (`bl1308SiblingDetectorCoversReplaySteps.js` by the usual convention) must be
+  written AND registered in `specs/pipeline/steps/index.js` in the same commit,
+  or the acceptance runner hard-fails for every other parcel in flight
+  (BL-233).
+
+  ## Full stage chain is deliberate
+
+  `required_stages` lists all six even though the change is small. BL-1306's
+  handoff-audit defect means a `required_stages` reroute never queues the
+  handoff; declaring the full chain sidesteps that entirely. Do not "optimise"
+  this to a shorter chain until BL-1306 is fixed.
+
+  ## e2e procedure for QA
+
+  Build a throwaway fixture repo (not the live one) with a bare origin:
+
+  1. Commit ticket Y's work as ordinary untagged commits on a role branch.
+  2. On a later branch, merge that branch in with a merge subject naming
+     ticket X only - the forward-merge shape.
+  3. Run `bb swarmforge/scripts/land_step_cli.bb X <tip> <fixture-root>`.
+  4. Assert Y appears in the sibling report, and that the replay tip adds no
+     path absent from origin/main that the report did not name.
+  5. Regression: re-run the BL-1241 and BL-1272 suites and confirm the plain
+     `:land` path for an unentangled tip is unchanged.
+
+  The live-repo confirmation is the BL-1307 shape itself: once BL-1300 has
+  landed the original reproduction is gone, so capture it in the fixture
+  first.
+
+human_approval: pending
+
+approval_context: >
+  Minted from a QA hold, not from an intake. QA verified BL-1307's own work as
+  fully green and correctly declined both to bounce it (no role in its chain
+  owns this tooling) and to hand-roll the replay (QA.prompt forbids it). The
+  specifier re-verified every git claim independently before minting; the
+  mechanism is confirmed, not suspected.
+
+  Nothing here needs a design ruling from you - the two implementation shapes
+  are the coder's and architect's call, which is why no ruling_options are
+  declared. What is worth your eye is the severity: this silently ships an
+  unapproved ticket's code past a human-approval gate, which is why it is
+  `high` and priority 5 rather than triaged with the ordinary defect queue.
