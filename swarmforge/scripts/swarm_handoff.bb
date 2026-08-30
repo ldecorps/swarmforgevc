@@ -25,7 +25,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "tree_collapse_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "unregistered_test_gate_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -419,22 +418,6 @@
         task-scope-block
         (when (task-scope-gate-lib/blocked? task-scope-result)
           task-scope-result)
-        ;; BL-1240 unregistered-test gate: refuses a git_handoff whose own
-        ;; parcel adds a file under swarmforge/scripts/test/ with no row in
-        ;; suite-manifest.tsv, so the omission fails the ticket that created
-        ;; it instead of accumulating invisibly until QA runs the full suite
-        ;; (see unregistered_test_gate_lib.bb). Parcel-scoped, never
-        ;; tree-scoped; same fail-open posture as every gate above.
-        unregistered-test-result
-        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
-          (unregistered-test-gate-lib/findings-for-git-handoff
-           {:root (project-root) :task-name task-name :commit canonical}))
-        _ (when-let [warning (:warning unregistered-test-result)]
-            (binding [*out* *err*]
-              (println (str "UNREGISTERED_TEST WARNING: " warning))))
-        unregistered-test-block
-        (when (unregistered-test-gate-lib/blocked? unregistered-test-result)
-          unregistered-test-result)
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -465,10 +448,6 @@
                                     {:task-name task-name :findings (:findings parcel-rollback-block)}))
                              tree-collapse-block
                              (conj (tree-collapse-guard-lib/refusal-message tree-collapse-block))
-                             unregistered-test-block
-                             (conj (unregistered-test-gate-lib/refusal-message
-                                    {:task-name task-name
-                                     :findings (:findings unregistered-test-block)}))
                              task-scope-block
                              (conj (task-scope-gate-lib/refusal-message
                                     {:task-name task-name

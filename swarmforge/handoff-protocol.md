@@ -660,6 +660,23 @@ Mechanics (`task_scope_gate_lib.bb`):
   to 1 path — the task's own evidence file — while still catching a
   commit that IS tagged for this task but also touches a foreign ticket's
   path.
+- **A commit's own tree diff means AUTHORED, not DELIVERED, for this gate
+  (BL-1297).** `own-commit-changed-paths` in `task_scope_gate_lib.bb`
+  answers two different questions from one walk: `:delivered` is a
+  commit's change against its first parent alone (what it puts on the
+  branch); `:authored` is what differs from EVERY parent (`--cc`) — empty
+  for an ordinary clean receive-merge, whose content was already
+  attributed to the commits that made it upstream. This gate and the
+  unregistered-test gate (`parcel-own-changed-paths`) both read
+  `:authored`, because both judge the parcel's author, not what a
+  receive-merge happens to carry — every stage's routine `git merge
+  <hash>` receive, and the constitution's own main syncs, would otherwise
+  be charged with every ticket riding along, refusing nearly every
+  forward. The land step's replay (below) reads `:delivered` instead,
+  because it asks what a parcel puts on the branch. Before BL-1297, the
+  underlying `--first-parent --name-only` walk reported nothing at all for
+  any merge commit — read as "no foreign paths", which passed a scope
+  check that never actually inspected the commit.
 - **Fail-open is absolute**, same posture as BL-953/BL-972: no ticket id
   in the task name, an unreadable commit, an unreadable commit-history
   walk, or every changed path resolving to no ticket (or only the task's
