@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ea3497013fa426298b861b07b97f7ed7ba6860e33fde0c3e68343ca1b033f4f3
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T21:29:22.478248245Z","feature_name":"A reverse hop never targets a role whose worktree is the master checkout","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1299-reverse-hop-skips-master-resident-roles.feature","background_hash":"7def858a6d99f243feec45d54e5269809da96c9722df9d948c421d637a26818e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"reverse recipients exclude every master-resident role","scenario_hash":"976b871071d4bb4619034446b561c4bf4fd62901e1276e2a01e55552f6fa7316","mutation_count":15,"result":{"Total":15,"Killed":15,"Survived":0,"Errors":0},"tested_at":"2026-08-30T21:29:22.478248245Z"},{"index":3,"name":"master-residency is read from the roles table, not from a role-name list","scenario_hash":"4c5d7879d6e575aebf46d311f08a308c2920e24ae6ad0ecf2307408e2de6861d","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-30T21:27:27.234011282Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A reverse hop never targets a role whose worktree is the master checkout
 
   Reverse git_handoff copies propagate a parcel's tree shape BACKWARD to
@@ -27,6 +32,7 @@ Feature: A reverse hop never targets a role whose worktree is the master checkou
       | cleaner    | back-one  | coder                                            |
       | coder      | back-all  |                                                  |
       | QA         | back-all  | coder, cleaner, architect, hardender, documenter |
+      | hardender  | back-one  | architect                                        |
 
   # BL-1299 reverse-hop-skips-master-resident-roles-02
   Scenario: the specifier is never addressed a reverse copy
