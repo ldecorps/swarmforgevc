@@ -118,6 +118,74 @@ check "05: the seat is unchanged" '[[ "$(seat_model)" == "$before" ]]'
 check "05: no trial was armed" '[[ "$(bb "$CLI" trial status --role coder)" == *"no armed trial"* ]]'
 export MODEL_STEWARD_MEMORY_TOOL="$WORK/memory-ok.js"
 
+# ── 06: `trial go-live` reads the checklist without seating anything (BL-1183) ──
+# Untested until now: the acceptance feature only drives `trial nominate`
+# (the checklist consulted from inside it), never the standalone read-only
+# `trial go-live` subcommand the ticket's own qa_e2e step 3 names ("checklist
+# is readable offline").
+set_candidate_missing() { # candidate row omitted entirely -> no recorded score
+  bb -e "
+(require '[cheshire.core :as json])
+(let [p (str (System/getenv \"MODEL_STEWARD_STATE_DIR\") \"/registry.json\")
+      reg (json/parse-string (slurp p) true)]
+  (spit p (json/generate-string
+           (assoc-in reg [:role_matrix :coder]
+                     [{:provider \"anthropic\" :model \"perm-model\" :score 7 :evidence \"scorecard: perm\"}]))))
+" >/dev/null
+}
+
+set_candidate_evidence() { # score evidence
+  bb -e "
+(require '[cheshire.core :as json])
+(let [p (str (System/getenv \"MODEL_STEWARD_STATE_DIR\") \"/registry.json\")
+      reg (json/parse-string (slurp p) true)]
+  (spit p (json/generate-string
+           (assoc-in reg [:role_matrix :coder]
+                     [{:provider \"anthropic\" :model \"perm-model\" :score 7 :evidence \"scorecard: perm\"}
+                      {:provider \"cerebras\" :model \"trial-model\" :score $1 :evidence \"$2\"}]))))
+" >/dev/null
+}
+
+seed_registry 9 high
+: > "$CALLS"
+
+# -- ready: both scored, both cited -> allowed, nothing seated --------------
+out="$(bb "$CLI" trial go-live cerebras/trial-model --role coder 2>&1)"
+rc=$?
+check "06: a ready pairing exits 0" '[[ "$rc" == "0" ]]'
+check "06: a ready pairing reports satisfied" '[[ "$out" == *"go-live checklist satisfied for coder"* ]]'
+check "06: go-live arms nothing" '[[ "$(bb "$CLI" trial status --role coder)" == *"no armed trial"* ]]'
+check "06: go-live moves no seat" '[[ "$(seat_model)" == "perm-model" ]]'
+check "06: go-live runs no memory transfer" '[[ ! -s "$CALLS" ]]'
+
+# -- missing telemetry: candidate has no recorded score at all --------------
+set_candidate_missing
+out="$(bb "$CLI" trial go-live cerebras/trial-model --role coder 2>&1)"
+rc=$?
+check "06: an unscored candidate exits nonzero" '[[ "$rc" != "0" ]]'
+check "06: ...and MISSING names the telemetry gap" '[[ "$out" == *"MISSING trial-comparison telemetry"*"cerebras/trial-model"* ]]'
+check "06: ...and the trailing refusal also names it" '[[ "$out" == *"go-live checklist is not satisfied"* ]]'
+
+# -- missing assessor: scored, but on an opinion rather than a citation -----
+set_candidate_evidence 8 "the operator likes it"
+out="$(bb "$CLI" trial go-live cerebras/trial-model --role coder 2>&1)"
+rc=$?
+check "06: an opinion-only score exits nonzero" '[[ "$rc" != "0" ]]'
+check "06: ...and MISSING names the assessor gap" '[[ "$out" == *"MISSING performance assessor"*"cerebras/trial-model"* ]]'
+seed_registry 9 high  # restore for anything appended after this section
+
+# -- missing --role is refused before anything is read -----------------------
+out="$(bb "$CLI" trial go-live cerebras/trial-model 2>&1)"
+rc=$?
+check "06: a missing --role exits nonzero" '[[ "$rc" != "0" ]]'
+check "06: ...and says so" '[[ "$out" == *"requires --role"* ]]'
+
+# -- a role with no permanent model at all is refused, not NPE'd ------------
+out="$(bb "$CLI" trial go-live cerebras/trial-model --role never-seeded-role 2>&1)"
+rc=$?
+check "06: an unseeded role exits nonzero" '[[ "$rc" != "0" ]]'
+check "06: ...and names the role" '[[ "$out" == *"never-seeded-role has no permanent model"* ]]'
+
 if [[ $fail -eq 0 ]]; then
   note "model_steward trial lifecycle (BL-1182): ALL CHECKS PASSED"
 else
