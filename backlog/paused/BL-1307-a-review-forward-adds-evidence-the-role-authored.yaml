@@ -32,7 +32,9 @@ invariants:
   - "A review role's forward adds an evidence file naming the task being forwarded. Incidental content never satisfies it - not a resolved merge conflict, not a merge of unrelated work, not another task's evidence file."
   - "The gate never refuses a send whose inputs it could not read. Every unreadable-range, missing-mailbox, unknown-role and absent-fact shape fails open, exactly as BL-806 established and BL-1293 preserved."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  refuse the send, like BL-806 and BL-1293 already do
 ruling_options:
   - refuse the send, like BL-806 and BL-1293 already do
   - warn and record only, do not refuse - measure the miss rate first
