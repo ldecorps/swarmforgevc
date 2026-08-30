@@ -155,3 +155,5 @@ notes: |
     helper this ticket is scoped to reuse.
   - [2026-08-29] specifier: no `human_approval` requested - a measured defect
     with a named remedy already built for its two siblings.
+
+assigned_to: coder
