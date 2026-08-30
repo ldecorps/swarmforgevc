@@ -2,8 +2,8 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   parseSwarmIdentityConfPath,
   readEffectiveConfigValue,
@@ -18,7 +18,7 @@ test('parseSwarmIdentityConfPath reads the pack conf path from identity text', (
 });
 
 test('readEffectiveConfigValue prefers pack conf then falls back to tracked', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl584-conf-'));
+  const root = mkTmpDir('sfvc-bl584-conf-');
   fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.mkdirSync(path.join(root, 'packs', 'x'), { recursive: true });

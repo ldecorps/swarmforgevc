@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   parseArgs,
   resolveScanFiles,
@@ -10,7 +10,7 @@ const {
 } = require('../out/tools/thin-main-gate');
 
 function mkExtRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'thin-main-cli-'));
+  const root = mkTmpDir('thin-main-cli-');
   fs.mkdirSync(path.join(root, 'src', 'tools', 'nested'), { recursive: true });
   return root;
 }

@@ -28,10 +28,10 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const fc = require('fast-check');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const GATE = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'specifier_backlog_hygiene_gate.bb');
@@ -71,8 +71,8 @@ function runGate(env, subjectPath, cwd) {
 }
 
 function makeFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1194-property-backlog-'));
-  const published = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1194-property-published-'));
+  const root = mkTmpDir('bl1194-property-backlog-');
+  const published = mkTmpDir('bl1194-property-published-');
   for (const pool of KNOWN_POOLS) {
     fs.mkdirSync(path.join(root, pool), { recursive: true });
     fs.mkdirSync(path.join(published, pool), { recursive: true });

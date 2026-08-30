@@ -36,7 +36,11 @@ function fixtureRootWith(relativePath, contents) {
 
 const RAW_CALL_FILE =
   "const fs = require('fs'); const os = require('os'); const path = require('path');\n" +
-  "const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'x-'));\n";
+  // BL-1280: the `mkdtempSync(` boundary is split so the real-tree scan does
+  // not flag this fixture's DATA as a call site - the file is scanned like
+  // any other rather than being exempted wholesale, which would blind the
+  // guard to a REAL raw call arriving here later. The value is byte-identical.
+  "const dir = fs.mkdtemp" + "Sync(path.join(os.tmpdir(), 'x-'));\n";
 
 const SHARED_HELPER_FILE =
   "const { mkTmpDir } = require('./helpers/tmpDir');\n" + "const dir = mkTmpDir('x-');\n";
