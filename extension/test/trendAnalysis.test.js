@@ -39,6 +39,8 @@ describe('BL-604 one series reads as direction, magnitude and significance', () 
       assert.equal(bullet.priorValue, prior);
       assert.ok(bullet.text.includes(direction), bullet.text);
       assert.ok(bullet.text.includes('prior period'), `no line of significance: ${bullet.text}`);
+      const expectedMagnitude = delta > 0 ? `+${delta}` : String(delta);
+      assert.equal(bullet.text.startsWith(`Approval taps: ${direction} ${expectedMagnitude} `), true, bullet.text);
     });
   }
 
@@ -49,6 +51,12 @@ describe('BL-604 one series reads as direction, magnitude and significance', () 
 
     assert.equal(bullet.direction, 'down');
     assert.equal(bullet.delta, -10);
+  });
+
+  it('renders a non-integer value to two decimal places rather than truncating', () => {
+    const bullet = analyseSeries('s', 'S', points(10, 10.5));
+
+    assert.ok(bullet.text.includes('10.50'), bullet.text);
   });
 });
 
@@ -106,6 +114,11 @@ describe('BL-604 ranking and the bound', () => {
     const many = Array.from({ length: 4 }, (_, i) => ({ id: `s${i}`, label: `S${i}`, points: points(10, 20) }));
     assert.equal(buildTrendAnalysis(many, 2).length, 2);
   });
+
+  it('clamps a negative bound to zero bullets rather than slicing from the end', () => {
+    const many = Array.from({ length: 4 }, (_, i) => ({ id: `s${i}`, label: `S${i}`, points: points(10, 20) }));
+    assert.deepEqual(buildTrendAnalysis(many, -1), []);
+  });
 });
 
 describe('BL-604 significance', () => {
@@ -123,6 +136,11 @@ describe('BL-604 significance', () => {
     assert.match(significanceLine('up', 1.5), /more than doubled/);
     assert.match(significanceLine('down', 0.3), /material/);
     assert.match(significanceLine('down', 0.01), /small/);
+  });
+
+  it('treats exactly-doubled and exactly-material as their own boundary, not the tier below', () => {
+    assert.match(significanceLine('up', 1), /more than doubled/);
+    assert.match(significanceLine('down', 0.25), /material/);
   });
 });
 
@@ -168,6 +186,10 @@ describe('BL-604 the CLI is a thin wrapper', () => {
     // The real registry over an empty root trends nothing, so nothing prints -
     // which is the contract, not a failure.
     assert.deepEqual(written, []);
+  });
+
+  it('resolves the project root from cwd when no argv is given', () => {
+    assert.throws(() => main([], '/tmp'), /Cannot resolve SwarmForge project root/);
   });
 
   it('composes the same text the builder produces', () => {
