@@ -119,6 +119,25 @@ test('the exempt list is exactly the three documented paths - nothing was added 
   ]);
 });
 
+// ── BL-1280: the ENOENT skip is scoped to ENOENT only ──────────────────
+// findRawMkdtempCallSites tolerates a file vanishing between readdir and
+// readFile (a sibling suite's transient fixture, BL-1280) - but only THAT
+// error. A broadened catch that swallowed every read error would also hide a
+// real permission/IO failure behind a silently-clean scan.
+
+test('a non-ENOENT read failure still throws - only a vanished file is tolerated', () => {
+  const root = mkTmpDir('sfvc-mkdtemp-guard-permission-');
+  const unreadable = path.join(root, 'unreadable.test.js');
+  fs.writeFileSync(unreadable, "fs.mkdtempSync(path.join(os.tmpdir(), 'x-'));\n");
+  fs.chmodSync(unreadable, 0o000);
+
+  try {
+    assert.throws(() => findRawMkdtempCallSites(root), (err) => err.code !== 'ENOENT');
+  } finally {
+    fs.chmodSync(unreadable, 0o644);
+  }
+});
+
 // ── BL-420 test-helpers-clean-up-tmp-dirs-03: the actual migration-complete gate ──
 
 test('the real extension/test/ tree has zero raw mkdtemp call sites outside the shared helper', () => {
