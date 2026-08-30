@@ -157,3 +157,5 @@ notes: |
     reply from this seat could take minutes; the turn loop should account
     for that (e.g. an acknowledgement/typing signal) rather than assume a
     fast round trip.
+
+assigned_to: coder
