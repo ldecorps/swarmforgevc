@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=342af3711bb5bebde79ae447f4ae9c41ea22bfa62aa25d5a7e294a905a2df4b0
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T04:35:12.732396288Z","feature_name":"Stamp-off review of Cursor hotfix 2ec06b6ef1 - a dead front-desk feeder must not leave the bridge in queue mode","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature","background_hash":"6c4bb5a56b13c55f6207770041fac8a7fa3d8b19207fba29eae43bc4eec4d2de","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Queue mode is gated on front-desk feeder liveness","scenario_hash":"f92f691fcfa884c3bb2e3ec583597e23875f4754e099715ac7eceb1f98b6c788","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-30T04:35:05.635369156Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Stamp-off review of Cursor hotfix 2ec06b6ef1 - a dead front-desk feeder must not leave the bridge in queue mode
 
   Operator/Cursor hotfix 2ec06b6ef1 is live on main with the trailer
