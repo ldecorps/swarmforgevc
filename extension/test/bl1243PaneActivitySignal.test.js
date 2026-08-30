@@ -16,6 +16,18 @@ const path = require('node:path');
 const { derivePaneActivitySignal } = require('../out/bridge/residentPaneLive');
 const { isPaneActivelyProcessing } = require('../out/panel/agentPaneState');
 
+const UI_SOURCE = path.join(__dirname, '..', 'src', 'bridge', 'residentSpyUiHtml.ts');
+
+// The browser's own resolver, lifted from the UI source rather than restated -
+// a hand-written copy could drift from the rule that actually paints the dot.
+function loadResolver() {
+  const source = fs.readFileSync(UI_SOURCE, 'utf8');
+  const fn = /function resolvePaneStatusKind\(pane, aggregateKind\) \{[\s\S]*?\n  \}/.exec(source);
+  assert.ok(fn, 'resolvePaneStatusKind has moved or been renamed');
+  // eslint-disable-next-line no-new-func
+  return new Function(`${fn[0]}\nreturn resolvePaneStatusKind;`)();
+}
+
 const FIXTURES = path.join(__dirname, '..', '..', 'specs', 'features', 'fixtures', 'BL-970');
 const KINDS = new Set(['ok', 'stale', 'err']);
 
@@ -70,6 +82,19 @@ describe('BL-1243 the per-pane activity signal', () => {
       const signal = derivePaneActivitySignal(fixture(name));
       assert.ok(signal === undefined || KINDS.has(signal), `${name} produced ${signal}`);
     }
+  });
+
+  it('lets a failed poll outrank a pane own healthy signal', () => {
+    // BL-1243 scenario 06: this view repaints the LAST snapshot's panes when a
+    // poll fails, and the per-pane signal is read first - so a tile that was
+    // busy when the bridge went down would stay green for the whole outage.
+    const resolve = loadResolver();
+    const busy = { available: true, activitySignal: derivePaneActivitySignal(fixture('midturn-esc-footer.txt')) };
+
+    assert.equal(resolve(busy, 'err'), 'err', 'a failed poll was painted healthy by a stale per-pane signal');
+    // ...and only a FAILED poll. A merely stale aggregate still yields.
+    assert.equal(resolve(busy, 'stale'), 'ok');
+    assert.equal(resolve(busy, 'ok'), 'ok');
   });
 
   it('lets two panes in the same poll differ', () => {
