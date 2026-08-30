@@ -3,7 +3,8 @@ title: "Specification.MD carries 285 junk copies of one BL-607 paragraph interle
 milestone: M8
 type: defect
 severity: medium
-status: superseded
+status: done
+closed_as: superseded-by-BL-895
 epic: spec-drift-realignment
 human_approval: approved
 priority: 172
@@ -290,3 +291,34 @@ notes: |
 
   status: superseded. Coordinator closes to `backlog/done/M8/`; no QA pass is
   owed, because no parcel was ever forwarded from this ticket.
+
+deprecator_adjudication: |
+  ## RETIRE — executed 2026-08-30 by specifier (Article 3.6)
+
+  This ticket was adjudicated SUPERSEDED on 2026-08-16 (see the disposition
+  block in `notes:` above) and its own closing line asked the coordinator to
+  close it to `backlog/done/M8/`. That move never happened: the ticket sat in
+  `backlog/paused/` for a further fourteen days carrying `human_approval:
+  approved` and a promotable posture, i.e. fully eligible for promotion into a
+  rebuild of work that had already landed. Found by a proactive freshness sweep
+  of the paused pool, not by the promotion gate — the gate only fires when a
+  ticket is actually picked, so a stranded retirement is invisible until then.
+
+  Re-verified before executing the move, rather than trusting the 08-16 note:
+
+  - `6b0c54784` (BL-895's repair) IS an ancestor of `main`.
+  - `backlog/done/M8/BL-895-specification-md-duplicated-bl607-paragraph.yaml`
+    exists — the superseding ticket is itself closed.
+  - `grep -c` for the duplicated BL-607 paragraph in
+    `docs/reference/Specification.MD` prints `1` on the live tree (it printed
+    `286` when this ticket was written). The defect is gone.
+
+  Retired, not reworded (Article 3.6): no scenario is touched and no prose in
+  this file was trimmed — every human sentence is preserved above, appended to
+  only (Article 5.3). The `.feature.draft` is left in place: it was never
+  executable, no runner picks it up, and BL-895's landed parcel is the coverage.
+
+  BL-693 (the standing repeated-paragraph guard) is explicitly NOT superseded
+  and stays live in `backlog/paused/` — re-confirmed present and `status: todo`
+  at retirement time. The recurrence risk remains open and now has nothing in
+  front of it.

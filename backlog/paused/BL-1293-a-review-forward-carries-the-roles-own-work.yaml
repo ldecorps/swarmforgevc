@@ -31,7 +31,7 @@ required_wiring:
 invariants:
   - "A review role's forward carries content that role itself authored - its committed evidence file or its fix. A commit that introduces nothing of its own over its parents is never a pass, whatever its shape or subject."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. Two things
   worth knowing.

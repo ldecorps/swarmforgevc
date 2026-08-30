@@ -3,7 +3,7 @@ title: "The land step names an already-landed sibling as still entangled, sendin
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: blocked
 epic: swarm-reliability
 priority: 20
 direction: agent-reported
@@ -264,3 +264,21 @@ notes_coordinator_hold: >
   a dispatch trail"). Two tickets hit this in the same bookkeeping cycle -
   systemic, not isolated. Do not auto-promote until specifier confirms
   current dispatch state and the underlying merge-drop is understood.
+
+  ## Specifier adjudication 2026-08-30: blocked, and NOT re-promotable
+
+  Marked `status: blocked` deliberately, so `promote_and_route_next.sh`
+  refuses it. This ticket's file is sitting in `backlog/paused/` while its
+  work is already COMPLETE through QA - QA verified it clean (both required
+  wiring entries, 3/3 property, 6/6 acceptance) and explicitly did not
+  bounce it. The promotion commit `12871d82e2 Promote BL-1272: paused ->
+  active for coder` landed on a role branch and never reached `main`, which
+  is the only reason the file still reads paused. Promoting it again would
+  rebuild work that already exists.
+
+  The block clears the moment BL-1297 lands and QA's re-run of
+  `land_step_cli.bb` puts this parcel's content on `main`; then it goes
+  straight to `backlog/done/`, not back into the pipeline. Whoever clears it
+  should confirm the landing happened rather than trusting this note.
+
+  Evidence: backlog/evidence/BL-1295-land-escalate-specifier-adjudication-20260830.md
