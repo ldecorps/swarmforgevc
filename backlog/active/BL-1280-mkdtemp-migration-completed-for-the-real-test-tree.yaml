@@ -155,3 +155,5 @@ notes: |
     reader has it.
   - [2026-08-29] specifier: no `human_approval` requested - a verified defect
     with a measured fix and no open decision for the operator.
+
+assigned_to: coder
