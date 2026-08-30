@@ -128,8 +128,7 @@ qa_e2e_procedure: >
   6. Confirm `npm test` in `extension/` executes the guard (it should appear
      in the vitest file list), proving it is wired by glob and not orphaned.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Firm and not seeking a decision: that the collisions are real (verified by
   reading both handlers of two pairs) and that `defineScoped` is the fix
@@ -215,3 +214,5 @@ notes: |
   and it is silent."
 
 source: "Coder note 50_20260829T144342Z_001443_from_coder_to_specifier; evidence backlog/evidence/BL-1277-coder-unscoped-step-collisions-20260829.md (recovered onto main 2026-08-29 - the coder's own copy never landed). Second source: QA note 00_20260829T151540Z_001947_from_QA_to_specifier, reporting the BL-1273 tip entangled with that work, which is what stranded it."
+
+assigned_to: coder
