@@ -206,13 +206,13 @@
   subject: "Own getUpdates when the front-desk inbound feeder is dead."
   detected_at: 2026-08-28
   state: stamp-open
-  stamp_ticket: BL-1260
+  stamp_ticket: BL-1253
   human_decision: null
   decided_at: null
 - commit: 2b67f4b1a2
   subject: "Freeze the Telegram pipeline board while the pack is asleep."
   detected_at: 2026-08-29
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1283
   human_decision: null
   decided_at: null
