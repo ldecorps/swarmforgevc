@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1182: the day-long best-of-breed model
+trial lifecycle — nominate a candidate against a role, seat it for one
+operating day, then assess: promote if it outranks the permanent model (a
+score tie selects the cheaper `cost_class`), otherwise revert. New `trial
+nominate|status|assess` subcommands on `model_steward_cli.bb`
+(`model_steward_trial_lib.bb` decides, `model_steward_store.bb` persists
+trial state). Production **live** trials are gated separately by BL-1183 —
+this ships the trial state machine itself. `nominate` refuses a candidate
+that is not `certified`, one that is already the role's permanent model, and
+a re-nomination of a model that already lost a trial unless `--evidence`
+names something new, so a losing candidate cannot be silently re-seated
+forever. The permanent model a trial is judged against is resolved as
+whatever a trial already recorded for that role, else the role's live
+ModelFactory seat, else (only for a never-seated role) the top certified
+role-matrix recommendation as a bootstrap — deliberately NOT "the top-scoring
+certified model," since that definition would make every trial unwinnable by
+construction. Agent memory transfers at both trial boundaries (BL-1178) via
+the same bb→compiled-node bridge `handoffd` already uses, running BEFORE
+trial state is persisted or the seat moves so a failed transfer leaves
+neither an armed trial nor a half-moved seat; a promotion owes no boundary
+transfer since the trial model is already seated. See the new "Day-long BoB
+trial lifecycle" section in
+`docs/how-to/BL-547-model-steward-overview.md`. Acceptance:
+`specs/features/BL-1182-day-long-bob-trial-lifecycle.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1232: the morning briefing's
 shift-velocity chart (BL-1184) is readable again — a human-reported intake
 found the Y axis crushed flat by a single outlier day (~415 against an
