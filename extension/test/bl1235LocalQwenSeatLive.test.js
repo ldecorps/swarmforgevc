@@ -168,6 +168,25 @@ describe('BL-1235 the endpoint reading', () => {
     assert.match(reading.probe.reason, /503/);
     assert.match(reading.probe.reason, /server busy/, 'the reason is a bare status code');
   });
+
+  it('truncates an oversized error body rather than posting it whole', async () => {
+    const huge = 'x'.repeat(5000);
+    const reading = await readLocalEndpoint(ENDPOINT, async () => ({
+      ok: false,
+      status: 500,
+      text: async () => huge,
+    }));
+
+    assert.equal(reading.probe.endpointStatus, 'unhealthy');
+    // The reason is the fixed prefix plus AT MOST 200 chars of body - an
+    // untruncated 5000-char body would otherwise ride straight into the
+    // Telegram topic on every failing probe.
+    assert.ok(
+      reading.probe.reason.length < huge.length,
+      `an oversized error body was not truncated: ${reading.probe.reason.length} chars`
+    );
+    assert.match(reading.probe.reason, new RegExp(`x{200}(?!x)`));
+  });
 });
 
 describe('BL-1235 the completion call', () => {
@@ -194,6 +213,23 @@ describe('BL-1235 the completion call', () => {
           text: async () => 'model "qwen3:14b" not found',
         })),
       /model "qwen3:14b" not found/
+    );
+  });
+
+  it('truncates an oversized failure body in the thrown message too', async () => {
+    const huge = 'y'.repeat(5000);
+    await assert.rejects(
+      () =>
+        completeWithLocalModel('qwen3:14b', 'hello', ENDPOINT, async () => ({
+          ok: false,
+          status: 500,
+          text: async () => huge,
+        })),
+      (err) => {
+        assert.ok(err.message.length < huge.length, `the thrown message was not truncated: ${err.message.length} chars`);
+        assert.match(err.message, /y{200}(?!y)/);
+        return true;
+      }
     );
   });
 });

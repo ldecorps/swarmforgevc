@@ -149,6 +149,18 @@ export interface LocalSeatTurnOutcome {
  * message, posted in the same topic — the turn fails visibly, in the one place
  * the person who asked is looking, and no other seat is asked to cover.
  */
+/** deps.readEndpoint, or the real endpoint probe when the caller injects nothing. */
+function resolveReadEndpoint(deps: LocalSeatTurnDeps): () => Promise<LocalEndpointReading> {
+  return deps.readEndpoint ?? (() => readLocalEndpoint());
+}
+
+/** deps.complete, or the real completion call when the caller injects nothing. */
+function resolveComplete(
+  deps: LocalSeatTurnDeps
+): (modelId: string, prompt: string, endpointUrl: string) => Promise<string> {
+  return deps.complete ?? ((m, p, url) => completeWithLocalModel(m, p, url));
+}
+
 export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSeatTurnOutcome> {
   const posted: string[] = [];
   const post = async (message: string): Promise<void> => {
@@ -160,8 +172,7 @@ export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSe
   };
 
   const modelId = resolveLocalSeatModelId(process.env, deps.modelId);
-  const readEndpoint = deps.readEndpoint ?? (() => readLocalEndpoint());
-  const { probe, catalogue } = await readEndpoint();
+  const { probe, catalogue } = await resolveReadEndpoint(deps)();
 
   const turn = decideLocalSeatTurn({
     topicId: deps.topicId,
@@ -180,7 +191,7 @@ export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSe
   }
 
   await post(formatLocalSeatAcknowledgement(turn.modelId));
-  const complete = deps.complete ?? ((m, p, url) => completeWithLocalModel(m, p, url));
+  const complete = resolveComplete(deps);
   try {
     // Trimmed here, not only in the default completion call: a reply of pure
     // whitespace posted into the topic is indistinguishable from a broken
