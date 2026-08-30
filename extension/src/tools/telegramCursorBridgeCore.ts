@@ -25,18 +25,6 @@ export const CURSOR_BRIDGE_TOPIC_NAME = 'Cursor Remote';
 /** Standing Telegram topic for Float Companion / Let's Talk discussion mirror. */
 export const BUBBLE_SUBJECT_ID = 'BUBBLE';
 export const BUBBLE_TOPIC_NAME = 'Bubble';
-/**
- * BL-1235: the local-model seat's own dedicated topic, a THIRD subject in this
- * same map. It is named here, in the module that resolves a topic to a seat,
- * and then deliberately kept OUT of CursorBridgeTopicScope: cursor keeps the
- * usual host topic and the front desk, and must never answer in the local
- * seat's topic. Because `decideInboundGate` ignores anything outside its own
- * scope, leaving QWEN_LOCAL out of that bag is what makes the human's
- * directive structural rather than a filter someone could forget to apply.
- * The seat's own decisions live in localQwenSeat.ts.
- */
-export const QWEN_LOCAL_SUBJECT_ID = 'QWEN_LOCAL';
-export const QWEN_LOCAL_TOPIC_NAME = 'Local Qwen';
 export const TELEGRAM_MESSAGE_MAX_LENGTH = 4096;
 
 export interface CursorBridgeQueuedPrompt {

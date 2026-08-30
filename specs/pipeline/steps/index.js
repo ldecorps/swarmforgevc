@@ -882,8 +882,7 @@ const DOMAINS = [
   require('./bl1232ShiftVelocityChartReadableSteps'),
   require('./bl604MorningBriefingTrendAnalysisSteps'),
   require('./bl1243LiveScreenPerPaneActivitySteps'),
-  require('./bl670PipelineBoardLastKnownStageSteps'),
-  require('./bl1235LocalQwenSeatSteps')
+  require('./bl670PipelineBoardLastKnownStageSteps')
 ];
 
 function registerSteps(registry) {
