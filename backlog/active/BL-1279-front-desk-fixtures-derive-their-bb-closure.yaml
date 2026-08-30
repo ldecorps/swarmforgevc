@@ -175,3 +175,5 @@ notes: |
   - [2026-08-29] specifier: no `human_approval` requested. This is a
     straightforward defect with a verified fix and no open decision for the
     operator - flagging it would add a wait without adding information.
+
+assigned_to: coder
