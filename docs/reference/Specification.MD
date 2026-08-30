@@ -1,24 +1,5 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 30, 2026 (BL-1253: stamp-off of Cursor hotfix
-`2ec06b6ef1` — CONFIRMED. The hotfix stops the Cursor bridge from trusting
-front-desk queue mode when the front-desk poll feeder is dead: queue mode
-drained an already-empty file while the bridge's own heartbeat still looked
-healthy, so the host stayed silent and `/pilot` piled up unanswered in
-Telegram. `extension/src/tools/cursorBridgeInboundQueue.ts` gains
-`frontDeskPollHeartbeatPath` / `readFrontDeskPollHeartbeatMs` over
-`front-desk-poll-heartbeat.json` (returning `null` for a missing or
-unparseable file) and re-evaluates feeder liveness on EVERY poll, not once
-at start, owning `getUpdates` itself whenever the feeder reads stale, absent,
-or unparseable; `start_cursor_bridge.sh` now defaults
-`CURSOR_BRIDGE_INBOUND_QUEUE=0` when the feeder is not live at launch. This
-stamp-off review confirms or refutes landed behavior only — it reimplements
-nothing, and the hotfix ledger row (`backlog/hotfix-ledger.yaml`, commit
-`2ec06b6ef1`) stays `stamp-open` pending a human `certified`/`waived`
-decision (BL-848); green review scenarios never write that decision
-themselves. Acceptance:
-`specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature`.)
-Prior entry —
 **Last Updated:** August 30, 2026 (BL-1250: the expeditor's (BL-567)
 liveness probe now counts ROLES, not processes, fixing a false `degraded`
 verdict on every healthy restart. `probe-liveness` counted every process
