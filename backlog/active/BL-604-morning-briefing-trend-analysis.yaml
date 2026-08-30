@@ -11,15 +11,25 @@ direction: human-requested
 depends_on: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-605]
 assigned_to: specifier
 mutation_cost: medium
+slice_size_envelope: medium
+acceptance: specs/features/BL-604-morning-briefing-trend-analysis.feature
+
+invariants:
+  - "Every bullet's stated direction and magnitude equal computeTrend's own direction and delta for that series - the narrative renders the computed trend and never derives a judgement of its own."
+  - "A series appears in the section if and only if computeTrend returns a direction other than 'unknown' for it - absence of data is never rendered as a finding."
+
+required_wiring:
+  - swarmforge/scripts/briefing_email_lib.bb::trend-analysis-section::the section key must sit in optional-section-adapter-keys or apply-optional-sections never reaches the adapter
+  - swarmforge/scripts/handoffd.bb::trend-analysis-section::the adapter must be wired into briefing-email-sweep! or the section is built and called from nowhere
+
 source: |
   Human, 2026-07-23, epic BL-594: "an analysis of the trend has to be published
   as part of the morning briefing."
 description: |
-  The morning briefing already ships (BL-214/258) with enrichment sections
-  (briefingEnrichment / briefingDigest) and inline rendered diagrams
-  (BL-260/402, CID-attached per BL-286). Add a TREND ANALYSIS section that reads
-  the BL-594 series and produces a short NARRATIVE - not merely re-plots the
-  charts.
+  The morning briefing already ships (BL-214/258) with optional sections and
+  inline rendered diagrams (BL-260/402, CID-attached per BL-286). Add a TREND
+  ANALYSIS section that reads the BL-594 series and produces a short NARRATIVE -
+  not merely re-plots the charts.
 
   "Analysis, not charts" is the load-bearing word. The section states what
   CHANGED and whether it matters, e.g.:
@@ -29,20 +39,82 @@ description: |
     - "Backlog grew net +9 this week; drain is not keeping up" (599)
     - "Median approval latency 6h, one ticket open 3 days" (600)
   Direction + magnitude + a one-line "so what", per series, driven by the SAME
-  trend.ts direction/slope the charts use - the narrative is a rendering of the
-  computed trend, never a second, hand-tuned judgement.
+  computation the charts use - the narrative is a rendering of the computed
+  trend, never a second, hand-tuned judgement.
 
   The analysis-builder is a PURE function over the series (series in, ranked
   narrative bullets out), unit-tested with fixtures - the same pure/impure split
-  the rest of the briefing enrichment uses. Rank by significance so the briefing
+  the rest of the briefing sections use. Rank by significance so the briefing
   leads with the trend that moved most, and stays SHORT (the briefing is a
   phone read, BL-392's bounded-subject discipline applies to the body too).
 
   A series with no producer landed, or too few points to trend, is omitted from
   the narrative rather than reported as "flat/no change" - absence of data is
   not a finding.
-acceptance: |
-  Specifier writes scenarios. Minimum:
+
+  ## Where this plugs in (verified live 2026-08-30, see notes)
+
+  - **The series**: all nine are landed and registered in
+    `extension/src/metrics/trendsBoardRegistry.ts` as `TRENDS_BOARD_SERIES`,
+    each a `TrendsBoardSeriesSource` (`id`, `label`, `producer`, `loadPoints`).
+    That registry is the enumeration - the builder maps over it and carries no
+    per-series list of its own, exactly as BL-603's board does.
+  - **The computation**: `computeTrend` in `extension/src/metrics/trend.ts`.
+    It compares the LATEST period to the one before it and returns
+    `{currentValue, priorValue, delta, direction}` where direction is
+    `up`/`down`/`flat`, or `unknown` when there are fewer than two points.
+    `unknown` is precisely the "not enough data to trend" case, so the omission
+    rule needs no threshold of its own.
+  - **The safe read**: `loadPointsSafely` (`extension/src/metrics/trendsBoard.ts`)
+    already turns a throwing or unlanded loader into an empty series. Reuse it;
+    an empty series then falls out through the `unknown` rule with no extra
+    branch.
+  - **The briefing seam**: `swarmforge/scripts/briefing_email_lib.bb` holds an
+    ordered `optional-section-adapter-keys` vector, and its own comment states
+    the contract - "adding a section later is a new entry in this vector, not a
+    new branch". `handoffd.bb`'s `briefing-email-sweep!` supplies one adapter
+    fn per key; the nine existing siblings are each two lines, e.g.
+    `(defn chase-trend-briefing-section [] (node-tool-line "chase-trend-line.js"))`.
+
+  ## How (direction, not mandate)
+
+  Follow the established section shape rather than inventing one: a pure
+  builder over the registry, a thin compiled CLI under `extension/src/tools/`
+  that prints the section text, a two-line `*-briefing-section` fn in
+  `handoffd.bb` that shells to it, and one new key in
+  `optional-section-adapter-keys`. Per the shared engineering rule the CLI's
+  `main()` is a thin wrapper over exported, testable helpers.
+
+  The ONE naming decision this ticket fixes rather than leaves open is the
+  adapter key: **`:trend-analysis-section`**. It is fixed because
+  `required_wiring:` above is armed against that literal in both files - it is
+  the interface name, not a design choice, and the gate needs something real to
+  check. Everything else (module names, bullet wording, the bound's value, how
+  significance is scored) is the implementer's.
+
+  ## Constraints
+
+  - **The narrative may not disagree with the chart beside it.** Direction and
+    magnitude come from `computeTrend` for the same series; nothing here
+    recomputes, smooths, or re-thresholds them (invariant 1).
+  - **Never substitute a zero, a flat line, or an interpolated point** for a
+    missing one - `trendsBoard.ts` states this rule for the board and it holds
+    verbatim here. A series that cannot be trended is absent from the section,
+    not present as "no change" (invariant 2).
+  - **A failure degrades, never crashes the send** (BL-260 posture). A throwing
+    loader costs its own bullet and nothing else; the briefing still goes out
+    with its other sections intact.
+  - **No new instrumentation.** This is a consumer of the nine landed series.
+    If a series looks wrong, that is its producer's ticket, not this one.
+  - **Bounded.** The briefing is read on a phone. The section declares a
+    maximum number of bullets and stops there, leading with the largest mover.
+
+acceptance_minimums_from_the_approved_spec: |
+  Preserved verbatim from this ticket's own human-approved inline `acceptance:`
+  block, which read "Specifier writes scenarios. Minimum:" - the four minimums
+  below are that block unaltered, and each is mapped to the scenario that now
+  carries it. Nothing was dropped or reworded (Article 5.3).
+
   1. The briefing body gains a trend-analysis section: per landed series, a
      direction + magnitude + one-line significance, derived from trend.ts's own
      slope, not a separate judgement.
@@ -51,11 +123,45 @@ acceptance: |
      "no change".
   4. The analysis builder is pure and unit-tested; a render failure degrades
      the briefing gracefully (BL-260 posture), never crashes the send.
+
+  Mapping: minimum 1 -> scenario 01 (and invariant 1); minimum 2 -> scenario
+  02; minimum 3 -> scenario 03 (and invariant 2); minimum 4 -> scenario 04 plus
+  the pure-builder unit tests. Scenario 05 is additional, not a replacement: it
+  pins that the section reaches the briefing that is actually sent.
+
+qa_e2e_procedure: >
+  (1) The full acceptance for
+  `specs/features/BL-604-morning-briefing-trend-analysis.feature` is green -
+  9 subtests (3 Examples rows in scenario 01, 2 in scenario 03, plus scenarios
+  02, 04 and 05). (2) The two declared invariants each have a coder-authored
+  property test in the parcel, and each is non-vacuous: check the generator
+  actually reaches series of length 0, 1 and many, and both signs of delta -
+  a generator that only ever produces trendable series makes invariant 2
+  vacuous. (3) Compose a real briefing end to end against a fixture target
+  path with all nine series present and confirm the sent BODY carries the
+  section, in `optional-section-adapter-keys` order relative to the other
+  sections - not merely that the CLI prints it when run by hand (this is the
+  BL-419 "shipped, unit-tested, wired nowhere" check, and it is what
+  `required_wiring:` guards from the other side). (4) Break one series' loader
+  deliberately (make it throw) and confirm the briefing still sends, missing
+  only that bullet - the whole section must not vanish and the sweep must not
+  raise. (5) Feed a series exactly one point and confirm no bullet appears for
+  it anywhere in the body, and that no "no change"/"flat" wording is emitted
+  for it. (6) `git diff` for the parcel shows no change under
+  `extension/src/metrics/` that alters an existing series' numbers - this
+  ticket adds a consumer and touches no producer.
+
 out_of_scope: |
   - The charts themselves on the mini app (BL-603 owns that surface).
   - New instrumentation (producer tickets own the series).
   - Emailing anything the briefing does not already email; this is a section
     in the existing morning briefing, not a new message.
+  - Changing `computeTrend` itself. If a two-point delta turns out to be the
+    wrong statistic for the narrative, that is a separate ticket against
+    `trend.ts` affecting the charts too - not something this consumer decides
+    on its own, which would be the exact disagreement invariant 1 forbids.
+  - The night closing-ceremony packet (BL-820) and the daily briefing's other
+    sections. This adds one section beside them and changes none of them.
 
 notes: |
   - [2026-08-29] coordinator: open-slot nudge named this candidate, but the
@@ -77,3 +183,59 @@ notes: |
   - [2026-08-30] coordinator: fifth nudge, same story. Slot filled by
     BL-1284 (Article 3.2.4 expedited defect, severity:high, priority 5)
     before this turn. Still capacity, not inaction.
+  - [2026-08-30] specifier: promoted and routed here to write the scenarios
+    the approved `acceptance:` block delegated. Migrated `acceptance:` from an
+    inline block scalar to a single-line pointer at the new feature file. That
+    migration was mandatory, not cosmetic: a block-scalar `acceptance:` reads
+    as the bare indicator `|` to the gates' ticket reader, so the BL-761
+    acceptance-contract gate fails CLOSED at the documenter->QA hop and the
+    BL-880 pointer gate skips the ticket silently at every earlier hop
+    (backlog-schema.md, BL-624/BL-625). Left as it was, this ticket would have
+    run five stages and then refused to reach QA.
+  - [2026-08-30] specifier: Article 3.6 freshness pass on a ticket written
+    2026-07-23. Verdict AMEND, not retire - the value is fully intact (the
+    human's directive stands, all nine producers landed, and no trend
+    narrative exists anywhere in the tree; greps for `trendAnalysis`,
+    `trend-analysis` and "trend analysis" across `extension/src`,
+    `swarmforge/scripts` and `specs` return nothing). Two premises had gone
+    stale and are corrected above:
+      * "enrichment sections (briefingEnrichment / briefingDigest)" - there is
+        no `briefingEnrichment` module in the tree. The live seam is
+        `briefing_email_lib.bb`'s `optional-section-adapter-keys` vector plus
+        one adapter fn in `handoffd.bb`'s `briefing-email-sweep!`.
+        `briefingDigest.ts` exists but exports only merged/blocked ticket
+        helpers and is not a section registry. Scoping the work to it would
+        have instrumented the wrong layer.
+      * "trend.ts's own slope" - `computeTrend` computes no slope. It is
+        latest-period minus prior-period, with a three-way direction and
+        `unknown` below two points. Said plainly now, because the difference
+        decides what a bullet may claim: `flat` is a finding, `unknown` is not.
+    Both dependency status and both premises were verified by reading the code
+    on main, not from the ticket's own description.
+  - [2026-08-30] specifier: `human_approval` stays `approved` and was
+    deliberately NOT flipped to `pending`. The human approved an `acceptance:`
+    block whose first words are "Specifier writes scenarios" - authorship of
+    the scenarios is what was delegated, so exercising that delegation is not
+    a re-spec. The four approved minimums are preserved verbatim in
+    `acceptance_minimums_from_the_approved_spec:` above and each is mapped to
+    the scenario carrying it; the amendments correct two stale premises and add
+    no scope. Re-asking would re-block a ticket the coordinator has now nudged
+    five times, on a question already answered.
+  - [2026-08-30] specifier: two invariants, both cheap to encode because the
+    builder is pure - generate series arrays and assert the bullet's direction
+    and delta against `computeTrend` on the same input (1), and that inclusion
+    tracks `direction !== 'unknown'` (2). Invariant 2 is the one that most
+    wants a property test rather than more examples: scenario 03 can only ever
+    enumerate 0 and 1 points, while the property covers every series shape,
+    including a long series that legitimately trends to flat.
+  - [2026-08-30] specifier: `required_wiring:` names both halves of the seam
+    because this ticket is the exact BL-419 shape - a builder and CLI that can
+    be complete, unit-tested and green while being called from nowhere. Both
+    entries were run through `pre_qa_gate_lib.bb`'s own `parse-wiring-entry`
+    before commit and both yield `:pattern "trend-analysis-section"`,
+    byte-identical to the literal each file must contain (BL-874/BL-960).
+    That is also why the adapter key is fixed by this ticket rather than left
+    to the implementer.
+  - [2026-08-30] specifier: no `retires:` and no scenario in a sibling feature
+    file is falsified by this work - the BL-603 board keeps publishing the
+    charts unchanged, and this section is additive beside them.
