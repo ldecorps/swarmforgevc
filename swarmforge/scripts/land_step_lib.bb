@@ -93,8 +93,13 @@
   [{:keys [paths complete? same-content?]}]
   (boolean (and complete? (seq paths) (every? same-content? paths))))
 
+;; BL-1297: asks readability through the SAME walk the attribution itself
+;; uses (task_scope_gate_lib.bb's own-commit-changed-paths), never a second
+;; invocation of git. A probe that reads a commit differently from the walk
+;; it is vouching for can call a commit readable whose paths the walk then
+;; silently drops - which is exactly the merge blind spot this ticket fixes.
 (defn- diff-readable? [root commit]
-  (zero? (:exit (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" commit))))
+  (some? (task-scope-gate-lib/own-commit-changed-paths root commit)))
 
 (defn attribution-complete?
   "Every commit in `candidates` that names `sibling-id` can actually be
