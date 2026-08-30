@@ -34,6 +34,16 @@
          nil (unregistered-test-gate-lib/parcel-test-file (str T "/bl1240_x_property_runner.bb")))
 (assert= "test/lib/ holds shared helpers, not tests - the discovery is not recursive"
          nil (unregistered-test-gate-lib/parcel-test-file (str T "/lib/bb_fixture_load_guard.sh")))
+;; The example above is nil for BOTH reasons at once (nested AND fails
+;; test-file?'s own name shape - "lib/..." itself never starts with "test_"),
+;; so on its own it cannot tell whether the nested-path guard is doing
+;; anything. A fixture that isolates the guard needs the RELATIVE PATH,
+;; directory included, to independently satisfy test-file?'s own predicate -
+;; only then does removing the guard change the answer.
+(assert= "a directory itself named test_-prefixed does not make its contents a test file"
+         nil (unregistered-test-gate-lib/parcel-test-file (str T "/test_fixtures/test_helper.sh")))
+(assert= "...same for the _test_runner.bb shape, nested"
+         nil (unregistered-test-gate-lib/parcel-test-file (str T "/lib/nested_test_runner.bb")))
 (assert= "a test file OUTSIDE this tree is another lane's business"
          nil (unregistered-test-gate-lib/parcel-test-file "extension/test/foo.test.js"))
 (assert= "a functional path is not a test file"
