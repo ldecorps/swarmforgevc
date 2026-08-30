@@ -1,6 +1,6 @@
-# Five guarded fixture copy-lists, and a standing test-suite inventory (BL-973)
+# Nine guarded fixture copy-lists, and a standing test-suite inventory (BL-973)
 
-Five fixtures build a disposable root by copying a named list of `.bb` files,
+Nine fixtures build a disposable root by copying a named list of `.bb` files,
 then shell out to a real `bb <entry-point>` subprocess. Babashka resolves
 every `load-file` relative to the loading file, so a file missing from the
 copied set is missing from the fixture, and the subprocess dies at load time —
@@ -34,12 +34,26 @@ each fixture with the entry point it actually drives:
 | `extension/test/readLiveRoleHeldTicketsCli.test.js` | `pipeline_stage_cli.bb` | `BB_FIXTURE_CLOSURE` export (vitest module) |
 | `swarmforge/scripts/test/test_lean_ledger_bb_wiring.sh` | `done_with_current_task.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
 | `swarmforge/scripts/test/lib/operator_runtime_sandbox.sh` | `operator_runtime.bb` | runs the sandbox's own copy function and reads what lands |
+| `swarmforge/scripts/test/test_front_desk_supervisor_bl622_refusal.sh` | `front_desk_supervisor.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
+| `swarmforge/scripts/test/test_front_desk_supervisor_tick.sh` | `front_desk_supervisor.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
+| `swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh` | `front_desk_supervisor.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
+| `swarmforge/scripts/test/test_front_desk_supervisor_fleet_creds.sh` | `front_desk_supervisor.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
 
 The effective list is read **behaviorally** — what the fixture actually
 copies or actually exports — never by grepping its source for a literal. A
 source grep would pass against a stale comment, which is exactly the "kept in
 sync" failure the constitution's engineering article already forbids
 (BL-897).
+
+The four `front_desk_supervisor.bb` fixtures were enrolled later than the
+original five (BL-1279, 2026-08-30): the same rot this table exists to
+prevent — a hand-listed copy-set missing two `load-file` edges,
+`daemon_log_freshness_pulse_lib.bb` and `self_heal_telemetry_lib.bb` — had
+reached these four fixtures unguarded, because BL-973 derived each guarded
+list's *contents* but left *which* fixtures are guarded as this hand-written
+table. That second-order gap (a sixth-or-later fixture rotting unnoticed
+beside a green guard) is not itself closed — deriving fixture membership
+automatically is recorded as a follow-up, not done here.
 
 ## Adding a new load-file dependency upstream
 
