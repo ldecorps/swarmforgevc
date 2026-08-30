@@ -28,7 +28,7 @@ required_wiring:
 invariants:
   - "Every temp root a runner creates is removed on every exit path it controls, and a root left behind by a run that was killed is swept before the next run makes any assertion - nothing traps SIGKILL, so cleanup alone is never sufficient."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. The judgment
   worth a look: 21 files is a lot of near-identical edits, and the guard message

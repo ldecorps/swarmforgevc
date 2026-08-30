@@ -256,6 +256,31 @@
           {:unreadable? true})
         {:base base}))))
 
+;; BL-1295: `git revert` writes the subject `Revert "<original subject>"`,
+;; so a revert inherits the reverted commit's ticket id VERBATIM. A revert
+;; of a MERGE undoes everything that merge carried, so its diff names every
+;; path the merge touched - including other tickets' files - and the gate
+;; refused the send on the strength of a commit that only REMOVED content.
+;; Observed live on BL-1240, blocked at the documenter to QA hop by
+;; `3825f91cd Revert "Merge documenter BL-1240 0ca3bc03c0 into QA. By QA."`,
+;; whose diff names docs/how-to/BL-973-....md. No ticket field could exempt
+;; it: abandoned_commits rewrites the walk's BASE only when the base itself
+;; is listed, and the acceptance/retires path exemptions would have to claim
+;; scope the ticket does not own.
+;;
+;; The QUOTING is the signal, not the word. A hand-written subject that
+;; merely begins with "Revert" is a real commit by whoever wrote it and
+;; stays attributed - exempting too broadly would let genuine foreign scope
+;; through, which is the failure direction that actually matters here.
+(defn revert-subject? [subject]
+  (boolean (and subject (re-find #"(?i)^\s*revert\s+\"" subject))))
+
+;; Pure half of commit-message-names-task? below, so the attribution rule is
+;; asserted directly on subjects rather than only through a git fixture.
+(defn subject-names-task? [subject task-ticket-id]
+  (and (not (revert-subject? subject))
+       (= task-ticket-id (pipeline-stage-lib/extract-ticket-id subject))))
+
 (defn- commit-message-names-task? [root commit task-ticket-id]
   ;; SUBJECT-only, PRIMARY (first-mentioned) ticket id only - via
   ;; pipeline-stage-lib's single-match extract-ticket-id, never
@@ -273,9 +298,11 @@
   ;; subject names), matching this task_commit_coherence_gate_lib.bb's own
   ;; different, multi-id "does the subject name several tickets"
   ;; question intentionally does NOT reuse.
+  ;; BL-1295 is the THIRD over-match shape (see revert-subject? above):
+  ;; a revert's inherited subject.
   (let [subj (git! root "log" "-1" "--format=%s" commit)]
     (and (zero? (:exit subj))
-         (= task-ticket-id (pipeline-stage-lib/extract-ticket-id (:out subj))))))
+         (subject-names-task? (:out subj) task-ticket-id))))
 
 (defn- own-commit-diff [root commit]
   (let [diff (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" commit)]

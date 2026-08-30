@@ -12,7 +12,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1286-a-tracked-launcher-never-names-an-untracked-pack.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two things need your call, and neither is the gate itself.
 
