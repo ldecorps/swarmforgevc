@@ -190,3 +190,5 @@ approval_context: >
   flipped and the promotion gate still refuses the ticket. Reply "approve
   BL-1299" here to confirm the relayed decision was really yours, and unblock
   a critical defect that fires on every architect forward.
+
+assigned_to: coder
