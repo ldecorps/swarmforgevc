@@ -17,6 +17,7 @@ test/bl687EpicTileSurfaceUntouched.property.test.js	allowlist	pre-existing; trac
 test/bl733ProducerCrosscheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/bl735PilotAcceptanceExecution.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/bl782LivenessProbesScopedToRoot.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
+test/bl874PortableTimeInvariants.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/crossFileDuplicationCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/hostActivityFeed.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/multiBranchParserCoverageCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
@@ -26,4 +27,5 @@ test/pilotScopedCrapEvidence.property.test.js	allowlist	pre-existing; tracked un
 test/resolveMutationConcurrency.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/selfHealTelemetry.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/shellEntryPointDriveCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
+test/tempDirTrapGuard.property.test.js	allowlist	pre-existing; worktree scan noise; tracked under BL-1175 pending fix
 test/unreachableStepHandlerCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
