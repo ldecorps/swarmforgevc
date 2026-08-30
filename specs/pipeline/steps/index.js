@@ -651,6 +651,7 @@ const DOMAINS = [
   require('./bl1252CommitGuardCompleteInventorySteps'),
   require('./bl1225SyncRestartTrailSteps'),
   require('./bl1218RemoteControlConfigAtLaunchSteps'),
+  require('./bl1264AbsentApprovalContextSteps'),
   require('./bl948SocketFixtureShortRootSteps'),
   require('./bl964RetiredEnsureEnvVarGateSteps'),
   require('./bl963NudgeGateChainSteps'),
