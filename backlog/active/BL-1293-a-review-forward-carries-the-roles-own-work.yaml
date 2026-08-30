@@ -184,3 +184,14 @@ notes: |
   structural hole that only a human noticing a missing file can currently detect.
 
 assigned_to: coder
+
+abandoned_commits: [fdebd71026]
+# QA landed this ticket tip-pure on 2026-08-30 (BL-1241 remedy): the QA
+# worktree's cumulative merge tip (fdebd71026) carried unlanded BL-1300 work
+# as an ancestor (BL-1300 held at QA pending a human_ruling tap, see
+# backlog/evidence/BL-1300-qa-hold-pending-human-ruling-20260830.md), never
+# BL-1293's own. land_step_cli.bb built `land-replay/BL-1293-fdebd71026` ->
+# 45945fc206, tip-pure onto origin/main, containing only BL-1293's own
+# attributed paths (byte-identical to fdebd71026's own diff, independently
+# verified). Landed commit: 45945fc206. See
+# backlog/evidence/BL-1293-qa-pass-20260830.md.
