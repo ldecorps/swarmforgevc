@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { runConciergeTick } = require('../out/concierge/conciergeTick');
+const { runConciergeTick, pipelineBoardShouldRefresh } = require('../out/concierge/conciergeTick');
 // BL-414 hardener bounce: only the one rate-limit wiring test below needs
 // the REAL Telegram-facing retry function - conciergeTick.ts itself stays
 // Telegram-agnostic (see its own header comment); every other test in this
@@ -2655,6 +2655,122 @@ test('BL-814: a rejecting readRoleHeldTickets does not crash the tick and leaves
 
   assert.equal(posted.length, 1, 'expected no new board post on a failed computation - the prior post stands');
   assert.deepEqual(state.pipelineBoard, boardAfterFirstTick, 'expected the prior tick\'s board state to be left untouched');
+});
+
+// Sleeping pack (finish-shift bedtime): phone path stays up and the concierge
+// tick still runs, but the pipeline board must freeze — no recompute, no
+// Telegram repost — until seats are live again.
+test('pipelineBoardShouldRefresh: undefined/true refresh; false freezes', () => {
+  assert.equal(pipelineBoardShouldRefresh(undefined), true);
+  assert.equal(pipelineBoardShouldRefresh(true), true);
+  assert.equal(pipelineBoardShouldRefresh(false), false);
+});
+
+test('pipeline board does not refresh while isPipelineBoardAwake returns false', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return { messageId: posted.length };
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'held ticket' }] }));
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+
+  await runConciergeTick(adapters);
+  assert.equal(posted.length, 1);
+  const boardWhileAwake = state.pipelineBoard;
+  assert.ok(hasRowFor(posted[0], 'BL-1'));
+
+  adapters.isPipelineBoardAwake = () => false;
+  adapters.readRoleHeldTickets = () => ({ QA: ['BL-1'] });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'held ticket' }, { id: 'BL-2', title: 'new work' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 1, 'expected no board repost while the pack is asleep');
+  assert.deepEqual(state.pipelineBoard, boardWhileAwake, 'expected last awake board state to freeze');
+});
+
+test('pipeline board resumes refreshing once isPipelineBoardAwake returns true again', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return { messageId: posted.length };
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'held ticket' }] }));
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+
+  await runConciergeTick(adapters);
+  assert.equal(posted.length, 1);
+
+  adapters.isPipelineBoardAwake = () => false;
+  adapters.readRoleHeldTickets = () => ({ QA: ['BL-1'] });
+  await runConciergeTick(adapters);
+  assert.equal(posted.length, 1, 'asleep tick must not post');
+
+  adapters.isPipelineBoardAwake = () => true;
+  await runConciergeTick(adapters);
+  assert.equal(posted.length, 2, 'expected a board repost once the pack wakes');
+  assert.ok(hasRowFor(posted[1], 'BL-1'));
+  assert.notEqual(state.pipelineBoard.messageId, 1);
+});
+
+test('pipeline board pin sync is skipped while asleep', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  const pinCalls = [];
+  let nextMessageId = 100;
+  adapters.boardAdapters.postMessage = async () => ({ messageId: nextMessageId });
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.boardPinAdapters = {
+    getTopPinnedMessageId: async () => undefined,
+    unpinAllMessages: async () => {
+      pinCalls.push('unpinAll');
+      return true;
+    },
+    pinMessage: async (messageId) => {
+      pinCalls.push(`pin:${messageId}`);
+      return true;
+    },
+  };
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'held ticket' }] }));
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+
+  await runConciergeTick(adapters);
+  assert.ok(pinCalls.length > 0, 'awake tick should attempt pin enforce');
+  assert.equal(state.pipelineBoard.messageId, 100);
+  const pinsWhileAwake = pinCalls.length;
+
+  adapters.isPipelineBoardAwake = () => false;
+  nextMessageId = 101;
+  adapters.readRoleHeldTickets = () => ({ QA: ['BL-1'] });
+  pinCalls.length = 0;
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(pinCalls, [], 'asleep tick must not touch pins');
+  assert.equal(state.pipelineBoard.messageId, 100);
+  assert.equal(pinsWhileAwake > 0, true);
+});
+
+test('omitting isPipelineBoardAwake keeps legacy board refresh behaviour', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return { messageId: posted.length };
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'held ticket' }] }));
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  delete adapters.isPipelineBoardAwake;
+
+  await runConciergeTick(adapters);
+  adapters.readRoleHeldTickets = () => ({ QA: ['BL-1'] });
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 2, 'absent awake adapter must keep refreshing');
 });
 
 // ── BL-465: root-intake / recently-closed / GitHub link list wiring ──────
