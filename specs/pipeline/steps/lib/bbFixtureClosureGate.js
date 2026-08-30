@@ -1,6 +1,7 @@
 'use strict';
 
-// BL-973: the guard that keeps five fixture copy-lists honest.
+// BL-973: the guard that keeps every enrolled fixture copy-list honest
+// (five at BL-973, nine after BL-1279 enrolled the front-desk four).
 //
 // Each list names the .bb dependencies a fixture must copy for a real bb
 // subprocess to load. Hand-maintained, they drift the moment anything upstream
@@ -48,6 +49,27 @@ const FIXTURES = {
   },
   'swarmforge/scripts/test/test_lean_ledger_bb_wiring.sh': {
     entry: 'done_with_current_task.bb',
+    kind: 'shell-copy',
+  },
+  // BL-1279: the four front-desk supervisor fixtures. They existed unguarded
+  // for months beside this table because BL-973 derived each list's CONTENTS
+  // but left WHICH fixtures are guarded hand-enumerated here - by the time
+  // they were found, all four were red and five of one file's eight checks
+  // were passing vacuously against a subprocess that never started.
+  'swarmforge/scripts/test/test_front_desk_supervisor_bl622_refusal.sh': {
+    entry: 'front_desk_supervisor.bb',
+    kind: 'shell-copy',
+  },
+  'swarmforge/scripts/test/test_front_desk_supervisor_tick.sh': {
+    entry: 'front_desk_supervisor.bb',
+    kind: 'shell-copy',
+  },
+  'swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh': {
+    entry: 'front_desk_supervisor.bb',
+    kind: 'shell-copy',
+  },
+  'swarmforge/scripts/test/test_front_desk_supervisor_fleet_creds.sh': {
+    entry: 'front_desk_supervisor.bb',
     kind: 'shell-copy',
   },
   'swarmforge/scripts/test/lib/operator_runtime_sandbox.sh': {
