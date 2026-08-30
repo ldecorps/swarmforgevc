@@ -89,10 +89,13 @@ export function runTrialBoundaryMemory(
       };
 }
 
-export function main(argv: readonly string[]): number {
+export function main(
+  argv: readonly string[],
+  deps: Parameters<typeof runTrialBoundaryMemory>[1] = {}
+): number {
   let report: TrialBoundaryMemoryReport;
   try {
-    report = runTrialBoundaryMemory(parseTrialBoundaryArgs(argv));
+    report = runTrialBoundaryMemory(parseTrialBoundaryArgs(argv), deps);
   } catch (err) {
     process.stdout.write(`${JSON.stringify({ ok: false, signal: (err as Error).message })}\n`);
     return 2;
