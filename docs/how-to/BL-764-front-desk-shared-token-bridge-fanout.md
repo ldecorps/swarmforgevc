@@ -19,13 +19,25 @@ healthy.
    `callback_query`/`poll_answer` follow-ups) to an on-disk queue instead of
    dropping them (`forwardCursorBridgeUpdate`,
    `extension/src/tools/telegramFrontDeskBotCore.ts`).
-2. **The bridge drains the queue instead of polling.** With
-   `CURSOR_BRIDGE_INBOUND_QUEUE` enabled, `telegram-cursor-bridge` reads
+2. **The bridge drains the queue instead of polling — but only while the
+   feeder is actually alive.** With `CURSOR_BRIDGE_INBOUND_QUEUE` enabled,
+   `telegram-cursor-bridge` reads
    `.swarmforge/operator/cursor-bridge-inbound.jsonl`
    (`drainCursorBridgeInboundUpdates`,
    `extension/src/tools/telegramCursorBridgeLive.ts`) instead of calling
    `getUpdates` itself. The drain renames the file before reading it, so an
-   append racing a drain is never lost and never double-delivered.
+   append racing a drain is never lost and never double-delivered. Queue mode
+   used to be assumed for the life of the process once selected; a dead front
+   desk then drained an already-empty file forever while its own heartbeat
+   still looked healthy, so the bridge stayed silent with no update ever
+   forwarded (Cursor hotfix `2ec06b6ef1`, stamped off by BL-1253). Each poll
+   now re-checks the front desk's own poll heartbeat
+   (`frontDeskPollHeartbeatPath` / `readFrontDeskPollHeartbeatMs`,
+   `extension/src/tools/cursorBridgeInboundQueue.ts`, reading the same
+   `.swarmforge/operator/front-desk-poll-heartbeat.json` the BL-370 front-desk
+   staleness check writes) and the bridge owns `getUpdates` itself the moment
+   the feeder reads stale, absent, or unparseable — never waiting for a
+   restart to notice.
 3. **An exclusive token still polls directly.** Setting
    `CURSOR_BRIDGE_BOT_TOKEN` to a token different from the front desk's keeps
    the bridge as its own `getUpdates` caller — the queue is the shared-token
@@ -42,11 +54,14 @@ healthy.
 
 - Leave `CURSOR_BRIDGE_BOT_TOKEN` unset (bridge shares `TELEGRAM_BOT_TOKEN`
   with the front desk) to get the queue automatically —
-  `CURSOR_BRIDGE_INBOUND_QUEUE` defaults to `1` in that case.
+  `CURSOR_BRIDGE_INBOUND_QUEUE` defaults to `1` in that case, UNLESS the
+  front-desk poll feeder is not live at launch, in which case the script
+  defaults it to `0` so the bridge polls directly instead of trusting a dead
+  feeder from the start.
 - Set `CURSOR_BRIDGE_BOT_TOKEN` to a dedicated token to keep the bridge
   polling directly.
 - `CURSOR_BRIDGE_INBOUND_QUEUE=0|1` forces the mode explicitly, overriding
-  the token-based default.
+  the token-based and liveness-based defaults.
 
 ## Liveness cue
 
@@ -74,7 +89,7 @@ process that could steal updates from the real bridge.
 
 ## Where it lives
 
-- Queue: `extension/src/tools/cursorBridgeInboundQueue.ts`
+- Queue + feeder-liveness gate: `extension/src/tools/cursorBridgeInboundQueue.ts`
 - Front desk forwarding: `extension/src/tools/telegramFrontDeskBotCore.ts` →
   `forwardCursorBridgeUpdate`
 - Bridge draining / shared-token decision:
