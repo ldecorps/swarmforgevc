@@ -7,6 +7,8 @@
 # credential or real HTTP server.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_closure_copy.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_fixture_load_guard.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -25,8 +27,17 @@ make_fixture() {
   # BL-436: also load-files swarm_identity_lib.bb (own-swarm-name) and
   # fleet_telegram_creds_lib.bb (per-swarm creds resolution) - same
   # requirement.
-  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/process_table_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
-     "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" "$d/"
+  # BL-1279: the copy set is DERIVED from front_desk_supervisor.bb's transitive
+  # load-file closure, never hand-listed. The hand list this replaces named six
+  # of eight libs and every bb subprocess here died at load, with five of the
+  # eight checks in the refusal test still reporting OK - a crash satisfies a
+  # negative assertion by accident. The two missing edges arrived in commits
+  # that restored dropped work (20999b11c, 8feaa2ad2) and nothing made them
+  # update four cp lines; BL-973 built the derivation for exactly this rot.
+  copy_bb_closure "$SRC" "$d" front_desk_supervisor.bb \
+    || { printf 'FAIL - %s\n' "could not derive front_desk_supervisor.bb's load-file closure" >&2; exit 1; }
+  # And nothing runs until that root can actually load (BL-1279 invariant 2).
+  assert_bb_closure_present "$SRC" "$d" front_desk_supervisor.bb
   # A fake entrypoint that stays alive forever (mirrors the real bridge/bot
   # processes, which never exit on their own while healthy).
   cat > "$d/extension/out/tools/start-bridge-headless.js" <<'EOF'
