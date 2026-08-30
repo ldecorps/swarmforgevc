@@ -49,6 +49,25 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human preference (2026-08-31) — exhaust `hold/` before `paused/`
+
+**Human directive (Cursor session, 2026-08-31):** when an active slot opens,
+promote the next ticket from `backlog/hold/` rather than from `backlog/paused/`.
+Exhaust the held pool first.
+
+**Effect (pull order, Article 3.1 release):**
+
+- While any **approved** ticket remains in `backlog/hold/`, do **not** promote
+  from `backlog/paused/` into `active/`.
+- On each open slot, human-release (hold → active) the top approved held ticket
+  by ordinary priority ordering among hold/, then route. Leave the rest in
+  `hold/` until the next slot — do not dump them into `paused/` where Article
+  3.2.4 expedite ranking would lose them to unrelated high-severity paused work.
+- `human_approval: pending` held tickets (e.g. BL-1300) stay held until the
+  human rules; they do not block release of other approved hold/ tickets.
+- Auto-pick (`promote_and_route_next.sh`) still never reads `hold/` — this
+  preference is a coordinator/human release order, not a gate change.
+
 ## Standing human preference (2026-08-25 evening) — finish local Ollama / Qwen epic
 
 **Human directive (Cursor session, 2026-08-25 ~19:31 BST):** prioritize the
