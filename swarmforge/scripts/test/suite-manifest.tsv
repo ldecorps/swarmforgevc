@@ -387,6 +387,7 @@ test_reference_freshness_guard.sh	standing
 test_relaunch_resume_cli.sh	standing		
 test_remote_control_health.sh	standing		
 test_remote_control_launch.sh	standing		
+test_remote_control_launch_lib.sh	standing		
 test_remote_wakeup_nudge.sh	standing		
 test_remote_wakeup_periodic_pull.sh	standing		
 test_required_stages_ticket_lookup_collision.sh	standing		
