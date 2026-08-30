@@ -72,6 +72,8 @@ acceptance: |
   - [2026-08-27T17:26Z] coordinator: open-slot nudge declined — deferred
     tracker (human 2026-07-16 chose document-as-not-wired, not pin+install).
     Moved to backlog/hold/; promote only after operator explicitly activates.
+  - [2026-08-30T15:35Z] operator (Cursor): activate — build the Babashka
+    hardening toolchain. Moved hold → paused.
 
 qa_e2e: |
   Per the eventual pickup spec: from a clean checkout, run the install script and
@@ -82,13 +84,10 @@ qa_e2e: |
 
 human_approval: approved
 approval_context: >
-  Not required to FILE — this is a deferred, low-priority swarm-proposed tracker
-  created so engineering.prompt's honest 'not currently wired / tracked future
-  item (BL-472)' correction has a real referent. The DECISION to actually build it
-  (pin+install+wire) is the human's, made at activation time; the human chose the
-  document-as-not-wired disposition on 2026-07-16 and deferred the build. Any
-  actively-scoped work drawn from this tracker follows the normal spec +
-  human-review flow (including a new feature file) at that time.
+  Filed as a deferred tracker (human 2026-07-16 chose document-as-not-wired).
+  Operator activated 2026-08-30 via Cursor: build pin+install+wire for
+  clj-mutate/crap4clj/dry4clj. Specifier settles open questions and authors
+  the feature file at pickup; normal human-review of that spec still applies.
 mutation_cost: low
 
 assigned_to: specifier

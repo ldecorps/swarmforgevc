@@ -94,6 +94,14 @@ You are the cleaner.
   `swarm_handoff.sh ./tmp/handoff.txt`
   Never write directly to `inbox/new/` — that path sends no wake-up.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
+- `git_handoff` requires two identical helper invocations (self-audit): the first
+  prints `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED` and does not queue; after you
+  re-check the work, run the same draft again to queue.
+- Pack conf may set `back-one` on this seat: the helper also emits a
+  priority-`00` non-forwarding merge-only copy to `coder`. Draft only the
+  forward `to: architect`; do not manually list reverse recipients.
+- A `non-forwarding: true` inbound is merge-only — merge, then
+  `done_with_current.sh`; do not send a `git_handoff` for that inbound.
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
 ## An unreachable step handler is an untested-behavior flag until proven otherwise (BL-753)
