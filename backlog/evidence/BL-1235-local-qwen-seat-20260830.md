@@ -130,3 +130,82 @@ staffing pipeline roles with a local model, and renaming Telegram/Cursor
 identifiers for interface purity — even though this is the genuine second host
 incarnation local-engineering rule 7 names, which licenses the seat and
 nothing else.
+
+## Architect bounce, 2026-08-30 — D1 and D2, both correct
+
+### D1 — the seat was unreachable
+
+The architect's grep is the finding, and it is right: every export of
+`localQwenSeat.ts` had exactly two referents, the module itself and the subject
+id. Nothing in the live bot resolved the seat's topic, routed an inbound
+message through `decideLocalSeatTurn`, or called the model. Posting in topic
+41004 would have done nothing.
+
+Worse, my own evidence file said the only remaining step was the operator
+writing the topic-map binding. That was wrong and I should not have written it:
+the ticket's own description commissions the turn loop — *"The turn loop then
+sends the topic's message to the local endpoint and posts the completion back
+into the same topic"* — and its qa_e2e step 2 asks someone to post a message and
+see a reply. I built the decision, called the I/O "the caller's", and then
+declared the caller out of scope by pointing at the one operational step that
+genuinely was.
+
+**The acceptance did not catch it because every scenario drives the decision
+directly** — its own header says so. A decision function with zero callers reads
+as fully tested. That is the general lesson here, not a detail of this ticket.
+
+**Built:** `extension/src/tools/localQwenSeatLive.ts` — the seat's topic
+resolved from the same map cursor's and Bubble's come from, the endpoint read
+(`/api/tags`), the completion call (`/api/generate`, non-streaming), and one
+whole turn: decide, acknowledge, complete, post back, with every edge injected
+so it runs in-process with no ollama and no bot.
+
+**Wired:** in `processInboundUpdates`, BEFORE `decideInboundAction` is consulted
+— a message in the seat's topic is handled and the loop moves on, so cursor is
+never asked about that topic at all. That placement is invariant 1's structural
+half at the dispatch level, matching the one already in the decision.
+
+**It runs inside the existing poll, deliberately, not as a second poller.** A
+bot token has exactly one `getUpdates` consumer; a second one is an immediate
+409 that would take the front desk down — a spectacular way to honour "cursor
+stays behind the usual host topic".
+
+Re-running the architect's own grep now returns four files: the two seat
+modules, the subject-id declaration, and the live loop that calls them.
+
+Order matters in the turn and is asserted: on `answer` the acknowledgement goes
+out FIRST, because the measured turn on this host is 3m19s. A completion that
+throws becomes a refusal carrying the endpoint's own words, posted in the same
+topic. `not-mine` posts nothing at all.
+
+One thing the tests found while writing them: a completion of pure whitespace
+was being posted as a blank message, which in a topic is indistinguishable from
+a broken seat. It is trimmed in the turn loop now, not only in the default
+completion call, so any completion source gets the same treatment.
+
+### D2 — my reach floor was a one-in-eight lottery
+
+Also correct, and the arithmetic is exactly right: `P(answer) = 1/5 × 1/4 × 1/3
+= 1/60`, and `(59/60)^120 ≈ 13%`.
+
+This is the third property test in this repo to fail the same way, and twice
+today I fixed the same shape in someone else's — so the fix is the one that
+class always wants: **build the case, never raise `numRuns` until the lottery
+usually wins.** Each of the three decision kinds now has its own constructed
+input and its own `fc.assert`, so the floor cannot miss. The uniform-draw
+breadth check is kept as a separate test with no floor on it, because breadth
+is what it is for.
+
+Run eight times back to back: 8 passes, 6 tests each.
+
+### Runs after the bounce
+
+| what | result |
+|---|---|
+| BL-1235 acceptance | 5/5 |
+| unit (`bl1235LocalQwenSeat` + `bl1235LocalQwenSeatLive`) | 33/33 |
+| property | 6/6, eight consecutive runs |
+| `telegramCursorBridgeLive.test.js` (the file wired into) | 129 passed |
+
+`telegramCursorBridgeCli.test.js` is 3 red — baselined against HEAD before this
+parcel, identical 3, and one of the 26 files in this branch's standing red set.

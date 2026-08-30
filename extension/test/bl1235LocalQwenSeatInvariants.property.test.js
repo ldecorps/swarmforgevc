@@ -196,8 +196,64 @@ describe('BL-1235 invariant 2: a seat that cannot answer says why, and hands the
     assertReachFloor(coverage, Object.keys(REFUSAL_CAUSES), CAUSE_FLOOR, 'refusal cause');
   });
 
+  // Each of the three kinds is CONSTRUCTED, one fc.assert apiece, rather than
+  // hoped for from a uniform draw. The first version of this test drew topic,
+  // endpoint and model independently and asked for all three kinds afterwards:
+  // an `answer` needed all three draws to land on their one matching value at
+  // once, P = 1/5 x 1/4 x 1/3 = 1/60, so over 120 runs P(zero answers) was
+  // ~13% - a one-in-eight flake, found by the architect running it six times.
+  // That is the same under-provisioned-reach defect this repo has now hit in
+  // three separate property tests; the fix is always to build the case, never
+  // to raise numRuns until the lottery usually wins.
+  const KIND_CASES = {
+    answer: {
+      topicId: SEAT_TOPIC,
+      probe: { endpointStatus: 'healthy', endpointUrl: ENDPOINT },
+      modelId: DEFAULT_LOCAL_SEAT_MODEL_ID,
+      catalogue: [DEFAULT_LOCAL_SEAT_MODEL_ID],
+    },
+    refuse: {
+      topicId: SEAT_TOPIC,
+      probe: { endpointStatus: 'missing', endpointUrl: ENDPOINT, reason: 'connect ECONNREFUSED' },
+      modelId: DEFAULT_LOCAL_SEAT_MODEL_ID,
+      catalogue: [DEFAULT_LOCAL_SEAT_MODEL_ID],
+    },
+    'not-mine': {
+      topicId: CURSOR_TOPIC,
+      probe: { endpointStatus: 'healthy', endpointUrl: ENDPOINT },
+      modelId: DEFAULT_LOCAL_SEAT_MODEL_ID,
+      catalogue: [DEFAULT_LOCAL_SEAT_MODEL_ID],
+    },
+  };
+  const KIND_FLOOR = 10;
+
   it('offers no decision a caller could route to another seat on', () => {
-    const kinds = new Set();
+    const coverage = {};
+    for (const [expected, input] of Object.entries(KIND_CASES)) {
+      fc.assert(
+        fc.property(fc.constant(expected), (kind) => {
+          const decision = decideLocalSeatTurn({ ...input, seatTopicId: SEAT_TOPIC });
+          coverage[decision.kind] = (coverage[decision.kind] || 0) + 1;
+          assert.equal(decision.kind, kind, `the constructed ${kind} case produced ${decision.kind}`);
+          // The structural half of "never hands the turn to another seat":
+          // there is no fallback, delegate or escalate case to route on.
+          assert.ok(
+            ['answer', 'refuse', 'not-mine'].includes(decision.kind),
+            `the seat produced a routable decision kind: ${decision.kind}`
+          );
+          return true;
+        }),
+        { numRuns: KIND_FLOOR }
+      );
+    }
+    // Deterministic now: each kind was built, so the floor cannot miss.
+    assertReachFloor(coverage, Object.keys(KIND_CASES), KIND_FLOOR, 'decision kind');
+  });
+
+  it('still produces only the three kinds under an arbitrary draw', () => {
+    // The breadth half, kept - but with no reach floor on it, because breadth
+    // is what this one is for and coverage is what the constructed test above
+    // owns.
     fc.assert(
       fc.property(
         fc.constantFrom(...Object.values(SURFACES)),
@@ -205,9 +261,6 @@ describe('BL-1235 invariant 2: a seat that cannot answer says why, and hands the
         fc.constantFrom(DEFAULT_LOCAL_SEAT_MODEL_ID, 'absent:1b', '  '),
         (topicId, { probe, catalogue }, modelId) => {
           const decision = decideLocalSeatTurn({ topicId, seatTopicId: SEAT_TOPIC, probe, modelId, catalogue });
-          kinds.add(decision.kind);
-          // The structural half of "never hands the turn to another seat":
-          // there is no fallback, delegate or escalate case to route on.
           assert.ok(
             ['answer', 'refuse', 'not-mine'].includes(decision.kind),
             `the seat produced a routable decision kind: ${decision.kind}`
@@ -216,14 +269,6 @@ describe('BL-1235 invariant 2: a seat that cannot answer says why, and hands the
         }
       ),
       { numRuns: 120 }
-    );
-    // ...and all three real kinds were actually produced, or the check above
-    // held only over whichever one the draw favoured.
-    assertReachFloor(
-      Object.fromEntries([...kinds].map((k) => [k, 1])),
-      ['answer', 'refuse', 'not-mine'],
-      1,
-      'decision kind'
     );
   });
 });
