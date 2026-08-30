@@ -139,8 +139,3 @@ list's closure check, and that it fires on a new upstream edge), `04`/`05`
 (`shell_test_discovery_cli.bb`) that fails loud on untracked or unaccounted
 `test_*.sh` files under `swarmforge/scripts/test/`. See
 [Shell-test discovery](BL-724-orphan-red-shell-test-untracked-and-undiscovered.md).
-
-A `git_handoff` send now also carries its own PARCEL-scoped registration
-check, so an unregistered file is caught at the moment its own ticket adds
-it rather than accumulating unseen until the next full suite run. See
-[Unregistered-test send-time gate](BL-1240-unregistered-test-send-time-gate.md).

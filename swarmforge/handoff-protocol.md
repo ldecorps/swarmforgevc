@@ -795,64 +795,6 @@ known-good ref, not a parcel routed through it.
 
 How-to: `docs/how-to/BL-1205-tree-collapse-guard.md`.
 
-## Unregistered-Test Send-Time Gate (BL-1240)
-
-`swarm_handoff.bb` refuses a `git_handoff` whose own parcel adds a file
-under `swarmforge/scripts/test/` with no row in that directory's
-`suite-manifest.tsv`. Before this gate, `suite_inventory_cli.bb`'s
-tree-wide check (BL-973) only fired when `run_bb_suite.sh` ran the whole
-suite — so an unregistered file accumulated invisibly, roughly six a day
-over five days, until the suite refused to start at all (39 names in the
-failure, the state BL-1239 exists to clear) and the refusal landed on QA,
-holding a list of other tickets' omissions QA cannot reasonably author:
-choosing `standing` versus `excluded` needs the reason the test was
-written, which lives with its author and its ticket.
-
-Mechanics (`unregistered_test_gate_lib.bb`):
-
-- **Parcel-scoped, never tree-scoped.** The check asks only "does THIS
-  parcel add an unregistered test file", reusing `task_scope_gate_lib`'s
-  own `parcel-own-changed-paths` walk (now a public seam) — never "is the
-  tree clean". A parcel that touches no test file at all passes even
-  while other tickets' files sit unregistered in the tree; a tree-scoped
-  copy would relocate BL-1239's drift problem onto every unrelated parcel
-  instead of ending it.
-- **Registration is asked of the existing inventory logic, never
-  re-derived.** What counts as a test file (`test-file?`) and what a row
-  says (`parse-manifest`) are both `suite_inventory_lib.bb`'s — the same
-  code `suite_inventory_cli.bb` runs — so this gate and the tree-wide
-  check cannot drift into two notions of "registered".
-- **A deleted path is never a finding.** The file no longer exists; a
-  stale row for it is the tree-wide check's business, not this parcel's.
-- **The refusal names the file AND quotes the row it needs**, so the
-  author can act on it in one edit rather than needing to know the
-  manifest's own column format.
-- **Fail-open on unreadable facts**, same posture as every other send-time
-  gate in `swarm_handoff.bb`: an unresolvable task id, an unreadable
-  commit range, or no readable manifest each warn on stderr and the send
-  proceeds.
-- The silent-row half — a manifest row whose first column names no
-  existing test file — is already refused by BL-1239's own
-  `suite_inventory_lib/check` (MALFORMED for a non-test-file name, missing
-  for an absent one); this gate does not re-validate rows, deliberately —
-  a parcel that merely touches the manifest must not be refused for
-  another ticket's already-malformed row.
-
-Refusal message names the file and quotes the manifest row needed:
-
-```text
-Cannot send git_handoff for BL-1240: this parcel adds a test file
-(swarmforge/scripts/test/test_example.sh) under swarmforge/scripts/test/
-with no row in suite-manifest.tsv (BL-1240). An unregistered test file is
-invisible to the standing suite, and the refusal would otherwise land on
-QA instead of here. Add to swarmforge/scripts/test/suite-manifest.tsv:
-swarmforge/scripts/test/test_example.sh	standing
-...or, if it should not run on every parcel, lane `excluded` with a
-YYYY-MM-DD date and the reason.
-```
-
-How-to: `docs/how-to/BL-1240-unregistered-test-send-time-gate.md`.
-
 ## Bounce Revert Verification (BL-954)
 
 A bounce requires the bouncing role to remove the bounced commit's content
