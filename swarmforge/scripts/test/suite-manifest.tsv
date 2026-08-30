@@ -156,6 +156,7 @@ remote_wakeup_test_runner.bb	standing
 required_stages_test_runner.bb	standing		
 rescue_lib_test_runner.bb	standing		
 retirement_registry_lib_test_runner.bb	standing		
+reverse_audit_handoff_test_runner.bb	standing		
 review_forward_evidence_gate_lib_test_runner.bb	standing		
 role_ask_escalation_lib_test_runner.bb	standing		
 role_lifecycle_lib_test_runner.bb	standing		
@@ -371,6 +372,7 @@ test_project_socket_id_lib.sh	standing
 test_promote_and_route_next_no_limit_depth.sh	standing		
 test_promote_and_route_next_priority.sh	standing		
 test_prompt_engine_lib.sh	standing		
+test_propagation_conf_parsing.sh	standing		
 test_property_suite_drift_guard.sh	standing		
 test_provision_autonomous_host.sh	standing		
 test_provision_primary_host.sh	standing		
