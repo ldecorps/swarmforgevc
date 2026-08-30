@@ -898,7 +898,8 @@ const DOMAINS = [
   require('./bl1224WatchAdoptsRestartedRuntimeSteps'),
   require('./bl1254ExpediteNoVerdictChainStampSteps'),
   require('./bl1272LandedSiblingSteps'),
-  require('./bl1183BobGoLiveGateSteps')
+  require('./bl1183BobGoLiveGateSteps'),
+  require('./bl1299ReverseHopMasterResidentSteps')
 ];
 
 function registerSteps(registry) {
