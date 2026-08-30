@@ -162,3 +162,5 @@ notes: |
     precisely to stop the label being hardcoded), and 'restarts the handoff
     daemon' vs 'restarts the operator runtime' name two different subjects.
     Resolved as accepted-by-design at mint."
+
+assigned_to: coder
