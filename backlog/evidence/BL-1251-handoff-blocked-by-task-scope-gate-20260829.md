@@ -79,3 +79,10 @@ never attributed. The block is one path, not two.
 BL-1251 is HELD at `4ba1d0c9e`. It re-sends unchanged once BL-1276 lands on
 `main` and is merged into the coder worktree — the gate runs from the sender's
 own checkout, so the fix must be present *there*, not merely on `main`.
+
+## Related: the coder's own contemporaneous write-up
+
+The coder independently recorded the same incident before this resolution
+landed, including a proposed `RETIRE-WITH`-marker predicate as an alternative
+to the `retires:` field adopted above. See
+[BL-1251-coder-handoff-blocked-by-task-scope-gate-20260829.md](BL-1251-coder-handoff-blocked-by-task-scope-gate-20260829.md).

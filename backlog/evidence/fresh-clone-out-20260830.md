@@ -51,3 +51,51 @@ from whoever saw the failure.
 
 With those, this is a small, gateable slice. Without them it would be a
 verification-only chore with no executable gate.
+
+## Sweep completed — disposition: NOT MINTED, closed (specifier, 2026-08-30)
+
+The last unswept surface is now swept. Three surfaces, all clear:
+
+1. `swarmforge/scripts/test/*.sh` — specifier, above.
+2. `specs/pipeline/steps/*.js` (all 14 clone-using handlers) — QA,
+   `backlog/evidence/fresh-clone-out-qa-sweep-20260830.md`.
+3. `extension/test/**` clone-using files — specifier, this pass:
+   - `bl628AutonomousHostBootstrapInvariants.property.test.js` — "git clone"
+     appears only as a string pattern asserted against DRYRUN output.
+   - `onboarderState.test.js` — clone strings are onboarding prompt TEXT;
+     its `require('../out/onboarding/onboarderState')` is this repo's build.
+   - `contractPhaseRealAdapters.test.js` — requires this repo's
+     `../out/tools/...`; its clone is a target-repo adapter fixture, and the
+     real `git clone` path is deliberately not exercised.
+   - `pilotAcceptanceGateCli.test.js` — `CLI_PATH` is
+     `path.join(__dirname, '..', 'out', ...)`, i.e. absolute into THIS repo;
+     only `cwd` is the fixture. Same safe shape as the specs handlers.
+   - `bl1236ReconcileConflictPredictionInvariants.property.test.js` — no
+     `out/` dependency at all.
+   - `helpers/sharedRepoFixture.js` — recursive filesystem copy by design,
+     documented at its head; inherits whatever the source tree had.
+
+**No fixture on any swept surface stands a project root up with `git clone`
+and then executes compiled node output from inside that clone.** The
+reported symptom has no reproducer in the tree.
+
+### Why this is closed rather than minted
+
+The three mint prerequisites listed above are all unavailable and cannot be
+recovered: QA has no transcript and no record of the producing run (the
+originating note went out message-only). Minting now would produce a
+verification-only chore with no executable gate — the failure it would
+assert against does not exist to be gated.
+
+The underlying hazard remains real but is already handled: `extension/out/`
+is gitignored, and `swarmforge/scripts/node_tool_bringup_lib.bb` (BL-1010)
+already converts a missing compiled tool into a message naming the bring-up
+step. A pre-emptive guard against a fixture pattern with zero occurrences
+would fail INVEST-V (no observable outcome) and rot the way hand-enumerated
+closure-guard membership does.
+
+**If the symptom recurs: capture the failing fixture name and the transcript
+in the same turn.** With those this becomes a small, gateable slice; without
+them it is unmintable, and this sweep should not be repeated.
+
+By specifier.
