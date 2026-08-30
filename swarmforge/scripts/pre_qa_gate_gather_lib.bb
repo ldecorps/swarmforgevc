@@ -62,9 +62,16 @@
 ;; empty - if the first-parent diff is empty, that combined diff is
 ;; necessarily empty too, so the general check subsumes it.
 
-(defn- commit-parents
+(defn commit-parents
   "Full-length parent shas of full-sha, oldest-first-parent-first, or nil if
-   the commit cannot be read."
+   the commit cannot be read.
+
+   PUBLIC (BL-1293): merge-introduces-nothing-unique? answers \"did this
+   commit contribute anything\" only for a MERGE - on a root commit with an
+   empty tree its diff-tree is empty too, and reading that as \"introduced
+   nothing\" refuses a legitimate send. The parent-count guard is part of the
+   primitive's contract, so both callers (no-dropped-work? below and the
+   review-forward gate) apply the SAME one rather than each inventing it."
   [project-root full-sha]
   (let [res (run-git project-root ["show" "-s" "--format=%P" full-sha])]
     (when (git-ok? res)
@@ -76,8 +83,14 @@
   (let [res (run-git project-root ["rev-parse" (str ref "^{tree}")])]
     (when (git-ok? res) (str/trim (:out res)))))
 
-(defn- merge-introduces-nothing-unique?
-  "True when full-sha is a merge whose combined diff against ALL of its
+(defn merge-introduces-nothing-unique?
+  "PUBLIC (BL-1293): shared with review_forward_evidence_gate_lib.bb, whose
+   BL-806 gate compared commit IDENTITY and so passed a bare merge that
+   introduced nothing the review role authored. There is exactly one notion
+   of \"what did this commit contribute\" in the swarm, and this is it - the
+   sibling gate calls this var, it does not grow a second copy.
+
+   True when full-sha is a merge whose combined diff against ALL of its
    parents (`git diff-tree -m --cc`, which prunes any hunk that matches at
    least one parent) is empty - i.e. every line of its tree already exists
    in some parent, so the merge itself resolved no conflicts and added no
