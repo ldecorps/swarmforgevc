@@ -16,6 +16,8 @@
   brief note.
 
 ## Context Clear Requires Startup Re-Read
+- Never `/clear` unless context is at least 75% full; if the fraction is
+  unknown, do not clear (operator hotfix 2026-08-30).
 - On any context clear, immediately re-enter your role loop from a fresh
   chat — never continue on remembered chat alone. The system prefix
   survives a `/clear` without a respawn (BL-519); whoever issues one
