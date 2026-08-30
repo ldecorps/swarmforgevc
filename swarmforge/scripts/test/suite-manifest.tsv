@@ -404,6 +404,7 @@ test_rotation_sequential_pack.sh	standing
 test_route_backlog_role_label_bash32.sh	standing		
 test_routing_manifest_lib_real_backlog.sh	standing		
 test_rule_proposal.sh	standing		
+test_run_commit_guards.sh	standing		
 test_seat_affinity_lib.sh	standing		
 test_second_swarm_pack.sh	standing		
 test_setup_bubble_named_tunnel.sh	standing		
