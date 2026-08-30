@@ -36,6 +36,9 @@ invariants:
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1254ExpediteNoVerdictChainStampSteps::acceptance handler registered so the runner executes every review scenario"
+  - 'swarmforge/scripts/expedite_cli.bb::expedite-lib/should-recover-missing-verdict?::the recovery decision must stay in the shared lib so the bound is testable as pure logic, not inlined in the driver'
+  - 'swarmforge/scripts/expedite_cli.bb::expedite-lib/bounce-payload-valid?::the bounce refusal is the load-bearing correction of the chain; if the driver stops asking, synthesized bounces return silently'
+  - 'swarmforge/scripts/expedite_cli.bb::expedite-lib/finalize-stage-result::timeout-beats-missing-file ordering lives here; an inlined cond in the driver would drift from the tested one'
 
 description: >
   WHAT. Three operator/Cursor hotfixes landed on main on 2026-08-28, all with
@@ -155,5 +158,44 @@ notes: |
     promotion - `bb swarmforge/scripts/hotfix_ledger_update.bb . --link <sha>
     BL-1254` for each of the three SHAs. All three rows are stamp_ticket null
     at mint.
+
+  - [2026-08-30] specifier: ADJUDICATED a duplicate mint surfaced by the coder.
+    BL-1259 was a second stamp-off ticket for these same three SHAs, minted
+    later the same day. BL-1259 is RETIRED (closed_as: superseded-by-BL-1254);
+    this ticket survives because it is the one promoted, routed and in flight.
+    The three hotfix-ledger rows were re-linked from BL-1259 to BL-1254. This
+    is the same collision and the same resolution as BL-1253/BL-1260, reported
+    by the coder on the same sweep.
+  - [2026-08-30] specifier: BL-1259's distinct content is CARRIED here rather
+    than dropped, per Article 5.3 and the BL-1253 precedent. Two pieces land,
+    and BOTH are the coder's to build:
+    (a) scenario 06, the timeout-beats-missing-verdict ordering in
+        finalize-stage-result. Scenarios 01-05 never exercised it, yet it is
+        shipped behaviour in this chain: a stage killed for overrun ALSO
+        leaves no verdict, so without it the absence masks why the stage died
+        and scenario 01 would re-invoke a stage that must not be re-invoked.
+    (b) three lib-anchored required_wiring entries pinning
+        should-recover-missing-verdict?, bounce-payload-valid? and
+        finalize-stage-result as shared-lib calls from expedite_cli.bb.
+        Verified before committing: all three patterns match expedite_cli.bb
+        at both main and the cleaner tip (1 hit each), so none is vacuous.
+    Nothing already built changes. BL-1259's other two invariants were NOT
+    carried: "never synthesizes a bounce" is already scenarios 03+04, and
+    "recovery bound independent of the bounce budget" is already scenario 04.
+  - [2026-08-30] specifier: BL-1259's third invariant (a timeout is classified
+    as a timeout even when the verdict is also missing) is carried as scenario
+    06 rather than a fourth invariant line - the invariants cap is 3 and the
+    existing three are all load-bearing for a superseding chain. Recorded here
+    so the omission reads as a decision, not a drop.
+
+  - [2026-08-30] specifier: carried from retired BL-1259's approval_context, a
+    question BL-1254's own does not raise and which the human should answer at
+    the ledger decision: max-missing-verdict-recoveries = 2 was moved twice in
+    three hours under live pressure (3f4f69ec1b allowed one, 70c5e0e5b0 went
+    through the bounce bound, 5de352ed1d settled on two) and was never
+    measured. Each recovery is a full headless agent invocation, so too high
+    costs real tokens and too low abandons a ticket mid-run. Confirm 2, or say
+    what it should be. This is a question for the human, NOT scope for this
+    parcel - changing the bound stays out of scope either way.
 
 assigned_to: coder
