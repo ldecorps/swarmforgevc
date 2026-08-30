@@ -1,0 +1,213 @@
+id: BL-1294
+title: "pinnedRepoFixture's closure resolver reduces every load-file dependency to a basename and then silently skips the ones it cannot find, so the first production script to load-file into a subdirectory builds a quietly incomplete fixture"
+milestone: M8
+type: defect
+severity: high
+# high, where BL-1287's neighbouring lane defect is medium, for one reason:
+# this one breaks a safety SIGNAL rather than degrading it. An incomplete
+# fixture makes a suite's verdict stop reflecting the code under test - the
+# exact failure BL-871's invariant 1 exists to close - and it does so while
+# reporting the failure against an unrelated, correct subsystem (here BL-1203's
+# dedup invariant). It is also live: it blocks the coder's in-flight BL-1240
+# parcel today, and it will re-fire for every future dependency that crosses a
+# directory boundary. Not critical: no production path is touched, the swarm is
+# not down, the pre-commit guard refused correctly, and nothing is lost.
+status: todo
+epic: code-quality-gates
+priority: 26
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1294-fixture-script-closure-preserves-dependency-paths.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1294::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1294 -> 0), so the anchor cannot pass before the work is done"
+
+invariants:
+  - "A fixture's scripts tree is never quietly smaller than the closure it was asked for: a dependency the builder cannot resolve fails the build naming it."
+  - "A dependency's location within the scripts tree survives the copy - a fixture resolves every load-file exactly as the live tree does."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. One judgment is worth
+  a look, and one scheduling question is genuinely yours rather than mine.
+
+  The judgment: scenario 02 turns today's silent skip into a hard failure. That
+  is a behaviour change for a shared helper 11 test files call, so it was
+  measured before being specified - the same six entry points against main's
+  scripts resolve to a closure of 48 files with NOTHING missing, so no existing
+  fixture is relying on the skip and nothing goes red when it starts throwing.
+  The helper's own doc comment already promises this behaviour ("so a missing
+  dependency surfaces as a copy failure naming it, never as a silently smaller
+  fixture"); the code just never did it. If you would rather keep the skip and
+  only fix the path reduction, say so - it closes the live incident but leaves
+  the trap armed for a dependency that is genuinely absent.
+
+  The scheduling question: the coder's BL-1240 parcel is blocked on this RIGHT
+  NOW and cannot fix it itself - the fix is in extension/test/helpers/, outside
+  BL-1240's task scope, so task_scope_gate_lib.bb would refuse the combined
+  commit. Either this jumps ahead of BL-1240, or the coder unblocks by having
+  unregistered_test_gate_lib.bb reach suite_inventory_lib.bb some other way.
+  The first is cleaner and is why this carries severity high; the second is
+  faster. Your call, not mine.
+
+description: |
+  ## What is wrong
+
+  `extension/test/helpers/pinnedRepoFixture.js` builds a fixture's
+  `swarmforge/scripts/` tree from the transitive `load-file` closure of the
+  entry points a test invokes (BL-1038, replacing a whole-directory copy). Its
+  own header states the contract it means to keep:
+
+      A name the reader cannot resolve is still included (so a missing
+      dependency surfaces as a copy failure naming it, never as a silently
+      smaller fixture)
+
+  Two things stop that from being true.
+
+  **1. The closure discards path structure.** `loadFileDeps` scans a line for
+  quoted strings ending in `.bb` and records `path.basename(...)` of each. A
+  Babashka script that builds its dependency's path from segments -
+
+      (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "test" "suite_inventory_lib.bb")))
+
+  - contributes only the bare name `suite_inventory_lib.bb`. The `"test"`
+  segment is not in the match and would be discarded by `basename` anyway.
+
+  **2. The copy then swallows the miss.** `copyScriptClosure` looks the name up
+  at the flat root of the live scripts directory and, not finding it, `continue`s:
+
+      if (!fs.existsSync(src)) {
+        if (entrypoints.includes(name)) {
+          throw new Error(`pinnedRepoFixture: entry point ${name} not found in ${liveScriptsDir}`);
+        }
+        continue;   // a dependency named but absent - the closure records it, the copy skips it
+      }
+
+  Only an ENTRY POINT throws. A dependency produces exactly the silently smaller
+  fixture the header says it prevents.
+
+  ## How it surfaced, and why it cost a full triage cycle
+
+  The coder reported `telegramFrontDeskBotCli.property.test.js` red on BL-1203's
+  invariant 1, blocking commits. That file is green on main - 3/3 solo, and green
+  in a full 279-file `npm run test:properties` run, which is the pre-commit
+  guard's own condition.
+
+  It is red on `swarmforge-coder` because BL-1240 adds
+  `swarmforge/scripts/unregistered_test_gate_lib.bb`, reaches it from
+  `swarm_handoff.bb`, and that lib load-files into `test/`. The fixture is built
+  without `suite_inventory_lib.bb`, so every `bb swarm_handoff.bb` call in the
+  fixture dies at load:
+
+      Type:     java.io.FileNotFoundException
+      Message:  .../fixture/swarmforge/scripts/test/suite_inventory_lib.bb (No such file or directory)
+      Location: .../fixture/swarmforge/scripts/unregistered_test_gate_lib.bb:42:1
+
+  `enqueueRoleAnswerNote` catches the non-zero exit, writes one stderr line and
+  returns `false`, so no outbox file is written - and invariant 1, which asserts
+  `outboxFileCount(root) === distinctUpdateIds.size`, reports a DEDUP violation.
+  The dedup logic is fine. A missing file in a test fixture was reported as a
+  correctness defect in an unrelated subsystem.
+
+  Full measurement chain, both disproved hypotheses, and the ownership argument:
+  `backlog/evidence/BL-1294-telegram-front-desk-cli-property-triage-20260830.md`.
+
+  ## Why this is the resolver's defect and not BL-1240's
+
+  Load-filing into a subdirectory is a legitimate layout, and it already exists
+  on main - four sites under `swarmforge/scripts/test/` reach back up into
+  `swarmforge/scripts/`. Those are runners, never fixture entry points, so none
+  had ever been pulled through the resolver. BL-1240's lib is the first
+  production script in a fixture closure to cross a directory boundary. The trap
+  was latent and it is armed for everyone: 11 test files call
+  `copyLiveScriptClosureInto`, and the two that put `swarm_handoff.bb` in their
+  closure break the moment BL-1240 lands.
+
+  ## How (direction, not mandate)
+
+  The two halves are independent and both are wanted. For the first, a
+  dependency needs to be carried as a path RELATIVE TO the scripts directory
+  rather than as a basename, which means `loadFileDeps` has to read the whole
+  path expression rather than one quoted token - note that the live sites build
+  paths from several string segments in one call, and that a segment list can
+  point up into the tree as well as down. For the second, an unresolved
+  dependency should fail the copy naming it, the way the header already
+  promises; the entry-point branch is the shape to follow.
+
+  `resolveScriptClosure` and `copyScriptClosure` are already exported and pure
+  over an injected reader, so both halves are directly testable without building
+  a real fixture. Whether `loadFileDeps` keeps its current signature is the
+  implementer's call.
+
+qa_e2e_procedure: >
+  1. Prove the original incident is closed. Check out the coder's
+     `swarm_handoff.bb` closure (or any tree where a script in a fixture closure
+     load-files into a subdirectory) and run the two files whose closure contains
+     `swarm_handoff.bb`:
+     `cd extension && npx vitest run --config vitest.properties.config.mjs
+     test/telegramFrontDeskBotCli.property.test.js` and
+     `npx vitest run test/telegramFrontDeskBotCli.test.js`.
+     Both must be green, and BL-1203 invariant 1 in particular.
+  2. Prove the fixture is complete rather than merely passing: build the closure
+     of `swarm_handoff.bb` into a scratch directory, hand a plain
+     `type: note` draft to the fixture's copy, and confirm it exits 0 with no
+     `FileNotFoundException` from any `load-file` line.
+  3. Prove the loud failure. Point a fixture build at an entry point whose
+     dependency genuinely does not exist and confirm the copy FAILS naming that
+     dependency's path - not a green build over a smaller fixture.
+  4. Prove no existing fixture regressed: run the full `npm run test:properties`
+     and the unit suite, and confirm the failing-file set is unchanged from the
+     pre-parcel baseline (28 property files red on main at spec time, listed in
+     the evidence file's run; `telegramFrontDeskBotCli.property.test.js` is NOT
+     among them and must not become so).
+  5. Confirm every scenario in the feature file resolves to a registered step
+     handler - `specs/pipeline/runtime.js` THROWS on a missing one.
+
+source: |
+  coder note 50_20260830T044645Z_001485_from_coder_to_specifier_for_specifier.handoff:
+  "Unowned red: telegramFrontDeskBotCli.property BL-1203 inv1 blocks commits"
+
+  Specifier triage 2026-08-30 established that the red is neither unowned nor a
+  BL-1203 defect, and minted this ticket for the mechanism actually measured.
+
+notes: |
+  ## The reported red is NOT what this ticket is named after - read this first
+
+  The coder reported it as an unowned flake in `telegramFrontDeskBotCli.property`.
+  It is neither unowned nor a flake: it is deterministic on `swarmforge-coder`,
+  absent on `main`, and caused by shared fixture infrastructure rather than by
+  either the property or the code it exercises. Closing this ticket closes that
+  red. BL-1203's invariant 1 needs no change and is not in scope.
+
+  ## Observation, deliberately NOT in scope
+
+  `enqueueRoleAnswerNote` swallows a failed `bb` spawn (one stderr line, returns
+  `false`) and BL-1203 invariant 1 ignores that return value, which is how an
+  infrastructure failure came to be reported as a dedup violation. The swallow
+  itself was checked and is CORRECT: `telegramFrontDeskBotCore.ts:2011` captures
+  the boolean and runs `confirmRoleAnswerDelivery` only `if (queued)`, so a
+  failed spawn leaves the pending marker in place and a human's answer is never
+  silently confirmed away. No production defect there.
+
+  The remaining cost is diagnostic, and scenario 02 removes it at the source: a
+  fixture that cannot be built completely will fail loudly and by name long
+  before any invariant is evaluated. Not folded in here - different file,
+  different mechanism (BL-1061's property-lane triage split 1:4 on exactly this
+  principle).
+
+  ## Documenter note
+
+  `extension/test/helpers/pinnedRepoFixture.js`'s header comment currently
+  describes the two behaviours this ticket changes - the basename-keyed closure
+  and the "still included... never a silently smaller fixture" promise the code
+  does not keep. Both sentences are in scope for this parcel's documenter pass,
+  not a follow-up.
+
+  ## IR-DRY
+
+  Four `possible-synonym` findings, medium confidence, all reviewed and none
+  acted on: three pairs are one step pattern differing only in its quoted
+  argument, and `has a file at` / `has no file at` are deliberate opposites.

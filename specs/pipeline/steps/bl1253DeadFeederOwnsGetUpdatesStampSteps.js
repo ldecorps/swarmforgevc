@@ -254,6 +254,37 @@ function registerSteps(registry) {
     fs.rmSync(st.root, { recursive: true, force: true });
   });
 
+  // ── 06: the recovery direction, carried from retired BL-1260 ────────────
+  //
+  // Scenario 02's mirror, and the dangerous one: a bridge that takes the
+  // token and never returns it leaves the front desk permanently dead while
+  // every liveness signal reads green. Same deps object, same process - the
+  // hand-back cannot be observed any other way.
+
+  scoped(/^the bridge owns getUpdates because the heartbeat was stale$/, async (ctx) => {
+    const st = makeFixture(ctx);
+    writeHeartbeat(st.opDir, 'stale');
+    await poll(ctx);
+    assertOwnedGetUpdates(st);
+  });
+
+  scoped(/^the front-desk poll heartbeat becomes fresh again during the run$/, async (ctx) => {
+    writeHeartbeat(ctx.bl1253.opDir, 'fresh');
+    await poll(ctx);
+  });
+
+  scoped(/^the bridge returns to consuming the queue without being restarted$/, (ctx) => {
+    const st = ctx.bl1253;
+    assert.equal(st.polls, 2, 'the scenario must observe two polls of one bridge');
+    assert.equal(st.lastDrainedQueue, true, 'the bridge did not go back to the queue');
+    assert.equal(
+      st.lastPolledTelegram,
+      false,
+      'the bridge kept the token after the front desk recovered - two pollers on one token'
+    );
+    fs.rmSync(st.root, { recursive: true, force: true });
+  });
+
   // ── 04: the start script, run for real ──────────────────────────────────
 
   scoped(/^the front-desk inbound feeder is not live at start$/, (ctx) => {
