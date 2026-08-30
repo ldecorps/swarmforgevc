@@ -68,6 +68,15 @@ describe('BL-670 the reader normalises both map shapes', () => {
     assert.equal(normaliseTicketStageEntry({ stage: 'QA' }).status, TICKET_STAGE_STATUS_LAST_KNOWN);
   });
 
+  it('pins the fallback operator: a defined-but-empty status is NOT replaced (??, not ||)', () => {
+    // `entry.status ?? LAST_KNOWN` only falls back on null/undefined - an
+    // explicit empty string is a distinct (if degenerate) value and passes
+    // through unchanged. Pinned here so a `??` -> `||` slip (which WOULD
+    // replace it) is caught; no test elsewhere exercises a defined-but-falsy
+    // status.
+    assert.equal(normaliseTicketStageEntry({ stage: 'QA', status: '' }).status, '');
+  });
+
   for (const junk of ['', null, undefined, 42, {}, { status: 'claimed' }, { stage: '' }]) {
     it(`drops junk rather than fabricating a stage: ${JSON.stringify(junk)}`, () => {
       assert.equal(normaliseTicketStageEntry(junk), undefined);
