@@ -98,7 +98,7 @@ qa_e2e: >
   Finally, confirm a SUCCESSFUL replay still leaves its branch in place -
   QA's own land action reads it.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off on the new feature file, plus one scoping judgement to confirm.
 

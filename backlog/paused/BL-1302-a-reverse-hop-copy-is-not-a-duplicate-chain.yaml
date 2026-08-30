@@ -1,0 +1,115 @@
+id: BL-1302
+title: "A back-one or back-all forward plants a live git_handoff for the same ticket in every earlier mailbox, and the duplicate-chain guard reads each one as a competing chain, so the next role's forward is refused until they drain"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 13
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one predicate in an existing guard; no structure to refactor"
+acceptance: specs/features/BL-1302-a-reverse-hop-copy-is-not-a-duplicate-chain.feature
+
+invariants:
+  - "Only a parcel that could itself be forwarded can block a forward: a non-forwarding inbound never blocks."
+  - "Absence fails closed - a live parcel carrying no non-forwarding marker blocks exactly as it does today."
+
+source: "Hardener note (priority 00) 2026-08-30T18:01Z, 'BL-1297 send blocked: dup-chain+self-entangled tip', with the refusal text in backlog/evidence/BL-1297-hardener-send-blocked-20260830.md (hardener branch, 476f49fc34). Specifier reconstructed the timing and re-ran duplicate-chain-guard-lib/blocking-parcel directly from both roots; findings in backlog/evidence/BL-1297-spec-correction-20260830.md."
+
+description: |
+  ## What is wrong
+
+  `duplicate_chain_guard_lib.bb`'s `live-parcel-for-ticket` treats ANY live
+  `git_handoff` for the ticket in another role's `new`/`in_process` as a
+  competing chain. Since the reverse-hop feature landed (human commit
+  `44d2d42591`, 2026-08-30 17:03Z), that shape is routine: a `back-one`
+  sender plants one `non-forwarding: true` copy and a `back-all` sender
+  plants one per earlier pipeline role. The moment a role forwards, the
+  ticket has live parcels in up to five other mailboxes, and the NEXT role's
+  forward is refused until every recipient has drained its copy.
+
+  A non-forwarding inbound cannot start a competing chain - Article 2.4
+  makes it merge-only, and `swarm_handoff.bb` already refuses a
+  `git_handoff` while such an inbound is in the sender's `in_process`. So it
+  can never be the thing BL-760 exists to catch.
+
+  ## Measured
+
+  The hardener's forward of BL-1297 - the critical land-step fix - was
+  refused at ~17:52Z naming
+  `00_20260830T175000Z_001295_from_architect_to_specifier`, the architect's
+  `back-all` copy. That copy was dequeued 17:50:03 and completed 17:55:57,
+  so the block lasted about six minutes and then cleared on its own; re-running
+  `blocking-parcel` for the same ticket and sender now returns `nil` from both
+  the master root and the hardener worktree.
+
+  Six minutes is the STANDING-pack case, where every reverse recipient is live
+  and drains quickly. On a router pack a reverse recipient may be dormant until
+  it is rotated in, and the window is then unbounded. BL-1299 shrinks the
+  exposure by removing the two master-resident roles from the recipient set;
+  it does not remove it, because `coder` and `cleaner` copies still block.
+
+  ## Why the symptom is worse than the delay
+
+  The refusal names a real file and tells the sender to clear it with
+  `redo_from.sh <ticket> <stage>` - salvage machinery. A role that follows
+  that instruction on a healthy parcel would be restarting a work item to
+  clear a copy that was about to disappear on its own. The hardener declined,
+  correctly, and lost the pass instead. An instruction that is wrong for the
+  common case is worse than no instruction.
+
+  ## How (direction, not mandate)
+
+  `live-parcel-for-ticket` already reads each candidate file's headers via
+  `handoff-lib/header-field` to check `type` and `task`. Reading
+  `non-forwarding` in the same predicate is additive, and
+  `swarm_handoff.bb`'s `inbound-non-forwarding?` already spells that check
+  one way worth reusing rather than respelling. Only an explicit marker
+  exempts (invariant 2). If the refusal survives for a genuine duplicate, its
+  `redo_from.sh` advice is still right and should stay.
+
+notes: |
+  ## Not the same defect as BL-1299 [2026-08-30 specifier]
+
+  BL-1299 is about WHO receives a reverse copy (a master-resident role must
+  not, because the merge it prescribes would land unapproved work on `main`).
+  This ticket is about what an already-delivered copy DOES to an unrelated
+  gate. Both were exposed by the same 3-hour-old feature; neither fixes the
+  other. Landing BL-1299 first narrows this window from five mailboxes to
+  two, which is a reason to sequence them, not to merge them.
+
+  ## No required_wiring, deliberately [2026-08-30 specifier]
+
+  The change is a predicate inside a function `swarm_handoff.bb`'s validate
+  step already calls on every send. No new mechanism needs a call site, and
+  the only available anchor would match identically before and after, gating
+  nothing (BL-1235).
+
+qa_e2e_procedure: |
+  1. Set a role's roles.tsv col 9 to `back-all` (architect already is) and
+     send a forward `git_handoff` from it. Confirm the reverse copies land in
+     the earlier roles' `inbox/new/` carrying `non-forwarding: true`.
+  2. WITHOUT draining them, send the next role's forward `git_handoff` for the
+     same ticket. It must be accepted - today it is refused naming one of the
+     reverse copies.
+  3. Place a live forward `git_handoff` (no non-forwarding header) for the same
+     ticket in a third role's mailbox and repeat: the send MUST still be
+     refused, naming that parcel, with the `redo_from.sh` advice intact.
+  4. Strip the `non-forwarding` line from a reverse copy and repeat step 2:
+     the send must be refused again (absence buys no exemption).
+
+human_approval: pending
+
+approval_context: >
+  The defect is measured and the direction is narrow: a non-forwarding inbound
+  cannot start a competing chain, so it should not block one. Worth a human
+  glance only because it slightly loosens a guard that exists to catch a real
+  and expensive failure (one ticket forking into two chains, BL-727), and
+  because it is the second defect found in the reverse-hop feature within
+  three hours of it landing - if the intent is to reconsider that feature
+  rather than keep patching around it, say so here and this ticket should wait.

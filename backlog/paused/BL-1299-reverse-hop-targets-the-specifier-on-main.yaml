@@ -1,0 +1,193 @@
+id: BL-1299
+title: "A back-all reverse hop is addressed to the specifier, whose worktree is the published main branch, so the prescribed merge-only action would land unapproved in-flight work on main and bypass the QA gate"
+milestone: M8
+type: defect
+severity: critical
+status: todo
+epic: swarm-reliability
+priority: 0
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1299-reverse-hop-skips-master-resident-roles.feature
+
+invariants:
+  - "No reverse git_handoff copy is ever addressed to a role whose worktree is the master checkout (today: coordinator and specifier)."
+  - "Changing the reverse-recipient set never changes which role is stamped terminal - last-pack-role? still resolves to the last code-worktree role."
+
+source: "Live inbound 2026-08-30T17:50Z: .swarmforge/handoffs/specifier/inbox/in_process/00_20260830T175000Z_001295_from_architect_to_specifier_for_specifier.handoff - a non-forwarding: true reverse copy from architect carrying commit 513d840d97 for BL-1297. Refused by the specifier rather than executed; verified against swarm_handoff.bb and .swarmforge/roles.tsv before minting."
+
+description: |
+  ## What is wrong
+
+  `swarm_handoff.bb`'s `reverse-roles` computes a `back-all` sender's reverse
+  recipients as `(vec (take idx (pack-role-names)))`. `pack-role-names` is
+  documented as "Pipeline roles from roles.tsv order, excluding coordinator"
+  and removes exactly one role:
+
+      (remove #(= "coordinator" (handoff-lib/seat-stage %)))
+
+  The specifier is NOT removed. It is first in the pipeline order, so it is a
+  reverse recipient for EVERY `back-all` sender. `.swarmforge/roles.tsv` today
+  gives `architect` col9 = `back-all`, so with roles
+  `[specifier coder cleaner architect hardender documenter QA]` and idx 3,
+  `(take 3 ...)` = `[specifier coder cleaner]`.
+
+  ## Why this is critical, not cosmetic
+
+  The coordinator was excluded because it is master-resident and does no code
+  integration. The specifier is master-resident for the SAME reason
+  (`PIPELINE.md`'s roles table gives both worktree "master") and is under an
+  explicit constitutional prohibition:
+
+    - Article 1.2 - the specifier "never merges, closes tickets, or integrates".
+    - Article 4.2 / 1.8 - QA lands the approved commit on `main`.
+
+  But Article 2.4 says a `non-forwarding: true` inbound is merge-only: "run
+  the payload merge, then `done_with_current.sh`". So the protocol instructs
+  the specifier to perform an action its own role article forbids, and the
+  target of that merge is the published branch.
+
+  ## Measured, 2026-08-30, on the live inbound
+
+  The master checkout is on branch `main`; the architect's commit `513d840d97`
+  is the tip of branch `master`, which has diverged:
+
+      git rev-list --left-right --count main...master  ->  3   398
+      git merge-base --is-ancestor 513d840d97 main     ->  false
+      git diff --stat main...513d840d97                ->  392 files, 11516 insertions
+
+  Executing the prescribed merge would therefore land 398 commits of
+  unapproved, in-flight, multi-ticket work onto `main` in one action, with no
+  QA gate anywhere in the path. The only thing that prevented it was the
+  receiving agent noticing the conflict between Article 2.4 and Article 1.2.
+
+  ## How (direction, not mandate)
+
+  The natural fix is to exclude master-resident roles from `pack-role-names`
+  the same way `coordinator` already is, rather than special-casing
+  `specifier` at the `reverse-roles` call site. `pack-role-names` has only two
+  call sites in the tree (`last-pack-role?` and `reverse-roles`), and the
+  terminal role is `QA` either way, so widening the exclusion does not disturb
+  terminal stamping - invariant 2 exists to hold that.
+
+  Note that `.swarmforge/roles.tsv` is local runtime state, not tracked - the
+  fix belongs in the code that reads it, not in the tsv.
+
+  ## Decided: derive, do not hardcode (human ruling 2026-08-30)
+
+  The one open design choice is now settled by the human:
+
+    "BL-1299 approved: derive master-resident from roles.tsv, not hardcode."
+
+  So master-residency is READ FROM THE ROLES TABLE, never a second literal
+  role name beside `coordinator`. That much is a mandate; the rest of this
+  section stays direction, and any implementation satisfying the scenarios
+  and the invariants is acceptable.
+
+  The column is already there and already parsed on the same line:
+  `.swarmforge/roles.tsv` col 2 is the worktree NAME (`master` for exactly
+  `specifier` and `coordinator`, the role's own name otherwise) and col 3 is
+  its absolute PATH (the repo root for those two). `pack-role-names` today
+  splits the row and keeps only `(first ...)`, discarding both - so the fix
+  is to keep a column it already has in hand, not to read a new file.
+
+  Either column is an acceptable derivation. Scenario 04's handler must
+  therefore build a REALISTIC row - col 2 `master` AND col 3 the repo root
+  together, exactly as the live table pairs them - so the contract does not
+  accidentally pick a winner between two correct implementations.
+
+notes: |
+  ## Deliberately NO required_wiring [2026-08-30 specifier]
+
+  This ticket adds no mechanism needing a call site: it changes an existing
+  function that already has live callers. The one anchor available - the
+  acceptance handler registration in `specs/pipeline/steps/index.js` - would be
+  satisfied by the parcel's own diff and so would gate nothing (BL-1235), and
+  it is redundant anyway: `acceptance:` here points at a real `.feature`, and
+  the acceptance runner already THROWS on a scenario with no handler, so the
+  suite itself forces the handler to exist. Banking a green that means nothing
+  is worse than declaring none.
+
+  ## Relationship to the reverse-hop feature itself
+
+  The reverse-hop mechanism landed in human commit `44d2d42591` ("Steal
+  upstream reverse git_handoff hops and two-call AUDIT_REQUIRED.",
+  2026-08-30 17:03Z). This is a gap in that feature's recipient selection, not
+  an argument against the feature. `back-one` senders are unaffected in
+  today's table (`cleaner` -> `coder`); only `back-all` reaches back far
+  enough to touch the specifier.
+
+  ## The ruling is relayed, not tapped [2026-08-30 specifier]
+
+  The human's answer arrived as a coordinator note
+  (`00_20260830T175739Z_003266_from_coordinator_to_specifier`, priority 00,
+  2026-08-30T17:57:39Z) reading in full: "BL-1299 approved: derive
+  master-resident from roles.tsv, not hardcode."
+
+  It is quoted here because that note is the ONLY durable copy: the ask went
+  out to this ticket's topic at 17:55Z, the topic record carries no inbound
+  reply, no `Approve BL-1299: record human_approval` commit exists, and the
+  front-desk log has no BL-1299 line - so the human answered somewhere the
+  recorder never saw. The specifier does not flip `human_approval` on a
+  second-hand relay, so the field still reads `pending`. It is NOT an
+  unanswered question: do not raise a fresh ask, and do not re-open the
+  design choice.
+
+  ## Scenario 04 is what makes the ruling enforceable [2026-08-30 specifier]
+
+  A hardcoded `#{"coordinator" "specifier"}` passes scenarios 01-03 unchanged
+  - they only ever name those two roles, so the approved derivation and the
+  rejected hardcode are indistinguishable to them. Scenario 04 makes an
+  ordinary code-worktree role master-resident purely by its roles-table row;
+  the hardcode fails it. Without that scenario the human's ruling would be
+  unenforced prose and the rejected implementation could ship green.
+
+  ## The constitutional half is the specifier's, and it is blocked
+  [2026-08-30 specifier]
+
+  Article 2.3's reverse-hop paragraph
+  (`swarmforge/constitution/articles/02_handoffs.md`) says the helper writes
+  reverse copies "to all earlier pipeline roles (`back-all`), never to
+  `coordinator`", and stamps "the last non-coordinator pack role" terminal.
+  Both sentences name the single exclusion this ticket widens, so both go
+  stale the moment the fix lands. That prose is specifier-owned (Article 5.1)
+  and no gate will schedule it: `required_stages` has no specifier stage, and
+  a `required_wiring` entry would pin it to the parcel commit rather than
+  main (BL-798). It is recorded here as this ticket's other half.
+
+  It could not be landed at spec time. `boot_prefix_budget_gate.sh` was
+  failing on main at 45097 chars against a 44000 budget, BEFORE any edit -
+  hotfix `9fad290581` has since restored it to 41927 and turned both red lanes
+  green. But BL-1227's acceptance scenario 02 re-measures the LIVE tree at a
+  42000 ceiling (that discrepancy is BL-1300), so the real headroom is 73
+  chars and this correction still does not fit. Land it in this ticket's own
+  parcel, together with whatever trim it needs, once BL-1300 has settled which
+  of the two numbers is the budget.
+
+qa_e2e_procedure: |
+  1. Confirm `.swarmforge/roles.tsv` still gives `architect` col9 = `back-all`
+     (if not, set it for the test and restore afterwards).
+  2. From the architect worktree, send a `git_handoff` forward to `hardender`.
+  3. Assert NO reverse copy appears in the specifier mailbox:
+     `ls .swarmforge/handoffs/specifier/inbox/new/ | grep from_architect` is empty.
+  4. Assert the legitimate reverse copies DO still appear for `coder` and
+     `cleaner` (including their worktree mailboxes).
+  5. Assert the forward copy to `hardender` is unchanged and still carries the
+     terminal stamping it had before.
+
+human_approval: pending
+
+approval_context: >
+  NOTHING IS OPEN - this needs a re-tap, not a new decision. The design
+  question this field was raised for ("derive master-residency from the roles
+  table, or hardcode a second name?") was answered by the human on 2026-08-30
+  and is recorded verbatim under "Decided" in the description: derive from
+  roles.tsv. The spec was finalised against that answer the same day. The
+  answer reached the specifier relayed through a coordinator note rather than
+  as a reply in this ticket's own topic, so the structured field was never
+  flipped and the promotion gate still refuses the ticket. Reply "approve
+  BL-1299" here to confirm the relayed decision was really yours, and unblock
+  a critical defect that fires on every architect forward.
