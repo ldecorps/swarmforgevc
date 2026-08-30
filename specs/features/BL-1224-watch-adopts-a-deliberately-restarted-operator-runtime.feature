@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e827f55baed12b3346b05ea0cca4323e0ac6a94201263d7d5bb434ed7860cdce
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T03:50:02.868698171Z","feature_name":"BL-1224 the operator-runtime watch adopts a deliberately restarted runtime instead of counting a crash","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1224-watch-adopts-a-deliberately-restarted-operator-runtime.feature","background_hash":"ed6006969e8f982e4c9516f19930e3a9f69d7a5533b2130cb0c60b788f108686","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the pidfile decides whether a vanished tracked pid was a crash or a handover","scenario_hash":"e7837ee81ca8801a67f701e3e8d59ae089512898d401548c7c9d18f8d96bc423","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-30T03:50:02.868698171Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1224 the operator-runtime watch adopts a deliberately restarted runtime instead of counting a crash
 
   On 2026-08-28 operator_runtime_supervisor.log announced "operator runtime

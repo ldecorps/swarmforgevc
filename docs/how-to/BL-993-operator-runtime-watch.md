@@ -72,12 +72,50 @@ still apply.
 
 Every `:started`, `:re-armed`, and `:gave-up` event is announced on the
 human channel (Telegram, when configured — otherwise the announce is still
-logged and recorded, never lost). `:crashed` and `:healthy-reset` are logged
-only. `announced-event?` in `operator_runtime_watch_lib.bb` is the single
-source of truth for which events reach the human — the supervisor's own
-dispatch calls into it rather than keeping an independent copy (a prior
-architect bounce caught exactly that drift: see
-`backlog/evidence/BL-993-bounce-20260821-architect.md`).
+logged and recorded, never lost). `:crashed`, `:healthy-reset`, and
+`:adopted` (BL-1224, below) are logged only. `announced-event?` in
+`operator_runtime_watch_lib.bb` is the single source of truth for which
+events reach the human — the supervisor's own dispatch calls into it rather
+than keeping an independent copy (a prior architect bounce caught exactly
+that drift: see `backlog/evidence/BL-993-bounce-20260821-architect.md`).
+
+## A deliberate restart by something else is adopted, never counted as a crash (BL-1224)
+
+Nothing else in the swarm is supposed to restart `operator_runtime.bb`
+directly — but `build_freshness_cli.bb`'s `restart-operator-group!` does,
+once per QA merge (the coordinator runs a freshness sync after every merge).
+Before BL-1224, every one of those deliberate restarts was indistinguishable
+from a crash to this watch: `check-one!` asks only "is the tracked pid
+alive", and a replaced pid answers that question identically to a dead one.
+On a busy merge night this produced clusters of phantom
+`crashed`/`started` announcements, climbing attempt counters, and even a
+`gave-up` cooldown that left the runtime genuinely unwatched for up to 15
+minutes — none of it caused by an actual failure.
+
+Each tick now reads the runtime pidfile fresh (`:pidfile-pid`) and consults
+it, in `decide`, between the deliberate-stop gate above and the crash-path
+`check-one-fn`: when the pidfile names a **different, live**
+`operator_runtime.bb` process (verified through the same cmdline-checked
+`pid-alive?`/`runtime-alive?` this watch already uses — no second liveness
+predicate), the watch **adopts** that pid and moves on. `check-one-fn` is
+never reached, so an adoption spawns nothing and spends nothing: the attempt
+counter is untouched, exactly as BL-1154's `voluntary-build-stale-started-entry`
+already does for a voluntary build-stale roll — the same shape for a
+different non-crash. `check-one!` itself is unchanged; it is shared by five
+supervisors that must not be affected.
+
+The genuine crash path is unchanged in every other case: a tracked pid that
+died with the pidfile still naming it, naming nothing, or naming a live but
+unrelated process (pid reuse) is still `:crashed`, still restarted through
+`start_operator_runtime.sh`, and still announced. Pid reuse is deliberately
+**not** adopted — the same liveness check that makes adoption safe is what
+keeps a masked crash from being missed.
+
+An adoption is logged as `:adopted` and recorded in the status file, but it
+does **not** reach the human channel — it is not an incident, and training
+the human to ignore a restart announcement that fires every few minutes is
+exactly the credibility cost this ticket exists to stop. A post-mortem
+distinguishes an adoption from a tick that did nothing by reading the log.
 
 ## The watcher is never the watched
 
@@ -140,10 +178,13 @@ bash swarmforge/scripts/test/bl993_announce_matches_predicate.sh
 bash swarmforge/scripts/test/test_stop_operator_runtime_watch_first.sh
 bash swarmforge/scripts/test/test_start_ancillary_services_operator_watch_gate.sh
 bash swarmforge/scripts/test/test_swarm_status_operator_runtime.sh
+bb swarmforge/scripts/test/bl1224_watch_adoption_property_runner.bb
+bash swarmforge/scripts/test/test_operator_runtime_watch_adoption.sh
 ```
 
-Acceptance feature:
-[`specs/features/BL-993-a-dead-operator-runtime-is-restarted-without-a-human.feature`](../../specs/features/BL-993-a-dead-operator-runtime-is-restarted-without-a-human.feature).
+Acceptance features:
+[`specs/features/BL-993-a-dead-operator-runtime-is-restarted-without-a-human.feature`](../../specs/features/BL-993-a-dead-operator-runtime-is-restarted-without-a-human.feature),
+[`specs/features/BL-1224-watch-adopts-a-deliberately-restarted-operator-runtime.feature`](../../specs/features/BL-1224-watch-adopts-a-deliberately-restarted-operator-runtime.feature).
 
 See also: [babysitterd — the deterministic health-sweep daemon](BL-611-babysitterd-runbook.md)
 for the *other* half of the mutual-watch picture (operator-runtime tells on
