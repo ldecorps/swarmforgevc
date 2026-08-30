@@ -36,7 +36,19 @@ function fakeAdapters(ctx, overrides = {}) {
   };
 }
 
+// BL-1277: this file's own feature title, so the generic step text below can
+// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
+// feature being run and otherwise falls back to first-match across every
+// handler file - so an UNSCOPED registration of text another file also
+// registers hands whichever file loads first the job of answering both
+// features, silently, against the wrong fixture.
+const BL1277_FEATURE_NAME = "The pipeline board posts the new message before deleting the old one, so there is always at least one board to look at";
+
 function registerSteps(registry) {
+  // BL-1277: registrations whose step text another handler file also
+  // registers go through here, pinned to this file's own feature.
+  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
+
   registry.define(/^a pipeline board sync driven by injected post and delete adapters$/, (ctx) => {
     ctx.calls = [];
     ctx.data = board([{ id: 'BL-1', column: 'coder', slug: '' }]);
@@ -50,7 +62,7 @@ function registerSteps(registry) {
     ctx.calls = []; // only the SCENARIO's own sync call is under test below.
   });
 
-  registry.define(/^no board message has been posted yet$/, (ctx) => {
+  bl1277Scoped(/^no board message has been posted yet$/, (ctx) => {
     ctx.prevState = undefined;
   });
 
