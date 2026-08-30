@@ -128,3 +128,28 @@ defect this ticket exists to close.
 No new probe or heartbeat, no new status meanings, no poll-rate change, no
 Bubble port, and nothing in the static backlog-dashboard PWA — this is the LIVE
 holistic UI only.
+
+## Specifier amendment, 2026-08-30 — the mapping ruled, and scenario 06
+
+The mapping question above is **ruled as built**: idle reads `stale`. No fourth
+status kind.
+
+The same amendment added scenario 06, and it names a real defect this parcel
+would otherwise have shipped. `residentSpyUiHtml.ts` repaints the LAST
+snapshot's panes when a poll FAILS, and `resolvePaneStatusKind` consulted the
+per-pane signal before anything else — so a tile that was busy at the moment the
+bridge went down would have stayed green for the whole outage. The one event the
+operator most needs the grid to stop claiming things about is exactly the one it
+would have kept claiming through.
+
+A failed poll now outranks every per-pane signal. Scoped to `err` deliberately,
+per the scenario's own wording: a merely STALE aggregate still yields to the
+pane's own answer, because "the poll is a bit old" is not "we have lost
+contact".
+
+Covered three ways: scenario 06 through the real reader; a unit test that pins
+all three aggregates against a busy pane (`err` → err, `stale` → ok, `ok` → ok);
+and invariant 1's property, which now asserts the failed-poll clause for every
+pane shape and carries its own reach floor so the clause cannot go unexercised.
+
+Acceptance 7/7, unit 8/8, property 4/4.
