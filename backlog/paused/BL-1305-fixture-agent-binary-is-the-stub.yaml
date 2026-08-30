@@ -80,7 +80,7 @@ qa_e2e: >
   binary should ever have been launched to survive. Confirm the fixture stub
   did run, so the scenarios are not passing merely because nothing launched.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Review of the new feature file, plus one live operational decision that is
   not this ticket's to take.

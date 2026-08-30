@@ -141,3 +141,5 @@ notes: |
   bounce charged to the architect for BL-1224 is still correct on its own terms -
   the pass genuinely did not happen - but no amount of role diligence closes a
   structural hole that only a human noticing a missing file can currently detect.
+
+assigned_to: coder
