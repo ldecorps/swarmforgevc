@@ -19,11 +19,11 @@
 ;; BL-1293: the comparison used to be commit IDENTITY alone, and a merge is
 ;; a new commit - so a bare "Merge <received> into <role-branch>", the shape
 ;; this swarm produces at nearly every hop, passed while the role authored
-;; nothing. The architect forwarded BL-1224 exactly that way (and BL-1183 the
-;; same session); only a human-authored QA bounce noticing a missing evidence
-;; file caught it. The gate now asks what the commit CONTRIBUTED, reusing the
-;; primitive BL-1269 already built for the sibling pre-QA ancestry gate rather
-;; than growing a second notion of it.
+;; nothing. The architect forwarded BL-1224 exactly that way (and BL-1183
+;; the same session); only a human-authored QA bounce noticing a missing
+;; evidence file caught it. The gate now asks what the commit CONTRIBUTED,
+;; reusing the primitive BL-1269 already built for the sibling pre-QA
+;; ancestry gate rather than growing a second notion of it.
 
 (ns review-forward-evidence-gate-lib
   (:require [babashka.fs :as fs]
@@ -86,9 +86,10 @@
 
 (defn forward-introduces-nothing-own?
   "True when commit is a MERGE (two or more parents) whose combined diff
-   against ALL its parents is empty - every line already exists in some parent, so the role that made it
-   authored nothing of its own. The second fs-touching function in this file
-   (see received-commit-for-task); `blocked?` stays pure and takes the answer.
+   against ALL its parents is empty - every line already exists in some
+   parent, so the role that made it authored nothing of its own. The second
+   fs-touching function in this file (see received-commit-for-task);
+   `blocked?` stays pure and takes the answer.
 
    REUSES pre-qa-gate-gather-lib/merge-introduces-nothing-unique? (BL-1269),
    which is why this gate cannot drift from its sibling. Fails open (false)
