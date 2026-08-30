@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1243: each Live Screen role tile now
+paints its OWN agent's activity dot instead of every tile moving together.
+BL-1160 shipped the reader (`resolvePaneStatusKind` prefers an optional
+per-pane `activitySignal`) but never the writer — `PaneLiveSnapshot` carried
+no such field, so every tile fell through to the whole-poll aggregate. This
+ticket sets it: `derivePaneActivitySignal(paneText)` runs inside
+`tryCaptureRolePane`, deriving `'ok' | 'stale' | 'err'` from the SAME pane
+text the Live Screen poll already captures — no new tmux probe, no second
+poll loop, no Mini App poll-rate change (the operator's own stop condition,
+checked by counting `capturePane(` call sites and confirmed unchanged).
+Mapping, ruled by a human sentence dropped in an earlier mint and now
+restored verbatim: busy → `ok` (green); alive-but-idle → `stale` (amber);
+unavailable, meaning no capture at all → no per-pane signal, so the existing
+UI branch hides the dot rather than showing a fourth status kind. A blank
+capture (a pane that WAS captured but returned nothing) is the other half of
+that and answers for itself with `stale` rather than falling through to the
+aggregate — the exact gap
+that would otherwise paint a dead pane green on the next poll. `ok` is
+never derived from the shared `isPaneActivelyProcessing` predicate a second
+time — the signal is checked to agree with it, never re-decides "busy" on
+its own, keeping the same busy definition `chase_sweep_lib.bb` uses
+(BL-1003). A rebuild during this same parcel closed a regression the
+original build introduced: on a failing poll, all three error paths in
+`residentSpyUiHtml.ts` were repainting the prior successful capture's
+`lastPanes`, and because the per-pane signal is read before the aggregate,
+a tile whose last capture was busy kept painting green through the whole
+outage — exactly backwards from "never misleading green" during the one
+event the operator most needs to see. Fixed: the per-pane signal now
+defers to the aggregate's own `err` verdict specifically (never to a merely
+`stale` aggregate, which would amber every tile at once on ordinary poll
+jitter and erase the distinction this ticket exists to draw). Acceptance:
+`specs/features/BL-1243-live-screen-per-pane-activity-signal.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-604: the morning briefing gains a
 trend-analysis section — a short NARRATIVE of the BL-594 behaviour trends,
 distinct from the mini-app's charts, per human directive 2026-07-23. Per

@@ -796,6 +796,17 @@ export function getResidentSpyUiHtml(): string {
   }
 
   function resolvePaneStatusKind(pane, aggregateKind) {
+    // BL-1243 scenario 06: a FAILED poll outranks every per-pane signal. This
+    // view repaints the last snapshot's panes when a poll fails, and the
+    // per-pane signal is consulted before anything else - so a tile that was
+    // busy at the moment the bridge went down would stay green for the whole
+    // outage, which is the one moment the operator most needs the grid to stop
+    // claiming things. Scoped to 'err' deliberately: a merely STALE aggregate
+    // still yields to the pane's own answer, because "the poll is a bit old"
+    // is not "we have lost contact".
+    if (aggregateKind === 'err') {
+      return aggregateKind;
+    }
     if (pane && pane.activitySignal) {
       return pane.activitySignal;
     }

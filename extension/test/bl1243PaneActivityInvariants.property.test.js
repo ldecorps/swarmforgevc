@@ -76,6 +76,14 @@ describe('BL-1243 invariant 1: green never comes from anywhere but the pane', ()
           const pane = { ...base, activitySignal: derivePaneActivitySignal(base.paneText) };
           const painted = resolve(pane, aggregate);
 
+          // BL-1243 scenario 06: a FAILED poll outranks every per-pane signal,
+          // because the view is repainting the last snapshot and none of those
+          // signals is current any more.
+          if (aggregate === 'err') {
+            coverage['aggregate:err:checked'] = (coverage['aggregate:err:checked'] || 0) + 1;
+            assert.equal(painted, 'err', `a ${shape} pane was painted ${painted} while the poll was failing`);
+            return true;
+          }
           if (painted === 'ok') {
             assert.equal(
               pane.activitySignal,
@@ -95,6 +103,8 @@ describe('BL-1243 invariant 1: green never comes from anywhere but the pane', ()
     // An aggregate that is never 'ok' cannot expose the defect this invariant
     // is about, so the green aggregate carries its own floor.
     assertReachFloor(coverage, ['aggregate:ok'], 4, 'green aggregate draws');
+    // ...and the failed-poll clause must actually have been exercised too.
+    assertReachFloor(coverage, ['aggregate:err:checked'], 4, 'failed-poll draws');
   });
 
   it('lets two panes under one aggregate disagree, which is the whole point', () => {
@@ -102,6 +112,11 @@ describe('BL-1243 invariant 1: green never comes from anywhere but the pane', ()
     fc.assert(
       fc.property(fc.constantFrom(...AGGREGATES), (aggregate) => {
         coverage.draw = (coverage.draw || 0) + 1;
+        if (aggregate === 'err') {
+          // A failed poll paints every tile err by design (scenario 06), so
+          // "they must differ" is not a claim about this case.
+          return true;
+        }
         const busy = SHAPES.busy();
         const idle = SHAPES.idle();
         const paint = (p) => resolve({ ...p, activitySignal: derivePaneActivitySignal(p.paneText) }, aggregate);
