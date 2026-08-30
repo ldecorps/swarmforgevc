@@ -3,7 +3,7 @@ title: "A revert commit inherits its reverted ticket's subject, so the send-time
 milestone: M8
 type: defect
 severity: high
-status: todo
+status: blocked
 epic: swarm-reliability
 priority: 12
 direction: agent-reported
@@ -116,6 +116,30 @@ approval_context: >
   call and I have left it to the coordinator rather than assuming it.
 
 notes: |
+  ## Parked at QA on a named blocker - not dropped [2026-08-30 specifier]
+
+  QA verified this parcel clean and raised a LAND_ESCALATE only about its
+  LANDING (siblings BL-1253/BL-1272 unlanded; QA note 002017, 16:32Z). The
+  specifier adjudicated it a PARK, not a bounce, in commit `724a953ea5`:
+  the parcel is intact and parks on the `swarmforge-QA` branch until the land
+  step itself is fixed. Blocker: BL-1297 (a merge commit's own paths read as
+  empty, so the scope gate blames this ticket for a revert's foreign paths).
+
+  `status: blocked` records that park durably. Until now it lived only in a
+  commit subject, an evidence file and two notes - none of which the sweeps,
+  the briefing, or the next agent to open this ticket can see, which is why
+  BL-719's dropped-parcel sweep has re-reported it as a "possible drop" once
+  per cooldown window since 17:00Z. The marker does not silence that sweep on
+  its own; BL-1301 is the slice that teaches the sweep to read it.
+
+  Clearing the park is the coordinator's call once BL-1297 has landed
+  (backlog-schema.md: `blocked` is a park the coordinator may later clear).
+  The parcel resumes from the QA branch - it does not restart, and `assigned_to`
+  is left as it stood, since re-routing is not this amendment's business.
+
+  Bookkeeping only: nothing about what any role builds changes, so no holder
+  was woken for it.
+
   BL-1240 is blocked on this ticket. It is complete at the documenter, docs
   verified unchanged and correct, and it is holding in_process rather than
   being bounced or worked around - the documenter was right not to force it.
@@ -127,5 +151,23 @@ notes: |
   This defect recurs on any ticket that is bounced, reverted, reworked and
   re-forwarded - a common path, not an exotic one - so it will not stay
   a one-ticket problem.
+
+  ## Specifier adjudication 2026-08-30: parked at QA, not bounced
+
+  QA verified this ticket clean and escalated only its LANDING
+  (`swarmforge-QA:backlog/evidence/BL-1295-land-escalate-20260830.md`). The
+  work is genuinely unlanded - `revert-subject?` is absent from
+  `main:swarmforge/scripts/task_scope_gate_lib.bb` and
+  `bl1295RevertSubjectAttributionSteps` from `main:specs/pipeline/steps/index.js`
+  - and the land step's "own-paths identical to origin/main" is a false
+  report caused by BL-1297, not a description of the repository.
+
+  Nothing further is owed by this ticket or its author. The parcel stays put,
+  intact on `swarmforge-QA` and its ancestry; QA re-runs `land_step_cli.bb`
+  once BL-1297 (and then BL-1298) have landed via the expeditor. Do NOT
+  hand-roll the replay in the meantime: citing an upstream non-merge commit
+  to dodge the blind spot would silently land a PARTIAL parcel.
+
+  Evidence: backlog/evidence/BL-1295-land-escalate-specifier-adjudication-20260830.md
 
 assigned_to: coder

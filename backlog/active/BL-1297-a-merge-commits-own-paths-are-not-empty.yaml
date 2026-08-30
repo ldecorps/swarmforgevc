@@ -2,10 +2,10 @@ id: BL-1297
 title: "A merge commit's own changed paths come back empty, so the scope gate, the unregistered-test gate and the land step's replay all fail open on the pipeline's most common commit shape"
 milestone: M8
 type: defect
-severity: high
+severity: critical
 status: todo
 epic: swarm-reliability
-priority: 10
+priority: 0
 direction: agent-reported
 depends_on: []
 mutation_cost: low
@@ -67,17 +67,47 @@ description: |
 
   ## How (direction, not mandate)
 
-  Compute the commit's own change against its first parent for every commit
-  shape. `git diff --name-only <commit>^1 <commit>` is the precise
-  first-parent semantic and is what I measured as correct; `-m` answers a
-  different (per-parent union) question and should not be reached for
-  casually. Whatever is chosen must keep scenario 04 true - an ordinary
-  single-parent commit's answer must not change - and must handle a root
-  commit, which has no first parent, without failing the gate open.
+  Compute BOTH answers from one walk, and wire each caller to the one its
+  decision needs (invariant 3). `git diff --name-only <commit>^1 <commit>`
+  is the DELIVERED semantic. `git diff-tree --cc --name-only -r <commit>` is
+  the AUTHORED one, and on a single-parent commit it degrades to the ordinary
+  diff, which is what keeps scenario 04 and scenario 06 true at once. `-m`
+  answers a third (per-parent union) question and should still not be reached
+  for casually. A root commit has no parent and must not fail the gate open.
+
+  ## Corrected 2026-08-30 - this contract blocked its own parcel
+
+  The version above originally said DELIVERED for every caller, and invariant
+  2 asserted all three callers "answer the same question about the same commit
+  identically". That premise is false: caller 1 asks what content a commit puts
+  on the branch, callers 2 and 3 judge what its author wrote. Conflating them
+  is fail-CLOSED in the opposite direction from the bug this ticket fixes.
+
+  The proof is this ticket's own parcel. With the fix live in the hardener's
+  worktree, its forward to the documenter was refused naming 11 paths across
+  BL-1295, BL-1272, BL-1298, BL-676, BL-677, BL-816, BL-875 and GH-24 - none
+  of them written by the hardener. They arrived in the receive-merge every
+  stage is REQUIRED to make, plus the routine main syncs the constitution
+  requires. Measured on that merge (`d4e74ea3d1`):
+
+      git diff --name-only d4e74ea3d1^1 d4e74ea3d1        -> 25 paths, 8 tickets
+      git diff-tree --cc --name-only -r d4e74ea3d1        -> 1 path
+      the one authored path: swarmforge/scripts/test/task_scope_gate_lib_test_runner.bb
+
+  That single authored path is BL-1297's own file, so under AUTHORED
+  semantics the send passes on its merits. Under DELIVERED semantics every
+  forward in the pipeline is refused the moment its branch has synced main,
+  which is always. Scenario 05 pins that case; scenario 02 keeps the real
+  entanglement - a merge whose own resolution touches a foreign path.
+
+  Evidence: `backlog/evidence/BL-1297-hardener-send-blocked-20260830.md`
+  (on the hardener branch) and
+  `backlog/evidence/BL-1297-spec-correction-20260830.md`.
 
 invariants:
-  - "A commit's own changed paths are computed against its first parent for every commit shape; a merge never reports an empty change set merely because it is a merge."
-  - "An empty change set is only ever the truth, never an artefact of how the diff was invoked - the three callers sharing this walk answer the same question about the same commit identically."
+  - "A merge's DELIVERED paths are its first-parent delta and are never empty merely because it is a merge; its AUTHORED paths are what differ from EVERY parent, and are empty exactly when the merge resolved nothing itself."
+  - "An empty change set is only ever the truth, never an artefact of how the diff was invoked."
+  - "Each caller reads the question its own decision needs: the land-step replay reads DELIVERED, the send-time scope gate and the unregistered-test gate read AUTHORED."
 
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1297MergeCommitOwnPathsSteps::the four scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
@@ -109,6 +139,20 @@ approval_context: >
   so, because it changes what the gate refuses.
 
 notes: |
+  ## Amended in flight, and why it is reworded rather than retired
+  [2026-08-30 specifier]
+
+  Scenario 02 was rewritten in place and scenarios 05/06 added. The
+  retire-never-reword rule (BL-1006) governs a scenario that describes
+  behaviour which SHIPPED and was later superseded; nothing here has landed,
+  so there is no shipped contract to preserve and an amendment is the honest
+  record. The rebuild is the coder's: `own-commit-changed-paths` gains a
+  second answer and callers 2 and 3 move onto it.
+
+  Per BL-233 the handlers for scenarios 05 and 06 must land in the SAME
+  parcel as the rename - the acceptance runner throws on a scenario with no
+  handler, so a partial rebuild turns the suite red for every other parcel.
+
   This is the SECOND defect found in task_scope_gate_lib.bb on 2026-08-30, and
   they are independent: BL-1295 is `commit-message-names-task?` attributing a
   revert to the ticket whose subject it inherited (a false REFUSAL); this is
@@ -132,3 +176,48 @@ notes: |
     - `replay!`'s "could not create worktree" failure path does not delete the
       branch `git worktree add -b` may already have created, so a re-run with
       the same task and commit fails a second time for a different reason.
+
+  ## Specifier re-triage 2026-08-30: high -> critical, priority 10 -> 0
+
+  Confirmed a SECOND time in the field, on a different ticket, within hours:
+  landing BL-1295 escalated with the identical
+  "nothing to commit - own-paths identical to origin/main" on the merge
+  `0c550b4bcb`, while `revert-subject?` is verifiably absent from
+  `main:swarmforge/scripts/task_scope_gate_lib.bb` and
+  `bl1295RevertSubjectAttributionSteps` from `main:specs/pipeline/steps/index.js`.
+  The tool's "identical to origin/main" is a false statement about a parcel
+  with substantial unlanded content, not a description of the repository.
+
+  It is worse than the original write-up said, and this is why it is now
+  critical rather than high. `task-tagged-changed-paths` picks its
+  candidates with `rev-list --first-parent origin/main..<commit>`. On a QA
+  tip the first-parent chain is QA's OWN commits, and every commit QA makes
+  to receive a parcel is a `Merge <role> BL-xxxx into QA` MERGE. The
+  upstream roles' non-merge commits sit on second parents and are never
+  candidates. So on the shape the land step is always given, the only
+  task-tagged candidate is a merge - which means `own-commit-diff`'s merge
+  blind spot is not an edge case the land step occasionally meets, it is the
+  ONLY case it ever meets. Every land of an entangled tip fails, and three
+  parcels (BL-1295, BL-1272, BL-1253) are stacked behind it now.
+
+  Do not "fix" this by citing an upstream non-merge commit instead. Checked:
+  citing the documenter's own non-merge commit would make the documenter's
+  paths the only candidates and silently replay a PARTIAL parcel, dropping
+  the coder's and hardener's content. The false report is preferable to that.
+
+  Routing: this is a defect IN the delivery machinery, so it cannot ride the
+  pipeline it repairs - its own parcel would reach QA and hit the identical
+  LAND_ESCALATE. It goes through `swarmforge/scripts/expedite.sh` (PIPELINE.md
+  "Same gates, no machinery", BL-567), FIRST, before BL-1298. Note for whoever
+  runs it: expedite teardown restarts the swarm unless `--no-restart` is
+  passed, and the expedite path does not run the required_wiring gate
+  (BL-1255) - verify that entry by hand.
+
+  The two smaller issues this ticket's notes recorded as out of scope are now
+  ticketed as BL-1298 - they recurred on BL-1295 too. Nothing about this
+  ticket's own fix direction, scenarios or feature file changed here, so the
+  standing `human_approval: approved` still covers what was approved; only
+  severity, priority and this record changed. Full reasoning:
+  backlog/evidence/BL-1295-land-escalate-specifier-adjudication-20260830.md
+
+assigned_to: coder
