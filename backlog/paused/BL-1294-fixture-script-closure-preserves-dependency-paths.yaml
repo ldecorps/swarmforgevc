@@ -30,6 +30,9 @@ invariants:
   - "A dependency's location within the scripts tree survives the copy - a fixture resolves every load-file exactly as the live tree does."
 
 human_approval: pending
+ruling_options:
+  - BL-1294 jumps ahead of BL-1240 - cleaner, and why this carries severity high
+  - the coder unblocks BL-1240 another way - faster, this stays in the queue
 approval_context: >
   A new feature file is authored here, so it needs a tap. One judgment is worth
   a look, and one scheduling question is genuinely yours rather than mine.
