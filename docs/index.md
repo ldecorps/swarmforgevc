@@ -47,6 +47,7 @@ expects them, and are not migrated or rewritten here.
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
 - [RECENTLY CLOSED lines show closure age](how-to/BL-980-recently-closed-elapsed-time.md) — `(10min ago)` from durable `doneClosedAtMs`; RECENTLY CLOSED only (BL-980).
 - [One unified pipeline grid across swarms](how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md) — one kanban; caption `s1`/`s2` badges when multi-swarm; remote held-by-role never guessed (BL-1009).
+- [The Pipeline Board's Stage Status, As-Of Time, and Health Dot](how-to/BL-670-pipeline-board-last-known-stage-and-health.md) — the qualified `{stage, status, asOf, healthDot}` shape replacing a bare role string, `claimed`/`in-transit-to`/`last-known` (the durable `sent/` trail as fallback, never a competitor to a live observation), and the per-ticket bounce-count health dot (BL-670).
 - [Spec navigation tree on the live console, with an epic tier](how-to/BL-592-spec-tree-on-live-console-with-epic-tier.md) — Milestone → Epic → BL item → Gherkin, live via `/spec-tree-state`; ports BL-117's engine, read-only (BL-592).
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Bubble Operator docs on phone](how-to/BL-1166-bubble-authored-docs-index-and-first-pages.md) — read-only Divio browser from `docs/index.md` via remote HTML page `operator-docs` (BL-1166; first slice of BL-1165).
