@@ -1,8 +1,8 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   classifyTopicThread,
   mayWriteTrackedTopicRecord,
@@ -25,7 +25,7 @@ const {
 const SILENT = () => {};
 
 function mkRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl695-prop-'));
+  return mkTmpDir('sfvc-bl695-prop-');
 }
 
 test('property (invariant 1): only BL-/GH- ids may write tracked records', () => {

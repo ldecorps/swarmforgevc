@@ -3,8 +3,8 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   deriveHandoffLatency,
   aggregateHandoffLatencyByRole,
@@ -42,7 +42,7 @@ test('BL-602 P1: still-queued (no dequeued_at) is always open, never processed',
 test('BL-602 P2: gather covers master and worktree mailbox layouts (new/in_process/completed)', () => {
   fc.assert(
     fc.property(fc.constantFrom('master', 'worktree'), fc.constantFrom(...ROLES), (layout, role) => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl602-p2-'));
+      const root = mkTmpDir('bl602-p2-');
       try {
         const entry =
           layout === 'master'

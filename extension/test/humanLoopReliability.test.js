@@ -2,8 +2,8 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const {
   aggregateOutcomeSuccessRate,
@@ -24,7 +24,7 @@ describe('BL-595 humanLoopReliability', () => {
   let root;
 
   beforeEach(() => {
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl595-unit-'));
+    root = mkTmpDir('bl595-unit-');
   });
 
   afterEach(() => {

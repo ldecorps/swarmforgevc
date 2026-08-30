@@ -1,6 +1,5 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const {
@@ -92,7 +91,7 @@ test('filterNewContextEvents drops already-persisted agent+session+timestamp key
 test('runContextTelemetryProducer backfills transcript history and is idempotent on rerun', () => {
   const projectRoot = mkTmpDir('ctx-producer-');
   const worktreePath = path.join(projectRoot, '.worktrees', 'coder');
-  const claudeProjectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-producer-projects-'));
+  const claudeProjectsDir = mkTmpDir('ctx-producer-projects-');
   fs.mkdirSync(worktreePath, { recursive: true });
   writeRolesTsv(projectRoot, worktreePath);
   writeFixtureTranscript(claudeProjectsDir, worktreePath, [

@@ -2,8 +2,8 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   APPROVAL_ASK_LOCATOR,
 } = require('../out/concierge/topicRouter');
@@ -305,7 +305,7 @@ test('sweepStaleApprovalAsks is a quiet no-op when no recipient is configured', 
 });
 
 test('cooldown state file read/write is load-bearing on disk', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl584-cooldown-'));
+  const root = mkTmpDir('sfvc-bl584-cooldown-');
   assert.equal(readLastStaleApprovalEmailMs(root), null);
   writeLastStaleApprovalEmailMs(root, 12345);
   assert.equal(readLastStaleApprovalEmailMs(root), 12345);
@@ -316,7 +316,7 @@ test('cooldown state file read/write is load-bearing on disk', () => {
 });
 
 test('listLiveApprovalAskCandidates walks live YAML and joins ask + topic evidence', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl584-scan-'));
+  const root = mkTmpDir('sfvc-bl584-scan-');
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.writeFileSync(
