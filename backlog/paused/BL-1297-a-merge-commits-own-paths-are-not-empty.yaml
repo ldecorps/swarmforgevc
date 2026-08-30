@@ -94,7 +94,7 @@ qa_e2e: >
   to what the current code reports, and that a root commit does not pass the
   gate open.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off on the new feature file, and one judgement to confirm.
 
