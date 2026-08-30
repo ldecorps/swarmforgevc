@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1272: the land step's entangled-sibling
+report now distinguishes a sibling still unlanded from one whose own content
+is already byte-identical on `origin/main` — a tip-pure replay that lands
+sibling A no longer causes sibling B's later report (cited at the same
+original tip) to keep printing `ENTANGLED_SIBLING A`, since B's replay is
+still a new commit built on `origin/main` and A's *original* commit remains
+an ancestor either way. `land_step_cli.bb` now prints one `LANDED_SIBLING
+<ticket-id>` line per resolved sibling alongside `ENTANGLED_SIBLING`;
+`entanglement-note`, the priority `00` note reaching the specifier for a
+genuinely unresolvable case, names only siblings still actually unlanded.
+The discriminator is content — the sibling's attributed paths already
+byte-identical on `origin/main`, reusing `task_scope_gate_lib.bb`'s own
+attribution walk — never a subject-line grep for the sibling's ticket id,
+which would falsely clear a sibling only minted or spec'd, not landed
+(BL-1241 invariant 2 stays fail-closed). `land-plan`'s action for a given
+commit is unchanged: a sibling's original commit remains an ancestor and may
+carry content its replay excluded, so the decision stays `:land`, only the
+report changes. Observed live twice in one shift before this fix (BL-1232
+landing tip-pure and still reported entangled with an already-landed
+BL-1182). See
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`.
+Acceptance:
+`specs/features/BL-1272-a-landed-sibling-is-not-reported-as-entangled.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1254: BL-848 stamp-off of the Cursor
 expedite no-verdict recovery chain — three commits, `3f4f69ec1b` then
 `70c5e0e5b0` then `5de352ed1d`, reviewed as ONE resulting state because the
