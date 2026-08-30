@@ -65,3 +65,8 @@ notes: |
     next open slot.
   - [2026-08-29] coordinator: second nudge, same story. Slot filled by BL-1274
     before this turn. Still capacity, not inaction.
+  - [2026-08-30] coordinator: third nudge, same story. Both open slots were
+    filled by BL-1277 and BL-1279 (Article 3.2.4 expedited defects,
+    severity:high, ranked ahead of BL-604's ordinary priority) before this
+    turn — active/ is back at the effective cap of 7. Still capacity, not
+    inaction; BL-604 remains eligible for the next open slot.
