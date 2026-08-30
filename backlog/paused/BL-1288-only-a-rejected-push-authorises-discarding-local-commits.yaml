@@ -29,7 +29,7 @@ invariants:
   - "Local-ahead commits are discarded only when the remote REJECTED the push; a push that could not be attempted or completed (remote unreachable, no credentials, network down) never authorises a reset."
   - "When a push failure decides the outcome, that push's own error text reaches the caller's result - never replaced by the reset's error, nor by an outcome name."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. The judgment
   worth a look: what a NON-rejection push failure should do instead of

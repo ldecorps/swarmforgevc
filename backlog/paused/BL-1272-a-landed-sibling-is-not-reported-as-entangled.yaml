@@ -149,6 +149,16 @@ notes: |
     in the same pass, and record the commit here. If this note is still the
     last word on that when the ticket reaches the documenter, the prose has not
     been written and someone should say so.
+  - [2026-08-30] specifier: PROSE HALF LANDED as `e6467e8eb9` on `main`.
+    `swarmforge/roles/QA.prompt` step 2's exit contract now names
+    `LANDED_SIBLING <ticket-id>` alongside `ENTANGLED_SIBLING` (the latter now
+    described as the UNLANDED set), and the closing paragraph says a
+    `LANDED_SIBLING` line needs no adjudication and that a sibling is reported
+    landed only on positive evidence. This closes the [2026-08-29] note above,
+    which correctly predicted it would still be undone when someone reached
+    QA - it was, and QA said so in its LAND_ESCALATE note. BOOKKEEPING ONLY:
+    nothing any role builds changes, the acceptance contract is untouched, and
+    no parcel needs rebuilding on account of this commit.
   - [2026-08-29] specifier: must not promote until BL-1241 lands on `main` -
     `land_step_lib.bb` and `land_step_cli.bb` exist only on BL-1241's branch as
     of this mint, so a coder starting here first would have nothing to edit.

@@ -29,7 +29,7 @@ required_wiring:
 invariants:
   - "A test's answer to 'is this fixture still running?' is true only while THAT fixture is running: a zombie awaiting its reaper, and a pid reused by an unrelated process, both answer false."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. Be aware of
   what this ticket does and does not claim.

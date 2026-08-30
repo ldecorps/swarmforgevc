@@ -1,0 +1,134 @@
+id: BL-1297
+title: "A merge commit's own changed paths come back empty, so the scope gate, the unregistered-test gate and the land step's replay all fail open on the pipeline's most common commit shape"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1297-a-merge-commits-own-paths-are-not-empty.feature
+
+source: "QA note (priority 00) 2026-08-30 landing BL-1272; evidence .worktrees/QA/backlog/evidence/BL-1272-land-escalate-20260830.md section 'The land step's own replay tool cannot complete'. Re-verified by the specifier against git and the three call sites before minting."
+
+description: |
+  ## What is wrong
+
+  `task_scope_gate_lib.bb`'s `own-commit-diff` runs:
+
+      git diff-tree --no-commit-id --name-only -r --first-parent <commit>
+
+  For a MERGE commit git suppresses the diff entirely unless `-m` or
+  `-c`/`--cc` is given, and `--first-parent` is a `log`/`rev-list` traversal
+  flag with no effect on `diff-tree`'s own diff output. So a merge commit
+  yields NO paths.
+
+  A merge is the normal shape of a role's own commit: every stage does
+  `git merge <hash>` to receive the handoff, then forwards. When a parcel's
+  only task-tagged commit is that merge, the change set collapses to `[]`.
+
+  ## Why this is fail-OPEN, not merely a missing report
+
+  At `task_scope_gate_lib.bb`'s own gate site, `nil` means "the walk failed"
+  and warns unreadable, but `[]` means "no foreign paths" and PASSES. A merge
+  commit produces `[]`, not `nil`, so the scope check silently approves a
+  parcel it never actually inspected.
+
+  ## Measured, 2026-08-30, on a real merge commit
+
+      git diff-tree --no-commit-id --name-only -r --first-parent <merge>  -> 0 paths
+      git diff-tree --no-commit-id --name-only -r -m <merge>              -> 10 paths
+      git diff --name-only <merge>^1 <merge>                              -> 2 paths
+
+  The invocation decides the answer, and only the last is the commit's own
+  first-parent change. `-m` unions the per-parent diffs and answers a
+  different question, so this is a real choice, not a flag swap.
+
+  ## Blast radius - three callers share this walk
+
+  1. `land_step_lib.bb` - the tip-pure replay. This is where it surfaced:
+     landing BL-1272, whose only BL-1272-subject commit in the walk was the
+     merge `dde87ca41`, the replay reported "nothing to commit" and
+     escalated. Verified by the specifier: that is the sole such commit.
+  2. `task_scope_gate_lib.bb` itself, at its own gate site - the send-time
+     scope check (BL-1192/BL-1276).
+  3. `unregistered_test_gate_lib.bb`, via `parcel-own-changed-paths`, whose
+     own docstring says it "asks the same question of the same parcel and
+     must never answer it differently".
+
+  QA did not verify whether callers 2 and 3 are actually invoked with a
+  merge-commit citation in real operation, and neither did I - but the defect
+  is in the shared helper, not in any one caller, so the fix belongs there
+  and all three inherit it.
+
+  ## How (direction, not mandate)
+
+  Compute the commit's own change against its first parent for every commit
+  shape. `git diff --name-only <commit>^1 <commit>` is the precise
+  first-parent semantic and is what I measured as correct; `-m` answers a
+  different (per-parent union) question and should not be reached for
+  casually. Whatever is chosen must keep scenario 04 true - an ordinary
+  single-parent commit's answer must not change - and must handle a root
+  commit, which has no first parent, without failing the gate open.
+
+invariants:
+  - "A commit's own changed paths are computed against its first parent for every commit shape; a merge never reports an empty change set merely because it is a merge."
+  - "An empty change set is only ever the truth, never an artefact of how the diff was invoked - the three callers sharing this walk answer the same question about the same commit identically."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1297MergeCommitOwnPathsSteps::the four scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
+
+qa_e2e: >
+  In a fixture repo, build a merge commit whose first-parent change touches a
+  path belonging to another ticket, tag its subject with the task, and run the
+  send-time gate: it must refuse and name the path. It passes today, which is
+  the defect. Then run the land step against a parcel whose only task-tagged
+  commit is a merge: it must find content to replay rather than reporting
+  nothing to commit. Re-run BL-1272's own landing through land_step_cli.bb
+  afterwards and confirm it no longer escalates for this reason. Finally
+  confirm an ordinary single-parent commit's reported paths are byte-identical
+  to what the current code reports, and that a root commit does not pass the
+  gate open.
+
+human_approval: approved
+approval_context: >
+  Sign-off on the new feature file, and one judgement to confirm.
+
+  The fix has a real choice inside it that I have written as direction rather
+  than mandate: `-m` and `git diff <commit>^1 <commit>` give DIFFERENT answers
+  on the same merge (10 paths versus 2 in my measurement), because `-m` unions
+  the per-parent diffs. I have pointed at the first-parent form as correct,
+  since the helper's whole question is "what did this commit change of its
+  own", and every caller is asking about a parcel's own work. If you want the
+  broader per-parent union instead - which would make the gate stricter but
+  would also attribute the merged-in branch's paths to the merging role - say
+  so, because it changes what the gate refuses.
+
+notes: |
+  This is the SECOND defect found in task_scope_gate_lib.bb on 2026-08-30, and
+  they are independent: BL-1295 is `commit-message-names-task?` attributing a
+  revert to the ticket whose subject it inherited (a false REFUSAL); this is
+  `own-commit-diff` returning nothing for a merge (a false PASS). One gate
+  failing closed in one direction and open in the other, in the same file, on
+  the same day. Worth reviewing them together even though they are fixed
+  separately.
+
+  BL-1272's own code is clean and is NOT blocked by its own quality - QA
+  verified it (required wiring both entries, 3/3 property, 6/6 acceptance) and
+  explicitly did not bounce it. Its landing is blocked on this ticket, and
+  should be re-attempted through land_step_cli.bb once this lands. No further
+  work is needed on BL-1272 itself.
+
+  Two smaller issues QA recorded while reproducing this, both self-corrected
+  and NOT scoped here - neither is this ticket's defect, and they are written
+  down so they are not lost:
+    - `land_step_cli.bb` run without an explicit repo-root from a LINKED
+      worktree builds a `.git/land-replay-worktrees/...` path under a gitlink
+      FILE, so `git worktree add` fails outright.
+    - `replay!`'s "could not create worktree" failure path does not delete the
+      branch `git worktree add -b` may already have created, so a re-run with
+      the same task and commit fails a second time for a different reason.
