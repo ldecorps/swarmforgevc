@@ -889,6 +889,7 @@ const DOMAINS = [
   require('./bl1253DeadFeederOwnsGetUpdatesStampSteps'),
   require('./bl1224WatchAdoptsRestartedRuntimeSteps'),
   require('./bl1254ExpediteNoVerdictChainStampSteps'),
+  require('./bl1272LandedSiblingSteps'),
   require('./bl1183BobGoLiveGateSteps')
 ];
 

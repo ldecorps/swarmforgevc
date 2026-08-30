@@ -68,9 +68,75 @@
     (when (zero? (:exit res))
       (remove str/blank? (str/split-lines (:out res))))))
 
+(defn- blob-at
+  "The blob id `rev` holds at `path`, or ::absent when it holds none. A path
+   absent on BOTH sides is byte-identical in the only sense that matters here:
+   a sibling whose landed content was a deletion really is landed."
+  [root rev path]
+  (let [res (git! root "rev-parse" "--verify" "-q" (str rev ":" path))]
+    (if (zero? (:exit res)) (str/trim (:out res)) ::absent)))
+
+(defn sibling-landed?
+  "Pure over the injected facts: is this sibling's attributed content ALREADY
+   on origin/main, byte for byte?
+
+   BL-1272, invariant 1: landed is a POSITIVE finding, never an inference from
+   silence. `paths` nil (the attribution walk could not run) and `paths` empty
+   (nothing was attributed to the sibling at all) both mean the question was
+   not answered, and an unanswered question reports the sibling as entangled -
+   the same fail-closed posture entangled-siblings' own warning path takes.
+
+   Deliberately NOT a subject grep over origin/main's history: a mint or spec
+   commit names a ticket while its pipeline work is still unlanded, so a
+   subject match would suppress a REAL entanglement and turn a fail-closed
+   check fail-open."
+  [{:keys [paths complete? same-content?]}]
+  (boolean (and complete? (seq paths) (every? same-content? paths))))
+
+(defn- diff-readable? [root commit]
+  (zero? (:exit (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" commit))))
+
+(defn attribution-complete?
+  "Every commit in `candidates` that names `sibling-id` can actually be
+   diffed.
+
+   This is not belt-and-braces. task-tagged-changed-paths signals failure with
+   nil ONLY when the commit walk itself fails; a single commit whose diff
+   cannot be computed silently contributes no paths, shrinking the attributed
+   set instead of emptying it. Without this probe a sibling whose READABLE
+   half is already on origin/main would be reported as landed on a check that
+   never saw its other half - invariant 1's \"partial\" row, fail-open."
+  [root candidates sibling-id]
+  (every? (fn [c]
+            (or (not= sibling-id (commit-ticket-id root c))
+                (diff-readable? root c)))
+          candidates))
+
+(defn landed-siblings
+  "The subset of `siblings` whose attributed content between origin/main and
+   `commit` is already byte-identical in origin/main's tree.
+
+   Attribution reuses task_scope_gate_lib.bb's own walk (BL-1192), the same
+   one `own-paths` delegates to - never a second implementation. `paths-fn` is
+   injected so the walk-failed row is drivable without corrupting a
+   repository; it defaults to that real walk."
+  ([root commit origin-main candidates siblings]
+   (landed-siblings root commit origin-main candidates siblings nil))
+  ([root commit origin-main candidates siblings paths-fn]
+   (let [walk (or paths-fn
+                  #(task-scope-gate-lib/task-tagged-changed-paths root origin-main commit %))
+         same-content? (fn [p] (= (blob-at root commit p) (blob-at root origin-main p)))]
+     (->> siblings
+          (filter #(sibling-landed?
+                    {:paths (walk %)
+                     :complete? (attribution-complete? root candidates %)
+                     :same-content? same-content?}))
+          set))))
+
 (defn entangled-siblings
-  "{:entangled #{ticket-ids} :warning nil} on a clean read, or
-   {:entangled nil :warning \"...\"} when the walk could not be completed -
+  "{:entangled #{ticket-ids} :landed #{...} :unlanded #{...} :warning nil} on a
+   clean read, or {:entangled nil :warning \"...\"} when the walk could not be
+   completed -
    never a silent empty set standing in for 'could not check' (this
    ticket's own invariant 2: a commit must not land while another ticket's
    unreviewed work is an ancestor of it - a check that could not run must
@@ -84,11 +150,21 @@
     (let [candidates (ancestry-commits root origin-main commit)]
       (if (nil? candidates)
         {:entangled nil :warning (str "land-step: could not read the commit range origin/main.." commit)}
-        {:entangled (->> candidates
-                         (keep #(commit-ticket-id root %))
-                         (remove #(= % task-ticket-id))
-                         set)
-         :warning nil}))
+        (let [siblings (->> candidates
+                            (keep #(commit-ticket-id root %))
+                            (remove #(= % task-ticket-id))
+                            set)
+              landed (landed-siblings root commit origin-main candidates siblings)]
+          ;; :entangled stays the FULL set - it is what land-plan decides on,
+          ;; and BL-1272 invariant 2 keeps that decision unchanged. :landed and
+          ;; :unlanded are the reporting split: a sibling's original commit is
+          ;; still an ancestor after its replay lands, and may carry content
+          ;; the replay deliberately excluded, so landing as cited would
+          ;; resurrect exactly what the replay severed.
+          {:entangled siblings
+           :landed landed
+           :unlanded (into #{} (remove landed siblings))
+           :warning nil})))
     {:entangled nil :warning "land-step: origin/main could not be resolved"}))
 
 (defn own-paths
@@ -115,7 +191,7 @@
   [{:keys [root commit task-ticket-id]}]
   (if-not task-ticket-id
     {:action :escalate :reason "land-step: task name names no ticket id"}
-    (let [{:keys [entangled warning]} (entangled-siblings root commit task-ticket-id)]
+    (let [{:keys [entangled landed unlanded warning]} (entangled-siblings root commit task-ticket-id)]
       (cond
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
@@ -123,16 +199,23 @@
         (let [paths (own-paths root commit task-ticket-id)]
           (if (nil? paths)
             {:action :escalate :reason (str "land-step: could not compute " task-ticket-id "'s own paths to replay")}
-            {:action :replay :entangled entangled :own-paths paths}))))))
+            {:action :replay :entangled entangled :landed landed :unlanded unlanded
+             :own-paths paths}))))))
 
 (defn entanglement-note
   "The text QA sends when replay itself cannot be completed cleanly (BL-1241
    qa_e2e_procedure / QA.prompt step 3: a note to the specifier, priority
-   00, never a bounce to the parcel's author) - names every entangled
-   sibling ticket, the actionable content invariant 1 requires."
-  [task-name entangled]
-  (format "%s: entangled tip - sibling ticket(s) %s unlanded as ancestors, tip-pure replay could not complete cleanly; specifier adjudication needed."
-          task-name (str/join "," (sort entangled))))
+   00, never a bounce to the parcel's author) - names every sibling ticket
+   that is STILL unlanded, the actionable content invariant 1 requires.
+   BL-1272: a sibling whose work is already on origin/main is not an
+   adjudication request, so naming it would send the specifier to settle
+   something already settled."
+  [task-name unlanded]
+  (if (seq unlanded)
+    (format "%s: entangled tip - sibling ticket(s) %s unlanded as ancestors, tip-pure replay could not complete cleanly; specifier adjudication needed."
+            task-name (str/join "," (sort unlanded)))
+    (format "%s: entangled tip - every ancestor sibling ticket has already landed, but the tip-pure replay could not complete cleanly; specifier adjudication needed."
+            task-name)))
 
 ;; ── replay: build the tip-pure commit as a local git object ──────────────
 ;; Never pushes, never fast-forwards `main`/origin - QA's own land action

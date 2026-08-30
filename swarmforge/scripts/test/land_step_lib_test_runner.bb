@@ -151,6 +151,102 @@
   (assert-includes "entanglement-note: names a sibling" msg "BL-9002")
   (assert-includes "entanglement-note: names the other sibling" msg "BL-9003"))
 
+;; ── BL-1272: a landed sibling is not reported as entangled ───────────────
+;; A tip-pure replay lands as a NEW commit object, so landing a sibling's
+;; replay does not remove that sibling's ORIGINAL commit from the ancestry of
+;; the next parcel cited at the same original tip. The report must stop naming
+;; it - but only on POSITIVE evidence its content is already on origin/main.
+
+;; sibling-landed? is pure over the injected facts, so every fail-closed row
+;; is pinned without a corrupted repository.
+(assert= "sibling-landed?: byte-identical attributed content -> landed"
+         true
+         (land-step-lib/sibling-landed? {:paths ["a.txt"] :complete? true :same-content? (constantly true)}))
+(assert= "sibling-landed?: a differing path -> not landed"
+         false
+         (land-step-lib/sibling-landed? {:paths ["a.txt"] :complete? true :same-content? (constantly false)}))
+(assert= "sibling-landed?: partially present -> not landed"
+         false
+         (land-step-lib/sibling-landed? {:paths ["a.txt" "b.txt"] :complete? true
+                                         :same-content? #(= % "a.txt")}))
+(assert= "sibling-landed?: an unreadable walk (nil paths) -> not landed, never silently landed"
+         false
+         (land-step-lib/sibling-landed? {:paths nil :complete? true :same-content? (constantly true)}))
+(assert= "sibling-landed?: no attributed paths at all -> not landed (absence is not evidence)"
+         false
+         (land-step-lib/sibling-landed? {:paths [] :complete? true :same-content? (constantly true)}))
+
+;; The fail-open shape the completeness probe exists to close: the attribution
+;; walk yields FEWER paths when one commit's diff cannot be computed, and the
+;; half it did see is already on origin/main.
+(assert= "sibling-landed?: a partial attribution walk -> not landed, however identical what it saw"
+         false
+         (land-step-lib/sibling-landed? {:paths ["a.txt"] :complete? false
+                                         :same-content? (constantly true)}))
+
+;; landed-siblings against a real repository: the sibling's file is already on
+;; origin/main, byte-identical, while its ORIGINAL commit is still an ancestor.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "sib.txt" "sibling content\n" "BL-9002: sibling work")
+  (commit! root "own.txt" "own content\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    ;; Land the sibling's CONTENT on origin/main as a different commit object,
+    ;; exactly as a tip-pure replay does.
+    (sh! root "git" "checkout" "-q" "-b" "landing" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+    (commit! root "sib.txt" "sibling content\n" "BL-9002: sibling work (replayed tip-pure)")
+    (mark-origin-main-here! root)
+    (sh! root "git" "checkout" "-q" "main")
+    (let [origin-main (land-step-lib/origin-main-sha root)]
+      (assert= "landed-siblings: a sibling already byte-identical on origin/main is landed"
+               #{"BL-9002"}
+               (land-step-lib/landed-siblings root commit origin-main
+                                              (str/split-lines (:out (sh! root "git" "rev-list" "--first-parent" (str origin-main ".." commit))))
+                                              #{"BL-9002"}))
+      (let [result (land-step-lib/entangled-siblings root commit "BL-9001")]
+        (assert= "entangled-siblings: the sibling is still in :entangled (the decision is unchanged)"
+                 #{"BL-9002"} (:entangled result))
+        (assert= "entangled-siblings: and is reported as landed" #{"BL-9002"} (:landed result))
+        (assert= "entangled-siblings: so nothing is left to adjudicate" #{} (:unlanded result)))
+      (let [plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+        (assert= "land-plan: the action is UNCHANGED when the sibling has landed" :replay (:action plan))
+        (assert= "land-plan: and it carries the landed sibling" #{"BL-9002"} (:landed plan))
+        (assert= "land-plan: and names nothing to adjudicate" #{} (:unlanded plan))))))
+
+;; The same fixture with the sibling's content NOT on origin/main: still
+;; entangled, still adjudicable - the check did not get looser.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "sib.txt" "sibling content\n" "BL-9002: sibling work")
+  (commit! root "own.txt" "own content\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/entangled-siblings root commit "BL-9001")]
+    (assert= "entangled-siblings: an unlanded sibling is not reported as landed" #{} (:landed result))
+    (assert= "entangled-siblings: and stays adjudicable" #{"BL-9002"} (:unlanded result))))
+
+;; A subject grep would call this landed; a content check must not. origin/main
+;; carries a commit NAMING the sibling (a mint or spec commit) while the
+;; sibling's actual work is still unlanded.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "sib.txt" "sibling content\n" "BL-9002: sibling work")
+  (commit! root "own.txt" "own content\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "minting" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+    (commit! root "backlog/paused/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: mint the ticket")
+    (mark-origin-main-here! root)
+    (sh! root "git" "checkout" "-q" "main")
+    (let [result (land-step-lib/entangled-siblings root commit "BL-9001")]
+      (assert= "entangled-siblings: a mere mint naming the sibling never counts as landed"
+               #{} (:landed result))
+      (assert= "entangled-siblings: the real entanglement survives a subject match on origin/main"
+               #{"BL-9002"} (:unlanded result)))))
+
+;; entanglement-note names only what is left to adjudicate.
+(let [msg (land-step-lib/entanglement-note "BL-9001-fixture" #{})]
+  (assert-includes "entanglement-note: says so when every sibling already landed" msg "already landed")
+  (assert-includes "entanglement-note: still names the task" msg "BL-9001-fixture"))
+
 ;; ── report ─────────────────────────────────────────────────────────────────
 
 (if (seq @failures)
