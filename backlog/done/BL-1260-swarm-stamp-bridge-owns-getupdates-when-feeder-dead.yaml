@@ -12,7 +12,11 @@ direction: swarm-surfaced
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1260-bridge-owns-getupdates-when-feeder-dead.feature
+acceptance: specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature
+# Retired: repointed from this ticket's own deleted feature file to BL-1253's,
+# the contract that now carries its content (its scenario 03 landed there as
+# scenario 06). Not a claim of ownership over BL-1253's contract - the BL-1251
+# rule that a retirement ticket points at the contract it retires into.
 
 human_approval: approved
 approval_context: >
