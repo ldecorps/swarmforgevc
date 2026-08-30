@@ -117,6 +117,7 @@ master_main_reconcile_lib_test_runner.bb	standing
 migrate_gherkin_test_runner.bb	standing		
 model_factory_test_runner.bb	standing		
 model_steward_test_runner.bb	standing		
+model_steward_trial_lib_test_runner.bb	standing		
 mono_router_lib_test_runner.bb	standing		
 mutation_cooldown_test_runner.bb	standing		
 named_tunnel_liveness_lib_test_runner.bb	standing		
@@ -330,6 +331,7 @@ test_migrate_shared_mailbox.sh	standing
 test_model_factory_cli.sh	standing		
 test_model_factory_runtime_wiring.sh	standing		
 test_model_steward_cli.sh	standing		
+test_model_steward_trial_cli.sh	standing
 test_mutation_cooldown_gate.sh	standing		
 test_named_tunnel_liveness_ancillary_start.sh	standing		
 test_negotiation_relay_supervisor_tick.sh	standing		
