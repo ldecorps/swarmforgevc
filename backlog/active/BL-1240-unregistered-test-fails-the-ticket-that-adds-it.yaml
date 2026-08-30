@@ -121,3 +121,5 @@ notes: |
   - [2026-08-28] specifier: depends_on BL-1239 is a sequencing constraint, not
     a build dependency - this can be implemented in parallel, but must not
     LAND before the backfill or it refuses every parcel on inherited drift.
+
+assigned_to: coder
