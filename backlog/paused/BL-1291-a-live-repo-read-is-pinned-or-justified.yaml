@@ -29,7 +29,7 @@ required_wiring:
 invariants:
   - "A test's cost and verdict never depend on live repository content it did not establish; where a test must read live state, the reason it cannot use a pinned fixture is recorded rather than left implicit."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a human tap. The judgment
   worth a look is per-file, and it is genuinely three different calls: for each
