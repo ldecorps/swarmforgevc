@@ -56,7 +56,19 @@ const KNOWN_SWARM_ACTIONS = new Set([
   'merge to the main branch',
 ]);
 
+// BL-1277: this file's own feature title, so the generic step text below can
+// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
+// feature being run and otherwise falls back to first-match across every
+// handler file - so an UNSCOPED registration of text another file also
+// registers hands whichever file loads first the job of answering both
+// features, silently, against the wrong fixture.
+const BL1277_FEATURE_NAME = "The human is answered even while an Operator is busy";
+
 function registerSteps(registry) {
+  // BL-1277: registrations whose step text another handler file also
+  // registers go through here, pinned to this file's own feature.
+  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
+
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^an Operator is mid-conversation with the human and will not exit$/, () => {
     // Narrative only - the real shell test's own hold_operator_slot spawns a
@@ -156,7 +168,7 @@ function registerSteps(registry) {
   });
 
   // ── restricted-front-desk-operator-07 ───────────────────────────────
-  registry.define(/^the swarm's health is reported$/, (ctx) => {
+  bl1277Scoped(/^the swarm's health is reported$/, (ctx) => {
     ctx.output = ctx.output || runRuntimeTickTest(ctx);
   });
   registry.define(/^both Operators are reported$/, (ctx) => {

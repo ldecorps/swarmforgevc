@@ -53,7 +53,15 @@ function createStepRegistry() {
     return null;
   }
 
-  return { define, defineScoped, resolve };
+  // BL-1277: read-only view of what was actually registered, so a guard can
+  // decide "two files registered this same pattern unscoped" from the
+  // registry's own entries rather than from a re-scan of step-file source
+  // text. Returns copies; resolve()'s semantics are untouched.
+  function listDefinitions() {
+    return definitions.map(({ pattern, handler, featureName }) => ({ pattern, handler, featureName }));
+  }
+
+  return { define, defineScoped, resolve, listDefinitions };
 }
 
 module.exports = { createStepRegistry };
