@@ -1,0 +1,252 @@
+id: BL-1285
+title: "test_front_desk_supervisor_liveness.sh decides its stall checks by racing a fixed wall-clock cushion, so a loaded host turns three acceptance features intermittently red"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The fixture is CORRECT about the behaviour it
+# gates - on an idle host it is 14/14 green - and nothing is lost or corrupted.
+# What it costs is trust: three acceptance features go red with it under load,
+# and the reds move around, so the honest reading of a failure is "probably the
+# flake" - which is how a real regression in the front desk's stall detection
+# would get waved through. Not high: no gate is dead and no lane is blind (the
+# checks still run and still fail loudly when the supervisor is broken); not
+# low: it is not cosmetic, it fires inside the swarm's own delivery machinery.
+status: todo
+epic: code-quality-gates
+priority: 22
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "the change is confined to one shell fixture's timing strategy plus one new step-handler file; there is no duplication to fold and no production module to tidy."
+  hardender: "no production code changes - the deliverable is test-harness code, and the Babashka/shell lane has no mutation, CRAP or DRY tooling wired (BL-472 deferred). Scenario 03 is the non-vacuity guard the hardener would otherwise be asked to build, and it is in the acceptance contract."
+  documenter: "no mechanism a registered diagram depicts changes, and no living doc describes the fixture's timing. docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md mentions the file only for its closure copy-list, which this ticket does not touch."
+acceptance: specs/features/BL-1285-front-desk-liveness-fixture-does-not-race-the-wall-clock.feature
+
+invariants: []
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. The one
+  judgment worth a look before it goes: the gate is DELAY INJECTION (run the
+  fixture with an extra pause before each supervisor check and require the same
+  verdict), not a repeat-under-load run. Delay injection is deterministic,
+  costs a few seconds and would have caught what QA hit; a load-based scenario
+  reproduces the real condition but is itself load-dependent and slow. The
+  loaded repeat-run stays, as a QA e2e step done by hand, so both are covered.
+  Also firm, and the reason the ticket is not simply "widen the cushion": if
+  the injected delay turns out to reveal the SUPERVISOR mis-deciding rather
+  than the fixture mis-asserting, the coder stops and reports rather than
+  padding a sleep over a product defect.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh` establishes
+  every one of its stall-detection checks by racing a real clock against real
+  subprocesses. `stamp_own_heartbeat_then_age_past_stall` (lines 60-66) writes
+  a heartbeat and then sleeps a FIXED cushion:
+
+      sleep "$(awk -v s="$stall_ms" 'BEGIN { printf "%.3f", (s + 300) / 1000 }')"
+
+  300ms over `FRONT_DESK_STALL_MS`. Every check around it then assumes the
+  next `bb front_desk_supervisor.bb --check-once` subprocess reads the world
+  on the fixture's terms. Nothing enforces that assumption: each check spawns
+  a real `bb` process, the fixture spawns real Node children, `write_heartbeat`
+  itself runs two more `bb` processes, and a loaded host schedules none of it
+  to a 300ms budget.
+
+  ## Evidence
+
+  QA reproduced it twice during the BL-1279 pass (2026-08-30), with a
+  DIFFERENT set of checks red each time:
+
+  | run                       | checks that failed                                                    |
+  |---------------------------|-----------------------------------------------------------------------|
+  | inside the acceptance run | `the bot transitions to stalled`                                       |
+  | bare rerun                | `front-desk-liveness-01`, the bridge check, and the stall-logged check |
+
+  The specifier then ran the fixture three times on an idle host: 3/3 green,
+  14/14 checks, deterministic. A defect that is invisible when the host is
+  quiet and moves around when it is busy is a scheduling race, not a logic
+  defect - which is exactly what QA concluded.
+
+  It is not BL-1279's. `git show 501dedf09` touches only `make_fixture`'s
+  copy/load-guard lines; the check bodies and the cushion are byte-identical
+  to before. But this fixture died at load 100% of the time until BL-1279
+  repaired its copy-list, so the race had no way to be observed. It is newly
+  EXPOSED, never newly introduced.
+
+  ## Why it is worth a ticket
+
+  Three acceptance features grep this fixture's PASS lines and go red with it:
+
+  - `specs/features/BL-370-front-desk-liveness-means-listening.feature`
+  - `specs/features/BL-1089-the-front-desk-liveness-suite-gates-the-guarantee-it-names.feature`
+  - `specs/features/BL-1279-front-desk-fixtures-derive-their-bb-closure.feature` (scenario 03)
+
+  The fixture is also `standing` in `suite-manifest.tsv` (row 259), so it runs
+  on every standing-suite pass. A red that appears and disappears with host
+  load is a red reviewers learn to dismiss, and the thing it gates is the front
+  desk's own stall detection - the ~9h-outage failure mode BL-370 and BL-1089
+  exist for. The cost already landed once: QA spent a chunk of the BL-1279 pass
+  proving a red was not caused by the diff under review.
+
+  ## The property wanted
+
+  No check's verdict may depend on how much wall-clock time elapsed between the
+  fixture's setup and the supervisor's read of it. Each verdict must hold for
+  ANY non-negative delay.
+
+  ## How (direction, not mandate)
+
+  The fix is to put every check on the SAFE side of delay rather than to widen
+  the cushion, so that more load can only ever make a verdict more true:
+
+  - A check that must observe `stalled` wants a heartbeat that is already
+    past the stall window at the moment it is stamped - own (at or after this
+    child's `started-at-ms`, per BL-1035/BL-1089) but with a stall window small
+    enough that any real elapsed time exceeds it. Then no sleep is needed and
+    extra delay only ages it further.
+  - A check that must observe `running` wants the opposite: a fresh heartbeat
+    and a stall window wide enough that no plausible delay reaches it.
+  - `FRONT_DESK_STALL_MS` and `FRONT_DESK_HEARTBEAT_STARTUP_GRACE_MS` are both
+    already-honoured env knobs (`front_desk_supervisor.bb` lines 208 and 455),
+    so each block can pick the window that makes its own expectation robust.
+    Note the two blocks pull in opposite directions - the BL-1089 predecessor-
+    heartbeat check at lines 127-132 NEEDS a wide startup grace, so a single
+    global value for the whole file is the wrong shape.
+  - The delay seam the acceptance drives (an extra pause before every
+    `check_once`) is fixture-side test-harness config. It is not a production
+    `*_FORCE_RESULT` bypass and must not become one - nothing in
+    `front_desk_supervisor.bb` changes to serve the test.
+
+  ## Constraints
+
+  - **If the injected delay reveals the SUPERVISOR mis-deciding rather than
+    the fixture mis-asserting, stop and report.** That would be a product
+    defect in the front desk's stall detection and a different, more serious
+    ticket - not something to pad a sleep over. Say so in a `note` and do not
+    "fix" it here.
+  - **Do not weaken what the fixture proves.** It exists to drive a REAL
+    `front_desk_supervisor.bb --check-once` subprocess, a real fake bot
+    process and a real heartbeat JSON file - never a hand-rolled substitute
+    for the supervisor's read/decide/act path (its own header, lines 2-8).
+    Moving these checks down to the pure `poll-heartbeat-stale?` unit lane
+    would delete the only coverage of the real wiring. That lane already
+    exists (`front_desk_supervisor_lib_test_runner.bb`) and is not the answer.
+  - **All 14 checks survive, by name.** A run may not get robust by asserting
+    less. Scenario 02 pins this.
+  - **The closure copy-list stays derived.** `copy_bb_closure` and
+    `assert_bb_closure_present` in `make_fixture` are BL-1279's, landed
+    yesterday, and are not touched.
+  - Only `test_front_desk_supervisor_liveness.sh` changes among the four
+    front-desk supervisor fixtures. The other three are not in scope even if
+    they share the pattern (see `out_of_scope`).
+
+qa_e2e_procedure: >
+  (1) `bash swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh`
+  exits 0 and reports ALL CHECKS PASSED, with the same 14 named checks as
+  before the parcel (diff the check names against the run recorded in
+  `backlog/evidence/BL-1279-qa-pass-20260830.md`'s fixture list). (2) The full
+  acceptance for
+  `specs/features/BL-1285-front-desk-liveness-fixture-does-not-race-the-wall-clock.feature`
+  is 5/5 (three Examples rows in scenario 01, plus scenarios 02 and 03).
+  (3) THE LOAD REPRODUCTION, by hand and not executable: start ~28 busy loops
+  (`for i in $(seq 1 28); do timeout 200 bash -c 'while :; do :; done' & done`
+  on this 20-core host), confirm load average is above core count, run the
+  fixture three times, and require ALL CHECKS PASSED on all three - then kill
+  the loops and confirm none survive (`ps -eo args | grep -c '[w]hile :'` is
+  0). Before the parcel this is where the flake appears; this step is the one
+  that proves the fix against the real condition rather than a simulated one.
+  (4) Re-run the three features that grep this fixture's PASS lines -
+  BL-370, BL-1089, and BL-1279 scenario 03 - and confirm each is green, since
+  the fixture's check NAMES are their contract and a rename would silently
+  break them. (5) `bb swarmforge/scripts/test/front_desk_supervisor_lib_test_runner.bb`
+  still passes: the pure decision lane must be untouched, per the BL-1164
+  changed-path gate. (6) `git diff` for the parcel shows changes confined to
+  `swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh`, the new
+  feature file, and the new step handler plus its registration in
+  `specs/pipeline/steps/index.js` - `front_desk_supervisor.bb` and
+  `front_desk_supervisor_lib.bb` are NOT in the diff.
+
+out_of_scope: |
+  - **The other three front-desk supervisor fixtures**
+    (`..._bl622_refusal.sh`, `..._tick.sh`, `..._fleet_creds.sh`). They share
+    the family but not the measured defect: only the liveness fixture has
+    stall-detection checks built on a sleep cushion, and only it has been
+    observed flaking. If a second one is caught flaking it gets its own ticket
+    with its own evidence - a single "make the fixtures load-proof" ticket is
+    the shape that decomposes on contact (it has already done so twice for the
+    property lane), so triage stays per file.
+  - **The supervisor's own timing behaviour.** `poll-heartbeat-stale?`, the
+    startup grace, the backoff and the escalation arming are all correct as
+    they stand and are pinned by their own unit lane. This ticket changes no
+    production code. If the coder finds otherwise, see Constraints - that is a
+    report, not a rewrite.
+  - **A general anti-flake mechanism.** No shared "retry a flaky fixture"
+    helper, no suite-wide timing framework, no quarantine lane. One fixture,
+    one defect.
+  - **BL-1284** (the stray property-runner manifest row that has the whole
+    standing bb suite refusing to start). It is the other defect from the same
+    QA pass, already minted and already active. It is why this fixture's row
+    is not being exercised by `run_bb_suite.sh` right now, but it is a
+    different fault with a different fix and the two do not fold.
+  - **The 26 property-suite failures QA also saw.** Those are BL-1229's
+    `checkOrphanedAuthoredDocs` missing-deps stub, already ticketed and paused.
+
+source: |
+  QA `note` (priority 50) to specifier, 2026-08-30T02:02:06Z, verbatim:
+  "Untracked: liveness.sh real-clock check flake, newly exposed by BL-1279"
+
+  The substance is in QA's own evidence file,
+  `backlog/evidence/BL-1279-qa-pass-20260830.md`, section "Two pre-existing
+  defects found, neither introduced by this ticket", item 2 - which records
+  both reproductions and the check sets that failed in each. QA confirmed the
+  defect is absent from `backlog/active`, `backlog/paused` and `backlog/hold`
+  before reporting it, and deliberately did not fold it into the BL-1279
+  approval or bounce BL-1279 for it. The specifier re-verified that grep,
+  reproduced the idle-host green baseline (3/3), and read the fixture and the
+  supervisor before minting.
+
+notes: |
+  - [2026-08-30] specifier: `invariants:` is deliberately empty, and this was a
+    close call. "No verdict depends on elapsed wall-clock time" is a genuine
+    property over the whole slice, not an example. But a declared invariant
+    obliges the coder to carry an executable PROPERTY test for it in the same
+    parcel (backlog-schema.md, BL-654), and every sample of this property is a
+    real ~25s run of a multi-subprocess shell fixture - a generator-driven lane
+    over it would take hours per parcel and would be abandoned or stubbed
+    vacuous, which is worse than not declaring it. The property is instead
+    encoded as scenario 01's delay-injection Examples table and stated in full
+    under "The property wanted", where the coder acts on it and the architect
+    reviews against it. A manufactured invariant is worse than no field (BL-633).
+  - [2026-08-30] specifier: no `required_wiring:`. The mechanism here has no
+    call site outside its own acceptance contract - the runner throws on any
+    scenario lacking a step handler, so an unregistered handler hard-fails on
+    its own. Every entry available would have had to pin an identifier the
+    coder has not chosen yet (the delay env var, the step-handler symbol), and
+    a `path::pattern` naming a not-yet-written literal is the BL-874 trap: the
+    gate matches it as a plain substring, so it can only ever refuse the
+    documenter's send.
+  - [2026-08-30] specifier: the two IR-DRY findings on the feature file were
+    reviewed and both are intentional, not drift. The `an extra delay of ...`
+    Given repeats across all three scenarios because it is ONE step definition
+    with three call sites - that is the DRY outcome, and the placeholder form
+    in the outline is the same step parameterised. The "possible-synonym" pair
+    (`exits zero and reports no failed check` / `exits non-zero and names a
+    failed stall check`) is a deliberate mirror: scenario 03 is the
+    non-vacuity guard and reads as the inverse of the pass on purpose.
+  - [2026-08-30] specifier: `required_stages: [coder, architect, qa]` with
+    `required_stages_routing_enabled true` in `swarmforge.conf`. The architect
+    is kept - not for a design change, but because the one judgment that
+    decides whether this ticket is right at all ("is the fixture mis-asserting,
+    or is the supervisor mis-deciding?") is exactly the call a review stage
+    should be forced to make explicitly before QA.
+  - [2026-08-30] specifier: scenario 03 exists because the obvious wrong fix -
+    widening every window until nothing can fail - passes scenarios 01 and 02
+    perfectly. It is the same non-vacuity discipline BL-1279 used as its own
+    invariant 2, and it is the reason the hardener can be skipped: the guard
+    against a vacuous pass is in the contract rather than added after it.
