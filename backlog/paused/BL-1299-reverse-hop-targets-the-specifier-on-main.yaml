@@ -158,12 +158,14 @@ notes: |
   a `required_wiring` entry would pin it to the parcel commit rather than
   main (BL-798). It is recorded here as this ticket's other half.
 
-  It could NOT be landed at spec time: `boot_prefix_budget_gate.sh` already
-  fails on main at 45097 chars against a 44000 budget, BEFORE any edit, so
-  every boot-inlined article change must now ride a >=1097-char trim in the
-  same commit. Bundling an unrelated constitutional trim into a critical
-  defect fix is the wrong parcel for it. The overage is filed separately as
-  BL-1300; this paragraph lands once that gate is green.
+  It could not be landed at spec time. `boot_prefix_budget_gate.sh` was
+  failing on main at 45097 chars against a 44000 budget, BEFORE any edit -
+  hotfix `9fad290581` has since restored it to 41927 and turned both red lanes
+  green. But BL-1227's acceptance scenario 02 re-measures the LIVE tree at a
+  42000 ceiling (that discrepancy is BL-1300), so the real headroom is 73
+  chars and this correction still does not fit. Land it in this ticket's own
+  parcel, together with whatever trim it needs, once BL-1300 has settled which
+  of the two numbers is the budget.
 
 qa_e2e_procedure: |
   1. Confirm `.swarmforge/roles.tsv` still gives `architect` col9 = `back-all`
