@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   deriveHandoffLatency,
   deriveHandoffLatencyRecords,
@@ -54,7 +54,7 @@ test('aggregateHandoffLatencyByRole splits outliers per role', () => {
 });
 
 test('gatherRoleHandoffLatencyRecords reads master-resident mailbox layout', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl602-'));
+  const root = mkTmpDir('bl602-');
   try {
     writeHandoff(path.join(root, '.swarmforge', 'handoffs', 'coder', 'inbox', 'completed'), '50_x.handoff', {
       to: 'coder',

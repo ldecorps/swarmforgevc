@@ -3,15 +3,15 @@
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const fc = require('fast-check');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO = path.join(__dirname, '..', '..');
 
 function materialize() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1143-p-'));
+  const root = mkTmpDir('bl1143-p-');
   const scripts = path.join(root, 'swarmforge', 'scripts');
   const packs = path.join(root, 'swarmforge', 'packs');
   const evidence = path.join(root, 'backlog', 'evidence');

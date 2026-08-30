@@ -25,9 +25,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_standing_allowlist_lib.sh');
@@ -71,7 +71,7 @@ printf '%s' "$UNLISTED"
 }
 
 function fixtureRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'bl1234-prop-'));
+  return mkTmpDir('bl1234-prop-');
 }
 
 test('BL-1234/BL-654 invariant 1: an all-allowlisted set of ANY generated size is allowed', () => {

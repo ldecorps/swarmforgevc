@@ -2,8 +2,8 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   AGENT_NOTE_USER_MESSAGE_MAX_LEN,
   composeAgentNoteMessage,
@@ -87,12 +87,12 @@ test('isAgentNoteRequestShape rejects non-objects and missing fields', () => {
 });
 
 test('readDeclaredRoleNames returns an empty list when roles.tsv is missing', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl790-roles-'));
+  const root = mkTmpDir('bl790-roles-');
   assert.deepEqual(readDeclaredRoleNames(root), []);
 });
 
 test('queueAgentNoteViaHandoff shells to swarm_handoff with coordinator role', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl790-queue-'));
+  const root = mkTmpDir('bl790-queue-');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), 'role\tworktree\n');
   const calls = [];
@@ -113,7 +113,7 @@ test('queueAgentNoteViaHandoff shells to swarm_handoff with coordinator role', a
 });
 
 test('queueAgentNoteViaHandoff surfaces handoff failures', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl790-queue-fail-'));
+  const root = mkTmpDir('bl790-queue-fail-');
   const result = await queueAgentNoteViaHandoff(root, 'coder', composeAgentNoteMessage('hi'), async () => {
     throw new Error('boom');
   });
@@ -122,7 +122,7 @@ test('queueAgentNoteViaHandoff surfaces handoff failures', async () => {
 });
 
 test('decideAgentNoteSend queues for a declared role', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl790-decide-'));
+  const root = mkTmpDir('bl790-decide-');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(
     path.join(root, '.swarmforge', 'roles.tsv'),
@@ -141,7 +141,7 @@ test('decideAgentNoteSend queues for a declared role', async () => {
 });
 
 test('decideAgentNoteSend refuses undeclared roles before queuing', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl790-decide-role-'));
+  const root = mkTmpDir('bl790-decide-role-');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(
     path.join(root, '.swarmforge', 'roles.tsv'),

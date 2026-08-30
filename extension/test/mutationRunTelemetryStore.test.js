@@ -2,8 +2,8 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   appendMutationRunRecord,
   readMutationRunRecords,
@@ -27,7 +27,7 @@ const RECORD = {
 };
 
 test('appendMutationRunRecord appends without rewriting prior lines', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl593-telemetry-'));
+  const dir = mkTmpDir('bl593-telemetry-');
   try {
     const file = path.join(dir, 'mutation-runs.jsonl');
     appendMutationRunRecord(file, RECORD);

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   classifyTopicThread,
   mayWriteTrackedTopicRecord,
@@ -18,7 +18,7 @@ const {
 } = require('../out/concierge/blTopicStore');
 
 function mkRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'bl695-'));
+  return mkTmpDir('bl695-');
 }
 
 test('classify: BL/GH are tickets; SUP is supervisor; other is unbound', () => {

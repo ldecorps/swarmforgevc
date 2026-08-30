@@ -23,17 +23,18 @@ const { RAW_MKDTEMP_PATTERN, findRawMkdtempLines } = require('../../out/tools/ra
 // detects it - a scan that flagged its own fixtures would make the
 // migration-complete gate (scenario 03) permanently unsatisfiable.
 //
-// BL-1209: pilotMkdtempConventionCheck.test.js and its property sibling
-// carry the same shape - RAW_CALL_FILE/RAW_LINE fixture strings proving
-// assessPilotMkdtempConvention flags a raw call - and were omitted here
-// when that ticket added them, so the real-tree scan (scenario 03) flagged
-// its own sibling guard's fixtures as violations.
+// BL-1209 added pilotMkdtempConventionCheck.test.js and its property sibling
+// here, because their RAW_CALL_FILE/RAW_LINE fixture strings were being
+// flagged by the real-tree scan. BL-1280 removed them again: a FILE-level
+// exemption is the wrong instrument for a STRING-level problem, because it
+// also blinds the guard to any real raw call that file gains later. Those two
+// fixtures now split the literal across the `mkdtempSync(` boundary instead -
+// same bytes written to disk, no line for this scan to match - so the list
+// stays exactly the three paths tmpDir.js's own comment says it should.
 const SELF_EXEMPT_RELATIVE_PATHS = [
   'helpers/tmpDir.js',
   'tmpDirMigrationGuard.test.js',
   'tmpDirMigrationGuard.property.test.js',
-  'pilotMkdtempConventionCheck.test.js',
-  'pilotMkdtempConventionCheck.property.test.js',
 ];
 
 // Impure: walks every .js file under testDir (recursively), skipping the
@@ -57,7 +58,24 @@ function findRawMkdtempCallSites(testDir) {
       if (!entry.name.endsWith('.js') || exemptFiles.has(full)) {
         continue;
       }
-      const text = fs.readFileSync(full, 'utf8');
+      // BL-1280: a file can vanish between the readdir above and this read.
+      // Other suites in the same lane write transient fixture files INTO
+      // extension/test and delete them again (bl868's
+      // `bl868-fixture-<n>-peer<n>.property.test.js` are the live case), and
+      // with `isolate: false` they run beside this scan. Until the migration
+      // finished, this walk always threw on a violation first and the race was
+      // invisible; a green scan made it the failure. A file that no longer
+      // exists cannot hold a call site, so skipping it is exactly right - and
+      // only ENOENT is skipped, so a permission or IO error still fails loudly.
+      let text;
+      try {
+        text = fs.readFileSync(full, 'utf8');
+      } catch (err) {
+        if (err.code === 'ENOENT') {
+          continue;
+        }
+        throw err;
+      }
       for (const line of findRawMkdtempLines(text)) {
         violations.push({ file: full, line });
       }

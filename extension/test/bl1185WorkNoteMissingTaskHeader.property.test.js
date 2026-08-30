@@ -11,10 +11,10 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -60,7 +60,7 @@ const slugArb = fc
   .map((chars) => chars.join(''));
 
 function mkHandoffFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1185-prop-'));
+  const root = mkTmpDir('bl1185-prop-');
   const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
   git(['init', '-q', '.']);
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
