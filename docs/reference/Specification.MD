@@ -1,5 +1,61 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1235: a THIRD host-agent seat — a
+local model served through ollama — answers only in its own dedicated
+Telegram topic, per human directive: "cursor stays behind the usual host
+topic and front desk. I want local qwen only behind its dedicated one." A
+new `QWEN_LOCAL` subject id joins `CURSOR_REMOTE`/`BUBBLE` as a third entry
+in the same topic-map resolution `telegramCursorBridgeCore.ts` already
+carried — a sibling, not a new mechanism. Cursor's surfaces are protected
+TWO structural ways: `decideLocalSeatTurn`'s first clause returns
+`not-mine` for any topic that isn't the seat's own before the endpoint or
+model are even considered (so the seat cannot answer on Cursor's topic even
+to report itself broken), and `QWEN_LOCAL` is deliberately absent from
+`CursorBridgeTopicScope`, so the cursor bridge's own gate ignores it
+structurally rather than by a filter someone could forget. In the live
+dispatch the seat's turn is handled BEFORE `decideInboundAction` is
+consulted, inside the bridge's existing poll (a second `getUpdates`
+consumer on the same bot token would 409 and take the front desk down). The
+model tag is READ FROM CONFIGURATION, never hardcoded — the human's answer
+(`qwen3:14b`, after the ticket's own guess of `qwen2.5-coder:14b` could not
+be verified) is the default only; `resolveLocalSeatModelId` still checks
+whatever tag it resolves against the endpoint's live catalogue, so an
+unpulled or misconfigured tag is a visible refusal naming what the endpoint
+actually holds, never a silent fallback. On this CPU-only host a measured
+real turn took 3m19s at ~2.8 tok/s, so the seat posts an acknowledgement
+FIRST, before the completion call, naming the model and warning the reply
+may take minutes; every non-answer decision (endpoint down/unhealthy, model
+absent/unconfigured) carries the endpoint's own reason and hands the turn
+to nobody — there is no fallback/delegate case in the decision type at all.
+An architect bounce caught the seat's decision logic built with zero live
+callers — every acceptance scenario drove the decision function directly,
+so a fully-tested decision with nothing wired to it still read as green;
+fixed by building and wiring the live turn loop
+(`localQwenSeatLive.ts`) into the bridge's inbound dispatch. See the new
+`docs/how-to/BL-1235-local-qwen-seat-behind-its-own-topic.md`. Acceptance:
+`specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature`.)
+Prior entry —
+**Last Updated:** August 30, 2026 (BL-1183: the BoB day-long trial lifecycle
+(BL-1182) gains a go-live gate — per human directive, no production trial
+starts until telemetry and performance-assessing tools can actually decide
+outrank/tie/lose for that pairing. `run-trial-nominate` runs the checklist
+BEFORE arming or seating anything; a new `trial go-live --role <role>
+<provider>/<model>` subcommand reads it standalone with no side effect. The
+checklist is DERIVED from what the trial lifecycle's own `decide` function
+needs, not a separate list that could drift from it: a role-matrix score for
+BOTH the candidate and the permanent model (telemetry), and
+battery/scorecard/bake-off evidence behind each score
+(`battery-or-scorecard-evidence?`, the same predicate `ranking-authority-tier`
+already uses) — a score with no such citation is somebody's opinion, and an
+opinion cannot adjudicate a day of production. Fail-closed: an unreadable
+registry, an absent role-matrix entry, or an unscored candidate all produce a
+refusal, never a silent pass. Every gap is named — which model, and which
+half (telemetry or assessor) is missing — carried in one refusal string, so
+a caller cannot report the verdict without the reasons. See the new "The
+go-live gate: no production trial without something that can judge it"
+section in `docs/how-to/BL-547-model-steward-overview.md`. Acceptance:
+`specs/features/BL-1183-bob-go-live-telemetry-assessor-gate.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1224: the operator-runtime watch
 (BL-993) no longer counts a deliberate restart of `operator_runtime.bb` by
 something else as a crash. `build_freshness_cli.bb`'s `restart-operator-group!`

@@ -96,9 +96,23 @@ export interface LocalSeatTurnInput {
  * structural half of "never hands the turn to another seat" - a caller cannot
  * route elsewhere on a decision that offers nowhere to route to.
  */
+/** Invariant 1's hard gate, isolated: true for any message not in the seat's own topic. */
+function isForeignTopic(topicId: number | undefined, seatTopicId: number | undefined): boolean {
+  return seatTopicId === undefined || topicId === undefined || topicId !== seatTopicId;
+}
+
+/**
+ * What the endpoint DOES hold, for the "wrong tag vs missing pull" refusal
+ * text - naming what it does hold turns "unavailable" into something the
+ * reader can act on.
+ */
+function describeCatalogue(catalogue: readonly string[]): string {
+  return catalogue.length ? catalogue.join(', ') : 'nothing';
+}
+
 export function decideLocalSeatTurn(input: LocalSeatTurnInput): LocalSeatTurn {
   const { topicId, seatTopicId } = input;
-  if (seatTopicId === undefined || topicId === undefined || topicId !== seatTopicId) {
+  if (isForeignTopic(topicId, seatTopicId)) {
     return { kind: 'not-mine' };
   }
 
@@ -119,10 +133,9 @@ export function decideLocalSeatTurn(input: LocalSeatTurnInput): LocalSeatTurn {
     // Up, but does not hold what we asked for. Naming what it DOES hold turns
     // "unavailable" into something the reader can act on - the difference
     // between a wrong tag and a missing pull is one line of output away.
-    const held = input.catalogue.length ? input.catalogue.join(', ') : 'nothing';
     return {
       kind: 'refuse',
-      reason: `the endpoint is up but does not hold "${modelId}" (it holds: ${held})`,
+      reason: `the endpoint is up but does not hold "${modelId}" (it holds: ${describeCatalogue(input.catalogue)})`,
       modelId,
       endpointUrl: health.endpointUrl,
     };
