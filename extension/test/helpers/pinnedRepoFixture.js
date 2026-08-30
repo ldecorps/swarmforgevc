@@ -47,7 +47,9 @@ function loadFileDeps(source) {
     if (!line.includes('load-file')) continue;
     const quoted = [...line.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
     quoted.forEach((value, i) => {
-      if (!value.endsWith('.bb')) return;
+      // A quoted string ending in `.bb` that contains whitespace is prose
+      // ("<x>.bb load-files <y>.bb"), not a filename.
+      if (!value.endsWith('.bb') || /\s/.test(value)) return;
       // The path segments immediately preceding the name: the unbroken run of
       // quoted strings before it. A quoted string that is not a path segment
       // (a message, a flag) would have to sit directly against the filename
@@ -69,10 +71,39 @@ function loadFileDeps(source) {
  * scripts directory root. A dependency that climbs out of that root cannot be
  * copied from it, so it keeps its normalised name and is skipped by the copy
  * exactly like any other name the reader cannot resolve.
+ *
+ * Two load-file idioms are in the tree and they look identical to a
+ * segments-before-the-filename rule while meaning DIFFERENT anchors:
+ *
+ *   (fs/path (fs/parent *file*) "test" "x.bb")        relative to the referrer
+ *   (fs/path repo-root "swarmforge" "scripts" "x.bb") the scripts root itself
+ *
+ * The second is anchored at the repository root, and `swarmforge/scripts` is
+ * the very directory this walker is already based at - so those two segments
+ * are the base, not a subdirectory under the referrer. Reading them as one
+ * would yield `test/swarmforge/scripts/x.bb`, which exists nowhere, and the
+ * copy would silently skip it: the exact failure this ticket exists to close,
+ * one idiom over. The `(?:^|\/)` allows for a dep that climbs out with `..`
+ * before naming the root.
  */
-function resolveDepPath(referrer, dep) {
+const SCRIPTS_ROOT_ANCHOR = /(?:^|\/)swarmforge\/scripts\/(.+)$/;
+
+function resolveDepPath(referrer, dep, exists) {
+  const anchored = SCRIPTS_ROOT_ANCHOR.exec(dep);
+  if (anchored) return path.posix.normalize(anchored[1]);
   const dir = path.posix.dirname(referrer);
-  return path.posix.normalize(dir === '.' ? dep : `${dir}/${dep}`);
+  const relative = path.posix.normalize(dir === '.' ? dep : `${dir}/${dep}`);
+  if (dep.includes('/')) return relative;
+  // A BARE name spells no path, so it names no anchor either: the expression
+  // that built it started from a variable no quoted segment records
+  // (`scripts-dir`, `(fs/parent (fs/parent *file*))`, `repo-root`). Both
+  // readings are live in this tree - `test/suite_inventory_cli.bb` loads its
+  // sibling `suite_inventory_lib.bb`, while `test/acp_session_lib_test_runner.bb`
+  // loads the ROOT's `acp_session_lib.bb` - so the tree decides, nearest
+  // first, exactly as the load-file expression itself would. With no reader
+  // to ask, the historical flat reading stands.
+  if (exists && exists(relative)) return relative;
+  return dep;
 }
 
 /**
@@ -93,7 +124,10 @@ function resolveScriptClosure(entrypoints, readSource) {
     // Resolved against the naming file's own directory (BL-1240), so a script
     // inside test/ reaching back out with ".." names the root copy rather
     // than a second one under test/.
-    if (source) for (const dep of loadFileDeps(source)) frontier.push(resolveDepPath(name, dep));
+    if (source) {
+      const exists = (candidate) => readSource(candidate) != null;
+      for (const dep of loadFileDeps(source)) frontier.push(resolveDepPath(name, dep, exists));
+    }
   }
   return seen;
 }

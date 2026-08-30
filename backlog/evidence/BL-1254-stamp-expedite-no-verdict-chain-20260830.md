@@ -137,6 +137,45 @@ leaves the ledger pointing at a different one. This is the specifier's call
 specifier. Not touched here: this parcel writes nothing to the ledger, and
 retiring a ticket is not the coder's to do.
 
+## Amendment, 2026-08-30: scenario 06 and the three lib anchors
+
+The specifier amended this ticket in flight (BL-1259 retired as the duplicate
+this parcel surfaced; its distinct content carried here per Article 5.3).
+
+**Scenario 06 — a timeout is reported as a timeout even when no verdict was
+written.** Confirmed. `finalize-stage-result`'s ordering puts timeout/overrun
+ahead of the missing file, so a stage killed at its deadline is recorded as
+`fail`/`stage-timeout`, never `fail`/`no-verdict`, and is NOT re-invoked. The
+handler drives all three spellings the driver can arrive in — killed at the
+deadline, over budget on return, and both — because the two conditions really
+do arrive together and only the ordering separates them.
+
+Non-vacuous, shown directly rather than asserted: with the two `cond` branches
+in `finalize-stage-result` swapped, the same input returns
+
+    {"recover":false,"finalVerdict":"fail","finalReason":"no-verdict"}
+
+instead of `stage-timeout` — the absence masking why the stage was actually
+killed, which is the defect the ordering exists to prevent. (Running the whole
+feature under that mutation fails all ten scenarios, not one: the Background's
+invariant-1 check sees the modified hotfix source and refuses the pass, which
+is itself the guard working.) The mutation was reverted; the hotfix sources are
+byte-identical to `HEAD`.
+
+**The three new `required_wiring` anchors** pin
+`should-recover-missing-verdict?`, `bounce-payload-valid?` and
+`finalize-stage-result` as shared-lib calls from `expedite_cli.bb`. Each was
+grepped against the file this parcel ships: one hit each, none vacuous. No code
+change was needed — the driver already calls all three through the lib, which
+is what makes the anchors meaningful rather than aspirational.
+
+**BL-1259 retirement**: the ledger rows were re-linked to BL-1254, so the
+mismatch this parcel surfaced is resolved. Scenario 05 asserts only that the
+rows are neither certified nor waived, so it is unaffected by the re-link and
+still passes.
+
+Acceptance after the amendment: **10 scenarios, 10 pass**.
+
 ## Commit-time property guard: overridden, and why
 
 `check_property_suite_drift.sh` rejects this commit for ONE non-allowlisted red:
