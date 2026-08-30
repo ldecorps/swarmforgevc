@@ -116,3 +116,5 @@ notes: |
     isPaneActivelyProcessing is exported from panel/agentPaneState.ts:81. The
     grep for writers of activitySignal returned only the reading file, which is
     what makes required_wiring entry 1 non-vacuous.
+
+assigned_to: coder
