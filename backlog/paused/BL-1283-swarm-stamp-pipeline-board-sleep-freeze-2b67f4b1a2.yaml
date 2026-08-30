@@ -1,0 +1,113 @@
+id: BL-1283
+title: "Swarm stamp-off: certify Cursor hotfix 2b67f4b1a2 (the Telegram pipeline board freezes while the pack is asleep)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fault it addresses (the board reposting all night with no seats
+# live) is already fixed on main; this stamp confirms or refutes the land.
+# Not high: nothing is currently broken. Not low: the ledger row stays pending
+# and an uncertified hotfix keeps resurfacing until a human answers.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1283-swarm-stamp-pipeline-board-sleep-freeze-2b67f4b1a2.feature
+
+human_approval: pending
+
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 2b67f4b1a2. Review-only:
+  it confirms or refutes the land and never reimplements it. What needs your
+  decision is the ledger row — certify or waive — which green tests must never
+  write on their own.
+
+  Two things to know before you decide. First, the freeze reads swarm liveness
+  through probeSwarmLiveness, which has a recorded false-green history on this
+  host; a liveness probe that answers wrongly now decides whether the board
+  goes stale, so scenario 05 makes the failure direction explicit rather than
+  assuming the probe is sound. Second, the SAME commit adds two rows to
+  swarmforge/scripts/property_suite_standing_allowlist.tsv —
+  bl874PortableTimeInvariants and tempDirTrapGuard — neither of which has
+  anything to do with the board freeze. Both are labelled "pre-existing;
+  tracked under BL-1175". Allowlisting a red silences it, so scenario 06
+  checks the attribution rather than taking it on trust. If you would rather
+  the allowlist rows were split out and decided separately, say so and I will
+  peel them into their own ticket.
+
+invariants:
+  - "This stamp-off never reimplements the hotfix — review confirms or refutes landed commit 2b67f4b1a2 only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."
+  - "A frozen board is the previously posted board unchanged: freezing never posts, repins, or blanks anything."
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1283PipelineBoardSleepFreezeSwarmStampSteps::acceptance handler registered so the runner executes every review scenario"
+
+description: >
+  WHAT. Operator/Cursor hotfix 2b67f4b1a2 is live on main with the trailer
+  Hotfix-Certification: pending. Subject: "Freeze the Telegram pipeline board
+  while the pack is asleep."
+
+  Landed behaviour under review (do not redesign).
+  extension/src/concierge/conciergeTick.ts gains an optional
+  isPipelineBoardAwake adapter and an exported pure gate
+  pipelineBoardShouldRefresh(awake) returning `awake ?? true`. While awake,
+  runConciergeTick calls syncBoardIfWired then syncBoardPinIfWired exactly as
+  before. While asleep it calls NEITHER: the board sync result is
+  short-circuited to the previous state and the pin step is skipped entirely,
+  so the last posted board and its pin are left untouched. The concierge tick
+  itself keeps running — Approvals, role asks and the rest of the phone path
+  are deliberately unaffected. extension/src/tools/telegram-front-desk-bot.ts
+  supplies the adapter as isSwarmLive(probeSwarmLiveness(targetPath)).
+
+  The same commit also adds two rows to
+  swarmforge/scripts/property_suite_standing_allowlist.tsv
+  (bl874PortableTimeInvariants, tempDirTrapGuard), both attributed to BL-1175.
+
+  WHY. finish-shift puts the seats to bed but leaves the front desk up, so the
+  concierge tick kept recomputing and reposting the pipeline board all night
+  against a pack with no live roles. Separately: an unticketed hotfix never
+  becomes an official swarm deal on green tests alone (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the landed
+  sources at 2b67f4b1a2. Open a narrow follow-up only if review finds a
+  defect; do not rewrite the concierge tick in this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the hotfix. This parcel confirms or
+    refutes what landed.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT redesign the liveness probe, finish-shift, or the board renderer.
+    If review finds a design defect in any of them, that is a narrow follow-up
+    ticket, not this parcel.
+  - Do NOT remove or re-attribute the two property-allowlist rows the commit
+    added. Scenario 06 REPORTS on their attribution; acting on what it finds
+    is the human's call (see approval_context).
+
+qa_e2e_procedure: >
+  (1) At commit 2b67f4b1a2, confirm conciergeTick.ts exports
+  pipelineBoardShouldRefresh and that it returns true for undefined.
+  (2) Confirm that on the asleep path runConciergeTick calls neither
+  syncBoardIfWired nor syncBoardPinIfWired, and that the returned pipelineBoard
+  is the previous state object.
+  (3) Confirm telegram-front-desk-bot.ts wires isPipelineBoardAwake to
+  isSwarmLive(probeSwarmLiveness(targetPath)).
+  (4) Run the extension unit tests covering conciergeTick.test.js and confirm
+  the freeze, resume, pin-skip and legacy-default cases the commit added are
+  present and green.
+  (5) Confirm both property_suite_standing_allowlist.tsv rows the commit added
+  name a tracking ticket, and record in the evidence file whether BL-1175
+  actually covers tempDirTrapGuard — report only, change nothing.
+  (6) Leave Hotfix-Certification pending until the human ledger decision.
+
+source: |
+  backlog/hotfix-ledger.yaml entry for commit 2b67f4b1a2 (detected_at
+  2026-08-29, state pending, no stamp ticket). Minted on the coordinator's
+  note "Mint BL-848 stamp ticket for hotfix 2b67f4b1a2 (ledger: pending)",
+  2026-08-30. Ledger linked with hotfix_ledger_update.bb --link on mint, so
+  the recurrent sweep stops nudging the coordinator for it.
