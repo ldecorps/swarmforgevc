@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1232: the morning briefing's
+shift-velocity chart (BL-1184) is readable again — a human-reported intake
+found the Y axis crushed flat by a single outlier day (~415 against an
+ordinary sub-30 range), colliding X-axis date labels, and one hop between
+consecutive days eating most of the plot width. The last two shared one root
+cause: `nonLinearTimeX` took the log of raw age in MILLISECONDS rather than
+age normalized to the series span, so the curve's shape depended on the
+clock's units — over a 30-day series the single most recent day-to-day hop
+could consume ~84% of the plot, packing every other day into the leftmost
+sixth where index-picked labels then stacked on each other. Fixed by
+normalizing age to `0..1` before the log
+(`log(1 + TIME_WARP_K * normalizedAge) / log(1 + TIME_WARP_K)`,
+`TIME_WARP_K = 9`) — the non-linear warp BL-1184 locked in stays non-linear
+(`hasNonLinearTimeSpacing` still holds), it no longer lets one unit-of-time
+choice dominate the plot. Date labels now come from a new shared
+`pickLabelIndicesByPixelGap` (`briefingChartSvgCommon.ts`, reachable by any
+future chart) that picks by where points actually render rather than by
+series index, always keeping the most recent day and greedily accepting
+candidates that clear a derived minimum pixel gap. The Y-axis crush is fixed
+separately with a soft cap: `shiftVelocityAxisPlan` derives a robust body
+bound from the series (`max(median × 3, p75 × 2, 1)`) and, only when the true
+peak materially exceeds it, draws the axis from the bound and renders the
+over-cap day as a distinct clipped marker on the cap line carrying its true
+value as text — no series value is ever silently dropped or flattened, and
+when the peak does not materially exceed the bound the axis behaves exactly
+as before. The metric (max tickets landed per rolling 8h window per day) and
+the lifecycle-adapter data source are unchanged — this ticket is
+presentation-only. See the updated "The non-linear time axis" and new "The Y
+axis: soft cap with a clipped-peak marker" sections in
+`docs/how-to/BL-1184-briefing-shift-velocity-chart.md`. Acceptance:
+`specs/features/BL-1232-shift-velocity-chart-readable.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1281: `bl1048DeliveredParcelIsNotNotStarted.property.test.js`
 carried BL-1062's own defect a third time — nine declared reach floors
 checked against an unseeded `fast-check` draw, so whether a run cleared them
