@@ -1,0 +1,103 @@
+id: BL-1290
+title: "Two step files root a control-socket fixture at os.tmpdir(), overrunning the 100-char socket limit on macOS, so socketFixtureShortRootGuard is a standing red"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained to the test lanes. Nothing is lost or corrupted
+# and the guard still fires loudly and correctly - it is doing its job. The
+# cost is that it has been red long enough to read as background, which is how
+# a real regression behind it would be waved through (BL-816). Not high: no
+# gate is dead and no production path is touched. Not low: it is not cosmetic,
+# and it sits in the swarm's own delivery machinery.
+status: todo
+epic: code-quality-gates
+priority: 25
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "the change is two call sites adopting an existing helper (lib/socketFixtureRoot.js mkSocketFixtureRoot) plus one new step-handler file; there is no duplication to fold - adopting the shared helper IS the de-duplication."
+  hardender: "no production module changes: the deliverable is step-handler and fixture code. Scenario 03 measures the converted path against the length limit, which is the non-vacuity check the hardener would otherwise be asked to add, and it is in the acceptance contract."
+  documenter: "no living doc describes where socket fixtures are rooted, and no registered diagram depicts it."
+acceptance: specs/features/BL-1290-a-socket-fixture-is-rooted-short-enough-to-bind.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1290::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1290 -> 0), so the anchor cannot pass before the work is done"
+
+invariants:
+  - "No control-socket fixture path can exceed swarm_socket_lib.bb's length limit on any supported OS, whatever that OS uses as its temp base - a fixture that binds on Linux but not macOS is a violation, not a platform quirk."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. The one thing
+  worth knowing: this defect is INVISIBLE on Linux, which is where the swarm
+  runs. The overrun only bites on macOS, whose temp base is long, and both
+  supported target OSes are in scope (local-engineering.prompt: macOS and Linux).
+  So scenario 03 deliberately measures the converted path against the limit
+  rather than accepting a passing Linux run as proof. If you consider macOS out
+  of scope in practice, this ticket drops to cosmetic and should be closed
+  rather than built - that is the call worth making before it starts.
+
+description: |
+  ## What is wrong
+
+  `extension/test/socketFixtureShortRootGuard.test.js` scans
+  `specs/pipeline/steps` and fails on any step file that builds or references a
+  control socket while rooting its fixture at `os.tmpdir()`. Two files violate
+  it today, so the guard is a standing red in the unit lane:
+
+  - `specs/pipeline/steps/bl1112StandingUnitRedsSteps.js`
+  - `specs/pipeline/steps/bl691AmbulanceWorkflowGapsSteps.js`
+
+  The guard states the mechanism itself: such a fixture is "rooted at
+  os.tmpdir() (long on macOS; the socket path overruns swarm_socket_lib.bb's
+  100-char guard) - use lib/socketFixtureRoot.js's mkSocketFixtureRoot
+  instead".
+
+  ## Why it matters beyond the red
+
+  A unix socket path has a hard length limit. On Linux the temp base is short
+  and the fixture binds, so the step passes; on macOS the same code cannot bind.
+  The suite's verdict therefore depends on which OS ran it - the class
+  BL-871's invariant 1 exists to close - and this project supports both
+  (local-engineering.prompt: macOS and Linux only).
+
+  ## How (direction, not mandate)
+
+  `lib/socketFixtureRoot.js`'s `mkSocketFixtureRoot` already exists and is
+  the short-rooted alternative the guard names. This is adoption at two call
+  sites, not new machinery. Verify by measuring the resulting path against the
+  limit, not by observing a green Linux run - the whole defect is that a green
+  Linux run proves nothing here.
+
+qa_e2e_procedure: >
+  Run the guard directly and require zero violations:
+  `cd extension && npx vitest run --config vitest.config.mjs test/socketFixtureShortRootGuard.test.js`.
+  Then run the full unit lane and confirm this guard is no longer among the
+  failures. Finally confirm every scenario in the feature file resolves to a
+  registered step handler - the runner THROWS on a missing one.
+
+source: |
+  Hardener note 00_20260830T040607Z_001018_from_hardender_to_specifier
+  (priority 00): "3 standing guards red: tempDirTrap, socketFixtureShortRoot,
+  liveRepoDerivation". Split 1:3 by the specifier under Consolidation
+  Authority - three guards, three mechanisms, three violating file sets, the
+  same discipline BL-1061's property-lane triage used when it split 1:4.
+
+notes: |
+  Confirmed red at spec time, 2026-08-30, by running the three guards
+  together: 3 failed / 36 passed.
+
+  Checked before minting: BL-1112 (standing unit reds) is in done/ and names
+  different files; BL-1175 shipped the property-lane standing ALLOWLIST, which
+  covers only the property sibling of tempDirTrapGuard, not this guard;
+  BL-1240 (active) fires the SUITE-MANIFEST gate per parcel and owns
+  registration drift, not these convention guards. None of the three owns this.
+
+  The shared cause is worth stating even though it is not this ticket's to fix:
+  each guard runs at suite-run time, so a violation is reported to whoever next
+  runs the suite rather than to the author who introduced it - the same shape
+  BL-1240 is fixing for the manifest. If that per-parcel approach generalises,
+  these three are its natural next call sites.
