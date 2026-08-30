@@ -724,6 +724,26 @@ You are the hardender.
   `tested_at` was not in HEAD; nearly forwarded an unverified gate as
   passed. Durable script-side fail-loud fix: BL-884.)
 
+## run_gherkin_mutation.sh's work-dir is WRITTEN INTO — never point it at the repo or a tracked path (rule_proposal 2026-08-30, accepted)
+- The script writes `base/` and `mutations/` **into** the work-dir you give
+  it. `specs/pipeline/scripts/run_gherkin_mutation.sh` only calls `mktemp -d`
+  when that positional is EMPTY (line 63-64); anything you pass is used
+  verbatim, so `.` — or any tracked path — clobbers repo state. `base/feature.json`
+  is a TRACKED file (BL-700/701), and a run with work-dir `.` overwrites it.
+- Rule: pass a fresh `mktemp -d` under `./tmp/` (your own worktree, never
+  `/tmp`), or omit the positional entirely and let the script make its own;
+  then `rm -rf` it when the run is done. Never `.`, never a path git tracks.
+- This compounds with the 4-positional rule above: the work-dir is the SECOND
+  positional, so a mis-ordered call can put something meaningless there and
+  still write into the repo. Check what you passed, not just that it ran.
+  (Incident: BL-1224 hardener pass, 2026-08-30 — work-dir `.` overwrote the
+  tracked `base/feature.json`. Caught by `git status` before commit, restored,
+  and an `mktemp` re-run reproduced the same 8/8 with no collateral diff, so
+  the verdict stood; the clobber was the only damage. A dirty tree you did not
+  intend is the tell — engineering.prompt's "no unrelated local/generated
+  artifacts committed" and the workflow rule "temporary files: `./tmp/` in your
+  assigned worktree, never `/tmp`".)
+
 ## Overlapping self-exclusion guards each need an ISOLATING test — a combined fixture hides one mechanism's mutant behind the other (rule_proposal 2026-08-13, accepted)
 - When a self-exclusion (or any check) is guarded by two overlapping
   mechanisms — e.g. a filename-pattern case-statement AND a pid==self
