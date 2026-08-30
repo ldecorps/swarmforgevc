@@ -186,3 +186,30 @@ a function`, an unrelated stub gap. This parcel neither caused nor fixes it.
 
 `swarmforge/scripts/wait_pipeline_drain.sh` is untracked in this worktree and
 is not mine; nothing in the tree references it. Left exactly as found.
+
+## Architect bounce, 2026-08-30 - D1: a literal NUL byte in the property test
+
+**Defect.** `extension/test/bl1277StepCollisionInvariants.property.test.js`
+carried a single raw 0x00 byte in the ambiguity key - the template literal
+joined `feature` and `text` with the BYTE rather than with the two-character
+escape. The runtime value is correct and every test passed, which is why it
+survived to review; but git classifies a whole file as binary on the strength
+of that one byte, so `git diff` rendered all 321 lines as
+`Bin 0 -> 15571 bytes`, and every future change to the file would have been
+unreviewable the same way. `file` reported it as `data`.
+
+**Fix.** The key is now written with the escape sequence `\u0000` - six ASCII
+characters, identical value - and a comment beside it says why, so the next
+edit does not reintroduce it. `file` now reports "JavaScript source, Unicode
+text, UTF-8 text".
+
+**Swept wider than the one line, because the class is invisible by eye.** Every
+file in this parcel, and in BL-1279's and BL-1280's authored the same session,
+was scanned for a raw NUL and checked with `file`. This was the only one.
+
+**Verifying by diff, stated so it is not read as a failed fix.** `git diff` on
+the fixed file still prints `Bin 15571 -> 15894` in the bounce commit itself,
+because the OLD blob is binary and git needs only one side to be. From this
+commit forward both sides are text and the diff renders normally.
+
+**Runs after the fix.** Property lane 5/5, guard 6/6, acceptance 5/5.
