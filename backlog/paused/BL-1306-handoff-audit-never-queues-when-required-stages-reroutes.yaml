@@ -117,6 +117,24 @@ notes: |
   accidental drift, so none was normalized. A Background cannot absorb the shared
   Given without breaking Outline row 2, which needs a NON-skipping declaration.
 
+  ## A workaround is now written down, and this ticket retires it [2026-08-30 specifier]
+
+  The hardender hit this on BL-1293 (three identical `AUDIT_REQUIRED` refusals on
+  `to: documenter`, a stage that ticket skips; `to: QA` converged next call) and
+  proposed a rule for it. Accepted 2026-08-30 and landed in two places:
+
+  - `swarmforge/handoff-protocol.md`, after the BL-991 paragraph in the BL-606
+    routing section - the full statement.
+  - `swarmforge/roles/hardender.prompt` - the compact actionable form, at the
+    point of failure.
+
+  Both say plainly that they are a workaround for THIS defect, not a rule about
+  how handoffs ought to be addressed. **Retiring them is part of this ticket**:
+  when the key mismatch is fixed, delete both (grep `BL-1306`) in the same
+  parcel. Prose that outlives the defect it describes is exactly the stale
+  premise Article 3.6 exists to remove, and a workaround is the shape most
+  likely to be left behind - it reads as advice rather than as a bug report.
+
 qa_e2e_procedure: |
   1. On the fix commit, confirm the converted feature runs and is green:
      `node specs/pipeline/cli.js specs/features/BL-1306-handoff-audit-reroute.feature`
