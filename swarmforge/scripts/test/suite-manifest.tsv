@@ -457,9 +457,9 @@ ticket_close_guard_lib_test_runner.bb	standing
 ticket_status_lib_test_runner.bb	standing		
 tool_miss_heal_lib_test_runner.bb	standing		
 tree_collapse_guard_lib_test_runner.bb	standing		
+unregistered_test_gate_lib_test_runner.bb	standing		
 untracked_collision_clear_lib_test_runner.bb	standing		
 upstream_drift_check_lib_test_runner.bb	standing		
 wake_attribution_lib_test_runner.bb	standing		
 wake_dedup_lib_test_runner.bb	standing		
 worktree_drift_lib_test_runner.bb	standing		
-unregistered_test_gate_lib_test_runner.bb	standing		
