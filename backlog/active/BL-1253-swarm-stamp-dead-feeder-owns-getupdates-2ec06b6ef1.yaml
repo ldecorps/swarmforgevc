@@ -118,3 +118,5 @@ notes: |
     2ec06b6ef1 BL-1253`. Recorded here so it is not lost; the ledger row is
     still stamp_ticket null at mint.
   - [2026-08-29] specifier: shape follows BL-1136 / BL-1113 stamp-offs.
+
+assigned_to: coder
