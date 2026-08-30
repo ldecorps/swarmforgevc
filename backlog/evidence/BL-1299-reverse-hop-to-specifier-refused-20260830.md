@@ -51,3 +51,36 @@ Role law and the QA gate win; the merge was refused.
 
 `coder` and `cleaner` are legitimate reverse recipients of this same hop and
 must keep receiving it. Only master-resident roles are to be excluded.
+
+---
+
+## Recurrence 2 — 2026-08-30T18:55:53Z (inbound `754c893f04`)
+
+The defect is unfixed (`swarm_handoff.bb:734` still removes only
+`coordinator`), so a second `back-all` reverse hop from architect landed in the
+specifier inbox:
+
+- handoff: `00_20260830T185553Z_001299_from_architect_to_specifier_for_specifier.handoff`
+- `from: architect`, `non-forwarding: true`, `priority: 00`
+- task: `BL-1297-a-merge-commits-own-paths-are-not-empty`
+- payload: `merge_and_process architect 754c893f04`
+
+Topology verified at refusal time (not assumed):
+
+    git rev-parse --abbrev-ref HEAD              -> main
+    git merge-base --is-ancestor 754c893f04 main -> false
+    git rev-list --left-right --count main...master -> 4  405
+    git diff --stat main...754c893f04            -> 394 files, 12163 insertions, 373 deletions
+
+Obeying Article 2.4's merge-only instruction would have landed 394 files on the
+published `main` in one action, bypassing the QA integration gate (Articles
+1.8 / 4.2) and violating Article 1.2 (the specifier never merges or
+integrates). **Refused**; inbound completed via `done_with_current.sh`.
+
+No bounce recorded against the architect: the reverse copy is
+helper-synthesized by `swarm_handoff.bb`, not drafted by the sending role, so
+it is not chargeable to them.
+
+Recurrence count is now 2 in one shift, both from the architect's `back-all`
+window. Every subsequent architect forward will produce another until BL-1299
+lands.

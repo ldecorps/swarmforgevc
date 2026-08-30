@@ -1,0 +1,181 @@
+id: BL-1304
+title: "expedite --dry-run walks into the real stage launcher: it crashes on a working directory it deliberately did not create, and executes a full expedited run for real whenever that directory already exists"
+milestone: M8
+type: defect
+severity: high
+# high: a flag documented as "touch nothing" runs the real thing under a state
+# that is not exotic but routine - a re-run after a failed expedite, which is
+# exactly when an operator reaches for --dry-run. Only an accident stops it
+# today (the same flag skips creating the worktree, so the launch dies on
+# ENOENT), and that accident disappears the moment a worktree for the ticket
+# survives from an earlier run. It also cost a coordinator a blocked shift on
+# a false diagnosis. Not critical: nothing is broken while the swarm is up,
+# no work has been lost to it, and the failure mode observed so far is a
+# refusal rather than damage. Not medium: --dry-run is the ONLY safe way to
+# inspect an expedite plan, and it is simultaneously unusable and unsafe.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1304-a-dry-run-spawns-nothing.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1304DryRunSpawnsNothingSteps::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this feature file rather than skipping them. Verified absent from index.js at spec time (grep bl1304 -> 0 hits), so the anchor cannot pass before the work is done. Read this as a registry-completeness anchor and nothing more: per BL-1235 an anchor the parcel satisfies by its own diff proves no production wiring, and this ticket HAS no production wiring anchor to offer, because the fix is a guard inside drive-stages!/run-stage! which -main already calls unconditionally today"
+
+invariants:
+  - "A --dry-run invocation starts no stage process and creates no branch, worktree or backlog move, regardless of what an earlier run of the same ticket left on disk."
+  - "A --dry-run succeeds and prints a plan whenever a real run could start; it never fails on a condition that only a real run would have created."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. One judgment
+  is worth your eye, and it is a genuine fork rather than a detail.
+
+  This ticket makes --dry-run FULLY dry: the stage driver is skipped, so no
+  worktree is needed and none is made. The alternative is to make --dry-run
+  create the worktree (and only then skip the stages), which would exercise
+  more of the real path and make the printed plan more faithful - at the cost
+  of a dry run leaving a branch and a directory behind, which is a side
+  effect on a flag whose whole contract is that it has none. I chose fully
+  dry because "touch nothing" is the documented promise and because the
+  ~40 stale expedite-BL-* worktrees already on this host are evidence that
+  the ones we create do not get cleaned up. If you would rather it create the
+  worktree, that is a one-line change of direction and much cheaper to make
+  now than after the coder builds it.
+
+  Deliberately NOT in scope, so it does not read as a gap: cleaning up the
+  stale worktrees, and improving the "Cannot run program setsid" message
+  itself. The first is unrelated housekeeping. The second stops happening on
+  the dry-run path once this guard lands, and chasing it on the real-run path
+  would mean second-guessing a JVM error string for a case a real run cannot
+  reach - a poor trade for the size of this slice.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/expedite_cli.bb`, `-main` (line 875):
+
+      init      (initiate! opts run-dir)
+      worktree  (ensure-worktree! opts)
+      stages    (expedite-lib/stages-for {})
+      staged    (drive-stages! opts worktree run-dir stages)
+
+  Every other side-effecting step in this file is gated on the `dry-run?`
+  flag - `stop-stack!` (425), `bookkeep` (359), `park-others!` (398),
+  `ensure-worktree!` (515), `record-qa-hat-verdict!` (207), the ticket move
+  (881), the progress write (892) and `restart-stack!` (836). `drive-stages!`
+  is not, and `run-stage!` (657) does not destructure `dry-run?` at all. So a
+  dry run reaches the real stage launcher and tries to start role agents.
+
+  It does not manage to, but only by accident. `ensure-worktree!` honours the
+  flag too, so a dry run never creates the directory it then hands the
+  launcher as its working directory:
+
+      (when-not (or dry-run? (fs/exists? dir))
+        ... git worktree add ...)
+
+  Java's ProcessBuilder cannot start a process in a directory that does not
+  exist, and it reports that by naming the PROGRAM. Hence the observed crash:
+
+      java.io.IOException
+      Cannot run program "setsid" (in directory
+        "/home/carillon/swarmforgevc/.worktrees/expedite-BL-1288"):
+        error: 2 (No such file or directory)
+      at swarmforge/scripts/bounded_run_lib.bb:33
+      via expedite_cli.bb:732 (drive-stages!) <- expedite_cli.bb:875 (-main)
+
+  `setsid` is fine. On this host it is `/usr/bin/setsid`, present and on
+  PATH. The message accuses the one component that was not the problem.
+
+  ## The dangerous half
+
+  Read that `when-not` again: it short-circuits on `(fs/exists? dir)`. A dry
+  run whose worktree ALREADY exists therefore gets a valid working directory,
+  the launcher starts, and the run proceeds - stage prompts composed, agents
+  spawned, verdicts written, the pre-QA wiring gate evaluated. The dry-run
+  guards further down still suppress the backlog moves and the restart, so
+  the run does real work and then declines to record it.
+
+  That state is not exotic. It is what a re-run looks like: an expedite run
+  that failed partway leaves `.worktrees/expedite-<id>` behind, and the next
+  thing an operator reasonably does is `--dry-run` to inspect the plan before
+  trying again. This host currently carries about forty `expedite-BL-*`
+  worktrees from past runs, none cleaned up.
+
+  ## Measured
+
+  2026-08-30, this host, reproduced directly:
+  `./swarmforge/scripts/expedite.sh BL-1288 --dry-run` -> exit 1 with the
+  IOException above. The run printed its plan lines correctly first
+  (`bookkeep :adopt`, `park BL-1295 -> backlog/hold/`, `worktree ... on
+  expedite/BL-1288`) and, confirming the other guards do hold, changed
+  nothing: BL-1288 stayed in `backlog/paused/`, BL-1295 stayed in
+  `backlog/active/`, `.worktrees/expedite-BL-1288` was never created, the
+  branch was never made, and the eight tmux sessions plus handoffd and
+  babysitterd were still running afterwards.
+
+  ## How (direction, not mandate)
+
+  Gate the driver the way its eight siblings are gated: on a dry run, report
+  the stage chain that WOULD run and start nothing. The run then needs no
+  worktree, which is consistent with `ensure-worktree!` already declining to
+  make one.
+
+  The `EXPEDITE_STAGE_RUNNER` seam that `run-stage!` already honours is the
+  natural way to assert "no stage was started" without a model in the loop:
+  point it at a recorder and assert zero invocations. That seam exists; this
+  ticket does not need a new one.
+
+qa_e2e_procedure: >
+  1. Remove any `.worktrees/expedite-<id>` for the ticket under test, then run
+     `expedite.sh <id> --dry-run`. It must exit 0, print the plan, and start
+     no stage. Confirm no worktree and no `expedite/<id>` branch were created
+     (`git worktree list`, `git branch --list 'expedite/<id>'`), and that the
+     ticket did not move out of `backlog/paused/`.
+  2. Now create the worktree by hand (`git worktree add -b expedite/<id>
+     .worktrees/expedite-<id> main`) and run the SAME dry run again. It must
+     behave identically - no stage started. This is the case that runs for
+     real today, so it is the one that proves the fix.
+  3. With `EXPEDITE_STAGE_RUNNER` pointed at a recording stub, run a real
+     (non-dry) expedite of a throwaway ticket and confirm the stub IS invoked
+     once per stage - the guard must not have disabled the driver.
+  4. Confirm the reproduced `Cannot run program "setsid"` failure no longer
+     occurs on the dry-run path, and that `setsid` was never the fault
+     (`command -v setsid` resolves on the host).
+  5. Confirm every scenario resolves to a registered step handler.
+
+source: |
+  Coordinator note (priority 00, in_process
+  `00_20260830T194907Z_003272_from_coordinator_to_specifier`): "expedite
+  BL-1288 --dry-run crashes (setsid/worktree) - blocked, need call".
+  Reproduced and root-caused by the specifier before minting.
+
+notes: |
+  ## Verified before minting
+
+  - `setsid` is NOT missing: `/usr/bin/setsid`, on PATH, resolves. The
+    coordinator's "(setsid/worktree)" was an accurate observation of an
+    ambiguous message, not a wrong diagnosis - the message is ambiguous by
+    construction.
+  - No existing ticket covers this. Grepped `paused/`, `active/`, `hold/`,
+    `debt/` for `dry-run`, `drive-stages`, `expedite_cli`, `expedite.sh`:
+    the only hits are BL-1034 (expeditor commits its own backlog moves,
+    `debt/`), BL-1254 (no-verdict chain) and BL-1298 (replay from a linked
+    worktree). None touches the dry-run guard. The shipped expedite tickets
+    (BL-567, BL-1023, BL-1024, BL-1025, BL-1091, BL-1249, BL-1255) are all in
+    `done/` and none of them gates the driver.
+  - The swarm was NOT harmed by the reproduction: dry-run's other guards held.
+    See the Measured section for the post-run state check.
+
+  ## Why this is not a required_wiring shape
+
+  Recorded because a reviewer will look for one. The defect is a missing
+  guard inside a function `-main` already calls on every run, so there is no
+  new call site to pin and no BL-419 "shipped but unwired" risk. Per BL-1235,
+  declaring an anchor the parcel satisfies by its own diff would bank a green
+  that means nothing; the single entry declared here is the step-registry
+  anchor only, and the entry text says so.
