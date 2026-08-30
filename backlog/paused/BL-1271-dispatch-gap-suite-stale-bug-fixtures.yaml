@@ -170,3 +170,30 @@ notes: |
     this ticket changes a role prompt or a constitution article - Article
     3.2.4's transition clause already says `bug` is retired for new tickets
     and the predicate already matches it. The deliverable is entirely code.
+
+  ## Freshness hold ADJUDICATED [2026-08-30] specifier — CONFIRM PROMOTE
+
+  The coordinator's Article 3.6 gate held this with "stale premise, names
+  retired surface". Verified against live code, and the hold is a FALSE
+  POSITIVE. Every element of the premise still holds:
+
+  - Both named surfaces exist: swarmforge/scripts/test/dispatch_gap_test_runner.bb
+    and swarmforge/scripts/promotion_gates_lib.bb.
+  - The stale fixture literal is still there, still exactly two occurrences.
+  - The suite is still RED, with exactly the two failures described and the
+    exact expected/actual pair ("BL-14" vs "BL-13"). Ran it; nothing has
+    silently fixed it.
+  - Invariant 1 is safe to keep: expedited-types is #{"defect"} today, and a
+    sweep of paused/active/hold finds ZERO live tickets carrying type: bug
+    (the 58 that remain are all in done/ and cannot be promoted). Article
+    3.2.4's condition for dropping bug from the predicate — "only once no
+    ticket carries it" — is therefore satisfied, so defect-only is correct
+    rather than premature.
+
+  WHY THE GATE FIRED, so the next pass is cheap: this ticket's whole
+  deliverable is deleting a stale expectation about a RETIRED type, so it
+  necessarily names `type: bug` throughout. A freshness check keyed on
+  "mentions a retired surface" will flag it every time. The signal to read
+  instead is whether the retired thing is being ASSERTED as live (stale) or
+  being REMOVED (this ticket). Do not re-hold on the same grounds; if the
+  gate fires again, this note is the answer.

@@ -1,0 +1,124 @@
+id: BL-1296
+title: "Bubble gets its own answering seat so it stays answerable while the Cursor seat is busy, while remaining a mirror of the front desk"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 50
+direction: human-requested
+depends_on: [BL-1235]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1296-bubble-answers-from-its-own-seat.feature
+
+source: >
+  Operator conversation, 2026-08-28. Human observed Bubble (the operator phone app)
+  going quiet while the single Cursor answering seat was busy running the BL-1248
+  pilot's long gherkin-mutation/property sweep. The tunnel/bridge were healthy the
+  whole time (fresh heartbeat, offset advancing) — the responder was simply occupied.
+  Human asked whether Bubble could have its own seat to run in parallel.
+
+  Drained from backlog/INTAKE-bubble-own-seat-parallel-answering.yaml (filed by the
+  operator 2026-08-28 on the human's request; that intake is the sole source of this
+  ticket and was removed from the backlog root when this was minted).
+
+description: >
+  Today Bubble is a MIRROR topic (extension/src/bridge/bubbleMirrorTopic.ts). There is
+  exactly ONE answering seat — the live Cursor agent session
+  (extension/src/bridge/cursorBridgeAgentSession) — and both the cursor host topic
+  (8435) and the Bubble topic (11810) route to it. So whenever the Cursor seat is busy
+  (e.g. a piloted expedite), Bubble cannot answer: same responder, one turn at a time.
+
+  The request is to give Bubble a dedicated answering seat so it can respond in parallel,
+  leaving cursor's host topic and the front desk untouched — the SAME shape as BL-1235
+  ("A local qwen seat answers in its own dedicated messaging topic"). Ride on BL-1235's
+  seat/lifecycle machinery rather than inventing a parallel mechanism.
+
+  DECIDED (human, 2026-08-30): option B — DEDICATED WORKER, Bubble stays a mirror.
+  Bubble remains the phone view of the front desk and gets its own worker so the mirror
+  stays live and answerable even while cursor is busy. Option A (an INDEPENDENT
+  responder that answers on its own and may diverge from the front desk — a genuine
+  second brain) was considered and NOT chosen; divergence is out of scope. The human's
+  words for the chosen shape: "Same answers as the front desk, just not blocked behind
+  Cursor's current turn."
+
+  How (direction, not mandate): BL-1235 shipped a dedicated-topic seat with its own turn
+  loop (extension/src/tools/localQwenSeat.ts, wired through
+  extension/src/tools/telegramCursorBridgeCore.ts and the subject-id topic map at
+  .swarmforge/operator/cursor-bridge-topic-map.json, which today reads
+  {"8435": "CURSOR_REMOTE", "11810": "BUBBLE"}). Reuse that machinery for a Bubble
+  worker rather than inventing a second mechanism. How "stays a mirror" is achieved —
+  shared context, or relaying the front desk's own answer — is the implementer's call,
+  provided invariant 1 holds.
+
+invariants:
+  - "The Bubble seat never diverges from the front desk: it is a mirror served by its own worker, never an independent responder with its own separate context."
+  - "A seat answers only its own topic - the Bubble worker never serves the cursor host topic or the front desk, and the Cursor seat never serves the Bubble topic."
+  - "Exactly one getUpdates owner exists at all times; adding the second seat opens no competing poller."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1296BubbleSeatSteps::the five scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
+
+qa_e2e: >
+  With both seats running, occupy the Cursor seat with a long turn (a piloted
+  expedite or an equivalent long sweep) and confirm from the phone that a message sent
+  to the Bubble topic is answered while that turn is still in flight — this is the whole
+  point of the ticket and must be demonstrated live, not only in fakes. Then send a
+  message to the cursor host topic and confirm the Bubble worker did not answer it, and
+  vice versa. Stop the Bubble seat and confirm the watchdog reports it. Throughout,
+  confirm only one getUpdates owner exists (no 409s in the bridge log) and that the
+  bridge does not restart — the dead-feeder/409 classes must not reopen.
+
+human_approval: pending
+approval_context: >
+  The A/B shape question is already answered by you directly (2026-08-30, option B),
+  archived verbatim at
+  backlog/answers-archive/ANSWER-2026-08-30-bubble-seat-option-b-dedicated-worker.md,
+  and I am not re-asking it.
+
+  What is worth a look on the feature file: your selected acceptance shape included
+  "Bubble's answer == front desk's answer". I have written that as invariant 1 (no
+  divergence, a mirror with its own worker) rather than as literal answer-string
+  equality, because a question asked only on the phone has no front-desk answer to be
+  equal to. If you did mean strict echo — the Bubble worker relays the front desk's
+  own answer rather than producing one — say so and I will tighten it, since that is a
+  materially different build.
+
+  Also confirming two classifications I chose rather than inherited: milestone M8 (the
+  intake guessed M3, marked "Specifier to confirm"; the sibling BL-1235 it rides on is
+  M8), and epic local-llm-swarm (BL-1235's epic, the seat/lifecycle machinery this
+  reuses). The bubble-control epic BL-841 is the phone-drives-the-swarm control-verbs
+  plane, which this is not.
+
+notes: |
+  Operator did NOT implement or pre-spec this (out of bounds without a spec). Feasibility
+  read given to the human: conceptually straightforward and already patterned on BL-1235,
+  but a real ticket, not a quick edit — a second agent session bound to the Bubble topic,
+  a model/seat choice, lifecycle/supervision, and care not to reopen the 409/dead-feeder
+  bugs the bridge is still stabilizing (3 restarts in the hour before this was filed).
+
+  The intake's acceptance list, carried forward and now expressed as the feature file's
+  five scenarios plus the three invariants:
+    - "Bubble answers in its own topic even while the Cursor host seat is busy with other work (parallelism demonstrated)."
+    - "Cursor's host topic and the front desk are never served by the Bubble seat, and vice versa (no cross-answering)."
+    - "A Bubble seat that cannot answer says why in its own topic; it never fails silently and never hands the turn to another seat."
+    - "No regression of the Telegram 409 / double-poller or dead-feeder classes: only one getUpdates owner; the second seat does not open a competing poller."
+    - "The new seat is supervised/kept-alive like the existing bridge (watchdog covers both seats)."
+
+  Related, from the intake:
+    - "BL-1235 (paused) — local qwen dedicated-topic seat; shares the seat/lifecycle machinery this should reuse."
+    - "Dead-feeder / 409 bridge stability work (commits 2ec06b6ef1, 5045fae371) — the concurrency hazards a second seat must not reopen."
+  BL-1235 has since SHIPPED (backlog/done/), so the machinery this rides on exists today
+  rather than being a sibling in flight — that is why depends_on is satisfiable now.
+
+  A live design input recorded on BL-1235: the human's model-tag answer was qwen3:14b at
+  a measured ~2.8 tok/s on this host. A slow seat is a real constraint on any second
+  seat's turn loop, and the Bubble worker's model/seat choice should be made with that in
+  mind rather than assumed to match the Cursor seat.
+
+  IR-DRY: one medium-confidence near-duplicate reported, between scenario 02's
+  parameterized "a message arrives in the <topic> topic" and scenarios 01/03's concrete
+  "a message arrives in the Bubble topic". Reviewed and deliberately kept: the outline is
+  the parameterized form of the same step and one handler pattern serves both, so this is
+  not accidental drift.

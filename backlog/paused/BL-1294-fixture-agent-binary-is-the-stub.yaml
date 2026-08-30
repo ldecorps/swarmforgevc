@@ -1,0 +1,123 @@
+id: BL-1294
+title: "Acceptance fixtures launch real Claude agents: the fake-binary PATH shim is defeated by the pane shell's own PATH prepend"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 15
+direction: agent-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1294-fixture-agent-binary-is-the-stub.feature
+
+source: "Found by the specifier 2026-08-30 while idle-checking swarm liveness: pgrep showed 29 claude processes, of which 21 were launched from /tmp/aps-role-lifecycle-* acceptance fixture roots rather than the swarm."
+
+description: >
+  specs/pipeline/steps/roleLifecycleParkUnneededSteps.js intends to stub the
+  agent binary: mkFakeBin() writes an `exit 0` script named `claude` into a
+  temp dir, and fakeEnv() prepends that dir to PATH. The stub is never
+  reached. The fixture config writes the bare command name (`window coder
+  claude coder --model x`), and the command is resolved inside a tmux pane
+  whose shell sources the user startup file, which prepends the directory
+  holding the REAL agent binary ahead of the fixture directory. The bare name
+  therefore resolves to the real binary and a real, billable Claude agent
+  boots against a throwaway fixture root, told to begin its role loop.
+
+  Measured on this host 2026-08-30: 21 real agent processes from 7 fixture
+  roots, alive about 1h50m, about 2.6 GB resident, alongside 22 orphaned
+  fixture roots and 13 orphaned fake-bin dirs. The only other claude
+  processes on the box were the swarm's own 8.
+
+  Reproduced directly, without the suite: writing a stub named `claude` into
+  a dir, prepending that dir to PATH, opening a tmux session on an isolated
+  socket and asking the pane to resolve `claude` returns the real binary at
+  the directory the shell startup file prepends, not the stub.
+
+  WHY THIS IS NOT ALREADY FIXED. BL-458 and BL-817 both addressed REAPING -
+  tearing down what a fixture spawned, including on abnormal exit. Neither
+  prevents the real binary from being reached, so even a perfect reaper still
+  boots real agents for the duration of every run. This ticket is the
+  prevention half, and it is what makes the reaper a second line of defence
+  rather than the only one.
+
+  How (direction, not mandate): a shim that depends on PATH precedence cannot
+  hold across a shell that re-orders PATH, so stop depending on PATH order -
+  have the fixture name its stub by a path no startup file can re-order, for
+  instance by writing the stub's absolute path into the fixture config's
+  command column instead of the bare name. Any approach that makes the stub
+  unconditionally the thing that runs is acceptable.
+
+  SCOPE. One handler only - and that is the whole of it, not a first
+  instalment. The fake-bin-prepended-to-PATH idiom appears in about 20 step
+  handlers, so a sibling sweep looked likely; it was surveyed before minting
+  and is not needed. The shim can only be defeated where a bare command name
+  is resolved inside a tmux pane: a direct spawnSync with fakeEnv runs
+  non-interactive, sources no startup file, and the shim holds. Exactly one
+  other handler both starts tmux sessions and mentions a claude command,
+  bl804BabysitterMonoRouterTopologyAwarenessSteps.js, and it is already safe
+  by construction - it runs `exec -a "claude --remote-control fake" sleep
+  999`, renaming a sleep process's argv so pgrep sees it, and never resolves
+  a real binary at all. So there is no sweep ticket to follow, and this
+  slice is not blocked on one.
+
+invariants:
+  - "No acceptance step handler ever executes a real agent binary: a fixture's agent command runs the fixture's own stub, whatever the pane shell's startup files do to PATH."
+  - "A fixture reaches its stub by a path the shell cannot re-order, never by PATH-prefix precedence alone."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1294FixtureAgentBinarySteps::the three scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
+
+qa_e2e: >
+  With the swarm stopped, record the pre-run count of real agent processes
+  whose command line contains an aps-role-lifecycle fixture path (expect 0
+  after the current orphans are dealt with). Run the role-lifecycle
+  acceptance scenarios to completion. Re-run the same count: it must still be
+  0, both immediately and after the runner exits. Then repeat with the runner
+  killed mid-scenario (SIGTERM) - the count must still be 0, since no real
+  binary should ever have been launched to survive. Confirm the fixture stub
+  did run, so the scenarios are not passing merely because nothing launched.
+
+human_approval: pending
+approval_context: >
+  Review of the new feature file, plus one live operational decision that is
+  not this ticket's to take.
+
+  The scope question I expected to raise here is already settled by evidence
+  and needs no ruling: I surveyed the roughly 20 step handlers sharing the
+  fake-bin idiom before minting, and only roleLifecycleParkUnneededSteps.js
+  can be defeated. The one other pane-starting candidate fakes its argv with
+  exec -a and never resolves a real binary. So this is a one-file fix with no
+  follow-on sweep, and I am not asking you to choose narrow versus wide.
+
+  What does need your decision: 21 real agent processes from this defect are
+  alive on the host right now, from 7 fixture roots, about 1h50m old and
+  about 2.6 GB resident. BL-458's notes explicitly asked that orphans of this
+  class not be silently hand-killed, so I have left them running and am
+  surfacing them instead. They are also the live evidence for this ticket.
+  Say whether to kill them now or leave them until the fix lands.
+
+notes: |
+  Evidence gathered 2026-08-30 by the specifier, all reproducible:
+
+  - `pgrep -af claude` -> 29 processes, 21 of them with
+    `--settings /tmp/aps-role-lifecycle-<id>/.swarmforge/launch/<role>.claude-settings.json`
+    and `--append-system-prompt-file /tmp/aps-role-lifecycle-<id>/.swarmforge/prompts/<role>.md`,
+    ages 01:45:44 to 01:50:29, RSS 88-147 MB each.
+  - 7 distinct fixture roots among those processes; 22 aps-role-lifecycle-*
+    roots and 13 aps-role-lifecycle-fakebin-* dirs left on disk.
+  - The remaining 8 claude processes are the live swarm's own roles.
+  - Direct repro of the shim defeat: a stub named `claude` in a fixture dir,
+    that dir prepended to PATH, `tmux -S <isolated.sock> new-session -d`,
+    then asking the pane to resolve the command, returns the real binary in
+    the directory the shell startup file prepends - not the stub.
+
+  The orphaned processes were left running deliberately: BL-458's own notes
+  say not to "fix" this class by a silent manual kill of the day's orphans.
+  They are also the live evidence for this ticket.
+
+  Related, both already landed and neither sufficient here:
+  BL-458 (acceptance-fixture process leak - reaping, incl. abnormal exit) and
+  BL-817 (six step handlers adopt BL-458's shared reaper).
