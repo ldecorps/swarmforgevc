@@ -110,7 +110,10 @@
         [has-task? s6] (gen-bool s5)
         ;; BL-1293: nil is a real value here, not a gap - it is what an
         ;; unreadable commit produces, and it must never block.
-        [nothing-own s7] (gen-pick s6 [true false nil])]
+        [nothing-own s7] (gen-pick s6 [true false nil])
+        ;; BL-1307: nil is a real value here too - it is what an unreadable
+        ;; range produces, and it must never block.
+        [carries-evidence s8] (gen-pick s7 [true false nil])]
     [{:type type
       :sender sender
       :recipients recipients
@@ -118,8 +121,9 @@
       :commit commit
       :reroute-reason (if has-reroute? "operator asked for a reroute" nil)
       :received-commit received-commit
-      :introduces-nothing-own? nothing-own}
-     s7]))
+      :introduces-nothing-own? nothing-own
+      :carries-own-evidence? carries-evidence}
+     s8]))
 
 ;; ── independent oracle ────────────────────────────────────────────────────
 
@@ -132,7 +136,7 @@
    invariant 2's fail-open shapes are unchanged (a nil received-commit can
    never equal a non-blank commit)."
   [{:keys [type sender recipients task-name commit reroute-reason received-commit
-           introduces-nothing-own?]}]
+           introduces-nothing-own? carries-own-evidence?]}]
   (let [is-review-role? (contains? #{"cleaner" "architect" "hardender" "documenter"} sender)
         is-git-handoff? (= type "git_handoff")
         single-recipient? (= (count recipients) 1)
@@ -147,10 +151,15 @@
         ;; BL-1293, stated fresh: carrying none of the role's own work is
         ;; refused on the same surface, whatever the commit id happens to be.
         ;; Only an explicit true counts - false and nil are "not established".
-        carries-nothing-own? (and has-commit? (true? introduces-nothing-own?))]
+        carries-nothing-own? (and has-commit? (true? introduces-nothing-own?))
+        ;; BL-1307, stated fresh: a forward that adds no evidence file naming
+        ;; the task it carries is refused on the same surface, however much
+        ;; incidental content it happens to contribute. Only an explicit
+        ;; false counts - nil and absent are "the gate could not tell".
+        adds-no-own-evidence? (and has-commit? (false? carries-own-evidence?))]
     (boolean (and is-git-handoff? moves-forward? (not detour-marked?)
                   has-task?
-                  (or names-received-commit? carries-nothing-own?)))))
+                  (or names-received-commit? carries-nothing-own? adds-no-own-evidence?)))))
 
 ;; ── the property ──────────────────────────────────────────────────────────
 
@@ -313,6 +322,104 @@
   (when (= (naive-ignores-reroute? scenario) (review-forward-evidence-gate-lib/blocked? scenario))
     (swap! failures conj "FAIL non-vacuity: naive and real gate agree on the reroute_reason case - the property would not have caught this mutant")))
 
+
+;; ── BL-1307: the evidence fact, BY CONSTRUCTION ──────────────────────────
+;; invariant 1 - "A review role's forward adds an evidence file naming the
+;;    task being forwarded. Incidental content never satisfies it - not a
+;;    resolved merge conflict, not a merge of unrelated work, not another
+;;    task's evidence file."
+;; invariant 2 - unchanged and restated for this fact: an unreadable range
+;;    (nil) never refuses.
+;;
+;; The broad generator above would reach "review role + forward + single
+;; recipient + task + no reroute + evidence-absent" only when six independent
+;; draws line up - the astronomically-rare deep state BL-950's and BL-1293's
+;; notes already record. So this fact gets its own generator with sender,
+;; recipient and type FIXED to the gated hop, and the commit id deliberately
+;; DIFFERENT from the received one with introduces-nothing-own? false: neither
+;; older fact can explain a refusal in this space, so only the evidence fact
+;; can. Both verdicts are ASSERTED reached below, never hoped for.
+
+(def evidence-refused-reached (atom 0))
+(def evidence-allowed-reached (atom 0))
+
+(defn gen-evidence-scenario [s]
+  (let [[carries s1] (gen-pick s [true false nil])
+        [has-reroute? s2] (gen-bool s1)
+        [has-task? s3] (gen-bool s2)
+        [sender s4] (gen-pick s3 ["cleaner" "architect" "hardender" "documenter"])
+        [recipient s5] (gen-pick s4 required-stages-lib/canonical-order)]
+    [{:type "git_handoff"
+      :sender sender
+      :recipients [recipient]
+      :task-name (if has-task? "BL-1224-a-parcel-that-passed-through" "")
+      ;; a DESCENDANT id that contributes content of its own: BL-806's
+      ;; identity check and BL-1293's contribution check both PASS it, so a
+      ;; refusal here can only come from the evidence fact.
+      :commit "cccccccccc"
+      :reroute-reason (if has-reroute? "operator asked for a reroute" nil)
+      :received-commit "bbbbbbbbbb"
+      :introduces-nothing-own? false
+      :carries-own-evidence? carries}
+     s5]))
+
+(check-all "BL-1307: a forward adding no evidence for the task it names matches the invariant text, by construction"
+           gen-evidence-scenario
+           (fn [scenario]
+             (let [expected (expected-blocked? scenario)]
+               (if expected
+                 (swap! evidence-refused-reached inc)
+                 (swap! evidence-allowed-reached inc))
+               (let [actual (review-forward-evidence-gate-lib/blocked? scenario)]
+                 (if (= expected actual)
+                   true
+                   (format "expected %s, got %s" expected actual))))))
+
+(when (zero? @evidence-refused-reached)
+  (swap! failures conj "FAIL BL-1307 reachability: the by-construction generator never produced the REFUSED shape (carries-own-evidence? false, forward direction, no reroute, task present)"))
+(when (zero? @evidence-allowed-reached)
+  (swap! failures conj "FAIL BL-1307 reachability: the by-construction generator never produced an ALLOWED shape"))
+
+;; Invariant 2, stated on its own for this fact: a range the gate could not
+;; read (nil) is not a refusal. A gate that treated nil as "no evidence"
+;; would strand every send whose range git cannot diff.
+(let [unreadable {:type "git_handoff" :sender "architect" :recipients ["hardender"]
+                  :task-name "BL-T" :commit "cccccccccc" :reroute-reason nil
+                  :received-commit "bbbbbbbbbb" :introduces-nothing-own? false
+                  :carries-own-evidence? nil}]
+  (when (review-forward-evidence-gate-lib/blocked? unreadable)
+    (swap! failures conj "FAIL BL-1307: an unreadable range (nil) blocked the send - the gate must fail open")))
+
+;; ── BL-1307 non-vacuity: the pre-fix gate (BL-1293's two facts) fails this ──
+;; Kept as a live mutant: if the real gate ever regresses to reading only the
+;; commit, this goes red rather than the suite quietly staying green.
+
+(defn commit-facts-only-blocked?
+  [{:keys [type sender recipients task-name commit reroute-reason received-commit
+           introduces-nothing-own?]}]
+  (boolean (and (= type "git_handoff")
+                (contains? #{"cleaner" "architect" "hardender" "documenter"} sender)
+                (= (count recipients) 1)
+                (required-stages-lib/routes-forward? sender (first recipients))
+                (str/blank? reroute-reason)
+                (not (str/blank? task-name))
+                (not (str/blank? commit))
+                (or (= commit received-commit) (true? introduces-nothing-own?)))))
+
+;; The BL-1224 shape itself: a forward that contributed a conflict resolution
+;; and no evidence for the task it names.
+(let [conflict-only {:type "git_handoff" :sender "architect" :recipients ["hardender"]
+                     :task-name "BL-1224-a-parcel-that-passed-through"
+                     :commit "b7d22b9ee3" :reroute-reason nil
+                     :received-commit "3bc1e28b53"
+                     :introduces-nothing-own? false :carries-own-evidence? false}]
+  (when (commit-facts-only-blocked? conflict-only)
+    (swap! failures conj "FAIL BL-1307 non-vacuity setup: the commit-only gate was expected to MISS the BL-1224 shape"))
+  (when-not (review-forward-evidence-gate-lib/blocked? conflict-only)
+    (swap! failures conj "FAIL BL-1307: the real gate let a forward with no evidence for its task through"))
+  (when (= (commit-facts-only-blocked? conflict-only)
+           (review-forward-evidence-gate-lib/blocked? conflict-only))
+    (swap! failures conj "FAIL BL-1307 non-vacuity: the commit-only gate and the real gate agree on the BL-1224 shape - the property would not have caught the pre-fix mutant")))
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))
