@@ -22,7 +22,7 @@ invariants:
   - "Checklist failure names the missing telemetry or assessor — never a silent skip into live trial."
 
 required_wiring:
-  - "BoB trial start path::go-live checklist::telemetry + assessor readiness"
+  - 'swarmforge/scripts/model_steward_trial_lib.bb::go-live::the gate must live on the REAL trial-start path (the lib BL-1182 shipped the trial lifecycle into, whose nominate is what the feature file means by "a production day trial is nominated"), not only in the acceptance handler. Verified absent at amendment time (grep go-live -> 0 in this lib and in model_steward_cli.bb), so the anchor is non-vacuous; "go-live" is fixed by this ticket own feature file, not an implementer naming guess'
   - "specs/pipeline/steps/index.js::bl1183BobGoLiveGateSteps::acceptance handler registered"
 
 description: |
@@ -42,6 +42,22 @@ source: |
   .swarmforge/operator/INTAKE-best-of-breed-swarm-model-trials.md. Epic BL-1180 child.
 
 notes: |
-  - [2026-08-27] specifier: minted from operator intake drain.
+
+  ## AMENDMENT 2026-08-30 — required_wiring row 1 (bookkeeping only)
+  
+  Row 1 read `BoB trial start path::go-live checklist::telemetry + assessor
+  readiness`. `pre_qa_gate_lib.bb` splits on `::` and matches the pattern as a
+  plain substring against the file at `path` — so it parsed as
+  `{:path "BoB trial start path", :pattern "go-live checklist"}`, a path that is
+  prose and cannot exist. The gate arms at the documenter->QA hop, the LAST one,
+  and fails CLOSED, so this would have blocked the forward after all six stages
+  of work were spent. The BL-874 shape. Reported by the coder, 2026-08-30.
+  
+  Re-anchored to `swarmforge/scripts/model_steward_trial_lib.bb::go-live`.
+  
+  **Nothing you build changes.** The acceptance contract, the scenarios and the
+  described behaviour are untouched; this only makes the wiring declaration
+  checkable against a real file. Row 2 is unchanged.
+    - [2026-08-27] specifier: minted from operator intake drain.
 
 assigned_to: coder

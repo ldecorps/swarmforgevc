@@ -1,0 +1,173 @@
+id: BL-1288
+title: "rematch-with-push-first! treats EVERY failed push as genuine divergence, so an unreachable remote or missing credential destroys local-ahead commits - and it throws away the :error string that is the only thing able to tell the two apart"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that destroys committed work and blinds the signal meant
+# to prevent it. Seven resets on 2026-08-30, two of them inside a single
+# specifier turn; prior shifts lost an operator directive four times and erased
+# a recorded human_approval (invisible - it reads as `pending` afterwards). Not
+# critical: the swarm stays up, and every loss so far was recoverable from the
+# reflog by `cherry-pick -x` with zero conflicts, so this is destruction plus a
+# manual treadmill rather than permanent data loss. Not medium: the guard that
+# exists to prevent exactly this (BL-1198) is shipped, wired at all three call
+# sites, and silently degrading - a broken safety signal, not a contained bug.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1288-only-a-rejected-push-authorises-discarding-local-commits.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1288::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1288 -> 0), so the anchor cannot pass before the work is done"
+
+invariants:
+  - "Local-ahead commits are discarded only when the remote REJECTED the push; a push that could not be attempted or completed (remote unreachable, no credentials, network down) never authorises a reset."
+  - "When a push failure decides the outcome, that push's own error text reaches the caller's result - never replaced by the reset's error, nor by an outcome name."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. The judgment
+  worth a look: what a NON-rejection push failure should do instead of
+  resetting. This ticket specifies "keep the commits and surface the reason" -
+  it deliberately does NOT specify a retry, because the existing periodic
+  push-sweep (BL-356) already owns retry-on-backoff and adding a second retry
+  loop here would violate the bounded-retries guardrail. So on an unreachable
+  remote the reconcile does nothing and says why, leaving local ahead until the
+  sweep or a role pushes. If you would rather it escalate (an operator note, or
+  the alarm path) that is a one-line change of direction, and better decided
+  now than after the coder builds it.
+
+  Also worth knowing, because it reads like scope creep and is not: BL-1198's
+  own ticket text asserts "a rejected push is the genuine-divergence signal,
+  not a transient failure to retry past". That premise is exactly what this
+  ticket corrects, so this is a follow-on to a shipped ticket, not a rebuild
+  of it. BL-1198's behaviour on the genuinely-rejected path is unchanged and
+  is pinned by scenario 03.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/master_main_reconcile_lib.bb:745` -
+  `rematch-with-push-first!`, the shared BL-1198 primitive that puts a push in
+  front of `git reset --hard origin/main`:
+
+      [{:keys [push! reset!]}]
+      (let [push-result (push!)]
+        (if (:success push-result)
+          {:success true :outcome :pushed}
+          (reset!)))
+
+  Every unsuccessful push falls to `(reset!)`. But a push fails for more
+  reasons than divergence: an unreachable remote, an expired or absent
+  credential in the daemon's environment, a network drop. Each of those is
+  classified as "genuine divergence" and answered by destroying every
+  local-ahead commit.
+
+  The adapter contract in this function's own docstring is
+  `(fn [] -> {:success bool :error str?})`. That `:error` is the only value
+  that could separate "the remote said no" from "I could not reach the
+  remote", and the function never reads it. On the reset path the caller
+  (`handoffd.bb:3182`) then reports the RESET's stderr, or the bare
+  `failure-outcome` name - so the push's reason does not survive anywhere an
+  operator can see it.
+
+  ## This is not a wiring gap - the guard is wired and still failing
+
+  Checked at spec time: all three production callers route through the shared
+  primitive (`handoffd.bb:3182`, `swarm_heal.bb:97`,
+  `post_hotfix_merge_origin.bb:86`). BL-1198 is fully wired. The defect is the
+  classification inside it, which is why more call sites would not have helped
+  and why the losses continued after BL-1198 shipped.
+
+  ## The correct shape already exists one function away
+
+  `absorb-with-merge!`, in the same file, ends its failure path with
+  `(merge-failure-log-tail outcome (:error result))` (line 719). The sibling
+  orchestrator preserves its failure reason; this one discards it.
+
+  ## Measured
+
+  2026-08-30, this host: `git reflog | grep -c "reset: moving to origin/main"`
+  = 161 all-time, **7 dated 2026-08-30**, two of them (04:43, 04:48) inside a
+  single specifier turn. The coordinator's note that opened this ticket -
+  "reconcile reset ate Close BL-604 again; recovered via cherry-pick -x" - is
+  the seventh. At the time of triage local `main` was 8 commits ahead of
+  `origin/main`, 0 behind: a clean fast-forward, nothing diverged, and every
+  one of those 8 was destroyable.
+
+  Prior shifts (recorded 2026-08-29): an operator's own reprioritization
+  directive destroyed and restored four times in ~90 minutes, and a recorded
+  `human_approval: approved` erased - which is invisible, because an erased
+  approval reads as `pending`.
+
+  ## How (direction, not mandate)
+
+  Classify the push failure before deciding. `git push` distinguishes these
+  cleanly enough on stderr (a non-fast-forward rejection versus a transport or
+  auth failure), and the adapter already hands the text over. Only a genuine
+  rejection may call `reset!`; anything else returns a failure that keeps the
+  commits and carries the push's own error.
+
+  Deliberately NOT in scope: a retry loop. The periodic push-sweep (BL-356)
+  already owns retry-on-backoff, and this project's guardrail is bounded
+  retries with one owner - a second loop here would be the duplication BL-1198
+  itself avoided. On a non-rejection failure the reconcile does nothing and
+  says why.
+
+qa_e2e_procedure: >
+  1. With the daemon running, make the remote unreachable for one reconcile
+     cycle (point `origin` at an unroutable URL in a scratch clone, or drop
+     network) while local `main` is purely ahead. Confirm the local-ahead
+     commits SURVIVE the cycle and that the recorded outcome names the push's
+     transport error, not a reset.
+  2. Restore the remote and confirm the next cycle pushes and reports
+     `:pushed`, with no reset attempted (scenario 03 / BL-1198 unchanged).
+  3. Force a genuine divergence (commit on origin and locally, so the push is
+     rejected non-fast-forward) and confirm the reset path still behaves
+     exactly as today - this is the path BL-1198 shipped and it must not move.
+  4. Re-count `git reflog | grep -c "reset: moving to origin/main"` before and
+     after a quiet hour with the remote reachable; the count must not grow on
+     a repo that is purely ahead.
+  5. Confirm every scenario resolves to a registered step handler.
+
+source: |
+  Coordinator note `00_20260830T034740Z_003204_from_coordinator_to_specifier`
+  (priority 00): "reconcile reset ate Close BL-604 again; recovered via
+  cherry-pick -x"
+
+notes: |
+  ## Verified before minting
+
+  - The coordinator's recovery landed: BL-604 is in `backlog/done/` on
+    `origin/main` and absent from `active/`.
+  - All three production callers already use the shared BL-1198 primitive, so
+    this is NOT the BL-419 "shipped but unwired" shape. Recorded because that
+    is the first thing a reviewer will suspect.
+  - No open ticket covers this. BL-1198 (push-before-reset), BL-1214
+    (ff-absorb real merge), BL-1236 (merge verdict), BL-1256 (kill-switch stay
+    loud) are all in `done/`; nothing in `paused/`, `active/`, `hold/` or
+    `debt/` mentions `master_main_reconcile`.
+
+  ## The kill switch is NOT the remedy here
+
+  `master_main_reconcile_enabled` was shipped OFF by BL-1248 and deliberately
+  re-armed to `true` by the operator on 2026-08-29 (`cce70d985`), to clear the
+  durable skipped-by-config deadlock that was parking coordinator bookkeeping.
+  Turning it back off would restore that deadlock. This ticket makes ON safer;
+  it must not be read as an argument to disable the sweep, and no part of it
+  touches that flag.
+
+  ## Specifier action taken alongside this mint
+
+  Local `main` was 8 ahead / 0 behind at triage. Rather than leave those
+  commits exposed for the ticket's whole lifetime, they were pushed
+  (`git push origin main:main`, under the BL-1144 lock discipline: acquire
+  `.swarmforge/land-main.publish.lock`, re-fetch, re-verify `origin/main` is
+  still an ancestor of local `main`, push, release). `main...origin/main` is
+  now `0 0`. That closes the current window; it does not fix the defect, which
+  will re-open it on the next daemon cycle that cannot reach the remote.
