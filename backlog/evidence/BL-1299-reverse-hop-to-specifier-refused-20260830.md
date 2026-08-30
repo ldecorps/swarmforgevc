@@ -84,3 +84,59 @@ it is not chargeable to them.
 Recurrence count is now 2 in one shift, both from the architect's `back-all`
 window. Every subsequent architect forward will produce another until BL-1299
 lands.
+
+---
+
+## Refusal 3 — `5d1529fa62`, 2026-08-30 20:55Z (architect, BL-1288)
+
+Same defect, same `back-all` window, third occurrence in one shift.
+
+    inbound: 00_20260830T205518Z_001303_from_architect_to_specifier_for_specifier.handoff
+    from: architect        type: git_handoff        priority: 00
+    non-forwarding: true   commit: 5d1529fa62
+    task: BL-1288-only-a-rejected-push-authorises-discarding-local-commits
+
+Topology verified at refusal time, not assumed:
+
+    git rev-parse --abbrev-ref HEAD              -> main
+    git merge-base --is-ancestor 5d1529fa62 main -> false
+    git rev-list --left-right --count main...master -> 2  10
+    git diff --stat main...5d1529fa62            -> 8 files, 892 insertions, 17 deletions
+
+**Refused**; inbound completed via `done_with_current.sh`. No bounce recorded —
+the reverse copy is synthesized by `swarm_handoff.bb`, not drafted by the
+architect, so it is not chargeable to them.
+
+### The new fact this one adds: a small diff is not a safe one
+
+Refusals 1 and 2 would each have landed ~394 files and >11k insertions, because
+`master` was then ~400 commits ahead of `main`. This one is **8 files and 892
+insertions** — the coder branch has since merged `main` (`bfbbc4eeb0`), so the
+divergence is down to `2  10`. The hazard looks two orders of magnitude smaller,
+and a future reader glancing at the diffstat could easily conclude this instance
+was harmless and merge it.
+
+It is not harmless, and size was never the reason to refuse. `5d1529fa62` is
+BL-1288's **architect-stage tip**. The ticket declares
+`required_stages: [coder, cleaner, architect, hardender, documenter, qa]`, so
+merging it onto `main` would land the ticket with **hardender, documenter and QA
+unrun** — no mutation pass, no docs pass, and no integration gate. The eight
+files include production Babashka (`master_main_reconcile_lib.bb`), a new step
+handler, and its registration in `specs/pipeline/steps/index.js`.
+
+So the refusal criterion stands unchanged and is independent of diff size: **HEAD
+is `main`, and the commit is not already an ancestor of it.** Whether that
+represents 8 files or 394, obeying the merge makes the specifier the integrator
+and skips the QA gate (Articles 1.2, 1.8, 4.2). Record the diffstat as evidence
+of what was avoided, never as the test for whether to avoid it.
+
+### Status of the fix
+
+BL-1299 is `severity: critical`, `priority: 0`, `human_approval: approved`, and
+still in `backlog/paused/`. The slot it was waiting on has since turned over —
+BL-1295 closed to `backlog/done/` this shift and the coordinator promoted
+**BL-1288** into the single active slot rather than BL-1299. That is a legitimate
+ordering call and this file does not dispute it; it records only that the defect
+remains unfixed, so every further architect `back-all` forward will produce a
+fourth refusal, a fifth, and so on. Each appends here rather than minting a new
+ticket.
