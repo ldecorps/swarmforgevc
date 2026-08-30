@@ -138,3 +138,6 @@ notes: |
 source: "Coder note 50_20260829T140743Z_001437 replying to the BL-1062 specifier ruling; observation raised, ticketing decision left to the specifier."
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-29, by: cleaner, blamed: coder, class: acceptance, commit: a2e4db6164, evidence: backlog/evidence/BL-1274-bounce-20260829.md }
