@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   aggregateRotationDynamics,
   queryRotationDynamics,
@@ -63,7 +63,7 @@ test('queryRotationDynamics returns NA for non-mono-router packs', () => {
 });
 
 test('emitRotationEvent appends one jsonl record', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl596-'));
+  const root = mkTmpDir('bl596-');
   try {
     emitRotationEvent(root, {
       from: 'coder',

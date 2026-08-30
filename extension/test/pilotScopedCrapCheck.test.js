@@ -2,7 +2,6 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const {
   assessPilotScopedCrap,
@@ -10,6 +9,7 @@ const {
   PILOT_CRAP_VIOLATION_REFUSAL,
 } = require('../out/tools/pilotScopedCrapCheck');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 test('isExtensionTsPath accepts extension ts and rejects other paths', () => {
   assert.equal(isExtensionTsPath('extension/src/foo.ts'), true);
@@ -25,13 +25,13 @@ test('isExtensionSrcTsPath accepts extension/src ts and rejects other paths', ()
 });
 
 test('assessPilotScopedCrap returns empty scannedPaths when no extension ts was touched', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl745-empty-'));
+  const root = mkTmpDir('bl745-empty-');
   const outcome = assessPilotScopedCrap(root, ['README.md', 'backlog/active/BL-745.yaml']);
   assert.deepEqual(outcome, { checked: true, tsFilesScanned: 0, violations: [], scannedPaths: [] });
 });
 
 test('assessPilotScopedCrap returns srcPathsInScope when coverage is missing', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl745-src-scope-'));
+  const root = mkTmpDir('bl745-src-scope-');
   const rel = 'extension/src/missingCov.ts';
   const abs = path.join(root, rel);
   fs.mkdirSync(path.dirname(abs), { recursive: true });

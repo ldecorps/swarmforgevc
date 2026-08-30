@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 // BL-1261 invariants (declared in the ticket YAML):
 // 1. "The audit reports only. No path in it moves, promotes, or deletes a ticket
@@ -45,7 +45,7 @@ const ROLES = ['coder', 'cleaner', 'architect', 'hardener', 'documenter', 'QA'];
 const SUBDIRS = ['new', 'in_process'];
 
 function makeFixtureRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'bl1261-prop-'));
+  return mkTmpDir('bl1261-prop-');
 }
 
 function setupPools(root) {

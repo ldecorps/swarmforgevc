@@ -29,7 +29,12 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const { assessPilotMkdtempConvention } = require('../out/tools/pilotMkdtempConventionCheck');
 const { findRawMkdtempLines } = require('../out/tools/rawMkdtempDetector');
 
-const RAW_LINE = "const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'x-'));";
+const RAW_LINE =
+  // BL-1280: the `mkdtempSync(` boundary is split so the real-tree scan does
+  // not flag this fixture's DATA as a call site - the file is scanned like
+  // any other rather than being exempted wholesale, which would blind the
+  // guard to a REAL raw call arriving here later. The value is byte-identical.
+  "const dir = fs.mkdtemp" + "Sync(path.join(os.tmpdir(), 'x-'));";
 const CLEAN_LINE = "const dir = mkTmpDir('x-');";
 
 const OUT_OF_SCOPE = [
