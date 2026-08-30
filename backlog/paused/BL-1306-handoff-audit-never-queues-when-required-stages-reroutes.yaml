@@ -133,7 +133,7 @@ qa_e2e_procedure: |
   4. Edit the draft between two calls and confirm the audit still refuses, so the
      fix did not buy queueing by weakening the Article 2.3 challenge.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. Nothing in this ticket
   is a choice I am handing you - the defect was read out of `swarm_handoff.bb`
