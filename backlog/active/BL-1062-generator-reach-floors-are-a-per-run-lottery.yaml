@@ -11,6 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1062-generator-reach-floors-are-a-per-run-lottery.feature
+abandoned_commits: [b345346ac,9547c5c86,120edac96,460a3f052,3edf4d8b7,685a0296d,e416ea6f4,62ab4d2b4,54f35abea,504aca3eb,0c0d24586,385334d1d,97c45ff0f,d1d775821,26dcc3667,79480b858,85fa5d74f,6131a66f4,89b920e95,06a4e1ff3,7023c8381,b4f410451,c53e1bfd3,79e0d5b14,29560a30f,aeb016197,46909817c,6d6f2569f,4c2fb609e,09e4cd58a,1b480dadf,6b4d36fed,04b637650,f886e49a3,1c5709d23,77a9cc502,d4083e78e,c0c694f15,bf7895a35,79e3cbf44,6f5752d06,67d0c18c1,487278e7d,adf16cd3e,858c28042,1b3a0a0e5,a5b065e0c,e7353f626,938ce576d,1017d776b,54c17b697,dbcf59fb7,cfd1eeec9,db56560ee,efa2848e2,1baa87873,175e24b11,9664aab11,05f322115,8521d22d5,b8c4c43f6,7ccc2f223,c5bb4810a,5bf354adc,795d79a2f]
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1062::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
@@ -87,6 +88,29 @@ qa_e2e_procedure: >
   regress materially.
 
 notes: >
+  [2026-08-30] QA, BL-1241 entangled-tip rebuild. The documenter's handed-off
+  commit (b345346ac) carried the coder's long-lived branch ancestry entangled
+  with dozens of unrelated sibling tickets' merges (BL-1209, BL-1246, BL-1276,
+  BL-1193, BL-1273, BL-1267/1268/1220/603 step-scoping) - the same shape of
+  tangle this branch's other tickets were already being rebuilt around.
+  Rebuilt tip-pure: cherry-picked BL-1062's own three cleanly-scoped commits
+  (coder 85fa5d74f, hardener 120edac96, documenter b345346ac - each verified
+  via `git show --stat` to touch only BL-1062's own files) onto origin/main
+  (which already carried the prior BL-1246 tip-pure rebuild). abandoned_commits
+  records the full superseded chain. `git diff origin/main HEAD --stat`
+  confirmed exactly BL-1062's own eight files.
+
+  A PRIOR REBUILD ATTEMPT ON THIS SAME BRANCH (commit f476e976a, same session)
+  replayed only the coder's diff and silently dropped the hardener's
+  `extension/test/reachFloors.test.js` (52 lines, direct unit coverage for the
+  shared reachFloors helper) and the documenter's `docs/reference/Specification.MD`
+  entry - found by diffing the incomplete rebuild's file list against each
+  original stage commit's own `git show --stat` before trusting it as done.
+  Completed by cherry-picking the missing two commits on top. Lesson: "replay
+  only this ticket's own paths" means EVERY stage's paths, not just the
+  coder's - verify the rebuilt file list against the full original chain's
+  file list before treating a rebuild as complete.
+
   RE-ADJUDICATED AND UNPARKED 2026-08-29 (specifier). This ticket was parked
   into `backlog/debt/` on 87c3ede59 with eighteen siblings. That folder is
   read by NO promotion script - `grep -rn "backlog/debt"` over `swarmforge/`
