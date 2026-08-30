@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1274: the `bl787` named-tunnel
+readiness property no longer races the host scheduler for its verdict.
+Invariant 1 used to launch the REAL `launch_resident_spy_tunnel.sh` against
+a fake `cloudflared` and assert `exit 0` — the registration line was
+already on disk before the launcher started, so the only thing between the
+fixture and a deterministic result was the host scheduling that subprocess
+inside the launcher's readiness poll budget. BL-871 (2026-08-11) widened
+that budget 2s → 20s for this exact assertion; it went red again on
+2026-08-29 with the 20s budget in place, and because this file carries no
+entry on `swarmforge/scripts/property_suite_standing_allowlist.tsv`, the red
+refused every commit touching `extension/src/*` or any
+`*.property.test.js`, repo-wide, including an unrelated BL-1220 attempt. A
+tenfold widening had bought 18 days — the signal that the remedy class was
+wrong. Fixed by giving `launch_resident_spy_tunnel.sh` a guarded entry point
+(`main()`, invoked only when `"${BASH_SOURCE[0]}" == "${0}"` — executed, not
+sourced), the shell form of the engineering article's "CLI `main()` is a
+thin wrapper over testable helpers"; invariant 1 now sources the launcher
+and calls `wait_named_ready` directly against a log the fixture wrote and a
+pid the fixture owns, so the verdict is a pure function of log content and
+nothing is spawned or raced. Every budget went down, not up (readiness poll
+20s → 0.03s in the property; scenario 03 forecloses a third widening by
+asserting none of the readiness-budget constants increased). End-to-end
+coverage (hostname echoed, state file written, no state without
+registration) moved to `swarmforge/scripts/test/test_launch_resident_spy_named_tunnel.sh`
+and this ticket's acceptance scenarios against the real launcher — a
+placement change, not a coverage loss. Hand-authored mutation sweep (no
+Stryker/CRAP tooling scope change) confirmed the new entry-point guard is
+load-bearing. Acceptance:
+`specs/features/BL-1274-named-tunnel-readiness-property-races-the-host-scheduler.feature`.)
+Prior entry —
 **Last Updated:** August 29, 2026 (BL-1276: the BL-1192 pre-handoff
 task-scope gate no longer refuses a ticket for editing a path its own
 landed YAML declares as part of its deliverable. `foreign-scope-findings`
