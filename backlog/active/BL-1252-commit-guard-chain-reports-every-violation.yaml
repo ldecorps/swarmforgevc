@@ -197,3 +197,5 @@ notes: |
     checker's own guidance this is not accidental drift, so it is resolved as
     reviewed-and-kept rather than normalized; folding the plain scenarios into
     the outline would merge their distinct Then-assertions away.
+
+assigned_to: coder

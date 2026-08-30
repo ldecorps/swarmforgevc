@@ -5,6 +5,7 @@
 // applies it. Mirrors topicRouter.ts's own RouteAdapters shape (a small,
 // named adapters interface; a pure decision function; a thin apply step).
 import { resolveIconStickerId, IconStickerLookup } from './topicIcon';
+import { IconMarkerWriteOutcome } from './blTopicStore';
 
 export interface TopicIconAdapters {
   // BL-342: getForumTopicIconStickers is a live Telegram read with no
@@ -14,10 +15,23 @@ export interface TopicIconAdapters {
   getIconStickers: () => Promise<IconStickerLookup[]>;
   setTopicIcon: (topicId: number, iconCustomEmojiId: string) => Promise<boolean>;
   readSwarmIconId: (ticketId: string) => string | undefined;
-  recordSwarmIconId: (ticketId: string, iconId: string) => void;
+  // BL-1210: recording the marker REPORTS whether it happened. A store
+  // that refuses the id returns 'refused', and syncTopicIcon passes that
+  // refusal on to its own caller instead of claiming 'updated'.
+  recordSwarmIconId: (ticketId: string, iconId: string) => IconMarkerWriteOutcome;
 }
 
-export type IconSyncOutcome = 'updated' | 'skipped-not-owned' | 'skipped-unresolved-icon' | 'failed';
+// BL-1210: 'icon-set-marker-unrecorded' is the honest report for the one
+// case that used to masquerade as 'updated' - Telegram accepted the icon,
+// but no store would hold the ownership marker, so the swarm does NOT own
+// what it just set. Distinct from 'failed' (the icon was set) and never a
+// thrown error: the live tick's icon sync is best-effort by design.
+export type IconSyncOutcome =
+  | 'updated'
+  | 'icon-set-marker-unrecorded'
+  | 'skipped-not-owned'
+  | 'skipped-unresolved-icon'
+  | 'failed';
 
 // BL-424: resolves the desired emoji against the live set, falling back to
 // a second emoji (the plain paused icon) only when one was supplied and the
@@ -71,6 +85,11 @@ export async function syncTopicIcon(
   if (!ok) {
     return 'failed';
   }
-  adapters.recordSwarmIconId(ticketId, iconId);
+  // BL-1210 invariant 1: only an explicit 'recorded' counts as a durable
+  // write. Anything else - a refusal, or an adapter that reports nothing at
+  // all - leaves the marker unwritten, and the caller is told so.
+  if (adapters.recordSwarmIconId(ticketId, iconId) !== 'recorded') {
+    return 'icon-set-marker-unrecorded';
+  }
   return 'updated';
 }

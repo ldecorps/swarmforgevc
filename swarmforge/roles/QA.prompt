@@ -148,23 +148,42 @@ You are QA.
          resolves the easy case — but check the precondition honestly: unbuilt
          mints, a ticket you just bounced, and retired-ticket files are not
          landable siblings.
-      2. Otherwise rebuild tip-pure YOURSELF: replay only this ticket's own
-         paths onto current `origin/main` and land that commit. You already
-         hold the input — detecting the entanglement means you attributed every
-         changed path to its ticket. Record `abandoned_commits: [<superseded
-         hashes>]` on the ticket: the replay deliberately severs descent, and
-         both `task_scope_gate_lib.bb` and `pre_qa_gate_lib.bb` re-base their
-         walk on `origin/main` only when that override is present
-         (`swarmforge/backlog-schema.md`, `read-abandoned-commits`). Omitting
-         it turns a correct rebuild into a sibling-gate refusal.
+      2. Otherwise **run the land step's own CLI — this remedy has a tool, do
+         not hand-roll the replay**:
+         `bb swarmforge/scripts/land_step_cli.bb <task-name> <commit>`
+         (from the repo root; an optional third argument overrides the repo
+         root). It reuses `task_scope_gate_lib.bb`'s OWN attribution walk to
+         decide which paths are this ticket's, so its answer agrees with the
+         sibling gates by construction — a hand rebuild's does not. It builds
+         git objects only: it never pushes, never sends a handoff, and never
+         moves `main`. Landing and notifying stay YOUR actions (Article 1.8).
+         Its three outcomes:
+         - exit 0, `LAND_CLEAN <commit>` — nothing entangled. Land `<commit>`
+           unchanged by your ordinary land action; the rest of this item does
+           not apply.
+         - exit 0, `LAND_REPLAY <branch> <new-commit>` followed by one
+           `ENTANGLED_SIBLING <ticket-id>` line per sibling — a tip-pure
+           commit holding only this ticket's own paths now exists on
+           `<branch>`, built off current `origin/main`. Review that tip and
+           land `<new-commit>`, **never the originally-cited commit**, then
+           record `abandoned_commits: [<cited commit>]` on the ticket. That
+           record is not optional bookkeeping: the replay deliberately severs
+           descent, and both `task_scope_gate_lib.bb` and `pre_qa_gate_lib.bb`
+           re-base their walk on `origin/main` only when the override is
+           present (`swarmforge/backlog-schema.md`, `read-abandoned-commits`).
+           Omitting it turns a correct rebuild into a sibling-gate refusal.
+         - exit 1, `LAND_ESCALATE` then the reason — the detection or the
+           replay could not be completed cleanly (a real conflict, an
+           unreadable range). Go to 3; do not retry by hand.
       3. Rematch once, bounded, per the BL-1144 discipline above — never a
-         loop mid-gate. If the replay cannot be made clean (a real conflict, or
-         a live bookkeeping question about what the entangled content even
-         is), that is still NOT a bounce to the author: send the **specifier**
-         a `note` (priority `00`) naming the conflicting paths, and stop.
-      Name every entangled sibling ticket in whatever you send. A silent
-      rebuild loses the signal that the branch was entangled at all, which is
-      the signal the coordinator and specifier need.
+         loop mid-gate. A `LAND_ESCALATE`, or a replay that still will not
+         come clean, is still NOT a bounce to the author: send the
+         **specifier** a `note` (priority `00`) naming the conflicting paths,
+         and stop.
+      Name every entangled sibling ticket in whatever you send — the CLI's
+      `ENTANGLED_SIBLING` lines are that list. A silent rebuild loses the
+      signal that the branch was entangled at all, which is the signal the
+      coordinator and specifier need.
     - BL-114: if the ticket's `id` is `GH-<n>` (seeded from a GitHub issue; its
       `source:` carries the issue URL), close the loop now:
       `swarmforge/scripts/issue_done.sh <source-url> <merge-commit>`. It never

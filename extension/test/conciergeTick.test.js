@@ -154,6 +154,7 @@ function fakeAdapters(overrides = {}) {
         readSwarmIconId: (ticketId) => iconOwnership[ticketId],
         recordSwarmIconId: (ticketId, iconId) => {
           iconOwnership[ticketId] = iconId;
+          return 'recorded';
         },
       },
       // BL-418: no standing topics by default - tests that exercise the
@@ -993,6 +994,7 @@ test('BL-449: a brand-new epic topic is assigned its resolved musical-form icon 
       readSwarmIconId: (id) => iconOwnership[id],
       recordSwarmIconId: (id, iconId) => {
         iconOwnership[id] = iconId;
+        return 'recorded';
       },
     },
   });
@@ -1017,7 +1019,7 @@ test('BL-449: two different new epics created in the same tick get distinct pool
         return true;
       },
       readSwarmIconId: () => undefined,
-      recordSwarmIconId: () => {},
+      recordSwarmIconId: () => 'recorded',
     },
   });
   setFolders(folders({
@@ -1042,7 +1044,7 @@ test('BL-449: reusing an already-created epic topic for a second slice never re-
         return true;
       },
       readSwarmIconId: () => 'id-mic',
-      recordSwarmIconId: () => {},
+      recordSwarmIconId: () => 'recorded',
     },
   });
   const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
@@ -1068,7 +1070,7 @@ test('BL-449: a failed epic-topic creation never attempts to set an icon', async
         return true;
       },
       readSwarmIconId: () => undefined,
-      recordSwarmIconId: () => {},
+      recordSwarmIconId: () => 'recorded',
     },
   });
   adapters.routeAdapters.createTopic = async (name) => {
@@ -1091,7 +1093,7 @@ test('BL-449: an epic emoji absent from the live sticker set is skipped without 
         return true;
       },
       readSwarmIconId: () => undefined,
-      recordSwarmIconId: () => {},
+      recordSwarmIconId: () => 'recorded',
     },
   });
   setFolders(folders({
@@ -1126,7 +1128,7 @@ test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning
         return true;
       },
       readSwarmIconId: () => undefined,
-      recordSwarmIconId: () => {},
+      recordSwarmIconId: () => 'recorded',
     },
   });
   // One distinct epic per pool icon plus one more in the same tick - the
@@ -1172,7 +1174,7 @@ test('BL-457: known epics reserve their pinned glyphs before unknown epics draw 
         return true;
       },
       readSwarmIconId: () => undefined,
-      recordSwarmIconId: () => {},
+      recordSwarmIconId: () => 'recorded',
     },
   });
   // Mirrors the live backlog that produced the false warning: three KNOWN
