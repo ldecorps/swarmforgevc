@@ -50,13 +50,18 @@ description: >
   command column instead of the bare name. Any approach that makes the stub
   unconditionally the thing that runs is acceptable.
 
-  SCOPE. Fix the one handler proven to be leaking. The same
-  fake-bin-prepended-to-PATH idiom appears in about 20 step handlers, but the
-  shim only fails where the command is resolved inside a tmux pane; a direct
-  spawnSync with fakeEnv runs non-interactive and the shim holds there. Only
-  roleLifecycleParkUnneededSteps.js is leaking today. A sweep of the sibling
-  handlers that also launch through a pane is deliberately out of scope here
-  and is minted separately, so this slice stays one sitting.
+  SCOPE. One handler only - and that is the whole of it, not a first
+  instalment. The fake-bin-prepended-to-PATH idiom appears in about 20 step
+  handlers, so a sibling sweep looked likely; it was surveyed before minting
+  and is not needed. The shim can only be defeated where a bare command name
+  is resolved inside a tmux pane: a direct spawnSync with fakeEnv runs
+  non-interactive, sources no startup file, and the shim holds. Exactly one
+  other handler both starts tmux sessions and mentions a claude command,
+  bl804BabysitterMonoRouterTopologyAwarenessSteps.js, and it is already safe
+  by construction - it runs `exec -a "claude --remote-control fake" sleep
+  999`, renaming a sleep process's argv so pgrep sees it, and never resolves
+  a real binary at all. So there is no sweep ticket to follow, and this
+  slice is not blocked on one.
 
 invariants:
   - "No acceptance step handler ever executes a real agent binary: a fixture's agent command runs the fixture's own stub, whatever the pane shell's startup files do to PATH."
@@ -77,19 +82,22 @@ qa_e2e: >
 
 human_approval: pending
 approval_context: >
-  One scope decision needs sign-off. This slice fixes only
-  roleLifecycleParkUnneededSteps.js, the one handler proven to be leaking
-  real agents right now, and leaves the sibling sweep to its own ticket. The
-  alternative is to widen this slice to every step handler using the same
-  fake-bin idiom. I lean narrow: only the pane-launched handlers can actually
-  be defeated, the sweep needs its own survey to identify which those are,
-  and BL-817 already set the precedent of a separate adopt-the-fix sweep
-  ticket. Say if you would rather have it done in one pass.
+  Review of the new feature file, plus one live operational decision that is
+  not this ticket's to take.
 
-  Also worth a decision outside this ticket: 21 real agent processes from
-  this defect are alive on the host right now. BL-458's notes explicitly
-  asked that such orphans not be silently hand-killed, so I have left them
-  running and am surfacing them rather than cleaning up.
+  The scope question I expected to raise here is already settled by evidence
+  and needs no ruling: I surveyed the roughly 20 step handlers sharing the
+  fake-bin idiom before minting, and only roleLifecycleParkUnneededSteps.js
+  can be defeated. The one other pane-starting candidate fakes its argv with
+  exec -a and never resolves a real binary. So this is a one-file fix with no
+  follow-on sweep, and I am not asking you to choose narrow versus wide.
+
+  What does need your decision: 21 real agent processes from this defect are
+  alive on the host right now, from 7 fixture roots, about 1h50m old and
+  about 2.6 GB resident. BL-458's notes explicitly asked that orphans of this
+  class not be silently hand-killed, so I have left them running and am
+  surfacing them instead. They are also the live evidence for this ticket.
+  Say whether to kill them now or leave them until the fix lands.
 
 notes: |
   Evidence gathered 2026-08-30 by the specifier, all reproducible:
