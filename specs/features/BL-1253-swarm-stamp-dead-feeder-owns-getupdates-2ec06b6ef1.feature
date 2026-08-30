@@ -36,6 +36,16 @@ Feature: Stamp-off review of Cursor hotfix 2ec06b6ef1 - a dead front-desk feeder
     When the heartbeat goes stale during the run
     Then the bridge owns getUpdates without being restarted
 
+  # BL-1253 dead-feeder-owns-getupdates-stamp-06
+  # Carried from retired BL-1260 scenario 03. Scenario 02 above covers
+  # fresh -> stale mid-run; this is the mirror, and it is the dangerous
+  # direction: a bridge that takes the token and never returns it leaves the
+  # front desk permanently dead while every liveness signal reads green.
+  Scenario: A recovered feeder gets the token back
+    Given the bridge owns getUpdates because the heartbeat was stale
+    When the front-desk poll heartbeat becomes fresh again during the run
+    Then the bridge returns to consuming the queue without being restarted
+
   # BL-1253 dead-feeder-owns-getupdates-stamp-03
   Scenario: A malformed heartbeat file is treated as no heartbeat
     Given the front-desk poll heartbeat file cannot be parsed as a heartbeat

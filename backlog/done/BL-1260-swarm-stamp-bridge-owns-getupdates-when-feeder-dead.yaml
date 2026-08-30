@@ -3,7 +3,9 @@ title: "Swarm stamp-off: the Host bridge takes over getUpdates when the front-de
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: done
+closed_as: superseded-by-BL-1253
+closed_at: 2026-08-30
 epic: swarm-reliability
 priority: 40
 direction: swarm-surfaced
@@ -131,7 +133,50 @@ qa_e2e_procedure: |
      `stop_ancillary_services.sh` deletes it.
 
 notes: |
-  - "[2026-08-29] specifier, on minting: one of four unstamped hotfixes the
+
+  ## RETIRED 2026-08-30 - duplicate stamp-off for the same hotfix
+  
+  BL-1253 (active, in flight) and this ticket both certify the SAME hotfix
+  commit `2ec06b6ef1`. The hotfix ledger cited BL-1260 while BL-1253 was the one
+  promoted and routed. Reported by the coder as a stamp collision.
+  
+  BL-1253 survives: it is active, already routed, and is the ledger stamp-off.
+  The ledger row is repointed to it in the same pass.
+  
+  **This retirement drops nothing (Article 5.3).** This ticket carried content
+  BL-1253 does not, and every piece of it was assessed against BL-1253
+  piece by piece rather than trimmed (BL-1253 amendment 210677bc4). No BL-1293
+  was minted - the surviving content belongs in the stamp-off itself:
+  
+  - The 90-second stall-window decision, verbatim, including "It was picked
+    during a live outage. Confirm 90s, or say what margin you want." That
+    question was NEVER individually answered: this ticket's
+    `human_approval: approved` came from the bulk sweep `f4ae431a9`
+    ("Approve BL-1252..BL-1266 (15 paused)"), not a tap on this decision.
+  - Invariants 1 and 3 (at most one getUpdates poller per token; a front desk
+    that is polling but late to stamp must not be classified dead).
+  - The `telegram-front-desk-bot.ts::front-desk-poll-heartbeat.json` WRITER
+    anchor - BL-1253 explicitly scopes "any change to the front-desk bot or the
+    heartbeat writer" OUT, so nothing else covers it.
+  - Scenarios 02 (a feeder that dies mid-run is taken over without restarting
+    the bridge) and 03 (a recovered feeder gets the token back). The giveback
+    path is absent from BL-1253 entirely.
+  
+  CARRIED into BL-1253 (commit 210677bc4): the 90s decision verbatim in its
+  `approval_context`, invariant 1 as its third invariant, and scenario 03 as its
+  new scenario 06 (a recovered feeder gets the token back - the mirror of its
+  scenario 02, and the direction nothing covered).
+
+  RETIRED as already covered, not reworded: scenarios 01 and 04 (BL-1253's
+  scenario 01 outline and 03), scenario 02 (BL-1253's scenario 02), and
+  invariant 2 (BL-1253's scenario 02). The
+  `telegram-front-desk-bot.ts::front-desk-poll-heartbeat.json` writer anchor was
+  checked rather than carried: that writer EXISTS on main, so it is not the
+  dark-path risk it guarded against.
+
+  `specs/features/BL-1260-bridge-owns-getupdates-when-feeder-dead.feature` is
+  removed with this retirement; git history keeps the original.
+    - "[2026-08-29] specifier, on minting: one of four unstamped hotfixes the
     coordinator surfaced. Minted alone rather than folded with the other
     three, which are a single evolving expedite fix in Babashka — different
     subsystem, different failure class, different tool chain. Those are

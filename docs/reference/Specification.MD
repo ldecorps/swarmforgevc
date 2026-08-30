@@ -1,6 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
-<<<<<<< HEAD
+**Last Updated:** August 30, 2026 (BL-1235: a THIRD host-agent seat — a
+local model served through ollama — answers only in its own dedicated
+Telegram topic, per human directive: "cursor stays behind the usual host
+topic and front desk. I want local qwen only behind its dedicated one." A
+new `QWEN_LOCAL` subject id joins `CURSOR_REMOTE`/`BUBBLE` as a third entry
+in the same topic-map resolution `telegramCursorBridgeCore.ts` already
+carried — a sibling, not a new mechanism. Cursor's surfaces are protected
+TWO structural ways: `decideLocalSeatTurn`'s first clause returns
+`not-mine` for any topic that isn't the seat's own before the endpoint or
+model are even considered (so the seat cannot answer on Cursor's topic even
+to report itself broken), and `QWEN_LOCAL` is deliberately absent from
+`CursorBridgeTopicScope`, so the cursor bridge's own gate ignores it
+structurally rather than by a filter someone could forget. In the live
+dispatch the seat's turn is handled BEFORE `decideInboundAction` is
+consulted, inside the bridge's existing poll (a second `getUpdates`
+consumer on the same bot token would 409 and take the front desk down). The
+model tag is READ FROM CONFIGURATION, never hardcoded — the human's answer
+(`qwen3:14b`, after the ticket's own guess of `qwen2.5-coder:14b` could not
+be verified) is the default only; `resolveLocalSeatModelId` still checks
+whatever tag it resolves against the endpoint's live catalogue, so an
+unpulled or misconfigured tag is a visible refusal naming what the endpoint
+actually holds, never a silent fallback. On this CPU-only host a measured
+real turn took 3m19s at ~2.8 tok/s, so the seat posts an acknowledgement
+FIRST, before the completion call, naming the model and warning the reply
+may take minutes; every non-answer decision (endpoint down/unhealthy, model
+absent/unconfigured) carries the endpoint's own reason and hands the turn
+to nobody — there is no fallback/delegate case in the decision type at all.
+An architect bounce caught the seat's decision logic built with zero live
+callers — every acceptance scenario drove the decision function directly,
+so a fully-tested decision with nothing wired to it still read as green;
+fixed by building and wiring the live turn loop
+(`localQwenSeatLive.ts`) into the bridge's inbound dispatch. See the new
+`docs/how-to/BL-1235-local-qwen-seat-behind-its-own-topic.md`. Acceptance:
+`specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1183: the BoB day-long trial lifecycle
 (BL-1182) gains a go-live gate — per human directive, no production trial
 starts until telemetry and performance-assessing tools can actually decide
