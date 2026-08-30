@@ -650,6 +650,7 @@ const DOMAINS = [
   require('./bl1210IconMarkerStoreSteps'),
   require('./bl1252CommitGuardCompleteInventorySteps'),
   require('./bl1225SyncRestartTrailSteps'),
+  require('./bl1218RemoteControlConfigAtLaunchSteps'),
   require('./bl948SocketFixtureShortRootSteps'),
   require('./bl964RetiredEnsureEnvVarGateSteps'),
   require('./bl963NudgeGateChainSteps'),
