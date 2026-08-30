@@ -161,6 +161,60 @@
   (assert-true "a trial is due after its day elapses"
                (model-steward-trial-lib/due? trial "2026-09-01T00:00:00Z")))
 
+;; ── BL-1183: the go-live gate ─────────────────────────────────────────────
+;;
+;; The checklist is decided from what `decide` actually needs - a score for
+;; BOTH models, and battery/scorecard/bake-off evidence behind them - so these
+;; assert the gaps it names, one per missing thing, not merely that it said no.
+
+(defn matrix-registry
+  "A registry whose role matrix carries whatever evidence each side is given.
+   nil evidence means the model is scored but nobody assessed it; nil score
+   means it is not in the matrix at all."
+  [role {:keys [perm-score perm-evidence trial-score trial-evidence]}]
+  (cond-> (-> model-steward-lib/empty-registry
+              (model-steward-lib/register-model "anthropic" "perm-model" {:status "certified" :cost_class "medium"})
+              (model-steward-lib/register-model "cerebras" "trial-model" {:status "certified" :cost_class "low"}))
+    perm-score (model-steward-lib/add-role-ranking role "anthropic" "perm-model" perm-score perm-evidence)
+    trial-score (model-steward-lib/add-role-ranking role "cerebras" "trial-model" trial-score trial-evidence)))
+
+(defn checklist-for [role opts]
+  (model-steward-trial-lib/go-live-checklist
+   (model-steward-trial-lib/go-live-readiness
+    (matrix-registry role opts) role {:provider "cerebras" :model "trial-model"} permanent)))
+
+(let [ready (checklist-for "coder" {:perm-score 7 :perm-evidence "scorecard: perm"
+                                    :trial-score 8 :trial-evidence "battery: trial"})]
+  (assert= "go-live: both scored and both assessed -> ready" true (:ready? ready))
+  (assert= "go-live: a satisfied checklist names no gaps" [] (:missing ready))
+  (assert= "go-live: a satisfied checklist refuses nothing" nil
+           (model-steward-trial-lib/go-live-refusal ready)))
+
+(let [no-trial-score (checklist-for "coder" {:perm-score 7 :perm-evidence "scorecard: perm"})]
+  (assert= "go-live: an unscored candidate is not ready" false (:ready? no-trial-score))
+  (assert-true "go-live: ...and the gap names the missing telemetry"
+               (some #(clojure.string/includes? % "trial-comparison telemetry") (:missing no-trial-score)))
+  (assert-true "go-live: ...naming which side is missing it"
+               (some #(clojure.string/includes? % "candidate cerebras/trial-model") (:missing no-trial-score))))
+
+(let [no-perm-score (checklist-for "coder" {:trial-score 8 :trial-evidence "battery: trial"})]
+  (assert-true "go-live: an unscored PERMANENT model is a gap too"
+               (some #(clojure.string/includes? % "permanent anthropic/perm-model") (:missing no-perm-score))))
+
+(let [opinion-only (checklist-for "coder" {:perm-score 7 :perm-evidence "scorecard: perm"
+                                           :trial-score 8 :trial-evidence "the operator likes it"})]
+  (assert= "go-live: a score with no battery/scorecard citation is not an assessor" false (:ready? opinion-only))
+  (assert-true "go-live: ...and the gap says so"
+               (some #(clojure.string/includes? % "performance assessor") (:missing opinion-only))))
+
+(let [nothing (checklist-for "coder" {})]
+  (assert= "go-live: an empty role matrix is not ready" false (:ready? nothing))
+  (assert= "go-live: ...and every one of the four checks is named" 4 (count (:missing nothing)))
+  (assert-true "go-live: the refusal carries every gap"
+               (every? #(clojure.string/includes?
+                         (model-steward-trial-lib/go-live-refusal nothing) %)
+                       (:missing nothing))))
+
 ;; ── the disk round trip (architect D1) ────────────────────────────────────
 ;;
 ;; Every assertion above is in-process, and that is exactly why the :permanent

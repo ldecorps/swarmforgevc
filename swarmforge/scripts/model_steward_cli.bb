@@ -108,6 +108,7 @@
   (println "  evaluate <provider>/<model> --role <role> --scorecard <path> [--bakeoff <path>] [--decertify-on-regression]")
   (println "  compat-docs [--out <path>]")
   (println "  trial nominate <provider>/<model> --role <role> [--evidence <path>]")
+  (println "  trial go-live --role <role> <provider>/<model>")
   (println "  trial status [--role <role>]")
   (println "  trial assess --role <role> [--now <iso>]")
   (System/exit 1))
@@ -426,6 +427,17 @@
           permanent (permanent-for-role trials registry role)]
       (when-not permanent
         (trial-die! (str "trial refused: " role " has no permanent model to trial against")))
+      ;; BL-1183: the go-live gate, BEFORE anything is armed. A production day
+      ;; trial that cannot be adjudicated is worse than no trial - it seats a
+      ;; non-permanent model for a day and learns nothing - so this refuses
+      ;; rather than arming and hoping. --dry-run skips the gate deliberately,
+      ;; for checking a pairing's readiness without seating anything.
+      (let [checklist (model-steward-trial-lib/go-live-checklist
+                       (model-steward-trial-lib/go-live-readiness
+                        registry role {:provider provider :model model} permanent))]
+        (when-let [refusal (model-steward-trial-lib/go-live-refusal checklist)]
+          (trial-die! refusal))
+        (println (str "go-live checklist satisfied for " role)))
       (let [{:keys [trials error trial]}
             (model-steward-trial-lib/nominate trials registry role
                                               {:provider provider :model model :evidence evidence}
@@ -479,9 +491,34 @@
                       " permanent=" (model-steward-trial-lib/seat-id seat)
                       " reason=" (:reason outcome)))))))
 
+(defn run-trial-go-live
+  "BL-1183 qa_e2e step 3: read the checklist without seating anything. Pure
+   over the registry, so an operator can ask \"could this even be judged?\"
+   before committing a day to finding out."
+  [rest-args]
+  (when (empty? rest-args) (usage))
+  (let [[provider model] (parse-provider-model (first rest-args))
+        flags (vec (rest rest-args))
+        role (opt-value flags "--role")]
+    (when (str/blank? role)
+      (trial-die! "trial go-live requires --role <role>"))
+    (let [registry (load-registry)
+          trials (load-trials)
+          permanent (permanent-for-role trials registry role)]
+      (when-not permanent
+        (trial-die! (str "trial go-live: " role " has no permanent model to compare against")))
+      (let [checklist (model-steward-trial-lib/go-live-checklist
+                       (model-steward-trial-lib/go-live-readiness
+                        registry role {:provider provider :model model} permanent))]
+        (if (:ready? checklist)
+          (println (str "go-live checklist satisfied for " role))
+          (do (doseq [gap (:missing checklist)] (println (str "MISSING " gap)))
+              (trial-die! (model-steward-trial-lib/go-live-refusal checklist))))))))
+
 (defn run-trial [rest-args]
   (case (first rest-args)
     "nominate" (run-trial-nominate (vec (rest rest-args)))
+    "go-live" (run-trial-go-live (vec (rest rest-args)))
     "status" (run-trial-status (vec (rest rest-args)))
     "assess" (run-trial-assess (vec (rest rest-args)))
     (usage)))
