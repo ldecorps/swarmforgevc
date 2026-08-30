@@ -1,0 +1,114 @@
+id: BL-1289
+title: "21 bb and shell test runners create a temp root with no cleanup path, so tempDirTrapGuard's unit-lane scan is a standing red"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained to the test lanes. Nothing is lost or corrupted
+# and the guard still fires loudly and correctly - it is doing its job. The
+# cost is that it has been red long enough to read as background, which is how
+# a real regression behind it would be waved through (BL-816). Not high: no
+# gate is dead and no production path is touched. Not low: it is not cosmetic,
+# and it sits in the swarm's own delivery machinery.
+status: todo
+epic: code-quality-gates
+priority: 26
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, qa]
+stage_skip_reasons:
+  hardender: "the deliverable is Babashka and shell test-runner code, and that lane has no mutation, CRAP or DRY tooling wired (BL-472 deferred); there is no TypeScript production change to harden. Scenario 03 is the non-vacuity guard the hardener would otherwise be asked for, and it is in the acceptance contract."
+  documenter: "no living doc describes these runners cleanup behaviour and no registered diagram depicts it; the convention itself is already stated in engineering.prompt."
+acceptance: specs/features/BL-1289-a-temp-root-is-always-cleaned-up.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1289::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1289 -> 0), so the anchor cannot pass before the work is done"
+
+invariants:
+  - "Every temp root a runner creates is removed on every exit path it controls, and a root left behind by a run that was killed is swept before the next run makes any assertion - nothing traps SIGKILL, so cleanup alone is never sufficient."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. The judgment
+  worth a look: 21 files is a lot of near-identical edits, and the guard message
+  itself points at `lib/tmp_cleanup.sh` for the shell cases. Whether the bb
+  runners should get an equivalent shared helper (rather than 15 hand-written
+  shutdown hooks) is a real design call and is why the cleaner stage is kept in
+  the chain rather than skipped. If you would rather this ship as pure
+  hand-edits with no new helper, say so and the cleaner stage comes out.
+
+description: |
+  ## What is wrong
+
+  `extension/test/tempDirTrapGuard.test.js` scans `swarmforge/scripts` and
+  fails on any runner that creates a temp root with no cleanup path. It
+  currently reports **21 violations**, so the guard is a standing red in the
+  UNIT lane - which, unlike the property lane, has no allowlist mechanism.
+
+  The violating files, as reported by the guard on 2026-08-30:
+
+  - 15 bb runners, each "creates a temp root (fs/create-temp-dir) but has no
+    shutdown hook and no try/finally delete-tree" - `bl1121_reconcile_import`,
+    `bl1122_mid_commit_mute`, `bl1134_post_add_mute`, `bl1137_cwd_scoped_mute`,
+    `bl1138_rematch_bookkeeping`, `bl1141_refuse_rematch`, `bl533_exit_gates`,
+    `bl615_orphaned_claim_progress`, `bl683_backlog_folder_count`,
+    `daemon_log_freshness_pulse_lib`, `master_checkout_integrity_lib`,
+    `post_hotfix_merge_origin_lib`, `post_qa_branch_sweep_lib`,
+    `retirement_registry_lib`, `rotation_telemetry_lib`,
+    `self_heal_telemetry_lib`.
+  - 5 shell scripts, each "creates a temp root (mktemp -d) but has no EXIT trap
+    and does not source lib/tmp_cleanup.sh" - `local_coder_battery.sh`,
+    `land_main_publish_test_runner.sh`, `local_ollama_pack_shape_test_runner.sh`,
+    `cold_swap_day_shift_to_ollama_qwen_test_runner.sh`,
+    `test_shell_test_discovery.sh`.
+
+  ## Why the property-lane allowlist does not cover it
+
+  `swarmforge/scripts/property_suite_standing_allowlist.tsv` carries
+  `test/tempDirTrapGuard.property.test.js` with the rationale "worktree scan
+  noise". That is the PROPERTY sibling. The unit-lane file scanned here reports
+  real files in `swarmforge/scripts`, and is on no allowlist.
+
+  ## How (direction, not mandate)
+
+  Give each runner a cleanup path on the exits it controls. The guard message
+  already names `lib/tmp_cleanup.sh` for the shell cases; whether the bb
+  runners get an equivalent shared helper or hand-written shutdown hooks is the
+  cleaner-stage question this ticket deliberately leaves open.
+
+  Cleanup alone is not the whole invariant. Nothing traps SIGKILL, so a killed
+  run leaves its root behind however careful the exit path is - the next run
+  must sweep by prefix BEFORE it asserts, the same discipline BL-971 records
+  for the JS fixtures.
+
+qa_e2e_procedure: >
+  Run the guard directly and require zero violations:
+  `cd extension && npx vitest run --config vitest.config.mjs test/tempDirTrapGuard.test.js`.
+  Then run the full unit lane and confirm this guard is no longer among the
+  failures. Finally confirm every scenario in the feature file resolves to a
+  registered step handler - the runner THROWS on a missing one.
+
+source: |
+  Hardener note 00_20260830T040607Z_001018_from_hardender_to_specifier
+  (priority 00): "3 standing guards red: tempDirTrap, socketFixtureShortRoot,
+  liveRepoDerivation". Split 1:3 by the specifier under Consolidation
+  Authority - three guards, three mechanisms, three violating file sets, the
+  same discipline BL-1061's property-lane triage used when it split 1:4.
+
+notes: |
+  Confirmed red at spec time, 2026-08-30, by running the three guards
+  together: 3 failed / 36 passed.
+
+  Checked before minting: BL-1112 (standing unit reds) is in done/ and names
+  different files; BL-1175 shipped the property-lane standing ALLOWLIST, which
+  covers tempDirTrapGuard.property.test.js as "worktree scan noise" but not any
+  of these unit-lane guards; BL-1240 (active) fires the SUITE-MANIFEST gate per
+  parcel and owns registration drift, not these convention guards. None of the
+  three owns this.
+
+  The shared cause is worth stating even though it is not this ticket's to fix:
+  each guard runs at suite-run time, so a violation is reported to whoever next
+  runs the suite rather than to the author who introduced it - the same shape
+  BL-1240 is fixing for the manifest. If that per-parcel approach generalises,
+  these three are its natural next call sites.
