@@ -11,7 +11,6 @@ import {
 } from '../swarm/tmuxClient';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
 import { stripAnsi } from '../panel/ansi';
-import { isPaneActivelyProcessing } from '../panel/agentPaneState';
 import {
   RESIDENT_PANE_SPY_DEFAULT_LINES,
   RESIDENT_PANE_SPY_ROLE_SEARCH_LINES,
@@ -26,25 +25,10 @@ import { readRoleModelId } from '../swarm/backendSwitch';
 import { formatModelDisplayName } from '../swarm/modelDisplayName';
 import { resolveSwarmConfigPath, configHasRotationRouter } from '../swarm/swarmLauncher';
 
-/**
- * BL-1160's palette, unextended: the whole set a tile's dot may paint.
- * CPU, model and ticket cues are explicitly not status kinds.
- */
-export type PaneActivitySignal = 'ok' | 'stale' | 'err';
-
 export interface PaneLiveSnapshot {
   available: boolean;
   roleLabel?: string;
   paneText?: string;
-  /**
-   * BL-1243: THIS PANE's own activity, derived from the pane text this same
-   * capture already holds. BL-1160 taught the UI to prefer it
-   * (resolvePaneStatusKind in residentSpyUiHtml.ts) and deliberately left the
-   * writer for later, saying not to fake one from aggregate data; this is
-   * that writer. Absent means "no per-pane answer" and the UI falls back to
-   * whole-poll freshness exactly as before.
-   */
-  activitySignal?: PaneActivitySignal;
   sessionTarget?: string;
   modelLabel?: string;
   ticketId?: string;
@@ -110,43 +94,6 @@ function withHeader(
   };
 }
 
-/**
- * BL-1243: one pane's own activity, from the text the Live Screen poll already
- * captured. Pure - no tmux, no probe, no second poll. That is the operator's
- * own stop condition on this ticket ("Is that a big runtime overhead? If so
- * don't do it"), so the derivation has to be CPU on data already paid for or
- * it must not ship at all.
- *
- * The mapping is not a free choice; the palette and scenario 01 decide it
- * between them. Only ok/stale/err exist, tiles polled together must be able to
- * DIFFER, and a busy agent is plainly the healthy one - so an alive-but-idle
- * pane can only be `stale`. It reads honestly too: `stale` on this dot means
- * "nothing is happening here", which for a pane whose text shows no live turn
- * is exactly true, and it is what makes a grid of dots tell the operator where
- * the work is.
- *
- * The two no-text cases are NOT the same, and collapsing them is how a tile
- * goes green on nothing:
- *   - no capture at all (`undefined`) means there is no pane here to speak
- *     for. No signal; the snapshot marks the pane unavailable and the UI's
- *     existing branch hides the dot, exactly as before this ticket.
- *   - a capture that came back BLANK is a pane we looked at and saw nothing
- *     on. Returning `undefined` there would hand the answer to the whole-poll
- *     aggregate - and the aggregate is precisely the thing that knows nothing
- *     about this pane, so inheriting its green is the fake-from-aggregate
- *     move BL-1160 refused and invariant 1 forbids. `stale` is the honest
- *     floor: no evidence this pane is doing anything.
- */
-export function derivePaneActivitySignal(paneText: string | undefined): PaneActivitySignal | undefined {
-  if (paneText === undefined) {
-    return undefined;
-  }
-  if (!paneText.trim()) {
-    return 'stale';
-  }
-  return isPaneActivelyProcessing(paneText) ? 'ok' : 'stale';
-}
-
 function tryCaptureRolePane(
   targetPath: string,
   socketPath: string,
@@ -182,9 +129,6 @@ function tryCaptureRolePane(
     available: true,
     roleLabel: identity.roleLabel,
     paneText,
-    // Derived from `paneText` above - the capture this function already made,
-    // never a second one (BL-1243 invariant 2).
-    activitySignal: derivePaneActivitySignal(paneText),
     sessionTarget: target,
     modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
     ...heldTicket,

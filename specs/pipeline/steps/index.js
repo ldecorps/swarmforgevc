@@ -880,8 +880,7 @@ const DOMAINS = [
   require('./bl1281ReachFloorsByConstructionSteps'),
   require('./bl1182DayLongBobTrialLifecycleSteps'),
   require('./bl1232ShiftVelocityChartReadableSteps'),
-  require('./bl604MorningBriefingTrendAnalysisSteps'),
-  require('./bl1243LiveScreenPerPaneActivitySteps')
+  require('./bl604MorningBriefingTrendAnalysisSteps')
 ];
 
 function registerSteps(registry) {
