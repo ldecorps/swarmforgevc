@@ -174,6 +174,81 @@ veto on a class of work, recorded here so specifier/coordinator do not keep
 pulling Telegram / PWA-client UX by inertia while Bubble is the stated
 ramp.
 
+## Standing human directive (2026-08-30 ~21:35 BST) — raise swarm throughput
+
+Raw intake: `backlog/archive/INTAKE-operator-question-1788122140494.md` (verbatim,
+with the specifier's disposition appended). Recorded here rather than minted as a
+ticket because its substance is **WIP / pull policy — a coordinator constraint,
+not a ticket**, the same disposition as the 2026-08-23 "Cursor seats, then sleep"
+directive above. It is also the exact decision the 2026-08-01 review named as
+option **(b) Raise the cap** and referred out as "an operator decision, not a
+backlog one". The operator has now made it.
+
+The human's own words, verbatim:
+
+> Human directive to the coordinator: augment (increase) the swarm's throughput —
+> raise dispatch concurrency / WIP so more tickets progress in parallel.
+> Coordinator to decide and apply the throughput increase within safe limits.
+
+### Effect on the pull policy
+
+- **The 2026-08-30 cap-1 hold is superseded.** `swarmforge.conf` reads
+  `config active_backlog_max_depth 1` under the comment "Cap held at 1 while
+  reverse-hop + AUDIT_REQUIRED verification is in flight (operator 2026-08-30).
+  Restore the standing depth after that settles." That hold landed in
+  `44d2d42591` at **17:03 BST**; this directive is from **~21:35 BST the same
+  day** and is the later operator word. Article 3.5's standing operator
+  directive (2026-07-09) — never leave a throttle engaged after recovery —
+  points the same way: raise, do not wait to be told twice.
+- **The coordinator picks the number.** The human delegated it explicitly
+  ("Coordinator to decide ... within safe limits"). Nothing in this file
+  mandates a value, and the specifier does not set one.
+- **Read the effective depth from the CLI, never by grepping the conf:**
+  `bb swarmforge/scripts/effective_backlog_depth_cli.bb <root>` — it read `1`
+  when this section was written.
+- **A built lever already exists and is switched off.** BL-1128 shipped
+  `bb swarmforge/scripts/headroom_cap_raise_cli.bb <root> raise|unhold|undo`,
+  which raises the configured depth only when CPU/memory headroom AND the
+  Article 3.5 throttle both allow, and can `undo` back to the prior depth. All
+  five of its keys are still commented out in `swarmforge.conf`
+  (`active_backlog_max_depth_ceiling`, `active_backlog_headroom_raise_step`,
+  `active_backlog_headroom_raise_cooldown_minutes`,
+  `active_backlog_headroom_cpu_ratio_max`,
+  `active_backlog_headroom_mem_available_mb_min`). Enabling them honours this
+  directive *continuously and reversibly*, rather than as one manual edit that
+  nothing later re-evaluates.
+
+### What "within safe limits" has to weigh — facts, not a recommendation
+
+1. **The verification the cap-1 hold was protecting has not finished.** Since
+   17:03 the reverse-hop / AUDIT_REQUIRED work has minted BL-1299…BL-1303, and
+   **BL-1299 is `type: defect`, `severity: critical`, `status: todo`, still in
+   `paused/`**, with three recorded handoff refusals (newest `f94ebfd60c`).
+   Raising the cap does not repeal that — it means concurrent parcels while a
+   critical defect in the handoff path is open.
+2. **Orthogonality stops being decorative.** At depth 1 the Concurrent Work
+   Orthogonality rule is structurally inert. Above 1 it is the only thing
+   keeping two actives off the same file — and 2026-08-30 already produced a
+   worktree-drift storm across cleaner/architect/hardender/documenter.
+3. **One 2026-08-01 blocker is now closed.** BL-663 (`promote_and_route_next.sh`
+   not enforcing the ordering gates) is in `backlog/done/M8/`. That was the
+   compounding defect which made a higher cap unsafe at the time; it is no
+   longer a reason to hold.
+4. **Every stage is single-seat.** No pack in `swarmforge/packs/` declares a
+   duplicate `window` line for one role. Raising the cap therefore *pipelines*
+   the stages — fewer roles idle — but does not widen any single stage.
+   BL-1004's `seat_affinity_lib.bb` already handles sibling seats, but none are
+   staffed anywhere. If the cap alone does not deliver "more tickets progress in
+   parallel", a second seat on the narrowest stage is the next lever, and that
+   is a pack change: an operator decision, not a backlog one.
+
+### Expiry
+
+A standing raise, not a one-shot: spent only when the human revokes it or
+declares a new WIP policy. An Article 3.5 health throttle may still lower the
+cap transiently — and must then be restored to the standing depth, per that
+article, not left engaged.
+
 ## Classification
 
 Every ticket in `backlog/active/` and `backlog/paused/` carries a
@@ -221,7 +296,12 @@ Rules:
 ## Pull policy (coordinator applies at promotion time)
 
 - **Hard cap:** `active_backlog_max_depth` in `swarmforge.conf` (read the
-  current value each time) remains the absolute WIP ceiling.
+  current value each time) remains the absolute WIP ceiling. Read it via
+  `bb swarmforge/scripts/effective_backlog_depth_cli.bb <root>`, never by
+  grepping the conf. The human's 2026-08-30 throughput directive above asks the
+  coordinator to RAISE this ceiling within safe limits and supersedes the
+  17:03 cap-1 hold still written in the conf comment — a raise is now the
+  standing instruction, not a deviation from this policy.
 - **Direction lane:** at most ONE active slot may hold a `non-aligned`
   ticket, and only when no orthogonal `aligned`/`expedite` candidate exists.
   All other slots pull `expedite` first (bugs-first), then `aligned`, by
