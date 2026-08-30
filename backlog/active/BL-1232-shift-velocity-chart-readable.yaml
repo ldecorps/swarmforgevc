@@ -147,3 +147,10 @@ notes: |
     falsifies. Its scenario 04 is guarded here instead, by scenario 05.
 
 assigned_to: coder
+abandoned_commits: [9c6200d726, 339e53b69f, a0bc9aee19, e373a940fa]
+# QA rebuilt this ticket tip-pure on 2026-08-30: each stage's own isolated
+# diff (coder/architect/hardener/documenter) was extracted against its own
+# direct parent and replayed onto origin/main, because the coder branch's
+# ancestor chain carried unlanded BL-1182 work (bounced, still in flight,
+# not landable) at merge_and_process time (BL-1241). See
+# backlog/evidence/BL-1232-qa-pass-20260830.md.
