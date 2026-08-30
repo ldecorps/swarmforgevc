@@ -802,6 +802,22 @@ You are the hardender.
 - (Incident: BL-730, 2026-08-13 — the only self-test's argv also matched
   the case-statement's filename exclusion, so deleting the separate
   pid==self check survived undetected until a test isolated it.)
+- **The mirror case: a fixture that never REACHES the guard (rule_proposal
+  2026-08-30, accepted).** The same mutant hides when the guard under test
+  sits BEHIND an earlier predicate the fixture already fails. A "nested path
+  is excluded" test whose fixture name does not satisfy the base name-shape
+  check in the first place proves nothing about nesting: the nesting branch is
+  never evaluated, so deleting it survives. Overlap hides a guard behind a
+  sibling; unreachability hides it behind a predecessor. Both read as a
+  passing test.
+- Rule, both shapes together: the fixture must INDEPENDENTLY satisfy every
+  predicate upstream of the guard you are testing, and must NOT satisfy any
+  sibling guard that could carry the assertion on its own. State which
+  predicate each fixture is isolating when you record the pass — if you cannot
+  name it, the test is not isolating anything.
+  (Incident: BL-1240, 2026-08-30 — the "test/lib/ not recursive" fixture used
+  a name that never matched `test-file?` anyway, so removing the nesting guard
+  survived undetected until a discriminating fixture was built.)
 
 ## An acceptance step that greps the ticket's own YAML is a trap for every later note — never quote its trigger phrase while explaining it (rule_proposal 2026-08-13, accepted)
 - A guard scenario that greps the ticket's own YAML for trigger words (e.g.
