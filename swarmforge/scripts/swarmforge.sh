@@ -278,6 +278,10 @@ typeset -a WORKTREE_NAMES=()
 typeset -a WORKTREE_PATHS=()
 typeset -a RECEIVE_MODES=()
 typeset -a IDLE_CLEAR_FLAGS=()
+# Propagation token (forward-only|back-one|back-all): column 9 of roles.tsv.
+# Defaults forward-only. Stolen from upstream reverse git_handoff hops; kept
+# as its own column so BL-089 idle-clear stays at column 8 unchanged.
+typeset -a PROPAGATION_MODES=()
 # BL-982: SEAT vs STAGE identity. ROLES holds SEAT ids (today usually equal
 # to the stage name; a second seat of a stage is declared as
 # <stage>@<seat>, e.g. coder@sonnet). STAGES holds each slot's STAGE - the
@@ -589,6 +593,8 @@ register_role() {
   # BL-982: $8 is the slot's STAGE; defaulted to the seat id so every
   # pre-seat caller (and every single-seat pack) is byte-identical.
   local stage="${8:-$role}"
+  # $9 is the optional reverse-hop propagation mode (default forward-only).
+  local propagation="${9:-forward-only}"
   ROLE_INDEX[$role]=${#ROLES[@]}
   ROLES+=("$role")
   AGENTS+=("$agent")
@@ -597,6 +603,7 @@ register_role() {
   WORKTREE_NAMES+=("$worktree")
   RECEIVE_MODES+=("$receive_mode")
   IDLE_CLEAR_FLAGS+=("$idle_clear")
+  PROPAGATION_MODES+=("$propagation")
   EXTRA_CLI_ARGS+=("$extra_cli")
   WORKTREE_PATHS+=("$worktree_path")
   STAGES+=("$stage")
@@ -715,6 +722,13 @@ parse_config() {
     else
       receive_mode="task"
     fi
+    # Optional reverse-hop propagation (upstream back-one/back-all). Must be
+    # parsed before idle-clear so `batch back-one idle-clear` works.
+    local propagation="forward-only"
+    if [[ "${fields[$next_field]:-}" == (forward-only|back-one|back-all) ]]; then
+      propagation="${fields[$next_field]}"
+      next_field=$((next_field + 1))
+    fi
     local idle_clear="off"
     if [[ "${fields[$next_field]:-}" == "idle-clear" ]]; then
       idle_clear="on"
@@ -815,7 +829,7 @@ parse_config() {
     else
       worktree_path="$(worktree_path_for_name "$worktree")"
     fi
-    register_role "$role" "$agent" "$worktree" "$receive_mode" "$idle_clear" "$extra_cli" "$worktree_path" "$seat_stage"
+    register_role "$role" "$agent" "$worktree" "$receive_mode" "$idle_clear" "$extra_cli" "$worktree_path" "$seat_stage" "$propagation"
   done < "$CONFIG_FILE"
 
   if (( ${#ROLES[@]} == 0 )); then
@@ -920,7 +934,7 @@ provision_coordinator() {
     extra_cli+="${extra_cli:+ }--remote-control $(remote_control_session_name_for_role "$role")"
   fi
 
-  register_role "$role" "$COORDINATOR_AGENT" "master" "task" "off" "$extra_cli" "$WORKING_DIR"
+  register_role "$role" "$COORDINATOR_AGENT" "master" "task" "off" "$extra_cli" "$WORKING_DIR" "coordinator" "forward-only"
 }
 
 # BL-243 coordinator-infrastructure-02: the pack is the conf's own
@@ -1044,7 +1058,7 @@ write_roles_file() {
   : > "$ROLES_FILE"
   local i
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "${ROLES[$i]}" \
       "${WORKTREE_NAMES[$i]}" \
       "${WORKTREE_PATHS[$i]}" \
@@ -1052,7 +1066,8 @@ write_roles_file() {
       "${DISPLAY_NAMES[$i]}" \
       "${AGENTS[$i]}" \
       "${RECEIVE_MODES[$i]}" \
-      "${IDLE_CLEAR_FLAGS[$i]}" >> "$ROLES_FILE"
+      "${IDLE_CLEAR_FLAGS[$i]}" \
+      "${PROPAGATION_MODES[$i]:-forward-only}" >> "$ROLES_FILE"
   done
 }
 
