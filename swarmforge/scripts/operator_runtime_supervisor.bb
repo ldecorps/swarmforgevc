@@ -164,6 +164,15 @@
       (log! "start-cmd-failed" (str "exit=" exit))))
   (operator-runtime-watch-lib/read-pid project-root))
 
+;; BL-1224: an adoption is NOT announced to the human - it is not an incident -
+;; but it must be visible here and in the status file, or a post-mortem cannot
+;; tell a handover from a tick that did nothing (invariant 3).
+;;
+;; The default arm no longer swallows an unknown event. It used to return nil,
+;; which is how :adopted would have been silently invisible had this arm not
+;; been added - the same fail-safe direction announcement-for-event already
+;; takes for its own default, and for the same reason: a new event should be
+;; noisy and wrong rather than quiet and missing.
 (defn log-event! [event entry]
   (case event
     :started (log! "started" "pid=" (str (:pid entry)) "attempt=" (str (:attempts entry)))
@@ -171,7 +180,10 @@
     :healthy-reset (log! "healthy-reset")
     :gave-up (log! "gave-up" "after" (str (:attempts entry)) "attempt(s)")
     :re-armed (log! "re-armed" "pid=" (str (:pid entry)))
-    nil))
+    :adopted (log! "adopted" "pid=" (str (:pid entry))
+                   "attempt=" (str (:attempts entry))
+                   "reason=deliberate restart by another process")
+    (when event (log! (name event)))))
 
 ;; The whole is-it-announced/what-does-it-say decision lives in
 ;; operator-runtime-watch-lib/announcement-for-event (gated on
@@ -204,7 +216,11 @@
             :pid-alive? operator-runtime-watch-lib/pid-alive?
             :spawn! spawn-operator!
             :restart-config restart-config :giveup-config giveup-config
-            :check-one-fn front-desk-supervisor-lib/check-one!})]
+            :check-one-fn front-desk-supervisor-lib/check-one!
+            ;; BL-1224: the discriminator between a crash and a handover. Read
+            ;; fresh on every tick, because the whole point is that somebody
+            ;; else may have rewritten it since the last one.
+            :pidfile-pid (operator-runtime-watch-lib/read-pid project-root)})]
       (if (= :deliberately-stopped event)
         (do (log! "deliberately-stopped" stop-reason)
             (write-status! prior "deliberately-stopped" stop-reason))
