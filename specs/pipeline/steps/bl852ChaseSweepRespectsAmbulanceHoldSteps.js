@@ -138,19 +138,7 @@ function snapshotFile(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null;
 }
 
-// BL-1277: this file's own feature title, so the generic step text below can
-// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
-// feature being run and otherwise falls back to first-match across every
-// handler file - so an UNSCOPED registration of text another file also
-// registers hands whichever file loads first the job of answering both
-// features, silently, against the wrong fixture.
-const BL1277_FEATURE_NAME = "The chase sweep leaves ambulance-held parcels alone";
-
 function registerSteps(registry) {
-  // BL-1277: registrations whose step text another handler file also
-  // registers go through here, pinned to this file's own feature.
-  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
-
   // ── Background ────────────────────────────────────────────────────────
   registry.define(/^a running swarm with a mailbox for every role$/, (ctx) => {
     ctx.root = mkRoot();
@@ -212,7 +200,7 @@ function registerSteps(registry) {
     ctx.itemFile = file;
   });
 
-  bl1277Scoped(/^the ambulance is released$/, (ctx) => {
+  registry.define(/^the ambulance is released$/, (ctx) => {
     if (!ctx.root) {
       ctx.root = mkRoot();
       ensureInboxDirs(ctx);

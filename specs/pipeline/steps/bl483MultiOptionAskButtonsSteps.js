@@ -36,19 +36,7 @@ function mkTopicReplyUpdate(text) {
   return { update_id: 1, message: { message_id: 1, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, message_thread_id: AGENT_QUESTIONS_TOPIC_ID, text } };
 }
 
-// BL-1277: this file's own feature title, so the generic step text below can
-// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
-// feature being run and otherwise falls back to first-match across every
-// handler file - so an UNSCOPED registration of text another file also
-// registers hands whichever file loads first the job of answering both
-// features, silently, against the wrong fixture.
-const BL1277_FEATURE_NAME = "Multi-option agent questions surface on Telegram as tappable buttons with one-effect answer capture";
-
 function registerSteps(registry) {
-  // BL-1277: registrations whose step text another handler file also
-  // registers go through here, pinned to this file's own feature.
-  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
-
   // ── Background ──────────────────────────────────────────────────────
   registry.define(/^the front desk is live and round-trips inline-button callbacks$/, (ctx) => {
     ctx.bridged = [];
@@ -59,7 +47,7 @@ function registerSteps(registry) {
     ctx.recordedMessage = undefined;
   });
 
-  bl1277Scoped(/^an agent can file a question through the ask protocol$/, () => {
+  registry.define(/^an agent can file a question through the ask protocol$/, () => {
     // Documented by the Background text itself - operator_ask.bb's real
     // --options flag (BL-466, extended by BL-483's operator-lib/ask-options)
     // is separately unit-tested; nothing further to arrange here.

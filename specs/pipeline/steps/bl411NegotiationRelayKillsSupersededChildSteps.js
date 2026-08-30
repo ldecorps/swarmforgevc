@@ -24,19 +24,7 @@ function checkOneWithKillTracking(entry, nowMs, pidAlive) {
   return JSON.parse(out);
 }
 
-// BL-1277: this file's own feature title, so the generic step text below can
-// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
-// feature being run and otherwise falls back to first-match across every
-// handler file - so an UNSCOPED registration of text another file also
-// registers hands whichever file loads first the job of answering both
-// features, silently, against the wrong fixture.
-const BL1277_FEATURE_NAME = "the negotiation relay supervisor never runs two relay pollers at once";
-
 function registerSteps(registry) {
-  // BL-1277: registrations whose step text another handler file also
-  // registers go through here, pinned to this file's own feature.
-  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
-
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^a negotiation relay supervisor managing a relay poll-loop child process$/, () => {
     // No fixture setup needed - each scenario's own Given builds its entry.
@@ -68,7 +56,7 @@ function registerSteps(registry) {
     ctx.nowMs = 6001;
   });
 
-  bl1277Scoped(/^the supervisor checks whether it may spawn the replacement$/, (ctx) => {
+  registry.define(/^the supervisor checks whether it may spawn the replacement$/, (ctx) => {
     ctx.result = checkOneWithKillTracking(ctx.entry, ctx.nowMs, ctx.pidAlive);
   });
 

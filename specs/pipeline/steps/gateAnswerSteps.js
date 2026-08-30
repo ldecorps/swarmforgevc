@@ -53,20 +53,8 @@ async function postGateAnswer(port, headers, body) {
   });
 }
 
-// BL-1277: this file's own feature title, so the generic step text below can
-// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
-// feature being run and otherwise falls back to first-match across every
-// handler file - so an UNSCOPED registration of text another file also
-// registers hands whichever file loads first the job of answering both
-// features, silently, against the wrong fixture.
-const BL1277_FEATURE_NAME = "answer a captured to-human gate from a remote client, scoped to gate answers only";
-
 function registerSteps(registry) {
-  // BL-1277: registrations whose step text another handler file also
-  // registers go through here, pinned to this file's own feature.
-  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
-
-  bl1277Scoped(/^an agent blocked on a captured to-human gate in the message store$/, (ctx) => {
+  registry.define(/^an agent blocked on a captured to-human gate in the message store$/, (ctx) => {
     ctx.targetPath = mkTmp();
     writeSessionsTsv(ctx.targetPath, ['coder']);
     writeTmuxSocket(ctx.targetPath, '/tmp/aps-gate-answer.sock');
