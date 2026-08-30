@@ -1,0 +1,151 @@
+id: BL-1306
+title: "The two-call handoff audit stores its challenge under the routed recipient but looks it up under the drafted one, so any git_handoff that required_stages reroutes can never queue"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1306-handoff-audit-reroute.feature.draft
+
+invariants:
+  - "A challenge is stored and looked up on the same basis: every field the lookup compares is computed from the same post-routing values the store used, or is excluded from both."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1306HandoffAuditRerouteSteps::the acceptance handler must be registered in the same commit that renames the draft'
+
+source: "Reported by the coder 2026-08-30T22:13:29Z as a priority-00 spec-gap note: \"handoff audit never queues when required_stages reroutes the drafted to: role\". Confirmed by the specifier by reading swarm_handoff.bb before minting."
+
+description: |
+  ## What is wrong
+
+  `swarm_handoff.bb -main` computes the audit lookup key BEFORE routing and the
+  audit storage key AFTER it:
+
+      (invalidate-changed-invocation-audits!
+       sender (invocation-fingerprint draft sender headers))   ; ~line 1041
+      (let [routed (route-required-stages ...)                 ; ~line 1043
+            ...
+            (audit-candidate draft sender headers
+                             (:recipients routed) ...)         ; ~line 1059
+
+  `invocation-fingerprint` takes `:recipients` from the raw `to:` header;
+  `audit-candidate` takes it from `(:recipients routed)`. `invalidate-changed-
+  invocation-audits!` deletes any stored audit for which
+  `(not= invocation (select-keys candidate (keys invocation)))`, so whenever
+  BL-606 routing rewrote the recipient the two disagree on `:recipients` and the
+  standing challenge is deleted at the top of EVERY invocation.
+
+  The sender therefore gets `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED` on the first
+  call, re-audits, re-invokes with a byte-identical draft exactly as Article 2.3
+  instructs - and gets the same refusal, forever. There is no number of correct
+  retries that queues the parcel.
+
+  ## When it fires
+
+  All of these hold today, so this is live, not theoretical:
+
+  - `config required_stages_routing_enabled true` in BOTH `swarmforge.conf` and
+    `packs/full-forge.conf`.
+  - The reroute needs only a forward `git_handoff`, one recipient, no
+    `rejection_reason`/`reroute_reason`, and a ticket declaring `required_stages`
+    that skips the drafted next stage.
+  - Declaring a skipping `required_stages` is normal practice, not an edge case:
+    BL-1300 in `backlog/active/` declares `[coder, qa]`, so a coder drafting
+    `to: cleaner` reroutes to `qa` and lands exactly on this.
+
+  ## Why severity high
+
+  It is a hard block on the delivery machinery for an entire ticket shape, with
+  no workaround the sender can see - the refusal it prints is the ordinary audit
+  challenge, so it reads as the agent's own incomplete review rather than a
+  defect. The likely failure mode is an agent re-auditing and re-invoking in a
+  loop, which is what the handoff daemon halts the whole swarm for. It is not
+  `critical` because it is bounded to tickets carrying a skipping
+  `required_stages`; forwards on tickets without one queue normally.
+
+  ## How (direction, not mandate)
+
+  Compare like with like. Either compute the lookup fingerprint after routing so
+  both sides see the routed recipients, or drop `:recipients` from the
+  invalidation comparison and let the fields that are genuinely draft-derived
+  carry it. Whichever shape is chosen, scenario 03 must keep passing: a draft the
+  sender EDITED between calls must still invalidate the standing challenge, or
+  the fix has bought queueing by disabling the audit.
+
+  Also worth a look while in here, but do not treat it as the ticket unless it
+  proves real: `:commit` has the same split basis (`invocation-fingerprint` reads
+  the raw `commit:` header, `audit-candidate` stores `(:canonical-commit
+  validation)`). Ordinary git_handoffs do queue today, so the canonical form must
+  currently equal the drafted 10-hex - but that is an accident of the two happening
+  to agree, not a guarantee either function states.
+
+notes: |
+  ## Do NOT give this ticket a skipping required_stages [2026-08-30 specifier]
+
+  `required_stages` is declared here as the full six-stage chain deliberately. A
+  ticket that skips a stage cannot be forwarded while this defect is live, so a
+  short declaration would make the fix for the bug undeliverable by the bug. If a
+  later pass wants to trim stages, land the fix first.
+
+  ## The acceptance contract is a draft and this ticket converts it [2026-08-30 specifier]
+
+  `acceptance:` points at a `.feature.draft`, which no `*.feature` glob and no
+  acceptance runner picks up - authored that way because a `.feature` committed
+  before its step handler exists makes the runner THROW for every other parcel in
+  flight (BL-233). Converting it is IN SCOPE for this parcel and must happen in
+  ONE commit: rename to `specs/features/BL-1306-handoff-audit-reroute.feature`,
+  add `specs/pipeline/steps/bl1306HandoffAuditRerouteSteps.js`, REGISTER it in
+  `specs/pipeline/steps/index.js`, and repoint `acceptance:` at the renamed file.
+  Renaming without landing the handler in that same commit turns the suite red
+  for everyone. The `required_wiring` entry above pins the registration.
+
+  ## Gherkin review record [2026-08-30 specifier]
+
+  `gherkin_lint_gate.sh` passes. The IR-DRY checker reports 6 medium-confidence
+  findings and ALL SIX were reviewed and kept: `<declaration>` vs the fixed
+  "skips the drafted recipient" is the Outline parameterizing what the plain
+  scenarios fix; "edits the draft" vs "with an identical draft" are the
+  deliberate opposites the whole ticket turns on; "has already invoked" (Given
+  state) vs "invokes" (When action) is ordinary Gherkin; "no handoff is queued"
+  vs "the handoff is queued to <recipient>" are the two outcomes. None is
+  accidental drift, so none was normalized. A Background cannot absorb the shared
+  Given without breaking Outline row 2, which needs a NON-skipping declaration.
+
+qa_e2e_procedure: |
+  1. On the fix commit, confirm the converted feature runs and is green:
+     `node specs/pipeline/cli.js specs/features/BL-1306-handoff-audit-reroute.feature`
+     (the `.feature.draft` must be gone and `acceptance:` must name the `.feature`).
+  2. Live check, in a scratch worktree so no real parcel moves: pick a ticket in
+     `backlog/active/` declaring a `required_stages` that skips the next stage
+     (BL-1300's `[coder, qa]` is the shape), draft a forward `git_handoff` from
+     the stage before the skip, and invoke `swarm_handoff.sh` twice with a
+     byte-identical draft.
+  3. The first call must print `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`; the SECOND
+     must print `HANDOFF DELIVERED:` and the queued file must name the ROUTED
+     recipient, not the drafted one. Before the fix the second call repeats the
+     refusal - that difference is the whole gate.
+  4. Edit the draft between two calls and confirm the audit still refuses, so the
+     fix did not buy queueing by weakening the Article 2.3 challenge.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. Nothing in this ticket
+  is a choice I am handing you - the defect was read out of `swarm_handoff.bb`
+  before minting, not inferred from the report, and the two possible fix shapes
+  are the coder's to pick since both satisfy the same declared invariant.
+
+  What is worth knowing before you tap. First, this blocks forwarding outright
+  for any ticket declaring a `required_stages` that skips a stage, and BL-1300 in
+  the active backlog is exactly that shape - so the coder can hit this the moment
+  BL-1300 is ruled and built. Second, the failure is silent in the worst way: the
+  refusal it prints is the ordinary audit challenge, so a correct agent reads it
+  as its own incomplete review and retries forever, which is what the daemon
+  halts the swarm for. Third, this ticket deliberately declares the FULL six-stage
+  chain, because a ticket that skips a stage cannot be forwarded while the bug is
+  live - the fix must not be undeliverable by the thing it fixes.
