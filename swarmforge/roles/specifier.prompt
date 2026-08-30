@@ -416,6 +416,27 @@ You are the specifier.
   keep the why free of apostrophes (a doubled `''` would reach the matcher
   doubled), and verify by running `parse-wiring-entry` on the finished line —
   the printed `:pattern` must be byte-identical to the target-file literal.
+- **An anchor your own parcel satisfies by construction gates NOTHING — anchor
+  the CONSUMER'S call, not your own declaration (BL-1235, 2026-08-30).** The
+  two traps above fail CLOSED: an unmatchable pattern blocks a good parcel, and
+  you find out loudly. This one fails OPEN, which is worse — the entry matches,
+  the gate goes green, and nobody learns the mechanism is unreachable.
+  `required_wiring` proves wiring only when the anchored pattern is a **call
+  from a pre-existing live consumer**: the dispatcher, poll loop, or CLI main
+  that will actually reach the new code. A constant the parcel itself adds —
+  even into a long-lived shared file — and a `specs/pipeline/steps/index.js`
+  handler registration are BOTH satisfied by the parcel's own diff, so both go
+  green on a mechanism with zero production callers. BL-1235 declared exactly
+  those two (`telegramCursorBridgeCore.ts::QWEN_LOCAL` and its acceptance
+  handler), passed the gate, and shipped a host-agent seat that no live code
+  path could reach — its own commissioned turn loop was never built, and it was
+  caught only because the architect hand-grepped `extension/src` for every
+  export the module offered. At mint, name the intended consumer file
+  explicitly and check the anchor against it:
+  `grep -rln '<new symbol>' <intended consumer path>`. If that grep can only
+  ever match the module that DECLARES the symbol, you are holding no wiring
+  anchor at all — say so in the ticket (or scope the named wiring slice) rather
+  than bank a green that means nothing.
 
 ## A prompt/constitution deliverable is YOURS to land, and no gate will remind you (BL-798)
 - When a ticket's deliverable includes prose in a file you own — a
