@@ -237,5 +237,31 @@ notes: |
     human hold, so returning it to active/ and routing to coder is a deliberate
     call for the coordinator or the human - I am recording the verdict, not
     moving the ticket.
+    CORRECTION [2026-08-30, same turn] - the paragraph above saying the chain
+    "is stalled" and "no role holds the ticket" is WRONG about how far this got.
+    QA's stand-down note revealed it. The chain DID run end to end: coder ->
+    cleaner -> architect -> hardener (03708aed5) -> documenter (08b727496) ->
+    QA. I inferred "no parcel" from an inbox sweep that found nothing and from
+    the cleaner having moved on; both facts were true and neither supported the
+    conclusion, because QA had already dequeued its handoff. The verdict sent to
+    the coordinator - re-enter at the CODER - is still right, for a sharper
+    reason than I gave.
+    THE REAL DEFECT. The hardener (7ce9b95b1) and documenter (87eb0fdf7) each
+    merged main and so pulled scenario 06 into the feature file, but NO ONE
+    BUILT ITS STEP HANDLER. Verified at documenter tip 22f267b6e: the feature
+    file contains stamp-06, index.js registers
+    bl1254ExpediteNoVerdictChainStampSteps, and that handler implements none of
+    scenario 06's steps - no "killed for exceeding its time budget", no
+    "stage-timeout", zero matches. A merge carried the CONTRACT forward without
+    the code: exactly the BL-233 shape the amendment warned about. The
+    documenter tip therefore cannot pass acceptance on scenario 06.
+    QA IS RIGHT TO STAND DOWN, for a second reason it did not name: its cited
+    commit 08b727496 PREDATES the documenter's merge of the amendment and has
+    no scenario 06 at all. Landing it would silently drop the absorbed BL-1259
+    content a second time - the very loss this absorption exists to prevent.
+    DO NOT LAND 08b727496.
+    NEXT STEP, corrected: the CODER builds scenario 06's step handler on top of
+    the documenter's work, then the parcel re-walks cleaner -> QA. Everything
+    already built for scenarios 01-05 stands and must not be rebuilt.
 
 assigned_to: coder
