@@ -18,8 +18,12 @@
 ;;   model_steward_cli.bb adapter <provider>/<model>
 ;;   model_steward_cli.bb compat-docs [--out <path>]
 ;;   model_steward_cli.bb eligible <provider>/<model> --role <role> [--override-uncertified]
+;;   model_steward_cli.bb trial nominate <provider>/<model> --role <role> [--evidence <path>]
+;;   model_steward_cli.bb trial status [--role <role>]
+;;   model_steward_cli.bb trial assess --role <role> [--now <iso>]
 (ns model-steward-cli
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -27,6 +31,9 @@
 (load-file (str (fs/path scripts-dir "model_steward_store.bb")))
 (load-file (str (fs/path scripts-dir "model_steward_lib.bb")))
 (load-file (str (fs/path scripts-dir "model_steward_evaluate_lib.bb")))
+(load-file (str (fs/path scripts-dir "model_steward_trial_lib.bb")))
+(load-file (str (fs/path scripts-dir "model_factory_store.bb")))
+(load-file (str (fs/path scripts-dir "node_tool_bringup_lib.bb")))
 
 (defn cli-args []
   (let [raw (vec *command-line-args*)]
@@ -100,6 +107,9 @@
   (println "  eligible <provider>/<model> --role <role> [--override-uncertified]")
   (println "  evaluate <provider>/<model> --role <role> --scorecard <path> [--bakeoff <path>] [--decertify-on-regression]")
   (println "  compat-docs [--out <path>]")
+  (println "  trial nominate <provider>/<model> --role <role> [--evidence <path>]")
+  (println "  trial status [--role <role>]")
+  (println "  trial assess --role <role> [--now <iso>]")
   (System/exit 1))
 
 (defn run-status []
@@ -319,6 +329,163 @@
         (save-registry! registry'')
         (print-evaluate-result provider model role report-path result decertify?)))))
 
+
+;; ── BL-1182: the day-long BoB trial lifecycle ────────────────────────────
+;;
+;; Thin, like every other command here: model_steward_trial_lib.bb decides,
+;; model_steward_store.bb persists trial state, model_factory_store.bb writes
+;; the seat, and the memory-transfer boundary is the compiled node tool (BL-1178
+;; is TypeScript and Babashka cannot import it).
+
+(defn- trial-die! [message]
+  (binding [*out* *err*] (println message))
+  (System/exit 1))
+
+(defn load-trials []
+  (model-steward-store/read-trials! (state-dir) model-steward-trial-lib/empty-trials))
+
+(defn save-trials! [trials]
+  (model-steward-store/write-trials! (state-dir) trials))
+
+(defn factory-state-dir []
+  (or (System/getenv "MODEL_FACTORY_STATE_DIR")
+      (str (fs/path (model-factory-store/repo-root) model-factory-store/default-state-dir-rel))))
+
+(defn- with-cost-class [registry {:keys [provider model]}]
+  (when (and provider model)
+    {:provider provider :model model
+     :cost_class (:cost_class (model-steward-lib/model-entry registry provider model))}))
+
+(defn permanent-for-role
+  "The model this role runs when no trial is seated - an OPERATIONAL fact, in
+   this order: what the trial state recorded (a promotion or a revert writes it
+   there), else the role's current seat in ModelFactory's assignment overlay,
+   else - for a role that has never been seated at all - the top certified
+   recommendation, the way BL-1181's cast bootstraps one.
+
+   Deriving it from the role matrix FIRST was the obvious reading and it is
+   wrong: the top-scoring model is then permanent by definition, so no
+   candidate can ever outrank it and every nomination is refused as `already
+   permanent`. The seat is what a trial displaces, so the seat is what
+   `permanent` has to mean."
+  [trials registry role]
+  (or (get-in trials [:permanent role])
+      (with-cost-class registry (get (model-factory-store/read-assignment-overlay! (factory-state-dir))
+                                     (keyword role)))
+      (with-cost-class registry (first (model-steward-lib/role-recommendations
+                                        registry role {:include-uncertified? false})))))
+
+(defn- memory-tool-path []
+  (str (fs/path (model-steward-store/repo-root) "extension" "out" "tools" "trial-boundary-memory.js")))
+
+(defn transfer-memory!
+  "Runs BL-1178's capture/inject for one trial boundary, and REFUSES the seat
+   move when it fails - an amnesiac seat reported as success is the failure
+   BL-1178's own invariant 2 names. `boundary` is nil when the step changes no
+   model (a promotion leaves the trial model seated), and then nothing is owed.
+
+   MODEL_STEWARD_MEMORY_TOOL overrides the tool path so the acceptance and the
+   shell test can drive a stub instead of a live capture."
+  [boundary role]
+  (when boundary
+    (let [tool (or (System/getenv "MODEL_STEWARD_MEMORY_TOOL") (memory-tool-path))]
+      (when-not (fs/exists? tool)
+        (trial-die! (node-tool-bringup-lib/missing-tool-message "trial-boundary-memory" tool)))
+      (let [{:keys [exit out err]} (process/sh
+                                    ["node" tool
+                                     "--role" role
+                                     "--boundary" (if (= boundary "trial-start") "start" "end")
+                                     "--target" (str (model-steward-store/repo-root))])]
+        (when-not (zero? exit)
+          (trial-die! (str "trial refused: agent-memory transfer failed at " boundary
+                           " for " role " - the seat was NOT moved"
+                           (when-not (str/blank? (str out)) (str " :: " (str/trim (str out))))
+                           (when-not (str/blank? (str err)) (str " :: " (str/trim (str err)))))))
+        {:boundary boundary :role role}))))
+
+(defn- write-seat! [role seat]
+  (let [dir (factory-state-dir)
+        overlay (or (model-factory-store/read-assignment-overlay! dir) {})
+        entry (merge (get overlay (keyword role) {})
+                     {:role role
+                      :provider (:provider seat)
+                      :model (:model seat)
+                      :agent (model-factory-lib/resolve-launch-agent (:provider seat))})]
+    (model-factory-store/write-assignment-overlay! dir (assoc overlay (keyword role) entry))))
+
+(defn run-trial-nominate [rest-args]
+  (when (empty? rest-args) (usage))
+  (let [[provider model] (parse-provider-model (first rest-args))
+        flags (vec (rest rest-args))
+        role (opt-value flags "--role")
+        evidence (opt-value flags "--evidence")]
+    (when (str/blank? role)
+      (trial-die! "trial nominate requires --role <role>"))
+    (let [registry (load-registry)
+          trials (load-trials)
+          permanent (permanent-for-role trials registry role)]
+      (when-not permanent
+        (trial-die! (str "trial refused: " role " has no permanent model to trial against")))
+      (let [{:keys [trials error trial]}
+            (model-steward-trial-lib/nominate trials registry role
+                                              {:provider provider :model model :evidence evidence}
+                                              permanent (now-iso))]
+        (when error (trial-die! error))
+        ;; The boundary runs BEFORE anything is persisted or seated: a failed
+        ;; transfer must leave no armed trial behind to assess later.
+        (transfer-memory! (model-steward-trial-lib/boundary-for
+                           :nominate {:from (model-steward-trial-lib/seat-id permanent)
+                                      :to (model-steward-trial-lib/seat-id trial)})
+                          role)
+        (save-trials! (assoc-in trials [:permanent role] permanent))
+        (write-seat! role trial)
+        (println (str "trial armed role=" role
+                      " model=" (model-steward-trial-lib/seat-id trial)
+                      " permanent=" (model-steward-trial-lib/seat-id permanent)
+                      " ends=" (:ends_at trial)))))))
+
+(defn run-trial-status [rest-args]
+  (let [trials (load-trials)
+        only (opt-value rest-args "--role")
+        active (:active trials)
+        roles (if (str/blank? only) (sort (keys active)) [only])]
+    (doseq [role roles]
+      (if-let [t (get active role)]
+        (println (str role " armed " (model-steward-trial-lib/seat-id t)
+                      " permanent=" (model-steward-trial-lib/seat-id (:permanent t))
+                      " ends=" (:ends_at t)
+                      (when (model-steward-trial-lib/due? t (now-iso)) " DUE")))
+        (println (str role " no armed trial"))))))
+
+(defn run-trial-assess [rest-args]
+  (let [role (opt-value rest-args "--role")
+        at (or (opt-value rest-args "--now") (now-iso))]
+    (when (str/blank? role)
+      (trial-die! "trial assess requires --role <role>"))
+    (let [registry (load-registry)
+          trials (load-trials)
+          armed (model-steward-trial-lib/armed-for-role trials role)
+          {:keys [trials error outcome]} (model-steward-trial-lib/assess trials registry role at)]
+      (when error (trial-die! error))
+      (let [seat (:seat outcome)]
+        (transfer-memory! (model-steward-trial-lib/boundary-for
+                           :assess {:from (model-steward-trial-lib/seat-id armed)
+                                    :to (model-steward-trial-lib/seat-id seat)})
+                          role)
+        (save-trials! (assoc-in trials [:permanent role] seat))
+        (write-seat! role seat)
+        (println (str "trial " (name (:decision outcome))
+                      " role=" role
+                      " permanent=" (model-steward-trial-lib/seat-id seat)
+                      " reason=" (:reason outcome)))))))
+
+(defn run-trial [rest-args]
+  (case (first rest-args)
+    "nominate" (run-trial-nominate (vec (rest rest-args)))
+    "status" (run-trial-status (vec (rest rest-args)))
+    "assess" (run-trial-assess (vec (rest rest-args)))
+    (usage)))
+
 (let [args (cli-args)
       cmd (first args)
       rest-args (vec (rest args))]
@@ -334,4 +501,5 @@
     "capability" (run-capability rest-args)
     "adapter" (run-adapter rest-args)
     "eligible" (run-eligible rest-args)
+    "trial" (run-trial rest-args)
     (usage)))

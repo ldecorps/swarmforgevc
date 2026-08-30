@@ -88,6 +88,35 @@
         (write-registry! state-dir initial)
         initial))))
 
+(defn trials-file [state-dir]
+  (fs/path state-dir "trials.json"))
+
+;; BL-1182: the trial lifecycle's own state, beside the registry rather than
+;; inside it. A trial is not a fact about a MODEL - it is a fact about a ROLE's
+;; seat for one day - and folding it into registry.json would make every
+;; registry reader carry a schema it has no use for.
+(defn write-trials! [state-dir trials]
+  (atomic-spit! (trials-file state-dir) (json/generate-string trials)))
+
+(defn read-trials!
+  "Reads trial state, returning `empty-trials` when the file is absent or
+   unreadable. Degrade-never-crash, like read-assignment-overlay!: a corrupt
+   trials.json must not stop the steward CLI from reporting or from arming a
+   fresh trial - it means no trial is known, which is the safe reading."
+  [state-dir empty-trials]
+  (let [p (trials-file state-dir)]
+    (if (fs/exists? p)
+      (try
+        (let [parsed (parse-json (slurp (str p)))]
+          (if (map? parsed)
+            (-> parsed
+                (update :active (fn [m] (into {} (map (fn [[k v]] [(name k) v])) (or m {}))))
+                (update :losers (fn [m] (into {} (map (fn [[k v]] [(name k) (vec v)])) (or m {}))))
+                (update :history #(vec (or % []))))
+            empty-trials))
+        (catch Exception _ empty-trials))
+      empty-trials)))
+
 (defn write-certification-report! [state-dir provider model timestamp report]
   (let [safe-ts (clojure.string/replace timestamp #"[^A-Za-z0-9._-]" "-")
         file-name (str provider "__" model "__" safe-ts ".json")
