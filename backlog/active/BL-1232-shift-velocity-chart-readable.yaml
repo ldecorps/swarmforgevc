@@ -145,3 +145,5 @@ notes: |
   - [2026-08-28] specifier: BL-1006 sweep done - only BL-1184's feature file
     touches this chart, and it carries no boundary assertion this ticket
     falsifies. Its scenario 04 is guarded here instead, by scenario 05.
+
+assigned_to: coder
