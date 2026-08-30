@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ca1dd2cebd6a19f6b14de44ba6da2c83fabf782711e71596a92f9239ec796016
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T06:36:49.623852575Z","feature_name":"A sibling whose work is already landed is not reported as entangled","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1272-a-landed-sibling-is-not-reported-as-entangled.feature","background_hash":"9c84335f2c6d0d0d0d1fa7de90aeb368d169fbfe92e4ade13f8be27d33ed6b03","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A sibling is reported as entangled only on positive evidence it is unlanded","scenario_hash":"3aba2411cf9946655428fe8e18bfd1d2c08925e3cf3c888bba101ab67a81cf28","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-30T06:36:49.623852575Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A sibling whose work is already landed is not reported as entangled
   The land step's entanglement check walks the cited commit's own ancestry and
   names every commit whose subject belongs to a different ticket. A tip-pure

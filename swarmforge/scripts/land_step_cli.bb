@@ -9,7 +9,11 @@
 ;; Exit 0, prints "LAND_CLEAN <commit>": no entangled sibling found. QA
 ;;   proceeds with its own ordinary land action on <commit> unchanged.
 ;; Exit 0, prints "LAND_REPLAY <branch> <new-commit>" then one
-;;   "ENTANGLED_SIBLING <ticket-id>" line per sibling: a tip-pure commit was
+;;   "ENTANGLED_SIBLING <ticket-id>" line per sibling still unlanded, and one
+;;   "LANDED_SIBLING <ticket-id>" line per sibling whose own content is
+;;   already byte-identical on origin/main (BL-1272 - its original commit
+;;   remains an ancestor, so the replay is still the right action, but it is
+;;   nothing left for anyone to adjudicate): a tip-pure commit was
 ;;   built on <branch>, off origin/main, containing only this ticket's own
 ;;   paths. QA reviews <branch>'s tip and lands THAT commit (never the
 ;;   originally-cited one), and records `abandoned_commits: [<cited
@@ -64,11 +68,12 @@
               (if (:success result)
                 (do
                   (println (str "LAND_REPLAY " (:branch result) " " (:commit result)))
-                  (doseq [id (sort (:entangled plan))] (println (str "ENTANGLED_SIBLING " id)))
+                  (doseq [id (sort (:unlanded plan))] (println (str "ENTANGLED_SIBLING " id)))
+                  (doseq [id (sort (:landed plan))] (println (str "LANDED_SIBLING " id)))
                   (System/exit 0))
                 (do
                   (println "LAND_ESCALATE")
-                  (println (land-step-lib/entanglement-note task-name (:entangled plan)))
+                  (println (land-step-lib/entanglement-note task-name (:unlanded plan)))
                   (println (:reason result))
                   (System/exit 1))))
 
