@@ -1,0 +1,1 @@
+{"id":"BL-1008","messages":[{"seq":0,"ts":1788082543822,"author":"swarm","type":"outbound","text":"BL-1008 ✅ done — BL-933's bounded fs.watch deadline is itself a bare 10000ms constant, so the helper written to convert a load-induced lane timeout into a clear diagnostic has now become a load-induced failure of its own"}]}

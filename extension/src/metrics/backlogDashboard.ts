@@ -157,10 +157,23 @@ function toDashboardSummary(
 export function computeNeedsApproval(active: BacklogItem[], paused: BacklogItem[]): NeedsApprovalEntry[] {
   return [...active, ...paused]
     .filter((item) => item.humanApproval === 'pending')
+    // BL-1264: a conditional spread, not an unconditional property. An own
+    // key valued `undefined` is NOT the same as an absent key to any strict
+    // comparison, so writing one for a ticket with no approval_context made
+    // this producer contradict `approvalContext?: string` above. Absent
+    // means absent: every reader already treats a missing context as
+    // nothing to render (pendingApprovalsAnnouncement.ts:84 returns early
+    // on a falsy value), so a sentinel would change what they show.
+    //
+    // This is NOT in tension with the "explicit rather than absent"
+    // convention documented on `needsApproval`/`notDoneCount` above - that
+    // is about those TOP-LEVEL fields always being present so both surfaces
+    // can render a no-data state. It says nothing about a per-entry
+    // optional field, and this entry's own type declares the opposite.
     .map((item) => ({
       id: item.id,
       title: item.title,
-      approvalContext: item.approvalContext,
+      ...(item.approvalContext === undefined ? {} : { approvalContext: item.approvalContext }),
     }));
 }
 

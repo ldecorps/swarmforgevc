@@ -11,7 +11,7 @@ function fakeAdapters(overrides = {}) {
     ],
     setTopicIcon: async () => true,
     readSwarmIconId: () => undefined,
-    recordSwarmIconId: () => {},
+    recordSwarmIconId: () => 'recorded',
     ...overrides,
   };
 }
@@ -31,7 +31,7 @@ test('syncTopicIcon sets the icon on a brand-new topic and records ownership', a
         setCalls.push({ topicId, iconId });
         return true;
       },
-      recordSwarmIconId: (ticketId, iconId) => recordCalls.push({ ticketId, iconId }),
+      recordSwarmIconId: (ticketId, iconId) => { recordCalls.push({ ticketId, iconId }); return 'recorded'; },
     })
   );
 
@@ -109,7 +109,7 @@ test('syncTopicIcon reports failure and does NOT record ownership when setTopicI
     true,
     fakeAdapters({
       setTopicIcon: async () => false,
-      recordSwarmIconId: (...args) => recordCalls.push(args),
+      recordSwarmIconId: (...args) => { recordCalls.push(args); return 'recorded'; },
     })
   );
   assert.equal(outcome, 'failed');
@@ -174,4 +174,48 @@ test('syncTopicIcon still skips when neither the primary nor the fallback emoji 
   );
   assert.equal(outcome, 'skipped-unresolved-icon');
   assert.deepEqual(setCalls, []);
+});
+
+// ── BL-1210 scenario 02: a marker no store will hold is never reported as a
+//    successful sync. The icon really was set on Telegram, so 'failed' would
+//    be a lie in the other direction - the outcome names exactly what
+//    happened, and the caller learns it from the RETURN VALUE, not stderr.
+
+test('syncTopicIcon reports icon-set-marker-unrecorded when the store refuses the marker', async () => {
+  const setCalls = [];
+  const outcome = await syncTopicIcon(
+    '   ',
+    42,
+    '💡',
+    true,
+    fakeAdapters({
+      setTopicIcon: async (topicId, iconId) => {
+        setCalls.push({ topicId, iconId });
+        return true;
+      },
+      recordSwarmIconId: () => 'refused',
+    })
+  );
+
+  assert.equal(outcome, 'icon-set-marker-unrecorded');
+  assert.notEqual(outcome, 'updated');
+  assert.deepEqual(setCalls, [{ topicId: 42, iconId: 'id-bulb' }]);
+});
+
+test('syncTopicIcon does not throw when the marker is refused (the live tick is best-effort)', async () => {
+  await assert.doesNotReject(() =>
+    syncTopicIcon('', 42, '💡', true, fakeAdapters({ recordSwarmIconId: () => 'refused' }))
+  );
+});
+
+test('syncTopicIcon treats an adapter that reports nothing at all as an unrecorded marker', async () => {
+  const outcome = await syncTopicIcon(
+    'role-benchmarking',
+    42,
+    '💡',
+    true,
+    fakeAdapters({ recordSwarmIconId: () => undefined })
+  );
+
+  assert.equal(outcome, 'icon-set-marker-unrecorded');
 });

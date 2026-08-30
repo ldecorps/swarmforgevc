@@ -35,7 +35,7 @@ function noopIconAdapters() {
     getIconStickers: async () => [],
     setTopicIcon: async () => true,
     readSwarmIconId: () => undefined,
-    recordSwarmIconId: () => {},
+    recordSwarmIconId: () => 'recorded',
   };
 }
 

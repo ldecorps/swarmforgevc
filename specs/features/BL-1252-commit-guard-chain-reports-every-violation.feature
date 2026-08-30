@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=05c7db8c7278a6c5399eee828d8282631c0316731f6c4fceb4e0f74f9661cd43
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T07:46:39.630370756Z","feature_name":"The pre-commit guard chain reports every violation in one refusal","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1252-commit-guard-chain-reports-every-violation.feature","background_hash":"a364eaa52974271f9f70f6ecb6965ac249082e467467d1ffc7800fc853d30dce","implementation_hash":"unknown","scenarios":[{"index":0,"name":"One refusal names every index-inspection guard the commit violates","scenario_hash":"08f1eb4dee21bdfa38b693b62337021b790b0886dd23c5ba5dcf59c6f93b5578","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-30T07:46:39.630370756Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The pre-commit guard chain reports every violation in one refusal
 
   `swarmforge/git-hooks/pre-commit` runs four independent guards as four

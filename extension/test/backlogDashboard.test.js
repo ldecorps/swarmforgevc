@@ -136,6 +136,53 @@ test('a live active ticket with human_approval: pending appears in needsApproval
   assert.deepEqual(data.needsApproval, [{ id: 'BL-100', title: 'Needs a look' }]);
 });
 
+// ── BL-1264: an absent approval context is an ABSENT KEY ────────────────
+// The producer used to write `approvalContext: undefined` unconditionally,
+// contradicting `approvalContext?: string` on NeedsApprovalEntry. These
+// assert with hasOwnProperty rather than a truthiness check: a truthiness
+// check passes for BOTH shapes and would prove nothing.
+
+test('BL-1264: a pending ticket with no approval context has no approvalContext key at all', () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-100', title: 'Needs a look', humanApproval: 'pending' })], paused: [], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  const entry = data.needsApproval[0];
+  assert.equal(Object.prototype.hasOwnProperty.call(entry, 'approvalContext'), false);
+  assert.deepEqual(Object.keys(entry).sort(), ['id', 'title']);
+});
+
+test('BL-1264: a pending ticket WITH an approval context still carries it', () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-101', title: 'Has context', humanApproval: 'pending', approvalContext: 'one call to make' })], paused: [], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  const entry = data.needsApproval[0];
+  assert.equal(Object.prototype.hasOwnProperty.call(entry, 'approvalContext'), true);
+  assert.equal(entry.approvalContext, 'one call to make');
+});
+
+test('BL-1264: an empty-string approval context is kept, not pruned - only undefined means absent', () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-102', humanApproval: 'pending', approvalContext: '' })], paused: [], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  assert.equal(Object.prototype.hasOwnProperty.call(data.needsApproval[0], 'approvalContext'), true);
+  assert.equal(data.needsApproval[0].approvalContext, '');
+});
+
+test('BL-1264: the serialised artefact is byte-identical whether the key is absent or undefined', () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-100', title: 'Needs a look', humanApproval: 'pending' })], paused: [], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  // What the pre-fix producer emitted, serialised. JSON.stringify drops own
+  // keys valued undefined, which is why backlog.json never carried the key
+  // and why no consumer of the file is affected by this change.
+  const preFixShape = { ...data, needsApproval: [{ id: 'BL-100', title: 'Needs a look', approvalContext: undefined }] };
+  assert.equal(JSON.stringify(data), JSON.stringify(preFixShape));
+});
+
 test('a live paused ticket with human_approval: pending is included too (both active and paused are "live")', () => {
   const data = buildBacklogDashboard(
     { active: [], paused: [item({ id: 'BL-101', humanApproval: 'pending' })], done: [] },
