@@ -1,0 +1,1 @@
+{"id":"BL-1284","messages":[{"seq":0,"ts":1788058004068,"author":"swarm","type":"outbound","text":"BL-1284 ✅ done — The standing Babashka suite refuses to run again: BL-1276 left a property-runner row in suite-manifest.tsv, so the only gate wired for the bb/shell lane exits 1 and every red in that lane is invisible"}]}
