@@ -278,6 +278,11 @@
 ;; itself.
 (def optional-section-adapter-keys
   [:suite-duration-line :needs-approval-section :merged-blocked-digest :stage-dwell-section :chase-trend-section
+   ;; BL-604: the trend ANALYSIS - a narrative read of the same behaviour-trend
+   ;; series the charts plot, not a re-plot of them. Adding a section is a new
+   ;; entry in this vector, never a new branch, which is this vector's own
+   ;; stated contract.
+   :trend-analysis-section
    :not-done-count-line :standing-rule-violations-line :suboptimality-verdict-line :qa-bounce-line
    :telegram-bridge-cost-line])
 
