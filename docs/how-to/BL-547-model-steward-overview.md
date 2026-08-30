@@ -1,6 +1,6 @@
 # Model Steward: Onboarding, Certification, and Role Recommendations
 
-Last Updated: 2026-08-24
+Last Updated: 2026-08-30
 
 SwarmForge's **Model Steward** maintains the Model Registry, Capability Registry, Role Recommendation Matrix, and Prompt Adapter catalogue — the permanent home for knowledge about each language model the swarm uses.
 
@@ -264,6 +264,52 @@ In production mode:
 
 All CLI commands read from and write to the runtime state, so changes persist across future invocations.
 
+## Day-long BoB trial lifecycle (BL-1182)
+
+A trial seats a candidate model against a role for one operating day, then
+assesses it: promote if it outranks the permanent model (a score tie selects
+the cheaper `cost_class`), otherwise revert. Production **live** trials wait
+on BL-1183 — this lifecycle is the trial state machine itself.
+
+```bash
+bb swarmforge/scripts/model_steward_cli.bb trial nominate <provider>/<model> \
+  --role <role> [--evidence <path>]
+bb swarmforge/scripts/model_steward_cli.bb trial status [--role <role>]
+bb swarmforge/scripts/model_steward_cli.bb trial assess --role <role> [--now <iso>]
+```
+
+- **`nominate`** arms a trial: the candidate must already be `certified`
+  (`eligible`'s own gate — a trial seat is a live seat) and must not already
+  be the role's permanent model. A model that lost a prior trial is refused a
+  re-nomination unless `--evidence` names something new — without that, a
+  losing model could be re-seated every day forever, each nomination looking
+  reasonable in isolation.
+- **`status`** reports whether a role has an armed trial, which model, the
+  permanent model it is running against, and whether the trial's day window
+  is `DUE` for assessment.
+- **`assess`** ends the trial: outrank promotes, a tie promotes only when the
+  trial is the cheaper `cost_class` (reusing `model_factory_lib`'s own
+  cost-class ranking, not a second copy of it), and a loss reverts to the
+  permanent model and records steward evidence against silent re-trial.
+
+**The permanent model is what the trial displaces, not "the top-ranked
+certified model."** Those sound equivalent and are not: if "permanent" were
+defined as the top score, no candidate could ever outrank it, since the
+highest score is the permanent by definition — every nomination that could
+teach the steward anything would be refused. The resolution order is: what
+trial state already recorded for that role → the role's live seat in
+ModelFactory's assignment overlay → and only for a role never yet seated, the
+top certified role-matrix recommendation as a bootstrap.
+
+**Agent memory transfers at both trial boundaries** (BL-1178) — seating a
+candidate and reverting or promoting at the end — through the same
+bb → compiled-`extension/out` bridge `handoffd` uses elsewhere
+(`trial-boundary-memory.ts`). The transfer runs BEFORE the trial state is
+persisted or the seat moves, so a failed transfer leaves no armed trial to
+assess later and no half-moved seat — refused, not silently reported as a
+success. A promotion owes no boundary transfer at all: the seat already runs
+the trial model, so nothing switches.
+
 ## Slice 3 (BL-557): steward as a role + compatibility docs
 
 The Model Steward graduates from a Slice 1 stub prompt into a
@@ -295,8 +341,10 @@ Reference.
 
 Related: [Route work to a local-model seat](./BL-1053-route-work-to-a-local-model-seat.md),
 [Wire Mistral Vibe into the Intelligence Layer](./BL-682-mistral-vibe-intelligence-layer-routing.md),
-[ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md).
+[ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md),
+[Wire agent memory into hot-swap and trial](./BL-1178-wire-agent-memory-into-hot-swap-and-trial.md).
 
 Acceptance (Slice 2): `specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature`.
 Acceptance (Slice 3): `specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature`.
+Acceptance (day-long trial lifecycle): `specs/features/BL-1182-day-long-bob-trial-lifecycle.feature`.
 

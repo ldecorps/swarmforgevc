@@ -91,8 +91,20 @@ describe('BL-1182 trial-boundary-memory bridge', () => {
     const report = runTrialBoundaryMemory(parseTrialBoundaryArgs(ARGS), deps);
 
     assert.equal(report.ok, false);
+    assert.equal(report.captured, true);
     assert.equal(report.injected, false);
     assert.equal(report.signal, 'inject refused');
+  });
+
+  it('passes through a false captured flag when the capture step itself failed', () => {
+    const deps = {
+      buildState: () => ({ role: 'coder', transcriptSummary: '', openParcelIds: [] }),
+      transfer: () => ({ ok: false, captured: false, injected: false, signal: 'capture failed' }),
+    };
+
+    const report = runTrialBoundaryMemory(parseTrialBoundaryArgs(ARGS), deps);
+
+    assert.equal(report.captured, false);
   });
 
   it('exits 2 with a reason when the arguments are unusable', () => {
@@ -110,5 +122,38 @@ describe('BL-1182 trial-boundary-memory bridge', () => {
     const report = JSON.parse(written.join(''));
     assert.equal(report.ok, false);
     assert.match(report.signal, /--role/);
+  });
+
+  function withCapturedStdout(fn) {
+    const written = [];
+    const realWrite = process.stdout.write;
+    process.stdout.write = (chunk) => {
+      written.push(String(chunk));
+      return true;
+    };
+    try {
+      return { result: fn(), report: () => JSON.parse(written.join('')) };
+    } finally {
+      process.stdout.write = realWrite;
+    }
+  }
+
+  it('exits 0 and reports ok when the transfer succeeds', () => {
+    const { deps } = stubs({ ok: true });
+
+    const { result, report } = withCapturedStdout(() => main(ARGS, deps));
+
+    assert.equal(result, 0);
+    assert.equal(report().ok, true);
+  });
+
+  it('exits 1 and reports the failure signal when the transfer fails', () => {
+    const { deps } = stubs({ ok: false, signal: 'inject refused' });
+
+    const { result, report } = withCapturedStdout(() => main(ARGS, deps));
+
+    assert.equal(result, 1);
+    assert.equal(report().ok, false);
+    assert.equal(report().signal, 'inject refused');
   });
 });
