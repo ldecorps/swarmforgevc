@@ -1,0 +1,121 @@
+id: BL-1300
+title: "BL-1227's one-time headroom proof was implemented as a live measurement, so the effective boot-prefix budget is silently 42000 while every failure message and every document says 44000"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one assertion's binding changes; no structure to refactor"
+  architect: "no design surface - the fix is which tree the existing check measures"
+  hardender: "the changed assertion is itself the coverage; no new production branch"
+  documenter: "the value it records is stated in the feature file it lives in"
+acceptance: specs/features/BL-1227-boot-prefix-live-budget-check.feature
+
+invariants:
+  - "Exactly one number is enforceable as the boot-prefix budget, and it is the number the failing report names."
+
+source: "Found 2026-08-30 while restoring the fifth overrun (hotfix 9fad290581). The trim had to reach 41927 to make the acceptance suite green, not the 44000 the gate reports; measured by running specs/pipeline/cli.js against BL-1227's feature at 45097 chars (3 fail / 4 pass) and again after the trim (7/7)."
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-1227-boot-prefix-live-budget-check.feature` scenario 02
+  asserts the composed prefix is "at most 42000 characters". Its `Given` reads
+  "the repository at the BL-1227 fix commit", which sounds pinned, but the
+  handler
+  (`specs/pipeline/steps/bl1227BootPrefixLiveBudgetCheckSteps.js`) implements
+  it as:
+
+      ctx.bl1227.root = undefined;   // the real, current working-tree repo
+
+  with the comment "this feature's own acceptance run against it IS 'the fix
+  commit' state". That was true on the day it landed and false every day
+  after. Scenario 01 has the same binding.
+
+  So a proof intended to fire ONCE - "this fix leaves headroom" - became a
+  permanent live ceiling. Growth to anywhere in 42001..44000 is legal by the
+  documented budget, passes `boot_prefix_budget_gate.sh`, passes the standing
+  Babashka runner, and still fails the acceptance suite for every parcel in
+  flight, with a report that says "budget 44000".
+
+  ## Why it is worth a ticket rather than a shrug
+
+  The gap is only 2000 chars and the articles sit inside it constantly. The
+  2026-08-30 restoration had to trim to 41927 - 73 chars of slack - purely to
+  satisfy an assertion nobody was reading as a budget. The next amendment of
+  any boot-inlined article breaches it, and the author will be told the
+  budget is 44000 while being refused at 42000. That is the same class of
+  defect as a gate whose message names the wrong rule: the person who has to
+  act on it cannot act on what it says.
+
+  ## How (direction, not mandate)
+
+  Two coherent shapes; pick one and make the tree say so.
+
+  1. Honour the intent: make scenario 02 genuinely one-time, by asserting
+     against a RECORDED size for its own fix commit rather than re-measuring
+     the live tree. The live 44000 assertion in the standing runner then
+     remains the single enforceable budget.
+  2. Honour the practice: keep measuring live, and make 42000 the real,
+     documented budget everywhere - `boot_prefix_budget_gate_lib`'s value, the
+     failing report, and the specifier prompt's instruction all move together.
+
+  What is NOT acceptable is leaving two live numbers, or deleting the headroom
+  idea outright: the headroom exists because four of the five overruns were
+  breached again within weeks (BL-618, BL-858, BL-883, BL-1227).
+
+notes: |
+  ## The fifth overrun is already fixed; this is the leftover [2026-08-30 specifier]
+
+  The overrun itself (45097/44000 since `44d2d42591`) was restored on main by
+  hotfix `9fad290581`, which relocated `project.prompt`'s shipped Milestone-1
+  charter verbatim to `articles/reference/project-milestone1-detailed.prompt`.
+  Both red lanes are green again: the standing runner reports ALL PASS and
+  BL-1227's acceptance feature 7/7. This ticket is ONLY the budget-number
+  discrepancy that restoration exposed. Do not re-do the trim.
+
+  ## Related, deliberately not bundled [2026-08-30 specifier]
+
+  `boot_prefix_budget_gate.sh` is advisory: nothing invokes it at commit time
+  (`.git/hooks/` holds only samples, and the only non-test reference in the
+  tree is `swarmforge/roles/specifier.prompt`). That is how `44d2d42591` put
+  main 1097 chars over budget without anyone noticing for two hours - the
+  standing lane that would have caught it is itself refusing to run (BL-1284).
+  Making the check unbypassable at authoring time is a real slice and a
+  sibling in spirit to BL-1240, which does exactly that for the suite-manifest
+  inventory check. It is NOT part of this ticket: it needs a human design call
+  (a git hook is untracked state, so it needs a bootstrap story), and bundling
+  it here would fail INVEST-Small. Mint it separately if the human wants it.
+
+qa_e2e_procedure: |
+  1. Confirm the acceptance suite is green at the fix commit:
+     `node specs/pipeline/cli.js specs/features/BL-1227-boot-prefix-live-budget-check.feature`
+     reports 7/7.
+  2. Append 2500 chars to a boot-inlined article (e.g. `project.prompt`) so the
+     composed prefix sits between 42001 and 44000. Re-run step 1 and
+     `swarmforge/scripts/boot_prefix_budget_gate.sh`.
+  3. The two must now AGREE - either both refuse and both name the same number,
+     or both pass. A pass from one and a refusal from the other, or a refusal
+     naming a number other than the one enforced, is the defect still present.
+  4. Restore the article (`git restore -- <path>`) and re-run step 1 to confirm
+     7/7 again.
+
+human_approval: pending
+
+approval_context: >
+  The defect is measured and not in question: an assertion documented as a
+  one-time headroom proof is re-measured live on every run, so the enforced
+  boot-prefix budget is 42000 while every message and document says 44000.
+  What needs a human decision is which way to resolve it - make the proof
+  genuinely one-time and keep 44000 as the single budget (option 1), or accept
+  42000 as the real budget and move every number and message to match it
+  (option 2). Option 1 restores the documented contract; option 2 keeps the
+  stricter ceiling that has in practice been the thing preventing a sixth
+  overrun. Either is defensible, which is why it is not the specifier's call.

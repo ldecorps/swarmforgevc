@@ -3813,6 +3813,27 @@
                                  :log-fn (fn [tag sess detail] (log! tag sess detail))
                                  :text instruction-text))}))
 
+;; Hotfix 2026-08-30: same proxy calibration as idle_clear_fullness_cli.bb /
+;; extension CONTEXT_CLEAR_PROXY_FULL_AT_LINE_COUNT (400). nil when capture
+;; fails — closing_context_clear_lib fail-closes (no /clear if unknown).
+(def context-clear-proxy-full-at-line-count 400)
+
+(defn role-context-fullness-percent
+  "Proxy fullness 0-100 from pane scrollback, or nil when we cannot tell."
+  [socket role-info]
+  (try
+    (let [session (handoff-lib/wake-session socket (:session role-info))
+          pane (capture-pane-lines socket session context-clear-proxy-full-at-line-count)
+          lines (if (string? pane)
+                  (count (str/split-lines pane))
+                  0)]
+      (when (pos? lines)
+        (* 100.0 (/ (min lines context-clear-proxy-full-at-line-count)
+                    context-clear-proxy-full-at-line-count))))
+    (catch Exception e
+      (log! "context-clear-fullness-unreadable" (:role role-info) (.getMessage e))
+      nil)))
+
 (defn closing-context-clear-sweep! [roles socket]
   ;; BL-309 bounce fix: :record-clear! durably poisons closed-ticket-id
   ;; against ever being re-cleared (new-close?'s whole point). Skip the
@@ -3825,15 +3846,19 @@
   (if (tmux-inject-disabled?)
     (log! "closing-context-clear-skip-mailbox-only")
     (when-let [coordinator (get roles "coordinator")]
-      (closing-context-clear-lib/evaluate-closing-context-clear!
-       {:idle? (role-mailbox-idle? coordinator)
-        :closed-ticket-id (latest-done-ticket-id)
-        :last-cleared-ticket-id (read-last-cleared-ticket-id)
-        :role-name "coordinator"}
-       (merge (context-clear-injectors socket coordinator)
-              {:record-clear! (fn [ticket-id]
-                                 (record-context-clear! ticket-id)
-                                 (log! "closing-context-clear-fired" ticket-id))})))))
+      (let [fullness (role-context-fullness-percent socket coordinator)
+            decision (closing-context-clear-lib/evaluate-closing-context-clear!
+                      {:idle? (role-mailbox-idle? coordinator)
+                       :closed-ticket-id (latest-done-ticket-id)
+                       :last-cleared-ticket-id (read-last-cleared-ticket-id)
+                       :role-name "coordinator"
+                       :fullness-percent fullness}
+                      (merge (context-clear-injectors socket coordinator)
+                             {:record-clear! (fn [ticket-id]
+                                                (record-context-clear! ticket-id)
+                                                (log! "closing-context-clear-fired" ticket-id))}))]
+        (when (and (nil? (:action decision)) (some? fullness))
+          (log! "closing-context-clear-skip-fullness" "coordinator" (str fullness "%")))))))
 
 ;; ── BL-316: generalized per-role context-clear at the safe idle boundary
 ;;    after a role's OWN inbox/completed/ gains a fresh entry ─────────────
@@ -3888,15 +3913,19 @@
     (doseq [[role-name role-info] roles
             :when (not= role-name "coordinator")]
       (try
-        (closing-context-clear-lib/evaluate-closing-context-clear!
-         {:idle? (role-mailbox-idle? role-info)
-          :closed-ticket-id (latest-completed-entry-id role-info)
-          :last-cleared-ticket-id (read-role-last-cleared role-name)
-          :role-name role-name}
-         (merge (context-clear-injectors socket role-info)
-                {:record-clear! (fn [entry-id]
-                                   (record-role-context-clear! role-name entry-id)
-                                   (log! "role-context-clear-fired" role-name entry-id))}))
+        (let [fullness (role-context-fullness-percent socket role-info)
+              decision (closing-context-clear-lib/evaluate-closing-context-clear!
+                        {:idle? (role-mailbox-idle? role-info)
+                         :closed-ticket-id (latest-completed-entry-id role-info)
+                         :last-cleared-ticket-id (read-role-last-cleared role-name)
+                         :role-name role-name
+                         :fullness-percent fullness}
+                        (merge (context-clear-injectors socket role-info)
+                               {:record-clear! (fn [entry-id]
+                                                  (record-role-context-clear! role-name entry-id)
+                                                  (log! "role-context-clear-fired" role-name entry-id))}))]
+          (when (and (nil? (:action decision)) (some? fullness))
+            (log! "role-context-clear-skip-fullness" role-name (str fullness "%"))))
         (catch Exception e
           (log! "role-context-clear-role-error" role-name (.getMessage e)))))))
 

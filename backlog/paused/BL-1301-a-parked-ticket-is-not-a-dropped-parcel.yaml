@@ -1,0 +1,132 @@
+id: BL-1301
+title: "A deliberately parked active ticket matches the dropped-parcel shape exactly, so the sweep re-reports it as a possible drop every cooldown window until the park ends"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one predicate and one map key; no structure to refactor"
+acceptance: specs/features/BL-1301-a-parked-ticket-is-not-a-dropped-parcel.feature
+
+invariants:
+  - "Suppression is opt-in and fails closed: an active ticket with no status field, or any status other than blocked, is nudged exactly as it is today."
+  - "The suppression lives in the dropped-parcel decision only - read-active-items stays shared, and the candidate sets of the BL-222 dispatch-gap and unassigned-active sweeps are unchanged."
+  - "A suppressed ticket is never invisible: every suppression is logged with the ticket id and the reason."
+
+source: "Coordinator note (priority 00) 2026-08-30T18:01Z: 'dispatch-gap sweep re-flags BL-1295 3x/shift; deliberate QA park unknown to it.' Verified against the live trail: coordinator self-notes 003246/003249/003267 carry the identical message at 17:00, 17:30 and 18:00Z, one per 30-minute cooldown window."
+
+description: |
+  ## What is wrong
+
+  `chase_sweep_lib.bb`'s `decide-dropped-parcel?` fires when an active ticket
+  has a trail, no parcel in flight in any role's `new`/`in_process`, and that
+  trail has gone stale past `dropped_parcel_stall_threshold_minutes`
+  (default 45). That is the correct definition of a dropped parcel - and it
+  is also, exactly, the definition of a ticket parked ON PURPOSE.
+
+  Live instance: BL-1295 reached QA, QA raised a LAND_ESCALATE, and the
+  specifier adjudicated "park, not bounce - blocker BL-1297" (commit
+  `724a953ea5`). The parcel now sits intact on the `swarmforge-QA` branch,
+  which is not a mailbox, so `live-mail?` is false and stays false for as
+  long as the park lasts. The sweep has re-reported it once per cooldown
+  window ever since.
+
+  ## Why it is worth fixing rather than tolerating
+
+  The nudge is not wrong about the facts; it is unable to represent the one
+  fact that matters. Its cost is not the noise but what the noise teaches: a
+  coordinator who learns that "no parcel in flight" means "BL-1295 again"
+  will skip the note that reports a real drop - and a real drop has no other
+  detector (BL-719 exists precisely because BL-222's dispatch-gap sweep can
+  fire at most once per ticket, so a mid-pipeline drop is otherwise invisible).
+  Silencing the detector by raising the global threshold or cooldown would
+  buy quiet by blinding it, which is the opposite of the fix.
+
+  ## The park must be durable in the TICKET, not in a commit message
+
+  BL-1295's park was recorded in a commit subject, an evidence file and two
+  notes - none of which the sweep, a briefing, or the next agent to read the
+  ticket can see. The ticket itself still read `status: todo`, `assigned_to:
+  coder`. That is the same failure shape as a retirement recorded only in
+  `backlog/evidence/` (BL-1258). So the marker this sweep reads must be a
+  field on the ticket, and `status: blocked` already IS that field: per
+  `backlog-schema.md` it means "park a ticket under a stated condition the
+  coordinator may later clear", which is precisely this situation.
+
+  ## How (direction, not mandate)
+
+  `read-active-item` already slurps the file and reads two fields with
+  `read-yaml-field`, so carrying `:status` alongside `:id` and `:assigned-to`
+  is additive. `promotion_gates_lib.bb` already has a `read-status` and a
+  `blocked-status-refusal` if a shared reader is preferred to a third
+  spelling.
+
+  Put the check in the dropped-parcel decision, NOT in `read-active-items`:
+  that reader is shared with the dispatch-gap and unassigned-active sweeps,
+  and filtering there would silently change all three (invariant 2). The
+  daemon already has a suppression idiom to mirror - `dropped-parcel-sweep!`
+  logs `dropped-parcel-suppressed` with a reason when a main-sync deadlock is
+  active (invariant 3).
+
+notes: |
+  ## No required_wiring, deliberately [2026-08-30 specifier]
+
+  The change is a predicate inside a function the live sweep already calls:
+  `handoffd.bb`'s `dropped-parcel-sweep!` -> `chase-sweep-lib/
+  dropped-parcel-items` -> `decide-dropped-parcel?`. There is no new
+  mechanism needing a call site, and the only anchor available would match
+  identically before and after the fix, which gates nothing (BL-1235).
+  Declaring one here would bank a green that means nothing.
+
+  ## BL-1295's own park is now recorded [2026-08-30 specifier]
+
+  The live instance that prompted this ticket was fixed in the same pass:
+  BL-1295 now carries `status: blocked` and a notes paragraph naming its
+  blocker (BL-1297), the adjudication commit, and the branch its parcel is
+  parked on. That marker changes nothing about the nudges until THIS ticket
+  lands - the sweep does not read `status:` yet - but it is what the fix will
+  read, and it makes the park legible to a human reading the ticket, which it
+  was not before.
+
+  ## Not in scope: whether the other sweeps should honour the marker
+
+  Scenario 04 pins the dispatch-gap sweep as unchanged, so the blast radius is
+  one decision function. Whether a parked ticket should also be exempt from
+  the dispatch-gap or unassigned-active nudges is a real question and a
+  separate ticket; it is not settled here, and scenario 04 must be retired by
+  whichever ticket settles it (BL-1006).
+
+qa_e2e_procedure: |
+  1. Pick an active ticket with a stale trail and no live mail (or stage one
+     in a fixture tree), leave its status as minted, and run the daemon's
+     dropped-parcel sweep. Confirm the coordinator receives the
+     "no parcel in flight - possible drop" note.
+  2. Set that ticket's `status: blocked`, clear the per-ticket cooldown entry
+     in `.swarmforge/daemon/dropped-parcel-nudge-cooldown.json`, and run the
+     sweep again. Confirm NO note is sent, and that the daemon log carries a
+     suppression line naming the ticket id.
+  3. Remove the `status:` line entirely, clear the cooldown, run again:
+     the note MUST return (absence buys no silence).
+  4. Confirm an active ticket with `status: blocked` and no trail at all still
+     produces a dispatch-gap nudge - that sweep is untouched.
+
+human_approval: pending
+
+approval_context: >
+  The defect and the live instance are measured and not in question. What is
+  worth a human eye is the choice of marker: this ticket reuses the existing
+  `status: blocked` field rather than inventing a park-specific one, on the
+  grounds that backlog-schema.md already defines it as a coordinator-clearable
+  park and it is already read by the promotion gates. The alternative is a
+  dedicated field (say `parked_reason:`) that cannot be confused with a
+  promotion-eligibility marker. Reusing `status` keeps one concept in one
+  field; a dedicated field keeps the sweep's input from ever being changed for
+  an unrelated promotion reason. Reply here if you want the dedicated field
+  instead - everything else in the ticket stands either way.
