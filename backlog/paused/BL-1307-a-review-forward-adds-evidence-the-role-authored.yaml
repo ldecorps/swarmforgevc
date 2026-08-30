@@ -1,0 +1,192 @@
+id: BL-1307
+title: "Both review-forward gates ask what the COMMIT looks like, never whether the ROLE did anything - so the BL-1224 architect forward that started this passes both, because resolving a merge conflict counts as content of its own"
+milestone: M8
+type: defect
+severity: high
+# high, for the same reason BL-1293 is: a required Article 4.1 gate can still be
+# skipped silently, and the only thing that currently catches it is a human
+# reading a QA bounce and noticing a missing file. Happened twice in one session
+# (BL-1224, BL-1183). Not critical - nothing is destroyed and QA did catch both.
+# Not medium - a gate reporting pass while its stage produced nothing is a broken
+# safety signal, not a contained bug.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: [BL-1293]
+# Sequencing, not logic: BL-1293 is in flight against the same two files
+# (review_forward_evidence_gate_lib.bb, swarm_handoff.bb). The predicate here is
+# independent of BL-1293's - it reads a different fact - but promoting the two
+# concurrently would collide. Promote only once BL-1293 is in done/.
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one predicate added beside its two siblings in the same lib, reading a fact neither of them reads. There is no second copy to de-duplicate - the shared-primitive question was settled by BL-1293, which promoted merge-introduces-nothing-unique? rather than copying it."
+acceptance: specs/features/BL-1307-a-review-forward-adds-evidence-the-role-authored.feature
+
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::review-forward-evidence-gate-lib/forward-carries-own-evidence?::the predicate must be CALLED from the live send path, not merely defined in the gate lib. swarm_handoff.bb is the gate's only production caller (it already computes forward-introduces-nothing-own? at line 370 and feeds both blocked? and refusal-message the same way), so anchoring in the CONSUMER proves a real path reaches the new decision - a declaration-side anchor would be satisfied by this parcel's own diff and prove nothing (BL-1235). The name is chosen here at mint so the pattern is a literal that will exist (BL-874). Verified absent at spec time (grep -> 0)."
+
+invariants:
+  - "A review role's forward adds an evidence file naming the task being forwarded. Incidental content never satisfies it - not a resolved merge conflict, not a merge of unrelated work, not another task's evidence file."
+  - "The gate never refuses a send whose inputs it could not read. Every unreadable-range, missing-mailbox, unknown-role and absent-fact shape fails open, exactly as BL-806 established and BL-1293 preserved."
+
+human_approval: approved
+human_ruling: |
+  refuse the send, like BL-806 and BL-1293 already do
+ruling_options:
+  - refuse the send, like BL-806 and BL-1293 already do
+  - warn and record only, do not refuse - measure the miss rate first
+approval_context: >
+  A new feature file is authored here, so it needs a tap. One question is
+  genuinely yours, and one thing is settled and worth stating so it is not
+  re-opened.
+
+  Yours: whether this fires as a REFUSAL or as a warning. The two earlier gates
+  in this family both refuse, so refusing is the consistent choice and the stall
+  is the point - a review stage that produced nothing should not be able to
+  advance. But this predicate is stricter than either of theirs: it can only be
+  satisfied by a file the role writes, so a role that does its pass and forgets
+  the file gets stopped at the hop. That is the intended behaviour, and it is
+  also a real stall you would bear, on a swarm where the evidence-file naming
+  convention is strong (543 architect-named files) but not universal (e.g.
+  BL-1203-bounce-20260828.md names no role). Option 2 ships the same predicate
+  as telemetry, measures how often it would have fired and on what, and leaves
+  the refusal to a follow-up. If you tap option 2, scenario 01's verdict column
+  and scenario 02 change from "refused" to "recorded", so the feature file needs
+  amending before this promotes - flag it and I will.
+
+  Settled, not a question: matching on the evidence FILE rather than on "does the
+  diff contain a real fix". The looser form was considered and rejected on the
+  evidence - b7d22b9ee3's conflict resolution IS a change to a non-evidence path,
+  so a fix-or-evidence rule would pass the very commit this ticket exists to
+  refuse. Article 4.4 already requires the file unconditionally, including for a
+  clean sweep, so the strict form asks for nothing the constitution does not.
+
+description: |
+  ## What is wrong
+
+  Two gates now guard a review role's forward, and both judge the COMMIT:
+
+  - BL-806 refuses a forward whose `commit:` equals the received commit.
+  - BL-1293 refuses a merge that introduces nothing over its parents
+    (`merge-introduces-nothing-unique?`).
+
+  Neither asks whether the role produced anything. A forward that carries
+  incidental bytes - most commonly a merge conflict the role resolved
+  mechanically while merging its predecessor's work - satisfies both while
+  containing no review output at all.
+
+  ## The commit that proves it
+
+  `b7d22b9ee3`, the architect's BL-1224 forward, is the shape both gates were
+  built over and neither can refuse:
+
+      git diff-tree -m --cc --no-commit-id b7d22b9ee3
+
+  is NOT empty. It carries an 8-line conflict resolution in
+  `specs/pipeline/steps/index.js` - one parent removed
+  `bl1235LocalQwenSeatSteps`, the other added
+  `bl1224WatchAdoptsRestartedRuntimeSteps`, and the architect resolved the
+  array. So `merge-introduces-nothing-unique?` returns false, correctly, and
+  BL-1293's gate allows the send.
+
+  Meanwhile QA established (`backlog/evidence/BL-1224-bounce-20260830.md`, D1)
+  that no `BL-1224-architect-*.md` existed anywhere in history at that point,
+  while every other ticket that session had one. The architect's pass did not
+  happen. Nothing structural could tell.
+
+  This was found by the coder during BL-1293's self-audit, which is why BL-1293
+  is correct and incomplete rather than wrong: it closes the bare-clean-merge
+  class, which is real and was invisible. It cannot close this one, because the
+  fact it reads does not distinguish review output from a conflict resolution.
+
+  ## How (direction, not mandate)
+
+  Read a different fact: what the forward ADDED for THIS task, over the commit
+  the role received. Article 4.4 names the artifact - one evidence file per
+  review pass, an explicit committed NONE for a clean sweep - so the check is
+  the presence of an evidence file naming the task being forwarded, added
+  somewhere in the range `received..forwarded`.
+
+  Range, not commit: a role that commits its evidence and then merges before
+  forwarding must pass, and its evidence commit is inside the range.
+
+  Task, not role: match the task id in the filename, not the role name. The
+  `BL-NNNN-<role>-...` convention is strong but has real exceptions, and a batch
+  role forwarding one of several in-process tasks needs the evidence for the
+  task it is actually forwarding - which is exactly what the last Examples row
+  in scenario 01 pins.
+
+  Fail open on every shape the gate cannot evaluate (invariant 2). Widening a
+  send-time gate is where over-refusal bites, and BL-806's fail-open posture is
+  what makes it safe to widen at all.
+
+  Keep the refusal actionable: name the role, the task, and the evidence file to
+  commit, and say that an explicit NONE is a legitimate pass - a role stopped
+  here needs to know the way out is to write the file, not to route around the
+  gate.
+
+qa_e2e_procedure: >
+  1. Replay the real shape, which is now satisfiable: drive the gate with
+     `b7d22b9ee3` forwarded against `3bc1e28b53` received for BL-1224, and
+     confirm it is REFUSED - naming the role, the task and the evidence file.
+     This is the step BL-1293 could not carry, and it is this ticket's whole
+     point.
+  2. Confirm a forward that adds an evidence file naming the task passes, both
+     when the evidence is in the forwarded commit itself and when it is in an
+     earlier commit in the range followed by a merge.
+  3. Confirm an explicit committed NONE passes - Article 4.4 makes a clean sweep
+     a real outcome and over-refusing it would stall every no-defect pass.
+  4. Confirm a batch role forwarding task A, whose range adds evidence for task B
+     only, is REFUSED for A.
+  5. Confirm BL-806 and BL-1293 behaviour has not moved: the unchanged-received-
+     hash case and the bare-clean-merge case each still refuse, with their own
+     wording, and both sibling acceptance suites are still green.
+  6. Confirm every fail-open shape still sends: unreadable range, missing
+     mailbox, unknown sender role, absent fact.
+  7. Confirm every scenario resolves to a registered step handler.
+
+source: |
+  Split from BL-1293 by the specifier on 2026-08-30, on the coder's finding.
+
+  The coder, working BL-1293, sent a priority-00 note: "BL-1293 step 4
+  unsatisfiable: b7d22b9ee3 resolved a conflict, not an empty merge" - and
+  recorded it in `backlog/evidence/BL-1293-coder-20260830.md` rather than
+  quietly dropping the step. Verified by the specifier before splitting:
+  `git diff-tree -m --cc --no-commit-id b7d22b9ee3` returns 621 bytes of
+  conflict resolution, so the mandated predicate cannot refuse that commit.
+
+  BL-1293 keeps the class it does close (bare clean merges) and had its
+  `qa_e2e_procedure` step 4 corrected plus a bounding negative added, in the
+  same pass that minted this. Nothing BL-1293 built changes.
+
+  Upstream of both: the coder's note of 2026-08-30, "Pattern: architect skipped
+  review on BL-1224 AND BL-1183 (both bounced)".
+
+notes: |
+  ## Verified before minting
+
+  - `b7d22b9ee3` has two parents and a non-empty combined diff (621 bytes,
+    `specs/pipeline/steps/index.js`) - checked directly, not inferred from the
+    coder's note.
+  - `forward-carries-own-evidence?` appears 0 times in `swarmforge/` and
+    `specs/`, so the wiring anchor cannot pass before the work is done.
+  - No existing paused, active or hold ticket covers evidence-file presence at
+    the forward hop - swept the three pools by hand before minting.
+  - `swarm_handoff.bb` is the gate's only production caller (lines 370-382,
+    453-455 on the coder's BL-1293 tip), so the consumer anchor is real.
+  - `docs/reference/Specification.MD` carries changelog entries for BL-806 and
+    BL-950's changes to this gate, which is why `documenter` is a required stage
+    here even though BL-1293 skipped it.
+
+  ## Why this is a split and not an amendment to BL-1293
+
+  BL-1293 is in flight and already implemented correctly against its spec. The
+  two failures are told apart by different facts - one reads the commit's
+  contribution, the other reads what the range added for a task - so folding
+  this in would have traded a correct low-cost fix, already built and green,
+  for a bigger one carrying real over-refusal risk. Article 5.3's constraint is
+  met: no human sentence from the source note is dropped, and the coder's
+  finding is quoted verbatim above.
