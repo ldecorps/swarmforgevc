@@ -874,6 +874,7 @@ const DOMAINS = [
   require('./bl1245RoleReopensOwnQuestionSlotSteps'),
   require('./bl1261HoldDivergenceAuditSteps'),
   require('./bl1239SuiteManifestAccountedSteps'),
+  require('./bl1277UnscopedStepCollisionSteps'),
   require('./bl1279FrontDeskFixtureClosureSteps'),
   require('./bl1280MkdtempMigrationCompleteSteps')
 ];
