@@ -83,3 +83,18 @@ notes: >
 # own milestone line, and carry the acceptance list above forward. Article 5.3:
 # the human's sentences in source: and the operator's directive text survive
 # verbatim into the resulting ticket.
+#
+# ── premise refresh (appended 2026-08-30 ~06:00Z) ─────────────────────────
+# STILL BLOCKED ON THE HUMAN. `deliver-role-answer.js --role specifier`
+# returns {"kind":"already-consumed"}, which means the store holds an OLDER
+# already-paired answer and the A/B question above is genuinely unanswered.
+# Marker deliberately LEFT in place — archiving it would discard a live
+# question and free the slot for a duplicate re-ask. Do not re-ask.
+#
+# One premise moved, and it does NOT change the question: BL-1235 has SHIPPED
+# (backlog/done/BL-1235-local-qwen-seat-behind-its-own-topic.yaml, QA-passed
+# 2026-08-30). The intake and the note above both describe it as "paused,
+# approved". The seat/lifecycle machinery this intake was told to ride on is
+# therefore REAL now rather than pending, which strengthens options A and B
+# equally — the fork is untouched, so the question stands exactly as posed.
+# Re-read BL-1235 in done/ (not paused/) when speccing.
