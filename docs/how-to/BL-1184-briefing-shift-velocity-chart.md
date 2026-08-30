@@ -51,16 +51,41 @@ lifecycles, not from replaying the log.
 
 Unlike the burndown chart's linear day axis, this chart deliberately warps
 time: `nonLinearTimeX` places each day using a logarithmic age transform
-(`log(1 + age) / log(1 + maxAge)`), so older days compress toward the left
-and recent days spread out with more pixel precision. `maxAge` floors at 1
-so a single-day series doesn't divide by zero. `hasNonLinearTimeSpacing` is
-the check used to assert the spacing is genuinely unequal (not a
+over age NORMALIZED to `0..1` first —
+`log(1 + TIME_WARP_K * (age / maxAge)) / log(1 + TIME_WARP_K)`, `TIME_WARP_K
+= 9` — so older days compress toward the left and recent days spread out
+with more pixel precision, without one hop consuming most of the plot
+(BL-1232: an earlier version took the log of raw age in milliseconds, which
+made the curve's shape depend on the clock's units — over a 30-day series
+one hop could consume ~84% of the plot width). `maxAge` floors at 1 so a
+single-day series doesn't divide by zero. `hasNonLinearTimeSpacing` is the
+check used to assert the spacing is genuinely unequal (not a
 coincidentally-even linear axis) — consecutive point gaps must differ by
 more than 2% of the plot width between the oldest and newest pair.
 
-Y stays linear (`niceChartAxisMax`, same helper the burndown chart uses via
-the shared `briefingChartSvgCommon.ts` module) — only the time axis is
-warped.
+Date labels are picked by `pickLabelIndicesByPixelGap`
+(`briefingChartSvgCommon.ts`, shared with any future caller — BL-1232) by
+where points actually plot, not by series index: the most recent day always
+keeps its label, then a right-to-left walk accepts a candidate once it
+clears a minimum pixel gap from an already-picked neighbour (~72px, the
+rendered width of a `YYYY-MM-DD` label at font-size 11 monospace plus a
+gutter) — so labels never stack on each other regardless of how the warp
+clusters points.
+
+## The Y axis: soft cap with a clipped-peak marker (BL-1232)
+
+Y is linear (`niceChartAxisMax`, the same helper the burndown chart uses via
+the shared `briefingChartSvgCommon.ts` module), but the axis maximum is no
+longer simply the series peak. `shiftVelocityAxisPlan` derives a robust body
+bound from the series — `max(median × 3, p75 × 2, 1)` — and when the true
+peak materially exceeds that bound, the axis is drawn from the bound instead
+of the peak: an outlier day (the chart's original failure — a single ~415
+day flattening every ordinary sub-30 day to the floor) no longer crushes the
+scale for the rest of the series. A day whose value sits above the drawn
+axis renders as a distinct clipped marker sitting on the cap line, carrying
+its true value as text — no value is ever silently dropped or flattened.
+When the peak does not materially exceed the body bound, the axis behaves
+exactly as it always did: it covers the true peak, and nothing is clipped.
 
 ## Fail-open independence — now three sources, not two
 
@@ -90,7 +115,11 @@ branch inside either.
    subtitle naming the peak count and window.
 2. Confirm the x-axis spacing is visibly denser on the right (recent days)
    than the left (older days) once the history spans more than a handful of
-   days.
+   days, that no two date labels overlap, and that ordinary days are
+   visually resolvable rather than flat on the floor. If the series has a
+   day whose value materially exceeds the rest, confirm it renders as a
+   distinct marker on the cap line carrying its true value, not silently
+   flattened into the axis.
 3. Rename `extension/out/tools/render-briefing-shift-velocity.js` aside and
    send — confirm the architecture diagrams and burndown chart still
    arrive, and the plaintext note no longer mentions shift velocity.
