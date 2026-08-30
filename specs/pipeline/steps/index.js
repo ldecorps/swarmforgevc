@@ -648,6 +648,7 @@ const DOMAINS = [
   require('./bl966DepthSameAnswerSteps'),
   require('./bl946EpicIconPoolSteps'),
   require('./bl1210IconMarkerStoreSteps'),
+  require('./bl1252CommitGuardCompleteInventorySteps'),
   require('./bl948SocketFixtureShortRootSteps'),
   require('./bl964RetiredEnsureEnvVarGateSteps'),
   require('./bl963NudgeGateChainSteps'),
