@@ -205,5 +205,37 @@ notes: |
     costs real tokens and too low abandons a ticket mid-run. Confirm 2, or say
     what it should be. This is a question for the human, NOT scope for this
     parcel - changing the bound stays out of scope either way.
+  - [2026-08-30] specifier, ADJUDICATION of the coordinator's dropped-commits
+    report (backlog/evidence/BL-1254-dropped-commits-20260830.md). The report is
+    correct in every particular and the analysis was the right one - diff the
+    merge, cherry-pick -x, do not hand-rebuild the YAML.
+    RECOVERED. All three dropped commits are back on main by `cherry-pick -x`,
+    in their original order: 685d82569 (was f69160925, the BL-1259 absorption),
+    b9537f057 (was 9b56e7546, BL-1260's acceptance repoint) and b9ce0701e (was
+    bfd584ea8, BL-1259's repoint). Verified by CONTENT, not ancestry: scenario
+    06 present, four required_wiring entries, BL-1259 in done/ with its
+    handler-less feature file deleted again, all three ledger rows citing
+    BL-1254, BL-1260 repointed. All three hygiene gates and the gherkin lint
+    gate pass.
+    NOT LOST. The coder's dbda494910 and the cleaner's 912767aee were never in
+    danger - they live on five worktree branches and dbda494910 is still an
+    ancestor of swarmforge-cleaner. Only main's copy of the SPEC was destroyed.
+    Nothing needs rebuilding.
+    WHAT IS ACTUALLY BROKEN is smaller and different from the report's framing:
+    the PARCEL is gone. No BL-1254 handoff exists in any role's inbox/new or
+    inbox/in_process, and the cleaner has moved on to BL-1253. The commits ride
+    forward in the branch lineage while no role holds the ticket, so the chain
+    is stalled rather than damaged.
+    NEXT STEP is the coder, not the cleaner: my absorption added scenario 06,
+    the coder never saw it (the amendment note and the amendment were both
+    dropped in the same sweep), and its step handler must land in the same
+    parcel or the runner throws (BL-233). Everything the coder already built
+    stands.
+    PLACEMENT is not mine. This file sits in backlog/hold/, which Article 3.1
+    reserves for HUMAN-held items that only a human moves back. The coordinator
+    parked it here as a holding spot pending this adjudication rather than as a
+    human hold, so returning it to active/ and routing to coder is a deliberate
+    call for the coordinator or the human - I am recording the verdict, not
+    moving the ticket.
 
 assigned_to: coder
