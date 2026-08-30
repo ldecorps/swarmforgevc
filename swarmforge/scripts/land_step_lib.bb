@@ -23,7 +23,8 @@
 ;; (task-tagged-changed-paths, BL-1192) for "this ticket's own paths" -
 ;; never a second implementation of that walk, invariant 2's own shape
 ;; applied one door down. BL-1297: that walk answers two questions and this
-;; step asks it for :delivered at every call site, explicitly. The sibling-detection walk below is NEW (a
+;; step asks it for :delivered at every call site, explicitly. The
+;; sibling-detection walk below is NEW (a
 ;; different range: origin/main..commit, unfiltered, to see who ELSE is in
 ;; there) but shares the SAME ticket-id extractor
 ;; (pipeline-stage-lib/extract-ticket-id) - the "small live-glue duplicated
