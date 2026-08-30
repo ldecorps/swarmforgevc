@@ -73,12 +73,31 @@ description: |
   terminal role is `QA` either way, so widening the exclusion does not disturb
   terminal stamping - invariant 2 exists to hold that.
 
-  Deriving "master-resident" from the roles table (worktree column) is
-  preferable to hardcoding a second role name, but that is direction: any
-  implementation satisfying the scenarios and the invariants is acceptable.
-
   Note that `.swarmforge/roles.tsv` is local runtime state, not tracked - the
   fix belongs in the code that reads it, not in the tsv.
+
+  ## Decided: derive, do not hardcode (human ruling 2026-08-30)
+
+  The one open design choice is now settled by the human:
+
+    "BL-1299 approved: derive master-resident from roles.tsv, not hardcode."
+
+  So master-residency is READ FROM THE ROLES TABLE, never a second literal
+  role name beside `coordinator`. That much is a mandate; the rest of this
+  section stays direction, and any implementation satisfying the scenarios
+  and the invariants is acceptable.
+
+  The column is already there and already parsed on the same line:
+  `.swarmforge/roles.tsv` col 2 is the worktree NAME (`master` for exactly
+  `specifier` and `coordinator`, the role's own name otherwise) and col 3 is
+  its absolute PATH (the repo root for those two). `pack-role-names` today
+  splits the row and keeps only `(first ...)`, discarding both - so the fix
+  is to keep a column it already has in hand, not to read a new file.
+
+  Either column is an acceptable derivation. Scenario 04's handler must
+  therefore build a REALISTIC row - col 2 `master` AND col 3 the repo root
+  together, exactly as the live table pairs them - so the contract does not
+  accidentally pick a winner between two correct implementations.
 
 notes: |
   ## Deliberately NO required_wiring [2026-08-30 specifier]
@@ -101,6 +120,51 @@ notes: |
   today's table (`cleaner` -> `coder`); only `back-all` reaches back far
   enough to touch the specifier.
 
+  ## The ruling is relayed, not tapped [2026-08-30 specifier]
+
+  The human's answer arrived as a coordinator note
+  (`00_20260830T175739Z_003266_from_coordinator_to_specifier`, priority 00,
+  2026-08-30T17:57:39Z) reading in full: "BL-1299 approved: derive
+  master-resident from roles.tsv, not hardcode."
+
+  It is quoted here because that note is the ONLY durable copy: the ask went
+  out to this ticket's topic at 17:55Z, the topic record carries no inbound
+  reply, no `Approve BL-1299: record human_approval` commit exists, and the
+  front-desk log has no BL-1299 line - so the human answered somewhere the
+  recorder never saw. The specifier does not flip `human_approval` on a
+  second-hand relay, so the field still reads `pending`. It is NOT an
+  unanswered question: do not raise a fresh ask, and do not re-open the
+  design choice.
+
+  ## Scenario 04 is what makes the ruling enforceable [2026-08-30 specifier]
+
+  A hardcoded `#{"coordinator" "specifier"}` passes scenarios 01-03 unchanged
+  - they only ever name those two roles, so the approved derivation and the
+  rejected hardcode are indistinguishable to them. Scenario 04 makes an
+  ordinary code-worktree role master-resident purely by its roles-table row;
+  the hardcode fails it. Without that scenario the human's ruling would be
+  unenforced prose and the rejected implementation could ship green.
+
+  ## The constitutional half is the specifier's, and it is blocked
+  [2026-08-30 specifier]
+
+  Article 2.3's reverse-hop paragraph
+  (`swarmforge/constitution/articles/02_handoffs.md`) says the helper writes
+  reverse copies "to all earlier pipeline roles (`back-all`), never to
+  `coordinator`", and stamps "the last non-coordinator pack role" terminal.
+  Both sentences name the single exclusion this ticket widens, so both go
+  stale the moment the fix lands. That prose is specifier-owned (Article 5.1)
+  and no gate will schedule it: `required_stages` has no specifier stage, and
+  a `required_wiring` entry would pin it to the parcel commit rather than
+  main (BL-798). It is recorded here as this ticket's other half.
+
+  It could NOT be landed at spec time: `boot_prefix_budget_gate.sh` already
+  fails on main at 45097 chars against a 44000 budget, BEFORE any edit, so
+  every boot-inlined article change must now ride a >=1097-char trim in the
+  same commit. Bundling an unrelated constitutional trim into a critical
+  defect fix is the wrong parcel for it. The overage is filed separately as
+  BL-1300; this paragraph lands once that gate is green.
+
 qa_e2e_procedure: |
   1. Confirm `.swarmforge/roles.tsv` still gives `architect` col9 = `back-all`
      (if not, set it for the test and restore afterwards).
@@ -115,11 +179,13 @@ qa_e2e_procedure: |
 human_approval: pending
 
 approval_context: >
-  The defect and its blast radius are established by measurement and are not in
-  question; the fix direction (exclude master-resident roles from the reverse
-  recipient set) is firm. What needs a human decision is only whether to derive
-  "master-resident" from the roles-table worktree column or to extend the
-  existing hardcoded coordinator exclusion by one name. This is a critical
-  defect that fires on every architect forward, so it wants a fast decision -
-  the receiving specifier refused the merge, but that refusal is a judgement
-  call by the agent, not an enforced guard.
+  NOTHING IS OPEN - this needs a re-tap, not a new decision. The design
+  question this field was raised for ("derive master-residency from the roles
+  table, or hardcode a second name?") was answered by the human on 2026-08-30
+  and is recorded verbatim under "Decided" in the description: derive from
+  roles.tsv. The spec was finalised against that answer the same day. The
+  answer reached the specifier relayed through a coordinator note rather than
+  as a reply in this ticket's own topic, so the structured field was never
+  flipped and the promotion gate still refuses the ticket. Reply "approve
+  BL-1299" here to confirm the relayed decision was really yours, and unblock
+  a critical defect that fires on every architect forward.
