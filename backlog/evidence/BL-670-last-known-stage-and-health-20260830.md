@@ -140,3 +140,36 @@ called from one, so the per-test afterEach sweep is the right lifetime.
 
 Worth recording because the guard did its job on its author: the ban is four
 hours old and I still reached for the old call out of habit.
+
+## Architect bounce, 2026-08-30 — D1
+
+Correct, and mine. `readTicketStageMap`'s return contract changed from
+`Record<string, string>` to `Record<string, TicketStageEntry>`, and I updated
+every caller, the CLI shell test's matchers and the inverter's dual-shape
+acceptance — but missed a landed standing test,
+`extension/test/state.test.js`'s "BL-464: readTicketStageMap reads the
+coordinator-persisted {ticketId: role} store", which asserted the bare-role
+shape and went red.
+
+How it escaped: I grepped for consumers of `readTicketStageMap` and ran
+`test/swarmState.test.js`, the file the symbol's name suggests. The assertion
+lives in `test/state.test.js`. The grep found the file; the test run did not,
+because I chose which suites to run from the grep's IMPORT sites rather than
+running the lane. Running `npx vitest run test/` — as the architect did — is
+what caught it.
+
+**Fixed** by asserting the new shape, with the test's title and a comment
+saying why it moved: BL-464's own guarantee (the coordinator-persisted store is
+what the board reads) is unchanged and still what the test is for; only the
+shape moved, and a pre-BL-670 bare-role store still reads, reporting
+`last-known`.
+
+**Swept for the same class rather than fixing the one the architect named.**
+Whole unit lane: 26 files / 218 tests red, which is the standing baseline this
+branch has carried since BL-1280 closed the mkdtemp guard, and not one of the
+failing files is a state, stage, pipeline, swarm or bl670 file. The architect's
+own grep across `test/*.test.js` for `readTicketStageMap`/`TicketStageEntry`
+agrees: this was the only stale one.
+
+Re-verified after the fix: `state.test.js` 28/28, BL-670 acceptance 9/9, both
+bb runners ALL PASS, `test_pipeline_stage_cli.sh` ALL CHECKS PASSED.
