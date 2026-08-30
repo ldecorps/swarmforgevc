@@ -25,6 +25,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "tree_collapse_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "reverse_hop_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -723,41 +724,34 @@
     (catch Exception e
       (report-nonfatal! "ROUTING-SKIP RECORD FAILED:" e))))
 
-(defn pack-role-names
-  "Pipeline roles from roles.tsv order, excluding coordinator."
+(defn roles-table-lines
+  "roles.tsv lines for this project, or [] when the table is absent."
   []
   (let [tsv (roles-file)]
     (if (fs/exists? tsv)
-      (->> (str/split-lines (slurp (str tsv)))
-           (remove str/blank?)
-           (map #(first (str/split % #"\t")))
-           (remove #(= "coordinator" (handoff-lib/seat-stage %)))
-           vec)
+      (str/split-lines (slurp (str tsv)))
       [])))
 
+(defn pack-role-names
+  "Pipeline roles from roles.tsv order, excluding the coordinator and every
+   MASTER-RESIDENT role (BL-1299). A role whose roles-table worktree is the
+   master checkout - the specifier as well as the coordinator - holds no code
+   worktree of its own, so a merge-only reverse copy addressed to it would
+   land unapproved in-flight work on the published branch. Residency is read
+   from the table, never from a second hardcoded role name."
+  []
+  (reverse-hop-lib/pipeline-roles (roles-table-lines)))
+
 (defn role-propagation [role-name]
-  (or (when (and role-name (fs/exists? (roles-file)))
-        (some (fn [line]
-                (let [fields (str/split line #"\t" -1)]
-                  (when (= role-name (first fields))
-                    (let [mode (str/trim (or (get fields 8) ""))]
-                      (when (#{"forward-only" "back-one" "back-all"} mode)
-                        mode)))))
-              (str/split-lines (slurp (str (roles-file))))))
-      "forward-only"))
+  (if role-name
+    (reverse-hop-lib/propagation-for (roles-table-lines) role-name)
+    "forward-only"))
 
 (defn last-pack-role? [role]
-  (= role (last (pack-role-names))))
+  (= role (reverse-hop-lib/last-pipeline-role (roles-table-lines))))
 
 (defn reverse-roles [sender]
-  (let [roles (pack-role-names)
-        idx (.indexOf roles sender)]
-    (if (neg? idx)
-      []
-      (case (role-propagation sender)
-        "back-one" (if (pos? idx) [(nth roles (dec idx))] [])
-        "back-all" (vec (take idx roles))
-        []))))
+  (reverse-hop-lib/reverse-recipients (roles-table-lines) sender (role-propagation sender)))
 
 (defn with-non-forwarding [headers sender]
   (if (and (= "git_handoff" (get headers "type"))
