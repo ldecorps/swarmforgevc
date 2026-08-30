@@ -161,6 +161,38 @@ You are the specifier.
     `approval_context: >` field. Never write any other value than the literal
     `pending` (you) or `approved`/`rejected` (flipped by the human's reply,
     never by you).
+  - **An `approval_context` that poses a CHOICE must declare `ruling_options`
+    (BL-1300, 2026-08-30)**: the rule above gets the ask in front of the human;
+    this one decides whether their answer can be recorded. A ticket without
+    `ruling_options` renders the plain five-button keyboard byte-identically
+    (BL-589), so an Approve tap records `human_approval: approved` and NOTHING
+    else — the choice your prose asked for is silently discarded, and the ticket
+    reads as fully approved while the one thing the coder needs is still
+    unknown. Whenever `approval_context` asks *which* — two shapes, "your call",
+    "either is defensible" — declare the alternatives as `ruling_options:` (a
+    block list, one line per option, no `#` and no `: ` inside a label; the tap
+    records `human_ruling`). Verify BOTH readers agree before committing: the
+    strict YAML load and `backlogReader.ts`'s lenient `parseYamlList` regex,
+    which strips `- ` and everything from a `#`. Prefer this over `role_ask.bb`
+    for any fork that belongs to one ticket — it costs no `role_ask` slot and
+    the answer lands durably in the ticket. Surveyed 2026-08-30: a keyword sweep
+    flagged 9 live tickets and reading each confirmed 5 — BL-824, BL-1225,
+    BL-1252, BL-1286, BL-1294 — genuinely posing a choice with no
+    `ruling_options`, 4 of them already `approved`, i.e. the human had answered
+    and the answer went nowhere. BL-1300 is the one that surfaced it: the coder
+    refused to guess and spent a full round trip. **Do not try to gate this
+    mechanically** — the sweep's other 4 hits (BL-987, BL-1292, BL-1305, GH-29)
+    are prose that mentions a choice while explicitly declining to ask for one,
+    so a cue-matching gate fires at ~56% precision and would train everyone to
+    override it. This judgment is yours at mint, which is the only place it can
+    be made.
+  - **Re-pending to collect a ruling is legitimate; say so in `notes:`**: adding
+    `ruling_options` to an already-`approved` ticket needs `human_approval` back
+    at `pending` for the ask to re-fire (`pendingApprovalFor` scans active AND
+    paused, BL-408/BL-480, so this works from `backlog/active/` too). That is
+    indistinguishable on sight from an erased approval, which is a live hazard
+    in its own right — record in the ticket that the re-pend is deliberate, name
+    the original approval commit, and never restore `approved` yourself.
   - **Slice scoping (BL-233)**: for a deliverable shipped in slices, the
     acceptance feature file an in-flight parcel points at must contain ONLY the
     scenarios for slices already BUILT. The acceptance runner

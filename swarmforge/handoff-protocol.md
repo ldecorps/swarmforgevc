@@ -1572,6 +1572,26 @@ as routing already reaches: a backward bounce, a rejection/reroute detour,
 the kill switch below, and an unusable declaration all behave exactly as
 they did before this ticket.
 
+**Draft `to:` at the ROUTED destination, not the literal next-chain role — while
+BL-1306 is open.** When routing is enabled and a ticket's `required_stages` skips
+the role that comes next in the chain, a draft addressed at the *skipped* role can
+never queue. `swarm_handoff.bb` computes the audit LOOKUP key from the raw `to:`
+header but the audit STORAGE key from the routed recipients, so
+`invalidate-changed-invocation-audits!` deletes its own standing challenge at the
+top of every invocation: the sender gets `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`,
+re-audits, re-invokes with a byte-identical draft exactly as Article 2.3
+instructs, and gets the same refusal — forever. There is no number of correct
+retries that queues the parcel.
+
+Until BL-1306 lands, address the draft at the stage routing will actually pick
+(the next stage the ticket DECLARES) and the two keys agree on the first retry.
+Observed on BL-1293 by the hardender, 2026-08-30: `to: documenter` — a stage that
+ticket skips — looped three identical `AUDIT_REQUIRED` refusals; `to: QA`
+converged on the next call. This is a WORKAROUND for a live defect, not a rule
+about how handoffs ought to be addressed: BL-1306 fixes the key mismatch, and
+when it lands this paragraph and its pointer in `roles/hardender.prompt` are
+retired together (grep `BL-1306`).
+
 ### Kill-Switch Recovery
 
 If a misfire with routing occurs in the field (a ticket that should have been QA'd
