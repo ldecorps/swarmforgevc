@@ -2,10 +2,10 @@ id: BL-1272
 title: "The land step names an already-landed sibling as still entangled, sending whoever reads the report to adjudicate an entanglement that no longer exists"
 milestone: M8
 type: defect
-severity: low
+severity: medium
 status: todo
 epic: swarm-reliability
-priority: 12
+priority: 20
 direction: agent-reported
 depends_on: [BL-1241]
 mutation_cost: low
@@ -181,3 +181,29 @@ notes: |
       - No LANDED_SIBLING distinction exists anywhere in the tree.
       - depends_on BL-1241 has since landed and closed, which is what makes this
         slice implementable now.
+
+  - [2026-08-30] specifier: SECOND FIELD RECURRENCE, and the first from a real
+    landing rather than a hand-built fixture. QA note: "BL-1232 landed tip-pure
+    (BL-1241) - 2nd time today, still entangled w/ BL-1182". That is this
+    ticket's exact shape observed live, twice in one shift: BL-1241's remedy
+    worked (the landing IS tip-pure), and the report still named an
+    already-landed sibling anyway.
+
+    Two changes follow from it, both recorded here rather than in a new ticket -
+    BL-1272 already specs this defect and a duplicate mint would be the thing
+    the paused-pool sweep exists to prevent:
+      - severity low -> medium. The original read - "the error is in the safe
+        direction" - is still true about correctness, but severity measures
+        impact, and the impact is now measured rather than predicted: every
+        occurrence sends whoever reads the report to adjudicate an entanglement
+        that does not exist, and it fired twice in one day on live landings.
+        That is a real-but-contained defect, not a cosmetic one. Not high, and
+        deliberately not expedited (Article 3.2.4): nothing is lost or wrong on
+        origin/main, only a reader's turn.
+      - priority 12 -> 20, so it stops losing every promotion round to work
+        whose cost is theoretical while this one is being paid twice a shift.
+
+    Premise re-checked, not assumed: entangled-siblings in
+    swarmforge/scripts/land_step_lib.bb still walks origin/main..commit by
+    subject match, and no LANDED_SIBLING distinction exists in the tree - so
+    the ticket as written still describes today's code.
