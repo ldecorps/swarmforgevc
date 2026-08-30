@@ -430,8 +430,9 @@
       ;; BL-1183: the go-live gate, BEFORE anything is armed. A production day
       ;; trial that cannot be adjudicated is worse than no trial - it seats a
       ;; non-permanent model for a day and learns nothing - so this refuses
-      ;; rather than arming and hoping. --dry-run skips the gate deliberately,
-      ;; for checking a pairing's readiness without seating anything.
+      ;; rather than arming and hoping. `trial go-live` (run-trial-go-live,
+      ;; below) reads the same checklist read-only, for checking a pairing's
+      ;; readiness without seating anything.
       (let [checklist (model-steward-trial-lib/go-live-checklist
                        (model-steward-trial-lib/go-live-readiness
                         registry role {:provider provider :model model} permanent))]
