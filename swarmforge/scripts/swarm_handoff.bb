@@ -362,6 +362,13 @@
         ;; forward-direction git_handoff naming exactly the commit it
         ;; received for this task (Article 4.4 backstop; see
         ;; review_forward_evidence_gate_lib.bb).
+        ;; BL-1293: and one that contributed nothing of its own - a bare
+        ;; merge of the received parcel is a NEW commit, so identity alone
+        ;; never saw the most common shape in this swarm.
+        review-forward-nothing-own?
+        (and (= "git_handoff" type) canonical (not (str/blank? task-name))
+             (review-forward-evidence-gate-lib/forward-introduces-nothing-own?
+              (project-root) canonical))
         review-forward-evidence-block?
         (and (= "git_handoff" type) canonical (not (str/blank? task-name))
              (review-forward-evidence-gate-lib/blocked?
@@ -371,6 +378,7 @@
                :task-name task-name
                :commit canonical
                :reroute-reason (get headers "reroute_reason")
+               :introduces-nothing-own? review-forward-nothing-own?
                :received-commit (review-forward-evidence-gate-lib/received-commit-for-task
                                   (project-root) sender task-name)}))
         ;; BL-1213 parcel-rollback gate: refuses a git_handoff whose branch
@@ -443,7 +451,8 @@
                                  (into (pointer-gate-errors type to task-name canonical)))
                              review-forward-evidence-block?
                              (conj (review-forward-evidence-gate-lib/refusal-message
-                                    {:sender sender :task-name task-name :commit canonical}))
+                                    {:sender sender :task-name task-name :commit canonical
+                                     :introduces-nothing-own? review-forward-nothing-own?}))
                              parcel-rollback-block
                              (conj (parcel-rollback-guard-lib/refusal-message
                                     {:task-name task-name :findings (:findings parcel-rollback-block)}))
