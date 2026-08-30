@@ -1,5 +1,55 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1183: the BoB day-long trial lifecycle
+(BL-1182) gains a go-live gate — per human directive, no production trial
+starts until telemetry and performance-assessing tools can actually decide
+outrank/tie/lose for that pairing. `run-trial-nominate` runs the checklist
+BEFORE arming or seating anything; a new `trial go-live --role <role>
+<provider>/<model>` subcommand reads it standalone with no side effect. The
+checklist is DERIVED from what the trial lifecycle's own `decide` function
+needs, not a separate list that could drift from it: a role-matrix score for
+BOTH the candidate and the permanent model (telemetry), and
+battery/scorecard/bake-off evidence behind each score
+(`battery-or-scorecard-evidence?`, the same predicate `ranking-authority-tier`
+already uses) — a score with no such citation is somebody's opinion, and an
+opinion cannot adjudicate a day of production. Fail-closed: an unreadable
+registry, an absent role-matrix entry, or an unscored candidate all produce a
+refusal, never a silent pass. Every gap is named — which model, and which
+half (telemetry or assessor) is missing — carried in one refusal string, so
+a caller cannot report the verdict without the reasons. See the new "The
+go-live gate: no production trial without something that can judge it"
+section in `docs/how-to/BL-547-model-steward-overview.md`. Acceptance:
+`specs/features/BL-1183-bob-go-live-telemetry-assessor-gate.feature`.)
+Prior entry —
+**Last Updated:** August 30, 2026 (BL-1224: the operator-runtime watch
+(BL-993) no longer counts a deliberate restart of `operator_runtime.bb` by
+something else as a crash. `build_freshness_cli.bb`'s `restart-operator-group!`
+runs once per QA merge and stops/respawns the runtime itself; the watch's
+`check-one!` asks only whether the tracked pid is alive, so a replaced pid
+answered that question identically to a dead one — on a busy merge night this
+produced clusters of phantom `crashed`/`started` announcements, a climbing
+attempt counter, and even a `gave-up` cooldown leaving the runtime genuinely
+unwatched for up to 15 minutes, none of it caused by an actual failure. Fixed
+by reading the runtime pidfile fresh each tick and consulting it in `decide`,
+between the deliberate-stop gate and the crash-path `check-one-fn`: when the
+pidfile names a DIFFERENT, live `operator_runtime.bb` process (verified
+through the SAME cmdline-checked liveness predicate the watch already uses —
+no second, diverging check, per a prior BL-993 architect bounce), the watch
+adopts that pid without touching the attempt counter or reaching
+`check-one-fn` at all — the same shape BL-1154 already uses for a voluntary
+build-stale roll. `check-one!` itself is untouched, since it is shared by
+five other supervisors that must not change behaviour. The genuine crash path
+is unchanged in every other case — a pid that died with the pidfile still
+naming it, naming nothing, or naming a live but UNRELATED process (pid reuse)
+is still `crashed`, restarted through `start_operator_runtime.sh`, and still
+announced; pid reuse is deliberately never adopted. An adoption is logged and
+recorded in the status file but does not reach the human channel — it is not
+an incident, and announcing one every few minutes is exactly the alert
+fatigue this ticket exists to stop. See the updated "A deliberate restart by
+something else is adopted, never counted as a crash" section in
+`docs/how-to/BL-993-operator-runtime-watch.md`. Acceptance:
+`specs/features/BL-1224-watch-adopts-a-deliberately-restarted-operator-runtime.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-670: the Pipeline Board's authoritative
 `.swarmforge/board/ticket-stage-map.json` moves from a bare `{ticket ->
 role}` string map to a qualified `{ticket -> {stage, status, asOf,

@@ -39,6 +39,69 @@
    :history []   ;; every completed trial, newest last
    :losers {}})  ;; role -> [{:provider :model :evidence :at}]
 
+;; ── BL-1183: the go-live gate ─────────────────────────────────────────────
+;;
+;; The human's instruction: do not run live day-long production trials until
+;; telemetry and performance-assessing tools can actually decide
+;; outrank / tie / lose. So a production trial does not merely fail to be
+;; useful without them - it refuses to arm.
+;;
+;; What "ready" MEANS here is derived from what `decide` above actually needs,
+;; not invented as a separate checklist that could drift from it:
+;;   - TELEMETRY is a role-matrix score for BOTH models. Without both, `decide`
+;;     falls through its unscored clause and reverts on absent evidence; it
+;;     never compares anything, so the trial would burn a day to learn nothing.
+;;   - An ASSESSOR is battery/scorecard/bake-off evidence behind those scores -
+;;     `model_steward_lib/battery-or-scorecard-evidence?`, the same predicate
+;;     `ranking-authority-tier` already uses to decide which evidence may
+;;     outrank which. A score with no such citation is somebody's opinion, and
+;;     an opinion cannot adjudicate a day of production.
+;;
+;; Fail-closed by construction: `go-live-checklist` reports ready only when it
+;; can positively see both, for both models. An unreadable registry, an absent
+;; role matrix and a candidate nobody has scored all produce a NAMED gap rather
+;; than a pass - invariant 2's "never a silent skip into live trial".
+
+(defn- scored-entry [registry role provider model]
+  (->> (model-steward-lib/role-recommendations registry role {:include-uncertified? true})
+       (filter #(and (= provider (:provider %)) (= model (:model %))))
+       first))
+
+(defn go-live-readiness
+  "What the registry can actually see about this pairing, as data. Pure over
+   the registry so the checklist is decidable offline - the ticket's own
+   qa_e2e step 3 asks for exactly that."
+  [registry role candidate permanent]
+  (letfn [(look [who {:keys [provider model]}]
+            (let [entry (scored-entry registry role provider model)]
+              {:who who
+               :model (str provider "/" model)
+               :scored? (number? (:score entry))
+               :assessed? (model-steward-lib/battery-or-scorecard-evidence? (:evidence entry))}))]
+    [(look "candidate" candidate) (look "permanent" permanent)]))
+
+(defn go-live-checklist
+  "Turns readiness into a verdict that NAMES every gap. The missing list is the
+   whole value of this function: a bare false would tell an operator to go
+   looking, which is the same cost as no gate at all."
+  [readiness]
+  (let [missing (vec (concat
+                      (for [{:keys [who model scored?]} readiness
+                            :when (not scored?)]
+                        (str "trial-comparison telemetry: no recorded score for the " who " " model))
+                      (for [{:keys [who model assessed?]} readiness
+                            :when (not assessed?)]
+                        (str "performance assessor: no battery/scorecard/bake-off evidence for the " who " " model))))]
+    {:ready? (empty? missing) :missing missing}))
+
+(defn go-live-refusal
+  "The refusal text, or nil when the checklist is satisfied. One string, so a
+   caller cannot accidentally report the verdict without the reasons."
+  [{:keys [ready? missing]}]
+  (when-not ready?
+    (str "trial refused: the BoB go-live checklist is not satisfied - "
+         (clojure.string/join "; " missing))))
+
 ;; ── nomination ────────────────────────────────────────────────────────────
 
 (defn armed-for-role [trials role]
