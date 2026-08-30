@@ -82,3 +82,37 @@ Invariant 1 only. Invariant 3 shares the file's launch-a-real-process shape but
 sets no readiness budget and asserts pidfile teardown — a different mechanism,
 untouched, still 35s and still passing. bl968 (BL-1062) and bl955 are separate
 causes and separate tickets.
+
+## Cleaner bounce, 2026-08-29 — scenario 03 was unpassable after commit
+
+**Defect.** Scenario 03's "before" side read the pre-change budget out of
+`git show HEAD:extension/test/bl787NamedTunnelInvariants.property.test.js`.
+That ref names the pre-fix commit only in the window between editing the file
+and committing it. From the authoring commit onward, `HEAD` already carries the
+NEW constant names, both regexes miss, `before.attempts`/`before.interval` read
+`0`, and the step's own guard (`before.attempts > 0 && before.interval > 0`)
+fails. The scenario was green exactly once, in my working tree, and red by
+construction in every downstream worktree.
+
+**Fix.** The "before" side is now the spec-time literal
+`PRE_CHANGE_BUDGET_SECONDS = 20` — the same constant scenario 02 already uses
+to delay the fake cloudflared past the pre-change budget — and no git ref is
+read. `execFileSync` is dropped from the step file's imports; only the "after"
+side still reads the property file, from disk.
+
+**Non-vacuity.** The after-side guard survives: `after.attempts` and
+`after.interval` must both be > 0, and they resolve to `3` and `0.01` from the
+live property file (0.03s ≤ 20s). Point either regex at a name the file does
+not define and the scenario fails rather than passing on zeros.
+
+**Run.** `specs/pipeline/scripts/run_acceptance.sh
+specs/features/BL-1274-named-tunnel-readiness-property-races-the-host-scheduler.feature`
+— 4 tests, 4 pass, 0 fail, from a committed tree (no uncommitted-window
+dependency).
+
+**Runtime note.** On the bounce-rework run the whole file took 112s, invariant 1
+82.9s of it, on a loaded host — slower than the ~2s the table above records for
+an unloaded run. The table's point stands (the readiness *verdict* no longer
+depends on the scheduler; invariant 1 passed), but read that 2s as a best case,
+not a ceiling. Only allowlisted error: BL-871's benign
+`[vitest-worker]: Timeout calling "onTaskUpdate"`.

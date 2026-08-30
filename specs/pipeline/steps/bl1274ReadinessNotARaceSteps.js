@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LAUNCH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'launch_resident_spy_tunnel.sh');
@@ -209,31 +209,27 @@ function registerSteps(registry) {
   });
 
   // ── 03 ──────────────────────────────────────────────────────────────
+  // The "before" side is the spec-time literal PRE_CHANGE_BUDGET_SECONDS, NOT a
+  // value read back out of a git ref. `HEAD:<property file>` names the pre-fix
+  // commit only in the window between editing the file and committing it; from
+  // the commit onward HEAD already carries the NEW constant names, so a
+  // ref-based comparison reads 0 and the scenario becomes unpassable by
+  // construction in every downstream worktree (cleaner bounce, 2026-08-29).
   scoped(/^the readiness wait budgets are compared against their values before the change$/, (ctx) => {
     ctx.bl1274 = ctx.bl1274 || {};
-    const before = execFileSync('git', ['-C', REPO_ROOT, 'show', `HEAD:extension/test/${path.basename(PROPERTY_FILE)}`], {
-      encoding: 'utf8',
-    });
+    const now = fs.readFileSync(PROPERTY_FILE, 'utf8');
     ctx.bl1274.budgets = {
-      before: {
-        attempts: Number((before.match(/SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS: '(\d+)'/) || [])[1] || 0),
-        interval: Number((before.match(/SWARMFORGE_NAMED_TUNNEL_WAIT_INTERVAL: '([\d.]+)'/) || [])[1] || 0),
+      beforeSeconds: PRE_CHANGE_BUDGET_SECONDS,
+      after: {
+        attempts: Number((now.match(/LAUNCH_SEAM_ATTEMPTS = '(\d+)'/) || [])[1] || 0),
+        interval: Number((now.match(/LAUNCH_SEAM_INTERVAL = '([\d.]+)'/) || [])[1] || 0),
       },
-      after: (() => {
-        const now = fs.readFileSync(PROPERTY_FILE, 'utf8');
-        return {
-          attempts: Number((now.match(/LAUNCH_SEAM_ATTEMPTS = '(\d+)'/) || [])[1] || 0),
-          interval: Number((now.match(/LAUNCH_SEAM_INTERVAL = '([\d.]+)'/) || [])[1] || 0),
-        };
-      })(),
     };
   });
 
   scoped(/^no wait budget is larger than it was before the change$/, (ctx) => {
-    const { before, after } = ctx.bl1274.budgets;
-    assert.ok(before.attempts > 0 && before.interval > 0, `could not read the pre-change budget: ${JSON.stringify(before)}`);
+    const { beforeSeconds, after } = ctx.bl1274.budgets;
     assert.ok(after.attempts > 0 && after.interval > 0, `could not read the post-change budget: ${JSON.stringify(after)}`);
-    const beforeSeconds = before.attempts * before.interval;
     const afterSeconds = after.attempts * after.interval;
     assert.ok(
       afterSeconds <= beforeSeconds,
