@@ -232,9 +232,15 @@
 ;; CANDIDATE sockets, then ask each whether a server answers - the measured
 ;; 2026-07-25 case is a stopped swarm whose socket file still exists.
 
-(defn- pids-matching
-  "Live pids whose argv matches `needle`, excluding this process's own argv so
-   the audit cannot invent phantom survivors (pgrep -f self-matches)."
+(defn- ps-entries-matching
+  "Live processes whose argv matches `needle`, as {:pid :argv}, excluding this
+   process's own argv so the audit cannot invent phantom survivors (pgrep -f
+   self-matches).
+
+   BL-1250: the argv is carried, not discarded. The role-agent probe needs to
+   know WHICH role each matching process belongs to, and a count of pids
+   cannot tell it - which is precisely how a healthy eight-role pack came to
+   be observed as sixteen."
   [needle]
   (let [{:keys [out]} (sh {} "ps" "-eo" "pid=,args=")
         self (str (.pid (java.lang.ProcessHandle/current)))]
@@ -247,8 +253,18 @@
                    (when (and (not= pid self)
                               (str/includes? argv needle)
                               (not (str/includes? argv "expedite_cli.bb")))
-                     pid))))
+                     {:pid pid :argv argv}))))
          vec)))
+
+(defn- pids-matching
+  "Live pids whose argv matches `needle`."
+  [needle]
+  (mapv :pid (ps-entries-matching needle)))
+
+(defn- argvs-matching
+  "The argv strings of live processes matching `needle`."
+  [needle]
+  (mapv :argv (ps-entries-matching needle)))
 
 (defn- tmux-servers-answering [project-root]
   (let [socks (try (vec (fs/glob (fs/path project-root ".swarmforge" "tmux") "*.sock"))
@@ -271,7 +287,15 @@
        ;; --remote-control Operator has no project root in argv; scope via the
        ;; prompt path launch_operator.sh always passes for this root.
        :operator (seq (pids-matching (str root "/swarmforge/roles/operator.prompt")))
-       :role-agents (count (pids-matching (str root "/.swarmforge/launch/")))})))
+       ;; BL-1250: ROLES, not processes. A launched role runs both its zsh
+       ;; launcher and the claude agent under it, so counting matching
+       ;; processes observed 16 for a healthy 8-role pack and reported every
+       ;; healthy restart as :degraded - the same verdict a genuine
+       ;; half-launch produces. The needle is unchanged and still root-scoped
+       ;; (BL-782); only the arithmetic over what it matched has moved into
+       ;; expedite-lib, where it is pure and directly testable.
+       :role-agents (expedite-lib/count-role-agents
+                     root (argvs-matching (str root expedite-lib/launch-dir-segment)))})))
 
 ;; NOTE: tmux-servers-answering shells `tmux`, which expedite_lib's own
 ;; forbidden-command? would flag. That is correct and intended: PROBING whether

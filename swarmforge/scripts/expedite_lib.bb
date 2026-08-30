@@ -594,6 +594,76 @@
                         (not restart-ok?) :restart
                         :else nil)}))
 
+;; ── BL-1250: the probe counts ROLES, not processes ──────────────────────────
+;;
+;; A launched role contributes TWO processes whose argv names this root's
+;; launch directory, not one:
+;;
+;;     zsh    <root>/.swarmforge/launch/specifier.sh
+;;     claude --settings <root>/.swarmforge/launch/specifier.claude-settings.json
+;;
+;; Counting those processes made a healthy eight-role pack observe sixteen
+;; against an expectation of eight, so every healthy restart reported
+;; :degraded — indistinguishable from the genuine half-launch the verdict
+;; exists to catch, and measured that way on 2026-08-28 against a pack that
+;; was whole.
+;;
+;; The needle stays root-scoped ON PURPOSE (BL-782): the prefix carries the
+;; project root, so another swarm's roles on the same host are not counted.
+;;
+;; The count is of DISTINCT ROLE NAMES, which is what makes it independent of
+;; how many processes a role happens to run. Halving would pass a healthy
+;; eight-role pack and break the moment a role gained a third process, or a
+;; role ran only its launcher — exactly the half-launch being detected.
+
+(def launch-dir-segment "/.swarmforge/launch/")
+
+(defn launch-files-by-role
+  "Pure: every launch-directory file each role is named by, as
+   {role #{file ...}}. `<root>/.swarmforge/launch/specifier.sh` and
+   `...specifier.claude-settings.json` are both the role `specifier`.
+
+   Root-scoped: the prefix carries the project root, so another swarm's roles
+   on the same host contribute nothing (BL-782)."
+  [root argv-lines]
+  (let [prefix (str root launch-dir-segment)
+        pattern (re-pattern (str (java.util.regex.Pattern/quote prefix) "([^\\s/]+)"))]
+    (reduce (fn [acc file]
+              (let [role (first (str/split file #"\."))]
+                (if (str/blank? role)
+                  acc
+                  (update acc role (fnil conj #{}) file))))
+            {}
+            (mapcat #(map second (re-seq pattern (str %))) argv-lines))))
+
+(defn launcher-only?
+  "A role named ONLY by its own `<role>.sh` launcher script has no agent under
+   it. The zsh launcher outlives its claude child, so a role whose agent has
+   died still appears in the process table - counting it would hide exactly
+   the half-launch this verdict exists to catch."
+  [role files]
+  (= files #{(str role ".sh")}))
+
+(defn role-agent-names
+  "Pure: the roles observed to have an AGENT up, sorted.
+
+   One name per role, however many processes that role runs - its launcher,
+   its agent, and any wrapper a future launcher adds are all the same role.
+   That independence is the invariant; halving a process count would satisfy
+   today's two-process shape and nothing else."
+  [root argv-lines]
+  (->> (launch-files-by-role root argv-lines)
+       (remove (fn [[role files]] (launcher-only? role files)))
+       (map key)
+       sort
+       vec))
+
+(defn count-role-agents
+  "The observed :role-agents figure: how many ROLES are up, whatever each one
+   is running."
+  [root argv-lines]
+  (count (role-agent-names root argv-lines)))
+
 (def expected-live-set
   "What a healthy full-stack start brings up, as counts. Used to REPORT a delta
    rather than to assert health — scenario 17 requires the report never claim
