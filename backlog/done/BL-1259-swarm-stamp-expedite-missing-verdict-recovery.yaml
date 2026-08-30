@@ -3,14 +3,20 @@ title: "Swarm stamp-off: the expeditor recovers a stage that wrote no verdict, b
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: done
+closed_as: superseded-by-BL-1254
+closed_at: 2026-08-30
 epic: swarm-reliability
 priority: 40
 direction: swarm-surfaced
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1259-expedite-missing-verdict-recovery.feature
+acceptance: specs/features/BL-1254-swarm-stamp-expedite-no-verdict-chain.feature
+# Retired: repointed from this ticket's own deleted feature file to BL-1254's,
+# the contract that now carries its content (its scenario 04 landed there as
+# scenario 06). Not a claim of ownership over BL-1254's contract - the BL-1251
+# rule that a retirement ticket points at the contract it retires into.
 
 human_approval: approved
 approval_context: >
@@ -159,3 +165,51 @@ notes: |
     `approval_context` deliberately — it is the one judgement in these three
     commits a human should confirm rather than the swarm ratifying it by
     passing gates."
+
+  ## RETIRED 2026-08-30 - duplicate stamp-off for the same three hotfixes
+
+  BL-1254 (active, in flight at the cleaner) and this ticket both certify the
+  SAME three commits: 3f4f69ec1b, 70c5e0e5b0, 5de352ed1d. BL-1254 was minted
+  first (3aa70ac9e); this ticket was minted later the same day (e00132d4a) by
+  a second pass over the same unstamped-hotfix list, and the ledger rows were
+  pointed here while BL-1254 was the one actually promoted and routed.
+  Reported by the coder as a stamp collision - the second such report on one
+  sweep, the first being BL-1253/BL-1260.
+
+  BL-1254 survives: it is active, already routed, the coder has committed
+  against it (dbda494910) and the cleaner has merged it (912767aee). The three
+  hotfix-ledger rows are re-linked from BL-1259 to BL-1254.
+
+  Content carried to BL-1254 rather than dropped (Article 5.3):
+  - scenario 04 (a timeout is reported as a timeout even when no verdict was
+    written) lands there as scenario 06; BL-1254's 01-05 never exercised
+    finalize-stage-result's timeout-beats-missing-file ordering.
+  - the three lib-anchored required_wiring entries pinning
+    should-recover-missing-verdict?, bounce-payload-valid? and
+    finalize-stage-result as shared-lib calls from expedite_cli.bb.
+  - invariant 3 is carried as that scenario, not a fourth invariant line
+    (cap is 3, and BL-1254's existing three are load-bearing for a chain whose
+    third commit supersedes its second).
+  Not carried, because BL-1254 already covers them: invariant 1 (never
+  synthesizes a bounce) is its scenarios 03+04; invariant 2 (recovery bound
+  independent of the bounce budget) is its scenario 04.
+
+  This ticket's approval_context raised one question BL-1254's does not: is
+  max-missing-verdict-recoveries = 2 the number the human wants, given it was
+  chosen twice under live pressure without measurement. That question is NOT
+  retired with the ticket - it is recorded in BL-1254's notes and remains for
+  the ledger decision.
+
+  Its feature file specs/features/BL-1259-expedite-missing-verdict-recovery.feature
+  is deleted in this commit: it would never receive a step handler, and the
+  acceptance runner throws on any scenario without one (BL-233).
+
+  Bookkeeping note: this ticket's retirement (the move to done/ and the feature
+  file deletion) was staged by git mv before the BL-1254 amendment was
+  committed, so it rode along in f69160925 rather than landing as its own
+  commit. Content is correct and complete; only the split is not. Not corrected
+  by rewriting history - a reset on main is the sharpest hazard in this repo
+  (master_main_reconcile has eaten commits seven times in one shift) and the
+  risk far exceeds a commit-hygiene blemish. Recorded here so the combined
+  commit reads as known, not as an unnoticed BL-1192 violation.
+
