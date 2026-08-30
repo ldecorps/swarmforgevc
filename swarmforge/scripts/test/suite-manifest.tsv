@@ -347,7 +347,6 @@ test_operator_runtime_bl647_rotation_liveness.sh	standing
 test_operator_runtime_bl653_escalation_driven.sh	standing		
 test_operator_runtime_bl763_cursor_bridge_watchdog.sh	standing		
 test_operator_runtime_control_lost.sh	standing		
-test_operator_runtime_watch_adoption.sh	standing		
 test_operator_runtime_disk_space_sweep.sh	standing		
 test_operator_runtime_events_lock.sh	standing		
 test_operator_runtime_fixture_reaper_sweep.sh	standing		

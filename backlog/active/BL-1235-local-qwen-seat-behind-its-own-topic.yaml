@@ -159,6 +159,3 @@ notes: |
     fast round trip.
 
 assigned_to: coder
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-30, by: architect, blamed: coder, class: behavior, commit: 5d8fcd6fad, evidence: backlog/evidence/BL-1235-local-qwen-seat-behind-its-own-topic-bounce-20260830.md }

@@ -159,44 +159,6 @@
                     " tries; will retry after cooldown")
       (str "operator runtime watch event " (name event)))))
 
-(defn adoptable-pid
-  "BL-1224 - pure: the pid to ADOPT when the tracked one has vanished, or nil
-   when this is a genuine crash.
-
-   check-one! asks only \"is the tracked pid alive?\", and a pid that was
-   REPLACED looks exactly like a pid that DIED. The discriminator it never
-   consults is the pidfile: after a deliberate restart - the coordinator's
-   `build_freshness_cli.bb sync` stops the live runtime and starts its own
-   after every QA merge - the pidfile names a DIFFERENT, live
-   operator_runtime.bb. After a real crash it names the dead pid, or nothing,
-   or (pid reuse) something that is not our runtime at all.
-
-   `alive?` is the caller's own liveness predicate, which is pid-alive? above -
-   the cmdline-checked one. Deliberately NOT a new predicate: BL-993's
-   architect bounce was specifically about not growing a second, diverging
-   liveness check, and pid reuse is ruled out only because that one already
-   rules it out.
-
-   Returns nil - i.e. \"this was a crash, behave exactly as today\" - when the
-   tracked pid is still alive, when no pidfile pid is known, when the pidfile
-   still names the tracked pid, or when the pidfile's pid is not a live
-   runtime. An adoption must never mask a genuine crash."
-  [{:keys [tracked-pid pidfile-pid alive?]}]
-  (when (and pidfile-pid
-             (not= pidfile-pid tracked-pid)
-             (not (alive? tracked-pid))
-             (alive? pidfile-pid))
-    pidfile-pid))
-
-(defn adopt-entry
-  "BL-1224 - pure: the tracked entry, now following the pid somebody else
-   started. `:attempts` is carried over UNTOUCHED, which is the whole point:
-   a handover is not a failure and must not spend the restart budget that
-   exists for real ones. The status is running because it is, and
-   :crashed-at-ms is cleared because nothing crashed."
-  [entry pid now-ms]
-  (assoc entry :pid pid :status "running" :crashed-at-ms nil :started-at-ms now-ms))
-
 (defn decide
   "The FULL per-tick decision (BL-993 invariant 1): the deliberate-stop gate
    first, then - only when NOT stopped - check-one!'s own bounded-restart
@@ -205,27 +167,12 @@
    load-order-independent and pure; spawn! is only ever reached through it,
    so a deliberate stop provably never restarts anything - not merely by
    convention at each call site, but because THIS function never calls
-   check-one-fn at all on that branch.
-
-   BL-1224 adds the ADOPTION gate between the two, and for the same structural
-   reason: an adoption provably starts nothing and spends nothing, because
-   this branch never reaches check-one-fn either - the only thing that spawns
-   or counts an attempt. `:pidfile-pid` is optional, so a caller that does not
-   supply it behaves exactly as before. BL-1154's
-   voluntary-build-stale-started-entry is the precedent being followed: a
-   deliberate non-crash gets its own event rather than being charged to the
-   crash budget."
-  [{:keys [skip-env parked entry now-ms pid-alive? spawn! restart-config giveup-config check-one-fn
-           pidfile-pid]}]
-  (cond
-    (deliberately-stopped? skip-env parked)
+   check-one-fn at all on that branch."
+  [{:keys [skip-env parked entry now-ms pid-alive? spawn! restart-config giveup-config check-one-fn]}]
+  (if (deliberately-stopped? skip-env parked)
     {:entry entry :event :deliberately-stopped :stop-reason (stop-reason skip-env parked)}
-
-    :else
-    (if-let [adopted (adoptable-pid {:tracked-pid (:pid entry) :pidfile-pid pidfile-pid :alive? pid-alive?})]
-      {:entry (adopt-entry entry adopted now-ms) :event :adopted :stop-reason nil}
-      (let [{:keys [entry event]} (check-one-fn entry now-ms pid-alive? spawn! restart-config giveup-config)]
-        {:entry entry :event event :stop-reason nil}))))
+    (let [{:keys [entry event]} (check-one-fn entry now-ms pid-alive? spawn! restart-config giveup-config)]
+      {:entry entry :event event :stop-reason nil})))
 
 (defn initial-entry
   "check-one!'s own default-entry ('not-started') always spawns
