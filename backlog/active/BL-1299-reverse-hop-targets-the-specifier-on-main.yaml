@@ -192,3 +192,15 @@ approval_context: >
   a critical defect that fires on every architect forward.
 
 assigned_to: coder
+
+abandoned_commits: [5486e839db]
+# QA landed this ticket tip-pure on 2026-08-30 (BL-1241 remedy): the
+# documenter's cited commit (5486e839db, this QA worktree's own merge of the
+# documenter's tip) carried two unlanded, non-BL-1299 files as co-changes —
+# a BL-1288 QA-evidence pair and a stray BL-1295 confirmation note, both
+# artifacts of this same QA pass's own bookkeeping, never meant to ride onto
+# `main`. land_step_cli.bb built `land-replay/BL-1299-5486e839db` ->
+# dbcdd00722, tip-pure onto origin/main (which already carried BL-1288's own
+# landed content via 16570bc52b), containing only BL-1299's own attributed
+# paths (byte-identical to 5486e839db's own diff, independently verified).
+# Landed commit: dbcdd00722. See backlog/evidence/BL-1299-qa-pass-20260830.md.
