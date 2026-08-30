@@ -9,7 +9,7 @@ severity: medium
 priority: 149
 direction: human-requested
 depends_on: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-605]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 slice_size_envelope: medium
 acceptance: specs/features/BL-604-morning-briefing-trend-analysis.feature
