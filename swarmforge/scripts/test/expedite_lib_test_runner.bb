@@ -479,6 +479,67 @@
 (assert= "1249: ...and reports :malformed"
          :malformed (:reason (expedite-lib/restart-hold-verdict "{\"active\":true,\"untilMs\":\"soon\"}" 1000)))
 
+;; ── BL-1250: role-agents counts ROLES, not processes ─────────────────────
+
+(def bl1250-root "/home/dev/swarmforgevc")
+(defn- bl1250-launch [role suffix]
+  (str bl1250-root "/.swarmforge/launch/" role suffix))
+(defn- bl1250-pack
+  "The argv table a healthy pack of `roles` produces: a zsh launcher and a
+   claude agent per role, exactly as measured on 2026-08-28."
+  [roles]
+  (mapcat (fn [r] [(str "zsh " (bl1250-launch r ".sh"))
+                   (str "claude --settings " (bl1250-launch r ".claude-settings.json"))])
+          roles))
+
+(def bl1250-eight ["architect" "cleaner" "coder" "coordinator" "documenter"
+                   "hardender" "qa" "specifier"])
+
+(assert= "1250: a launcher and its agent are ONE role, not two"
+         ["specifier"]
+         (expedite-lib/role-agent-names bl1250-root (bl1250-pack ["specifier"])))
+
+(assert= "1250: a healthy eight-role pack is observed as eight, not sixteen"
+         8 (expedite-lib/count-role-agents bl1250-root (bl1250-pack bl1250-eight)))
+
+(assert= "1250: ...so the delta is empty and the restart reports :ok"
+         {} (expedite-lib/live-set-delta
+             {:tmux-servers 1 :handoffd 1 :handoffd-supervisor 1
+              :role-agents (expedite-lib/count-role-agents bl1250-root (bl1250-pack bl1250-eight))}))
+
+;; The non-vacuity pair: a fix that simply halved the count would pass the
+;; two assertions above and fail this one, because these roles have no agent.
+(assert= "1250: a role running only its launcher still counts once - a dead agent is not hidden"
+         6 (expedite-lib/count-role-agents
+            bl1250-root
+            (concat (bl1250-pack (drop 2 bl1250-eight))
+                    (map #(str "zsh " (bl1250-launch % ".sh")) (take 2 bl1250-eight)))))
+
+(assert= "1250: ...and a role that is entirely gone is not counted at all"
+         6 (expedite-lib/count-role-agents bl1250-root (bl1250-pack (drop 2 bl1250-eight))))
+
+(assert= "1250: a third process for one role does not inflate the count"
+         8 (expedite-lib/count-role-agents
+            bl1250-root
+            (concat (bl1250-pack bl1250-eight)
+                    [(str "node --inspect " (bl1250-launch "coder" ".wrapper.js"))])))
+
+;; BL-782's discipline, kept on purpose rather than by accident.
+(assert= "1250: another project root's roles are never counted"
+         ["coder"]
+         (expedite-lib/role-agent-names
+          bl1250-root
+          (concat (bl1250-pack ["coder"])
+                  ["zsh /home/dev/other-project/.swarmforge/launch/qa.sh"
+                   "claude --settings /home/dev/other-project/.swarmforge/launch/architect.claude-settings.json"])))
+
+(assert= "1250: an empty table observes no roles, and never throws"
+         0 (expedite-lib/count-role-agents bl1250-root []))
+
+(assert= "1250: the launch directory named with no role file names no role"
+         [] (expedite-lib/role-agent-names
+             bl1250-root [(str "ls " bl1250-root "/.swarmforge/launch/")]))
+
 (assert= "17: a matching live set yields an EMPTY delta, never a health claim"
          {} (expedite-lib/live-set-delta
              {:tmux-servers 1 :handoffd 1 :handoffd-supervisor 1 :role-agents 8}))
