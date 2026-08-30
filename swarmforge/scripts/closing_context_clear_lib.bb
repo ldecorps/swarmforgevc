@@ -12,7 +12,15 @@
 ;; only in this ticket - the idle check itself reuses operator_lib.bb's
 ;; own role-idle? {:inbox-new-count :in-process-count} -> boolean shape,
 ;; computed by the caller and passed in as :idle?.
+;;
+;; Hotfix 2026-08-30 (human): also require a known context-window fullness
+;; at or above the threshold (default 75%) before /clear. Same fail-closed
+;; posture as BL-1238 / BL-141 — if fullness-percent is nil/unknown, do NOT
+;; clear. Prevents Anthropic agents from paying a full prefix reload when
+;; the window is mostly empty (or when we cannot tell).
 (ns closing-context-clear-lib)
+
+(def default-fullness-threshold-percent 75)
 
 (defn new-close?
   "True when closed-ticket-id is present AND differs from
@@ -23,13 +31,26 @@
   [closed-ticket-id last-cleared-ticket-id]
   (boolean (and closed-ticket-id (not= closed-ticket-id last-cleared-ticket-id))))
 
+(defn fullness-allows-clear?
+  "True only when fullness-percent is a real number at or above
+   threshold-percent. nil/non-number = cannot tell = refuse (fail-closed)."
+  [fullness-percent threshold-percent]
+  (boolean (and (number? fullness-percent)
+                (>= fullness-percent threshold-percent))))
+
 (defn decide-context-clear
   "The whole decision, pure: clear only at the intersection of the role
    being idle (no in-process task, no pending inbox item) AND the most
    recent bookkeeping close being one this role has not already been
-   cleared for. Returns {:action :clear|nil}."
-  [{:keys [idle? new-close?]}]
-  {:action (if (and idle? new-close?) :clear nil)})
+   cleared for AND the context window being known-and-full-enough.
+   Returns {:action :clear|nil}."
+  [{:keys [idle? new-close? fullness-percent threshold-percent]
+    :or {threshold-percent default-fullness-threshold-percent}}]
+  {:action (if (and idle?
+                    new-close?
+                    (fullness-allows-clear? fullness-percent threshold-percent))
+             :clear
+             nil)})
 
 (defn startup-reread-instruction
   "Literal text injected immediately after /clear (BL-309/BL-316).
@@ -50,17 +71,23 @@
 (defn evaluate-closing-context-clear!
   "One tick's full evaluation, adapter-injected (mirrors
    operator_lib.bb's evaluate-closing-pass! shape): given the gathered pure
-   state (:idle?, :closed-ticket-id, :last-cleared-ticket-id, :role-name)
-   decides whether to clear and, if so, performs it through the injected
-   adapters IN ORDER - :inject-clear! (fn []), then
-   :inject-startup-reread! (fn [instruction-text]), then :record-clear!
-   (fn [ticket-id]) so a crash between clear and record simply re-clears
-   (harmless/idempotent from the agent's point of view) rather than ever
-   silently skipping the startup re-read. Returns {:action :clear|nil}."
-  [{:keys [idle? closed-ticket-id last-cleared-ticket-id role-name]} adapters]
+   state (:idle?, :closed-ticket-id, :last-cleared-ticket-id, :role-name,
+   :fullness-percent, optional :threshold-percent) decides whether to clear
+   and, if so, performs it through the injected adapters IN ORDER -
+   :inject-clear! (fn []), then :inject-startup-reread! (fn [instruction-text]),
+   then :record-clear! (fn [ticket-id]) so a crash between clear and record
+   simply re-clears (harmless/idempotent from the agent's point of view)
+   rather than ever silently skipping the startup re-read. Returns
+   {:action :clear|nil}."
+  [{:keys [idle? closed-ticket-id last-cleared-ticket-id role-name
+           fullness-percent threshold-percent]
+    :or {threshold-percent default-fullness-threshold-percent}}
+   adapters]
   (let [decision (decide-context-clear
                   {:idle? idle?
-                   :new-close? (new-close? closed-ticket-id last-cleared-ticket-id)})]
+                   :new-close? (new-close? closed-ticket-id last-cleared-ticket-id)
+                   :fullness-percent fullness-percent
+                   :threshold-percent threshold-percent})]
     (when (= :clear (:action decision))
       ((:inject-clear! adapters))
       ((:inject-startup-reread! adapters) (startup-reread-instruction role-name))

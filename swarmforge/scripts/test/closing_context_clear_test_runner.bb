@@ -15,6 +15,9 @@
 (defn assert-true [msg actual] (assert= msg true (boolean actual)))
 (defn assert-false [msg actual] (assert= msg false (boolean actual)))
 
+;; Fullness that satisfies the 75% gate (hotfix 2026-08-30).
+(def full-enough 80)
+
 ;; ── new-close? (pure) ─────────────────────────────────────────────────────
 
 (assert-true "a closed ticket never cleared before is a new close"
@@ -26,21 +29,49 @@
 (assert-false "no closed ticket at all (empty backlog/done/) is never a new close"
               (closing-context-clear-lib/new-close? nil nil))
 
+;; ── fullness-allows-clear? (pure) ─────────────────────────────────────────
+
+(assert-true "fullness at threshold allows clear"
+             (closing-context-clear-lib/fullness-allows-clear? 75 75))
+(assert-true "fullness above threshold allows clear"
+             (closing-context-clear-lib/fullness-allows-clear? 90 75))
+(assert-false "fullness below threshold refuses"
+              (closing-context-clear-lib/fullness-allows-clear? 74 75))
+(assert-false "nil fullness (cannot tell) refuses — fail-closed"
+              (closing-context-clear-lib/fullness-allows-clear? nil 75))
+
 ;; ── decide-context-clear (pure) ───────────────────────────────────────────
 ;; BL-309 clear-fires-at-safe-close-01 / no-clear-while-not-idle-02
+;; + hotfix fullness gate
 
-(assert= "clear-fires-at-safe-close-01: idle + new close -> clear"
+(assert= "clear-fires-at-safe-close-01: idle + new close + full enough -> clear"
          {:action :clear}
-         (closing-context-clear-lib/decide-context-clear {:idle? true :new-close? true}))
+         (closing-context-clear-lib/decide-context-clear
+          {:idle? true :new-close? true :fullness-percent full-enough}))
 (assert= "no-clear-while-not-idle-02: not idle -> no clear even with a new close"
          {:action nil}
-         (closing-context-clear-lib/decide-context-clear {:idle? false :new-close? true}))
+         (closing-context-clear-lib/decide-context-clear
+          {:idle? false :new-close? true :fullness-percent full-enough}))
 (assert= "no-repeat-clear-same-close-03: idle but not a new close -> no clear"
          {:action nil}
-         (closing-context-clear-lib/decide-context-clear {:idle? true :new-close? false}))
+         (closing-context-clear-lib/decide-context-clear
+          {:idle? true :new-close? false :fullness-percent full-enough}))
 (assert= "neither condition -> no clear"
          {:action nil}
-         (closing-context-clear-lib/decide-context-clear {:idle? false :new-close? false}))
+         (closing-context-clear-lib/decide-context-clear
+          {:idle? false :new-close? false :fullness-percent full-enough}))
+(assert= "hotfix: idle + new close but below 75% -> no clear"
+         {:action nil}
+         (closing-context-clear-lib/decide-context-clear
+          {:idle? true :new-close? true :fullness-percent 50}))
+(assert= "hotfix: idle + new close but fullness unknown -> no clear"
+         {:action nil}
+         (closing-context-clear-lib/decide-context-clear
+          {:idle? true :new-close? true :fullness-percent nil}))
+(assert= "hotfix: omitting fullness-percent (legacy callers) -> no clear"
+         {:action nil}
+         (closing-context-clear-lib/decide-context-clear
+          {:idle? true :new-close? true}))
 
 ;; ── startup-reread-instruction (pure) ─────────────────────────────────────
 
@@ -60,7 +91,8 @@
                 :inject-startup-reread! (fn [text] (swap! calls conj [:inject-startup-reread text]))
                 :record-clear! (fn [ticket-id] (swap! calls conj [:record-clear ticket-id]))}
       result (closing-context-clear-lib/evaluate-closing-context-clear!
-              {:idle? true :closed-ticket-id "BL-308" :last-cleared-ticket-id nil :role-name "coordinator"}
+              {:idle? true :closed-ticket-id "BL-308" :last-cleared-ticket-id nil
+               :role-name "coordinator" :fullness-percent full-enough}
               adapters)]
   (assert= "clear-fires-at-safe-close-01: fires the clear action" {:action :clear} result)
   (assert= "clear-fires-at-safe-close-01: injects clear, then the re-read instruction, then records - in that exact order"
@@ -78,7 +110,8 @@
                   :inject-startup-reread! (fn [_] (swap! calls conj :inject-startup-reread))
                   :record-clear! (fn [_] (swap! calls conj :record-clear))}
         result (closing-context-clear-lib/evaluate-closing-context-clear!
-                {:idle? false :closed-ticket-id "BL-308" :last-cleared-ticket-id nil :role-name "coordinator"}
+                {:idle? false :closed-ticket-id "BL-308" :last-cleared-ticket-id nil
+                 :role-name "coordinator" :fullness-percent full-enough}
                 adapters)]
     (assert= (str "no-clear-while-not-idle-02 (" reason "): no clear action") {:action nil} result)
     (assert= (str "no-clear-while-not-idle-02 (" reason "): touches no adapter at all") [] @calls)))
@@ -90,7 +123,8 @@
                 :inject-startup-reread! (fn [_] (swap! calls conj :inject-startup-reread))
                 :record-clear! (fn [_] (swap! calls conj :record-clear))}
       result (closing-context-clear-lib/evaluate-closing-context-clear!
-              {:idle? true :closed-ticket-id "BL-308" :last-cleared-ticket-id "BL-308" :role-name "coordinator"}
+              {:idle? true :closed-ticket-id "BL-308" :last-cleared-ticket-id "BL-308"
+               :role-name "coordinator" :fullness-percent full-enough}
               adapters)]
   (assert= "no-repeat-clear-same-close-03: no clear action" {:action nil} result)
   (assert= "no-repeat-clear-same-close-03: touches no adapter at all" [] @calls))
@@ -101,7 +135,8 @@
                 :inject-startup-reread! (fn [text] (swap! calls conj [:inject-startup-reread text]))
                 :record-clear! (fn [ticket-id] (swap! calls conj [:record-clear ticket-id]))}
       result (closing-context-clear-lib/evaluate-closing-context-clear!
-              {:idle? true :closed-ticket-id "BL-309" :last-cleared-ticket-id "BL-308" :role-name "coordinator"}
+              {:idle? true :closed-ticket-id "BL-309" :last-cleared-ticket-id "BL-308"
+               :role-name "coordinator" :fullness-percent full-enough}
               adapters)]
   (assert= "new-close-triggers-again-04: fires the clear action again" {:action :clear} result)
   (assert= "new-close-triggers-again-04: records the NEW ticket id, not the old one"
@@ -109,6 +144,18 @@
             [:inject-startup-reread (closing-context-clear-lib/startup-reread-instruction "coordinator")]
             [:record-clear "BL-309"]]
            @calls))
+
+;; hotfix: unknown fullness never touches adapters even when otherwise eligible
+(let [calls (atom [])
+      adapters {:inject-clear! (fn [] (swap! calls conj :inject-clear))
+                :inject-startup-reread! (fn [_] (swap! calls conj :inject-startup-reread))
+                :record-clear! (fn [_] (swap! calls conj :record-clear))}
+      result (closing-context-clear-lib/evaluate-closing-context-clear!
+              {:idle? true :closed-ticket-id "BL-308" :last-cleared-ticket-id nil
+               :role-name "coordinator" :fullness-percent nil}
+              adapters)]
+  (assert= "hotfix unknown fullness: no clear action" {:action nil} result)
+  (assert= "hotfix unknown fullness: touches no adapter" [] @calls))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
