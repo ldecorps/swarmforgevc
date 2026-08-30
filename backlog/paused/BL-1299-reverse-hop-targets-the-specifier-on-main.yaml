@@ -1,0 +1,125 @@
+id: BL-1299
+title: "A back-all reverse hop is addressed to the specifier, whose worktree is the published main branch, so the prescribed merge-only action would land unapproved in-flight work on main and bypass the QA gate"
+milestone: M8
+type: defect
+severity: critical
+status: todo
+epic: swarm-reliability
+priority: 0
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1299-reverse-hop-skips-master-resident-roles.feature
+
+invariants:
+  - "No reverse git_handoff copy is ever addressed to a role whose worktree is the master checkout (today: coordinator and specifier)."
+  - "Changing the reverse-recipient set never changes which role is stamped terminal - last-pack-role? still resolves to the last code-worktree role."
+
+source: "Live inbound 2026-08-30T17:50Z: .swarmforge/handoffs/specifier/inbox/in_process/00_20260830T175000Z_001295_from_architect_to_specifier_for_specifier.handoff - a non-forwarding: true reverse copy from architect carrying commit 513d840d97 for BL-1297. Refused by the specifier rather than executed; verified against swarm_handoff.bb and .swarmforge/roles.tsv before minting."
+
+description: |
+  ## What is wrong
+
+  `swarm_handoff.bb`'s `reverse-roles` computes a `back-all` sender's reverse
+  recipients as `(vec (take idx (pack-role-names)))`. `pack-role-names` is
+  documented as "Pipeline roles from roles.tsv order, excluding coordinator"
+  and removes exactly one role:
+
+      (remove #(= "coordinator" (handoff-lib/seat-stage %)))
+
+  The specifier is NOT removed. It is first in the pipeline order, so it is a
+  reverse recipient for EVERY `back-all` sender. `.swarmforge/roles.tsv` today
+  gives `architect` col9 = `back-all`, so with roles
+  `[specifier coder cleaner architect hardender documenter QA]` and idx 3,
+  `(take 3 ...)` = `[specifier coder cleaner]`.
+
+  ## Why this is critical, not cosmetic
+
+  The coordinator was excluded because it is master-resident and does no code
+  integration. The specifier is master-resident for the SAME reason
+  (`PIPELINE.md`'s roles table gives both worktree "master") and is under an
+  explicit constitutional prohibition:
+
+    - Article 1.2 - the specifier "never merges, closes tickets, or integrates".
+    - Article 4.2 / 1.8 - QA lands the approved commit on `main`.
+
+  But Article 2.4 says a `non-forwarding: true` inbound is merge-only: "run
+  the payload merge, then `done_with_current.sh`". So the protocol instructs
+  the specifier to perform an action its own role article forbids, and the
+  target of that merge is the published branch.
+
+  ## Measured, 2026-08-30, on the live inbound
+
+  The master checkout is on branch `main`; the architect's commit `513d840d97`
+  is the tip of branch `master`, which has diverged:
+
+      git rev-list --left-right --count main...master  ->  3   398
+      git merge-base --is-ancestor 513d840d97 main     ->  false
+      git diff --stat main...513d840d97                ->  392 files, 11516 insertions
+
+  Executing the prescribed merge would therefore land 398 commits of
+  unapproved, in-flight, multi-ticket work onto `main` in one action, with no
+  QA gate anywhere in the path. The only thing that prevented it was the
+  receiving agent noticing the conflict between Article 2.4 and Article 1.2.
+
+  ## How (direction, not mandate)
+
+  The natural fix is to exclude master-resident roles from `pack-role-names`
+  the same way `coordinator` already is, rather than special-casing
+  `specifier` at the `reverse-roles` call site. `pack-role-names` has only two
+  call sites in the tree (`last-pack-role?` and `reverse-roles`), and the
+  terminal role is `QA` either way, so widening the exclusion does not disturb
+  terminal stamping - invariant 2 exists to hold that.
+
+  Deriving "master-resident" from the roles table (worktree column) is
+  preferable to hardcoding a second role name, but that is direction: any
+  implementation satisfying the scenarios and the invariants is acceptable.
+
+  Note that `.swarmforge/roles.tsv` is local runtime state, not tracked - the
+  fix belongs in the code that reads it, not in the tsv.
+
+notes: |
+  ## Deliberately NO required_wiring [2026-08-30 specifier]
+
+  This ticket adds no mechanism needing a call site: it changes an existing
+  function that already has live callers. The one anchor available - the
+  acceptance handler registration in `specs/pipeline/steps/index.js` - would be
+  satisfied by the parcel's own diff and so would gate nothing (BL-1235), and
+  it is redundant anyway: `acceptance:` here points at a real `.feature`, and
+  the acceptance runner already THROWS on a scenario with no handler, so the
+  suite itself forces the handler to exist. Banking a green that means nothing
+  is worse than declaring none.
+
+  ## Relationship to the reverse-hop feature itself
+
+  The reverse-hop mechanism landed in human commit `44d2d42591` ("Steal
+  upstream reverse git_handoff hops and two-call AUDIT_REQUIRED.",
+  2026-08-30 17:03Z). This is a gap in that feature's recipient selection, not
+  an argument against the feature. `back-one` senders are unaffected in
+  today's table (`cleaner` -> `coder`); only `back-all` reaches back far
+  enough to touch the specifier.
+
+qa_e2e_procedure: |
+  1. Confirm `.swarmforge/roles.tsv` still gives `architect` col9 = `back-all`
+     (if not, set it for the test and restore afterwards).
+  2. From the architect worktree, send a `git_handoff` forward to `hardender`.
+  3. Assert NO reverse copy appears in the specifier mailbox:
+     `ls .swarmforge/handoffs/specifier/inbox/new/ | grep from_architect` is empty.
+  4. Assert the legitimate reverse copies DO still appear for `coder` and
+     `cleaner` (including their worktree mailboxes).
+  5. Assert the forward copy to `hardender` is unchanged and still carries the
+     terminal stamping it had before.
+
+human_approval: pending
+
+approval_context: >
+  The defect and its blast radius are established by measurement and are not in
+  question; the fix direction (exclude master-resident roles from the reverse
+  recipient set) is firm. What needs a human decision is only whether to derive
+  "master-resident" from the roles-table worktree column or to extend the
+  existing hardcoded coordinator exclusion by one name. This is a critical
+  defect that fires on every architect forward, so it wants a fast decision -
+  the receiving specifier refused the merge, but that refusal is a judgement
+  call by the agent, not an enforced guard.
