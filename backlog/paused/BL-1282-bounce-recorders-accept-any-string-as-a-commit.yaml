@@ -1,0 +1,162 @@
+id: BL-1282
+title: "DEFECT — the bounce recorders accept any non-blank string as --commit: 42 of 346 stored bounces breach the 10-hex contract and 19 cite a commit that resolves to nothing"
+milestone: M8
+type: defect
+severity: medium
+# medium: real-but-contained. The send-back itself is never blocked (BL-635
+# recording is best-effort), and the store still works for the 94% of rows
+# whose commit resolves. What is damaged is evidence quality and one live
+# attribution: a typo'd hash cannot be walked back to a diff, and because the
+# dedup key includes `commit`, re-recording the same send-back with the
+# corrected hash appends a SECOND row instead of deduping. Not `high`: no
+# safety signal is broken outright and nothing is lost that a re-read cannot
+# recover. Not `low`: the polluted rows feed the daily briefing and the
+# per-role bounce-rate experiment BL-990 was built to protect.
+status: todo
+epic: code-quality-gates
+priority: 90
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1282-bounce-recorders-accept-any-string-as-a-commit.feature
+
+invariants:
+  - "Every commit written to the bounce store is exactly ten hexadecimal characters — the contract Article 2.2 already states."
+  - "A bounce record is never written citing a commit that resolves to no commit object in the repository at write time."
+  - "The three outcomes of a recorder call — record written, duplicate no-op, refused — are always distinguishable from the CLI's own output; a refusal never reads as a success."
+
+human_approval: pending
+
+approval_context: >
+  Approve if bounce telemetry is worth defending at write time. The one
+  judgement call is the DISPOSITION of a bad commit: this ticket asks for a
+  parse-time refusal (the caller has the real hash in hand and can re-run in
+  seconds), rather than writing the row with an "unwalkable" marker. Refusal
+  is the stricter choice and it does mean a fumbled invocation records
+  nothing until it is re-run — acceptable because BL-635 recording is
+  explicitly best-effort and never blocks the send-back itself. Reject, or
+  amend to the marker variant, if you would rather never lose a row.
+  Backfilling the 19 existing unresolvable records is deliberately NOT in
+  this slice (the store is append-only by design); say so if you want it and
+  it becomes its own ticket.
+
+description: |
+  ## What
+
+  `record-bounce.js` and `record-bounce-correction.js` validate every
+  argument they take against a real contract — `--role` and `--by` against
+  the pipeline role vocabulary, `--class` against the failure classes,
+  `--evidence` against a path shape — except `--commit`, which is checked
+  only for being a non-blank string
+  (`extension/src/quality/qaBounce.ts` `isNonEmptyString(candidate.commit)`;
+  `extension/src/tools/recordBounceCorrectionArgs.ts`
+  `isNonBlank(flags['--commit'])`). Any string at all is written durably.
+
+  Article 2.2 already states the contract this is missing: a handoff
+  `commit` is "exactly 10 hex chars, one real commit". Nothing enforces it
+  on the way into the bounce store.
+
+  ## Why it matters
+
+  Measured over the whole store on 2026-08-30 — 346 bounce records across
+  `.swarmforge/bounces/` and the legacy `.swarmforge/qa_bounces/`:
+
+  - **42 records breach the ten-hex contract.** Mostly 9-character hashes;
+    also two full 40-character hashes (BL-727, BL-1115), several
+    8-character ones in the legacy store, and one record whose `commit` is
+    the literal string `subunparseable` (BL-590, 2026-08-27) — a shell
+    accident written durably without complaint.
+  - **19 records cite a commit that resolves to no object in this
+    repository.** Sixteen are in the go-forward store.
+
+  Two of those unresolvable hashes are demonstrably typos rather than
+  later-collected objects, and they show the second-order damage:
+
+      BL-1247  9663cc93b1  2026-08-29T01:29:26.099Z  coder  by QA   <- resolves to nothing
+      BL-1247  9663cc93bd  2026-08-29T01:29:28.805Z  coder  by QA   <- the real commit
+
+  Two point seven seconds apart, one character apart. The reviewer noticed
+  and re-ran — but `bounceNaturalKey` includes `commit`, so the corrected
+  re-run did not dedup against the typo. It appended. **The coder is charged
+  twice for one send-back**, in the store that feeds the daily briefing and
+  the per-role bounce-rate experiment.
+
+  Worse, it is not correctable. `bounceCorrectionTargetKey` is also
+  `ticket|commit`, so a BL-990 correction can only ever name one of the two
+  rows; the phantom stays charged, permanently, because the store is
+  append-only by design.
+
+  Not every unresolvable hash is a typo — a commit recorded correctly can
+  later become unreachable through a branch reset or a collect, which this
+  host has seen repeatedly. That is a real and separate cause, and this
+  ticket does not claim those rows. But `subunparseable` is not that, a
+  9-character hash was wrong at the moment it was written regardless of what
+  happened afterwards, and the BL-1247 pair above is a typo caught in the
+  act.
+
+  ## How (direction, not mandate)
+
+  Validate `--commit` where every other argument is already validated — at
+  parse time, in both recorders — on two counts: the ten-hex shape, and that
+  it resolves to a commit object in the repository. Refuse otherwise, with a
+  machine-readable reason on the CLI's existing JSON stdout, so the caller
+  can tell a refusal from a duplicate no-op from a written record. The
+  reason tokens `commit-not-ten-hex` and `commit-unresolvable` are named in
+  the scenarios because the acceptance steps assert on them; how the check
+  is factored between the two CLIs is the implementer's call.
+
+  Case: ten hexadecimal characters, matched case-insensitively. Git prints
+  lowercase and every stored row is lowercase, but refusing an uppercase
+  hash that git resolves fine would be friction with no benefit.
+
+  ## Scope
+
+  - `extension/src/tools/recordBounceArgs.ts`,
+    `extension/src/tools/recordBounceCorrectionArgs.ts`, and whichever
+    shared validator they reach for.
+  - Both CLIs' own test suites.
+
+  ## Out of scope
+
+  - Backfilling, annotating, or deleting the 19 existing unresolvable
+    records. The store is append-only by design and a repair is its own
+    decision; this slice stops the bleeding at the write path only.
+  - Changing `bounceNaturalKey` or `bounceCorrectionTargetKey`. The
+    double-charge above is a consequence of the bad hash getting in, and
+    closing the write path closes it. Redesigning the dedup key is a
+    different ticket if it is ever wanted.
+  - Any constitution or prompt edit. Article 2.2 already states the ten-hex
+    contract; this ticket enforces an existing rule and writes no new one,
+    so no specifier-owned prose half is owed here (BL-798).
+
+qa_e2e_procedure: >
+  In the QA worktree, with the compiled CLIs: (1) run record-bounce.js
+  against a scratch project root with --commit subunparseable and confirm it
+  refuses, naming commit-not-ten-hex, and that the scratch bounce file is
+  unchanged; (2) repeat with a well-formed but nonexistent hash such as
+  9663cc93b1 and confirm it refuses naming commit-unresolvable; (3) repeat
+  with the real ten-hex prefix of a commit on the QA branch and confirm one
+  record is appended and the CLI reports it written; (4) run that same
+  successful invocation a second time and confirm the CLI distinguishes the
+  duplicate no-op from both a write and a refusal; (5) run
+  record-bounce-correction.js with --commit subunparseable and confirm it
+  refuses and leaves the correction store unchanged. Finally re-run the
+  store-wide scan from the description over .swarmforge/bounces/ and
+  .swarmforge/qa_bounces/ and confirm the counts are unchanged at 42 and 19
+  — this slice must not rewrite history.
+
+source: |
+  Found by the specifier on 2026-08-30 while working the 2026-08-29 closing
+  ceremony packet (BL-820 lean pass). The packet's own hypotheses named the
+  QA dwell and the behaviour-bounce count; walking the shift's bounce rows
+  to test those hypotheses is what surfaced the BL-1247 pair, and scanning
+  the rest of the store showed it was not a one-off.
+
+  Recorded as the ceremony's process_ticket outcome for shift 2026-08-29.
+
+notes: |
+  The two invariant-unencoded bounces in the same shift (BL-1245, BL-1194,
+  both raised by the architect) were checked and are correctly attributed —
+  both tickets do declare invariants in their YAML, so BL-633's mechanism
+  worked as designed and no spec-side defect is implied by them.

@@ -33,6 +33,33 @@ gate's blind spot, covered structurally by the same fail-open posture below.
 A task's own `backlog/evidence/<task-id>-*` files never count as foreign
 overlap — that's the task's own paperwork.
 
+## Declared-path exemption (BL-1276)
+
+A path is also **not** foreign when the ticket's own landed YAML (freshest of
+`main`/`origin/main` — never the sender's working copy, so a specifier
+amendment is honoured without the sender merging first) declares it in one
+of two fields, read through one `declared-exempt-paths` accessor:
+
+- `acceptance:` — a defect against a shipped check amends the durable
+  contract for that check rather than forking it, so the one file the
+  ticket must edit is the one file the gate would otherwise see as foreign.
+- `retires:` — a list of exact paths belonging to ANOTHER ticket that this
+  ticket is chartered to retire or re-tense. BL-1006 requires exactly this
+  shape ("retire, never reword": a retirement ticket, by construction,
+  edits the superseded ticket's `.feature` file), so before this the gate
+  refused a constitutionally mandated edit — BL-1246's fully tested,
+  committed cleanup of BL-1248 scenario 04 had no move that did not either
+  violate its own spec or defeat the gate.
+
+Exact strings only, one path per `retires:` entry — no glob or prefix
+expansion, and declaring a feature file does not exempt that ticket's YAML
+or evidence files too. A ticket that cannot be resolved on any ref grants NO
+exemption, and the refusal says the exemption could not be evaluated. The
+`RETIRE-WITH: <id>` comment convention some feature files carry is
+documentation only — never read by the gate, and not required to agree with
+`retires:`. See `swarmforge/backlog-schema.md`'s `retires` row for the full
+field contract.
+
 ## Example refusal
 
 ```
