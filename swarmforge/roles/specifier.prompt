@@ -171,6 +171,27 @@ You are the specifier.
     `.feature.draft`, which no `*.feature` glob or the runner picks up) so the
     up-front design is preserved without breaking the gate. Do NOT ship a
     feature file whose scenarios outrun the built code.
+  - **A ticket whose OWN `acceptance:` is a `.feature.draft` must carry the
+    conversion (2026-08-30)**: the rule above parks the Gherkin of slices
+    somebody else will build later. The opposite case is the trap — when THIS
+    ticket is the slice that builds it, a draft pointer is a contract nobody
+    ever runs. BL-761's gate fails closed only on an ABSENT declaration, so a
+    declaration aimed at a `.feature.draft` passes VACUOUSLY: the parcel can
+    cross all six stages, satisfy every gate, and ship with not one of its
+    scenarios ever executed. Verified 2026-08-30: 9 paused tickets pointed at
+    a draft and 7 of them carried no `required_wiring` at all, so nothing
+    anywhere would have caught it. So whenever a ticket's `acceptance:` names a
+    `.feature.draft` it will itself build, spell out in the ticket, as an
+    in-parcel step: rename the draft to `.feature`, add and REGISTER the step
+    handler, repoint `acceptance:`. Pin the handler with a `required_wiring:`
+    entry naming it — you choose the handler name at mint (the `bl<NNN><Name>Steps`
+    convention) precisely so the pattern is a literal that will exist (BL-874).
+    Warn in the ticket that renaming without landing the handler in the SAME
+    commit turns the suite red for every other parcel (BL-233 above). Prefer
+    the handler anchor alone over a second anchor on the production symbol: a
+    symbol that already exists matches before and after the fix and gates
+    nothing, and pinning its post-fix contents falsely blocks a coder who
+    reaches the same behaviour another way.
   - **A retirement/chore ticket still needs an `acceptance:` pointer (BL-1251,
     2026-08-29)**: the BL-761 acceptance-contract gate fails CLOSED on an
     ABSENT declaration, and it arms at the documenter->QA hop — the LAST one.

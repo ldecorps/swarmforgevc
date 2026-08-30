@@ -47,11 +47,31 @@ description: |
   Do not widen `--by` (already complete) or add QA as a producer here —
   QA-produced defects have no downstream bouncer in the chain.
 
+  ## Making the contract executable (do this in THIS parcel)
+
+  `acceptance:` above points at a `.feature.draft`, which no `*.feature`
+  glob and no runner picks up - correct while the slice was unbuilt, wrong
+  the moment it is built. In the SAME commit as the fix:
+
+  1. Rename `specs/features/BL-799-record-bounce-specifier-producer.feature.draft`
+     to `.feature`.
+  2. Add `specs/pipeline/steps/bl799RecordBounceSpecifierProducerSteps.js`
+     and register it in `specs/pipeline/steps/index.js` under exactly that
+     name - `required_wiring` above pins it.
+  3. Point this ticket's `acceptance:` at the `.feature` path.
+
+  Do NOT rename the draft without landing the handler in the same commit:
+  the runner THROWS on any scenario lacking a handler (BL-233), so a
+  half-done rename turns the suite red for every other parcel.
+
   ## Out of scope
 
   - Backfilling the missing BL-795 ledger row (note it in the parcel's
     evidence if trivially safe, else skip).
   - Any change to bounce routing rules (Article 4.3/4.4).
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl799RecordBounceSpecifierProducerSteps::acceptance handler registered so the runner actually executes both scenarios; without it the contract below is declared but never run"
 
 acceptance: specs/features/BL-799-record-bounce-specifier-producer.feature.draft
 
@@ -66,6 +86,29 @@ source: |
     --role: coder|cleaner|architect|hardender|documenter
 
 notes: |
+  ## Freshness confirmed [2026-08-30] specifier
+
+  Premise re-verified against live code before promotion (Article 3.6
+  proactive check), not merely re-read. Still exactly as filed:
+  `KNOWN_PRODUCING_ROLES` (extension/src/quality/qaBounce.ts:11) is
+  `coder|cleaner|architect|hardender|documenter` - no specifier - while
+  `KNOWN_BOUNCE_ROLES` (line 70), which backs `--by`, does include it. Ran
+  the CLI live with `--role specifier`: it printed usage and exited, the
+  same refusal the 2026-08-03 and 2026-08-27 occurrences record. Two
+  distinct enums, one gap. CONFIRM PROMOTE.
+
+  Only ONE required_wiring entry, deliberately. An anchor on
+  `KNOWN_PRODUCING_ROLES` was considered and rejected twice over: the
+  literal already exists, so it would match before and after the fix
+  (vacuous), and pinning the post-fix array contents would falsely block a
+  coder who derives the list from KNOWN_BOUNCE_ROLES instead of editing it
+  by hand. The handler anchor is the honest gate - it guarantees the two
+  scenarios RUN, and the scenarios are what assert specifier is accepted.
+
+  Checked the sibling surface too: `record-bounce-correction.js` (BL-990)
+  takes only `--by`, which already accepts specifier, so it has no
+  equivalent gap and stays out of scope.
+
   ## e2e procedure for QA
 
   1. Run record-bounce with --role specifier --class spec-gap against a
