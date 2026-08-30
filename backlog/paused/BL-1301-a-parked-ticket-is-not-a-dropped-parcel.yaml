@@ -117,8 +117,7 @@ qa_e2e_procedure: |
   4. Confirm an active ticket with `status: blocked` and no trail at all still
      produces a dispatch-gap nudge - that sweep is untouched.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   The defect and the live instance are measured and not in question. What is
   worth a human eye is the choice of marker: this ticket reuses the existing

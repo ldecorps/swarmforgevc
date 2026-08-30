@@ -153,6 +153,21 @@ notes: |
     loud) are all in `done/`; nothing in `paused/`, `active/`, `hold/` or
     `debt/` mentions `master_main_reconcile`.
 
+  ## Route: the normal pipeline, NOT the expeditor (specifier ruling 2026-08-30)
+
+  This ticket is `severity: high`, so Article 3.2.4 puts it at the front of the
+  promotion queue. That is a promotion-ORDERING rule and nothing more. It is
+  not a reason to run `expedite.sh` - queue-jump is not the expeditor. The
+  expeditor exists for defects in the swarm's own delivery machinery, which
+  cannot ride the pipeline they repair; this fix is a classification guard in
+  a .bb lib and the live pipeline carries it fine. Roles work on their own
+  worktree branches, so the reconcile reset cannot reach the parcel in flight,
+  and QA's land is already protected by the BL-1144 publish lock.
+
+  Full ruling, the reproduced teardown refusal that would have blocked an
+  expedited run anyway, and the freshness pre-clearance:
+  `backlog/evidence/BL-1288-expedite-call.md`.
+
   ## The kill switch is NOT the remedy here
 
   `master_main_reconcile_enabled` was shipped OFF by BL-1248 and deliberately
@@ -195,3 +210,5 @@ occurrences:
     16062880b. Prevention at the push-verdict, which is what this ticket builds,
     is the only workable fix."
 
+
+assigned_to: coder

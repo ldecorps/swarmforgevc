@@ -1,0 +1,134 @@
+id: BL-1303
+title: "A feature file can reach main with no registered step handler, so the runner throws on every one of its scenarios and the next role to run the suite inherits a red it did not cause"
+milestone: M8
+type: defect
+severity: high
+# high, matching BL-1294's reasoning for the same shape: this breaks a safety
+# SIGNAL rather than degrading it. main's acceptance verdict stops reflecting
+# the code under test, and it fails against whichever parcel runs the suite
+# next rather than the one that caused it. It is live right now (BL-1253, 8
+# scenarios, 0 pass). Not critical: the swarm is up, no production path is
+# touched, and the complete parcel still exists at 2e519c4a8f - nothing lost.
+status: todo
+epic: code-quality-gates
+priority: 28
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1303-a-feature-on-main-always-has-a-registered-handler.feature
+
+required_wiring:
+  - "swarmforge/scripts/run_commit_guards.sh::run_guard check_feature_handler_registration.sh::the guard must be added to the commit-guard chain. run_commit_guards.sh is the pre-existing live consumer - both swarmforge/git-hooks/pre-commit and pre-merge-commit exec it - so this anchor proves the guard is actually REACHED rather than merely written. Per BL-1235 this is the entry that carries the wiring proof. The guard name is fixed here at mint so the pattern is a literal that will exist; keep the run_guard prefix so it joins the chain the same way check_pipeline_code_on_main.sh does."
+  - "specs/pipeline/steps/index.js::bl1303::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler, which is this ticket's own subject, so an unregistered file would fail every scenario here. Verified absent from index.js at spec time (grep bl1303 -> 0). Honest note per BL-1235: this anchor is satisfied by the parcel's own diff and so proves nothing about reachability - the run_commit_guards.sh entry above is the real wiring proof. It is kept only because registering a handler is literally the behaviour under test."
+
+invariants:
+  - "The guard fails closed: an artifact it cannot resolve or read is a refusal naming it, never a silent pass."
+  - "One pass reports every offending artifact, not only the first."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. One scope judgment is
+  genuinely yours.
+
+  Scenario 03 widens the guard from REGISTRATION to RUNNABILITY: it also refuses
+  when a registered handler executes a sibling script under
+  specs/pipeline/steps/lib/ that is absent from the tree. I included it because
+  it is the half the coder actually reported, and because the live incident lost
+  BOTH the registration line and the lib script in the same revert - fixing only
+  registration would turn 8 no-handler failures into 8 execution failures and
+  look like a regression. If you would rather keep this slice to registration
+  alone and let the sibling-script check be its own ticket, say so and I will
+  split it; the remaining five scenarios stand on their own.
+
+  What is NOT in question: the guard refuses rather than warns. Every other
+  member of the commit-guard chain refuses, and a warning here would reproduce
+  exactly the accumulate-unseen failure BL-1240 measured at six files a day.
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/runtime.js` throws on any scenario whose steps no registered
+  handler matches. Nothing refuses a commit or merge that puts `main` into that
+  state, so a feature file can land with its handler unregistered - or with the
+  handler registered but a script it executes missing - and the failure surfaces
+  later, to whichever role next runs the suite, against a parcel that did not
+  cause it.
+
+  This is the step-registry sibling of BL-1240, which measured the same
+  accumulate-unseen shape for `suite-manifest.tsv`. Different registry,
+  different gate, same failure mode; neither ticket subsumes the other.
+
+  ## The live incident (2026-08-30)
+
+  BL-1253's QA bounce-revert `403b75e44e` correctly removed four coupled
+  artifacts together: the handler
+  `specs/pipeline/steps/bl1253DeadFeederOwnsGetUpdatesStampSteps.js`, its lib
+  `specs/pipeline/steps/lib/bl1253StartCursorBridgeFeederCli.sh`, the
+  `specs/pipeline/steps/index.js` registration line, and four evidence files.
+
+  A later merge then resurrected the handler file and the feature file, but
+  neither the registration nor the lib. Measured on `main` at spec time:
+
+      steps/bl1253DeadFeederOwnsGetUpdatesStampSteps.js   PRESENT
+      steps/lib/bl1253StartCursorBridgeFeederCli.sh       ABSENT
+      specs/features/BL-1253-...feature                   PRESENT
+      index.js registration (grep bl1253)                 ABSENT
+
+      node specs/pipeline/cli.js specs/features/BL-1253-...feature
+        -> 8 tests, 0 pass, 8 fail
+        -> 'no step handler matched "Given the landed sources at commit 2ec06b6ef1"'
+
+  BL-1253 itself is not at fault and needs no respec: it was parked to
+  `backlog/hold/` at 17:17 by bookkeeping (`66be60ea40`, orphaned by a dead
+  expedite run for BL-1295), and its complete reworked parcel still exists at
+  `2e519c4a8f` on all six `primary/*` branches. Restoring `main` is a separate,
+  immediate QA action - `specs/pipeline/steps/` is a QA-exclusive path under
+  `check_pipeline_code_on_main.sh`, so no other role may commit there. This
+  ticket is only about the missing detection.
+
+  ## How (direction, not mandate)
+
+  A guard in the commit-guard chain beside `check_pipeline_code_on_main.sh`,
+  which already refuses a bad `main` tip before it exists rather than reacting
+  to one that already does. Resolving each feature's steps against the registry
+  is the obvious route; the implementer chooses how.
+
+  Two constraints worth naming because both have bitten before:
+
+  - `run_commit_guards.sh` runs `set -uo pipefail`, NOT `set -e`, and captures
+    each guard's status so one failure cannot mask the rest (BL-1242/BL-1252).
+    A new guard joins that shape and keeps its own `set -euo pipefail` inside.
+  - The refusal must list every offender in one pass (Article 4.4's shape,
+    applied in a gate) - a guard that stops at the first offender reproduces
+    the one-defect-at-a-time bounce loop that rule exists to prevent.
+
+qa_e2e_procedure: |
+  1. On a scratch branch off main, delete the `bl1253` line from
+     `specs/pipeline/steps/index.js` (or pick any registered handler) and stage
+     the change. Run `swarmforge/scripts/run_commit_guards.sh <repo-root>`.
+     Expect a refusal naming that feature file and the unregistered handler,
+     alongside any other guard's output, with the chain still running every
+     guard rather than aborting at the first failure.
+  2. Restore the line, then delete a lib script a registered handler executes.
+     Re-run: expect a refusal naming the missing sibling script.
+  3. Restore both. Re-run: expect the guard silent and the chain green.
+  4. Repeat step 1 on a non-main branch: expect the guard silent.
+  5. Confirm the live case is closed: `node specs/pipeline/cli.js
+     specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature`
+     runs 8 scenarios with no "no step handler matched" error.
+
+source: >
+  Coder note 2026-08-30T19:25Z (priority 00): "BL-1253 main: steps ref missing
+  lib/bl1253StartCursorBridgeFeederCli.sh". Investigated by the specifier the
+  same turn; the missing lib is real but is the SECOND defect - the primary
+  cause of the red is the absent index.js registration. Both were lost in the
+  same revert and both were left behind by the same partial resurrection.
+
+notes: >
+  Sibling of BL-1240 (same accumulate-unseen shape, different registry:
+  suite-manifest.tsv vs specs/pipeline/steps/index.js). Neither subsumes the
+  other and they can land in either order. Checked at spec time and NOT
+  duplicated by BL-1294 (pinnedRepoFixture closure resolver) or BL-1279
+  (front-desk fixture bb closure).
