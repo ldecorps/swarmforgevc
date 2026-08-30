@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=29811f2580c4d229894912e03dc1869f004dc800d0dbc6d549717c87012d2958
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T22:34:05.101356408Z","feature_name":"A review role's forward carries work that role actually did","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1293-a-review-forward-carries-the-roles-own-work.feature","background_hash":"4c6b6778a6267dbee1ad749e7a80cd1948d93e71aa987cd13bac28af53812ee9","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A forward is judged by what the role contributed, not by the commit id","scenario_hash":"d8e81fec9ce922e17412265e8498d05e790cd6bda2f1d55bfc4242c733bbe754","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-30T22:34:01.718189823Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A review role's forward carries work that role actually did
 
   BL-806's review-forward evidence gate refuses a forward whose `commit:`
