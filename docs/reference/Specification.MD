@@ -1,5 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-670: the Pipeline Board's authoritative
+`.swarmforge/board/ticket-stage-map.json` moves from a bare `{ticket ->
+role}` string map to a qualified `{ticket -> {stage, status, asOf,
+healthDot}}` shape, crossing the Babashka/TypeScript language boundary in
+four sites (`pipeline_stage_lib.bb`, `pipeline_stage_cli.bb`,
+`swarmState.ts`, `pipelineGridLive.ts`'s `invertTicketStageToRoleHeldTickets`,
+which accepts either shape for backward compatibility with fixtures still
+writing the old one). `status` is one of `claimed` (a role holds the parcel
+`in_process`, unchanged), `in-transit-to` (a parcel sits unclaimed in the
+next role's `new/` inbox — BL-1048's existing never-not-started case, now
+named explicitly instead of reading identically to `claimed`), or
+`last-known` (nothing live mentions the ticket, so the durable `sent/`
+handoff trail answers with the role it was last forwarded to — newly read;
+`:sent` was previously absent from the scanned mailbox states). The trail is
+a FALLBACK, never a competitor to a live observation: live derivation keeps
+BL-1048's existing most-downstream-wins precedence untouched, and `sent/` is
+consulted only when no live mailbox mentions the ticket at all — an earlier
+"rank claimed above in-transit above last-known" design broke BL-1048's own
+scenario, where a ticket delivered downstream while still technically open
+upstream must show the later, more-current role. Every qualified entry also
+carries an `asOf` ISO-8601 timestamp (ties on identical role+status break on
+the later `asOf`, a string compare that closed an order-dependence a
+property test found across 71/500 draws) and a `healthDot` (green/yellow/red
+from the ticket YAML's own `bounce_history:` count — 0 / 1-2 / 3+, no new
+store). One derivation, two consumers: the board and BL-659's completion
+ring read the identical map, so they can never disagree. The six status/dot
+literals crossing the language boundary are asserted equal by a test
+reading them out of the Babashka source, not kept in sync by comment
+(BL-897). Sync triggers, all grid layout (columns, padding, epic captions,
+the dropped mini-slug row), the per-ticket legend deep-links, and the
+not-started defect itself are untouched — each is a different, already-owned
+ticket (BL-487, BL-585, BL-940, BL-1048 respectively). See the new
+`docs/how-to/BL-670-pipeline-board-last-known-stage-and-health.md`.
+Acceptance:
+`specs/features/BL-670-pipeline-board-last-known-stage-and-health.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1243: each Live Screen role tile now
 paints its OWN agent's activity dot instead of every tile moving together.
 BL-1160 shipped the reader (`resolvePaneStatusKind` prefers an optional
