@@ -305,10 +305,29 @@
          (subject-names-task? (:out subj) task-ticket-id))))
 
 (defn own-commit-changed-paths
-  "The paths THIS commit changed of its own, against its FIRST parent - for
-   every commit shape. nil (never []) when the commit or its diff could not
-   be read, so a caller reads blindness as blindness rather than as a clean
-   commit.
+  "The paths a commit changed of its own - under one of TWO semantics, which
+   are the same answer everywhere except on a merge:
+
+     :delivered  what content this commit puts on the branch - its change
+                 against its FIRST parent. \"What did receiving this parcel
+                 bring in?\"  The land step's replay asks this.
+
+     :authored   what the person making this commit actually wrote - what
+                 differs from EVERY parent (`--cc`). For a merge that is only
+                 a conflict resolution or an evil merge, and it is empty for
+                 an ordinary clean receive-merge, whose content was authored
+                 upstream and is already attributed to the commits that made
+                 it. The send-time scope gate and the unregistered-test gate
+                 ask this, because both judge the parcel's AUTHOR.
+
+   Defaults to :delivered, which is the shape BL-1241's readability probe in
+   land_step_lib.bb already depends on.
+
+   nil (never []) when the commit or its diff could not be read, so a caller
+   reads blindness as blindness rather than as a clean commit. Under
+   :authored an EMPTY answer is a real answer - the merge resolved nothing
+   itself - and that distinction is the whole point of returning nil for
+   failure.
 
    BL-1297: the previous invocation was
    `diff-tree --no-commit-id --name-only -r --first-parent <commit>`, which
@@ -322,31 +341,38 @@
    approved parcels it never inspected, and the land step's replay reported
    nothing to commit on the one shape it is always given.
 
-   Diffing the first parent against the commit answers the question the
-   three callers actually ask (\"what did this commit change of its own\")
-   on merges and non-merges alike. `-m` is deliberately NOT used: it unions
-   the per-parent diffs, which attributes the merged-in branch's work to the
-   merging role - a different question, and a stricter gate than any caller
-   asked for. A single-parent commit's answer is unchanged: --first-parent
-   was already a no-op there, and the two-tree diff-tree form is the same
-   plumbing walk with the same rename-detection-off default.
+   BL-1297 amended: the first version of this fix answered :delivered for all
+   three callers, and that refused every forward in the pipeline the moment a
+   branch had synced main - which is always. Measured on one real
+   receive-merge: 25 delivered paths spanning 8 unrelated tickets, 1 authored
+   path, and that one was this ticket's own file. The two questions are kept
+   apart here rather than at the call sites so no caller can invent a third.
 
-   A ROOT commit has no first parent; its own change is the tree it
-   introduced (`--root`), never nothing - answering nothing there would pass
-   the gate open on a foreign path exactly as the merge blind spot did."
-  [root commit]
-  (let [parent (git! root "rev-parse" "-q" "--verify" (str commit "^1^{commit}"))
-        diff (if (zero? (:exit parent))
-               (git! root "diff-tree" "--no-commit-id" "--name-only" "-r"
-                     (str/trim (:out parent)) commit)
-               ;; No first parent: either a root commit (diff against the
-               ;; empty tree) or an unreadable commit, which must stay nil.
-               (let [resolves (git! root "rev-parse" "-q" "--verify" (str commit "^{commit}"))]
-                 (if (zero? (:exit resolves))
-                   (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--root" commit)
-                   resolves)))]
-    (when (zero? (:exit diff))
-      (remove str/blank? (str/split-lines (:out diff))))))
+   `-m` answers neither: it unions the per-parent diffs, attributing the
+   merged-in branch's work to the merging role - a stricter gate than any
+   caller asked for.
+
+   A ROOT commit has no parent at all, so every path in it is both delivered
+   and authored (`--root`), never nothing - answering nothing there would
+   pass the gate open on a foreign path exactly as the merge blind spot did."
+  ([root commit] (own-commit-changed-paths root commit :delivered))
+  ([root commit semantic]
+   (let [parent (git! root "rev-parse" "-q" "--verify" (str commit "^1^{commit}"))
+         diff (if (zero? (:exit parent))
+                (if (= semantic :authored)
+                  (git! root "diff-tree" "--no-commit-id" "--cc" "--name-only" "-r" commit)
+                  (git! root "diff-tree" "--no-commit-id" "--name-only" "-r"
+                        (str/trim (:out parent)) commit))
+                ;; No first parent: either a root commit (diff against the
+                ;; empty tree) or an unreadable commit, which must stay nil.
+                (let [resolves (git! root "rev-parse" "-q" "--verify" (str commit "^{commit}"))]
+                  (if (zero? (:exit resolves))
+                    (if (= semantic :authored)
+                      (git! root "diff-tree" "--no-commit-id" "--cc" "--name-only" "-r" "--root" commit)
+                      (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" "--root" commit))
+                    resolves)))]
+     (when (zero? (:exit diff))
+       (remove str/blank? (str/split-lines (:out diff)))))))
 
 ;; nil (never []) distinctly signals "the walk itself failed" - collapsing
 ;; that into the fail-open empty-findings shape would silently accept an
@@ -357,19 +383,25 @@
 ;; for its tip-pure rebuild - never a second implementation of the same
 ;; walk. Behavior and signature unchanged from BL-1192's own shipped shape;
 ;; only the `-` is dropped.
-(defn task-tagged-changed-paths [root base commit task-ticket-id]
-  (let [candidates (if base
-                      (let [log (git! root "rev-list" "--first-parent" (str base ".." commit))]
-                        (when (zero? (:exit log))
-                          (remove str/blank? (str/split-lines (:out log)))))
-                      [commit])]
-    (when candidates
-      (->> candidates
-           (filter #(commit-message-names-task? root % task-ticket-id))
-           (mapcat #(own-commit-changed-paths root %))
-           (remove nil?)
-           distinct
-           vec))))
+(defn task-tagged-changed-paths
+  ([root base commit task-ticket-id]
+   (task-tagged-changed-paths root base commit task-ticket-id :delivered))
+  ;; BL-1297: the semantic travels with the caller, not with the walk. The
+  ;; land step reads :delivered (what the parcel puts on the branch); the two
+  ;; send-time gates read :authored (what the parcel's author wrote).
+  ([root base commit task-ticket-id semantic]
+   (let [candidates (if base
+                       (let [log (git! root "rev-list" "--first-parent" (str base ".." commit))]
+                         (when (zero? (:exit log))
+                           (remove str/blank? (str/split-lines (:out log)))))
+                       [commit])]
+     (when candidates
+       (->> candidates
+            (filter #(commit-message-names-task? root % task-ticket-id))
+            (mapcat #(own-commit-changed-paths root % semantic))
+            (remove nil?)
+            distinct
+            vec)))))
 
 (defn parcel-own-changed-paths
   "BL-1240: the paths THIS parcel's own work changed — the walk above, from
@@ -380,12 +412,19 @@
    Public because BL-1240's unregistered-test gate asks the same question of
    the same parcel and must never answer it differently: two notions of \"what
    this parcel changed\" on the same send path would disagree exactly where it
-   matters, on the entangled tip neither could see."
+   matters, on the entangled tip neither could see.
+
+   BL-1297: both send-time gates judge the parcel's AUTHOR, so this reads
+   :authored. A clean receive-merge - which every stage is required to make,
+   plus the routine main syncs the constitution requires - authored nothing,
+   and must not be charged with the tickets that rode in on it. The land
+   step's replay is the caller that wants :delivered, and it asks
+   task-tagged-changed-paths for it directly."
   [root task-ticket-id commit]
   (let [raw-base (last-handoff-commit root task-ticket-id)
         {:keys [base unreadable?]} (effective-base root task-ticket-id raw-base)]
     (when-not unreadable?
-      (task-tagged-changed-paths root base commit task-ticket-id))))
+      (task-tagged-changed-paths root base commit task-ticket-id :authored))))
 
 (defn findings-for-git-handoff
   "The one impure entry point. Returns {:findings [{:path :ticket-id}]} on

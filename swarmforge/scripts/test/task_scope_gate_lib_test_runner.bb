@@ -506,15 +506,43 @@
     (assert-false "BL-1297 s01: the first parent's own path is NOT attributed here"
                   (contains? (set paths) "extension/src/trunk-b.ts"))))
 
-;; Scenario 02: a merge whose first-parent change carries a foreign path is
-;; refused - the headline fail-open. Before this change the gate passed.
+;; An EVIL merge: the merge commit itself writes a path that is on neither
+;; parent. That is the merger's own authorship, so scenario 02's refusal has
+;; to survive the amendment that made scenario 05 pass.
+(defn- evil-merge-fixture!
+  "A merge whose OWN resolution writes `resolved-path` - content that exists
+   on neither parent, so `--cc` names it and the merger is answerable for it.
+   `branch-path` merely rides in through the merge and must NOT be charged."
+  [root subject branch-path resolved-path]
+  (sh! root "git" "checkout" "-q" "-b" "bl1297-evil-branch")
+  (commit! root branch-path (str "content of " branch-path "\n")
+           (str "BL-9999-other: " branch-path " arriving through the merge"))
+  (sh! root "git" "checkout" "-q" "main")
+  (commit! root "extension/src/trunk-b.ts" "trunk\n"
+           "BL-9999-other: extension/src/trunk-b.ts already on the receiving branch")
+  (sh! root "git" "-c" "core.hooksPath=/dev/null" "merge" "--no-ff" "-q" "--no-commit" "bl1297-evil-branch")
+  (fs/create-dirs (fs/parent (fs/path root resolved-path)))
+  (spit (str (fs/path root resolved-path)) "resolved in the merge itself\n")
+  (sh! root "git" "add" "-A")
+  (sh! root "git" "-c" "core.hooksPath=/dev/null" "commit" "-q" "-m" subject)
+  (:out (sh! root "git" "rev-parse" "HEAD")))
+
+;; Scenario 02 (amended): a merge whose OWN resolution touches another
+;; ticket's path is refused. The merger wrote it, so the merger answers for it.
 (with-fixture [root]
   (mark-origin-main-here! root)
-  (let [merge-sha (merge-fixture! root "BL-1174-fixture: merge carrying another ticket's file"
-                                  ["backlog/active/BL-1185-x.yaml"] "extension/src/trunk-b.ts")
+  (let [merge-sha (evil-merge-fixture! root "BL-1174-fixture: merge resolving another ticket's file"
+                                       "extension/src/parcel-a.ts"
+                                       "backlog/active/BL-1185-x.yaml")
         result (task-scope-gate-lib/findings-for-git-handoff
                 {:root root :task-name "BL-1174-fixture" :commit merge-sha})]
-    (assert-true "BL-1297 s02: a merge carrying a foreign path is blocked"
+    ;; The premise, asserted: the resolved path really is the merge's own
+    ;; authorship and the ridden-in path really is not. Without this the row
+    ;; could pass under :delivered semantics for the wrong reason.
+    (assert= "BL-1297 s02: only the resolved path is authored by the merge"
+             ["backlog/active/BL-1185-x.yaml"]
+             (vec (task-scope-gate-lib/own-commit-changed-paths root merge-sha :authored)))
+    (assert-true "BL-1297 s02: a merge that AUTHORS a foreign path is blocked"
                  (task-scope-gate-lib/blocked? result))
     (assert= "BL-1297 s02: the finding names the foreign ticket"
              "BL-1185" (:ticket-id (first (:findings result))))
@@ -522,6 +550,55 @@
                      (task-scope-gate-lib/refusal-message
                       {:task-name "BL-1174-fixture" :findings (:findings result)})
                      "backlog/active/BL-1185-x.yaml")))
+
+;; Scenario 05: the regression the FIRST version of this contract caused.
+;; Every stage receives its handoff by merge and syncs main routinely, so an
+;; ordinary receive-merge DELIVERS every ticket landed since the branch last
+;; synced. Charging those to the merger refuses every forward in the pipeline.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [merge-sha (merge-fixture! root "BL-1174-fixture: a clean receive-merge"
+                                  ["backlog/active/BL-1185-x.yaml"] "extension/src/trunk-b.ts")
+        result (task-scope-gate-lib/findings-for-git-handoff
+                {:root root :task-name "BL-1174-fixture" :commit merge-sha})]
+    ;; The premise: the foreign path IS delivered by this merge. If it were
+    ;; not, "not refused" would be true for a reason that proves nothing.
+    (assert-true "BL-1297 s05: the foreign path really is delivered by the merge"
+                 (contains? (set (task-scope-gate-lib/own-commit-changed-paths root merge-sha :delivered))
+                            "backlog/active/BL-1185-x.yaml"))
+    (assert= "BL-1297 s05: the merge resolved no path itself"
+             [] (vec (task-scope-gate-lib/own-commit-changed-paths root merge-sha :authored)))
+    (assert-false "BL-1297 s05: a clean receive-merge carrying other tickets' work is NOT refused"
+                  (task-scope-gate-lib/blocked? result))))
+
+;; Scenario 06: on a single-parent commit the two questions can only have one
+;; answer, and the fix must not let them drift apart there.
+(with-fixture [root]
+  (commit! root "extension/src/one.ts" "export {};\n" "BL-1174-fixture: ordinary commit")
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        delivered (task-scope-gate-lib/own-commit-changed-paths root sha :delivered)
+        authored (task-scope-gate-lib/own-commit-changed-paths root sha :authored)]
+    (assert= "BL-1297 s06: delivered and authored agree on a single-parent commit"
+             (vec delivered) (vec authored))
+    (assert-false "BL-1297 s06: and they agree on something, not on nothing"
+                  (empty? authored))))
+
+;; A root commit has no parent at all, so everything in it is both delivered
+;; and authored - the gate must not pass open on it under either semantic.
+(with-fixture [root]
+  (sh! root "git" "checkout" "-q" "--orphan" "bl1297-authored-root")
+  (commit! root "backlog/active/BL-1185-x.yaml" "id: BL-1185\n" "BL-1174-fixture: root commit carrying a foreign path")
+  (let [root-sha (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (assert-true "BL-1297: a root commit's authored paths are the tree it introduced"
+                 (contains? (set (task-scope-gate-lib/own-commit-changed-paths root root-sha :authored))
+                            "backlog/active/BL-1185-x.yaml"))))
+
+;; Blindness stays distinguishable from a clean merge under :authored - the
+;; whole reason the empty answer of scenario 05 is safe to trust.
+(with-fixture [root]
+  (assert= "BL-1297: an unreadable commit answers nil under :authored too"
+           nil (task-scope-gate-lib/own-commit-changed-paths
+                root "0000000000000000000000000000000000000000" :authored)))
 
 ;; Scenario 03: a parcel whose ONLY attributed commit is a merge still has
 ;; content - the land step's replay reads this same walk, based at origin/main.
@@ -531,7 +608,8 @@
                                   ["extension/src/parcel-a.ts"] "extension/src/trunk-b.ts")
         base (:out (sh! root "git" "rev-parse" "origin/main"))
         candidates (:out (sh! root "git" "rev-list" "--first-parent" (str base ".." merge-sha)))
-        paths (task-scope-gate-lib/task-tagged-changed-paths root base merge-sha "BL-1174")]
+        paths (task-scope-gate-lib/task-tagged-changed-paths root base merge-sha "BL-1174")
+        explicit (task-scope-gate-lib/task-tagged-changed-paths root base merge-sha "BL-1174" :delivered)]
     ;; Asserted, not assumed: the merge really is the only commit in the walk
     ;; whose subject names the task, so an empty answer could only come from
     ;; the merge blind spot.
@@ -541,7 +619,11 @@
                               (remove str/blank? (str/split-lines candidates)))))
     (assert-false "BL-1297 s03: the walk finds content to replay" (empty? paths))
     (assert= "BL-1297 s03: it is the merge's own first-parent content"
-             ["extension/src/parcel-a.ts"] (vec paths))))
+             ["extension/src/parcel-a.ts"] (vec paths))
+    ;; The land step reads DELIVERED. The default must stay that, or the
+    ;; replay silently loses everything an upstream role authored.
+    (assert= "BL-1297 s03: the walk's default semantic is the land step's :delivered"
+             (vec paths) (vec explicit))))
 
 ;; Scenario 04: an ordinary single-parent commit's answer does not change -
 ;; byte-identical to what the previous invocation reported.

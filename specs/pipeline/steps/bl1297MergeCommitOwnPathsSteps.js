@@ -87,10 +87,28 @@ function mergeParcelIn(ctx, branchPath) {
   return ctx.commit;
 }
 
-function ownPaths(root, commit) {
+// A merge whose OWN resolution writes `resolvedPath` - content on neither
+// parent, so --cc names it and the merger is answerable for it. `branchPath`
+// merely rides in through the merge and must not be charged to the merger.
+function evilMergeParcelIn(ctx, branchPath, resolvedPath) {
+  git(ctx.root, 'checkout', '-q', '-b', 'bl1297-evil-branch');
+  commitFile(ctx.root, branchPath, `${OTHER}: ${branchPath} arriving through the merge`);
+  git(ctx.root, 'checkout', '-q', 'main');
+  commitFile(ctx.root, TRUNK_PATH, `${OTHER}: ${TRUNK_PATH} already on the receiving branch`);
+  git(ctx.root, '-c', 'core.hooksPath=/dev/null', 'merge', '--no-ff', '-q', '--no-verify', '--no-commit', 'bl1297-evil-branch');
+  const full = path.join(ctx.root, resolvedPath);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, 'resolved in the merge itself\n');
+  git(ctx.root, 'add', '-A');
+  git(ctx.root, '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '--no-verify', '-m', MERGE_SUBJECT);
+  ctx.commit = git(ctx.root, 'rev-parse', 'HEAD').trim();
+  return ctx.commit;
+}
+
+function ownPaths(root, commit, semantic = ':delivered') {
   const out = bb(`
 (load-file ${JSON.stringify(GATE_LIB)})
-(let [r (task-scope-gate-lib/own-commit-changed-paths ${JSON.stringify(root)} ${JSON.stringify(commit)})]
+(let [r (task-scope-gate-lib/own-commit-changed-paths ${JSON.stringify(root)} ${JSON.stringify(commit)} ${semantic})]
   (print (if (nil? r) "NIL" (clojure.string/join "\\n" r))))`);
   return out === 'NIL' ? null : out.split('\n').filter(Boolean);
 }
@@ -119,8 +137,8 @@ function registerSteps(registry) {
   );
 
   // ── Scenarios 01 / 04 shared ──────────────────────────────────────────────
-  scoped(/^the commit's own changed paths are computed$/, (ctx) => {
-    ctx.paths = ownPaths(ctx.root, ctx.commit);
+  scoped(/^the commit's delivered paths are computed$/, (ctx) => {
+    ctx.paths = ownPaths(ctx.root, ctx.commit, ':delivered');
   });
 
   scoped(/^those paths are reported$/, (ctx) => {
@@ -141,9 +159,17 @@ function registerSteps(registry) {
 
   // ── Scenario 02 ───────────────────────────────────────────────────────────
   scoped(
-    /^the attributed commit is a merge whose first-parent change touches a path belonging to another ticket$/,
+    /^the attributed commit is a merge whose own resolution touches a path belonging to another ticket$/,
     (ctx) => {
-      mergeParcelIn(ctx, FOREIGN_PATH);
+      evilMergeParcelIn(ctx, PARCEL_PATH, FOREIGN_PATH);
+      // The premise, asserted rather than assumed: the resolved path really
+      // is the merge's own authorship and the ridden-in path really is not.
+      // Without this the refusal below could be true for the wrong reason.
+      assert.deepEqual(
+        ownPaths(ctx.root, ctx.commit, ':authored'),
+        [FOREIGN_PATH],
+        'the fixture did not build a merge that authors the foreign path'
+      );
     }
   );
 
@@ -218,6 +244,57 @@ function registerSteps(registry) {
 
   scoped(/^the paths reported are the same as before this change$/, (ctx) => {
     assert.deepEqual(ctx.paths, ctx.before, `a single-parent commit's answer changed: ${JSON.stringify(ctx.paths)} vs ${JSON.stringify(ctx.before)}`);
+    cleanup(ctx);
+  });
+
+  // ── Scenario 05 ───────────────────────────────────────────────────────────
+  // The regression the first version of this contract caused: every stage
+  // receives its handoff by merge and syncs main routinely, so an ordinary
+  // receive-merge DELIVERS every ticket landed since the branch last synced.
+  scoped(
+    /^the attributed commit is a clean receive-merge whose delivered paths belong to other tickets$/,
+    (ctx) => {
+      mergeParcelIn(ctx, FOREIGN_PATH);
+      // If the foreign path were not actually delivered here, "not refused"
+      // would be true for a reason that proves nothing.
+      assert.ok(
+        ownPaths(ctx.root, ctx.commit, ':delivered').includes(FOREIGN_PATH),
+        'the fixture did not deliver the foreign path through the merge'
+      );
+    }
+  );
+
+  scoped(/^the merge resolved no path itself$/, (ctx) => {
+    assert.deepEqual(
+      ownPaths(ctx.root, ctx.commit, ':authored'),
+      [],
+      'the fixture merge resolved something itself, so it is not the clean shape'
+    );
+  });
+
+  scoped(/^the handoff is not refused$/, (ctx) => {
+    assert.equal(
+      ctx.blocked,
+      false,
+      `a clean receive-merge was charged with the tickets that rode in on it: ${ctx.verdict}`
+    );
+    cleanup(ctx);
+  });
+
+  // ── Scenario 06 ───────────────────────────────────────────────────────────
+  scoped(/^the commit's delivered paths and its authored paths are both computed$/, (ctx) => {
+    ctx.delivered = ownPaths(ctx.root, ctx.commit, ':delivered');
+    ctx.authored = ownPaths(ctx.root, ctx.commit, ':authored');
+  });
+
+  scoped(/^the two answers are identical$/, (ctx) => {
+    assert.deepEqual(
+      ctx.delivered,
+      ctx.authored,
+      `the two answers drifted apart where only one is possible: ${JSON.stringify(ctx.delivered)} vs ${JSON.stringify(ctx.authored)}`
+    );
+    // And they agree on something, not on nothing.
+    assert.ok(ctx.authored.length > 0, 'both answers were empty, so agreement proves nothing');
     cleanup(ctx);
   });
 }

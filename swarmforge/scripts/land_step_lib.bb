@@ -22,7 +22,9 @@
 ;; Reuses task_scope_gate_lib.bb's OWN already-shipped, already-tested walk
 ;; (task-tagged-changed-paths, BL-1192) for "this ticket's own paths" -
 ;; never a second implementation of that walk, invariant 2's own shape
-;; applied one door down. The sibling-detection walk below is NEW (a
+;; applied one door down. BL-1297: that walk answers two questions and this
+;; step asks it for :delivered at every call site, explicitly. The
+;; sibling-detection walk below is NEW (a
 ;; different range: origin/main..commit, unfiltered, to see who ELSE is in
 ;; there) but shares the SAME ticket-id extractor
 ;; (pipeline-stage-lib/extract-ticket-id) - the "small live-glue duplicated
@@ -63,6 +65,9 @@
 
 ;; nil (never []) signals "the walk itself failed" - same fail-open
 ;; contract task_scope_gate_lib.bb's own task-tagged-changed-paths uses.
+;; (That contract is the nil-vs-empty one, which BL-1297's :delivered /
+;; :authored split left untouched: both semantics still answer nil only when
+;; the walk could not run.)
 (defn- ancestry-commits [root base commit]
   (let [res (git! root "rev-list" "--first-parent" (str base ".." commit))]
     (when (zero? (:exit res))
@@ -98,8 +103,13 @@
 ;; invocation of git. A probe that reads a commit differently from the walk
 ;; it is vouching for can call a commit readable whose paths the walk then
 ;; silently drops - which is exactly the merge blind spot this ticket fixes.
+;;
+;; :delivered is passed EXPLICITLY, not inherited from the helper's default.
+;; The land step is the caller that wants delivered content, and saying so
+;; here means a future change to that default cannot silently re-point this
+;; probe at a question it is not vouching for.
 (defn- diff-readable? [root commit]
-  (some? (task-scope-gate-lib/own-commit-changed-paths root commit)))
+  (some? (task-scope-gate-lib/own-commit-changed-paths root commit :delivered)))
 
 (defn attribution-complete?
   "Every commit in `candidates` that names `sibling-id` can actually be
@@ -129,7 +139,7 @@
    (landed-siblings root commit origin-main candidates siblings nil))
   ([root commit origin-main candidates siblings paths-fn]
    (let [walk (or paths-fn
-                  #(task-scope-gate-lib/task-tagged-changed-paths root origin-main commit %))
+                  #(task-scope-gate-lib/task-tagged-changed-paths root origin-main commit % :delivered))
          same-content? (fn [p] (= (blob-at root commit p) (blob-at root origin-main p)))]
      (->> siblings
           (filter #(sibling-landed?
@@ -179,10 +189,19 @@
    last-handoff boundary that function's default caller uses - the exact
    parameterisation it already exposes, never a reimplementation. nil
    (never []) on an unreadable range, mirroring that function's own
-   contract."
+   contract.
+
+   BL-1297: reads :DELIVERED, and says so explicitly rather than inheriting
+   the helper's default. The replay has to reproduce the content the parcel
+   puts on the branch, which on the shape this step is always given - a QA
+   tip whose only task-tagged commit is a receive-merge - is everything that
+   merge brought in. The send-time gates read :authored instead, because they
+   judge the parcel's author; reading THAT here would hand the replay an
+   empty set and report \"nothing to commit\", which is the defect this
+   ticket exists to fix, arriving from the other side."
   [root commit task-ticket-id]
   (when-let [origin-main (origin-main-sha root)]
-    (task-scope-gate-lib/task-tagged-changed-paths root origin-main commit task-ticket-id)))
+    (task-scope-gate-lib/task-tagged-changed-paths root origin-main commit task-ticket-id :delivered)))
 
 (defn land-plan
   "The land step's own decision: {:action :land} when no entanglement is
