@@ -1,0 +1,143 @@
+id: BL-1293
+title: "The BL-806 review-forward evidence gate compares commit IDENTITY, so a bare merge passes it - the architect forwarded BL-1224 having produced no review output at all, and only a QA bounce caught it"
+milestone: M8
+type: defect
+severity: high
+# high: a required Article 4.1 gate can be skipped silently, and the thing that
+# hides the skip is the commit shape this swarm produces most often. The
+# structural backstop that exists to prevent it (BL-806) is shipped, wired, and
+# blind to it. Caught twice in one session (BL-1224, BL-1183) and only by a
+# human-authored QA bounce noticing a missing evidence file. Not critical:
+# nothing is destroyed and QA did catch both, so the outer net held. Not medium:
+# a gate that reports pass while its stage produced nothing is a broken safety
+# signal, not a contained bug.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, qa]
+stage_skip_reasons:
+  cleaner: "the change is one predicate in one lib adopting a primitive that already exists in a sibling lib, plus one new step-handler file; adopting the shared primitive IS the de-duplication."
+  documenter: "no living doc describes this gate's decision rule and no registered diagram depicts it; Article 4.4 already states the rule the gate enforces and does not change here."
+acceptance: specs/features/BL-1293-a-review-forward-carries-the-roles-own-work.feature
+
+required_wiring:
+  - "swarmforge/scripts/review_forward_evidence_gate_lib.bb::merge-introduces-nothing-unique::the gate must REUSE the primitive BL-1269 already built rather than grow a second notion of what a commit contributed. Verified absent from this file at spec time (grep -> 0), so the anchor cannot pass before the work is done"
+  - "specs/pipeline/steps/index.js::bl1293::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent at spec time (grep bl1293 -> 0)"
+
+invariants:
+  - "A review role's forward carries content that role itself authored - its committed evidence file or its fix. A commit that introduces nothing of its own over its parents is never a pass, whatever its shape or subject."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. Two things
+  worth knowing.
+
+  First, this is deliberately NOT a new gate. BL-806's gate is already shipped
+  and wired into swarm_handoff.bb; BL-1269 already fixed this exact class in
+  the sibling pre-QA ancestry gate and built the primitive
+  (`merge-introduces-nothing-unique?`). This ticket is that primitive reaching
+  the one gate that was left behind. If a reviewer reads it as re-litigating
+  BL-806, it is not.
+
+  Second, the one real implementation constraint: the primitive is `defn-`
+  (private) in `pre_qa_gate_gather_lib.bb`. Making it shared is in scope.
+  Copying it is NOT - two notions of "what did this commit contribute" is the
+  precise failure this ticket exists to close, and the same reasoning BL-1240's
+  own wiring entry records for the inventory logic.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/review_forward_evidence_gate_lib.bb` (BL-806) refuses a
+  forward-direction `git_handoff` from a review role whose `commit:` EQUALS the
+  commit that role received for the same task. That is Article 4.4's "commit
+  your explicit-NONE evidence (or your fix) and forward THAT commit", enforced
+  structurally because BL-536 proved the prompt text alone was not enough.
+
+  The comparison is commit IDENTITY. A merge commit is a new commit, so a bare
+  `Merge <received> into <role-branch>` is not equal to what was received and
+  the gate allows it - while the role contributed nothing.
+
+  That is the commit shape this swarm produces most often, at every hop.
+
+  ## The incident
+
+  QA's BL-1224 bounce, D1 (`backlog/evidence/BL-1224-bounce-20260830.md`):
+
+      the architect stage produced no output of any kind for this ticket: no
+      evidence file, no code change, not even a merge-commit message naming
+      what was reviewed. The parcel simply passed through.
+
+  The architect's forward was `b7d22b9ee`, "Merge commit '3bc1e28b53' into
+  swarmforge-architect (BL-1224 cleaner handoff)". QA established there is no
+  other BL-1224 commit between the cleaner's merge and the hardener's, and no
+  `BL-1224-architect-*.md` anywhere in history at that point - while every
+  other ticket that session had one. The gate passed it.
+
+  A second instance was reported the same session (BL-1183, also bounced), which
+  is what turned this from an incident into a pattern.
+
+  ## Why the existing gate cannot see it, and what already exists
+
+  BL-1269 fixed exactly this class one gate over: the pre-QA ancestry gate
+  credited a merge with both parents' changes. Its remedy is
+  `merge-introduces-nothing-unique?` (`pre_qa_gate_gather_lib.bb:79`), which
+  compares a merge against ALL its parents rather than trusting the commit id.
+  BL-1269 is in `done/`, it never mentions this gate, and
+  `review_forward_evidence_gate_lib.bb` does not reference the primitive
+  (verified: 0 occurrences). The fix was applied to one gate and not its sibling
+  - the same "corrected in one place only" shape BL-1257 recorded for the
+  entangled-tip basis.
+
+  ## How (direction, not mandate)
+
+  Judge the forward by what the commit contributed, not by its id: a commit that
+  introduces nothing of its own over its parents fails the gate exactly as an
+  unchanged received hash does. Reuse the existing primitive; it is `defn-`
+  today, so promoting it to shared is part of the work. Do not copy it.
+
+  Keep the refusal actionable (scenario 03): it must name the role, the task and
+  the evidence to commit, because Article 4.4 makes an explicit committed NONE a
+  legitimate pass and the role needs to know that is the way out.
+
+qa_e2e_procedure: >
+  1. Drive the gate directly with a bare merge forward (a review role merging its
+     received commit and forwarding that merge) and confirm it is REFUSED, with a
+     message naming the role, the task and the evidence to commit.
+  2. Confirm an explicit committed NONE evidence file still passes - Article 4.4
+     makes a clean sweep a real outcome, and over-refusing it would stall every
+     no-defect pass in the swarm.
+  3. Confirm the unchanged-received-hash case still refuses exactly as today
+     (BL-806 behaviour must not move).
+  4. Replay the real shape: `b7d22b9ee` as the forwarded commit against
+     `3bc1e28b53` as received, and confirm the fixed gate refuses it.
+  5. Confirm every scenario resolves to a registered step handler.
+
+source: |
+  Coder note (priority 50), 2026-08-30: "Pattern: architect skipped review on
+  BL-1224 AND BL-1183 (both bounced)". Root cause traced by the specifier to the
+  BL-806 gate's identity comparison rather than to the architect.
+
+notes: |
+  ## Verified before minting
+
+  - `review_forward_evidence_gate_lib.bb` IS wired (`swarm_handoff.bb:18` loads
+    it, line 360 calls `blocked?`), so this is not the BL-419 unwired shape.
+  - The primitive exists at `pre_qa_gate_gather_lib.bb:79` and is `defn-`.
+  - `review_forward_evidence_gate_lib.bb` references it 0 times.
+  - BL-1269 (the sibling fix) is in `done/` and mentions this gate 0 times, so
+    nothing owns this. BL-1240 is about the suite-manifest gate firing at the
+    wrong TIME, a different defect in the same family.
+
+  ## Not the architect's defect to carry
+
+  Worth stating because the reporting note reads as a role complaint: the
+  architect skipping a pass is the symptom. The reason it reached QA rather than
+  being refused at the hop is this gate, and that is where the fix belongs. A
+  bounce charged to the architect for BL-1224 is still correct on its own terms -
+  the pass genuinely did not happen - but no amount of role diligence closes a
+  structural hole that only a human noticing a missing file can currently detect.
