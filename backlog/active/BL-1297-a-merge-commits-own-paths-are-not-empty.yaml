@@ -2,10 +2,10 @@ id: BL-1297
 title: "A merge commit's own changed paths come back empty, so the scope gate, the unregistered-test gate and the land step's replay all fail open on the pipeline's most common commit shape"
 milestone: M8
 type: defect
-severity: high
+severity: critical
 status: todo
 epic: swarm-reliability
-priority: 10
+priority: 0
 direction: agent-reported
 depends_on: []
 mutation_cost: low
@@ -132,3 +132,48 @@ notes: |
     - `replay!`'s "could not create worktree" failure path does not delete the
       branch `git worktree add -b` may already have created, so a re-run with
       the same task and commit fails a second time for a different reason.
+
+  ## Specifier re-triage 2026-08-30: high -> critical, priority 10 -> 0
+
+  Confirmed a SECOND time in the field, on a different ticket, within hours:
+  landing BL-1295 escalated with the identical
+  "nothing to commit - own-paths identical to origin/main" on the merge
+  `0c550b4bcb`, while `revert-subject?` is verifiably absent from
+  `main:swarmforge/scripts/task_scope_gate_lib.bb` and
+  `bl1295RevertSubjectAttributionSteps` from `main:specs/pipeline/steps/index.js`.
+  The tool's "identical to origin/main" is a false statement about a parcel
+  with substantial unlanded content, not a description of the repository.
+
+  It is worse than the original write-up said, and this is why it is now
+  critical rather than high. `task-tagged-changed-paths` picks its
+  candidates with `rev-list --first-parent origin/main..<commit>`. On a QA
+  tip the first-parent chain is QA's OWN commits, and every commit QA makes
+  to receive a parcel is a `Merge <role> BL-xxxx into QA` MERGE. The
+  upstream roles' non-merge commits sit on second parents and are never
+  candidates. So on the shape the land step is always given, the only
+  task-tagged candidate is a merge - which means `own-commit-diff`'s merge
+  blind spot is not an edge case the land step occasionally meets, it is the
+  ONLY case it ever meets. Every land of an entangled tip fails, and three
+  parcels (BL-1295, BL-1272, BL-1253) are stacked behind it now.
+
+  Do not "fix" this by citing an upstream non-merge commit instead. Checked:
+  citing the documenter's own non-merge commit would make the documenter's
+  paths the only candidates and silently replay a PARTIAL parcel, dropping
+  the coder's and hardener's content. The false report is preferable to that.
+
+  Routing: this is a defect IN the delivery machinery, so it cannot ride the
+  pipeline it repairs - its own parcel would reach QA and hit the identical
+  LAND_ESCALATE. It goes through `swarmforge/scripts/expedite.sh` (PIPELINE.md
+  "Same gates, no machinery", BL-567), FIRST, before BL-1298. Note for whoever
+  runs it: expedite teardown restarts the swarm unless `--no-restart` is
+  passed, and the expedite path does not run the required_wiring gate
+  (BL-1255) - verify that entry by hand.
+
+  The two smaller issues this ticket's notes recorded as out of scope are now
+  ticketed as BL-1298 - they recurred on BL-1295 too. Nothing about this
+  ticket's own fix direction, scenarios or feature file changed here, so the
+  standing `human_approval: approved` still covers what was approved; only
+  severity, priority and this record changed. Full reasoning:
+  backlog/evidence/BL-1295-land-escalate-specifier-adjudication-20260830.md
+
+assigned_to: coder

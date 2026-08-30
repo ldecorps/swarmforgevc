@@ -146,6 +146,14 @@ function registerSteps(registry) {
   // ── Scenario 03 ───────────────────────────────────────────────────────────
   scoped(/^the walk contains a revert of an earlier merge of the task$/, (ctx) => {
     ctx.mergeSha = mergeTaskWork(ctx);
+    // BL-1297: the walk starts just after that merge, so the merge itself is
+    // not a candidate. It carries a foreign path deliberately - that is what
+    // makes REVERTING it name that path - and since BL-1297 a merge's own
+    // first-parent change is no longer invisible to the walk, so leaving the
+    // merge in range would refuse this scenario on the merge's own account
+    // and stop it testing the revert at all. The revert stays in range, which
+    // is the only commit this scenario is about.
+    ctx.base = ctx.mergeSha;
     ctx.revertSha = revertMerge(ctx, ctx.mergeSha);
   });
 

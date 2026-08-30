@@ -455,6 +455,151 @@
 (assert-false "subject-names-task?: a passing mention after the primary id does not claim the task (BL-1192 shape 2)"
               (task-scope-gate-lib/subject-names-task? "BL-1227: decouple unlanded BL-1240 gate wiring" "BL-1240"))
 
+
+;; ── BL-1297: a merge commit's own changed paths are computed, not empty ──
+;;
+;; `git diff-tree --no-commit-id --name-only -r --first-parent <merge>`
+;; prints NOTHING: git suppresses a merge's diff unless -m/-c/--cc is given,
+;; and --first-parent is a log/rev-list traversal flag with no effect on
+;; diff-tree's own diff output. A merge is the normal shape of a role's own
+;; commit (every stage does `git merge <hash>` to receive a handoff, then
+;; forwards), so the change set collapsed to [] - and [] is "no foreign
+;; paths", which PASSES. The gate approved parcels it never inspected.
+
+(defn- merge-fixture!
+  "The live pipeline shape: a role's branch receives a parcel with
+   `git merge`, and THAT merge is the only commit whose subject names the
+   task. `branch-paths` arrive through the merge (its own first-parent
+   change); `trunk-path` is already on the first parent, committed under
+   ANOTHER ticket's subject, so it is neither the merge's own change nor
+   attributed to this task - but a per-parent union (-m) would name it,
+   which is how these rows tell the two answers apart. Returns the merge sha."
+  [root subject branch-paths trunk-path]
+  (sh! root "git" "checkout" "-q" "-b" "bl1297-branch")
+  (doseq [p branch-paths]
+    (commit! root p (str "content of " p "\n") (str "BL-9999-other: " p " arriving through the merge")))
+  (sh! root "git" "checkout" "-q" "main")
+  (commit! root trunk-path (str "content of " trunk-path "\n")
+           (str "BL-9999-other: " trunk-path " already on the receiving branch"))
+  (sh! root "git" "-c" "core.hooksPath=/dev/null" "merge" "--no-ff" "-q" "-m" subject "bl1297-branch")
+  (:out (sh! root "git" "rev-parse" "HEAD")))
+
+;; The premise, asserted rather than assumed: the OLD invocation really does
+;; report nothing for a merge. If git ever changed that, these rows would be
+;; testing a defect that no longer exists.
+(with-fixture [root]
+  (let [merge-sha (merge-fixture! root "BL-1174-fixture: merge the parcel in"
+                                  ["extension/src/parcel-a.ts"] "extension/src/trunk-b.ts")
+        old (:out (sh! root "git" "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" merge-sha))]
+    (assert= "BL-1297 premise: the old invocation reports no paths for a merge" "" old)))
+
+;; Scenario 01: a merge reports the paths it changed against its first parent.
+(with-fixture [root]
+  (let [merge-sha (merge-fixture! root "BL-1174-fixture: merge the parcel in"
+                                  ["extension/src/parcel-a.ts"] "extension/src/trunk-b.ts")
+        paths (task-scope-gate-lib/own-commit-changed-paths root merge-sha)]
+    (assert= "BL-1297 s01: a merge's own paths are its first-parent change"
+             ["extension/src/parcel-a.ts"] (vec paths))
+    (assert-false "BL-1297 s01: the result is not empty" (empty? paths))
+    ;; Not the per-parent union: -m would ALSO name the receiving branch's own
+    ;; file, attributing the merging role's prior work to the incoming parcel.
+    (assert-false "BL-1297 s01: the first parent's own path is NOT attributed here"
+                  (contains? (set paths) "extension/src/trunk-b.ts"))))
+
+;; Scenario 02: a merge whose first-parent change carries a foreign path is
+;; refused - the headline fail-open. Before this change the gate passed.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [merge-sha (merge-fixture! root "BL-1174-fixture: merge carrying another ticket's file"
+                                  ["backlog/active/BL-1185-x.yaml"] "extension/src/trunk-b.ts")
+        result (task-scope-gate-lib/findings-for-git-handoff
+                {:root root :task-name "BL-1174-fixture" :commit merge-sha})]
+    (assert-true "BL-1297 s02: a merge carrying a foreign path is blocked"
+                 (task-scope-gate-lib/blocked? result))
+    (assert= "BL-1297 s02: the finding names the foreign ticket"
+             "BL-1185" (:ticket-id (first (:findings result))))
+    (assert-includes "BL-1297 s02: the refusal names the foreign path"
+                     (task-scope-gate-lib/refusal-message
+                      {:task-name "BL-1174-fixture" :findings (:findings result)})
+                     "backlog/active/BL-1185-x.yaml")))
+
+;; Scenario 03: a parcel whose ONLY attributed commit is a merge still has
+;; content - the land step's replay reads this same walk, based at origin/main.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [merge-sha (merge-fixture! root "BL-1174-fixture: the parcel's only tagged commit is this merge"
+                                  ["extension/src/parcel-a.ts"] "extension/src/trunk-b.ts")
+        base (:out (sh! root "git" "rev-parse" "origin/main"))
+        candidates (:out (sh! root "git" "rev-list" "--first-parent" (str base ".." merge-sha)))
+        paths (task-scope-gate-lib/task-tagged-changed-paths root base merge-sha "BL-1174")]
+    ;; Asserted, not assumed: the merge really is the only commit in the walk
+    ;; whose subject names the task, so an empty answer could only come from
+    ;; the merge blind spot.
+    (assert= "BL-1297 s03: exactly one commit in the walk names the task"
+             1 (count (filter #(str/includes?
+                                (:out (sh! root "git" "log" "-1" "--format=%s" %)) "BL-1174-fixture")
+                              (remove str/blank? (str/split-lines candidates)))))
+    (assert-false "BL-1297 s03: the walk finds content to replay" (empty? paths))
+    (assert= "BL-1297 s03: it is the merge's own first-parent content"
+             ["extension/src/parcel-a.ts"] (vec paths))))
+
+;; Scenario 04: an ordinary single-parent commit's answer does not change -
+;; byte-identical to what the previous invocation reported.
+(with-fixture [root]
+  (commit! root "extension/src/one.ts" "export {};\n" "BL-1174-fixture: ordinary commit")
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        old (remove str/blank?
+                    (str/split-lines
+                     (:out (sh! root "git" "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" sha))))
+        new (task-scope-gate-lib/own-commit-changed-paths root sha)]
+    (assert= "BL-1297 s04: a single-parent commit reports exactly what it reported before"
+             (vec old) (vec new))
+    (assert= "BL-1297 s04: and that is the path it touched" ["extension/src/one.ts"] (vec new))))
+
+;; A multi-path single-parent commit, deleting one path and adding another -
+;; scenario 04 again on a shape where an ordering or rename-detection
+;; difference between the two invocations would show up.
+(with-fixture [root]
+  (commit! root "extension/src/gone.ts" "export {};\n" "BL-1174-fixture: a file that will be deleted")
+  (fs/delete (str (fs/path root "extension/src/gone.ts")))
+  (commit! root "extension/src/arrived.ts" "export {};\n" "BL-1174-fixture: delete one, add another")
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        old (remove str/blank?
+                    (str/split-lines
+                     (:out (sh! root "git" "diff-tree" "--no-commit-id" "--name-only" "-r" "--first-parent" sha))))
+        new (task-scope-gate-lib/own-commit-changed-paths root sha)]
+    (assert= "BL-1297 s04: a delete-and-add commit reports exactly what it reported before"
+             (vec old) (vec new))))
+
+;; A root commit has no first parent. It must report the tree it introduced -
+;; not nothing, which would pass the gate open on a foreign path.
+(with-fixture [root]
+  (let [root-sha (:out (sh! root "git" "rev-list" "--max-parents=0" "HEAD"))
+        paths (task-scope-gate-lib/own-commit-changed-paths root root-sha)]
+    ;; The fixture's seed commit is empty, so the honest answer is [] - but it
+    ;; is [] because the tree IS empty, never because the walk was skipped.
+    ;; The next fixture proves the difference.
+    (assert= "BL-1297: an empty root commit honestly reports no paths" [] (vec paths))))
+
+(with-fixture [root]
+  (sh! root "git" "checkout" "-q" "--orphan" "bl1297-root")
+  (commit! root "backlog/active/BL-1185-x.yaml" "id: BL-1185\n" "BL-1174-fixture: root commit carrying a foreign path")
+  (let [root-sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        paths (task-scope-gate-lib/own-commit-changed-paths root root-sha)]
+    (assert-true "BL-1297: a root commit names the paths it introduced"
+                 (contains? (set paths) "backlog/active/BL-1185-x.yaml"))
+    (let [result (task-scope-gate-lib/findings-for-git-handoff
+                  {:root root :task-name "BL-1174-fixture" :commit root-sha})]
+      (assert-true "BL-1297: a root commit carrying a foreign path does not pass the gate open"
+                   (task-scope-gate-lib/blocked? result)))))
+
+;; An unreadable commit still answers nil, never [] - the fail-open signal the
+;; callers distinguish from a genuinely clean parcel.
+(with-fixture [root]
+  (assert= "BL-1297: an unreadable commit answers nil, never an empty vector"
+           nil (task-scope-gate-lib/own-commit-changed-paths
+                root "0000000000000000000000000000000000000000")))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))
