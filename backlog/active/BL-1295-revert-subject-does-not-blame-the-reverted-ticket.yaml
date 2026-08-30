@@ -96,7 +96,7 @@ qa_e2e: >
   git_handoff that is refused today must be accepted, with no change to
   BL-1240's own YAML.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off on the new feature file, and one judgement worth confirming.
 
@@ -127,3 +127,5 @@ notes: |
   This defect recurs on any ticket that is bounced, reverted, reworked and
   re-forwarded - a common path, not an exotic one - so it will not stay
   a one-ticket problem.
+
+assigned_to: coder
