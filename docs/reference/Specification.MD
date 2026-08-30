@@ -1,5 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1277: two step files registering the
+same UNSCOPED step-text pattern used to silently answer each other's
+scenarios — `specs/pipeline/stepRegistry.js` resolved an unscoped
+`registry.define` by first-match across every handler file, so whichever
+file loaded first (fixed by `steps/index.js`'s own require order) answered
+that step text for both features, with no signal anywhere that the wrong
+handler ran. Not hypothetical: a scan of `main` found 15 colliding patterns
+across 17 file pairs, two of them RED at the time of scan
+(`BL-1268-stale-claim-branch-must-name-this-ticket.feature` 2/7 instead of
+7/7, `BL-378-no-single-file-bounds-the-suite.feature` 3/4 instead of 4/4) —
+both tickets were already shipped and correct, but the acceptance evidence
+they were closed on was not. Fixed two ways: (1) the losing side of every
+collision — the file `steps/index.js`'s load order does NOT let answer that
+text — is pinned to its own feature via the existing `registry.defineScoped`
+(BL-425), across 16 step files this parcel touches; the winning side stays
+unscoped where a third feature legitimately relies on the unscoped fallback,
+so no feature is left with no handler at all. (2) a new standing guard,
+`extension/test/helpers/stepCollisionGuard.js`, wired into the unit lane,
+property lane, and this ticket's own acceptance steps, refuses any FUTURE
+unscoped duplicate — its verdict comes from loading each step file into a
+fresh registry and reading `stepRegistry.js`'s own `listDefinitions()`,
+never a re-implemented source-text scan, so a step file that registers
+through a wrapper or a loop is still caught. No step handler's logic and no
+`.feature` file changed to make a collision go away; `resolve()`'s existing
+scoped-then-unscoped fallback semantics are untouched. Both previously-red
+features return to 7/7 and 4/4 with no change to their own handlers.
+Acceptance:
+`specs/features/BL-1277-step-files-must-not-share-an-unscoped-step-pattern.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1280: the BL-420 mkdtemp migration to
 the shared `mkTmpDir()` helper — built but never finished — is complete for
 `extension/test`. `tmpDirMigrationGuard.test.js`'s repo-wide raw-`fs.mkdtempSync`
