@@ -1,71 +1,60 @@
-# BL-1182 and BL-1232: committed coder work, unlanded, with no live parcel — 2026-08-30
+# BL-1182 and BL-1232 — RETRACTED: there is no dispatch gap — 2026-08-30
 
-Raised by: specifier, from QA's priority-00 note
-"BL-1284 landed tip-pure (BL-1241) - coder branch entangled with BL-1182+BL-1232".
+**This file's original finding was WRONG and is retracted in full. Both tickets
+are live and in flight.** The retraction and its cause are kept here rather than
+deleted, because a note carrying the wrong finding was already sent to the
+coordinator and the correction has to be walkable from the same place.
 
-## What QA's note reported, and what it turned out to mean
+## What was claimed, and why it was wrong
 
-QA landed BL-1284 tip-pure onto `origin/main` per the BL-1241 remedy (b) ruling,
-abandoning the coder tip `fa7d305367`. Its note named BL-1182 and BL-1232 as the
-entangled siblings. Investigating those two siblings found a separate condition
-that the note does not itself describe and that no role has yet acted on.
+Prompted by QA's priority-00 note ("BL-1284 landed tip-pure (BL-1241) - coder
+branch entangled with BL-1182+BL-1232"), the specifier reported that BL-1182 and
+BL-1232 had committed work on `swarmforge-coder`, no live parcel anywhere, and an
+idle pipeline — a dispatch gap for the coordinator to close.
 
-## The condition
+**The "no live parcel" half was a measurement error.** The mailbox sweep was run
+against `.worktrees/<role>/.swarmforge/handoffs/<role>/inbox/<state>`. The
+worktree roles do not use that shape. Per `handoff_lib.bb`'s own comment at
+`mailbox-base-dir` — "Roles with their own dedicated worktree already have
+physical separation and keep their existing flat layout; only worktree-name
+`master` gets the extra `<role>` subdirectory" — the six pipeline roles are
+**flat**: `.worktrees/<role>/.swarmforge/handoffs/inbox/<state>`. Every probe hit
+a path that does not exist and returned zero, so an active pipeline read as an
+empty one.
 
-Both tickets are `status: todo`, `assigned_to: coder`, sitting in
-`backlog/active/`. Both have real implementation work committed on
-`swarmforge-coder`. Neither is on `main`. **Neither has a parcel anywhere.**
+## The actual state, re-measured against the correct paths
 
-| Ticket | Commit on `swarmforge-coder` | On `main`? |
+| Ticket | Where it actually is | Parcel |
 |---|---|---|
-| BL-1182 day-long BoB trial lifecycle | `f64ad3280` "revert the architect's revert and fix D1 and D2" | no |
-| BL-1232 shift-velocity chart readable | `9c6200d72` "make the briefing shift-velocity chart readable at ordinary velocity" | no |
+| BL-1182 day-long BoB trial lifecycle | **hardender**, in_process (batch `batch_20260830T024219Z_000001`) | `git_handoff` commit `604a245de3` |
+| BL-1232 shift-velocity chart readable | **QA**, in_process | `git_handoff` commit `e373a940fa` from documenter |
 
-Verified by content, not by ancestry alone — each ticket's own
-`required_wiring` anchor was grepped on both refs:
+Also live at the same moment: BL-604 at the architect (`7c05b99402`), BL-1243 and
+BL-1235 routed to the coder. The pipeline was busy throughout.
 
-- BL-1232 `extension/src/metrics/briefingChartSvgCommon.ts::export function pickLabelIndicesByPixelGap`
-  — **absent on `main`** (the file does not exist there), **present on `swarmforge-coder`** (1 match).
-- BL-1182 `swarmforge/scripts/model_steward_cli.bb::trial`
-  — **0 matches on `main`**, **68 matches on `swarmforge-coder`**.
+`.swarmforge/board/ticket-stage-map.json` read
+`{"BL-1182":"hardender","BL-1232":"QA", ...}` and was **correct**. It was briefly
+suspected of being stale on the strength of the bad sweep; it was not.
 
-Ancestry agrees: `git merge-base --is-ancestor f64ad3280 main` → no;
-`git merge-base --is-ancestor 9c6200d72 main` → no.
+## What survives from the original investigation
 
-## No parcel exists for either
+Only the ancestry facts, which were measured correctly and remain true — and which
+are unremarkable once the parcels are located:
 
-Swept `inbox/new` and `inbox/in_process` for all eight roles across the master
-checkout and every pipeline worktree (`.worktrees/{coder,cleaner,architect,
-hardender,documenter,QA}`). The only live parcel in the entire swarm was this
-specifier note. The tmux sessions for all eight roles are up, so the pipeline is
-running and idle, not stopped mid-flight.
+- `f64ad3280` (BL-1182) and `9c6200d72` (BL-1232) are not ancestors of `main`.
+  That is what unlanded in-flight work looks like; both have since been carried
+  forward under new commits by later stages.
+- BL-1284's abandoned tip `fa7d305367` is benign: the landed `a4d43634e` carries
+  identical content.
+- BL-1273's stranded `205fdd36f` has since landed and is now an ancestor of `main`,
+  so that earlier instance is closed.
 
-BL-1182 had already been bounced by the architect (`a0deb5f52`,
-`53b4ae464` revert) and the coder had rebuilt against it (`f64ad3280`) — so the
-work is a post-bounce rebuild, not an abandoned first attempt.
+## Lesson
 
-## What this is NOT
-
-- **Not the BL-1273 stranding shape.** That was a commit with no ticket carrying
-  it. Here both siblings have live active tickets, so their content is owned; what
-  is missing is a parcel to carry it forward. The BL-1273 instance itself has since
-  self-resolved — `205fdd36f` is now an ancestor of `main`.
-- **Not a defect in QA's tip-pure land.** BL-1284's rebuild was correct and its
-  abandoned tip `fa7d305367` is benign: the landed `a4d43634e` carries identical
-  content, so the coder's next merge of `main` is a no-op for that row.
-- **Not a spec defect in either ticket.** Both are human-approved, both passed
-  their size-envelope adjudication, and neither has an unfixed spec-gap bounce.
-
-## Disposition
-
-Routing is the coordinator's, not the specifier's (Article 1.1 / specifier
-"Does Not Own"). Surfaced to the coordinator by note. The decision the coordinator
-owns is whether to re-dispatch BL-1182 and BL-1232 to the coder so the existing
-commits are forwarded down the chain, before promoting further new work — two
-active slots are already consumed by these two tickets.
-
-No ticket minted: the condition is a dispatch gap with an owner, not an uncovered
-defect. The reporting half of the entangled-sibling surface is already covered by
-BL-1272 (paused).
+A mailbox sweep must use `handoff_lib.bb`'s resolver, or at minimum both layout
+shapes — master-resident roles nest under `<role>/`, worktree roles do not. A
+sweep that silently finds no directory must report NO DIR, never zero; the
+original sweep's `[ -d "$d" ] || continue` turned six missing paths into six
+confident zeroes. Absence of a directory is not absence of work.
 
 By specifier.
