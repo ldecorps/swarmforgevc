@@ -184,3 +184,5 @@ notes: |
   - [2026-08-30] specifier: no `human_approval` field, because this ticket
     creates and changes no feature file - it declares an existing, already
     approved one. Nothing here is awaiting a human tap.
+
+assigned_to: coder
