@@ -24,8 +24,9 @@
 ;;     unknown cost is a real registry state and its rank is the tie-break's
 ;;     edge case.
 ;;
-;; Non-vacuity is proven by breaking each invariant and recording the result -
-;; see backlog/evidence/BL-1182-property-non-vacuity-20260830.md.
+;; Non-vacuity is proven by breaking each invariant and recording the result;
+;; the table is in backlog/evidence/BL-1182-day-long-trial-lifecycle-20260830.md
+;; (architect D2: this comment used to name a separate file that never existed).
 
 (ns bl1182-trial-lifecycle-property-runner
   (:require [babashka.fs :as fs]

@@ -150,3 +150,51 @@ than invent another cut if the slice proved oversized. It did not: the four
 verbs came to ~290 lines of lib plus a CLI command, and the three invariants
 each span both halves, so building them together kept every one of them
 testable in one place. No split requested.
+
+
+## Architect bounce, 2026-08-30 — D1 and D2
+
+**D1 (correctness).** `permanent-for-role`'s clause 1 — the trial ledger's own
+recorded permanent, documented as winning over ModelFactory's overlay — was
+dead code in every real invocation. `read-trials!` re-stringified the role keys
+of `:active` and `:losers` but not `:permanent`, and `parse-json` keywordizes
+any object key with no `/`, so a role written as `"coder"` came back as
+`:coder`. Every CLI invocation is a fresh `bb` process, so the round trip
+happened on every command after the one that wrote it.
+
+The consequence was not cosmetic, and the architect reproduced it end to end:
+after a promotion, an external write to the assignment overlay silently became
+the "permanent" a later nomination recorded — and `assess` reverts a losing
+trial to `(:permanent trial)`, so a losing trial could install whatever the
+overlay had drifted to, over the model the ledger's own history adjudicated.
+
+Fixed by applying the same re-stringify to `:permanent`, with a comment on the
+whole block saying that EVERY role-keyed map needs it — the shape of the defect
+is "one more map was added and the round-trip step was not".
+
+Verified against the architect's own scenario: promote `trial-a`, drift the
+overlay to `openai/drift-model`, nominate `trial-b` →
+
+```
+trial armed role=coder model=cerebras/trial-b permanent=cerebras/trial-a
+```
+
+the ledger's permanent, as documented, not the drifted overlay.
+
+**The test gap that let it ship green, closed.** Every assertion in the lib
+runner was in-process, and no test wrote then read trial state through JSON —
+which is precisely the step the defect lives in. `model_steward_trial_lib_test_runner.bb`
+now round-trips `write-trials!` / `read-trials!` through a real temp dir and
+asserts `:permanent`, `:active` and `:losers` all resolve by STRING role
+afterwards, plus that no role key comes back a keyword. Confirmed
+red-capable: with the `:permanent` line removed it fails 2 assertions, naming
+the value; restored, ALL PASS.
+
+**D2 (minor).** The property runner's header pointed at
+`backlog/evidence/BL-1182-property-non-vacuity-20260830.md`, which never
+existed — the non-vacuity table is in this file. The comment now names this
+file and says why it changed.
+
+**Runs after the fix.** Lib runner ALL PASS (30 assertions), CLI shell test
+ALL CHECKS PASSED (21), property runner ALL PASS at 500 runs/invariant with
+unchanged coverage, acceptance 5/5.

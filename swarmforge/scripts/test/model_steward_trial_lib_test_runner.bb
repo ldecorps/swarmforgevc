@@ -8,6 +8,7 @@
 
 (def scripts-dir (str (fs/path (fs/parent (fs/canonicalize *file*)) "..")))
 (load-file (str (fs/path scripts-dir "model_steward_trial_lib.bb")))
+(load-file (str (fs/path scripts-dir "model_steward_store.bb")))
 
 (def failures (atom []))
 
@@ -159,6 +160,37 @@
                (model-steward-trial-lib/due? trial "2026-08-31T09:00:00Z"))
   (assert-true "a trial is due after its day elapses"
                (model-steward-trial-lib/due? trial "2026-09-01T00:00:00Z")))
+
+;; ── the disk round trip (architect D1) ────────────────────────────────────
+;;
+;; Every assertion above is in-process, and that is exactly why the :permanent
+;; key defect shipped green: parse-json keywordizes any object key with no "/",
+;; so a role written as "coder" comes back as :coder, and since every CLI
+;; invocation is a fresh bb process the round trip happens on every command
+;; after the one that wrote it. A test that never writes then reads through
+;; JSON cannot see it. This one does.
+
+(let [dir (str (fs/create-temp-dir {:prefix "bl1182-trial-roundtrip-"}))]
+  (try
+    (let [written (-> model-steward-trial-lib/empty-trials
+                      (assoc-in [:permanent "coder"] permanent)
+                      (assoc-in [:active "coder"] {:role "coder" :provider "cerebras" :model "trial-model"
+                                                   :status "armed" :permanent permanent})
+                      (assoc-in [:losers "coder"] [{:provider "cerebras" :model "old" :evidence "e"}]))
+          _ (model-steward-store/write-trials! dir written)
+          read-back (model-steward-store/read-trials! dir model-steward-trial-lib/empty-trials)]
+      (assert= "a role-keyed :permanent survives the JSON round trip as a STRING key"
+               permanent (get-in read-back [:permanent "coder"]))
+      (assert= "a role-keyed :active survives it too"
+               "armed" (:status (model-steward-trial-lib/armed-for-role read-back "coder")))
+      (assert= "so do the recorded losers"
+               1 (count (model-steward-trial-lib/losers-for-role read-back "coder")))
+      (assert-true "no role key comes back as a keyword"
+                   (every? string? (concat (keys (:permanent read-back))
+                                           (keys (:active read-back))
+                                           (keys (:losers read-back))))))
+    (finally
+      (fs/delete-tree dir))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

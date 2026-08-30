@@ -109,9 +109,19 @@
       (try
         (let [parsed (parse-json (slurp (str p)))]
           (if (map? parsed)
+            ;; Every ROLE-KEYED map is re-stringified. parse-json keywordizes
+            ;; any object key with no "/", so a role name written as "coder"
+            ;; comes back as :coder - and since every CLI invocation is a fresh
+            ;; bb process, that round-trip happens on every command after the
+            ;; one that wrote it. :permanent was missed here first (architect
+            ;; D1): permanent-for-role's clause 1 then never matched, so the
+            ;; ledger's own adjudicated permanent silently lost to whatever
+            ;; ModelFactory's overlay had drifted to, and a later losing trial
+            ;; would have reverted the seat to the drifted model.
             (-> parsed
                 (update :active (fn [m] (into {} (map (fn [[k v]] [(name k) v])) (or m {}))))
                 (update :losers (fn [m] (into {} (map (fn [[k v]] [(name k) (vec v)])) (or m {}))))
+                (update :permanent (fn [m] (into {} (map (fn [[k v]] [(name k) v])) (or m {}))))
                 (update :history #(vec (or % []))))
             empty-trials))
         (catch Exception _ empty-trials))
