@@ -883,6 +883,7 @@ const DOMAINS = [
   require('./bl604MorningBriefingTrendAnalysisSteps'),
   require('./bl1243LiveScreenPerPaneActivitySteps'),
   require('./bl670PipelineBoardLastKnownStageSteps'),
+  require('./bl1235LocalQwenSeatSteps'),
   require('./bl1224WatchAdoptsRestartedRuntimeSteps'),
   require('./bl1183BobGoLiveGateSteps')
 ];

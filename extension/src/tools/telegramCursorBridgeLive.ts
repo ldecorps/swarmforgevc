@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CursorAgentError, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
+import { readQwenLocalTopicId, runLocalSeatTurn } from './localQwenSeatLive';
 import {
   answerCallbackQuery,
   createForumTopicWithRateLimitRetry,
@@ -1523,6 +1524,19 @@ export interface CursorBridgeLoopDeps {
   post?: PostChunksFn;
   /** Telegram transport seam for the liveness cue — never a real network call under test. */
   telegramPostFn?: TelegramPostFn;
+  /**
+   * BL-1235: the local-model seat's own topic, when the operator has bound
+   * one. A message there is handled by that seat and never reaches cursor's
+   * decision at all - the human's directive is that cursor keeps the usual
+   * host topic and the front desk, and nothing else.
+   *
+   * The seat runs inside THIS poll rather than as a second one: a bot token
+   * has exactly one getUpdates consumer, and a second poller is an immediate
+   * 409 that would take the front desk down with it.
+   */
+  qwenLocalTopicId?: number;
+  /** Seam for the seat's whole turn - injected so tests need no ollama. */
+  runLocalSeatTurnFn?: typeof runLocalSeatTurn;
 }
 
 function resolveInboundQueueFromFeeder(opDir: string): boolean {
@@ -1983,6 +1997,29 @@ async function processInboundUpdates(
     if (!inbound) {
       continue;
     }
+    // BL-1235: the local seat's topic is handled BEFORE cursor's decision is
+    // consulted, and the loop moves on. Cursor is therefore never asked about
+    // that topic - the structural half of "cursor stays behind the usual host
+    // topic and front desk", rather than a filter applied afterwards.
+    if (
+      deps.qwenLocalTopicId !== undefined &&
+      inbound.kind !== 'callback' &&
+      inbound.topicId === deps.qwenLocalTopicId
+    ) {
+      const runTurn = deps.runLocalSeatTurnFn ?? runLocalSeatTurn;
+      await runTurn({
+        targetPath: deps.repoRoot,
+        topicId: inbound.topicId,
+        seatTopicId: deps.qwenLocalTopicId,
+        text: inbound.text ?? '',
+        // The loop's own chunked sender, so the seat's replies ride exactly
+        // the path every other reply in this topic does.
+        post: async (topicId: number, message: string) => {
+          await handlerCtx.post(deps.botToken, deps.chatId, topicId, message, inbound.messageId);
+        },
+      });
+      continue;
+    }
     const pending = readPendingOperatorConfirm(deps.repoRoot);
     const pendingPlan = readPendingPlanConfirm(deps.repoRoot);
     const rawDecision = decideInboundAction(
@@ -2272,6 +2309,11 @@ export async function runCursorBridgeApp(
     resolveUseInboundQueue: () => resolveInboundQueueFromFeeder(opDir),
     useInboundQueue: resolveInboundQueueFromFeeder(opDir),
     telegramPostFn: env.telegramPostFn,
+    // BL-1235: resolved from the SAME topic map cursor's and Bubble's ids come
+    // from, so binding the seat is one entry in that file and nothing else.
+    // Undefined - nobody has bound a topic - simply means the seat owns none
+    // and this poll behaves exactly as it did before the seat existed.
+    qwenLocalTopicId: readQwenLocalTopicId(env.repoRoot),
     ...env.loopOverrides,
   };
 
