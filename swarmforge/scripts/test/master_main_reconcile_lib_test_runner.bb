@@ -1002,6 +1002,19 @@
 (assert-true "bl1288: `! [rejected] ... (fetch first)` is a rejection"
              (master-main-reconcile-lib/push-rejection?
               " ! [rejected]        main -> main (fetch first)\nhint: Updates were rejected because the remote contains work"))
+;; "non-fast-forward"/"fetch first" alone, with no "! [rejected]" marker, is
+;; NOT a rejection - the two clauses are ANDed, not ORed. A hint or advice
+;; line can legitimately mention "non-fast-forward" without git having
+;; actually rejected anything; only the marker together with one of these
+;; words is the real signal. (Hardener pass, BL-1288, 2026-08-30: confirmed
+;; by hand-mutating the `and` to `or` - the mutant survived every prior test
+;; because none exercised this half of the conjunction.)
+(assert= "bl1288: `non-fast-forward` alone, with no rejection marker, is NOT a rejection" false
+         (master-main-reconcile-lib/push-rejection?
+          "hint: Updates were rejected because a pushed branch tip is behind (non-fast-forward)"))
+(assert= "bl1288: `fetch first` alone, with no rejection marker, is NOT a rejection" false
+         (master-main-reconcile-lib/push-rejection?
+          "hint: fetch first before you push again"))
 (assert= "bl1288: an unresolvable host is NOT a rejection" false
          (master-main-reconcile-lib/push-rejection?
           "fatal: unable to access 'https://example.invalid/r.git': Could not resolve host: example.invalid"))
