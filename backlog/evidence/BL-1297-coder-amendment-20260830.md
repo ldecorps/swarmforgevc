@@ -144,3 +144,70 @@ reason (a stray property-runner row) and was not used as the gate — every
 suite above was invoked directly instead.
 
 By coder.
+
+---
+
+## 8. Self-audit findings (handoff audit challenge), fixed in `1a` below
+
+The audit challenge was answered by re-reading the inbound note, the amended
+ticket, the amended feature, and the committed diff, then enumerating EVERY
+caller of the shared walk rather than the three the ticket names:
+
+```
+grep -rn 'own-commit-changed-paths\|task-tagged-changed-paths\|parcel-own-changed-paths' \
+     --include='*.bb' --include='*.sh' .   # excluding tests
+```
+
+Five live call sites, all accounted for: three in `land_step_lib.bb`
+(`diff-readable?`, `landed-siblings`' default walk, `own-paths`), one in
+`unregistered_test_gate_lib.bb` via the shared seam, one at the gate site.
+No sixth consumer, and no shell script reaches the walk directly.
+
+**D1 — the land step's semantic was IMPLICIT.** All three of its call sites
+took the helper's 4-arity/2-arity default. That is not "each caller reads the
+question its own decision needs" (invariant 3); it is each caller inheriting
+whatever the helper happens to default to. The failure it leaves open is
+precisely the one the ticket's own re-triage warns about: point the default at
+`:authored` and the replay is handed an empty set and reports "nothing to
+commit" — this ticket's defect, arriving from the other side, with nothing in
+`land_step_lib.bb` to notice. Fixed: `:delivered` is now passed explicitly at
+all three sites, with the reason stated where a future reader will meet it.
+Behaviour is unchanged (the default already was `:delivered`), so no test
+result moves; invariant 3's property already pins `land` to the delivered set,
+which is what keeps the explicit choice honest rather than decorative.
+
+**D2 — stale comments in `land_step_lib.bb`.** Four comments described the
+shared walk as answering ONE question ("the same contract
+task-tagged-changed-paths uses"). Under the amendment that reads as an
+instruction to make the two agree, which is the mistake being repaired.
+Corrected in place; the nil-vs-empty half of that contract, which the split
+left untouched, is now called out as the part that IS still shared.
+
+**Checked and found clean, no change needed:**
+- `the two answers are identical` is also a BL-1097 step. Both are
+  `defineScoped` to their own feature, so there is no collision — verified by
+  running BL-1097's feature too: **4 scenarios, 4 pass, 0 fail**.
+- No feature file still uses the renamed `the commit's own changed paths are
+  computed`.
+- Article 4.5: the one production path this parcel changes,
+  `swarmforge/scripts/task_scope_gate_lib.bb` (and now
+  `land_step_lib.bb`), is covered by registered runners that were run above.
+  No NEW test file is introduced, so the unregistered-test gate has nothing
+  new to register.
+- Working tree carries one untracked file this parcel did not create,
+  `swarmforge/scripts/wait_pipeline_drain.sh`. It is NOT staged and NOT
+  swept — surfaced here for whoever owns it.
+
+### Re-run after the audit fixes
+
+| suite | result |
+|---|---|
+| `task_scope_gate_lib_test_runner.bb` | ALL PASS |
+| `land_step_lib_test_runner.bb` | ALL PASS |
+| `unregistered_test_gate_lib_test_runner.bb` | ALL PASS |
+| `bl1240_unregistered_test_gate_property_runner.bb` | ALL PASS |
+| `task_scope_gate_acceptance_exemption_property_runner.bb` | ALL PASS |
+| BL-1297 feature | 6 pass, 0 fail |
+| BL-1097 feature | 4 pass, 0 fail |
+| BL-1297 properties | 3 of 3 pass |
+| BL-1295 properties | 3 of 3 pass |
