@@ -175,3 +175,6 @@ notes: |
   - [2026-08-29] specifier: shape follows BL-1136 / BL-1113 stamp-offs.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-30, by: QA, blamed: coder, class: acceptance, commit: 207dc0c03b, evidence: backlog/evidence/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1-bounce-20260830.md }

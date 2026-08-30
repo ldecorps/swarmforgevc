@@ -1,5 +1,105 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1297: a merge commit's own changed
+paths no longer come back empty, which had let the send-time scope gate,
+the unregistered-test gate, and the land step's tip-pure replay all fail
+open on the pipeline's most common commit shape. `own-commit-diff`
+(`task_scope_gate_lib.bb`) ran `diff-tree --no-commit-id --name-only -r
+--first-parent <commit>`; git suppresses a merge's diff entirely unless
+`-m` or `-c`/`--cc` is given, and `--first-parent` is a `log`/`rev-list`
+traversal flag with no effect on `diff-tree`'s own diff output — so every
+merge commit reported zero paths. A merge is the normal shape of a role's
+own commit (every stage receives a handoff via `git merge <hash>`), so a
+parcel whose only task-tagged commit was that merge collapsed to an empty
+change set, which the gate reads as "no foreign paths" and passes,
+unverified. New `own-commit-changed-paths` answers two distinct questions
+from one walk: `:delivered` (`diff <commit>^1 <commit>`) is what content a
+commit puts on the branch against its first parent alone; `:authored`
+(`diff-tree --cc`) is what differs from EVERY parent, empty for an
+ordinary clean receive-merge whose content was already attributed
+upstream. The land step's replay reads `:delivered` (what a parcel puts on
+the branch); the send-time scope gate and the unregistered-test gate both
+read `:authored` (what the parcel's author actually wrote) — an earlier
+version of this fix answered `:delivered` for all three callers, which
+refused every forward the moment a branch had synced `main`, which is
+always (measured: 25 delivered paths across 8 unrelated tickets on one
+real receive-merge, versus 1 authored path — the fix's own file). A root
+commit (`--root`) answers both semantics identically and is never treated
+as empty. Acceptance:
+`specs/features/BL-1297-a-merge-commits-own-paths-are-not-empty.feature`.)
+Prior entry —
+**Last Updated:** August 30, 2026 (BL-1295: the pre-handoff task-scope gate
+no longer blames a revert commit for the ticket whose subject it merely
+quoted. `commit-message-names-task?` (`task_scope_gate_lib.bb`) reads a
+commit's SUBJECT and takes the first ticket id in it; `git revert` writes
+the subject `Revert "<the original subject>"`, so a revert of a merge
+inherited that merge's ticket id verbatim, and its diff — naming every path
+the merge touched, since a revert of a merge undoes all of it — was scanned
+for foreign scope as if the reverted ticket had authored it, refusing the
+send. Observed live on BL-1240, blocked at the documenter-to-QA hop by
+`3825f91cd Revert "Merge documenter BL-1240 0ca3bc03c0 into QA. By QA."`,
+whose diff named `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
+— foreign to BL-1240. No ticket field could exempt it: `abandoned_commits`
+rewrites the walk's BASE only when the base itself is listed, and declaring
+the foreign path under `retires:` would assert scope BL-1240 does not own.
+New `revert-subject?` recognizes the inherited-subject shape by the
+QUOTING, not the word "Revert" alone, so a hand-written subject that merely
+begins with "Revert" stays attributed to its actual author; a revert commit
+is now excluded from `commit-message-names-task?` before the ticket-id
+match runs. The gate's refusal for a genuine foreign-scope commit is
+unchanged (scenario 02 keeps its teeth). This is the third over-match shape
+this predicate has been hardened against (after a body-substring match and
+a multi-id subject, both recorded in its own comment). Acceptance:
+`specs/features/BL-1295-revert-subject-does-not-blame-the-reverted-ticket.feature`.)
+Prior entry —
+**Last Updated:** August 30, 2026 (BL-1272: the land step's entangled-sibling
+report now distinguishes a sibling still unlanded from one whose own content
+is already byte-identical on `origin/main` — a tip-pure replay that lands
+sibling A no longer causes sibling B's later report (cited at the same
+original tip) to keep printing `ENTANGLED_SIBLING A`, since B's replay is
+still a new commit built on `origin/main` and A's *original* commit remains
+an ancestor either way. `land_step_cli.bb` now prints one `LANDED_SIBLING
+<ticket-id>` line per resolved sibling alongside `ENTANGLED_SIBLING`;
+`entanglement-note`, the priority `00` note reaching the specifier for a
+genuinely unresolvable case, names only siblings still actually unlanded.
+The discriminator is content — the sibling's attributed paths already
+byte-identical on `origin/main`, reusing `task_scope_gate_lib.bb`'s own
+attribution walk — never a subject-line grep for the sibling's ticket id,
+which would falsely clear a sibling only minted or spec'd, not landed
+(BL-1241 invariant 2 stays fail-closed). `land-plan`'s action for a given
+commit is unchanged: a sibling's original commit remains an ancestor and may
+carry content its replay excluded, so the decision stays `:land`, only the
+report changes. Observed live twice in one shift before this fix (BL-1232
+landing tip-pure and still reported entangled with an already-landed
+BL-1182). See
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`.
+Acceptance:
+`specs/features/BL-1272-a-landed-sibling-is-not-reported-as-entangled.feature`.)
+Prior entry —
+**Last Updated:** August 30, 2026 (BL-1254: BL-848 stamp-off of the Cursor
+expedite no-verdict recovery chain — three commits, `3f4f69ec1b` then
+`70c5e0e5b0` then `5de352ed1d`, reviewed as ONE resulting state because the
+third supersedes part of the second (certifying `70c5e0e5b0` in isolation
+would certify dead behaviour) — CONFIRMED. Resulting behaviour: an expedite
+stage that exits without a parseable `verdict.json` is re-invoked while
+recoveries remain (`max-missing-verdict-recoveries` = 2 in
+`swarmforge/scripts/expedite_lib.bb`), with an escalated prompt on the second
+attempt that forbids waiting on background/Monitor work and requires writing
+`pass`, `bounce`, or `fail` as the last action; a further miss fails closed.
+`bounce-payload-valid?` refuses a bounce whose `reason` and `class` are both
+blank, and refuses the driver's own synthetic `no-verdict-abandoned` tag, so
+a synthesized "bounce because no-verdict" cannot re-enter the same stage and
+burn the bounce bound in a loop. Review recorded one non-live finding rather
+than fixing it: `bounce-payload-valid?` lower-cases `reason` before comparing
+it to the synthetic tag but compares `class` exactly, an asymmetry the
+running driver never reaches (it only ever synthesizes the lowercase tag),
+pinned in `extension/test/bl1254MissingVerdictNeverBounces.property.test.js`
+as the anchor for a future fix. This stamp-off reimplements nothing; all
+three hotfix-ledger rows (`3f4f69ec1b`, `70c5e0e5b0`, `5de352ed1d`) stay
+`state: stamp-open` pending a human `certified`/`waived` decision (BL-848).
+See `docs/how-to/BL-1254-swarm-stamp-expedite-no-verdict-chain.md`.
+Acceptance: `specs/features/BL-1254-swarm-stamp-expedite-no-verdict-chain.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1253: stamp-off of Cursor hotfix
 `2ec06b6ef1` — CONFIRMED. The hotfix stops the Cursor bridge from trusting
 front-desk queue mode when the front-desk poll feeder is dead: queue mode

@@ -435,6 +435,13 @@
               (task-scope-gate-lib/revert-subject? "BL-1240: revert the fixture change and redo it"))
 (assert-false "revert-subject?: an ordinary subject is not a revert" (task-scope-gate-lib/revert-subject? "BL-1240: do the thing"))
 (assert-false "revert-subject?: nil is not a revert" (task-scope-gate-lib/revert-subject? nil))
+;; Hardener pass (BL-1295): the anchor and the required whitespace are both
+;; load-bearing, not incidental to the regex's shape - a hand-authored
+;; mutation sweep found both survive if dropped/loosened.
+(assert-false "revert-subject?: the quote must be ANCHORED at the start - mid-subject 'Revert \"' is not exempt"
+              (task-scope-gate-lib/revert-subject? "BL-1240: Revert \"something else\""))
+(assert-false "revert-subject?: 'Revert' immediately followed by the quote with NO whitespace is not the git-revert shape"
+              (task-scope-gate-lib/revert-subject? "Revert\"BL-1240: something\""))
 
 (assert-true "subject-names-task?: a subject naming the task is still the task's own commit"
              (task-scope-gate-lib/subject-names-task? "BL-1240: do the thing" "BL-1240"))
