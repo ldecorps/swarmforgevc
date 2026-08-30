@@ -27,7 +27,7 @@ invariants:
   - "The guard fails closed: an artifact it cannot resolve or read is a refusal naming it, never a silent pass."
   - "One pass reports every offending artifact, not only the first."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. One scope judgment is
   genuinely yours.
