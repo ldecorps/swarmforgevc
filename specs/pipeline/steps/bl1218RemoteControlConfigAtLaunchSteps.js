@@ -71,7 +71,15 @@ function compose(ctx, role) {
       '-c',
       `source '${SWARMFORGE_SH}' '${root}'; parse_config; ${INDEX_OF_ROLE} write_role_launch_script "$(index_of_role ${role})"`,
     ],
-    { encoding: 'utf8' }
+    {
+      encoding: 'utf8',
+      // swarmforge.sh is sourced from THIS repo's own swarmforge/scripts, so
+      // model_factory_cli.bb's repo-root-derived default would otherwise
+      // read THIS repo's real .swarmforge/model-factory/ instead of the
+      // fixture's, leaking live overlay state into the composed script
+      // (see test_remote_control_launch.sh / test_model_factory_runtime_wiring.sh).
+      env: { ...process.env, MODEL_FACTORY_STATE_DIR: path.join(root, '.swarmforge', 'model-factory') },
+    }
   );
   const script = path.join(root, '.swarmforge', 'launch', `${role}.sh`);
   assert.ok(fs.existsSync(script), `no launch script was composed for ${role}`);

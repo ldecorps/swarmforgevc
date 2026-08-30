@@ -61,7 +61,13 @@ config remote_control off
 window coder claude coder --model claude-haiku-4-5-20251001 --dangerously-skip-permissions --effort low --remote-control SwarmForge-Coder
 EOF
 
-zsh -c "source '$SWARMFORGE_SH' '$ROOT3'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role coder)\""
+# MODEL_FACTORY_STATE_DIR: swarmforge.sh here is sourced from THIS repo's own
+# swarmforge/scripts (the fixture root has no copy of it), so
+# model_factory_cli.bb's repo-root-derived default would read THIS repo's
+# real .swarmforge/model-factory/ instead of the fixture's, and the settings
+# JSON assertion below would observe live overlay state rather than the
+# window line's own model (see test_model_factory_runtime_wiring.sh).
+MODEL_FACTORY_STATE_DIR="$ROOT3/.swarmforge/model-factory" zsh -c "source '$SWARMFORGE_SH' '$ROOT3'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role coder)\""
 CODER_SCRIPT_EXPLICIT_OFF="$ROOT3/.swarmforge/launch/coder.sh"
 [[ -f "$CODER_SCRIPT_EXPLICIT_OFF" ]] || fail "03: coder launch script was not written"
 grep -q -- '--remote-control' "$CODER_SCRIPT_EXPLICIT_OFF" \
