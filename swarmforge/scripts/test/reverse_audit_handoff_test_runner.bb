@@ -1,8 +1,8 @@
 #!/usr/bin/env bb
 ;; Unit coverage for reverse-hop recipient selection, terminal stamping and
 ;; propagation parsing - reverse_hop_lib.bb, the single implementation
-;; swarm_handoff.bb's pack-role-names / last-pack-role? / role-propagation /
-;; reverse-roles all delegate to.
+;; swarm_handoff.bb's last-pack-role? / role-propagation / reverse-roles
+;; all delegate to.
 ;;
 ;; BL-1299: this file previously called handoff-lib/role-propagation and
 ;; handoff-lib/pack-pipeline-role-names, neither of which has ever existed -

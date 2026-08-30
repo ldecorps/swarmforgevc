@@ -732,21 +732,18 @@
       (str/split-lines (slurp (str tsv)))
       [])))
 
-(defn pack-role-names
-  "Pipeline roles from roles.tsv order, excluding the coordinator and every
-   MASTER-RESIDENT role (BL-1299). A role whose roles-table worktree is the
-   master checkout - the specifier as well as the coordinator - holds no code
-   worktree of its own, so a merge-only reverse copy addressed to it would
-   land unapproved in-flight work on the published branch. Residency is read
-   from the table, never from a second hardcoded role name."
-  []
-  (reverse-hop-lib/pipeline-roles (roles-table-lines)))
-
 (defn role-propagation [role-name]
   (if role-name
     (reverse-hop-lib/propagation-for (roles-table-lines) role-name)
     "forward-only"))
 
+;; BL-1299: both of these read the pipeline order through
+;; reverse_hop_lib.bb, which drops the coordinator AND every MASTER-RESIDENT
+;; row. A role whose roles-table worktree is the master checkout - the
+;; specifier as well as the coordinator - holds no code worktree of its own,
+;; so a merge-only reverse copy addressed to it would land unapproved
+;; in-flight work on the published branch. Residency is read from the table,
+;; never from a second hardcoded role name.
 (defn last-pack-role? [role]
   (= role (reverse-hop-lib/last-pipeline-role (roles-table-lines))))
 

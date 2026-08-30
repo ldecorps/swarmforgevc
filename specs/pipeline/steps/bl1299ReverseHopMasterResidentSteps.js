@@ -4,8 +4,8 @@
 // worktree is the master checkout".
 //
 // The scenarios drive the REAL reverse_hop_lib.bb - the single implementation
-// swarm_handoff.bb's pack-role-names / last-pack-role? / role-propagation /
-// reverse-roles all delegate to - against a roles.tsv built from the
+// swarm_handoff.bb's last-pack-role? / role-propagation / reverse-roles
+// all delegate to - against a roles.tsv built from the
 // scenario's own Given steps. Nothing here re-implements the selection: a
 // second copy of the math is exactly how the pre-fix unit runner came to
 // assert the defect as correct.
