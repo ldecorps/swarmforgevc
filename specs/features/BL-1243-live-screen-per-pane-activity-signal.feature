@@ -9,6 +9,10 @@ Feature: Each Live Screen tile paints its own agent's activity
   Live Screen snapshot already holds. It adds no capture and no poll: a design
   that needs new per-pane probes is out of scope and must not ship.
 
+  The mapping is the operator's own, from the source intake: busy paints ok,
+  alive-but-idle paints stale, and a pane with no usable text of its own gets
+  no signal at all. No fourth status kind is minted.
+
   Background:
     Given a Live Screen poll that captured pane text for each live role
 
@@ -41,3 +45,13 @@ Feature: Each Live Screen tile paints its own agent's activity
   Scenario: The existing colour meanings are not extended
     When a tile paints its activity dot
     Then the dot uses only the status kinds that existed before
+
+  # BL-1243 live-screen-per-pane-activity-06
+  # The operator's "never misleading green" during the one event they most need
+  # to see. residentSpyUiHtml.ts repaints the LAST snapshot's panes on a failed
+  # poll, and the per-pane signal is consulted before anything else - so without
+  # this a busy-at-outage tile stays green for the whole outage. Reuses
+  # scenario 02's Then; scoped to err only, never to a merely stale aggregate.
+  Scenario: A failing poll is never painted healthy by a per-pane signal
+    When the poll is failing and a role pane's own last signal was ok
+    Then its tile is not painted ok
