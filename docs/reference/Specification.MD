@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1279: four `front_desk_supervisor.bb`
+standing shell tests
+(`test_front_desk_supervisor_bl622_refusal.sh`/`_tick.sh`/`_liveness.sh`/
+`_fleet_creds.sh`) each hand-listed six `.bb` files to copy into a disposable
+fixture root, while the supervisor `load-file`s eight — missing
+`daemon_log_freshness_pulse_lib.bb` and `self_heal_telemetry_lib.bb`, so the
+subprocess died at load before reaching the behavior each test means to gate
+(BL-622's duplicate-poller refusal, BL-436's fleet creds, BL-370's liveness
+escalation, BL-303's recovery budget), while five of the refusal test's eight
+checks passed anyway because a crash also exits non-zero, also writes no pid
+file, and also writes no `received-env.json` — the guards these tests exist
+to prove were effectively untested behind a partial red nobody owned. Fixed
+by replacing each hand-written `cp` line with `copy_bb_closure`, the BL-973
+helper that derives a fixture's copy set from the entry point's real
+transitive `load-file` closure rather than a maintained list, and enrolling
+all four as `shell-copy` entries in `bbFixtureClosureGate.js` alongside
+BL-973's original five (`docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`).
+A new `swarmforge/scripts/test/lib/bb_fixture_load_guard.sh` closes the
+separate hazard invariant 2 names: it asserts the entry point's closure is
+present and executable in the fixture root before the first check runs, so a
+fixture whose subprocess never starts can no longer report passed checks by
+accident. `front_desk_supervisor.bb` itself is unchanged — only the fixtures
+that drive it, and their enrolment in the guard, moved. Deriving WHICH
+fixtures are guarded (rather than the five/nine-row table remaining
+hand-enumerated) is recorded as a follow-up, not done in this ticket.
+Acceptance:
+`specs/features/BL-1279-front-desk-fixtures-derive-their-bb-closure.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1274: the `bl787` named-tunnel
 readiness property no longer races the host scheduler for its verdict.
 Invariant 1 used to launch the REAL `launch_resident_spy_tunnel.sh` against
