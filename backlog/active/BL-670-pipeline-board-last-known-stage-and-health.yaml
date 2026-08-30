@@ -276,4 +276,6 @@ notes: |
   grepped before committing: each is a plain literal, none is a placeholder,
   none contains a double quote, and the three code anchors return 0 matches
   today so none is vacuous (BL-874/BL-960).
-
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-30, by: architect, blamed: coder, class: behavior, commit: ab04342ce2, evidence: backlog/evidence/BL-670-pipeline-board-last-known-stage-and-health-bounce-20260830.md }

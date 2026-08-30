@@ -134,6 +134,7 @@ orphan_sweep_enumeration_unavailable_test_runner.bb	standing
 outage_failover_test_runner.bb	standing		
 parcel_rollback_guard_lib_test_runner.bb	standing		
 pipeline_stage_lib_test_runner.bb	standing		
+pipeline_stage_qualifier_test_runner.bb	standing		
 post_hotfix_merge_origin_lib_test_runner.bb	standing		
 post_qa_branch_sweep_lib_test_runner.bb	standing		
 pre_qa_gate_gather_lib_acceptance_contract_test_runner.bb	standing		

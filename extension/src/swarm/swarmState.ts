@@ -160,9 +160,90 @@ export function readPipelineStages(targetPath: string): PipelineStage[] {
 // missing/corrupt file (no sync has ever run yet, or a torn write mid-
 // rewrite) - an empty map degrades to "no active ticket known", never a
 // crash or a fabricated location.
-export function readTicketStageMap(targetPath: string): Record<string, string> {
+/**
+ * BL-670: the stage QUALIFIER, mirrored from pipeline_stage_lib.bb.
+ *
+ * These three literals cross a language boundary - the bb side writes them
+ * into ticket-stage-map.json and this side reads them - so per the engineering
+ * article's mirrored-constant rule (BL-897) a TEST asserts the two spellings
+ * agree, rather than a comment asking the next editor to remember.
+ */
+export const TICKET_STAGE_STATUS_CLAIMED = 'claimed';
+export const TICKET_STAGE_STATUS_IN_TRANSIT = 'in-transit-to';
+export const TICKET_STAGE_STATUS_LAST_KNOWN = 'last-known';
+
+export type TicketStageStatus =
+  | typeof TICKET_STAGE_STATUS_CLAIMED
+  | typeof TICKET_STAGE_STATUS_IN_TRANSIT
+  | typeof TICKET_STAGE_STATUS_LAST_KNOWN;
+
+/** BL-670: the per-ticket health dot, also mirrored from the bb side. */
+export const TICKET_HEALTH_DOT_GREEN = 'green';
+export const TICKET_HEALTH_DOT_YELLOW = 'yellow';
+export const TICKET_HEALTH_DOT_RED = 'red';
+
+export type TicketHealthDot =
+  | typeof TICKET_HEALTH_DOT_GREEN
+  | typeof TICKET_HEALTH_DOT_YELLOW
+  | typeof TICKET_HEALTH_DOT_RED;
+
+export interface TicketStageEntry {
+  stage: string;
+  status: TicketStageStatus;
+  /** ISO instant the observation this entry came from was recorded. */
+  asOf?: string;
+  healthDot?: TicketHealthDot;
+}
+
+/**
+ * BL-670: a bare role string is still accepted, and that is deliberate rather
+ * than leftover. The map on disk is written by whichever `pipeline_stage_cli.bb`
+ * the target checkout has, and several acceptance fixtures write the pre-BL-670
+ * `{ticket: role}` shape directly; normalising here means one reader serves
+ * both, and a swarm mid-upgrade never renders a blank board because its cache
+ * predates the qualifier. An entry with no status is reported as `last-known`,
+ * which is the honest reading of "we know where it was and nothing more".
+ */
+function normaliseBareRoleStage(value: string): TicketStageEntry | undefined {
+  return value ? { stage: value, status: TICKET_STAGE_STATUS_LAST_KNOWN } : undefined;
+}
+
+function normaliseObjectStage(value: object): TicketStageEntry | undefined {
+  const entry = value as Partial<TicketStageEntry>;
+  if (typeof entry.stage !== 'string' || !entry.stage) {
+    return undefined;
+  }
+  return {
+    stage: entry.stage,
+    status: (entry.status as TicketStageStatus) ?? TICKET_STAGE_STATUS_LAST_KNOWN,
+    asOf: entry.asOf,
+    healthDot: entry.healthDot,
+  };
+}
+
+export function normaliseTicketStageEntry(value: unknown): TicketStageEntry | undefined {
+  if (typeof value === 'string') {
+    return normaliseBareRoleStage(value);
+  }
+  if (value && typeof value === 'object') {
+    return normaliseObjectStage(value);
+  }
+  return undefined;
+}
+
+export function readTicketStageMap(targetPath: string): Record<string, TicketStageEntry> {
   try {
-    return JSON.parse(fs.readFileSync(path.join(targetPath, SWARMFORGE_DIR, 'board', 'ticket-stage-map.json'), 'utf8')) as Record<string, string>;
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(targetPath, SWARMFORGE_DIR, 'board', 'ticket-stage-map.json'), 'utf8')
+    ) as Record<string, unknown>;
+    const out: Record<string, TicketStageEntry> = {};
+    for (const [ticketId, value] of Object.entries(raw)) {
+      const entry = normaliseTicketStageEntry(value);
+      if (entry) {
+        out[ticketId] = entry;
+      }
+    }
+    return out;
   } catch {
     return {};
   }
@@ -175,10 +256,18 @@ export function readTicketStageMap(targetPath: string): Record<string, string> {
 // structurally closes the double-row defect at its source; computePipeline
 // Board's own dedup (BL-464) is the belt-and-braces guarantee for whatever
 // reaches it regardless of the source.
-export function invertTicketStageToRoleHeldTickets(stageMap: Record<string, string>): Record<string, string[]> {
+export function invertTicketStageToRoleHeldTickets(
+  stageMap: Record<string, TicketStageEntry | string>
+): Record<string, string[]> {
   const byRole: Record<string, string[]> = {};
-  for (const [ticketId, role] of Object.entries(stageMap)) {
-    (byRole[role] ??= []).push(ticketId);
+  for (const [ticketId, value] of Object.entries(stageMap)) {
+    // BL-670: takes either shape, for the same reason readTicketStageMap does
+    // - a caller holding a pre-qualifier map must not silently invert to an
+    // empty board.
+    const entry = normaliseTicketStageEntry(value);
+    if (entry) {
+      (byRole[entry.stage] ??= []).push(ticketId);
+    }
   }
   return byRole;
 }
