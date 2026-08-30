@@ -47,7 +47,9 @@ const turn = (over = {}) =>
   });
 
 describe('BL-1235 the seat is a third subject in the existing map', () => {
-  it('is named in the module that resolves a topic to a seat', () => {
+  it('is named in the module that resolves a topic to a seat, not re-declared', () => {
+    // localQwenSeat re-exports the constant rather than defining its own, so
+    // this is the SAME binding through both import paths, not a coincidence.
     assert.equal(BRIDGE_QWEN_SUBJECT_ID, QWEN_LOCAL_SUBJECT_ID);
   });
 

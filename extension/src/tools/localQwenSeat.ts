@@ -23,9 +23,9 @@
 
 import { NamedModelEndpointProbe, isNamedModelHealthy } from '../swarm/modelServing';
 import { topicForSubject } from './telegramTopicDecisions';
+import { QWEN_LOCAL_SUBJECT_ID, QWEN_LOCAL_TOPIC_NAME } from './telegramCursorBridgeCore';
 
-export const QWEN_LOCAL_SUBJECT_ID = 'QWEN_LOCAL';
-export const QWEN_LOCAL_TOPIC_NAME = 'Local Qwen';
+export { QWEN_LOCAL_SUBJECT_ID, QWEN_LOCAL_TOPIC_NAME };
 
 /**
  * The model the seat runs, as CONFIGURATION with a documented default rather
