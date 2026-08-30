@@ -5,6 +5,7 @@
 
 (ns review-forward-evidence-gate-lib-test-runner
   (:require [babashka.fs :as fs]
+            [babashka.process]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "review_forward_evidence_gate_lib.bb")))
@@ -190,6 +191,137 @@
   (assert-includes "refusal names the sender role" msg "architect")
   (assert-includes "refusal names Article 4.4" msg "4.4")
   (assert-includes "refusal names the reroute_reason exemption" msg "reroute_reason"))
+
+;; ── BL-1293: judged by what the commit CONTRIBUTED, not by its id ────────
+;; BL-806 compared commit identity, so a bare "Merge <received> into
+;; <role-branch>" - the commit shape this swarm produces most often - passed
+;; the gate while the role authored nothing. The architect forwarded BL-1224
+;; that way and only a human-authored QA bounce caught it.
+
+(assert-true "a merge introducing nothing of its own -> blocked, though its id differs"
+             (review-forward-evidence-gate-lib/blocked?
+              (assoc (base-args) :commit "cccccccccc" :introduces-nothing-own? true)))
+
+(assert-false "a merge that DOES introduce its own content -> not blocked"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :commit "cccccccccc" :introduces-nothing-own? false)))
+
+(assert-false "unknown contribution (git could not tell) -> not blocked (fail open)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :commit "cccccccccc" :introduces-nothing-own? nil)))
+
+(assert-false "non-review sender forwarding an empty merge -> not blocked (surface unchanged)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :sender "coder" :recipients ["cleaner"]
+                      :commit "cccccccccc" :introduces-nothing-own? true)))
+
+(assert-false "empty merge WITH reroute_reason -> not blocked (marked detour still exempt)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :commit "cccccccccc" :introduces-nothing-own? true
+                      :reroute-reason "cannot act, routing onward")))
+
+(assert-false "empty merge on a BACKWARD bounce -> not blocked (direction gate unchanged)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :recipients ["cleaner"]
+                      :commit "cccccccccc" :introduces-nothing-own? true)))
+
+(assert-false "empty merge as a note -> not blocked (type gate unchanged)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :type "note" :commit "cccccccccc" :introduces-nothing-own? true)))
+
+(assert-true "BL-950 hop: QA -> coordinator approval that is an empty merge -> blocked"
+             (review-forward-evidence-gate-lib/blocked?
+              (assoc (base-args) :sender "QA" :recipients ["coordinator"]
+                     :commit "cccccccccc" :introduces-nothing-own? true)))
+
+(assert-false "blank commit with introduces-nothing-own? true -> not blocked"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :commit "" :introduces-nothing-own? true)))
+
+(assert-true "BL-806 unchanged: same commit still blocks with no contribution fact at all"
+             (review-forward-evidence-gate-lib/blocked? (base-args)))
+
+;; ── BL-1293: forward-introduces-nothing-own? over a real repository ──────
+;; The fs/git half, kept out of `blocked?` the same way received-commit-for-task
+;; is, so the pure decision stays fixture-free.
+
+(defn- git-env []
+  ;; BL-1233: an ambient GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE retargets these
+  ;; fixture commands at the REAL repository - `-C` does not save you.
+  (dissoc (into {} (System/getenv)) "GIT_DIR" "GIT_WORK_TREE" "GIT_INDEX_FILE"))
+
+(defn- git! [root & args]
+  (let [res (apply babashka.process/sh {:dir root :env (git-env)} "git" args)]
+    (when-not (zero? (:exit res))
+      (throw (ex-info (str "fixture git failed: " (pr-str args) "\n" (:err res)) {})))
+    (str/trim (:out res))))
+
+(defn- mk-git-repo []
+  (let [root (mk-root)]
+    (git! root "init" "-q" "-b" "main")
+    (git! root "config" "user.email" "fixture@example.com")
+    (git! root "config" "user.name" "fixture")
+    (spit (str (fs/path root "base.txt")) "base\n")
+    (git! root "add" "-A")
+    (git! root "commit" "-qm" "base")
+    root))
+
+;; A bare merge of a received commit into a role branch that carries unrelated
+;; prior content: two parents, a tree that matches NEITHER parent, and nothing
+;; the role authored. This is the exact BL-1224 shape.
+(let [root (mk-git-repo)
+      base (git! root "rev-parse" "HEAD")]
+  (git! root "checkout" "-q" "-b" "swarmforge-architect")
+  (spit (str (fs/path root "architect-prior.txt")) "unrelated prior content\n")
+  (git! root "add" "-A")
+  (git! root "commit" "-qm" "prior architect content")
+  (git! root "checkout" "-q" "main")
+  (spit (str (fs/path root "incoming.txt")) "the parcel\n")
+  (git! root "add" "-A")
+  (git! root "commit" "-qm" "cleaner parcel")
+  (let [received (git! root "rev-parse" "HEAD")]
+    (git! root "checkout" "-q" "swarmforge-architect")
+    (git! root "merge" "--no-ff" "-q" "-m" (str "Merge commit '" received "' into swarmforge-architect") received)
+    (let [merge-sha (git! root "rev-parse" "HEAD")]
+      (assert-true "a bare merge introducing nothing of its own is detected"
+                   (review-forward-evidence-gate-lib/forward-introduces-nothing-own? root merge-sha))
+      (assert= "sanity: the merge really is a distinct commit from what was received"
+               false (= merge-sha received))
+      ;; the role then commits its own evidence and forwards THAT
+      (spit (str (fs/path root "evidence.md")) "architect pass: NONE\n")
+      (git! root "add" "-A")
+      (git! root "commit" "-qm" "architect evidence")
+      (assert-false "a commit carrying the role's own evidence is not 'nothing of its own'"
+                    (review-forward-evidence-gate-lib/forward-introduces-nothing-own? root (git! root "rev-parse" "HEAD")))
+      (assert-false "a plain non-merge commit is never 'nothing of its own'"
+                    (review-forward-evidence-gate-lib/forward-introduces-nothing-own? root received))
+      ;; The shape that broke BL-806's own acceptance suite when this gate
+      ;; first called the primitive without the merge guard: an EMPTY root
+      ;; commit has no parents and an empty diff-tree, which reads as
+      ;; "introduced nothing" for an entirely unrelated reason.
+      (assert-false "an empty root commit (no parents) fails open, not 'nothing of its own'"
+                    (review-forward-evidence-gate-lib/forward-introduces-nothing-own?
+                     root (git! root "rev-list" "--max-parents=0" "HEAD")))
+      (assert-false "an unreadable commit fails open (never blocks)"
+                    (review-forward-evidence-gate-lib/forward-introduces-nothing-own? root "0000000000"))
+      (assert-false "a blank commit fails open"
+                    (review-forward-evidence-gate-lib/forward-introduces-nothing-own? root ""))))
+  base)
+
+;; ── BL-1293: the refusal has to say what to commit ───────────────────────
+
+(let [msg (review-forward-evidence-gate-lib/refusal-message
+           {:sender "architect" :task-name "BL-1224-x" :commit "bbbbbbbbbb"
+            :introduces-nothing-own? true})]
+  (assert-includes "nothing-own refusal names the role" msg "architect")
+  (assert-includes "nothing-own refusal names the task" msg "BL-1224-x")
+  (assert-includes "nothing-own refusal names the commit" msg "bbbbbbbbbb")
+  (assert-includes "nothing-own refusal names the evidence directory to commit into" msg "backlog/evidence/")
+  (assert-includes "nothing-own refusal says an explicit NONE is a legitimate pass" msg "NONE")
+  (assert-includes "nothing-own refusal names Article 4.4" msg "4.4")
+  (assert-includes "nothing-own refusal names the reroute_reason exemption" msg "reroute_reason")
+  (assert-includes "nothing-own refusal says what was wrong with the commit" msg "merge"))
+
 
 (if (seq @failures)
   (do
