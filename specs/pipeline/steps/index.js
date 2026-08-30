@@ -547,6 +547,7 @@ const DOMAINS = [
   require('./bl765BubbleRemoteConfigChiptuneCatalogSteps'),
   require('./bl514RcHealthInSwarmEnsureSteps'),
   require('./bl806ReviewForwardEvidenceGateSteps'),
+  require('./bl1293ReviewForwardOwnWorkSteps'),
   require('./bl697LetsTalkHandsFreeSteps'),
   require('./bl689BounceCarriesDefectInventorySteps'),
   require('./bl628AutonomousHostBootstrapSteps'),

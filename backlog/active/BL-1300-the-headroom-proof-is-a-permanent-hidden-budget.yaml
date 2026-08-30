@@ -94,6 +94,40 @@ notes: |
   (a git hook is untracked state, so it needs a bootstrap story), and bundling
   it here would fail INVEST-Small. Mint it separately if the human wants it.
 
+  ## Re-pended for the ruling; the approval was NOT lost [2026-08-30 specifier]
+
+  The 19:37 BST Approve tap (`ce7db10c62`) was real and it stands. What it could
+  not carry is WHICH of the two shapes to build, because this ticket posed a
+  binary choice in `approval_context` without declaring `ruling_options` - and
+  per BL-589 a ticket without that field keeps the plain five-button keyboard
+  byte-identically, so an Approve tap records no `human_ruling`. The coder was
+  right to refuse to guess (spec-gap note, 22:13Z); the gap is the specifier's,
+  not the coder's.
+
+  `human_approval` is therefore back to `pending` WITH `ruling_options`
+  declared, which is the built path for collecting the choice: `pendingApprovalFor`
+  scans active AND paused (BL-408/BL-480), so the ask re-fires from
+  `backlog/active/` and the tap records `human_ruling` and flips the field back
+  to `approved`. **This `pending` is a deliberate re-ask, not an erased
+  approval** - do not read it as a destroyed tap, and do not restore `approved`
+  without a recorded `human_ruling`.
+
+  ## The declared stage set is option 1's; option 2 needs one more [2026-08-30 specifier]
+
+  `required_stages: [coder, qa]` and the documenter skip reason ("the value it
+  records is stated in the feature file it lives in") hold only under option 1.
+  Option 2 moves the budget number out of the feature file into prose checked in
+  at four other places - `boot_prefix_budget_gate_lib.bb` (`(def budget 44000)`,
+  line 16, and its header comment), `boot_prefix_budget_gate.sh`'s header,
+  `docs/index.md` and `docs/how-to/BL-859-boot-prefix-budget-gate.md` - so under
+  option 2 the documenter stage is NOT skippable. The specifier prompt's own
+  "44000-char budget" sentence is a prompt deliverable and the specifier's to
+  land, not the coder's; role prompts are outside the measured prefix
+  (`stable-prefix-text` = constitution + PIPELINE only), so that edit does not
+  itself move the number. If option 2 is ruled, the specifier amends
+  `required_stages` to add `documenter` and lands the prompt half before the
+  parcel reaches that stage.
+
 qa_e2e_procedure: |
   1. Confirm the acceptance suite is green at the fix commit:
      `node specs/pipeline/cli.js specs/features/BL-1227-boot-prefix-live-budget-check.feature`
@@ -107,14 +141,27 @@ qa_e2e_procedure: |
   4. Restore the article (`git restore -- <path>`) and re-run step 1 to confirm
      7/7 again.
 
-human_approval: approved
+human_approval: pending
+ruling_options:
+  - option 1 — keep 44000 as the one budget, pin the proof to a recorded size
+  - option 2 — move every number and message to 42000, keep measuring live
 approval_context: >
-  The defect is measured and not in question: an assertion documented as a
-  one-time headroom proof is re-measured live on every run, so the enforced
-  boot-prefix budget is 42000 while every message and document says 44000.
-  What needs a human decision is which way to resolve it - make the proof
-  genuinely one-time and keep 44000 as the single budget (option 1), or accept
-  42000 as the real budget and move every number and message to match it
-  (option 2). Option 1 restores the documented contract; option 2 keeps the
-  stricter ceiling that has in practice been the thing preventing a sixth
-  overrun. Either is defensible, which is why it is not the specifier's call.
+  You already approved this fix at 19:37 BST and that stands - the defect is
+  measured and not in question. This re-ask exists only to carry the ONE thing
+  an Approve tap could not carry - which of the two shapes to build. The two buttons
+  above are the choice.
+
+  The defect: an assertion documented as a one-time headroom proof is
+  re-measured live on every run, so the enforced boot-prefix budget is 42000
+  while every message and document says 44000.
+
+  Option 1 makes the proof genuinely one-time and keeps 44000 as the single
+  budget - it restores the documented contract, and the coder touches only the
+  feature file and its step handler. Option 2 accepts 42000 as the real budget
+  and moves every number and message to match it - it keeps the stricter
+  ceiling that has in practice been the thing preventing a sixth overrun, at
+  the cost of a wider change (gate lib, its report, two docs pages, and a
+  specifier-prompt sentence the specifier lands itself). Either is defensible,
+  which is why it is not the specifier's call.
+
+assigned_to: coder

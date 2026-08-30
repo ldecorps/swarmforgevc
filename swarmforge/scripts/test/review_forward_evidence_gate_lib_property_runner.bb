@@ -7,6 +7,10 @@
 ;;      role (cleaner, architect, hardener, documenter) never names exactly
 ;;      the commit that role received for the same task, unless the draft
 ;;      carries a reroute_reason."
+;;   BL-1293 invariant - "A review role's forward carries content that role
+;;      itself authored - its committed evidence file or its fix. A commit
+;;      that introduces nothing of its own over its parents is never a pass,
+;;      whatever its shape or subject."
 ;;   invariant 2 - "The gate's refusal surface is exactly review-role
 ;;      forward-direction git_handoffs: bounces (backward direction), marked
 ;;      detours (reroute_reason), notes, rule_proposals, and non-review
@@ -103,15 +107,19 @@
         [recipients s3] (gen-recipients s2)
         [{:keys [commit received-commit]} s4] (gen-commit-pair s3)
         [has-reroute? s5] (gen-bool s4)
-        [has-task? s6] (gen-bool s5)]
+        [has-task? s6] (gen-bool s5)
+        ;; BL-1293: nil is a real value here, not a gap - it is what an
+        ;; unreadable commit produces, and it must never block.
+        [nothing-own s7] (gen-pick s6 [true false nil])]
     [{:type type
       :sender sender
       :recipients recipients
       :task-name (if has-task? "BL-T" "")
       :commit commit
       :reroute-reason (if has-reroute? "operator asked for a reroute" nil)
-      :received-commit received-commit}
-     s6]))
+      :received-commit received-commit
+      :introduces-nothing-own? nothing-own}
+     s7]))
 
 ;; ── independent oracle ────────────────────────────────────────────────────
 
@@ -123,7 +131,8 @@
    refuses exactly one shape... every other QA send passes untouched');
    invariant 2's fail-open shapes are unchanged (a nil received-commit can
    never equal a non-blank commit)."
-  [{:keys [type sender recipients task-name commit reroute-reason received-commit]}]
+  [{:keys [type sender recipients task-name commit reroute-reason received-commit
+           introduces-nothing-own?]}]
   (let [is-review-role? (contains? #{"cleaner" "architect" "hardender" "documenter"} sender)
         is-git-handoff? (= type "git_handoff")
         single-recipient? (= (count recipients) 1)
@@ -134,9 +143,14 @@
         detour-marked? (not (str/blank? reroute-reason))
         has-task? (not (str/blank? task-name))
         has-commit? (not (str/blank? commit))
-        names-received-commit? (and has-commit? (= commit received-commit))]
+        names-received-commit? (and has-commit? (= commit received-commit))
+        ;; BL-1293, stated fresh: carrying none of the role's own work is
+        ;; refused on the same surface, whatever the commit id happens to be.
+        ;; Only an explicit true counts - false and nil are "not established".
+        carries-nothing-own? (and has-commit? (true? introduces-nothing-own?))]
     (boolean (and is-git-handoff? moves-forward? (not detour-marked?)
-                  has-task? names-received-commit?))))
+                  has-task?
+                  (or names-received-commit? carries-nothing-own?)))))
 
 ;; ── the property ──────────────────────────────────────────────────────────
 
@@ -193,6 +207,88 @@
   (swap! failures conj "FAIL BL-950 reachability: the by-construction generator never produced the REFUSED shape (same commit, no reroute, task present)"))
 (when (zero? @qa-hop-excluded-shapes-reached)
   (swap! failures conj "FAIL BL-950 reachability: the by-construction generator never produced an EXCLUDED shape"))
+
+;; ── BL-1293: the empty-merge shape, BY CONSTRUCTION ──────────────────────
+;; The broad generator reaches "review role + forward + single recipient +
+;; task + no reroute + nothing-own" only when six independent draws line up,
+;; which is the same astronomically-rare deep state BL-950's note above
+;; records. So the new shape gets its own generator with sender, recipient
+;; and type FIXED to the gated hop: every case is a candidate by
+;; construction, and the commit id is deliberately DIFFERENT from the
+;; received one in the discriminating rows - an empty merge that also
+;; happened to name the received hash would be caught by BL-806's old
+;; identity check and prove nothing about this one.
+
+(def nothing-own-refused-reached (atom 0))
+(def nothing-own-allowed-reached (atom 0))
+
+(defn gen-nothing-own-scenario [s]
+  (let [[nothing-own s1] (gen-pick s [true false nil])
+        [has-reroute? s2] (gen-bool s1)
+        [has-task? s3] (gen-bool s2)]
+    [{:type "git_handoff"
+      :sender "architect"
+      :recipients ["hardender"]
+      :task-name (if has-task? "BL-T" "")
+      ;; a DESCENDANT id, never the received one: identity can never explain
+      ;; a refusal here, so only the contribution fact can.
+      :commit "cccccccccc"
+      :reroute-reason (if has-reroute? "operator asked for a reroute" nil)
+      :received-commit "bbbbbbbbbb"
+      :introduces-nothing-own? nothing-own}
+     s3]))
+
+(check-all "BL-1293: a forward carrying none of the role's own work matches the invariant text, by construction"
+           gen-nothing-own-scenario
+           (fn [scenario]
+             (let [expected (expected-blocked? scenario)]
+               (if expected
+                 (swap! nothing-own-refused-reached inc)
+                 (swap! nothing-own-allowed-reached inc))
+               (let [actual (review-forward-evidence-gate-lib/blocked? scenario)]
+                 (if (= expected actual)
+                   true
+                   (format "expected %s, got %s" expected actual))))))
+
+(when (zero? @nothing-own-refused-reached)
+  (swap! failures conj "FAIL BL-1293 reachability: the by-construction generator never produced the REFUSED shape (nothing-own true, no reroute, task present)"))
+(when (zero? @nothing-own-allowed-reached)
+  (swap! failures conj "FAIL BL-1293 reachability: the by-construction generator never produced an ALLOWED shape (nothing-own false/nil, or an exclusion)"))
+
+;; The fail-open half stated on its own: an unreadable commit (nil) is not a
+;; refusal. A gate that treated nil as "nothing own" would strand every send
+;; whose commit git cannot read.
+(let [unreadable {:type "git_handoff" :sender "architect" :recipients ["hardender"]
+                  :task-name "BL-T" :commit "cccccccccc" :reroute-reason nil
+                  :received-commit "bbbbbbbbbb" :introduces-nothing-own? nil}]
+  (when (review-forward-evidence-gate-lib/blocked? unreadable)
+    (swap! failures conj "FAIL BL-1293: an unknown contribution (nil) blocked the send - the gate must fail open")))
+
+;; ── BL-1293 non-vacuity: the pre-fix identity-only gate fails this property ──
+;; This is BL-806's exact decision, kept here as a live mutant: if the real
+;; gate ever regresses to comparing ids alone, the assertion below goes red
+;; rather than the suite quietly staying green.
+
+(defn identity-only-blocked?
+  [{:keys [type sender recipients task-name commit reroute-reason received-commit]}]
+  (boolean (and (= type "git_handoff")
+                (contains? #{"cleaner" "architect" "hardender" "documenter"} sender)
+                (= (count recipients) 1)
+                (required-stages-lib/routes-forward? sender (first recipients))
+                (str/blank? reroute-reason)
+                (not (str/blank? task-name))
+                (not (str/blank? commit))
+                (= commit received-commit))))
+
+(let [empty-merge {:type "git_handoff" :sender "architect" :recipients ["hardender"]
+                   :task-name "BL-T" :commit "cccccccccc" :reroute-reason nil
+                   :received-commit "bbbbbbbbbb" :introduces-nothing-own? true}]
+  (when (identity-only-blocked? empty-merge)
+    (swap! failures conj "FAIL BL-1293 non-vacuity setup: identity-only was expected to MISS the empty merge"))
+  (when-not (review-forward-evidence-gate-lib/blocked? empty-merge)
+    (swap! failures conj "FAIL BL-1293: the real gate let an empty merge through"))
+  (when (= (identity-only-blocked? empty-merge) (review-forward-evidence-gate-lib/blocked? empty-merge))
+    (swap! failures conj "FAIL BL-1293 non-vacuity: identity-only and the real gate agree on the empty merge - the property would not have caught the pre-fix mutant")))
 
 ;; ── non-vacuity companion: a naive "block every review-role same-commit
 ;;    send, ignoring reroute_reason" gate would fail this same property ────

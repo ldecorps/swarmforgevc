@@ -104,6 +104,39 @@ description: |
   the evidence to commit, because Article 4.4 makes an explicit committed NONE a
   legitimate pass and the role needs to know that is the way out.
 
+  ## Amended 2026-08-30: what this remedy closes, and what it does not
+
+  The coder's self-audit found `qa_e2e_procedure` step 4 unsatisfiable and said
+  so instead of fudging it. The finding is correct and verified:
+  `git diff-tree -m --cc --no-commit-id b7d22b9ee3` is NOT empty - it carries an
+  8-line conflict resolution in `specs/pipeline/steps/index.js`, where one
+  parent removed `bl1235LocalQwenSeatSteps` and the other added
+  `bl1224WatchAdoptsRestartedRuntimeSteps`. So
+  `merge-introduces-nothing-unique?` returns false on it, by design and
+  correctly.
+
+  That means this ticket closes the CLASS the incident belongs to but not the
+  incident's own commit. Stated plainly so nobody reads a green gate as proof
+  the BL-1224 shape is caught:
+
+  - CLOSED here: a review role forwarding a clean merge that introduces nothing
+    over its parents. That is the shape this swarm produces at nearly every hop,
+    it was invisible to BL-806, and the primitive sees it exactly.
+  - NOT closed here: a forward that resolved a merge conflict - or carries any
+    other incidental bytes - while containing no review output the role
+    authored. `b7d22b9ee3` is precisely that, which is why QA could only catch
+    it by noticing a missing evidence file by hand.
+
+  The residual needs a different signal: presence of role-authored evidence
+  over the received commit, not non-emptiness of a diff. That is BL-1307, split
+  out rather than folded in - widening this slice to carry it would trade a
+  correct low-cost fix for a bigger one with a real over-refusal risk, and the
+  two failures are told apart by different facts.
+
+  Nothing built for this ticket changes. The implementation matches the spec as
+  mandated; this amendment corrects the ticket's own claims and its QA
+  procedure, not the code.
+
 qa_e2e_procedure: >
   1. Drive the gate directly with a bare merge forward (a review role merging its
      received commit and forwarding that merge) and confirm it is REFUSED, with a
@@ -113,9 +146,17 @@ qa_e2e_procedure: >
      no-defect pass in the swarm.
   3. Confirm the unchanged-received-hash case still refuses exactly as today
      (BL-806 behaviour must not move).
-  4. Replay the real shape: `b7d22b9ee` as the forwarded commit against
-     `3bc1e28b53` as received, and confirm the fixed gate refuses it.
-  5. Confirm every scenario resolves to a registered step handler.
+  4. Replay the shape this remedy actually closes: a review role's BARE merge of
+     its received commit - no conflict resolved, nothing else in the tree -
+     forwarded as `commit:`, and confirm the fixed gate REFUSES it.
+  5. Record the bounding negative, do not treat it as a failure: `b7d22b9ee3` -
+     the BL-1224 forward this ticket was filed over - is NOT refused by this
+     remedy and must not be expected to be. It resolved a real conflict in
+     `specs/pipeline/steps/index.js`, so it does introduce content of its own
+     and the primitive correctly returns false. Closing that shape needs a
+     different signal (role-authored evidence, not merely unique bytes) and is
+     BL-1307. Do not widen this gate to reach it.
+  6. Confirm every scenario resolves to a registered step handler.
 
 source: |
   Coder note (priority 50), 2026-08-30: "Pattern: architect skipped review on
@@ -141,3 +182,5 @@ notes: |
   bounce charged to the architect for BL-1224 is still correct on its own terms -
   the pass genuinely did not happen - but no amount of role diligence closes a
   structural hole that only a human noticing a missing file can currently detect.
+
+assigned_to: coder
