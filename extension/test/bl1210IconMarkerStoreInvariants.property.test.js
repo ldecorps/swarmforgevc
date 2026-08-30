@@ -42,9 +42,23 @@ const ROLE_IDS = () =>
   fc.constantFrom('coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA', 'specifier');
 const UNSTORABLE_IDS = () => fc.constantFrom('', ' ', '   ', '\t', '\n');
 
+// Equal-weighted across five kinds, each kind lands ~10% of the time, and
+// over 60 runs a specific one is missed ~0.18% - which across the three
+// tests below and six required kinds is a ~1% chance of a spurious red per
+// full-lane run. A flaky commit gate is worse than no floor at all (the
+// sibling BL-1225 file failed exactly this way), so the draw is flattened:
+// each kind gets its own weight and the run count is raised, putting the
+// miss probability below one in a million.
 const STORABLE_ID = () =>
-  fc.oneof(TICKET_IDS(), SUPERVISOR_IDS(), EPIC_IDS(), STANDING_IDS(), ROLE_IDS());
-const ANY_ID = () => fc.oneof(STORABLE_ID(), UNSTORABLE_IDS());
+  fc.oneof(
+    { arbitrary: TICKET_IDS(), weight: 1 },
+    { arbitrary: SUPERVISOR_IDS(), weight: 1 },
+    { arbitrary: EPIC_IDS(), weight: 1 },
+    { arbitrary: STANDING_IDS(), weight: 1 },
+    { arbitrary: ROLE_IDS(), weight: 1 }
+  );
+const ANY_ID = () =>
+  fc.oneof({ arbitrary: STORABLE_ID(), weight: 5 }, { arbitrary: UNSTORABLE_IDS(), weight: 1 });
 const ICON_ID = () =>
   fc.string({ minLength: 1, maxLength: 24 }).filter((s) => s.trim().length > 0);
 
@@ -107,7 +121,7 @@ test('property (invariant 1): recordSwarmIconId reports recorded if and only if 
         }
       });
     }),
-    { numRuns: 60 }
+    { numRuns: 150 }
   );
   assertReach(seen, ['ticket', 'supervisor', 'epic', 'standing', 'role', 'unstorable']);
 });
@@ -139,7 +153,7 @@ test('property (invariant 2): every storable id records a readable marker, whate
         assert.equal(readSwarmIconId(root, id), iconId);
       });
     }),
-    { numRuns: 60 }
+    { numRuns: 150 }
   );
   assertReach(seen, ['ticket', 'supervisor', 'epic', 'standing', 'role']);
 });
@@ -160,7 +174,7 @@ test('property (invariant 2): the marker location varies by kind but only ticket
         );
       });
     }),
-    { numRuns: 60 }
+    { numRuns: 150 }
   );
   assertReach(seen, ['ticket', 'supervisor', 'epic', 'standing', 'role']);
 });
