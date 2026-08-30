@@ -1,0 +1,208 @@
+id: BL-1287
+title: "leakedFixtureTunnelPids selects every temp-path cloudflared on the host with no scoping to the asking run, so bl857's module-load sweep SIGKILLs a concurrently-running sibling suite's LIVE fixtures in a parallel fork pool"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained to the property lane. It cannot reach the
+# operator's tunnel - the temp-path rule still holds that line, and this ticket
+# keeps it (scenario 02). What it costs is the lane's verdict: a suite's result
+# becomes a function of which sibling file happened to be mid-flight, which is
+# exactly the "verdict depends on something other than the code under test"
+# failure BL-871's invariant 1 exists to close, and an intermittently red lane
+# is how a real regression gets waved through (BL-816). Not high: no gate is
+# dead, no production path is touched, and the suites still fail loudly on a
+# genuine reap defect. Not low: it is not cosmetic, and it fires inside the
+# swarm's own delivery machinery.
+status: todo
+epic: code-quality-gates
+priority: 24
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1287::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1287 -> 0), so the anchor cannot pass before the work is done"
+
+invariants:
+  - "A fixture sweep only ever signals a pid whose creating run is no longer alive; a fixture a live run still owns is never selected, however its temp path or tunnel name is shaped."
+  - "The sweep still clears every fixture left by a run that is gone, however that run died - nothing traps SIGKILL, so a killed run always leaves its fixtures behind and the next run must still find them."
+  - "No selection path can reach a cloudflared outside the OS temp directory, however the tunnel names collide."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a human tap. Two judgments
+  worth a look before it goes.
+
+  First, the discriminator. The ticket asks for "is the creating run still
+  alive?", not "is this process old?". A start-time cutoff is the obvious
+  cheap alternative and it is NOT what is specified: a sibling fork that
+  started before this one spawns fixtures that are legitimately older than the
+  asking run, so an age cutoff still kills live work. Direction, not mandate -
+  if the coder finds a cleaner discriminator that satisfies invariant 1, that
+  is in bounds; padding a time window is not.
+
+  Second, and the reason this is not simply filed as "bl857 inv3 is flaky":
+  the QA note that prompted it reports bl857 invariant 3 red in the full lane,
+  and I could NOT reproduce that specific red in 9 targeted runs (solo,
+  28-way CPU load, and concurrent with bl787 - all green; see the evidence
+  file). What IS reproduced, and what this ticket fixes, is the unscoped
+  selector, which bites in the other direction (bl857's sweep killing bl787's
+  live fixtures). If the human would rather hold this until QA supplies the
+  failing counterexample, that is a legitimate call - the defect here stands
+  on its own measurement either way.
+
+description: |
+  ## What is wrong
+
+  `extension/test/helpers/fixtureTunnelName.js` exports
+  `leakedFixtureTunnelPids(execFileSync)`, whose doc comment reads:
+
+      Fixture processes leaked by an EARLIER run, identified by the throwaway
+      binary path they were launched from rather than by tunnel name.
+
+  The predicate cannot make that claim good. It lists the whole host process
+  table and keeps every line that satisfies three conditions:
+
+      line.includes(`${os.tmpdir()}/`) && /\bcloudflared\b/ && / run \S/
+
+  with one exclusion, `pid !== process.pid` - the asking worker's own pid,
+  which is never a fixture. Nothing in that predicate distinguishes a fixture
+  an earlier run left behind from a fixture a DIFFERENT, STILL-RUNNING run is
+  using right now. Both live under the OS temp directory and both carry the
+  same command-line shape, by construction: they are made by the same helper.
+
+  `extension/test/bl857TunnelOwnershipInvariants.property.test.js:111` calls
+  `sweepLeakedFixtureTunnels()` at MODULE LOAD - before its own first
+  assertion - and SIGKILLs every pid the predicate returns. The property lane
+  runs `pool: 'forks'` with `maxForks: WORKER_POOL_SIZE` (> 1;
+  `vitest.properties.config.mjs`), so other property files are genuinely
+  in-flight at that moment. `bl787NamedTunnelInvariants.property.test.js`
+  spawns fixtures of exactly the matching shape and holds them live for tens
+  of seconds while its own assertions run.
+
+  ## Measurement (2026-08-30, this host)
+
+  A process shaped exactly like a live bl787 fixture - its own temp directory
+  (`bl787-ready-prop-*`), its own unique tunnel name from
+  `fixtureTunnelName()`, its creating run still running - was handed to the
+  real predicate:
+
+      sibling live fixture pid : 2702805
+      selected by sweep        : YES - would be SIGKILLed
+      total selected pids      : 2
+
+  So the sweep would kill a live sibling's fixture. That is the defect, and it
+  is independent of load: it needs only overlap.
+
+  ## Why the temp path is not the fix and not the bug
+
+  BL-1061 chose the temp path deliberately, and correctly, for a DIFFERENT
+  question: a name-matched sweep would select the operator's real cloudflared,
+  which is the hazard the whole helper exists to prevent. That choice stays
+  (invariant 3, scenario 02). The temp path answers "could this be a fixture?"
+  It was never asked to answer "does someone still need it?", and it cannot.
+  This ticket adds the second question; it does not reopen the first.
+
+  ## How (direction, not mandate)
+
+  The discriminator wanted is liveness of the CREATING RUN, not age of the
+  process. A start-time cutoff is the tempting cheap version and it is wrong
+  here: a sibling fork that started earlier owns fixtures that are legitimately
+  older than the asking run, so an age rule still kills live work and would
+  make the lane's verdict depend on fork start order instead of fork overlap.
+
+  One shape that satisfies invariant 1: have the fixture's throwaway temp
+  directory (or the tunnel name, which already carries `process.pid` via
+  `fixtureTunnelName()`) encode its creating pid, and have the sweep skip any
+  fixture whose creator is still alive. A run that is gone cannot be alive, so
+  invariant 2 keeps holding; a concurrent sibling's creator is alive by
+  definition, so invariant 1 starts holding. Any other discriminator that
+  satisfies both invariants is equally in bounds.
+
+  Note for whoever implements it: `bl857TunnelOwnershipInvariants` wraps the
+  helper in its own local `sweepLeakedFixtureTunnels()`. Whether that wrapper
+  belongs in the shared helper now that selection carries a real decision is a
+  cleaner-stage question, not a coder mandate.
+
+qa_e2e_procedure: >
+  1. Run the two suites concurrently in the real lane and confirm both stay
+     green with fixtures overlapping:
+     `cd extension && npx vitest run --config vitest.properties.config.mjs
+     test/bl857TunnelOwnershipInvariants.property.test.js
+     test/bl787NamedTunnelInvariants.property.test.js`
+     (bl787's invariant 3 runs ~30s, bl857's ~3s, so force overlap by running
+     the FULL files, not a -t filter - the filtered form is what made the
+     spec-time reproduction attempt inconclusive).
+  2. Prove the sweep still does its BL-1061 job: leave a fixture behind from a
+     run that is gone (spawn a temp-path fixture cloudflared, SIGKILL its
+     creating shell, leave the fixture alive), then load
+     bl857TunnelOwnershipInvariants and confirm the orphan is reaped.
+  3. Prove the operator's tunnel is still untouchable: with the real
+     `swarmforge-bubble` tunnel up, run `npm run test:properties` scoped to the
+     three tunnel files and confirm the live tunnel's pid is alive afterwards.
+  4. Confirm every scenario in the feature file resolves to a registered step
+     handler (the runtime THROWS on a missing one, so an unregistered handler
+     fails loudly rather than skipping).
+
+source: |
+  QA note 50_20260830T034254Z_001989_from_QA_to_specifier_for_specifier.handoff:
+  "Untracked flaky: bl857TunnelOwnershipInvariants inv3, 3/3 clean solo runs"
+
+  Specifier triage 2026-08-30 turned that report into this ticket. The reported
+  symptom is NOT what this ticket claims to fix - see notes.
+
+notes: |
+  ## Relationship to the QA report that prompted this - read before assuming
+  ## this ticket closes it
+
+  QA reported `bl857TunnelOwnershipInvariants` invariant 3 red in the full
+  property lane, clean 3/3 solo. That specific red was NOT reproduced at spec
+  time. Attempts, all green:
+
+  - inv3 solo, idle host (load 2.2): 1 run, 3.0s
+  - inv3 under 28 busy-loop CPU burners (load 9.2 rising to 25): 3 runs
+  - inv3 concurrent with bl787's inv3 in one fork pool: 3 runs
+
+  Two hypotheses were tested and DISPROVED, recorded so nobody re-walks them:
+
+  1. "The fixture is not visible to `pgrep -f` yet when the reap runs."
+     Measured 60/60 hits with zero misses on the exact spawn shape.
+  2. "A sibling suite kills bl857's fixtures." Every kill site in the three
+     tunnel property files and in `stop_ancillary_services.sh` is scoped to a
+     pidfile or a tunnel name. bl857's own module-load sweep is the ONLY
+     host-wide killer, and it fires before bl857's own tests, so it cannot
+     reach bl857's own inv3 fixtures.
+
+  A third candidate is untested and remains open for whoever gets QA's
+  counterexample: `isAlive()` is `process.kill(pid, 0)`, which returns TRUE for
+  an unreaped ZOMBIE. The reap SIGKILLs a fixture that was orphaned when its
+  `bash -c` wrapper exited, so the corpse waits on a subreaper before it stops
+  answering signal 0. inv3's assertions run within milliseconds of that
+  SIGKILL. The window measured 7-8ms here, bounded by the probe's own poll
+  cost, so the true width is unknown and could plausibly widen under a full
+  lane. This is a DIFFERENT defect in a DIFFERENT file from the one this
+  ticket fixes; if QA's counterexample points at it, mint it separately rather
+  than widening this slice (BL-1061's property-lane triage split 1:4 for
+  exactly this reason - one file, one mechanism, one ticket).
+
+  The specifier has asked QA for the failing counterexample and assertion text
+  by note. Until that arrives, the reported inv3 flake is UNTRIAGED, and this
+  ticket must not be read as having closed it.
+
+  ## What is being claimed
+
+  Only this: the sweep's selector cannot tell a live sibling's fixture from an
+  earlier run's leak, that is measured rather than argued, and it is a real
+  cross-file flake source in this exact family of suites - just in the
+  direction bl857-kills-bl787, not the direction QA observed.
+
+  ## Documenter note
+
+  `docs/reference/Specification.MD` (~line 3407) currently describes the sweep
+  as "selecting by the fixture's own throwaway temp path rather than by tunnel
+  name". That sentence stops being the whole truth when selection gains its
+  second question, so it is in scope for this parcel's documenter pass, not a
+  follow-up.
