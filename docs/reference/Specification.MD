@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-604: the morning briefing gains a
+trend-analysis section — a short NARRATIVE of the BL-594 behaviour trends,
+distinct from the mini-app's charts, per human directive 2026-07-23. Per
+landed series, a bullet states direction + magnitude + a one-line
+significance, ranked by PROPORTIONAL move (`|delta / prior|`, not
+`|delta|` — an absolute ranking would let whichever series is measured in
+the largest units dominate forever) and bounded in length for a phone read.
+Every bullet renders `computeTrend`'s own direction and delta for the same
+series the chart plots — nothing here recomputes, smooths, or
+re-thresholds a trend, so the narrative can never disagree with the chart
+beside it. A series appears if and only if `computeTrend` returns a
+direction other than `unknown` (fewer than two points): absence of data is
+never rendered as a finding, and when the whole analysis is empty the CLI
+prints no heading at all rather than an empty one. New `:trend-analysis-section`
+key in `briefing_email_lib.bb`'s `optional-section-adapter-keys`, wired via
+a two-line adapter in `handoffd.bb`'s `briefing-email-sweep!` — the
+established section shape (pure builder, thin CLI, one vector entry), not a
+new mechanism. A throwing series loader costs only that series' bullet; the
+briefing still sends with every other section intact (BL-260 posture). No
+producer, no chart, and no other briefing section changed — this is a
+second, narrative consumer of the same `TRENDS_BOARD_SERIES` registry
+BL-603's board already reads. See the new
+`docs/how-to/BL-604-morning-briefing-trend-analysis.md`. Acceptance:
+`specs/features/BL-604-morning-briefing-trend-analysis.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1182: the day-long best-of-breed model
 trial lifecycle — nominate a candidate against a role, seat it for one
 operating day, then assess: promote if it outranks the permanent model (a

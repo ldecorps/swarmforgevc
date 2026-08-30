@@ -8,7 +8,7 @@ severity: medium
 priority: 96
 direction: human-requested
 depends_on: [BL-585]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 supersedes: BL-573
 human_approval: approved
@@ -28,9 +28,15 @@ approval_context: >
   asserted a state that already holds.
 
 invariants:
-  - "A ticket any stage has touched never derives as not-started: it always carries its last-known stage with status (claimed | in-transit-to | last-known) and an as-of time."
+  - "A ticket any stage has touched always carries its stage QUALIFIED: one of claimed | in-transit-to | last-known, plus an as-of time. A bare role with no status and no as-of is not a satisfied derivation."
   - "ONE derivation, two consumers. The board and BL-659's completion ring read the same stage/status/as-of from the same durable trail, so they can never disagree."
   - "BL-487's freshness posture is preserved: the board recomputes from live state each tick and never regresses to trusting the coordinator-written cache as the source of truth."
+
+required_wiring:
+  - 'swarmforge/scripts/pipeline_stage_cli.bb:::sent::the durable trail must actually be scanned; :sent is absent from scanned-mailbox-states today (verified 0 matches 2026-08-30), so this can only match once last-known ships'
+  - 'swarmforge/scripts/pipeline_stage_lib.bb::in-transit-to::the derivation must emit the spec-mandated status literal, not a re-spelling of it (0 matches 2026-08-30)'
+  - 'extension/src/swarm/swarmState.ts::last-known::the TS side must carry the same status literals the bb side writes - the engineering article mirrored-constant rule, BL-897 (0 matches 2026-08-30)'
+  - 'specs/pipeline/steps/index.js::bl670PipelineBoardLastKnownStageSteps::acceptance handler registered'
 
 source: |
   .swarmforge/operator/INTAKE-pipeline-board-last-known-stage.md (operator
@@ -59,7 +65,8 @@ description: |
 
   Fixture: the filing-morning state (parcel in cleaner new/ + stale night
   batch in in_process) must derive "647 · cleaner (in transit) · as of
-  10:11", never NS.
+  10:11". The "never NS" half of this fixture already holds since BL-1048;
+  what this ticket adds is the "(in transit)" qualifier and the "as of 10:11".
 
   ## Health dot
 
@@ -82,12 +89,40 @@ description: |
   coordinator-written cache is no longer the source of truth and staleness
   is NOT the remaining defect. Do not re-litigate sync triggers.
 
-  ## The live sites (verified 2026-08-19, worktree and origin/main)
+  ## The live sites (re-verified 2026-08-30 — one premise had gone stale)
 
-  What IS still live is the derivation itself:
-  `swarmforge/scripts/pipeline_stage_cli.bb`'s `role-ticket-pairs-for`
-  reads only `(handoff-lib/mailbox-dir role-info :in_process)` — the `new/`
-  inbox and the durable `sent/` trail are invisible to it.
+  **AMENDED.** The 2026-08-19 filing said `role-ticket-pairs-for` "reads only
+  `(handoff-lib/mailbox-dir role-info :in_process)` — the `new/` inbox and the
+  durable `sent/` trail are invisible to it". **The `new/` half of that is no
+  longer true and must not be rebuilt.** BL-1048 landed it on 2026-08-22 in
+  `f9408d8ae` ("a delivered parcel is not not-started — scan inbox/new/ too"),
+  three days after this ticket's verification date. Today
+  `pipeline_stage_cli.bb:115` reads
+  `(def ^:private scanned-mailbox-states [:new :in_process])`, and
+  `role-ticket-pairs-for` maps over it. An in-transit ticket therefore already
+  derives its role and already does NOT render not-started.
+
+  What IS still live, all re-verified on 2026-08-30 against this worktree:
+
+  1. **No status qualifier.** The derivation collapses "claimed" and
+     "delivered but unopened" into the same bare role string. This is exactly
+     the distinction BL-1048 deliberately deferred — its own approval_context
+     says: "whether the grid should DISTINGUISH 'delivered, not yet opened'
+     from 'opened and being worked' ... This spec deliberately does NOT do
+     that ... If you want the distinction drawn, say so and it becomes its own
+     slice against the render, not this one." **BL-670 is that slice.**
+  2. **No `last-known` at all.** `:sent` is absent from
+     `scanned-mailbox-states`, so the durable trail is still unread — the
+     original claim holds for this half. The trail is real and populated for
+     every pipeline role (`.worktrees/<role>/.swarmforge/handoffs/sent/`), and
+     `handoff_lib.bb`'s `mailbox-dir` already resolves `:sent`, so this is a
+     read of a store with a live writer, not a dependency on unbuilt work.
+  3. **No as-of time** on any derivation, at any status.
+  4. **No health dot.**
+
+  So the remaining defect is no longer "an in-transit ticket renders NS" — it
+  is that the board shows WHERE without showing WHETHER-CLAIMED or SINCE-WHEN,
+  and goes blind entirely the moment every box is empty.
 
   The value shape change crosses a language boundary. Today
   `.swarmforge/board/ticket-stage-map.json` is {ticket-id -> role}, a bare
@@ -196,3 +231,49 @@ notes: |
   extension/test/pipelineBoard.test.js. Running them concurrently is the
   orthogonality breach that caused this rescope; BL-585 uses the same
   sequencing against BL-559 for the same reason.
+
+  ## Freshness adjudication 2026-08-30 (Article 3.6) — AMEND
+
+  Ran the deprecator freshness check before handing this to the coder, on a
+  ticket filed 2026-07-26 and last verified 2026-08-19. One premise had gone
+  stale and one had not:
+
+    - STALE: "the `new/` inbox ... invisible to it". Falsified by BL-1048
+      (`f9408d8ae`, 2026-08-22). Corrected in the description above; the coder
+      must NOT rebuild the `new/` scan.
+    - STILL TRUE: the durable `sent/` trail is unread (`:sent` absent from
+      `scanned-mailbox-states`), the value shape is still a bare
+      `{ticket -> role}` string map (live `ticket-stage-map.json` reads
+      `{"BL-670":"specifier","BL-1235":"coder",...}`; `swarmState.ts:163`
+      `readTicketStageMap` is still typed `Record<string, string>`), there is
+      no as-of time, and there is no health dot.
+
+  Outcome AMEND, not retire and not split. The valuable core — the qualified
+  `{stage, status, asOf}` shape across the language boundary, `last-known`
+  from the durable trail, one-derivation-two-consumers, and the health dot —
+  is entirely unbuilt and is now the NAMED successor to the distinction
+  BL-1048 explicitly deferred. Only the framing was wrong, and the framing is
+  what would have sent the coder to rebuild a shipped scan.
+
+  `human_approval: approved` is retained deliberately. The deliverable, the
+  human's 2026-08-19 scope ruling, and the verbatim requirement are all
+  unchanged; what changed is a false statement about the code as it stands.
+  Re-approval would be asking the human to re-affirm a decision this
+  amendment does not touch.
+
+  Other premises re-verified as still holding on 2026-08-30, so the next gate
+  pass is cheap: `depends_on: [BL-585]` is satisfied (BL-585 is in
+  `backlog/done/M8/`); BL-487's `syncBoardIfWired` is still live
+  (`conciergeTick.ts:641`), so "do not re-litigate sync triggers" stands;
+  `invertTicketStageToRoleHeldTickets` is still the TS consumer
+  (`pipelineGridLive.ts:18,39,49`); `reconcile-stage-map` and `filter-active`
+  are still the bb producers (`pipeline_stage_lib.bb:118,131`); BL-573 is in
+  `backlog/done/` and BL-940 is in `backlog/paused/`.
+
+  `required_wiring:` added in this amendment — the ticket had none, and its
+  value depends on the richer shape actually reaching the TS consumers rather
+  than being emitted and ignored (BL-531). All four patterns were parsed and
+  grepped before committing: each is a plain literal, none is a placeholder,
+  none contains a double quote, and the three code anchors return 0 matches
+  today so none is vacuous (BL-874/BL-960).
+
