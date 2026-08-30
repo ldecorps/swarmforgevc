@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkSharedTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { SHAPES, BL1048_REACH_FLOORS, makeTicketArbitraries } = require('./helpers/bl1048ReachFloors');
 
 // BL-1048 declared invariants, coder-first authorship (BL-654):
 //
@@ -107,17 +109,9 @@ function renderedColumnFor(role) {
   return role === 'coordinator' ? 'QA' : role;
 }
 
-// The observation shapes. Each names how many parcels a ticket is observed
-// in and, for the multi-observation ones, how the SECOND is derived from
-// the first - never an independent second draw.
-const SHAPES = [
-  'none', // no parcel anywhere: must stay not-started
-  'delivered-only', // inbox/new/ only: the defect this ticket closes
-  'opened-only', // inbox/in_process/ only: the pre-existing behavior
-  'both-states-same-role', // derived: flip the state at the SAME door
-  'opened-then-delivered-downstream', // derived: advance the role, delivered
-  'delivered-then-opened-downstream', // derived: advance the role, opened
-];
+// The observation shapes and the ticket arbitraries live in
+// helpers/bl1048ReachFloors.js (BL-1281), so the property lane and the
+// acceptance drive the same generator this test drives rather than a copy.
 
 function mailboxDir(root, role, state) {
   const stateSegments = state === 'new' ? ['inbox', 'new'] : ['inbox', 'in_process'];
@@ -298,40 +292,51 @@ function runDraw(tickets) {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
-const ticketArb = fc.record({
-  shape: fc.constantFrom(...SHAPES),
-  baseIndex: fc.integer({ min: 0, max: ROLE_NAMES.length - 1 }),
-  kind: fc.constantFrom('git_handoff', 'note'),
-  batched: fc.boolean(),
-  // Mostly active (the board's own membership set); a minority closed, so
-  // the filter-active half of the widening is exercised too.
-  active: fc.oneof({ arbitrary: fc.constant(true), weight: 4 }, { arbitrary: fc.constant(false), weight: 1 }),
-});
+const { drawForShape } = makeTicketArbitraries(fc, { roleCount: ROLE_NAMES.length });
+
+// BL-1281: the run budget is SPLIT ACROSS THE SHAPE SPACE, and each cell pins
+// the first two tickets of every draw to its own shape.
+//
+// Before this, all nine floors rode one unseeded `fc.array(ticketArb)` draw and
+// hoped. Two of them did not survive the hope: `shape` is drawn at p=1/6 per
+// ticket, and a replay of the generator and the counting block over 4000
+// simulated runs missed `deliveredOnly >= 8` on 1.15% of them and
+// `openedOnly >= 8` on 1.32% - a 2.50% run-level failure on CORRECT code, in a
+// file no allowlist covers, so the lottery refused unrelated parcels. That is
+// BL-1062's defect, third instance, and this is BL-1062's remedy: make the
+// coverage reachable by construction, floors untouched.
+//
+// Arithmetic, so the guarantee is checkable rather than asserted: 24 runs over
+// 6 shapes is 4 runs per cell, and each draw in a cell carries 2 tickets of
+// that cell's shape, so every shape is observed at least 8 times per run. The
+// two at-risk floors are 8. The remaining tickets of each draw stay free, so
+// the seven floors that were never at risk keep the sampling breadth they had.
+const SHAPE_CELL_RUNS = runsPerCell(Number(process.env.PROPERTY_RUNS ?? 24), SHAPES.length);
+
 
 describe('BL-1048: a delivered parcel is not not-started', () => {
   it('renders every ticket with a delivered or opened parcel at exactly one real role, and only a parcel-less ticket as not-started', () => {
-    fc.assert(
-      fc.property(fc.array(ticketArb, { minLength: 2, maxLength: 6 }), (tickets) => {
-        runDraw(tickets);
-      }),
-      { numRuns: Number(process.env.PROPERTY_RUNS ?? 24), verbose: false }
-    );
+    const seed = process.env.PROPERTY_SEED ? Number(process.env.PROPERTY_SEED) : undefined;
+    for (const shape of SHAPES) {
+      fc.assert(
+        fc.property(drawForShape(shape), (tickets) => {
+          runDraw(tickets);
+        }),
+        { numRuns: SHAPE_CELL_RUNS, verbose: false, ...(seed === undefined ? {} : { seed }) }
+      );
+    }
 
     // Reach floors: absolute counts, asserted rather than hoped for. A
     // property that never reaches the delivered-only state would pass
     // against the live defect (the failure shape BL-654's generator-reach
     // clause exists to close), so the floors are part of the test.
-    assert.ok(coverage.deliveredOnly >= 8, `delivered-only reach too low: ${JSON.stringify(coverage)}`);
-    assert.ok(coverage.openedOnly >= 8, `opened-only reach too low: ${JSON.stringify(coverage)}`);
-    assert.ok(coverage.bothStatesSameRole >= 4, `both-states-same-role reach too low: ${JSON.stringify(coverage)}`);
-    assert.ok(coverage.crossRole >= 6, `cross-role double-row candidate reach too low: ${JSON.stringify(coverage)}`);
-    assert.ok(coverage.deliveredNote >= 4, `delivered-note reach too low: ${JSON.stringify(coverage)}`);
-    assert.ok(coverage.deliveredBatched >= 4, `delivered-batch_ reach too low: ${JSON.stringify(coverage)}`);
-    assert.ok(
-      coverage.deliveredMasterResident >= 2,
-      `delivered master-resident reach too low: ${JSON.stringify(coverage)}`
-    );
-    assert.ok(coverage.noParcel >= 4, `no-parcel (genuinely not-started) reach too low: ${JSON.stringify(coverage)}`);
-    assert.ok(coverage.closedButDelivered >= 2, `closed-but-delivered reach too low: ${JSON.stringify(coverage)}`);
+    //
+    // BL-1281: driven through BL-1062's shared assertion, over the floors
+    // declared in helpers/bl1048ReachFloors.js - one statement of each number,
+    // readable by the acceptance, rather than nine inline restatements of an
+    // assertion the shared helper already owns.
+    for (const [value, floor] of Object.entries(BL1048_REACH_FLOORS)) {
+      assertReachFloor(coverage, [value], floor, 'bl1048');
+    }
   });
 });
