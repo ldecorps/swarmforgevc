@@ -881,8 +881,7 @@ const DOMAINS = [
   require('./bl1182DayLongBobTrialLifecycleSteps'),
   require('./bl1232ShiftVelocityChartReadableSteps'),
   require('./bl604MorningBriefingTrendAnalysisSteps'),
-  require('./bl1243LiveScreenPerPaneActivitySteps'),
-  require('./bl670PipelineBoardLastKnownStageSteps')
+  require('./bl1243LiveScreenPerPaneActivitySteps')
 ];
 
 function registerSteps(registry) {
