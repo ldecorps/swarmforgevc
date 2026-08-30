@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T04:25:23.339419376Z","feature_name":"BL-1250 the expeditor observes one role agent per role, whatever processes a role runs","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1250-expeditor-role-agent-probe-counts-roles.feature","background_hash":"0edf0fde206bdd62a64ab3077c8a27f31421a6eae5d2a0dbdab56a896d698d53","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1250 the expeditor observes one role agent per role, whatever processes a role runs
 
   The probe counts every process whose argv contains the launch directory, and

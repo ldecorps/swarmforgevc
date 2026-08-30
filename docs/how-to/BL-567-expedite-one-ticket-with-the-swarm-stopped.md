@@ -113,6 +113,19 @@ one rather than asserting health. Three outcomes, kept distinct:
 | `failed` | the start command itself failed |
 | `held` | the operator's pause marker was active — the start command never ran (BL-1249) |
 
+**`role-agents` counts roles, not processes (BL-1250).** A launched role
+contributes two processes to the table — a `zsh` launcher and a `claude`
+agent — so an earlier version of `probe-liveness` that counted matching
+processes read a healthy eight-role pack as sixteen against an expected
+`:role-agents 8`, reporting `degraded` on every clean restart regardless of
+actual health. The probe now groups matching process argvs by role and
+counts distinct roles; a role observed only by its own launcher file (the
+`zsh` line with no accompanying agent file) is excluded, since the launcher
+outlives a dead agent — counting the launcher alone would hide exactly the
+half-launch this signal exists to catch. `expected-live-set`'s `8` is
+unchanged, and the needle stays root-scoped (BL-782): another swarm on the
+same host contributes nothing to the count.
+
 **A hold is not the same as `--no-restart`.** Before running anything, the restart
 phase reads `.swarmforge/operator/control-pause.json` — the same marker the BL-1191
 restart gate already treats as blocking. If it is active, the outcome is `held`,

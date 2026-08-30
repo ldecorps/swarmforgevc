@@ -1,31 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 30, 2026 (BL-1240: a `git_handoff` is now refused at
-SEND TIME when its own parcel adds a file under `swarmforge/scripts/test/`
-with no row in that directory's `suite-manifest.tsv`, closing a gap where
-the BL-973 tree-wide inventory check fired only when the full standing suite
-ran — an unregistered file accumulated invisibly (measured ~6/day over 5
-days) until the suite refused to start at all, and the refusal always landed
-on QA holding a list of OTHER tickets' registration omissions it cannot
-reasonably author. The new gate is PARCEL-scoped, never tree-scoped — it
-asks only whether THIS parcel adds an unregistered file, reusing
-`task_scope_gate_lib.bb`'s own commit-walk (now a public
-`parcel-own-changed-paths` seam) rather than re-deriving one, so a parcel
-touching no test file passes even while other tickets' files sit
-unregistered elsewhere — a tree-scoped copy would have relocated the drift
-problem onto every unrelated parcel instead of ending it. Registration
-itself is asked of the SAME `suite_inventory_lib.bb` logic
-`suite_inventory_cli.bb` runs, never a second notion that could drift; a
-deleted path is never a finding. The refusal names the file and quotes the
-exact manifest row needed, so the fix is a one-edit action. Fail-open on
-every unreadable fact, matching every other send-time gate in
-`swarm_handoff.bb`. The silent-row half (a manifest row registering no real
-file) was already closed by BL-1239 and is not re-validated here,
-deliberately — a parcel merely touching the manifest must not be refused for
-another ticket's already-malformed row. See the new "Unregistered-Test
-Send-Time Gate (BL-1240)" section in `swarmforge/handoff-protocol.md` and
-`docs/how-to/BL-1240-unregistered-test-send-time-gate.md`. Acceptance:
-`specs/features/BL-1240-unregistered-test-fails-the-ticket-that-adds-it.feature`.)
+**Last Updated:** August 30, 2026 (BL-1250: the expeditor's (BL-567)
+liveness probe now counts ROLES, not processes, fixing a false `degraded`
+verdict on every healthy restart. `probe-liveness` counted every process
+whose argv named `<root>/.swarmforge/launch/`, but a launched role
+contributes TWO such processes (a `zsh` launcher and a `claude` agent) —
+against `expected-live-set`'s `:role-agents 8`, a fully healthy eight-role
+pack observed 16, so `live-set-delta` returned non-empty and
+`restart-stack!` reported `degraded` on every clean restart, indistinguishable
+from the genuine half-launch that verdict exists to catch (confirmed live:
+`pgrep -af` found 18 launch-directory processes on a pack the probe itself
+now correctly reports as `role-agents: 8`). The probe now groups matching
+process argvs by role and counts distinct roles; a role observed only by
+its own launcher file (with no accompanying agent file) is excluded,
+because the launcher outlives a dead agent — counting the launcher alone
+would hide exactly the half-launch this signal exists to detect.
+`expected-live-set`'s value of `8` is unchanged (raising it to 16 would
+have tied the expectation to today's launcher shape and reported eight
+bare launchers with no agents at all as healthy), `live-set-delta`'s
+match-only contract is untouched, the tmux/handoffd/handoffd-supervisor
+probes are untouched, and the needle stays root-scoped per BL-782 — another
+swarm on the same host still contributes nothing to the count. See the
+updated outcome table in
+`docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`.
+Acceptance: `specs/features/BL-1250-expeditor-role-agent-probe-counts-roles.feature`.)
 Prior entry —
 **Last Updated:** August 30, 2026 (BL-1235: a THIRD host-agent seat — a
 local model served through ollama — answers only in its own dedicated
