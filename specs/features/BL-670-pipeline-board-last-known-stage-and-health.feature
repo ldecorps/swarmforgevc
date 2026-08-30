@@ -1,15 +1,23 @@
 Feature: pipeline board shows last-known stage, never renders in-transit as not-started
 
-  # BL-670, supersedes BL-573: the board's ticket-stage map derives a stage
-  # only while a task-bearing parcel is CLAIMED (in_process) — a parcel in
-  # new/ (in transit, a large fraction of a ticket's life under depth-1
-  # rotation) derives nothing, so an in-transit ticket renders not-started.
-  # Observed: BL-647 had traversed specifier and coder and sat at the
-  # cleaner, but the board showed it not-started because
-  # ticket-stage-map.json read {} — aggravated by a stale orphaned
-  # night-batch claim with no derivable ticket id. The human's verbatim
-  # requirement: "chaque ticket dans sa colonne, avec l'agent en cours, OU
-  # LE DERNIER CONNU."
+  # BL-670, supersedes BL-573. Filed when the board's ticket-stage map
+  # derived a stage only while a parcel was CLAIMED (in_process), so an
+  # in-transit ticket rendered not-started: BL-647 had traversed specifier
+  # and coder and sat at the cleaner, but the board showed it not-started
+  # because ticket-stage-map.json read {}. The human's verbatim requirement:
+  # "chaque ticket dans sa colonne, avec l'agent en cours, OU LE DERNIER
+  # CONNU."
+  #
+  # AMENDED 2026-08-30. That original NOT-STARTED defect is FIXED and is not
+  # this ticket's to re-assert: BL-1048 (f9408d8ae, 2026-08-22) added new/ to
+  # the scanned mailbox states, and its own feature file owns the guarantee
+  # that a delivered parcel is never not-started. What BL-1048 deliberately
+  # deferred is what remains here, in its words: "whether the grid should
+  # DISTINGUISH 'delivered, not yet opened' from 'opened and being worked'".
+  # So this feature is about the QUALIFIER, not the column: every derived
+  # stage carries one of claimed | in-transit-to | last-known plus an as-of
+  # time, last-known comes from the durable sent/ trail that nothing reads
+  # yet, and each ticket carries a health dot.
   #
   # SCOPE, per the human's ruling of 2026-08-19: this ticket is the
   # DERIVATION SEMANTICS plus the HEALTH DOT, and nothing else. Every
@@ -25,13 +33,15 @@ Feature: pipeline board shows last-known stage, never renders in-transit as not-
   # reimplementation of it. The <status> and <dot colour> columns are
   # validated against explicit KNOWN_VALUES, never passed through.
 
-  # BL-670 in-transit-ticket-never-not-started-01
-  Scenario: a ticket in transit renders its last-known stage, never not-started
+  # BL-670 in-transit-ticket-carries-status-and-as-of-01
+  # The "never not-started" half of this scenario's original assertion was
+  # retired here on 2026-08-30: BL-1048 shipped it and its feature file owns
+  # it, so re-asserting it would duplicate another ticket's contract.
+  Scenario: a ticket in transit carries the in-transit status and an as-of time
     Given ticket 647 traversed specifier and coder and its parcel now sits in the cleaner's new/ inbox
     And a stale orphaned night-batch claim with no derivable ticket id also sits in_process
     When the board's ticket stage is derived
     Then ticket 647 derives stage cleaner with status in-transit-to as of 10:11
-    And ticket 647 does not derive as not-started
 
   # BL-670 derivation-status-per-parcel-location-02
   Scenario Outline: each parcel location derives its own stage status
