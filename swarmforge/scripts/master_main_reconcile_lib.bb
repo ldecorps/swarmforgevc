@@ -496,13 +496,19 @@
    BL-1236: :verdict-unavailable stays distinct from both - it is neither
    a reported conflict nor a designed rematch recovery, so it must not be
    routed through rematch-owner-recovery?'s silent-state-only path; it
-   goes through handle-blocked! like \"dirty\", surfacing a note."
+   goes through handle-blocked! like \"dirty\", surfacing a note.
+   BL-1288: :push-unavailable is the same shape - the push could not be
+   ATTEMPTED against the remote (transport, credentials), so there is
+   nothing to absorb and nothing designed to recover; it must not be
+   mislabelled \"conflict\", which both pages for an absorb merge that does
+   not exist and is a durable deadlock end-state."
   [outcome]
   (case (or outcome :conflict)
     :human-merge-in-progress "human-merge-in-progress"
     :refuse-rematch "refuse-rematch"
     :rematch-bookkeeping "rematch-bookkeeping"
     :verdict-unavailable "verdict-unavailable"
+    :push-unavailable "push-unavailable"
     "conflict"))
 
 (defn rematch-owner-recovery?
@@ -725,6 +731,38 @@
         (write-state! daemon-dir next-state))
       (handle-blocked! reason surface-msg))))
 
+;; ── BL-1288: only a REJECTED push authorises discarding local work ────────
+;; BL-1198 put a push in front of the reset, but read only :success from it,
+;; so EVERY unsuccessful push was treated as the genuine-divergence signal.
+;; A push also fails when the remote is unreachable, when the daemon holds no
+;; credential, or when the network is down - none of which is divergence, and
+;; each of which then answered a healthy local-ahead branch by destroying it
+;; (seven resets on 2026-08-30 alone, one of them losing a shipped ticket's
+;; prose half for a full day before anyone noticed). The adapter contract
+;; already returns the push's :error; this is the function that finally reads
+;; it.
+;;
+;; Deliberately fails CLOSED. Only stderr that positively identifies a
+;; non-fast-forward rejection authorises the discard; every other string -
+;; unrecognised ones included - keeps the commits. Discarding committed work
+;; must rest on evidence that the remote said no, never on the mere absence
+;; of a transport error this list happens to know about, because that list
+;; can only ever be incomplete and its gaps would be paid for in lost work.
+;;
+;; A hook's `[remote rejected]` is excluded on the same principle: the remote
+;; did refuse the push, but for policy, not because local main diverged, so
+;; resetting onto origin/main would destroy commits the remote never had a
+;; newer version of.
+(defn push-rejection?
+  "True only when `git push` stderr identifies a non-fast-forward rejection -
+   the genuine-divergence signal a reset onto origin/main exists to answer.
+   nil, empty, transport, credential and hook-policy failures are all false."
+  [error]
+  (let [text (str/lower-case (str (or error "")))]
+    (and (str/includes? text "! [rejected]")
+         (or (str/includes? text "non-fast-forward")
+             (str/includes? text "fetch first")))))
+
 ;; ── BL-1198: push-before-reset ───────────────────────────────────────────
 ;; A reset (`git reset --hard origin/main`) is only safe to the extent that
 ;; nothing on the branch it discards was worth keeping - but "local main is
@@ -745,23 +783,30 @@
 (defn rematch-with-push-first!
   "Orchestrates push-then-reset-if-rejected. adapters:
      :push!  (fn [] -> {:success bool :error str?}) - a single `git push
-             origin main` attempt, no retry loop (bounded - a rejected
-             push IS the genuine-divergence signal, not a transient
-             failure to retry past; this project's own already-wired
-             periodic push-sweep, BL-356, is what retries on a backoff
-             curve, not this one-shot pre-reset attempt).
+             origin main` attempt, no retry loop (bounded - this project's
+             own already-wired periodic push-sweep, BL-356, is what retries
+             on a backoff curve, not this one-shot pre-reset attempt).
+             BL-1288: its :error is READ, and decides what happens next.
      :reset! (fn [] -> map) - the EXISTING reset-to-origin recovery,
-             called only when the push above did not succeed; its return
-             value is passed through completely unchanged, so no caller-
-             visible contract changes on the genuine-divergence path.
+             called only when the push was REJECTED (push-rejection?); its
+             return value is passed through completely unchanged, so no
+             caller-visible contract changes on the genuine-divergence path.
    Returns {:success true :outcome :pushed} when the push alone already
-   resolved everything (no reset needed), else reset!'s own result,
-   verbatim."
+   resolved everything (no reset needed); reset!'s own result, verbatim, on
+   a genuine rejection; and, BL-1288, {:success false :outcome
+   :push-unavailable :error <the push's own error>} when the push failed for
+   any reason that is not a rejection - the commits are kept and the push's
+   reason travels to the caller. No retry is attempted here on purpose: the
+   reconcile does nothing and says why, leaving local ahead until the BL-356
+   sweep or a role pushes."
   [{:keys [push! reset!]}]
   (let [push-result (push!)]
-    (if (:success push-result)
-      {:success true :outcome :pushed}
-      (reset!))))
+    (cond
+      (:success push-result) {:success true :outcome :pushed}
+      (push-rejection? (:error push-result)) (reset!)
+      :else {:success false
+             :outcome :push-unavailable
+             :error (:error push-result)})))
 
 ;; ── BL-1214: :ff-absorb execution tries a real merge before resetting ─────
 ;; `absorb-dispatch-plan` resolves a genuine two-way divergence (behind>0,
