@@ -47,7 +47,19 @@ function publishStatusDoc(rendezvousDir, swarmName, doc) {
   fs.writeFileSync(path.join(dir, 'status.json'), JSON.stringify(doc));
 }
 
+// BL-1277: this file's own feature title, so the generic step text below can
+// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
+// feature being run and otherwise falls back to first-match across every
+// handler file - so an UNSCOPED registration of text another file also
+// registers hands whichever file loads first the job of answering both
+// features, silently, against the wrong fixture.
+const BL1277_FEATURE_NAME = "Each swarm publishes its own rolled-up status and the fleet console merges by enumerating them";
+
 function registerSteps(registry) {
+  // BL-1277: registrations whose step text another handler file also
+  // registers go through here, pinned to this file's own feature.
+  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
+
   // ── Background ─────────────────────────────────────────────────────
   registry.define(/^a swarm named "([^"]+)" whose handoffd is running$/, (ctx, swarmName) => {
     ctx.rendezvousDir = mkTmp('bl437-fleet-rendezvous-');
@@ -160,7 +172,7 @@ function registerSteps(registry) {
     };
     publishStatusDoc(ctx.rendezvousDir, 'fes', ctx.publishedDocFes);
   });
-  registry.define(/^the fleet console renders swarm "fes"$/, (ctx) => {
+  bl1277Scoped(/^the fleet console renders swarm "fes"$/, (ctx) => {
     ctx.rendered = renderFleet(ctx.rendezvousDir);
     ctx.fesRendered = ctx.rendered.swarms.find((s) => s.identity.name === 'fes');
   });

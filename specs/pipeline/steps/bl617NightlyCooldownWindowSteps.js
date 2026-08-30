@@ -91,7 +91,19 @@ function runApplyCooldownPause(ctx, nowMs, extraArgs = []) {
   return JSON.parse(out);
 }
 
+// BL-1277: this file's own feature title, so the generic step text below can
+// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
+// feature being run and otherwise falls back to first-match across every
+// handler file - so an UNSCOPED registration of text another file also
+// registers hands whichever file loads first the job of answering both
+// features, silently, against the wrong fixture.
+const BL1277_FEATURE_NAME = "Nightly cooldown window pauses the swarm overnight";
+
 function registerSteps(registry) {
+  // BL-1277: registrations whose step text another handler file also
+  // registers go through here, pinned to this file's own feature.
+  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
+
   // ── Background ────────────────────────────────────────────────────────
   registry.define(/^a swarm project with a controllable local clock$/, (ctx) => {
     ctx.root = mkTmp();
@@ -181,7 +193,7 @@ function registerSteps(registry) {
     ctx.telegramEnv = {};
   });
 
-  registry.define(/^the shipped repository documentation$/, () => {});
+  bl1277Scoped(/^the shipped repository documentation$/, () => {});
 
   // ── window-open-applies-timed-pause-01 / window-decision-table-02 ──────
   registry.define(/^the cooldown sweep ticks at "([^"]+)" local$/, (ctx, localTime) => {
@@ -267,7 +279,7 @@ function registerSteps(registry) {
   });
 
   // ── delivery-frozen-not-killed-11 ────────────────────────────────────────
-  registry.define(/^an agent enqueues a git_handoff parcel at "([^"]+)" local$/, (ctx) => {
+  bl1277Scoped(/^an agent enqueues a git_handoff parcel at "([^"]+)" local$/, (ctx) => {
     ctx.parcelName = '50_from_coder_to_coder.handoff';
     fs.writeFileSync(
       path.join(ctx.outbox, ctx.parcelName),

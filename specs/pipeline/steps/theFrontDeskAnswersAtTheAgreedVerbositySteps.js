@@ -84,7 +84,19 @@ function composeFrontDeskReplyPrompt(rawContractYamlContent) {
   return execFileSync('bb', ['-e', code], { encoding: 'utf8' });
 }
 
+// BL-1277: this file's own feature title, so the generic step text below can
+// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
+// feature being run and otherwise falls back to first-match across every
+// handler file - so an UNSCOPED registration of text another file also
+// registers hands whichever file loads first the job of answering both
+// features, silently, against the wrong fixture.
+const BL1277_FEATURE_NAME = "The front desk answers the human at the verbosity he agreed to";
+
 function registerSteps(registry) {
+  // BL-1277: registrations whose step text another handler file also
+  // registers go through here, pinned to this file's own feature.
+  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
+
   // ── Background ─────────────────────────────────────────────────────
   registry.define(/^the human has an agreed contract with the swarm$/, (ctx) => {
     ctx.targetPath = mkTargetPath();
@@ -118,7 +130,7 @@ function registerSteps(registry) {
   // this scenario reuses it rather than risking two divergent copies.
 
   // ── the-front-desk-answers-at-the-agreed-verbosity-03 ────────────────
-  registry.define(/^the human negotiates the verbosity to concise$/, (ctx) => {
+  bl1277Scoped(/^the human negotiates the verbosity to concise$/, (ctx) => {
     // BL-382 shipped no dedicated "negotiate verbosity" CLI (its own
     // reviseContractFromObjection only ever touches scope/outOfScope/
     // boundaries) - a direct contract.yaml rewrite is how its own

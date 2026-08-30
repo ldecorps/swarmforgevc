@@ -128,9 +128,21 @@ async function waitForFile(p, timeoutMs) {
 // explicit warning, this codebase's recurring gherkin-mutation gap).
 const KNOWN_MISHAPS = new Set(['a crash', 'a host reboot']);
 
+// BL-1277: this file's own feature title, so the generic step text below can
+// be pinned to it. stepRegistry.resolve() prefers a registration scoped to the
+// feature being run and otherwise falls back to first-match across every
+// handler file - so an UNSCOPED registration of text another file also
+// registers hands whichever file loads first the job of answering both
+// features, silently, against the wrong fixture.
+const BL1277_FEATURE_NAME = "The Operator is always reachable, and being reachable never costs the swarm its recovery arm";
+
 function registerSteps(registry) {
+  // BL-1277: registrations whose step text another handler file also
+  // registers go through here, pinned to this file's own feature.
+  const bl1277Scoped = (pattern, handler) => registry.defineScoped(pattern, handler, BL1277_FEATURE_NAME);
+
   // ── Background ───────────────────────────────────────────────────────
-  registry.define(/^the swarm is running$/, () => {
+  bl1277Scoped(/^the swarm is running$/, () => {
     // Narrative only - each scenario below builds exactly the real
     // fixture it needs (a thread store, a runtime fixture, an attended
     // session), never a shared "whole swarm" fixture that would obscure
