@@ -268,8 +268,9 @@ All CLI commands read from and write to the runtime state, so changes persist ac
 
 A trial seats a candidate model against a role for one operating day, then
 assesses it: promote if it outranks the permanent model (a score tie selects
-the cheaper `cost_class`), otherwise revert. Production **live** trials wait
-on BL-1183 — this lifecycle is the trial state machine itself.
+the cheaper `cost_class`), otherwise revert. Every nomination passes a
+go-live checklist first (BL-1183, below) — this lifecycle is the trial
+state machine itself.
 
 ```bash
 bb swarmforge/scripts/model_steward_cli.bb trial nominate <provider>/<model> \
@@ -310,6 +311,51 @@ assess later and no half-moved seat — refused, not silently reported as a
 success. A promotion owes no boundary transfer at all: the seat already runs
 the trial model, so nothing switches.
 
+## The go-live gate: no production trial without something that can judge it (BL-1183)
+
+The human's instruction was direct: do not run live day-long production
+trials until telemetry and performance-assessing tools can actually decide
+outrank/tie/lose. `run-trial-nominate` runs a checklist BEFORE arming or
+seating anything, and a trial that cannot be adjudicated refuses to start
+rather than seating a model for a day and learning nothing from it.
+
+```bash
+bb swarmforge/scripts/model_steward_cli.bb trial go-live --role <role> <provider>/<model>
+```
+
+`trial go-live` reads the checklist without seating anything — safe to run
+any time to check readiness in advance; `nominate` runs the identical check
+itself before arming.
+
+The checklist is **derived** from what the trial lifecycle's own `decide`
+function actually needs to compare a pairing, not a separate list that
+could drift from it:
+
+- **Telemetry**: a role-matrix score for BOTH the candidate and the
+  permanent model. Without both, `decide` falls through its unscored clause
+  and reverts on absent evidence — the trial would seat a non-permanent
+  model for a day and never actually compare anything.
+- **An assessor**: battery/scorecard/bake-off evidence behind each score
+  (`model_steward_lib/battery-or-scorecard-evidence?`, the same predicate
+  `ranking-authority-tier` already uses to decide which evidence may
+  outrank which). A score with no such citation is somebody's opinion, and
+  an opinion cannot adjudicate a day of production.
+
+The gate is **fail-closed** and **names every gap** — an unreadable
+registry, an absent role-matrix entry, or an unscored candidate all produce
+a refusal naming which model and which half (telemetry or assessor) is
+missing, never a silent "not ready":
+
+```
+trial refused: the BoB go-live checklist is not satisfied -
+  trial-comparison telemetry: no recorded score for the candidate cerebras/trial-model;
+  performance assessor: no battery/scorecard/bake-off evidence for the permanent anthropic/perm-model
+```
+
+A refusal reporting only "not ready" with no reasons would cost the operator
+the same search as having no gate at all, so `go-live-refusal` always
+carries every named gap in one string.
+
 ## Slice 3 (BL-557): steward as a role + compatibility docs
 
 The Model Steward graduates from a Slice 1 stub prompt into a
@@ -347,4 +393,5 @@ Related: [Route work to a local-model seat](./BL-1053-route-work-to-a-local-mode
 Acceptance (Slice 2): `specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature`.
 Acceptance (Slice 3): `specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature`.
 Acceptance (day-long trial lifecycle): `specs/features/BL-1182-day-long-bob-trial-lifecycle.feature`.
+Acceptance (go-live gate): `specs/features/BL-1183-bob-go-live-telemetry-assessor-gate.feature`.
 
