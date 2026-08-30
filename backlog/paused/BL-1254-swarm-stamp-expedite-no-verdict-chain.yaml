@@ -155,5 +155,13 @@ notes: |
     promotion - `bb swarmforge/scripts/hotfix_ledger_update.bb . --link <sha>
     BL-1254` for each of the three SHAs. All three rows are stamp_ticket null
     at mint.
+  - "[2026-08-30] coordinator: DO NOT auto-promote until specifier
+    adjudicates. Promotion loop keeps re-selecting this ticket (top priority
+    among eligible paused) but the router refuses to route it (dispatch trail
+    already exists - coder/cleaner commits dbda494910/912767aee and specifier
+    absorption commit f69160925 exist in the repo but are not ancestors of
+    main HEAD, a merge silently dropped them). See
+    backlog/evidence/BL-1254-dropped-commits-20260830.md. Specifier notified
+    via note, priority 00, 2026-08-30."
 
 assigned_to: coder
