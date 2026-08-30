@@ -3,7 +3,11 @@
 (ns swarm-handoff
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
-            [clojure.string :as str]))
+            [clojure.edn :as edn]
+            [clojure.string :as str])
+  (:import [java.nio.channels FileChannel]
+           [java.nio.file OpenOption StandardOpenOption]
+           [java.security MessageDigest]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_inject_lib.bb")))
@@ -45,7 +49,7 @@
        "body: <proposed rule text, max 200 chars>\n"
        "rationale: <why the rule is needed, max 200 chars>"))
 
-(def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped"})
+(def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped" "non-forwarding"})
 (def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "rejection_reason" "reroute_reason" "scope" "body" "rationale"})
 (def allowed-types #{"awake" "git_handoff" "note" "rule_proposal"})
 (def valid-scope-pattern #"constitution|engineering|project|role:[a-zA-Z][a-zA-Z0-9]*")
@@ -740,30 +744,218 @@
     (catch Exception e
       (report-nonfatal! "ROUTING-SKIP RECORD FAILED:" e))))
 
-(defn body [type sender canonical-commit note-message scope proposal-body rationale recipients]
+(defn pack-role-names
+  "Pipeline roles from roles.tsv order, excluding coordinator."
+  []
+  (let [tsv (roles-file)]
+    (if (fs/exists? tsv)
+      (->> (str/split-lines (slurp (str tsv)))
+           (remove str/blank?)
+           (map #(first (str/split % #"\t")))
+           (remove #(= "coordinator" (handoff-lib/seat-stage %)))
+           vec)
+      [])))
+
+(defn role-propagation [role-name]
+  (or (when (and role-name (fs/exists? (roles-file)))
+        (some (fn [line]
+                (let [fields (str/split line #"\t" -1)]
+                  (when (= role-name (first fields))
+                    (let [mode (str/trim (or (get fields 8) ""))]
+                      (when (#{"forward-only" "back-one" "back-all"} mode)
+                        mode)))))
+              (str/split-lines (slurp (str (roles-file))))))
+      "forward-only"))
+
+(defn last-pack-role? [role]
+  (= role (last (pack-role-names))))
+
+(defn reverse-roles [sender]
+  (let [roles (pack-role-names)
+        idx (.indexOf roles sender)]
+    (if (neg? idx)
+      []
+      (case (role-propagation sender)
+        "back-one" (if (pos? idx) [(nth roles (dec idx))] [])
+        "back-all" (vec (take idx roles))
+        []))))
+
+(defn with-non-forwarding [headers sender]
+  (if (and (= "git_handoff" (get headers "type"))
+           (last-pack-role? sender))
+    (assoc headers "non-forwarding" "true")
+    headers))
+
+(defn inbound-non-forwarding? []
+  (boolean
+    (some #(= "true" (handoff-lib/header-field % "non-forwarding"))
+          (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
+
+(defn sha256 [text]
+  (let [digest (.digest (MessageDigest/getInstance "SHA-256")
+                        (.getBytes (str text) "UTF-8"))]
+    (apply str (map #(format "%02x" (bit-and (int %) 0xff)) digest))))
+
+(defn audit-pending-dir []
+  (fs/path (project-root) ".swarmforge" "handoffs" "audit_pending"))
+
+(defn sender-audit-dir [sender]
+  (fs/path (audit-pending-dir) (sha256 sender)))
+
+(defn audit-task-id [headers]
+  (get headers "task"))
+
+(defn audit-file [sender task-id]
+  (fs/path (sender-audit-dir sender)
+           (str (sha256 task-id) ".edn")))
+
+(defn sender-audit-files [sender]
+  (let [dir (sender-audit-dir sender)]
+    (if (fs/directory? dir)
+      (->> (fs/glob dir "*.edn")
+           (filter fs/regular-file?)
+           vec)
+      [])))
+
+(defn read-audit [path]
+  (when (fs/regular-file? path)
+    (try
+      (edn/read-string (slurp (str path)))
+      (catch Exception _ nil))))
+
+(defn write-audit! [path candidate]
+  (fs/create-dirs (fs/parent path))
+  (let [tmp (fs/create-temp-file {:dir (fs/parent path) :prefix ".audit."})]
+    (spit (str tmp) (str (pr-str {:candidate candidate
+                                  :created-at (timestamp)}) "\n"))
+    (fs/move tmp path {:replace-existing true})))
+
+(defn with-audit-lock [f]
+  (let [dir (audit-pending-dir)
+        path (fs/path dir ".lock")
+        options (into-array OpenOption [StandardOpenOption/CREATE
+                                        StandardOpenOption/WRITE])]
+    (fs/create-dirs dir)
+    (with-open [channel (FileChannel/open (fs/path path) options)]
+      (.lock channel)
+      (f))))
+
+(defn sender-audit-dir-empty? [dir]
+  (and (fs/directory? dir)
+       (empty? (filter fs/regular-file? (fs/list-dir dir)))))
+
+(defn remove-empty-sender-audit-dir! [sender]
+  (let [dir (sender-audit-dir sender)]
+    (when (sender-audit-dir-empty? dir)
+      (fs/delete-if-exists dir))))
+
+(defn delete-sender-audits! [sender]
+  (doseq [path (sender-audit-files sender)]
+    (fs/delete-if-exists path))
+  (remove-empty-sender-audit-dir! sender))
+
+(defn invocation-fingerprint [draft sender headers]
+  {:sender sender
+   :task-id (audit-task-id headers)
+   :type (get headers "type")
+   :recipients (vec (str/split (or (get headers "to") "") #"," -1))
+   :priority (get headers "priority")
+   :task (get headers "task")
+   :commit (get headers "commit")
+   :non-forwarding (= "true" (get headers "non-forwarding"))
+   :draft-fingerprint (sha256 (slurp (str draft)))})
+
+(defn invalidate-changed-invocation-audits! [sender invocation]
+  (with-audit-lock
+    (fn []
+      (doseq [path (sender-audit-files sender)
+              :let [candidate (:candidate (read-audit path))]
+              :when (not= invocation (select-keys candidate (keys invocation)))]
+        (fs/delete-if-exists path))
+      (remove-empty-sender-audit-dir! sender))))
+
+(defn audit-candidate [draft sender headers recipients canonical-commit]
+  {:version 1
+   :sender sender
+   :task-id (audit-task-id headers)
+   :type (get headers "type")
+   :recipients (vec recipients)
+   :priority (get headers "priority")
+   :task (get headers "task")
+   :commit canonical-commit
+   :non-forwarding (= "true" (get headers "non-forwarding"))
+   :draft-fingerprint (sha256 (slurp (str draft)))})
+
+(defn print-audit-required! [candidate]
+  (binding [*out* *err*]
+    (println "AUDIT_REQUIRED")
+    (println "HANDOFF_NOT_QUEUED")
+    (println "TASK_ID:" (:task-id candidate))
+    (println "COMMIT:" (:commit candidate))
+    (println)
+    (println "Re-read the complete inbound task payload and every source it references.")
+    (println "Compare the completed work product against every requirement and constraint,")
+    (println "including interactions, boundaries, failure cases, and negative requirements.")
+    (println "Establish requirement-to-evidence traceability appropriate to your role:")
+    (println "every requirement must be covered by the work, supported by relevant verification,")
+    (println "or identified as a gap.")
+    (println "Review the complete committed diff, tests and checks, generated artifacts,")
+    (println "and unrelated working-tree changes. Passing tools or clean formatting alone do")
+    (println "not establish that the task is complete.")
+    (println "Fix every finding, commit the corrections, rerun applicable checks, and repeat")
+    (println "this audit against the revised candidate before running the handoff command again.")))
+
+(defn submit-after-audit! [candidate submit!]
+  (with-audit-lock
+    (fn []
+      (let [path (audit-file (:sender candidate) (:task-id candidate))
+            previous (:candidate (read-audit path))]
+        (if (= candidate previous)
+          (let [result (submit!)]
+            (delete-sender-audits! (:sender candidate))
+            result)
+          (do
+            (delete-sender-audits! (:sender candidate))
+            (write-audit! path candidate)
+            (print-audit-required! candidate)
+            nil))))))
+
+(defn structure-instruction [handback?]
+  (if handback?
+    "The inbound tree is the structure. Replay this role's current task onto that shape."
+    "This role's current tree is the structure. Replay the inbound work onto that shape."))
+
+(defn body [type sender canonical-commit note-message scope proposal-body rationale recipients
+            & {:keys [handback?] :or {handback? false}}]
   (let [lead (handoff-lib/handoff-body-lead recipients)]
     (case type
       "awake" "awake"
-      "git_handoff" (str lead "merge_and_process " sender " " canonical-commit)
+      "git_handoff" (str lead "merge_and_process " sender " " canonical-commit
+                         "\n\n" (structure-instruction handback?))
       "note" (str lead note-message)
       "rule_proposal" (str lead
                            "Rule proposal (" scope ") from " sender ": " proposal-body
                            "\nRationale: " rationale))))
 
-(defn write-handoff! [{:keys [headers recipients canonical-commit sender routing-skipped]}]
+(defn write-handoff! [{:keys [headers recipients canonical-commit sender routing-skipped
+                              priority non-forwarding reverse?]}]
   (let [timestamp-id (id-timestamp)
         created-at (timestamp)
         sequence (next-sequence)
         id (str timestamp-id "_" sequence "_from_" sender)
         recipient-slug (str/join "_" recipients)
-        priority (get headers "priority")
+        priority (or priority (get headers "priority"))
         type (get headers "type")
+        non-forwarding? (if (some? non-forwarding)
+                          non-forwarding
+                          (= "true" (get headers "non-forwarding")))
         filename (str priority "_" timestamp-id "_" sequence "_from_" sender "_to_" recipient-slug ".handoff")
         outbox-dir (fs/path (state-dir) "outbox")
         outbox-file (fs/path outbox-dir filename)
         handoff-body (body type sender canonical-commit (get headers "message")
                            (get headers "scope") (get headers "body") (get headers "rationale")
-                           recipients)
+                           recipients
+                           :handback? (or reverse? non-forwarding?))
         lines (cond-> [(str "id: " id)
                        (str "from: " sender)
                        (str "to: " (str/join "," recipients))
@@ -785,6 +977,8 @@
                 (conj (str "reroute_reason: " (get headers "reroute_reason")))
                 routing-skipped
                 (conj (str "routing_skipped: " (format-routing-skipped routing-skipped)))
+                non-forwarding?
+                (conj "non-forwarding: true")
                 true
                 (conj (str "created_at: " created-at)
                       ""
@@ -799,6 +993,22 @@
       (exit! 1 "HANDOFF WRITE FAILED: the installed file was corrupt (empty or missing required envelope headers); no handoff was queued."))
     (check-backlog-depth) ; Add backlog depth check after writing handoff
     outbox-file))
+
+(defn write-handoffs! [ctx]
+  (let [headers (with-non-forwarding (:headers ctx) (:sender ctx))
+        ctx (assoc ctx :headers headers)
+        forward (write-handoff! (assoc ctx :reverse? false
+                                       :non-forwarding (= "true" (get headers "non-forwarding"))))
+        reverse (when (= "git_handoff" (get headers "type"))
+                  (mapv (fn [role]
+                          (write-handoff! (assoc ctx
+                                                 :recipients [role]
+                                                 :priority "00"
+                                                 :non-forwarding true
+                                                 :reverse? true
+                                                 :routing-skipped nil)))
+                        (reverse-roles (:sender ctx))))]
+    (into [forward] reverse)))
 
 (defn error-report [draft errors]
   (binding [*out* *err*]
@@ -834,6 +1044,9 @@
     (catch Exception e
       (report-nonfatal! "HANDOFF SYNC INJECT FAILED:" e))))
 
+(defn deliver-all! [outbox-files sender]
+  (mapv #(try-sync-deliver! % sender) outbox-files))
+
 (defn -main [& args]
   (when (not= 1 (count args))
     (usage)
@@ -845,47 +1058,65 @@
       (when-not (role-known? sender)
         (exit! 1 (str "Unknown sender role: " sender)))
       (let [{:keys [headers ordered errors]} (parse-draft draft)
+            headers (with-non-forwarding headers sender)
             validation (validate headers ordered sender)
             all-errors (vec (concat errors (:errors validation)))]
         (when (seq all-errors)
           (error-report draft all-errors)
           (System/exit 2))
+        (when (and (= "git_handoff" (get headers "type"))
+                   (inbound-non-forwarding?))
+          (exit! 1 "Current inbound handoff is non-forwarding; do not send a git_handoff. Merge, then done_with_current."))
+        (invalidate-changed-invocation-audits!
+         sender (invocation-fingerprint draft sender headers))
         (let [routed (route-required-stages {:type (get headers "type")
                                              :task (get headers "task")
                                              :recipients (:recipients validation)
                                              :root (project-root)
                                              :headers headers
                                              :sender sender})
-              outbox-file (write-handoff! {:headers headers
-                                           :recipients (:recipients routed)
-                                           :canonical-commit (:canonical-commit validation)
-                                           :sender sender
-                                           :routing-skipped (:routing-skipped routed)})
-              _ (when-let [skip (:routing-skipped routed)]
-                  (log-routing-skip! (project-root) (assoc skip :sender sender :created_at (timestamp))))
-              sync-result (if (skip-sync-inject?)
-                            :skipped
-                            (try-sync-deliver! outbox-file sender))]
-          (fs/delete draft)
-          (cond
-            (= sync-result :delivered)
-            (println (str "HANDOFF DELIVERED:" (str outbox-file)))
+              submit! (fn []
+                        (let [files (write-handoffs! {:headers headers
+                                                      :recipients (:recipients routed)
+                                                      :canonical-commit (:canonical-commit validation)
+                                                      :sender sender
+                                                      :routing-skipped (:routing-skipped routed)})]
+                          (when-let [skip (:routing-skipped routed)]
+                            (log-routing-skip! (project-root)
+                                               (assoc skip :sender sender :created_at (timestamp))))
+                          files))
+              outbox-files (if (= "git_handoff" (get headers "type"))
+                             (submit-after-audit!
+                              (audit-candidate draft sender headers
+                                               (:recipients routed)
+                                               (:canonical-commit validation))
+                              submit!)
+                             (submit!))]
+          (when outbox-files
+            (let [sync-results (if (skip-sync-inject?)
+                                 (vec (repeat (count outbox-files) :skipped))
+                                 (deliver-all! outbox-files sender))]
+              (fs/delete draft)
+              (doseq [[outbox-file sync-result] (map vector outbox-files sync-results)]
+                (cond
+                  (= sync-result :delivered)
+                  (println (str "HANDOFF DELIVERED:" (str outbox-file)))
 
-            (= sync-result :held)
-            (println (str "HANDOFF HELD (ambulance):" (str outbox-file)))
+                  (= sync-result :held)
+                  (println (str "HANDOFF HELD (ambulance):" (str outbox-file)))
 
-            (= sync-result :skipped)
-            (if (skip-daemon?)
-              (exit! 1 (str "Handoff queued for mailbox delivery but handoffd is disabled "
-                            "(SWARMFORGE_SKIP_DAEMON=1). Unset SKIP_DAEMON for mailbox-only mode. File: "
-                            outbox-file))
-              (println (str "HANDOFF QUEUED (mailbox only, no tmux inject):" (str outbox-file))))
+                  (= sync-result :skipped)
+                  (if (skip-daemon?)
+                    (exit! 1 (str "Handoff queued for mailbox delivery but handoffd is disabled "
+                                  "(SWARMFORGE_SKIP_DAEMON=1). Unset SKIP_DAEMON for mailbox-only mode. File: "
+                                  outbox-file))
+                    (println (str "HANDOFF QUEUED (mailbox only, no tmux inject):" (str outbox-file))))
 
-            (skip-daemon?)
-            (exit! 1 (str "Handoff queued but sync tmux injection failed; daemon disabled. "
-                          "See inject-traffic.log. File: " outbox-file))
+                  (skip-daemon?)
+                  (exit! 1 (str "Handoff queued but sync tmux injection failed; daemon disabled. "
+                                "See inject-traffic.log. File: " outbox-file))
 
-            :else
-            (println (str "HANDOFF QUEUED (daemon backup will deliver):" (str outbox-file)))))))))
+                  :else
+                  (println (str "HANDOFF QUEUED (daemon backup will deliver):" (str outbox-file))))))))))))
 
 (apply -main *command-line-args*)

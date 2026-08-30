@@ -34,16 +34,42 @@ wake-up that way). No-Op Rule: don't forward a commit with no functional
 change (narrow meta-churn exemption; see `handoff-protocol.md`). Never
 write reserved/audit headers. See **02-handoffs-detailed.md**.
 
+**Self-audit (git_handoff only).** The first valid `swarm_handoff.sh`
+invocation for a given draft fingerprint prints `AUDIT_REQUIRED` /
+`HANDOFF_NOT_QUEUED` and does **not** queue. Re-read the inbound, diff,
+and checks; fix and commit if needed; invoke the helper again with an
+identical draft to queue. A changed draft invalidates the prior challenge.
+Notes are unchanged (single call).
+
+**Reverse hops.** Pack windows may declare `forward-only` (default),
+`back-one`, or `back-all` after the receive mode. On a queued `git_handoff`,
+the helper also writes priority-`00` `non-forwarding: true` copies to the
+previous role (`back-one`) or all earlier pipeline roles (`back-all`),
+never to `coordinator`. Agents draft only the forward `to:`; reverses are
+helper-synthesized. The last non-coordinator pack role's forward
+`git_handoff` is also stamped `non-forwarding: true` (terminal).
+
 ## 2.4 Receiving Rules
 Use `ready_for_next.sh` to receive work (checks `in_process/` first). Batch
 roles (cleaner, hardener) process multiple parcels at once. A parcel stuck
 in `inbox/new/` >10 minutes: the coordinator must chase it. See
 **02-handoffs-detailed.md**.
 
+A `non-forwarding: true` inbound is **merge-only**: run the payload merge,
+then `done_with_current.sh`. Do **not** send a `git_handoff` for that
+inbound — the helper refuses while such an inbound is `in_process`. On a
+reverse (handback), the inbound tree is the structure; replay this role's
+current task onto that shape.
+
 ## 2.5 Merge-Up Protocol
 The full sequence (QA broadcast → land on `main` → coordinator bookkeeping)
 is stated in `PIPELINE.md` steps 5–6 — not repeated here. Draft-format
 mechanics: 2.2/2.3 above. See **02-handoffs-detailed.md**.
+
+QA merge-up **notes** remain the QA→upstream sync path for now (QA windows
+stay `forward-only`). Reverse hops on cleaner/architect may coexist; do not
+treat reverse copies as a replacement for the QA note broadcast until that
+migration is explicit.
 
 ## 2.6 Multi-Ticket Batch Forwards Carry Every Ticket ID
 - A `git_handoff` names ONE ticket. When a batch role's committed work

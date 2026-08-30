@@ -1,0 +1,139 @@
+id: BL-1298
+title: "The land step's replay cannot run from any role's own worktree, because it builds its scratch checkout under a .git that is a FILE there - and the failed attempt leaves behind the branch that makes the retry fail for a different reason"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1298-the-replay-runs-from-a-linked-worktree.feature
+
+source: "QA note (priority 00) 2026-08-30 landing BL-1295; evidence swarmforge-QA:backlog/evidence/BL-1295-land-escalate-20260830.md, second field occurrence of the two smaller issues BL-1297's notes recorded as out-of-scope when landing BL-1272. Verified by the specifier against land_step_lib.bb and the live repository before minting."
+
+invariants:
+  - "The replay's scratch checkout is created under the repository's real git common directory, so the main checkout and a linked worktree produce the same replay for the same ticket and commit."
+  - "A failed replay leaves the repository exactly as it found it - no scratch worktree and no scratch branch survive - so a retry can only fail for the reason the first attempt did."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1298ReplayLinkedWorktreeSteps::the three scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
+
+description: |
+  ## What is wrong
+
+  `replay!` in `swarmforge/scripts/land_step_lib.bb` builds its scratch
+  checkout at
+
+      (fs/path root ".git" "land-replay-worktrees" <task-id>-<short commit>)
+
+  That path is only real when `root` is the MAIN checkout. In a linked
+  worktree `.git` is a FILE holding `gitdir: ...`, so the path names a
+  child of a regular file and `git worktree add` fails outright:
+
+      land-step replay: could not create worktree
+      /home/carillon/swarmforgevc/.worktrees/QA/.git/land-replay-worktrees/BL-1295-0c550b4bcb
+      off origin/main
+
+  Measured 2026-08-30: `.worktrees/QA/.git` is a 54-byte ASCII file, not a
+  directory. QA's own worktree is the ONLY place QA works, and every other
+  pipeline role is in a linked worktree too, so as shipped the replay
+  cannot run from anywhere a role actually stands. It works only when the
+  caller passes the master checkout as the optional third argument - which
+  is a workaround a reader has to already know about, not the contract.
+
+  ## The second half: the failed attempt is not free
+
+  On the `create` failure path `replay!` returns immediately. Unlike the
+  two later failure paths, it runs neither `cleanup!` nor
+  `git branch -q -D branch` - but `git worktree add -b <branch>` may
+  already have created `land-replay/<task-id>-<short commit>`. QA confirmed
+  the stray branch directly on BL-1295 (deleted by hand before retrying),
+  and had recorded the same prediction while landing BL-1272.
+
+  Four such branches are sitting in the repository right now:
+  `land-replay/BL-1194-9bf6fcfd7b`, `land-replay/BL-1245-e1bc21174a`,
+  `land-replay/BL-1261-2c7867e770`, `land-replay/BL-1266-be105a66c4`.
+  Whether each is a leaked failure or a successful replay whose branch was
+  never swept afterwards (the docstring keeps the branch on success by
+  design, and nothing sweeps it later) is not established here and is not
+  this ticket's job to decide - do NOT delete them as part of this work.
+  They are written down so the evidence is not lost.
+
+  The consequence is the one QA hit: the retry fails for a DIFFERENT reason
+  than the first attempt, so whoever reads the second message is sent
+  chasing the wrong defect.
+
+  ## How (direction, not mandate)
+
+  Ask git where the real git directory is instead of assuming `.git` is a
+  directory - `git rev-parse --git-common-dir` from `root` is the obvious
+  reading, and it answers correctly in the main checkout and in a linked
+  worktree alike. Whatever is chosen must keep the existing guarantee that
+  the scratch checkout is never inside the caller's own working tree, which
+  may hold uncommitted work.
+
+  For the second half, make the `create` failure path clean up on the same
+  terms the later failure paths already do. Deleting a branch that
+  `worktree add` did not in fact create must not itself turn into a new
+  failure.
+
+  This is NOT scoped to sweep the four pre-existing branches above, and NOT
+  scoped to change what a SUCCESSFUL replay leaves behind - QA's land action
+  reads that branch, so removing it would break landing.
+
+qa_e2e: >
+  In a fixture repo with a real linked worktree, set up a parcel whose
+  approved commit is entangled with an unlanded sibling, then run
+  land_step_cli.bb from INSIDE the linked worktree with no third argument.
+  It must produce a tip-pure replay commit rather than "could not create
+  worktree", and the replayed tree must hold the same paths the same run
+  from the main checkout produces. Then force the scratch-checkout creation
+  to fail and confirm no `land-replay/<id>-<sha>` branch survives, and that
+  invoking the land step a second time with the same ticket and commit
+  reports the first attempt's reason and not a branch-already-exists one.
+  Finally, confirm a SUCCESSFUL replay still leaves its branch in place -
+  QA's own land action reads it.
+
+human_approval: pending
+approval_context: >
+  Sign-off on the new feature file, plus one scoping judgement to confirm.
+
+  Four `land-replay/*` branches already exist in the repository. I have
+  deliberately kept sweeping them OUT of this ticket, because I could not
+  establish whether they are leaked failures or successful replays whose
+  branches were simply never swept - and the second kind would tell us
+  something different is missing (nothing removes a replay branch after the
+  land action reads it). If you would rather this ticket also decided that,
+  say so and I will scope it; otherwise it stays a separate question.
+
+notes: |
+  Split out of BL-1297 rather than folded into it, deliberately. BL-1297 is
+  a defect in `task_scope_gate_lib.bb`'s `own-commit-diff` shared by three
+  callers; this is a defect in `land_step_lib.bb`'s `replay!` alone. They
+  are independent - either can be fixed and gated without the other - and
+  BL-1297 already carries `human_approval: approved`, which re-scoping it
+  would re-open for no gain. BL-1297's own `notes:` recorded both halves of
+  this defect as explicitly out of its scope; this ticket is where they
+  land.
+
+  Landing BL-1295, BL-1272 and BL-1253 needs BOTH fixed: BL-1297 is why the
+  replay finds nothing to commit, and this is why it cannot even create the
+  checkout it would have committed in. BL-1297 is the harder blocker and is
+  triaged critical; this one is medium because a working - if undocumented -
+  route around it exists today (pass the master checkout as the third
+  argument).
+
+  Routing: like BL-1297, this is a defect IN the delivery machinery, so it
+  cannot ride the pipeline it repairs - its own parcel would reach QA and
+  hit the identical LAND_ESCALATE. It goes through
+  `swarmforge/scripts/expedite.sh`, after BL-1297. See
+  backlog/evidence/BL-1295-land-escalate-specifier-adjudication-20260830.md.
+
+  The `required_wiring` entry above anchors the acceptance handler's
+  registration, and is a SCENARIO-EXECUTION anchor, not a production-wiring
+  claim (BL-1235): `replay!` already has its live caller in
+  `land_step_cli.bb`, so there is no new call site for this ticket to prove.

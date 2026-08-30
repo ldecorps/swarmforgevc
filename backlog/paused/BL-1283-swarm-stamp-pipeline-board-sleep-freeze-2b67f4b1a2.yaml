@@ -16,7 +16,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1283-swarm-stamp-pipeline-board-sleep-freeze-2b67f4b1a2.feature
 
-human_approval: pending
+human_approval: approved
 
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 2b67f4b1a2. Review-only:
