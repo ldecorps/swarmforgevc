@@ -13,8 +13,8 @@ const {
   whenAlertTelemetryIdle,
 } = require('../out/metrics/alertTelemetryStore');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 test('aggregateFalsePositiveRate computes per-window rate', () => {
   const hour = 60 * 60 * 1000;
@@ -57,7 +57,7 @@ test('aggregateFalsePositiveRate ignores records where fired is false', () => {
 });
 
 test('evaluateAlertWithTelemetry does not change evaluation result', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl598-unit-'));
+  const root = mkTmpDir('bl598-unit-');
   const out = evaluateAlertWithTelemetry(root, 'operator-actionable', 'actionable', () => 42);
   assert.equal(out, 42);
   await whenAlertTelemetryIdle();
@@ -67,7 +67,7 @@ test('evaluateAlertWithTelemetry does not change evaluation result', async () =>
 });
 
 test('emit survives unwritable telemetry path', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl598-bad-'));
+  const root = mkTmpDir('bl598-bad-');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, '.swarmforge', 'telemetry'), 'not-a-dir');
   assert.doesNotThrow(() => emitAlertVerdict(root, 'AGENT_EXITED', 'false-positive'));

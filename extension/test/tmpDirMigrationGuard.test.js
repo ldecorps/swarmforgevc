@@ -97,22 +97,25 @@ test('finds violations nested several directories deep, not just at the top leve
 });
 
 // ── BL-771 shared-tmpdir-helper-02: the guard was not weakened to go green ─
-// Pins the exempt list to exactly its five documented, load-bearing entries
-// (tmpDir.js's own real call site, this guard's two fixture-string test
-// files, and BL-1209's sibling pilotMkdtempConventionCheck guard's own two
-// fixture-string test files, same shape) - a green migration-complete gate
-// bought by widening this list instead of migrating the offending file
-// would be a false pass. Any addition here must be a file whose raw-call
-// TEXT is fixture DATA proving a detector works, never executable code
-// that itself leaks a temp dir.
+// Pins the exempt list to exactly its three documented, load-bearing entries
+// (tmpDir.js's own real call site and this guard's two fixture-string test
+// files) - a green migration-complete gate bought by widening this list
+// instead of migrating the offending file would be a false pass.
+//
+// BL-1280 took it back down from five. BL-1209 had added
+// pilotMkdtempConventionCheck.test.js and its property sibling because their
+// fixture STRINGS were being flagged; the objection is not that those strings
+// are innocent - they are - but that a FILE-level exemption also blinds this
+// scan to a REAL raw call either file gains later. Those two now split the
+// literal across the `mkdtempSync(` boundary instead: same bytes written to
+// disk, nothing on any line for the scan to match, and both files still
+// scanned like every other.
 
-test('the exempt list is exactly the five documented paths - nothing was added to buy a green scan', () => {
+test('the exempt list is exactly the three documented paths - nothing was added to buy a green scan', () => {
   assert.deepEqual(SELF_EXEMPT_RELATIVE_PATHS, [
     'helpers/tmpDir.js',
     'tmpDirMigrationGuard.test.js',
     'tmpDirMigrationGuard.property.test.js',
-    'pilotMkdtempConventionCheck.test.js',
-    'pilotMkdtempConventionCheck.property.test.js',
   ]);
 });
 

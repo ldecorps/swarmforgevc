@@ -3,16 +3,16 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const {
   assessPropertyGeneratorReach,
   isPropertyTestPath,
   PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL,
 } = require('../out/tools/propertyGeneratorReachCheck');
 const { landPilotedTicket, checkPropertyGeneratorReach } = require('../out/tools/pilotAcceptanceGate');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 function mkRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'bl739-unit-'));
+  return mkTmpDir('bl739-unit-');
 }
 
 function writeCore(root, boundary = 4096) {
