@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 30, 2026 (BL-1297: a merge commit's own changed
+paths no longer come back empty, which had let the send-time scope gate,
+the unregistered-test gate, and the land step's tip-pure replay all fail
+open on the pipeline's most common commit shape. `own-commit-diff`
+(`task_scope_gate_lib.bb`) ran `diff-tree --no-commit-id --name-only -r
+--first-parent <commit>`; git suppresses a merge's diff entirely unless
+`-m` or `-c`/`--cc` is given, and `--first-parent` is a `log`/`rev-list`
+traversal flag with no effect on `diff-tree`'s own diff output — so every
+merge commit reported zero paths. A merge is the normal shape of a role's
+own commit (every stage receives a handoff via `git merge <hash>`), so a
+parcel whose only task-tagged commit was that merge collapsed to an empty
+change set, which the gate reads as "no foreign paths" and passes,
+unverified. New `own-commit-changed-paths` answers two distinct questions
+from one walk: `:delivered` (`diff <commit>^1 <commit>`) is what content a
+commit puts on the branch against its first parent alone; `:authored`
+(`diff-tree --cc`) is what differs from EVERY parent, empty for an
+ordinary clean receive-merge whose content was already attributed
+upstream. The land step's replay reads `:delivered` (what a parcel puts on
+the branch); the send-time scope gate and the unregistered-test gate both
+read `:authored` (what the parcel's author actually wrote) — an earlier
+version of this fix answered `:delivered` for all three callers, which
+refused every forward the moment a branch had synced `main`, which is
+always (measured: 25 delivered paths across 8 unrelated tickets on one
+real receive-merge, versus 1 authored path — the fix's own file). A root
+commit (`--root`) answers both semantics identically and is never treated
+as empty. Acceptance:
+`specs/features/BL-1297-a-merge-commits-own-paths-are-not-empty.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1295: the pre-handoff task-scope gate
 no longer blames a revert commit for the ticket whose subject it merely
 quoted. `commit-message-names-task?` (`task_scope_gate_lib.bb`) reads a
