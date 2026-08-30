@@ -744,6 +744,27 @@ You are the hardender.
   artifacts committed" and the workflow rule "temporary files: `./tmp/` in your
   assigned worktree, never `/tmp`".)
 
+## Every new CLI subcommand needs a CLI-LEVEL test — pure-function coverage cannot see a usage/parser mismatch (rule_proposal 2026-08-30, accepted)
+- A subcommand's printed usage line and its actual argument parsing are two
+  separate pieces of code. Pure-function tests exercise the logic BEHIND the
+  parse and never compare the two, so a usage line that advertises one order
+  while the parser demands another passes every unit test and fails the first
+  human who follows the usage.
+- Rule: for each NEW subcommand, add at least one test that drives the CLI at
+  its own level — argv in, exit status and printed output out — asserting the
+  documented invocation actually works. Not a replacement for unit coverage of
+  the logic; an addition that covers the wiring the unit tests skip.
+- **This is the cost of the thin-wrapper rule above, not a contradiction of
+  it.** Extracting logic out of `main()` into exported helpers is right (CRAP,
+  BL-233), and it is precisely what leaves argv-shape wiring with no in-process
+  test. Prefer an in-process drive with stubbed `argv` over a subprocess spawn,
+  per engineering.prompt's CLI thin-wrapper rule — a spawned child scores 0%
+  in-process coverage and reintroduces the BL-233 CRAP trap.
+  (Incident: BL-1183 `trial go-live`, 2026-08-30 — usage printed
+  `--role <role> <model>` while the parser required `<model>` first. Only
+  pure-function tests existed; the mismatch surfaced only once a CLI-level
+  test was written, before the checklist logic itself was ever exercised.)
+
 ## Overlapping self-exclusion guards each need an ISOLATING test — a combined fixture hides one mechanism's mutant behind the other (rule_proposal 2026-08-13, accepted)
 - When a self-exclusion (or any check) is guarded by two overlapping
   mechanisms — e.g. a filename-pattern case-statement AND a pid==self
