@@ -723,6 +723,15 @@
 
 ;; ── rematch-with-push-first! (BL-1198) ───────────────────────────────────
 
+;; BL-1288: these three pin BL-1198's pass-through on the genuine-divergence
+;; path, and they still do. Only the fixture moved: the rejection is now
+;; spelled the way `git push` actually spells it, because the classifier
+;; BL-1288 adds reads that text rather than treating every failure as a
+;; rejection. Every assertion below is unchanged.
+(def REJECTED-STDERR
+  " ! [rejected]        main -> main (non-fast-forward)\nerror: failed to push some refs to 'origin'")
+
+
 (let [reset-calls (atom 0)
       result (master-main-reconcile-lib/rematch-with-push-first!
               {:push! (fn [] {:success true})
@@ -733,7 +742,7 @@
 
 (let [push-calls (atom 0)
       result (master-main-reconcile-lib/rematch-with-push-first!
-              {:push! (fn [] (swap! push-calls inc) {:success false :error "non-fast-forward"})
+              {:push! (fn [] (swap! push-calls inc) {:success false :error REJECTED-STDERR})
                :reset! (fn [] {:success true :outcome :rematched-bookkeeping})})]
   (assert= "bl1198: a rejected push still calls reset! (exactly once)" 1 @push-calls)
   (assert-true "bl1198: a rejected push falls through to reset!'s success" (:success result))
@@ -741,7 +750,7 @@
            :rematched-bookkeeping (:outcome result)))
 
 (let [result (master-main-reconcile-lib/rematch-with-push-first!
-              {:push! (fn [] {:success false :error "non-fast-forward"})
+              {:push! (fn [] {:success false :error REJECTED-STDERR})
                :reset! (fn [] {:success false :error "reset failed" :outcome :rematch-bookkeeping})})]
   (assert= "bl1198: reset!'s own failure result passes through verbatim"
            {:success false :error "reset failed" :outcome :rematch-bookkeeping} result))
@@ -976,6 +985,139 @@
   (assert-true "surface-message: verdict-unavailable names itself, not a conflict"
                (clojure.string/includes? msg "verdict unavailable"))
   (assert-true "surface-message: verdict-unavailable stays within the 80-char note limit" (<= (count msg) 80)))
+
+;; ── BL-1288: only a REJECTED push authorises discarding local-ahead work ──
+;; rematch-with-push-first! (BL-1198) fell to (reset!) on EVERY unsuccessful
+;; push, so an unreachable remote or a missing credential - neither of which
+;; is divergence - destroyed every local-ahead commit. The adapter contract
+;; already carries the push's :error; these tests pin that it is now both
+;; READ (to classify) and PRESERVED (so the reason reaches an operator).
+
+;; Classification. Fails CLOSED: only a recognised non-fast-forward rejection
+;; authorises the discard, because destroying committed work needs positive
+;; evidence, never the absence of a recognised transport error.
+(assert-true "bl1288: `! [rejected] ... (non-fast-forward)` is a rejection"
+             (master-main-reconcile-lib/push-rejection?
+              " ! [rejected]        main -> main (non-fast-forward)\nerror: failed to push some refs to 'origin'"))
+(assert-true "bl1288: `! [rejected] ... (fetch first)` is a rejection"
+             (master-main-reconcile-lib/push-rejection?
+              " ! [rejected]        main -> main (fetch first)\nhint: Updates were rejected because the remote contains work"))
+;; "non-fast-forward"/"fetch first" alone, with no "! [rejected]" marker, is
+;; NOT a rejection - the two clauses are ANDed, not ORed. A hint or advice
+;; line can legitimately mention "non-fast-forward" without git having
+;; actually rejected anything; only the marker together with one of these
+;; words is the real signal. (Hardener pass, BL-1288, 2026-08-30: confirmed
+;; by hand-mutating the `and` to `or` - the mutant survived every prior test
+;; because none exercised this half of the conjunction.)
+(assert= "bl1288: `non-fast-forward` alone, with no rejection marker, is NOT a rejection" false
+         (master-main-reconcile-lib/push-rejection?
+          "hint: Updates were rejected because a pushed branch tip is behind (non-fast-forward)"))
+(assert= "bl1288: `fetch first` alone, with no rejection marker, is NOT a rejection" false
+         (master-main-reconcile-lib/push-rejection?
+          "hint: fetch first before you push again"))
+(assert= "bl1288: an unresolvable host is NOT a rejection" false
+         (master-main-reconcile-lib/push-rejection?
+          "fatal: unable to access 'https://example.invalid/r.git': Could not resolve host: example.invalid"))
+(assert= "bl1288: a refused connection is NOT a rejection" false
+         (master-main-reconcile-lib/push-rejection?
+          "ssh: connect to host example.com port 22: Connection refused\nfatal: Could not read from remote repository."))
+(assert= "bl1288: a missing credential is NOT a rejection" false
+         (master-main-reconcile-lib/push-rejection?
+          "fatal: could not read Username for 'https://example.com': No such device or address"))
+(assert= "bl1288: a failed authentication is NOT a rejection" false
+         (master-main-reconcile-lib/push-rejection?
+          "remote: Invalid username or password.\nfatal: Authentication failed for 'https://example.com/r.git/'"))
+(assert= "bl1288: a hook's `[remote rejected]` does NOT authorise a discard" false
+         (master-main-reconcile-lib/push-rejection?
+          " ! [remote rejected] main -> main (pre-receive hook declined)"))
+(assert= "bl1288: an absent error string never authorises a discard" false
+         (master-main-reconcile-lib/push-rejection? nil))
+(assert= "bl1288: an empty error string never authorises a discard" false
+         (master-main-reconcile-lib/push-rejection? ""))
+(assert= "bl1288: an unrecognised failure never authorises a discard" false
+         (master-main-reconcile-lib/push-rejection? "fatal: something nobody has seen before"))
+
+;; The orchestrator. A rejection still resets (BL-1198's path, unchanged -
+;; pinned again here because this ticket edits the function that carries it).
+(let [reset-calls (atom 0)
+      result (master-main-reconcile-lib/rematch-with-push-first!
+              {:push! (fn [] {:success false
+                              :error " ! [rejected]  main -> main (non-fast-forward)"})
+               :reset! (fn [] (swap! reset-calls inc)
+                         {:success true :outcome :rematched-bookkeeping})})]
+  (assert= "bl1288: a rejected push still calls reset! exactly once" 1 @reset-calls)
+  (assert= "bl1288: a rejected push still passes reset!'s outcome through"
+           :rematched-bookkeeping (:outcome result)))
+
+;; Anything that is not a rejection keeps the commits and never resets.
+(doseq [[label err]
+        [["an unreachable remote"
+          "fatal: unable to access 'https://example.invalid/r.git': Could not resolve host: example.invalid"]
+         ["an absent credential"
+          "fatal: could not read Username for 'https://example.com': No such device or address"]
+         ["an unrecognised failure" "fatal: something nobody has seen before"]]]
+  (let [reset-calls (atom 0)
+        result (master-main-reconcile-lib/rematch-with-push-first!
+                {:push! (fn [] {:success false :error err})
+                 :reset! (fn [] (swap! reset-calls inc)
+                           {:success true :outcome :rematched-bookkeeping})})]
+    (assert= (str "bl1288: " label " never calls reset!") 0 @reset-calls)
+    (assert= (str "bl1288: " label " reports failure") false (:success result))
+    (assert= (str "bl1288: " label " reports outcome :push-unavailable")
+             :push-unavailable (:outcome result))
+    (assert= (str "bl1288: " label " carries the push's OWN error text verbatim")
+             err (:error result))))
+
+;; The push's reason is not displaced by the reset's error. The reset here
+;; would fail with a different, recognisable string; it must not appear.
+(let [result (master-main-reconcile-lib/rematch-with-push-first!
+              {:push! (fn [] {:success false :error "Could not resolve host: example.invalid"})
+               :reset! (fn [] {:success false :error "RESET-ERROR-MUST-NOT-APPEAR"
+                               :outcome :rematch-bookkeeping})})]
+  (assert= "bl1288: the reset's error never displaces the push's"
+           "Could not resolve host: example.invalid" (:error result))
+  (assert= "bl1288: the outcome name never displaces the push's error text"
+           false (= "push-unavailable" (:error result))))
+
+;; A successful push is untouched by any of this.
+(let [reset-calls (atom 0)
+      result (master-main-reconcile-lib/rematch-with-push-first!
+              {:push! (fn [] {:success true})
+               :reset! (fn [] (swap! reset-calls inc) {:success true})})]
+  (assert= "bl1288: a successful push still reports :pushed" :pushed (:outcome result))
+  (assert= "bl1288: a successful push still never resets" 0 @reset-calls))
+
+;; Routing. :push-unavailable must not be mislabelled "conflict": that reason
+;; pages an operator for an absorb merge that does not exist here, AND is a
+;; durable deadlock end-state. It behaves like BL-1236's :verdict-unavailable
+;; - its own reason, surfaced, never a designed rematch recovery.
+(assert= "bl1288: :push-unavailable maps to its own block reason"
+         "push-unavailable" (master-main-reconcile-lib/merge-failure-reason :push-unavailable))
+(assert= "bl1288: :push-unavailable is not designed rematch recovery" false
+         (master-main-reconcile-lib/rematch-owner-recovery? "push-unavailable"))
+(assert= "bl1288: :push-unavailable does not end as a durable deadlock" false
+         (boolean (master-main-reconcile-lib/designed-end-state-is-deadlock-tripped? "push-unavailable")))
+
+;; BL-1288: the surfaced note. surface-message is a `case` with no default,
+;; so a reason with no branch THROWS inside the daemon's sweep rather than
+;; returning nil - and :push-unavailable is a reason this library now
+;; produces. "The reconcile does nothing and SAYS WHY" needs a note that
+;; exists, names the push, and fits the 80-char note limit.
+(let [msg (master-main-reconcile-lib/surface-message {:behind 3 :reason :push-unavailable})]
+  (assert-true "bl1288: :push-unavailable surfaces a note at all" (string? msg))
+  (assert-true "bl1288: the surfaced note names the push" (clojure.string/includes? msg "push"))
+  (assert-true "bl1288: the surfaced note says no reset happened" (clojure.string/includes? msg "not reset"))
+  (assert-true "bl1288: the surfaced note stays within the 80-char limit" (<= (count msg) 80)))
+(let [msg (master-main-reconcile-lib/surface-message {:behind 123456789 :reason :push-unavailable})]
+  (assert-true "bl1288: the note still fits when `behind` is long" (<= (count msg) 80)))
+
+;; And the push's reason reaches the log the operator reads, rather than
+;; stopping at the result map.
+(let [tail (master-main-reconcile-lib/merge-failure-log-tail
+            :push-unavailable "Could not resolve host: example.invalid")]
+  (assert= "bl1288: the log tail names the reason" "push-unavailable" (first tail))
+  (assert-true "bl1288: the log tail carries the push's own error"
+               (some #(= "Could not resolve host: example.invalid" %) tail)))
 
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)

@@ -1,4 +1,4 @@
-id: BL-1294
+id: BL-1305
 title: "Acceptance fixtures launch real Claude agents: the fake-binary PATH shim is defeated by the pane shell's own PATH prepend"
 milestone: M8
 type: defect
@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1294-fixture-agent-binary-is-the-stub.feature
+acceptance: specs/features/BL-1305-fixture-agent-binary-is-the-stub.feature
 
 source: "Found by the specifier 2026-08-30 while idle-checking swarm liveness: pgrep showed 29 claude processes, of which 21 were launched from /tmp/aps-role-lifecycle-* acceptance fixture roots rather than the swarm."
 
@@ -68,7 +68,7 @@ invariants:
   - "A fixture reaches its stub by a path the shell cannot re-order, never by PATH-prefix precedence alone."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1294FixtureAgentBinarySteps::the three scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
+  - 'specs/pipeline/steps/index.js::bl1305FixtureAgentBinarySteps::the three scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
 
 qa_e2e: >
   With the swarm stopped, record the pre-run count of real agent processes
@@ -80,7 +80,7 @@ qa_e2e: >
   binary should ever have been launched to survive. Confirm the fixture stub
   did run, so the scenarios are not passing merely because nothing launched.
 
-human_approval: approved
+human_approval: pending
 approval_context: >
   Review of the new feature file, plus one live operational decision that is
   not this ticket's to take.
@@ -121,3 +121,27 @@ notes: |
   Related, both already landed and neither sufficient here:
   BL-458 (acceptance-fixture process leak - reaping, incl. abnormal exit) and
   BL-817 (six step handlers adopt BL-458's shared reaper).
+
+  ## Renumbered BL-1294 -> BL-1305, and the approval on it was not this ticket's [2026-08-30 specifier]
+
+  This ticket was minted as BL-1294 at 07:52 on 2026-08-30 (commit
+  1caa7827e7). BL-1294 was already taken: the fixture-closure-resolver defect
+  had claimed it an hour earlier at 06:54 (commit 80c4a33713). Two different
+  tickets carried one id for the rest of the day. The earlier mint keeps
+  BL-1294 - it also owns `backlog/topics/BL-1294.json` and is the BL-1294 that
+  BL-1303 and the coder-red triage evidence refer to - so this one moves to
+  BL-1305, id and feature file together.
+
+  `human_approval` is reset to `pending`, deliberately. It read `approved`,
+  set by the sweep in commit 2830aec113 ("Approve BL-1282, BL-1283, BL-1293,
+  BL-1294"), which touched THIS file. But the Telegram topic the human was
+  shown for BL-1294 renders the closure-resolver ticket's title and its
+  approval context, so the tap behind that commit was cast against the other
+  ticket. An approval is not transferable between two tickets that merely
+  shared an id, so this ticket has none and asks again. It fails closed: the
+  cost is one more tap, where keeping it would have shipped a ticket on an
+  approval nobody gave for it.
+
+  Its `approval_context` still stands unchanged and still needs an answer -
+  including the live question about the orphaned agent processes, which was
+  never actually put to the human.

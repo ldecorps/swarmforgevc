@@ -834,6 +834,7 @@ const DOMAINS = [
   require('./bl1189LiveScreenOnePrimaryWorkingTicketSteps'),
   require('./bl1200GitEnvGuardSteps'),
   require('./bl1198RematchPushFirstSteps'),
+  require('./bl1288PushFailureClassificationSteps'),
   require('./bl1190GhostApprovalAskRequiresLiveYamlSteps'),
   require('./bl1213ParcelRollbackGuardSteps'),
   require('./bl1205HandoffRefusesAMassDeletionForwardSteps'),

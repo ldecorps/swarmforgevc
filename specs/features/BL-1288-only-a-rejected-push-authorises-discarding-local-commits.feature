@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=56676ff6fe6a74478b6abc21a60d1ec487f7afdb4654ed1df27bf00c0d3f8684
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-30T20:56:31.190061764Z","feature_name":"Only a rejected push may authorise discarding local-ahead commits","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1288-only-a-rejected-push-authorises-discarding-local-commits.feature","background_hash":"0a0318cdf49dd6776df1020e96d7f48b004b7acd9c9b99cb762ff9047b89c89b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Only a remote's rejection authorises the discard","scenario_hash":"78cb807e8606bdf6c431bb447dd089265a9f34aa45fd5d2bac01c11d5212f77a","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-30T20:56:31.190061764Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Only a rejected push may authorise discarding local-ahead commits
 
   BL-1198 put a push in front of the reconcile's `git reset --hard

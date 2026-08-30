@@ -178,8 +178,7 @@ qa_e2e_procedure: |
   5. Assert the forward copy to `hardender` is unchanged and still carries the
      terminal stamping it had before.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   NOTHING IS OPEN - this needs a re-tap, not a new decision. The design
   question this field was raised for ("derive master-residency from the roles
