@@ -15,6 +15,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1276-a-tickets-own-declared-paths-are-not-foreign.feature
+abandoned_commits: [2d158b436,f6748a1ff,b345346ac,9547c5c86,fa4a3b05d,120edac96,907839f3d,460a3f052,3edf4d8b7,685a0296d,e416ea6f4,62ab4d2b4,54f35abea,504aca3eb,0c0d24586,385334d1d,97c45ff0f,d1d775821,26dcc3667,79480b858,85fa5d74f,6131a66f4,89b920e95,06a4e1ff3,769fd2bbe,d6d65df53,7023c8381,b4f410451,c53e1bfd3,914c5bbfd,79e0d5b14,29560a30f,25e7922f0,aeb016197,46909817c,8f47d9f7e,94e9830b4,6d6f2569f,4c2fb609e,dd24236f0,4a33e32ac,e964bce1d,09e4cd58a,4ae4055ea,e53b11128,7ca3686fc,9c883b7a7,d2eb01b9b,1b480dadf,6b4d36fed,e566c7faa,04b637650,edde810ca,d510e2602,2c68bb1e4,f886e49a3,b3ee3cdc3,e272c6b01,5e5b420c4,8c99722cc,d89c88842,a6cad5f58,558c34261,50f8c5332,fb588fa88,1ef491f0c,f304bf0cf,aa3245393,1c5709d23,77a9cc502,d4083e78e,c0c694f15,3e279b961,f6d369da3,4732a3a19,4ba1d0c9e,2701ad794,d682b0f0a,16f26f273,9b7c38932,f8816b35b,bf7895a35,79e3cbf44,6f5752d06,1921de5c4,09f0dae07,6165889ff,8feaa2ad2,4e616abfc,ad0ce0ddc,8ef78b14e,67d0c18c1,487278e7d,adf16cd3e,858c28042,1b3a0a0e5,a5b065e0c,e7353f626,938ce576d,7fb91b653,1017d776b,11bb0ede8,75de17dec,6b7ad7ee7,54c17b697,dbcf59fb7,cfd1eeec9,db56560ee,efa2848e2,1baa87873,175e24b11,20e6ddd23,9664aab11,205fdd36f,05f322115,8521d22d5,b8c4c43f6,985dbcf59,9747e6c1d,7ccc2f223,c5bb4810a,43d181069,ae503cbe6,f13403676,b06b75cde,3c07857a5,670473039,9296711a7,5bf354adc,795d79a2f,f85514f2e]
 
 invariants:
   - "A parcel is never refused with an outcome its recipient has no action available to satisfy."
@@ -181,6 +182,48 @@ source: |
   it. Option 1 of that file is the direction adopted here.
 
 notes: |
+  - [2026-08-30] QA: BL-1241 entangled-tip rebuild. The documenter's handed-off
+    commit (2d158b436d) carried the coder's long-lived branch ancestry
+    entangled with dozens of unrelated sibling tickets' merges (the same
+    branch tangle other tickets from this shift were rebuilt around).
+    Rebuilt tip-pure onto origin/main: cherry-picked BL-1276's own six
+    commits in order (coder 25e7922f0, specifier amendment d510e2602 -
+    which cherry-picked empty because its doc/schema additions were already
+    present on origin/main via a separate path, and was skipped rather than
+    forced - coder amendment d6d65df53, hardener e416ea6f4, architect
+    907839f3d, documenter 2d158b436d), each verified via `git show --stat`
+    to touch only BL-1276's own files. One merge conflict, in
+    `specs/pipeline/steps/index.js` against BL-1062's own rebuilt
+    registration line landed moments earlier - resolved by keeping both
+    require lines. `git diff origin/main HEAD --stat` confirmed exactly
+    BL-1276's own fourteen files.
+
+    FOUND AND FIXED: the rebuilt tree carried the step handler under its
+    PRE-AMENDMENT filename, `bl1276AcceptanceContractNotForeignSteps.js`,
+    even though its own file content and every later stage (hardener,
+    architect, documenter) already referred to the ticket's final widened
+    scope ("declared paths", not "acceptance contract"). The original
+    entangled chain had the correct final name
+    (`bl1276DeclaredPathsNotForeignSteps.js`) only because a `Merge main for
+    BL-1276's amendment` commit folded in the rename as a side effect of
+    merging unrelated branch state - the individual BL-1276-attributed
+    commits never renamed it themselves, so cherry-picking only those
+    commits reproduced the stale name. Caught by comparing the rebuilt
+    tree's file list against the original documenter tip's file list before
+    trusting the rebuild complete (BL-1062's own rebuild earlier this
+    session taught the same lesson from the missing-file side; this is the
+    stale-name side of it). Fixed via `git mv` plus the `index.js`
+    registration update; repo-wide grep confirmed no other reference to the
+    old filename.
+
+    Re-verified after the rename: compile clean; both
+    `task_scope_gate_lib_test_runner.bb` and
+    `task_scope_gate_acceptance_exemption_property_runner.bb` ALL PASS;
+    BL-1276's own acceptance (8/8) and BL-1192's full acceptance (9/9, no
+    regression) both green; `test_swarm_handoff_sync_deliver.sh` and
+    `test_swarm_handoff_daemon_backup.sh` both ALL PASS (swarm_handoff.bb
+    was refactored by this ticket, extracting code into the new
+    `landed_ticket_lib.bb`). Both required_wiring anchors confirmed present.
   - [2026-08-29] specifier: this ticket has its OWN feature file rather than
     amending `specs/features/BL-1192-pre-handoff-task-scope-gate.feature`, and
     that is deliberate, not an oversight. Pointing its acceptance: at BL-1192's
