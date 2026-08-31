@@ -22,15 +22,15 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 //    -> encoded below by "the stub wins against any arrangement of rival
 //       binaries a startup file could prepend".
 //
-// 2. "A fixture reaches its stub by a path the shell cannot re-order, never
-//    by PATH-prefix precedence alone."
-//    -> encoded below by "the stub wins even when the fixture directory is
-//       NOT first in PATH", i.e. precisely the cases where precedence ALONE
-//       would lose. See the coder spec-gap report
-//       (backlog/evidence/BL-1305-coder-spec-gap-20260831.md) for why the
-//       ticket's literal wording - an absolute path in the config's command
-//       column - is refused by validate_agent's closed allowlist and is
-//       therefore NOT what is encoded here; the specifier is adjudicating.
+// Invariant 2 ("reaches its stub by a path the shell cannot re-order") was
+// RETIRED by the specifier on 2026-08-31 as a mechanism mandate that could
+// not be satisfied - the config's agent column is a closed allowlist that
+// refuses a path (coder report backlog/evidence/BL-1305-coder-spec-gap-
+// 20260831.md, adjudication backlog/evidence/BL-1305-bounce-20260831.md).
+// Invariant 1 already carries the property in full. The stronger case it
+// used to describe is still exercised here, as a property rather than a
+// mandate: the stub wins even when the fixture directory is NOT first in
+// PATH, i.e. precisely the cases where precedence ALONE would lose.
 //
 // GENERATOR REACH. A rival directory is only interesting if it actually
 // collides, so every generated rival is CONSTRUCTED to hold a binary named
@@ -69,7 +69,7 @@ function resolveInZsh(env) {
   }).stdout.trim();
 }
 
-test('invariant 1+2: the fixture stub wins against any arrangement of rival binaries, at any PATH position', { skip: !HAS_ZSH }, () => {
+test('invariant 1: the fixture stub wins against any arrangement of rival binaries, at any PATH position', { skip: !HAS_ZSH }, () => {
   fc.assert(
     fc.property(
       fc.integer({ min: 1, max: 4 }),
@@ -96,7 +96,7 @@ test('invariant 1+2: the fixture stub wins against any arrangement of rival bina
   );
 });
 
-test('invariant 2 reach floor: the generator actually produces cases where PATH precedence alone would lose', { skip: !HAS_ZSH }, () => {
+test('reach floor: the generator actually produces cases where PATH precedence alone would lose', { skip: !HAS_ZSH }, () => {
   // An asserted reachability floor, not a hoped-for one: without the fixture's
   // own startup file, a rival placed ahead of the fixture dir DOES win. If this
   // stops being true the property above has gone vacuous.
