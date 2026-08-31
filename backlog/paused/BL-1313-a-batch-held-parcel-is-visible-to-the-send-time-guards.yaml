@@ -155,7 +155,9 @@ qa_e2e_procedure: |
   6. Run the acceptance feature and
      `bb swarmforge/scripts/test/...` shell fixtures for both guards.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  option 1 - fix the two send-time guards only, as specced
 ruling_options:
   - option 1 - fix the two send-time guards only, as specced
   - option 2 - also consolidate the six hand-rolled batch walkers into the new reader
