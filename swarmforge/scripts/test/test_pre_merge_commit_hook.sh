@@ -138,4 +138,19 @@ grep -qE '^[^#]*run_commit_guards\.sh' "$HOOK" \
   && fail "08: pre-merge-commit was repointed at the whole chain - out of scope (BL-1234)"
 pass "08 the hook names the guard without widening the chain to every guard"
 
+# ── case 09: the chain runs without `set -e`, so an unloadable shared lib ──
+#    would leave run_guard undefined and fall through to `exit 0`. A copy of
+#    the hook with no lib beside it must REFUSE, never wave the merge past
+#    every guard at once.
+reset_fixture
+LONELY="$ROOT/lonely"
+mkdir -p "$LONELY/git-hooks" "$LONELY/scripts"
+cp "$HOOK" "$LONELY/git-hooks/pre-merge-commit"
+cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$LONELY/scripts/" 2>/dev/null || true
+OUT="$(cd "$REPO" && bash "$LONELY/git-hooks/pre-merge-commit" 2>&1)" && STATUS=0 || STATUS=$?
+[ "$STATUS" -ne 0 ] || fail "09: a hook whose guard chain could not be loaded allowed the merge: $OUT"
+printf '%s' "$OUT" | grep -q "commit_guard_chain_lib.sh" \
+  || fail "09: the refusal does not say which file could not be loaded: $OUT"
+pass "09 an unloadable guard chain refuses the merge instead of skipping every guard"
+
 echo "ALL PASS: pre-merge-commit"

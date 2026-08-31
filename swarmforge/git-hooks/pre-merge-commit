@@ -37,6 +37,15 @@ SCRIPTS_DIR="$HOOK_DIR/../scripts"
 GUARD_DIR="${SWARMFORGE_COMMIT_GUARD_DIR:-$SCRIPTS_DIR}"
 GUARD_CHAIN_LABEL="pre-merge-commit"
 
+# The chain runs WITHOUT `set -e` (see above), so a source that fails does
+# not abort: run_guard would simply be undefined, every guard would be a
+# "command not found", and the hook would still reach its `exit 0` - a merge
+# waved through by a missing file. Refuse instead. The same guard-chain rule
+# as everywhere else: a check that cannot run is never collected as a pass.
+if [ ! -r "$SCRIPTS_DIR/commit_guard_chain_lib.sh" ]; then
+  echo "pre-merge-commit: MERGE REFUSED. The guard chain could not be loaded: $SCRIPTS_DIR/commit_guard_chain_lib.sh is missing or unreadable." >&2
+  exit 1
+fi
 # shellcheck source=../scripts/commit_guard_chain_lib.sh
 . "$SCRIPTS_DIR/commit_guard_chain_lib.sh"
 

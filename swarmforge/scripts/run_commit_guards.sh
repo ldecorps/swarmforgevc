@@ -44,6 +44,13 @@ GUARD_CHAIN_LABEL="pre-commit"
 # guard and report every violation in one refusal, and the one way to get
 # that wrong is shared - so the aggregation is shared too, rather than
 # copied and left to drift.
+# This file runs WITHOUT `set -e` too, so a failed source would leave
+# run_guard undefined and the chain would fall through to `exit 0` - every
+# guard silently skipped. Refuse instead.
+if [ ! -r "$SCRIPT_DIR/commit_guard_chain_lib.sh" ]; then
+  echo "pre-commit: COMMIT REFUSED. The guard chain could not be loaded: $SCRIPT_DIR/commit_guard_chain_lib.sh is missing or unreadable." >&2
+  exit 1
+fi
 # shellcheck source=commit_guard_chain_lib.sh
 . "$SCRIPT_DIR/commit_guard_chain_lib.sh"
 
