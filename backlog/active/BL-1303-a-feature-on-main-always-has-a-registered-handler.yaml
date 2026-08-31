@@ -132,3 +132,5 @@ notes: >
   other and they can land in either order. Checked at spec time and NOT
   duplicated by BL-1294 (pinnedRepoFixture closure resolver) or BL-1279
   (front-desk fixture bb closure).
+
+assigned_to: coder

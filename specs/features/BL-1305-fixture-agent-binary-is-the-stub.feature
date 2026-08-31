@@ -1,7 +1,7 @@
 Feature: An acceptance fixture never launches a real agent binary
 
-  specs/pipeline/steps/roleLifecycleParkUnneededSteps.js shims the agent
-  command by writing an `exit 0` stub into a temporary directory and
+  specs/pipeline/steps/roleLifecycleParkUnneededSteps.js intends to stub the
+  agent command by writing an `exit 0` stub into a temporary directory and
   prepending that directory to PATH via fakeEnv(). The stub is never
   reached. tmux starts each fixture pane with the user shell, that shell
   sources its own startup file, and the startup file prepends the directory
@@ -21,21 +21,26 @@ Feature: An acceptance fixture never launches a real agent binary
   duration of the run. This feature covers prevention at the source.
 
   A shim that depends on PATH precedence cannot hold across a shell that
-  re-orders PATH. The fixture must name its stub by a path no shell startup
-  file can re-order.
+  re-orders PATH. What this feature requires is the outcome - the stub is
+  unconditionally what runs - and it deliberately names no mechanism for
+  getting there. An earlier draft of scenario 01 required the launch command
+  to name the stub by an absolute path; that route is refused by
+  validate_agent's closed allowlist before anything launches, so it was
+  retired on 2026-08-31 rather than swapped for a different mechanism
+  mandate. See the ticket for the measurement.
 
   Background:
     Given a role-lifecycle fixture root with an agent stub written into it
 
   # BL-1305 fixture-agent-binary-is-the-stub-01
-  Scenario: The launch command names the fixture stub by a path, not a bare name
-    When the fixture builds the launch command for a role
-    Then the command names a path inside the fixture root
-    And the command is not the bare agent name
+  Scenario: The agent command resolves to the fixture stub inside a pane shell
+    When the fixture resolves the agent command in a pane shell
+    Then the command resolves to the stub inside the fixture root
+    And the command does not resolve to the real agent binary
 
   # BL-1305 fixture-agent-binary-is-the-stub-02
-  Scenario: A same-named binary earlier on PATH does not displace the stub
-    Given a directory holding a different binary of the same agent name is prepended to PATH
+  Scenario: A startup file prepending a same-named binary does not displace the stub
+    Given the pane shell's startup file prepends a directory holding a different binary of the same agent name
     When the fixture launches a role agent
     Then the fixture stub is what ran
     And the binary the prepended directory holds did not run

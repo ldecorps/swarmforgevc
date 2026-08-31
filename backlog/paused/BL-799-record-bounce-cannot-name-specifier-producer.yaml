@@ -129,3 +129,14 @@ occurrences:
     That is the concrete cost of leaving this at severity: low — every
     specifier-owned bounce is invisible to the numbers, and spec-gap is
     precisely the class a lean pass would want to see trending."
+  - "[2026-08-31] BL-1305: the coder raised an Article 4.4 spec-gap note against
+    a specifier-produced defect (scenario 01 and invariant 2 mandated a mechanism
+    the description had explicitly called direction-not-mandate, and which
+    validate_agent's closed allowlist refuses outright). The specifier ruled,
+    amended the feature file and ticket, and ran record-bounce.js with --role
+    specifier --class spec-gap: refused with the usage text, third occurrence of
+    the identical refusal after 2026-08-03 (BL-795) and 2026-08-27 (BL-1184).
+    Durable record went to backlog/evidence/BL-1305-bounce-20260831.md instead.
+    Three occurrences in four weeks, all the same class, all invisible to the
+    store the daily briefing and the per-role bounce-rate experiment read — the
+    spec-gap trend line is not merely incomplete, it reads as zero."

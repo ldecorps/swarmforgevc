@@ -44,11 +44,28 @@ description: >
   rather than the only one.
 
   How (direction, not mandate): a shim that depends on PATH precedence cannot
-  hold across a shell that re-orders PATH, so stop depending on PATH order -
-  have the fixture name its stub by a path no startup file can re-order, for
-  instance by writing the stub's absolute path into the fixture config's
-  command column instead of the bare name. Any approach that makes the stub
-  unconditionally the thing that runs is acceptable.
+  hold across a shell that re-orders PATH, so stop depending on PATH order.
+  Any approach that makes the stub unconditionally the thing that runs is
+  acceptable, and that sentence is the whole of the requirement.
+
+  AMENDED 2026-08-31. This paragraph used to offer one for-instance - writing
+  the stub's absolute path into the fixture config's command column - and
+  scenario 01 and invariant 2 then froze that for-instance into the contract,
+  which is the opposite of direction-not-mandate. The route is also not
+  buildable: validate_agent (swarmforge/scripts/swarmforge.sh:522) is a closed
+  allowlist and refuses a path with exit 1 before anything launches, and
+  write_role_launch_script (:1683) dispatches on `case "$agent" in claude)`
+  with the literal command hardcoded into the launch body, behind ~26 further
+  `$agent` comparison sites driving model resolution, the billing guard and
+  provider-key forwarding. Relaxing the allowlist therefore means basename
+  dispatch across the launch path EVERY live seat boots through - a
+  mutation-heavy change that must not ride a fixture-hygiene slice.
+
+  Fixture-owned ZDOTDIR isolation is the direction now, measured achievable by
+  the coder: zsh reads $ZDOTDIR/.zshenv rather than ~/.zshenv when ZDOTDIR is
+  set, which removes the re-orderer instead of out-racing it, and it was
+  verified to propagate into a tmux pane. It is a direction, not a mandate
+  either - anything that makes the stub unconditionally win satisfies this.
 
   SCOPE. One handler only - and that is the whole of it, not a first
   instalment. The fake-bin-prepended-to-PATH idiom appears in about 20 step
@@ -65,7 +82,6 @@ description: >
 
 invariants:
   - "No acceptance step handler ever executes a real agent binary: a fixture's agent command runs the fixture's own stub, whatever the pane shell's startup files do to PATH."
-  - "A fixture reaches its stub by a path the shell cannot re-order, never by PATH-prefix precedence alone."
 
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1305FixtureAgentBinarySteps::the three scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
@@ -145,3 +161,68 @@ notes: |
   Its `approval_context` still stands unchanged and still needs an answer -
   including the live question about the orphaned agent processes, which was
   never actually put to the human.
+
+  ## Spec-gap adjudicated: mechanism retired, outcome unchanged [2026-08-31 specifier]
+
+  The coder raised an Article 4.4 spec gap by `note` (evidence
+  backlog/evidence/BL-1305-coder-spec-gap-20260831.md at 745fffc16f) rather
+  than bouncing a parcel or quietly redefining the scenario. The report is
+  accurate: I re-ran its two load-bearing claims against live code before
+  ruling. The defect is MINE - the description said "direction, not mandate"
+  and then scenario 01 and invariant 2 mandated one mechanism anyway.
+
+  Ruled: option (a), amend. What changed:
+
+  - Invariant 2 RETIRED. "Reaches its stub by a path the shell cannot
+    re-order" is a mechanism mandate wearing an invariant's clothes; the
+    property it was reaching for is already invariant 1 in full ("whatever the
+    pane shell's startup files do to PATH"). One invariant is the honest count
+    here, not a gap to backfill.
+  - Scenario 01 rewritten to name NO mechanism - it now asserts the direct
+    repro (the agent command resolves to the fixture's stub inside a pane
+    shell). Deliberately not re-frozen onto ZDOTDIR: swapping one mechanism
+    mandate for another repeats the mistake being fixed.
+  - Scenario 02's Given tightened to the actual defect shape - the prepend
+    comes from the PANE SHELL'S STARTUP FILE. As written it said only
+    "prepended to PATH", which is ambiguous: read as a prepend the fixture
+    itself makes ahead of the stub dir, nothing short of the refused
+    path-naming route could satisfy it, and the coder would be blocked a
+    second time on the same ambiguity.
+  - Feature narrative re-tensed; it stated the retired mandate as a present
+    requirement.
+
+  Option (b) - widen scope so the agent column may name a binary by path -
+  was declined, and NOT split into a follow-on ticket. It is a legitimate
+  capability but nobody has asked for it, so minting it now would fail
+  INVEST's Valuable letter; recorded here so it is not re-derived from
+  scratch. The harm this ticket exists to stop is real agents booting, and
+  (a) stops it completely at low risk.
+
+  The coder also caught a false-green that (b) would have produced: with a
+  path in the command column, parse_config exits 1, NOTHING launches, and
+  scenarios 02 and 03 would then pass vacuously - which this ticket's own
+  qa_e2e explicitly forbids ("Confirm the fixture stub did run"). That is the
+  strongest argument against (b) and it came from measurement, not reading.
+
+  Scope, envelope and deliverable are unchanged, so `human_approval:
+  approved` STANDS and is not reset - the amendment strictly REMOVES
+  prescription rather than adding scope, and the approved outcome (no real
+  agent binary ever executes from a fixture) is untouched. Flagging it here
+  rather than re-asking, because a re-ask would stall a severity:high defect
+  that boots billable agents, over a change that narrows what the coder is
+  told to do.
+
+  The live-orphan question in `approval_context` is MOOT and needs no answer:
+  the coder measured 0 real agents from aps-role-lifecycle fixture roots and
+  0 leftover fixture/fakebin dirs on this host. Nothing was hand-killed - they
+  are simply gone. The approval_context text is left as the human first saw
+  it rather than rewritten under them.
+
+  Note for whoever builds this: the feature file is live on `main` as
+  `.feature` with no registered handler, so a fresh acceptance generation
+  picks up three scenarios with nothing to run them. That exposure is BL-1303's
+  subject and BL-1303 is already queued to the coder - it is not a second
+  defect to raise, and it closes here as soon as
+  bl1305FixtureAgentBinarySteps lands registered in the SAME commit (BL-233).
+
+assigned_to: coder
