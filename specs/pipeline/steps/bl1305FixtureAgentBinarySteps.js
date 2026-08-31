@@ -24,14 +24,31 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { afterEach } = require('node:test');
 
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const fixtureReaper = require('./lib/fixtureReaper');
 const {
   mkFakeBin,
   fakeEnv,
   stubRanCount,
   AGENT_NAME,
 } = require('./roleLifecycleParkUnneededSteps');
+
+// BL-1305 tmux-reaper adoption: every scenario opens a real tmux server on
+// an isolated socket (runInPane), and only scenario 03 tears it down inline
+// (it must, to make its own assertion meaningful). Scenarios 01 and 02
+// leave theirs running with no inline teardown at all, so this afterEach is
+// not a backstop for the throw path here - it is the ONLY teardown those
+// two scenarios get.
+let trackedRoots = [];
+afterEach(() => {
+  while (trackedRoots.length) {
+    const root = trackedRoots.pop();
+    fixtureReaper.reap(root);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 // How long to let a pane command settle before reading what it wrote. The
 // pane writes a file and exits; this is a bounded wait, never a bare sleep
@@ -85,6 +102,19 @@ function registerSteps(registry) {
     ctx.paneSeq = 0;
     ctx.sockets = new Set();
     ctx.realAgent = realAgentPath();
+
+    // fixtureReaper.reap() finds a fixture's tmux server ONLY via this
+    // pointer file (role_lifecycle.sh's own shape) - track() alone does not
+    // teach it this fixture's socket (accepted rule_proposal 2026-08-22,
+    // BL-1049). Written before track() and before any tmux new-session
+    // call, so reap() finds it even if the process dies between here and
+    // the first pane. runInPane always resolves the same socket path for a
+    // given ctx.root, so one pointer file covers every pane this scenario
+    // opens.
+    fs.mkdirSync(path.join(ctx.root, '.swarmforge'), { recursive: true });
+    fs.writeFileSync(path.join(ctx.root, '.swarmforge', 'tmux-socket'), path.join(ctx.root, 'p.sock'));
+    fixtureReaper.track(ctx.root);
+    trackedRoots.push(ctx.root);
   });
 
   // ── 01 ───────────────────────────────────────────────────────────────

@@ -321,6 +321,7 @@ expects them, and are not migrated or rewritten here.
 - [Shared Git-Repo Fixture and Its Guard (BL-1039)](reference/BL-1039-shared-git-repo-fixture.md) — the seed-once template that replaces per-test `git init`/`config`/`commit` in the unit lane, its structural isolation, the by-inspection creation guard and its three scoped exemptions.
 - [ACP-Hosted Seat Snapshot (BL-1081)](reference/BL-1081-acp-hosted-seat-snapshot.md) — the `.swarmforge/acp/<role>.json` schema, the provider-table `:acp` dimension, which babysitter checks change for a hosted seat, the `acp-host-pane` CLI, and the production launcher that puts the `vibe` spike seat behind the host.
 - [Nested Git-Repository Guard (BL-1230)](reference/BL-1230-nested-git-repository-guard.md) — reports any git repository nested in the tracked tree that git itself didn't put there (a `backlog/.git` leak's redirect of `git rev-parse --show-toplevel`); exempt by construction (worktree gitfiles, `node_modules`), report-only, sibling of BL-1039's source-text scan.
+- [Fixture Agent-Binary Defeats PATH Shim (BL-1305)](reference/BL-1305-fixture-agent-binary-defeats-path-shim.md) — the fixture-owned `ZDOTDIR`/`.zshenv` isolation that stops a pane shell's own startup file from re-ordering PATH ahead of the fake `claude` stub, closing the path that let acceptance fixtures boot real, billable agents.
 ## Explanation
 
 *Understanding-oriented: discursive background and rationale.*
