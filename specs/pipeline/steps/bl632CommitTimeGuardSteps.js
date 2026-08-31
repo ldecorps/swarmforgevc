@@ -34,6 +34,17 @@ const TICKET_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_ticket
 const PROPERTY_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
 const PRE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
 const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-merge-commit');
+// What the hooks EXECUTE and SOURCE, not only the guards themselves.
+// BL-1252 moved pre-commit's guards behind run_commit_guards.sh and BL-1303
+// gave pre-merge-commit a chain of its own over the same sourced
+// aggregation; a fixture missing either dies before any guard decides
+// anything, so the scenarios stop testing the guard they name.
+const GUARD_RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'run_commit_guards.sh');
+const GUARD_CHAIN_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'commit_guard_chain_lib.sh');
+const FEATURE_HANDLER_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_feature_handler_registration.sh');
+const MERGE_PARENT_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'incoming_merge_parent_lib.sh');
+const SHARED_REPO_GUARD_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_shared_repo_guard.sh');
+const STANDING_ALLOWLIST_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_standing_allowlist_lib.sh');
 
 // Fixture-root hygiene (BL-459's acceptance sibling): every root the
 // Background creates is registered for removal at process exit, so neither
@@ -57,7 +68,14 @@ function mkFixtureRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl632-acceptance-'));
   fixtureRoots.push(root);
   git(root, 'init', '-q', '-b', 'main');
-  git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init');
+  // Repo-LOCAL identity. The scenarios' own actions commit without `-c`, so
+  // a fixture that relies on the host having a global identity aborts with
+  // "Author identity unknown" before any hook runs - the guard's verdict is
+  // then never reached and every scenario fails for a host-config reason
+  // rather than for anything this feature is about.
+  git(root, 'config', 'user.email', 't@t');
+  git(root, 'config', 'user.name', 't');
+  git(root, 'commit', '-q', '--allow-empty', '-m', 'init');
 
   fs.mkdirSync(path.join(root, 'swarmforge', 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(root, 'swarmforge', 'git-hooks'), { recursive: true });
@@ -66,12 +84,32 @@ function mkFixtureRepo() {
     [SIZE_GUARD, 'swarmforge/scripts/check_commit_size.sh'],
     [TICKET_GUARD, 'swarmforge/scripts/check_ticket_deletion.sh'],
     [PROPERTY_GUARD, 'swarmforge/scripts/check_property_suite_drift.sh'],
+    [FEATURE_HANDLER_GUARD, 'swarmforge/scripts/check_feature_handler_registration.sh'],
+    [GUARD_RUNNER, 'swarmforge/scripts/run_commit_guards.sh'],
+    [GUARD_CHAIN_LIB, 'swarmforge/scripts/commit_guard_chain_lib.sh'],
+    [MERGE_PARENT_LIB, 'swarmforge/scripts/incoming_merge_parent_lib.sh'],
+    [SHARED_REPO_GUARD_LIB, 'swarmforge/scripts/property_suite_shared_repo_guard.sh'],
+    [STANDING_ALLOWLIST_LIB, 'swarmforge/scripts/property_suite_standing_allowlist_lib.sh'],
     [PRE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-commit'],
     [PRE_MERGE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-merge-commit'],
   ]) {
     const dst = path.join(root, rel);
     fs.copyFileSync(src, dst);
     fs.chmodSync(dst, 0o755);
+  }
+  // An EMPTY step registry, so BL-1303's guard asks its real question of
+  // this fixture - nothing here is unrunnable - rather than refusing every
+  // action because a repo with no acceptance pipeline has no registry.
+  fs.mkdirSync(path.join(root, 'specs', 'pipeline', 'steps'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'specs', 'pipeline', 'steps', 'index.js'), 'module.exports = [];\n');
+  // That guard resolves its compiled checker relative to its OWN script dir,
+  // so the fixture's copy needs the real out tree beside it.
+  fs.mkdirSync(path.join(root, 'extension'), { recursive: true });
+  try {
+    fs.symlinkSync(path.join(REPO_ROOT, 'extension', 'out'), path.join(root, 'extension', 'out'), 'dir');
+  } catch {
+    // A checker the guard cannot resolve is a refusal naming the reason
+    // (BL-1303 fails closed) - never a false pass.
   }
   git(root, 'add', '-A');
   git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'seed hooks');

@@ -36,6 +36,22 @@ cp "$TICKET_GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
 cp "$SCRIPT_DIR/../check_property_suite_drift.sh" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
 cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$ROOT/swarmforge/scripts/property_suite_shared_repo_guard.sh"
 cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$ROOT/swarmforge/scripts/incoming_merge_parent_lib.sh"
+# What the hooks EXECUTE and SOURCE. BL-1252 moved pre-commit's guards behind
+# run_commit_guards.sh and BL-1303 gave pre-merge-commit a chain of its own
+# over the same sourced aggregation; without them the hook dies before any
+# guard decides anything and every case below fails for that reason instead.
+cp "$SCRIPT_DIR/../run_commit_guards.sh" "$ROOT/swarmforge/scripts/run_commit_guards.sh"
+cp "$SCRIPT_DIR/../commit_guard_chain_lib.sh" "$ROOT/swarmforge/scripts/commit_guard_chain_lib.sh"
+cp "$SCRIPT_DIR/../check_feature_handler_registration.sh" "$ROOT/swarmforge/scripts/check_feature_handler_registration.sh"
+cp "$SCRIPT_DIR/../property_suite_standing_allowlist_lib.sh" "$ROOT/swarmforge/scripts/property_suite_standing_allowlist_lib.sh"
+# An EMPTY step registry, so BL-1303's guard asks its real question here -
+# nothing in this fixture is unrunnable - rather than refusing every action
+# because a repo with no acceptance pipeline has no registry to read. Its
+# compiled checker is resolved relative to the guard's own script dir, so
+# link the real out tree beside the copied guard.
+mkdir -p "$ROOT/specs/pipeline/steps" "$ROOT/extension"
+printf 'module.exports = [];\n' > "$ROOT/specs/pipeline/steps/index.js"
+ln -s "$SCRIPT_DIR/../../../extension/out" "$ROOT/extension/out" 2>/dev/null || true
 cp "$IS_QA_ANCESTOR" "$ROOT/swarmforge/scripts/is_qa_ancestor.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
 cp "$PRE_MERGE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-merge-commit"
