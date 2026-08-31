@@ -1,0 +1,181 @@
+id: BL-1309
+title: "The only landing step QA cannot skip never asks what the tip carries, so a plain push of the QA branch ships every ticket previously merged into it"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: nothing is destroyed and the pipeline keeps moving. But a
+# ticket withheld pending a HUMAN RULING reached origin/main through this path,
+# and the only thing that caught it was a specifier reading git history four
+# lands later. A gate that is bypassable on the mandatory path is a broken
+# safety signal, which is the same grading BL-1293 and BL-1307 carry.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: [BL-1308]
+# Both landed and closed. BL-1241 built `entangled-siblings`, BL-1308 widened it
+# to full ancestry. This slice does not touch the detector - it wires the
+# finished detector into the step QA cannot skip. Nothing unbuilt is waited on.
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one guard added to one 60-line shell script beside the decision it already computes; there is no second copy to de-duplicate and no structure to extract."
+acceptance: specs/features/BL-1309-the-mandatory-land-decide-step-is-blind-to-entanglement.feature.draft
+
+required_wiring:
+  - "swarmforge/scripts/land_main_publish.sh::ENTANGLED_SIBLING_BLOCK::the CONSUMER anchor (BL-1235). land_main_publish.sh is pre-existing and is the only land step QA.prompt makes mandatory, so a marker in THIS file proves a live path reaches the new decision. Anchoring in land_step_lib.bb instead would be satisfied by the parcel's own diff and prove nothing. The marker string is fixed here at mint so the pattern is a literal that will exist (BL-874); grep for it today returns 0."
+  - "specs/pipeline/steps/index.js::bl1309LandDecideStepEntanglementSteps::the draft-conversion anchor, doing a DIFFERENT job from the entry above. This ticket's own acceptance: starts life pointing at a .feature.draft, which passes every gate vacuously (BL-761 fails closed only on an ABSENT declaration). This entry pins the registration so the rename cannot be forgotten. It is deliberately NOT offered as proof of production wiring - see BL-1235 and the entry above."
+
+invariants:
+  - "No tip that adds an unlanded ticket's content over origin/main is advised for push, whatever route that content took onto the tip - a first-parent merge, a second-parent merge, or a rematch."
+  - "An input the step cannot read never becomes a refusal. An unrunnable detector, an unreadable range against origin/main and an unknown ticket all fail OPEN, exactly as BL-806 established and BL-1293 and BL-1307 preserved."
+
+source: |
+  Found 2026-08-31 by the specifier from an idle ready_for_next.sh returning
+  NO_TASK, while checking whether BL-1307's park was stale. Full evidence:
+  backlog/evidence/BL-1300-hold-is-not-a-withholding-20260831.md and
+  backlog/evidence/BL-1307-landed-park-is-stale-20260831.md.
+
+description: |
+  ## What is wrong
+
+  QA.prompt's landing step is: acquire the lock, run
+  `land_main_publish.sh <root> --decide-only`, rematch when advised, then
+  `git push origin HEAD:main`. That decide step is the one part of landing QA
+  cannot skip.
+
+  `swarmforge/scripts/land_main_publish.sh` fetches `origin/main`, compares tip
+  ancestry, and prints an EDN decision from `master_main_reconcile_lib`. It
+  asks whether the push is fast-forwardable. It never asks whose work the tip
+  carries: `grep -n 'entangled\|land_step_lib\|sibling' land_main_publish.sh`
+  returns **nothing**.
+
+  The check that would answer it exists and works. `entangled-siblings` in
+  `land_step_lib.bb` was built by BL-1241 and widened to full ancestry by
+  BL-1308. But it is reachable only through `land_step_cli.bb`, which QA runs
+  BY HAND, when QA notices there might be something to notice. So the swarm's
+  answer to "did this land ship someone else's unlanded work" depends on a
+  human step being remembered, while the step that is enforced stays blind.
+
+  `main`'s first-parent chain IS the `swarmforge-QA` branch. So a plain push of
+  the branch tip ships everything ever merged into it, including work QA
+  explicitly decided NOT to land.
+
+  ## The instance, verified by reflog rather than argued
+
+  `origin/main@{20}` (`a4dc4742d8`) does not contain `68a36bcfae`, QA's merge of
+  BL-1300. `origin/main@{19}` (`82347884f3`, "BL-1308: QA pass") does.
+
+  So **BL-1308's own land is the push that shipped BL-1300** - a ticket QA had
+  deliberately held four commits earlier (`d4b666a336`, "verified green,
+  landing blocked on pending human_ruling"), whose `human_approval: pending`
+  was a deliberate re-ask for a binary choice between two shapes. One of those
+  two shapes is now live on `origin/main` without the choice ever being made.
+
+  The same push carried BL-1307, held at `6d9e987a07` for exactly this reason.
+  BL-1295 landed the same way on 2026-08-30. Three instances in two days.
+
+  The irony is load-bearing, not decoration: BL-1308 was the ticket that FIXED
+  the detector, and its own land bypassed it. A hold that only stops the replay,
+  and leaves the merged content sitting on the branch `main` is advanced from,
+  is not a hold. Compare the constitution's "A Bounce Must Be Reverted Out Of
+  The Bouncing Branch" (BL-490/BL-495): a bounce has that rule; a hold has no
+  equivalent, and this is what that gap costs.
+
+  ## How (direction, not mandate)
+
+  Give the answer where it cannot be skipped: have `--decide-only` consult the
+  finished detector and refuse rather than advise, printing a stable marker
+  (`ENTANGLED_SIBLING_BLOCK`) plus one line naming each unlanded ticket, so the
+  caller keys off a literal rather than parsing prose. The existing remedy does
+  not change: QA's answer to a refusal is the tip-pure replay it already runs
+  today, only now it is told to rather than expected to remember.
+
+  Two constraints the implementer should not have to rediscover:
+
+  - `land_main_publish.sh` runs under `set -euo pipefail` (line 11). A guard
+    that can legitimately exit non-zero must not abort the script by inheriting
+    that - capture the status (`guard || st=$?`) rather than letting `set -e`
+    take it, per the constitution's Guardrails rule (BL-1242/BL-1252).
+  - The fail-open half is not optional politeness; it is what keeps a blind
+    detector from becoming a swarm-wide land outage. See invariant 2.
+
+notes: |
+  ## Deliberately NOT in this slice [2026-08-31 specifier]
+
+  Two adjacent findings from the same investigation, both real, both separate:
+
+  1. **`backlog/hold/` silences a ticket's approval ask.**
+     `pendingApprovalsAnnouncementHook.ts:25` iterates `['active','paused']`
+     and `metrics/backlogDashboard.ts` has no `hold` member at all, so
+     BL-1300's pending ruling has not been offered to anyone since it was
+     held. That is a concierge defect in a different language in a different
+     layer; bundling it here would fail INVEST-Small. Recorded in BL-1300's
+     own notes and evidence; mint separately if the human wants it fixed
+     rather than worked around.
+  2. **Whether a held ticket's merge should be reverted OFF the QA branch**
+     rather than left for each subsequent land to re-detect. That is a
+     process/constitution question (the bounce rule's missing twin), not a
+     code slice, and it belongs in an Article 5 amendment if it is wanted.
+
+  ## IR-DRY findings reviewed, not normalized away [2026-08-31 specifier]
+
+  The checker reports 4 medium findings on the feature draft: the
+  carries/omits marker pair, and three `it reports <X>` pairs across the
+  Outline and the two concrete scenarios. All four are deliberate - one
+  regex handler serves all of them, and the marker pair asserts the same
+  surface in both directions, which is the point. Per the tool's own
+  suggested_action these are not accidental drift, so the wording stands.
+
+qa_e2e_procedure: |
+  1. On a scratch clone, build a branch tip that merges two tickets' work where
+     only one is on `origin/main`. Run
+     `swarmforge/scripts/land_main_publish.sh <root> --decide-only`.
+     It must print `ENTANGLED_SIBLING_BLOCK` and name the unlanded ticket, and
+     must NOT advise a push.
+  2. Land the unlanded sibling, re-run step 1: the marker is gone and the
+     decision is the ordinary one.
+  3. Fail-open: make the detector unrunnable (rename `land_step_lib.bb` in the
+     scratch clone) and re-run step 1. The step must print the ordinary
+     decision and no marker - a blind detector must never refuse.
+  4. Regression on the real path: run step 1 against the live `swarmforge-QA`
+     tip and confirm the decision it prints matches what
+     `bb swarmforge/scripts/land_step_cli.bb <task> <commit>` reports
+     independently. A disagreement between the two is the defect still present.
+  5. Confirm the script still behaves under `set -euo pipefail`: a refusal must
+     exit with the documented status, not abort mid-script leaving the land
+     lock held.
+
+human_approval: pending
+ruling_options:
+  - refuse every entangled tip, so the tip-pure replay becomes the normal land
+  - refuse only when the entangled sibling is withheld or awaiting approval
+approval_context: >
+  A new feature file is authored here, so it needs a tap. One question is
+  genuinely yours.
+
+  The defect is not in question and is verified by reflog: BL-1308's own land
+  pushed BL-1300 onto origin/main, four commits after QA deliberately held it
+  for a human ruling you have not yet given. BL-1307 rode the same push.
+
+  Yours is how wide the refusal should be. QA.prompt says an entangled tip is
+  the NORMAL state of a long-lived role branch - "the BL-506 inventory's
+  legitimate YES, which is what ordinary pipelining produces". So option 1
+  refuses most lands and makes the tip-pure replay the everyday path. It is the
+  simplest rule, it has no judgment in it, and BL-1241 already built the remedy
+  it forces. The cost is a slower land, every time, including the many where
+  the entangled sibling was going to land ten minutes later anyway.
+
+  Option 2 refuses only when the sibling is actually being withheld - in
+  backlog/hold, or human_approval pending, or QA recorded a hold for it. It
+  costs nothing on ordinary lands and stops exactly the case that has now
+  happened three times in two days. Its risk is that it needs to read ticket
+  state to decide, so it has more ways to be wrong, and a sibling withheld in a
+  way the predicate does not recognise slips through - which is how this class
+  of defect keeps recurring.
+
+  Settled, not a question: the refusal fails OPEN on anything it cannot read,
+  under either option. A land step that refuses because it could not run the
+  detector would be a swarm-wide outage, and BL-806, BL-1293 and BL-1307 all
+  already hold that line.
