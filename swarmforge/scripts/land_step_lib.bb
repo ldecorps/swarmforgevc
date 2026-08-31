@@ -236,18 +236,31 @@
       (remove str/blank? (str/split-lines (:out res))))))
 
 (defn- path-owner-tickets
-  "The ticket ids attributed to `path`'s changes: every commit `commits-fn`
-   reports for `path`, run through this file's own commit-ticket-id
-   extractor. `commits-fn` is injected (defaults to the real git walk) so
-   the unreadable row is drivable in a test without corrupting a
-   repository, the same posture `landed-siblings`' `paths-fn` already takes.
+  "The attribution of `path`'s changes: every commit `commits-fn` reports for
+   `path`, run through this file's own commit-ticket-id extractor.
+   `commits-fn` is injected (defaults to the real git walk) so the unreadable
+   row is drivable in a test without corrupting a repository, the same
+   posture `landed-siblings`' `paths-fn` already takes.
 
-   nil propagates a read failure (never a silent 'no attribution'); #{} is a
-   real answer - every commit that touched this path named no ticket at
-   all, which is positive information, not blindness."
+   nil propagates a read failure (never a silent 'no attribution'). On a
+   successful read, returns {:owners #{...} :any-untagged? bool}: `:owners`
+   is the set of ticket ids named by a touching commit's subject (#{} is a
+   real answer - every touching commit named no ticket at all, positive
+   information, not blindness); `:any-untagged?` is true when at least one
+   touching commit's subject named no ticket.
+
+   BL-1315 hardener finding: an untagged touch used to contribute nothing to
+   `:owners`, making it indistinguishable from 'no commit touched this path'
+   - so a path touched by BOTH an unlanded sibling's tagged commit and a
+   later untagged own-chain commit read as 'every owner is the unlanded
+   sibling' and was wrongly excluded. `:any-untagged?` lets the caller tell
+   the two apart and keep the path when an untagged touch's contribution is
+   unaccounted for (invariant 1)."
   [root origin-main commit path commits-fn]
   (when-let [commits (commits-fn root origin-main commit path)]
-    (into #{} (keep #(commit-ticket-id root %) commits))))
+    (let [ids (map #(commit-ticket-id root %) commits)]
+      {:owners (into #{} (remove nil? ids))
+       :any-untagged? (boolean (some nil? ids))})))
 
 (defn own-paths
   "This ticket's own changed paths since origin/main - the tip-pure replay
@@ -291,14 +304,15 @@
          (if (empty? remaining)
            {:paths acc :warning nil}
            (let [path (first remaining)
-                 owners (path-owner-tickets root origin-main commit path commits-fn)]
+                 attribution (path-owner-tickets root origin-main commit path commits-fn)]
              (cond
-               (nil? owners)
+               (nil? attribution)
                {:paths nil :warning (str "land-step: could not read " path "'s attribution")}
 
-               (and (seq owners)
-                    (not (contains? owners task-ticket-id))
-                    (every? unlanded-siblings owners))
+               (and (seq (:owners attribution))
+                    (not (:any-untagged? attribution))
+                    (not (contains? (:owners attribution) task-ticket-id))
+                    (every? unlanded-siblings (:owners attribution)))
                (recur (rest remaining) acc)
 
                :else
