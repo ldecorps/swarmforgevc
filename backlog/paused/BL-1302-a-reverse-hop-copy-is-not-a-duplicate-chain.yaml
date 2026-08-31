@@ -2,7 +2,7 @@ id: BL-1302
 title: "A back-one or back-all forward plants a live git_handoff for the same ticket in every earlier mailbox, and the duplicate-chain guard reads each one as a competing chain, so the next role's forward is refused until they drain"
 milestone: M8
 type: defect
-severity: medium
+severity: high
 status: todo
 epic: swarm-reliability
 priority: 13
@@ -102,6 +102,30 @@ qa_e2e_procedure: |
      refused, naming that parcel, with the `redo_from.sh` advice intact.
   4. Strip the `non-forwarding` line from a reverse copy and repeat step 2:
      the send must be refused again (absence buys no exemption).
+
+  ## Severity raised medium -> high, 2026-08-31 (specifier)
+
+  `medium` was set from a single occurrence, before there was any evidence
+  about how often this fires. There are now two, in the first eight hours of
+  the reverse-hop feature being live, in different roles on different tickets:
+
+  - 2026-08-30 18:01Z - hardener blocked on BL-1297
+    (`backlog/evidence/BL-1297-hardener-send-blocked-20260830.md`).
+  - 2026-08-31 00:05Z - architect blocked on BL-1308. Confirmed by running
+    `duplicate-chain-guard-lib/blocking-parcel` directly rather than reading
+    the refusal text: the blocking parcel is the coder's `non-forwarding: true`
+    reverse-hop copy of **BL-1308 itself**, planted by the very forward the
+    architect was trying to continue. Full transcript in
+    `backlog/evidence/BL-1302-specifier-live-block-20260831.md`.
+
+  That is not an edge case - it is what a `back-one` forward now does every
+  time, and it holds a role idle until an unrelated role happens to drain a
+  merge-only inbound. The specifier prompt reserves `high` for "a live fault
+  degrading behaviour", which this is. The raise also places it in the Article
+  3.2.4 expedite lane.
+
+  Scope, cost and acceptance are unchanged - this is a severity correction on
+  new evidence, not an amendment. Nothing built against this ticket changes.
 
 human_approval: approved
 approval_context: >
