@@ -166,6 +166,7 @@ const DOMAINS = [
   require('./humanInTheLoopClosedSteps'),
   require('./quietPeriodGateCliSteps'),
   require('./routingManifestFieldSteps'),
+  require('./bl1305FixtureAgentBinarySteps'),
   require('./roleLifecycleParkUnneededSteps'),
   require('./topicOpeningSummarySteps'),
   require('./mergedCodeReachesDaemonsSteps'),
