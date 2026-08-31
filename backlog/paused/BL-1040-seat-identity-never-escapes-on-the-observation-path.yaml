@@ -11,8 +11,8 @@ severity: medium
 status: todo
 epic: multi-seat-stages
 assigned_to: none
-priority: 20
-direction: swarm-reported
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]

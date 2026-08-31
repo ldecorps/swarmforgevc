@@ -4,8 +4,8 @@ milestone: M5
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-priority: 28
-direction: human-requested
+priority: 2
+direction: queue-jump
 severity: medium
 depends_on: [BL-236, BL-1316]
 mutation_cost: medium
@@ -45,4 +45,4 @@ depends_on_note: |
   BL-1316 first — Adapt climbs from the claim-time baseline, not from an
   unrelated pack default.
 
-assigned_to: specifier
+assigned_to: none

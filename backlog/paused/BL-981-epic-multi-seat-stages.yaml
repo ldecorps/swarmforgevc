@@ -6,7 +6,7 @@ type: epic
 epic: multi-seat-stages
 priority: 26
 depends_on: []
-decomposes_into: [BL-982, BL-983, BL-1001, BL-1004, BL-1040, BL-1316]
+decomposes_into: [BL-982, BL-983, BL-1001, BL-1004, BL-1040, BL-1316, BL-1319, BL-1320]
 
 remaining_slices:
   - "Difficulty-aware routing among seats of a stage: map a ticket difficulty
@@ -18,23 +18,41 @@ remaining_slices:
      takes hard work) and the specifier answered wait-vs-spill asymmetrically
      (hard waits and never spills down; easy may spill up)."
   - "Supervisor / chase / ensure / stage-dwell treat seats as instances of a
-     stage: dwell still names the STAGE as the bottleneck, while ops surfaces may
-     show seat-level detail including each seat's model. The BOARD and STAGE-MAP
-     half of this slice was MINTED 2026-08-22 as BL-1040, from a rescued
-     uncommitted fix found in the coder worktree: BL-983 enforced its own
-     invariant 3 only on the FORWARD path, so a ticket a non-bare seat holds
-     reached the board keyed `coder@sonnet2`, matched no bare role name, and
-     painted as not-started. Supervisor, chase, ensure and stage-dwell are NOT
-     in BL-1040 and this slice stays open for them."
+     stage: DRAINED 2026-08-31, and the framing above was wrong about three of
+     its four surfaces. The BOARD and STAGE-MAP half was MINTED 2026-08-22 as
+     BL-1040, from a rescued uncommitted fix found in the coder worktree: BL-983
+     enforced its own invariant 3 only on the FORWARD path, so a ticket a
+     non-bare seat holds reached the board keyed `coder@sonnet2`, matched no bare
+     role name, and painted as not-started. The DWELL half was MINTED 2026-08-31
+     as BL-1319: the optimizer's `nameBottleneck` ranks rows keyed on the seat id,
+     so a two-seat stage contributes two rows and its split dwell can rank BELOW a
+     single-seat stage that is actually faster - a wrong answer, not just a wrong
+     label. Supervisor, chase and ensure were READ at that mint and need no
+     change: chase and the flow watchdog already route seat decisions through
+     `seat_affinity_lib.bb` / `handoff-lib/stage-seat-worked-task-sets`, and
+     `swarm_ensure.bb` and the babysitter iterate roles.tsv per SEAT deliberately -
+     each seat is its own pane, session and launch script, so folding seats onto
+     stages there would break respawn rather than fix anything. The ops surface
+     that RENDERS each seat and its model remains unbuilt and is a live
+     `ruling_options` choice on BL-1319; if the human rules to split it out, it
+     becomes this epic's next child. This slice is otherwise closed."
   - "Who may CLAIM a rework, as distinct from who gets fresh work. BL-983's one
      stage queue is a pure race, and seats hold separate worktrees, so a bounce
      can be claimed by a seat with none of the parcel's history - measured live
      on BL-994 (build 782b343a4 on coder@sonnet2; fix 080b30253 on coder does
      NOT have it as an ancestor). MINTED 2026-08-20 as BL-1004, severity high.
      Orthogonal to BL-1001 and does not wait for it."
-  - "Operator docs + Swarm Optimizer wording: make the existing 'add/remove a role
-     instance' recommendation map to a documented operator step, and let it name
-     WHICH model tier to add when the constraint is capacity at a difficulty band."
+  - "Operator docs + Swarm Optimizer wording: MINTED 2026-08-31 as BL-1320, with
+     its premise corrected. This slice assumed an EXISTING 'add/remove a role
+     instance' recommendation to reword; there is none - grepping `extension/src`,
+     `swarmforge/scripts` and `docs/` for 'role instance', 'add a role' and
+     'remove a role' returns nothing, and the optimizer instrument names a
+     bottleneck stage while emitting no recommendation text at all. BL-1320
+     therefore WRITES the operator step that was assumed to exist (add and remove
+     a seat of a stage, the bare-seat constraint, and which model tier to add for
+     a difficulty band), exercised against a real pack parse so the page cannot
+     drift from the parser. Whether the optimizer should also EMIT that
+     recommendation is a live `ruling_options` choice on BL-1320."
 
 source: |
   Operator intake .swarmforge/operator/INTAKE-duplicate-bottleneck-seat.md
