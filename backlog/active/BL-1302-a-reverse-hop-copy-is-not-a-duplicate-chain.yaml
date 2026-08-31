@@ -136,3 +136,5 @@ approval_context: >
   because it is the second defect found in the reverse-hop feature within
   three hours of it landing - if the intent is to reconsider that feature
   rather than keep patching around it, say so here and this ticket should wait.
+
+assigned_to: coder
