@@ -167,4 +167,18 @@ grep -qE '^\s*"\$REPO_ROOT/swarmforge/scripts/check_(commit_size|ticket_deletion
   && fail "10: pre-commit still calls a guard directly, bypassing the runner"
 pass "10 the pre-commit hook delegates to run_commit_guards.sh"
 
+# ── case 11: the chain runs without `set -e`, so an unloadable shared lib ──
+#    (BL-1303 extracted run_guard into commit_guard_chain_lib.sh) would leave
+#    run_guard undefined and fall through to `exit 0` - every guard silently
+#    skipped. A copy with no lib beside it must REFUSE.
+reset_fixture
+LONELY="$ROOT/lonely"
+mkdir -p "$LONELY"
+cp "$RUNNER" "$LONELY/run_commit_guards.sh"
+OUT="$(SWARMFORGE_COMMIT_GUARD_DIR="$GUARDS" bash "$LONELY/run_commit_guards.sh" "$ROOT" 2>&1)" && STATUS=0 || STATUS=$?
+[ "$STATUS" -ne 0 ] || fail "11: a runner whose guard chain could not be loaded allowed the commit: $OUT"
+names commit_guard_chain_lib.sh || fail "11: the refusal does not say which file could not be loaded: $OUT"
+ran check_commit_size.sh && fail "11: guards ran despite the chain failing to load: $OUT"
+pass "11 an unloadable guard chain refuses the commit instead of skipping every guard"
+
 echo "ALL PASS: run_commit_guards.sh"
