@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 31, 2026 (BL-1225: a build-freshness sync's
+restarts now leave a readable forensic trail. `restart-operator-group!`
+(`swarmforge/scripts/build_freshness_cli.bb`) used to spawn the replacement
+`operator_runtime.bb` with a path string in babashka.process's `:out`,
+which truncates — every sync erased `.swarmforge/operator/runtime.log`'s
+prior stop/start history, verified by direct reproduction before the fix.
+The spawn now goes through the new pure
+`build-freshness-lib/operator-log-spawn-opts` (`build_freshness_lib.bb`),
+which appends, matching `start_operator_runtime.sh`'s own `>>`.
+`restart-handoffd-group!` now passes
+`SWARMFORGE_DAEMON_START_CALLER=build-freshness-lib/daemon-start-caller` as
+extra environment to `start_handoff_daemon.sh`, which has always read and
+printed that variable into `.swarmforge/daemon/daemon-start-audit.log` but
+had nothing setting it — every sync-initiated daemon start previously
+audited as `caller=unknown`, forcing a by-hand timestamp correlation during
+the 2026-08-28 crash-window post-mortem. Only the sync's own start sets the
+caller; a start no sync initiated still reads `unknown`. Which process
+groups a sync restarts, and in what order, is unchanged, as are BL-433's
+stop-file, `status.json` deletion, and bounded settle-wait. No new
+extension command or setting. Acceptance:
+`specs/features/BL-1225-sync-initiated-restart-leaves-a-readable-trail.feature`.
+How-to: `docs/how-to/BL-1225-sync-restart-trail.md`.)
+Prior entry —
 **Last Updated:** August 31, 2026 (BL-1252: the shared pre-commit hook's
 four guards — `check_commit_size.sh`, `check_ticket_deletion.sh`,
 `check_pipeline_code_on_main.sh`, `check_property_suite_drift.sh` — used to
