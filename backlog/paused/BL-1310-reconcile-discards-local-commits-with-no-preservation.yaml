@@ -176,7 +176,9 @@ qa_e2e_procedure: |
      still surfaces without touching main (BL-1236), and a push failure that is
      not a rejection still keeps the commits (BL-1288).
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  never discard local-ahead commits - refuse and surface, a human resolves it
 ruling_options:
   - preserve, then discard - the reconcile keeps unblocking itself
   - never discard local-ahead commits - refuse and surface, a human resolves it
