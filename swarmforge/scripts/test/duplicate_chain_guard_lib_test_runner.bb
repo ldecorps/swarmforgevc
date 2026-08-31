@@ -44,7 +44,7 @@
   (let [role-info (handoff-lib/load-role-info role root)]
     (handoff-lib/mailbox-dir role-info state)))
 
-(defn write-handoff! [root role state filename {:keys [type task message from to]
+(defn write-handoff! [root role state filename {:keys [type task message from to non-forwarding]
                                                  :or {type "git_handoff" from "specifier" to role}}]
   (let [dir (mailbox-dir-for root role state)]
     (fs/create-dirs dir)
@@ -52,6 +52,10 @@
           (str "id: x\nfrom: " from "\nto: " to "\npriority: 20\ntype: " type "\n"
                (when (= type "git_handoff") (str "task: " task "\ncommit: a1b2c3d4e5\n"))
                (when (= type "note") (str "message: " message "\n"))
+               ;; BL-1302: the reverse-hop marker swarm_handoff.bb stamps on a
+               ;; synthesized back-one/back-all copy. Written verbatim, so a
+               ;; test parcel is byte-shaped like a real one.
+               (when non-forwarding (str "non-forwarding: " non-forwarding "\n"))
                "\nbody\n"))))
 
 ;; ── blocking-parcel: no ticket id skips silently ────────────────────────
@@ -175,6 +179,75 @@
                   "already exists at documenter (20_blocker.handoff). If that parcel "
                   "is genuinely stale, clear it first: redo_from.sh BL-901 <stage>")
              msg)))
+
+
+;; ── BL-1302: a reverse-hop copy is not a competing chain ─────────────────
+;;
+;; A back-one/back-all forward plants a `non-forwarding: true` git_handoff for
+;; the SAME ticket in every earlier role's mailbox. Article 2.4 makes such an
+;; inbound merge-only, and swarm_handoff.bb refuses a git_handoff while one is
+;; in the sender's in_process — so it can never start the second chain BL-760
+;; exists to catch, and must not block the forward it was synthesized from.
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-handoff! root "coder" :new "00_reverse_copy.handoff"
+                  {:task "BL-901" :non-forwarding "true"})
+  (assert-nil "a live non-forwarding reverse-hop copy does not block the forward"
+              (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "architect")))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-handoff! root "coder" :in_process "00_reverse_copy.handoff"
+                  {:task "BL-901" :non-forwarding "true"})
+  (assert-nil "a non-forwarding copy already dequeued to in_process does not block either"
+              (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "architect")))
+
+;; Invariant 2 — absence fails closed. Only an EXPLICIT marker exempts, so a
+;; malformed or pre-reverse-hop parcel blocks exactly as it does today.
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-handoff! root "coder" :new "00_no_marker.handoff" {:task "BL-901"})
+  (let [block (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "architect")]
+    (assert= "a parcel carrying no non-forwarding marker still blocks"
+             "coder" (:role block))))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-handoff! root "coder" :new "00_marker_false.handoff"
+                  {:task "BL-901" :non-forwarding "false"})
+  (let [block (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "architect")]
+    (assert= "non-forwarding: false is not an exemption — only \"true\" exempts"
+             "coder" (:role block))))
+
+;; The exemption SKIPS a candidate, it does not abort the walk: a genuine
+;; competing chain behind a reverse copy must still be found and named.
+
+(let [root (mk-root)]
+  (write-roles! root)
+  ;; roles.tsv order is coder, cleaner, architect, documenter, QA — the exempt
+  ;; copy sits at coder, ahead of the real blocker at documenter.
+  (write-handoff! root "coder" :new "00_reverse_copy.handoff"
+                  {:task "BL-901" :non-forwarding "true"})
+  (write-handoff! root "documenter" :new "20_real_blocker.handoff" {:task "BL-901"})
+  (let [block (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "architect")]
+    (assert= "a genuine forward parcel behind an exempt copy is still found"
+             "documenter" (:role block))
+    (assert= "and it is the one named"
+             "20_real_blocker.handoff" (some-> (:file block) fs/file-name))))
+
+;; The marker exempts only a parcel for THIS ticket — it carries no cross-ticket
+;; effect, and a note was never a blocker in the first place (type gate).
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-handoff! root "coder" :new "00_reverse_copy_other.handoff"
+                  {:task "BL-902" :non-forwarding "true"})
+  (write-handoff! root "cleaner" :new "20_blocker.handoff" {:task "BL-901"})
+  (let [block (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "architect")]
+    (assert= "an exempt copy for a different ticket changes nothing"
+             "cleaner" (:role block))))
 
 (if (seq @failures)
   (do

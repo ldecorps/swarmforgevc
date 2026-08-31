@@ -651,6 +651,7 @@ const DOMAINS = [
   require('./bl946EpicIconPoolSteps'),
   require('./bl1210IconMarkerStoreSteps'),
   require('./bl1252CommitGuardCompleteInventorySteps'),
+  require('./bl1302ReverseCopyNotDuplicateChainSteps'),
   require('./bl1225SyncRestartTrailSteps'),
   require('./bl1218RemoteControlConfigAtLaunchSteps'),
   require('./bl1264AbsentApprovalContextSteps'),
