@@ -1,0 +1,136 @@
+id: BL-1311
+title: "A Let's Talk turn is silently dropped when no Bubble topic is bound - the fallback resolver exists, is exported, and has zero callers"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: the swarm is up and nothing is lost from disk. But two
+# things are broken at once. (1) A live behaviour fault - an operator's Let's
+# Talk turn reaches NO topic at all when no dedicated Bubble topic is bound,
+# where the documented contract is that it falls back to Cursor Remote. (2)
+# main is openly red: specs/features/BL-709-...feature runs 7 pass / 1 fail
+# today, so every role that runs the acceptance suite inherits a red it did
+# not cause - the same safety-signal grade as BL-1303 and BL-1294.
+status: todo
+epic: swarmforge-console
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-709-bubble-its-own-telegram-topic.feature
+
+invariants:
+  - "A completed Let's Talk turn reaches exactly one topic or fails loudly - it is never silently dropped."
+  - "Ordinary (non-Let's-Talk) Bubble mirroring keeps its never-fall-back contract: this fix must not make effectiveBubbleMirrorTopicId start returning the Cursor Remote topic."
+
+description: |
+  ## What is wrong
+
+  `mirrorLetsTalkTurnToBubble` (`extension/src/bridge/bridgeServer.ts:241`)
+  resolves its destination with `bubbleMirrorTopicForPath`, which delegates to
+  `effectiveBubbleMirrorTopicId` (`extension/src/bridge/bubbleMirrorTopic.ts`).
+  That resolver deliberately returns `undefined` when no dedicated Bubble topic
+  is bound - its own doc comment says "Prefer the dedicated Bubble topic; never
+  dump ordinary talk onto Cursor Remote" - and `mirrorLetsTalkTurnToBubble`
+  early-returns on `undefined`. So the turn is sent nowhere.
+
+  The correct resolver for THIS call already exists, exported, sixty lines
+  above the call site: `effectiveLetsTalkMirrorTopicId`
+  (`bridgeServer.ts:160`), whose doc comment states exactly the contract the
+  acceptance scenario asserts - "Bound dedicated Bubble -> Bubble only;
+  unbound -> previous Cursor Remote mirror". It has ZERO callers anywhere in
+  `extension/src` or `extension/test` (verified 2026-08-31). This is the
+  BL-1235 shape: a mechanism built, exported and left unreachable.
+
+  The two resolvers are not redundant and neither is wrong. `effectiveBubble
+  MirrorTopicId` is right for ordinary Bubble mirroring; `effectiveLetsTalk
+  MirrorTopicId` is right for Let's Talk turns. The defect is that the Let's
+  Talk path calls the wrong one.
+
+  ## Also missing: this behaviour's test coverage, in both lanes
+
+  `extension/test/bl709BubbleOwnTelegramTopic.property.test.js` (4/4 passing at
+  BL-709's original QA pass, `backlog/evidence/BL-709-qa-pass-20260827.md`) is
+  absent from `main`. `extension/test/letsTalkBridge.test.js` shipped with
+  BL-709 coverage (45 tests at that pass) and now runs 42 with zero remaining
+  reference to BL-709, "Cursor Remote", or the unbound fallback - three tests'
+  worth of exactly this behaviour, gone from the unit lane too.
+
+  Restoring coverage for the fallback contract in both lanes is part of this
+  ticket, not a follow-up: it is the coverage for the behaviour being fixed.
+  The originals are recoverable from git (the file was added by `9e713ac6c2`,
+  "fix(BL-709): adopt Bubble topic - unbound fallback + APS + properties") and
+  are a reasonable starting point, but reproducing them verbatim is not
+  required - equivalent coverage of the same contract is what matters.
+
+  ## How (direction, not mandate)
+
+  Point the Let's Talk mirror at the Let's Talk resolver. The shapes do not
+  line up as-is - `effectiveLetsTalkMirrorTopicId` takes a
+  `CursorBridgeTopicIds` while the call site holds a `targetPath` - so the
+  implementer chooses between reading the ids at the call site and adding a
+  `letsTalkMirrorTopicForPath` sibling next to `bubbleMirrorTopicForPath`.
+  Either is fine; do not widen `effectiveBubbleMirrorTopicId` to get there
+  (invariant 2).
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-709-bubble-its-own-telegram-topic.feature`
+     Expect 8 tests, 8 pass. Today it is 7 pass / 1 fail on
+     `BL-709 bubble-topic-07`, deterministically. Scenario 03 (the bound case)
+     passes today and must still pass - it is the regression guard for the fix.
+  2. `grep -rn 'effectiveLetsTalkMirrorTopicId' extension/src` - expect at
+     least one hit that is not the `export function` definition line. Zero
+     non-definition hits today.
+  3. Unit lane: the fallback contract is covered again in
+     `extension/test/letsTalkBridge.test.js` (or a sibling), and a property
+     file covering it exists under `extension/test/`. Both run green.
+  4. Live: with the cursor bridge up and NO dedicated Bubble topic bound, take
+     one Let's Talk turn and confirm both sides appear in the Cursor Remote
+     topic. Then bind a Bubble topic, take another turn, and confirm it lands
+     in Bubble and NOT in Cursor Remote.
+
+source: >
+  QA note 2026-08-31 (priority 00): "BL-709 registered+landed 3382e88059; real
+  fallback bug found, see evidence" - full analysis in
+  backlog/evidence/BL-709-qa-main-red-repair-20260831.md. QA repaired BL-709's
+  unregistered step handler on main (a QA-exclusive path under
+  check_pipeline_code_on_main.sh), which unmasked this: while all 8 scenarios
+  failed identically with "no step handler matched", nobody could see that 7
+  pass and 1 fails on its own merits. QA explicitly did not attempt the fix -
+  it is a logic change to production TypeScript, outside QA's repair lane.
+  Every claim above independently re-verified by the specifier the same turn,
+  including running the feature file.
+
+notes: >
+  No required_wiring on this ticket, deliberately, and the reason is worth
+  stating because the ticket looks exactly like one that should carry it. The
+  work IS wiring an uncalled export into its live consumer - but the export and
+  the call site are in the SAME file (bridgeServer.ts), so any substring anchor
+  on effectiveLetsTalkMirrorTopicId matches the `export function` line that is
+  already there and would go green with nothing changed. That is the vacuous
+  anchor BL-1235 warns about, which fails OPEN. Acceptance scenario
+  `BL-709 bubble-topic-07` is the real proof here and is strictly better than a
+  grep: it is red on main today and can only go green when the call site
+  actually changes. qa_e2e_procedure step 2 carries the grep as a human check.
+
+  On the acceptance pointer (BL-1251 shape): this ticket authors no feature
+  file of its own and points at BL-709's, because the contract it must satisfy
+  IS that file post-fix - scenario 07 green, every other scenario still
+  resolving and green. This is not a claim of ownership over BL-709's contract.
+
+  How the coverage was lost, stated with its uncertainty rather than as a
+  finding. There is NO ordinary deletion commit for
+  bl709BubbleOwnTelegramTopic.property.test.js anywhere in main's history -
+  `git log --full-history --diff-filter=D main -- <path>` is empty, and every
+  commit that touches the path relative to a parent is a MERGE. So it was lost
+  in merge resolution, not deleted on purpose: the BL-571/958/954 silent-
+  revert-by-merge shape. The specifier could not cheaply pin down WHICH merge
+  (several 2026-08-27 merges show a parent holding the file and a result
+  without it, and the deletion then propagates correctly through the rest).
+  Two things follow, and the implementer should not re-derive them: the file's
+  history is invisible to a plain `git log main -- <path>` because history
+  simplification prunes it, so "no delete commit" is not evidence of anything;
+  and check_merge_deletion.sh (BL-1242) landed 2026-08-28, one day AFTER the
+  loss, so its absence here is timing, not a gap in it. No guard ticket is
+  minted from this - a gap was looked for and could not be substantiated.

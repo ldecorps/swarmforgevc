@@ -395,6 +395,7 @@ const DOMAINS = [
   require('./bl696TelegramCursorBridgeOperatorSteps'),
   require('./bl710OneClearTelegramRedeployPathSteps'),
   require('./bl711InterfaceVsIncarnationGlossarySteps'),
+  require('./bl709BubbleItsOwnTelegramTopicSteps'),
   require('./bl790BridgeQueuesNoteForRoleSteps'),
   require('./bl688RecordableSpecFailureClassesSteps'),
   require('./bl690EnsureDaemonRepairStartsNotHaltsSteps'),
