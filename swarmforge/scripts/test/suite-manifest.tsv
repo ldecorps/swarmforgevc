@@ -431,8 +431,9 @@ test_stop_swarm_freshness_cron.sh	standing
 test_supersede_guard.sh	standing		
 test_support_runtime_tick.sh	standing		
 test_swarm_ensure.sh	standing		
-test_swarm_handoff_daemon_backup.sh	standing		
-test_swarm_handoff_sync_deliver.sh	standing		
+test_swarm_handoff_daemon_backup.sh	standing
+test_swarm_handoff_inbound_non_forwarding.sh	standing
+test_swarm_handoff_sync_deliver.sh	standing
 test_swarm_heal_push_before_reset.sh	standing		
 test_swarm_identity_conf_parsing.sh	standing		
 test_swarm_identity_lib.sh	standing		
