@@ -1,5 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 31, 2026 (BL-1252: the shared pre-commit hook's
+four guards — `check_commit_size.sh`, `check_ticket_deletion.sh`,
+`check_pipeline_code_on_main.sh`, `check_property_suite_drift.sh` — used to
+run as four sequential commands under `set -euo pipefail`, so the first
+one that refused aborted the hook and a commit violating several guards was
+reported one violation per commit attempt, the first-failure-stop shape
+Article 4.4 forbids of a reviewing role. Extracted into
+`swarmforge/scripts/run_commit_guards.sh`, which the hook now `exec`s: the
+three index-inspection guards run under `set -uo pipefail` (no `-e`), one
+exit status captured per guard, and a commit violating more than one is
+refused ONCE with every violation named. `check_property_suite_drift.sh` is
+reached only once those three pass, so an already-refused commit never
+pays for `npm run test:properties`, and it still runs on every commit the
+cheap three allow. No guard's predicate, threshold, or exemption changed —
+only the completeness of the report — and an unexpected non-refusal exit
+(a crash, a missing script) still refuses and names the failing guard.
+Same shape the sibling commit-msg hook already uses (BL-1242, `61735035f`).
+No new extension command or setting. Acceptance:
+`specs/features/BL-1252-commit-guard-chain-reports-every-violation.feature`.
+How-to: `docs/how-to/BL-1252-commit-guard-chain-reports-every-violation.md`.)
+Prior entry —
 **Last Updated:** August 31, 2026 (BL-1210: every Telegram topic kind keeps
 its icon ownership marker again, closing a two-day-old (2026-08-25–27)
 regression BL-695 introduced. BL-695's classification split
