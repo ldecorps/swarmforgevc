@@ -23,6 +23,14 @@
    match BL-901)."
   [file ticket-id]
   (and (= "git_handoff" (handoff-lib/header-field file "type"))
+       ;; BL-1302: a non-forwarding parcel is a reverse-hop copy (Article 2.4,
+       ;; merge-only). Its recipient is forbidden to forward it, and
+       ;; swarm_handoff.bb refuses a git_handoff while one sits in the sender's
+       ;; in_process — so it cannot be the second chain BL-760 catches, and it
+       ;; must not block the very forward that synthesized it. Skipping a
+       ;; candidate, not aborting the walk: a genuine competing chain behind a
+       ;; reverse copy is still found and named.
+       (not (handoff-lib/non-forwarding? file))
        (= ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field file "task")))))
 
 (defn- live-parcel-for-ticket
