@@ -1,0 +1,161 @@
+id: BL-1318
+title: "Pack launch refuses to staff a role with a model the steward has not cleared FOR THAT ROLE — global `certified` is not per-role clearance"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-intelligence-layer
+priority: 3
+direction: human-requested
+severity: high
+depends_on: [BL-547]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1318-pack-launch-steward-staffing-gate.feature
+
+human_approval: pending
+approval_context: >
+  The refuse-until-cleared invariant is firm (human directive verbatim in
+  `source:`, plus an explicit "Yes go ahead"). What is NOT settled is the shape
+  of the operator escape hatch. The intake names two forms in the same breath —
+  `--override-uncertified` and "env skip, same spirit as
+  LOCAL_CODER_BATTERY_SKIP_GATE=1" — and they are not equivalent in practice: an
+  env var survives into every child launch and every `./swarm ensure` respawn,
+  which is what makes it convenient for scripted bring-up and also what makes it
+  easy to leave switched on forever; a CLI flag is per-invocation and cannot
+  silently persist, but every wrapper script that relaunches a pack has to be
+  taught to forward it. Pick one (or both) below; the coder builds exactly what
+  is chosen and does not add the other on its own initiative.
+ruling_options:
+  - Env var only - PACK_STAFFING_SKIP_GATE=1, mirroring the BL-1127 precedent exactly
+  - CLI flag only - ./swarm --override-uncertified, per-invocation and never persistent
+  - Both - env var for scripted bring-up, CLI flag for an interactive one-off launch
+
+required_wiring:
+  - "swarmforge/scripts/swarmforge.sh::pack_staffing_gate::the CONSUMER anchor (BL-1235). parse_config's per-window loop already runs validate_agent on every line and is the only code path every pack launch and every materialised .swarmforge/launch/<role>.sh passes through. Anchoring inside the new lib alone would be satisfied by this parcel's own diff and would gate nothing."
+  - "swarmforge/scripts/pack_staffing_gate_lib.bb::seat-staffing-decision::the PURE decision fn every caller shares, so the shell gate and the tests cannot drift into two different rules. Name fixed at mint so the pattern is a literal that will exist (BL-874)."
+
+invariants:
+  - "Every window line reaches an explicit recorded decision — pass, refuse or override. A seat whose provider and model cannot be resolved refuses; nothing is ever staffed by default because the gate had no opinion."
+  - "The gate only READS steward evidence. It never writes the registry, a scorecard or a role matrix, and never runs a compliance battery at launch time."
+  - "An override is never indistinguishable from a pass, in the operator-facing output or in the recorded decision."
+
+description: |
+  ## Gap
+
+  ModelFactory's `assign` / cold-apply / BL-669 failover already consult the
+  steward's `assignment-eligible?` gate. **Pack `window` lines bypass that path
+  entirely** — a pack may pin any `agent`, `--model` and `--openai-api-base`,
+  and `./swarm --pack …` staffs the seat with no steward consult at all.
+
+  And the global `certified` flag is not per-role clearance. Verified on the
+  live registry 2026-08-31: `opencode/nemotron-3-ultra-free` is registry-
+  `certified` on a scorecard whose only passes are `coder-gate`,
+  `opencode-zen-live` and `no-scheduling` — its `QA-gate` reads
+  `human-verdict-pending`, and it appears on the `:coder` role-matrix and on no
+  other. Both Bob packs nonetheless pinned QA to it. Live consequence: the QA
+  seat printed a BL-1303 TASK and then idled / auth-thrashed instead of running
+  `merge_and_process` — the wrong tool sitting the gate role.
+
+  ## Wanted
+
+  Before a launch staffs role R with provider/model M, refuse unless all three
+  hold: M is ranked on R's role-matrix with battery/scorecard evidence; R's
+  compliance gate for M is decided **pass** (not `human-verdict-pending`); and
+  `assignment-eligible?` holds. Refuse **loudly**, naming the role, the resolved
+  provider/model, which check failed, and the steward CLI the operator should
+  run. An operator escape hatch exists (see `ruling_options`) and is loud.
+
+  ## How (direction, not mandate)
+
+  `parse_config` in `swarmforge/scripts/swarmforge.sh` is the live integration
+  point — verified, not assumed: it is the only loop every pack window passes
+  through, it already calls `validate_agent` per line, and the per-role
+  `.swarmforge/launch/<role>.sh` scripts that `rotate_to_role.sh` re-execs are
+  materialised downstream of it. **Gating there therefore covers the mono-router
+  rotate path too, with no second call site** — do not add one.
+
+  A seat's steward identity has to be RESOLVED from the window line, and no
+  existing helper does this: `provider_compat_lib.bb` maps API keys and bases
+  for perplexity/cerebras/qwen only and knows nothing of anthropic, cursor,
+  gemini, deepseek or opencode. The live packs show the shapes that must
+  resolve: `cursor … --model auto` → `cursor/auto`; `claude … --model
+  claude-sonnet-5` → `anthropic/claude-sonnet-5`; and the awkward one,
+  `aider --model openai/qwen3.7-plus --openai-api-base <aliyuncs base>` →
+  `qwen/qwen3.7-plus`, where the registry provider comes from the api-base host,
+  not from the `openai/` prefix. Prefer an explicit, table-driven map seeded
+  from the live packs over inference — and per invariant 1, an entry the table
+  does not cover refuses rather than guessing.
+
+  ## In-parcel deliverables
+
+  - The acceptance step handler for the feature file above, named
+    `bl1318PackStaffingGateSteps`, landed AND registered in
+    `specs/pipeline/steps/index.js` in the same commit (BL-233: an amended
+    contract whose handler lands later turns `main` red for every other parcel).
+  - A how-to cross-linked from the BL-547 and BL-1127 pages.
+
+  ## Not this slice
+
+  - Auto-running the full compliance battery at launch time. Capture stays
+    operator/steward-assigned; this gate only READS evidence (invariant 2).
+  - Recruiter / discovery work. This is a staffing REFUSE, not a new qualify
+    path.
+  - Hand-editing `docs/reference/model-compatibility.md` — it is generated;
+    regen via `model-steward compat-docs`.
+  - Certifying `opencode/nemotron-3-ultra-free` for QA. That is a steward /
+    operator action requiring battery evidence that does not exist, and it is
+    not what this ticket asks for. See `notes:`.
+
+source: |
+  Root intake `backlog/INTAKE-pack-launch-steward-staffing-gate.md` (filed by
+  the human via Cursor 2026-08-31 ~15:16 BST, commit df10a5e4de), drained by the
+  specifier 2026-08-31. Human ask, verbatim:
+
+  > Model steward should certify before a model staffs a swarm role.
+  > Yes go ahead [mint intake + restaff QA off nemotron]
+
+  The intake is the sole source; this is a 1:1 drain, no consolidation.
+
+qa_e2e_procedure: >
+  On a live checkout, take a copy of one Bob pack and edit its QA window to pin
+  `opencode` / `nemotron-3-ultra-free`. Run `./swarm <root> --pack <that copy>`
+  with SWARMFORGE_TERMINAL=none and confirm it refuses before any tmux window
+  exists, and that the refusal text names QA, `opencode/nemotron-3-ultra-free`,
+  the failing check, and a runnable `model-steward` command. Re-run with the
+  escape hatch the human ruled for and confirm it staffs while printing a
+  warning that is visibly not a pass. Then run the shipped
+  `bob-multi-provider-mono-router` and `bob-multi-provider-forge` packs unedited
+  and confirm both parse clean. Finally, `git status` the steward state dir and
+  confirm nothing under `.swarmforge/model-steward/` changed across any of it.
+
+notes: |
+  Severity `high`, not `critical`: the swarm is not down, and the live exposure
+  was mitigated in the same session (df10a5e4de restaffed both Bob packs' QA to
+  `cursor/auto`). It is not `medium` because the mitigation is a hand edit that
+  any future pack or relaunch re-opens — the broken safety signal itself is
+  still unfixed, which is exactly the `high` band. The human filed the intake
+  as "Priority: high".
+
+  `depends_on` names only BL-547 (confirmed in `backlog/done/`). BL-1127 and
+  BL-557 are the shape precedents and their code is landed and read for this
+  spec — `swarmforge/scripts/local_coder_battery_staffing_gate.sh` and the
+  `model_steward_cli.bb` `role-matrix` / `status` / `certify` subcommands all
+  exist on `main` — but neither ticket YAML is in `backlog/done/`, so citing
+  them as `depends_on` would name an unresolvable id.
+
+  Related, and deliberately NOT folded in: the coder's 2026-08-31 bounce of the
+  "certify nemotron for QA" steward note. The specifier adjudicated that as no
+  ticket — the note cited
+  `.swarmforge/operator/NOTE-steward-certify-nemotron-qa-20260831.md`, which the
+  intake claims was "already filed" but which does not exist anywhere in the
+  repo; certification is a steward/operator action, not pipeline work; and on
+  the merits nemotron's QA-gate evidence does not exist to certify against. This
+  ticket is the durable half of that incident.
+
+  IR-DRY on the feature file leaves two reviewed medium-confidence
+  possible-synonym findings, both deliberate: warning-on-override vs refusal
+  wording (the distinction IS the assertion), and the outline placeholder vs its
+  concrete instantiation (same step shape, one handler).
+
+assigned_to: none
