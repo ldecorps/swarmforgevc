@@ -68,6 +68,38 @@ Exhaust the held pool first.
 - Auto-pick (`promote_and_route_next.sh`) still never reads `hold/` — this
   preference is a coordinator/human release order, not a gate change.
 
+**Scope boundary — it governs which pool an OPENING slot pulls from, and
+nothing else (specifier, 2026-08-31).** The directive is a pull-order
+preference. It does not authorise creating an open slot by demoting a ticket
+that is already active, and it says nothing about demotion at all.
+
+- **Never demote a ticket whose parcel is already in flight.** Moving the YAML
+  does not stop, pause, or recall a parcel — no role reads the backlog pool to
+  decide whether to keep working. The demote removes the work from the
+  accounting while it keeps moving, so the cap is not relieved; it is breached
+  silently, and the coordinator then promotes on top of hidden WIP.
+- Before demoting anything, check whether a parcel exists for it: sweep every
+  role inbox (`new` and `in_process`, master **and** worktree) for the task
+  name, and check `git log --all --grep=<id>` for a commit newer than the
+  promotion. An empty `assigned_to:` proves nothing — that field records where
+  the coordinator routed, and goes stale the moment the parcel moves on.
+- A ticket with a live parcel belongs in `active/` for as long as that parcel
+  is in the pipeline, whatever its priority. Article 3.1 defines `active/` as
+  "Items currently in the pipeline"; a parcel sitting at the architect or at QA
+  *is* in the pipeline. Leaving its ticket in `paused/` also breaks post-QA
+  bookkeeping, which closes `active/` → `done/` and would find nothing to move.
+- When the held pool genuinely should be drained first and every slot is busy,
+  the correct response is to **wait for a slot to open**, not to manufacture
+  one. Held work keeps; a half-built parcel does not.
+
+**Incident this came from (2026-08-31 00:45):** BL-1307 and BL-1308 were
+demoted `active/` → `paused/` to free two slots for `hold/`. BL-1308's coder
+was mid-work and committed seven minutes later; the parcel is now at the
+architect. BL-1307's parcel was already complete and parked at QA. Neither
+demote stopped anything: real WIP went from 2 to 4 while the recorded count
+stayed at 2. Both tickets now carry their pipeline state in their own
+`notes:` so this reading cannot recur.
+
 ## Standing human preference (2026-08-25 evening) — finish local Ollama / Qwen epic
 
 **Human directive (Cursor session, 2026-08-25 ~19:31 BST):** prioritize the
