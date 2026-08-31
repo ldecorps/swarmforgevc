@@ -8,3 +8,8 @@ item and decides what (if anything) becomes a real ticket.
 ## The question
 
 Put an anthropic monorouter to implement all the recent model specific tickets
+
+
+## Disposition (2026-08-31)
+
+Executed as ops (not minted): live pack switched to `mono-router` (Anthropic). See `.swarmforge/operator/NOTE-switched-to-anthropic-mono-router-20260831.md`.
