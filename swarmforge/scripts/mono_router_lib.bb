@@ -501,6 +501,38 @@
            (< (- now-ms last-rotate-at-ms) cooldown)) :cooldown
       :else :rotate)))
 
+;; Hotfix 2026-08-31: seated-preferred yield (QA hold / specifier note deadlock).
+;; BL-795 redirect recovers when preferred is NOT seated. When preferred IS
+;; already the live resident (idle with in_process held), redirect loops into
+;; already-active and dependency mail starves forever.
+(defn chase-rotate-decision
+  "Pure redirect gate for handoffd chase-rotate-to!.
+
+   Args: :preferred — preferred-mono-rotate-role (or nil);
+   :poked-role — the role this chase poke is for;
+   :active-role — mono-router-active-role marker (or nil);
+   :poked-actionable? — role-mail-row actionable? for the poked role.
+
+   When preferred equals active-role, do NOT redirect — redirect-to-self
+   is always useless (already-active or same-role respawn), and an idle
+   holder with unreadable live identity must still yield to dependency mail.
+   Live-role is intentionally NOT consulted here (BL-921 already-active
+   gate stays separate on attempt-resident-rotate!).
+
+   Returns {:action :redirect|:skip-broadcast|:rotate :target <role-or-nil>}."
+  [{:keys [preferred poked-role active-role poked-actionable?]}]
+  (cond
+    (and preferred
+         (not= (str preferred) (str poked-role))
+         (not= (str preferred) (str active-role)))
+    {:action :redirect :target preferred}
+
+    (not poked-actionable?)
+    {:action :skip-broadcast :target nil}
+
+    :else
+    {:action :rotate :target poked-role}))
+
 ;; ── BL-576: aged-note actionability ─────────────────────────────────────────
 ;; actionable-mail? deliberately excludes notes so a QA merge-up broadcast
 ;; cannot thrash the resident through five rotations in a row. But design
