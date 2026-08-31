@@ -13,50 +13,26 @@
  * but neither the registration nor the lib. `main` then carried 8 scenarios
  * that all failed with "no step handler matched".
  *
- * This module is the pure assessor. It decides from the TEXT of the tree -
- * it never requires a step file, because requiring the registry executes
- * every handler module and a tree that cannot run is exactly the tree this
- * check is asked about. The two things that made BL-1253's scenarios
- * unrunnable are both statically visible: the registration is a `require`
- * line in the registry, and the lib script is a `path.join(__dirname,
- * 'lib', ...)` reference in the handler.
+ * This module is the pure assessor: it walks the registry graph and decides
+ * which feature files are left unrunnable. It never requires a step file,
+ * because requiring the registry executes every handler module and a tree
+ * that cannot run is exactly the tree this check is asked about. The two
+ * things that made BL-1253's scenarios unrunnable are both statically
+ * visible: the registration is a `require` line in the registry, and the lib
+ * script is a `path.join(__dirname, 'lib', ...)` reference in the handler.
  *
- * IO (listing the tree, reading files, the branch check) stays in
- * check-feature-handler-registration.ts and the shell guard.
+ * Shared constants and types live in featureHandlerRegistrationTypes.ts.
+ * Text-level parsing (require specifiers, sibling-script references, ticket
+ * ids) lives in featureHandlerRegistrationText.ts. Turning the Offender list
+ * into refusal text lives in featureHandlerRegistrationReport.ts. Callers
+ * (check-feature-handler-registration.ts, tests) import each piece from the
+ * module that actually defines it rather than through a re-export barrel
+ * here - narrower interfaces, and it keeps this file's own dependency graph
+ * a one-way fan-out with no cycle back to it.
  */
 
-export const REGISTRY_PATH = 'specs/pipeline/steps/index.js';
-export const STEPS_DIR = 'specs/pipeline/steps';
-export const LIB_DIR = 'specs/pipeline/steps/lib';
-export const FEATURES_DIR = 'specs/features';
-
-export type OffenderKind =
-  | 'unreadable-step-registry'
-  | 'missing-registry-module'
-  | 'unregistered-handler'
-  | 'unreadable-handler'
-  | 'missing-sibling-script';
-
-export type Offender = {
-  kind: OffenderKind;
-  /** The artifact the refusal is about, repo-relative. */
-  path: string;
-  /** The feature file left unrunnable by it, when one is implicated. */
-  feature?: string;
-  /** The registered handler reaching for a missing sibling. */
-  handler?: string;
-};
-
-export type FeatureHandlerTree = {
-  /** Repo-relative paths under specs/features/ ending in .feature. */
-  featureFiles: string[];
-  /** Repo-relative paths of the top-level specs/pipeline/steps/*.js files. */
-  stepFiles: string[];
-  /** Repo-relative paths of everything under specs/pipeline/steps/lib/. */
-  libFiles: string[];
-  /** Text of a repo-relative path, or null when absent or unreadable. */
-  readFile(relativePath: string): string | null;
-};
+import { extractRequiredModules, extractSiblingScripts, featureTicketId, handlerDeclaresTicket } from './featureHandlerRegistrationText';
+import { REGISTRY_PATH, type Offender, type OffenderKind, type FeatureHandlerTree } from './featureHandlerRegistrationTypes';
 
 /** Order offenders are reported in: the registry first, then what it reaches. */
 const KIND_ORDER: OffenderKind[] = [
@@ -67,97 +43,8 @@ const KIND_ORDER: OffenderKind[] = [
   'missing-sibling-script',
 ];
 
-const KIND_LABEL: Record<OffenderKind, string> = {
-  'unreadable-step-registry': 'unreadable step registry',
-  'missing-registry-module': 'missing or unreadable registry module',
-  'unreadable-handler': 'unreadable handler',
-  'unregistered-handler': 'unregistered handler',
-  'missing-sibling-script': 'missing sibling script',
-};
-
-function basename(relativePath: string): string {
-  const parts = relativePath.split('/');
-  return parts[parts.length - 1];
-}
-
-function withJsExtension(name: string): string {
-  return /\.[A-Za-z0-9]+$/.test(name) ? name : `${name}.js`;
-}
-
-/**
- * Blanks out double-quoted strings and template literals before a scan.
- *
- * Step files embed FIXTURE SOURCE as string literals - bl1209's detector
- * fixture writes `"const { mkTmpDir } = require('./helpers/tmpDir');"` into a
- * temp file. That is a require in some other tree, not in this one, and
- * reading it as a registry hop reports a module that was never meant to exist
- * here. Real requires and real lib references in this codebase are written
- * with single quotes, so blanking the other two quoting forms separates the
- * code from the source it carries. A reference hidden in a double-quoted
- * string is therefore not scanned - it can only make this check MISS an
- * offender, never invent one.
- */
-export function withoutEmbeddedSource(text: string): string {
-  return text
-    .replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``')
-    .replace(/"(?:\\[\s\S]|[^"\\])*"/g, '""');
-}
-
-/**
- * Relative `require('./x')` specifiers of one file, resolved against the
- * directory of the file that requires them - a `require('./sibling')` inside
- * steps/lib/ names steps/lib/sibling.js, never steps/sibling.js.
- */
-export function extractRequiredModules(text: string, fromFile: string): string[] {
-  const dir = fromFile.split('/').slice(0, -1).join('/');
-  const found: string[] = [];
-  const re = /require\(\s*'(\.\/[^']+)'\s*\)/g;
-  const source = withoutEmbeddedSource(text);
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(source)) !== null) {
-    found.push(`${dir}/${withJsExtension(match[1].slice(2))}`);
-  }
-  return found;
-}
-
-/**
- * Sibling scripts a handler reaches for under specs/pipeline/steps/lib/.
- *
- * Anchored on `__dirname` (or an explicit `specs/pipeline/steps/lib/` path):
- * `path.join(__dirname, 'lib', 'x.sh')` is a reference to THIS directory's
- * lib, while `path.join(TEST_DIR, 'lib', 'tmp_cleanup.sh')` names a lib
- * somewhere else entirely and must not be resolved here. A lib path named in
- * prose is not a reference either, so the quoted forms are the only ones read.
- */
-export function extractSiblingScripts(text: string): string[] {
-  const found: string[] = [];
-  const fromDirname = /__dirname\s*,\s*'lib'\s*,\s*'([^'/]+)'/g;
-  const fromStepsPath = /'steps'\s*,\s*'lib'\s*,\s*'([^'/]+)'/g;
-  const inline = /'(?:[^']*\/)?specs\/pipeline\/steps\/lib\/([^'/]+)'/g;
-  const source = withoutEmbeddedSource(text);
-  for (const re of [fromDirname, fromStepsPath, inline]) {
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(source)) !== null) {
-      found.push(`${LIB_DIR}/${withJsExtension(match[1])}`);
-    }
-  }
-  return found;
-}
-
-/** The ticket id a feature file's name declares, e.g. "BL-1253". */
-export function featureTicketId(featureFile: string): string | undefined {
-  const match = basename(featureFile).match(/^(BL-\d+)/);
-  return match ? match[1] : undefined;
-}
-
-/**
- * Does this handler file's name declare that ticket? `bl1303...Steps.js`
- * belongs to BL-1303 and never to BL-130 - the digits must end where the
- * ticket's do, or a short ticket id adopts a longer one's handler.
- */
-export function handlerDeclaresTicket(stepFile: string, ticketId: string): boolean {
-  const digits = ticketId.slice('BL-'.length);
-  return new RegExp(`^bl${digits}(?![0-9])`, 'i').test(basename(stepFile));
+function offenderKey(offender: Offender): string {
+  return [offender.kind, offender.path, offender.feature || '', offender.handler || ''].join(' ');
 }
 
 /**
@@ -208,10 +95,6 @@ function walkRegistry(
     }
   }
   return { reachable, registryReadable: true };
-}
-
-function offenderKey(offender: Offender): string {
-  return [offender.kind, offender.path, offender.feature || '', offender.handler || ''].join(' ');
 }
 
 /**
@@ -278,37 +161,4 @@ export function assessFeatureHandlerRegistration(tree: FeatureHandlerTree): Offe
     const byKind = KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind);
     return byKind !== 0 ? byKind : offenderKey(a).localeCompare(offenderKey(b));
   });
-}
-
-export function describeOffender(offender: Offender): string {
-  const label = KIND_LABEL[offender.kind];
-  if (offender.kind === 'unregistered-handler') {
-    return `${label}: ${offender.path} (offending feature file: ${offender.feature})`;
-  }
-  if (offender.kind === 'missing-sibling-script') {
-    return `${label}: ${offender.path} (executed by ${offender.handler})`;
-  }
-  if (offender.kind === 'missing-registry-module') {
-    return `${label}: ${offender.path} (required by ${REGISTRY_PATH})`;
-  }
-  return `${label}: ${offender.path}`;
-}
-
-export function formatFeatureHandlerRefusal(offenders: Offender[]): string {
-  if (offenders.length === 0) {
-    return '';
-  }
-  const lines = [
-    'Commit refused: a feature file would reach `main` with no runnable step handler.',
-    '',
-  ];
-  for (const offender of offenders) {
-    lines.push(`  - ${describeOffender(offender)}`);
-  }
-  lines.push(
-    '',
-    `${offenders.length} offending artifact(s) reported - this pass names every one of them, so there is no second violation waiting for your next attempt (Article 4.4).`,
-    `Remedy: register the handler in ${REGISTRY_PATH}, restore the sibling script it executes, or retire the feature file with them. specs/pipeline/runtime.js throws on any scenario no registered handler matches, so this tree would fail for whichever role runs the suite next.`
-  );
-  return lines.join('\n');
 }
