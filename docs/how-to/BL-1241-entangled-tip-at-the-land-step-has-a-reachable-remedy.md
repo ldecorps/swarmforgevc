@@ -72,6 +72,19 @@ entangled with the other two), running the land step once per ticket
 produces three independent tip-pure replay commits — the sequence
 terminates with all three landable, instead of all three bounced.
 
+## Sibling detection walks full ancestry, not first-parent (BL-1308)
+
+`entangled-siblings`'s candidate walk (`ancestry-commits` in
+`land_step_lib.bb`) covers a commit's FULL ancestry — not a
+`--first-parent` walk. The replay's own-path diff (`:delivered`) diffs a
+merge against its first parent alone, so it can draw content from a
+merge's second parent regardless of who authored it; a `--first-parent`
+detection walk would miss a sibling whose untagged work only reached the
+tip that way, naming other siblings while silently replaying that one's
+files in unreported. `own-commit-changed-paths` and
+`task-tagged-changed-paths` are unaffected by this — only the detector's
+candidate set widened.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
