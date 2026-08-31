@@ -1,5 +1,5 @@
 id: BL-1315
-title: "The replay's own-path set expands a ticket-tagged merge into everything its second parent brought in, so an unlanded sibling's files enter a tip meant to carry one ticket and a verified-green parcel cannot land"
+title: "The replay's own-path set is the tagged merge's first-parent diff rather than the ticket's contribution over origin/main, so a sibling's files enter the tip and the ticket's own files drop out of it, and neither parcel can land"
 milestone: M8
 type: defect
 severity: high
@@ -11,7 +11,7 @@ severity: high
 # is the correct response and it works, and every parcel parks intact.
 status: todo
 epic: swarm-reliability
-priority: 6
+priority: 4
 direction: swarm-reported
 depends_on: [BL-1308]
 # BL-1308 is landed and closed. It widened the DETECTOR and said in its own
@@ -110,14 +110,66 @@ description: |
   In both, the detector named the sibling correctly. The report was right and
   the tip was still wrong.
 
+  ## The same computation drops the ticket's OWN files (2026-08-31, BL-1303)
+
+  The fault above is one face of the defect. The other face is the same
+  `own-paths` call losing content it must keep, and subtraction alone cannot
+  fix it - you cannot subtract your way back to a path that was never in the
+  set.
+
+  `:delivered` answers "what did this merge bring in relative to its FIRST
+  parent". The replay needs "what does this ticket's chain contribute relative
+  to ORIGIN/MAIN". Those two differ exactly when the ticket's own work reached
+  the branch BEFORE its own tagged merge did - which is what a sibling's
+  passenger ride does to it.
+
+  Verified 2026-08-31 on BL-1303's QA tip `ab8d10a8b3`. BL-1303's files rode
+  onto the QA branch on the second parent of `86c2ed1c2d` (QA's merge of
+  documenter BL-1298). By the time QA made its own BL-1303-tagged merge, those
+  files were already on its first parent `467b65f0ff`, so they were not in the
+  diff:
+
+      bb -e '(load-file "swarmforge/scripts/land_step_lib.bb")
+             (land-step-lib/own-paths "." "ab8d10a8b3" "BL-1303")'
+      -> 20 paths - the last hops' delta only
+
+  Absent from those 20: `check-feature-handler-registration.ts`,
+  `featureHandlerRegistrationReport.ts`,
+  `featureHandlerRegistrationText.ts`, `featureHandlerRegistrationTypes.ts`,
+  `bl1303FeatureHandlerRegistrationSteps.js` and its `index.js` registration,
+  and three test files - every one attributable to BL-1303's own commits
+  (`4073795d88`, `1ad04298d3`). PRESENT in those 20:
+  `check_feature_handler_registration.sh`, which shells out to the CLI the
+  replay drops. Landing that tip wires a guard whose `$CHECKER` has no source
+  and fails closed on every subsequent commit and merge to `main`.
+
+  So `86c2ed1c2d` caused BOTH holds at once: BL-1298's replay over-includes
+  those files, BL-1303's under-includes the same ones. Neither parcel can go
+  first, and BL-1298's earlier prediction that the pair self-resolves once
+  BL-1303 lands is falsified. This slice is the only exit; both unpark by
+  re-running `land_step_cli.bb` on the same cited commits, with no re-work.
+
+  This half is invariant 1 restated as a symptom. It is recorded here because
+  an implementation that follows the direction below without it ships all of
+  scenarios 01-05 green while BL-1303 stays unlandable.
+
   ## How (direction, not mandate)
 
   BL-1308 already built the attribution this needs: `ancestry-commits` walks
   the FULL range, `commit-ticket-id` attributes each commit, and `blob-at`
   already decides whether a sibling's content is novel over origin/main or
-  byte-identical to it. The obvious route is to subtract, from the delivered
-  path set, the paths attributable only to a sibling the same run reports as
-  entangled and unlanded. The implementer chooses how.
+  byte-identical to it.
+
+  One route settles both faces, because both come from the base of the set
+  rather than from the subtraction: base the path set on the ticket's
+  contribution across the full `origin/main..tip` range - which is what
+  `ancestry-commits` already walks - instead of on the tagged merge's
+  first-parent diff, and THEN subtract the paths attributable only to a
+  sibling the same run reports as entangled and unlanded. Basing it on the
+  full range restores what the first-parent diff dropped; subtracting removes
+  what it should never have carried. The implementer chooses how, and may
+  reach the same two invariants another way - but a change that only
+  subtracts does not satisfy invariant 1, and scenario 06 is what says so.
 
   ## What NOT to do
 
@@ -153,7 +205,17 @@ qa_e2e_procedure: |
   5. Fail-loud: on a scratch branch, make a commit in the range whose subject
      names no ticket and which touches a path no other commit touches. Re-run:
      expect a refusal naming that path, and no tip advised for push.
-  6. `node specs/pipeline/cli.js specs/features/BL-1315-the-replay-tip-carries-only-the-ticket-being-landed.feature`
+  6. The OTHER face, on the live case that motivated it. Before the change,
+     `bb -e '(load-file "swarmforge/scripts/land_step_lib.bb")
+     (land-step-lib/own-paths "." "ab8d10a8b3" "BL-1303")'` returns 20 paths
+     and none of `extension/src/tools/check-feature-handler-registration.ts`,
+     `specs/pipeline/steps/bl1303FeatureHandlerRegistrationSteps.js` or the
+     three test files - while `git diff --name-only origin/main ab8d10a8b3`
+     DOES contain them. After the change, expect all of them present and
+     `swarmforge/scripts/check_feature_handler_registration.sh` still present,
+     i.e. the guard and the CLI it shells out to land together or not at all.
+     (If BL-1303 has landed by then, this is history - record that and skip.)
+  7. `node specs/pipeline/cli.js specs/features/BL-1315-the-replay-tip-carries-only-the-ticket-being-landed.feature`
      runs every scenario with no "no step handler matched" error.
 
 source: >
@@ -178,6 +240,30 @@ notes: >
   BL-1272, which touches `land_step_lib.bb` for the opposite direction (a
   false POSITIVE on an already-landed sibling). Same file. BL-1309 is a
   different file (`land_main_publish.sh`) and may run concurrently.
+
+  AMENDED 2026-08-31 by the specifier, after QA held BL-1303 on the same
+  computation in the opposite direction (ruling:
+  backlog/evidence/BL-1303-specifier-ruling-qa-hold-upheld-under-include-20260831.md).
+  Widened title, a new description section, scenario 06, e2e step 6, and
+  `priority:` 6 -> 4. This is a DESCRIPTION GAP being closed, not new scope:
+  invariant 1 already forbade the dropped-path outcome, and the amendment
+  makes it executable. Scope stays one function (`own-paths`), one root cause
+  (the base of the path set), one sitting.
+
+  The HUMAN APPROVAL WAS DELIBERATELY NOT RESET, and that is not an oversight
+  to correct later. `human_ruling` reads "narrow the replay tip by attribution,
+  so an entangled parcel can still land its own work" - the amendment adds no
+  fork and makes that clause's second half true, and `approval_context`
+  explicitly recommended "option 1 with both invariants enforced". Re-pending
+  would erase a genuine approval to ask a question already answered.
+
+  ROUTING, for the coordinator: this is a defect in the land step, so a parcel
+  built normally reaches `swarmforge-QA` - the branch already carrying this
+  entanglement - and is held by the very defect it repairs. Route via
+  `swarmforge/scripts/expedite.sh BL-1315 --no-restart`, as BL-1297/BL-1298
+  were. Two hazards to carry in: the expedite path skips the `required_wiring`
+  gate, so verify both anchors by hand; and `--dry-run` is not dry once
+  `.worktrees/expedite-BL-1315` exists.
 
   IR-DRY, resolved not ignored: the checker's remaining medium findings pair a
   step written with a placeholder in an outline against the same step written

@@ -18,6 +18,17 @@ Feature: A replay tip adds only the content of the ticket being landed
   Twice in two days a verified-green parcel was held rather than landed:
   BL-1307 over BL-1300 on 2026-08-30, BL-1298 over BL-1303 on 2026-08-31.
 
+  The same computation loses the ticket's OWN content, for the same reason.
+  :delivered answers "what did this merge bring in relative to its FIRST
+  parent"; the replay needs "what does this ticket's chain contribute relative
+  to origin/main". When the ticket's own work reached the branch BEFORE its own
+  tagged merge - which is what a sibling's passenger ride does to it - the
+  first-parent diff no longer holds it and the replay drops it. On 2026-08-31
+  the one event, QA's merge 86c2ed1c2d, caused both holds at once: BL-1298's
+  replay over-included BL-1303's files and BL-1303's replay under-included the
+  same ones. Subtraction alone cannot fix the second face - a path that was
+  never in the set cannot be subtracted back into it.
+
   Background:
     Given a QA tip whose ticket-tagged merge imports a role branch
     And the sibling detector reports every ticket that branch carries
@@ -61,3 +72,11 @@ Feature: A replay tip adds only the content of the ticket being landed
     Given the imported branch carries content of no other ticket
     When the replay builds its tip
     Then the tip is unchanged from the full delivered set
+
+  # BL-1315 replay-tip-carries-only-the-landed-ticket-06
+  Scenario: Content that reached the branch before the ticket's own merge still lands
+    Given the landed ticket's content reached the branch on an earlier sibling's merge
+    And the ticket's own ticket-tagged merge therefore adds none of it
+    When the replay builds its tip
+    Then the tip still adds every path the landed ticket's own chain delivered
+    And the tip is not limited to what the ticket-tagged merge added over its first parent
