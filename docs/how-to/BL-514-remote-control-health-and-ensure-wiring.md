@@ -235,7 +235,52 @@ This slice deliberately does not touch what a *newly written* launch script
 contains — a pack flipped to `off` today keeps its already-written scripts
 carrying `--remote-control`, they're just no longer treated as desired
 state. Stripping the flag at write time is the sibling ticket BL-1218 (same
-source intake, direction 1); landing both is the intake's hybrid.
+source intake, direction 1) — landed, see below; landing both is the
+intake's hybrid.
+
+## New: `config remote_control off` decides the launched flag itself, not just auto-inject (BL-1218)
+
+Before this, `config remote_control on|off` governed only auto-INJECT: a
+Claude window line that omitted `--remote-control` got one added when the
+default was on and none when it was off — but a window line that **named**
+the flag explicitly was never consulted about the config at all. Both the
+standing `swarmforge.conf` and `packs/full-forge.conf` name
+`--remote-control` explicitly on every Claude window line, so on exactly
+the packs a human is most likely to be running, `remote_control off`
+switched nothing off: the seats still launched with remote control, still
+registered cloud sessions, and the persisted launch script — the artifact
+BL-1217 above now reads as desired state — still recorded the flag.
+
+The decision now lives in one place, `resolve_remote_control_cli`
+(`swarmforge/scripts/remote_control_launch_lib.sh`, sourced by
+`swarmforge.sh`, a pure string transform so it is asserted directly rather
+than only observed through a written script):
+
+- **Non-Claude seat** — untouched; non-Claude seats have no remote control
+  to govern (BL-1108).
+- **`config remote_control` on (or absent)** — byte-for-byte today's
+  composition: a window line that already names `--remote-control` keeps
+  it exactly where it was; a line with no flag gets one appended the way
+  `extra_cli+=" --remote-control"` always appended it.
+- **`config remote_control off`** — no `--remote-control` flag survives in
+  the composed line, whatever the window line said. `rc_strip_remote_control_flag`
+  removes the flag and, when present, the session-name token that follows
+  it (a following token starting with `-` is a different flag and is kept).
+
+Together with BL-1217, a persisted launch script now never disagrees with
+the config that was effective when it was written: BL-1218 makes what gets
+**written** honor config off at launch time; BL-1217 makes what gets
+**read** by health/repair honor config off for scripts already on disk.
+Neither slice rewrites an already-written script when config flips — a
+pack switched to `off` mid-run keeps its currently-running seats' scripts
+as-is until each is next relaunched; BL-1217 is what keeps the health
+check from treating that stale script as desired state in the meantime.
+
+The lib is sourced by `zsh` (`swarmforge.sh`) and tested under `bash`
+(`test_remote_control_launch_lib.sh`), so it uses a `sed`-based transform
+rather than a token loop over an unquoted parameter — the same word-split
+hazard BL-801 names elsewhere, since zsh does not split an unquoted
+parameter on whitespace the way bash does.
 
 ## Related
 
