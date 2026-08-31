@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 31, 2026 (BL-1210: every Telegram topic kind keeps
+its icon ownership marker again, closing a two-day-old (2026-08-25–27)
+regression BL-695 introduced. BL-695's classification split
+(`topicThreadKind.ts`) correctly restricted git-tracked
+`backlog/topics/*.json` records to `ticket` ids, but its marker-store
+change went further than the tracked-record boundary required:
+`recordSwarmIconId` only had a durable store for `ticket` and `supervisor`
+kinds, so a marker write for an `epic`, `standing`, or `role` id (all
+classify `unbound`) silently wrote nothing — while `syncTopicIcon` still
+reported `updated`. No live icon behaviour broke (every epic/standing/role
+caller passes `isNewTopic=true`, bypassing the ownership check the marker
+feeds), but the marker was inert for 3 of 4 topic kinds and every such sync
+wrote a fail-closed line to stderr — a trap for any future caller that
+passes `isNewTopic=false`. Fixed with a second untracked store,
+`.swarmforge/topic-icons.json`, shared by epic/standing/role ids
+(supervisor keeps its own separate `.swarmforge/supervisor-topic-icons.json`,
+filename unchanged). `recordSwarmIconId` now returns `'recorded' |
+'refused'` explicitly — a blank id is `refused` outright, no store may key
+a marker by an empty string — and `syncTopicIcon` gains the
+`'icon-set-marker-unrecorded'` outcome for anything that isn't `'recorded'`,
+rather than claiming `'updated'`. The tracked-record boundary itself is
+untouched: no epic/standing/role id can write under `backlog/topics/`
+either way. Both declared invariants are property tests with an asserted
+generator-reach floor over all six id kinds. This parcel's code landed on
+`main` on 2026-08-30 as a passenger of entangled merges before reaching a
+QA gate — the coder/cleaner/architect/hardener chain was already complete
+and unchanged, verified byte-identical at this pass, and the No-Op Rule
+(Article 1.9/2.3.2) applied: no functional commit was forwarded, only doc
+and QA remained. See `docs/how-to/BL-695-supervisor-threads-are-not-front-desk-topics.md`
+"Update: epic/standing/role icon markers were silently dropped, now fixed"
+section. Acceptance:
+`specs/features/BL-1210-icon-ownership-marker-survives-the-tracked-record-boundary.feature`.)
+Prior entry —
 **Last Updated:** August 31, 2026 (BL-1218: `config remote_control off` now
 decides the launched flag itself, not merely whether one is auto-injected.
 Before this, `remote_control on|off` governed only auto-inject: a Claude
