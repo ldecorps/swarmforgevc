@@ -32,7 +32,9 @@ invariants:
   - "No path the landed ticket's own chain delivered is ever dropped from the replay tip, whichever role authored it and whether or not that role's commit names the ticket."
   - "A path is excluded only on positive attribution to another ticket that is unlanded. An attribution that cannot be read refuses the land - it never silently narrows the tip."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  option 1 - narrow the replay tip by attribution, so an entangled parcel can still land its own work
 ruling_options:
   - option 1 - narrow the replay tip by attribution, so an entangled parcel can still land its own work
   - option 2 - do not narrow anything; accept that an entangled tip waits for its sibling, and let BL-1309 block it loudly
