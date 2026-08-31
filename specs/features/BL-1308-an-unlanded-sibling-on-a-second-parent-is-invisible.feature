@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=af30cb93f76ff0467a9e52035797d05e158ce4ca3b24b7fec9012244ebe91d48
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-31T00:11:24.513548065Z","feature_name":"An unlanded sibling reached only through a merge's second parent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature","background_hash":"212826b91bef58bd2964debb3570c00459183cd24794056bb53344f1e6d303f4","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A sibling is named wherever its commits sit in the ancestry","scenario_hash":"5ea88299c6bbdc6730cd2d9cd787e151dd39cfd6419fa9f0378e1c0864be3685","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-31T00:11:24.513548065Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: An unlanded sibling reached only through a merge's second parent
 
   BL-1241 gave the land step a remedy for an entangled tip: name the sibling
