@@ -517,6 +517,17 @@ Mechanics (`duplicate_chain_guard_lib.bb`):
   deterministic (`roles.tsv` order, then `new/` before `in_process/`, then
   filename order), so a genuine duplicate reports the same blocker every
   time.
+- **A `non-forwarding: true` parcel is skipped, not counted** (BL-1302). A
+  `back-one`/`back-all` reverse hop (2.3 "Reverse hops") plants exactly this
+  marker in one or more earlier mailboxes on every ordinary forward; its
+  recipient is merge-only (Article 2.4) and can never start a competing
+  chain, so it must not block the very forward that synthesized it. The
+  check is `handoff-lib/non-forwarding?`, the one shared spelling of the
+  marker test (also used by `swarm_handoff.bb`'s `inbound-non-forwarding?`
+  send-time refusal) — absence of the marker, or any value other than the
+  literal `true`, fails closed and the parcel still counts as a blocker.
+  Skipping a candidate does not stop the walk: a genuine competing chain
+  sitting behind a reverse copy is still found and named.
 - **The sender's own mailbox is excluded.** The sender is the holder, and its
   inbound parcel is by definition the one it is acting on — this is what
   keeps every ordinary forward legal.

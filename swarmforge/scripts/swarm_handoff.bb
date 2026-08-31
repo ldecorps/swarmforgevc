@@ -802,7 +802,9 @@
 
 (defn inbound-non-forwarding? []
   (boolean
-    (some #(= "true" (handoff-lib/header-field % "non-forwarding"))
+    ;; BL-1302: one spelling of the marker check, shared with the
+    ;; duplicate-chain guard (handoff-lib/non-forwarding?).
+    (some handoff-lib/non-forwarding?
           (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
 
 (defn sha256 [text]
