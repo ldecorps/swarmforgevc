@@ -29,6 +29,15 @@ ancestors of this worktree's HEAD and `origin/main` before this pass began.
 Commit: `c681bcd05b` "BL-1225: document the sync-restart audit-trail
 fixes."
 
+## Self-audit finding, fixed
+
+The `swarm_handoff.sh` self-audit challenge caught a real defect: the docs
+wrote the audit-log caller value as `build-freshness-lib/daemon-start-caller`
+(the Clojure var's qualified name) instead of its actual string value
+`build_freshness_cli` (`(def daemon-start-caller "build_freshness_cli")` in
+`build_freshness_lib.bb:206`). Fixed across the how-to, `docs/index.md`,
+and `Specification.MD` in `4256c4479c`.
+
 ## Disposition
 
 Forwarding `git_handoff` to QA, priority `00`, task
