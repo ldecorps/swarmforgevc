@@ -33,12 +33,13 @@ line — but nothing ever set the variable, so every daemon start audited as
 meant correlating timestamps by hand against when a sync ran.
 
 `restart-handoffd-group!` now passes
-`SWARMFORGE_DAEMON_START_CALLER=build-freshness-lib/daemon-start-caller`
-as extra environment to `start_handoff_daemon.sh`, so the resulting audit
-line reads:
+`SWARMFORGE_DAEMON_START_CALLER=build_freshness_cli` (the value of
+`build-freshness-lib/daemon-start-caller`, a shared constant rather than a
+duplicated literal) as extra environment to `start_handoff_daemon.sh`, so
+the resulting audit line reads:
 
 ```
-start_handoff_daemon invoked root=<root> pid=<pid> SKIP_DAEMON= caller=build-freshness-lib/daemon-start-caller
+start_handoff_daemon invoked root=<root> pid=<pid> SKIP_DAEMON= caller=build_freshness_cli
 ```
 
 Only the sync's own start sets it — a `start_handoff_daemon.sh` invocation
@@ -60,7 +61,7 @@ audits as `caller=unknown`, so the label means something when you see it.
 | Piece | Location |
 | --- | --- |
 | Spawn-opts helper | `build-freshness-lib/operator-log-spawn-opts` (`swarmforge/scripts/build_freshness_lib.bb`) |
-| Caller constant | `build-freshness-lib/daemon-start-caller` (`swarmforge/scripts/build_freshness_lib.bb`) |
+| Caller constant | `build-freshness-lib/daemon-start-caller` = `"build_freshness_cli"` (`swarmforge/scripts/build_freshness_lib.bb`) |
 | Wired from | `restart-operator-group!` / `restart-handoffd-group!` (`swarmforge/scripts/build_freshness_cli.bb`) |
 | Acceptance | `specs/features/BL-1225-sync-initiated-restart-leaves-a-readable-trail.feature` |
 

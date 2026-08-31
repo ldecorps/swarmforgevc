@@ -10,8 +10,9 @@ The spawn now goes through the new pure
 `build-freshness-lib/operator-log-spawn-opts` (`build_freshness_lib.bb`),
 which appends, matching `start_operator_runtime.sh`'s own `>>`.
 `restart-handoffd-group!` now passes
-`SWARMFORGE_DAEMON_START_CALLER=build-freshness-lib/daemon-start-caller` as
-extra environment to `start_handoff_daemon.sh`, which has always read and
+`SWARMFORGE_DAEMON_START_CALLER=build_freshness_cli` (the value of the new
+`build-freshness-lib/daemon-start-caller` constant) as extra environment to
+`start_handoff_daemon.sh`, which has always read and
 printed that variable into `.swarmforge/daemon/daemon-start-audit.log` but
 had nothing setting it — every sync-initiated daemon start previously
 audited as `caller=unknown`, forcing a by-hand timestamp correlation during
