@@ -6,7 +6,7 @@ type: epic
 epic: multi-seat-stages
 priority: 26
 depends_on: []
-decomposes_into: [BL-982, BL-983, BL-1001, BL-1004, BL-1040]
+decomposes_into: [BL-982, BL-983, BL-1001, BL-1004, BL-1040, BL-1316]
 
 remaining_slices:
   - "Difficulty-aware routing among seats of a stage: map a ticket difficulty

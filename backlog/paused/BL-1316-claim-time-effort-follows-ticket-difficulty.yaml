@@ -1,0 +1,71 @@
+id: BL-1316
+title: "A seat's reasoning effort cranks or shrinks to the claimed ticket's mutation_cost — hard work thinks harder, easy work does not burn the same budget"
+milestone: M8
+type: feature
+status: todo
+epic: multi-seat-stages
+priority: 8
+direction: human-requested
+severity: medium
+depends_on: [BL-236, BL-1001, BL-235]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1316-claim-time-effort-follows-ticket-difficulty.feature
+
+human_approval: approved
+approval_context: >
+  Human via Cursor 2026-08-31: after pinning Composer (Cursor) / cheap models
+  (Copilot) on pack seats, asked to push the tickets that force a worker to
+  adapt its reasoning to the incoming ticket's difficulty. BL-1001 only picks
+  the seat; BL-236 Suggest only sets a static per-role dial. This ticket is
+  the missing claim-time lever. Approved for promote when depth allows.
+
+required_wiring:
+  - "swarmforge/scripts/seat_difficulty_lib.bb::effort-for-mutation-cost::the PURE map from mutation_cost to an effort token; claim sites call it rather than inventing a second table. Name fixed at mint so the pattern is a literal that will exist (BL-874)."
+  - "swarmforge/scripts/handoff_lib.bb::apply-claim-effort!::the CONSUMER anchor (BL-1235). Claim / ready-for-next paths already decide which ticket a seat holds; the effort apply must ride that same moment, not a later optional tick. Anchoring only inside seat_difficulty_lib would be satisfied by the parcel's own diff."
+
+invariants:
+  - "A ticket's mutation_cost is the only difficulty signal this slice reads for effort — never seat name, never idle time, never a second schema field."
+  - "A backend with no effort lever never receives an unsupported CLI flag; claim still succeeds."
+  - "Effort from a previous claim does not stick after the next claim; each claim retunes or restores the pack default when mutation_cost is absent."
+
+description: |
+  ## Gap
+
+  BL-1001 routes by difficulty to a seat. BL-236 Suggest proposes a per-ROLE
+  effort at swarm start. Neither retunes reasoning when THIS ticket arrives.
+  On a Composer-everywhere / Haiku-everywhere pack that is the whole cost
+  story: every ticket burns the same thinking budget.
+
+  ## Wanted
+
+  At claim (and reclaim) time, map `mutation_cost` → reasoning effort and
+  apply it on backends that expose the lever (Claude `--effort`, Cursor
+  effort-bearing model ids / params, Copilot when the CLI accepts an effort
+  equivalent). Missing `mutation_cost` → leave pack default. No lever → skip
+  apply, never invent flags.
+
+  ## Not this slice
+
+  - BL-1001 seat pick (already landed).
+  - BL-236 Adapt/Auto autonomy tiers (bounce-driven escalate) — sibling
+    BL-1317 if minted; do not fold in here.
+  - BL-545 economic descent ladder (periodic seat-wide notch) — different
+    cadence; stays on the epic's remaining_slices until separately minted.
+
+source: |
+  Human via Cursor chat 2026-08-31 ~10:33–10:37 BST: asked where the ticket
+  is that forces the worker to adapt reasoning to incoming ticket difficulty,
+  then "push all these tickets that will enable reasoning to crank or shrink
+  depending on difficulty." Closest landed pieces named in that thread:
+  BL-1001 (seat), BL-236 (per-role Suggest), BL-545 remaining descent ladder,
+  BL-981 epic. This mint is the claim-time gap those do not cover.
+
+notes: |
+  Epic tag `multi-seat-stages` because it consumes the same `mutation_cost`
+  signal BL-1001 already standardised for seats; not a ModelFactory assignment.
+  Update BL-981 remaining_slices / BL-545 notes only if documenter pass asks —
+  do not block this slice on epic YAML edits.
+
+assigned_to: specifier
