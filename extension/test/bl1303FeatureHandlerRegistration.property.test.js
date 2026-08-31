@@ -2,11 +2,9 @@
 
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const {
-  assessFeatureHandlerRegistration,
-  formatFeatureHandlerRefusal,
-  REGISTRY_PATH,
-} = require('../out/tools/featureHandlerRegistrationCheck');
+const { assessFeatureHandlerRegistration } = require('../out/tools/featureHandlerRegistrationCheck');
+const { formatFeatureHandlerRefusal } = require('../out/tools/featureHandlerRegistrationReport');
+const { REGISTRY_PATH } = require('../out/tools/featureHandlerRegistrationTypes');
 
 // BL-1303's two declared invariants (backlog/active/BL-1303-...yaml), encoded
 // on the pure assessor the guard delegates to. Coder-authored per BL-654;

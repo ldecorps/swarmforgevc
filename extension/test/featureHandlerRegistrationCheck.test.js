@@ -1,11 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const {
-  assessFeatureHandlerRegistration,
-  formatFeatureHandlerRefusal,
-  REGISTRY_PATH,
-} = require('../out/tools/featureHandlerRegistrationCheck');
+const { assessFeatureHandlerRegistration } = require('../out/tools/featureHandlerRegistrationCheck');
+const { formatFeatureHandlerRefusal } = require('../out/tools/featureHandlerRegistrationReport');
+const { REGISTRY_PATH } = require('../out/tools/featureHandlerRegistrationTypes');
 
 // BL-1303: specs/pipeline/runtime.js throws on any scenario whose steps no
 // registered handler matches, so a feature file can reach `main` carrying

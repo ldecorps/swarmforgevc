@@ -16,14 +16,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import {
-  assessFeatureHandlerRegistration,
-  formatFeatureHandlerRefusal,
-  FeatureHandlerTree,
-  FEATURES_DIR,
-  LIB_DIR,
-  STEPS_DIR,
-} from './featureHandlerRegistrationCheck';
+import { assessFeatureHandlerRegistration } from './featureHandlerRegistrationCheck';
+import { formatFeatureHandlerRefusal } from './featureHandlerRegistrationReport';
+import { FeatureHandlerTree, FEATURES_DIR, LIB_DIR, STEPS_DIR } from './featureHandlerRegistrationTypes';
 
 export type CheckIo = {
   /** Names directly in a repo-relative directory; [] when it does not exist. */
