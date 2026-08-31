@@ -1,5 +1,56 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 31, 2026 (BL-1308: the land step's sibling detector
+now walks a commit's FULL ancestry, not just `--first-parent`, so it can
+name every ticket the replay's own-path diff can draw content from.
+`ancestry-commits` (`land_step_lib.bb`) fed `entangled-siblings` its
+candidates from `git rev-list --first-parent <base>..<commit>`, while the
+replay's own-path set (`own-commit-changed-paths`'s `:delivered`, fixed by
+BL-1297) diffs a merge against its first parent alone — a real two-tree
+diff that returns everything the merge's SECOND parent carried, regardless
+of author. A `--first-parent` walk never reaches a commit sitting only on
+a second parent, so a sibling ticket whose untagged work rode into a
+forward-merge that way had its paths enter the replay tip while its id
+never reached the sibling report — the detector under-included in exactly
+the place the path set over-includes. Observed live 2026-08-30 on BL-1307's
+documenter tip `bd27e884cb`: the report named BL-1288/1293/1299 and never
+BL-1300, whose four files (including
+`extension/test/bl1300HeadroomProofIsPinned.test.js`, absent from
+`origin/main`) were present in the replay while `human_approval: pending`
+was still open on the BL-1300 ticket. `ancestry-commits` now runs plain
+`git rev-list <base>..<commit>` (full ancestry); `own-commit-changed-paths`
+and `task-tagged-changed-paths` are untouched, so the replay still
+reproduces exactly what the parcel put on the branch — only detection
+widened. Acceptance:
+`specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature`.)
+Prior entry —
+**Last Updated:** August 31, 2026 (BL-1307: the review-forward evidence gate
+now refuses a forward that carries content but none of it is the sender's
+own Article 4.4 review evidence for the task — closing the gap BL-806 and
+BL-1293 leave open when a review role resolves a merge conflict mechanically
+while merging its predecessor's work, since a conflict resolution is
+non-empty content that satisfies both older gates while containing no review
+output at all. Proven live on `b7d22b9ee3`, the architect's BL-1224 forward:
+an 8-line conflict resolution in `specs/pipeline/steps/index.js` passes
+BL-806 (not a same-commit forward) and BL-1293 (not a bare merge introducing
+nothing), yet QA's own bounce found no `BL-1224-architect-*.md` anywhere in
+history — the architect's pass never happened, and neither existing gate
+could tell. New `forward-carries-own-evidence?`
+(`review_forward_evidence_gate_lib.bb`) reads `git diff --name-only
+--diff-filter=AM` over the range `received-commit..commit` and asks whether
+any added/modified path is this task's own `backlog/evidence/<ticket-id>-*`
+file; `blocked?` refuses only on an explicit `false` (the range was readable
+and added no such file), leaving every unreadable-range, missing-ticket-id,
+or blank-commit shape to fail open exactly as BL-806 established. Range, not
+commit: a role that commits its evidence and then merges before forwarding
+still passes, since the evidence commit is inside the range. Task, not role:
+the match is on the ticket id in the filename, so a batch role forwarding
+one of several in-process tasks is judged on the evidence for the task it is
+actually forwarding, not on its own role name. See the widened
+"Review-Forward Evidence Gate (BL-806, widened by BL-950, BL-1307)" section
+in `swarmforge/handoff-protocol.md`. Acceptance:
+`specs/features/BL-1307-a-review-forward-adds-evidence-the-role-authored.feature`.)
+Prior entry —
 **Last Updated:** August 30, 2026 (BL-1297: a merge commit's own changed
 paths no longer come back empty, which had let the send-time scope gate,
 the unregistered-test gate, and the land step's tip-pure replay all fail

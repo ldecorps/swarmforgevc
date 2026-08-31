@@ -1401,7 +1401,7 @@ the other holder(s).
 Acceptance:
 `specs/features/BL-1105-a-duplicate-ticket-id-is-refused-at-mint.feature`.
 
-## Review-Forward Evidence Gate (BL-806, widened by BL-950)
+## Review-Forward Evidence Gate (BL-806, widened by BL-950, BL-1307)
 
 A structural backstop for Article 4.4's "commit your explicit-NONE evidence
 (or your fix) and forward THAT commit" — a clean review pass that leaves no
@@ -1485,6 +1485,57 @@ approval naming the commit QA actually made all pass through exactly as
 before — only a same-commit approval to the coordinator is new-refused.
 QA's integration send (landing on `main`, pushing origin) remains excluded,
 for the same entangles-integration-mechanics reason BL-806 gave.
+
+### A forward must carry its OWN review evidence, not just any content (BL-1307)
+
+BL-806 refuses a same-commit forward; a sibling gate refuses a bare merge
+that introduces nothing over its parents. Neither asks whether the role
+produced anything — a forward that carries incidental bytes (most commonly
+a merge conflict the role resolved mechanically while merging its
+predecessor's work) satisfies both while containing no review output at
+all. `b7d22b9ee3`, the architect's BL-1224 forward, is the shape that
+proved this: an 8-line conflict resolution in `specs/pipeline/steps/index.js`
+is non-empty content, so both older facts pass it, but QA's own bounce
+(`backlog/evidence/BL-1224-bounce-20260830.md`) established that no
+`BL-1224-architect-*.md` existed anywhere in history — the architect's pass
+never happened, and nothing structural could tell.
+
+`blocked?` gains a third fact, `carries-own-evidence?`, read the same
+explicit-true/explicit-false way as the other two — only an explicit
+**false** refuses; **nil** (the range was unreadable, the task name carried
+no ticket id, or either commit was blank) leaves the send alone, same
+fail-open posture BL-806 established. The fact itself
+(`forward-carries-own-evidence?`) reads `git diff --name-only
+--diff-filter=AM` over the range `received-commit..commit` and asks whether
+any added or modified path is this task's own `backlog/evidence/<ticket-id>-*`
+file — Article 4.4's required artifact, one evidence file per review pass
+(an explicit committed `NONE` for a clean sweep is a legitimate pass and
+satisfies it). Range, not commit: a role that commits its evidence and then
+merges before forwarding still passes, because the evidence commit is inside
+the range. Task, not role: the check matches the ticket id in the filename,
+not the sender's role name, so a batch role forwarding one of several
+in-process tasks is judged on the evidence for the task it is actually
+forwarding.
+
+A refusal names the role, the task, the evidence path to commit, and the
+`reroute_reason` escape hatch, e.g.:
+```
+Cannot send git_handoff for <task>: commit <hash> carries content, but
+nothing it adds over the commit <hash> received for this task is <role>'s
+review evidence - and a resolved merge conflict is not a review pass.
+Article 4.4 requires one evidence file per review pass: commit
+backlog/evidence/<ticket-id>-<role>-<date>.md with items D1..Dn, or an
+explicit NONE when the sweep found no defect, and forward THAT commit. If
+<role> legitimately cannot act on this parcel, route it onward with a
+reroute_reason instead.
+```
+Implementation: `forward-carries-own-evidence?` in
+`review_forward_evidence_gate_lib.bb`, the third fs-touching function in the
+file alongside `received-commit-for-task` and
+`forward-introduces-nothing-own?`; `blocked?` itself stays a pure decision
+over booleans. Wired live into `swarm_handoff.bb`'s validate path, which
+computes the received commit once and reuses it for both the sibling gate's
+lookup and this one.
 
 ## Dynamic Routing via Specifier-Declared required_stages (BL-606)
 
