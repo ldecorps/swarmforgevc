@@ -905,7 +905,8 @@ const DOMAINS = [
   require('./bl1272LandedSiblingSteps'),
   require('./bl1183BobGoLiveGateSteps'),
   require('./bl1299ReverseHopMasterResidentSteps'),
-  require('./bl1308SiblingDetectorCoversReplaySteps')
+  require('./bl1308SiblingDetectorCoversReplaySteps'),
+  require('./bl1303FeatureHandlerRegistrationSteps')
 ];
 
 function registerSteps(registry) {
