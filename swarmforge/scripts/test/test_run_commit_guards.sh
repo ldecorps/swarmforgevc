@@ -40,7 +40,7 @@ STUB
   chmod +x "$GUARDS/$name"
 }
 
-ALL_GUARDS="check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_property_suite_drift.sh"
+ALL_GUARDS="check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_feature_handler_registration.sh check_property_suite_drift.sh"
 
 reset_fixture() {
   rm -rf "$GUARDS" "$RAN"
@@ -90,19 +90,29 @@ names check_commit_size.sh || fail "03: refusal omitted check_commit_size.sh: $O
 names check_ticket_deletion.sh || fail "03: refusal omitted check_ticket_deletion.sh: $OUT"
 pass "03 two violations are both run and both named in ONE refusal"
 
-# ── case 04: all three index guards refuse ──────────────────────────────────
+# ── case 04: every cheap guard refuses ──────────────────────────────────────
 reset_fixture
 set_exit check_commit_size.sh 1
 set_exit check_ticket_deletion.sh 1
 set_exit check_pipeline_code_on_main.sh 1
+set_exit check_feature_handler_registration.sh 1
 run_runner
-[ "$STATUS" -ne 0 ] || fail "04: a triply-violating commit was allowed"
-for g in check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh; do
+[ "$STATUS" -ne 0 ] || fail "04: a quadruply-violating commit was allowed"
+for g in check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_feature_handler_registration.sh; do
   ran "$g" || fail "04: $g never ran"
   names "$g" || fail "04: refusal omitted $g: $OUT"
 done
 ran check_property_suite_drift.sh && fail "04: the expensive tier was paid for a refused commit"
-pass "04 all three index violations appear in one refusal"
+pass "04 every cheap-tier violation appears in one refusal"
+
+# ── case 04b: BL-1303's guard is in the CHEAP tier, so an earlier refusal ────
+#    never stops it running - the completeness the tier exists for.
+reset_fixture
+set_exit check_commit_size.sh 1
+run_runner
+ran check_feature_handler_registration.sh \
+  || fail "04b: an earlier refusal skipped the feature-handler guard - it is not in the cheap tier"
+pass "04b the feature-handler guard runs even when an earlier cheap guard refuses"
 
 # ── case 05: a later guard refuses while earlier ones pass ──────────────────
 reset_fixture
@@ -131,7 +141,7 @@ run_runner
 names check_ticket_deletion.sh || fail "07: refusal did not name the missing guard: $OUT"
 pass "07 a missing guard script refuses the commit and is named"
 
-# ── case 08: the expensive guard still refuses when the cheap three pass ────
+# ── case 08: the expensive guard still refuses when the cheap ones pass ─────
 reset_fixture
 set_exit check_property_suite_drift.sh 1
 run_runner
@@ -153,7 +163,7 @@ pass "09 guard order is preserved in the report"
 # ── case 10: the hook actually INVOKES the runner (BL-419 wiring) ───────────
 HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
 grep -q 'run_commit_guards.sh' "$HOOK" || fail "10: pre-commit does not invoke run_commit_guards.sh"
-grep -qE '^\s*"\$REPO_ROOT/swarmforge/scripts/check_(commit_size|ticket_deletion|pipeline_code_on_main|property_suite_drift)\.sh"' "$HOOK" \
+grep -qE '^\s*"\$REPO_ROOT/swarmforge/scripts/check_(commit_size|ticket_deletion|pipeline_code_on_main|feature_handler_registration|property_suite_drift)\.sh"' "$HOOK" \
   && fail "10: pre-commit still calls a guard directly, bypassing the runner"
 pass "10 the pre-commit hook delegates to run_commit_guards.sh"
 

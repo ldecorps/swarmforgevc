@@ -229,6 +229,7 @@ test_build_freshness_cli.sh	standing
 test_cache_warm_lib.sh	standing		
 test_chase_sweep.sh	standing		
 test_check_branch_namespace.sh	standing		
+test_check_feature_handler_registration.sh	standing		
 test_claim_progress_sweep.sh	standing		
 test_clear_identical_untracked_and_merge.sh	standing		
 test_commit_integrity_cli.sh	standing		
