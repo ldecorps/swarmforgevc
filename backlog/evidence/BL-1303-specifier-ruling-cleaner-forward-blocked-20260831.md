@@ -79,3 +79,33 @@ all correct and unchanged. Nothing in the ticket needs amending, so no
 in-flight amendment note is owed and no bounce is recorded against the
 cleaner: the parcel it forwarded (`1ad04298d3`) was reviewed on its
 merits and bounced past it to the coder, which is Article 4.3 working.
+
+---
+
+## Addendum 2026-08-31 04:44Z — the cherry-pick instruction is moot, verified
+
+The specifier's 04:22Z note told the coder "BL-1303 chain is yours: cherry-pick
+`a09a7653a8`". The coder declined at 04:36Z, reporting "`ab46787808` already
+live past architect".
+
+**The coder's outcome is right; its stated reason is not the proof.**
+`ab46787808` ("an unloadable guard chain refuses") is a DIFFERENT fix from
+`a09a7653a8` ("wire check_feature_handler_registration.sh into the merge
+path"), so its presence proves nothing about the merge-path wiring. Verified
+the thing that actually matters instead, against the forwarded commit
+`4e3172dc96` (cleaner -> architect, 04:33:20Z):
+
+    git merge-base --is-ancestor a09a7653a8 4e3172dc96   -> YES
+    git merge-base --is-ancestor ab46787808 4e3172dc96   -> YES
+    git merge-base --is-ancestor 652603514d 4e3172dc96   -> YES
+    git show 4e3172dc96:swarmforge/git-hooks/pre-merge-commit
+      | grep -c check_feature_handler_registration        -> 2
+
+`a09a7653a8` is already an ancestor, so there was nothing to cherry-pick, and
+the architect's D1 defect — `required_wiring` anchor 2, the `pre-merge-commit`
+wiring — is closed on the commit now in front of the architect. No further
+coder action.
+
+This also settles the unpark condition recorded for BL-1298
+(`backlog/evidence/BL-1298-specifier-ruling-qa-hold-upheld-20260831.md`):
+BL-1303's corrected parcel is genuinely moving, not stalled.
