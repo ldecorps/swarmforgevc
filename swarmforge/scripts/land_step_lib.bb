@@ -2,8 +2,8 @@
 ;; tip, replacing "bounce it to the author" (an outcome no role can act on:
 ;; no role can remove commits that are ancestors of its own branch).
 ;;
-;; A parcel's cited commit routinely has OTHER tickets' unlanded work as a
-;; first-parent ancestor - ordinary pipelining on a long-lived role branch,
+;; A parcel's cited commit routinely has OTHER tickets' unlanded work as an
+;; ancestor - ordinary pipelining on a long-lived role branch,
 ;; not misconduct. Landing it as-is would put that unreviewed sibling work
 ;; on `main` (the BL-506 refusal); bouncing it back to the author fixes
 ;; nothing, since the author cannot un-ancestor commits already on their own
@@ -68,8 +68,28 @@
 ;; (That contract is the nil-vs-empty one, which BL-1297's :delivered /
 ;; :authored split left untouched: both semantics still answer nil only when
 ;; the walk could not run.)
-(defn- ancestry-commits [root base commit]
-  (let [res (git! root "rev-list" "--first-parent" (str base ".." commit))]
+(defn- ancestry-commits
+  "Every commit reachable from `commit` and not from `base` - the FULL
+   ancestry, deliberately not a `--first-parent` walk.
+
+   BL-1308, invariant 2: this set must include every commit the replay's
+   own-path diff can draw content from. That diff asks
+   `own-commit-changed-paths` for `:delivered`, which for a merge is its
+   change against its FIRST parent - a real two-tree diff, so it returns
+   everything the merge's SECOND parent brought in, whoever authored it.
+   A `--first-parent` walk never reaches those commits, so a sibling ticket
+   whose untagged work rode into a forward-merge on the second parent had
+   its paths enter the replay while its id never reached the report: the
+   detector under-included in exactly the place the path set over-includes.
+   Observed 2026-08-30 on BL-1307's documenter tip, which carried four
+   unlanded BL-1300 files past a pending human approval while the report
+   named BL-1288/1293/1299 and never BL-1300.
+
+   Only DETECTION widens here. `own-commit-changed-paths` and
+   `task-tagged-changed-paths` are untouched: the replay must still
+   reproduce what the parcel put on the branch."
+  [root base commit]
+  (let [res (git! root "rev-list" (str base ".." commit))]
     (when (zero? (:exit res))
       (remove str/blank? (str/split-lines (:out res))))))
 
