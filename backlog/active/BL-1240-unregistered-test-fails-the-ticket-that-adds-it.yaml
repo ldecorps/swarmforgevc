@@ -1,0 +1,158 @@
+id: BL-1240
+title: "The suite-manifest gate fires at suite-run time, so drift accumulates unseen at six files a day and the refusal lands on QA instead of the author"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 19
+direction: agent-reported
+depends_on: [BL-973, BL-1239]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1240-unregistered-test-fails-the-ticket-that-adds-it.feature
+
+human_approval: approved
+approval_context: >
+  One choice needs sign-off: WHERE the check fires. A send-time check in
+  swarm_handoff.bb sits beside the existing pre-QA wiring gate and needs no
+  new machinery, but only catches a file once a parcel moves. A commit-time
+  check catches it immediately and annoys people more often, including on
+  work-in-progress commits. I lean send-time for consistency with the gates
+  already there, and have written it that way as direction rather than
+  mandate. Say if you would rather have it at commit time.
+
+invariants:
+  - "A parcel that adds a test file without a manifest row does not move to the next stage."
+  - "A manifest row that registers no existing file is reported as an error, never accepted silently."
+
+required_wiring:
+  - 'swarmforge/scripts/unregistered_test_gate_lib.bb::suite-inventory-lib/manifest-name::the per-parcel check must reuse the existing inventory logic rather than growing a second, divergent notion of what counts as registered, so it must reach the definitions in suite_inventory_lib.bb rather than restate them. AMENDED 2026-08-30: the original entry named suite_inventory_cli.bb, which reaches the manifest name only through this symbol and so never contains the literal suite-manifest.tsv that the pattern searched for'
+  - 'specs/pipeline/steps/index.js::bl1240UnregisteredTestFailsAuthorSteps::acceptance handler registered'
+
+description: |
+  ## What is wrong
+
+  `suite_inventory_cli.bb` compares the whole test tree against
+  `suite-manifest.tsv` when `run_bb_suite.sh` runs. Nothing checks at the
+  moment a file is added. So the author of an unregistered test file is never
+  told, and the refusal surfaces later, to whoever next runs the full suite.
+
+  In practice that is QA, at the final gate, on a parcel that did not cause
+  it, holding a list of other tickets' omissions. QA cannot reasonably author
+  those rows: choosing `standing` versus `excluded` needs the reason the test
+  was written, which lives with its author and its ticket.
+
+  ## The measurement
+
+  The gate landed 2026-08-23 (BL-973). Files then accumulated unregistered:
+
+      2026-08-23   4
+      2026-08-24   7
+      2026-08-25   6
+      2026-08-26  12
+      2026-08-27   5
+      2026-08-28   3
+
+  Roughly six a day for five days, ending with the suite refusing to start at
+  all and 39 names in the failure — the state BL-1239 exists to clear. Not one
+  of those days produced a signal to the person who created the drift.
+
+  ## The silent-row half
+
+  The manifest also accepts a row that registers nothing.
+  `test_bl780_rotation_actionability_ordering.sh` had a row written for it
+  with the ticket id in the filename column; the row was accepted, the file
+  stayed unregistered, and the omission looked handled. A gate that can be
+  satisfied by a row that does nothing is not a gate.
+
+  ## How (direction, not mandate)
+
+  - **Fire per parcel, not per suite run.** `swarm_handoff.bb` already runs a
+    pre-QA gate over the outgoing commit; a check in that family sees the
+    parcel's own added paths and refuses the forward, naming the file and the
+    row it needs. Commit-time is the alternative — see approval_context.
+  - **Scope to the parcel's own changes.** Scenario 03 is the load-bearing
+    one: a parcel that adds no test file must pass even while the tree still
+    carries other tickets' unregistered files, or this gate becomes a second
+    copy of the problem it is fixing and blocks everyone until BL-1239 lands.
+  - **Reuse the existing inventory logic.** Ask `suite_inventory_cli.bb` what
+    counts as registered rather than re-deriving it; two notions of
+    registration would drift the same way the runner list and the manifest
+    once did.
+  - **Validate rows, not just files.** A first column that names no existing
+    test file is an error.
+
+qa_e2e_procedure: >
+  (1) On a branch, add a new file under `swarmforge/scripts/test/` with no
+  manifest row and forward the parcel; confirm the forward is refused and the
+  message names the file. (2) Add the row, forward again, confirm it proceeds.
+  (3) With another ticket's test file left unregistered in the tree, forward a
+  parcel that touches no test file at all, and confirm it proceeds — this is
+  the check that the gate is parcel-scoped and not tree-scoped. (4) Add a
+  manifest row whose first column is a ticket id, run the manifest validation,
+  and confirm it fails naming that row. (5) Confirm `run_bb_suite.sh`'s own
+  tree-wide check still behaves as before — this ticket adds a gate, it does
+  not replace one.
+
+out_of_scope: |
+  - Clearing the existing 39-file backlog of unregistered files. That is
+    BL-1239 and must land first, or every parcel is refused on drift its
+    author did not create.
+  - Extending this to the TypeScript or Gherkin lanes. They have their own
+    tooling; this is the Babashka and shell manifest only.
+  - Changing the lane vocabulary or the exclusion rules. Unchanged.
+
+source: |
+  QA `note` (priority 00) to specifier+coordinator, 2026-08-28T06:51:05Z:
+  "run_bb_suite.sh blocked: suite-manifest.tsv drift, 49 unreg. files,
+  unticketed". Split 1:N by the specifier: BL-1239 is the backfill that
+  unblocks the suite, this is the reason it will not be needed a second time.
+
+notes: |
+
+  ## AMENDMENT 2026-08-30 - required_wiring entry 1 (bookkeeping only)
+  
+  Entry 1 named `swarmforge/scripts/test/suite_inventory_cli.bb` with pattern
+  `suite-manifest.tsv`. That CLI reaches the manifest name only through
+  `suite-inventory-lib/manifest-name`; the literal is defined in
+  `suite_inventory_lib.bb`. The gate read therefore found no match and failed
+  closed at the documenter->QA hop - the last one, after all six stages of work
+  were spent. Same shape as BL-874/BL-960/BL-1183.
+  
+  Re-anchored to `swarmforge/scripts/unregistered_test_gate_lib.bb` with pattern
+  `suite-inventory-lib/manifest-name`, which states the ORIGINAL intent more
+  exactly than the entry it replaces: the reuse this ticket requires is the new
+  gate lib reaching the inventory lib own definitions.
+  
+  The documenter suggested repointing the same pattern at
+  `suite_inventory_lib.bb`. That was deliberately NOT taken: the file already
+  carries that literal on `main` today, so the anchor would pass before any of
+  this ticket work is done - vacuous, the very failure BL-874 exists to prevent.
+  The re-anchored file is absent from `main`, so it cannot pass early.
+  
+  Verified at amendment time: pattern present at the parcel tip
+  (`unregistered_test_gate_lib.bb:105`), file absent on `main`. The production
+  call site is also present and verified (`swarm_handoff.bb:426`,
+  `unregistered-test-gate-lib/findings-for-git-handoff`, absent on `main`), so no
+  additional entry is needed to cover the BL-419 concern.
+  
+  **Nothing you build changes.** Acceptance, scenarios and described behaviour are
+  untouched; this only makes the wiring declaration checkable.
+    - [2026-08-28] specifier: this is the same structural shape as BL-1237,
+    minted an hour earlier from a different report - a gate that is correct
+    about the condition but fires on a role that cannot act on it, having
+    accumulated the condition invisibly in the meantime. Worth watching for as
+    a class rather than treating each instance as a one-off.
+  - [2026-08-28] specifier: the daily counts above are first-appearance dates
+    of the 39 files on main, taken per file from its adding commit, not
+    estimated.
+  - [2026-08-28] specifier: depends_on BL-1239 is a sequencing constraint, not
+    a build dependency - this can be implemented in parallel, but must not
+    LAND before the backfill or it refuses every parcel on inherited drift.
+
+assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-30, by: QA, blamed: coder, class: unit, commit: 5db40d59bd, evidence: backlog/evidence/BL-1240-unregistered-test-fails-the-ticket-that-adds-it-bounce-20260830.md }
+  - { at: 2026-08-30, by: architect, blamed: coder, class: behavior, commit: b82a1e856a, evidence: backlog/evidence/BL-1240-architect-bounce-20260830.md }
