@@ -164,4 +164,20 @@ notes: >
   repairs it before this lands, use it as a historical fixture rather than
   re-breaking main to demonstrate the guard.
 
+  Constraint the implementer should not have to rediscover (specifier sweep
+  2026-08-31, full result in the evidence file above): twelve step-handler
+  files are absent from index.js on main, and ELEVEN of them are correct. The
+  bl<NNN>Only.js files are deliberate focused entry points - each a three-line
+  re-export of the real handler, each carrying the comment "avoids loading the
+  full steps/index.js, which requires a compiled extension/out tree" - and all
+  eleven of those targets ARE registered (verified individually). A guard keyed
+  to "every steps/*.js file must appear in index.js" therefore emits twelve
+  refusals today, one true and eleven false, which is the shape that gets a
+  guard normalized away within a week. Key it on the FEATURE side instead -
+  every specs/features/*.feature must be matched by a REGISTERED handler, which
+  is this ticket's own title and asks the question runtime.js actually throws
+  on, and has no false-positive class. Do not special-case the *Only.js
+  filename: that encodes a naming convention as a boundary and silently exempts
+  the next real offender that happens to be named that way.
+
 assigned_to: coder

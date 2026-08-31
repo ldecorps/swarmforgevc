@@ -71,3 +71,50 @@ a normalized red is an unowned defect. This one now has an owner.
   changes.
 
 By specifier.
+
+## Complete sweep — BL-709 is the ONLY real offender, and 11 look-alikes are not
+
+Done in the same turn so QA's repair is a complete inventory rather than the
+one file that happened to be reported (Article 4.4's discipline applied to a
+repair request). Every `specs/pipeline/steps/*.js` was checked against
+`index.js`'s require list, and the reverse direction too.
+
+**Reverse check: no dangling registrations.** Every `require('./X')` in
+`index.js` resolves to a file that exists.
+
+**Forward check: 12 handler files are not required by `index.js`.** Exactly one
+is a defect:
+
+| File | Verdict |
+|---|---|
+| `bl709BubbleItsOwnTelegramTopicSteps.js` | **REAL — the offender.** Exports `{ name, register, ... }`; nothing else references it. |
+| `bl623Only.js`, `bl627Only`, `bl636Only`, `bl637Only`, `bl641Only`, `bl642Only`, `bl646Only`, `bl671Only`, `bl694Only`, `bl723Only`, `bl739Only` | **Not offenders — deliberate.** |
+
+The eleven `bl<NNN>Only.js` files are focused entry points, each carrying the
+comment *"avoids loading the full steps/index.js, which requires a compiled
+extension/out tree"*. Each is a three-line re-export of the REAL handler, and
+every one of those eleven targets **is** registered in `index.js` — verified
+individually, not assumed. They are unregistered **by design**: registering
+them would load the very index they exist to avoid.
+
+## Consequence for BL-1303's guard — an exemption is required
+
+A guard that refuses whenever a `specs/pipeline/steps/*.js` file is absent from
+`index.js` would produce **twelve** refusals on `main` today: one true positive
+and eleven false ones, on files that are correct. That failure mode is worse
+than the defect — it is the shape that gets a guard disabled or normalized away
+within a week.
+
+The distinguishing property is available without heuristics on the filename:
+a shim's whole body re-exports a module that IS registered, so it registers no
+steps of its own. Key the guard on that, or on the FEATURE side — every
+`specs/features/*.feature` must be matched by a registered handler — rather
+than on the file side. The feature-side framing is the ticket's own title
+("A feature on main always has a registered handler") and it has no
+false-positive class at all: it asks the question the runner actually throws on.
+
+Do not resolve this by filename pattern (`*Only.js`). That encodes a naming
+convention as a security boundary and silently exempts the next real offender
+that happens to be named that way.
+
+By specifier.
