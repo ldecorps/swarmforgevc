@@ -20,11 +20,12 @@
 #
 # The two tiers are not a preference, they are a cost asymmetry:
 # check_property_suite_drift.sh runs `npm run test:properties`, while the
-# other three read the git index and exit. Completeness is therefore
-# required WITHIN the cheap tier, and the expensive tier is reached only
-# when the cheap three pass - so a full suite run is never charged to a
-# commit that is already refused. It still runs on every commit those three
-# allow, which is every commit that is going to succeed.
+# others read the git index (or, for BL-1303's guard, the step registry) and
+# exit. Completeness is therefore required WITHIN the cheap tier, and the
+# expensive tier is reached only when the cheap ones pass - so a full suite
+# run is never charged to a commit that is already refused. It still runs on
+# every commit those guards allow, which is every commit that is going to
+# succeed.
 #
 # Usage: run_commit_guards.sh [repo-root]
 #   repo-root defaults to `git rev-parse --show-toplevel`.
@@ -69,12 +70,17 @@ report_refusals() {
   echo "pre-commit: every guard in this tier ran, so the list above is complete - there is no second violation waiting for your next attempt (Article 4.4)." >&2
 }
 
-# ── Tier 1: the cheap guards. All three run, whatever any of them decides. ──
+# ── Tier 1: the cheap guards. All of them run, whatever any one decides. ──
 # Order is the hook's original order and is deliberately unchanged, so a
 # committer with exactly one violation sees the same one they see today.
 run_guard check_commit_size.sh 50
 run_guard check_ticket_deletion.sh
 run_guard check_pipeline_code_on_main.sh
+# BL-1303: also a `main`-only guard, and it exits before doing any work on
+# every other branch - so it joins the cheap tier even though the work it
+# does on `main` is a node process reading the step registry, not a git
+# index read.
+run_guard check_feature_handler_registration.sh
 
 if [ -n "$refused" ]; then
   report_refusals

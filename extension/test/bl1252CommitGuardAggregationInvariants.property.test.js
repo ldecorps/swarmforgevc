@@ -25,6 +25,9 @@ const INDEX_GUARDS = [
   'check_commit_size.sh',
   'check_ticket_deletion.sh',
   'check_pipeline_code_on_main.sh',
+  // BL-1303: a `main`-only guard that exits before doing any work on every
+  // other branch, so it belongs to the cheap tier the aggregation is about.
+  'check_feature_handler_registration.sh',
 ];
 const SUITE_GUARD = 'check_property_suite_drift.sh';
 const ALL_GUARDS = [...INDEX_GUARDS, SUITE_GUARD];
@@ -53,12 +56,16 @@ function planOf(states) {
   return Object.fromEntries(ALL_GUARDS.map((g, i) => [g, states[i]]));
 }
 
-const RANDOM_PLAN = () =>
-  fc.tuple(GUARD_STATE(), GUARD_STATE(), GUARD_STATE(), GUARD_STATE()).map(planOf);
-const CLEAN_PLAN = () => fc.constant(planOf([0, 0, 0, 0]));
+// One draw per guard in ALL_GUARDS - derived from the list rather than a
+// hand-counted tuple, so adding a guard to the chain (BL-1303 added the
+// fourth cheap one) widens the plan instead of leaving the new guard
+// undefined in every generated plan, which no state would ever satisfy.
+const RANDOM_PLAN = () => fc.tuple(...ALL_GUARDS.map(() => GUARD_STATE())).map(planOf);
+const cheapAllPassing = INDEX_GUARDS.map(() => 0);
+const CLEAN_PLAN = () => fc.constant(planOf([...cheapAllPassing, 0]));
 const SUITE_ONLY_PLAN = () => fc.oneof(
-  fc.constant(planOf([0, 0, 0, 1])),
-  fc.constant(planOf([0, 0, 0, 2]))
+  fc.constant(planOf([...cheapAllPassing, 1])),
+  fc.constant(planOf([...cheapAllPassing, 2]))
 );
 
 const PLAN = () =>
@@ -209,7 +216,7 @@ test('property (invariant 2): the runner refuses exactly the commits the pre-BL-
   assertReach(seen, ['clean', 'multiIndexViolation', 'unexpected', 'missing', 'suiteOnly']);
 });
 
-test('property (invariant 2): the expensive guard runs if and only if the cheap three all pass', () => {
+test('property (invariant 2): the expensive guard runs if and only if every cheap guard passes', () => {
   const seen = freshSeen();
   fc.assert(
     fc.property(PLAN(), (plan) => {

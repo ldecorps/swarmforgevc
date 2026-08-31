@@ -25,7 +25,8 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1303-a-feature-on-main-always-has-a-registered-handler.feature
 
 required_wiring:
-  - "swarmforge/scripts/run_commit_guards.sh::run_guard check_feature_handler_registration.sh::the guard must be added to the commit-guard chain. run_commit_guards.sh is the pre-existing live consumer - both swarmforge/git-hooks/pre-commit and pre-merge-commit exec it - so this anchor proves the guard is actually REACHED rather than merely written. Per BL-1235 this is the entry that carries the wiring proof. The guard name is fixed here at mint so the pattern is a literal that will exist; keep the run_guard prefix so it joins the chain the same way check_pipeline_code_on_main.sh does."
+  - "swarmforge/scripts/run_commit_guards.sh::run_guard check_feature_handler_registration.sh::the guard must be added to the commit-guard chain. run_commit_guards.sh is a pre-existing live consumer - swarmforge/git-hooks/pre-commit execs it - so this anchor proves the guard is REACHED on the plain-commit path rather than merely written. CORRECTION 2026-08-31: this entry originally asserted that pre-merge-commit execs run_commit_guards.sh too. It does not - pre-merge-commit execs check_pipeline_code_on_main.sh directly - so this anchor alone leaves the merge path uncovered, and the pre-merge-commit entry below is what closes it. Per BL-1235 the two entries together carry the wiring proof. The guard name is fixed here at mint so the pattern is a literal that will exist; keep the run_guard prefix so it joins the chain the same way check_pipeline_code_on_main.sh does."
+  - "swarmforge/git-hooks/pre-merge-commit::check_feature_handler_registration.sh::the guard must ALSO be reached on the --no-ff merge path. Both incidents this ticket cites put main into the bad state by merge (BL-1253 by a resurrecting merge, BL-709 by merge 45625ef9cb), and QA lands every approved commit with git merge --no-ff, so a guard wired only into run_commit_guards.sh would have caught NEITHER of them. git itself invokes this hook, so it is a pre-existing live consumer and this anchor is real reachability proof rather than a self-satisfied declaration (BL-1235). Verified absent at amend time: pre-merge-commit today execs only check_pipeline_code_on_main.sh. If you reach the guard from this hook by some other route than naming it here, say so in a note and the anchor will be repointed - do not work around it."
   - "specs/pipeline/steps/index.js::bl1303::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler, which is this ticket's own subject, so an unregistered file would fail every scenario here. Verified absent from index.js at spec time (grep bl1303 -> 0). Honest note per BL-1235: this anchor is satisfied by the parcel's own diff and so proves nothing about reachability - the run_commit_guards.sh entry above is the real wiring proof. It is kept only because registering a handler is literally the behaviour under test."
 
 invariants:
@@ -109,6 +110,30 @@ description: |
     applied in a gate) - a guard that stops at the first offender reproduces
     the one-defect-at-a-time bounce loop that rule exists to prevent.
 
+  ## The guard must be reached on the MERGE path (added 2026-08-31)
+
+  `swarmforge/git-hooks/pre-commit` is a thin wrapper over
+  `run_commit_guards.sh`, but `swarmforge/git-hooks/pre-merge-commit` is NOT -
+  it execs `check_pipeline_code_on_main.sh` directly and never reaches the
+  chain. A guard wired only into `run_commit_guards.sh` therefore does not
+  fire for `git merge --no-ff`, which is how QA lands every approved commit
+  and how BOTH incidents above put `main` into the bad state. It would have
+  caught neither of them. `pre-merge-commit`'s own BL-632 comment names this
+  exact coverage-in-disguise hole; closing it for this guard is in scope here.
+
+  Two things NOT to do while closing it:
+
+  - Do NOT repoint `pre-merge-commit` at `run_commit_guards.sh` wholesale.
+    That newly subjects every merge to `check_commit_size.sh`,
+    `check_ticket_deletion.sh` and the expensive `check_property_suite_drift.sh`
+    - whose allowlist matcher is currently broken and running under an
+    operator override (BL-1234). Widening the whole chain to the merge path is
+    a separate ticket, not this one.
+  - Do NOT let `pre-merge-commit` become a sequential `set -e` chain of two
+    guards. That is the first-failure-stop shape BL-1242/BL-1252 removed from
+    `pre-commit`: capture each guard's status, exit the combined status, and
+    let each guard keep its own `set -euo pipefail`.
+
 qa_e2e_procedure: |
   1. On a scratch branch off main, delete the `bl1253` line from
      `specs/pipeline/steps/index.js` (or pick any registered handler) and stage
@@ -123,6 +148,12 @@ qa_e2e_procedure: |
   5. Confirm the live case is closed: `node specs/pipeline/cli.js
      specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature`
      runs 8 scenarios with no "no step handler matched" error.
+  6. Exercise the MERGE path, which step 1 does not reach: in a scratch clone,
+     branch off main, remove a registration line there, then
+     `git checkout main && git merge --no-ff <branch>`. Expect the merge to be
+     refused, naming the offending feature. Step 1 fires `pre-commit`; a clean
+     `--no-ff` merge fires only `pre-merge-commit`, a different hook, so a
+     guard that passes step 1 can still be absent from the path that matters.
 
 source: >
   Coder note 2026-08-30T19:25Z (priority 00): "BL-1253 main: steps ref missing
@@ -164,6 +195,31 @@ notes: >
   repairs it before this lands, use it as a historical fixture rather than
   re-breaking main to demonstrate the guard.
 
+  LANDING PRECONDITION (specifier, 2026-08-31). Once the guard is reached on
+  the merge path it refuses on the STATE of main, not on what a commit
+  changes. While BL-709's registration line is absent from
+  specs/pipeline/steps/index.js it therefore refuses EVERY plain commit on
+  main - specifier spec commits and coordinator bookkeeping alike - and every
+  --no-ff land, including this parcel's own. Verified still absent on main on
+  2026-08-31. So BL-709's repair must land BEFORE this parcel does. That
+  repair is QA-exclusive under check_pipeline_code_on_main.sh and was routed
+  to QA by note on 2026-08-31; it stays out of this parcel. If QA has already
+  repaired it by the time this arrives, nothing here changes - the
+  precondition is simply already met.
+
+  KNOWN RESIDUAL, stated so it is not later mistaken for coverage: a
+  FAST-FORWARD merge fires neither pre-commit nor pre-merge-commit, so no
+  commit-hook guard can cover that path at all. A CONFLICTED merge finished
+  with `git commit` does fire pre-commit and so is covered. Both are
+  properties of githooks(5) rather than of this guard, and closing the
+  fast-forward hole needs a different instrument - not in scope here.
+
+  This amendment does not reopen the human approval above. The tap ruled on
+  one question - whether scenario 03's sibling-script check belongs in this
+  slice - and that question is untouched. What changed is a correction to a
+  wiring premise that was factually wrong, without which the ticket does not
+  deliver its own title.
+
   Constraint the implementer should not have to rediscover (specifier sweep
   2026-08-31, full result in the evidence file above): twelve step-handler
   files are absent from index.js on main, and ELEVEN of them are correct. The
@@ -180,4 +236,12 @@ notes: >
   filename: that encodes a naming convention as a boundary and silently exempts
   the next real offender that happens to be named that way.
 
+  Confirmed by the coder 2026-08-31 (note, priority 00): the implementation
+  was already feature-keyed before that constraint landed, and the guard
+  reports 1 offender with 0 of the 11 *Only.js files flagged. Recorded here
+  as verification - the constraint cost no rework and demands none.
+
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-31, by: architect, blamed: coder, class: behavior, commit: 7d782800ad, evidence: backlog/evidence/BL-1303-a-feature-on-main-always-has-a-registered-handler-bounce-20260831.md }

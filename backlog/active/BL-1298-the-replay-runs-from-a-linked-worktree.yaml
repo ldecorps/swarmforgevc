@@ -137,3 +137,5 @@ notes: |
   registration, and is a SCENARIO-EXECUTION anchor, not a production-wiring
   claim (BL-1235): `replay!` already has its live caller in
   `land_step_cli.bb`, so there is no new call site for this ticket to prove.
+
+assigned_to: coder
