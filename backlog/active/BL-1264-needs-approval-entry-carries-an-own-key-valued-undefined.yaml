@@ -137,3 +137,13 @@ notes: >
   either path.
 
 assigned_to: coder
+abandoned_commits:
+  - 5f5190eaa9
+  - 1a7dfc3654
+# [2026-08-31] documenter: pre_qa_gate_lib.bb ancestry check (BL-490)
+# refusal, recorded not guessed. This ticket's coder rebuilt a tip-pure
+# branch (0a3d6125a7, matching swarmforge-coder-bl1264-pure) after the
+# hold->active park/release, superseding two earlier BL-1264-tagged
+# commits still reachable only from master: 5f5190eaa9 (duplicate coder
+# evidence write) and 1a7dfc3654 (the pre-rebuild bookkeeping merge the
+# rebuild replaced). Listed by SHA per abandoned-sha?'s direct match.
