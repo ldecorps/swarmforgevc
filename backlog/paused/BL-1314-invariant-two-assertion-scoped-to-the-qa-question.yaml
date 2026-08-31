@@ -1,0 +1,187 @@
+id: BL-1314
+title: "The BL-925 invariant-2 assertion greps handoffd.bb for any ancestry call at all, so two legitimate helpers fail an invariant that is intact"
+milestone: M8
+type: defect
+severity: high
+# high, on the same reasoning BL-1303 and BL-1294 carry for the identical
+# shape: this breaks a safety SIGNAL rather than degrading it. The assertion
+# is a standing pin on a real invariant, and it now reports a violation that
+# does not exist - so once the test runs to completion again, main is red for
+# a defect nobody can fix by fixing the code, and the red lands on whichever
+# parcel runs the suite next. Not critical: nothing is down, no production
+# path is touched, and the invariant the assertion defends is genuinely
+# intact - only the assertion is wrong.
+status: todo
+epic: code-quality-gates
+priority: 27
+direction: swarm-reported
+depends_on: [BL-1303]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1314-invariant-two-assertion-scoped-to-the-qa-question.feature
+
+required_wiring:
+  - "swarmforge/scripts/test/suite-manifest.tsv::test_pipeline_code_on_main_guard.sh::the changed assertion must stay reachable by the standing suite. The manifest is a pre-existing live consumer - the standing runner reads it, this ticket does not add it - so per BL-1235 this is real reachability proof rather than a line the parcel satisfies by construction. It is also the failure BL-1240 measured on this exact registry: a test quietly dropped from the manifest still passes review and never runs again. Verified present at spec time, line 365."
+  - "specs/pipeline/steps/index.js::bl1314::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: this anchor is satisfied by the parcel own diff and so proves nothing about reachability; the manifest entry above is the real wiring proof. Kept because BL-233 requires the handler to land in the SAME commit as the feature file, and BL-1303 is open on main today for exactly the omission this pins. Verified absent from index.js at spec time (grep bl1314 -> 0)."
+
+invariants:
+  - "The assertion fails when, and only when, a file answers the QA-approved-tip question outside is_qa_ancestor.sh. An ancestry call over any other pair of refs is not a violation and must not fail it."
+  - "The positive half is not weakened while the negative half is scoped: removing the is_qa_ancestor.sh call from either file still fails the assertion."
+
+human_approval: pending
+ruling_options:
+  - option 1 - scope the assertion to the QA question, leave handoffd.bb alone
+  - option 2 - keep the assertion strict, give handoffd.bb one ancestry helper for every ref pair
+approval_context: >
+  The technical finding is settled and evidenced; what needs your eye is which
+  of two defensible readings of invariant 2 this repo wants.
+
+  Option 1 (what this ticket is written for). Invariant 2 says "there is one
+  definition of QA-approved tip; a second predicate that answers the same
+  question differently is the defect". Neither of the two helpers that fail the
+  assertion today asks that question - one asks whether origin/main is an
+  ancestor of HEAD, the other whether a role branch can fast-forward to a
+  landed commit. So the invariant holds and the assertion is over-broad. Fix
+  the assertion, in the shape its own bash sibling already has.
+
+  Option 2. A broader rule than invariant 2 states: handoffd.bb should have
+  exactly ONE ancestry primitive, and every ancestry question in the daemon
+  should go through it, so the assertion as written is correct and handoffd.bb
+  is what should change. This is coherent, but it is a new rule rather than
+  BL-925 invariant 2, it is a larger change to a live daemon, and it cannot
+  route the QA question through the generic helper without losing what
+  is_qa_ancestor.sh adds on top of raw ancestry - BL-952 bounce detection.
+
+  I recommend option 1 and have specced it. Say option 2 and this ticket is
+  rewritten, not amended.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh` pins BL-925
+  invariant 2 with two greps. The bash half is scoped to the question:
+
+      grep -q 'merge-base.*--is-ancestor.*swarmforge-QA' "$GUARD" && fail ...
+
+  The Babashka half is not:
+
+      grep -q '"merge-base".*"--is-ancestor"' "$HANDOFFD" && fail ...
+
+  It matches ANY ancestry call in handoffd.bb, whatever pair of refs the call
+  is about. On 2026-08-18, when BL-925 wrote it, that was equivalent: the QA
+  call was the only ancestry call in the file. It has not been equivalent
+  since 2026-08-25.
+
+  ## The two hits today, both legitimate
+
+      handoffd.bb:3161  master-main-origin-is-ancestor?
+                        git merge-base --is-ancestor origin/main HEAD
+                        added by BL-1130 (a3c4429c42, 2026-08-25)
+
+      handoffd.bb:3357  git-is-ancestor? [dir ancestor descendant]
+                        generic; sole caller is the post-QA branch sweep
+                        fast-forward check at :3380
+                        added by BL-668 (f5b6b49f1f, 2026-08-26)
+
+  Neither mentions swarmforge-QA. Neither asks "is this a QA-approved tip".
+
+  ## The invariant is intact
+
+  handoffd.bb answers the QA question in exactly one place - `qa-ancestor?` at
+  :2789, which shells to `is_qa_ancestor.sh`, the same script
+  `check_pipeline_code_on_main.sh` calls. BL-925 invariant 2 reads: "There is
+  one definition of `QA-approved tip` in the repo. A second predicate that
+  answers the same question differently is the defect, not the fix." There is
+  no second predicate answering that question. The assertion is wrong; the
+  code it accuses is not.
+
+  ## Why nobody saw it for six days
+
+  The assertion sits near the end of the file. BL-1252 moved pre-commit
+  guards behind `run_commit_guards.sh` without adding that file to the
+  fixtures, so this test aborted at case 01 and never reached line 380. The
+  coder repaired that fixture rot inside BL-1303 on 2026-08-31 and the first
+  complete run in days surfaced the red. That is why this ticket exists at
+  all, and why BL-1303 must land first.
+
+  ## How (direction, not mandate)
+
+  Scope the handoffd.bb grep to the QA question, the way its bash sibling
+  already is. The `swarmforge-QA` ref name is the only durable anchor for
+  "this call asks the QA question", so matching on it is the honest shape.
+
+  Say the limitation in the test comment rather than engineering around it: a
+  re-inlined call that binds the ref to a variable escapes this assertion AND
+  its bash sibling equally. That is a known limit of a grep-based pin. Do NOT
+  close it by enumerating handoffd.bb legitimate ancestry calls in an
+  allowlist - a hand-enumerated membership list rots silently (BL-973 shape,
+  four dead fixtures), and it would fail again the next time a helper is added
+  for a third unrelated question.
+
+  ## What NOT to do
+
+  Do not change handoffd.bb. Neither helper is drift. Routing an
+  origin/main-versus-HEAD check through `is_qa_ancestor.sh` would be a real
+  defect: that script answers only the swarmforge-QA question, and since
+  BL-952 it also folds in bounce detection, which is meaningless for the other
+  two call sites.
+
+qa_e2e_procedure: |
+  1. On main, with BL-1303 landed so the fixtures are whole, run
+     `bash swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh`.
+     Expect every case to pass, including
+     "BL-925 invariant2-one-shared-definition". Before this ticket that run
+     ends in "FAIL: BL-925 invariant 2: handoffd.bb still runs its own inline
+     ancestry git call".
+  2. Negative, handoffd.bb: on a scratch branch add an inline
+     `["git" "merge-base" "--is-ancestor" sha "swarmforge-QA"]` call anywhere
+     in handoffd.bb, leaving `qa-ancestor?` in place. Re-run: expect the
+     assertion to fail naming handoffd.bb. Revert.
+  3. Negative, bash half unchanged: on a scratch branch add an inline
+     `git merge-base --is-ancestor "$SHA" swarmforge-QA` to
+     check_pipeline_code_on_main.sh. Re-run: expect the assertion to fail
+     naming that file. Revert.
+  4. Positive half not weakened: on a scratch branch delete the
+     `is_qa_ancestor.sh` invocation from handoffd.bb. Re-run: expect the
+     assertion to fail. Revert. Repeat for check_pipeline_code_on_main.sh.
+  5. Third-question regression: on a scratch branch add a fourth ancestry
+     helper over an unrelated ref pair (say `refs/heads/foo` and HEAD).
+     Re-run: expect the assertion to PASS. This is the case that is red today
+     and the reason the ticket exists.
+  6. `node specs/pipeline/cli.js specs/features/BL-1314-invariant-two-assertion-scoped-to-the-qa-question.feature`
+     runs every scenario with no "no step handler matched" error.
+
+source: >
+  Coder note 2026-08-31T04:29Z (priority 10): "BL-925 red revealed in
+  test_pipeline_code_on_main_guard.sh; see evidence file", pointing at
+  backlog/evidence/BL-1303-coder-merge-path-20260831.md item 2, which
+  surfaced the red and explicitly routed the amend-or-accept decision to the
+  specifier rather than taking it inside BL-1303. Adjudicated the same turn;
+  ruling recorded in
+  backlog/evidence/BL-1314-specifier-ruling-invariant-2-overbroad-20260831.md.
+
+notes: >
+  Promotion ordering, not a bundling: depends_on names BL-1303 because
+  BL-1303 is in flight and its coder pass touches this same test file (the
+  fixture repair). Promoting both at once would put two parcels in the same
+  file. BL-1314 is independently implementable and gateable once BL-1303 has
+  landed; it needs nothing built inside BL-1303 beyond the fixture repair
+  that makes the test runnable end to end.
+
+  IR-DRY, resolved not ignored: the checker reports two medium findings on
+  this feature file, both pairing a step written with a "<file>" placeholder
+  in an outline against the same step written with the literal handoffd.bb in
+  a plain scenario. Both normalize to one handler pattern with a quoted
+  capture, so there is no duplication in the step registry - the checker
+  compares raw text and cannot see that. Do not "fix" it by making scenarios
+  03 and 04 artificial outlines.
+
+  The coder also flagged, in the same evidence file, that BL-1303 has no
+  merge-path acceptance scenario. Ruled no-change on 2026-08-31 and recorded
+  in the ruling evidence file: the merge path is covered executably by
+  test_pre_merge_commit_hook.sh cases 01/03/09 and by BL-632 acceptance
+  feature, which drives a real `git merge --no-ff` through the real hook.
+  Adding a scenario to an in-flight ticket would require its handler in the
+  same parcel (BL-233) and would strand a parcel already past the coder
+  (BL-971 shape). BL-1303 needs no amendment and its holder needs no note.

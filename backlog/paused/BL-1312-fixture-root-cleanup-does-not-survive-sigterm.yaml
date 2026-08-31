@@ -1,0 +1,213 @@
+id: BL-1312
+title: "mkSocketFixtureRoot's cleanup is a bare process.on('exit') hook, so a fixture root and its tmux server survive SIGTERM unless some unrelated step file happens to install a reaper"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained, and deliberately consistent with BL-1067's
+# grading of the same family. The damage is host resources during acceptance
+# runs - leaked /tmp roots and, where a fixture started one, a leaked tmux
+# server that reap() never reached. No credential exposure, no data loss, no
+# swarm-down, and main is not red because of it. Not low: this is not clutter.
+# The helper's documented job is to be the BACKSTOP for the throw/kill paths
+# (its own header: "a measured 236 of 287 step files had no finally at all"),
+# and on the signal paths it does not run at all. A backstop that works only
+# by accident is a broken safety guarantee, which is what lifts this above
+# cosmetic.
+status: todo
+epic: code-quality-gates
+priority: 45
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1312-fixture-root-signal-cleanup.feature.draft
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1312FixtureRootSignalCleanupSteps::this ticket converts its own .feature.draft to .feature in-parcel, so the handler must be REGISTERED in the same commit - specs/pipeline/runtime.js THROWS on any scenario with no handler, and an unregistered file turns the whole suite red for every other parcel rather than skipping quietly. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done."
+
+invariants:
+  - "A fixture root handed out by mkSocketFixtureRoot is removed on SIGINT/SIGTERM regardless of which other step files happen to be loaded in the same process."
+  - "Signal handling stays installed once per process however many roots are created - no second, per-caller SIGINT/SIGTERM listener appears."
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/lib/socketFixtureRoot.js` promises to remove every
+  fixture root it hands out, "reaping any fixture tmux server by SOCKET PATH
+  first (BL-817/BL-458 hygiene)" - its own header comment calls this the
+  backstop for the throw paths. It delivers that promise through
+  `installExitHook()`, which registers **only** `process.on('exit',
+  removeStragglers)`.
+
+  Node does not run `'exit'` handlers when a process is terminated by SIGTERM
+  or SIGINT; the default action terminates immediately without unwinding. So
+  on the signal paths the cleanup does not run.
+
+  It appears to work because of an accident of loading. `fixtureReaper`'s
+  `installGlobalHandlersOnce()` DOES install SIGINT/SIGTERM listeners, and
+  those call `process.exit(1)` - which unwinds `'exit'` hooks, including
+  `socketFixtureRoot`'s. So whenever any step file in the same process calls
+  `track()` or `onAbnormalExit()`, the roots are cleaned. Load a process that
+  uses `mkSocketFixtureRoot` alone and nothing is cleaned.
+
+  This is BL-458's own finding - quoted verbatim in `fixtureReaper.js`'s
+  header comment, "only a process.on('exit') handler, which does not fire on
+  SIGTERM/SIGINT" - reproduced in the shared helper that **90 step files**
+  depend on (`grep -rln mkSocketFixtureRoot specs/pipeline/steps/`).
+
+  ## Verified, not inferred
+
+  Reproduced both ways with a two-mode probe: one node process that calls
+  `mkSocketFixtureRoot` and nothing else, one that additionally calls
+  `onAbnormalExit`. Each sent SIGTERM once the root existed.
+
+      bare        : SURVIVED (leak)  /tmp/aps-probe-pnrot6
+      with-reaper : cleaned          /tmp/aps-probe-ws7lXu
+
+  Deterministic. The probe is reproduced in `qa_e2e_procedure` step 1.
+
+  ## On the report this came from - the mechanism is NOT the one reported
+
+  QA reported this (see `source:`) as "a create-then-track race in the shared
+  `fixtureReaper`: a directory created moments before the process-wide signal
+  handler fires, but not yet registered via `track()`/`liveFakeBinDirs`, is
+  never swept". The observation - four inert `/tmp` dirs surviving a SIGTERM
+  mid-run - is real and correctly reported. The mechanism is not that, and an
+  implementer who chases the reported one will narrow a caller-side window
+  that is not what leaked.
+
+  Two things rule the race framing out. `mkSocketFixtureRoot` registers the
+  root in its OWN `trackedRoots` one statement after `mkdtempSync`, so every
+  root is covered from birth however long the caller then takes to add it to
+  `liveFakeBinDirs`. And one of the four leaked dirs, `aps-bl1305-rival-*`
+  (`bl1305FixtureAgentBinarySteps.js:144`), is a bare `mkSocketFixtureRoot`
+  call whose result is assigned straight to `ctx.rivalBin` - it has no
+  caller-side registration step at all, so it has no race window to lose, and
+  it leaked anyway.
+
+  The caller-side window in `roleLifecycleParkUnneededSteps.js` (`mkFakeBin`
+  writes a stub, chmods it, writes a `.zshenv`, and only then calls
+  `liveFakeBinDirs.add(dir)`) is genuinely there and is worth closing while
+  in the file. It is secondary: the lib already covers those dirs, and
+  closing it alone would fix nothing.
+
+  ## How (direction, not mandate)
+
+  Give `socketFixtureRoot`'s cleanup the same signal coverage `track()` and
+  `reap()` already have, rather than inventing a second one. `fixtureReaper`
+  exports `onAbnormalExit(fn)` for exactly this shape - its doc comment
+  offers it to "a fixture shape track()/reap() do not already know how to
+  kill" - and it installs the process-wide listeners ONCE however many
+  callers register, which is what keeps invariant 2 true. Routing
+  `removeStragglers` through it is the obvious route and the implementer
+  should say so if they take another; installing a private SIGTERM listener
+  in `socketFixtureRoot` is the route to avoid, because two independent
+  listeners reintroduce the ordering question this helper exists to settle.
+
+qa_e2e_procedure: |
+  1. The two-mode probe, which is the whole defect in ten lines. Write a
+     script that requires `mkSocketFixtureRoot`, optionally calls
+     `onAbnormalExit(() => {})`, creates one root, prints it, and idles. Run
+     it, wait for the path, send SIGTERM, then test the directory.
+     BEFORE the fix: the no-reaper mode leaks the root, the with-reaper mode
+     cleans it. AFTER: both clean it. Run the leaking mode twice - it is
+     deterministic, not timing-dependent, and a flaky pass here means the
+     probe raced the root's creation, not that the bug is intermittent.
+  2. `node specs/pipeline/cli.js specs/features/BL-1312-fixture-root-signal-cleanup.feature`
+     Expect 4/4 (three Examples rows plus the listener-count scenario). The
+     `SIGTERM | already` row is the regression guard: it passes today and
+     must still pass, since it is the accidental path the suite has been
+     relying on.
+  3. `grep -c onAbnormalExit specs/pipeline/steps/lib/socketFixtureRoot.js`
+     - zero today; expect at least one after. Human check only, not a gate
+     (see `notes:`).
+  4. Whole-suite regression, because this helper has 90 callers and that is
+     the actual risk of this ticket: run the full acceptance suite before and
+     after and compare the pass/fail sets file by file. No file that passed
+     before may fail after. Between runs, confirm no `/tmp` fixture roots
+     survive: `ls -d /tmp/aps-* /tmp/bl* 2>/dev/null | wc -l`.
+
+source: >
+  QA note 2026-08-31 (priority 60): "BL-1305 QA found unticketed reaper race:
+  SIGTERM leaks /tmp dirs, see evidence" - the finding is in
+  backlog/evidence/BL-1305-qa-pass-20260831.md under "New finding, not
+  blocking BL-1305", where QA observed four inert /tmp directories surviving a
+  deliberate SIGTERM during BL-1305's own qa_e2e, confirmed no live processes
+  in them, removed the four they had created, and correctly declined to gate
+  BL-1305 on it. QA also grepped backlog/ for an existing ticket on this and
+  found none; the specifier re-checked independently and agrees - BL-1067
+  (backlog/debt/) is the adjacent guard defect, not this, and BL-1289's 21
+  named violators are all swarmforge/scripts runners. The mechanism above is
+  the specifier's own, from reading the source and running the probe; it
+  differs from the reported one, and the description says so and why.
+
+notes: >
+  On the acceptance pointer and the in-parcel conversion. This ticket's
+  `acceptance:` names a `.feature.draft` that THIS ticket builds, which is the
+  shape that otherwise passes every gate vacuously - BL-761's contract gate
+  fails closed only on an ABSENT declaration, so a declaration aimed at a
+  draft satisfies it while not one scenario ever runs. So, as an explicit
+  in-parcel step: rename
+  `specs/features/BL-1312-fixture-root-signal-cleanup.feature.draft` to
+  `.feature`, add `specs/pipeline/steps/bl1312FixtureRootSignalCleanupSteps.js`
+  and REGISTER it in `specs/pipeline/steps/index.js`, and repoint this
+  ticket's `acceptance:` at the `.feature` path - all in the same commit. The
+  handler name is fixed here at mint precisely so `required_wiring` anchors a
+  literal that will exist (BL-874). Renaming without landing the registration
+  in that same commit turns the suite red for every other parcel in flight
+  (BL-233).
+
+  On what that `required_wiring` entry does and does not prove. It is the
+  index.js registration anchor, and by BL-1235's rule it is satisfied by this
+  parcel's own diff - it proves the handler is registered, NOT that the fix is
+  reachable from anything real. It is declared anyway because the conversion
+  above makes registration a genuine in-parcel obligation that a red suite
+  would otherwise announce to an unrelated parcel. The real proof of this
+  ticket is scenario 01's `SIGTERM | not` row, which is red today and can only
+  go green when the helper's signal coverage actually changes. A wiring anchor
+  on `socketFixtureRoot.js::onAbnormalExit` was considered and deliberately
+  NOT declared: it would gate correctly, but it would also mandate one of two
+  legitimate implementations, and the Negotiable letter says direction, not
+  design. Step 3 of `qa_e2e_procedure` carries it as a human check instead.
+
+  On the IR-DRY report, adjudicated rather than skipped. The checker returns
+  one medium-confidence `possible-synonym` finding (score 0.625) pairing "a
+  node process has created a fixture root with mkSocketFixtureRoot" with "a
+  node process has created four fixture roots with mkSocketFixtureRoot". Left
+  as-is deliberately: the tool's own `suggested_action` is to normalize only
+  where the differing wording is accidental drift, and here it is semantic -
+  scenario 02 needs SEVERAL roots to show the listener count does not grow per
+  root, which is exactly invariant 2. Collapsing them onto one parameterized
+  step would either force a count column that is identical across all three of
+  scenario 01's rows (the pruning rule forbids it) or bend the step text into
+  "1 fixture root(s)". Not an oversight; do not re-normalize it.
+
+human_approval: pending
+ruling_options:
+  - option 1 - fix the shared helper, so all 90 callers get signal coverage
+  - option 2 - narrow fix, cover only the two BL-1305 step files for now
+approval_context: >
+  One question, and it is about blast radius rather than whether the defect is
+  real. The defect is verified and reproducible either way (the probe is in
+  the description).
+
+  OPTION 1, which the ticket is written for, changes
+  specs/pipeline/steps/lib/socketFixtureRoot.js - a helper 90 step files
+  depend on. That is the honest fix: the guarantee is the helper's, it is
+  currently kept only by accident of which other file is loaded, and every one
+  of those 90 callers is exposed the moment it runs in a process that does not
+  happen to pull in fixtureReaper. The risk is proportional - a regression in
+  this helper destabilises the acceptance suite broadly, which is why
+  qa_e2e_procedure step 4 is a whole-suite before/after comparison rather than
+  a spot check.
+
+  OPTION 2 covers only the two step files QA actually saw leak
+  (roleLifecycleParkUnneededSteps, bl1305FixtureAgentBinary) and leaves the
+  helper alone. Lower risk this week, and it leaves the other 88 callers
+  holding a backstop that does not run on the signal paths - including the
+  tmux-server reap that BL-458 and BL-817 both exist to guarantee.
+
+  I recommend option 1. Option 2 is the reasonable answer if the acceptance
+  suite is currently load-bearing for other in-flight work and you would
+  rather not perturb a shared fixture helper right now; it does not close the
+  defect, and the ticket would need re-scoping to say so.
