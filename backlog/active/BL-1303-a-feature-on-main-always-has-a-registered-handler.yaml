@@ -6,9 +6,14 @@ severity: high
 # high, matching BL-1294's reasoning for the same shape: this breaks a safety
 # SIGNAL rather than degrading it. main's acceptance verdict stops reflecting
 # the code under test, and it fails against whichever parcel runs the suite
-# next rather than the one that caused it. It is live right now (BL-1253, 8
-# scenarios, 0 pass). Not critical: the swarm is up, no production path is
-# touched, and the complete parcel still exists at 2e519c4a8f - nothing lost.
+# next rather than the one that caused it. Not critical: the swarm is up, no
+# production path is touched, and in both instances found so far the complete
+# parcel still existed elsewhere in git - nothing lost.
+# Live instance UPDATED 2026-08-31: the BL-1253 one cited at mint was repaired
+# by QA on 2026-08-30 (8674998ad6). The live instance is now BL-709 - handler
+# file present, registration absent, 8 scenarios 0 pass, red on main since
+# 2026-08-27. Two independent instances in five days is the evidence for the
+# grade, not either one alone.
 status: todo
 epic: code-quality-gates
 priority: 28
@@ -132,5 +137,31 @@ notes: >
   other and they can land in either order. Checked at spec time and NOT
   duplicated by BL-1294 (pinnedRepoFixture closure resolver) or BL-1279
   (front-desk fixture bb closure).
+
+  Second live offender, found 2026-08-31 by the coder while working this
+  ticket and verified by the specifier the same turn: BL-709. Its handler
+  specs/pipeline/steps/bl709BubbleItsOwnTelegramTopicSteps.js is present and
+  intact, its registration line is absent from index.js, and
+  `node specs/pipeline/cli.js specs/features/BL-709-bubble-its-own-telegram-topic.feature`
+  is 8 tests / 0 pass on main today. This is a BETTER fixture for the guard
+  than the BL-1253 instance was, because the mechanism differs: BL-1253 lost
+  the line to a bounce-revert plus a partial resurrection, whereas BL-709 lost
+  it to a MERGE. Merge 45625ef9cb ("merge: process documenter 83b00aa1dd for
+  BL-941 QA rematch verification", 2026-08-27 13:58 +0100) had the line in
+  first parent 6e78c39a88 and not in second parent 83b00aa1dd, and resolved to
+  the side without it - the silent-revert-by-merge shape of BL-571/BL-958/
+  BL-954. The line had been landed deliberately by b3ddc2e692 ("fix(BL-709):
+  register bl709 steps in index.js. By documenter.") and survived a conflict
+  cleanup at cab163c9cf before the merge dropped it. So a guard keyed only to
+  revert/resurrection would miss this one; it must refuse on the STATE of main
+  regardless of how that state was reached. Evidence:
+  backlog/evidence/BL-1303-second-live-offender-bl709-20260831.md
+
+  The BL-709 repair itself is NOT in this ticket's scope and must not be folded
+  into this parcel: specs/pipeline/steps/ is QA-exclusive on main under
+  check_pipeline_code_on_main.sh, so only QA may commit it. Routed to QA by
+  note 2026-08-31. It is also a live regression test for this guard - if QA
+  repairs it before this lands, use it as a historical fixture rather than
+  re-breaking main to demonstrate the guard.
 
 assigned_to: coder
