@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 31, 2026 (BL-1298: the land step's replay now runs
+from ANY worktree, not only the main checkout. `replay!`
+(`swarmforge/scripts/land_step_lib.bb`) built its scratch checkout at
+`<root>/.git/land-replay-worktrees/...`; `.git` is a directory only in the
+main checkout — in a linked worktree, the only place a pipeline role ever
+stands, it is a FILE holding `gitdir: ...`, so the path named a child of a
+regular file and `git worktree add` failed outright ("could not create
+worktree ... off origin/main", measured 2026-08-30 landing BL-1295 from
+`.worktrees/QA`). The only working route was passing the main checkout as
+an undocumented optional third argument. New `git-common-dir` asks git
+directly (`rev-parse --git-common-dir`), which resolves correctly — and
+identically — from either checkout, so the same ticket and commit replay
+the same way regardless of who invokes it; a git that cannot answer is a
+refusal naming the root, never a path built from a guess. Second half: on
+the create-failure path, `git worktree add -b` had already created the
+scratch branch before failing to make the checkout, and that path returned
+without deleting it — unlike the other two failure paths — so a retry
+failed with "branch already exists", a different reason than the first
+attempt, misdirecting whoever read it. All three failure paths now delete
+the branch through one `drop-branch!`; deleting a branch that was never
+created is not itself treated as a failure. Not in scope: the four
+pre-existing `land-replay/*` branches already in the repository, and what a
+SUCCESSFUL replay leaves behind (QA's own land action still reads that
+branch). Acceptance:
+`specs/features/BL-1298-the-replay-runs-from-a-linked-worktree.feature`.)
+Prior entry —
 **Last Updated:** August 31, 2026 (BL-1225: a build-freshness sync's
 restarts now leave a readable forensic trail. `restart-operator-group!`
 (`swarmforge/scripts/build_freshness_cli.bb`) used to spawn the replacement
