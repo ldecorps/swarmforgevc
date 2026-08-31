@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 31, 2026 (BL-1253: the stamp-off review of Cursor
+hotfix `2ec06b6ef1` reaches its final round-3 state — CONFIRMED, still
+`stamp-open`. Supersedes the August 30 entry below, written before this
+ticket absorbed retired BL-1260 (Article 5.3: a consolidation never drops a
+human sentence). Two things carried forward from BL-1260 that the prior
+entry did not yet state: invariant 3 — at most one process calls
+`getUpdates` on the shared bot token at any moment, and the token comes
+back once the feeder recovers — now asserted by
+`bl1253TokenOwnershipInvariants.property.test.js`; and Scenario 06, "A
+recovered feeder gets the token back", the mirror of scenario 02's
+fresh-to-stale case and the dangerous direction (a bridge that takes the
+token and never returns it leaves the front desk permanently dead while
+every other liveness signal reads green). Also carried forward and still
+**unanswered**: the 90-second `DEFAULT_FRONT_DESK_FEEDER_STALL_MS` stall
+window at `telegramCursorBridgeCore.ts:371` — BL-1260's own outstanding
+question, which belongs to the eventual human ledger decision for
+`2ec06b6ef1` and must not be treated as settled by this stamp-off's green
+scenarios. Nothing about the landed hotfix itself changed across the three
+pipeline rounds; round 3 re-confirms rather than re-fixes (QA's bounce, now
+closed, was scenario 06's missing step handler). See
+`docs/how-to/BL-1253-swarm-stamp-dead-feeder-owns-getupdates.md`.
+Acceptance:
+`specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature`.)
+Prior entry —
 **Last Updated:** August 31, 2026 (BL-1308: the land step's sibling detector
 now walks a commit's FULL ancestry, not just `--first-parent`, so it can
 name every ticket the replay's own-path diff can draw content from.
