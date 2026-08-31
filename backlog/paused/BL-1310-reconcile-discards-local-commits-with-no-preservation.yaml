@@ -1,0 +1,211 @@
+id: BL-1310
+title: "Every guard on the master-main reconcile narrows WHEN it may reset away local-ahead commits and none makes the discard recoverable, so committed work survives only as unreachable objects in the reflog"
+milestone: M8
+type: defect
+severity: critical
+# critical, not high: this is realised data loss, which is the schema's own
+# reserved meaning for the grade. On 2026-08-31 at 03:24:49 +0100 it destroyed
+# seven commits of specifier work - a whole ticket mint (BL-1309, a 181-line
+# YAML and its 50-line feature draft), an accepted rule_proposal, and a
+# re-priced human ruling on BL-1300 - and nothing recovered them for about an
+# hour, by accident, when an idle specifier read the reflog for another reason.
+# The recovery window is not permanent: the discarded commits are unreachable,
+# so `git gc` ends it. Grading this `high` would say the work is merely
+# degraded; it is gone.
+status: todo
+epic: swarm-reliability
+priority: 3
+direction: swarm-reported
+depends_on: [BL-1198, BL-1214, BL-1236, BL-1288]
+# All four landed and closed. They are named because this slice is their
+# residual, not because it waits on them: each narrowed the conditions under
+# which the reset fires, and the reset still fires. Nothing unbuilt is waited on.
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one helper added beside the reset adapter it guards, in a lib all three call sites already load-file; there is no second copy to de-duplicate and no structure to extract."
+acceptance: specs/features/BL-1310-reconcile-never-discards-a-commit-it-cannot-name.feature.draft
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::preserve-before-reset!::the CONSUMER anchor (BL-1235). handoffd.bb is pre-existing and is the live daemon: its sweep reaches master-main-reconcile-merge! through the adapter map at :3343-3344, and master-main-rematch-onto-origin! (:3175) is where the reset adapter is built. A marker in THIS file therefore proves a running path reaches the new preservation step. Anchoring in master_main_reconcile_lib.bb instead would be satisfied by the parcel's own diff and prove nothing. The name is fixed here at mint so the pattern is a literal that will exist (BL-874); grep for it today returns 0."
+  - "specs/pipeline/steps/index.js::bl1310ReconcilePreservesDiscardedCommitsSteps::the draft-conversion anchor, doing a DIFFERENT job from the entry above. This ticket's acceptance: starts life pointing at a .feature.draft, which passes every gate vacuously because BL-761 fails closed only on an ABSENT declaration. This entry pins the registration so the rename cannot be forgotten. Deliberately NOT offered as proof of production wiring - see BL-1235."
+
+invariants:
+  - "After any reconcile that moves local main off commits origin/main does not contain, every such commit is reachable from a ref - never from the reflog alone."
+  - "Work that cannot be preserved is not discarded: if the preservation step fails for any reason, the reconcile leaves local main exactly as found and says why, the same non-destructive shape :verdict-unavailable already uses."
+
+source: |
+  Found 2026-08-31 by the specifier from an idle ready_for_next.sh returning
+  NO_TASK. The tell was BL-1309 being absent from every backlog folder while a
+  memory recorded it as minted. `git reflog` then showed
+  `reset: moving to origin/main` at 03:24:49 +0100 and seven commits below it.
+  Recovery evidence and the full lost-commit list:
+  backlog/evidence/BL-1310-reconcile-reset-destroyed-seven-commits-20260831.md
+
+description: |
+  ## What is wrong
+
+  `master-main-rematch-onto-origin!` (`swarmforge/scripts/handoffd.bb:3175`)
+  ends at `git reset --hard origin/main`. Four shipped tickets each narrowed
+  the conditions under which it may run:
+
+  - BL-1198 makes it attempt a push first.
+  - BL-1214 makes a non-conflicting two-way divergence take a real merge.
+  - BL-1236 refuses when git cannot answer whether the merge would conflict.
+  - BL-1288 makes only a genuine `! [rejected]` non-fast-forward authorise it.
+
+  Every one of those guards is about WHEN. None is about WHAT HAPPENS TO THE
+  COMMITS. When the reset does fire - correctly, by all four rules - the
+  local-ahead commits are discarded with no preservation of any kind: no
+  branch, no tag, no stash, no listing of the discarded SHAs anywhere. They
+  become unreachable objects, and `git gc` is entitled to collect them.
+
+  So the recovery procedure the swarm actually relies on is: somebody notices
+  their own work is missing, thinks to read `git reflog`, finds the entry above
+  `reset: moving to origin/main`, and cherry-picks. That has worked every time
+  it has been attempted. It is not a mechanism - it is a person being lucky and
+  attentive, inside a window that ends silently.
+
+  ## The instance, measured rather than argued
+
+  At 03:24:49 +0100 on 2026-08-31 the divergence was 31 behind / 7 ahead. The
+  push was therefore legitimately rejected, BL-1288's rule authorised the
+  reset, and seven commits were destroyed:
+
+  - `194b11287e` + `d6fd8b6eb6` - the whole BL-1309 mint: a 181-line ticket
+    YAML, a 50-line feature draft, and its topic record.
+  - `949d3f18b3` - a `rule_proposal` from the hardender that the specifier had
+    ACCEPTED and committed into `hardender.prompt`. The proposer had already
+    been told it was accepted.
+  - `e35d9a873d` - BL-1300's re-priced ruling: a 94-line YAML amendment and a
+    108-line evidence file, written specifically so a human would not tap on a
+    premise that was no longer true.
+  - `4fc530b180` - BL-1307's landed-park evidence.
+  - two superseded topic records.
+
+  Nothing recovered them. They were found about an hour later by an idle
+  specifier reading the reflog for an unrelated reason, and restored with
+  `cherry-pick -x` - zero conflicts, as every previous recovery has had.
+
+  `git reflog | grep -c "reset: moving to origin/main"` has been reported at
+  148 historically; three of them are dated 2026-08-31 alone (01:34:39,
+  01:42:59, 03:24:49). This is a cadence, not an incident.
+
+  ## The branch name promises something the code does not do
+
+  The plan that reached the reset here is `:replay-bookkeeping`
+  (`master_main_reconcile_lib.bb:214`, dispatched at `handoffd.bb:3237`,
+  logging `predicted-conflict-colliding-local-ahead`). Its name says the
+  bookkeeping commits are replayed. Its executor is
+  `master-main-rematch-onto-origin!`, which replays nothing and resets. A
+  reader auditing this path for safety reads the name and stops.
+
+  ## How (direction, not mandate)
+
+  Before the `reset!` adapter runs, make the commits it is about to discard
+  reachable and named - for example a ref under a rescue namespace at the
+  pre-reset HEAD, plus the discarded SHAs and subjects in the reconcile's own
+  log line. A ref is materially stronger than the reflog: reflog entries for
+  unreachable commits expire and `git gc` collects them, whereas a ref makes
+  them permanently reachable and greppable by anyone, without knowing to look
+  in a reflog they may not have.
+
+  Two constraints the implementer should not have to rediscover:
+
+  - The preservation step must not itself become a way to block the reconcile
+    on a bad day. See invariant 2 for the direction chosen when it fails: the
+    non-destructive one, matching `:verdict-unavailable`'s existing shape.
+  - `master-main-rematch-onto-origin!` is reached from three call sites that
+    all `load-file` `master_main_reconcile_lib.bb` (handoffd, post_hotfix,
+    babysitter). Put the helper there rather than in three copies, exactly as
+    BL-1214's `absorb-with-merge!` already is.
+
+notes: |
+  ## Deliberately NOT in this slice [2026-08-31 specifier]
+
+  1. **Actually replaying the discarded commits** (cherry-picking them onto the
+     new base so the reconcile is lossless rather than merely recoverable).
+     That is what `:replay-bookkeeping`'s name implies and it is a defensible
+     next slice, but it is a bigger and riskier change - it can conflict, and a
+     conflicting auto-cherry-pick in a daemon is its own outage shape. This
+     slice makes the loss recoverable, which is the safety net that makes a
+     replay slice optional rather than urgent. Mint it separately if wanted.
+  2. **Whether `master_main_reconcile_enabled` should be off at all.** It was
+     deliberately re-armed by the operator on 2026-08-29 (`cce70d985`) to clear
+     a durable main-sync deadlock, so OFF has a real, known cost. This ticket
+     does not reopen that decision and must not be read as arguing for it.
+  3. **Renaming `:replay-bookkeeping`** to something that does not promise a
+     replay. Worth doing, cosmetic, and it would collide with this slice's own
+     file; fold it into the replay ticket above if that is ever built.
+
+  ## IR-DRY findings reviewed, not normalized away [2026-08-31 specifier]
+
+  Two of the three findings on the first draft were accidental drift and were
+  fixed: a `2 commits`/`3 commits` split with no meaning behind it (unified on
+  3), and a `Then local main is at origin/main` that read as a synonym of the
+  `Given local main is not ahead of origin/main` in another scenario (sharpened
+  to `has been reset to origin/main`, which is what it actually asserts). The
+  one remaining finding - that Given against the Background's `origin/main has
+  advanced with commits local main does not have` - is deliberate: the
+  Background establishes that origin moved, and scenario 03 adds that local has
+  nothing of its own. Collapsing them would merge two distinct preconditions.
+
+qa_e2e_procedure: |
+  1. On a scratch clone, build a genuine two-way divergence with conflicting
+     content: commit to `origin/main` and to local `main` touching the same
+     lines. Confirm `git rev-list --left-right --count main...origin/main`
+     reports both sides non-zero, and that a plain `git push origin main` is
+     rejected non-fast-forward (this is the state that authorises the reset).
+  2. Run the reconcile. It must reset local `main` to `origin/main` AND leave
+     every discarded commit reachable: `git rev-list <rescue-ref>` contains each
+     SHA that was local-only, and `git merge-base --is-ancestor <sha> <ref>` is
+     true for each.
+  3. Read the daemon log for that cycle: it must name the rescue ref and each
+     discarded commit. An operator who never opens a reflog must be able to
+     find the work from this line alone.
+  4. Re-run with no local-ahead commits. No rescue ref may be created - a
+     reconcile that discards nothing must leave no litter behind.
+  5. Failure path: make ref creation fail (a read-only refs directory, or a
+     pre-existing ref name that cannot be replaced). The reconcile must leave
+     local `main` exactly as found, discard nothing, and report why. Confirm by
+     ancestry, not by the log line: the pre-reset HEAD must still be `main`.
+  6. Regression: confirm the four existing guards still hold - a clean
+     fast-forward still pushes without any rescue ref (BL-1198), a
+     non-conflicting divergence still merges (BL-1214), an unavailable verdict
+     still surfaces without touching main (BL-1236), and a push failure that is
+     not a rejection still keeps the commits (BL-1288).
+
+human_approval: pending
+ruling_options:
+  - preserve, then discard - the reconcile keeps unblocking itself
+  - never discard local-ahead commits - refuse and surface, a human resolves it
+approval_context: >
+  A new feature file is authored here, so it needs a tap. One question is
+  genuinely yours, and it is not whether the defect is real.
+
+  The defect is measured, not argued: at 03:24:49 on 2026-08-31 the reconcile
+  reset away seven commits of specifier work, including a whole ticket mint and
+  an accepted rule_proposal, leaving them reachable only from the reflog. They
+  were recovered by luck an hour later. The reflog window ends whenever git gc
+  runs.
+
+  Yours is how far the fix should go. Option 1 keeps today's behaviour and
+  makes it recoverable: before the reset, the commits about to be discarded are
+  written to a rescue ref and named in the log. The reconcile still unblocks
+  itself automatically, which is why you re-armed it on 2026-08-29 - it clears
+  the main-sync deadlock without anyone being woken up. The cost is that work
+  still leaves main by surprise, and somebody still has to notice and
+  cherry-pick it back.
+
+  Option 2 stops the discard entirely: on a conflicting divergence with
+  local-ahead commits the reconcile refuses, reports, and leaves main as found
+  - the same shape BL-1236 already uses when git cannot answer. Nothing is ever
+  lost. The cost is exactly the deadlock you re-armed the sweep to clear: main
+  stays diverged until a human or a role resolves it, and on a quiet night that
+  can be hours of parked bookkeeping.
+
+  Settled, not a question, under either option: the preservation step must
+  never itself block the reconcile silently, and if preservation fails the
+  commits are kept rather than discarded. That is invariant 2 and it does not
+  depend on which option you pick.

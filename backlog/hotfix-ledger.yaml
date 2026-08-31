@@ -205,7 +205,7 @@
 - commit: 2ec06b6ef1
   subject: "Own getUpdates when the front-desk inbound feeder is dead."
   detected_at: 2026-08-28
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1253
   human_decision: null
   decided_at: null
