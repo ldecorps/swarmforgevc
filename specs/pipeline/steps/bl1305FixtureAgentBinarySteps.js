@@ -116,16 +116,20 @@ function registerSteps(registry) {
     fs.writeFileSync(rival, `#!/usr/bin/env bash\nprintf 'RIVAL\\n' >> '${path.join(ctx.rivalBin, 'rival-ran.log')}'\nexit 0\n`);
     fs.chmodSync(rival, 0o755);
 
-    // A startup file the pane shell sources, prepending the rival - this is
-    // what defeated the fixture's own PATH prepend in production.
-    const hostZdot = mkSocketFixtureRoot('aps-bl1305-hostzdot-');
-    fs.writeFileSync(
-      path.join(hostZdot, '.zshenv'),
-      `export PATH='${ctx.rivalBin}'"\${PATH:+${path.delimiter}$PATH}"\n`
-    );
-    ctx.hostZdot = hostZdot;
-    // Point the pane at that startup file the way the host's own HOME would.
-    ctx.env = { ...ctx.env, ZDOTDIR: hostZdot };
+    // The adversary startup file here is the HOST'S OWN, not a planted one.
+    // That is deliberate, and it is the only faithful shape: the fixture's
+    // protection works by OWNING $ZDOTDIR, so a planted startup file could
+    // only be made to run by handing the adversary ZDOTDIR, which inverts the
+    // very mechanism under test and would prove nothing.
+    //
+    // On this host ~/.zshenv genuinely prepends the directory holding the real
+    // agent binary, so it IS the adversary, live, on every zsh the pane
+    // starts. That it is genuinely defeated is established by running this
+    // feature against a deliberately broken implementation: with the
+    // fixture's isolation removed all three scenarios fail. The planted rival
+    // below adds a second same-named binary reachable through the inherited
+    // PATH, so the Then can name a binary that must not have run WITHOUT
+    // risking a real agent launch to prove it.
     ctx.env.PATH = `${ctx.rivalBin}${path.delimiter}${ctx.env.PATH}`;
   });
 
@@ -135,7 +139,7 @@ function registerSteps(registry) {
     // the fixture builds it, then launch through a pane.
     ctx.env = fakeEnv(ctx.fakeBin);
     if (ctx.rivalBin) ctx.env.PATH = `${ctx.rivalBin}${path.delimiter}${ctx.env.PATH}`;
-    ctx.launchOutput = runInPane(ctx, `${AGENT_NAME} --model x & sleep 0.5; echo launched`);
+    runInPane(ctx, `${AGENT_NAME} --model x & sleep 0.5; echo launched`);
   });
 
   registry.define(/^the fixture stub is what ran$/, (ctx) => {
