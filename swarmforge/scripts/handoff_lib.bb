@@ -163,6 +163,17 @@
 (defn header-value [file field default]
   (or (header-field file field) default))
 
+(defn non-forwarding?
+  "True when file carries the reverse-hop merge-only marker (Article 2.4).
+   BL-1302: the ONE spelling of this check. Two callers need it — the send
+   gate that refuses forwarding an inbound handback (swarm_handoff.bb's
+   inbound-non-forwarding?) and the duplicate-chain guard that must not read
+   a handback as a competing chain — and a marker parsed one way in one file
+   and another way in the other is exactly how the two disagree. Absence and
+   any value but the literal \"true\" are false: absence fails closed."
+  [file]
+  (= "true" (header-field file "non-forwarding")))
+
 (defn body [file]
   (let [[_ body] (str/split (slurp (str file)) #"\n\n" 2)]
     (or body "")))
