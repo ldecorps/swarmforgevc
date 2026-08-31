@@ -242,3 +242,6 @@ notes: >
   as verification - the constraint cost no rework and demands none.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-31, by: architect, blamed: coder, class: behavior, commit: 7d782800ad, evidence: backlog/evidence/BL-1303-a-feature-on-main-always-has-a-registered-handler-bounce-20260831.md }

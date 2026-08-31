@@ -281,39 +281,81 @@
             (when-not (zero? (:exit res)) (reset! ok false))))))
     @ok))
 
+(defn git-common-dir
+  "The repository's real git directory, absolute, as git itself reports it.
+
+   BL-1298: `.git` is a DIRECTORY only in the MAIN checkout. In a linked
+   worktree - the only place a pipeline role ever stands - it is a FILE
+   holding `gitdir: ...`, so a path built by joining \".git\" onto the root
+   names a child of a regular file and `git worktree add` fails outright
+   (\"could not create worktree ... off origin/main\", measured 2026-08-30
+   landing BL-1295). `--git-common-dir` answers correctly from either
+   checkout, and answers the SAME from both, which is what makes the replay
+   independent of who invoked it. It is relative to the root git resolved it
+   from, so it is absolutized here rather than trusted as given.
+
+   nil signals \"git could not answer\" - the caller refuses rather than
+   building a path from a guess, the same fail-closed posture as
+   origin-main-sha above."
+  [root]
+  (let [res (git! root "rev-parse" "--git-common-dir")]
+    (when (zero? (:exit res))
+      (let [reported (str/trim (:out res))]
+        (when (seq reported)
+          (str (fs/absolutize (fs/path root reported))))))))
+
 (defn replay!
   "Builds a tip-pure commit for task-ticket-id's own-paths, on top of
    origin/main, in a DEDICATED linked worktree
-   (.git/land-replay-worktrees/<task-ticket-id>-<short cited-commit>, off
+   (<git-common-dir>/land-replay-worktrees/<task-ticket-id>-<short
+   cited-commit> - git's own answer for where the git directory is, which is
+   NOT <root>/.git in a linked worktree (BL-1298), off
    a scratch branch land-replay/<task-ticket-id>-<short cited-commit>) -
    never a checkout in the caller's own worktree, which may be mid-work
    with real uncommitted changes QA cannot risk disturbing. Returns
    {:success true :commit sha :branch name} or {:success false :reason
    \"...\"} - never throws. The scratch worktree is always removed before
    returning, success or failure alike; the branch itself survives success
-   (QA's own land action reads it) and is deleted on failure."
+   (QA's own land action reads it) and is deleted on EVERY failure - including
+   a failure to create the checkout, which `worktree add -b` reaches only
+   after it has already made the branch (BL-1298)."
   [{:keys [root commit task-ticket-id own-paths]}]
-  (let [origin-main (origin-main-sha root)]
-    (if (nil? origin-main)
+  (let [origin-main (origin-main-sha root)
+        common-dir (git-common-dir root)]
+    (cond
+      (nil? origin-main)
       {:success false :reason "land-step replay: could not resolve origin/main"}
+
+      (nil? common-dir)
+      {:success false :reason (str "land-step replay: could not resolve the git directory of " root)}
+
+      :else
       (let [branch (str "land-replay/" task-ticket-id "-" (subs commit 0 (min 10 (count commit))))
-            scratch (str (fs/path root ".git" "land-replay-worktrees" (str task-ticket-id "-" (subs commit 0 (min 10 (count commit))))))
+            scratch (str (fs/path common-dir "land-replay-worktrees" (str task-ticket-id "-" (subs commit 0 (min 10 (count commit))))))
             cleanup! (fn []
                        (git! root "worktree" "remove" "-f" scratch)
                        (fs/delete-tree scratch {:force true}))
+            ;; `worktree add -b` creates the branch even when it then fails to
+            ;; make the checkout, so every failure path deletes it - including
+            ;; this one, which used to return early and leak it. Deleting a
+            ;; branch that was never created is not itself a failure: git!
+            ;; reports a status and the status is deliberately ignored.
+            drop-branch! (fn [] (git! root "branch" "-q" "-D" branch))
             create (git! root "worktree" "add" "-q" "-b" branch scratch origin-main)]
         (if-not (zero? (:exit create))
-          {:success false :reason (str "land-step replay: could not create worktree " scratch " off origin/main")}
+          (do (cleanup!)
+              (drop-branch!)
+              {:success false :reason (str "land-step replay: could not create worktree " scratch " off origin/main")})
           (let [applied? (write-tree-from-paths! scratch commit own-paths)]
             (if-not applied?
               (do (cleanup!)
-                  (git! root "branch" "-q" "-D" branch)
+                  (drop-branch!)
                   {:success false :reason (str "land-step replay: could not apply " task-ticket-id "'s own paths from " commit)})
               (let [commit-res (git! scratch "-c" "user.email=t@t" "-c" "user.name=t"
                                       "commit" "-q" "-m" (str task-ticket-id ": tip-pure replay onto origin/main (BL-1241 land-step remedy)"))]
                 (if-not (zero? (:exit commit-res))
                   (do (cleanup!)
-                      (git! root "branch" "-q" "-D" branch)
+                      (drop-branch!)
                       {:success false :reason (str "land-step replay: nothing to commit for " task-ticket-id " - own-paths identical to origin/main")})
                   (let [sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))]
                     (cleanup!)
