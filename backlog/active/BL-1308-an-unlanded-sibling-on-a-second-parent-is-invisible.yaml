@@ -163,6 +163,28 @@ notes: |
   landed the original reproduction is gone, so capture it in the fixture
   first.
 
+  ## Pipeline state, 2026-08-31 - a live parcel is IN FLIGHT (specifier)
+
+  Promoted to `active/` at 00:36:48 and demoted back to `paused/` at 00:45:19,
+  eight minutes later, to free a slot under the 2026-08-31 human directive
+  (exhaust `hold/` before `paused/`, `061c9e6366`). The coder was already
+  working and could not have known: it committed `f3166a3fd5` at 00:52:25,
+  seven minutes AFTER the demote landed.
+
+  - The parcel is live and healthy. The cleaner passed it NONE (no defect found)
+    at `51b9a74b78`, 01:02:17, and forwarded to the **architect**, which holds it.
+  - The parcel branch predates the demote, so it still carries this file under
+    `backlog/active/`. When a downstream role merges `main`, git rename detection
+    should collapse that to `paused/` cleanly rather than leaving two copies -
+    but the merged tree then has this ticket in `paused/` while its parcel is at QA.
+  - **The consequence to watch:** post-QA bookkeeping closes a ticket
+    `active/` -> `done/` (Article 3.3). With the file in `paused/`, that close has
+    nothing to move, and the work ships while the ticket stays in the paused pool -
+    the shipped-zombie residue that later reads as promotable work.
+  - **Therefore: do NOT re-promote or re-mint this ticket.** The work exists and is
+    moving. The file's home should be corrected to `active/` by the coordinator;
+    the parcel itself needs nothing and no role has rework.
+
 human_approval: approved
 approval_context: >
   Minted from a QA hold, not from an intake. QA verified BL-1307's own work as
