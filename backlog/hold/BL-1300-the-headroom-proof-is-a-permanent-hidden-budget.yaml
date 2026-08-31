@@ -128,6 +128,42 @@ notes: |
   `required_stages` to add `documenter` and lands the prompt half before the
   parcel reaches that stage.
 
+  ## Option 1 is ALREADY LIVE on main - the ruling's cost changed [2026-08-31 specifier]
+
+  The coder's option-1 work reached `origin/main` as a passenger while this
+  ticket sat held. QA merged it into `swarmforge-QA` (`68a36bcfae`) BEFORE
+  deciding whether to land, then recorded the hold (`d4b666a336`) as a commit
+  on top of that merge rather than as a removal of it - and `main`'s
+  first-parent chain IS that branch, so the next unrelated land carried it
+  over. Ten tickets have landed on top of it since.
+
+  Verified, not inferred: `9553cf9354` and `3fe063d3ad` are both ancestors of
+  `origin/main`; `origin/main`'s step handler contains `fixCommitTree()` with
+  the fix-commit Given bound to the materialized tree (option 1's whole
+  deliverable); both `extension/test/bl1300HeadroomProofIsPinned.test.js` and
+  `extension/test/bl1300SingleEnforceableBudget.property.test.js` are on
+  `origin/main` (the first was ABSENT when QA wrote its hold); and
+  `node specs/pipeline/cli.js specs/features/BL-1227-boot-prefix-live-budget-check.feature`
+  is 7/7 on the live tree. Full table:
+  `backlog/evidence/BL-1300-hold-is-not-a-withholding-20260831.md`.
+
+  This does NOT decide the ruling - it re-prices it. See the amended
+  `approval_context`. Do not read it as an argument for option 1.
+
+  ## `hold/` silenced this ticket's own approval ask [2026-08-31 specifier]
+
+  The move to `backlog/hold/` (`aeea3fa6dc`) was correct and was made on the
+  specifier's own request for a free night-shift slot. Its unintended effect:
+  the approvals sweep never looks in `hold/`.
+  `pendingApprovalsAnnouncementHook.ts:25` iterates `['active', 'paused']`,
+  `:67` calls `computeNeedsApproval(folders.active, folders.paused)`, and
+  `metrics/backlogDashboard.ts` has no `hold` member at all (`:53-54`).
+
+  So the re-ask this ticket was re-pended to fire has not been firing since.
+  Article 3.1 makes moving out of `hold/` a HUMAN action - neither the
+  coordinator nor the specifier may do it - so the ruling has to be asked for
+  directly, or the human returns the ticket to `paused/` first.
+
 qa_e2e_procedure: |
   1. Confirm the acceptance suite is green at the fix commit:
      `node specs/pipeline/cli.js specs/features/BL-1227-boot-prefix-live-budget-check.feature`
@@ -143,25 +179,43 @@ qa_e2e_procedure: |
 
 human_approval: pending
 ruling_options:
-  - option 1 — keep 44000 as the one budget, pin the proof to a recorded size
-  - option 2 — move every number and message to 42000, keep measuring live
+  - option 1 - confirm what is already live on main, close it
+  - option 2 - revert the landed fix, then move every number to 42000
 approval_context: >
-  You already approved this fix at 19:37 BST and that stands - the defect is
-  measured and not in question. This re-ask exists only to carry the ONE thing
-  an Approve tap could not carry - which of the two shapes to build. The two buttons
-  above are the choice.
+  IMPORTANT, changed since this was last asked: option 1 is ALREADY BUILT AND
+  LIVE ON MAIN. It reached origin/main as a passenger while this ticket sat
+  held - QA merged the coder's work into its branch before deciding whether to
+  land, and main is advanced from that branch. Verified: commits 9553cf9354
+  and 3fe063d3ad are ancestors of origin/main, both test files are present,
+  and BL-1227's acceptance feature is 7/7 on the live tree. Evidence:
+  backlog/evidence/BL-1300-hold-is-not-a-withholding-20260831.md.
 
-  The defect: an assertion documented as a one-time headroom proof is
-  re-measured live on every run, so the enforced boot-prefix budget is 42000
-  while every message and document says 44000.
+  The question is still yours and still open. Only the price of each answer
+  moved, and you should not be asked to choose without knowing it.
 
-  Option 1 makes the proof genuinely one-time and keeps 44000 as the single
-  budget - it restores the documented contract, and the coder touches only the
-  feature file and its step handler. Option 2 accepts 42000 as the real budget
-  and moves every number and message to match it - it keeps the stricter
-  ceiling that has in practice been the thing preventing a sixth overrun, at
-  the cost of a wider change (gate lib, its report, two docs pages, and a
-  specifier-prompt sentence the specifier lands itself). Either is defensible,
-  which is why it is not the specifier's call.
+  The defect, unchanged: an assertion documented as a one-time headroom proof
+  was re-measured live on every run, so the enforced boot-prefix budget was
+  42000 while every message and document said 44000.
 
+  Option 1 now means CONFIRM, not build. The pinned proof is already running
+  and 44000 is already the single enforced budget everywhere. Cost: a
+  bookkeeping close. Nothing to implement, nothing to revert.
+
+  Option 2 now means REVERT, then build. The landed fix comes off main first
+  (9553cf9354, 3fe063d3ad, and the two test files), then the original option-2
+  scope goes in: boot_prefix_budget_gate_lib.bb's budget value and header,
+  boot_prefix_budget_gate.sh's header, docs/index.md,
+  docs/how-to/BL-859-boot-prefix-budget-gate.md, and a specifier-prompt
+  sentence the specifier lands itself. required_stages gains documenter.
+
+  Option 2 is still entirely defensible - 42000 is the stricter ceiling that
+  has in practice been the thing preventing a sixth overrun, and "it already
+  shipped" is not by itself a reason to keep it. That is exactly why you are
+  being re-asked rather than told.
+
+  One thing you cannot do from here: this ticket is in backlog/hold/, and the
+  approvals sweep only scans active and paused, so no button for it is being
+  offered anywhere. Article 3.1 makes moving it out of hold/ a human action.
+  Either move it back to backlog/paused/ and the ask re-fires, or reply with
+  the ruling directly and the specifier records it.
 assigned_to: coder
