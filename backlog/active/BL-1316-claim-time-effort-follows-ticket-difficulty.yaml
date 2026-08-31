@@ -68,4 +68,4 @@ notes: |
   Update BL-981 remaining_slices / BL-545 notes only if documenter pass asks —
   do not block this slice on epic YAML edits.
 
-assigned_to: specifier
+assigned_to: coder
