@@ -38,6 +38,10 @@ const REAL_LAUNCH_ROLES = ['coder', 'cleaner', 'architect', 'QA'];
 // itself is killed, mirroring test_role_lifecycle_cli.sh's own trap-based
 // cleanup.
 const liveFixtureRoots = new Set();
+// BL-1305: the fake-bin dirs are created outside any fixture root, so
+// cleanupRoot never saw them - 13 were left orphaned on the host alongside
+// the 22 fixture roots. Tracked here and removed by the same reaper.
+const liveFakeBinDirs = new Set();
 
 function cleanupRoot(root) {
   const sock = tmuxSocket(root);
@@ -56,13 +60,82 @@ onAbnormalExit(() => {
       // best-effort - the process is already exiting
     }
   }
+  for (const dir of liveFakeBinDirs) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      liveFakeBinDirs.delete(dir);
+    } catch {
+      // best-effort - the process is already exiting
+    }
+  }
 });
 
+const AGENT_NAME = 'claude';
+// Every stub invocation appends a line here, so a scenario can assert the
+// stub actually RAN - not merely that no real agent did. A test that passes
+// because nothing launched at all is the failure mode this ticket's qa_e2e
+// explicitly rules out.
+const STUB_RAN_LOG = 'stub-ran.log';
+// Long enough to outlive any scenario, short enough that a stub the reaper
+// somehow missed dies on its own instead of becoming an orphan.
+const STUB_RESIDENT_SECONDS = 300;
+
+// BL-1305: prepending fakeBin to PATH does not make the stub the thing that
+// runs. zsh sources $ZDOTDIR/.zshenv on EVERY invocation - the
+// non-interactive `zsh -c` inside role_lifecycle.sh, and the generated
+// `#!/usr/bin/env zsh` launch script in the pane - and the host's own
+// ~/.zshenv prepends the directory holding the REAL agent binary AHEAD of
+// whatever the fixture set. The bare name then resolved to the real binary
+// and a real, billable agent booted against a throwaway fixture root: 21 of
+// them measured alive on 2026-08-30, ~2.6 GB resident, each told to begin its
+// role loop. BL-458/BL-817 both addressed REAPING, so even a perfect reaper
+// still boots real agents for the duration of a run; this is the prevention
+// half.
+//
+// The fix is to stop the re-ordering rather than try to out-prepend it:
+// ZDOTDIR points zsh at a fixture-owned directory, so the host startup file
+// is not read at all and the only startup file in play is the one the
+// fixture writes beside its own stub.
 function mkFakeBin() {
   const dir = mkSocketFixtureRoot('aps-role-lifecycle-fakebin-');
-  fs.writeFileSync(path.join(dir, 'claude'), '#!/usr/bin/env bash\nexit 0\n');
-  fs.chmodSync(path.join(dir, 'claude'), 0o755);
+  const stub = path.join(dir, AGENT_NAME);
+  // The stub must STAY RESIDENT, not `exit 0`. A role's pane is alive only
+  // while its process is, and the scenarios assert real live sessions - so an
+  // instantly-exiting stub kills the session under them. Those assertions
+  // used to hold only because the REAL agent was the thing running and stayed
+  // up: the defect was propping up the suite that was supposed to catch it.
+  // The sleep is BOUNDED so a missed reap self-heals rather than sitting for
+  // ever; cleanupRoot's tmux kill-server is the primary teardown and
+  // onAbnormalExit (BL-458) covers SIGTERM/SIGINT.
+  fs.writeFileSync(
+    stub,
+    [
+      '#!/usr/bin/env bash',
+      `printf '%s\\n' "$0" >> '${path.join(dir, STUB_RAN_LOG)}'`,
+      `exec sleep ${STUB_RESIDENT_SECONDS}`,
+      '',
+    ].join('\n')
+  );
+  fs.chmodSync(stub, 0o755);
+  // The fixture's own .zshenv, read in place of the host's because fakeEnv
+  // sets ZDOTDIR to this directory. It re-asserts the stub dir at the front
+  // of PATH, so the stub wins in every nested zsh the fixture starts, not
+  // just the first.
+  fs.writeFileSync(
+    path.join(dir, '.zshenv'),
+    `export PATH='${dir}'"\${PATH:+${path.delimiter}\$PATH}"\n`
+  );
+  liveFakeBinDirs.add(dir);
   return dir;
+}
+
+// How many times the fixture stub was executed. Used to prove a scenario is
+// non-vacuous: the stub ran, so the absence of a real agent is prevention,
+// not an empty run.
+function stubRanCount(fakeBin) {
+  const log = path.join(fakeBin, STUB_RAN_LOG);
+  if (!fs.existsSync(log)) return 0;
+  return fs.readFileSync(log, 'utf8').split('\n').filter((line) => line.trim() !== '').length;
 }
 
 function fakeEnv(fakeBin) {
@@ -71,6 +144,9 @@ function fakeEnv(fakeBin) {
     SWARMFORGE_CONFIG: undefined,
     ANTHROPIC_API_KEY: undefined,
     ANTHROPIC_AUTH_TOKEN: undefined,
+    // BL-1305: this is what makes the PATH below hold. Without it the host
+    // ~/.zshenv re-prepends the real binary's directory ahead of fakeBin.
+    ZDOTDIR: fakeBin,
     PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
   };
 }
@@ -441,4 +517,4 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+module.exports = { registerSteps, mkFakeBin, fakeEnv, stubRanCount, AGENT_NAME, STUB_RAN_LOG };
