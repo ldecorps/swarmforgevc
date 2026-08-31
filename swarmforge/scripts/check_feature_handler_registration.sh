@@ -14,8 +14,12 @@
 #
 # Sits beside check_pipeline_code_on_main.sh in the commit-guard chain, which
 # already refuses a bad `main` tip before it exists rather than reacting to
-# one that already does. Delegated to from swarmforge/scripts/run_commit_guards.sh,
-# which both swarmforge/git-hooks/pre-commit and pre-merge-commit exec.
+# one that already does. Reached on BOTH commit-time paths, which are two
+# different hooks rather than one: swarmforge/git-hooks/pre-commit execs
+# swarmforge/scripts/run_commit_guards.sh, and swarmforge/git-hooks/pre-merge-commit
+# - the only hook git fires for a clean `git merge --no-ff` - runs this guard
+# itself. Both incidents above put `main` into the bad state BY MERGE, so
+# wiring reached only from run_commit_guards.sh would have caught neither.
 #
 # The decision itself lives in the pure assessor
 # (extension/src/tools/featureHandlerRegistrationCheck.ts, unit-tested under

@@ -1,12 +1,62 @@
 #!/usr/bin/env bash
 # BL-632: pre-merge-commit is a SEPARATE hook from pre-commit and is the
 # only one that fires for `git merge --no-ff` (the handoff path's
-# merge_and_process shape). Without this file, pre-commit alone leaves the
-# --no-ff merge path unguarded - coverage-in-disguise, the exact hole the
-# BL-590 post-mortem called out. Delegates to the same standalone script
-# pre-commit uses, so the QA-exclusive path definition lives in one place.
-set -euo pipefail
+# merge_and_process shape, and how QA lands every approved commit). Without
+# this file, pre-commit alone leaves the --no-ff merge path unguarded -
+# coverage-in-disguise, the exact hole the BL-590 post-mortem called out.
+#
+# BL-1303: that hole was only half closed. This hook ran ONE guard while
+# pre-commit had grown to five, so a feature file could reach `main` with
+# no runnable step handler by the merge path - which is how BOTH incidents
+# BL-1303 cites actually happened (BL-1253 by a resurrecting merge, BL-709
+# by merge 45625ef9cb). check_feature_handler_registration.sh therefore runs
+# here too.
+#
+# It is NOT repointed at run_commit_guards.sh wholesale: that would newly
+# subject every merge to check_commit_size.sh, check_ticket_deletion.sh and
+# the expensive check_property_suite_drift.sh, whose allowlist matcher is
+# currently broken and running under an operator override (BL-1234).
+# Widening the whole chain to the merge path is a separate ticket.
+#
+# The two guards are NOT a sequential `set -e` chain either - that is the
+# first-failure-stop shape BL-1242/BL-1252 removed from pre-commit, where
+# the first refusal aborted the hook and every later violation waited for
+# the next attempt. Each guard's status is captured, the combined status is
+# exited, and each guard still runs under its own `set -euo pipefail`. The
+# aggregation itself is shared with run_commit_guards.sh rather than
+# re-derived here (commit_guard_chain_lib.sh).
+#
+# KNOWN RESIDUAL, so it is not mistaken for coverage: a FAST-FORWARD merge
+# fires neither this hook nor pre-commit, so no commit-hook guard covers
+# that path at all. A CONFLICTED merge finished with `git commit` fires
+# pre-commit and so is covered. Both are properties of githooks(5).
+set -uo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$HOOK_DIR/../scripts"
+GUARD_DIR="${SWARMFORGE_COMMIT_GUARD_DIR:-$SCRIPTS_DIR}"
+GUARD_CHAIN_LABEL="pre-merge-commit"
 
-"$REPO_ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
+# The chain runs WITHOUT `set -e` (see above), so a source that fails does
+# not abort: run_guard would simply be undefined, every guard would be a
+# "command not found", and the hook would still reach its `exit 0` - a merge
+# waved through by a missing file. Refuse instead. The same guard-chain rule
+# as everywhere else: a check that cannot run is never collected as a pass.
+if [ ! -r "$SCRIPTS_DIR/commit_guard_chain_lib.sh" ]; then
+  echo "pre-merge-commit: MERGE REFUSED. The guard chain could not be loaded: $SCRIPTS_DIR/commit_guard_chain_lib.sh is missing or unreadable." >&2
+  exit 1
+fi
+# shellcheck source=../scripts/commit_guard_chain_lib.sh
+. "$SCRIPTS_DIR/commit_guard_chain_lib.sh"
+
+# Order matches the chain pre-commit runs, so a merge with exactly one
+# violation reports the same guard a commit with that violation reports.
+run_guard check_pipeline_code_on_main.sh
+run_guard check_feature_handler_registration.sh
+
+if guard_chain_has_refusal; then
+  report_refusals
+  exit "$guard_chain_status"
+fi
+
+exit 0
