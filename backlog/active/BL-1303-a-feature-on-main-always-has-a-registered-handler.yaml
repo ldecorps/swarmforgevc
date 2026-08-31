@@ -236,4 +236,9 @@ notes: >
   filename: that encodes a naming convention as a boundary and silently exempts
   the next real offender that happens to be named that way.
 
+  Confirmed by the coder 2026-08-31 (note, priority 00): the implementation
+  was already feature-keyed before that constraint landed, and the guard
+  reports 1 offender with 0 of the 11 *Only.js files flagged. Recorded here
+  as verification - the constraint cost no rework and demands none.
+
 assigned_to: coder
