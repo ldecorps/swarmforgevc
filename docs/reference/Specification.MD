@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 31, 2026 (BL-1218: `config remote_control off` now
+decides the launched flag itself, not merely whether one is auto-injected.
+Before this, `remote_control on|off` governed only auto-inject: a Claude
+window line that omitted `--remote-control` got one added when the default
+was on and none when off, but a window line that NAMED the flag explicitly
+was never consulted about the config at all — and both the standing
+`swarmforge.conf` and `packs/full-forge.conf` name `--remote-control`
+explicitly on every Claude window line, so on exactly the packs a human is
+most likely to be running, `remote_control off` switched nothing off. New
+`resolve_remote_control_cli` (`swarmforge/scripts/remote_control_launch_lib.sh`,
+sourced by `swarmforge.sh`) is the one decision site: a non-Claude seat
+passes through unchanged (BL-1108); config on/absent composes byte-for-byte
+as before (a named flag stays where the window line put it, an absent one
+is appended exactly as `extra_cli+=" --remote-control"` always did); config
+off leaves no `--remote-control` flag whatever the window line said, via
+`rc_strip_remote_control_flag` (removes the flag and, when present, the
+session-name token that follows it — a following token starting with `-`
+is a different flag and is kept). The lib is sourced by zsh
+(`swarmforge.sh`) and tested under bash, so it uses a `sed` transform
+rather than a token loop over an unquoted parameter (the BL-801 word-split
+hazard). Sibling to BL-1217 (same source intake, direction 1 vs. 2):
+BL-1217 made repair/health READ config off for scripts already on disk;
+this makes launch WRITE config off into new scripts, so a persisted launch
+script never disagrees with the config effective when it was written. Out
+of scope, both slices: rewriting an already-written script when config
+flips mid-run. See `docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md`
+"New: `config remote_control off` decides the launched flag itself" section.
+Acceptance:
+`specs/features/BL-1218-config-off-is-honored-over-an-explicit-window-flag.feature`.)
+Prior entry —
 **Last Updated:** August 31, 2026 (BL-1253: the stamp-off review of Cursor
 hotfix `2ec06b6ef1` reaches its final round-3 state — CONFIRMED, still
 `stamp-open`. Supersedes the August 30 entry below, written before this
