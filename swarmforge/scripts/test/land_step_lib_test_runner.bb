@@ -144,6 +144,101 @@
     (assert= "replay!: no extra worktree left registered after a successful replay"
              before-count after-count)))
 
+;; ── BL-1298: the replay runs from the worktree the caller is actually in ──
+;; `.git` is a DIRECTORY only in the main checkout. In a linked worktree - the
+;; only place a pipeline role ever works - it is a FILE holding `gitdir: ...`,
+;; so a scratch path built from `<root>/.git` names a child of a regular file
+;; and `git worktree add` fails outright. The replay must ask git where the
+;; real git directory is, and answer the same from either checkout.
+
+(defn- linked-worktree! [root]
+  (let [wt (str (fs/path root "linked-wt"))]
+    (sh! root "git" "worktree" "add" "-q" "--detach" wt "HEAD")
+    wt))
+
+(defn- scratch-path-for [root task-ticket-id commit]
+  (str (fs/path root ".git" "land-replay-worktrees"
+                (str task-ticket-id "-" (subs commit 0 10)))))
+
+(defn- replay-branch-for [task-ticket-id commit]
+  (str "land-replay/" task-ticket-id "-" (subs commit 0 10)))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling unlanded work")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        wt (linked-worktree! root)
+        from-linked (land-step-lib/replay! {:root wt :commit commit :task-ticket-id "BL-9001"
+                                            :own-paths ["backlog/active/BL-9001-x.yaml"]})]
+    (assert-true "replay!: succeeds when invoked from a linked worktree"
+                 (:success from-linked))
+    (when (:success from-linked)
+      (assert= "replay!: a linked worktree replays exactly the ticket's own paths"
+               "backlog/active/BL-9001-x.yaml"
+               (:out (sh! root "git" "diff-tree" "-r" "--no-commit-id" "--name-only"
+                          (:commit from-linked))))
+      (assert= "replay!: a linked worktree replays onto origin/main"
+               (:out (sh! root "git" "rev-parse" "origin/main"))
+               (:out (sh! root "git" "rev-parse" (str (:commit from-linked) "^")))))
+    ;; Same ticket, same commit, other checkout: the answer must not depend on
+    ;; which one asked. Compared by TREE, not by sha - the two commits are
+    ;; distinct objects only because they are made at different seconds.
+    (sh! root "git" "branch" "-q" "-D" (replay-branch-for "BL-9001" commit))
+    (let [from-main (land-step-lib/replay! {:root root :commit commit :task-ticket-id "BL-9001"
+                                            :own-paths ["backlog/active/BL-9001-x.yaml"]})]
+      (assert-true "replay!: succeeds from the main checkout too" (:success from-main))
+      (when (and (:success from-linked) (:success from-main))
+        (assert= "replay!: the two checkouts produce the same replayed tree"
+                 (:out (sh! root "git" "rev-parse" (str (:commit from-main) "^{tree}")))
+                 (:out (sh! root "git" "rev-parse" (str (:commit from-linked) "^{tree}"))))))))
+
+;; A failed attempt is not free: `git worktree add -b` creates the branch even
+;; when it then fails to make the checkout (verified against git directly), and
+;; the create failure path returned without deleting it. The next attempt then
+;; failed with "branch already exists" - a DIFFERENT reason from the first, so
+;; whoever read the second message was sent chasing the wrong defect.
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        scratch (scratch-path-for root "BL-9001" commit)
+        branch (replay-branch-for "BL-9001" commit)]
+    ;; A regular FILE where the scratch checkout must go: `worktree add` cannot
+    ;; create it, which is the create-failure path under test.
+    (fs/create-dirs (fs/parent scratch))
+    (spit scratch "not a directory\n")
+    (let [result (land-step-lib/replay! {:root root :commit commit :task-ticket-id "BL-9001"
+                                          :own-paths ["backlog/active/BL-9001-x.yaml"]})]
+      (assert= "replay!: a scratch checkout that cannot be created is a failure"
+               false (:success result))
+      (assert-includes "replay!: the failure names the scratch checkout"
+                       (:reason result) "could not create worktree")
+      (assert= "replay!: a failed create leaves no scratch branch behind"
+               "" (:out (sh! root "git" "branch" "--list" branch))))))
+
+;; Scenario 03: once the first attempt's reason is gone, so is the failure. A
+;; leaked branch would make the retry fail for its own reason instead.
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        scratch (scratch-path-for root "BL-9001" commit)
+        args {:root root :commit commit :task-ticket-id "BL-9001"
+              :own-paths ["backlog/active/BL-9001-x.yaml"]}]
+    (fs/create-dirs (fs/parent scratch))
+    (spit scratch "not a directory\n")
+    (let [first-attempt (land-step-lib/replay! args)]
+      (assert= "replay!: the first attempt fails" false (:success first-attempt))
+      (fs/delete-if-exists scratch)
+      (let [retry (land-step-lib/replay! args)]
+        (assert-true "replay!: the retry succeeds once the first attempt's reason is gone"
+                     (:success retry))
+        (assert= "replay!: a retry never fails for a branch the first attempt leaked"
+                 nil (:reason retry))))))
+
 ;; ── entanglement-note ────────────────────────────────────────────────────
 
 (let [msg (land-step-lib/entanglement-note "BL-9001-fixture" #{"BL-9002" "BL-9003"})]
