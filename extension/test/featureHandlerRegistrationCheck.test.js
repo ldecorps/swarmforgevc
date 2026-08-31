@@ -261,6 +261,90 @@ test('a module the registry requires but the tree does not carry is a refusal na
   assert.equal(offenders[0].path, `${STEPS}/bl9VanishedSteps.js`);
 });
 
+test('a module required by two other step files is read only once', () => {
+  // Both bl1AaaSteps.js and bl2BbbSteps.js require the same shared module.
+  // The offender list alone cannot tell dedup from re-visiting: either way
+  // it comes out empty. What dedup actually buys is that the shared module
+  // is never re-read once it has been seen, so the discriminator is a read
+  // count, not the offender list.
+  //
+  // The shared module lives under helpers/, not directly under steps/, so it
+  // is never itself classified as a top-level handler - otherwise the
+  // sibling-script scan's OWN legitimate read of every reachable handler
+  // would add a second, unrelated read and defeat the count.
+  const SHARED = `${STEPS}/helpers/sharedSteps.js`;
+  const files = {
+    'specs/features/BL-1-aaa.feature': 'Feature: aaa',
+    'specs/features/BL-2-bbb.feature': 'Feature: bbb',
+    [`${STEPS}/index.js`]: registry('bl1AaaSteps', 'bl2BbbSteps'),
+    [`${STEPS}/bl1AaaSteps.js`]: "require('./helpers/sharedSteps');",
+    [`${STEPS}/bl2BbbSteps.js`]: "require('./helpers/sharedSteps');",
+    [SHARED]: 'module.exports = {};',
+  };
+  const base = tree(files);
+  const reads = [];
+  const offenders = assessFeatureHandlerRegistration({
+    ...base,
+    readFile: (p) => {
+      reads.push(p);
+      return base.readFile(p);
+    },
+  });
+  assert.deepEqual(offenders, []);
+  const sharedReads = reads.filter((p) => p === SHARED).length;
+  assert.equal(
+    sharedReads,
+    1,
+    `the shared module was read ${sharedReads} times - the walk is not deduping an already-seen required module`
+  );
+});
+
+test('a require resolving to a non-.js module is reachable but not traversed further', () => {
+  // extractRequiredModules only appends .js when the specifier names no
+  // extension of its own; a require naming a non-.js file (a fixture, a
+  // config) must still count as reachable without being queued as a step
+  // file to walk requires out of. A blank fixture cannot distinguish "not
+  // traversed" from "traversed and found nothing", so the fixture's own text
+  // contains a require-shaped reference in single quotes (so it survives
+  // withoutEmbeddedSource's double-quote/backtick blanking): traversing it
+  // would surface a phantom missing-registry-module offender for a module
+  // that is never meant to be resolved.
+  const offenders = assessFeatureHandlerRegistration(
+    tree({
+      'specs/features/BL-1-thing.feature': 'Feature: thing',
+      [`${STEPS}/index.js`]: registry('bl1ThingSteps'),
+      [`${STEPS}/bl1ThingSteps.js`]: "require('./fixture.dat');",
+      [`${STEPS}/fixture.dat`]: "require('./ghost');",
+    })
+  );
+  assert.deepEqual(offenders, []);
+});
+
+test('a feature file whose name declares no ticket id is never an offender', () => {
+  const offenders = assessFeatureHandlerRegistration(
+    tree({
+      'specs/features/smoke-test.feature': 'Feature: smoke test',
+      [`${STEPS}/index.js`]: registry('smokeSteps'),
+      [`${STEPS}/smokeSteps.js`]: 'module.exports = {};',
+    })
+  );
+  assert.deepEqual(offenders, []);
+});
+
+test('an unreadable handler is a refusal naming it when the registry itself cannot be read', () => {
+  // With the registry unreadable, nothing is known to be reachable, so
+  // every handler in the tree is scanned for sibling scripts - including one
+  // that cannot itself be read.
+  const offenders = assessFeatureHandlerRegistration(
+    tree({ [`${STEPS}/bl1OneSteps.js`]: null })
+  );
+  assert.deepEqual(kinds(offenders).sort(), ['unreadable-handler', 'unreadable-step-registry']);
+  assert.equal(
+    offenders.find((o) => o.kind === 'unreadable-handler').path,
+    `${STEPS}/bl1OneSteps.js`
+  );
+});
+
 // ── reachability is transitive, not one hop ─────────────────────────────────
 test('a handler registered through another step file counts as registered', () => {
   const offenders = assessFeatureHandlerRegistration(
