@@ -242,6 +242,62 @@
       (assert= "entangled-siblings: the real entanglement survives a subject match on origin/main"
                #{"BL-9002"} (:unlanded result)))))
 
+;; ── BL-1308: a sibling reachable only through a merge's SECOND parent ─────
+;; The detector's candidate walk must cover every commit the replay's
+;; own-path diff can draw content from. `own-commit-changed-paths` reads a
+;; merge against its FIRST parent, so it pulls in everything that merge's
+;; second parent carried - regardless of who authored it. A detector that
+;; walked --first-parent never saw those commits, so a sibling riding in on
+;; the second parent entered the replay while its id never reached the
+;; report.
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "bl1308-sibling")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling unlanded work")
+  (sh! root "git" "checkout" "-q" "main")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  ;; The forward-merge shape: its subject names the CITED ticket, and the
+  ;; sibling's commits arrive on the second parent under their own subjects.
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: forward merge" "bl1308-sibling")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/entangled-siblings root commit "BL-9001")]
+    (assert= "entangled-siblings: names a sibling reachable only via a merge's second parent"
+             #{"BL-9002"} (:entangled result))
+    (assert= "entangled-siblings: that sibling is reported as unlanded"
+             #{"BL-9002"} (:unlanded result))
+    (assert= "entangled-siblings: no warning on a clean read of a merge ancestry"
+             nil (:warning result))))
+
+;; Invariant 1, at the decision: every ticket whose content the replay tip
+;; would add over origin/main is named in the same run's report.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "bl1308-sibling2")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling unlanded work")
+  (sh! root "git" "checkout" "-q" "main")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: forward merge" "bl1308-sibling2")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "land-plan: a second-parent sibling forces the tip-pure replay" :replay (:action plan))
+    (assert= "land-plan: and names it" #{"BL-9002"} (:entangled plan))))
+
+;; A first-parent sibling is still found - widening the walk adds coverage,
+;; it never trades one blind spot for another.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9003-x.yaml" "id: BL-9003\n" "BL-9003: first-parent sibling")
+  (sh! root "git" "checkout" "-q" "-b" "bl1308-sibling3")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: second-parent sibling")
+  (sh! root "git" "checkout" "-q" "main")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: forward merge" "bl1308-sibling3")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/entangled-siblings root commit "BL-9001")]
+    (assert= "entangled-siblings: both walks' siblings are named"
+             #{"BL-9002" "BL-9003"} (:entangled result))))
+
 ;; entanglement-note names only what is left to adjudicate.
 (let [msg (land-step-lib/entanglement-note "BL-9001-fixture" #{})]
   (assert-includes "entanglement-note: says so when every sibling already landed" msg "already landed")
