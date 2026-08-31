@@ -191,4 +191,28 @@ notes: |
   met: no human sentence from the source note is dropped, and the coder's
   finding is quoted verbatim above.
 
+  ## Pipeline state, 2026-08-31 - parked at QA, NOT unstarted work (specifier)
+
+  Recorded here because it previously lived ONLY in
+  `backlog/evidence/BL-1307-specifier-adjudication-land-hold-20260831.md`, and
+  an evidence file is not durable ticket state. On 2026-08-31 00:45 this ticket
+  therefore read as ordinary `status: todo` work and was demoted `active/` ->
+  `paused/` on that reading. The demote was reasonable on the information the
+  ticket carried; this block is the information it was missing.
+
+  - **A parcel for this ticket exists and is COMPLETE.** QA verified it fully
+    green - unit + property + 6/6 acceptance + sibling regressions + the wiring
+    anchor live - and then declined to land it.
+  - **It is parked at QA, not bounced.** No role in its chain owns
+    `land_step_lib.bb`; nothing was sent back, and no role has rework to do.
+  - **The only blocker is BL-1300's land.** The tip-pure replay carries unlanded
+    BL-1300 content; once BL-1300 lands, that content is byte-identical rather
+    than novel and this lands unchanged. BL-1300 sits in `backlog/hold/` awaiting
+    a human ruling tap, so this cannot move until that tap happens.
+  - **Therefore: do NOT re-promote this as new work, do NOT route it to a coder,
+    and do NOT rebuild it.** Wherever this file sits, the parcel is the truth.
+    Re-promoting it would rebuild finished work from scratch.
+  - Do NOT re-cite a different upstream commit to force the land - that silently
+    replays a PARTIAL parcel (BL-1297, BL-1308).
+
 assigned_to: coder
