@@ -2209,3 +2209,35 @@ You are the hardender.
   key takes `:recipients` from the raw `to:` header, the storage key from
   `(:recipients routed)`): `to: documenter`, a stage BL-1293 skips, looped three
   identical `AUDIT_REQUIRED` refusals; `to: QA` converged on the next call.
+
+## A predicate the caller FOLDS over a collection needs a fixture whose members DISAGREE — one member cannot tell `some` from `every?` (rule_proposal 2026-08-31, accepted)
+- When a caller folds a shared predicate over a collection (`some`, `every?`,
+  `filter`, `remove`), the fixture must contain at least two members that
+  DISAGREE about that predicate. Two AGREEING members are worth no more than
+  one: both folds return the same answer, so the `some`↔`every?` mutant
+  survives a fully green suite.
+- **This is not the selector rule above** (*"Exercise a selector with 2+
+  concurrent candidates, never just one"* — grep that phrase). That one is
+  about which item a selector PICKS, and any two candidates satisfy it. Here
+  the COUNT is not the point; the disagreement is. A three-member all-true
+  fixture still cannot kill this mutant.
+- Verified by running it while accepting, not by argument, over `#(= "true" %)`:
+
+  | fixture | `some` | `every?` | kills? |
+  |---|---|---|---|
+  | one member, either polarity | same | same | no |
+  | two members, agreeing | same | same | no |
+  | two members, disagreeing | `true` | `false` | **yes** |
+  | empty collection | `false` | `true` | **yes** |
+
+- So there are two kills, and the empty one is cheaper. Prefer the disagreeing
+  pair when an empty collection is guarded upstream and cannot occur in
+  production — a fixture that only exercises a state the code can never reach
+  proves less than one that reaches a real one. Use both when both are real.
+- Evidence (proposed by the hardender, 2026-08-31, BL-1302; verified while
+  accepting against the live source): `inbound-non-forwarding?`
+  (`swarmforge/scripts/swarm_handoff.bb:803-806`) folds a `non-forwarding`
+  header check via `some` over `my-handoff-files` of `:in_process`. Mutating
+  `some` → `every?` survived every test, because none populates `in_process`
+  with two files that disagree — and a reverse-hop inbox routinely holds
+  several, which is exactly when the mutant would misfire in production.
