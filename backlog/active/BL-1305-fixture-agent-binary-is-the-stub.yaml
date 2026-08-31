@@ -145,3 +145,5 @@ notes: |
   Its `approval_context` still stands unchanged and still needs an answer -
   including the live question about the orphaned agent processes, which was
   never actually put to the human.
+
+assigned_to: coder
