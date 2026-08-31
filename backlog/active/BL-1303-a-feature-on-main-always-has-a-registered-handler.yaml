@@ -241,4 +241,38 @@ notes: >
   reports 1 offender with 0 of the 11 *Only.js files flagged. Recorded here
   as verification - the constraint cost no rework and demands none.
 
+  PARKED AT QA 2026-08-31, NOT BOUNCED - no rework is owed to any role in this
+  chain. QA verified this ticket's own work green on every gate and held rather
+  than landing, because the shared land step builds a replay tip that DROPS
+  this ticket's own core files: the CLI entry point, the three
+  featureHandlerRegistration modules, the step handler and its index.js
+  registration, and three test files - while keeping
+  check_feature_handler_registration.sh, which shells out to the dropped CLI.
+  Landing that tip would wire a guard whose $CHECKER has no source and fail
+  closed on every subsequent commit and merge to main.
+
+  The specifier verified the observation independently and re-diagnosed the
+  cause the same turn (ruling:
+  backlog/evidence/BL-1303-specifier-ruling-qa-hold-upheld-under-include-20260831.md;
+  QA's own evidence:
+  backlog/evidence/BL-1303-qa-hold-land-step-cross-contamination-20260831.md).
+  Cause is NOT the dangling replay branches QA's note names - those are outside
+  the range the computation walks. This ticket's files reached the QA branch
+  early, as passenger content on 86c2ed1c2d (QA's merge of documenter BL-1298),
+  so by the time QA made its own BL-1303-tagged merge they were already on that
+  merge's FIRST parent and absent from its first-parent diff, which is what
+  land_step_lib.bb's own-paths reads.
+
+  UNPARK CONDITION: BL-1315 ships (amended this turn to cover this direction;
+  route via expedite.sh, it is a defect in the land step). Then QA re-runs
+  land_step_cli.bb on the SAME cited commit ab8d10a8b3 - no re-work, no
+  re-verification of this parcel. Do NOT re-cite an upstream non-merge commit
+  to get around it: only ab8d10a8b3 names this ticket on the first-parent walk,
+  and citing further up replays a partial parcel, which is strictly worse.
+
+  The parcel HOLDER is QA, not the stale assigned_to below (that field records
+  where the coordinator routed the work, not where the parcel is). The ticket
+  stays in backlog/active/ deliberately: backlog/hold/ silences the approval
+  sweep, which scans active and paused only.
+
 assigned_to: coder
