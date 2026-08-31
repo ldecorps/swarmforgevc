@@ -3,10 +3,47 @@
 # only one that fires for `git merge --no-ff` (the handoff path's
 # merge_and_process shape). Without this file, pre-commit alone leaves the
 # --no-ff merge path unguarded - coverage-in-disguise, the exact hole the
-# BL-590 post-mortem called out. Delegates to the same standalone script
-# pre-commit uses, so the QA-exclusive path definition lives in one place.
-set -euo pipefail
+# BL-590 post-mortem called out. Delegates to the same standalone scripts
+# pre-commit uses, so each guard's definition lives in one place.
+#
+# BL-1303: also runs check_feature_handler_registration.sh, so a --no-ff
+# merge (how QA lands every approved commit, and how both BL-1253 and
+# BL-709 put main into the bad state) is refused exactly like a plain
+# commit is. Deliberately NOT repointed at run_commit_guards.sh as a whole:
+# that would newly subject every merge to check_commit_size.sh,
+# check_ticket_deletion.sh and check_property_suite_drift.sh - the last of
+# which is running under an operator override for a broken allowlist
+# matcher (BL-1234) - which is a separate widening, not this ticket.
+#
+# Runs both guards unconditionally rather than as a `set -e` sequential
+# chain, so one guard's refusal never masks the other's (the shape
+# BL-1242/BL-1252 removed from pre-commit, Article 4.4 applied to a gate).
+# Each guard keeps its own `set -euo pipefail` inside; only the chaining
+# here is `set -uo pipefail` with per-call status capture.
+set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-"$REPO_ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
+status=0
+refused=""
+
+run_guard() {
+  local script="$1"
+  local st=0
+  "$REPO_ROOT/swarmforge/scripts/$script" || st=$?
+  if [ "$st" -ne 0 ]; then
+    status="$st"
+    refused="${refused}${refused:+ }${script}"
+  fi
+  return 0
+}
+
+run_guard check_pipeline_code_on_main.sh
+run_guard check_feature_handler_registration.sh
+
+if [ -n "$refused" ]; then
+  echo "" >&2
+  echo "pre-merge-commit: MERGE REFUSED. Guards reporting a violation: ${refused}" >&2
+fi
+
+exit "$status"
