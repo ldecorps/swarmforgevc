@@ -421,6 +421,31 @@
     (assert= "own-paths (06): the ticket's own content still lands, though it arrived on an earlier sibling merge"
              true (contains? (set (:paths result)) "own.txt"))))
 
+;; 07: HARDENING FINDING (BL-1315) - a path touched by BOTH an unlanded
+;; sibling's TAGGED commit and a later UNTAGGED own-chain commit is wrongly
+;; dropped. `path-owner-tickets` runs every touching commit through
+;; `commit-ticket-id` and `keep`s only the non-nil results - so an untagged
+;; commit's touch on a path contributes NOTHING to `owners`, and the
+;; exclusion cond then sees only the sibling's id and reads "every owner is
+;; unlanded" even though an own, untagged commit also touched the same
+;; path. This is the same shape as scenario 03 (an untagged own commit
+;; must never cause a drop) except the path is SHARED with a sibling
+;; instead of exclusive to the own chain - a combination no existing
+;; scenario or property-test fixture exercises (own and sibling paths are
+;; always disjoint filenames elsewhere in this suite and in
+;; bl1315OwnPathsFullRangeInvariants.property.test.js's generator).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "bl1315-07-sibling")
+  (commit! root "shared.txt" "sibling content\n" "BL-9002: sibling creates shared file")
+  (sh! root "git" "checkout" "-q" "main")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: forward merge (brings in sibling)" "bl1315-07-sibling")
+  (commit! root "shared.txt" "own content on top of the sibling's\n" "coder: refine shared.txt further (no ticket tag)")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "own-paths (07): a shared path with a later untagged own edit atop an unlanded sibling's touch is never dropped (invariant 1)"
+             true (contains? (set (:paths result)) "shared.txt"))))
+
 ;; ── report ─────────────────────────────────────────────────────────────────
 
 (if (seq @failures)
