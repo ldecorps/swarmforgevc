@@ -1,0 +1,1 @@
+{"id":"BL-1311","messages":[{"seq":0,"ts":1788288933698,"author":"swarm","type":"outbound","text":"BL-1311 🎵 in progress — A Let's Talk turn is silently dropped when no Bubble topic is bound - the fallback resolver exists, is exported, and has zero callers"}]}
