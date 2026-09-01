@@ -31,13 +31,14 @@ cat > "$STATE_DIR/registry.json" <<'JSON'
   },
   "capabilities": {},
   "role_matrix": {
-    "QA": [{"provider": "cursor", "model": "auto", "score": 0.9, "evidence": "compliance-battery:fixture"}]
+    "QA": [{"provider": "cursor", "model": "auto", "score": 0.9, "evidence": "compliance-battery:fixture"}],
+    "coder": [{"provider": "cursor", "model": "auto", "score": 0.9, "evidence": "compliance-battery:fixture"}]
   },
   "adapters": {}
 }
 JSON
 cat > "$STATE_DIR/scorecards/cursor__auto.json" <<'JSON'
-{"model": "auto", "entries": [{"competency": "QA-gate", "status": "pass", "reason": "fixture"}]}
+{"model": "auto", "entries": [{"competency": "QA-gate", "status": "pass", "reason": "fixture"}, {"competency": "coder-gate", "status": "pass", "reason": "fixture"}]}
 JSON
 
 mk_root() {
@@ -146,5 +147,40 @@ OUT4="$(MODEL_STEWARD_STATE_DIR="$FRESH_STATE" zsh -c "
 [[ "$OUT4" == *"anthropic/claude-sonnet-5"* ]] || fail "04: refusal did not resolve the real seed's provider/model (got: $OUT4)"
 
 pass "04: with no runtime registry, the real committed seed is read and an unscored model fails closed (invariant 1)"
+
+# ── 5: BL-982 - an `@`-seat is gated against its STAGE's role-matrix/gate
+#    (a mono-router extra seat, e.g. coder@extra, is not itself a role the
+#    matrix knows about), while the refusal still names the full seat id. ──
+ROOT5="$(mk_root multi-seat-root)"
+cat > "$ROOT5/swarmforge/swarmforge.conf" <<'CONF'
+config active_backlog_max_depth -1
+window coder cursor coder --model auto
+window coder@extra cursor coder-extra --model mystery-unmapped
+CONF
+OUT5A="$(MODEL_STEWARD_STATE_DIR="$STATE_DIR" zsh -c "
+  source '$SWARMFORGE_SH' '$ROOT5'
+  parse_config
+  echo 'PARSE_CONFIG_RETURNED'
+" 2>&1)" && RC5A=0 || RC5A=$?
+[[ $RC5A -ne 0 ]] || fail "05a: an unmapped @-seat should refuse"
+[[ "$OUT5A" == *"role 'coder@extra'"* ]] || fail "05a: refusal did not name the full seat id 'coder@extra' (got: $OUT5A)"
+
+pass "05a: an @-seat's refusal names the full seat id, not its bare stage"
+
+ROOT5B="$(mk_root multi-seat-pass-root)"
+cat > "$ROOT5B/swarmforge/swarmforge.conf" <<'CONF'
+config active_backlog_max_depth -1
+window coder cursor coder --model auto
+window coder@extra cursor coder-extra --model auto
+CONF
+OUT5B="$(MODEL_STEWARD_STATE_DIR="$STATE_DIR" zsh -c "
+  source '$SWARMFORGE_SH' '$ROOT5B'
+  parse_config
+  echo 'PARSE_CONFIG_RETURNED'
+" 2>&1)"
+[[ "$OUT5B" == *"PARSE_CONFIG_RETURNED"* ]] \
+  || fail "05b: an @-seat resolving to a model ranked+gated for its STAGE (coder) should staff, not refuse for a nonexistent 'coder@extra' matrix entry (got: $OUT5B)"
+
+pass "05b: an @-seat is gated against its bare STAGE's role-matrix and compliance gate (mono-router rotate path coverage)"
 
 echo "test_pack_staffing_gate_wiring: ALL CHECKS PASSED"
