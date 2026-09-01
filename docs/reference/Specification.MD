@@ -2,9 +2,7 @@
 
 **Last Updated:** September 1, 2026 (BL-1316: a seat's reasoning effort
 now also retunes at claim/reclaim time from the claimed ticket's
-`mutation_cost` — see the Effort dial section below.)
-
-**Previously:** August 31, 2026 (BL-1303: a new commit-guard,
+`mutation_cost` — see the Effort dial section below; BL-1303: a new commit-guard,
 `check_feature_handler_registration.sh`, refuses a commit or `--no-ff`
 merge on `main` that leaves a `specs/features/*.feature` file with no
 registered — or no longer runnable — step handler. `specs/pipeline/runtime.js`
