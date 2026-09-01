@@ -3164,28 +3164,67 @@
                                                    {:dir (str project-root)})]
     (master-main-reconcile-lib/merge-verdict exit)))
 
+;; BL-1310: local main's ahead-count against origin/main, read FRESH right
+;; before a reset would fire - never a value an earlier decision layer
+;; computed, which the push-then-reset sequence below could have staled.
+;; `git rev-list` failing (a corrupted or unreachable ref) reports nil, not
+;; 0: an undeterminable count must never read as "safe to reset" (invariant
+;; 2 - see master_main_reconcile_lib.bb's own reset-authorized-by-ahead-
+;; count?, which treats nil exactly like a positive count).
+(defn- master-main-local-ahead-count! []
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                            ["git" "rev-list" "--left-right" "--count" "origin/main...main"]
+                            {:dir (str project-root)})]
+    (when (zero? exit)
+      (let [[_behind ahead] (map parse-long (str/split (str/trim out) #"\s+"))]
+        ahead))))
+
+;; BL-1310 required_wiring CONSUMER anchor: wraps the raw `git reset --hard
+;; origin/main` adapter so it only ever runs when local main is genuinely
+;; not ahead of origin/main - the human ruling's "never discard local-ahead
+;; commits; refuse and surface" applied at the one place this call site's
+;; adapter is built (master-main-rematch-onto-origin! below). Delegates the
+;; actual decision to master_main_reconcile_lib.bb's own refuse-reset-if-
+;; local-ahead! - the ONE shared implementation all three reset call sites
+;; use (see that function's own header) - this wrapper only supplies the
+;; real git adapters and the daemon log line.
+(defn- refuse-reset-if-local-ahead! [raw-reset!]
+  (fn []
+    (let [result (master-main-reconcile-lib/refuse-reset-if-local-ahead!
+                  {:ahead-count! master-main-local-ahead-count!
+                   :raw-reset! raw-reset!})]
+      (when (= :local-ahead-refused (:outcome result))
+        (log! "master-main-reconcile" "local-ahead-refused" (str "ahead=" (or (:ahead result) "undeterminable"))))
+      result)))
+
 (defn- master-main-rematch-onto-origin!
   "BL-1138/1141: reset --hard origin/main. Never touches foreign MERGE_HEAD.
    BL-1198: attempts a push first (reusing push-sweep-push! - the same
    git-push adapter push_sweep_lib.bb's own periodic sweep already uses,
-   never a second push path) - only resets when that push is rejected."
+   never a second push path) - only resets when that push is rejected.
+   BL-1310: the reset adapter itself is gated by refuse-reset-if-local-
+   ahead! - only a KNOWN ahead=0 may actually reset; local-ahead or an
+   undeterminable count refuses instead of discarding."
   [success-outcome failure-outcome]
   (if (master-main-merge-head-present?)
     {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
-    (let [result (master-main-reconcile-lib/rematch-with-push-first!
+    (let [raw-reset! (fn []
+                        (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
+                                                  ["git" "reset" "--hard" "origin/main"]
+                                                  {:dir (str project-root)})]
+                          (if (zero? exit)
+                            {:success true}
+                            {:success false :error (str/trim (or err (name failure-outcome)))})))
+          result (master-main-reconcile-lib/rematch-with-push-first!
                   {:push! push-sweep-push!
-                   :reset! (fn []
-                             (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
-                                                       ["git" "reset" "--hard" "origin/main"]
-                                                       {:dir (str project-root)})]
-                               (if (zero? exit)
-                                 {:success true}
-                                 {:success false :error (str/trim (or err (name failure-outcome)))})))})]
+                   :reset! (refuse-reset-if-local-ahead! raw-reset!)})]
       (if (:success result)
         {:success true :outcome success-outcome}
         {:success false
          :error (or (:error result) (name failure-outcome))
-         :outcome failure-outcome}))))
+         :outcome (if (= :local-ahead-refused (:outcome result))
+                    :local-ahead-refused
+                    failure-outcome)}))))
 
 (defn- master-main-reconcile-merge! []
   (let [{:keys [ahead behind]} (push-sweep-rev-counts!)

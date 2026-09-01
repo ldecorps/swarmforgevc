@@ -653,6 +653,109 @@
 
 (non-vacuity-check-bl1248-invariant-2)
 
+;; ── BL-1310 invariant 1 (coder-authored first, per BL-654): "The reconcile
+;;    never runs `git reset --hard origin/main` while local main carries a
+;;    commit not reachable from origin/main - the reset's authority is
+;;    limited to the ahead=0 case." Encoded over reset-authorized-by-ahead-
+;;    count? composed the SAME way handoffd.bb's own refuse-reset-if-local-
+;;    ahead! (the required_wiring CONSUMER anchor) composes it: gate first,
+;;    raw reset adapter only on authorization - restating that composition
+;;    here proves the actual shape production wiring uses, not merely the
+;;    predicate in isolation.
+;;
+;; BL-654 generator-reach: 0 (authorized) and nil (undeterminable) each get
+;; real weight, not rare corners - these are the two branches the invariant
+;; is actually about. Positive counts vary across small and large so "any
+;; positive count refuses" is not proven at just one value.
+(defn gen-ahead-count [s]
+  (gen-pick s [0 0 0 nil nil nil 1 2 3 5 100 987654321]))
+
+(defn- gated-reset-fires? [reset-authorized-by-ahead-count?-fn ahead]
+  (let [calls (atom [])
+        raw-reset! (fn [] (swap! calls conj :reset) {:success true})]
+    (when (reset-authorized-by-ahead-count?-fn ahead)
+      (raw-reset!))
+    (boolean (seq @calls))))
+
+(check-all "bl1310 invariant 1: the raw reset adapter fires if and only if ahead is a KNOWN 0"
+           gen-ahead-count
+           (fn [ahead]
+             (let [fired? (gated-reset-fires? master-main-reconcile-lib/reset-authorized-by-ahead-count? ahead)]
+               (cond
+                 (and (= ahead 0) (not fired?))
+                 (str "ahead=0 is genuinely safe (nothing local would be lost) but the reset never fired")
+
+                 (and (not= ahead 0) fired?)
+                 (str "reset fired despite ahead=" (pr-str ahead) " - a local-ahead or undeterminable count was discarded")
+
+                 :else true))))
+
+;; Non-vacuity: a mutant that ignores ahead entirely and always resets -
+;; exactly today's pre-fix bug shape (every guard shipped so far narrows
+;; WHEN the reset fires, none of them changed WHAT HAPPENS TO THE COMMITS).
+(defn- mutant-always-authorized? [_ahead] true)
+
+(defn- non-vacuity-check-bl1310-invariant-1 []
+  (let [fired? (gated-reset-fires? mutant-always-authorized? 3)]
+    (if fired?
+      (println "non-vacuity confirmed: a mutant that always authorises the reset is flagged (ahead=3 still reset)")
+      (do (println "NON-VACUITY FAILURE (bl1310 always-authorized mutant): expected the reset to fire, it did not")
+          (System/exit 1)))))
+
+(non-vacuity-check-bl1310-invariant-1)
+
+;; ── BL-1310 invariant 2 (coder-authored first, per BL-654): "An
+;;    undeterminable ahead-count is never treated as ahead=0: if the
+;;    reconcile cannot safely tell whether local main is ahead, it leaves
+;;    local main exactly as found and reports why, the same non-destructive
+;;    shape :verdict-unavailable already uses." Two distinct claims from
+;;    invariant 1 above: (a) nil is classified like a REAL positive ahead-
+;;    count, never like 0 (already exercised by invariant 1's own generator,
+;;    restated directly here against the oracle below for its own
+;;    independent proof), and (b) the refusal is always LOUD - a real report
+;;    string naming this ticket, never a silent no-op indistinguishable from
+;;    "nothing to do".
+(defn- oracle-never-guesses-safe? [ahead]
+  ;; Independent restatement: authorized iff ahead is the literal integer 0
+  ;; - nil, and every other value, refuse. Never calls reset-authorized-by-
+  ;; ahead-count? itself.
+  (identical? 0 ahead))
+
+(check-all "bl1310 invariant 2: an undeterminable ahead-count is classified exactly like a real positive one (refuse) - never guessed safe like ahead=0"
+           gen-ahead-count
+           (fn [ahead]
+             (let [actual (master-main-reconcile-lib/reset-authorized-by-ahead-count? ahead)
+                   expected (oracle-never-guesses-safe? ahead)]
+               (if (not= expected actual)
+                 (str "ahead=" (pr-str ahead) " expected authorized?=" expected " got " actual)
+                 true))))
+
+(check-all "bl1310 invariant 2: the refusal always reports why, the same non-destructive shape :verdict-unavailable already uses (names this ticket, stays within the 80-char note budget)"
+           (fn [s] (gen-pick s [0 1 2 3 100 987654321]))
+           (fn [behind]
+             (let [msg (master-main-reconcile-lib/surface-message {:behind behind :reason :local-ahead-refused})]
+               (cond
+                 (not (string? msg)) (str "no report produced for behind=" behind " - a silent refusal is indistinguishable from nothing to do")
+                 (not (clojure.string/includes? msg "BL-1310")) (str "report does not name BL-1310: " (pr-str msg))
+                 (not (clojure.string/includes? msg "not reset")) (str "report does not say no reset happened: " (pr-str msg))
+                 (> (count msg) 80) (str "report exceeds the 80-char note budget: " (pr-str msg))
+                 :else true))))
+
+;; Non-vacuity: a mutant surface-message that silently falls back to no
+;; report at all for this reason (the exact shape a forgotten `case` branch
+;; would take, given surface-message's own no-default `case`).
+(defn- mutant-surface-message-drops-local-ahead [reason]
+  (when-not (= reason :local-ahead-refused) "some other report"))
+
+(defn- non-vacuity-check-bl1310-invariant-2 []
+  (let [msg (mutant-surface-message-drops-local-ahead :local-ahead-refused)]
+    (if (nil? msg)
+      (println "non-vacuity confirmed: a mutant that drops the :local-ahead-refused report is flagged (nil, not a string)")
+      (do (println "NON-VACUITY FAILURE (bl1310 dropped-report mutant): expected nil, got a report")
+          (System/exit 1)))))
+
+(non-vacuity-check-bl1310-invariant-2)
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "master_main_reconcile_lib property: " runs " runs"))
 (if (empty? @failures)

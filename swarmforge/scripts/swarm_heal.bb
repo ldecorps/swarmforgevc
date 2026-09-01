@@ -93,14 +93,30 @@
                          :merge-verdict! (fn [] :clean)
                          ;; BL-1198: attempt a push first — only reset when
                          ;; that push is rejected (genuine divergence).
+                         ;; BL-1310: the reset adapter itself is gated by
+                         ;; master_main_reconcile_lib.bb's refuse-reset-if-
+                         ;; local-ahead! - the SAME shared implementation
+                         ;; handoffd.bb and post_hotfix_merge_origin.bb use,
+                         ;; not a copy - only a KNOWN ahead=0 may actually
+                         ;; reset; local-ahead or an undeterminable count
+                         ;; refuses instead of discarding.
                          :rematch! (fn []
                                      (master-main-reconcile-lib/rematch-with-push-first!
                                       {:push! (fn []
                                                 (let [r (sh root "git" "push" "origin" "main")]
                                                   {:success (zero? (:exit r)) :error (:err r)}))
                                        :reset! (fn []
-                                                 (let [r (sh root "git" "reset" "--hard" "origin/main")]
-                                                   {:success (zero? (:exit r)) :error (:err r)}))}))
+                                                 (master-main-reconcile-lib/refuse-reset-if-local-ahead!
+                                                  {:ahead-count!
+                                                   (fn []
+                                                     (let [c (sh root "git" "rev-list" "--left-right" "--count" "origin/main...main")]
+                                                       (when (zero? (:exit c))
+                                                         (let [[_behind ahead] (map parse-long (str/split (:out c) #"\s+"))]
+                                                           ahead))))
+                                                   :raw-reset!
+                                                   (fn []
+                                                     (let [r (sh root "git" "reset" "--hard" "origin/main")]
+                                                       {:success (zero? (:exit r)) :error (:err r)}))}))}))
                          :merge! (fn []
                                    (let [r (sh root "git" "merge" "--ff-only" "--no-edit" "origin/main")]
                                      (if (zero? (:exit r))

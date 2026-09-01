@@ -406,7 +406,14 @@
       ;; relying on which caller happens to relabel it first.
       :push-unavailable
       (let [msg (str "BL-1288: push failed, not a rejection, " behind " behind - not reset")]
-        (if (<= (count msg) 80) msg "BL-1288: push failed, not a rejection - not reset")))))
+        (if (<= (count msg) 80) msg "BL-1288: push failed, not a rejection - not reset"))
+      ;; BL-1310: local main carries commits origin/main does not have -
+      ;; the reset's authority is limited to ahead=0, so this refuses
+      ;; instead of discarding them. Names the ticket so an operator who
+      ;; never opens a reflog can tell from this line alone why nothing moved.
+      :local-ahead-refused
+      (let [msg (str "BL-1310: local-ahead commits present, " behind " behind - refused, not reset")]
+        (if (<= (count msg) 80) msg "BL-1310: local-ahead commits present - refused, not reset")))))
 
 (defn surface-draft-lines
   "A `note` to the coordinator only - reconciling the master checkout's own
@@ -517,6 +524,7 @@
     :rematch-bookkeeping "rematch-bookkeeping"
     :verdict-unavailable "verdict-unavailable"
     :push-unavailable "push-unavailable"
+    :local-ahead-refused "local-ahead-refused"
     "conflict"))
 
 (defn rematch-owner-recovery?
@@ -840,6 +848,50 @@
       :else {:success false
              :outcome :push-unavailable
              :error (:error push-result)})))
+
+;; ── BL-1310: the reset's authority is limited to ahead=0 ─────────────────
+;; BL-1198/1214/1236/1288 each narrow WHEN a reset onto origin/main may
+;; fire; none of them changes WHAT HAPPENS TO THE COMMITS once it does -
+;; every local-ahead commit is simply gone, recoverable only by luck from
+;; the reflog before `git gc` collects it. Human ruling (this ticket): never
+;; discard local-ahead commits - refuse and surface, a human resolves it.
+;; A reset is authorized ONLY when the caller's own ahead-count is a KNOWN
+;; zero - nil (the count could not be determined) and any positive count
+;; both refuse; nil never reads as "safe to reset" (invariant 2).
+(defn reset-authorized-by-ahead-count?
+  [ahead]
+  (= 0 ahead))
+
+;; ── BL-1310 required_wiring: the ONE shared composition all three reset
+;; call sites (handoffd.bb, swarm_heal.bb, post_hotfix_merge_origin.bb -
+;; all three already load-file this lib) wrap their own raw `git reset
+;; --hard origin/main` adapter with, rather than three independent copies -
+;; exactly as BL-1214's absorb-with-merge! already is. Reads the ahead-
+;; count FRESH via :ahead-count! (never a value an earlier decision layer
+;; computed, which could have staled by the time the reset would fire) and
+;; only calls :raw-reset! when reset-authorized-by-ahead-count? says so;
+;; otherwise returns a refuse outcome without touching anything.
+(defn refuse-reset-if-local-ahead!
+  "adapters:
+     :ahead-count! (fn [] -> int-or-nil) - local main's CURRENT ahead-count
+             against origin/main, read fresh right before the reset would
+             fire; nil when it could not be determined (never treated as 0).
+     :raw-reset!   (fn [] -> map) - the EXISTING reset-to-origin adapter,
+             called ONLY when reset-authorized-by-ahead-count? authorizes
+             it; its return value is passed through completely unchanged.
+   Returns raw-reset!'s own result verbatim when authorized; else
+   {:success false :outcome :local-ahead-refused :ahead <n-or-nil>
+    :error <message naming this ticket>} without ever calling raw-reset!."
+  [{:keys [ahead-count! raw-reset!]}]
+  (let [ahead (ahead-count!)]
+    (if (reset-authorized-by-ahead-count? ahead)
+      (raw-reset!)
+      {:success false
+       :outcome :local-ahead-refused
+       :ahead ahead
+       :error (str "BL-1310: local main ahead of origin/main by "
+                   (if ahead ahead "an undeterminable count")
+                   " - refusing to discard local-ahead commits")})))
 
 ;; ── BL-1214: :ff-absorb execution tries a real merge before resetting ─────
 ;; `absorb-dispatch-plan` resolves a genuine two-way divergence (behind>0,

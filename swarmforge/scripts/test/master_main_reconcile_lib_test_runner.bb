@@ -1140,6 +1140,35 @@
   (assert-true "bl1288: the log tail carries the push's own error"
                (some #(= "Could not resolve host: example.invalid" %) tail)))
 
+;; ── BL-1310: the reset's authority is limited to ahead=0 ──────────────────
+
+(assert= "bl1310: ahead=0 authorises a reset" true
+         (master-main-reconcile-lib/reset-authorized-by-ahead-count? 0))
+(assert= "bl1310: ahead=1 refuses" false
+         (master-main-reconcile-lib/reset-authorized-by-ahead-count? 1))
+(assert= "bl1310: ahead=3 refuses" false
+         (master-main-reconcile-lib/reset-authorized-by-ahead-count? 3))
+(assert= "bl1310: an undeterminable (nil) ahead-count refuses - never treated as 0"
+         false (master-main-reconcile-lib/reset-authorized-by-ahead-count? nil))
+
+;; merge-failure-reason routes the new outcome to its own reason string,
+;; distinct from the generic "conflict" default.
+(assert= "bl1310: :local-ahead-refused maps to its own block reason"
+         "local-ahead-refused" (master-main-reconcile-lib/merge-failure-reason :local-ahead-refused))
+(assert= "bl1310: :local-ahead-refused is not designed rematch recovery" false
+         (master-main-reconcile-lib/rematch-owner-recovery? "local-ahead-refused"))
+
+;; The surfaced note names BL-1310 (qa_e2e_procedure step 3: an operator who
+;; never opens a reflog must be able to tell from this line alone why
+;; nothing moved) and stays within the 80-char note budget.
+(let [msg (master-main-reconcile-lib/surface-message {:behind 3 :reason :local-ahead-refused})]
+  (assert-true "bl1310: :local-ahead-refused surfaces a note at all" (string? msg))
+  (assert-true "bl1310: the surfaced note names BL-1310" (clojure.string/includes? msg "BL-1310"))
+  (assert-true "bl1310: the surfaced note says no reset happened" (clojure.string/includes? msg "not reset"))
+  (assert-true "bl1310: the surfaced note stays within the 80-char limit" (<= (count msg) 80)))
+(let [msg (master-main-reconcile-lib/surface-message {:behind 123456789 :reason :local-ahead-refused})]
+  (assert-true "bl1310: the note still fits when `behind` is long" (<= (count msg) 80)))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")
