@@ -3170,14 +3170,13 @@
 ;; `git rev-list` failing (a corrupted or unreachable ref) reports nil, not
 ;; 0: an undeterminable count must never read as "safe to reset" (invariant
 ;; 2 - see master_main_reconcile_lib.bb's own reset-authorized-by-ahead-
-;; count?, which treats nil exactly like a positive count).
+;; count?, which treats nil exactly like a positive count). Parse shared via
+;; master_main_reconcile_lib.bb's ahead-count-via-rev-list - see its header.
 (defn- master-main-local-ahead-count! []
-  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
-                            ["git" "rev-list" "--left-right" "--count" "origin/main...main"]
-                            {:dir (str project-root)})]
-    (when (zero? exit)
-      (let [[_behind ahead] (map parse-long (str/split (str/trim out) #"\s+"))]
-        ahead))))
+  (master-main-reconcile-lib/ahead-count-via-rev-list
+   {:sh! (fn [] (daemon-cycle-guard-lib/sh!
+                 ["git" "rev-list" "--left-right" "--count" "origin/main...main"]
+                 {:dir (str project-root)}))}))
 
 ;; BL-1310 required_wiring CONSUMER anchor: wraps the raw `git reset --hard
 ;; origin/main` adapter so it only ever runs when local main is genuinely

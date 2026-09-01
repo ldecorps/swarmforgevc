@@ -862,6 +862,29 @@
   [ahead]
   (= 0 ahead))
 
+;; ── BL-1310 cleanup: the ahead-count read that feeds refuse-reset-if-
+;; local-ahead!'s :ahead-count! adapter is byte-for-byte the same `git
+;; rev-list --left-right --count origin/main...main` shell-out + parse-long
+;; split each of the three call sites already had in scope under a
+;; different name (handoffd.bb's push-sweep-rev-counts!, post_hotfix_
+;; merge_origin.bb's rev-counts!, swarm_heal.bb's inline :rev-counts!) -
+;; sharing the PARSE here (not the earlier-computed value; each call site
+;; still shells out fresh, per refuse-reset-if-local-ahead!'s own freshness
+;; requirement above) removes a three-way copy the same way refuse-reset-
+;; if-local-ahead! itself is the one shared reset gate rather than three.
+(defn ahead-count-via-rev-list
+  "adapters: :sh! (fn [] -> {:exit int :out string}) - runs `git rev-list
+     --left-right --count origin/main...main` (or an equivalent fixture) in
+     the target repo, called FRESH by the caller right before use.
+   Returns local main's ahead-count, or nil when the command failed or its
+   output could not be parsed - never 0 (the same undeterminable shape
+   reset-authorized-by-ahead-count? refuses)."
+  [{:keys [sh!]}]
+  (let [{:keys [exit out]} (sh!)]
+    (when (zero? exit)
+      (let [[_behind ahead] (map parse-long (str/split (str/trim (or out "")) #"\s+"))]
+        ahead))))
+
 ;; ── BL-1310 required_wiring: the ONE shared composition all three reset
 ;; call sites (handoffd.bb, swarm_heal.bb, post_hotfix_merge_origin.bb -
 ;; all three already load-file this lib) wrap their own raw `git reset

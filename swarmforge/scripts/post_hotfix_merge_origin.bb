@@ -82,12 +82,11 @@
 
 ;; BL-1310: local main's ahead-count against origin/main, read FRESH right
 ;; before the reset would fire - mirrors handoffd.bb's own master-main-
-;; local-ahead-count!. nil (rev-list failed) is never treated as 0.
+;; local-ahead-count!. nil (rev-list failed) is never treated as 0. Parse
+;; shared via master_main_reconcile_lib.bb's ahead-count-via-rev-list.
 (defn- local-ahead-count! [root]
-  (let [c (sh root "git" "rev-list" "--left-right" "--count" "origin/main...main")]
-    (when (zero? (:exit c))
-      (let [[_behind ahead] (map parse-long (str/split (str/trim (:out c)) #"\s+"))]
-        ahead))))
+  (master-main-reconcile-lib/ahead-count-via-rev-list
+   {:sh! (fn [] (sh root "git" "rev-list" "--left-right" "--count" "origin/main...main"))}))
 
 (defn- rematch-onto-origin! [root]
   ;; BL-1138: rematch bookkeeping onto origin/main — reset, never conflicted absorb.

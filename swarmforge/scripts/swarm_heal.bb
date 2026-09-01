@@ -108,11 +108,11 @@
                                        :reset! (fn []
                                                  (master-main-reconcile-lib/refuse-reset-if-local-ahead!
                                                   {:ahead-count!
+                                                   ;; Parse shared via master_main_reconcile_lib.bb's
+                                                   ;; ahead-count-via-rev-list - see its header.
                                                    (fn []
-                                                     (let [c (sh root "git" "rev-list" "--left-right" "--count" "origin/main...main")]
-                                                       (when (zero? (:exit c))
-                                                         (let [[_behind ahead] (map parse-long (str/split (:out c) #"\s+"))]
-                                                           ahead))))
+                                                     (master-main-reconcile-lib/ahead-count-via-rev-list
+                                                      {:sh! (fn [] (sh root "git" "rev-list" "--left-right" "--count" "origin/main...main"))}))
                                                    :raw-reset!
                                                    (fn []
                                                      (let [r (sh root "git" "reset" "--hard" "origin/main")]
