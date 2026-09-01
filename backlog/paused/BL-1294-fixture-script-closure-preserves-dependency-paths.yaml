@@ -29,7 +29,7 @@ invariants:
   - "A fixture's scripts tree is never quietly smaller than the closure it was asked for: a dependency the builder cannot resolve fails the build naming it."
   - "A dependency's location within the scripts tree survives the copy - a fixture resolves every load-file exactly as the live tree does."
 
-human_approval: pending
+human_approval: approved
 ruling_options:
   - BL-1294 jumps ahead of BL-1240 - cleaner, and why this carries severity high
   - the coder unblocks BL-1240 another way - faster, this stays in the queue
