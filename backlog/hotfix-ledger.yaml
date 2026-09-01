@@ -237,3 +237,10 @@
   stamp_ticket: BL-1323
   human_decision: null
   decided_at: null
+- commit: db7e3f2bda
+  subject: "Restaff bob BoB starting cast: Anthropic seats, coder on qwen3.8-max."
+  detected_at: 2026-09-01
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
