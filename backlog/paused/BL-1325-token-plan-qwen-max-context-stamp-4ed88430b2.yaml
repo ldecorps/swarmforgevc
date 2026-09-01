@@ -1,4 +1,4 @@
-id: BL-1322
+id: BL-1325
 title: "Swarm stamp-off: certify Cursor hotfix 4ed88430b2 (Token Plan qwen3.8-max seats with a declared 1M Claude Code window)"
 milestone: M8
 type: defect
@@ -16,7 +16,7 @@ assigned_to: none
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1322-token-plan-qwen-max-context-stamp-4ed88430b2.feature
+acceptance: specs/features/BL-1325-token-plan-qwen-max-context-stamp-4ed88430b2.feature
 
 human_approval: pending
 approval_context: >
