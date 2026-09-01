@@ -137,6 +137,16 @@ function registerSteps(registry) {
     // No parcel placed; directory is empty.
   });
 
+  // BL-1302: a second, ORDINARY parcel in the sender's own in_process -
+  // disagreeing with the non-forwarding one placed by the sibling step
+  // above - so the self-check's `some` fold has two members to discriminate
+  // instead of one.
+  registry.define(/^the sender also holds an ordinary inbound for a different ticket (.+)$/, (ctx, held) => {
+    ensureFixture(ctx);
+    const dir = placementDir(ctx, 'sender', held);
+    writeHandoff(dir, '99_ordinary.handoff', 'specifier', 'coder', `${ctx.ticket}-other`, false);
+  });
+
   registry.define(/^an empty batch directory remains in its in_process$/, (ctx) => {
     ensureFixture(ctx);
     const base = path.join(ctx.coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process');
