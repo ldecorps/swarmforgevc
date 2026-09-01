@@ -18,7 +18,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1326-bob-restaff-anthropic-coder-qwen-db7e3f2bda.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit db7e3f2bda. Review-only:
   it confirms or refutes the land and never reimplements it. No choice is
