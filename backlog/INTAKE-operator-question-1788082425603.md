@@ -33,3 +33,10 @@ question the human is still being asked.
 answered and its slot clears, the specifier asks the human what "the spec
 tip text filter" refers to and drains this intake normally. It stays in the
 backlog root until then, which is the correct state for an undrained intake.
+
+**Recheck 2026-09-01 (specifier):** still blocked on the same slot.
+`deliver-role-answer.js --role specifier` returns `already-consumed` (drift
+question genuinely unanswered, marker left in place), and a fresh grep for
+`spec.?tip|tip.?text|tip.?filter` across extension/src, docs, swarmforge,
+specs, and the live backlog still returns nothing. Nothing changed; no action
+taken, none needed until the slot clears.
