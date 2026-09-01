@@ -701,6 +701,19 @@
             :elapsed elapsed
             :attempt attempt}))))))
 
+(defn dry-run-plan!
+  "BL-1304: dry-run's stand-in for drive-stages!. Never calls run-stage!, so
+   no stage process starts and no run worktree is required - regardless of
+   what an earlier run already left on disk (ensure-worktree! stays gated on
+   dry-run? independently, so the two never race). Shaped like a real
+   drive-stages! success (:ticket :done) so every downstream read of `staged`
+   in -main - ticket-moved?, :bound/:history/:exhaustion in run-record - needs
+   no dry-run branch of its own."
+  [{:keys [bounce-bound]} stages]
+  (let [bound-info (expedite-lib/bound-in-force bounce-bound)]
+    (log! "dry-run plan: stages" (str/join " -> " stages) "- no stage will be started")
+    {:ticket :done :bounces {} :history [] :bound bound-info}))
+
 (defn drive-stages!
   "Walk the chain, honouring bounces. Bounce accounting and the meaning of
    exhaustion both come from the lib."
@@ -872,7 +885,9 @@
           init (initiate! opts run-dir)
           worktree (ensure-worktree! opts)
           stages (expedite-lib/stages-for {})
-          staged (drive-stages! opts worktree run-dir stages)
+          staged (if (:dry-run? opts)
+                   (dry-run-plan! opts stages)
+                   (drive-stages! opts worktree run-dir stages))
           ;; BL-1023: ticket-moved? tracks the MOVE RESULT, never stages :done
           ;; alone — a when-let no-op used to leave this true while the file
           ;; sat unmoved in paused/.
