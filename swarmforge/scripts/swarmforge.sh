@@ -532,6 +532,92 @@ validate_agent() {
   esac
 }
 
+# BL-1318: pack staffing gate — refuses to staff seat ROLE with AGENT/model
+# until the steward's role-matrix ranking, per-role compliance gate, and
+# assignment-eligible? all clear it for STAGE. Anchored HERE (parse_config's
+# per-window-line loop, right after validate_agent — the only code path
+# every pack window and every materialised .swarmforge/launch/<role>.sh
+# passes through) per required_wiring: anchoring inside the pure lib alone
+# would be satisfied by this parcel's own diff and gate nothing, and this is
+# the ONE call site — provision_coordinator does not get a second one, the
+# coordinator is reserved infrastructure and never a window line.
+#
+# The pure rule lives in pack_staffing_gate_lib.bb's seat-staffing-decision;
+# this function is the thin fs-adapter caller (pack_staffing_gate_cli.bb
+# does the actual evidence read) so the shell gate and its test runner
+# cannot drift into two different rules.
+#
+# PACK_STAFFING_SKIP_GATE=1 is the operator escape hatch — same shape as
+# BL-1127's LOCAL_CODER_BATTERY_SKIP_GATE=1. It turns a refusal into a
+# staffed "override" decision that still prints loudly to stderr and is
+# never recorded or shown as a plain pass (invariant 3).
+pack_staffing_gate() {
+  local role="$1" seat_stage="$2" agent="$3" extra_cli="$4" line_no="$5"
+  # model-steward evidence (registry/seed + scorecards) is anchored to THIS
+  # SwarmForge checkout, not to WORKING_DIR (the arbitrary target project a
+  # pack happens to be launched against) — same repo-root model_steward_cli.bb
+  # itself resolves relative to its own file location.
+  local swarmforge_root="${SCRIPT_DIR:h:h}"
+  local windows_file
+  windows_file="$(mktemp)"
+  printf '%s\t%s\t%s\t%s\n' "$role" "$seat_stage" "$agent" "$extra_cli" > "$windows_file"
+
+  local -a override_flag
+  override_flag=()
+  if [[ "${PACK_STAFFING_SKIP_GATE:-}" == "1" ]]; then
+    override_flag=(--override)
+  fi
+
+  local out rc=0
+  out="$(bb "$SCRIPT_DIR/pack_staffing_gate_cli.bb" "$swarmforge_root" "$windows_file" "${override_flag[@]}" 2>&1)" || rc=$?
+  rm -f "$windows_file"
+
+  if (( rc != 0 )); then
+    error_msg "pack staffing gate: failed to evaluate role '$role' on line $line_no: $out"
+    exit 1
+  fi
+
+  if [[ "$out" == NO_EVIDENCE$'\t'* ]]; then
+    if [[ "${PACK_STAFFING_SKIP_GATE:-}" == "1" ]]; then
+      echo -e "${YELLOW}WARNING: pack staffing gate OVERRIDE (PACK_STAFFING_SKIP_GATE=1) — role '$role' staffed with no steward evidence available (no runtime registry or committed seed under $swarmforge_root).${RESET}" >&2
+      return 0
+    fi
+    error_msg "pack staffing gate: no steward evidence available (no runtime registry or committed seed under $swarmforge_root) — refusing to staff role '$role' on line $line_no."
+    exit 1
+  fi
+
+  # zsh gotcha: `IFS=$'\t' read` collapses adjacent tabs (space/tab/newline
+  # stay "IFS whitespace" and merge even when IFS is set to tab alone), so
+  # an empty provider/model field silently shifts every field after it -
+  # `${(ps:\t:)}` array splitting keeps empty fields intact.
+  local -a tsv_fields
+  tsv_fields=("${(@ps:\t:)out}")
+  local seat="${tsv_fields[1]:-}" decision="${tsv_fields[2]:-}" \
+        provider="${tsv_fields[3]:-}" model="${tsv_fields[4]:-}" \
+        failing_check="${tsv_fields[5]:-}" steward_cmd="${tsv_fields[6]:-}"
+
+  # When the seat resolver has no mapping at all, provider/model are empty -
+  # there is no steward identity to name, so name the raw window line
+  # instead (quoted) so the operator can still see what was pinned.
+  local identity="${provider:-}/${model:-}"
+  [[ -z "${provider:-}" && -z "${model:-}" ]] && identity="window line '$agent $extra_cli'"
+
+  case "$decision" in
+    pass) ;;
+    override)
+      echo -e "${YELLOW}WARNING: pack staffing gate OVERRIDE (PACK_STAFFING_SKIP_GATE=1) — role '$role' staffed with $identity despite failing check '$failing_check'. Clear it: ${steward_cmd:-<no runnable command>}${RESET}" >&2
+      ;;
+    refuse)
+      error_msg "pack staffing gate refused role '$role' (line $line_no): $identity failed check '$failing_check'. Run: ${steward_cmd:-<no runnable command>}"
+      exit 1
+      ;;
+    *)
+      error_msg "pack staffing gate: unexpected decision '$decision' for role '$role' on line $line_no."
+      exit 1
+      ;;
+  esac
+}
+
 # BL-1052 / BL-1082: OpenAI-compatible base URL for a seat staffed by a
 # downloaded model on this host. Overridable; never a cloud vendor host.
 DEFAULT_LOCAL_MODEL_ENDPOINT_URL="http://127.0.0.1:11434/v1"
@@ -799,6 +885,7 @@ parse_config() {
     fi
 
     validate_agent "$agent" "$role"
+    pack_staffing_gate "$role" "$seat_stage" "$agent" "$extra_cli" "$line_no"
 
     case "$receive_mode" in
       task|batch) ;;

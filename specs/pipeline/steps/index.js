@@ -912,6 +912,7 @@ const DOMAINS = [
   require('./bl1315OwnPathsFullRangeSteps'),
   require('./bl1304DryRunSpawnsNothingSteps'),
   require('./bl1313BatchGuardVisibilitySteps'),
+  require('./bl1318PackStaffingGateSteps'),
 ];
 
 function registerSteps(registry) {
