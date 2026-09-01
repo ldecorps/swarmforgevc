@@ -6,7 +6,7 @@ type: epic
 epic: swarm-intelligence-layer
 priority: 30
 depends_on: []
-decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-590, BL-624, BL-625, BL-643, BL-684, BL-1052, BL-1053, BL-1056]
+decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-590, BL-624, BL-625, BL-643, BL-684, BL-1052, BL-1053, BL-1056, BL-1317]
 # ^ BL-590 and BL-684 added 2026-07-26: both carry `epic: swarm-intelligence-layer`
 #   but were absent from this list, so the epic under-reported its own orbit — the
 #   Onboarder half of it entirely, including the slice already on `main`.
@@ -28,7 +28,7 @@ promotion_order:
       - "BL-547 Slice 2 merged (model-steward evaluate)"
 remaining_slices:
   - "Scheduled ECONOMIC REVIEW (monthly + on any price validity-window boundary): for each seat, compare its model price tier against measured performance need (BL-635 roundsPerClose by blamed role, think-share profiles, QA bounce rates) and emit PROPOSALS - never an application. Blocked on unparking BL-548 (the evaluation arm): the operator gate is il faudrait l evaluer, so a tier-down proposal with no evaluation plan is refused by format. Split from INTAKE-steward-economic-review-price-windows.md; the queryable half is BL-1056."
-  - "The descent LADDER, effort first then model: M@xhigh -> M@high -> M@medium -> M@low -> (M-1)@high (not @low - a smaller brain may need MORE deliberation). ONE notch per review period, each an annotated experiment with its own guard window; ASYMMETRIC hysteresis - a tripped guard climbs back one notch immediately, descending again requires N clean periods. Terminal state per seat is the cheapest (model, effort) whose guard stays clean, re-walked when a price window shifts. Operator addendum 2026-07-26 16:20; depends on the economic review slice above."
+  - "The descent LADDER, effort first then model: M@xhigh -> M@high -> M@medium -> M@low -> (M-1)@high (not @low - a smaller brain may need MORE deliberation). ONE notch per review period, each an annotated experiment with its own guard window; ASYMMETRIC hysteresis - a tripped guard climbs back one notch immediately, descending again requires N clean periods. Terminal state per seat is the cheapest (model, effort) whose guard stays clean, re-walked when a price window shifts. Operator addendum 2026-07-26 16:20; depends on the economic review slice above. Related claim-time lever (not this periodic ladder): BL-1316; Adapt-tier climb on bounces: BL-1317."
   - "PromptEngine Slice 2: fragment registry + per-model adapters"
   - "PromptEngine Slice 3: versioning, validation, inspect CLI"
   - "Model Steward Slice 2: recruiter/bakeoff evaluate ingestion (drained -> BL-556, paused)"

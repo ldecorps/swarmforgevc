@@ -182,7 +182,9 @@ notes: >
   scenario 01's rows (the pruning rule forbids it) or bend the step text into
   "1 fixture root(s)". Not an oversight; do not re-normalize it.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  option 1 - fix the shared helper, so all 90 callers get signal coverage
 ruling_options:
   - option 1 - fix the shared helper, so all 90 callers get signal coverage
   - option 2 - narrow fix, cover only the two BL-1305 step files for now

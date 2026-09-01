@@ -29,7 +29,9 @@ invariants:
   - "The assertion fails when, and only when, a file answers the QA-approved-tip question outside is_qa_ancestor.sh. An ancestry call over any other pair of refs is not a violation and must not fail it."
   - "The positive half is not weakened while the negative half is scoped: removing the is_qa_ancestor.sh call from either file still fails the assertion."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  option 1 - scope the assertion to the QA question, leave handoffd.bb alone
 ruling_options:
   - option 1 - scope the assertion to the QA question, leave handoffd.bb alone
   - option 2 - keep the assertion strict, give handoffd.bb one ancestry helper for every ref pair
