@@ -840,7 +840,8 @@
                       {:deadlock-active? true :ahead 144 :behind 593 :reason "dirty"
                        :overlapping-paths ["backlog/active/BL-709.yaml"]})]
                (and f (= "main-sync-deadlock" (:key f)) (= "CRIT" (:severity f))
-                    (str/includes? (:message f) "clear overlapping path backlog/active/BL-709.yaml")
+                    (str/includes? (:message f) "backlog/active/BL-709.yaml")
+                    (str/includes? (:message f) "./swarm heal")
                     (str/includes? (:message f) "Not /pilot"))))
 
 (assert-nil "BL-1187: inactive deadlock emits no finding"
