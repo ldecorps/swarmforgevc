@@ -1,35 +1,71 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 31, 2026 (BL-1315: the land step's replay tip is
-now based on the FULL `origin/main..commit` diff, not the ticket-tagged
-merge's first-parent `:delivered` diff — closing BL-1308's stated residual
-on the same computation. `own-paths` (`land_step_lib.bb`) used to delegate
-to `task_scope_gate_lib.bb`'s `task-tagged-changed-paths` reading
-`:delivered`, a two-tree diff against a merge's single first parent. That
-base was wrong in both directions on the same live machinery, two
-incidents in two days: over-inclusion (2026-08-30, BL-1307 over BL-1300 —
-an unlanded sibling's second-parent content entered the tip under the
-forwarded ticket's name) and under-inclusion (2026-08-31, BL-1298 over
-BL-1303 — the landed ticket's OWN content, having reached the branch
-before its own tagged merge via a sibling's passenger ride, was absent
-from the first-parent diff and so dropped from the tip; verified live on
-BL-1303's QA tip `ab8d10a8b3`, where `own-paths` returned only the last
-hop's 20 paths, present `check_feature_handler_registration.sh` but
-omitted the TS source files it shells out to). `own-paths` now bases the
-set on the full range and
-excludes a path only on positive attribution to a still-unlanded sibling
-and no other ticket — never the landed ticket's own paths, and never a
-path touched by even one untagged commit, which an untagged touch's
-otherwise-invisible contribution could previously make read as fully
-sibling-owned. An unreadable attribution refuses the land rather than
-silently narrowing the tip, naming the specific path or diff it could not
-read. `land_step_cli.bb`'s `LAND_CLEAN`/`LAND_REPLAY`/`LAND_ESCALATE`
-output shape is unchanged; a landed or byte-identical sibling (BL-1272)
-is still never subtracted. No new extension command or setting.
-Acceptance:
-`specs/features/BL-1315-the-replay-tip-carries-only-the-ticket-being-landed.feature`.
-How-to:
-`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`.)
+**Last Updated:** August 31, 2026 (BL-1303: a new commit-guard,
+`check_feature_handler_registration.sh`, refuses a commit or `--no-ff`
+merge on `main` that leaves a `specs/features/*.feature` file with no
+registered — or no longer runnable — step handler. `specs/pipeline/runtime.js`
+throws on any scenario no registered handler matches, and nothing had
+refused the `main` state that creates: a feature file could land with its
+handler unregistered, or registered but a script it executes missing, and
+the failure surfaced later to whichever role next ran the suite, against a
+parcel that did not cause it — the step-registry sibling of BL-1240's
+`suite-manifest.tsv` accumulate-unseen shape. Two live incidents motivated
+it, both by MERGE rather than a fresh commit: BL-1253's bounce-revert
+removed a handler, its lib script, and its `index.js` registration
+together, and a later resurrecting merge brought back the handler and
+feature file but not the registration or the lib; separately, merge
+`45625ef9cb` (2026-08-27) silently dropped BL-709's already-landed
+registration line by resolving to the parent that lacked it (the BL-571/
+BL-958/BL-954 silent-revert-by-merge shape). Because both incidents
+happened by `--no-ff` merge, the guard is reached from BOTH commit-time
+hooks — `pre-commit` (via the widened `run_commit_guards.sh`, now five
+guards) and `pre-merge-commit` (previously a single-guard delegate to
+`check_pipeline_code_on_main.sh` alone, now two guards) — rather than only
+the one `pre-commit` had already grown a chain in. `pre-merge-commit` was
+deliberately NOT repointed at the whole `run_commit_guards.sh` chain, which
+would have newly subjected every merge to the commit-size/ticket-deletion
+guards and the expensive `check_property_suite_drift.sh` (currently running
+under an operator override for its own broken allowlist matcher, BL-1234).
+The two hooks' guard-chain aggregation — run every guard, report every
+violation in one refusal, never abort at the first (Article 4.4's shape in
+a gate, BL-1242/BL-1252's discipline) — is shared via a new sourced
+library, `swarmforge/scripts/commit_guard_chain_lib.sh`, rather than
+re-derived per hook. The guard is keyed on the FEATURE side (every
+`specs/features/*.feature` must resolve to a registered handler) rather
+than "every `steps/*.js` file must appear in `index.js`", because eleven of
+twelve currently-unregistered step files on `main` are deliberate `*Only.js`
+focused re-export entry points that are each correctly registered under
+their real handler's name — a file-keyed guard would have emitted eleven
+false refusals alongside the one true one. See the widened "Guard-Chain
+Aggregation Is Shared, Not the Whole Chain (BL-1303)" section in
+`docs/reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md`.
+Acceptance: `specs/features/BL-1303-a-feature-on-main-always-has-a-registered-handler.feature`.)
+Prior entry —
+**Last Updated:** August 31, 2026 (BL-1298: the land step's replay now runs
+from ANY worktree, not only the main checkout. `replay!`
+(`swarmforge/scripts/land_step_lib.bb`) built its scratch checkout at
+`<root>/.git/land-replay-worktrees/...`; `.git` is a directory only in the
+main checkout — in a linked worktree, the only place a pipeline role ever
+stands, it is a FILE holding `gitdir: ...`, so the path named a child of a
+regular file and `git worktree add` failed outright ("could not create
+worktree ... off origin/main", measured 2026-08-30 landing BL-1295 from
+`.worktrees/QA`). The only working route was passing the main checkout as
+an undocumented optional third argument. New `git-common-dir` asks git
+directly (`rev-parse --git-common-dir`), which resolves correctly — and
+identically — from either checkout, so the same ticket and commit replay
+the same way regardless of who invokes it; a git that cannot answer is a
+refusal naming the root, never a path built from a guess. Second half: on
+the create-failure path, `git worktree add -b` had already created the
+scratch branch before failing to make the checkout, and that path returned
+without deleting it — unlike the other two failure paths — so a retry
+failed with "branch already exists", a different reason than the first
+attempt, misdirecting whoever read it. All three failure paths now delete
+the branch through one `drop-branch!`; deleting a branch that was never
+created is not itself treated as a failure. Not in scope: the four
+pre-existing `land-replay/*` branches already in the repository, and what a
+SUCCESSFUL replay leaves behind (QA's own land action still reads that
+branch). Acceptance:
+`specs/features/BL-1298-the-replay-runs-from-a-linked-worktree.feature`.)
 Prior entry —
 **Last Updated:** August 31, 2026 (BL-1225: a build-freshness sync's
 restarts now leave a readable forensic trail. `restart-operator-group!`

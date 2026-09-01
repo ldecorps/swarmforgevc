@@ -20,11 +20,12 @@
 #
 # The two tiers are not a preference, they are a cost asymmetry:
 # check_property_suite_drift.sh runs `npm run test:properties`, while the
-# other three read the git index and exit. Completeness is therefore
-# required WITHIN the cheap tier, and the expensive tier is reached only
-# when the cheap three pass - so a full suite run is never charged to a
-# commit that is already refused. It still runs on every commit those three
-# allow, which is every commit that is going to succeed.
+# others read the git index (or, for BL-1303's guard, the step registry) and
+# exit. Completeness is therefore required WITHIN the cheap tier, and the
+# expensive tier is reached only when the cheap ones pass - so a full suite
+# run is never charged to a commit that is already refused. It still runs on
+# every commit those guards allow, which is every commit that is going to
+# succeed.
 #
 # Usage: run_commit_guards.sh [repo-root]
 #   repo-root defaults to `git rev-parse --show-toplevel`.
@@ -33,60 +34,49 @@
 #   guards; never a way to change what a guard decides).
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${1:-$(git rev-parse --show-toplevel)}"
 GUARD_DIR="${SWARMFORGE_COMMIT_GUARD_DIR:-$REPO_ROOT/swarmforge/scripts}"
+GUARD_CHAIN_LABEL="pre-commit"
 
-status=0
-refused=""
-unexpected=""
+# BL-1303: run_guard/report_refusals moved to a sourced lib when
+# pre-merge-commit grew a chain of its own. Both callers must run every
+# guard and report every violation in one refusal, and the one way to get
+# that wrong is shared - so the aggregation is shared too, rather than
+# copied and left to drift.
+# This file runs WITHOUT `set -e` too, so a failed source would leave
+# run_guard undefined and the chain would fall through to `exit 0` - every
+# guard silently skipped. Refuse instead.
+if [ ! -r "$SCRIPT_DIR/commit_guard_chain_lib.sh" ]; then
+  echo "pre-commit: COMMIT REFUSED. The guard chain could not be loaded: $SCRIPT_DIR/commit_guard_chain_lib.sh is missing or unreadable." >&2
+  exit 1
+fi
+# shellcheck source=commit_guard_chain_lib.sh
+. "$SCRIPT_DIR/commit_guard_chain_lib.sh"
 
-# Runs one guard, never aborting the chain. A guard's OWN refusal is exit 1;
-# anything else non-zero (a crash, a missing script's 127, a bad argument) is
-# an unexpected failure - which still refuses the commit. Aggregating exit
-# codes must never convert an error into a pass.
-run_guard() {
-  local script="$1"
-  shift
-  local st=0
-  "$GUARD_DIR/$script" "$@" || st=$?
-  if [ "$st" -ne 0 ]; then
-    status="$st"
-    refused="${refused}${refused:+ }${script}"
-    if [ "$st" -ne 1 ]; then
-      unexpected="${unexpected}${unexpected:+ }${script} (exit ${st})"
-    fi
-  fi
-  return 0
-}
-
-report_refusals() {
-  echo "" >&2
-  echo "pre-commit: COMMIT REFUSED. Guards reporting a violation: ${refused}" >&2
-  if [ -n "$unexpected" ]; then
-    echo "pre-commit: these guards did not refuse cleanly - they failed unexpectedly (a crash, a missing script, or any non-refusal exit): ${unexpected}" >&2
-    echo "pre-commit: an unexpected failure still refuses the commit; it is never collected as a pass." >&2
-  fi
-  echo "pre-commit: every guard in this tier ran, so the list above is complete - there is no second violation waiting for your next attempt (Article 4.4)." >&2
-}
-
-# ── Tier 1: the cheap guards. All three run, whatever any of them decides. ──
+# ── Tier 1: the cheap guards. All of them run, whatever any one decides. ──
 # Order is the hook's original order and is deliberately unchanged, so a
 # committer with exactly one violation sees the same one they see today.
 run_guard check_commit_size.sh 50
 run_guard check_ticket_deletion.sh
 run_guard check_pipeline_code_on_main.sh
+# BL-1303: also a `main`-only guard, and it exits before doing any work on
+# every other branch - so it joins the cheap tier even though the work it
+# does on `main` is a node process reading the step registry, not a git
+# index read.
+run_guard check_feature_handler_registration.sh
 
-if [ -n "$refused" ]; then
+if guard_chain_has_refusal; then
   report_refusals
-  exit "$status"
+  exit "$guard_chain_status"
 fi
 
 # ── Tier 2: the expensive guard, reached only by a commit the cheap three
 #    allow. Deferring it must never mean skipping it. ─────────────────────────
 run_guard check_property_suite_drift.sh
 
-if [ -n "$refused" ]; then
+if guard_chain_has_refusal; then
   report_refusals
 fi
 
-exit "$status"
+exit "$guard_chain_status"

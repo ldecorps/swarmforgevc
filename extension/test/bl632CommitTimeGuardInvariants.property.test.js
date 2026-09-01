@@ -22,6 +22,19 @@ const GUARD_SCRIPT = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_pipeli
 const SIZE_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_commit_size.sh');
 const TICKET_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_ticket_deletion.sh');
 const PROPERTY_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
+const FEATURE_HANDLER_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_feature_handler_registration.sh');
+// BL-1252 moved the pre-commit hook's guards behind this runner and BL-1303
+// gave pre-merge-commit a chain of its own over the same sourced aggregation.
+// Both files are part of what the hooks EXECUTE, so a fixture without them
+// runs no guard at all - every action fails with "No such file or directory"
+// instead of the refusal this property is about.
+const GUARD_RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'run_commit_guards.sh');
+const GUARD_CHAIN_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'commit_guard_chain_lib.sh');
+// Libs the guards SOURCE. A guard whose lib is absent dies at its source
+// line before deciding anything, so the fixture carries them too.
+const MERGE_PARENT_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'incoming_merge_parent_lib.sh');
+const SHARED_REPO_GUARD_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_shared_repo_guard.sh');
+const STANDING_ALLOWLIST_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_standing_allowlist_lib.sh');
 const PRE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
 const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-merge-commit');
 
@@ -43,6 +56,12 @@ const EXEC_FIXTURE_FILES = [
   'swarmforge/scripts/check_commit_size.sh',
   'swarmforge/scripts/check_ticket_deletion.sh',
   'swarmforge/scripts/check_property_suite_drift.sh',
+  'swarmforge/scripts/check_feature_handler_registration.sh',
+  'swarmforge/scripts/run_commit_guards.sh',
+  'swarmforge/scripts/commit_guard_chain_lib.sh',
+  'swarmforge/scripts/incoming_merge_parent_lib.sh',
+  'swarmforge/scripts/property_suite_shared_repo_guard.sh',
+  'swarmforge/scripts/property_suite_standing_allowlist_lib.sh',
   'swarmforge/git-hooks/pre-commit',
   'swarmforge/git-hooks/pre-merge-commit',
 ];
@@ -63,12 +82,37 @@ function mkFixtureTemplate() {
     [SIZE_GUARD, 'swarmforge/scripts/check_commit_size.sh'],
     [TICKET_GUARD, 'swarmforge/scripts/check_ticket_deletion.sh'],
     [PROPERTY_GUARD, 'swarmforge/scripts/check_property_suite_drift.sh'],
+    [FEATURE_HANDLER_GUARD, 'swarmforge/scripts/check_feature_handler_registration.sh'],
+    [GUARD_RUNNER, 'swarmforge/scripts/run_commit_guards.sh'],
+    [GUARD_CHAIN_LIB, 'swarmforge/scripts/commit_guard_chain_lib.sh'],
+    [MERGE_PARENT_LIB, 'swarmforge/scripts/incoming_merge_parent_lib.sh'],
+    [SHARED_REPO_GUARD_LIB, 'swarmforge/scripts/property_suite_shared_repo_guard.sh'],
+    [STANDING_ALLOWLIST_LIB, 'swarmforge/scripts/property_suite_standing_allowlist_lib.sh'],
     [PRE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-commit'],
     [PRE_MERGE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-merge-commit'],
   ]) {
     const dst = path.join(d, rel);
     fs.copyFileSync(src, dst);
     fs.chmodSync(dst, 0o755);
+  }
+  // check_feature_handler_registration.sh resolves its compiled checker
+  // relative to its OWN script dir, so the fixture's copy needs the real
+  // out tree beside it. A symlink, not a copy: the fixture is rebuilt per
+  // case and the tree is large.
+  // An EMPTY step registry, so the feature-handler guard (BL-1303) asks its
+  // real question of the fixture - no feature file is unrunnable here - and
+  // does not refuse merely because a tree with no acceptance pipeline has no
+  // registry to read.
+  fs.mkdirSync(path.join(d, 'specs', 'pipeline', 'steps'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'specs', 'pipeline', 'steps', 'index.js'), 'module.exports = [];\n');
+
+  fs.mkdirSync(path.join(d, 'extension'), { recursive: true });
+  try {
+    fs.symlinkSync(path.join(REPO_ROOT, 'extension', 'out'), path.join(d, 'extension', 'out'), 'dir');
+  } catch {
+    // A checker the guard cannot resolve is a refusal naming the reason
+    // (BL-1303 fails closed), which still refuses the action this property
+    // asserts is refused - slower to read, never a false pass.
   }
   execFileSync('git', ['add', '-A'], { cwd: d });
   execFileSync('git', ['commit', '-q', '-m', 'seed hooks'], { cwd: d });

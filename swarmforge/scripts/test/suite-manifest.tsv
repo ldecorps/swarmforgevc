@@ -229,6 +229,7 @@ test_build_freshness_cli.sh	standing
 test_cache_warm_lib.sh	standing		
 test_chase_sweep.sh	standing		
 test_check_branch_namespace.sh	standing		
+test_check_feature_handler_registration.sh	standing		
 test_claim_progress_sweep.sh	standing		
 test_clear_identical_untracked_and_merge.sh	standing		
 test_commit_integrity_cli.sh	standing		
@@ -367,6 +368,7 @@ test_pipeline_stage_cli.sh	standing
 test_pipeline_survivor_scan.sh	standing		
 test_portable_daemon_spawn_lib.sh	standing		
 test_portable_stat_lib.sh	standing		
+test_pre_merge_commit_hook.sh	standing		
 test_prepare_handoff_dirs_mailbox_split.sh	standing		
 test_project_socket_id_lib.sh	standing		
 test_promote_and_route_next_no_limit_depth.sh	standing		
