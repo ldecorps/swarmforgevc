@@ -909,7 +909,8 @@ const DOMAINS = [
   require('./bl1308SiblingDetectorCoversReplaySteps'),
   require('./bl1298ReplayLinkedWorktreeSteps'),
   require('./bl1303FeatureHandlerRegistrationSteps'),
-  require('./bl1315OwnPathsFullRangeSteps')
+  require('./bl1315OwnPathsFullRangeSteps'),
+  require('./bl1304DryRunSpawnsNothingSteps'),
 ];
 
 function registerSteps(registry) {
