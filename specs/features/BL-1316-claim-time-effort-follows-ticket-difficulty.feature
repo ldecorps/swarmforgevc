@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=bb97c3d0720dad61b35f36bff2540addbf51724758cb0318d2f5d0ced2068d5a
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-01T04:21:41.374495215Z","feature_name":"BL-1316 a seat's reasoning effort follows the claimed ticket's mutation_cost","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1316-claim-time-effort-follows-ticket-difficulty.feature","background_hash":"6bd3903a05a00194695b399ef1f107d1b5ddadab162bbf24c488ba2742ea2307","implementation_hash":"unknown","scenarios":[{"index":0,"name":"claiming a ticket sets effort from its mutation_cost","scenario_hash":"86c2da00abd5da37346a405b744affce58cfa28e60c49b065f925367f89453d1","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-01T04:21:41.374495215Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1316 a seat's reasoning effort follows the claimed ticket's mutation_cost
 
   BL-1001 chooses WHICH seat may claim by `mutation_cost`. BL-236's Suggest
