@@ -1,5 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 1, 2026 (BL-1313: the two send-time guards
+that read a role's `in_process` mailbox — `swarm_handoff.bb`'s
+`inbound-non-forwarding?` self-check (Article 2.4's merge-only refusal)
+and `duplicate_chain_guard_lib.bb`'s BL-760 duplicate-chain check — were
+blind to parcels a batch role (cleaner, hardener) holds inside an
+`in_process/batch_*/` subdirectory, because both walked `in_process`
+through `handoff-lib/handoff-files`, which only lists the flat top level
+(`batch-dirs`, the helper that does descend, sat unused one line below
+it). For the two batch roles this meant the merge-only self-check could
+never fire, and BL-760's duplicate-chain guard failed open — a live
+parcel sitting with the cleaner or hardener was invisible to a
+competing send from anywhere else. Measured 2026-08-31: an architect
+`back-all` bounce planted a `non-forwarding: true` reverse copy in the
+cleaner's `batch_*/` dir; the cleaner never got the accurate refusal
+(inert for it) and was instead blocked later by the duplicate-chain
+guard naming the coder's mailbox, read that as a lost stamp, and
+recorded a wrong root cause. Fix: `handoff_lib.bb` gains
+`handoff-files-with-batches` / `my-handoff-files-with-batches`,
+batch-aware twins that concatenate the flat listing with every
+`batch_*` subdirectory's contents; both guards now call the batch-aware
+reader for `:in_process` walks instead of the flat one. Scope held to
+the two send-time guards named in the measured incident — four other
+blind `in_process` reads in `handoff_lib.bb` (`stage-seat-worked-task-sets`,
+the mono-router resident check's two `:blocking-file` reads,
+`wait-for-delivery!`) and the six pre-existing hand-rolled batch walkers
+elsewhere are deliberately out of scope, left for a survey ticket if one
+of them shows a measured consequence. Acceptance:
+`specs/features/BL-1313-a-batch-held-parcel-is-visible-to-the-send-time-guards.feature`.
+Prior entry —
 **Last Updated:** September 1, 2026 (BL-1316: a seat's reasoning effort
 now also retunes at claim/reclaim time from the claimed ticket's
 `mutation_cost` — see the Effort dial section below; BL-1303: a new commit-guard,

@@ -48,6 +48,7 @@ bl1081_acp_snapshot_agreement_test_runner.bb	standing
 bl1097_router_dispatch_trail_test_runner.bb	standing		
 bl1138_rematch_bookkeeping_test_runner.bb	standing		
 bl1141_refuse_rematch_test_runner.bb	standing		
+bl1313_handoff_files_with_batches_test_runner.bb	standing		
 bl556_evaluate_ingest_test_runner.bb	standing		
 bl568_menu_blocked_test_runner.bb	standing		
 bl615_orphaned_claim_progress_test_runner.bb	standing		
@@ -435,6 +436,7 @@ test_support_runtime_tick.sh	standing
 test_swarm_ensure.sh	standing		
 test_swarm_handoff_daemon_backup.sh	standing
 test_swarm_handoff_inbound_non_forwarding.sh	standing
+test_swarm_handoff_inbound_non_forwarding_batch.sh	standing
 test_swarm_handoff_sync_deliver.sh	standing
 test_swarm_heal_push_before_reset.sh	standing		
 test_swarm_identity_conf_parsing.sh	standing		
