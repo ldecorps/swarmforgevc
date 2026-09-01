@@ -1,0 +1,175 @@
+id: BL-1324
+title: "Swarm stamp-off: certify Cursor hotfix 4ed88430b2 (claude seat targeting a qwen* --model rides Token Plan billing with a real 1M context window)"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: nothing is down, but the pre-fix behaviour was a live
+# fault degrading every ticket routed through the currently-staffed
+# bob-multi-provider-mono-router pack — Claude Code auto-compacted mid-ticket
+# against a model that is genuinely a 1M-token window, discarding working
+# context on live pipeline work (see BL-848 doctrine: an uncertified hotfix
+# never becomes an official swarm deal on green tests alone).
+status: todo
+epic: swarm-intelligence-layer
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature
+
+human_approval: pending
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 4ed88430b2. Review-only:
+  it confirms or refutes the land and never reimplements it. What needs your
+  decision is the ledger row — certify or waive — which green tests must
+  never write on their own.
+
+  Two things to know before you decide. (1) `extra_cli_targets_qwen_cloud`
+  only matches a separate `--model qwen*` token pair (space form); a
+  single-token `--model=qwen3.8-max` form would silently fail to detect and
+  the seat would keep first-party Anthropic auth against a Qwen Token Plan
+  key it never received. Every current pack window line uses the space
+  form, so this is dormant today, not live. (2) the new elif branch in
+  `launch_role` (pane-env construction) is reached only when the seat is
+  NOT already routed through `role_uses_openrouter` — a role marked
+  OpenRouter-backed whose --model happens to be qwen* would fall through to
+  the OpenRouter branch instead and never get the Qwen key or the context
+  window declared. No pack currently combines OpenRouter routing with a
+  qwen* --model, so this is also dormant, not live.
+
+ruling_options:
+  - Certify as landed; both dormant gaps are acceptable as-is, open no follow-up
+  - Certify as landed; mint a follow-up to also match the --model=<value> single-token form and/or document the OpenRouter-precedence caveat
+  - Waive review — the fix is a strict improvement over unconditional 50k auto-compaction and needs no further gate
+
+invariants:
+  - "This stamp-off never reimplements, rewrites or reverts the hotfix — review confirms or refutes landed commit 4ed88430b2 only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does (BL-848)."
+  - "A sibling Anthropic (non-qwen) claude seat in the same mixed pack is never remapped onto the Token Plan endpoint by this hotfix — only a seat whose own --model is qwen* is affected."
+
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::extra_cli_targets_qwen_cloud "$extra_cli"::billing_guard remaps a claude seat onto Token Plan whenever the seat''s own --model is qwen*, not only via SWARMFORGE_USE_QWEN=1'
+  - 'swarmforge/scripts/swarmforge.sh::extra_cli_targets_qwen_cloud "${EXTRA_CLI_ARGS[$index]:-}"::launch_role forwards QWEN_API_KEY and declares CLAUDE_CODE_MAX_CONTEXT_TOKENS into the pane env for a mixed-pack claude+qwen seat'
+  - 'swarmforge/packs/bob-multi-provider-mono-router.conf::--model qwen3.8-max::every pipeline seat''s window line requests the qwen3.8-max model that the swarmforge.sh remap detects'
+  - "specs/pipeline/steps/index.js::bl1324ClaudeSeatQwenCloudContextWindowSteps::acceptance handler registered so the runner executes every review scenario"
+
+description: >
+  WHAT. Operator/Cursor hotfix 4ed88430b2 is live on main with the trailer
+  Hotfix-Certification: pending. Subject: "Hotfix bob mono-router onto Token
+  Plan qwen3.8-max with a real 1M Claude Code window."
+
+  Landed behaviour under review (do not redesign). Claude Code sizes an
+  unrecognized gateway model id (any qwen* Token Plan model) at roughly 50k
+  tokens and auto-compacts mid-ticket, even though Token Plan qwen3.* is
+  genuinely a 1M-token window — this was silently degrading every seat
+  staffed on a qwen* model via the claude agent. The fix: (1)
+  swarmforge.sh gains `extra_cli_targets_qwen_cloud`, which scans a role's
+  extra CLI args for a `--model qwen*` token pair; (2) the claude-agent
+  billing-guard branch (previously gated only on `SWARMFORGE_USE_QWEN=1`)
+  now also fires whenever `extra_cli_targets_qwen_cloud` is true, mapping
+  ANTHROPIC_* onto the Token Plan Anthropic-compat endpoint AND exporting
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (default 1000000, honoring any pre-set
+  value) inside the generated launch script — so a single Claude seat can
+  ride Token Plan billing without remapping every other Anthropic seat in
+  the same mixed pack; (3) `launch_role`'s pane-env construction gains a
+  parallel `elif` (claude agent, not OpenRouter-routed, extra CLI targets
+  qwen cloud) that sources `qwen_launch_guard_lib.sh`, applies credential
+  fallbacks, forwards `QWEN_API_KEY` into the tmux pane env when present,
+  and always sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` in the pane env flags —
+  needed because the prior code only forwarded the Qwen key for non-claude
+  agents or for the global `SWARMFORGE_USE_QWEN=1` case, never for a lone
+  qwen*-targeted claude seat. Separately,
+  `swarmforge/packs/bob-multi-provider-mono-router.conf` is rewritten to
+  stage every pipeline role (coder/specifier/cleaner/architect/hardener/
+  documenter/QA) on `claude` + `--model qwen3.8-max`, while the coordinator
+  stays on `claude-sonnet-5` (first-party Anthropic Max) so daemon wake/poke
+  stays reliable — replacing the pack's prior per-role vendor spread
+  (gemini/vibe/aider/cursor).
+
+  WHY. Pipeline seats on this pack were compacting mid-ticket, discarding
+  working context on live work, purely because Claude Code mis-sizes an
+  unrecognized gateway model id — a real capability gap masquerading as a
+  quality problem with the underlying qwen3.8-max model. An uncertified
+  change to the pack's billing/context wiring carries the same BL-848 review
+  posture as any other hotfix ("an unticketed hotfix never becomes an
+  official swarm deal on green tests alone").
+
+  HOW (direction, not mandate). Walk the acceptance feature against the
+  landed sources at 4ed88430b2. Open a narrow follow-up only if review finds
+  a defect; do not rewrite the billing-guard or pane-env wiring in this
+  parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the hotfix. This parcel confirms
+    or refutes what landed.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT redesign `extra_cli_targets_qwen_cloud`'s matching shape (space-
+    separated `--model` token pair) or the if/elif precedence between the
+    OpenRouter branch and the new qwen-cloud branch in this parcel. A defect
+    found in either is a narrow follow-up ticket per the human's ruling, not
+    a rewrite here.
+  - Do NOT silently "fix" the two dormant gaps named in approval_context.
+    Report them in the evidence file; acting on them is the human's call via
+    ruling_options.
+
+qa_e2e_procedure: >
+  (1) At commit 4ed88430b2, confirm `extra_cli_targets_qwen_cloud` in
+  swarmforge.sh matches a `--model` token immediately followed by a
+  qwen*-prefixed value, and returns false for a non-qwen model, no --model
+  flag at all, and the `--model=qwen*` single-token form.
+  (2) Confirm the claude-agent billing-guard branch fires — and maps
+  ANTHROPIC_* onto the Token Plan endpoint, exporting
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS with the `${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}`
+  default — whenever `extra_cli_targets_qwen_cloud` is true, even with
+  SWARMFORGE_USE_QWEN unset, and that a sibling claude seat whose --model is
+  NOT qwen* is untouched.
+  (3) Confirm `launch_role`'s new `elif` branch (claude agent, not
+  OpenRouter-routed, qwen-cloud-targeted) forwards QWEN_API_KEY into
+  provider_env_flags when the credential is available and always sets
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS in the pane env flags.
+  (4) Confirm `swarmforge/packs/bob-multi-provider-mono-router.conf`'s
+  window lines request `--model qwen3.8-max` via the `claude` agent for
+  every pipeline role, and `claude-sonnet-5` for the coordinator.
+  (5) Record in the evidence file whether the two dormant gaps
+  (approval_context) are confirmed as acceptable-as-is or worth a follow-up,
+  per the human's ruling.
+  (6) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  IR-DRY adjudication at mint (do not re-litigate): the checker reports six
+  medium-confidence near-duplicate/possible-synonym findings, all comparing
+  Given/Then steps across scenarios 02-05 that share vocabulary ("claude
+  role's extra CLI is", "billing guard", "CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+  because every scenario is a precondition or assertion on the same
+  underlying billing-guard/context-window mechanism. Each pair is a
+  genuinely distinct value or direction under test (qwen* vs non-qwen
+  --model; forced-default vs preserved-override context token value; the
+  guard's own export vs the preserved final value). Re-run at any time with
+  `bb run gherkin-parser` then `bb run gherkin-ir-dry-checker` from
+  swarmforge/vendor/aps (invoked via `bb.edn` tasks, not standalone
+  executables).
+
+  Ledger: commit 4ed88430b2 had a `state: pending` row in
+  backlog/hotfix-ledger.yaml (added by the recurrent sweep from the
+  commit's own trailer) — linked to this ticket with `hotfix_ledger_update.bb
+  --link` in the same mint, and its `state` flipped to `stamp-open` to match
+  every other linked row, so the recurrent sweep stops nudging the
+  coordinator for it.
+
+  Ticket-number note: the coordinator's note named "BL-848" as the doctrine
+  this stamp-off exists under (see docs/how-to/BL-848-certify-an-operator-
+  hotfix.md), not a ticket ID to reuse — BL-848 itself is a long-closed,
+  unrelated ticket (backlog/done/BL-848-hotfix-swarm-certification-recurring-check.yaml,
+  2026-08-08). This ticket is minted under the next free ID, BL-1324,
+  following the same pattern BL-1323's own coordinator note used for a prior
+  hotfix under the same doctrine.
+
+source: |
+  Coordinator note (2026-09-01): "hotfix 4ed88430b2 ledger row unstamped -
+  mint BL-848 review ticket." Satisfied in full by this ticket (BL-1324;
+  see notes on the ticket-number reading).

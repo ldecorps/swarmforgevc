@@ -226,8 +226,8 @@
 - commit: 4ed88430b2
   subject: "Hotfix bob mono-router onto Token Plan qwen3.8-max with a real 1M Claude Code window."
   detected_at: 2026-09-01
-  state: pending
-  stamp_ticket: null
+  state: stamp-open
+  stamp_ticket: BL-1324
   human_decision: null
   decided_at: null
 - commit: 9c94735f03
