@@ -1,0 +1,157 @@
+id: BL-1323
+title: "Swarm stamp-off: certify Cursor hotfix db7e3f2bda (bob pack restaffed to an Anthropic starting cast, coder-only Qwen Token Plan)"
+milestone: M8
+type: defect
+severity: medium
+# medium: nothing is currently stalled and the pack is already staffed on the
+# landed cast, so this is not urgent in itself. Not low: an uncertified
+# hotfix keeps resurfacing in the recurrent sweep until a human answers, and
+# this is the SECOND same-day restaff of this pack (after 4ed88430b2/BL-1322)
+# so an unreviewed drift here compounds faster than usual.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1323-bob-restaff-anthropic-coder-qwen-db7e3f2bda.feature
+
+human_approval: pending
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit db7e3f2bda. Review-only:
+  it confirms or refutes the land and never reimplements it. No choice is
+  posed here — approving authorizes the review parcel; the certify/waive
+  decision on the ledger row stays human-only and comes after the review
+  (BL-848).
+
+  Two things to know before you approve. First, this is the SECOND restaff of
+  the bob-multi-provider-mono-router pack today: 4ed88430b2 (reviewed by
+  BL-1322, still awaiting its own ledger decision) put every pipeline seat on
+  Token Plan qwen3.8-max except the coordinator; db7e3f2bda now reverses that
+  — every seat goes back to first-party claude-sonnet-5 EXCEPT the resident
+  coder, which stays on qwen3.8-max with the 1M context declaration. The
+  commit's own header frames this as the Best-of-Breed *starting point*, to be
+  diversified deliberately later, not a return to the old multi-vendor mix.
+
+  Second, an observation for the record, not a defect: db7e3f2bda's own diff
+  also carries the two files that mint BL-1322 (its paused YAML and feature
+  file) — confirmed by diffing against its parent, which has neither file.
+  Those files' content is correct and already covered by BL-1322 itself; this
+  ticket does not re-review them. Flagging only because a Cursor-attributed
+  hotfix commit swallowing a specifier-authored ticket mint is the shape of
+  hazard the "never git add -A on a shared checkout" guidance exists to catch,
+  and it is worth a human eye even though nothing here is factually wrong.
+
+invariants:
+  - "This stamp-off never reimplements, rewrites or reverts the hotfix — review confirms or refutes landed commit db7e3f2bda only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."
+  - "The review scopes to the pack conf restaff only — it does not re-review BL-1322's bundled ticket files, which are BL-1322's own record."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1323BobRestaffAnthropicStartingCastSteps::acceptance handler registered so the runner executes every review scenario'
+
+description: >
+  WHAT. Operator/Cursor hotfix db7e3f2bda is live on main with the trailer
+  Hotfix-Certification: pending. Subject: "Restaff bob BoB starting cast:
+  Anthropic seats, coder on qwen3.8-max."
+
+  Landed behaviour under review (do not redesign). Only
+  swarmforge/packs/bob-multi-provider-mono-router.conf changes (52 lines);
+  no launcher code moves. The window block's specifier/cleaner/architect/
+  hardender/documenter/QA lines switch from `--model qwen3.8-max` to
+  `--model claude-sonnet-5`; the coder line is untouched
+  (`--model qwen3.8-max --effort high`, HOME). The coordinator was never a
+  window line and remains claude-sonnet-5 via `coordinator_agent`/
+  `coordinator_model` config, auto-provisioned. The header comment is
+  rewritten from documenting an all-qwen "quality trial" to documenting a
+  Best-of-Breed *starting cast* (Anthropic everywhere except the resident
+  coder), with an explicit warning not to read the file as an
+  already-diversified multi-vendor mix. The PREREQ block flips from "Token
+  Plan key for every pipeline seat" to "Anthropic subscription for every
+  non-coder seat, Token Plan key for the coder seat only." The
+  "Context:"/1M-window comment narrows from "every Qwen Claude seat" to "the
+  Qwen Claude coder seat" — prose only; the launcher's
+  extra_cli_targets_qwen_cloud predicate and launch_role's qwen elif branch
+  (reviewed in full by BL-1322) are untouched code, so any seat whose
+  --model still matches qwen* still gets the remap and the 1M declaration —
+  it is simply that only the coder seat now matches.
+
+  WHY. Human directive, quoted in the commit body: "BoB starts as Anthropic
+  everywhere except the resident coder on Token Plan qwen3.8-max (Claude
+  agent); keep the 1M context env on that seat only." Separately: an
+  unticketed hotfix never becomes an official swarm deal on green tests alone
+  (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the
+  landed sources at db7e3f2bda. Open a narrow follow-up only if review finds
+  a defect; do not rewrite the launcher's remap path or re-restaff the pack
+  in this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the hotfix. This parcel confirms or
+    refutes what landed at db7e3f2bda.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT redesign extra_cli_targets_qwen_cloud, the billing_guard branch, or
+    launch_role's provider elif chain — none of them changed in this commit;
+    they were already reviewed by BL-1322 and stay out of scope here too.
+  - Do NOT re-staff the pack back toward the all-qwen3.8-max cast, and do not
+    treat the Anthropic-starting-cast framing as a mandate to diversify other
+    seats in this parcel — that is future, deliberate work per the header.
+  - Do NOT re-review backlog/paused/BL-1322-*.yaml or
+    specs/features/BL-1322-*.feature. They are bundled into this commit's
+    diff but are BL-1322's own record, not this ticket's subject.
+  - Do NOT change the 1000000 default or the override semantics of
+    CLAUDE_CODE_MAX_CONTEXT_TOKENS.
+
+qa_e2e_procedure: >
+  (1) At commit db7e3f2bda, confirm bob-multi-provider-mono-router.conf's
+  window block: coder is `claude coder --model qwen3.8-max --effort high`;
+  specifier/architect/QA are `claude <role> --model claude-sonnet-5 --effort
+  high`; cleaner/hardender/documenter are `claude <role> batch --model
+  claude-sonnet-5 --effort medium`; no window line names coordinator.
+  (2) Confirm `coordinator_agent claude` and `coordinator_model
+  claude-sonnet-5` are still set.
+  (3) Re-run BL-1322's already-verified extra_cli_targets_qwen_cloud predicate
+  (unchanged code) against each window's CLI tokens from this commit's conf
+  and confirm only the coder window's tokens match.
+  (4) Confirm the header comment states the Anthropic-starting-point framing
+  and the "do not treat as diversified" warning, and the PREREQ block lists
+  Anthropic subscription for every non-coder seat plus
+  BAILIAN_TOKEN_PLAN_API_KEY/QWEN_API_KEY for the coder seat only.
+  (5) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  IR-DRY adjudication at mint (do not re-litigate): the checker flagged five
+  medium-confidence findings, all pairing different Given fixtures on the
+  same conf file — "the pack" (overview) vs "the pack's header comment" vs
+  "the pack's window block" — plus a Then/And pair asserting two distinct
+  config keys and a Then/And pair asserting two distinct window facts (agent
+  vs model). Each pair names a different concern read from a different part
+  of the file; one step-handler pattern would blur what is actually being
+  asserted. Same disposition as BL-1321/BL-1322: normalised proximity, not
+  accidental drift. Re-run with `bb gherkin-parser` then `bb
+  gherkin-ir-dry-checker` from swarmforge/vendor/aps (invoke as `bb` tasks
+  from that directory, not as executable files — there is no
+  swarmforge/vendor/aps/gherkin-parser binary).
+
+  Ledger: commit db7e3f2bda ALREADY had a row in backlog/hotfix-ledger.yaml
+  (state: pending, recorded by 36e3c59581) — no --new was needed, only
+  --link at mint, so the recurrent sweep stops nudging the coordinator for
+  it.
+
+  Relationship to BL-1322: that ticket reviews the PRIOR staffing state
+  (4ed88430b2, all-qwen3.8-max except coordinator) and is unaffected by this
+  one — its Background pins to that historical commit, which git history
+  does not change. This ticket does not depend_on BL-1322; both are
+  independent point-in-time reviews and either can certify/waive on its own
+  schedule.
+
+source: |
+  Coordinator note 00_20260901T115455Z_003375_from_coordinator_to_specifier
+  (2026-09-01): "hotfix db7e3f2bda has no stamp ticket - mint a review
+  ticket for it". Satisfied in full by this ticket.
