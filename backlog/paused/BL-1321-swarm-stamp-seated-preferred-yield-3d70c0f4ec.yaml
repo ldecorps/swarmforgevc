@@ -19,8 +19,9 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1321-swarm-stamp-seated-preferred-yield-3d70c0f4ec.feature
 
-human_approval: pending
-
+human_approval: approved
+human_ruling: |
+  Accept the line-ending normalisation as landed and open no follow-up
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 3d70c0f4ec. Review-only:
   it confirms or refutes the land and never reimplements it. What needs your
