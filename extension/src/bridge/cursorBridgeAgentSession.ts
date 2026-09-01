@@ -369,13 +369,13 @@ export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBr
   if (shouldUseFrontDeskRunner(targetPath)) {
     return createLiveFrontDeskBridgeSession(targetPath);
   }
-  const apiKey = resolveCursorApiKey(targetPath);
   const modelId = process.env.CURSOR_BRIDGE_MODEL?.trim() || readSwarmEnvValue(targetPath, 'CURSOR_BRIDGE_MODEL') || 'auto';
   let cachedAgent: SDKAgent | undefined;
 
   const ensureAgent = async (): Promise<SDKAgent> => {
     const state = loadState(targetPath);
     if (!cachedAgent) {
+      const apiKey = resolveCursorApiKey(targetPath);
       cachedAgent = await openAgentWithAuthRecovery(targetPath, apiKey, modelId, state.agentId);
       const next = { ...state, agentId: cachedAgent.agentId };
       saveState(targetPath, next);
