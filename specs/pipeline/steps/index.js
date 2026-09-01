@@ -910,6 +910,7 @@ const DOMAINS = [
   require('./bl1298ReplayLinkedWorktreeSteps'),
   require('./bl1303FeatureHandlerRegistrationSteps'),
   require('./bl1304DryRunSpawnsNothingSteps'),
+  require('./bl1313BatchGuardVisibilitySteps'),
   require('./bl1315OwnPathsFullRangeSteps')
 ];
 
