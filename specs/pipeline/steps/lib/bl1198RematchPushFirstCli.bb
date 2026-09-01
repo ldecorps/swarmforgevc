@@ -13,6 +13,12 @@
 ;; exercises "only what happens immediately before a reset that has already
 ;; been decided on fires" - the ticket's own in-scope description.
 ;;
+;; BL-1310: :reset! is wrapped with master_main_reconcile_lib.bb's own
+;; refuse-reset-if-local-ahead! - the same composition handoffd.bb,
+;; swarm_heal.bb, and post_hotfix_merge_origin.bb wire at their reset
+;; adapters - so scenario 02 proves current production behaviour for
+;; local-ahead commits, not the pre-BL-1310 discard path.
+;;
 ;; Usage: bb bl1198RematchPushFirstCli.bb <repo-root>
 ;; Exits 0 always (success/failure of the push/reset themselves is not this
 ;; script's concern); prints one JSON line
@@ -48,6 +54,16 @@
 (def push-attempted? (atom false))
 (def reset-attempted? (atom false))
 
+(defn- ahead-count! []
+  (master-main-reconcile-lib/ahead-count-via-rev-list
+   {:sh! (fn [] (sh "git" "rev-list" "--left-right" "--count" "origin/main...main"))}))
+
+(def raw-reset!
+  (fn []
+    (reset! reset-attempted? true)
+    (let [r (sh "git" "reset" "--hard" "origin/main")]
+      {:success (zero? (:exit r)) :error (:err r)})))
+
 (def result
   (master-main-reconcile-lib/rematch-with-push-first!
    {:push! (fn []
@@ -55,11 +71,13 @@
              (let [r (sh "git" "push" "origin" "main")]
                {:success (zero? (:exit r)) :error (:err r)}))
     :reset! (fn []
-              (reset! reset-attempted? true)
-              (let [r (sh "git" "reset" "--hard" "origin/main")]
-                {:success (zero? (:exit r)) :error (:err r)}))}))
+              (master-main-reconcile-lib/refuse-reset-if-local-ahead!
+               {:ahead-count! ahead-count!
+                :raw-reset! raw-reset!}))}))
 
 (println (json/generate-string {:pushed (= :pushed (:outcome result))
                                  :pushAttempted @push-attempted?
-                                 :resetAttempted @reset-attempted?}))
+                                 :resetAttempted @reset-attempted?
+                                 :outcome (some-> (:outcome result) name)
+                                 :error (:error result)}))
 (System/exit 0)

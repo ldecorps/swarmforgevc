@@ -40,10 +40,10 @@ Feature: Only a rejected push may authorise discarding local-ahead commits
     Then the local-ahead commits are <fate>
 
     Examples:
-      | cause                          | fate      |
-      | the remote rejected it         | discarded |
-      | the remote was unreachable     | kept      |
-      | no credentials were available  | kept      |
+      | cause                          | fate |
+      | the remote rejected it         | kept |
+      | the remote was unreachable     | kept |
+      | no credentials were available  | kept |
 
   # BL-1288 push-failure-classification-02
   Scenario: The push's own reason survives into the reported outcome

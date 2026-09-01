@@ -132,27 +132,25 @@ function registerSteps(registry) {
     }
   });
 
-  // ── scenario 02: genuinely diverged - push attempted, then reset ────────
-
   scoped(/^it attempts the push first$/, (ctx) => {
     const st = ctx.bl1198;
     assert.equal(st.result.pushAttempted, true, `push! was never invoked: ${JSON.stringify(st.result)}`);
+    assert.equal(st.result.pushed, false, `expected the push to be rejected, got: ${JSON.stringify(st.result)}`);
   });
 
-  scoped(/^only after that push is rejected does it reset local main to origin\/main$/, (ctx) => {
+  scoped(/^local main is left with the local-ahead commit intact$/, (ctx) => {
     const st = ctx.bl1198;
-    try {
-      assert.equal(st.result.pushed, false, `expected the push to be rejected, got: ${JSON.stringify(st.result)}`);
-      assert.equal(st.result.resetAttempted, true, `reset! was never invoked after the rejected push: ${JSON.stringify(st.result)}`);
-      const currentSha = git(st.root, ['rev-parse', 'HEAD']);
-      assert.equal(
-        currentSha,
-        st.originTipSha,
-        `expected local main to land exactly on origin's tip (${st.originTipSha}) after the reset, got ${currentSha}`
-      );
-    } finally {
-      cleanupFixtureState(ctx);
-    }
+    const currentSha = git(st.root, ['rev-parse', 'HEAD']);
+    assert.equal(
+      currentSha,
+      st.aheadSha,
+      `local-ahead commit was discarded: HEAD moved from ${st.aheadSha} to ${currentSha}`
+    );
+    assert.equal(
+      st.result.outcome,
+      'local-ahead-refused',
+      `expected BL-1310 refusal after rejected push with local-ahead commits: ${JSON.stringify(st.result)}`
+    );
   });
 }
 
