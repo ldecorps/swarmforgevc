@@ -490,6 +490,58 @@
 ;; Design And Testability rule). Its integration coverage lives in
 ;; test_rotate_to_role_stuck_parcel_gate.sh's fake-tmux fixture instead.
 
+;; ── BL-1316: apply-claim-effort! (the IO edge over claim-effort-decision) ──
+
+(defn bl1316-fixture!
+  "A fresh target-root with role's launch/<role>.claude-settings.json seeded
+   with starting-effort, or no file at all when starting-effort is nil."
+  [role starting-effort]
+  (let [dir (mk-tmp-dir)
+        launch-dir (fs/path dir ".swarmforge" "launch")]
+    (fs/create-dirs launch-dir)
+    (when starting-effort
+      (spit (str (fs/path launch-dir (str role ".claude-settings.json")))
+            (str "{\"model\":\"claude-sonnet-5\",\"effortLevel\":\"" starting-effort "\"}")))
+    dir))
+
+(defmacro bl1316-with-fixture [[dir-sym role starting-effort] & body]
+  `(let [~dir-sym (bl1316-fixture! ~role ~starting-effort)]
+     (handoff-lib/set-project-root! ~dir-sym)
+     (try
+       ~@body
+       (finally (handoff-lib/set-project-root! nil)))))
+
+(bl1316-with-fixture [dir "coder" "medium"]
+  (let [result (handoff-lib/apply-claim-effort!
+                {:role "coder" :backend "claude" :mutation-cost "high" :pack-default-effort "medium"})]
+    (assert= "apply-claim-effort!: high mutation_cost applies and writes" {:apply? true :effort "high" :written? true} result)
+    (assert-true "apply-claim-effort!: settings file effortLevel updated to high"
+                 (str/includes? (slurp (str (fs/path dir ".swarmforge" "launch" "coder.claude-settings.json"))) "\"high\""))))
+
+(bl1316-with-fixture [dir "coder" "high"]
+  (let [result (handoff-lib/apply-claim-effort!
+                {:role "coder" :backend "claude" :mutation-cost nil :pack-default-effort "low"})]
+    (assert= "apply-claim-effort! invariant 3: absent mutation_cost restores the pack default, not the prior effort"
+             {:apply? true :effort "low" :written? true} result)
+    (assert-true "apply-claim-effort!: settings file restored to the pack default"
+                 (str/includes? (slurp (str (fs/path dir ".swarmforge" "launch" "coder.claude-settings.json"))) "\"low\""))))
+
+(bl1316-with-fixture [dir "coder@cursor2" "n/a"]
+  (let [before (slurp (str (fs/path dir ".swarmforge" "launch" "coder@cursor2.claude-settings.json")))
+        result (handoff-lib/apply-claim-effort!
+                {:role "coder@cursor2" :backend "cursor" :mutation-cost "high" :pack-default-effort "low"})]
+    (assert= "apply-claim-effort! invariant 2: a backend with no lever never applies"
+             {:apply? false} result)
+    (assert= "apply-claim-effort!: settings file untouched for a no-lever backend"
+             before
+             (slurp (str (fs/path dir ".swarmforge" "launch" "coder@cursor2.claude-settings.json"))))))
+
+(bl1316-with-fixture [dir "coder" nil]
+  (assert= "apply-claim-effort!: claim still succeeds (no throw) when the settings file is missing"
+           {:apply? true :effort "high" :written? false}
+           (handoff-lib/apply-claim-effort!
+            {:role "coder" :backend "claude" :mutation-cost "high" :pack-default-effort "low"})))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")

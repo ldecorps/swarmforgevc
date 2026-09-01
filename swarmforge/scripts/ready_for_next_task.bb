@@ -62,6 +62,24 @@
         yaml (active-ticket-yaml root tid)]
     (seat-difficulty-lib/parse-mutation-cost yaml)))
 
+(defn- apply-effort-for-task!
+  "BL-1316: retunes (or restores) this seat's reasoning effort for the
+   ticket named by handoff-file's task header, at both the claim moment
+   (a freshly dequeued parcel) and the reclaim moment (an in-process parcel
+   resumed after a restart) - the two claim/ready-for-next sites -main
+   already has. Best-effort IO lives entirely in handoff-lib/apply-claim-
+   effort!; a failure there never blocks the turn."
+  [handoff-file pack-conf]
+  (let [me (handoff-lib/current-role)
+        backends (seat-difficulty-lib/parse-seat-backends pack-conf)
+        efforts (seat-difficulty-lib/parse-seat-efforts pack-conf)
+        cost (mutation-cost-for-task (handoff-lib/header-field handoff-file "task"))]
+    (handoff-lib/apply-claim-effort!
+     {:role me
+      :backend (get backends me)
+      :mutation-cost cost
+      :pack-default-effort (get efforts me)})))
+
 (defn- sibling-busy?
   [ri]
   (boolean (seq (handoff-lib/handoff-files
@@ -245,6 +263,7 @@
         ;; ready_for_next.sh.
         (do
           (enforce-branch-claim-guard! (first in-process-files) in-process-dir new-dir)
+          (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
           (handoff-lib/print-task (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
@@ -352,6 +371,7 @@
                                      :task (:task decision)
                                      :sibling-seats sibling-seat-ids})))
                         (enforce-branch-claim-guard! target-file in-process-dir new-dir)
+                        (apply-effort-for-task! target-file pack-conf)
                         (handoff-lib/print-task target-file))
                       (recur (rest candidates)))))))))))))
 

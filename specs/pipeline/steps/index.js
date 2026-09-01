@@ -402,6 +402,7 @@ const DOMAINS = [
   require('./bl686EpicDrilldownSlugMatchSteps'),
   require('./bl1000FreshnessPinnedFixtureSteps'),
   require('./bl1001DifficultyAwareSeatRoutingSteps'),
+  require('./bl1316ClaimTimeEffortSteps'),
   require('./bl1007ContentionBudgetSteps'),
   require('./bl1008BoundedWatchDeadlineSteps'),
   require('./bl1009UnifiedPipelineGridAcrossSwarmsSteps'),
@@ -907,8 +908,9 @@ const DOMAINS = [
   require('./bl1299ReverseHopMasterResidentSteps'),
   require('./bl1308SiblingDetectorCoversReplaySteps'),
   require('./bl1298ReplayLinkedWorktreeSteps'),
+  require('./bl1303FeatureHandlerRegistrationSteps'),
   require('./bl1315OwnPathsFullRangeSteps'),
-  require('./bl1303FeatureHandlerRegistrationSteps')
+  require('./bl1304DryRunSpawnsNothingSteps'),
 ];
 
 function registerSteps(registry) {

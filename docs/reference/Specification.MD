@@ -1,6 +1,10 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 31, 2026 (BL-1303: a new commit-guard,
+**Last Updated:** September 1, 2026 (BL-1316: a seat's reasoning effort
+now also retunes at claim/reclaim time from the claimed ticket's
+`mutation_cost` — see the Effort dial section below.)
+
+**Previously:** August 31, 2026 (BL-1303: a new commit-guard,
 `check_feature_handler_registration.sh`, refuses a commit or `--no-ff`
 merge on `main` that leaves a `specs/features/*.feature` file with no
 registered — or no longer runnable — step handler. `specs/pipeline/runtime.js`
@@ -9687,6 +9691,8 @@ This load profile is shown in the run artifacts / Work Tree (a simple per-role b
 - **Maturity of the solution** (the angle you raised): early/greenfield work with sparse tests benefits from stronger models (mistakes are expensive and uncaught); a mature codebase with dense tests and tight specs can lean on cheaper models, because the gates catch errors cheaply. So the recommended tier can *shift down* as the project hardens.
 
 **Effort dial (BL-236, M5, Suggest tier — Claude-backed roles only):** beyond model choice, a reasoning-effort lever independent of which model. At run start, each role gets a per-role effort suggestion (`low`/`medium`/`high`/`xhigh`) with a one-line rationale — higher (`xhigh`) for design-heavy roles (specifier, architect), a neutral `high` for coder/hardener, lower (`medium`) for mechanical roles (cleaner, documenter, QA, coordinator). Suggestions are purely advisory: nothing changes until the operator explicitly sets a role's dial. Setting a role's effort rewrites that role's Claude settings-file `effortLevel` field in place and respawns just that role via the same in-memory, `swarmforge.conf`-untouched mechanism BL-235 uses for model switching (same landed-slice caveat: a role on a non-Claude backend has no effort setting to show, per Agent Backends' current true scope). The Adapt/Auto tiers below remain unbuilt — this is Suggest only.
+
+**Claim-time effort follows ticket difficulty (BL-1316):** on top of the static per-role Suggest dial above and BL-1001's seat pick, a seat's reasoning effort now also retunes per CLAIM: at claim and reclaim time, `seat_difficulty_lib.bb`'s `claim-effort-decision` maps the claimed ticket's `mutation_cost` straight to an effort token (crank for `high`, shrink for `low`) and `handoff_lib.bb`'s `apply-claim-effort!` rewrites the seat's launch-time settings file in place — best-effort, never blocking the claim. A ticket with no `mutation_cost` restores the pack/window's declared `--effort` default rather than leaving a prior ticket's effort in place. Only backends in `effort-lever-backends` (`claude` today) are touched at all; Cursor/Copilot-style backends with no lever get no apply attempt and no invented flag. How-to: `docs/how-to/BL-1316-claim-time-effort-follows-ticket-difficulty.md`.
 
 **Tiers of autonomy (deliberately conservative):**
 
