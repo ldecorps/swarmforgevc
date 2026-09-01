@@ -1,5 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** August 31, 2026 (BL-1315: the land step's replay tip is
+now based on the FULL `origin/main..commit` diff, not the ticket-tagged
+merge's first-parent `:delivered` diff — closing BL-1308's stated residual
+on the same computation. `own-paths` (`land_step_lib.bb`) used to delegate
+to `task_scope_gate_lib.bb`'s `task-tagged-changed-paths` reading
+`:delivered`, a two-tree diff against a merge's single first parent. That
+base was wrong in both directions on the same live machinery, two
+incidents in two days: over-inclusion (2026-08-30, BL-1307 over BL-1300 —
+an unlanded sibling's second-parent content entered the tip under the
+forwarded ticket's name) and under-inclusion (2026-08-31, BL-1298 over
+BL-1303 — the landed ticket's OWN content, having reached the branch
+before its own tagged merge via a sibling's passenger ride, was absent
+from the first-parent diff and so dropped from the tip; verified live on
+BL-1303's QA tip `ab8d10a8b3`, where `own-paths` returned only the last
+hop's 20 paths, present `check_feature_handler_registration.sh` but
+omitted the TS source files it shells out to). `own-paths` now bases the
+set on the full range and
+excludes a path only on positive attribution to a still-unlanded sibling
+and no other ticket — never the landed ticket's own paths, and never a
+path touched by even one untagged commit, which an untagged touch's
+otherwise-invisible contribution could previously make read as fully
+sibling-owned. An unreadable attribution refuses the land rather than
+silently narrowing the tip, naming the specific path or diff it could not
+read. `land_step_cli.bb`'s `LAND_CLEAN`/`LAND_REPLAY`/`LAND_ESCALATE`
+output shape is unchanged; a landed or byte-identical sibling (BL-1272)
+is still never subtracted. No new extension command or setting.
+Acceptance:
+`specs/features/BL-1315-the-replay-tip-carries-only-the-ticket-being-landed.feature`.
+How-to:
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`.)
+Prior entry —
 **Last Updated:** August 31, 2026 (BL-1225: a build-freshness sync's
 restarts now leave a readable forensic trail. `restart-operator-group!`
 (`swarmforge/scripts/build_freshness_cli.bb`) used to spawn the replacement

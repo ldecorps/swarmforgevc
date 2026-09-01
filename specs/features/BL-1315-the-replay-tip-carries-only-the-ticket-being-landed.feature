@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=18b3bde80b6e34aaeb51b539ee43710ae0849c62c5c15a56e5999f124dd369b5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-31T21:19:05.592216741Z","feature_name":"A replay tip adds only the content of the ticket being landed","feature_path":"/home/carillon/swarmforgevc/.worktrees/expedite-BL-1315/specs/features/BL-1315-the-replay-tip-carries-only-the-ticket-being-landed.feature","background_hash":"f74d022fcdd1520590182162d0e26993aef43ca97300ff7a23fb09aa5d73eff6","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A sibling that contributes no novel content is not subtracted","scenario_hash":"959c8574bc2c7b8e7d99e059ab6fa884200ac99887cdf73c816fb73165fbcfab","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-31T21:19:05.592216741Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A replay tip adds only the content of the ticket being landed
 
   land_step_lib.bb's own-paths delegates to task_scope_gate_lib.bb's

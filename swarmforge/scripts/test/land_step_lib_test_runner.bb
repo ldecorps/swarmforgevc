@@ -81,8 +81,9 @@
   (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling")
   (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
   (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
-        paths (land-step-lib/own-paths root commit "BL-9001")]
-    (assert= "own-paths: only the task's own path" ["backlog/active/BL-9001-x.yaml"] paths)))
+        result (land-step-lib/own-paths root commit "BL-9001")]
+    (assert= "own-paths: excludes the unlanded sibling's own path, self-computing unlanded"
+             ["backlog/active/BL-9001-x.yaml"] (:paths result))))
 
 ;; ── land-plan ────────────────────────────────────────────────────────────
 
@@ -302,6 +303,148 @@
 (let [msg (land-step-lib/entanglement-note "BL-9001-fixture" #{})]
   (assert-includes "entanglement-note: says so when every sibling already landed" msg "already landed")
   (assert-includes "entanglement-note: still names the task" msg "BL-9001-fixture"))
+
+;; ── BL-1315: own-paths adds only the landed ticket's own content, on the
+;;    FULL origin/main..tip range rather than the tagged merge's first-
+;;    parent diff - both faces (over- and under-inclusion) ────────────────
+
+;; 01: an unlanded sibling's own content, reachable only via the tagged
+;; merge's second parent, is dropped - but the landed ticket's own path
+;; survives (the over-inclusion face, BL-1307/BL-1300 and BL-1298/BL-1303).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "bl1315-01-sibling")
+  (commit! root "sib.txt" "sibling content\n" "BL-9002: sibling unlanded work")
+  (sh! root "git" "checkout" "-q" "main")
+  (commit! root "own.txt" "own content\n" "BL-9001: own work")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: forward merge" "bl1315-01-sibling")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})
+        paths (set (:paths result))]
+    (assert= "own-paths (01): drops the unlanded sibling's own path" false (contains? paths "sib.txt"))
+    (assert= "own-paths (01): keeps the landed ticket's own path" true (contains? paths "own.txt"))))
+
+;; 02a: a sibling already landed on origin/main is not subtracted - its
+;; content was never in the delivered diff to begin with, so the tip stays
+;; the full delivered set even if a caller (wrongly) still names it unlanded.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "sib.txt" "sibling content\n" "BL-9002: sibling work")
+  (commit! root "own.txt" "own content\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "bl1315-02a-landing" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+    (commit! root "sib.txt" "sibling content\n" "BL-9002: sibling work (replayed tip-pure)")
+    (mark-origin-main-here! root)
+    (sh! root "git" "checkout" "-q" "main")
+    (let [full (:out (sh! root "git" "diff" "--name-only" "origin/main" commit))
+          full-paths (set (remove str/blank? (str/split-lines full)))
+          result (land-step-lib/own-paths root commit "BL-9001" #{})
+          result-mistaken (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+      (assert= "own-paths (02a): unchanged from the full delivered set once the sibling has landed"
+               full-paths (set (:paths result)))
+      (assert= "own-paths (02a): still unchanged even if the landed sibling is (mistakenly) passed as unlanded"
+               full-paths (set (:paths result-mistaken))))))
+
+;; 02b: a sibling that rewrites a path back to origin/main's own content is
+;; byte-identical - never entering the delivered diff, so nothing to subtract.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "same content\n" "seed the shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "same content\n" "BL-9002: sibling rewrites shared with identical content")
+  (commit! root "own.txt" "own content\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "own-paths (02b): a byte-identical sibling path is not in the delivered set to begin with"
+             ["own.txt"] (:paths result))))
+
+;; 03: every role's contribution to the landed ticket survives, even a path
+;; whose own commit names no ticket at all - only the forward-merge does.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "coder.txt" "impl\n" "coder: implement the feature")
+  (commit! root "hardener.txt" "hardened\n" "hardener: add coverage")
+  (sh! root "git" "checkout" "-q" "-b" "bl1315-03-sibling")
+  (commit! root "sib.txt" "sibling\n" "BL-9002: sibling unlanded work")
+  (sh! root "git" "checkout" "-q" "main")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: documenter forward merge" "bl1315-03-sibling")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})
+        paths (set (:paths result))]
+    (assert= "own-paths (03): keeps coder's path though only the forward-merge names the ticket"
+             true (contains? paths "coder.txt"))
+    (assert= "own-paths (03): keeps hardener's path though only the forward-merge names the ticket"
+             true (contains? paths "hardener.txt"))
+    (assert= "own-paths (03): still drops the unlanded sibling's path"
+             false (contains? paths "sib.txt"))))
+
+;; 04: an undeterminable attribution refuses rather than narrows - driven via
+;; an injected commits-fn so the unreadable row is pinned without corrupting
+;; a real repository (the same posture landed-siblings' paths-fn takes).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own.txt" "own content\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        unreadable-fn (fn [_root _origin-main _commit _path] nil)
+        result (land-step-lib/own-paths root commit "BL-9001" #{} unreadable-fn)]
+    (assert= "own-paths (04): an unreadable attribution refuses rather than narrows" nil (:paths result))
+    (assert-includes "own-paths (04): the refusal names the affected path" (:warning result) "own.txt")))
+
+;; 05: a tip with no entangled sibling is untouched - own-paths returns
+;; exactly the full delivered set.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "a.txt" "a\n" "BL-9001: part one")
+  (commit! root "b.txt" "b\n" "BL-9001: part two")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        full (:out (sh! root "git" "diff" "--name-only" "origin/main" commit))
+        full-paths (set (remove str/blank? (str/split-lines full)))
+        result (land-step-lib/own-paths root commit "BL-9001" #{})]
+    (assert= "own-paths (05): unchanged from the full delivered set with no entangled sibling"
+             full-paths (set (:paths result)))))
+
+;; 06: content that reached the branch on an EARLIER sibling's merge still
+;; lands, even though the ticket's own tagged commit adds nothing over its
+;; first parent - the under-inclusion face (BL-1303's QA tip ab8d10a8b3).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "bl1315-06-own-work")
+  (commit! root "own.txt" "own content\n" "BL-9001: own work")
+  (sh! root "git" "checkout" "-q" "main")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9002: earlier sibling merge carries own work along" "bl1315-06-own-work")
+  (sh! root "git" "commit" "-q" "--allow-empty" "-m" "BL-9001: own ticket-tagged forward, nothing new")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        first-parent-delivered (task-scope-gate-lib/own-commit-changed-paths root commit :delivered)
+        result (land-step-lib/own-paths root commit "BL-9001" #{})]
+    (assert= "own-paths (06): the ticket-tagged commit itself adds nothing over its first parent (the premise)"
+             [] first-parent-delivered)
+    (assert= "own-paths (06): the ticket's own content still lands, though it arrived on an earlier sibling merge"
+             true (contains? (set (:paths result)) "own.txt"))))
+
+;; 07: HARDENING FINDING (BL-1315) - a path touched by BOTH an unlanded
+;; sibling's TAGGED commit and a later UNTAGGED own-chain commit is wrongly
+;; dropped. `path-owner-tickets` runs every touching commit through
+;; `commit-ticket-id` and `keep`s only the non-nil results - so an untagged
+;; commit's touch on a path contributes NOTHING to `owners`, and the
+;; exclusion cond then sees only the sibling's id and reads "every owner is
+;; unlanded" even though an own, untagged commit also touched the same
+;; path. This is the same shape as scenario 03 (an untagged own commit
+;; must never cause a drop) except the path is SHARED with a sibling
+;; instead of exclusive to the own chain - a combination no existing
+;; scenario or property-test fixture exercises (own and sibling paths are
+;; always disjoint filenames elsewhere in this suite and in
+;; bl1315OwnPathsFullRangeInvariants.property.test.js's generator).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "bl1315-07-sibling")
+  (commit! root "shared.txt" "sibling content\n" "BL-9002: sibling creates shared file")
+  (sh! root "git" "checkout" "-q" "main")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: forward merge (brings in sibling)" "bl1315-07-sibling")
+  (commit! root "shared.txt" "own content on top of the sibling's\n" "coder: refine shared.txt further (no ticket tag)")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "own-paths (07): a shared path with a later untagged own edit atop an unlanded sibling's touch is never dropped (invariant 1)"
+             true (contains? (set (:paths result)) "shared.txt"))))
 
 ;; ── report ─────────────────────────────────────────────────────────────────
 

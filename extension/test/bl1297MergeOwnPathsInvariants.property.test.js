@@ -26,6 +26,17 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 // shape that keeps it honest: it is the only merge whose author wrote
 // something, so it is the only merge on which AUTHORED may be non-empty.
 //
+// BL-1315 amendment: land_step_lib.bb's own-paths no longer answers
+// DELIVERED as this file measures it (the tagged commit's first-parent
+// diff) - it answers the FULL origin/main..tip diff minus whatever is
+// attributable only to another, unlanded ticket. In every INV3 fixture
+// below, the only content ever tagged with TASK's own id is the merge
+// commit itself, and everything else (TRUNK, the branch's carried content)
+// is tagged OTHER - a real, unlanded ticket id - so it is now excluded the
+// same way a genuine sibling's content is. What is left is exactly what the
+// merge commit itself authored, so the land assertion below now reads
+// `authored`, not `delivered`.
+//
 // All three drive REAL git repositories through the REAL bb libraries.
 // Nothing here re-implements the walk under test, and no property compares
 // the answer against another `git diff-tree` invocation - both expected sets
@@ -324,7 +335,7 @@ function threeCallers(root, commit) {
 (load-file ${JSON.stringify(LAND_LIB)})
 (load-file ${JSON.stringify(UNREG_LIB)})
 (let [gate (task-scope-gate-lib/parcel-own-changed-paths ${JSON.stringify(root)} ${JSON.stringify(TASK_ID)} ${JSON.stringify(commit)})
-      land (land-step-lib/own-paths ${JSON.stringify(root)} ${JSON.stringify(commit)} ${JSON.stringify(TASK_ID)})
+      land (:paths (land-step-lib/own-paths ${JSON.stringify(root)} ${JSON.stringify(commit)} ${JSON.stringify(TASK_ID)}))
       unreg (unregistered-test-gate-lib/findings-for-git-handoff
              {:root ${JSON.stringify(root)} :task-name ${JSON.stringify(TASK)} :commit ${JSON.stringify(commit)}})]
   (print (pr-str {:gate (vec (sort gate)) :land (vec (sort land))
@@ -369,10 +380,16 @@ test('property (invariant 3): the land step reads delivered, the two send-time g
         return inner ? inner.split(' ').map((s) => JSON.parse(s)) : [];
       };
 
-      // Caller 1 - the land-step replay - must be handed everything the
-      // parcel puts on the branch, or the replay silently ships a PARTIAL
-      // parcel, dropping whatever an upstream role authored.
-      assert.deepEqual([...parse('land')].sort(), [...delivered].sort(), `the land step misreads ${shape}: ${raw}`);
+      // Caller 1 - the land-step replay. BL-1315: every non-TASK path in
+      // this fixture family is tagged OTHER, a real (unlanded) ticket id,
+      // so the land step now excludes it - the same exclusion BL-1315
+      // applies to a genuine unlanded sibling's own content. What remains
+      // is exactly what the TASK-tagged commit itself authored: nothing
+      // else in this fixture ever carries TASK's own id, so `delivered`
+      // (BL-1297's pre-BL-1315 oracle, "whatever the tagged commit's
+      // first-parent diff happened to include") is no longer what the land
+      // step reads - `authored` is.
+      assert.deepEqual([...parse('land')].sort(), [...authored].sort(), `the land step misreads ${shape}: ${raw}`);
 
       // Caller 2 - the send-time scope gate - judges the parcel's AUTHOR. A
       // clean receive-merge authored nothing, and charging it with the

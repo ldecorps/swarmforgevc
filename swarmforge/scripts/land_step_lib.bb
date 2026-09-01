@@ -202,26 +202,123 @@
            :warning nil})))
     {:entangled nil :warning "land-step: origin/main could not be resolved"}))
 
+(defn- full-delivered-paths
+  "The two-tree diff between origin-main and commit - literally 'what
+   differs between origin/main's tree and this tip's tree', the ticket's
+   whole contribution across the FULL origin/main..tip range rather than any
+   one commit's diff against a parent.
+
+   BL-1315: this is the fix's base-of-the-set half. The tagged merge's own
+   :delivered diff (against its single first parent) drops the ticket's own
+   content whenever that content reached the branch BEFORE its own tagged
+   merge did - which is exactly what a sibling's passenger ride does to it
+   (verified live on BL-1303's QA tip ab8d10a8b3). A straight two-tree diff
+   against origin/main cannot lose that content, because it never depended
+   on which commit's first-parent edge carried it.
+
+   nil (never []) on an unreadable diff, this file's own fail-open
+   convention throughout."
+  [root origin-main commit]
+  (let [res (git! root "diff" "--name-only" origin-main commit)]
+    (when (zero? (:exit res))
+      (remove str/blank? (str/split-lines (:out res))))))
+
+(defn- path-attributing-commits
+  "Commits in origin-main..commit that changed `path`, via git's own
+   path-scoped history walk - which already elides a merge that is TREESAME
+   to a parent on that specific path, attributing the change to whichever
+   commit actually introduced it rather than to whatever forward-merge
+   happened to carry it along. nil signals the read itself failed; the
+   caller must refuse rather than read that as 'nothing touched this path'."
+  [root origin-main commit path]
+  (let [res (git! root "log" "--format=%H" (str origin-main ".." commit) "--" path)]
+    (when (zero? (:exit res))
+      (remove str/blank? (str/split-lines (:out res))))))
+
+(defn- path-owner-tickets
+  "The attribution of `path`'s changes: every commit `commits-fn` reports for
+   `path`, run through this file's own commit-ticket-id extractor.
+   `commits-fn` is injected (defaults to the real git walk) so the unreadable
+   row is drivable in a test without corrupting a repository, the same
+   posture `landed-siblings`' `paths-fn` already takes.
+
+   nil propagates a read failure (never a silent 'no attribution'). On a
+   successful read, returns {:owners #{...} :any-untagged? bool}: `:owners`
+   is the set of ticket ids named by a touching commit's subject (#{} is a
+   real answer - every touching commit named no ticket at all, positive
+   information, not blindness); `:any-untagged?` is true when at least one
+   touching commit's subject named no ticket.
+
+   BL-1315 hardener finding: an untagged touch used to contribute nothing to
+   `:owners`, making it indistinguishable from 'no commit touched this path'
+   - so a path touched by BOTH an unlanded sibling's tagged commit and a
+   later untagged own-chain commit read as 'every owner is the unlanded
+   sibling' and was wrongly excluded. `:any-untagged?` lets the caller tell
+   the two apart and keep the path when an untagged touch's contribution is
+   unaccounted for (invariant 1)."
+  [root origin-main commit path commits-fn]
+  (when-let [commits (commits-fn root origin-main commit path)]
+    (let [ids (map #(commit-ticket-id root %) commits)]
+      {:owners (into #{} (remove nil? ids))
+       :any-untagged? (boolean (some nil? ids))})))
+
 (defn own-paths
   "This ticket's own changed paths since origin/main - the tip-pure replay
-   content (BL-1241's remedy (b)). Delegates to task_scope_gate_lib.bb's
-   OWN already-shipped walk (BL-1192), based at origin/main instead of the
-   last-handoff boundary that function's default caller uses - the exact
-   parameterisation it already exposes, never a reimplementation. nil
-   (never []) on an unreadable range, mirroring that function's own
-   contract.
+   content (BL-1241's remedy (b)).
 
-   BL-1297: reads :DELIVERED, and says so explicitly rather than inheriting
-   the helper's default. The replay has to reproduce the content the parcel
-   puts on the branch, which on the shape this step is always given - a QA
-   tip whose only task-tagged commit is a receive-merge - is everything that
-   merge brought in. The send-time gates read :authored instead, because they
-   judge the parcel's author; reading THAT here would hand the replay an
-   empty set and report \"nothing to commit\", which is the defect this
-   ticket exists to fix, arriving from the other side."
-  [root commit task-ticket-id]
-  (when-let [origin-main (origin-main-sha root)]
-    (task-scope-gate-lib/task-tagged-changed-paths root origin-main commit task-ticket-id :delivered)))
+   BL-1315: based on the FULL origin-main..commit diff (`full-delivered-
+   paths` above), not the tagged merge's first-parent :delivered diff - see
+   that function's docstring for why the old base silently dropped content.
+   A path is then excluded only on POSITIVE attribution to a ticket in
+   `unlanded-siblings` and no other id (this ticket's invariant 2): never
+   the landed ticket's own path (even one no commit in range tags with its
+   id - invariant 1, scenario 06), and never a path attributed to nobody at
+   all (absence is not evidence, same posture `sibling-landed?` already
+   takes one door up).
+
+   {:paths [...] :warning nil} on success (paths may be [] - a real answer,
+   nothing left to replay). {:paths nil :warning \"...\"} when a diff
+   could not be read - origin/main unresolved, the full diff itself
+   unreadable, or one path's attribution unreadable, NAMED in the warning
+   text so a caller's refusal can say what it could not read (invariant 2's
+   refuse-rather-than-narrow half; scenario 04).
+
+   Two arities: given `unlanded-siblings` explicitly (what `land-plan`
+   passes, already computed by the same run's `entangled-siblings` call, so
+   the walk is never duplicated), or without it, in which case this
+   function computes it itself via `entangled-siblings` - so a caller that
+   asks this function in isolation (a test, a future direct caller) gets the
+   same answer the land step's own decision would reach, never a
+   half-applied one that skips exclusion entirely."
+  ([root commit task-ticket-id]
+   (let [{:keys [unlanded warning]} (entangled-siblings root commit task-ticket-id)]
+     (if warning
+       {:paths nil :warning warning}
+       (own-paths root commit task-ticket-id (or unlanded #{})))))
+  ([root commit task-ticket-id unlanded-siblings]
+   (own-paths root commit task-ticket-id unlanded-siblings path-attributing-commits))
+  ([root commit task-ticket-id unlanded-siblings commits-fn]
+   (if-let [origin-main (origin-main-sha root)]
+     (if-let [delivered (full-delivered-paths root origin-main commit)]
+       (loop [remaining delivered acc []]
+         (if (empty? remaining)
+           {:paths acc :warning nil}
+           (let [path (first remaining)
+                 attribution (path-owner-tickets root origin-main commit path commits-fn)]
+             (cond
+               (nil? attribution)
+               {:paths nil :warning (str "land-step: could not read " path "'s attribution")}
+
+               (and (seq (:owners attribution))
+                    (not (:any-untagged? attribution))
+                    (not (contains? (:owners attribution) task-ticket-id))
+                    (every? unlanded-siblings (:owners attribution)))
+               (recur (rest remaining) acc)
+
+               :else
+               (recur (rest remaining) (conj acc path))))))
+       {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)})
+     {:paths nil :warning "land-step: origin/main could not be resolved"})))
 
 (defn land-plan
   "The land step's own decision: {:action :land} when no entanglement is
@@ -240,9 +337,10 @@
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
         :else
-        (let [paths (own-paths root commit task-ticket-id)]
+        (let [{:keys [paths warning]} (own-paths root commit task-ticket-id unlanded)]
           (if (nil? paths)
-            {:action :escalate :reason (str "land-step: could not compute " task-ticket-id "'s own paths to replay")}
+            {:action :escalate
+             :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
             {:action :replay :entangled entangled :landed landed :unlanded unlanded
              :own-paths paths}))))))
 

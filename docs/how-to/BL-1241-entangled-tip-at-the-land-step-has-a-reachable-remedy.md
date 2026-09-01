@@ -85,6 +85,50 @@ files in unreported. `own-commit-changed-paths` and
 `task-tagged-changed-paths` are unaffected by this — only the detector's
 candidate set widened.
 
+## The replay tip is now based on the full range, not the tagged merge's first-parent diff (BL-1315)
+
+BL-1308 widened the DETECTOR only, by its own written statement, and left
+the path SET itself untouched. That set — `own-paths` in `land_step_lib.bb`
+— used to delegate to `task_scope_gate_lib.bb`'s `task-tagged-changed-paths`
+reading `:delivered`, which for a merge is a real two-tree diff against the
+merge's single first parent. Two incidents in two days showed this was
+wrong in both directions on the same computation:
+
+- **Over-inclusion** (2026-08-30, BL-1307 over BL-1300): `:delivered`
+  returns everything the merge's SECOND parent brought in, whoever authored
+  it — so a still-unlanded sibling riding the same role branch had its
+  files enter the tip under the forwarded ticket's name.
+- **Under-inclusion** (2026-08-31, BL-1298 over BL-1303): the same diff
+  drops the landed ticket's OWN content whenever that content reached the
+  branch *before* its own tagged merge did — exactly what a sibling's
+  passenger ride does to it. Verified live on BL-1303's QA tip `ab8d10a8b3`:
+  `own-paths` returned only the last hop's 20 paths and omitted every file
+  BL-1303's own coder/hardener commits delivered, including the guard
+  source `check_feature_handler_registration.sh` shells out to — landing
+  that tip would have wired a guard with no source, failing closed on every
+  subsequent commit to `main`.
+
+`own-paths` now bases the set on the FULL `origin/main..commit` diff (a
+straight two-tree diff, not a per-commit walk) instead of the tagged
+merge's first-parent diff — this alone restores what the old base dropped,
+because a full-range diff cannot lose content depending on which parent
+edge carried it. A path is then excluded only on POSITIVE attribution:
+every commit in range that touched the path is tagged, and every one of
+those tags names a ticket in the run's own `unlanded-siblings` set (never
+the landed ticket's own id, never a path with even one untagged touching
+commit, since an untagged touch's contribution can't be told apart from
+"nothing" and the two must not be conflated — invariant 1). An unreadable
+attribution refuses instead of narrowing: `land-plan`'s `:escalate` reason
+now names the specific path or diff `own-paths` could not read, rather than
+the old generic "could not compute own paths to replay" (invariant 2).
+
+None of this changes `land_step_cli.bb`'s output shape — `LAND_CLEAN`,
+`LAND_REPLAY <branch> <new-commit>`, and `LAND_ESCALATE` plus a reason are
+exactly as described above; only the tip `own-paths` computes, and the
+specificity of an escalate reason, changed. A landed or byte-identical
+sibling (the `LANDED_SIBLING` line, BL-1272) is still never subtracted —
+`unlanded-siblings` itself is unaffected by this ticket.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
