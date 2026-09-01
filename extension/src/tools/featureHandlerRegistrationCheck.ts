@@ -48,6 +48,43 @@ function offenderKey(offender: Offender): string {
 }
 
 /**
+ * One hop of the registry walk: resolves a single required module against
+ * the tree and folds it into the shared traversal state. Split out of
+ * walkRegistry so each function's own branching stays under the CRAP
+ * threshold - this is the per-module decision, walkRegistry is the loop that
+ * drives it.
+ */
+function visitRequiredModule(
+  required: string,
+  tree: FeatureHandlerTree,
+  seen: Set<string>,
+  textOf: Map<string, string>,
+  queue: string[],
+  reachable: Set<string>,
+  offenders: Offender[]
+): void {
+  if (seen.has(required)) {
+    return;
+  }
+  seen.add(required);
+  // Existence is asked of the tree itself rather than of a pre-listed set, so
+  // a handler kept in a subdirectory of steps/ resolves like any other.
+  // Absent and unreadable are one offender: either way the registry cannot be
+  // followed, and neither is a pass.
+  const requiredText = tree.readFile(required);
+  if (requiredText === null) {
+    offenders.push({ kind: 'missing-registry-module', path: required });
+    return;
+  }
+  reachable.add(required);
+  if (!required.endsWith('.js')) {
+    return;
+  }
+  textOf.set(required, requiredText);
+  queue.push(required);
+}
+
+/**
  * Every step file reachable from the registry by `require`, transitively - a
  * handler pulled in by another step file is registered just as truly as one
  * named in index.js. Unresolvable and unreadable hops are collected as
@@ -73,45 +110,24 @@ function walkRegistry(
     const current = queue.shift() as string;
     const text = textOf.get(current) as string;
     for (const required of extractRequiredModules(text, current)) {
-      if (seen.has(required)) {
-        continue;
-      }
-      seen.add(required);
-      // Existence is asked of the tree itself rather than of a pre-listed
-      // set, so a handler kept in a subdirectory of steps/ resolves like any
-      // other. Absent and unreadable are one offender: either way the
-      // registry cannot be followed, and neither is a pass.
-      const requiredText = tree.readFile(required);
-      if (requiredText === null) {
-        offenders.push({ kind: 'missing-registry-module', path: required });
-        continue;
-      }
-      reachable.add(required);
-      if (!required.endsWith('.js')) {
-        continue;
-      }
-      textOf.set(required, requiredText);
-      queue.push(required);
+      visitRequiredModule(required, tree, seen, textOf, queue, reachable, offenders);
     }
   }
   return { reachable, registryReadable: true };
 }
 
 /**
- * Every reason a feature file in this tree could not run, in ONE pass.
- *
- * Article 4.4's shape applied in a gate: a check that stopped at the first
- * offender would reproduce the one-defect-at-a-time loop that rule exists to
- * prevent, so every branch below collects and none returns early.
+ * A feature whose OWN ticket-named handler exists but is not reachable from
+ * the registry carries scenarios the runner will throw on. Split out of
+ * assessFeatureHandlerRegistration so each function's own branching stays
+ * under the CRAP threshold.
  */
-export function assessFeatureHandlerRegistration(tree: FeatureHandlerTree): Offender[] {
-  const offenders: Offender[] = [];
-  const { reachable, registryReadable } = walkRegistry(tree, offenders);
-
-  const handlers = tree.stepFiles.filter((p) => p !== REGISTRY_PATH);
-
-  // A feature whose OWN ticket-named handler exists but is not reachable from
-  // the registry carries scenarios the runner will throw on.
+function collectUnregisteredHandlers(
+  tree: FeatureHandlerTree,
+  handlers: string[],
+  reachable: Set<string>,
+  offenders: Offender[]
+): void {
   for (const feature of tree.featureFiles) {
     const ticketId = featureTicketId(feature);
     if (!ticketId) {
@@ -129,14 +145,20 @@ export function assessFeatureHandlerRegistration(tree: FeatureHandlerTree): Offe
       offenders.push({ kind: 'unregistered-handler', path: handler, feature });
     }
   }
+}
 
-  // A registered handler that executes an absent sibling script fails at the
-  // step rather than at resolution - the second half of the same incident.
-  // With an unreadable registry nothing is known to be reachable, so every
-  // handler in the tree is scanned instead: an unreadable registry must widen
-  // the report, never silence it.
-  const scanned = registryReadable ? handlers.filter((p) => reachable.has(p)) : handlers;
-  const libs = new Set(tree.libFiles);
+/**
+ * A registered handler that executes an absent sibling script fails at the
+ * step rather than at resolution - the second half of the same incident.
+ * Split out of assessFeatureHandlerRegistration for the same CRAP reason as
+ * collectUnregisteredHandlers above.
+ */
+function collectMissingSiblingScripts(
+  tree: FeatureHandlerTree,
+  scanned: string[],
+  libs: Set<string>,
+  offenders: Offender[]
+): void {
   for (const handler of scanned) {
     const text = tree.readFile(handler);
     if (text === null) {
@@ -149,7 +171,10 @@ export function assessFeatureHandlerRegistration(tree: FeatureHandlerTree): Offe
       }
     }
   }
+}
 
+/** De-duplicates offenders and orders them: the registry first, then what it reaches. */
+function dedupeAndSortOffenders(offenders: Offender[]): Offender[] {
   const deduped = new Map<string, Offender>();
   for (const offender of offenders) {
     const key = offenderKey(offender);
@@ -161,4 +186,27 @@ export function assessFeatureHandlerRegistration(tree: FeatureHandlerTree): Offe
     const byKind = KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind);
     return byKind !== 0 ? byKind : offenderKey(a).localeCompare(offenderKey(b));
   });
+}
+
+/**
+ * Every reason a feature file in this tree could not run, in ONE pass.
+ *
+ * Article 4.4's shape applied in a gate: a check that stopped at the first
+ * offender would reproduce the one-defect-at-a-time loop that rule exists to
+ * prevent, so every branch below collects and none returns early.
+ */
+export function assessFeatureHandlerRegistration(tree: FeatureHandlerTree): Offender[] {
+  const offenders: Offender[] = [];
+  const { reachable, registryReadable } = walkRegistry(tree, offenders);
+  const handlers = tree.stepFiles.filter((p) => p !== REGISTRY_PATH);
+
+  collectUnregisteredHandlers(tree, handlers, reachable, offenders);
+
+  // With an unreadable registry nothing is known to be reachable, so every
+  // handler in the tree is scanned instead: an unreadable registry must widen
+  // the report, never silence it.
+  const scanned = registryReadable ? handlers.filter((p) => reachable.has(p)) : handlers;
+  collectMissingSiblingScripts(tree, scanned, new Set(tree.libFiles), offenders);
+
+  return dedupeAndSortOffenders(offenders);
 }

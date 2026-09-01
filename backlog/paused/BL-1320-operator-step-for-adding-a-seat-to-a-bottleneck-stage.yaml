@@ -1,0 +1,129 @@
+id: BL-1320
+title: "Nothing tells the operator how to act on a named bottleneck: document adding/removing a seat of a stage, and which model tier to add for a difficulty band"
+milestone: M8
+type: chore
+status: todo
+epic: multi-seat-stages
+assigned_to: none
+priority: 3
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1320-operator-step-for-adding-a-seat-to-a-bottleneck-stage.feature
+
+human_approval: approved
+human_ruling: |
+  Docs now and mint the optimizer-emits-a-recommendation slice as its own child
+approval_context: >
+  A premise correction to approve, then one choice. The intake asks to "make the
+  existing 'add/remove a role instance' recommendation map to a documented
+  operator step". There is no such existing recommendation: grepped
+  `extension/src`, `swarmforge/scripts` and `docs/` for "role instance",
+  "add a role" and "remove a role" — zero hits. The optimizer instrument
+  (`extension/src/metrics/stageDwell.ts`) names a bottleneck stage and emits no
+  recommendation text at all. So there is nothing to reword, and this ticket
+  writes the operator step that was assumed to exist.
+  The choice is whether it stays documentation. Writing the how-to closes the
+  operator gap today at low cost. Making the optimizer EMIT the recommendation
+  puts the advice where the bottleneck is already named, but it is real code on
+  a live instrument and a bigger slice than the intake budgeted.
+ruling_options:
+  - Docs only - write the how-to now, leave the optimizer emitting no recommendation
+  - Docs now and mint the optimizer-emits-a-recommendation slice as its own child
+  - Docs plus emit - build the optimizer recommendation in this same slice
+
+invariants:
+  - "Every command and window line the how-to prints is exercised against a real pack parse by this ticket's own scenarios — no step is asserted in prose alone."
+
+description: |
+  ## Gap
+
+  BL-982 (landed) lets a pack declare a second seat of one stage with its own
+  model; BL-1001 (landed) routes work between seats by ticket difficulty. The
+  optimizer names a bottleneck stage. Nothing joins them up: when the
+  coordinator is told the coder stage is the bottleneck, no page says how to add
+  a seat there, how to take it away again, or WHICH model tier to add when the
+  constraint is capacity at a particular difficulty band rather than raw speed.
+
+  ## Wanted
+
+  A how-to under `docs/how-to/` covering, for an operator who has just been
+  handed a named bottleneck:
+
+  - the exact `window` line that adds a second seat of a stage, with its own
+    `--model`, and the exact edit that removes it again;
+  - the constraint a second seat cannot violate — a stage declaring an extra
+    `<stage>@<seat>` must also declare its bare stage-named seat, because
+    parcels address the stage (enforced today in `parse_config`,
+    `swarmforge/scripts/swarmforge.sh`);
+  - which model tier to add for a difficulty band, and the steward command that
+    lists the models ranked for that role
+    (`model-steward role-matrix <role>`, `swarmforge/scripts/model_steward_cli.bb`);
+  - a pointer to BL-1001's existing page for how work is then split between the
+    seats, rather than restating it.
+
+  ## Why the scenarios exercise a pack parse
+
+  A how-to whose commands are only asserted in prose rots silently — and this
+  one prints a `window` line whose grammar `parse_config` enforces and has
+  changed before (seat ids, the bare-seat requirement, receive modes,
+  propagation). The acceptance here runs the documented line through a real pack
+  parse so the page cannot drift away from the parser without going red.
+
+  ## Not this slice
+
+  - Making the optimizer emit the recommendation (see `ruling_options`).
+  - Any change to how work is routed between seats — BL-1001 owns that and has
+    shipped.
+  - The dwell fold: BL-1319, minted from the same intake.
+
+source: |
+  `.swarmforge/operator/INTAKE-mint-difficulty-aware-remaining-jumpq.md`
+  (human via Cursor, 2026-08-31 ~10:53 BST), unminted item 2, itself drawn from
+  BL-981's remaining slice "Operator docs + Swarm Optimizer wording". Human
+  words, verbatim:
+
+  > "Ask Specifier to mint the necessary epics next."
+
+  The intake's own scoping instruction, preserved verbatim:
+
+  > If either unminted slice is better as a small how-to / chore rather than a
+  > feature, mint the smallest honest ticket — do not pad.
+
+  Minted as a chore on that instruction. Sibling from the same intake: BL-1319.
+
+qa_e2e_procedure: >
+  Read the how-to and follow it literally, without consulting any other page.
+  Copy a live pack to a fixture, apply the documented add step verbatim, and run
+  `SWARMFORGE_TERMINAL=none ./swarm <root> --pack <fixture>` far enough to parse:
+  the stage must come up with two seats, each on the model the page said to
+  write. Apply the documented removal step and re-parse: one bare seat. Then
+  deliberately break the documented constraint — declare `<stage>@<seat>` with no
+  bare seat — and confirm the parse refuses with the message the page warns
+  about. Finally run the steward command the page names for the role and confirm
+  it prints a ranked list the tier guidance can actually be read against.
+
+notes: |
+  ## Premise verified before minting, and it did not hold
+
+  Grepped for the "existing recommendation" the intake asked to reword:
+  `role instance`, `add a role`, `remove a role` across `extension/src`,
+  `swarmforge/scripts` and `docs/` returned nothing, and `stageDwell.ts` /
+  `stage-dwell-report.ts` contain no recommendation text — only the bottleneck
+  naming. Recorded here so the next reader does not go looking for it.
+
+  ## One invariant, deliberately
+
+  Only one property holds across all four scenarios: no documented step is
+  believed on prose alone. Manufacturing a second or third to fill the field
+  would be padding on a slice this size.
+
+  ## IR-DRY judgment recorded
+
+  One `possible-synonym` finding at 0.5, kept: "a fixture pack with two seats of
+  one stage" is a Given that SETS UP that state in scenario 02, while "the stage
+  has two seats" is the Then that ASSERTS it in scenario 01. Setup and assertion
+  are not drift, and collapsing them would make scenario 02 assume what
+  scenario 01 proves.

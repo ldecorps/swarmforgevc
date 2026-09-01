@@ -1,0 +1,156 @@
+id: BL-1319
+title: "The optimizer's dwell instrument still ranks on seat ids: a two-seat stage reports as two stages, so its split dwell can rank BELOW a single-seat stage that is actually faster"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: multi-seat-stages
+assigned_to: none
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1319-stage-dwell-names-the-stage-not-a-seat.feature
+
+human_approval: approved
+human_ruling: |
+  Fold plus ops seat-detail - build the seat-and-model view in this same slice
+approval_context: >
+  This ticket does NOT match the shape the intake asked for, and the difference
+  is the thing to approve. `.swarmforge/operator/INTAKE-mint-difficulty-aware-remaining-jumpq.md`
+  asked for one child covering "supervisor / chase / ensure / stage-dwell". I
+  read all four before writing, and three of them do not have the defect: chase
+  and the flow watchdog already route seat decisions through
+  `seat_affinity_lib.bb` and `handoff-lib/stage-seat-worked-task-sets`, and
+  `swarm_ensure.bb` / the babysitter iterate roles.tsv per SEAT on purpose —
+  each seat is its own pane, session and launch script, so folding seats to
+  stages there would break respawn, not fix it. Only the dwell half is
+  genuinely open, and that is all this ticket claims.
+  The open question is how much of it to take. Folding the report is the
+  defect; ADDING an ops surface that shows each seat and its model is the
+  intake's "ops surfaces may show seat-level detail" half, and it is a new
+  surface, not a fix. This slice keeps the per-seat records intact so that
+  surface remains buildable, but does not build it.
+ruling_options:
+  - Fold only - report and bottleneck name the stage, per-seat records preserved for later
+  - Fold plus ops seat-detail - build the seat-and-model view in this same slice
+  - Fold now and mint the ops seat-detail view as its own child of BL-981
+
+invariants:
+  - "No stage name, bottleneck name or trend key emitted by the dwell instrument ever contains a seat id — the fold holds for every stage, not only the one with two seats."
+  - "The fold is lossless for a single-seat swarm: with only bare seats the report is byte-identical to the pre-fold output for the same parcels."
+  - "Per-seat attribution is preserved in the underlying dwell records, never discarded — folding happens where the report is assembled, not where records are read."
+
+description: |
+  ## What happens
+
+  `extension/src/metrics/stageDwell.ts` is the coordinator's optimizer
+  instrument (its own header says so, BL-102). `readRoleStageDwellRecords` and
+  `computeStageDwellReportForRoles` take a role entry straight from the roles
+  table and carry `entry.role` through as the report row's key. For a non-bare
+  seat that string IS the seat id — `coder@sonnet2`. Nothing in
+  `extension/src/metrics/` folds an `@`: the only two `split('@')` sites in
+  `extension/src` are `swarm/respawnPickup.ts` and `swarm/messageBus.ts`.
+
+  Two consequences, and the second is the one that matters:
+
+  1. `nameBottleneck` returns `role: top.role`, so the coordinator is told a
+     SEAT is the bottleneck. Cosmetic on its own.
+  2. `nameBottleneck` ranks on median processing per ROW. A two-seat stage
+     contributes two rows, each holding only its own seat's parcels, so the
+     stage's work is split before it is ranked. A stage that is genuinely the
+     bottleneck can therefore be ranked BELOW a single-seat stage that is
+     actually faster. The instrument does not merely mislabel the answer, it
+     can give the wrong one.
+
+  ## Why medium and not high
+
+  Latent, for the same reason BL-1040 is: no non-bare seat is configured today.
+  It becomes a live wrong answer the moment a second seat boots, which is what
+  BL-1001 (landed) and BL-982 (landed) exist to allow. Not `low` — a wrong
+  bottleneck is a wrong optimizer decision, not a cosmetic label.
+
+  ## How (direction, not mandate)
+
+  Fold the seat key onto its stage where the report is assembled, so rows for
+  the same stage merge before ranking. The Babashka side already has one
+  chokepoint for this — `handoff_lib.bb`'s `seat-stage` — and the TypeScript
+  side has none; whether to add a shared TS helper or fold at the single
+  assembly point is the implementer's and architect's call. Note only that the
+  merge has to happen before `nameBottleneck` ranks, not after it picks, or
+  consequence 2 survives the fix.
+
+  Live consumers already reach this module and need no new wiring:
+  `extension/src/bridge/bridgeState.ts` (`buildStageDwellState`, served on the
+  `/stage-dwell` request) and the `extension/src/tools/stage-dwell-report.ts`
+  CLI both call `computeStageDwellReportForRoles` today.
+
+  ## Not this slice
+
+  - Supervisor, chase, ensure and the babysitter. Checked, and correct as they
+    stand — see `approval_context`. The epic's remaining-slice prose that
+    lumps them in with dwell is being corrected in the same pass as this mint.
+  - The ops surface that renders each seat and its model (see `ruling_options`).
+  - BL-1040's board and stage-map path. Same family, different files, already
+    minted and approved; no overlap.
+
+source: |
+  `.swarmforge/operator/INTAKE-mint-difficulty-aware-remaining-jumpq.md`
+  (human via Cursor, 2026-08-31 ~10:53 BST), which asked the specifier to mint
+  whatever is still missing from the BL-981 JumpQ batch. Human words, verbatim:
+
+  > "Ask Specifier to mint the necessary epics next."
+
+  The intake's own scoping instruction, preserved verbatim:
+
+  > If either unminted slice is better as a small how-to / chore rather than a
+  > feature, mint the smallest honest ticket — do not pad.
+
+  Split 1:2 from that intake's unminted item 1 together with BL-1320 (its
+  unminted item 2). This ticket is the verified half of item 1; the rest of
+  item 1 was found not to be a defect.
+
+qa_e2e_procedure: >
+  Build a fixture roles table with two coder seats (`coder` and `coder@sonnet2`,
+  each with its own worktree path) plus one bare seat for every other stage, and
+  plant completed handoff audit headers in each seat's mailbox so that the two
+  coder seats together are the slowest stage while neither alone beats the
+  slowest single-seat stage. At the parent commit run
+  `node extension/out/tools/stage-dwell-report.js` against that fixture and
+  confirm the defect is visible first: two rows keyed `coder` and
+  `coder@sonnet2`, and a bottleneck naming a seat or the wrong stage. Repeat at
+  the parcel commit and confirm one `coder` row carrying both seats' parcels and
+  a bottleneck of `coder`. Then re-run against a single-seat fixture and diff the
+  output against the parent commit's for the same parcels — it must be identical.
+  Finally hit the bridge `/stage-dwell` endpoint on the fixture and confirm the
+  served payload carries no `@`.
+
+notes: |
+  ## No `required_wiring:`, deliberately
+
+  The fold lands inside `extension/src/metrics/stageDwell.ts`, and both live
+  consumers — `bridge/bridgeState.ts` and `tools/stage-dwell-report.ts` —
+  already call into that module today. There is therefore no call site that
+  could be missing, which is the only thing `required_wiring` proves. Any
+  anchor available here would name a symbol this parcel itself adds, inside the
+  module that declares it, and would go green on its own diff (BL-1235). Stating
+  that rather than banking a meaningless green.
+
+  ## Findings recorded at mint
+
+  - Grepped `extension/src` for seat folding: only `swarm/respawnPickup.ts:21`
+    and `swarm/messageBus.ts:100` split on `@`. Nothing under
+    `extension/src/metrics/` does.
+  - `nameBottleneck` (`stageDwell.ts:217`) ranks `withProcessing` rows by
+    median processing and returns `role: top.role` — the ranking-not-just-
+    labelling consequence above follows from that, and is the reason this is
+    not a cosmetic ticket.
+  - IR-DRY on the feature file: 0 findings.
+
+  ## Epic bookkeeping
+
+  BL-981's `decomposes_into` and `remaining_slices` are updated in the same
+  commit as this mint. The supervisor/chase/ensure framing in that slice's
+  prose is corrected, not silently dropped.
