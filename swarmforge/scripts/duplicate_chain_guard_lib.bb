@@ -46,11 +46,7 @@
           (some (fn [file]
                   (when (git-handoff-for-ticket? file ticket-id)
                     {:role (:role role-info) :file file}))
-                ;; BL-1313: in_process may hold parcels inside batch_* subdirs.
-                ((if (= state :in_process)
-                   handoff-lib/handoff-files-with-batches
-                   handoff-lib/handoff-files)
-                 (handoff-lib/mailbox-dir role-info state))))
+                (handoff-lib/handoff-files (handoff-lib/mailbox-dir role-info state))))
         (for [role-info (handoff-lib/load-all-roles root)
               ;; BL-983: exclusion is STAGE-level - every seat of the
               ;; sender's stage is "self" here. The sender's outward
