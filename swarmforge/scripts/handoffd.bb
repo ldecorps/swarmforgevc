@@ -1500,48 +1500,41 @@
 
 ;; BL-795/BL-654: invariant 2 ("a chase poke at a non-preferred role
 ;; redirects the resident onto the preferred actionable role rather than
-;; returning not-preferred and dropping the rotate") has no executable
-;; property-test encoding. The decision itself (preferred truthy and
-;; different from the polled role -> redirect) is two lines of pure boolean
-;; logic, but it is inlined in chase-rotate-to! below, which is otherwise
-;; entirely IO: preferred-mono-rotate-role/role-mail-row scan the real
-;; mailbox filesystem and ambulance state, and attempt-resident-rotate!
-;; captures the live resident tmux pane over a real socket and performs the
-;; actual rotation. Extracting the decision into a standalone pure function
-;; to make it property-testable would be a structural change to this
-;; adopted-as-is hand fix (BL-795's scope is explicitly "adopt the files
-;; above as-is for the three invariants", not redesign them), and the
-;; Babashka toolchain has no property-test framework wired for this
-;; daemon-control-flow layer regardless (Engineering Rules: Babashka
-;; mutation/CRAP/DRY tooling not wired; the .bb unit-test suite is the real
-;; gate). The invariant is instead encoded as a real-fixture integration
-;; test: test_handoffd_rule_proposal_rotate_wiring.sh scenario C drives the
-;; actual handoffd.bb --print-preferred-rotate-target path and proves the
-;; PRECONDITION this redirect depends on (an in_process priority-00 claim
-;; outranks a rule_proposal priority-50) resolves correctly through the real
-;; system, matching this project's established pattern for daemon-level
-;; behavior (see this ticket's own e2e QA procedure).
+;; returning not-preferred and dropping the rotate"). Decision is
+;; mono-router-lib/chase-rotate-decision (unit-tested); IO stays here.
+;; Hotfix 2026-08-31: when preferred is already seated, yield to the poked
+;; actionable role — otherwise redirect→already-active deadlocks dependency
+;; mail (QA hold + specifier note, 2026-08-31).
 (defn chase-rotate-to!
   "Rotate the mono-router resident onto `role` when that role's mail is the
-   preferred actionable target. When another role is preferred, REDIRECT to
-   that preferred role instead of returning not-preferred and dropping the
-   poke (2026-08-03: hardender held in_process while chase burned cycles on
-   specifier's skip-not-preferred / skip-broadcast — preferred was never
-   acted on because only the poked role could land a rotate)."
+   preferred actionable target. When another role is preferred AND not already
+   seated on the resident, REDIRECT to that preferred role (BL-795). When
+   preferred is already seated, proceed to the poked actionable role so an
+   idle holder cannot starve dependency mail forever."
   [socket roles role]
   (let [preferred (preferred-mono-rotate-role roles)
-        row (role-mail-row role (get roles role))]
-    (cond
-      (and preferred (not= preferred role))
-      (do (log! "chase-rotate-redirect" role preferred)
-          (attempt-resident-rotate! socket preferred))
+        active (handoff-lib/read-mono-router-active-role)
+        row (role-mail-row role (get roles role))
+        decision (mono-router-lib/chase-rotate-decision
+                  {:preferred preferred
+                   :poked-role role
+                   :active-role active
+                   :poked-actionable? (:actionable? row)})]
+    (case (:action decision)
+      :redirect
+      (do (log! "chase-rotate-redirect" role (:target decision))
+          (attempt-resident-rotate! socket (:target decision)))
 
-      (not (:actionable? row))
+      :skip-broadcast
       (do (log! "chase-rotate-skip-broadcast" role)
           {:ok false :reason "broadcast"})
 
-      :else
-      (attempt-resident-rotate! socket role))))
+      :rotate
+      (do (when (and preferred active
+                     (= (str preferred) (str active))
+                     (not= (str preferred) (str role)))
+            (log! "chase-rotate-seated-preferred-yield" preferred role))
+          (attempt-resident-rotate! socket role)))))
 
 (defn chase-poke-and-notify!
   "Shared chase wake/resume path. Gating is scoped to the pane the poke

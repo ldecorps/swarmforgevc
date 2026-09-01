@@ -4,7 +4,7 @@ Two versioned git hooks refuse, at commit time, a commit or `--no-ff` merge
 that would put pipeline code (`extension/src/`, `extension/test/`,
 `specs/pipeline/steps/`) onto `main` from any role but QA.
 
-**Last Updated:** 2026-08-19
+**Last Updated:** 2026-08-31
 
 ## Background
 
@@ -22,17 +22,30 @@ before it is made.
 launch). All role worktrees share one physical `.git` dir, so this one
 install covers every role.
 
-Two hooks delegate to the same standalone script,
-`swarmforge/scripts/check_pipeline_code_on_main.sh`, so the QA-exclusive
-path definition lives in exactly one place:
+Two hooks both run `check_pipeline_code_on_main.sh`, so the QA-exclusive
+path definition lives in exactly one place — but as of BL-1303 neither
+hook is a delegate to that one script alone; each runs a small ordered
+*chain* of independent guards, aggregated through the shared
+`swarmforge/scripts/commit_guard_chain_lib.sh` so a violation from any
+guard in the chain is collected rather than aborting the rest (see
+"Guard-Chain Aggregation Is Shared, Not the Whole Chain (BL-1303)" below):
 
 - **`pre-commit`** — fires for a plain `git commit`, including
-  `git commit --amend`.
+  `git commit --amend`. Delegates to `run_commit_guards.sh`, which runs
+  five guards in total: `check_commit_size.sh`, `check_ticket_deletion.sh`,
+  `check_pipeline_code_on_main.sh`, `check_feature_handler_registration.sh`
+  (cheap tier), then `check_property_suite_drift.sh` (expensive tier, run
+  only once the cheap tier passes).
 - **`pre-merge-commit`** — a separate hook, fires for `git merge --no-ff`
-  (the shape `merge_and_process` uses on the handoff path). Without this
-  second hook, `pre-commit` alone would leave the `--no-ff` merge path
-  unguarded — the exact hole the BL-590 post-mortem called out.
+  (the shape `merge_and_process` uses on the handoff path, and how QA
+  lands every approved commit). Without this second hook, `pre-commit`
+  alone would leave the `--no-ff` merge path unguarded — the exact hole
+  the BL-590 post-mortem called out. It runs two of the five:
+  `check_pipeline_code_on_main.sh` and `check_feature_handler_registration.sh`
+  — not the whole chain (see below for why).
 
+This section (through "QA-exclusive paths") describes `check_pipeline_code_on_main.sh`
+itself, the guard both hooks share and the one this ticket is named for.
 The guard itself:
 
 1. Exits 0 immediately on any branch other than `main`.
@@ -136,6 +149,46 @@ both work in the master checkout and commit to `main` routinely, but only
 under `backlog/`, `docs/`, `specs/features/` and `swarmforge/` — none of
 which are in the refused set.
 
+## Guard-Chain Aggregation Is Shared, Not the Whole Chain (BL-1303)
+
+`check_feature_handler_registration.sh` (a sibling guard, refusing a
+`specs/features/*.feature` file that reaches `main` with no registered — or
+no longer runnable — step handler; see its own ticket, BL-1303, for that
+guard's own behavior) is reached from both `pre-commit` and
+`pre-merge-commit`, because both incidents that motivated it put `main`
+into the bad state by `--no-ff` merge (BL-1253's resurrecting merge,
+BL-709's merge `45625ef9cb`) — a guard wired only into `pre-commit` would
+have caught neither.
+
+`pre-merge-commit` was NOT repointed at `run_commit_guards.sh` wholesale to
+pick this guard up: that would newly subject every merge to
+`check_commit_size.sh`, `check_ticket_deletion.sh`, and the expensive
+`check_property_suite_drift.sh` (whose allowlist matcher is currently
+broken and running under an operator override, BL-1234) — widening the
+whole chain to the merge path is a separate concern from closing this one
+guard's coverage hole. So `pre-merge-commit` runs its own two-guard chain
+instead, order matching `pre-commit`'s so a merge with exactly one
+violation reports the same guard a commit with that violation would.
+
+Both hooks must run every guard in their own chain and report every
+violation in one refusal — never abort at the first (Article 4.4's shape,
+applied in a gate; the same discipline BL-1242/BL-1252 established for
+`pre-commit`). That aggregation (`run_guard`, `guard_chain_has_refusal`,
+`report_refusals`) is a shared, sourced library,
+`swarmforge/scripts/commit_guard_chain_lib.sh`, rather than re-derived in
+each hook — the one way to get it wrong (a `set -e` chain that aborts at
+the first refusal) is shared code, not something to keep in sync by hand
+across two files. Both callers source it and run under `set -uo pipefail`
+with **no** `-e`; a chain member itself still keeps its own
+`set -euo pipefail`. A missing/unreadable library file is itself a refusal
+in both hooks — never a silent fall-through that waves a commit or merge
+through with every guard skipped.
+
+**Known residual, unchanged by BL-1303:** a fast-forward merge fires
+neither hook, so no commit-hook guard — this one or
+`check_feature_handler_registration.sh` — covers that path at all (see
+below).
+
 ## Holes This Guard Does NOT Close
 
 Stated plainly, per the ticket's own honesty requirement — a guard oversold
@@ -188,6 +241,11 @@ in series, not one claimed-perfect one.
   `swarmforge-QA` is not waved through.
 - **Property tests**
   (`extension/test/bl632CommitTimeGuardInvariants.property.test.js`).
+- **Guard-chain aggregation** (BL-1303):
+  `swarmforge/scripts/test/test_pre_merge_commit_hook.sh` and the widened
+  `test_run_commit_guards.sh` exercise both hooks' full-chain reporting —
+  a commit/merge violating more than one guard is refused once, naming
+  every offending guard, never stopping at the first.
 
 ## Related Tickets
 
@@ -210,3 +268,9 @@ in series, not one claimed-perfect one.
   gatherer now adjudicates a merge's offending paths against its
   non-first parents (QA-approved AND byte-identical clears; anything else
   still reports), using this guard's own `is_qa_ancestor.sh`.
+- **BL-1240:** Same accumulate-unseen failure shape as BL-1303, different
+  registry (`suite-manifest.tsv`, not `specs/pipeline/steps/index.js`).
+- **BL-1303:** Adds `check_feature_handler_registration.sh` to both hooks'
+  chains and extracts the shared `commit_guard_chain_lib.sh` aggregation
+  documented above — the first ticket to widen `pre-merge-commit` beyond
+  this guard alone.
