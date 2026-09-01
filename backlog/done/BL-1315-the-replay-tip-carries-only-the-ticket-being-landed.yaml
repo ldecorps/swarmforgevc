@@ -9,7 +9,7 @@ severity: high
 # BL-1300 on 08-30, BL-1298 over BL-1303 on 08-31), and on 08-30 three more
 # stacked behind the same class. Not critical: nothing is destroyed, QA's hold
 # is the correct response and it works, and every parcel parks intact.
-status: todo
+status: done
 epic: swarm-reliability
 priority: 4
 direction: swarm-reported
