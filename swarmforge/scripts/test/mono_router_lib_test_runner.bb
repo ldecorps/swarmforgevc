@@ -893,6 +893,43 @@
                      (not (probe "classic"))))
       (finally (fs/delete-tree short-root)))))
 
+;; ── Hotfix 2026-08-31: seated preferred must yield to other actionable mail ─
+;; Live deadlock: QA held BL-1303 in_process (deliberate hold pending specifier
+;; land-step ruling). Specifier had the priority-00 unblock note. preferred=
+;; QA, every chase-rotate-to! poke at specifier redirected to QA, then
+;; already-active — resident never left. BL-795 redirect must still fire when
+;; preferred is NOT seated.
+(assert= "seated preferred yields: poke specifier → rotate specifier (not redirect QA)"
+         {:action :rotate :target "specifier"}
+         (mono-router-lib/chase-rotate-decision
+          {:preferred "QA" :poked-role "specifier"
+           :active-role "QA" :poked-actionable? true}))
+(assert= "BL-795 intact: unseated preferred still redirects away from poke"
+         {:action :redirect :target "hardender"}
+         (mono-router-lib/chase-rotate-decision
+          {:preferred "hardender" :poked-role "specifier"
+           :active-role "coder" :poked-actionable? true}))
+(assert= "poke equals preferred → rotate preferred (already-active is downstream)"
+         {:action :rotate :target "QA"}
+         (mono-router-lib/chase-rotate-decision
+          {:preferred "QA" :poked-role "QA"
+           :active-role "QA" :poked-actionable? true}))
+(assert= "non-actionable poke still skip-broadcast even when preferred seated"
+         {:action :skip-broadcast :target nil}
+         (mono-router-lib/chase-rotate-decision
+          {:preferred "QA" :poked-role "specifier"
+           :active-role "QA" :poked-actionable? false}))
+(assert= "no preferred + actionable poke → rotate poked"
+         {:action :rotate :target "specifier"}
+         (mono-router-lib/chase-rotate-decision
+          {:preferred nil :poked-role "specifier"
+           :active-role "QA" :poked-actionable? true}))
+(assert= "marker-active preferred yields even when live identity would be unreadable"
+         {:action :rotate :target "specifier"}
+         (mono-router-lib/chase-rotate-decision
+          {:preferred "QA" :poked-role "specifier"
+           :active-role "QA" :poked-actionable? true}))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

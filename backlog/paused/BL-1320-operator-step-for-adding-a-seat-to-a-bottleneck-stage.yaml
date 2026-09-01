@@ -13,7 +13,9 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1320-operator-step-for-adding-a-seat-to-a-bottleneck-stage.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Docs now and mint the optimizer-emits-a-recommendation slice as its own child
 approval_context: >
   A premise correction to approve, then one choice. The intake asks to "make the
   existing 'add/remove a role instance' recommendation map to a documented

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=18b3bde80b6e34aaeb51b539ee43710ae0849c62c5c15a56e5999f124dd369b5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-31T21:19:05.592216741Z","feature_name":"A replay tip adds only the content of the ticket being landed","feature_path":"/home/carillon/swarmforgevc/.worktrees/expedite-BL-1315/specs/features/BL-1315-the-replay-tip-carries-only-the-ticket-being-landed.feature","background_hash":"f74d022fcdd1520590182162d0e26993aef43ca97300ff7a23fb09aa5d73eff6","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A sibling that contributes no novel content is not subtracted","scenario_hash":"959c8574bc2c7b8e7d99e059ab6fa884200ac99887cdf73c816fb73165fbcfab","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-31T21:19:05.592216741Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A replay tip adds only the content of the ticket being landed
 
   land_step_lib.bb's own-paths delegates to task_scope_gate_lib.bb's
@@ -17,6 +22,17 @@ Feature: A replay tip adds only the content of the ticket being landed
   NAMED as entangled - and is still built carrying content it should not.
   Twice in two days a verified-green parcel was held rather than landed:
   BL-1307 over BL-1300 on 2026-08-30, BL-1298 over BL-1303 on 2026-08-31.
+
+  The same computation loses the ticket's OWN content, for the same reason.
+  :delivered answers "what did this merge bring in relative to its FIRST
+  parent"; the replay needs "what does this ticket's chain contribute relative
+  to origin/main". When the ticket's own work reached the branch BEFORE its own
+  tagged merge - which is what a sibling's passenger ride does to it - the
+  first-parent diff no longer holds it and the replay drops it. On 2026-08-31
+  the one event, QA's merge 86c2ed1c2d, caused both holds at once: BL-1298's
+  replay over-included BL-1303's files and BL-1303's replay under-included the
+  same ones. Subtraction alone cannot fix the second face - a path that was
+  never in the set cannot be subtracted back into it.
 
   Background:
     Given a QA tip whose ticket-tagged merge imports a role branch
@@ -61,3 +77,11 @@ Feature: A replay tip adds only the content of the ticket being landed
     Given the imported branch carries content of no other ticket
     When the replay builds its tip
     Then the tip is unchanged from the full delivered set
+
+  # BL-1315 replay-tip-carries-only-the-landed-ticket-06
+  Scenario: Content that reached the branch before the ticket's own merge still lands
+    Given the landed ticket's content reached the branch on an earlier sibling's merge
+    And the ticket's own ticket-tagged merge therefore adds none of it
+    When the replay builds its tip
+    Then the tip still adds every path the landed ticket's own chain delivered
+    And the tip is not limited to what the ticket-tagged merge added over its first parent

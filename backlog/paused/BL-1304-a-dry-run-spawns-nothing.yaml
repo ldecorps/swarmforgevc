@@ -179,3 +179,5 @@ notes: |
   declaring an anchor the parcel satisfies by its own diff would bank a green
   that means nothing; the single entry declared here is the step-registry
   anchor only, and the entry text says so.
+
+assigned_to: coder

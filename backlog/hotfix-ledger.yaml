@@ -216,3 +216,10 @@
   stamp_ticket: BL-1283
   human_decision: null
   decided_at: null
+- commit: 3d70c0f4ec
+  subject: "Yield chase rotate when preferred role is already seated."
+  detected_at: 2026-08-31
+  state: pending
+  stamp_ticket: BL-1321
+  human_decision: null
+  decided_at: null

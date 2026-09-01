@@ -147,7 +147,7 @@ qa_e2e_procedure: |
      exit with the documented status, not abort mid-script leaving the land
      lock held.
 
-human_approval: pending
+human_approval: approved
 ruling_options:
   - refuse every entangled tip, so the tip-pure replay becomes the normal land
   - refuse only when the entangled sibling is withheld or awaiting approval
