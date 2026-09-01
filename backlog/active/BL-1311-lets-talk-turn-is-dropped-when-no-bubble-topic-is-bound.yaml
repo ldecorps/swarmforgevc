@@ -134,3 +134,5 @@ notes: >
   and check_merge_deletion.sh (BL-1242) landed 2026-08-28, one day AFTER the
   loss, so its absence here is timing, not a gap in it. No guard ticket is
   minted from this - a gap was looked for and could not be substantiated.
+
+assigned_to: coder
