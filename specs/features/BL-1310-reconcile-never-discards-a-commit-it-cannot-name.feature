@@ -1,57 +1,46 @@
-Feature: The master-main reconcile never discards a commit it cannot name afterwards
+Feature: The master-main reconcile never discards local-ahead commits
 
-  BL-1310. The reconcile's recovery path ends at `git reset --hard origin/main`.
-  Every guard shipped so far narrows WHEN that reset is allowed - BL-1198 makes
-  it attempt a push first, BL-1214 makes a non-conflicting divergence merge
-  instead, BL-1236 refuses when git cannot answer, BL-1288 requires a genuine
-  push rejection - and none of them makes the discard recoverable. On a real
-  two-way divergence the push is legitimately rejected, so the reset is
-  authorised, and the local-ahead commits survive only as unreachable objects
-  in the reflog until `git gc` collects them.
+  BL-1310. Human ruling: never discard local-ahead commits - refuse and
+  surface, a human resolves it. Every guard shipped so far (BL-1198, BL-1214,
+  BL-1236, BL-1288) narrows WHEN `master-main-rematch-onto-origin!` may reach
+  `git reset --hard origin/main`; none of them changes WHAT HAPPENS TO THE
+  COMMITS once it does. The human's ruling closes that gap by removing the
+  reset's authority over local-ahead commits entirely: when local main carries
+  a commit origin/main does not have and a content conflict is predicted, the
+  reconcile refuses and reports instead of resetting. Reset onto origin/main
+  remains available only when local main is not ahead - nothing local would be
+  lost.
 
   Background:
     Given a master checkout on main
     And origin/main has advanced with commits local main does not have
 
-  # BL-1310 reconcile-preserves-discarded-commits-01
-  Scenario: Commits the reset discards stay reachable afterwards
+  # BL-1310 reconcile-refuses-local-ahead-01
+  Scenario: A rejected push with local-ahead commits is refused, not reset
     Given local main is ahead by 3 commits
     And the reconcile predicts a content conflict
     When the reconcile runs
-    Then local main has been reset to origin/main
-    And every commit local main was ahead by is reachable from a rescue ref
+    Then local main is left exactly as it was found
+    And no reset is attempted
 
-  # BL-1310 reconcile-preserves-discarded-commits-02
-  Scenario: The operator is told what was discarded and where it went
+  # BL-1310 reconcile-refuses-local-ahead-02
+  Scenario: The operator is told why the reconcile did not reset
     Given local main is ahead by 3 commits
     And the reconcile predicts a content conflict
     When the reconcile runs
-    Then the reconcile reports the rescue ref
-    And the reconcile reports each discarded commit
+    Then the reconcile reports local-ahead refusal
+    And the report names BL-1310
 
-  # BL-1310 reconcile-preserves-discarded-commits-03
-  Scenario: A reconcile that discards nothing leaves no rescue ref behind
+  # BL-1310 reconcile-refuses-local-ahead-03
+  Scenario: A reconcile with nothing local-ahead may still reset after rejection
     Given local main is not ahead of origin/main
-    When the reconcile runs
-    Then no rescue ref is created
+    And the push to origin is rejected
+    When the rematch path runs
+    Then local main has been reset to origin/main
 
-  # BL-1310 reconcile-preserves-discarded-commits-04
-  Scenario: Work that cannot be preserved is not discarded
-    Given local main is ahead by 3 commits
-    And the reconcile predicts a content conflict
-    And the rescue ref cannot be written
+  # BL-1310 reconcile-refuses-local-ahead-04
+  Scenario: An undeterminable ahead-count refuses rather than guesses
+    Given local main's ahead-count against origin/main cannot be determined
     When the reconcile runs
     Then local main is left exactly as it was found
     And the reconcile reports why it did not reconcile
-
-  # BL-1310 reconcile-preserves-discarded-commits-05
-  Scenario Outline: Every plan that ends in a reset preserves first
-    Given local main is ahead by 3 commits
-    And the reconcile plan is <plan>
-    When the reconcile runs
-    Then every commit local main was ahead by is reachable from a rescue ref
-
-    Examples:
-      | plan               |
-      | replay-bookkeeping |
-      | refuse-rematch     |
