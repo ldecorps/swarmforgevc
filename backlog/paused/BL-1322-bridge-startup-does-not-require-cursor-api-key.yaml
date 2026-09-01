@@ -1,0 +1,132 @@
+id: BL-1322
+title: "Bridge startup requires CURSOR_API_KEY even for routes that never touch Cursor / Let's Talk"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: the swarm itself is up and nothing on disk is lost. But
+# it is a live availability fault with two faces at once. (1) In production,
+# ANY target with no CURSOR_API_KEY configured cannot start the bridge server
+# at all today, even if it never uses Let's Talk/Cursor routing — bridge
+# startup is the shared substrate for the console, pipeline board, spec tree,
+# paused pager, epic reorder, etc. (2) It silently broke the pipeline's own
+# quality signal: 8 test files / ~187 tests newly failing (QA, BL-1313 pass,
+# 2026-09-01) with zero relationship to what those tests actually exercise.
+status: todo
+epic: swarmforge-console
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1322-bridge-startup-does-not-require-cursor-api-key.feature
+
+invariants:
+  - "Constructing/starting a bridge server never requires CURSOR_API_KEY by itself — only actually sending a prompt to the Cursor SDK agent does."
+
+description: |
+  ## What is wrong
+
+  `startBridge` (`extension/src/bridge/bridgeServer.ts:2026`) unconditionally
+  builds a live Cursor agent session on every call unless the caller passes
+  an explicit `options.letsTalk.agentSession` override:
+
+      const letsTalkAgentSession = options.letsTalk?.agentSession ?? createLiveCursorBridgeAgentSession(targetPath);
+
+  `createLiveCursorBridgeAgentSession` (`extension/src/bridge/cursorBridgeAgentSession.ts:368`)
+  calls `resolveCursorApiKey(targetPath)` (line 372) **eagerly, at
+  construction time** — before any of the returned session's three methods
+  (`promptAgent`, `resetSession`, `readAgentId`) are ever invoked.
+  `resolveCursorApiKey` throws `CURSOR_API_KEY is not set for the headless
+  bridge` when the key is absent from both `process.env` and `swarm.env`.
+
+  Only `promptAgent` (via its internal `ensureAgent`) actually needs the key
+  — it is what opens the Cursor SDK agent. `readAgentId` only reads a state
+  file; `resetSession` only clears state and closes an already-open agent.
+  Neither touches the SDK or needs an API key.
+
+  The result: starting the bridge server at all — for any target, on any
+  route — now requires CURSOR_API_KEY to be configured, even when the route
+  being served has nothing to do with Cursor or Let's Talk. QA's BL-1313 pass
+  (`backlog/evidence/BL-1313-a-batch-held-parcel-is-visible-to-the-send-time-guards-qa-pass-20260901.md`)
+  found this breaking 8 test files not in the prior standing-red baseline —
+  bridgeServer, epicMakeTopBridge, epicReorderBridge, pausedPagerBridge,
+  specTreeBridge, startBridgeHeadlessCli, telegramCursorBridgeCli,
+  topicMakeTopBridge — roughly 187 tests, none of which exercise Cursor/Let's
+  Talk routing, all using the shared `startBridge` helper without stubbing
+  `options.letsTalk.agentSession`.
+
+  This is not merely a test-fixture gap: the same eager resolution is on the
+  path any real deployment takes, so a target that never configures
+  CURSOR_API_KEY (because it never intends to use Let's Talk) cannot bring
+  the bridge up at all.
+
+  ## How (direction, not mandate)
+
+  Make the API key resolution lazy — move it from `createLiveCursorBridgeAgentSession`'s
+  top level into the one place that actually needs it before opening an
+  agent (inside `ensureAgent`, called only from `promptAgent`). Constructing
+  the session object, reading the stored agent id, and resetting session
+  state should all work with no CURSOR_API_KEY set; only an actual prompt
+  attempt should throw the existing `MISSING_CURSOR_API_KEY_MESSAGE`. The
+  `shouldUseFrontDeskRunner` branch (which needs no API key at all) is
+  already unaffected and should stay that way.
+
+  Do not change the error message or where it surfaces when a prompt really
+  is attempted without a key — callers and any Telegram-facing copy that
+  quotes it stay as-is; only the TIMING of the check moves.
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1322-bridge-startup-does-not-require-cursor-api-key.feature`
+     Expect 4 scenarios, 4 pass.
+  2. Unset CURSOR_API_KEY (env and swarm.env) on a target and start the
+     bridge: it must come up without throwing, and a non-Cursor route (e.g.
+     GET /backlog) must respond normally.
+  3. With CURSOR_API_KEY still unset, submit a Let's Talk turn: it must fail
+     with the documented "CURSOR_API_KEY is not set for the headless bridge"
+     message — the failure is not silently swallowed, only deferred to the
+     point the key is actually needed.
+  4. Re-run the 8 previously-newly-failing files named in the BL-1313 QA
+     evidence (bridgeServer, epicMakeTopBridge, epicReorderBridge,
+     pausedPagerBridge, specTreeBridge, startBridgeHeadlessCli,
+     telegramCursorBridgeCli, topicMakeTopBridge) and confirm they no longer
+     fail on CURSOR_API_KEY.
+
+source: >
+  QA note 2026-09-01 (priority 00) on BL-1313's QA pass: "New untracked red:
+  8 bridge test files fail, CURSOR_API_KEY eager. See evidence." Full
+  analysis in
+  backlog/evidence/BL-1313-a-batch-held-parcel-is-visible-to-the-send-time-guards-qa-pass-20260901.md
+  (section "8 NEW failing files not in that baseline"). QA explicitly
+  reported rather than bounced — zero overlap with BL-1313's own changed
+  paths — and did not attempt the fix, which is a logic change to production
+  TypeScript outside QA's repair lane. Root cause (eager resolveCursorApiKey
+  call site, and that only promptAgent needs it) independently re-verified
+  by the specifier the same turn by reading bridgeServer.ts and
+  cursorBridgeAgentSession.ts directly; `grep -rli CURSOR_API_KEY
+  swarm.env backlog/active backlog/paused backlog/hold backlog/debt`
+  confirmed no existing ticket tracked this before BL-1322.
+
+notes: >
+  IR-DRY checker (bb gherkin-ir-dry-checker) flagged one near-duplicate and
+  two possible-synonym pairs on the feature file above; reviewed and left
+  as-is deliberately. The "near-duplicate" is scenario 0's `When the bridge
+  server is started...` against scenarios 1-3's `Given the bridge server has
+  started...` — these describe the same action in two different tenses
+  because scenario 0 tests startup itself while 1-3 need it as a
+  precondition; a shared Background does not fit because scenario 0's whole
+  point is that nothing has started yet when its own step runs. The two
+  possible-synonym pairs (`not set in the environment` vs `not set in
+  swarm.env`; `not set in swarm.env` vs `told to set CURSOR_API_KEY in
+  swarm.env`) are genuinely distinct concepts (two separate config sources;
+  a precondition vs. an assertion) that happen to share vocabulary.
+
+  No `required_wiring:` on this ticket: the fix is a pure code-motion inside
+  a function that already has exactly one call site
+  (`createLiveCursorBridgeAgentSession`, called only from `bridgeServer.ts`'s
+  `startBridge`) — there is no new call site to wire in, and an anchor on
+  either the function or its existing call site would be satisfied by the
+  parcel's own diff regardless of whether the fix is correct (the BL-1235
+  vacuous-anchor shape). The acceptance feature file is the real proof:
+  scenario 01 is red today (bridge startup throws) and can only go green
+  when the eager call actually moves.

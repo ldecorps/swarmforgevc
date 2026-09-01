@@ -3437,16 +3437,24 @@
                    :deadlock-state deadlock
                    :threshold-ticks 3})]
         (when due?
-          (let [payload {:active true
+          (let [dirty (master-main-reconcile-dirty-paths!)
+                merge-changed (if (pos? behind)
+                                (master-main-reconcile-merge-changed-paths!)
+                                #{})
+                overlap (master-main-reconcile-lib/normalize-overlapping-paths
+                         (master-main-reconcile-lib/overlapping-paths dirty merge-changed))
+                payload {:active true
                          :reason (or (:surfaced reconcile) "diverged")
                          :ahead ahead :behind behind
+                         :overlapping_paths overlap
                          :tripped_at (str (java.time.Instant/now))
                          :alerted true}]
             (master-main-reconcile-lib/write-deadlock! (str daemon-dir) payload)
-            (log! "main-sync-deadlock-tripped" ahead behind)
+            (log! "main-sync-deadlock-tripped" ahead behind (count overlap))
             (let [subject (master-main-reconcile-lib/deadlock-alert-subject)
                   body (master-main-reconcile-lib/deadlock-alert-text
-                        {:ahead ahead :behind behind :reason (:reason payload)})
+                        {:ahead ahead :behind behind :reason (:reason payload)
+                         :overlapping-paths overlap})
                   reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
               (try
                 (fs/create-dirs (fs/parent reply-outbox))

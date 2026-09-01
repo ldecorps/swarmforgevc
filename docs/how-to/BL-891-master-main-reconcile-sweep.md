@@ -189,9 +189,12 @@ handoffd (BL-1115 stamp-off of hotfix `a3bf11b533`; do not invert the range):
 **Trip-once deadlock.** When behind stays positive long enough with an aged
 coordinator `in_process` parcel (and ahead>0 or a dirty/conflict reconcile
 escalation), `master_main_reconcile_lib.bb` writes
-`.swarmforge/daemon/main-sync-deadlock.json`, raises **at most one** alert for
-that trip, and suppresses dropped-parcel nudges until `behind=0` (then the
-marker clears). Do not treat a quiet drop-nudge path as “reconcile finished”
+`.swarmforge/daemon/main-sync-deadlock.json` (including `overlapping_paths`
+when computable), raises **at most one** alert for that trip, and suppresses
+dropped-parcel nudges until `behind=0` (then the marker clears). Babysitterd
+(BL-1187) escalates a CRIT to the operator with the same clue: named
+overlapping dirty paths and `./swarm heal` after clearing them — not
+`/pilot`. Do not treat a quiet drop-nudge path as “reconcile finished”
 while the deadlock marker is still active — clear behind first.
 
 ## See also
