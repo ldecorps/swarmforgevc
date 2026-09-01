@@ -1,5 +1,14 @@
 # Only a rejected push authorises discarding local-ahead commits (BL-1288)
 
+> **Superseded on the genuine-rejection case (BL-1310).** "Genuine
+> divergence, the case the reset exists for. `(reset!)` runs exactly as
+> before BL-1288" below is no longer true: as of BL-1310 the reset only
+> ever fires when the ahead-count is a known zero, so a genuine rejection
+> with `ahead > 0` now refuses instead of resetting. See
+> [BL-1310](BL-1310-reconcile-refuses-instead-of-discarding-local-ahead-commits.md)
+> for the current behavior. This ticket's push-failure classification
+> (`:push-unavailable` vs. genuine rejection) is otherwise unchanged.
+
 [BL-1198](BL-1198-rematch-reset-must-push-before-discarding-local-ahead-commits.md)
 put a push in front of every `git reset --hard origin/main` call site, but
 `rematch-with-push-first!` only ever checked `:success` on the push result.
