@@ -130,3 +130,5 @@ notes: >
   vacuous-anchor shape). The acceptance feature file is the real proof:
   scenario 01 is red today (bridge startup throws) and can only go green
   when the eager call actually moves.
+
+assigned_to: coder
