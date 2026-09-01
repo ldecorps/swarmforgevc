@@ -8,6 +8,11 @@
 
 set -euo pipefail
 
+# BL-1318: this test exercises parse_config's OTHER behavior (not model
+# staffing) - bypass the steward staffing gate so a fixture's placeholder
+# --model value ("x", etc.) does not trip an unrelated refusal.
+export PACK_STAFFING_SKIP_GATE=1
+
 # BL-961 hardening: the pane a test runs in is a launch environment, not a
 # clean room - every live role shell exports SWARMFORGE_PACK, and an
 # operator shell can export SWARMFORGE_CONFIG. swarmforge.sh READS both

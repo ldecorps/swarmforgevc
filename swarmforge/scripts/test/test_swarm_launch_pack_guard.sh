@@ -5,6 +5,11 @@
 
 set -euo pipefail
 
+# BL-1318: this test exercises parse_config's OTHER behavior (not model
+# staffing) - bypass the steward staffing gate so a fixture's placeholder
+# --model value ("x", etc.) does not trip an unrelated refusal.
+export PACK_STAFFING_SKIP_GATE=1
+
 unset SWARMFORGE_CONFIG SWARMFORGE_PACK SWARMFORGE_ALLOW_FULL_PACK
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

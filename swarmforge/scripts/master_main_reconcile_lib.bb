@@ -646,32 +646,57 @@
 (defn deadlock-alert-subject []
   "SwarmForge: main-sync deadlock — bookkeeping halted")
 
-(defn deadlock-alert-text
-  [{:keys [ahead behind reason]}]
-  (str "⚠️ main-sync deadlock: local main ahead=" (or ahead 0)
-       " behind=" (or behind 0)
-       " (" (or reason "diverged-or-dirty") "). "
-       "Coordinator bookkeeping held; wakes and drop-nudges suppressed until behind=0. "
-       "Clear overlapping dirty paths or wait for BL-891 reconcile."))
+(def overlap-hint-path-cap
+  "Max overlapping paths named in operator/email hints before +N more."
+  8)
+
+(defn normalize-overlapping-paths
+  "Drop unknown-dirty sentinel and blank entries; stable sorted vec for hints."
+  [paths]
+  (->> (or paths [])
+       (remove #(or (= unknown-dirty-marker %) (str/blank? (str %))))
+       (map str)
+       sort
+       vec))
+
+(defn format-overlapping-path-list
+  "Name overlapping dirty paths for operator/email (cap + remainder count)."
+  [paths]
+  (let [paths (normalize-overlapping-paths paths)
+        n (count paths)
+        shown (vec (take overlap-hint-path-cap paths))
+        more (- n (count shown))]
+    (cond
+      (zero? n) nil
+      (pos? more) (str (str/join ", " shown) " (+" more " more)")
+      :else (str/join ", " shown))))
 
 (defn format-overlapping-path-hint
-  "BL-1187: name actionable paths for operator/babysitter hints."
+  "Operator/babysitter/email fix clue: name overlaps + clear-then-./swarm heal."
   [paths]
-  (let [paths (vec (remove #(= unknown-dirty-marker %) (or paths [])))]
-    (case (count paths)
-      0 "inspect master checkout git status (BL-891 docs/how-to/BL-891-master-main-reconcile-sweep.md)"
-      1 (str "clear overlapping path " (first paths))
-      (<= (count paths) 3) (str "clear overlapping paths: " (str/join ", " paths))
-      (str (count paths) " overlapping paths — see docs/how-to/BL-891-master-main-reconcile-sweep.md"))))
+  (let [listed (format-overlapping-path-list paths)]
+    (if listed
+      (str "clear these overlapping dirty paths off master main (" listed
+           "), then ./swarm heal")
+      (str "run git status --porcelain on master checkout; clear any dirty/"
+           "untracked paths that overlap incoming origin/main; then ./swarm heal "
+           "(see docs/how-to/BL-891-master-main-reconcile-sweep.md)"))))
 
 (defn operator-deadlock-hint
-  "BL-1187: babysitterd/operator-facing hint when main-sync-deadlock is active."
+  "BL-1187: babysitterd/operator/email-facing hint when main-sync-deadlock is active."
   [{:keys [ahead behind reason overlapping-paths]}]
   (str "main-sync deadlock (" (or reason "diverged") "): local main ahead="
        (or ahead 0) " behind=" (or behind 0)
        "; coordinator bookkeeping halted — operator fix: "
        (format-overlapping-path-hint overlapping-paths)
        "; handoffd auto-reconciles once overlap clears (BL-891). Not /pilot."))
+
+(defn deadlock-alert-text
+  "Trip-once Telegram/email body — same actionable clue as babysitter CRIT."
+  [{:keys [ahead behind reason overlapping-paths]}]
+  (str "⚠️ " (operator-deadlock-hint
+              {:ahead ahead :behind behind :reason (or reason "diverged-or-dirty")
+               :overlapping-paths overlapping-paths})))
 
 ;; ── adapter-injected orchestration ───────────────────────────────────────
 ;; adapters: {:rev-counts!          (fn [] -> {:ahead int :behind int}) -

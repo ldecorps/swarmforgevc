@@ -787,37 +787,44 @@
   (or (read-proc-meminfo-mb) (read-vm-stat-mb)))
 
 (defn gather-main-sync-deadlock []
+  "BL-1187: read active deadlock marker; prefer persisted overlapping_paths,
+   else recompute with git -C (sh! does not accept :dir — that path used to
+   spawn '{:dir' and fall open to an empty inspect-git-status hint)."
   (let [daemon-dir (fs/path state-dir "daemon")
         deadlock (master-main-reconcile-lib/read-deadlock (str daemon-dir))]
     (if (master-main-reconcile-lib/deadlock-active? deadlock)
       (let [ahead (or (:ahead deadlock) 0)
             behind (or (:behind deadlock) 0)
             reason (or (:reason deadlock) "diverged")
+            marked (master-main-reconcile-lib/normalize-overlapping-paths
+                    (or (:overlapping_paths deadlock) (:overlapping-paths deadlock)))
             overlapping-paths
-            (when (= "dirty" (str reason))
-              (try
-                (let [{:keys [exit out]} (sh! {:dir (str project-root)} "git" "status" "--porcelain")
-                      dirty (if (zero? exit)
-                              (master-main-reconcile-lib/porcelain-lines->paths out)
-                              #{master-main-reconcile-lib/unknown-dirty-marker})
-                      merge-changed
-                      (if (pos? behind)
-                        (let [{:keys [exit out]} (sh! {:dir (str project-root)} "git" "merge-base" "HEAD" "origin/main")]
-                          (if (zero? exit)
-                            (let [base (str/trim out)
-                                  {:keys [exit out]} (sh! {:dir (str project-root)}
-                                                           "git" "diff" "--name-only" base "origin/main")]
-                              (if (zero? exit)
-                                (into #{} (remove str/blank?) (str/split-lines out))
-                                #{master-main-reconcile-lib/unknown-dirty-marker}))
-                            #{master-main-reconcile-lib/unknown-dirty-marker}))
-                        #{})]
-                  (vec (master-main-reconcile-lib/overlapping-paths dirty merge-changed)))
-                (catch Exception _ [])))]
+            (if (seq marked)
+              marked
+              (when (= "dirty" (str reason))
+                (try
+                  (let [{:keys [exit out]} (sh! "git" "-C" (str project-root) "status" "--porcelain")
+                        dirty (if (zero? exit)
+                                (master-main-reconcile-lib/porcelain-lines->paths out)
+                                #{master-main-reconcile-lib/unknown-dirty-marker})
+                        merge-changed
+                        (if (pos? behind)
+                          (let [{:keys [exit out]} (sh! "git" "-C" (str project-root)
+                                                         "merge-base" "HEAD" "origin/main")]
+                            (if (zero? exit)
+                              (let [base (str/trim out)
+                                    {:keys [exit out]} (sh! "git" "-C" (str project-root)
+                                                             "diff" "--name-only" base "origin/main")]
+                                (if (zero? exit)
+                                  (into #{} (remove str/blank?) (str/split-lines out))
+                                  #{master-main-reconcile-lib/unknown-dirty-marker}))
+                              #{master-main-reconcile-lib/unknown-dirty-marker}))
+                          #{})]
+                    (vec (master-main-reconcile-lib/overlapping-paths dirty merge-changed)))
+                  (catch Exception _ []))))]
         {:deadlock-active? true :ahead ahead :behind behind :reason reason
-         :overlapping-paths overlapping-paths})
+         :overlapping-paths (or overlapping-paths [])})
       {:deadlock-active? false})))
-
 ;; ── pause + rotate-note gathering ─────────────────────────────────────────
 
 (defn read-pause []

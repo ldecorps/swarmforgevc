@@ -133,6 +133,7 @@ orphan_claim_sweep_lib_test_runner.bb	standing
 orphan_janitor_lib_test_runner.bb	standing		
 orphan_sweep_enumeration_unavailable_test_runner.bb	standing		
 outage_failover_test_runner.bb	standing		
+pack_staffing_gate_lib_test_runner.bb	standing		
 parcel_rollback_guard_lib_test_runner.bb	standing		
 pipeline_stage_lib_test_runner.bb	standing		
 pipeline_stage_qualifier_test_runner.bb	standing		
@@ -364,6 +365,8 @@ test_operator_runtime_sandbox_sweep_liveness_undetermined.sh	standing
 test_operator_runtime_tick.sh	standing		
 test_operator_telegram.sh	standing		
 test_operator_tunnel.sh	standing		
+test_pack_staffing_gate.sh	standing		
+test_pack_staffing_gate_wiring.sh	standing		
 test_pipeline_code_on_main_guard.sh	standing		
 test_pipeline_stage_cli.sh	standing		
 test_pipeline_survivor_scan.sh	standing		

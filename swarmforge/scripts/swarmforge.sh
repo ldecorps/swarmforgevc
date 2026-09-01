@@ -532,6 +532,92 @@ validate_agent() {
   esac
 }
 
+# BL-1318: pack staffing gate — refuses to staff seat ROLE with AGENT/model
+# until the steward's role-matrix ranking, per-role compliance gate, and
+# assignment-eligible? all clear it for STAGE. Anchored HERE (parse_config's
+# per-window-line loop, right after validate_agent — the only code path
+# every pack window and every materialised .swarmforge/launch/<role>.sh
+# passes through) per required_wiring: anchoring inside the pure lib alone
+# would be satisfied by this parcel's own diff and gate nothing, and this is
+# the ONE call site — provision_coordinator does not get a second one, the
+# coordinator is reserved infrastructure and never a window line.
+#
+# The pure rule lives in pack_staffing_gate_lib.bb's seat-staffing-decision;
+# this function is the thin fs-adapter caller (pack_staffing_gate_cli.bb
+# does the actual evidence read) so the shell gate and its test runner
+# cannot drift into two different rules.
+#
+# PACK_STAFFING_SKIP_GATE=1 is the operator escape hatch — same shape as
+# BL-1127's LOCAL_CODER_BATTERY_SKIP_GATE=1. It turns a refusal into a
+# staffed "override" decision that still prints loudly to stderr and is
+# never recorded or shown as a plain pass (invariant 3).
+pack_staffing_gate() {
+  local role="$1" seat_stage="$2" agent="$3" extra_cli="$4" line_no="$5"
+  # model-steward evidence (registry/seed + scorecards) is anchored to THIS
+  # SwarmForge checkout, not to WORKING_DIR (the arbitrary target project a
+  # pack happens to be launched against) — same repo-root model_steward_cli.bb
+  # itself resolves relative to its own file location.
+  local swarmforge_root="${SCRIPT_DIR:h:h}"
+  local windows_file
+  windows_file="$(mktemp)"
+  printf '%s\t%s\t%s\t%s\n' "$role" "$seat_stage" "$agent" "$extra_cli" > "$windows_file"
+
+  local -a override_flag
+  override_flag=()
+  if [[ "${PACK_STAFFING_SKIP_GATE:-}" == "1" ]]; then
+    override_flag=(--override)
+  fi
+
+  local out rc=0
+  out="$(bb "$SCRIPT_DIR/pack_staffing_gate_cli.bb" "$swarmforge_root" "$windows_file" "${override_flag[@]}" 2>&1)" || rc=$?
+  rm -f "$windows_file"
+
+  if (( rc != 0 )); then
+    error_msg "pack staffing gate: failed to evaluate role '$role' on line $line_no: $out"
+    exit 1
+  fi
+
+  if [[ "$out" == NO_EVIDENCE$'\t'* ]]; then
+    if [[ "${PACK_STAFFING_SKIP_GATE:-}" == "1" ]]; then
+      echo -e "${YELLOW}WARNING: pack staffing gate OVERRIDE (PACK_STAFFING_SKIP_GATE=1) — role '$role' staffed with no steward evidence available (no runtime registry or committed seed under $swarmforge_root).${RESET}" >&2
+      return 0
+    fi
+    error_msg "pack staffing gate: no steward evidence available (no runtime registry or committed seed under $swarmforge_root) — refusing to staff role '$role' on line $line_no."
+    exit 1
+  fi
+
+  # zsh gotcha: `IFS=$'\t' read` collapses adjacent tabs (space/tab/newline
+  # stay "IFS whitespace" and merge even when IFS is set to tab alone), so
+  # an empty provider/model field silently shifts every field after it -
+  # `${(ps:\t:)}` array splitting keeps empty fields intact.
+  local -a tsv_fields
+  tsv_fields=("${(@ps:\t:)out}")
+  local seat="${tsv_fields[1]:-}" decision="${tsv_fields[2]:-}" \
+        provider="${tsv_fields[3]:-}" model="${tsv_fields[4]:-}" \
+        failing_check="${tsv_fields[5]:-}" steward_cmd="${tsv_fields[6]:-}"
+
+  # When the seat resolver has no mapping at all, provider/model are empty -
+  # there is no steward identity to name, so name the raw window line
+  # instead (quoted) so the operator can still see what was pinned.
+  local identity="${provider:-}/${model:-}"
+  [[ -z "${provider:-}" && -z "${model:-}" ]] && identity="window line '$agent $extra_cli'"
+
+  case "$decision" in
+    pass) ;;
+    override)
+      echo -e "${YELLOW}WARNING: pack staffing gate OVERRIDE (PACK_STAFFING_SKIP_GATE=1) — role '$role' staffed with $identity despite failing check '$failing_check'. Clear it: ${steward_cmd:-<no runnable command>}${RESET}" >&2
+      ;;
+    refuse)
+      error_msg "pack staffing gate refused role '$role' (line $line_no): $identity failed check '$failing_check'. Run: ${steward_cmd:-<no runnable command>}"
+      exit 1
+      ;;
+    *)
+      error_msg "pack staffing gate: unexpected decision '$decision' for role '$role' on line $line_no."
+      exit 1
+      ;;
+  esac
+}
+
 # BL-1052 / BL-1082: OpenAI-compatible base URL for a seat staffed by a
 # downloaded model on this host. Overridable; never a cloud vendor host.
 DEFAULT_LOCAL_MODEL_ENDPOINT_URL="http://127.0.0.1:11434/v1"
@@ -799,6 +885,7 @@ parse_config() {
     fi
 
     validate_agent "$agent" "$role"
+    pack_staffing_gate "$role" "$seat_stage" "$agent" "$extra_cli" "$line_no"
 
     case "$receive_mode" in
       task|batch) ;;
@@ -1386,6 +1473,23 @@ swarm_only_strip_seat_tier() {
   echo "${out[*]}"
 }
 
+# True when this role's pack CLI names a Qwen Cloud model (Token Plan). Used so
+# a Claude seat can ride apps/anthropic without SWARMFORGE_USE_QWEN=1 remapping
+# every other Anthropic seat in a mixed pack (bob mono-router 2026-09-01).
+extra_cli_targets_qwen_cloud() {
+  local extra_cli="$1"
+  local -a parts
+  local i=1
+  parts=(${=extra_cli})
+  while (( i <= ${#parts} )); do
+    if [[ "${parts[i]}" == "--model" && "${parts[i+1]:-}" == qwen* ]]; then
+      return 0
+    fi
+    (( i++ ))
+  done
+  return 1
+}
+
 claude_settings_and_flags_from_extra_cli() {
   local extra_cli="$1"
   local -a parts cli_flags
@@ -1851,11 +1955,16 @@ export OPENAI_BASE_URL='${lm_url}'
 "
   fi
   if [[ "$agent" == "claude" ]]; then
-    if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" ]]; then
+    if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" ]] || extra_cli_targets_qwen_cloud "$extra_cli"; then
       # Token Plan Anthropic-compat (Claude Code → SEA apps/anthropic). Prefer
-      # over OpenRouter / first-party Max when the Qwen wrapper opted in.
+      # over OpenRouter / first-party Max when the Qwen wrapper opted in, OR
+      # when this seat's --model is qwen* (mixed Anthropic+Qwen packs — only
+      # this launch script remaps; sibling Anthropic seats keep subscription).
       # Key arrives via pane -e as QWEN_API_KEY (BL-130); never written here.
-      billing_guard="${qwen_lib_source}"$'\nqwen_guard_map_anthropic_compat || exit 1\n'
+      # CLAUDE_CODE_MAX_CONTEXT_TOKENS: unrecognized gateway IDs (qwen*) make
+      # Claude Code assume a tiny window and auto-compact ~50k; Token Plan
+      # qwen3.* is officially 1M — declare it so one ticket can breathe.
+      billing_guard="${qwen_lib_source}"$'\nqwen_guard_map_anthropic_compat || exit 1\nexport CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}"\n'
     elif role_uses_openrouter "$role"; then
       # OpenRouter-backed claude role: do NOT unset the auth token (that unset
       # is what forces subscription auth for every other claude role). Point the
@@ -2107,6 +2216,16 @@ launch_role() {
     if [[ -n "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-}" ]]; then
       provider_env_flags+=(-e "CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS}")
     fi
+  elif [[ "$agent" == "claude" ]] && extra_cli_targets_qwen_cloud "${EXTRA_CLI_ARGS[$index]:-}"; then
+    # Mixed pack: Claude seat with --model qwen* needs the Token Plan key in
+    # pane env even when the pack did not set SWARMFORGE_USE_QWEN=1 globally.
+    # shellcheck source=qwen_launch_guard_lib.sh
+    source "$SCRIPT_DIR/qwen_launch_guard_lib.sh"
+    qwen_guard_apply_credential_fallbacks
+    if [[ -n "${QWEN_API_KEY:-}" ]]; then
+      provider_env_flags+=(-e "QWEN_API_KEY=${QWEN_API_KEY}")
+    fi
+    provider_env_flags+=(-e "CLAUDE_CODE_MAX_CONTEXT_TOKENS=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}")
   fi
 
   wait_for_session_pane "$session"

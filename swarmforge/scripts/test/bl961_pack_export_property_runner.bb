@@ -82,8 +82,13 @@
    "SWARMFORGE_TERMINAL_BACKEND" "SWARMFORGE_USE_CEREBRAS" "SWARMFORGE_USE_PERPLEXITY"
    "SWARMFORGE_USE_QWEN"])
 
+;; BL-1318: this property exercises pack export composition, not model
+;; staffing - the fixture window lines pin no steward-mapped model, so
+;; bypass the new staffing gate the same way SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS
+;; is bypassed elsewhere, rather than teaching the fixture a real mapping.
 (def clean-env-prefix
-  (concat ["env"] (mapcat (fn [v] ["-u" v]) read-swarmforge-vars) ["XDG_RUNTIME_DIR=/tmp"]))
+  (concat ["env"] (mapcat (fn [v] ["-u" v]) read-swarmforge-vars)
+          ["XDG_RUNTIME_DIR=/tmp" "PACK_STAFFING_SKIP_GATE=1"]))
 
 (defn- gen-case [s]
   (let [[default? s1] (gen-int s 4)          ; 1-in-4 draws the default conf
