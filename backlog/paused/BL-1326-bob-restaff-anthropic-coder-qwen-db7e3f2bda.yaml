@@ -1,4 +1,4 @@
-id: BL-1323
+id: BL-1326
 title: "Swarm stamp-off: certify Cursor hotfix db7e3f2bda (bob pack restaffed to an Anthropic starting cast, coder-only Qwen Token Plan)"
 milestone: M8
 type: defect
@@ -16,7 +16,7 @@ assigned_to: none
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1323-bob-restaff-anthropic-coder-qwen-db7e3f2bda.feature
+acceptance: specs/features/BL-1326-bob-restaff-anthropic-coder-qwen-db7e3f2bda.feature
 
 human_approval: pending
 approval_context: >
