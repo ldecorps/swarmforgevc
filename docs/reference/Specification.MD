@@ -1,5 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 1, 2026 (BL-1322: bridge startup no longer
+requires `CURSOR_API_KEY` for targets that never touch Let's Talk/Cursor
+routing. `createLiveCursorBridgeAgentSession`
+(`extension/src/bridge/cursorBridgeAgentSession.ts`) used to call
+`resolveCursorApiKey` eagerly at construction time — before any of the
+returned session's methods ran — so `startBridge` failed for ANY target
+missing the key, even on routes with nothing to do with Cursor (console,
+pipeline board, spec tree, paused pager, epic reorder). The key resolution
+moved into `ensureAgent`, the one place inside `promptAgent` that actually
+opens a Cursor SDK agent; constructing the session, reading a stored agent
+id (`readAgentId`), and resetting session state (`resetSession`) all now
+work with no key configured, and only an actual Let's Talk prompt attempt
+throws the existing `MISSING_CURSOR_API_KEY_MESSAGE` — unchanged wording,
+only the timing moved. Also silently broke QA's own quality signal: 8 test
+files / ~187 tests (bridgeServer, epicMakeTopBridge, epicReorderBridge,
+pausedPagerBridge, specTreeBridge, startBridgeHeadlessCli,
+telegramCursorBridgeCli, topicMakeTopBridge) were newly failing on
+CURSOR_API_KEY with zero relationship to what they actually exercise
+(BL-1313 QA pass, 2026-09-01); all 8 pass again. Acceptance:
+`specs/features/BL-1322-bridge-startup-does-not-require-cursor-api-key.feature`.)
+Prior entry —
 **Last Updated:** September 1, 2026 (BL-1318: pack `window` lines now pass
 through a steward staffing gate before a launch stages any tmux window —
 previously a pack could pin any `agent`/`--model`/`--openai-api-base` and
