@@ -161,16 +161,6 @@
          vec)
     []))
 
-
-;; BL-1313: batch-aware twin of handoff-files - descends into batch_* subdirs.
-(defn handoff-files-with-batches [dir]
-  (if (fs/exists? dir)
-    (->> (concat (handoff-files dir)
-                 (mapcat handoff-files (batch-dirs dir)))
-         (sort-by #(fs/file-name %))
-         vec)
-    []))
-
 (defn header-field [file field]
   (let [prefix (str field ": ")]
     (some (fn [line]
@@ -387,10 +377,6 @@
 
 (defn my-handoff-files [dir]
   (vec (filter mine? (handoff-files dir))))
-
-;; BL-1313: batch-aware twin of my-handoff-files.
-(defn my-handoff-files-with-batches [dir]
-  (vec (filter mine? (handoff-files-with-batches dir))))
 
 ;; ── BL-983: seat-aware stage queue ──────────────────────────────────────
 ;; BL-982 split SEAT identity (<stage>@<seat> roles.tsv rows) from STAGE
