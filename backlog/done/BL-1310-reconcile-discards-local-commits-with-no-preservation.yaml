@@ -12,7 +12,7 @@ severity: critical
 # The recovery window is not permanent: the discarded commits are unreachable,
 # so `git gc` ends it. Grading this `high` would say the work is merely
 # degraded; it is gone.
-status: todo
+status: done
 epic: swarm-reliability
 priority: 3
 direction: swarm-reported
