@@ -1,0 +1,163 @@
+id: BL-1321
+title: "Swarm stamp-off: certify Cursor hotfix 3d70c0f4ec (chase rotate yields when the preferred role is already seated)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the deadlock it addresses (chase pokes redirecting forever into
+# already-active while dependency mail starved) is already fixed on main and
+# handoffd was restarted with the fix live; this stamp confirms or refutes the
+# land. Not high: nothing is currently stalled. Not low: the hotfix had no
+# ledger row at all, and an uncertified hotfix keeps resurfacing until a human
+# answers.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1321-swarm-stamp-seated-preferred-yield-3d70c0f4ec.feature
+
+human_approval: pending
+
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 3d70c0f4ec. Review-only:
+  it confirms or refutes the land and never reimplements it. What needs your
+  decision is the ledger row — certify or waive — which green tests must never
+  write on their own.
+
+  Three things to know before you decide. First, the gate decides from the
+  .swarmforge/mono-router-active-role MARKER, deliberately not the live
+  resident identity (the hotfix says so in its own docstring). This repo
+  already has a named staleness hazard for exactly that marker —
+  relaunch_resume_cli.bb prints "BL-1020 STALE" when it disagrees with the
+  resolvable home role. A stale marker makes the gate believe the preferred
+  role is seated when it is not, and it then declines the BL-795 redirect that
+  this hotfix is careful to preserve everywhere else. Scenario 03 makes that
+  direction explicit rather than assuming the marker is sound.
+
+  Second, the commit's six new asserts are five distinct cases: the last one,
+  "marker-active preferred yields even when live identity would be
+  unreadable", passes byte-identical arguments to the first and asserts the
+  same result. Harmless, but the operator note's "6 asserts" overstates the
+  coverage by one. Reported, not acted on.
+
+  Third — this is the fork below. The same commit re-line-ended two whole
+  files from CRLF to LF: swarmforge/scripts/mono_router_lib.bb and
+  swarmforge/scripts/test/mono_router_lib_test_runner.bb. This is why a plain
+  git show reads as 1344 and 1839 changed lines when the real change is 96
+  insertions and 34 deletions. It is a repair, not vandalism: those two were
+  the ONLY CRLF files under swarmforge/scripts at the parent commit, and the
+  repo now has zero. But the repo has no .gitattributes, so nothing stops it
+  recurring, and the blame cost on those two files is already paid. Choose
+  below.
+
+ruling_options:
+  - Accept the line-ending normalisation as landed and open no follow-up
+  - Accept it and mint a follow-up adding a .gitattributes rule pinning LF
+  - Report it in the evidence file only and decide after the review lands
+
+invariants:
+  - "This stamp-off never reimplements, rewrites or reverts the hotfix — review confirms or refutes landed commit 3d70c0f4ec only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."
+  - "BL-795's redirect still fires in every case where the preferred role is not the seated one — the yield narrows the redirect, it never replaces it."
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::mono-router-lib/chase-rotate-decision::the live daemon chase path calls the reviewed gate"
+  - "specs/pipeline/steps/index.js::bl1321SeatedPreferredYieldStampSteps::acceptance handler registered so the runner executes every review scenario"
+
+description: >
+  WHAT. Operator/Cursor hotfix 3d70c0f4ec is live on main with the trailer
+  Hotfix-Certification: pending. Subject: "Yield chase rotate when preferred
+  role is already seated."
+
+  Landed behaviour under review (do not redesign). swarmforge/scripts/
+  mono_router_lib.bb gains an exported pure function chase-rotate-decision
+  taking :preferred, :poked-role, :active-role and :poked-actionable? and
+  returning {:action :redirect|:skip-broadcast|:rotate :target ...}. It
+  redirects only when a preferred role exists, differs from the poked role,
+  AND differs from the active-role marker; when preferred equals the marker it
+  falls through, so an actionable poke rotates the poked role instead.
+  swarmforge/scripts/handoffd.bb's chase-rotate-to! stops inlining the old
+  two-line redirect test and dispatches on that decision, logging
+  chase-rotate-seated-preferred-yield when the yield is what fired.
+  swarmforge/scripts/test/mono_router_lib_test_runner.bb adds six asserts over
+  the new function.
+
+  The same commit converts mono_router_lib.bb and its test runner from CRLF to
+  LF line endings in full. See approval_context.
+
+  WHY. QA held BL-1303 in_process as a deliberate hold, pending a specifier
+  land-step ruling, while the specifier already had the priority-00 unblock
+  note. preferred resolved to QA, so every chase poke at specifier redirected
+  to QA and then returned already-active; the resident never moved and the
+  dependency mail starved. Separately: an unticketed hotfix never becomes an
+  official swarm deal on green tests alone (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the landed
+  sources at 3d70c0f4ec. Open a narrow follow-up only if review finds a
+  defect; do not rewrite the chase path in this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the hotfix. This parcel confirms or
+    refutes what landed. The operator note says so directly: "Do not rewrite
+    the seated-yield gate while stamp-off is pending."
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT redesign the active-role marker, preferred-mono-rotate-role, or
+    attempt-resident-rotate!'s already-active gate. A design defect found in
+    any of them is a narrow follow-up ticket, not this parcel.
+  - Do NOT re-line-end either file back to CRLF, and do not normalise any
+    other file's line endings in this parcel. Scenario 04 REPORTS; acting on
+    what it finds is the human's call (see ruling_options).
+  - Do NOT delete or rewrite the duplicated sixth assert in
+    mono_router_lib_test_runner.bb. Report it; removing a landed assert is a
+    change to the hotfix.
+
+qa_e2e_procedure: >
+  (1) At commit 3d70c0f4ec, confirm mono_router_lib.bb exports
+  chase-rotate-decision and that its redirect arm requires preferred to differ
+  from BOTH poked-role and active-role.
+  (2) Confirm handoffd.bb's chase-rotate-to! dispatches on that decision's
+  :action rather than an inlined test, and logs
+  chase-rotate-seated-preferred-yield on the yield path only.
+  (3) Run `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` and
+  confirm it prints ok; confirm the six seated-yield asserts are present and
+  record in the evidence file that two of them are byte-identical.
+  (4) Run `bash swarmforge/scripts/test/test_handoffd_rule_proposal_rotate_wiring.sh`
+  and confirm the BL-795 redirect regression is still green.
+  (5) Record in the evidence file the exact file list the commit re-line-ended
+  and confirm those files are byte-identical to what 3d70c0f4ec landed.
+  (6) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  IR-DRY adjudication at mint (do not re-litigate): the checker reports five
+  medium-confidence near-duplicate/synonym findings on this feature file, and
+  every one pairs an outline placeholder step against the same step
+  instantiated with a literal in scenario 02 or 03 (for example
+  `a chase poke for role "<poked>"` against `a chase poke for role
+  "specifier"`). One step-handler pattern serves both members of every pair,
+  which is the normalised state the checker exists to reach — it simply cannot
+  distinguish an instantiation from accidental drift. An earlier draft that
+  paraphrased those setups instead produced four genuine synonym findings and
+  was rejected in favour of this shape. Re-run at any time with `bb
+  gherkin-parser` then `bb gherkin-ir-dry-checker` from swarmforge/vendor/aps.
+
+  Ledger: commit 3d70c0f4ec had NO row in backlog/hotfix-ledger.yaml at all —
+  not a pending row awaiting a ticket, an absent one. The row was created with
+  hotfix_ledger_update.bb --new and linked to this ticket with --link in the
+  same mint, so the recurrent sweep stops nudging the coordinator for it.
+
+source: |
+  Coordinator note 00_20260831T192149Z_003354_from_coordinator_to_specifier
+  (2026-08-31): "Mint BL-848 stamp-off ticket for hotfix 3d70c0f4ec (no
+  stamp_ticket yet)". Satisfied in full by this ticket.
+
+  .swarmforge/operator/NOTE-cursor-hotfix-seated-preferred-yield-20260831.md
+  (operator/Cursor, 2026-08-31). Left in place — it is a NOTE, not an
+  INTAKE-*.md, and it carries live process guidance for the roles ("Do not
+  leave a git_handoff in in_process while waiting on another role") beyond
+  this ticket's scope.
