@@ -275,6 +275,7 @@ notes: >
   stays in backlog/active/ deliberately: backlog/hold/ silences the approval
   sweep, which scans active and paused only.
 
+abandoned_commits: [ab8d10a8b3]
 assigned_to: coder
 bounce_count: 1
 bounce_history:
