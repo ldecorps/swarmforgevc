@@ -57,15 +57,9 @@
 (def head-before (head))
 (def reset-attempted? (atom false))
 
-(defn- ahead-count! []
-  (master-main-reconcile-lib/ahead-count-via-rev-list
-   {:sh! (fn [] (sh "git" "rev-list" "--left-right" "--count" "origin/main...main"))}))
-
-(def raw-reset!
-  (fn []
-    (reset! reset-attempted? true)
-    (let [r (sh "git" "reset" "--hard" "origin/main")]
-      {:success (zero? (:exit r)) :error (:err r)})))
+(def reset-adapters
+  (master-main-reconcile-lib/real-git-reset-adapters
+   {:sh! sh :reset-attempted? reset-attempted?}))
 
 (def result
   (master-main-reconcile-lib/rematch-with-push-first!
@@ -73,9 +67,7 @@
              (let [r (sh "git" "push" "origin" "main")]
                {:success (zero? (:exit r)) :error (:err r)}))
     :reset! (fn []
-              (master-main-reconcile-lib/refuse-reset-if-local-ahead!
-               {:ahead-count! ahead-count!
-                :raw-reset! raw-reset!}))}))
+              (master-main-reconcile-lib/refuse-reset-if-local-ahead! reset-adapters))}))
 
 (println (json/generate-string
           {:pushed (= :pushed (:outcome result))

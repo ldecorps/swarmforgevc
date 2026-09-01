@@ -916,6 +916,33 @@
                    (if ahead ahead "an undeterminable count")
                    " - refusing to discard local-ahead commits")})))
 
+;; ── BL-1310 cleanup: bl1198RematchPushFirstCli.bb and bl1288PushFailure-
+;; ClassificationCli.bb (the acceptance drivers the architect's bounce had
+;; wired through refuse-reset-if-local-ahead!) each carried a byte-for-byte
+;; identical real-git :ahead-count!/:raw-reset! adapter pair - sharing it
+;; here removes that second copy the same way the three production call
+;; sites' ahead-count parse was shared above.
+(defn real-git-reset-adapters
+  "adapters:
+     :sh!              (fn [& args] -> {:exit int :out string :err string}) -
+             runs a git command in the target repo (or an equivalent
+             fixture); called FRESH for both the ahead-count read and the
+             reset itself, per refuse-reset-if-local-ahead!'s own freshness
+             requirement.
+     :reset-attempted? (atom bool) - set true only when :raw-reset! actually
+             runs `git reset --hard origin/main`, for the caller's own
+             reporting.
+   Returns the :ahead-count!/:raw-reset! pair refuse-reset-if-local-ahead!
+   expects."
+  [{:keys [sh! reset-attempted?]}]
+  {:ahead-count! (fn []
+                   (ahead-count-via-rev-list
+                    {:sh! (fn [] (sh! "git" "rev-list" "--left-right" "--count" "origin/main...main"))}))
+   :raw-reset! (fn []
+                 (reset! reset-attempted? true)
+                 (let [r (sh! "git" "reset" "--hard" "origin/main")]
+                   {:success (zero? (:exit r)) :error (:err r)}))})
+
 ;; ── BL-1214: :ff-absorb execution tries a real merge before resetting ─────
 ;; `absorb-dispatch-plan` resolves a genuine two-way divergence (behind>0,
 ;; ahead>0, no predicted conflict) to :ff-absorb, but every executor of
