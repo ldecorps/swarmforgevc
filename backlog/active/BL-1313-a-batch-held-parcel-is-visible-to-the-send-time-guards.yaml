@@ -12,6 +12,7 @@ mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1313-a-batch-held-parcel-is-visible-to-the-send-time-guards.feature
+abandoned_commits: [f0a9e08ccc]
 
 invariants:
   - "A role's receive mode never changes what a send-time guard sees: a parcel held inside a batch directory counts exactly as the same parcel held as a flat file."
