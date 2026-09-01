@@ -13,7 +13,9 @@ slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1318-pack-launch-steward-staffing-gate.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Env var only - PACK_STAFFING_SKIP_GATE=1, mirroring the BL-1127 precedent exactly
 approval_context: >
   The refuse-until-cleared invariant is firm (human directive verbatim in
   `source:`, plus an explicit "Yes go ahead"). What is NOT settled is the shape

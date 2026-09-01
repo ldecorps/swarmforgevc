@@ -14,7 +14,9 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1319-stage-dwell-names-the-stage-not-a-seat.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Fold plus ops seat-detail - build the seat-and-model view in this same slice
 approval_context: >
   This ticket does NOT match the shape the intake asked for, and the difference
   is the thing to approve. `.swarmforge/operator/INTAKE-mint-difficulty-aware-remaining-jumpq.md`
