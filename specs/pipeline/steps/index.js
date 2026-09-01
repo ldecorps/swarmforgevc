@@ -913,6 +913,7 @@ const DOMAINS = [
   require('./bl1304DryRunSpawnsNothingSteps'),
   require('./bl1313BatchGuardVisibilitySteps'),
   require('./bl1318PackStaffingGateSteps'),
+  require('./bl1322BridgeLazyCursorApiKeySteps'),
 ];
 
 function registerSteps(registry) {
