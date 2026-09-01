@@ -1386,6 +1386,23 @@ swarm_only_strip_seat_tier() {
   echo "${out[*]}"
 }
 
+# True when this role's pack CLI names a Qwen Cloud model (Token Plan). Used so
+# a Claude seat can ride apps/anthropic without SWARMFORGE_USE_QWEN=1 remapping
+# every other Anthropic seat in a mixed pack (bob mono-router 2026-09-01).
+extra_cli_targets_qwen_cloud() {
+  local extra_cli="$1"
+  local -a parts
+  local i=1
+  parts=(${=extra_cli})
+  while (( i <= ${#parts} )); do
+    if [[ "${parts[i]}" == "--model" && "${parts[i+1]:-}" == qwen* ]]; then
+      return 0
+    fi
+    (( i++ ))
+  done
+  return 1
+}
+
 claude_settings_and_flags_from_extra_cli() {
   local extra_cli="$1"
   local -a parts cli_flags
@@ -1851,11 +1868,16 @@ export OPENAI_BASE_URL='${lm_url}'
 "
   fi
   if [[ "$agent" == "claude" ]]; then
-    if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" ]]; then
+    if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" ]] || extra_cli_targets_qwen_cloud "$extra_cli"; then
       # Token Plan Anthropic-compat (Claude Code → SEA apps/anthropic). Prefer
-      # over OpenRouter / first-party Max when the Qwen wrapper opted in.
+      # over OpenRouter / first-party Max when the Qwen wrapper opted in, OR
+      # when this seat's --model is qwen* (mixed Anthropic+Qwen packs — only
+      # this launch script remaps; sibling Anthropic seats keep subscription).
       # Key arrives via pane -e as QWEN_API_KEY (BL-130); never written here.
-      billing_guard="${qwen_lib_source}"$'\nqwen_guard_map_anthropic_compat || exit 1\n'
+      # CLAUDE_CODE_MAX_CONTEXT_TOKENS: unrecognized gateway IDs (qwen*) make
+      # Claude Code assume a tiny window and auto-compact ~50k; Token Plan
+      # qwen3.* is officially 1M — declare it so one ticket can breathe.
+      billing_guard="${qwen_lib_source}"$'\nqwen_guard_map_anthropic_compat || exit 1\nexport CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}"\n'
     elif role_uses_openrouter "$role"; then
       # OpenRouter-backed claude role: do NOT unset the auth token (that unset
       # is what forces subscription auth for every other claude role). Point the
@@ -2107,6 +2129,16 @@ launch_role() {
     if [[ -n "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-}" ]]; then
       provider_env_flags+=(-e "CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS}")
     fi
+  elif [[ "$agent" == "claude" ]] && extra_cli_targets_qwen_cloud "${EXTRA_CLI_ARGS[$index]:-}"; then
+    # Mixed pack: Claude seat with --model qwen* needs the Token Plan key in
+    # pane env even when the pack did not set SWARMFORGE_USE_QWEN=1 globally.
+    # shellcheck source=qwen_launch_guard_lib.sh
+    source "$SCRIPT_DIR/qwen_launch_guard_lib.sh"
+    qwen_guard_apply_credential_fallbacks
+    if [[ -n "${QWEN_API_KEY:-}" ]]; then
+      provider_env_flags+=(-e "QWEN_API_KEY=${QWEN_API_KEY}")
+    fi
+    provider_env_flags+=(-e "CLAUDE_CODE_MAX_CONTEXT_TOKENS=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}")
   fi
 
   wait_for_session_pane "$session"
