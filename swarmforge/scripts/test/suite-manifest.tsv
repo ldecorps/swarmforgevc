@@ -468,3 +468,5 @@ upstream_drift_check_lib_test_runner.bb	standing
 wake_attribution_lib_test_runner.bb	standing		
 wake_dedup_lib_test_runner.bb	standing		
 worktree_drift_lib_test_runner.bb	standing		
+bl1313_handoff_files_with_batches_test_runner.bb	standing		
+test_swarm_handoff_inbound_non_forwarding_batch.sh	standing		

@@ -1,0 +1,238 @@
+id: BL-1040
+title: "BL-983 closed with invariant 3 enforced only on the FORWARD path: a ticket a non-bare seat is actively working reaches the board keyed `coder@sonnet2`, matches no bare role name, and paints as not-started"
+milestone: M8
+type: defect
+severity: medium
+# medium and honestly so: the defect is real and the board lies while it is
+# live, but it is LATENT today - the coder@sonnet2 seat was removed
+# 2026-08-21 by operator directive, so no non-bare seat currently exists.
+# It becomes a live board falsehood the moment a second seat boots again,
+# which BL-1001 (paused) exists to do. See the sequencing note.
+status: todo
+epic: multi-seat-stages
+assigned_to: none
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1040-seat-identity-never-escapes-on-the-observation-path.feature
+human_approval: approved
+
+invariants:
+  - "Seat identity never escapes the mailbox layer on the OBSERVATION path either - no stage map, board column, or held-role reading ever carries a seat id. This is BL-983's own invariant 3, closed over reading as well as over forwarding."
+  - "A multi-seat stage occupies exactly one board column and exactly one position in the reconciler's stage precedence order: N seats never widen either."
+  - "A ticket actively held by any seat of a stage is never rendered as not-started."
+
+description: |
+  ## What happens
+
+  BL-983 (done) declared invariant 3 verbatim:
+
+  > Seat identity never escapes the mailbox layer: a seat forwards to the
+  > next STAGE, so no downstream role, board, or metric ever learns which
+  > seat did the work.
+
+  It enforced that on the **forward** path - a seat addresses the next
+  stage, not a seat - and closed. The **observation** path was never closed,
+  and it leaks the seat id at three separate layers:
+
+  1. `swarmforge/scripts/pipeline_stage_cli.bb`, `role-ticket-pairs-for`,
+     records `(:role role-info)` verbatim, so `coder@sonnet2` is written
+     into `.swarmforge/board/ticket-stage-map.json`. `compute-stage-map`'s
+     `role-order` lists every SEAT, so a multi-seat stage also occupies more
+     than one position in the precedence order `reconcile-stage-map` uses to
+     decide "most downstream wins".
+  2. `extension/src/swarm/swarmState.ts`,
+     `invertTicketStageToRoleHeldTickets`, groups by whatever key the stage
+     map carries, propagating the seat id onward.
+  3. `extension/src/concierge/pipelineBoard.ts`, `heldRoleByTicketId`,
+     iterates `ALL_SWARM_ROLES` only - bare stage names. A seat-keyed entry
+     matches **nothing**, so the ticket falls through to the default and is
+     painted **not-started while a seat is actively working it**.
+
+  That third one is the observable defect: the board reports no progress on
+  a ticket that is in flight.
+
+  ## Why it is medium and not high, and what changes that
+
+  It is latent right now. The `coder@sonnet2` seat was removed 2026-08-21 by
+  operator directive (host load), so no non-bare seat exists and nothing is
+  currently mispainted. It is a live falsehood again the moment a second seat
+  boots.
+
+  **Sequencing, for the coordinator rather than a `depends_on`:** this should
+  land before BL-1001 (difficulty-aware seat routing, paused) activates,
+  because BL-1001's whole purpose is to bring seats back. It does not depend
+  on BL-1001 in the other direction and must not wait for it - the behaviour
+  here is fully buildable and gateable now against a fixture seat, exactly as
+  the rescued draft's own shell test already does.
+
+  ## Scope
+
+  The **board and stage-map observation path** only - layers 1, 2 and 3
+  above. BL-981's remaining slice also names supervisor, chase, ensure and
+  stage-dwell as surfaces that must treat seats as instances of a stage;
+  those are NOT in this ticket and the slice stays open for them. Splitting
+  here keeps this to one sitting; bundling them would not.
+
+  Also out of scope: `BL-732` (paused) fixes the same `@`-seat family in the
+  console pane-title chrome regex. Different surface, different fix, no file
+  overlap - deliberately left separate.
+
+  ## How (direction, not mandate)
+
+  Fold a seat key onto its stage on the read path. `handoff_lib.bb` already
+  exports `seat-stage` (`swarmforge/scripts/handoff_lib.bb:360`), so the
+  Babashka half has a chokepoint to reuse rather than a fourth hand-rolled
+  `indexOf('@')`.
+
+  Which layer is the authoritative normalization point, and whether the
+  downstream two keep a defensive fold or trust the source, is the
+  implementer's and architect's call. Note only that "normalize at the
+  source" and "defend at the renderer" are not alternatives here: the stage
+  map is a FILE on disk that outlives the process that wrote it, so a map
+  written by an older producer can still be read after the fix.
+
+  ## A starting point exists, and it is unverified
+
+  A rescued draft touching all six files - three source, three test - was
+  found uncommitted in `.worktrees/coder` and is reproduced in full in
+  `backlog/evidence/BL-1040-rescued-seat-fold-work-20260822.md`. It is on no
+  branch and in no commit, which is why it was captured there.
+
+  It is **UNVERIFIED**: never compiled, never run, never reviewed by any
+  stage. Treat it as saved rediscovery, not as a solution to merge, and feel
+  free to discard it if the design goes another way.
+
+  Provenance settled 2026-08-22 after the coder reported the edits were not
+  its own: they are the coordinator's rescue of the stash the 2026-08-20
+  briefing recorded as "stash@{0} (real BL-981 board-seat-leak fix) has no
+  worktree - flagged twice by the specifier, not yet rescued", applied into
+  the coder's worktree at 07:27:04 (all six files share that mtime to the
+  second). **All 38 current stashes and the stash reflog were scanned: the
+  work is in none of them.** The evidence file and the coder's volatile
+  working copy are the only two places it now exists - which is why it was
+  captured. See BL-1041 for the rescue-durability defect that exposed.
+
+qa_e2e_procedure: >
+  1. At the parent commit, add a second seat row for an existing stage to a
+     fixture `roles.tsv` (`coder@sonnet2`, its own worktree), place one
+     in_process parcel in the bare seat's mailbox and one in the second
+     seat's, and run `pipeline_stage_cli.bb report`. Confirm the absence of
+     the fix first: the emitted stage map contains the literal
+     `coder@sonnet2`.
+
+  2. Render the pipeline board from that same stage map and confirm the
+     second seat's ticket paints as NOT-STARTED while the seat holds it.
+     This is the defect; it must be seen before it is fixed.
+
+  3. At the parcel commit, repeat both steps. Confirm the stage map contains
+     no `@` at all, that both tickets appear under the one `coder` column,
+     and that neither paints as not-started.
+
+  4. Confirm the board is not widened: with two seats configured, confirm
+     the board renders exactly one `coder` column, and that the reconciler's
+     stage order lists `coder` exactly once.
+
+  5. Confirm the stale-file case, which is the one a source-only fix would
+     miss: hand the fixed reader a stage map written BEFORE the fix - one
+     that still contains `coder@sonnet2` - and confirm the board still folds
+     it onto `coder` rather than painting not-started.
+
+  6. Confirm no regression for the ordinary case: with a single-seat
+     `roles.tsv`, confirm the stage map and the board are byte-identical to
+     the parent commit's output for the same fixture.
+
+approval_context: >
+  Written from a coordinator note: "Rescued BL-981 seat-fold fix,
+  uncommitted in coder wt - needs ticket."
+
+
+  WHAT I FOUND WHEN I LOOKED. This is not just loose work needing a home. It
+  is a **declared invariant of a closed ticket that was only half enforced**.
+  BL-983 wrote "seat identity never escapes the mailbox layer: ... no
+  downstream role, board, or metric ever learns which seat did the work",
+  enforced it on the path where a seat FORWARDS work, and closed. The path
+  where the board READS who holds what was never closed, and it leaks at
+  three layers. The visible result is the board reporting a ticket as
+  not-started while a seat is actively working it.
+
+
+  TWO CALLS OF MINE.
+
+
+  (1) **`severity: medium`, not high.** The board genuinely lies, which is
+  the kind of broken signal I would normally call high - but it cannot lie
+  today, because you removed the `coder@sonnet2` seat on 2026-08-21 and no
+  non-bare seat exists. I would rather say "latent, and here is exactly what
+  makes it live" than inflate it into the expedite lane on a defect nothing
+  can currently trigger. What I did instead is write the sequencing down: it
+  must land before BL-1001 activates, since BL-1001 is what brings seats
+  back. If you would rather it be expedited anyway, say so.
+
+
+  (2) **I preserved the rescued diff but did not commit it into the coder
+  worktree.** It existed only as uncommitted changes on no branch - one
+  crash sweep from gone, which has happened here before. I copied it verbatim
+  into a committed evidence file and left the working copy untouched. I did
+  not land it: it is production code in someone else's worktree, and it is
+  unverified - never compiled, never run, never reviewed. The ticket says so
+  plainly so nobody mistakes it for a solution.
+
+
+  ONE THING I DELIBERATELY LEFT OUT. BL-981's slice also names supervisor,
+  chase, ensure and stage-dwell as surfaces that must treat seats as stage
+  instances. I scoped this to the board and stage map only and left that
+  slice open. Bundling all five surfaces would have failed INVEST-Small, and
+  the board half is the one with a rescued starting point and a visible
+  symptom.
+
+source: |
+  Coordinator `note` 00_20260822T062759Z_000810: "Rescued BL-981 seat-fold
+  fix, uncommitted in coder wt - needs ticket."
+
+  Partially satisfies BL-981's remaining slice "Supervisor / chase / ensure /
+  board / stage-dwell treat seats as instances of a stage" - the board and
+  stage-map half only. The slice stays open for the other surfaces.
+
+  Rescued working copy: `.worktrees/coder`, 6 modified tracked files,
+  reproduced in backlog/evidence/BL-1040-rescued-seat-fold-work-20260822.md.
+
+notes: |
+  ## Related, deliberately not merged into this ticket
+
+  - **BL-983** (done) - declared the invariant this ticket closes the other
+    half of. Its YAML in `backlog/done/` still reads `status: todo`; noted
+    for whoever does backlog hygiene, not fixed here.
+  - **BL-982** (done) - the seat-identity slice. Its feature file's
+    "the second seat is inert" boundary narrative has already been retired,
+    so there is no stale assertion for this ticket to clean up (BL-1006).
+  - **BL-1001** (paused) - difficulty-aware seat routing. Brings seats back;
+    see the sequencing note in the description.
+  - **BL-1004** (paused) - who may claim a rework. Same epic, orthogonal.
+  - **BL-732** (paused) - the `@`-seat family in the console pane-title
+    chrome regex. Different surface, no file overlap.
+
+  ## Untracked, surfaced not swept
+
+  `swarmforge/scripts/test/fixtures/` is untracked in both the coder
+  worktree and the master checkout - the same hot-sync orphan already known
+  in this repo. It is NOT part of this work and was left in place.
+
+  ## IR-DRY judgment recorded
+
+  The feature file went 8 findings -> 4. The real one - a 0.857
+  near-duplicate between "holds a ticket" and "holds a different ticket" -
+  was folded into a single "each seat holds its own ticket" step. A sixth
+  scenario asserting the single-seat regression was DROPPED rather than
+  reworded: its `Given` contradicted the two-seat `Background`, and its
+  content is a baseline comparison, which belongs in the QA e2e procedure
+  (step 6) rather than in an executable scenario.
+
+  The remaining four are all `possible-synonym` at <= 0.667 between steps
+  that name WHICH seat holds the ticket - the bare one, the second one, each
+  of them, or the Outline's placeholder over them. That distinction is the
+  behaviour under test, so collapsing it would conflate exactly what
+  invariants 1 and 2 exist to keep apart. Kept deliberately.
+
