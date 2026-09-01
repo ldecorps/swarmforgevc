@@ -54,6 +54,14 @@
 ;; ambulance-lib/mono-router-lib above.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "prompt_engine_lib.bb")))
 
+;; BL-1316: seat_difficulty_lib is also a leaf dependency (pure, no load-file
+;; of its own) - loaded here so apply-claim-effort! below can reuse its
+;; claim-effort-decision rather than growing a second effort/backend table.
+;; Same double-load-is-harmless shape as the other leaf deps above (a caller
+;; that already load-files it directly, e.g. ready_for_next_task.bb, just
+;; re-evaluates the same defns).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "seat_difficulty_lib.bb")))
+
 (defn worktree-root
   "Handoff state lives at the worktree root even when invoked from a
    subdirectory; the daemon only delivers to worktree-root inboxes (BL-056).
@@ -561,6 +569,43 @@
    never assembles prompt text itself)."
   [role-name]
   (str (fs/path (target-root) ".swarmforge" "prompts" (str role-name ".md"))))
+
+(defn claude-settings-path
+  "The launch-time settings file swarmforge.sh's write_claude_settings_file
+   wrote for role-name (--settings on the claude launch line). BL-1316's
+   claim-time effort apply rewrites this file's effortLevel in place; it
+   never invents a new location."
+  [role-name]
+  (str (fs/path (target-root) ".swarmforge" "launch" (str role-name ".claude-settings.json"))))
+
+(defn apply-claim-effort!
+  "BL-1316 consumer anchor: retunes (or restores) the current seat's
+   reasoning effort at claim/reclaim time from the claimed ticket's
+   mutation_cost. The pure decision (which backends have a lever, what
+   effort value to use) lives entirely in seat-difficulty-lib/claim-effort-
+   decision; this is only the IO edge over it.
+
+   Never throws and never blocks a claim: a backend with no lever, a
+   missing settings file, or unreadable/unwritable JSON all leave the claim
+   to succeed with nothing written (invariant 2's 'claim still succeeds').
+   Returns the decision map (plus :written? when a file write was
+   attempted) so a caller/test can observe what happened without re-deriving
+   it."
+  [{:keys [role backend mutation-cost pack-default-effort]}]
+  (let [decision (seat-difficulty-lib/claim-effort-decision
+                  {:backend backend :cost mutation-cost :pack-default-effort pack-default-effort})]
+    (if-not (:apply? decision)
+      decision
+      (let [settings-file (claude-settings-path role)]
+        (try
+          (if-not (fs/exists? settings-file)
+            (assoc decision :written? false)
+            (let [current (json/parse-string (slurp settings-file) true)
+                  updated (assoc current :effortLevel (:effort decision))]
+              (spit settings-file (json/generate-string updated {:pretty true}))
+              (assoc decision :written? true)))
+          (catch Exception _
+            (assoc decision :written? false)))))))
 
 ;; BL-911: rotation is the moment freshness is established, not inherited
 ;; from launch (see rotate-resident-to! below). recompose-role-prompt!

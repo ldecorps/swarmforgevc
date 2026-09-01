@@ -132,6 +132,53 @@
              :tiers tiers :models diff-models :conf-text diff-model-conf
              :sibling-states [{:role "coder" :tier "hard" :busy? true}]})))
 
+;; ── BL-1316: claim-time effort ─────────────────────────────────────────────
+
+(assert= "effort-for-mutation-cost is an identity map over the cost scale"
+         "high"
+         (seat-difficulty-lib/effort-for-mutation-cost "high"))
+
+(assert= "effort-for-mutation-cost: unknown/absent cost -> nil"
+         nil
+         (seat-difficulty-lib/effort-for-mutation-cost nil))
+
+(assert= "parse backends from window column 3"
+         {"coder" "claude" "coder@cursor2" "cursor"}
+         (seat-difficulty-lib/parse-seat-backends
+          (str "window coder claude coder --model x\n"
+               "window coder@cursor2 cursor coder-s --model y\n")))
+
+(assert= "parse effort defaults from window --effort"
+         {"coder" "high"}
+         (seat-difficulty-lib/parse-seat-efforts
+          (str "window coder claude coder --effort high\n"
+               "window cleaner claude cleaner --model z\n")))
+
+(assert= "claude has an effort lever" true (seat-difficulty-lib/effort-lever-backend? "claude"))
+(assert= "cursor has no effort lever yet" false (seat-difficulty-lib/effort-lever-backend? "cursor"))
+(assert= "copilot has no effort lever yet" false (seat-difficulty-lib/effort-lever-backend? "copilot"))
+(assert= "nil backend has no lever" false (seat-difficulty-lib/effort-lever-backend? nil))
+
+(assert= "claim-effort-decision: mutation_cost maps directly to effort"
+         {:apply? true :effort "low"}
+         (seat-difficulty-lib/claim-effort-decision
+          {:backend "claude" :cost "low" :pack-default-effort "high"}))
+
+(assert= "claim-effort-decision: absent cost restores the pack default"
+         {:apply? true :effort "high"}
+         (seat-difficulty-lib/claim-effort-decision
+          {:backend "claude" :cost nil :pack-default-effort "high"}))
+
+(assert= "claim-effort-decision: no lever backend never applies (invariant 2)"
+         {:apply? false}
+         (seat-difficulty-lib/claim-effort-decision
+          {:backend "cursor" :cost "high" :pack-default-effort "low"}))
+
+(assert= "claim-effort-decision: no cost and no pack default -> nothing to apply"
+         {:apply? false}
+         (seat-difficulty-lib/claim-effort-decision
+          {:backend "claude" :cost nil :pack-default-effort nil}))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str (count @failures) " failure(s)"))
