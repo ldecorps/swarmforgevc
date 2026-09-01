@@ -31,6 +31,13 @@ swarmforge/scripts/expedite.sh /path/to/repo BL-123
 Start with `--dry-run`. It prints the liveness verdict, what it would park, and
 whether the teardown would reach a clean slate — without moving a file.
 
+The stage driver itself is now gated on the flag too (BL-1304): before this
+fix, `--dry-run` reached the real stage launcher whenever a run worktree for
+the ticket already existed — exactly the state a re-run after a failed
+expedite lands in — and executed the whole run for real while still
+declining to record it. A dry run now reports the stage chain it would run
+and starts nothing, whether or not a worktree survives from an earlier run.
+
 ## What happens, in order
 
 **1. Initiation, and it blocks.**
