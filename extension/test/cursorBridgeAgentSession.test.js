@@ -953,6 +953,64 @@ test('cursorBridgeAgentSession: resolveCursorApiKey fails with actionable messag
   }
 });
 
+// ── BL-1322: constructing a live session must not eagerly require the key ──
+
+test('BL-1322: createLiveCursorBridgeAgentSession does not throw when CURSOR_API_KEY is unset', () => {
+  const root = mkRoot();
+  const prevKey = process.env.CURSOR_API_KEY;
+  delete process.env.CURSOR_API_KEY;
+  try {
+    const { createLiveCursorBridgeAgentSession } = loadCursorBridgeAgentSessionFresh();
+    assert.doesNotThrow(() => createLiveCursorBridgeAgentSession(root));
+  } finally {
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
+  }
+});
+
+test('BL-1322: readAgentId works with no CURSOR_API_KEY set', () => {
+  const root = mkRoot();
+  const prevKey = process.env.CURSOR_API_KEY;
+  delete process.env.CURSOR_API_KEY;
+  try {
+    const { createLiveCursorBridgeAgentSession } = loadCursorBridgeAgentSessionFresh();
+    const session = createLiveCursorBridgeAgentSession(root);
+    assert.doesNotThrow(() => session.readAgentId());
+  } finally {
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
+  }
+});
+
+test('BL-1322: resetSession works with no CURSOR_API_KEY set', async () => {
+  const root = mkRoot();
+  const prevKey = process.env.CURSOR_API_KEY;
+  delete process.env.CURSOR_API_KEY;
+  try {
+    const { createLiveCursorBridgeAgentSession } = loadCursorBridgeAgentSessionFresh();
+    const session = createLiveCursorBridgeAgentSession(root);
+    const result = await session.resetSession();
+    assert.equal(result.agentId, undefined);
+  } finally {
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
+  }
+});
+
+test('BL-1322: promptAgent still fails with the documented message when CURSOR_API_KEY is unset', async () => {
+  const root = mkRoot();
+  const prevKey = process.env.CURSOR_API_KEY;
+  delete process.env.CURSOR_API_KEY;
+  try {
+    const { createLiveCursorBridgeAgentSession } = loadCursorBridgeAgentSessionFresh();
+    const session = createLiveCursorBridgeAgentSession(root);
+    await assert.rejects(() => session.promptAgent('ping'), /CURSOR_API_KEY is not set for the headless bridge/);
+  } finally {
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
+  }
+});
+
 // ── BL-1050: a failed run is recorded on this host, not only in Telegram ──
 
 function failingAgent(status, id, message) {
