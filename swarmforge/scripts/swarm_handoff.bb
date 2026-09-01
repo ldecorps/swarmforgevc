@@ -802,10 +802,9 @@
 
 (defn inbound-non-forwarding? []
   (boolean
-    ;; BL-1302: one spelling of the marker check, shared with the
-    ;; duplicate-chain guard (handoff-lib/non-forwarding?).
+    ;; BL-1302 + BL-1313: batch-aware reader.
     (some handoff-lib/non-forwarding?
-          (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
+          (handoff-lib/my-handoff-files-with-batches (handoff-lib/my-mailbox-dir :in_process)))))
 
 (defn sha256 [text]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256")

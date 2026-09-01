@@ -76,3 +76,20 @@ Feature: A batch role's held parcel is visible to the send-time guards
     And an empty batch directory remains in its in_process
     When the send-time guards evaluate the send
     Then the send is not blocked
+
+  # BL-1313 batch-held-parcel-visible-to-send-time-guards-05
+  # BL-1302: the self-check folds via `some` over the sender's own
+  # in_process. A single-parcel fixture cannot tell `some` from `every?` -
+  # the sender must hold a SECOND, ordinary parcel that disagrees with the
+  # non-forwarding one, held at the OTHER depth, so only `some` still
+  # refuses (an `every?` regression would silently allow the send).
+  Scenario Outline: the sender's own non-forwarding inbound still refuses the send alongside a disagreeing ordinary parcel
+    Given the sender holds a non-forwarding inbound for that ticket <nonforwarding_held>
+    And the sender also holds an ordinary inbound for a different ticket <ordinary_held>
+    When the send-time guards evaluate the send
+    Then the send is refused with the merge-only reason, not the duplicate-chain reason
+
+    Examples:
+      | nonforwarding_held                          | ordinary_held                               |
+      | as a flat file in its in_process             | inside a batch directory in its in_process  |
+      | inside a batch directory in its in_process   | as a flat file in its in_process            |
