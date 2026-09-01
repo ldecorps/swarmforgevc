@@ -2,6 +2,11 @@
 # Claude agents get --remote-control on launch by default (claude.ai/code sessions).
 
 set -euo pipefail
+
+# BL-1318: this test exercises parse_config's OTHER behavior (not model
+# staffing) - bypass the steward staffing gate so a fixture's placeholder
+# --model value ("x", etc.) does not trip an unrelated refusal.
+export PACK_STAFFING_SKIP_GATE=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

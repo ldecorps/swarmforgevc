@@ -11,6 +11,11 @@
 
 set -euo pipefail
 
+# BL-1318: this test exercises parse_config's OTHER behavior (not model
+# staffing) - bypass the steward staffing gate so a fixture's placeholder
+# --model value ("x", etc.) does not trip an unrelated refusal.
+export PACK_STAFFING_SKIP_GATE=1
+
 # BL-315/engineering.prompt: unset a caller's own SWARMFORGE_CONFIG override
 # so every fixture below resolves via the conf this test writes, never a
 # leaked live-launch override.

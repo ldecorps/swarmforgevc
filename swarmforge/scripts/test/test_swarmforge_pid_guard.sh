@@ -6,6 +6,11 @@
 # and proves the guard's effect through role_lifecycle.sh unpark, the same
 # relaunch path a human/Operator would actually invoke.
 set -euo pipefail
+
+# BL-1318: this test exercises parse_config's OTHER behavior (not model
+# staffing) - bypass the steward staffing gate so a fixture's placeholder
+# --model value ("x", etc.) does not trip an unrelated refusal.
+export PACK_STAFFING_SKIP_GATE=1
 # Disables job-control monitor mode: without this, bash's async "done"
 # notification for the backgrounded LIVE_PID process below can print
 # mid-script and leak into an UNRELATED LATER command substitution's

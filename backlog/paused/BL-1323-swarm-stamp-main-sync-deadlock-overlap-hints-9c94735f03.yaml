@@ -1,0 +1,159 @@
+id: BL-1323
+title: "Swarm stamp-off: certify Cursor hotfix 9c94735f03 (main-sync deadlock hints name overlaps and teach ./swarm heal)"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: nothing is currently stalled and the hotfix is a
+# strict improvement over the broken code it replaces (a swallowed exception
+# that produced an empty hint). High because this touches the operator's
+# ONLY actionable signal during a main-sync deadlock — babysitterd's CRIT
+# escalation and the Telegram/email alert — and an uncertified change on
+# that path is elevated risk per BL-848 doctrine: the coordinator flagged it
+# specifically because it sits on the freshness-sync/main-sync-deadlock
+# machinery (BL-891), the same machinery behind the 2026-09-01 BL-1313
+# dirty-overlap deadlock incident.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1323-main-sync-deadlock-hints-name-overlaps-and-teach-swarm-heal.feature
+
+human_approval: pending
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 9c94735f03. Review-only:
+  it confirms or refutes the land and never reimplements it. What needs your
+  decision is the ledger row — certify or waive — which green tests must
+  never write on their own.
+
+  One thing to know before you decide. `babysitter_check.bb`'s CRIT gather
+  now prefers the deadlock marker's `overlapping_paths`, captured ONCE by
+  handoffd at trip time, over a fresh git recompute. Per BL-891's own
+  "at most one alert per trip" contract that is deliberate — but it also
+  means every recurring CRIT between trip and `behind=0` shows the
+  trip-time snapshot, not live git state: a path the operator has already
+  cleared can still be named as "overlapping" in a later CRIT, and a newly
+  dirty path added after the trip will not be. The review should confirm
+  this is accepted as a known snapshot-not-live limitation (worth surfacing
+  to the operator in the hint text) or is a real gap worth a follow-up.
+
+ruling_options:
+  - Certify as landed; the snapshot-not-live behavior is acceptable, open no follow-up
+  - Certify as landed; mint a follow-up to recompute or clearly label the hint as trip-time-only
+  - Waive review — the fix is a strict improvement over a swallowed exception and needs no further gate
+
+invariants:
+  - "This stamp-off never reimplements, rewrites or reverts the hotfix — review confirms or refutes landed commit 9c94735f03 only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does (BL-848)."
+  - "The reviewed code's overlapping-paths gather never silently swallows a git shell-out failure into an empty, unlabeled hint — the specific defect this hotfix fixes must not regress."
+
+required_wiring:
+  - "swarmforge/scripts/babysitter_check.bb::normalize-overlapping-paths::CRIT gather prefers the persisted marker overlap over a live git recompute"
+  - "swarmforge/scripts/handoffd.bb::normalize-overlapping-paths::the trip path persists overlapping_paths onto the deadlock marker"
+  - "specs/pipeline/steps/index.js::bl1323MainSyncDeadlockOverlapHintsStampSteps::acceptance handler registered so the runner executes every review scenario"
+
+description: >
+  WHAT. Operator/Cursor hotfix 9c94735f03 is live on main with the trailer
+  Hotfix-Certification: pending. Subject: "Make main-sync deadlock operator
+  hints name overlaps and ./swarm heal."
+
+  Landed behaviour under review (do not redesign). Before this hotfix,
+  `babysitter_check.bb`'s `gather-main-sync-deadlock` called
+  `(sh! {:dir (str project-root)} "git" "status" "--porcelain")` — a call
+  shape `bb`'s `sh!` does not accept (it spawns a literal argument "{:dir",
+  which fails immediately). The exception was caught and swallowed, so a
+  "dirty" deadlock's CRIT/escalation fell open to a hint naming zero paths.
+  The fix: (1) prefer the deadlock marker's own `overlapping_paths` /
+  `overlapping-paths` field (normalized via the new
+  `master-main-reconcile-lib/normalize-overlapping-paths`) when present,
+  skipping the git shell-out entirely; (2) when the marker has none and the
+  reason is "dirty", recompute using the corrected `(sh! "git" "-C"
+  (str project-root) ...)` call shape. Separately, `handoffd.bb`'s trip path
+  now computes and persists `:overlapping_paths` onto the deadlock marker
+  JSON at the moment it trips (via the pre-existing
+  `master-main-reconcile-dirty-paths!` / `-merge-changed-paths!` adapters),
+  so the marker carries real data for babysitterd to read back later.
+  `master_main_reconcile_lib.bb` gains `normalize-overlapping-paths` (drops
+  the unknown-dirty sentinel and blanks, sorts, dedupes via caller-side
+  logic) and `format-overlapping-path-list` (names up to 8 paths, then
+  "(+N more)"); `format-overlapping-path-hint` and `operator-deadlock-hint`
+  now always end with a "./swarm heal" instruction instead of a bare docs
+  pointer or "wait for BL-891 reconcile"; `deadlock-alert-text` (the
+  Telegram/email body) is rewritten to reuse `operator-deadlock-hint`'s body
+  directly, so the alert names the same paths and the same fix instruction
+  the babysitter CRIT already showed, rather than a separate, less
+  actionable message. Test coverage updated in
+  `babysitterd_sweep_lib_test_runner.bb` and
+  `master_main_reconcile_lib_test_runner.bb` for the new path-naming and cap
+  behavior. `docs/how-to/BL-891-master-main-reconcile-sweep.md` updated to
+  describe `overlapping_paths` persistence and the babysitterd CRIT clue.
+
+  WHY. The coordinator flagged this hotfix specifically as sitting on the
+  main-sync/freshness-sync machinery central to BL-891 and the 2026-09-01
+  BL-1313 dirty-overlap deadlock incident — an uncertified change here
+  carries more risk than an equivalent change elsewhere, per BL-848 doctrine
+  ("an unticketed hotfix never becomes an official swarm deal on green tests
+  alone").
+
+  HOW (direction, not mandate). Walk the acceptance feature against the
+  landed sources at 9c94735f03. Open a narrow follow-up only if review finds
+  a defect; do not rewrite the deadlock-hint path in this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the hotfix. This parcel confirms
+    or refutes what landed.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT redesign the deadlock marker schema, the "at most one alert per
+    trip" contract, or the 8-path display cap. A design defect found in any
+    of them is a narrow follow-up ticket, not this parcel.
+  - Do NOT silently "fix" the snapshot-not-live overlap gap named in
+    approval_context. Report it in the evidence file; acting on it is the
+    human's call via ruling_options.
+
+qa_e2e_procedure: >
+  (1) At commit 9c94735f03, confirm `gather-main-sync-deadlock` in
+  babysitter_check.bb prefers `normalize-overlapping-paths` of the marker's
+  own field before shelling out, and that the shell-out (when it does run)
+  uses `sh! "git" "-C" ...` rather than a `:dir` map option.
+  (2) Confirm handoffd.bb's trip path writes `:overlapping_paths` onto the
+  deadlock marker via `write-deadlock!` using the same normalize helper.
+  (3) Run `bb swarmforge/scripts/test/master_main_reconcile_lib_test_runner.bb`
+  and `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb` and
+  confirm both print ok, including the new cap/"(+N more)"/"./swarm heal"
+  assertions.
+  (4) Confirm `deadlock-alert-text` no longer emits the old generic "Clear
+  overlapping dirty paths or wait for BL-891 reconcile" text and instead
+  reuses `operator-deadlock-hint`'s actionable body.
+  (5) Record in the evidence file whether the snapshot-not-live overlap gap
+  (approval_context) is confirmed as landed-and-acceptable or worth a
+  follow-up, per the human's ruling.
+  (6) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  IR-DRY adjudication at mint (do not re-litigate): the checker reports
+  three medium-confidence possible-synonym findings on this feature file,
+  all comparing the trip-condition Given steps of scenarios 01, 02, and 05.
+  Each is a genuinely distinct precondition (marker already carries
+  overlapping paths / marker carries none and reason is "dirty" / a trip
+  with paths recorded, from the alert-text scenario) that happens to share
+  vocabulary ("main-sync deadlock", "tripped"/"trips", "overlapping paths
+  recorded") because they are all preconditions on the same underlying
+  marker. Re-run at any time with `bb gherkin-parser` then `bb
+  gherkin-ir-dry-checker` from swarmforge/vendor/aps.
+
+  Ledger: commit 9c94735f03 already had a `state: pending` row in
+  backlog/hotfix-ledger.yaml (added by the recurrent sweep from the
+  commit's own trailer) — linked to this ticket with `hotfix_ledger_update.bb
+  --link` in the same mint, so the recurrent sweep stops nudging the
+  coordinator for it.
+
+source: |
+  Coordinator note 00_20260901T140203Z_003378_from_coordinator_to_specifier
+  (2026-09-01): "Hotfix 9c94735f03 blocks freshness sync (BL-848). Mint
+  stamp-off." Satisfied in full by this ticket.

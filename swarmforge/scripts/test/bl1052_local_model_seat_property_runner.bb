@@ -107,7 +107,12 @@
                      "[[ \"${ROLES[$i]}\" == \"$t\" ]] && { echo \"$i\"; return; }; done; }; "
                      "write_role_launch_script \"$(index_of_role coder)\"")
             _ (process/shell {:out :string :err :string
-                              :extra-env {"SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS" "healthy"}}
+                              ;; BL-1318: local-model seats have no steward
+                              ;; provider mapping (out of steward scope) - bypass
+                              ;; the new staffing gate the same way the endpoint
+                              ;; readiness probe is bypassed.
+                              :extra-env {"SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS" "healthy"
+                                          "PACK_STAFFING_SKIP_GATE" "1"}}
                              "zsh" "-f" "-c" cmd)
             body (slurp (str (fs/path root ".swarmforge" "launch" "coder.sh")))]
         body)
@@ -152,6 +157,7 @@
                      "write_role_launch_script \"$(index_of_role coder)\"")
             _ (process/shell {:out :string :err :string
                               :extra-env {"SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS" "healthy"
+                                          "PACK_STAFFING_SKIP_GATE" "1"
                                           "OPENAI_API_KEY" key-val}}
                              "zsh" "-f" "-c" cmd)
             body (slurp (str (fs/path root ".swarmforge" "launch" "coder.sh")))
