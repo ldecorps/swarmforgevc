@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e50ab4a7ee9763bd4a7aa67d73858adb0026c808484f240c87b3274c8fc85a71
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-01T04:22:01.004926541Z","feature_name":"An expedite dry run plans and spawns nothing, whatever an earlier run left on disk","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1304-a-dry-run-spawns-nothing.feature","background_hash":"52fba28599884b12195ea706a9152c07b58ba939ba9bde4cadca1fe76607d10c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a dry run starts no stage, whatever an earlier run left behind","scenario_hash":"7057abd4f3418bb8ddfb8631b6f251db7ea70782fa71a1898c82f983d916565b","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-01T04:22:01.004926541Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: An expedite dry run plans and spawns nothing, whatever an earlier run left on disk
 
   `expedite.sh --dry-run` is documented as "plan and print; touch nothing".
