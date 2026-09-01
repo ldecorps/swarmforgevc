@@ -271,3 +271,6 @@ notes: >
   and an unrelated Background step. All normalize to one handler pattern per
   step; there is no duplication in the registry. Do not "fix" them by making
   plain scenarios into artificial outlines.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-31, by: hardender, blamed: coder, class: behavior, commit: 64156b80cf, evidence: backlog/evidence/BL-1315-hardener-bounce-20260831.md }
