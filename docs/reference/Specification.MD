@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 1, 2026 (BL-1318: pack `window` lines now pass
+through a steward staffing gate before a launch stages any tmux window —
+previously a pack could pin any `agent`/`--model`/`--openai-api-base` and
+`./swarm --pack …` staffed the seat with no steward consult at all, the gap
+that let `opencode/nemotron-3-ultra-free` — registry-`certified` globally but
+`QA-gate: human-verdict-pending` and ranked on the `:coder` role-matrix only —
+sit the QA seat on both Bob packs and idle instead of running
+`merge_and_process`. `pack_staffing_gate` in `swarmforge/scripts/swarmforge.sh`
+is the single call site, reached from `parse_config`'s per-window loop — the
+only path every pack launch and every materialised
+`.swarmforge/launch/<role>.sh` (the mono-router `rotate_to_role.sh` re-exec
+path included) passes through. It resolves each window's provider/model
+identity via a table-driven map in `pack_staffing_gate_lib.bb` (`cursor …
+--model auto` → `cursor/auto`; `claude … --model claude-sonnet-5` →
+`anthropic/claude-sonnet-5`; `aider --model openai/qwen3.7-plus
+--openai-api-base <aliyuncs base>` → `qwen/qwen3.7-plus`, provider taken from
+the api-base host, not the `openai/` prefix) and refuses any window whose
+identity cannot be resolved — nothing is staffed by default. The pure decision
+lives in `seat-staffing-decision` (`pack_staffing_gate_lib.bb`); the gate
+requires role-matrix ranking, a `pass` compliance-gate decision (not
+`human-verdict-pending`), and `assignment-eligible?`, and only READS steward
+evidence — it never writes the registry, a scorecard, or a role matrix, and
+never runs a compliance battery at launch time. A refusal prints the role, the
+resolved provider/model, the failing check, and a runnable `model-steward`
+command. Operator escape hatch: `PACK_STAFFING_SKIP_GATE=1` (same shape as
+BL-1127's `LOCAL_CODER_BATTERY_SKIP_GATE=1`), which stages the seat as an
+`override` — printed as a loud warning, never shown or recorded as a plain
+pass. Acceptance:
+`specs/features/BL-1318-pack-launch-steward-staffing-gate.feature`. How-to:
+`docs/how-to/BL-1318-pack-staffing-gate.md`, cross-linked from the BL-547 and
+BL-1127 how-to pages.)
+Prior entry —
 **Last Updated:** September 1, 2026 (BL-1313: the two send-time guards
 that read a role's `in_process` mailbox — `swarm_handoff.bb`'s
 `inbound-non-forwarding?` self-check (Article 2.4's merge-only refusal)

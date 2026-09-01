@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=86dd58980ea3a7dbd9e4aea17c39d51f2c48f8b14c4acbe79577e34a6e3fc8b2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-01T17:11:50.776484056Z","feature_name":"BL-1318 pack launch refuses a seat whose model the steward has not cleared for that role","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1318-pack-launch-steward-staffing-gate.feature","background_hash":"3e1339c18bbbf1e1d561fcff3fe571a453e7ba39e703265f61310feb1c00a9fe","implementation_hash":"unknown","scenarios":[{"index":0,"name":"launch refuses a seat the steward has not cleared for that role","scenario_hash":"29d5c95d1323e74d90bab104003607d8c10595b562351535009d1b6c8beebcd5","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-01T17:11:47.206721698Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1318 pack launch refuses a seat whose model the steward has not cleared for that role
 
   ModelFactory's assign / cold-apply / failover paths already consult the

@@ -597,7 +597,28 @@
               (master-main-reconcile-lib/operator-deadlock-hint
                {:ahead 144 :behind 593 :reason "dirty"
                 :overlapping-paths ["backlog/active/BL-709.yaml"]})
-              "clear overlapping path backlog/active/BL-709.yaml"))
+              "backlog/active/BL-709.yaml"))
+(assert-true "operator-deadlock-hint points at ./swarm heal"
+             (clojure.string/includes?
+              (master-main-reconcile-lib/operator-deadlock-hint
+               {:ahead 144 :behind 593 :reason "dirty"
+                :overlapping-paths ["backlog/active/BL-709.yaml"]})
+              "./swarm heal"))
+(let [many (mapv #(str "path-" % ".txt") (range 1 10))
+      hint (master-main-reconcile-lib/operator-deadlock-hint
+            {:ahead 9 :behind 2 :reason "dirty" :overlapping-paths many})]
+  (assert-true "operator-deadlock-hint names first capped paths when many overlap"
+               (clojure.string/includes? hint "path-1.txt"))
+  (assert-true "operator-deadlock-hint reports remainder when over cap"
+               (clojure.string/includes? hint "(+1 more)"))
+  (assert-true "operator-deadlock-hint still teaches ./swarm heal for many paths"
+               (clojure.string/includes? hint "./swarm heal")))
+(assert-true "deadlock-alert-text reuses operator-deadlock-hint body"
+             (clojure.string/includes?
+              (master-main-reconcile-lib/deadlock-alert-text
+               {:ahead 1 :behind 2 :reason "dirty"
+                :overlapping-paths ["specs/pipeline/steps/index.js"]})
+              "specs/pipeline/steps/index.js"))
 
 ;; ── BL-1120: never abort a foreign merge ────────────────────────────────
 (assert= "merge-attempt-plan: MERGE_HEAD already present -> skip"

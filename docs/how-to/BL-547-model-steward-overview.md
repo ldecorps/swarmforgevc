@@ -388,7 +388,10 @@ Reference.
 Related: [Route work to a local-model seat](./BL-1053-route-work-to-a-local-model-seat.md),
 [Wire Mistral Vibe into the Intelligence Layer](./BL-682-mistral-vibe-intelligence-layer-routing.md),
 [ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md),
-[Wire agent memory into hot-swap and trial](./BL-1178-wire-agent-memory-into-hot-swap-and-trial.md).
+[Wire agent memory into hot-swap and trial](./BL-1178-wire-agent-memory-into-hot-swap-and-trial.md),
+[Pack staffing gate](./BL-1318-pack-staffing-gate.md) — the same steward
+evidence gates pack `window` lines before launch, not just ModelFactory's
+assign/apply path.
 
 Acceptance (Slice 2): `specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature`.
 Acceptance (Slice 3): `specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature`.

@@ -39,6 +39,14 @@ cited **pass** evidence path (`LOCAL_CODER_BATTERY_EVIDENCE_PATH` or the newest
 Pack: `swarmforge/packs/ollama-qwen3-mono-router.conf` (Ollama OpenAI-compat on
 `127.0.0.1:11434`). Does not require `QWEN_API_KEY` / Bailian Token Plan keys.
 
+## Pack staffing gate (BL-1318)
+
+This ticket's `LOCAL_CODER_BATTERY_SKIP_GATE=1` escape hatch is the shape
+precedent for [Pack staffing gate](BL-1318-pack-staffing-gate.md)'s
+`PACK_STAFFING_SKIP_GATE=1` — the same steward evidence checked here for the
+coder role now gates every pack `window` line for every role, at `./swarm
+--pack …` launch time.
+
 ## Steward bake-off (BL-1140)
 
 For choosing **which** local model leads the role-matrix (and whether the

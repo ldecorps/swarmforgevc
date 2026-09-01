@@ -66,6 +66,7 @@ expects them, and are not migrated or rewritten here.
 - [Answering the Swarm Offline](how-to/BL-441-answering-offline-runbook.md)
 - [Bringing Up the FES Second Swarm (mono-rotate, own Telegram identity)](how-to/BL-439-fes-second-swarm-bringup.md)
 - [Model Steward: Onboarding, Certification, and Role Recommendations](how-to/BL-547-model-steward-overview.md) — register / certify; **capture-then-evaluate** ingest (BL-556); Slice 3 (BL-557) coordinator-assignable steward tasks + `compat-docs` projection.
+- [Pack staffing gate](how-to/BL-1318-pack-staffing-gate.md) — pack `window` lines now refuse an uncleared seat before launch (role-matrix rank + `pass` compliance gate + `assignment-eligible?`); global `certified` is not per-role clearance; `PACK_STAFFING_SKIP_GATE=1` escape hatch (BL-1318).
 - [Outage-driven seat failover via Model Steward](how-to/BL-669-outage-driven-seat-failover-via-steward.md) — sustained BL-650 outage → certified substitute at idle; auto-revert on close (BL-669); load-file-safe CLI (BL-1150).
 - [outage_failover_cli load-file safety](how-to/BL-1150-outage-failover-cli-load-file-safe.md) — BL-1150: babashka.file entrypoint guard so handoffd load-file cannot System/exit
 - [ModelFactory: Assigning and Applying Agent Models](how-to/BL-525-model-factory-assign-and-apply.md)
