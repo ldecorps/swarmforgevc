@@ -1,0 +1,187 @@
+id: BL-1315
+title: "The replay's own-path set expands a ticket-tagged merge into everything its second parent brought in, so an unlanded sibling's files enter a tip meant to carry one ticket and a verified-green parcel cannot land"
+milestone: M8
+type: defect
+severity: high
+# high, same grading as BL-1308 and BL-1309 for the same machinery: this
+# breaks a safety signal rather than degrading it, and it is now also a
+# throughput block. Two verified-green parcels held in two days (BL-1307 over
+# BL-1300 on 08-30, BL-1298 over BL-1303 on 08-31), and on 08-30 three more
+# stacked behind the same class. Not critical: nothing is destroyed, QA's hold
+# is the correct response and it works, and every parcel parks intact.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: [BL-1308]
+# BL-1308 is landed and closed. It widened the DETECTOR and said in its own
+# comment that it deliberately left the path set alone; this slice is that
+# stated residual. Nothing unbuilt is waited on. BL-1309 is a sibling, not a
+# prerequisite - it blocks the land, this makes the tip clean - and the two
+# can land in either order.
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1315-the-replay-tip-carries-only-the-ticket-being-landed.feature
+
+required_wiring:
+  - "swarmforge/scripts/land_step_cli.bb::land-step-lib/replay!::the CONSUMER anchor (BL-1235). land_step_cli.bb is pre-existing and is the only live caller of the replay, so anchoring the call here proves the changed own-path computation is on a path that actually runs. Anchoring inside land_step_lib.bb or task_scope_gate_lib.bb instead would be satisfied by the parcel own diff and prove nothing. Verified present at spec time, land_step_cli.bb:65."
+  - "specs/pipeline/steps/index.js::bl1315::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: satisfied by the parcel own diff, so it is not offered as wiring proof; the entry above is. Kept because BL-233 requires the handler in the SAME commit as the feature file. Verified absent at spec time (grep bl1315 -> 0)."
+
+invariants:
+  - "No path the landed ticket's own chain delivered is ever dropped from the replay tip, whichever role authored it and whether or not that role's commit names the ticket."
+  - "A path is excluded only on positive attribution to another ticket that is unlanded. An attribution that cannot be read refuses the land - it never silently narrows the tip."
+
+human_approval: approved
+human_ruling: |
+  option 1 - narrow the replay tip by attribution, so an entangled parcel can still land its own work
+ruling_options:
+  - option 1 - narrow the replay tip by attribution, so an entangled parcel can still land its own work
+  - option 2 - do not narrow anything; accept that an entangled tip waits for its sibling, and let BL-1309 block it loudly
+approval_context: >
+  This asks you to authorize narrowing something that has bitten before, so it
+  should not be authorized quietly.
+
+  Option 1, what this ticket is specced for. The replay exists to put one
+  ticket's work on origin/main. It currently cannot, because it expands a
+  ticket-tagged merge into everything the merge's second parent brought in -
+  which includes whatever sibling work rode along on that role branch. Fixing
+  it lets a verified parcel land while its sibling is still in flight.
+
+  The hazard, named plainly. Narrowing the replay is one step away from a
+  failure mode already recorded as strictly worse than the block it replaces:
+  citing an upstream non-merge commit replays a PARTIAL parcel, silently
+  dropping coder and hardener content. Invariant 1 forbids that outcome and
+  invariant 2 makes the failure mode a loud refusal rather than a quiet
+  narrowing, but the risk is real and it is why this is your call.
+
+  Option 2. Declare that an entangled tip simply waits. This costs nothing to
+  build and carries no drop risk; BL-1309 already makes the wait automatic and
+  loud instead of a hand-diff by whoever is on QA. The price is throughput:
+  five parcels were held or stacked by this class in two days, and every hold
+  spends a full QA verification pass that has to be repeated later.
+
+  I recommend option 1 with both invariants enforced. Say option 2 and this
+  ticket is retired in favour of BL-1309 rather than amended.
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb`'s `own-paths` (:205) delegates to
+  `task_scope_gate_lib.bb`'s `task-tagged-changed-paths` (:386). That function
+  picks candidates with `git rev-list --first-parent origin/main..<tip>`,
+  keeps the ones whose subject names the ticket, and expands each with
+  `own-commit-changed-paths ... :delivered`.
+
+  For a merge, `:delivered` is a real two-tree diff against the FIRST parent,
+  so it returns everything the merge's SECOND parent brought in - whoever
+  authored it, and whatever ticket it belongs to. A role's forward-merge takes
+  its subject from the ticket it forwards, so an earlier, still-unlanded ticket
+  whose work rode along on that branch is swept into the replay tip under the
+  forwarded ticket's name.
+
+  ## This is BL-1308's stated residual, not a rediscovery
+
+  `land_step_lib.bb:88-90` says it outright:
+
+      Only DETECTION widens here. `own-commit-changed-paths` and
+      `task-tagged-changed-paths` are untouched: the replay must still
+      reproduce what the parcel put on the branch.
+
+  BL-1308 closed the half where the sibling's id never reached the report. The
+  half where the sibling's FILES reach the tip was left, with a written
+  instruction to check it by hand. That check has now been run by hand twice.
+
+  ## Two incidents, two days
+
+  - 2026-08-30, BL-1307 over BL-1300: replay `c251bb4b666d` carried four
+    BL-1300 files absent from origin/main while BL-1300 sat
+    `human_approval: pending`. Landing as cited would have shipped unapproved
+    code past a human gate.
+  - 2026-08-31, BL-1298 over BL-1303: replay
+    `adb6e0beff01e32fe92cff5476fa7d9f725158c1` carries BL-1303's guard
+    implementation in its BOUNCED, pre-`pre-merge-commit`-wiring form.
+    Verified by the specifier the same turn:
+    `swarmforge/scripts/check_feature_handler_registration.sh` is ABSENT from
+    origin/main and PRESENT on the replay tip. Landing as cited would ship
+    BL-1303's known-incomplete guard under BL-1298's ticket, bypassing
+    BL-1303's own QA gate.
+
+  In both, the detector named the sibling correctly. The report was right and
+  the tip was still wrong.
+
+  ## How (direction, not mandate)
+
+  BL-1308 already built the attribution this needs: `ancestry-commits` walks
+  the FULL range, `commit-ticket-id` attributes each commit, and `blob-at`
+  already decides whether a sibling's content is novel over origin/main or
+  byte-identical to it. The obvious route is to subtract, from the delivered
+  path set, the paths attributable only to a sibling the same run reports as
+  entangled and unlanded. The implementer chooses how.
+
+  ## What NOT to do
+
+  Do not narrow by reading `:authored` instead of `:delivered`, and do not
+  narrow by citing an upstream non-merge commit. Both make one role's paths the
+  only candidates and silently replay a PARTIAL parcel, dropping coder and
+  hardener content - recorded as strictly worse than the loud false report it
+  would replace. Invariant 1 exists to forbid exactly that.
+
+  Do not hand-strip a tip. QA.prompt already forbids it, and this ticket is the
+  reason the tool should not need it.
+
+qa_e2e_procedure: |
+  1. Reproduce the live case first, before any change. On main, run
+     `bb swarmforge/scripts/land_step_cli.bb
+     BL-1298-the-replay-runs-from-a-linked-worktree 86c2ed1c2d`, then
+     `git diff --name-only origin/main <the LAND_REPLAY commit>`. Expect
+     BL-1303's files in the list, including
+     `swarmforge/scripts/check_feature_handler_registration.sh`, and confirm
+     `git cat-file -e origin/main:swarmforge/scripts/check_feature_handler_registration.sh`
+     fails. That is the defect. (If BL-1303 has landed by then, use any tip
+     whose sibling report names an unlanded ticket.)
+  2. Re-run after the change: expect the same LAND_REPLAY tip to add BL-1298's
+     own 9 files and none of BL-1303's, with the sibling report unchanged.
+  3. Nothing dropped: diff the new tip against the old one and confirm every
+     removed path is attributable to the unlanded sibling and none to
+     BL-1298's own chain. Check specifically that coder-authored and
+     hardener-authored paths survive even though only the documenter's
+     forward-merge names the ticket in its subject.
+  4. Already-landed sibling: run the same command on a tip whose only
+     entangled sibling is closed and on origin/main. Expect the tip unchanged
+     from the full delivered set - a landed sibling is not subtracted.
+  5. Fail-loud: on a scratch branch, make a commit in the range whose subject
+     names no ticket and which touches a path no other commit touches. Re-run:
+     expect a refusal naming that path, and no tip advised for push.
+  6. `node specs/pipeline/cli.js specs/features/BL-1315-the-replay-tip-carries-only-the-ticket-being-landed.feature`
+     runs every scenario with no "no step handler matched" error.
+
+source: >
+  QA note 2026-08-31T04:36Z (priority 00): "BL-1298 QA HOLD - replay pulls
+  bounced BL-1303 content, see evidence", pointing at
+  backlog/evidence/BL-1298-qa-hold-land-step-blind-spot-20260831.md. QA
+  verified BL-1298's own work green and held rather than landing. The
+  specifier verified QA's central claim independently and adjudicated the same
+  turn; ruling in
+  backlog/evidence/BL-1298-specifier-ruling-qa-hold-upheld-20260831.md.
+
+notes: >
+  Distinct from three neighbours, all checked at spec time. BL-1297 (done)
+  gave `:delivered` a real diff where it used to return nothing for a merge -
+  this is the residual of that fix being too wide, not a regression of it.
+  BL-1308 (done) widened the DETECTOR only, by its own written statement.
+  BL-1309 (paused) blocks the mandatory land step when the tip carries
+  unlanded content - the safety net, not the fix; it does not let an entangled
+  parcel land its own work.
+
+  ORTHOGONALITY, for the coordinator: do NOT promote this concurrently with
+  BL-1272, which touches `land_step_lib.bb` for the opposite direction (a
+  false POSITIVE on an already-landed sibling). Same file. BL-1309 is a
+  different file (`land_main_publish.sh`) and may run concurrently.
+
+  IR-DRY, resolved not ignored: the checker's remaining medium findings pair a
+  step written with a placeholder in an outline against the same step written
+  with a literal in a plain scenario, plus one false synonym between a Given
+  and an unrelated Background step. All normalize to one handler pattern per
+  step; there is no duplication in the registry. Do not "fix" them by making
+  plain scenarios into artificial outlines.

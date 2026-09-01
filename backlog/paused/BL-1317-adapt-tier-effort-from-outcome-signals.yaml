@@ -1,0 +1,48 @@
+id: BL-1317
+title: "Adapt-tier effort dial: auto-escalate (and later de-escalate) a seat's reasoning effort from outcome signals — the BL-236 deferred Adapt autonomy tier"
+milestone: M5
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 2
+direction: queue-jump
+severity: medium
+depends_on: [BL-236, BL-1316]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1317-adapt-tier-effort-from-outcome-signals.feature
+
+human_approval: approved
+approval_context: >
+  Human 2026-08-31 asked to push tickets that crank/shrink reasoning by
+  difficulty. BL-1316 covers claim-time mutation_cost. BL-236 Explicitly
+  deferred Adapt (auto-escalate on bounces) and Auto tiers; this mint is that
+  Adapt tier so hard tickets that still bounce can climb effort without a
+  human turning the dial. Approved when deps land.
+
+required_wiring:
+  - "extension/src/tools/effortDialAdapt.ts::decideAdaptEffort::pure decide from prior effort + outcome signal (bounce / clean pass); UI and launch paths call it, never embed a second policy."
+  - "swarmforge/scripts/handoff_lib.bb::record-effort-adapt!::CONSUMER anchor when a bounce or clean completion is recorded for the seat's held ticket — same moment the lifecycle ledger already learns the outcome."
+
+invariants:
+  - "Adapt never silently changes the pack window line on disk; in-memory / respawn only (same BL-235/BL-236 posture)."
+  - "A climb is one notch per signal; a drop requires the clean-period rule named in the feature — asymmetric, matching BL-545 descent-ladder hysteresis."
+
+description: |
+  BL-236 shipped Suggest-only. Its own text deferred Adapt (auto-escalate on
+  bounces) and Auto (apply within budget). This ticket is Adapt: when a seat
+  working a ticket bounces or otherwise signals under-thinking, raise effort
+  one notch and respawn; after N clean completions at the raised effort, allow
+  one notch down toward the BL-1316 claim-time baseline (not below it for that
+  ticket's mutation_cost). Auto tier stays out of scope.
+
+source: |
+  BL-236 description (Adapt deferred) + human 2026-08-31 Cursor ask to push
+  crank/shrink-by-difficulty enablers.
+
+depends_on_note: |
+  BL-1316 first — Adapt climbs from the claim-time baseline, not from an
+  unrelated pack default.
+
+assigned_to: none

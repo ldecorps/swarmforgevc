@@ -127,6 +127,28 @@ notes: |
   route around it exists today (pass the master checkout as the third
   argument).
 
+  PARKED 2026-08-31, bookkeeping only - NO REWORK IS OWED, and this ticket's
+  own work is NOT bounced. QA verified the whole parcel green (unit, property,
+  acceptance 4/4, both invariants, required_wiring anchor live) and then held
+  rather than landed, because the land step's replay tip
+  `adb6e0beff01e32fe92cff5476fa7d9f725158c1` carries BL-1303's bounced,
+  unlanded guard implementation. Evidence:
+  `backlog/evidence/BL-1298-qa-hold-land-step-blind-spot-20260831.md`;
+  specifier ruling upholding the hold:
+  `backlog/evidence/BL-1298-specifier-ruling-qa-hold-upheld-20260831.md`.
+
+  Recorded HERE, in the ticket, and not only in evidence, so the state cannot
+  be misread as WIP or as a bounce by whoever next picks this up. The ticket
+  deliberately stays in `backlog/active/` - moving it to `backlog/hold/` would
+  silence the approval sweep, which scans active and paused only, and creates
+  the stale-park shape BL-1300 and BL-1307 both hit.
+
+  UNPARK CONDITION, no re-work: once BL-1303 has landed on origin/main in its
+  corrected form, re-run `land_step_cli.bb` on the SAME cited commit
+  `86c2ed1c2d`. BL-1303's files then become byte-identical rather than novel
+  and the tip lands clean. Do not re-cite a different commit; do not hand-strip
+  the tip. The underlying machinery defect is ticketed as BL-1315.
+
   Routing: like BL-1297, this is a defect IN the delivery machinery, so it
   cannot ride the pipeline it repairs - its own parcel would reach QA and
   hit the identical LAND_ESCALATE. It goes through

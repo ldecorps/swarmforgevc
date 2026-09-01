@@ -1,0 +1,185 @@
+id: BL-1313
+title: "A batch role claims parcels into in_process/batch_*/, but both send-time guards walk in_process as a flat file list, so for cleaner and hardender the merge-only refusal is inert and the duplicate-chain guard fails open"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1313-a-batch-held-parcel-is-visible-to-the-send-time-guards.feature
+
+invariants:
+  - "A role's receive mode never changes what a send-time guard sees: a parcel held inside a batch directory counts exactly as the same parcel held as a flat file."
+  - "Absence still fails closed - a batch-held parcel carrying no non-forwarding marker blocks a competing chain exactly as a flat one does."
+
+source: "Cleaner note (priority 00) 2026-08-31T04:17Z, 'BL-1303 blocked at cleaner', with the refusal text and the cleaner's own (incorrect) root cause in backlog/evidence/BL-1303-cleaner-forward-blocked-duplicate-chain-guard-20260831.md (cleaner branch). Specifier reconstructed the three architect sends, read both guards' in_process walkers, and ruled on the escalation in backlog/evidence/BL-1303-specifier-ruling-cleaner-forward-blocked-20260831.md."
+
+description: |
+  ## What is wrong
+
+  Two guards decide, at send time, whether a `git_handoff` may leave a role.
+  Both read the sender's or another role's `in_process`, and both read it
+  through `handoff-lib/handoff-files`:
+
+  - `swarm_handoff.bb`'s `inbound-non-forwarding?` (line 803) - the Article
+    2.4 self-check. When it is true the send is refused at line 1085 with
+    "Current inbound handoff is non-forwarding; do not send a git_handoff.
+    Merge, then done_with_current."
+  - `duplicate_chain_guard_lib.bb`'s `live-parcel-for-ticket` - BL-760's
+    check that one ticket is not running as two live chains.
+
+  `handoff-files` (`handoff_lib.bb:140`) filters `fs/regular-file?` over the
+  top level of the directory. A batch role does not hold parcels there:
+  `ready_for_next` claims them into `in_process/batch_<ts>_<n>/`, which is a
+  directory and is skipped. `handoff_lib.bb` has a `batch-dirs` helper on the
+  very next line (148) - the blindness is a missed call, not an unknown shape.
+
+  So for the two batch roles, **cleaner and hardender**:
+
+  1. The merge-only self-check can never fire. The one refusal that would say
+     "you may not forward this inbound" is inert for the roles that receive
+     reverse copies exactly like everyone else.
+  2. BL-760's guard **fails open**. A live forwardable parcel held by a batch
+     role is invisible, so the ticket-forked-into-two-chains failure that
+     guard exists to catch (BL-727) goes undetected whenever the competing
+     parcel sits with the cleaner or hardender.
+
+  Symptom 1 also falsifies the premise BL-1302's exemption is written on.
+  `duplicate_chain_guard_lib.bb:26-32` argues a non-forwarding parcel can be
+  skipped safely because "swarm_handoff.bb refuses a git_handoff while one
+  sits in the sender's in_process". That refusal does not exist for a batch
+  sender, so for cleaner and hardender the two guards are simultaneously
+  inert and exempting - nothing checks the thing at all.
+
+  ## Measured
+
+  2026-08-31 ~04:12Z. Architect bounced BL-1303 to the coder and, being
+  `back-all`, planted `non-forwarding: true` reverse copies in coder and
+  cleaner. The cleaner's copy landed in
+  `in_process/batch_20260831T040914Z_000001/`.
+
+  Nothing told the cleaner the inbound was merge-only. It read the copy's
+  body ("Replay this role's current task onto that shape") at a moment when
+  its own most recent task WAS BL-1303, implemented the coder's bounced fix,
+  committed it at `a09a7653a8` - and only then was refused. Not by the
+  accurate message, which is inert for it, but by the duplicate-chain guard,
+  naming a parcel in the **coder's** mailbox.
+
+  A refusal that describes a mailbox the sender does not own does not read as
+  "you may not forward this". The cleaner concluded the reverse-hop synthesis
+  had lost a `non-forwarding` stamp, wrote that up, and escalated by note.
+  The stamp was never missing - the file it names is the architect's own
+  drafted bounce to the coder. Cost: one cleaner cycle, one BL-1303 commit
+  stranded on `swarmforge-cleaner`, one specifier escalation, and a wrong
+  root cause recorded in evidence.
+
+  ## How (direction, not mandate)
+
+  Every other lib that reads `in_process` already descends into batch
+  directories, six of them by hand: `chase_sweep_lib.bb`'s
+  `list-handoff-files-with-batches` (835), the byte-identical copy in
+  `hold_divergence_audit_lib.bb` (44), plus `orphan_claim_sweep_lib.bb`,
+  `flow_watchdog_lib.bb`, `operator_runtime.bb` (whose own comment records it
+  is duplicated from `handoffd_supervisor.bb`) and `done_with_current_task.bb`.
+  The two newest guards are the ones that do not.
+
+  The narrow fix is one batch-aware in_process reader in `handoff_lib.bb`,
+  beside `handoff-files` and `batch-dirs`, called by both guards. Whether it
+  replaces `handoff-files` for `:in_process` callers generally, or sits
+  beside it, is a design call - `handoff-files` is also used on `new/`, where
+  no batch directory exists and the behaviour is identical either way.
+
+  Do not fold the six hand-rolled duplicates into it in this ticket; see
+  approval_context.
+
+notes: |
+  ## Scope boundary [2026-08-31 specifier]
+
+  Four further `in_process` reads in `handoff_lib.bb` share this blindness
+  and are deliberately NOT in scope: `stage-seat-worked-task-sets` (465),
+  the two `:blocking-file` reads in the mono-router resident check (816,
+  822), and `wait-for-delivery!` (920, which does its own listing). Each has
+  a different consumer and a different consequence, none is a send-time
+  guard, and none has a measured incident. They belong in a survey ticket
+  minted only if one of them proves to have a live consequence - not folded
+  into a defect fix with a specific measured failure.
+
+  ## IR-DRY findings reviewed, no normalization [2026-08-31 specifier]
+
+  The vendored checker reports three medium-confidence `possible-synonym`
+  pairs on the feature file. All three are distinctions the ticket is
+  about, not accidental drift: forwardable vs non-forwarding parcel;
+  presence vs absence of a sender inbound; another role's mailbox vs the
+  sender's own. The checker's own guidance is to normalize only accidental
+  drift. Folding any pair into one Scenario Outline would need a binary
+  outcome column, which the specifier prompt forbids for outline handlers.
+
+  ## No required_wiring, deliberately [2026-08-31 specifier]
+
+  Both consumers already exist and are already called on every send by
+  `swarm_handoff.bb`'s validate step. No new mechanism needs a call site.
+  The only anchors available - a reader name this parcel itself introduces,
+  or the acceptance handler's own registration - are satisfied by the
+  parcel's own diff and would gate nothing (BL-1235). The scenarios gate
+  both call sites behaviourally instead.
+
+  ## Not a spec defect in BL-1303 [2026-08-31 specifier]
+
+  BL-1303's spec, its amended required_wiring and the architect's D1 are all
+  correct. This ticket takes nothing away from that chain, which continues at
+  the coder. Full ruling:
+  backlog/evidence/BL-1303-specifier-ruling-cleaner-forward-blocked-20260831.md
+
+qa_e2e_procedure: |
+  1. As the cleaner (or hardender), claim a `non-forwarding: true` inbound so
+     it sits in `inbox/in_process/batch_*/`. Draft and send a forward
+     `git_handoff` for that ticket. It must be refused with the merge-only
+     reason naming the sender's OWN inbound - today it is either accepted or
+     refused by the duplicate-chain guard naming another role's mailbox.
+  2. Repeat step 1 with a task role (flat in_process). The refusal must be
+     unchanged from today.
+  3. Place a live forward `git_handoff` (no `non-forwarding` header) for a
+     ticket into a batch role's `in_process/batch_*/`. From a different role,
+     send a `git_handoff` for that same ticket: it MUST be blocked naming
+     that parcel. Today it is accepted - this is the fail-open.
+  4. Replace that parcel with a `non-forwarding: true` copy and repeat step
+     3: the send must be accepted (BL-1302's exemption must survive reaching
+     through the batch directory).
+  5. Drain a batch role's parcel, leaving the empty `batch_*/` directory
+     behind, and send normally: no refusal.
+  6. Run the acceptance feature and
+     `bb swarmforge/scripts/test/...` shell fixtures for both guards.
+
+human_approval: approved
+human_ruling: |
+  option 1 - fix the two send-time guards only, as specced
+ruling_options:
+  - option 1 - fix the two send-time guards only, as specced
+  - option 2 - also consolidate the six hand-rolled batch walkers into the new reader
+approval_context: >
+  The defect is measured and the fix direction is narrow, so the ask is only
+  about where to draw the line.
+
+  Option 1 is what this ticket specs: one batch-aware in_process reader,
+  called by the two send-time guards. It closes both symptoms and stays one
+  sitting. It leaves seven near-identical walkers in the tree (six
+  hand-rolled ones that already descend correctly, plus the new one), which
+  is how the two newest guards came to be written against the wrong one in
+  the first place.
+
+  Option 2 folds those six into the shared reader in the same parcel. It
+  removes the trap for good, and `operator_runtime.bb`'s own comment already
+  flags its copy as duplicated. But it touches six libs on the live handoff
+  and chase paths - including `chase_sweep_lib.bb`, which drives the daemon
+  sweep - to fix a defect measured in two of them, and a regression there is
+  a swarm-wide transport fault rather than one blocked send. It would also
+  push the slice past one sitting.
+
+  I recommend option 1 and left the survey out of scope in notes. Say
+  otherwise here if you would rather pay the consolidation now while the
+  shape is fresh.
