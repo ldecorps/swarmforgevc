@@ -177,7 +177,7 @@ qa_e2e_procedure: |
   4. Restore the article (`git restore -- <path>`) and re-run step 1 to confirm
      7/7 again.
 
-human_approval: pending
+human_approval: approved
 ruling_options:
   - option 1 - confirm what is already live on main, close it
   - option 2 - revert the landed fix, then move every number to 42000
