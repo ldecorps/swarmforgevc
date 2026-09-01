@@ -219,7 +219,14 @@
 - commit: 3d70c0f4ec
   subject: "Yield chase rotate when preferred role is already seated."
   detected_at: 2026-08-31
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1321
+  human_decision: null
+  decided_at: null
+- commit: 4ed88430b2
+  subject: "Hotfix bob mono-router onto Token Plan qwen3.8-max with a real 1M Claude Code window."
+  detected_at: 2026-09-01
+  state: pending
+  stamp_ticket: null
   human_decision: null
   decided_at: null
