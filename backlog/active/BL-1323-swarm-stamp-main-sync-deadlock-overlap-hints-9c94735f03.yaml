@@ -167,3 +167,6 @@ source: |
   Coordinator note 00_20260901T140203Z_003378_from_coordinator_to_specifier
   (2026-09-01): "Hotfix 9c94735f03 blocks freshness sync (BL-848). Mint
   stamp-off." Satisfied in full by this ticket.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-02, by: architect, blamed: coder, class: behavior, commit: 75a4334436, evidence: backlog/evidence/BL-1323-architect-bounce-20260902.md }
