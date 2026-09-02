@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1338: BL-1267's adjudication
+fingerprint (SHA-256 over the ticket YAML) is no longer invalidated by the
+very promotion it authorized. `promote_and_route_next.sh` appends or
+in-place-rewrites `assigned_to:` on promotion, AFTER the freshness gate
+already ran — the fingerprint recorded at adjudication time was therefore
+guaranteed stale the moment its own `confirm_promote` was acted on,
+forcing a spurious re-adjudication on every promoted, previously-held
+ticket (observed live on BL-1271, 2026-09-02). Fix, scoped exactly to the
+human ruling (`extension/src/tools/deprecate-check.ts`'s new
+`fingerprintableTicketText`): the routing stamp a promotion writes — the
+appended-fresh shape and the in-place `sed`-rewritten shape alike — is
+normalized out before hashing; every other field, including a genuine
+edit to `assigned_to:` that is not that promotion's own write, still
+changes the fingerprint and re-arms the gate (BL-1267's invariant
+survives: a substantive amendment can never ride a stale clearance). No
+new store, no new discharge path, no change to what
+`promote_and_route_next.sh` writes. How-to:
+`docs/how-to/BL-1173-deprecator-freshness-gate-cli.md` "Discharging a hold".)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1317: the Adapt tier of the Effort
 dial — deferred by BL-236, deps BL-236/BL-1316 — ships: a seat's reasoning
 effort now climbs one notch on a bounce and may drop one notch after a

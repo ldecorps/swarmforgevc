@@ -67,8 +67,17 @@ This writes `.swarmforge/deprecator/adjudications/<BL-ID>.json` — **outside**
 the ticket, never inside it, because an adjudication necessarily discusses the
 deprecation vocabulary that earned the hold, and writing it into the ticket
 would arm the generic-claim branch (above) against the very ticket it just
-cleared. The record is fingerprinted (SHA-256) against the exact ticket YAML
-text at write time:
+cleared. The record is fingerprinted (SHA-256) against the ticket YAML text
+at write time — **with one exclusion** (BL-1338): the `assigned_to:` routing
+stamp a promotion itself writes (either appended fresh, or an existing line
+rewritten in place by `promote_and_route_next.sh`'s `sed`) is normalized out
+before hashing, so the promotion that a `confirm_promote` record authorizes
+can no longer invalidate that same record the moment it runs. Any other
+edit to the ticket — including a change to `assigned_to:` that is not that
+promotion's own stamp write — still changes the fingerprint and re-arms the
+gate; the exclusion covers only the routing write, never the ticket's
+substance. See `fingerprintableTicketText`
+(`extension/src/tools/deprecate-check.ts`) for the exact normalization.
 
 ```json
 {
