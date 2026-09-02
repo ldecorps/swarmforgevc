@@ -140,15 +140,21 @@ function hotfixRegions(text) {
   };
 }
 
+// BL-971: a killed run traps nothing, so stale fixture roots are swept BEFORE
+// a run as well as removed in a `finally` after it. The mtime guard is what
+// keeps that sweep from eating a LIVE sibling root: only dirs older than this
+// process are removed, so two fixtures alive at once never delete each other.
 function sweepStaleFixtures() {
   const base = os.tmpdir();
+  const processStart = Date.now() - Math.round(process.uptime() * 1000);
   for (const name of fs.readdirSync(base)) {
-    if (name.startsWith(FIXTURE_PREFIX)) {
-      try {
-        fs.rmSync(path.join(base, name), { recursive: true, force: true });
-      } catch {
-        // best-effort: a concurrent run cleans up its own root
-      }
+    if (!name.startsWith(FIXTURE_PREFIX)) continue;
+    const full = path.join(base, name);
+    try {
+      if (fs.statSync(full).mtimeMs >= processStart) continue;
+      fs.rmSync(full, { recursive: true, force: true });
+    } catch {
+      // best-effort: a concurrent run cleans up its own root
     }
   }
 }
