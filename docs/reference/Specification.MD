@@ -1,5 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1056: reverses BL-627's one
+deliberate omission. `pricingTable.ts` entries now carry optional
+`until`/`then` validity metadata — `claude-sonnet-5` costs at its
+introductory $2/$10 through 2026-08-31 and published list $3/$15 from
+2026-09-01, resolved per-instant by `resolveRatesAt`/`estimateCostUsdAt`
+rather than one fixed rate; every windowless model is unchanged, still
+costed identically at every instant. `listPricingWindowAlerts` (CLI:
+`extension/src/tools/pricing-windows.ts`) makes the cliff a query — it
+names every windowed entry whose boundary has closed or falls within 30
+days, so "Sonnet 5 intro pricing ends 2026-08-31" no longer depends on a
+human remembering it. A windows uncovered instant still fails loud (null,
+never a fallback rate, never zero) — BL-627's honest-null discipline
+extended, not relaxed. No autonomous seat mutation: this ticket only makes
+prices honest about time. How-to:
+`docs/how-to/BL-1056-a-price-with-an-expiry-date.md`.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1341: `check_merge_deletion.sh`
 (BL-1242) now covers BOTH merge directions, not only the receiving branch.
 Its original predicate read `git diff --name-status HEAD` — HEAD is the
