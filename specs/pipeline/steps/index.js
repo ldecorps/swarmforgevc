@@ -906,6 +906,7 @@ const DOMAINS = [
   require('./bl1040SeatIdentityObservationPathSteps'),
   require('./bl1319StageDwellNamesTheStageSteps'),
   require('./bl1283PipelineBoardSleepFreezeSwarmStampSteps'),
+  require('./bl1321SeatedPreferredYieldStampSteps'),
   require('./bl1254ExpediteNoVerdictChainStampSteps'),
   require('./bl1272LandedSiblingSteps'),
   require('./bl1183BobGoLiveGateSteps'),
