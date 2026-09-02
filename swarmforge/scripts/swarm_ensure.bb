@@ -696,8 +696,19 @@
    :degraded and forcibly respawn it back to `role`. A blank/missing rotation
    marker (every non-router pack) leaves role unchanged."
   [ordered-roles role]
+  ;; hotfix 2026-09-02 (BL-1020's rule applied here): the marker is a
+  ;; rotation-router CACHE, never topology on a standing pack. Under
+  ;; full-forge the first roles.tsv row (specifier) classifies as the
+  ;; "resident", a leftover marker from a prior mono-router era said
+  ;; `coordinator`, and this function handed the RC repair coordinator.sh
+  ;; for the specifier's session - a duplicate coordinator and no specifier
+  ;; at all, twice on 2026-09-02. resolve-resident-role is the ONE shared
+  ;; decision (BL-1020): it honours the marker only when rotation-router?.
   (if (= :resident (mono-router-lib/classify-role ordered-roles role))
-    (mono-router-lib/resident-launch-role role (read-mono-router-active-role-marker))
+    (:role (mono-router-lib/resolve-resident-role
+            {:rotation-router? (rotation-router-mode?)
+             :recorded-role (read-mono-router-active-role-marker)
+             :home-role role}))
     role))
 
 (defn rc-status [socket launch-role session]

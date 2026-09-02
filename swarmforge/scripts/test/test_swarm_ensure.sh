@@ -1360,6 +1360,78 @@ cleanup_daemon
 pass "RC-7 (BL-514): mono-router RC check follows a rotated resident's active launch script, never forces it back to home"
 
 # ---------------------------------------------------------------------------
+# RC-7b (hotfix 2026-09-02, BL-1020's rule applied to the RC repair): on a
+# STANDING pack (blank rotation) a leftover mono-router-active-role marker is
+# not topology. rc-launch-role honoured it anyway: the first roles.tsv row
+# (specifier under full-forge) classifies as the mono-router "resident", the
+# stale marker said `coordinator`, so the RC check read the specifier pane
+# against coordinator.sh's flag, called it :degraded and respawned
+# coordinator.sh INTO the specifier session - a duplicate coordinator and no
+# specifier at all, twice on 2026-09-02 (13:18, 16:34 launches, 17:30 ensure).
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'specifier\tmaster\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'rotation\t\nlaunch_pack\tfull-forge\n' > "$ROOT/.swarmforge/swarm-identity"
+printf 'exec claude --remote-control SwarmForge-Specifier\n' > "$ROOT/.swarmforge/launch/specifier.sh"
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+printf 'exec claude --remote-control SwarmForge-Coordinator\n' > "$ROOT/.swarmforge/launch/coordinator.sh"
+echo "coordinator" > "$ROOT/.swarmforge/mono-router-active-role"   # stale leftover from a prior router era
+RC7B_RESPAWNS="$ROOT/rc7b-respawns"
+: > "$RC7B_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  case "\$target" in
+    swarmforge-specifier|swarmforge-coder|swarmforge-coordinator) exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  echo "RESPAWN \$@" >> "$RC7B_RESPAWNS"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+# Every pane is CORRECTLY staffed with its own role's flag.
+cat > "$FAKE_BIN/rc7b_cmdline.sh" <<'EOF'
+#!/usr/bin/env bash
+case "$2" in
+  swarmforge-specifier) echo "claude --remote-control SwarmForge-Specifier" ;;
+  swarmforge-coder) echo "claude --remote-control SwarmForge-Coder" ;;
+  swarmforge-coordinator) echo "claude --remote-control SwarmForge-Coordinator" ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$FAKE_BIN/rc7b_cmdline.sh"
+# rc-cmdline-fn runs the command via `sh -c "$CMD" sh <socket> <session>`, so the
+# socket/session are the -c string's $1/$2 - they must be forwarded explicitly
+# for the fake to see the session (a bare script path receives no arguments).
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc7b_cmdline.sh \"\$1\" \"\$2\"" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q "^rc:specifier: HEALTHY$" \
+  || fail "RC-7b: on a standing pack the specifier's RC was read against a stale marker's role instead of its own launch script; got: $OUTPUT"
+[[ -s "$RC7B_RESPAWNS" ]] \
+  && fail "RC-7b: a stale mono-router marker made the RC check respawn a correctly-staffed standing pane; respawns: $(cat "$RC7B_RESPAWNS")"
+grep -q "coordinator.sh" "$RC7B_RESPAWNS" 2>/dev/null \
+  && fail "RC-7b: coordinator.sh was respawned into another role's session"
+cleanup_daemon
+pass "RC-7b (hotfix): a stale mono-router-active-role marker is not topology for the RC check on a standing pack - the specifier keeps its own launch script"
+
+# ---------------------------------------------------------------------------
 # BL-898: session-dead (flag present, cloud session dead) - detection is
 # persistent (RC-10), repair is idle-safe (RC-8/RC-9), and the human is
 # always told the outcome (RC-8's notify assertion).
