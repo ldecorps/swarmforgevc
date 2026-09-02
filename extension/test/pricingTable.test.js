@@ -35,10 +35,16 @@ test('BL-627 corrected and newly-added per-MTok rates', () => {
     'claude-opus-5': { inputPerMTok: 5, outputPerMTok: 25 },
     'claude-sonnet-5': { inputPerMTok: 3, outputPerMTok: 15 },
   };
+  // BL-1056: these are the LIST rates. claude-sonnet-5 now carries its
+  // introductory window, so its list rates are the ones in force after the
+  // window closed - resolved for an instant past the boundary rather than
+  // read off the row, which is the intro rate by design.
+  const postWindow = new Date('2026-09-01T00:00:00.000Z');
   for (const [model, rates] of Object.entries(expected)) {
     assert.ok(PRICING_TABLE[model], `missing PRICING_TABLE entry for ${model}`);
-    assert.equal(PRICING_TABLE[model].inputPerMTok, rates.inputPerMTok, `${model} input`);
-    assert.equal(PRICING_TABLE[model].outputPerMTok, rates.outputPerMTok, `${model} output`);
+    const inForce = require('../out/metrics/pricingTable').resolveRatesAt(PRICING_TABLE[model], postWindow);
+    assert.equal(inForce.inputPerMTok, rates.inputPerMTok, `${model} input`);
+    assert.equal(inForce.outputPerMTok, rates.outputPerMTok, `${model} output`);
   }
 });
 
@@ -165,5 +171,167 @@ test('BL-740: collectReferencedClaudeModels still scans packs and launch when sw
     assert.deepEqual(collectReferencedClaudeModels(root), ['claude-launch-qa', 'claude-pack-solo']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ── BL-1056: a price with an expiry date ────────────────────────────────
+// A rate that is only valid until a date is expressed IN the table (never a
+// sibling file), and the cliff is answerable instead of remembered.
+
+const {
+  resolveRatesAt,
+  estimateCostUsdAt,
+  listPricingWindowAlerts,
+  SONNET_5_INTRO_WINDOW_END,
+} = require('../out/metrics/pricingTable');
+
+const ONE_INPUT_MTOK = { inputTokens: 1_000_000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
+const at = (day) => new Date(`${day}T12:00:00.000Z`);
+
+const WINDOWED_TABLE = {
+  'claude-sonnet-5': {
+    inputPerMTok: 2,
+    outputPerMTok: 10,
+    cacheCreatePerMTok: 2.5,
+    cacheReadPerMTok: 0.2,
+    until: '2026-08-31',
+    then: { inputPerMTok: 3, outputPerMTok: 15, cacheCreatePerMTok: 3.75, cacheReadPerMTok: 0.3 },
+  },
+  'claude-opus-5': { inputPerMTok: 5, outputPerMTok: 25, cacheCreatePerMTok: 6.25, cacheReadPerMTok: 0.5 },
+  'expires-entirely': {
+    inputPerMTok: 2,
+    outputPerMTok: 10,
+    cacheCreatePerMTok: 2.5,
+    cacheReadPerMTok: 0.2,
+    until: '2026-08-31',
+    then: null,
+  },
+};
+
+test('a windowed rate resolves to the rate whose window contains the instant', () => {
+  for (const [day, expected] of [
+    ['2026-08-22', 2],
+    ['2026-08-31', 2],
+    ['2026-09-01', 3],
+  ]) {
+    assert.equal(estimateCostUsdAt(ONE_INPUT_MTOK, 'claude-sonnet-5', at(day), WINDOWED_TABLE), expected, day);
+  }
+});
+
+test('the boundary day is inside the window it names, not after it', () => {
+  assert.equal(resolveRatesAt(WINDOWED_TABLE['claude-sonnet-5'], at('2026-08-31')).inputPerMTok, 2);
+  assert.equal(resolveRatesAt(WINDOWED_TABLE['claude-sonnet-5'], new Date('2026-08-31T23:59:59.999Z')).inputPerMTok, 2);
+  assert.equal(resolveRatesAt(WINDOWED_TABLE['claude-sonnet-5'], new Date('2026-09-01T00:00:00.000Z')).inputPerMTok, 3);
+});
+
+test('a windowless model costs identically at every instant', () => {
+  for (const day of ['2026-08-22', '2026-09-01']) {
+    assert.equal(estimateCostUsdAt(ONE_INPUT_MTOK, 'claude-opus-5', at(day), WINDOWED_TABLE), 5, day);
+  }
+});
+
+test('an instant no window covers is null, the same fail-loud as an unpriced model', () => {
+  assert.equal(estimateCostUsdAt(ONE_INPUT_MTOK, 'expires-entirely', at('2026-09-01'), WINDOWED_TABLE), null);
+  assert.equal(estimateCostUsdAt(ONE_INPUT_MTOK, 'expires-entirely', at('2026-08-22'), WINDOWED_TABLE), 2);
+  assert.equal(estimateCostUsdAt(ONE_INPUT_MTOK, 'unpriced-model', at('2026-08-22'), WINDOWED_TABLE), null);
+});
+
+test('estimateCostUsd without an instant costs at the given clock, defaulting to now', () => {
+  assert.equal(estimateCostUsd(ONE_INPUT_MTOK, 'claude-sonnet-5', at('2026-08-22'), WINDOWED_TABLE), 2);
+  assert.equal(
+    estimateCostUsd(ONE_INPUT_MTOK, 'claude-sonnet-5'),
+    estimateCostUsdAt(ONE_INPUT_MTOK, 'claude-sonnet-5', new Date(), PRICING_TABLE)
+  );
+});
+
+test('the staleness query names a closed window with its boundary date', () => {
+  const alerts = listPricingWindowAlerts(at('2026-09-01'), WINDOWED_TABLE);
+  const sonnet = alerts.find((a) => a.model === 'claude-sonnet-5');
+  assert.ok(sonnet, `expected claude-sonnet-5 among ${JSON.stringify(alerts)}`);
+  assert.equal(sonnet.status, 'closed');
+  assert.equal(sonnet.until, '2026-08-31');
+});
+
+test('the staleness query names a window that is about to close', () => {
+  const alerts = listPricingWindowAlerts(at('2026-08-22'), WINDOWED_TABLE);
+  const sonnet = alerts.find((a) => a.model === 'claude-sonnet-5');
+  assert.ok(sonnet, 'expected the closing window to be named before it closes');
+  assert.equal(sonnet.status, 'closing');
+});
+
+test('the staleness query is silent about a windowless model, and about a window still far off', () => {
+  for (const day of ['2026-09-01', '2026-08-22']) {
+    assert.equal(
+      listPricingWindowAlerts(at(day), WINDOWED_TABLE).some((a) => a.model === 'claude-opus-5'),
+      false,
+      day
+    );
+  }
+  assert.deepEqual(listPricingWindowAlerts(at('2026-01-01'), WINDOWED_TABLE), []);
+});
+
+test('the live table models the Sonnet 5 introductory window BL-627 left out', () => {
+  const sonnet = PRICING_TABLE['claude-sonnet-5'];
+  assert.equal(sonnet.until, SONNET_5_INTRO_WINDOW_END);
+  assert.equal(sonnet.inputPerMTok, 2, 'the intro rate applies inside the window');
+  assert.equal(sonnet.outputPerMTok, 10);
+  assert.equal(resolveRatesAt(sonnet, at('2026-09-01')).inputPerMTok, 3, 'list price applies after it');
+  assert.equal(resolveRatesAt(sonnet, at('2026-09-01')).outputPerMTok, 15);
+});
+
+// The CLI wrapper is thin over runPricingWindows/parsePricingWindowsAt, which
+// are driven here in-process with a stubbed argv rather than a subprocess.
+const {
+  parsePricingWindowsAt,
+  runPricingWindows,
+  main: pricingWindowsMain,
+} = require('../out/tools/pricing-windows');
+
+test('the pricing-windows CLI parses a day, defaults to now, and refuses anything else', () => {
+  const now = at('2026-08-22');
+  assert.equal(parsePricingWindowsAt([], now), now);
+  assert.equal(parsePricingWindowsAt(['2026-09-01'], now).toISOString(), '2026-09-01T00:00:00.000Z');
+  for (const bad of ['tomorrow', '2026-9-1', '2026-13-45x', '']) {
+    assert.equal(parsePricingWindowsAt([bad], now), null, bad);
+  }
+});
+
+test('the pricing-windows report answers for the instant it was asked about', () => {
+  const report = runPricingWindows(at('2026-09-01'));
+  assert.equal(report.at, '2026-09-01T12:00:00.000Z');
+  const sonnet = report.alerts.find((a) => a.model === 'claude-sonnet-5');
+  assert.ok(sonnet, `expected the live Sonnet window to be named: ${JSON.stringify(report.alerts)}`);
+  assert.equal(sonnet.until, SONNET_5_INTRO_WINDOW_END);
+});
+
+test('the pricing-windows CLI main prints the report and refuses a bad day', () => {
+  const argv = process.argv;
+  const written = [];
+  const outWrite = process.stdout.write.bind(process.stdout);
+  const errWrite = process.stderr.write.bind(process.stderr);
+  process.stdout.write = (line) => {
+    written.push(line);
+    return true;
+  };
+  process.stderr.write = (line) => {
+    written.push(line);
+    return true;
+  };
+  try {
+    process.argv = ['node', 'pricing-windows.js', '2026-09-01'];
+    pricingWindowsMain();
+    assert.match(written.join(''), /claude-sonnet-5/);
+
+    written.length = 0;
+    process.exitCode = 0;
+    process.argv = ['node', 'pricing-windows.js', 'whenever'];
+    pricingWindowsMain();
+    assert.match(written.join(''), /Usage: pricing-windows\.js/);
+    assert.equal(process.exitCode, 1);
+    process.exitCode = 0;
+  } finally {
+    process.argv = argv;
+    process.stdout.write = outWrite;
+    process.stderr.write = errWrite;
   }
 });
