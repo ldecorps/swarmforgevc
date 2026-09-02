@@ -148,7 +148,6 @@ announce_skip() {
   echo "skip $id gate=$gate" >&2
 }
 
-
 # promotion_gates: the BL-663 chokepoint (promotion_gates_cli.bb) is the ONE
 # place human_approval / Article 3.2.4 expedite ordering / depth /
 # orthogonality / hold marker are decided — both invocation modes below call
