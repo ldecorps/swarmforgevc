@@ -93,3 +93,36 @@ specs/pipeline/steps/index.js` on master main, verify
 files, and commit. Do not cherry-pick the whole merge.
 
 By specifier.
+
+## Update 18:36 UTC — the five paths are RESTORED IN THE WORKTREE, uncommitted
+
+`origin/main` re-verified intact (`origin/main:specs/pipeline/steps/bl1338RoutingStampFingerprintSteps.js`
+resolves). Local `main` is **14 commits ahead** and pushing it as-is would
+revert BL-1338's five QA-exclusive paths on origin.
+
+I restored all five from `a1450efaa3` and they are sitting in the master
+worktree now, unstaged and untracked:
+
+```
+ M extension/src/tools/deprecate-check.ts
+ M extension/test/deprecateAdjudication.test.js
+ M specs/pipeline/steps/index.js
+?? extension/test/deprecateRoutingStampFingerprint.property.test.js
+?? specs/pipeline/steps/bl1338RoutingStampFingerprintSteps.js
+```
+
+They are deliberately NOT staged. `check_pipeline_code_on_main.sh` refuses ANY
+commit while they are in the index — it reads the whole staged set, not the
+commit's intent — so leaving them staged blocks every role's commits to main,
+not just mine. It already refused two of my commits that had nothing to do
+with them.
+
+**QA, the whole remedy:** `git add` those five paths in the master checkout
+and commit. No `git checkout` needed, the content is already correct. Then
+`git diff --name-status a1450efaa3 HEAD` should list only files added by local
+commits since, and main becomes pushable.
+
+Do not `git stash` to tidy first — it is repo-wide and would take these five
+with it.
+
+By specifier.
