@@ -188,3 +188,76 @@ test('the writer follows the ticket into active/ rather than fingerprinting noth
   });
   assert.equal(record.content_fingerprint, computeTicketFingerprint(HELD_TICKET));
 });
+
+// ── BL-1338: the promotion's own routing stamp does not invalidate the
+// adjudication that authorized that same promotion. Everything else about
+// the ticket still does.
+
+// Exactly what promote_and_route_next.sh appends after the gate passes.
+function withRoutingStamp(ticketText, role = 'coder') {
+  return `${ticketText}\nassigned_to: ${role}\n`;
+}
+
+test('the routing stamp a promotion writes does not change the fingerprint', () => {
+  assert.equal(computeTicketFingerprint(withRoutingStamp(HELD_TICKET)), computeTicketFingerprint(HELD_TICKET));
+});
+
+test('re-routing an already-stamped ticket does not change the fingerprint', () => {
+  assert.equal(
+    computeTicketFingerprint(withRoutingStamp(HELD_TICKET, 'specifier')),
+    computeTicketFingerprint(withRoutingStamp(HELD_TICKET, 'coder'))
+  );
+});
+
+test('an edit to the ticket spec still changes the fingerprint', () => {
+  for (const amended of [
+    `${HELD_TICKET}acceptance: specs/features/other.feature\n`,
+    `${HELD_TICKET}description: |\n  something new\n`,
+    HELD_TICKET.replace('fixture', 'fixtures'),
+  ]) {
+    assert.notEqual(computeTicketFingerprint(amended), computeTicketFingerprint(HELD_TICKET));
+  }
+});
+
+test('an indented assigned_to inside a block scalar is spec text, not a routing stamp', () => {
+  const quoted = `${HELD_TICKET}description: |\n  assigned_to: coder\n`;
+  assert.notEqual(computeTicketFingerprint(quoted), computeTicketFingerprint(HELD_TICKET));
+});
+
+test('a promoted ticket is still discharged by the adjudication that cleared it', () => {
+  const root = fixtureRoot();
+  const { path: recordPath } = recordAdjudication({
+    root,
+    ticketId: 'BL-77',
+    outcome: 'confirm_promote',
+    adjudicatedBy: 'specifier',
+    adjudicatedAt: '2026-09-02T12:00:00.000Z',
+  });
+  // The promotion: the ticket moves to active/ and is stamped, exactly as
+  // promote_and_route_next.sh does it.
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  fs.rmSync(path.join(root, 'backlog', 'paused', 'BL-77-fixture.yaml'));
+  fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-77-fixture.yaml'), withRoutingStamp(HELD_TICKET));
+
+  const after = deprecateCheck(root, 'BL-77');
+  assert.equal(after.decision, 'allow');
+  assert.match(after.reason, new RegExp(recordPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('a spec amendment after clearance still holds and names re-adjudication', () => {
+  const root = fixtureRoot();
+  recordAdjudication({
+    root,
+    ticketId: 'BL-77',
+    outcome: 'confirm_promote',
+    adjudicatedBy: 'specifier',
+    adjudicatedAt: '2026-09-02T12:00:00.000Z',
+  });
+  fs.writeFileSync(
+    path.join(root, 'backlog', 'paused', 'BL-77-fixture.yaml'),
+    withRoutingStamp(`${HELD_TICKET}acceptance: specs/features/amended.feature\n`)
+  );
+  const after = deprecateCheck(root, 'BL-77');
+  assert.equal(after.decision, 'hold');
+  assert.match(after.reason, /re-adjudicate/);
+});
