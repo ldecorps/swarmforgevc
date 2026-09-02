@@ -13,7 +13,9 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1334-a-landed-replay-is-qa-approved-when-it-lands.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Land step records the replay-to-approved-source mapping for the predicate to consult
 approval_context: >
   One design fork, and it is genuinely yours because the two shapes put the
   risk in different places.
