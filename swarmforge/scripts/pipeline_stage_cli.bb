@@ -162,10 +162,20 @@
 ;; the trail records where the ticket went, not where it came from, and
 ;; reading the mailbox owner there would park every finished ticket back on
 ;; whoever last touched it.
+;; BL-1040: every branch here folds a seat id (`coder@sonnet2`, BL-982's
+;; seat syntax) onto its STAGE. BL-983 declared that seat identity never
+;; escapes the mailbox layer and enforced it only where a seat FORWARDS;
+;; this is the OBSERVATION path, and it leaked. A stage map recording
+;; `coder@sonnet2` matches no bare stage name at the renderer, so the ticket
+;; painted as not-started while the seat was actively working it. The `:sent`
+;; branch folds too - a parcel may be addressed to a seat, not just held by
+;; one. handoff-lib/seat-stage is the existing chokepoint rather than a
+;; fourth hand-rolled indexOf('@').
 (defn- role-for-observation [role-info state file]
-  (if (= state :sent)
-    (some-> (read-header-field file "to") (str/split #",") first str/trim not-empty)
-    (:role role-info)))
+  (handoff-lib/seat-stage
+   (if (= state :sent)
+     (some-> (read-header-field file "to") (str/split #",") first str/trim not-empty)
+     (:role role-info))))
 
 ;; As-of: the parcel's own recorded time, falling back to the file's mtime.
 ;; A header is preferred because it is the moment the parcel was created,
@@ -193,7 +203,11 @@
 
 (defn compute-stage-map [project-root]
   (let [roles (handoff-lib/load-all-roles project-root)
-        role-order (mapv :role roles)
+        ;; Distinct STAGES in roles.tsv order - a multi-seat stage occupies
+        ;; exactly one position in the precedence order reconcile-stage-entries
+        ;; uses for "most downstream wins", and one board column. N seats
+        ;; never widen either.
+        role-order (vec (distinct (map #(handoff-lib/seat-stage (:role %)) roles)))
         pairs (mapcat role-ticket-pairs-for roles)
         dots (ticket-health-dots project-root)]
     (->> (pipeline-stage-lib/filter-active
