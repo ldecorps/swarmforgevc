@@ -29,6 +29,17 @@ Trigger: an offline `claude -p` cleaner stage on BL-1248 parked on a Monitor
 wait, exited 0 with no `verdict.json`, and the driver stamped
 `{"verdict":"fail","reason":"no-verdict"}` and hard-failed the ticket.
 
+## Timeout beats missing-verdict
+
+`finalize-stage-result` (`swarmforge/scripts/expedite_cli.bb`) checks for a
+timeout before it checks for a missing verdict. A stage killed for exceeding
+its time budget is recorded as `stage-timeout`, never as `no-verdict`, and is
+NOT re-invoked — only a genuine no-verdict miss (the stage exited on its own
+with no parseable `verdict.json`) triggers the recovery path above. Without
+this ordering, a killed-for-overrun stage would read as an absence and get
+re-invoked by the recovery path, which must not happen for a stage that was
+deliberately killed.
+
 ## Non-live finding recorded, not fixed here
 
 `bounce-payload-valid?` lower-cases `reason` before comparing it to the
