@@ -1,0 +1,47 @@
+# RETIRED 2026-09-02 (specifier, Article 3.6 deprecator adjudication).
+# BL-1286 was retired unbuilt: closed_as retired-premise-invalid, see
+# backlog/done/BL-1286-a-tracked-launcher-never-names-an-untracked-pack.yaml.
+# Demoted from .feature to .feature.draft so it is off the executable surface
+# (no *.feature glob and no specs/pipeline/runtime.js run picks it up). No
+# bl1286 step handler was ever registered, so no coverage is lost. The three
+# scenarios below are preserved BYTE-IDENTICAL - retired, never reworded. Only
+# the Feature: narrative is re-tensed, because the present tense it was written
+# in is now false (BL-1006: a durable contract carrying a false sentence is a
+# lie whether executable or not).
+
+Feature: A tracked launcher never names a pack the repo does not carry
+
+  RETIRED - this describes a defect that never existed as stated.
+
+  The narrative here claimed start-swarm-qwen.sh was tracked and launched
+  SWARMFORGE_PACK qwen-anthropic-forge while
+  swarmforge/packs/qwen-anthropic-forge.conf had never been committed. That
+  pairing was never real: `git log --all -S'qwen-anthropic-forge' --
+  start-swarm-qwen.sh` is empty, so the launcher never named that pack in any
+  commit. The quoted launch line lives in a comment inside the pack conf
+  itself. start-swarm-qwen.sh names qwen-anthropic-mono-router and
+  qwen-mono-router, both of which are tracked.
+
+  The residual trigger is also gone: qwen-anthropic-forge.conf was committed by
+  the operator on 2026-08-30 in 44d2d42591 and is tracked and clean. The gate
+  these scenarios specify would report zero findings on today's tree.
+
+  Background:
+    Given the repository as committed, with no untracked files consulted
+
+  # BL-1286 tracked-launcher-named-pack-01
+  Scenario: A pack named by tracked code must itself be tracked
+    When a tracked launcher names a swarm pack
+    Then that pack's config file is present in the repository
+
+  # BL-1286 tracked-launcher-named-pack-02
+  Scenario: The gate reports the offending pair, not just a count
+    When a tracked launcher names a pack the repository does not carry
+    Then the report names both the launcher and the missing pack file
+
+  # BL-1286 tracked-launcher-named-pack-03
+  # An untracked file on one developer's disk must never satisfy the gate -
+  # that working-tree copy is the very thing that hid the defect.
+  Scenario: An untracked config on disk does not satisfy the gate
+    When the missing pack config exists only as an untracked working-tree file
+    Then the gate still reports it as missing

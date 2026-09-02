@@ -20,6 +20,8 @@ import {
   StageDwellReportResult,
   BottleneckSummary,
   DwellStats,
+  SeatDwellDetail,
+  computeSeatDwellDetail,
 } from '../metrics/stageDwell';
 import { formatDurationMs, NO_SAMPLE_PLACEHOLDER } from '../metrics/swarmMetrics';
 import { resolveProjectRoot, loadRoles, printJsonToStdout, runCliMain, formatTrend } from './swarm-metrics';
@@ -61,6 +63,41 @@ export function formatStageDwellReport(result: StageDwellReportResult): string {
   return lines.join('\n');
 }
 
+// BL-1319: the ops seat-and-model view. The report above names stages only -
+// that is the optimizer's answer and the fold is what makes it correct. This
+// section is the sanctioned seat-level detail behind that fold, on an ops
+// surface rather than in the bridge payload.
+//
+// Rendered ONLY where a stage actually runs more than one seat. A single-seat
+// swarm's report is byte-identical to what it was before this ticket, which
+// is the same losslessness the fold itself promises.
+export function formatSeatDwellDetail(seats: SeatDwellDetail[]): string {
+  const byStage = new Map<string, SeatDwellDetail[]>();
+  for (const seat of seats) {
+    const existing = byStage.get(seat.stage);
+    if (existing) {
+      existing.push(seat);
+    } else {
+      byStage.set(seat.stage, [seat]);
+    }
+  }
+  const multiSeat = [...byStage.entries()].filter(([, rows]) => rows.length > 1);
+  if (multiSeat.length === 0) {
+    return '';
+  }
+  const lines = ['Seats:'];
+  for (const [stage, rows] of multiSeat) {
+    lines.push(`  ${stage}: ${rows.length} seat(s)`);
+    for (const row of rows) {
+      lines.push(
+        `    ${row.seat} (${row.agent}): ${row.parcelsProcessed} parcel(s) - ` +
+          `${formatDwellStats('wait', row.queueWait)}, ${formatDwellStats('processing', row.processing)}`
+      );
+    }
+  }
+  return lines.join('\n');
+}
+
 interface CliArgs {
   json: boolean;
   hours: number;
@@ -80,12 +117,20 @@ export function main(): void {
   const { json, hours } = parseArgs(process.argv.slice(2));
   const projectRoot = resolveProjectRoot(process.cwd());
   const roles = loadRoles(projectRoot);
-  const result = computeStageDwellReportForRoles(roles, Date.now(), hours);
+  const nowMs = Date.now();
+  const result = computeStageDwellReportForRoles(roles, nowMs, hours);
+  const seats = computeSeatDwellDetail(roles, nowMs, hours);
 
   if (json) {
-    printJsonToStdout(result);
+    // The seat detail rides the ops CLI's own JSON, never the bridge's
+    // /stage-dwell payload - that one stays seat-free.
+    printJsonToStdout({ ...result, seats });
   } else {
     console.log(formatStageDwellReport(result));
+    const seatText = formatSeatDwellDetail(seats);
+    if (seatText) {
+      console.log(seatText);
+    }
   }
 }
 
