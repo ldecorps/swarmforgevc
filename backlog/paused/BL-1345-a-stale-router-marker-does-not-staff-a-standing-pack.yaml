@@ -20,7 +20,7 @@ slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1345-a-stale-router-marker-does-not-staff-a-standing-pack.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed - the behaviour is not in dispute and the repair is the
   implementer's, so there are no ruling_options.
