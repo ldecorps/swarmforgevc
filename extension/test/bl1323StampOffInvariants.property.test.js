@@ -105,46 +105,53 @@ test('BL-1323/BL-654 invariant 3: the hint never comes back empty and unlabeled,
   // operator hint must still say something actionable, and must always
   // teach the recovery command.
   //
-  // GENERATOR REACH (asserted, not hoped for): the run fails unless it
-  // reached the empty case, the over-cap case, and the failed-read sentinel
-  // - the three the pre-hotfix code could not tell apart, since all three
-  // came out as the same empty hint.
+  // GENERATOR REACH (asserted AND guaranteed, not hoped for): the run fails
+  // unless it reached the empty case, the over-cap case, and the failed-read
+  // sentinel - the three the pre-hotfix code could not tell apart, since all
+  // three came out as the same empty hint. Each is reached by construction
+  // below rather than by a weighted draw.
   const reach = { empty: 0, overCap: 0, sentinel: 0, ordinary: 0 };
 
-  const pathsArb = fc.oneof(
-    { weight: 1, arbitrary: fc.constant([]) },
-    { weight: 1, arbitrary: fc.constant(['?']) },
-    { weight: 2, arbitrary: fc.array(fc.constantFrom('a.txt', 'b/c.bb', 'd/e/f.md'), { minLength: 1, maxLength: 5 }) },
-    {
-      weight: 2,
-      arbitrary: fc.integer({ min: 9, max: 20 }).map((n) =>
-        Array.from({ length: n }, (_, i) => `over/cap-${String(i).padStart(2, '0')}.txt`)),
-    },
-  );
+  // The SHAPE is drawn by the loop, not by the generator: each of the four
+  // corners gets its own dedicated property pass, so "did we reach the
+  // failed-read sentinel" is settled by construction. An fc.oneof over
+  // weighted shapes left the two low-weight corners at ~1/6 per draw, so a
+  // 20-run pass missed one about 5% of the time and the floor assertion red
+  // the suite for no reason (architect bounce D1, 2026-09-02) - the same
+  // defect shape fixed in BL-1343 earlier the same day. A floor that bites
+  // spuriously is the mirror image of a vacuous one, and on the machinery
+  // that carries the operator's only deadlock signal, a spurious red is how
+  // "just re-run it" becomes the habit this review exists to prevent.
+  const SHAPES = {
+    empty: fc.constant([]),
+    sentinel: fc.constant(['?']),
+    ordinary: fc.array(fc.constantFrom('a.txt', 'b/c.bb', 'd/e/f.md'), { minLength: 1, maxLength: 5 }),
+    overCap: fc.integer({ min: 9, max: 20 }).map((n) =>
+      Array.from({ length: n }, (_, i) => `over/cap-${String(i).padStart(2, '0')}.txt`)),
+  };
 
-  fc.assert(
-    fc.property(pathsArb, fc.constantFrom('dirty', 'diverged'), (paths, reason) => {
-      if (paths.length === 0) reach.empty += 1;
-      else if (paths.length === 1 && paths[0] === '?') reach.sentinel += 1;
-      else if (paths.length > 8) reach.overCap += 1;
-      else reach.ordinary += 1;
+  for (const [shape, arbitrary] of Object.entries(SHAPES)) {
+    fc.assert(
+      fc.property(arbitrary, fc.constantFrom('dirty', 'diverged'), (paths, reason) => {
+        reach[shape] += 1;
 
-      const hint = String(
-        reconcileLib(
-          `(master-main-reconcile-lib/operator-deadlock-hint {:ahead 1 :behind 1 :reason "${reason}" :overlapping-paths ${JSON.stringify(paths)}})`,
-        ),
-      );
+        const hint = String(
+          reconcileLib(
+            `(master-main-reconcile-lib/operator-deadlock-hint {:ahead 1 :behind 1 :reason "${reason}" :overlapping-paths ${JSON.stringify(paths)}})`,
+          ),
+        );
 
-      assert.ok(hint.trim().length > 0, 'the hint is empty');
-      assert.ok(hint.includes('./swarm heal'), `the hint does not teach the recovery command: ${hint}`);
-      if (paths.length === 0) {
-        // Nothing to name is still not nothing to say.
-        assert.match(hint, /git status/i);
-      }
-      return true;
-    }),
-    { numRuns: 20 },
-  );
+        assert.ok(hint.trim().length > 0, 'the hint is empty');
+        assert.ok(hint.includes('./swarm heal'), `the hint does not teach the recovery command: ${hint}`);
+        if (paths.length === 0) {
+          // Nothing to name is still not nothing to say.
+          assert.match(hint, /git status/i);
+        }
+        return true;
+      }),
+      { numRuns: 5 },
+    );
+  }
 
   assert.ok(reach.empty > 0, 'never exercised an empty overlap - the pre-hotfix failure shape went untested');
   assert.ok(reach.overCap > 0, 'never exercised an over-cap overlap');
