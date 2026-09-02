@@ -544,12 +544,37 @@ export function adjudicationRecordPath(root: string, ticketId: string): string {
 }
 
 /**
+ * The two mutations `promote_and_route_next.sh` makes to a ticket AFTER the
+ * freshness gate has passed: it appends `\nassigned_to: <role>\n` when the
+ * field is absent, and rewrites the line's value in place when it is present.
+ * Leaving them in the fingerprint made every promotion invalidate the
+ * adjudication that authorized it (BL-1338).
+ */
+const APPENDED_ROUTING_STAMP = /\n\nassigned_to:[^\n]*\n$/;
+const ROUTING_STAMP_LINE = /^assigned_to:[^\n]*$/gm;
+
+/**
+ * The ticket text the fingerprint is taken over: the whole YAML with only the
+ * promotion's own routing stamp neutralised - its appended form removed
+ * exactly as the script writes it, and any remaining top-level `assigned_to:`
+ * stripped of its value so re-routing is not an edit. Every other byte is
+ * carried through untouched, INCLUDING whitespace: BL-1267's re-arm on a
+ * substantive edit is what the fingerprint exists for and is not narrowed by
+ * anything beyond the stamp.
+ */
+export function fingerprintableTicketText(yamlText: string): string {
+  return yamlText.replace(APPENDED_ROUTING_STAMP, '\n').replace(ROUTING_STAMP_LINE, 'assigned_to:');
+}
+
+/**
  * The fingerprint an adjudication is bound to. Content, not mtime or commit:
  * a ticket that is rewritten byte-for-byte identically is the same ticket,
- * and one that changes by a single character is not the one that was cleared.
+ * and one that changes by a single character of SPEC is not the one that was
+ * cleared - see `fingerprintableTicketText` for the one exception, the
+ * promotion's own routing stamp (BL-1338).
  */
 export function computeTicketFingerprint(yamlText: string): string {
-  return crypto.createHash('sha256').update(yamlText, 'utf8').digest('hex');
+  return crypto.createHash('sha256').update(fingerprintableTicketText(yamlText), 'utf8').digest('hex');
 }
 
 /** Parse the raw JSON text; a syntax error or a non-object shape are both refusals. */
