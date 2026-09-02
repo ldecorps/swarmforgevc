@@ -50,7 +50,7 @@ invariants:
   - "The review scopes to the pack conf restaff only — it does not re-review BL-1322's bundled ticket files, which are BL-1322's own record."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1323BobRestaffAnthropicStartingCastSteps::acceptance handler registered so the runner executes every review scenario'
+  - 'specs/pipeline/steps/index.js::bl1326BobRestaffAnthropicStartingCastSteps::acceptance handler registered so the runner executes every review scenario'
 
 description: >
   WHAT. Operator/Cursor hotfix db7e3f2bda is live on main with the trailer
@@ -155,3 +155,42 @@ source: |
   Coordinator note 00_20260901T115455Z_003375_from_coordinator_to_specifier
   (2026-09-01): "hotfix db7e3f2bda has no stamp ticket - mint a review
   ticket for it". Satisfied in full by this ticket.
+
+specifier_amendment_2026_09_02: |
+  CORRECTED the `required_wiring` anchor, answering the coder's priority-00
+  spec-gap note "BL-1326 required_wiring anchor names bl1323* - stale from the
+  remap". The coder is right and this was a specifier defect.
+
+  The anchor read `bl1323BobRestaffAnthropicStartingCastSteps`. This ticket was
+  remapped from BL-1323 to BL-1326 by `745486fabc` ("Recovery wave 2A: remap
+  orphaned BL-1323 bob-restaff stamp to BL-1326"), which renamed the YAML, the
+  feature file and the topic record correctly but did not rewrite this
+  identifier inside the file. Corrected to
+  `bl1326BobRestaffAnthropicStartingCastSteps`.
+
+  Why it mattered, and why it had to be caught before the last hop: the gate
+  matches the pattern as a plain SUBSTRING against the target file at the
+  commit being sent (`pre_qa_gate_lib.bb`), with no expansion step. The coder
+  will register `bl1326…Steps`, so the old pattern could never have matched -
+  and the check arms at the documenter->QA hop, the LAST one. It would have
+  false-blocked the forward after all six stages were already spent, with a
+  misleading "wiring absent" reason (BL-874's shape).
+
+  Swept the rest of the remap rather than fixing only the line reported: this
+  anchor was the ONLY stale `1323` reference. The feature file is clean, and
+  BL-1323 - a different live ticket, the 9c94735f03 main-sync-deadlock stamp -
+  carries no bob-restaff content in the other direction.
+
+  Verified with the real block reader, not just the entry parser: the field
+  reads back `:present? true` with one item parsing to
+  `{:path "specs/pipeline/steps/index.js" :pattern
+  "bl1326BobRestaffAnthropicStartingCastSteps" …}`.
+
+  Scope note on what this anchor does and does not claim: it pins that the
+  acceptance handler is REGISTERED rather than merely written, which for a
+  stamp-off ticket is the substance - there is no production mechanism here to
+  wire. It is deliberately not offered as a production-wiring proof (BL-1235).
+
+  No `record-bounce.js` entry: this arrived as a spec-gap `note`, the correct
+  route per Article 4.4, and never became a parcel bounce, so there is no
+  bounce commit to cite.
