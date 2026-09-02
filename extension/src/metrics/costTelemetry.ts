@@ -36,7 +36,9 @@ function sumCost(records: TranscriptUsageRecord[]): number | null {
   let total = 0;
   let anyPriced = false;
   for (const record of records) {
-    const cost = estimateCostUsd(record.usage, record.model);
+    // BL-1056: costed at the instant the usage happened, not at "now" - a
+    // record from inside a rate's validity window must keep that rate.
+    const cost = estimateCostUsd(record.usage, record.model, new Date(record.timestampMs));
     if (cost !== null) {
       total += cost;
       anyPriced = true;

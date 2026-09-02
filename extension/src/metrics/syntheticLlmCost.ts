@@ -28,7 +28,11 @@ export function deriveSyntheticCostUsd(record: LlmInvocationRecord): number | nu
   if (!usage) {
     return null;
   }
-  const estimate = estimateCostUsd(usage, model);
+  // BL-1056: the invocation's own instant, so a record from inside a rate's
+  // validity window is costed at that rate however long ago it was written.
+  // An unparseable timestamp costs at now rather than not at all.
+  const at = new Date(record.at);
+  const estimate = estimateCostUsd(usage, model, Number.isNaN(at.getTime()) ? new Date() : at);
   if (estimate === null || estimate <= 0) {
     return null;
   }
