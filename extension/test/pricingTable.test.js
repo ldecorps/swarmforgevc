@@ -270,6 +270,62 @@ test('the staleness query is silent about a windowless model, and about a window
   assert.deepEqual(listPricingWindowAlerts(at('2026-01-01'), WINDOWED_TABLE), []);
 });
 
+// The exact instant a window closes (daysRemaining === 0, PRICING_WINDOW_ALERT_DAYS
+// boundary at exactly 30) - pinning the current, intentional side each
+// comparison falls on rather than leaving the boundary untested.
+test('the staleness query at the exact daysRemaining=0 and =30 boundaries', () => {
+  // endOfWindow('2026-08-31') is 2026-09-01T00:00:00.000Z: asking at that
+  // exact instant gives daysRemaining === 0, which is NOT < 0, so the window
+  // reads as still "closing" rather than "closed" at the instant it closes.
+  const atZero = listPricingWindowAlerts(new Date('2026-09-01T00:00:00.000Z'), WINDOWED_TABLE);
+  const sonnetAtZero = atZero.find((a) => a.model === 'claude-sonnet-5');
+  assert.ok(sonnetAtZero, 'expected the window to still be named at daysRemaining=0');
+  assert.equal(sonnetAtZero.status, 'closing');
+  assert.equal(sonnetAtZero.daysRemaining, 0);
+
+  // Exactly PRICING_WINDOW_ALERT_DAYS (30) out is included ("<="), 31 is not.
+  const at30 = listPricingWindowAlerts(new Date('2026-08-02T00:00:00.000Z'), WINDOWED_TABLE);
+  const sonnetAt30 = at30.find((a) => a.model === 'claude-sonnet-5');
+  assert.ok(sonnetAt30, 'expected the window to be named at exactly 30 days out');
+  assert.equal(sonnetAt30.daysRemaining, 30);
+  assert.equal(sonnetAt30.status, 'closing');
+
+  const at31 = listPricingWindowAlerts(new Date('2026-08-01T00:00:00.000Z'), WINDOWED_TABLE);
+  assert.equal(
+    at31.some((a) => a.model === 'claude-sonnet-5'),
+    false,
+    '31 days out must not yet be named'
+  );
+});
+
+// The sort itself: primary key daysRemaining ascending, secondary key model
+// name ascending on a tie. WINDOWED_TABLE's two windowed entries happen to
+// share one `until` date, but no prior test ever asserted on ORDER, so a
+// broken comparator (or a dropped .sort() call entirely) went unnoticed.
+test('the staleness query sorts by daysRemaining ascending, model name breaking ties', () => {
+  const rates = { inputPerMTok: 1, outputPerMTok: 1, cacheCreatePerMTok: 1, cacheReadPerMTok: 1 };
+  // Deliberately inserted OUT of the expected sorted order (beta, alpha,
+  // zeta rather than zeta, alpha, beta) - listPricingWindowAlerts iterates
+  // Object.entries(table) in insertion order, so a fixture that happens to
+  // already BE sorted would pass even with the .sort() call dropped
+  // entirely, proving nothing about whether the sort runs.
+  const table = {
+    beta: { ...rates, until: '2026-09-10' }, // same boundary as alpha: tie
+    zeta: { ...rates, until: '2026-08-20' }, // long closed: daysRemaining -16
+    alpha: { ...rates, until: '2026-09-10' }, // closing soon: daysRemaining 5
+  };
+  const alerts = listPricingWindowAlerts(new Date('2026-09-05T12:00:00.000Z'), table);
+  assert.deepEqual(
+    alerts.map((a) => a.model),
+    ['zeta', 'alpha', 'beta'],
+    'zeta (most overdue) first, then the tie broken alphabetically'
+  );
+  assert.deepEqual(
+    alerts.map((a) => a.daysRemaining),
+    [-16, 5, 5]
+  );
+});
+
 test('the live table models the Sonnet 5 introductory window BL-627 left out', () => {
   const sonnet = PRICING_TABLE['claude-sonnet-5'];
   assert.equal(sonnet.until, SONNET_5_INTRO_WINDOW_END);
@@ -293,6 +349,16 @@ test('the pricing-windows CLI parses a day, defaults to now, and refuses anythin
   assert.equal(parsePricingWindowsAt(['2026-09-01'], now).toISOString(), '2026-09-01T00:00:00.000Z');
   for (const bad of ['tomorrow', '2026-9-1', '2026-13-45x', '']) {
     assert.equal(parsePricingWindowsAt([bad], now), null, bad);
+  }
+});
+
+// A shape-valid but calendar-invalid day (JS's Date constructor rolls these
+// over rather than returning Invalid Date) must not silently answer for a
+// day the operator never typed.
+test('the pricing-windows CLI refuses a shape-valid day that JS Date would silently roll over', () => {
+  const now = at('2026-08-22');
+  for (const rollsOver of ['2026-02-30', '2026-04-31', '2026-13-01', '2026-00-15']) {
+    assert.equal(parsePricingWindowsAt([rollsOver], now), null, rollsOver);
   }
 });
 

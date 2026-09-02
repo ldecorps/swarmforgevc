@@ -12,7 +12,16 @@ import { printJsonToStdout, runCliMain } from './swarm-metrics';
 
 const USAGE = 'Usage: pricing-windows.js [YYYY-MM-DD]\n';
 
-/** Null for an argument that is not a plain calendar day - never a silent "now". */
+/**
+ * Null for an argument that is not a plain calendar day - never a silent
+ * "now". A shape-valid but calendar-invalid day (e.g. `2026-02-30`) is
+ * refused too, not silently rolled over: JS's Date constructor accepts
+ * `2026-02-30T00:00:00.000Z` and rolls it to March 2nd rather than
+ * returning Invalid Date, which would otherwise answer for a day the
+ * operator never typed with no error at all (found by the hardener,
+ * BL-1056 - the exact silent-misread this function's own doc comment
+ * already disclaimed, via a different avenue than NaN).
+ */
 export function parsePricingWindowsAt(argv: string[], now: Date = new Date()): Date | null {
   const [day] = argv;
   if (day === undefined) {
@@ -22,7 +31,12 @@ export function parsePricingWindowsAt(argv: string[], now: Date = new Date()): D
     return null;
   }
   const parsed = new Date(`${day}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  // Reject any rollover: the parsed instant's own UTC calendar day must
+  // read back exactly the day the operator typed.
+  return parsed.toISOString().slice(0, 10) === day ? parsed : null;
 }
 
 export interface PricingWindowsReport {
