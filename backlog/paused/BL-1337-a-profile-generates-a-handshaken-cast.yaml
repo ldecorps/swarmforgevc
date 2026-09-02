@@ -1,0 +1,206 @@
+id: BL-1337
+title: "Cast generation is hard-coded to one policy and handshakes nothing, so a cast can be applied naming a model that is registered but dead on this host"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 25
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1337-a-profile-generates-a-handshaken-cast.feature
+
+human_approval: pending
+approval_context: >
+  Two things to know before you rule, and one actual choice.
+
+  First, this is much less new code than the intake implies. BL-1181 already
+  built the generator: it cherry-picks from the steward registry, exports a
+  cast, converts it to a ModelFactory overlay and applies it. What is missing
+  is that the policy is hard-coded (the function is literally
+  `export-bob-starting-cast`) and that nothing handshakes before apply.
+
+  Second, that missing handshake is not hypothetical. The apply path today
+  will install a cast naming a model that is registered but unreachable on
+  this host's keys, and the live cast's own note records that a human had to
+  hand-adjust it - "not pure steward top-pick". Your "Firm: handshake before
+  runnable" is the fix for a real hole, not a nicety.
+
+  The choice is the output form. The intake allows either "a generated pack
+  conf" or "a ModelFactory overlay". The overlay path already exists and is
+  already applied, so reusing it keeps this slice genuinely small; a
+  launchable `.conf` is more directly useful to you at the terminal but is a
+  second renderer to build and keep correct.
+ruling_options:
+  - Cast plus ModelFactory overlay only, reusing the apply path BL-1181 already ships
+  - Cast plus overlay now and a launchable pack conf in this same slice
+  - Render a launchable pack conf instead of the overlay
+
+invariants:
+  - "A cast is offered as runnable only when EVERY seat's pick passed both registry eligibility for that role and a host reachability check; one failing seat makes the whole cast not-runnable."
+  - "A profile whose floors cannot be met fails loud naming the seats that could not be staffed - never a cast that omits a seat or silently substitutes below the floor."
+  - "No file the generator writes contains credential material."
+
+required_wiring:
+  - 'swarmforge/scripts/bob_starting_cast_lib.bb::apply-via-modelfactory-overlay::the handshake must gate the EXISTING apply path, not a new parallel one - this anchor is the live function a generated cast is installed through today, so pinning it is what proves the gate sits in front of the real door'
+
+description: |
+  ## What is already built
+
+  BL-1181 shipped the generator half in `bob_starting_cast_lib.bb`:
+  `top-certified-recommendation` and `cherry-pick-role-entry` select from the
+  steward registry, `export-bob-starting-cast` writes the cast,
+  `cast-to-assignment-overlay` and `apply-via-modelfactory-overlay` install
+  it. A live cast exists at
+  `.swarmforge/model-steward/casts/bob-multi-provider-20260831.json`, and the
+  steward lib already offers `role-recommendations`, `assignment-eligible?`,
+  `certified?` and `production-adapter-for`.
+
+  So the selection machinery, the store layout and the apply path all exist.
+
+  ## What is wrong
+
+  1. **The policy is hard-coded.** The entry point is named
+     `export-bob-starting-cast` and the cast carries
+     `"policy": "bob-multi-provider"`. There is no way to say "same machinery,
+     different profile" - which is exactly the intake's ask, and exactly what
+     the intake means by "a profile should be able to regenerate that shape
+     from policy, not from memory".
+
+  2. **Nothing handshakes.** No step between selection and apply checks that
+     the chosen model is reachable on this host. `assignment-eligible?`
+     answers a REGISTRY question, not a host question. The consequence is
+     visible in the live cast's own note: "Diversified across live providers
+     with keys on host 2026-08-31; not pure steward top-pick" - a human did
+     the host-reachability reasoning by hand, and nothing stops the next cast
+     from installing a model that is dead here.
+
+  ## How (direction, not mandate)
+
+  Make the policy a named profile read from a steward-owned path, and put a
+  handshake between selection and "runnable". Reuse what exists rather than
+  writing a second generator: the profile constrains the SAME cherry-pick,
+  and the handshake gates the SAME apply path.
+
+  The handshake bar follows the intake exactly: registry eligibility for the
+  role and host credential/endpoint reachability are both mandatory; a live
+  probe is optional and skipped when the profile says `handshake:
+  registry-only`, which must then be recorded in the evidence note as the
+  weaker bar it is.
+
+  Profile format: JSON under `.swarmforge/model-steward/profiles/`, matching
+  the store's existing shape (`registry.json`, `casts/*.json` are all JSON).
+  Chosen so no new parser or serialisation convention enters the store.
+
+constraints: >
+  - Handshake before "runnable". The intake states this as firm.
+  - No secret material in any generated file. Also firm.
+  - Propose, do not silently install as the live pack. Same "never autonomous
+    seat mutation" discipline the economic-review path carries.
+  - Do not invent a second price table. BL-1056 and the cost table are the
+    source of truth for any cost-posture field.
+  - Do not fork a second generator or a second apply path. Extend BL-1181's.
+
+qa_e2e_procedure: >
+  Against a fixture steward store, write a profile naming a topology, a
+  quality floor and a provider allow list. Seed the registry so one seat's
+  top-ranked model is eligible and reachable, a second seat's top pick is
+  registered but NOT assignment-eligible for that role, and a third seat's
+  top pick is eligible but unreachable (no key or a dead endpoint). At the
+  parent commit confirm the defect: generation is possible only for the
+  hard-coded Bob policy, and the apply path installs the unreachable pick
+  without complaint. At the parcel commit confirm the profile drives
+  selection, that seats two and three fall through to the next model that
+  handshakes, and that the evidence note records each seat's handshake
+  result. Then seed a fourth seat with no model above the floor and confirm
+  generation fails loud naming that seat and offers nothing runnable.
+  Confirm the live pack config is untouched throughout, and grep every file
+  the run wrote for credential material.
+
+out_of_scope: |
+  - Promoting or restructuring the epic itself. The intake says plainly:
+    "Do not promote epic BL-545 itself."
+  - Cost-posture selection driven by live price windows. BL-1056 owns honest
+    prices; a profile may carry a cost field, but this slice does not build
+    price-aware ranking.
+  - The seat-local outage substitute consult. That is BL-669, already shipped;
+    this is whole-cast composition.
+  - Standing-forge topology beyond what the existing cherry-pick already
+    handles. The live example the intake names is a mono-router cast, and
+    that is the shape this slice proves; a follow-up widens it. Recorded
+    here rather than as an executable scenario, so no assertion has to be
+    retired when that follow-up lands (BL-1006).
+
+source: |
+  `backlog/INTAKE-model-steward-generates-pack-from-profile.md` (human via
+  Cursor, 2026-09-01 ~08:36 BST), drained 2026-09-02 and archived to
+  `backlog/archive/`.
+
+  Article 5.3 - the human's words, preserved verbatim from that intake:
+
+  > When asked (operator / coordinator / human), **Model Steward generates a
+  > swarm pack `.conf` (or a concrete cast overlay) according to a named
+  > profile** — e.g. "mono-router, Anthropic-quality baseline, cheaper coder",
+  > "full-forge depth 3, maximize Token Plan", "Bob multi-provider diversity".
+
+  > It **picks only from models already known to the steward** (registry +
+  > role matrix + certification status), and **handshakes every pick** before
+  > the conf is offered as runnable — so a generated pack never names a model
+  > that is unavailable, uncertified for that seat, or dead on this host's
+  > keys/endpoints.
+
+  > A failed handshake **drops or replaces** that pick and re-resolves; a pack
+  > that cannot satisfy the profile's floors **fails loud** with which seats
+  > could not be staffed — never emit a conf that lies about availability.
+
+  > **Propose, do not silently install** as the live day-shift pack unless an
+  > explicit apply step / human approval says so
+
+  > Exact profile file format is for the specifier — YAML/JSON under
+  > `.swarmforge/model-steward/profiles/` is fine if that fits existing store
+  > layout.
+
+  > - Do not promote epic BL-545 itself.
+  > - Prefer one mintable child (or a thin epic + one vertical slice: "profile →
+  >   conf + handshake CLI") over boiling the ocean.
+  > - Firm: handshake before "runnable"; no secret material in generated files.
+
+  Minted as ONE vertical slice per that last instruction. No new epic tracker
+  was created: `swarm-intelligence-layer` (BL-1329) already exists and is the
+  right parent, and the intake's "BL-545" reference is the epic's former id -
+  BL-545 itself is closed in `backlog/done/M8/` and is a Telegram catch-up
+  ticket.
+
+notes: |
+  ## Findings recorded at mint, each verified rather than assumed
+
+  - `bob_starting_cast_lib.bb` exists with `top-certified-recommendation`,
+    `cherry-pick-role-entry`, `export-bob-starting-cast`,
+    `cast-to-assignment-overlay`, `apply-via-modelfactory-overlay`,
+    `roles-with-model-change`. The generator is real and the apply path is
+    real.
+  - A live cast exists: `.swarmforge/model-steward/casts/`
+    `bob-multi-provider-20260831.json`, `"schema-version": 1`, per-role
+    agent/provider/model/policy/reason.
+  - The steward store is JSON throughout (`registry.json`, `casts/*.json`),
+    which is why the profile format is JSON - no new convention.
+  - `model_steward_lib.bb` already provides `role-recommendations`,
+    `assignment-eligible?`, `certified?`, `production-adapter-for`; selection
+    does not need rebuilding.
+  - No existing ticket covers this: a backlog-wide grep for pack-from-profile
+    and cast-generation phrasing returned nothing in paused, active or done.
+  - Gates at mint: `gherkin_lint_gate.sh` clean; IR-DRY 1 finding over 18
+    step occurrences / 14 unique steps, and that finding is the deliberate
+    "offered as runnable" / "not offered as runnable" pair, not drift.
+
+  ## On the `required_wiring` entry
+
+  The anchor names `apply-via-modelfactory-overlay`, a function that EXISTS
+  and is the live door a generated cast is installed through. Pinning it is
+  what proves the new handshake gate sits in front of the real apply path
+  rather than in front of a new parallel one the old path could bypass. It is
+  deliberately not an anchor on the handshake function this parcel adds -
+  that would live in the module this parcel writes and would go green on its
+  own diff, proving nothing (BL-1235).
