@@ -233,3 +233,5 @@ notes: |
   fabricating the human's answer. BL-1305 has been reset to `pending` for the
   same reason, so both tickets now ask honestly and neither ships on an
   approval that cannot be shown to be its own.
+
+assigned_to: coder
