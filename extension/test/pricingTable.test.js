@@ -335,3 +335,32 @@ test('the pricing-windows CLI main prints the report and refuses a bad day', () 
     process.stderr.write = errWrite;
   }
 });
+
+// BL-1056: the ledger consumers cost each record at ITS instant, not at now -
+// otherwise a window makes historical totals drift as the clock moves.
+test("ledger costing uses the record's own instant", () => {
+  const { deriveSyntheticCostUsd } = require('../out/metrics/syntheticLlmCost');
+  const ledgerRecord = (isoAt) => ({
+    type: 'llm_invocation',
+    at: isoAt,
+    model: 'claude-sonnet-5',
+    tokens: { inputTokens: 1_000_000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    costUsd: null,
+    origin: {},
+  });
+  assert.equal(deriveSyntheticCostUsd(ledgerRecord('2026-08-22T00:00:00.000Z')), 2);
+  assert.equal(deriveSyntheticCostUsd(ledgerRecord('2026-09-01T00:00:00.000Z')), 3);
+});
+
+test("transcript cost telemetry uses each record's own instant", () => {
+  const { computeDailyRoleUsage } = require('../out/metrics/costTelemetry');
+  const record = (day) => ({
+    messageId: day,
+    timestampMs: Date.parse(`${day}T00:00:00.000Z`),
+    model: 'claude-sonnet-5',
+    usage: { inputTokens: 1_000_000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+  });
+  const byDay = computeDailyRoleUsage({ coder: [record('2026-08-22'), record('2026-09-01')] });
+  const costs = Object.values(byDay.coder).map((entry) => entry.costUsd).sort();
+  assert.deepEqual(costs, [2, 3], 'each day is costed at the rate in force that day');
+});
