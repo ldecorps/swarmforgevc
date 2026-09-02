@@ -12,7 +12,9 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Lower the per-worker heap reservation and also raise the default ceiling so the pool follows the host core count with no override set
 approval_context: >
   Your directive, verbatim, is preserved in source: below. Nothing here is
   broken and nothing is at risk either way - the pool is behaving exactly as
