@@ -1,0 +1,165 @@
+id: BL-1353
+title: "TASK_ARRIVED wakes a disposable Opus session on ordinary coordinator traffic - retire it or gate it to unclaimed handoffs"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 130
+direction: human-requested
+depends_on: [BL-653]
+mutation_cost: medium
+slice_size_envelope: medium
+assigned_to: none
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1353-task-arrived-is-not-an-escalation.feature
+
+invariants:
+  - "A wake source is never removed before a live escalation producer covers the condition it stood in for - BL-653's own invariant, carried forward unchanged."
+  - "The coordinator-inbox freshness probe keeps its second consumer: the BL-307/BL-310 closing-pass hibernation decision reads the same signal and must be unaffected by any change to the wake path."
+
+required_wiring:
+  - 'docs/how-to/BL-653-operator-escalation-driven-wake-model.md::TASK_ARRIVED::the documented wake-source model must name TASK_ARRIVED, in either its legitimate-sources table or its What-retired list. Absent at mint - the doc does not mention it at all, which is the divergence this ticket closes. Holds under either ruling.'
+  - 'specs/pipeline/steps/index.js::bl1353TaskArrivedIsNotAnEscalationSteps::acceptance handler registered so the runner executes every scenario. Absent at mint, grep bl1353 returns 0.'
+
+human_approval: pending
+
+approval_context: >
+  You asked whether the Operator wakes on a cron or on babysitterd's word, and
+  said you want it to wake when babysitterd finds something odd. That is already
+  the BL-653 model - except for one source that was never in BL-653's table and
+  is still live in code.
+  .
+  Measured off .swarmforge/operator/events-done for 2026-09-02 UTC, recounted
+  this pass rather than taken from the intake: TASK_ARRIVED 37, BABYSITTER_
+  ESCALATION 32, SWARM_CONTROL_LOST 4, across 60 dispatch files. TASK_ARRIVED is
+  51% of dispatched events - over half that day's disposable Opus sessions -
+  fired by a bare mtime probe on the coordinator's inbox that never checks
+  whether the coordinator picked the handoff up.
+  .
+  Your two options differ a lot in size, which is why I am asking rather than
+  picking. RETIRE is a few lines: drop one conj from tick-observed-events, drop
+  the entry from manufactured-tick-event-types, update the doc table. GATE needs
+  a claim-window concept that does not exist today - "did the coordinator take
+  this handoff within its window" is not currently tracked anywhere - plus
+  cooldown dedup, and would likely need splitting into its own slice.
+  .
+  Either way BL-653's invariant holds: babysitterd CRIT is a live escalation
+  producer, so no coverage is lost. Under RETIRE, an unclaimed handoff is caught
+  by BL-098 chase/nudge telemetry and babysitterd rather than by a wake.
+
+ruling_options:
+  - Retire TASK_ARRIVED entirely as an LLM Operator wake source
+  - Gate it to fire only on a handoff the coordinator did not claim in its window
+
+description: |
+  ## What is wrong
+
+  BL-653 made the LLM Operator summoned rather than scheduled, and its how-to
+  documents exactly three legitimate wake sources: inbound human traffic
+  (`TELEGRAM_*`, `HUMAN_COMMAND`), `BABYSITTER_ESCALATION` on a CRIT finding,
+  and `SWARM_CONTROL_LOST`.
+
+  `TASK_ARRIVED` is not in that table. It is still manufactured every tick by
+  `tick-observed-events` (`operator_lib.bb:674`) from
+  `coordinator-inbox-has-fresh?` (`operator_runtime.bb:1712`), a cheap mtime
+  probe that fires if any `.handoff` file in the coordinator's `inbox/new` is
+  younger than the tick interval. It never asks whether the coordinator
+  actually picked the handoff up, so ordinary pipeline motion - the thing the
+  coordinator exists to handle by itself - summons a disposable Opus session.
+
+  The documented model and the code have simply disagreed since BL-653 landed.
+
+  ## The cost, measured
+
+  `.swarmforge/operator/events-done`, 2026-09-02 UTC, 60 dispatch files:
+
+  | source | events |
+  |---|---|
+  | `TASK_ARRIVED` | 37 |
+  | `BABYSITTER_ESCALATION` | 32 |
+  | `SWARM_CONTROL_LOST` | 4 |
+
+  51% of dispatched events, and each dispatch is a disposable Opus session.
+
+  ## The trap to avoid
+
+  `coordinator-inbox-has-fresh?` has **two** consumers, and only the wake path
+  is in scope. `closing-pass-sweep!` (`operator_runtime.bb:1454`) reads the same
+  probe as `fresh-coordinator-mail?` for the BL-307/BL-310 hibernation
+  decision - fresh coordinator mail is a reason NOT to hibernate. Deleting or
+  repurposing the probe itself would silently change hibernation behaviour.
+  Change the wake path, leave the probe's other consumer intact.
+
+  ## How (direction, not mandate)
+
+  - `manufactured-tick-event-types` (`operator_lib.bb:678`) is the set BL-653's
+    property tests assert against. It is the single source of truth for what
+    the tick may manufacture, so editing the emitter without the set leaves a
+    false green. Change both together.
+  - `tick-observed-events` is already a pure function over a map - the wake
+    decision is testable without any filesystem or tmux.
+  - The doc table in `docs/how-to/BL-653-operator-escalation-driven-wake-model.md`
+    must end up naming `TASK_ARRIVED` either as a gated legitimate source or in
+    its "What retired" list, alongside `dead-agent-events` and
+    `SWARM_CHECK_TIMER`. That is what the required_wiring entry pins.
+
+  ## Explicitly NOT in scope
+
+  - babysitterd's CRIT catalogue and its 300s cadence. The operator's intake
+    says those are right; this is only the non-escalation wake.
+  - Any other entry in the event catalogue. `AGENT_EXITED` and
+    `SWARM_CHECK_TIMER` were already retired as wake sources by BL-653.
+
+qa_e2e_procedure: |
+  1. Baseline: count dispatched events by type for the last full UTC day with
+     `.swarmforge/operator/events-done/events-<epoch>.jsonl`, filtering files by
+     the epoch in the filename (NOT by mtime - the host runs UTC+1, so an mtime
+     filter silently misses the day's own files).
+  2. Land the change and let the swarm run through several coordinator handoffs
+     that the coordinator claims normally.
+  3. Re-count. Under the RETIRE ruling no new `TASK_ARRIVED` events appear at
+     all; under GATE, none appear for handoffs the coordinator claimed.
+  4. Confirm coverage is intact: force a babysitterd CRIT finding and verify a
+     `BABYSITTER_ESCALATION` still dispatches an Operator session.
+  5. Confirm hibernation is unaffected: with fresh mail in the coordinator's
+     `inbox/new`, verify the closing pass still declines to hibernate.
+  6. Confirm the how-to's wake-source list now matches the code.
+
+notes: |
+  Minted 2026-09-03 by the specifier from backlog-root intake
+  `INTAKE-operator-task-arrived-wakes-are-not-escalations-1788390881366.md`.
+
+  Premises verified this pass rather than trusted:
+  - `tick-observed-events` still conjes `{:type "TASK_ARRIVED"}` on
+    `coordinator-inbox-fresh?` (`operator_lib.bb:674`) - live, not stale.
+  - `manufactured-tick-event-types` = `#{"SWARM_CONTROL_LOST" "HUMAN_COMMAND"
+    "TASK_ARRIVED"}` (`operator_lib.bb:678`).
+  - The BL-653 how-to mentions `TASK_ARRIVED` **zero** times - the divergence
+    is real, not a doc that merely lags.
+  - Recounted the intake's table independently: 37/32/4 across 60 dispatch
+    files for 2026-09-02 UTC (intake said 36/31/4, filed minutes earlier).
+  - **Found beyond the intake:** `coordinator-inbox-has-fresh?` has a second
+    consumer in `closing-pass-sweep!` for BL-307/BL-310 hibernation. The intake
+    does not mention it. It is invariant 2 and the main way this slice could
+    break something.
+
+  Size forks on the ruling, which is why `slice_size_envelope` is `medium`
+  rather than `low`: RETIRE is genuinely small; GATE introduces a claim-window
+  concept that does not exist and should probably be split. Re-declare the
+  envelope once the ruling lands.
+
+  IR-DRY: two low-score possible-synonym findings remain and are deliberate -
+  "wake event is dispatched" vs "no wake event is manufactured" are the
+  positive and negative cases, and "pending queue" vs "tick sweep" are
+  genuinely different mechanisms (BABYSITTER_ESCALATION arrives via the queue,
+  never from the tick). Normalizing either would erase a load-bearing
+  distinction.
+
+source: |
+  backlog/INTAKE-operator-task-arrived-wakes-are-not-escalations-1788390881366.md
+  (filed by the Operator 2026-09-03, human-directed). The human asked whether
+  the Operator wakes on a cron or on babysitterd's word, and wants it to wake
+  when babysitterd finds something odd with the swarm - which is already the
+  BL-653 model. This ticket closes the one wake source that sits outside it.
