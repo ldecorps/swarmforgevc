@@ -11,6 +11,7 @@ depends_on: [BL-1095]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1271-dispatch-gap-suite-stale-bug-fixtures.feature
+abandoned_commits: [0ea1c8cb3b]
 
 invariants:
   - "The expedite predicate stays defect-only: expedited-types in promotion_gates_lib.bb gains no ticket type, and promotion_gates_lib_test_runner.bb's assertion that a type: bug candidate is not expedited survives unchanged."
