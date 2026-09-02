@@ -146,3 +146,5 @@ notes: |
   could be missing, which is the only thing `required_wiring` proves. Any
   anchor available here would name a symbol inside the module this parcel
   edits and would go green on its own diff (BL-1235).
+
+assigned_to: coder
