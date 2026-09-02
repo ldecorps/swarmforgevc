@@ -11,10 +11,11 @@ Feature: The replay separates two tickets inside one shared path
   landed, and the registration guard then refused every role's commit on main
   until a specifier adjudicated by hand.
 
-  Scenario 02 states only what holds under EITHER ruling in this ticket's
-  `ruling_options` - that no tip carrying the sibling's line is ever produced.
-  Which way it is achieved (refusing the land, or replaying the path per-hunk)
-  is the human's ruling, and the coder tightens 02 to the chosen shape.
+  The human ruled option 1: a shared path REFUSES the land, naming the path
+  and the sibling, rather than shipping either ticket's version of the blob.
+  Scenario 02 below is tightened to that shape. Splitting a shared path
+  per-hunk so an entangled parcel still lands its own work is option 2 and a
+  fair follow-up slice, once this has made the failure loud instead of silent.
 
   Background:
     Given the land step is replaying a cited commit for ticket "BL-A"
@@ -33,11 +34,13 @@ Feature: The replay separates two tickets inside one shared path
       | nobody | replayed whole |
 
   # BL-1332 a-shared-path-carries-the-siblings-lines-02
-  Scenario: No tip is ever produced carrying the unlanded sibling's line
+  Scenario: A shared path refuses the land rather than carrying the sibling's line
     Given the cited commit changes a path attributed to both "BL-A" and "BL-B"
     And that path holds one line contributed only by "BL-B"
     When the land step computes the replay tip
-    Then no tip is produced whose copy of that path contains "BL-B"'s line
+    Then the land is refused
+    And the refusal names that path and "BL-B"
+    And no tip is produced whose copy of that path contains "BL-B"'s line
 
   # BL-1332 a-shared-path-carries-the-siblings-lines-03
   Scenario: A shared path whose attribution cannot be read refuses the land
