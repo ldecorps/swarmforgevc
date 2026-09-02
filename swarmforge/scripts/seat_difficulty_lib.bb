@@ -170,13 +170,133 @@
    default, so a prior claim's effort never rides into this one unchanged
    (invariant 3). No resolvable effort at all (no cost, no pack default) is
    also :apply? false - nothing to write."
-  [{:keys [backend cost pack-default-effort]}]
+  [{:keys [backend cost pack-default-effort ticket adapted-ticket adapted-effort]}]
   (if-not (effort-lever-backend? backend)
     {:apply? false}
-    (let [effort (or (effort-for-mutation-cost cost) pack-default-effort)]
+    (let [baseline (or (effort-for-mutation-cost cost) pack-default-effort)
+          ;; BL-1317: an Adapt CLIMB recorded for THIS SAME ticket survives
+          ;; its re-claim. Without this the tier would be inert in the only
+          ;; situation it exists for: a bounce sends the same ticket back to
+          ;; the same seat, and the re-claim would reset the effort it just
+          ;; raised, so the seat would rework at exactly the effort that had
+          ;; already proved too low.
+          ;;
+          ;; Deliberately one-directional and ticket-scoped. Only an effort
+          ;; ABOVE the baseline is honoured, so this can never lower a claim
+          ;; below what the ticket's own mutation_cost bought; and only for
+          ;; the same ticket id, so a DIFFERENT ticket's claim still restores
+          ;; its own baseline exactly as before (BL-1316 invariant 3 - a prior
+          ;; ticket's effort never rides into an unrelated claim).
+          climbed (when (and ticket adapted-ticket (= (str ticket) (str adapted-ticket))
+                             (get cost-rank adapted-effort)
+                             (get cost-rank baseline)
+                             (> (get cost-rank adapted-effort) (get cost-rank baseline)))
+                    adapted-effort)
+          effort (or climbed baseline)]
       (if effort
         {:apply? true :effort effort}
         {:apply? false}))))
+
+;; ── BL-1317: Adapt tier ────────────────────────────────────────────────────
+;; BL-236 shipped Suggest-only and explicitly deferred Adapt. BL-1316 (above)
+;; sets the CLAIM-TIME baseline from the held ticket's mutation_cost. Adapt is
+;; the tier that moves effort around that baseline from OUTCOME signals, so a
+;; hard ticket that keeps bouncing can climb without a human turning the dial.
+;;
+;; The movement is deliberately asymmetric (declared invariant 2): a bounce
+;; climbs ONE notch immediately, a drop needs a whole streak of clean
+;; completions and never lands below the BL-1316 baseline. That is BL-545's
+;; descent-ladder hysteresis - the cost of thinking too little is a bounced
+;; parcel, the cost of thinking too much is only tokens, so evidence to climb
+;; is cheap and evidence to descend is expensive.
+;;
+;; Pure, like claim-effort-decision above: no IO, no respawn, no file write.
+;; handoff_lib.bb::record-effort-adapt! is the single IO edge over it.
+;;
+;; SINGLE POLICY, MIRRORED ACROSS A LANGUAGE BOUNDARY. The same ladder and the
+;; same streak default are stated in TypeScript at
+;; extension/src/tools/effortDialAdapt.ts (ADAPT_EFFORT_LADDER,
+;; ADAPT_DEFAULT_CLEAN_STREAK) because the UI/launch paths decide there while
+;; this consumer decides here. A comment claiming the two agree is not a gate,
+;; so test/test_bl1317_effort_ladder_parity.sh asserts both literals agree
+;; (the constant-across-a-language-boundary rule, BL-897).
+
+(def adapt-effort-ladder
+  "The effort ladder, weakest first. This is BL-236's operator dial scale
+   (extension/src/swarm/effortDial.ts EFFORT_LEVELS), NOT cost-rank: the
+   mutation_cost scale above stops at high, but a seat can already be running
+   at xhigh because the dial can set it there. A ladder that stopped at high
+   would leave Adapt silently inert at exactly the highest-stakes setting -
+   an xhigh seat's bounce would read as an unknown rung and change nothing.
+
+   The mutation_cost baseline still comes from cost-rank; only the rungs Adapt
+   may move BETWEEN come from here."
+  ["low" "medium" "high" "xhigh"])
+
+(def adapt-effort-rank
+  "Rank within adapt-effort-ladder. Separate from cost-rank because the two
+   scales are genuinely different lengths - see adapt-effort-ladder."
+  (into {} (map-indexed (fn [i e] [e i]) adapt-effort-ladder)))
+
+(def adapt-default-clean-streak
+  "Clean completions required before a single notch may be given back.
+   Asymmetric with the one-signal climb by design (invariant 2)."
+  3)
+
+(defn- adapt-rank [effort]
+  (get adapt-effort-rank (some-> effort str str/trim str/lower-case)))
+
+(defn adapt-effort-decision
+  "Pure BL-1317 Adapt decision: where a seat's effort moves given the effort
+   it is running at, the BL-1316 claim-time baseline for the held ticket, and
+   one outcome signal (\"bounce\" or \"clean\").
+
+   :apply? is true ONLY when the effort actually changes - there is nothing to
+   write otherwise, and an unchanged rung must not look like a retune. A
+   backend with no reasoning-effort lever decides :apply? false and names no
+   effort at all, so no unsupported flag can be built from this (BL-1316
+   invariant 2, carried forward). An unknown prior effort or an unknown signal
+   fails closed for the same reason: an effort token this ladder does not know
+   is not a rung, and guessing one writes a flag the backend may reject."
+  [{:keys [backend prior-effort baseline-effort signal clean-streak
+           clean-streak-required]}]
+  (if-not (effort-lever-backend? backend)
+    {:apply? false :reason "backend has no reasoning-effort lever"}
+    (let [prior (adapt-rank prior-effort)]
+      (if (nil? prior)
+        {:apply? false :effort prior-effort
+         :reason (str "unknown prior effort " (pr-str prior-effort))}
+        ;; An absent baseline is read as the CURRENT effort, never as the
+        ;; bottom rung: reading "no baseline" as low would let a clean streak
+        ;; drag a high-cost seat all the way down, which is exactly the floor
+        ;; invariant 2 exists to hold.
+        (let [floor (or (adapt-rank baseline-effort) prior)
+              top (dec (count adapt-effort-ladder))
+              sig (some-> signal str str/trim str/lower-case)]
+          (case sig
+            "bounce"
+            (let [next (min (inc prior) top)]
+              (if (= next prior)
+                {:apply? false :effort prior-effort
+                 :reason "already at the top of the ladder"}
+                {:apply? true :effort (nth adapt-effort-ladder next)
+                 :reason "bounce: climbing one notch"}))
+
+            "clean"
+            (let [required (or clean-streak-required adapt-default-clean-streak)
+                  streak (or clean-streak 0)]
+              (if (< streak required)
+                {:apply? false :effort prior-effort
+                 :reason (str "clean streak " streak "/" required)}
+                (let [next (max (dec prior) floor)]
+                  (if (= next prior)
+                    {:apply? false :effort prior-effort
+                     :reason "already at the claim-time baseline"}
+                    {:apply? true :effort (nth adapt-effort-ladder next)
+                     :reason "clean streak met: dropping one notch"}))))
+
+            {:apply? false :effort prior-effort
+             :reason (str "unknown signal " (pr-str signal))}))))))
 
 (defn seat-accepts?
   "True when declared tier may take cost. Undeclared tier accepts everything
