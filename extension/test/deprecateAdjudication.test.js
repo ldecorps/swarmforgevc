@@ -188,3 +188,103 @@ test('the writer follows the ticket into active/ rather than fingerprinting noth
   });
   assert.equal(record.content_fingerprint, computeTicketFingerprint(HELD_TICKET));
 });
+
+// ── BL-1338: the promotion's own routing stamp does not invalidate the
+// adjudication that authorized that same promotion. Everything else about
+// the ticket still does.
+
+// Exactly what promote_and_route_next.sh appends after the gate passes.
+function withRoutingStamp(ticketText, role = 'coder') {
+  return `${ticketText}\nassigned_to: ${role}\n`;
+}
+
+test('the routing stamp a promotion writes does not change the fingerprint', () => {
+  assert.equal(computeTicketFingerprint(withRoutingStamp(HELD_TICKET)), computeTicketFingerprint(HELD_TICKET));
+});
+
+test('re-routing an already-stamped ticket does not change the fingerprint', () => {
+  assert.equal(
+    computeTicketFingerprint(withRoutingStamp(HELD_TICKET, 'specifier')),
+    computeTicketFingerprint(withRoutingStamp(HELD_TICKET, 'coder'))
+  );
+});
+
+// A ticket whose spec ALREADY carries `assigned_to:` as a normal, previously
+// promoted field - single-newline separated, exactly the shape BL-1271's own
+// YAML ends in (`...\nassigned_to: coder\n`) - not the double-newline
+// APPENDED shape withRoutingStamp/promote_and_route_next.sh's printf
+// produces. This is the case promote_and_route_next.sh's `sed` in-place
+// rewrite handles, and it is the ONLY case ROUTING_STAMP_LINE (as opposed to
+// APPENDED_ROUTING_STAMP) exists for - a re-route that starts from a fresh
+// printf-append never needs it, because the double-newline signature
+// survives an in-place value edit and APPENDED_ROUTING_STAMP alone would
+// still strip it.
+function withGenuineAssignedTo(ticketText, role) {
+  return `${ticketText}assigned_to: ${role}\n`;
+}
+
+// Exactly what promote_and_route_next.sh's `sed` does: rewrite the line's
+// value, same position, same single-newline spacing either side.
+function reroutedInPlace(ticketText, newRole) {
+  return ticketText.replace(/^assigned_to:.*$/m, `assigned_to: ${newRole}`);
+}
+
+test('BL-1338: re-routing a GENUINELY pre-existing (single-newline, sed-rewritten) assigned_to field does not change the fingerprint', () => {
+  const original = withGenuineAssignedTo(HELD_TICKET, 'specifier');
+  const rerouted = reroutedInPlace(original, 'coder');
+  assert.notEqual(original, rerouted, 'the fixture must actually differ for this to test anything');
+  assert.equal(computeTicketFingerprint(rerouted), computeTicketFingerprint(original));
+});
+
+test('an edit to the ticket spec still changes the fingerprint', () => {
+  for (const amended of [
+    `${HELD_TICKET}acceptance: specs/features/other.feature\n`,
+    `${HELD_TICKET}description: |\n  something new\n`,
+    HELD_TICKET.replace('fixture', 'fixtures'),
+  ]) {
+    assert.notEqual(computeTicketFingerprint(amended), computeTicketFingerprint(HELD_TICKET));
+  }
+});
+
+test('an indented assigned_to inside a block scalar is spec text, not a routing stamp', () => {
+  const quoted = `${HELD_TICKET}description: |\n  assigned_to: coder\n`;
+  assert.notEqual(computeTicketFingerprint(quoted), computeTicketFingerprint(HELD_TICKET));
+});
+
+test('a promoted ticket is still discharged by the adjudication that cleared it', () => {
+  const root = fixtureRoot();
+  const { path: recordPath } = recordAdjudication({
+    root,
+    ticketId: 'BL-77',
+    outcome: 'confirm_promote',
+    adjudicatedBy: 'specifier',
+    adjudicatedAt: '2026-09-02T12:00:00.000Z',
+  });
+  // The promotion: the ticket moves to active/ and is stamped, exactly as
+  // promote_and_route_next.sh does it.
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  fs.rmSync(path.join(root, 'backlog', 'paused', 'BL-77-fixture.yaml'));
+  fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-77-fixture.yaml'), withRoutingStamp(HELD_TICKET));
+
+  const after = deprecateCheck(root, 'BL-77');
+  assert.equal(after.decision, 'allow');
+  assert.match(after.reason, new RegExp(recordPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('a spec amendment after clearance still holds and names re-adjudication', () => {
+  const root = fixtureRoot();
+  recordAdjudication({
+    root,
+    ticketId: 'BL-77',
+    outcome: 'confirm_promote',
+    adjudicatedBy: 'specifier',
+    adjudicatedAt: '2026-09-02T12:00:00.000Z',
+  });
+  fs.writeFileSync(
+    path.join(root, 'backlog', 'paused', 'BL-77-fixture.yaml'),
+    withRoutingStamp(`${HELD_TICKET}acceptance: specs/features/amended.feature\n`)
+  );
+  const after = deprecateCheck(root, 'BL-77');
+  assert.equal(after.decision, 'hold');
+  assert.match(after.reason, /re-adjudicate/);
+});

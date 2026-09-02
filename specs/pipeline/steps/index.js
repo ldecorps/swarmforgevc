@@ -15,6 +15,7 @@ const DOMAINS = [
   require('./bl1193RetiredTokenAnchoredSteps'),
   require('./bl1220UnitLaneRunnerBindingSteps'),
   require('./bl1267AdjudicationDischargeSteps'),
+  require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),
   require('./bl1268StaleClaimNamesThisTicketSteps'),
   require('./daemonWorkflowSteps'),
