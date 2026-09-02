@@ -924,6 +924,7 @@ const DOMAINS = [
   require('./bl1324ClaudeSeatQwenCloudContextWindowSteps'),
   require('./bl1314InvariantTwoQaQuestionSteps'),
   require('./bl1301ParkedTicketSteps'),
+  require('./bl1330SwarmStampBobAnthropicStartingCastSteps'),
 ];
 
 function registerSteps(registry) {
