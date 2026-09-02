@@ -168,6 +168,18 @@ notes: |
   and the tip lands clean. Do not re-cite a different commit; do not hand-strip
   the tip. The underlying machinery defect is ticketed as BL-1315.
 
+  RESOLVED 2026-09-02, specifier adjudication - the unpark's stated remedy is
+  itself stale and must NOT be run. `86c2ed1c2d` is already an ancestor of
+  origin/main AND its content is verified there: `git-common-dir` in
+  land_step_lib.bb, `cleanup!` on the create-failure path, the live .feature
+  with its handler registered. It landed inside the BL-1303 chain the two were
+  entangled through, so the re-run this ticket asked for is not owed - running
+  it would replay an entangled tip a second time, the operation that leaked a
+  sibling's line into main earlier today (BL-1332). No coder dispatch either;
+  no re-work was ever owed. What remains is coordinator bookkeeping only: move
+  to backlog/done/, recheck the cap, route the next item in the same turn.
+  Evidence: `backlog/evidence/BL-1298-specifier-unpark-adjudication-20260902.md`.
+
   Routing: like BL-1297, this is a defect IN the delivery machinery, so it
   cannot ride the pipeline it repairs - its own parcel would reach QA and
   hit the identical LAND_ESCALATE. It goes through

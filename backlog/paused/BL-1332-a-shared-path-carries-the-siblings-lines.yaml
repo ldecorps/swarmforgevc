@@ -1,0 +1,167 @@
+id: BL-1332
+title: "The replay excludes a sibling's paths but takes shared paths whole, so an unlanded ticket's adjacent line rides into main inside a file both tickets edit - and in index.js that line freezes every role's commits"
+milestone: M8
+type: defect
+severity: critical
+# critical, a grade above BL-1315's high, and the difference is blast radius
+# rather than drama. BL-1315 graded high because an entangled parcel parked
+# intact and QA's hold was the correct response. This one shipped a broken
+# tree to origin/main and then refused EVERY role's commit on main - backlog
+# bookkeeping included - until a human adjudicated. That is a whole-swarm
+# stop, not a held parcel. Nothing was destroyed, which is why it is not
+# beyond critical.
+status: todo
+epic: swarm-reliability
+priority: 3
+direction: swarm-reported
+depends_on: [BL-1315]
+# Landed and closed. BL-1315 built the per-PATH attribution this slice works
+# one granularity below; nothing unbuilt is waited on.
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1332-a-shared-path-carries-the-siblings-lines.feature.draft
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_cli.bb::land-step-lib/replay!::the CONSUMER anchor (BL-1235). land_step_cli.bb is pre-existing and is the only live caller of the replay, so anchoring the call here proves the changed shared-path handling sits on a path that actually runs. Anchoring inside land_step_lib.bb would be satisfied by this parcel own diff and prove nothing. Verified present at spec time, land_step_cli.bb line 65.'
+  - 'specs/pipeline/steps/index.js::bl1332SharedPathLineLeakSteps::the draft-conversion anchor, doing a DIFFERENT job from the entry above. This ticket acceptance starts life pointing at a .feature.draft, which passes BL-761 vacuously because that gate fails closed only on an ABSENT declaration. This entry pins the registration so the rename cannot be forgotten. Deliberately NOT offered as proof of production wiring, per BL-1235. Verified absent at spec time, grep bl1332 returns 0.'
+
+invariants:
+  - "A replayed path's content never carries a change attributed solely to a ticket the same run reported as unlanded, whatever else that path is attributed to."
+  - "A shared path whose ownership cannot be separated refuses the land, naming the path and the sibling; it never silently ships either ticket's version of it."
+
+description: |
+  ## What is wrong
+
+  `own-paths` in `swarmforge/scripts/land_step_lib.bb` decides inclusion per
+  PATH. A path is excluded only when every owner is an unlanded sibling and
+  none is the task ticket (lines 312-315). `write-tree-from-paths!` then
+  builds the tip with
+
+      git checkout <cited-commit> -- <path>
+
+  per included path - the WHOLE blob as it stood at the cited commit.
+
+  So for a path BOTH tickets legitimately edit, the task's ownership pulls the
+  path in, and the sibling's lines inside that file come with it. Path-level
+  attribution has no way to separate two tickets inside one file.
+
+  ## The instance, verified rather than argued
+
+  `c65d8e6728` ("BL-1314: tip-pure replay onto origin/main") added to
+  `specs/pipeline/steps/index.js`:
+
+      +  require('./bl1324ClaudeSeatQwenCloudContextWindowSteps'),
+      +  require('./bl1314InvariantTwoQaQuestionSteps'),
+
+  One legitimate line, one belonging to BL-1324 - still mid-pipeline, its
+  handler file absent from `main` and present only in the role worktrees.
+  QA's own BL-1314 evidence states the replay diff contains no BL-1324
+  content; the adjacent line rode along anyway, because the two tickets share
+  the path.
+
+  `check_feature_handler_registration.sh` then refused every commit on `main`
+  for every role - the coordinator's own backlog bookkeeping included - until
+  a specifier adjudicated by hand. Ruling and full verification:
+  `backlog/evidence/specifier-ruling-bl1324-require-leak-main-frozen-20260902.md`;
+  discovery: `backlog/evidence/coordinator-main-commit-blocked-bl1324-leak-20260902.md`.
+
+  ## Why this is not BL-1315 regressing, and not BL-1309
+
+  BL-1315 is landed and did what it says: "A path is excluded only on positive
+  attribution to another ticket that is unlanded." That sentence is the whole
+  defect - attribution stops at the path. This slice is the stated residual one
+  granularity down. BL-1309 is a different question again: whether the mandatory
+  land step asks what the tip carries at all, at COMMIT granularity.
+
+  `specs/pipeline/steps/index.js` is the file every ticket with a step handler
+  touches, which makes it the likeliest shared path in the repository. This is
+  not a freak entanglement; it recurs whenever two handler-adding tickets are in
+  flight together.
+
+  It is also not specific to `index.js`. Any append-only shared file two
+  in-flight tickets both add a line to carries the same risk - QA named
+  `swarmforge/scripts/test/suite-manifest.tsv` and `backlog-schema.md`'s field
+  table as the same shape. Scope the fix to the shared-path decision, not to a
+  list of known filenames.
+
+  ## How (direction, not mandate)
+
+  Two defensible shapes, and the choice is the human's - see `ruling_options`.
+  Whichever is chosen, the existing fail-closed posture must survive: an
+  attribution that cannot be read already refuses the land rather than
+  narrowing the tip silently, and that must stay true.
+
+  This is NOT scoped to change what an unshared path does today, and NOT
+  scoped to re-open BL-1315's landed per-path decision for paths with a single
+  owner.
+
+qa_e2e: >
+  In a fixture repo, build a cited commit in which two tickets both append a
+  line to one shared file and the sibling ticket is unlanded, then run
+  land_step_cli.bb for the landing ticket. Under option 1 it must refuse,
+  naming the shared path and the unlanded sibling, and leave no partial tip.
+  Under option 2 the replayed blob must contain the landing ticket's line and
+  not the sibling's. In both cases confirm a path owned only by the landing
+  ticket still replays whole, and a path owned only by the unlanded sibling is
+  still excluded, so BL-1315's behaviour is intact. Finally run
+  check_feature_handler_registration.sh against the produced tree and confirm
+  it passes - that guard is what turned this defect into a swarm-wide freeze.
+
+human_approval: pending
+approval_context: >
+  Sign-off on the new feature file, plus one design ruling that decides what
+  the coder builds - please answer it with the buttons rather than in prose.
+
+  A shared path is one both the landing ticket and an unlanded sibling edited.
+  Option 1 refuses the land and names both, which cannot ship anyone's wrong
+  content but blocks a parcel whenever two handler-adding tickets are in
+  flight - common, because index.js is shared by nearly every ticket. Option 2
+  keeps entangled parcels landing by replaying only the landing ticket's own
+  hunks in that file, which preserves throughput but is the larger and more
+  delicate build, and a mis-split hunk would ship a wrong tree rather than
+  refuse.
+
+  My recommendation is option 1. It removes the whole-swarm freeze now and is
+  small enough to be gated confidently; option 2 is a better end state and is
+  a fair follow-up slice once option 1 has made the failure loud instead of
+  silent. Option 2 is also close to what BL-1315 already chose one granularity
+  up, so if you would rather stay consistent with that precedent, say so.
+
+ruling_options:
+  - option 1 - refuse the land when a shared path mixes the landing ticket with an unlanded sibling, naming both
+  - option 2 - replay a shared path per-hunk so an entangled parcel still lands its own work
+
+notes: |
+  Minted 2026-09-02 by the specifier while adjudicating the coordinator's
+  priority-00 escalation that `main` refused all commits. The unwedge itself -
+  deleting the leaked require line from `main` - was ruled QA's to execute,
+  because check_pipeline_code_on_main.sh (BL-632) makes specs/pipeline/steps/
+  QA-exclusive on main and the only exemption is SWARMFORGE_ROLE=QA. That
+  repair is deliberately NOT part of this ticket: it is a one-line revert of a
+  delivery accident, already directed, and this ticket is the recurrence fix.
+
+  Routing caveat inherited from BL-1297, BL-1298 and BL-1315: this is a defect
+  IN the delivery machinery, so its own parcel reaches the same land step it
+  repairs. If it hits LAND_ESCALATE, route it through
+  swarmforge/scripts/expedite.sh rather than bouncing it - and note that
+  expedite teardown restarts the swarm unless --no-restart is passed.
+
+  The acceptance pointer is a .feature.draft on purpose. The conversion is
+  IN-PARCEL work, not a follow-up: rename it to .feature, add
+  specs/pipeline/steps/bl1332SharedPathLineLeakSteps.js, and REGISTER it in
+  specs/pipeline/steps/index.js in the SAME commit, then repoint acceptance:.
+  Renaming without landing the registration turns the suite red for every
+  other parcel (BL-233) - which is, with some irony, the exact failure mode
+  this ticket exists to prevent.
+
+  Spec-time gates run: gherkin_lint_gate.sh clean; IR-DRY leaves ONE
+  possible-synonym (medium) pairing the single-owner Given with the
+  two-owner Given. Judged a genuine distinction and deliberately not merged -
+  the difference between those two Givens IS the defect this ticket fixes,
+  so collapsing them would erase the behaviour under test.
+
+  QA's own procedural mitigation is complementary, not a substitute: diff a
+  replay against origin/main rather than the role's own worktree HEAD, which
+  can already carry the sibling's line, and read every shared registry file's
+  diff line by line. That is a habit; this ticket is the machinery.
