@@ -1,0 +1,187 @@
+id: BL-1334
+title: "The land step publishes a replay to main without advancing swarmforge-QA, so the one shared QA-approval predicate reads QA's own landed work as unapproved until an unrelated later merge closes the window"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1334-a-landed-replay-is-qa-approved-when-it-lands.feature
+
+human_approval: pending
+approval_context: >
+  One design fork, and it is genuinely yours because the two shapes put the
+  risk in different places.
+
+  Advancing the ref from the tool is the small fix, but it hands a script write
+  access to the ref that DEFINES approval - and BL-952 is on record that
+  reachability from swarmforge-QA is not approval, which is exactly the
+  property a careless ref bump would erode. Recording the mapping instead
+  leaves the ref semantics untouched but adds a second store the predicate must
+  consult, and a store that exists and cannot be read fails closed (BL-925
+  invariant 3), which is a new way for the gate to jam.
+
+  Nothing here is urgent: the window self-closes and `--override` is sanctioned
+  and logged. The reason to fix it at all is that the override is the habit,
+  not the exception.
+ruling_options:
+  - Land step advances swarmforge-QA to the commit it just landed
+  - Land step records the replay-to-approved-source mapping for the predicate to consult
+  - Leave as is and document the override as expected after every replay land
+
+invariants:
+  - "A commit the land step publishes to main reads as QA-approved at the moment it lands: no later, unrelated merge is required to make the shared predicate answer approved."
+  - "Approval never spreads: only the commit the land step landed for an approved parcel gains it, never an unrelated commit that happens to sit on the same branch."
+  - "A bounce verdict on file still vetoes approval, whatever the land step did to the ref or the store (BL-952)."
+
+description: |
+  ## What is wrong
+
+  `is_qa_ancestor.sh` is the ONE definition of "is this sha QA-approved"
+  (BL-925 invariant 2), shared by `check_pipeline_code_on_main.sh`,
+  `handoffd.bb`'s push-sweep gate and `babysitter_check.bb`. It answers on
+  ancestry of `swarmforge-QA`, vetoed by any bounce verdict on file.
+
+  The land step's tip-pure replay mints a NEW commit and publishes it to
+  `main`. Nothing in `land_step_lib.bb`, `land_step_cli.bb` or
+  `land_main_publish.sh` advances `swarmforge-QA` - verified by grep, the
+  string does not appear in any of the three. So at the instant QA's own
+  approved work lands, it is not in the QA ref's ancestry, and every
+  ancestry-based consumer reads `main` as carrying unapproved pipeline code.
+
+  `build_freshness_cli.bb` computes drift as `git merge-base main
+  swarmforge-QA` then every commit on `main` since that base; a freshly
+  replayed commit is exactly such a commit, and because it touches the
+  deployed surface it refuses `sync` as "main is not QA-approved". The
+  babysitter's Article 4.2 pipeline-code-on-main sweep flags the same commit
+  for the same reason.
+
+  The window closes only when something unrelated later merges `main` into the
+  QA ref. That is luck, not design.
+
+  ## Field occurrence, 2026-09-02
+
+  Two land-step replays - `d7426989b2` (BL-1301) and `c65d8e6728` (BL-1314) -
+  were flagged by the babysitter as pipeline code landed outside QA, and the
+  coordinator had to run `build_freshness_cli.bb sync --override` to keep
+  working. Both commits were legitimately QA-approved; the coordinator
+  investigated, confirmed that, and reported it rather than acting on the
+  flag. By the time this ticket was written the window had closed on its own
+  (the predicate now answers approved for both, and the live report reads
+  `"approved": true`), which is precisely why it is worth a gate: the evidence
+  evaporates.
+
+  ## Root cause, corrected from the report
+
+  The coordinator's evidence names the root cause as a missing "By QA."
+  commit trailer - "two independent gates rely on commit-trailer attribution
+  that land_step_cli.bb never writes". That is NOT the mechanism, and building
+  against it would produce a fix that changes nothing. `is_qa_ancestor.sh`
+  greps no commit message: its header states the predicate as ancestry plus
+  the durable bounce stores, and `build_freshness_cli.bb` uses a merge-base
+  computation. Both were verified directly. Neither reads a trailer. The
+  commits do indeed lack "By QA." - that part of the report is accurate - but
+  it is not what the gates consult, so adding the trailer would leave every
+  flag exactly where it is.
+
+  ## Why medium
+
+  Not high: nothing is destroyed, the pipeline keeps moving, the window
+  self-closes, and `--override` is a sanctioned escape hatch that logs itself
+  to `sync-overrides.jsonl`. Not low: the thing being overridden is a safety
+  gate, and a gate that must be bypassed on a routine path is the same broken
+  safety signal BL-1309 carries. The cost is habituation, paid slowly.
+
+  ## How (direction, not mandate)
+
+  See `ruling_options` - the fork is the human's. Whichever shape is chosen,
+  the predicate must stay the single definition (BL-925 invariant 2): this
+  ticket must not introduce a second, parallel notion of approval that the
+  three consumers could disagree about.
+
+constraints: >
+  - Do not weaken the bounce veto. BL-952 exists because reachability from
+    swarmforge-QA was treated as approval and twice-bounced code rode onto
+    origin/main.
+  - Do not add a second approval predicate. One definition, three consumers
+    (BL-925 invariant 2).
+  - Fail closed on an unreadable store or an unresolvable ref (BL-925
+    invariant 3): unknown is never approved.
+
+qa_e2e_procedure: >
+  In a scratch fixture repo with a `swarmforge-QA` ref and a `main` branch,
+  approve a parcel (no bounce record in either store), run the land step's
+  replay to publish it onto `main`, and do NOT merge `main` into the QA ref
+  afterwards. At the parent commit confirm the defect first:
+  `swarmforge/scripts/is_qa_ancestor.sh <landed-sha>` exits non-zero and
+  `build_freshness_cli.bb <root> report` shows `qa_approval.approved: false`
+  naming that sha. Repeat at the parcel commit and confirm the predicate exits
+  0 and the report reads `approved: true` with an empty `offending_shas`,
+  still with no merge into the QA ref. Then, in the same fixture, add an
+  unrelated pipeline-code commit to `main` belonging to no approved parcel and
+  confirm it is still reported unapproved; and write a bounce record for the
+  landed parcel and confirm the predicate flips back to not-approved. Finally
+  confirm `report` performs no compile and no daemon restart.
+
+out_of_scope: |
+  - The land step's sibling reporting. An already-landed sibling reported as
+    entangled is BL-1272, still paused.
+  - What the replayed tip carries. A land that ships tickets other than the
+    one being landed is BL-1309, still paused.
+  - Adding a "By QA." trailer to replay commits. It would be reasonable
+    provenance hygiene, but it fixes nothing here (see the root-cause section)
+    and no gate reads it. If it is wanted, it is its own chore, not this
+    ticket.
+
+source: |
+  Coordinator `note` (priority 20) to the specifier, 2026-09-02:
+  "land_step_cli.bb replay commits lack QA trailer, see coordinator ev",
+  with `backlog/evidence/coordinator-babysitter-article42-false-positive-20260902.md`
+  and `backlog/evidence/coordinator-main-commit-blocked-bl1324-leak-20260902.md`.
+
+  The coordinator's own words on what it did, preserved verbatim:
+
+  > "None to the commits themselves - both are correct, wanted, QA-approved
+  > content; reverting or altering them would be wrong. Recording this as a
+  > gate-accuracy defect for the specifier to fold into the land-step-replay
+  > work (BL-1298 territory, or its own ticket)."
+
+  Minted as its own ticket rather than folded into BL-1298: that ticket is
+  landed and closed, and its subject is the replay's scratch checkout, not the
+  approval predicate.
+
+notes: |
+  ## No `required_wiring:`, deliberately
+
+  Whichever ruling is taken, the change lands inside machinery that already
+  has live callers: `land_step_cli.bb` calls `land_step_lib.bb` today, and
+  `is_qa_ancestor.sh` is already invoked by `check_pipeline_code_on_main.sh`,
+  `handoffd.bb` and `babysitter_check.bb`. There is no call site that could be
+  missing, which is the only thing `required_wiring` proves. Any anchor
+  available here would name a symbol this parcel itself adds, inside the file
+  that declares it, and would go green on its own diff (BL-1235). Stating that
+  rather than banking a meaningless green.
+
+  ## Findings recorded at mint
+
+  - `grep -n 'swarmforge-QA' land_step_lib.bb land_step_cli.bb
+    land_main_publish.sh` -> no matches. The land step never advances the ref.
+  - `is_qa_ancestor.sh` header: approval is ancestry of `swarmforge-QA` AND no
+    bounce verdict in either the JSONL store or ticket-YAML `bounce_history`.
+    No commit-message read anywhere in it.
+  - `build_freshness_cli.bb:161-179`: drift is `merge-base main swarmforge-QA`
+    then `commit-shas-since!` on `main`; a fresh replay commit is necessarily
+    in that set.
+  - Both field commits now answer approved (`is_qa_ancestor.sh` exit 0) and
+    the live report reads `approved: true`. The window had already closed when
+    this was minted - the defect is real but not currently observable, so the
+    acceptance builds its own fixture rather than relying on the live repo.
+  - Gates at mint: `gherkin_lint_gate.sh` clean; IR-DRY 2 findings over 12
+    step occurrences, both the placeholder-versus-its-own-instantiation shape
+    that a Scenario Outline alongside a concrete scenario always produces, and
+    neither accidental drift.
