@@ -12,7 +12,7 @@ slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1349-spawn-heavy-property-files-fit-a-budget.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed here and there are no ruling_options: the work to do is
   not in dispute and how to do it is left to the implementer. What needs your
