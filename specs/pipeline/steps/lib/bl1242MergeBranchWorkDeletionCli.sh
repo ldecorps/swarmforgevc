@@ -11,6 +11,10 @@
 #   refusal-detail        - scenario 02: refusal content detail
 #   no-removal            - scenario 03: nothing removed, always allowed
 #   double-report <ticket-yaml|product> - scenario 04
+#   incoming-matrix <none|every>  - BL-1341 scenario 01
+#   incoming-detail               - BL-1341 scenario 02
+#   incoming-kept                 - BL-1341 scenario 03
+#   incoming-both-sides           - BL-1341 scenario 04
 # Prints one JSON line.
 
 set -uo pipefail
@@ -138,8 +142,77 @@ case "$MODE" in
     fi
     ;;
 
+  incoming-matrix|incoming-detail|incoming-kept)
+    # BL-1341's shape: a path that exists ONLY on the incoming branch. The
+    # receiving branch never had it, so the diff against HEAD is empty and
+    # the pre-BL-1341 guard saw nothing at all.
+    SEED="$(git -C "$ROOT" rev-list --max-parents=0 HEAD | head -1)"
+    git -C "$ROOT" checkout -q -b receiving "$SEED"
+    echo "receiving side" > "$ROOT/receiving-note.txt"
+    git -C "$ROOT" add receiving-note.txt
+    git -C "$ROOT" commit -q -m "BL-0005: receiving-side work"
+    RECEIVING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q -b incoming "$SEED"
+    mkdir -p "$ROOT/specs/pipeline/steps"
+    echo "// incoming only" > "$ROOT/specs/pipeline/steps/bl0006IncomingSteps.js"
+    git -C "$ROOT" add specs/pipeline/steps/bl0006IncomingSteps.js
+    git -C "$ROOT" commit -q -m "BL-0006: work only the incoming branch carries"
+    INCOMING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q receiving
+    git -C "$ROOT" reset -q --hard "$RECEIVING_TIP"
+    git -C "$ROOT" merge --no-ff --no-commit "$INCOMING_TIP" >/dev/null 2>&1 || true
+    if [[ "$MODE" != "incoming-kept" ]]; then
+      # The hand resolution: keep "ours" for a path only "theirs" had.
+      git -C "$ROOT" rm -q -f specs/pipeline/steps/bl0006IncomingSteps.js >/dev/null 2>&1 || true
+    fi
+
+    MSG="$ROOT/../msg_$$.txt"
+    if [[ "$MODE" == "incoming-matrix" && "$PARAM" == "every" ]]; then
+      echo "BL-0006: dropping it deliberately" > "$MSG"
+    else
+      echo "merge origin/main" > "$MSG"
+    fi
+    OUT="$(run_merge_guard "$MSG" 2>&1)"
+    EXIT_CODE=$?
+    rm -f "$MSG"
+    STDERR_ESCAPED="$(bb -e '(println (cheshire.core/generate-string (slurp *in*)))' <<<"$OUT")"
+    printf '{"exitCode":%s,"stderr":%s}\n' "$EXIT_CODE" "$STDERR_ESCAPED"
+    ;;
+
+  incoming-both-sides)
+    # A path BOTH branches carry, dropped by the resolution: it is a deletion
+    # against HEAD and against MERGE_HEAD, and must be ONE finding.
+    SEED="$(git -C "$ROOT" rev-list --max-parents=0 HEAD | head -1)"
+    git -C "$ROOT" checkout -q -b shared-base "$SEED"
+    mkdir -p "$ROOT/specs/pipeline/steps"
+    echo "// shared" > "$ROOT/specs/pipeline/steps/bl0007SharedSteps.js"
+    git -C "$ROOT" add specs/pipeline/steps/bl0007SharedSteps.js
+    git -C "$ROOT" commit -q -m "BL-0007: a path both sides carry"
+    SHARED_BOTH="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q -b incoming-shared "$SHARED_BOTH"
+    echo "// shared, edited on the incoming side" > "$ROOT/specs/pipeline/steps/bl0007SharedSteps.js"
+    git -C "$ROOT" add specs/pipeline/steps/bl0007SharedSteps.js
+    git -C "$ROOT" commit -q -m "BL-0007: incoming-side edit"
+    INCOMING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q shared-base
+    git -C "$ROOT" merge --no-ff --no-commit "$INCOMING_TIP" >/dev/null 2>&1 || true
+    git -C "$ROOT" rm -q -f specs/pipeline/steps/bl0007SharedSteps.js >/dev/null 2>&1 || true
+
+    MSG="$ROOT/../msg_$$.txt"
+    echo "merge, dropping a shared path" > "$MSG"
+    OUT="$(run_merge_guard "$MSG" 2>&1)"
+    EXIT_CODE=$?
+    rm -f "$MSG"
+    MENTIONS="$(printf '%s\n' "$OUT" | grep -c "bl0007SharedSteps.js" || true)"
+    printf '{"exitCode":%s,"mentions":%s}\n' "$EXIT_CODE" "$MENTIONS"
+    ;;
   *)
     echo "unknown mode: $MODE" >&2
     exit 2
     ;;
+
 esac
