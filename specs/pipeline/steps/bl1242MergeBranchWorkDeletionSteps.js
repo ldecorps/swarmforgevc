@@ -106,8 +106,10 @@ function registerSteps(registry) {
 
   // ── BL-1341: the incoming side ────────────────────────────────────────
 
-  scoped(/^a merge in progress on a branch that lacks files the incoming branch carries$/, (ctx) => {
-    ctx.bl1341 = true;
+  scoped(/^a merge in progress on a branch that lacks files the incoming branch carries$/, () => {
+    // The fixture for this scenario family is built by the CLI driver
+    // itself (bl1242MergeBranchWorkDeletionCli.sh's incoming-* modes), so
+    // this Given has nothing to record - the real work happens in the When.
   });
 
   scoped(/^the merge result omits those files and the message names "?([a-z]+)"? of them$/, (ctx, tickets) => {
