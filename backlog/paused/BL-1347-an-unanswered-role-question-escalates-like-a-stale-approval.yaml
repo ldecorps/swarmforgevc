@@ -1,0 +1,186 @@
+id: BL-1347
+title: "An unanswered role question escalates on the same email channel a stale approval ask already uses — and says the role can no longer ask anything"
+milestone: M8
+type: feature
+status: todo
+epic: question-attention-path
+priority: 125
+direction: specifier-found
+depends_on: [BL-584]
+mutation_cost: medium
+slice_size_envelope: small
+assigned_to: none
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1347-an-unanswered-role-question-escalates-like-a-stale-approval.feature
+
+invariants:
+  - "A role question is escalated only while its live marker exists - the marker is the only evidence a question is outstanding, and missing evidence fails closed to not-stale."
+  - "One absence sends one email: role questions and approval asks share a single digest and a single cooldown, never a second escalation channel."
+
+required_wiring:
+  - 'extension/src/tools/telegram-front-desk-bot.ts::listLiveRoleQuestionCandidates::the concierge tick sweep wiring must reach the new reader from a pre-existing live consumer, not from a declaration this parcel adds itself'
+  - 'specs/pipeline/steps/index.js::bl1347UnansweredRoleQuestionEscalatesSteps::acceptance handler registered so the runner executes every scenario. Absent at spec time, grep bl1347 returns 0.'
+
+source: |
+  BL-772 slice E, declared in that epic since it was written and never minted:
+  "escalation ladder for an unanswered question. Do NOT build a second timer:
+  extend BL-584's stale-approval email escalation to cover role asks."
+
+  Minted 2026-09-02 by the specifier, from a live incident it was itself the
+  subject of rather than from the epic text alone. Timeline, read off disk this
+  pass, not recalled:
+
+  - 2026-08-30 16:18:24Z the specifier raised a clarifying question via
+    role_ask.bb (worktree-drift attribution). `.swarmforge/operator/role-awaiting/specifier.json`
+    still holds it, `asked_at_ms` 1788106704878.
+  - `deliver-role-answer.js --role specifier` has returned a non-pairing result
+    on every check since: the stored answer in role-answers/specifier.json is
+    the 2026-08-28 reconcile-sweep one (`askedAtMs` 1787919016568). Per BL-1245
+    those do not pair, so the question is genuinely unanswered and `--resolve`
+    would discard a live question rather than recover a lost answer.
+  - `backlog/INTAKE-operator-question-1788082425603.md`, a raw backlog-root
+    intake, has therefore sat undrained for three days. Its own question is
+    truncated mid-sentence ("...the spec tip text filter...") and a grep across
+    extension/src, docs, swarmforge, specs and the live backlog returns that
+    file and nothing else - so it cannot be specced without asking the human,
+    and it cannot be asked while the one slot is held.
+  - Three consecutive daily rechecks (08-30, 09-01, 09-02) are recorded in that
+    intake file. Each could do nothing except confirm the block was unchanged.
+
+  Nothing in the swarm told the human a question was waiting past the single
+  Telegram post that raised it. The approvals path has had exactly that second
+  channel since BL-584 shipped.
+
+description: |
+  ## What is missing
+
+  `role_ask.bb` posts a clarifying question into the asking role's own Telegram
+  topic and then waits, with no upper bound and no second channel. If the human
+  misses that one notification the question waits forever, and the cost is not
+  merely a slow answer: a role may hold only ONE outstanding question
+  (`role-awaiting/<role>.json`, the already-pending guard), so an unanswered one
+  closes that role's only way to ask anything else. Nothing surfaces that.
+
+  The remedy already exists one directory over. BL-584's
+  `extension/src/notify/staleApprovalEscalation.ts` sweeps live tickets for an
+  `human_approval: pending`/`amending` ask older than a threshold, builds ONE
+  oldest-first digest with a Telegram deep link per line, emails it, and holds a
+  cooldown. It is already driven from the concierge tick by the
+  `sweepStaleApprovalAsks` adapter in
+  `extension/src/tools/telegram-front-desk-bot.ts`. It simply has no idea role
+  questions exist.
+
+  ## The behaviour
+
+  The same sweep also finds role questions that have gone unanswered past the
+  same threshold, and folds them into the same digest. Each role line names the
+  role, how long its question has waited, and - the part that makes it
+  actionable rather than merely informative - that the role can raise no further
+  question until this one is answered. Where the posted Telegram message is
+  recorded the line deep-links it, exactly as an approval line does; where it is
+  not, the line still appears without a link.
+
+  ## How (direction, not mandate)
+
+  The pieces line up with almost nothing new:
+
+  - Clock: a role marker carries `asked_at_ms` directly, so unlike an approval
+    ask there is no topic-record lookup and no human-activity reset to compute.
+    The marker existing IS the outstanding state; it is removed when the answer
+    is consumed (`deliver-role-answer.js`) or the role resolves its own slot
+    (`role_ask.bb --resolve`). That is invariant 1, and it is why this slice
+    needs no second timer, matching the epic's explicit instruction.
+  - Deep link: role asks already reuse the SAME ask-message store as approvals,
+    keyed by `roleAskThreadId(role)` = `role-ask-<role>` (see role_ask.bb's own
+    header and `ROLE_ASK_THREAD_PREFIX` in telegramFrontDeskBotCore.ts), so
+    `buildTelegramDeepLink` works unchanged.
+  - Config: reuse `approval_ask_stale_after_ms` and
+    `approval_ask_email_cooldown_ms`. A separate pair of knobs would be a second
+    escalation channel in all but name and would break invariant 2. If the two
+    genuinely need to diverge later that is its own ticket, with a reason.
+  - Shape: a candidate reader beside `listLiveApprovalAskCandidates` reading
+    `.swarmforge/operator/role-awaiting/*.json`, a selector that keeps entries
+    past the threshold, and one merged digest. Prefer widening the existing
+    `StaleAskEntry`/`buildStaleApprovalDigest` path over a parallel one - the
+    single digest and single cooldown are invariant 2, not an implementation
+    preference.
+
+  ## Not in scope
+
+  Clearing a wedged slot automatically. That is BL-772 slice D (pending-question
+  lifecycle: stale/superseded closure, and one source of truth for "is a
+  question outstanding"), and it is a different decision with different risk -
+  see `approval_context`. This slice makes the wait VISIBLE; it does not end it.
+
+  Also out: answering from the email, Bubble surfaces (BL-837/BL-838), and the
+  spoken nudge (slice F).
+
+notes: |
+  [2026-09-02 specifier] IR-DRY run on this feature file reports one
+  medium-confidence near-duplicate: "a role has an outstanding question older
+  than the stale threshold" against "...younger than...". Reviewed and kept as
+  written - that wording difference is the exact discriminator scenario 02
+  exists to assert, not accidental drift, which is the checker's own stated
+  condition for leaving a finding alone. For the same reason the shared Given is
+  NOT lifted into `Background`: scenarios 02 and 03 need a different state, so
+  hoisting it would change what they assert.
+
+  On `required_wiring` and BL-1235: the first entry anchors
+  `telegram-front-desk-bot.ts`, a pre-existing live consumer whose concierge
+  tick already calls `sweepStaleApprovalAsks`. The reader name is chosen here at
+  mint precisely so the pattern is a literal that will exist (BL-874), and it
+  can only match if the tick actually reaches the new code - it is not satisfied
+  by the module that declares it. Verified at spec time: `listLiveRoleQuestionCandidates`
+  appears nowhere in `extension/src` (0 hits) and `bl1347` appears nowhere in
+  `specs/pipeline/steps/index.js` (0 hits), so neither anchor can pass before
+  the work is done.
+
+  This ticket's own `acceptance:` names a real `.feature`, not a `.feature.draft`,
+  so it is not caught by the BL-1340 promotion deadlock.
+
+qa_e2e_procedure: |
+  1. With the front-desk bot running against a scratch target, write a role
+     marker `.swarmforge/operator/role-awaiting/hardender.json` with an
+     `asked_at_ms` older than `approval_ask_stale_after_ms`. Let one concierge
+     tick run. An email arrives naming `hardender`, the waited time, and the
+     statement that the role can raise no further question.
+  2. Same marker, `asked_at_ms` two minutes old: a tick sends nothing.
+  3. Remove the marker (or run `deliver-role-answer.js --role hardender` on a
+     paired answer): a tick sends nothing.
+  4. With both a stale role marker AND a ticket at `human_approval: pending`
+     past the threshold, one tick sends exactly ONE email naming both.
+  5. Immediately re-run the tick: nothing is sent (shared cooldown).
+  6. Confirm the live incident case: with the specifier marker
+     (`asked_at_ms` 1788106704878) present, a tick names `specifier` and a wait
+     measured in days.
+  7. `bash specs/pipeline/scripts/run_acceptance.sh` green with all six
+     scenarios of this feature file executing.
+
+human_approval: approved
+human_ruling: |
+  A - email only, the slot is cleared by a human answer or by the role itself
+approval_context: >
+  One ruling, and it is the only thing here a coder cannot decide: whether this
+  slice may also END a wait, or only make it visible.
+  Everything else is firm - reusing BL-584 rather than building a second timer
+  is the epic slice E instruction verbatim, and the single shared digest and
+  cooldown follow from it.
+  Option A is what this ticket is written for: email only, the slot never clears
+  itself, and a human answer or the asking role running role_ask.bb --resolve
+  stays the only exit. It can never destroy a live question, and the wedge it
+  cures is one of visibility.
+  Option B adds a much longer hard bound after which the marker is archived to
+  role-awaiting-archive and the role is told its question expired, so the
+  channel reopens unattended. That fixes the three-day block outright, but it
+  silently discards a question the human may simply not have got to yet, which
+  is the failure mode role_ask exists to prevent.
+  Option C escalates louder on each repeat instead of clearing, which stops
+  short of both and adds a second cadence to tune.
+  Specifier recommends A: BL-772 slice D already owns pending-question
+  lifecycle and closure, and auto-expiry is that decision, not this one.
+
+ruling_options:
+  - A - email only, the slot is cleared by a human answer or by the role itself
+  - B - email, and auto-archive the marker after a longer hard bound so the channel reopens
+  - C - email, escalating louder on each repeat, never clearing the slot
