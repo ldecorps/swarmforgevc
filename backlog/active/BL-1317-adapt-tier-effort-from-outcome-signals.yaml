@@ -45,4 +45,4 @@ depends_on_note: |
   BL-1316 first — Adapt climbs from the claim-time baseline, not from an
   unrelated pack default.
 
-assigned_to: none
+assigned_to: coder
