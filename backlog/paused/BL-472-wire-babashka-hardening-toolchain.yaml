@@ -11,6 +11,20 @@ depends_on: []
 source: "hardener rule_proposal (scope engineering, 2026-07-16, id 20260716T231815Z_000346) raised during BL-433 hardening: swarmforge.lock.json has NO Babashka tool pins, so every .bb hardening pass silently runs the degraded no-tooling fallback while the tool table implied real coverage. Specifier disposition 2026-07-16 (human ldecorps chose 'document as not-wired' over 'pin+install'): correct engineering.prompt to state the gap plainly NOW (done, same pass), and FILE this deferred tracker so 'tracked future item' is a real reference, not a dangling claim."
 
 notes: |
+  [2026-09-02T10:19Z coordinator] Eighth open-slot nudge naming this ticket
+  cleared without promotion: effective cap is now 4 (raised from 1, verified
+  via effective_backlog_depth_cli.bb). Re-ranked eligible paused candidates
+  under Article 3.2.4: three approved high-severity defects outrank this
+  ticket (chore/low) - BL-1309 (pri 5) and BL-1306 (pri 30) both refused by
+  promote_and_route_next.sh on the acceptance gate (draft .feature.draft not
+  executable - specifier has not finalized their spec yet); BL-1314 (pri 27)
+  had already been promoted concurrently by another process before this pass
+  reached it. With no more expedited candidates eligible, auto-pick promoted
+  BL-1301 (defect/medium, next in priority order) into the remaining slot.
+  `backlog/active/` now holds BL-1298, BL-1301, BL-1314, BL-1324 at effective
+  cap 4 - no slot remains open for BL-472. Verified via
+  effective_backlog_depth_cli.bb and ls backlog/active/ before clearing.
+
   [2026-09-02T10:07Z coordinator] Seventh open-slot nudge naming this ticket
   cleared without promotion: BL-1294 (defect/high/approved) had already been
   bookkept to done in this turn, opening one slot at effective cap 1. Before

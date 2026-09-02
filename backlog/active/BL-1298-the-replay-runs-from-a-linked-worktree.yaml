@@ -111,6 +111,25 @@ approval_context: >
   say so and I will scope it; otherwise it stays a separate question.
 
 notes: |
+  [2026-09-02T10:20Z coordinator] Re-promoted paused → active while filling
+  open slots for an open-slot nudge sweep. `route_backlog_to_coder.sh`
+  correctly REFUSED to dispatch this to coder (dispatch-trail hit) - per
+  this ticket's own UNPARK CONDITION note below, no re-work is owed, this is
+  NOT fresh coder work. Verified the condition is now satisfied: BL-1303 is
+  closed (`backlog/done/M8/BL-1303-...yaml`) and the cited commit
+  `86c2ed1c2d` is confirmed an ancestor of `origin/main`
+  (`git merge-base --is-ancestor 86c2ed1c2d origin/main` → true); BL-1297 is
+  also closed (`backlog/done/BL-1297-...yaml`). Per the ticket's own Routing
+  note, this must go through `swarmforge/scripts/expedite.sh` (machinery
+  defect, cannot ride the pipeline it repairs) - NOT a git_handoff to coder.
+  Deliberately left UNROUTED in `backlog/active/` (not sent to any role) so
+  the next coordinator/human pass sees this and runs the expedite re-run
+  (`land_step_cli.bb` on commit `86c2ed1c2d`) rather than blind-force-routing
+  a fresh coder dispatch. Flagging for the human/specifier rather than
+  self-running expedite.sh this turn, since it stops+restarts swarm
+  processes (`--no-restart` needed) and this coordinator has not verified an
+  expedite run is what the current shift wants right now.
+
   Split out of BL-1297 rather than folded into it, deliberately. BL-1297 is
   a defect in `task_scope_gate_lib.bb`'s `own-commit-diff` shared by three
   callers; this is a defect in `land_step_lib.bb`'s `replay!` alone. They

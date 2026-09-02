@@ -313,6 +313,7 @@ test_harness_env_scrub_bl657.sh	standing
 test_host_bootstrap.sh	standing		
 test_idle_clear_conf_parsing.sh	standing		
 test_idle_clear_respawn.sh	standing		
+test_invariant2_qa_definition_lib.sh	standing		
 test_is_qa_ancestor_expedite_store.sh	standing		
 test_is_qa_ancestor_yaml_store.sh	standing		
 test_issue_intake_loop.sh	standing		
