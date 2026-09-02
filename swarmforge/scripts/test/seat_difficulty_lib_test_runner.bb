@@ -246,15 +246,15 @@
          (seat-difficulty-lib/adapt-effort-decision
           {:backend "cursor" :prior-effort "medium" :baseline-effort "medium" :signal "bounce"}))
 
-(assert= "an unknown prior effort is not guessed at"
-         false
-         (:apply? (seat-difficulty-lib/adapt-effort-decision
-                   {:backend "claude" :prior-effort "turbo" :baseline-effort "medium" :signal "bounce"})))
+(assert= "an unknown prior effort is not guessed at, and says why rather than being silent"
+         {:apply? false :effort "turbo" :reason "unknown prior effort \"turbo\""}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "turbo" :baseline-effort "medium" :signal "bounce"}))
 
-(assert= "an unknown signal changes nothing"
-         false
-         (:apply? (seat-difficulty-lib/adapt-effort-decision
-                   {:backend "claude" :prior-effort "medium" :baseline-effort "medium" :signal "shrug"})))
+(assert= "an unknown signal changes nothing, and names the signal rather than being silent"
+         {:apply? false :effort "medium" :reason "unknown signal \"shrug\""}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "medium" :baseline-effort "medium" :signal "shrug"}))
 
 (assert= "an absent baseline is read as the prior effort, never as the bottom rung"
          false
