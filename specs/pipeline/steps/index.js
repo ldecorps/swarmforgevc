@@ -404,6 +404,7 @@ const DOMAINS = [
   require('./bl1001DifficultyAwareSeatRoutingSteps'),
   require('./bl1316ClaimTimeEffortSteps'),
   require('./bl1317AdaptEffortSteps'),
+  require('./bl1271DispatchGapDefectOnlySteps'),
   require('./bl1007ContentionBudgetSteps'),
   require('./bl1008BoundedWatchDeadlineSteps'),
   require('./bl1009UnifiedPipelineGridAcrossSwarmsSteps'),
