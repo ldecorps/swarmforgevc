@@ -1,0 +1,151 @@
+id: BL-1331
+title: "bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps.js lazily requires specs/pipeline/steps/index.js, forming a real (if runtime-safe) require cycle that dependency-cruiser's acyclic gate flags on every scan that touches either file"
+milestone: M8
+type: defect
+severity: low
+# low: the cycle is confirmed runtime-safe (lazy require, both modules
+# already in the require cache by execution time) and blocks no production
+# path. Not medium/high: nothing is stalled and the architect already
+# treated it as non-blocking in BL-1294. Still worth a ticket because it is
+# a STANDING false-positive on a hard architecture gate (BL-259) that will
+# keep re-surfacing for every future parcel whose changed-file scope happens
+# to include specs/pipeline/steps/index.js or this sibling file.
+status: todo
+epic: code-quality-gates
+priority: 40
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1331-break-bl726-index-require-cycle.feature
+
+human_approval: pending
+approval_context: >
+  No choice is posed — this is a mechanical simplification the specifier is
+  confident in (see WHY/HOW below), flagged for awareness only: it removes a
+  `require()` call, not any observable behaviour, and the existing BL-726
+  acceptance feature (unmodified) is the regression guard.
+
+invariants:
+  - "The BL-718 meta-acceptance check (bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps.js) drives the scenario through the SAME step registry the pipeline CLI actually uses for that run — never a second, independently-built registry."
+  - "specs/pipeline/steps/bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps.js contains no require of ./index (direct or indirect) at any point after this ticket lands."
+
+required_wiring:
+  - "specs/pipeline/steps/bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps.js::runBl718ScenarioByName::the function signature must change to take the registry as a parameter — the fix is this call site, not a new file"
+
+description: |
+  ## What
+
+  `specs/pipeline/steps/bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps.js`
+  (a step-handler module `index.js` itself requires — see `DOMAINS` array,
+  line 503) contains, inside `runBl718ScenarioByName` (line 37-56):
+
+      async function runBl718ScenarioByName(name) {
+        const { parseFeatureFile } = require('../runnerAdapter');
+        const { createStepRegistry } = require('../stepRegistry');
+        const { registerSteps } = require('./index');   // <-- lazy require, INSIDE the function body
+        const { runScenario } = require('../runtime');
+
+        const feature = parseFeatureFile(BL718_FEATURE);
+        const scenario = feature.scenarios.find((s) => s.name === name);
+        ...
+        const registry = createStepRegistry();
+        registerSteps(registry);   // builds a SECOND, independent registry from scratch
+        ...
+        await runScenario(registry, feature, scenario, ...);
+      }
+
+  This is a genuine require cycle — `index.js` → this file → (lazily)
+  `index.js` — and `.dependency-cruiser.cjs`'s `acyclic` rule (`from: {},
+  to: { circular: true }`, BL-259) correctly flags it as a structural edge.
+  It is runtime-safe today (the require is inside a function body, called
+  well after both modules are already in Node's require cache), which is
+  why the architect's BL-1294 review reported it rather than bouncing —
+  full analysis in `backlog/evidence/BL-1294-architect-pass-20260902.md`
+  (see the "Dependency gate" section). But every future parcel whose
+  changed-file scope touches `index.js` or this file will re-trigger the
+  same finding and cost the architect the same re-verification, forever,
+  unless the cycle is actually broken.
+
+  ## Why it can be removed outright, not merely justified
+
+  `runBl718ScenarioByName` is called from a step callback (line 118-120)
+  defined *inside* this file's own `registerSteps(registry)` function — the
+  same `registry` object `index.js`'s real `registerSteps(registry)` loop
+  (line 920-924) is filling in, in place, across every domain in `DOMAINS`.
+  By the time any step actually EXECUTES (feature-run time, always after
+  every domain has finished registering), that `registry` closure variable
+  already holds the exact same, fully-populated, production registry a
+  fresh `createStepRegistry()` + `require('./index').registerSteps(...)`
+  call would rebuild from scratch — just without the redundant duplicate
+  build, and without ever requiring `./index` again. Reusing it is not just
+  cycle-safe, it is a MORE faithful meta-check: it proves the BL-718
+  scenario resolves against the actual production registry this same run
+  assembled, rather than a look-alike copy.
+
+  ## How (direction, not mandate)
+
+  Change `runBl718ScenarioByName` to accept the ambient `registry` as a
+  parameter (e.g. `runBl718ScenarioByName(registry, name)`) instead of
+  building its own; drop the `createStepRegistry` and `require('./index')`
+  lines entirely; update the one call site (line 119,
+  `await runBl718ScenarioByName(scenarioName)` inside the
+  `/^the BL-718 scenario (.+) is executed through the pipeline CLI$/` step)
+  to pass the enclosing `registry` through. If review finds a reason this
+  reuse is unsafe (e.g. some domain mutates or resets `registry` between
+  registration and execution — not observed in this repo's structure), a
+  narrowly-scoped `.dependency-cruiser.cjs` allowlist entry for this one
+  edge, with the same reasoning as this ticket's WHY section in its
+  comment, is the fallback — but the reuse fix is the specifier's
+  confidence, not the fallback.
+
+qa_e2e_procedure: >
+  (1) Confirm the fix: `grep -n "require('./index')"
+  specs/pipeline/steps/bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps.js`
+  returns no hits.
+  (2) Confirm the dependency gate is clean: run
+  `node extension/out/tools/dependency-gate.js
+  specs/pipeline/steps/bl726Bl718AcceptanceFeatureHasNoStepHandlersSteps.js
+  specs/pipeline/steps/index.js` and confirm no `acyclic` violation is
+  reported for this pair (any other, unrelated finding is out of scope —
+  report, do not fix, per BL-1294's own precedent of not widening).
+  (3) Confirm no regression: run the full existing
+  `specs/features/BL-726-bl718-acceptance-feature-has-no-step-handlers.feature`
+  (unmodified by this ticket) through `node specs/pipeline/cli.js` and
+  confirm every scenario still passes, in particular the two Scenario
+  Outlines that exercise `runBl718ScenarioByName` (short/long reply,
+  mirror-failure/poll scenarios).
+  (4) Confirm every scenario in this ticket's own feature file resolves to
+  a registered step handler — `specs/pipeline/runtime.js` THROWS on a
+  missing one.
+
+out_of_scope: |
+  - Rewriting `runBl718FeatureCli` (the subprocess-CLI half of this file) —
+    unaffected, no cycle there.
+  - BL-601's "acyclic-rework" and BL-759's cycle — different files, both
+    already resolved (confirmed by the architect's BL-1294 grep sweep); do
+    not conflate.
+  - The other two `specs/pipeline/steps/*.js` files the architect noted
+    with an unrelated leaked-scratch-dir pattern
+    (`backlogDepthCapOverrideSteps.js`,
+    `bl1031BoundedChokepointSpawnReachableSubtreeSteps.js`) — a different
+    defect class, not this ticket's concern.
+  - Any change to `.dependency-cruiser.cjs`'s rule set beyond the narrow
+    fallback named in HOW above, if the primary fix turns out unsafe.
+
+notes: |
+  Source of this ticket: architect `note` (priority `00`) on BL-1294,
+  "Untracked acyclic cycle in specs/pipeline/steps - see BL-1294 architect
+  evidence" — grepped and confirmed genuinely untracked before minting
+  (`backlog/{paused,active,hold,evidence}/` had no ticket for this specific
+  edge; BL-601/BL-759 are different files, already resolved). Full
+  architect analysis: `backlog/evidence/BL-1294-architect-pass-20260902.md`
+  ("Dependency gate (BL-259, hard gate)" section) and the same file's
+  closing "Out-of-parcel note already sent" cross-reference in
+  `backlog/evidence/BL-1294-architect-bounce-20260902.md`.
+
+source: |
+  Architect note 00_20260902T084643Z_001347_from_architect_to_specifier
+  (2026-09-02): "Untracked acyclic cycle in specs/pipeline/steps - see
+  BL-1294 architect evidence". Satisfied in full by this ticket.
