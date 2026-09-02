@@ -64,3 +64,21 @@ Feature: a claude seat whose --model is qwen* gets Token Plan billing and a real
     When the pack's window lines are read
     Then every pipeline role's window line requests --model qwen3.8-max via the claude agent
     And the coordinator's window line requests claude-sonnet-5
+
+  # BL-1324 global-flag-packs-share-the-declaration-07
+  # Carried from the retired duplicate BL-1325 (superseded-by-BL-1324):
+  # a genuinely distinct check this feature did not otherwise cover.
+  Scenario: the global-flag packs share the 1M declaration; reported, not undone
+    Given a claude role's extra CLI is "--model qwen3.8-max --effort high"
+    And SWARMFORGE_USE_QWEN is set to "1"
+    When the role's billing guard is built
+    Then the review records that a seat under the global SWARMFORGE_USE_QWEN=1 flag also declares CLAUDE_CODE_MAX_CONTEXT_TOKENS
+    And that behaviour is left as the commit landed it
+
+  # BL-1324 review-never-self-certifies-08
+  # Carried from the retired duplicate BL-1325 (superseded-by-BL-1324):
+  # pins invariant 2 (green tests never write the ledger decision) as an
+  # explicit scenario rather than leaving it to qa_e2e_procedure prose alone.
+  Scenario: the review never certifies the hotfix by itself
+    When the review completes with every scenario green
+    Then the hotfix ledger entry for commit 4ed88430b2 is still awaiting a human decision
