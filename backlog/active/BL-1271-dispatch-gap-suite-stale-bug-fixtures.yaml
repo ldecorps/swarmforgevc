@@ -239,4 +239,12 @@ notes: |
   the gate. That is the safety property working. Re-run
   `record-adjudication.js` after the edit.
 
+  2026-09-02 19:05Z (coordinator): handoffd "no parcel in flight" nudge answered.
+  Not a drop: QA approved the re-fix (review merge 0ea1c8cb3b, note to the
+  specifier 18:20Z) but the mandatory land step escalated (LAND_ESCALATE,
+  same entangled sibling set as BL-1338/BL-1056; this was the third blocked
+  parcel that raised BL-1343 to critical, 91200add5b). Held per the
+  specifier's ruling, no relanding; awaits BL-1343 (active, coder), then QA
+  re-lands and closes.
+
 assigned_to: coder
