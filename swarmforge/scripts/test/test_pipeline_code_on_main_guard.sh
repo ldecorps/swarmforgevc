@@ -382,19 +382,19 @@ pass "extra: --list-paths publishes the QA-exclusive path set for external consu
 # extraction itself, so a future edit that quietly re-inlines the git call
 # in one file without the other fails loudly here instead of drifting
 # silently.
+# BL-1314: the checks themselves live in invariant2_qa_definition_lib.sh so
+# they can be driven against fixture files - inline here, they could only ever
+# be run against the live tree, and the regression BL-1314 fixes (a third,
+# unrelated ancestry question added to handoffd.bb) is not expressible by
+# mutating the checked-in file in place. Unit-tested by
+# test_invariant2_qa_definition_lib.sh; this call is the live-tree run.
 HANDOFFD="$SCRIPT_DIR/../handoffd.bb"
-grep -q "is_qa_ancestor.sh" "$GUARD" \
-  || fail "BL-925 invariant 2: check_pipeline_code_on_main.sh no longer calls is_qa_ancestor.sh"
-grep -q "is_qa_ancestor.sh" "$HANDOFFD" \
-  || fail "BL-925 invariant 2: handoffd.bb no longer calls is_qa_ancestor.sh"
-# Neither file may ALSO run its own independent `git merge-base
-# --is-ancestor ... swarmforge-QA` outside of is_qa_ancestor.sh's own body -
-# that would be exactly the divergent second definition invariant 2 forbids,
-# even with the shared script still present and called.
-grep -q 'merge-base.*--is-ancestor.*swarmforge-QA' "$GUARD" \
-  && fail "BL-925 invariant 2: check_pipeline_code_on_main.sh still runs its own inline ancestry git call"
-grep -q '"merge-base".*"--is-ancestor"' "$HANDOFFD" \
-  && fail "BL-925 invariant 2: handoffd.bb still runs its own inline ancestry git call"
+# shellcheck source=../invariant2_qa_definition_lib.sh
+source "$SCRIPT_DIR/../invariant2_qa_definition_lib.sh"
+INV2_VIOLATIONS=""
+INV2_STATUS=0
+INV2_VIOLATIONS="$(inv2_qa_definition_violations "$GUARD" "$HANDOFFD")" || INV2_STATUS=$?
+[[ "$INV2_STATUS" -eq 0 ]] || fail "$INV2_VIOLATIONS"
 pass "BL-925 invariant2-one-shared-definition: both the bash guard and handoffd.bb call is_qa_ancestor.sh, not a second independent ancestry check"
 
 # ── BL-1096: exemption anchors per path, not the incoming merge tip ────────

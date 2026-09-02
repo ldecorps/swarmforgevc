@@ -187,3 +187,5 @@ notes: >
   Adding a scenario to an in-flight ticket would require its handler in the
   same parcel (BL-233) and would strand a parcel already past the coder
   (BL-971 shape). BL-1303 needs no amendment and its holder needs no note.
+
+assigned_to: coder
