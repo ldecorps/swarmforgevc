@@ -193,6 +193,10 @@ it up from the trailer) and `--link` it to its ticket.
   recorded certify, with a narrow follow-up (BL-1328) minted for the two
   dormant matching-shape/precedence gaps found during review; ledger
   decision still pending the QA-reached `done` state.
+- BL-1254 — stamp-off for the expedite no-verdict recovery chain
+  (`3f4f69ec1b`, `70c5e0e5b0`, `5de352ed1d`) reviewed as one resulting state;
+  see [BL-1254 how-to](BL-1254-swarm-stamp-expedite-no-verdict-chain.md);
+  all three ledger rows pending until human certify/waive.
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 
