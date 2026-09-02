@@ -226,4 +226,109 @@ echo "$OUT9" | grep -q "bl0003ExampleSteps.js" \
 pass "09: a merge violating both guards at once reports both, not just the first to run"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
+# ══ BL-1341: the incoming side ══════════════════════════════════════════
+# The mirror case BL-1242's predicate is structurally blind to. A path that
+# exists ONLY on the incoming branch, dropped by a hand resolution: HEAD
+# never had it, `git diff --name-status HEAD` is empty, and the merge sails
+# through. On main the incoming branch is origin/main, so this is the
+# direction that loses QA-landed work (the b71c941a19 incident).
+
+setup_incoming_fixture() {
+  git -C "$ROOT" checkout -q -b "receiving$1" "$SEED"
+  echo "receiving side $1" > "$ROOT/receiving$1.txt"
+  git -C "$ROOT" add -A
+  git -C "$ROOT" commit -q -m "BL-0005: receiving-side work $1"
+  RECEIVING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+  git -C "$ROOT" checkout -q -b "incoming$1" "$SEED"
+  mkdir -p "$ROOT/specs/pipeline/steps"
+  echo "// incoming only" > "$ROOT/specs/pipeline/steps/bl0006IncomingSteps.js"
+  git -C "$ROOT" add -A
+  git -C "$ROOT" commit -q -m "BL-0006: work only the incoming branch carries"
+  INCOMING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+  git -C "$ROOT" checkout -q "receiving$1"
+  git -C "$ROOT" reset -q --hard "$RECEIVING_TIP"
+}
+
+# Starts the merge and hand-resolves the incoming-only path AWAY - exactly
+# what a resolver does when they keep "ours" for a path only "theirs" had.
+start_incoming_merge_dropping_it() {
+  set +e
+  git -C "$ROOT" merge --no-ff --no-commit "$INCOMING_TIP" >/dev/null 2>&1
+  set -e
+  git -C "$ROOT" rm -q -f specs/pipeline/steps/bl0006IncomingSteps.js >/dev/null 2>&1 || true
+}
+
+SEED="$(git -C "$ROOT" rev-list --max-parents=0 HEAD | head -1)"
+
+# ── 10: an incoming-only path dropped by the resolution, message naming
+#        nothing -> refused, naming the path, its ticket, and the side ────
+setup_incoming_fixture a
+start_incoming_merge_dropping_it
+echo "merge origin/main" > "$MSG"
+set +e
+OUT10="$(run_guard "$MSG" 2>&1)"
+STATUS10=$?
+set -e
+[[ "$STATUS10" -ne 0 ]] || fail "10: expected refusal when the resolution drops an incoming-only path"
+echo "$OUT10" | grep -q "bl0006IncomingSteps.js" || fail "10: refusal must name the dropped incoming path, got: $OUT10"
+echo "$OUT10" | grep -q "BL-0006" || fail "10: refusal must name the incoming path's ticket, got: $OUT10"
+echo "$OUT10" | grep -qi "incoming" || fail "10: refusal must say which side the path came from, got: $OUT10"
+pass "10: an unaccounted incoming-side drop is refused, naming path, ticket and side"
+git -C "$ROOT" merge --abort 2>/dev/null || true
+
+# ── 11: same shape, message names the ticket -> allowed ──────────────────
+setup_incoming_fixture b
+start_incoming_merge_dropping_it
+echo "BL-0006: drop it deliberately" > "$MSG"
+run_guard "$MSG" || fail "11: naming the ticket must allow the deliberate incoming-side removal"
+pass "11: naming the ticket allows a deliberate incoming-side removal"
+git -C "$ROOT" merge --abort 2>/dev/null || true
+
+# ── 12: a merge that keeps every incoming path is allowed ────────────────
+setup_incoming_fixture c
+set +e
+git -C "$ROOT" merge --no-ff --no-commit "$INCOMING_TIP" >/dev/null 2>&1
+set -e
+echo "merge origin/main, keeping everything" > "$MSG"
+run_guard "$MSG" || fail "12: a merge that keeps every incoming path must be allowed"
+pass "12: a merge keeping every incoming path is allowed"
+git -C "$ROOT" merge --abort 2>/dev/null || true
+
+# ── 13: a path both branches carry, dropped, is reported ONCE ────────────
+git -C "$ROOT" checkout -q -b receivingd "$SEED"
+mkdir -p "$ROOT/specs/pipeline/steps"
+echo "// shared" > "$ROOT/specs/pipeline/steps/bl0007SharedSteps.js"
+git -C "$ROOT" add -A
+git -C "$ROOT" commit -q -m "BL-0007: a path both sides carry"
+SHARED_BOTH="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+git -C "$ROOT" checkout -q -b incomingd "$SHARED_BOTH"
+echo "// shared, touched on the incoming side" > "$ROOT/specs/pipeline/steps/bl0007SharedSteps.js"
+git -C "$ROOT" add -A
+git -C "$ROOT" commit -q -m "BL-0007: incoming-side edit"
+INCOMING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+git -C "$ROOT" checkout -q receivingd
+set +e
+git -C "$ROOT" merge --no-ff --no-commit "$INCOMING_TIP" >/dev/null 2>&1
+set -e
+git -C "$ROOT" rm -q -f specs/pipeline/steps/bl0007SharedSteps.js >/dev/null 2>&1 || true
+echo "merge, dropping a shared path" > "$MSG"
+set +e
+OUT13="$(run_guard "$MSG" 2>&1)"
+STATUS13=$?
+set -e
+[[ "$STATUS13" -ne 0 ]] || fail "13: expected refusal when a path both sides carry is dropped"
+COUNT13="$(echo "$OUT13" | grep -c "bl0007SharedSteps.js" || true)"
+[[ "$COUNT13" -eq 1 ]] || fail "13: a path dropped from both sides must be reported once, got $COUNT13 lines: $OUT13"
+pass "13: a path dropped from both sides is reported once, not twice"
+# The single finding must still name BOTH sides, not just whichever one was
+# seen last - a dedup that overwrites instead of appending would pass the
+# count-of-1 check above while silently losing which side(s) actually
+# carried the drop.
+[[ "$OUT13" == *"this branch"* ]] || fail "13b: the single finding must still name 'this branch': $OUT13"
+[[ "$OUT13" == *"the incoming branch"* ]] || fail "13b: the single finding must still name 'the incoming branch': $OUT13"
+pass "13b: a path dropped from both sides names BOTH sides in its one finding"
+git -C "$ROOT" merge --abort 2>/dev/null || true
+
 echo "ALL PASS"
