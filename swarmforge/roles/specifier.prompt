@@ -62,6 +62,35 @@ You are the specifier.
      the still-valid remainder after amending it.
   4. **Confirm promote** — only after you verified the premise still holds;
      add a one-line rationale to ticket `notes:` so the next gate pass is cheap.
+- **Prose in `notes:` does NOT discharge a hold — write the RECORD (BL-1267).**
+  The gate is `deprecate-check.js` and it reads a machine-readable adjudication
+  at `.swarmforge/deprecator/adjudications/<BL-id>.json`, not your prose. An
+  adjudication written only into `notes:` or an evidence file clears nothing:
+  the next promotion attempt re-runs the same check, gets the same hold, and
+  costs another full specifier round trip. Whatever outcome you pick, record it
+  with the writer BL-1267 shipped alongside the reader:
+  ```
+  node extension/out/tools/record-adjudication.js <project-root> <BL-id> \
+      <confirm_promote|amend|retire|split> specifier
+  ```
+  Then verify, never assume — `node extension/out/tools/deprecate-check.js
+  <project-root> <BL-id>` must come back `"decision": "allow"` naming your
+  record. Only `confirm_promote` discharges directly; the other three change
+  the TICKET, so the gate re-reads the new text and decides again from it.
+  The record fingerprints the ticket content it was made against, so amending
+  the ticket afterwards correctly re-arms the gate — that is the safety
+  property, not a bug, and it means you record the adjudication AFTER any edit
+  the same pass makes.
+- **Verified 2026-09-02: this had never been done.**
+  `.swarmforge/deprecator/adjudications/` did not exist, so no ticket had ever
+  carried a readable discharge and every adjudicated ticket was re-held
+  forever. BL-1271 is the case that surfaced it: a prior pass adjudicated it
+  correctly on 2026-08-30, wrote "Do not re-hold on the same grounds" into
+  `notes:`, and the gate held it again on 2026-09-02 with the identical
+  reason, because nothing it reads had changed. A ticket whose whole
+  deliverable is REMOVING a retired thing necessarily names that thing, so
+  `retiredSurfaceHits` will flag it on every pass — the record is the only
+  thing that ends the loop.
 - **Proactive, not only reactive.** Before you ask the coordinator to promote
   an old paused ticket — or before you specced something months ago and it is
   about to surface — run the same sanity check yourself: do the acceptance
