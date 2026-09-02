@@ -197,7 +197,7 @@
       active-dir (str (fs/path tmp "active"))]
   (write-active-item! active-dir "BL-217" "coder")
   (assert= "read-active-items reads id and assigned_to from a backlog/active/*.yaml file"
-           [{:id "BL-217" :assigned-to "coder"}]
+           [{:id "BL-217" :assigned-to "coder" :status "todo"}]
            (chase-sweep-lib/read-active-items active-dir)))
 
 (let [tmp (mk-tmp)
@@ -219,7 +219,7 @@
       new-dir (str (fs/path tmp "coder-new"))]
   (write-active-item! active-dir "BL-217" "coder")
   (assert= "dispatch-gap-items auto-routes an active item with no dispatch trail anywhere"
-           [{:id "BL-217" :assigned-to "coder"}]
+           [{:id "BL-217" :assigned-to "coder" :status "todo"}]
            (chase-sweep-lib/dispatch-gap-items active-dir [new-dir])))
 
 (let [tmp (mk-tmp)
@@ -240,7 +240,7 @@
   (spit (str (fs/path active-dir "BL-523-demo.yaml"))
         "id: BL-523\ntitle: \"demo\"\nstatus: todo\n")
   (assert= "read-unassigned-active-items finds active with no assigned_to"
-           [{:id "BL-523" :assigned-to nil}]
+           [{:id "BL-523" :assigned-to nil :status "todo"}]
            (chase-sweep-lib/read-unassigned-active-items active-dir))
   (assert= "read-active-items still skips unassigned (BL-222 assignee auto-route unchanged)"
            []
@@ -259,7 +259,7 @@
         active-dir (str (fs/path tmp "active"))]
     (write-active-item! active-dir "BL-777" spelling)
     (assert= (str "BL-1093: assigned_to=" spelling " is unassigned, not a gap")
-             [{:id "BL-777" :assigned-to spelling}]
+             [{:id "BL-777" :assigned-to spelling :status "todo"}]
              (chase-sweep-lib/read-unassigned-active-items active-dir))
     (assert= (str "BL-1093: assigned_to=" spelling " skipped by read-active-items")
              []
@@ -267,7 +267,7 @@
     (assert= (str "BL-1093: draft-lines emit nothing for assigned_to=" spelling)
              nil
              (chase-sweep-lib/dispatch-gap-draft-lines
-              {:id "BL-777" :assigned-to spelling} "aaaaaaaaaa"))))
+              {:id "BL-777" :assigned-to spelling :status "todo"} "aaaaaaaaaa"))))
 
 (let [tmp (mk-tmp)
       active-dir (str (fs/path tmp "active"))]
@@ -275,7 +275,7 @@
   (spit (str (fs/path active-dir "BL-blank.yaml"))
         "id: BL-blank\ntitle: \"demo\"\nstatus: todo\nassigned_to: \n")
   (assert= "BL-1093: blank assigned_to is unassigned only (not both)"
-           [{:id "BL-blank" :assigned-to ""}]
+           [{:id "BL-blank" :assigned-to "" :status "todo"}]
            (chase-sweep-lib/read-unassigned-active-items active-dir))
   (assert= "BL-1093: blank assigned_to is not a dispatch-gap item"
            []
@@ -288,7 +288,7 @@
   (fs/create-dirs scan)
   (spit (str (fs/path active-dir "BL-523-demo.yaml")) "id: BL-523\ntitle: \"x\"\n")
   (assert= "unassigned-active-items returns unassigned with no trail"
-           [{:id "BL-523" :assigned-to nil}]
+           [{:id "BL-523" :assigned-to nil :status nil}]
            (chase-sweep-lib/unassigned-active-items active-dir [scan])))
 
 (let [tmp (mk-tmp)
@@ -306,7 +306,7 @@
 (assert= "unassigned-active-draft-lines address the coordinator only"
          ["type: note" "to: coordinator" "priority: 00"
           "message: Work BL-523 active unassigned - assign_to and route it."]
-         (chase-sweep-lib/unassigned-active-draft-lines {:id "BL-523" :assigned-to nil}))
+         (chase-sweep-lib/unassigned-active-draft-lines {:id "BL-523" :assigned-to nil :status "todo"}))
 
 (assert= "unassigned draft never targets coder/specifier"
          true
