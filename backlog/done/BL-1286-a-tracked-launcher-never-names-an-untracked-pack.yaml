@@ -3,14 +3,14 @@ title: "A tracked launcher names a pack config that was never committed, so the 
 milestone: M8
 type: defect
 severity: low
-status: todo
+status: done
 epic: swarm-reliability
 priority: 18
 direction: agent-reported
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1286-a-tracked-launcher-never-names-an-untracked-pack.feature
+acceptance: specs/features/BL-1286-a-tracked-launcher-never-names-an-untracked-pack.feature.draft
 
 human_approval: approved
 approval_context: >
@@ -141,3 +141,85 @@ notes: |
   - Severity low deliberately: nothing currently running is broken, because the
     working-tree copy is present on the machine that uses it. The cost is
     borne on a fresh clone or after a clean, which is why it stayed invisible.
+
+closed_as: retired-premise-invalid
+deprecator_adjudication: |
+  RETIRE (specifier, 2026-09-02). Article 3.6 deprecator freshness gate.
+  Held at promotion by the coordinator ("self-claims retired, no done/
+  closure"). Adjudicated: the ticket's central premise was FALSE AT MINT and
+  its residual trigger has since been resolved. Not promoted; not built.
+
+  1. The named pairing never existed. Title and description assert that
+     start-swarm-qwen.sh "is tracked and documents its launch as
+     SWARMFORGE_PACK=qwen-anthropic-forge ./start-swarm-qwen.sh". Verified:
+       git log --all -S'qwen-anthropic-forge' -- start-swarm-qwen.sh
+     is EMPTY - that string has never appeared in that file in any commit on
+     any ref. The quoted launch line actually lives at
+     swarmforge/packs/qwen-anthropic-forge.conf:20, i.e. in a comment INSIDE
+     the pack conf itself. A file naming itself is not a tracked launcher
+     naming an untracked pack. At 44d2d42591^ the only tracked file outside
+     backlog/ containing the string was this ticket's OWN feature file.
+     start-swarm-qwen.sh names qwen-anthropic-mono-router (its default) and
+     qwen-mono-router; both confs are tracked.
+
+  2. The residual trigger is resolved. swarmforge/packs/qwen-anthropic-forge.conf
+     is now TRACKED and clean, added in 44d2d42591 (author t, 2026-08-30
+     17:03:28 +0100). Question 1 of approval_context was answered by operator
+     action: the file was committed. Recorded as corroborating only - the
+     retirement rests on point 1, which stands on its own.
+
+  3. Question 3 is moot. swarmforge/scripts/wait_pipeline_drain.sh is gone
+     from the working tree and untracked, so it no longer trips the BL-629
+     dirty-surface refusal described in notes.
+
+  4. The acceptance contract became unsatisfiable. qa_e2e_procedure step 1
+     requires the gate to name the pair start-swarm-qwen.sh ->
+     swarmforge/packs/qwen-anthropic-forge.conf. That pair cannot be produced:
+     the launcher never named it and the pack is tracked. Feature scenario 03
+     ("an untracked config on disk does not satisfy the gate") has no live
+     instance either.
+
+  5. No recurrence today. The one untracked pack in the tree,
+     swarmforge/packs/anthropic-mono-router.conf, is named by no tracked
+     launcher or doc (exact-name grep excluding backlog/ returns nothing), and
+     swarmforge/packs/ is not on the BL-629 deployed surface. The gate would
+     report zero findings on today's tree.
+
+  Feature file RETIRED with the ticket. It is demoted from .feature to
+  .feature.draft in this commit, which takes it off the executable surface (no
+  *.feature glob and no specs/pipeline/runtime.js run picks up a .draft), and
+  acceptance: is repointed at the draft so the pointer does not dangle - the
+  same shape BL-751 and BL-428 already carry in backlog/done/, and the
+  backlog_hygiene_lib.bb dangling check does scan done/ (line 163), so a plain
+  delete would have left a standing violation. Unlike BL-1211's retirement -
+  where the file was deliberately KEPT as a live .feature because the behaviour
+  was live and handlers were registered - nothing here was ever built: no
+  bl1286 handler is registered in specs/pipeline/steps/index.js, so no coverage
+  is lost. The three scenarios are preserved BYTE-IDENTICAL (diff-verified):
+  retired, never reworded. Only the Feature: narrative is re-tensed, because
+  the present tense it was written in is now false (BL-1006).
+
+  The recurrence-guard idea is NOT carried forward, deliberately.
+  approval_context question 2 asked the human whether the gate was worth
+  building at all. That question was never answerable on the record: the ticket
+  posed a choice with no ruling_options, so the Approve tap wrote
+  human_approval: approved and discarded the ruling (the defect class surveyed
+  2026-08-30; BL-1286 was one of the five confirmed). Minting a successor would
+  be deciding for the operator on a low-severity gate whose only demonstrating
+  instance never existed. If the operator does want a "tracked code never names
+  an untracked pack" gate, it needs a fresh ticket minted WITH ruling_options.
+
+  Surfaced, not swept (constitution: ticket-less changes an agent did not make
+  are surfaced). Four untracked paths currently sit on the BL-629 deployed
+  surface and will refuse `build_freshness_cli.bb <root> sync` with
+  :dirty-surface - the same mechanism this ticket documented for
+  wait_pipeline_drain.sh:
+    extension/src/tools/providerChatSeat.ts
+    extension/src/tools/providerChatSeatLive.ts
+    swarmforge/scripts/open_swarm_spy_router.sh
+    swarmforge/scripts/spy_router_pane_label.sh
+  Verified against on-deployed-surface? in build_freshness_lib.bb:59-68 and
+  dirty-surface-paths! in build_freshness_cli.bb:191 (which reads
+  `git status --porcelain`, listing untracked files). Their disposition is the
+  operator's; no agent touched them. Reported to the coordinator, who can keep
+  working via the sanctioned `sync --override`.

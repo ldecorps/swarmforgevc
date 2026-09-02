@@ -10,7 +10,7 @@ severity: medium
 # which BL-1001 (paused) exists to do. See the sequencing note.
 status: todo
 epic: multi-seat-stages
-assigned_to: none
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: []

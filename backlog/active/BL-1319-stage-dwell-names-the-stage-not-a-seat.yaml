@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: multi-seat-stages
-assigned_to: none
+assigned_to: coder
 priority: 1
 direction: queue-jump
 depends_on: []
