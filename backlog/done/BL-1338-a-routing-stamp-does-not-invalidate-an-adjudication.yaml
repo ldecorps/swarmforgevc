@@ -146,3 +146,15 @@ notes: |
   could be missing, which is the only thing `required_wiring` proves. Any
   anchor available here would name a symbol inside the module this parcel
   edits and would go green on its own diff (BL-1235).
+
+assigned_to: coder
+
+abandoned_commits: [bc1a587622]
+# BL-1241/BL-1343: the QA-approved merge tip. land_step_cli.bb attributed
+# this ticket's own paths to nobody on it (own-paths came back empty
+# because the tagged commits entered QA's branch on the merge's
+# second-parent edge), so QA hand-landed the same content as 95e96ef217
+# instead. Recorded so the ancestry-based gates read the severed descent
+# as intentional. By QA.
+  [2026-09-02 coordinator] QA hand-landed on origin/main at a1450efaa3 (95e96ef217; land_step_cli attributed nothing on the merge tip - BL-1343). Closed on QA note 002134.
+  CAVEAT: local main lineage a427bacdb4 (specifier merge) dropped the pipeline half of that landing; origin/main is complete; local rebuild pending human ruling (coordinator role_ask 18:31Z).

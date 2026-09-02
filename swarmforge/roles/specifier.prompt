@@ -715,6 +715,40 @@ You are the specifier.
   (BL-314: the feature file sat untracked in the shared master checkout, so the
   coder's worktree never saw it and bounced the ticket back within a minute of
   promotion.)
+- **Landing that commit when `main` has diverged: obey the CLI, never hand-merge
+  (BL-1330, 2026-09-02).** The bullet above obliges you to commit on `main`, and
+  `main` is a SHARED checkout that QA pushes approved work onto — so it is
+  routinely behind `origin/main` by the time you go to land. `git pull` or
+  `git merge origin/main` is the reflex, and it is the one thing you must not do.
+  Run the same gate the coordinator runs at its step 0:
+  ```
+  bb swarmforge/scripts/main_sync_status_cli.bb <project-root>
+  ```
+  Obey the printed `action` and never invent a merge the CLI did not name. The
+  action table lives in `coordinator.prompt` step 0 and is not restated here, so
+  the two can never drift (BL-897); the only addition for you is that a
+  non-fast-forward join is NEVER yours. BL-891's reconcile sweep in `handoffd`
+  owns those. When the CLI says to wait, stop, report its output, and end the
+  turn — your mint keeps until the next one.
+  - This is a different rule from "Does not receive QA merge work" below, which
+    forbids merging FEATURE work. This one forbids the *reconciling* merge too:
+    Article 1.2's "never merges" has no exception carved out for landing your own
+    spec commit.
+  - BL-1330 is why. A merge commit carrying the `BL-1339: mint` subject
+    (`b71c941a19`) joined diverged `main` by hand, and its resolution silently
+    dropped six `backlog/evidence/BL-1330-*.md` files, two
+    `specs/pipeline/steps/` files and their `index.js` registration — all
+    QA-approved and already present on `origin/main`. The mint itself was
+    correct; the merge wrapped around it destroyed another ticket's landed work,
+    and nothing failed loudly. Note that authorship cannot be read off the
+    commit: every agent and the human commit as `t <t@t>`, so the first
+    attribution here blamed the operator and had to be corrected (`248715846a`).
+  - You could not have repaired it yourself either. Restoring it required
+    touching `specs/pipeline/steps/`, and `check_pipeline_code_on_main.sh`
+    correctly refuses pipeline code on `main` from anyone but QA (Article
+    1.8/4.2, BL-247) — the coordinator's mechanical recovery was refused for
+    exactly that reason. QA had to land it (`e358e1b46e`). A merge you must not
+    make is also a mess you cannot clean up.
 - After writing a paused backlog item, send the **coordinator** a `note` (priority
   `00`) that the item is ready in `backlog/paused/`.
 - **Amending an ALREADY-ACTIVE ticket mid-flight is not done when you commit it.**

@@ -1,0 +1,165 @@
+id: BL-1342
+title: "Swarm stamp-off: certify hotfix 27d6ab8630 (handoffd survives a vanished outbox parcel; supervisor grants a startup grace window)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the hotfix is live and the crash loop stopped, so nothing is stalled
+# by the stamp itself and there is no active incident (not critical/high). Not
+# low - both halves make something STOP being fatal: one swallows a read
+# failure, the other suppresses a :stalled verdict. Softening a health signal
+# is the kind of authority a human should sign for, and an uncertified hotfix
+# keeps resurfacing in the recurrent sweep until they do.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1342-swarm-stamp-handoffd-crashloop-hotfix-27d6ab8630.feature
+
+human_approval: approved
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 27d6ab8630. Review-only:
+  it confirms or refutes what landed and never reimplements it. No choice is
+  posed here - approving authorizes the review parcel; the certify/waive
+  decision on the ledger row stays human-only and comes after the review.
+
+  What to know before approving. Both halves of this hotfix make something
+  stop being fatal, which is always worth a second look. (1) The daemon's
+  poll loop now catches a failed read of an outbox parcel and skips that
+  parcel for the poll instead of dying - narrowed to java.io.IOException so a
+  genuine bug still throws, and the parcel is left untouched for the next
+  poll. (2) The supervisor will no longer return :stalled for a daemon
+  younger than one stall window, because right after a crash every
+  observation it has is stale by construction. That second one deliberately
+  suppresses a health verdict for a bounded window, so the review's job is to
+  confirm the window is genuinely bounded, that an unknown age grants
+  nothing, and that :dead is untouched - not to re-argue whether the crash
+  loop was worth fixing. It halted the whole swarm six times on 2026-09-02.
+
+  Disclosure: the Operator authored the hotfix, so this review is the
+  independent check.
+
+invariants:
+  - "The vanished-parcel guard catches I/O conditions only: any other exception still propagates out of the read, so a genuine bug is never silently swallowed as a vanished parcel."
+  - "A parcel skipped as vanished is never delivered, archived or modified - it is left exactly where it was and re-evaluated on the next poll, so the guard can drop no work."
+  - "The startup grace can only soften a :stalled verdict for a daemon younger than one stall window: an unknown daemon age grants nothing and a :dead verdict is unreachable by it."
+
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::handoff-lib/read-envelope-if-present::poll-once! reads every listed outbox parcel through the guarded reader. Present on origin/main, 1 occurrence.'
+  - 'swarmforge/scripts/handoffd.bb::outbox-parcel-unreadable::the live poll loop logs and skips a vanished parcel rather than dying. Present on origin/main, 1 occurrence.'
+  - 'swarmforge/scripts/handoffd_supervisor.bb:::daemon-age-ms (file-age-ms pid-file)::check! feeds the real daemon age into evaluate-health. Present on origin/main, 1 occurrence.'
+  - 'specs/pipeline/steps/index.js::bl1342SwarmStampHandoffdCrashloopHotfixSteps::acceptance handler registered so the runner executes every review scenario. Absent at spec time, grep bl1342 returns 0.'
+
+description: >
+  WHAT. Operator commit 27d6ab8630 is live on main carrying the trailer
+  Hotfix-Certification: pending, and holds a state: pending row in
+  backlog/hotfix-ledger.yaml with no stamp ticket. This parcel is the BL-848
+  review that lets a human certify or waive it.
+
+  Landed behaviour under review (do not redesign). Two changes that
+  compounded into one crash loop. First, swarmforge/scripts/handoff_lib.bb
+  gains read-envelope-if-present, which answers {:vanished true} for a file
+  that is gone or unreadable (java.io.IOException and its subclasses only)
+  and otherwise returns the parsed envelope; swarmforge/scripts/handoffd.bb's
+  poll-once! now reads each listed outbox parcel through it inside the doseq
+  binding and, on :vanished, logs outbox-parcel-unreadable and skips that
+  parcel for this poll. Before, that slurp sat OUTSIDE the try wrapping
+  deliver!. Second, swarmforge/scripts/handoffd_supervisor.bb's
+  evaluate-health gains a :daemon-age-ms input (the pid file's age, written
+  at daemon start, supplied by check!) and a within-startup-grace? clause: a
+  live daemon younger than one stall window reads :healthy rather than
+  :stalled. An unknown age changes nothing; the :dead clause and the
+  in-flight-sweep clauses are untouched.
+
+  WHY. On 2026-09-02 the daemon died at 11:18, 12:14, 14:54 and 15:25 - a
+  parcel the sending role archived between the outbox listing and the read
+  threw FileNotFoundException straight through poll-once!. The same signature
+  appeared on 2026-08-30 and was never ticketed. Each death alarm-and-halted
+  the whole swarm, and the BL-675 cron relaunched into it. Then at 15:28 and
+  15:29 the relaunched daemon was halted again on a :stalled verdict read
+  0.25s after start, from the dead daemon's stale heartbeat and the still
+  pending parcel. Separately: an unticketed hotfix never becomes an official
+  swarm deal on green tests alone (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the
+  landed commit. Open a narrow follow-up only if the review finds a defect;
+  do not rework the poll loop or the supervisor's health verdicts here.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the commit. This parcel confirms or
+    refutes what landed at 27d6ab8630.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT widen the swallow. No catching Exception or Throwable where the
+    hotfix catches java.io.IOException, and no second call site that reads an
+    outbox parcel outside the guarded reader.
+  - Do NOT widen the grace. It is bounded by one stall window and keyed on a
+    known daemon age; an unknown age must keep granting nothing, and :dead
+    must stay unreachable by it.
+  - Do NOT re-litigate the supervisor's alarm-and-halt policy itself. That it
+    halts on a real stall is correct; this hotfix only stops it firing on
+    evidence that is stale by construction.
+  - Do NOT hand-port anything into worker worktrees. All three files run only
+    from the master checkout and roles pick the change up on their normal
+    merge of main - the operator confirmed this at filing, and confirming it
+    is part of the review, not an assumption it inherits.
+
+qa_e2e_procedure: >
+  (1) At 27d6ab8630, confirm the three production wiring anchors above are
+  present and that the parcel read in poll-once! goes through
+  read-envelope-if-present with no remaining bare slurp of an outbox path.
+  (2) Confirm the catch is java.io.IOException, not Exception or Throwable,
+  and drive a non-I/O failure through the reader to see it propagate.
+  (3) Run the landed wiring suite
+  swarmforge/scripts/test/test_handoffd_outbox_vanished_parcel_wiring.sh
+  against a real daemon and confirm 4/4; then confirm the skipped parcel is
+  still present, unmodified and undelivered afterwards, and is delivered on a
+  later poll once readable.
+  (4) Confirm a normally-readable parcel still delivers unchanged - the guard
+  must be invisible on the happy path.
+  (5) Run handoffd_supervisor_startup_grace_test_runner.bb (7 assertions) and
+  bl977_supervisor_progress_property_runner.bb (200 draws). Then check the
+  three age cases by hand against evaluate-health: younger than stall-ms is
+  healthy, older is stalled, nil grants nothing.
+  (6) Negative case, the one that matters most: a NOT-alive daemon with a
+  fresh pid file must still read :dead. The grace must not be able to hide a
+  dead daemon behind a young pid file.
+  (7) Note that test_handoffd_supervisor.sh scenario 01 fails identically on
+  unmodified main (tmux shim shadowing, per the memory note on zsh-shebang
+  shell tests). It is pre-existing and not this parcel's - do not bounce on
+  it; if it is worth fixing, that is its own chore.
+  (8) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  Ledger: the commit already had a row in backlog/hotfix-ledger.yaml
+  (state: pending, detected_at 2026-09-02, stamp_ticket null), so this mint
+  needed --link only, not --new. Pre-mint SHA sweep across backlog/ found the
+  ledger row, the source intake and one coordinator evidence file, and no
+  existing stamp ticket in paused/active/done/hold - this is not a
+  double-mint.
+
+  IR-DRY: the checker's one remaining finding is a possible-synonym pair
+  between the outline's `the verdict is "<verdict>"` and scenario 06's
+  `the verdict is "dead"`. That is deliberate reuse of one parameterized
+  step, not drift - scenario 06 varies aliveness rather than age, so it
+  cannot fold into the outline's Examples table.
+
+  Sibling stamp-off BL-1333 (f57795b6d2 + d5739d84cc) is the same shape and
+  the same reviewer can reuse its posture, but the two are independent: no
+  depends_on, and neither blocks the other.
+
+source: |
+  backlog/INTAKE-operator-hotfix-handoffd-crashloop-1788366618490.md
+  (operator, 2026-09-02), drained by the specifier in the same pass that
+  minted this ticket. Its ask 1 - "mint ONE BL-848 stamp-off for 27d6ab8630
+  and --link it. Grep the SHA across backlog/ first - do not double-mint" -
+  is satisfied in full here. Its ask 2 (no hand-port needed) is carried into
+  constraints and qa_e2e_procedure above rather than dropped.
+  Coordinator note 00_20260902T163314Z_003448_from_coordinator_to_specifier:
+  "root intake: mint BL-848 stamp for 27d6ab8630, grep SHA first".

@@ -1,0 +1,152 @@
+id: BL-1346
+title: "Swarm stamp-off: certify hotfix 195de28861 (swarm ensure's RC repair no longer respawns a stale-marker role into another role's pane on a standing pack)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the hotfix is live and the outage it fixed is over, so nothing is
+# currently stalled by the stamp. Not low - an uncertified hotfix keeps
+# resurfacing in the recurrent sweep until a human answers, and this one gives
+# a repair path permission to kill and respawn a live agent pane, which is
+# authority worth a signature.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1346-swarm-stamp-rc-launch-role-stale-marker-195de28861.feature
+
+human_approval: approved
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 195de28861. Review-only:
+  it confirms or refutes what landed and never reimplements it. No choice is
+  posed - approving authorizes the review parcel; the certify/waive decision
+  on the ledger row stays human-only and comes after.
+
+  What to know before approving. The bug this fixed had real teeth: twice on
+  2026-09-02 (and again at the 17:30 ensure) the RC repair killed the
+  specifier's pane and respawned a SECOND coordinator into it, leaving the
+  swarm with no specifier at all while every session still looked alive. The
+  fix routes rc-launch-role through mono-router-lib/resolve-resident-role, the
+  one shared BL-1020 decision, which honours the marker only under
+  rotation-router-mode?. The review's job is to confirm the repair path can
+  still repair - scenario 02 and 03 are the ones that matter, not scenario 01.
+
+  Disclosure: the Operator authored the hotfix, so this review is the
+  independent check.
+
+invariants:
+  - "The hotfix removed a wrong respawn, never the ability to respawn: a genuinely down pane is still repaired, and with the role its pack assigns it."
+  - "The marker retains its full authority on a rotation-router pack; only its application to a non-router pack was removed."
+  - "This stamp-off never reimplements, rewrites or reverts 195de28861 - it confirms or refutes what landed."
+
+required_wiring:
+  - 'swarmforge/scripts/swarm_ensure.bb::resolve-resident-role::the shared BL-1020 decision stays wired into the RC repair path as landed. Present on origin/main, 2 occurrences.'
+  - 'swarmforge/scripts/swarm_ensure.bb::rc-launch-role::the repaired resolver stays in the live RC path. Present on origin/main, 3 occurrences.'
+  - 'specs/pipeline/steps/index.js::bl1346SwarmStampRcLaunchRoleSteps::acceptance handler registered so the runner executes every review scenario. Absent at spec time, grep bl1346 returns 0.'
+
+description: |
+  WHAT. Operator commit 195de28861 is live on main and holds a `state:
+  pending` row in backlog/hotfix-ledger.yaml with no stamp ticket. This parcel
+  is the BL-848 review that lets a human certify or waive it.
+
+  Landed behaviour under review (do not redesign). `rc-launch-role` classified
+  the first roles.tsv row - specifier, under full-forge - as the mono-router
+  "resident", and handed the RC check the launch script named by
+  `.swarmforge/mono-router-active-role`, which held a leftover `coordinator`
+  from that morning's router run. The RC check then read the specifier pane
+  against coordinator.sh's flag, called it `:degraded`, and ran
+  `respawn-pane -k -t swarmforge-specifier zsh .../coordinator.sh`. BL-1020
+  had already ruled that a stale marker is not topology on a standing pack;
+  the RC repair path never got that rule. `rc-launch-role` now resolves the
+  resident's launch role through `mono-router-lib/resolve-resident-role`.
+
+  Evidence the operator recorded: RED on a new RC-7b fixture (standing
+  identity, stale marker `coordinator`, correctly-staffed specifier) where the
+  fake tmux recorded the wrong respawn; GREEN with no respawn and
+  `rc:specifier: HEALTHY`; full `test_swarm_ensure.sh` 51 PASS / 0 FAIL with
+  RC-7 (router pack, marker honoured) unchanged.
+
+  WHY. An unticketed hotfix never becomes an official swarm deal on green
+  tests alone (BL-848), and this one holds kill-and-respawn authority over a
+  live agent pane.
+
+  HOW (direction, not mandate). Walk the acceptance feature against the landed
+  commit. Open a narrow follow-up only if the review finds a defect.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the commit. This parcel confirms or
+    refutes what landed at 195de28861.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT weaken the RC repair to make scenario 01 easier. The repair must
+    still fix a genuinely down pane; a hotfix that bought silence by disabling
+    repair would be a worse bug than the one it replaced.
+  - Do NOT take on the two side findings recorded in notes. Neither is this
+    parcel's, and one of them is already BL-1345's.
+  - Do NOT hand-port anything into worker worktrees. `swarm ensure` runs only
+    from the master checkout - the operator confirmed this at filing, and
+    confirming it is part of the review.
+
+qa_e2e_procedure: >
+  (1) At 195de28861, confirm the wiring anchors above and that rc-launch-role
+  has no local resident rule left beside the shared decision.
+  (2) Run the hotfix's own RC-7b fixture and the full test_swarm_ensure.sh;
+  expect 51 PASS / 0 FAIL and RC-7 unchanged.
+  (3) The negative case that matters most: with the same stale marker present,
+  take a pane genuinely DOWN and confirm the RC repair still respawns it, with
+  its own role. A hotfix that stopped repairing would pass scenario 01 and be
+  a regression.
+  (4) On a rotation-router pack, confirm the marker still resolves the
+  resident - the authority removed must be exactly the non-router case.
+  (5) Read whether ensure's post-repair report can distinguish a pane running
+  the wrong role. The operator's filing says it read HEALTHY after the bad
+  respawn; that gap is BL-1345's to close, and this step only records whether
+  the hotfix changed it.
+  (6) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  Ledger: the commit already had a row (state: pending, detected_at
+  2026-09-02, stamp_ticket null), so this mint needed `--link` only, not
+  `--new`. Pre-mint SHA sweep across backlog/ found the ledger row, the source
+  intake and one coordinator evidence file, and no existing stamp ticket - not
+  a double-mint.
+
+  The intake's two side findings, carried verbatim rather than dropped
+  (Article 5.3):
+
+  1. "`rc-cmdline-fn` runs `SWARM_ENSURE_RC_CMDLINE_CMD` via `sh -c \"$CMD\" sh
+  <socket> <session>`; the existing RC-7/RC-8.. fixtures set a bare script
+  path, so their fakes receive NO arguments, answer \"no process\", classify
+  :down and pass vacuously. RC-7b forwards `\"$1\" \"$2\"` explicitly. Worth a
+  chore to fix the older fixtures the same way." - NOT minted yet. It is a
+  vacuous-pass fixture defect, which is the shape that hides real failures, so
+  it should become a chore; it is recorded here so it is not lost, and the
+  reviewer should say whether it widened while they were in the file.
+
+  2. "After the wrong respawn, ensure's report line still read `rc:specifier:
+  HEALTHY` - the post-repair recheck does not catch a pane respawned with a
+  different role's script. Worth its own defect." - this one IS ticketed: it
+  is the second half of BL-1345, which was amended the same day from the
+  now-superseded cause ticket into the two halves this hotfix did not fix.
+
+  The intake's ask 2 (no worker-worktree port needed, `swarm ensure` runs only
+  from the master checkout) is carried into constraints and step (1) as
+  something the review confirms, not an assumption it inherits.
+
+source: |
+  backlog/INTAKE-operator-hotfix-rc-launch-role-stale-marker-1788373010454.md
+  (operator, 2026-09-02), drained by the specifier in the same pass that
+  minted this ticket. Its ask 1 - "mint ONE BL-848 stamp-off for
+  `195de28861` and `--link` it (grep the SHA across backlog/ first). Consider
+  folding side finding 2 into the same review's follow-up." - is satisfied
+  here, with side finding 2 routed to BL-1345 rather than a follow-up because
+  BL-1345 was already being amended to exactly that scope in the same pass.
+  Coordinator note 10_20260902T181946Z_003456_from_coordinator_to_specifier:
+  "003452 superseded: marker bug fixed by hotfix 195de28861; stamp via BL-848
+  only".

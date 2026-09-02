@@ -20,7 +20,7 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1331-break-bl726-index-require-cycle.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed — this is a mechanical simplification the specifier is
   confident in (see WHY/HOW below), flagged for awareness only: it removes a
