@@ -13,6 +13,13 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1334-a-landed-replay-is-qa-approved-when-it-lands.feature
 
+abandoned_commits: [6b1a5f6ba374b48367b1f99fbcd8c9523d300c2b]
+# BL-1241 land-step remedy: cited commit was entangled with unlanded siblings
+# BL-1040, BL-1056, BL-1283, BL-1319, BL-1321, BL-1327 as ancestors on the QA
+# branch. land_step_cli.bb replayed BL-1334's own paths tip-pure onto
+# origin/main as a4b923020c95b64e07867e71c3e9c6459d8d20a6, which is what
+# landed. See backlog/evidence/BL-1334-qa-pass-20260902.md.
+
 human_approval: approved
 human_ruling: |
   Land step records the replay-to-approved-source mapping for the predicate to consult

@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1338: BL-1267's adjudication
+fingerprint (SHA-256 over the ticket YAML) is no longer invalidated by the
+very promotion it authorized. `promote_and_route_next.sh` appends or
+in-place-rewrites `assigned_to:` on promotion, AFTER the freshness gate
+already ran — the fingerprint recorded at adjudication time was therefore
+guaranteed stale the moment its own `confirm_promote` was acted on,
+forcing a spurious re-adjudication on every promoted, previously-held
+ticket (observed live on BL-1271, 2026-09-02). Fix, scoped exactly to the
+human ruling (`extension/src/tools/deprecate-check.ts`'s new
+`fingerprintableTicketText`): the routing stamp a promotion writes — the
+appended-fresh shape and the in-place `sed`-rewritten shape alike — is
+normalized out before hashing; every other field, including a genuine
+edit to `assigned_to:` that is not that promotion's own write, still
+changes the fingerprint and re-arms the gate (BL-1267's invariant
+survives: a substantive amendment can never ride a stale clearance). No
+new store, no new discharge path, no change to what
+`promote_and_route_next.sh` writes. How-to:
+`docs/how-to/BL-1173-deprecator-freshness-gate-cli.md` "Discharging a hold".)
+Prior entry —
+**Last Updated:** September 2, 2026 (BL-1317: the Adapt tier of the Effort
+dial — deferred by BL-236, deps BL-236/BL-1316 — ships: a seat's reasoning
+effort now climbs one notch on a bounce and may drop one notch after a
+sustained clean streak (never below the BL-1316 claim-time baseline for the
+held ticket), applied automatically at the same completion moment
+`done_with_current_task.bb` already records the lifecycle ledger, never
+surfaced as a prompt and never rewriting `swarmforge.conf`. Model
+escalation, the other half of the Adapt row in the Tiers of autonomy table,
+remains unbuilt — this ticket is reasoning effort only. See the Effort dial
+section for the full description and `docs/how-to/BL-1317-adapt-tier-effort-from-outcome-signals.md`.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1334: `is_qa_ancestor.sh`, the one
 shared "is this sha QA-approved" predicate (BL-925 invariant 2), answers on
 ancestry of `swarmforge-QA` plus a bounce-verdict veto (BL-952) — but the
@@ -9928,16 +9958,18 @@ This load profile is shown in the run artifacts / Work Tree (a simple per-role b
 - **Outcome signals it already collects:** the per-role load profile above (active time, time-in-stage, rework load) plus chase counts and respawns. A cheap model that keeps getting rerouted or fails QA is a *false economy* — the bounces cost more than a stronger model would have. This is the key insight: cost-effectiveness is measured by **work that passes the gates**, not per-call price.
 - **Maturity of the solution** (the angle you raised): early/greenfield work with sparse tests benefits from stronger models (mistakes are expensive and uncaught); a mature codebase with dense tests and tight specs can lean on cheaper models, because the gates catch errors cheaply. So the recommended tier can *shift down* as the project hardens.
 
-**Effort dial (BL-236, M5, Suggest tier — Claude-backed roles only):** beyond model choice, a reasoning-effort lever independent of which model. At run start, each role gets a per-role effort suggestion (`low`/`medium`/`high`/`xhigh`) with a one-line rationale — higher (`xhigh`) for design-heavy roles (specifier, architect), a neutral `high` for coder/hardener, lower (`medium`) for mechanical roles (cleaner, documenter, QA, coordinator). Suggestions are purely advisory: nothing changes until the operator explicitly sets a role's dial. Setting a role's effort rewrites that role's Claude settings-file `effortLevel` field in place and respawns just that role via the same in-memory, `swarmforge.conf`-untouched mechanism BL-235 uses for model switching (same landed-slice caveat: a role on a non-Claude backend has no effort setting to show, per Agent Backends' current true scope). The Adapt/Auto tiers below remain unbuilt — this is Suggest only.
+**Effort dial (BL-236, M5, Suggest tier — Claude-backed roles only):** beyond model choice, a reasoning-effort lever independent of which model. At run start, each role gets a per-role effort suggestion (`low`/`medium`/`high`/`xhigh`) with a one-line rationale — higher (`xhigh`) for design-heavy roles (specifier, architect), a neutral `high` for coder/hardener, lower (`medium`) for mechanical roles (cleaner, documenter, QA, coordinator). Suggestions are purely advisory: nothing changes until the operator explicitly sets a role's dial. Setting a role's effort rewrites that role's Claude settings-file `effortLevel` field in place and respawns just that role via the same in-memory, `swarmforge.conf`-untouched mechanism BL-235 uses for model switching (same landed-slice caveat: a role on a non-Claude backend has no effort setting to show, per Agent Backends' current true scope). BL-1316 and BL-1317 below have since built the Adapt tier's two moving pieces (claim-time baseline, outcome-driven retuning); the Auto tier in the table below remains unbuilt.
 
 **Claim-time effort follows ticket difficulty (BL-1316):** on top of the static per-role Suggest dial above and BL-1001's seat pick, a seat's reasoning effort now also retunes per CLAIM: at claim and reclaim time, `seat_difficulty_lib.bb`'s `claim-effort-decision` maps the claimed ticket's `mutation_cost` straight to an effort token (crank for `high`, shrink for `low`) and `handoff_lib.bb`'s `apply-claim-effort!` rewrites the seat's launch-time settings file in place — best-effort, never blocking the claim. A ticket with no `mutation_cost` restores the pack/window's declared `--effort` default rather than leaving a prior ticket's effort in place. Only backends in `effort-lever-backends` (`claude` today) are touched at all; Cursor/Copilot-style backends with no lever get no apply attempt and no invented flag. How-to: `docs/how-to/BL-1316-claim-time-effort-follows-ticket-difficulty.md`.
+
+**Adapt-tier effort follows outcome signals (BL-1317):** on top of BL-1316's claim-time baseline, a seat's effort now also retunes at COMPLETION time, automatically and silently rather than as a surfaced prompt: a bounce (the completed handoff coming back as a reverse hop) climbs the seat's effort one notch above wherever it is now, while a clean completion counts toward a descent only once a streak of `ADAPT_DEFAULT_CLEAN_STREAK` (3) of them has accumulated, and even then drops only one notch and never below the BL-1316 baseline for the ticket the seat is holding. The pure decision is expressed twice — `extension/src/tools/effortDialAdapt.ts`'s `decideAdaptEffort` and `seat_difficulty_lib.bb`'s `adapt-effort-decision` — both climbing the same `EFFORT_LEVELS` ladder BL-236 already defines, kept in agreement by a cross-language parity gate (BL-897). The sole IO edge, `handoff_lib.bb`'s `record-effort-adapt!`, is called from `done_with_current_task.bb` at the same moment the lifecycle ledger already observes the completion; like BL-1316's apply, it never rewrites `swarmforge.conf` and never blocks a completion. Only `effort-lever-backends` are touched. How-to: `docs/how-to/BL-1317-adapt-tier-effort-from-outcome-signals.md`.
 
 **Tiers of autonomy (deliberately conservative):**
 
 | Tier | Behavior |
 |---|---|
 | **Suggest (default)** | Recommends a backend/model/effort per role at run start, with a one-line rationale; user accepts or overrides. Never changes anything silently. |
-| **Adapt (opt-in)** | Within a run, if a role's cheap model bounces (reroute/QA fail past a threshold), suggests escalating *that role* to a stronger model on next respawn — surfaced as a prompt, not automatic. |
+| **Adapt (shipped: reasoning effort only, BL-1317; model escalation still unbuilt)** | Within a run, a seat's *reasoning effort* (not yet model choice) climbs one notch automatically on a bounce and may drop one notch after a sustained clean streak, never below the BL-1316 claim-time baseline — applied directly, not surfaced as a prompt. Escalating the *model* on repeated bounces, as originally envisioned here, remains unbuilt. |
 | **Auto (later, opt-in)** | Applies the escalation/de-escalation itself within user-set bounds (e.g. "never exceed tier 3", "budget cap $X/run"), logging each change. |
 
 **Guardrails:** ties into the cost/rate-limit gap — a per-run budget cap that pauses the swarm is the hard backstop, independent of any suggestion logic. And because price data is user-configured, the extension never *assumes* it knows current rates; it presents its recommendation as advisory and points the user to verify.
