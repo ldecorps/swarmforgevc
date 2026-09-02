@@ -184,21 +184,21 @@
 - commit: 3f4f69ec1b
   subject: "Recover once when an expedite stage exits without verdict.json."
   detected_at: 2026-08-28
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1254
   human_decision: null
   decided_at: null
 - commit: 70c5e0e5b0
   subject: "After no-verdict recovery, bounce the same stage instead of failing the ticket."
   detected_at: 2026-08-28
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1254
   human_decision: null
   decided_at: null
 - commit: 5de352ed1d
   subject: "Refuse synthesized no-verdict bounces; recover twice with escalated prompts."
   detected_at: 2026-08-28
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1254
   human_decision: null
   decided_at: null
@@ -212,21 +212,21 @@
 - commit: 2b67f4b1a2
   subject: "Freeze the Telegram pipeline board while the pack is asleep."
   detected_at: 2026-08-29
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1283
   human_decision: null
   decided_at: null
 - commit: 3d70c0f4ec
   subject: "Yield chase rotate when preferred role is already seated."
   detected_at: 2026-08-31
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1321
   human_decision: null
   decided_at: null
 - commit: 4ed88430b2
   subject: "Hotfix bob mono-router onto Token Plan qwen3.8-max with a real 1M Claude Code window."
   detected_at: 2026-09-01
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1324
   human_decision: null
   decided_at: null
@@ -240,7 +240,7 @@
 - commit: db7e3f2bda
   subject: "Restaff bob BoB starting cast: Anthropic seats, coder on qwen3.8-max."
   detected_at: 2026-09-01
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1326
   human_decision: null
   decided_at: null
@@ -254,14 +254,14 @@
 - commit: d5739d84cc
   subject: "master_main_reconcile_lib: an overlapping dirty path that already matches origin/main's content no longer blocks reconciliation"
   detected_at: 2026-09-02
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1333
   human_decision: null
   decided_at: null
 - commit: f57795b6d2
   subject: "Hotfix: reconcile auto-resolves a dirty overlap whose content already matches origin/main"
   detected_at: 2026-09-02
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1333
   human_decision: null
   decided_at: null
