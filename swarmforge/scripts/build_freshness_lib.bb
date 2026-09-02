@@ -78,9 +78,25 @@
   "Given the drift commits since the last QA-landed commit (each already
    flagged by the CLI whether it touches the deployed code surface), the
    shas that would refuse a sync - bookkeeping-only commits are silently
-   excluded. Order is preserved from the input."
+   excluded. Order is preserved from the input.
+
+   BL-1334: a commit the ONE approval predicate (is_qa_ancestor.sh) already
+   calls QA-approved is not offending drift, whatever it touches. The land
+   step's tip-pure replay is necessarily drift - it is on main, after the
+   merge-base with swarmforge-QA - and necessarily touches the deployed
+   surface, so this gate refused every freshly landed replay and the
+   coordinator had to --override to keep working. The CLI asks the predicate
+   per drift sha and passes the answer in as :qa-approved?.
+
+   This does NOT add a second approval predicate (BL-925 invariant 2): the
+   answer comes from is_qa_ancestor.sh, the same one three other consumers
+   use. It removes a place that was deciding approval on its own.
+
+   :qa-approved? ABSENT means unapproved, never approved - so an unanswerable
+   predicate, an older CLI that supplies no flag, and a genuinely unapproved
+   commit all fail CLOSED alike (BL-925 invariant 3)."
   [drift-commits]
-  (mapv :sha (filter :touches-surface? drift-commits)))
+  (mapv :sha (filter #(and (:touches-surface? %) (not (:qa-approved? %))) drift-commits)))
 
 (defn tip-approval-status
   "report's pure fact: is main's tip QA-approved, and if not, which commits
