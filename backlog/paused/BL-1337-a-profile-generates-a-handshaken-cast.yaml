@@ -12,7 +12,9 @@ slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1337-a-profile-generates-a-handshaken-cast.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Cast plus ModelFactory overlay only, reusing the apply path BL-1181 already ships
 approval_context: >
   Two things to know before you rule, and one actual choice.
 

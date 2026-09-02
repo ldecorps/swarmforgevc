@@ -11,6 +11,38 @@ depends_on: []
 source: "hardener rule_proposal (scope engineering, 2026-07-16, id 20260716T231815Z_000346) raised during BL-433 hardening: swarmforge.lock.json has NO Babashka tool pins, so every .bb hardening pass silently runs the degraded no-tooling fallback while the tool table implied real coverage. Specifier disposition 2026-07-16 (human ldecorps chose 'document as not-wired' over 'pin+install'): correct engineering.prompt to state the gap plainly NOW (done, same pass), and FILE this deferred tracker so 'tracked future item' is a real reference, not a dangling claim."
 
 notes: |
+  [2026-09-02T15:47Z coordinator] Tenth open-slot nudge naming this ticket
+  cleared without promotion. The dirty-merge deadlock from the 15:12Z note
+  cleared (main_sync_status_cli.bb now behind:0/ready:true) once BL-1330's
+  bookkeeping unstuck it. Both slots that opened after BL-1330 closed
+  (active/ 2 -> 4 of effective cap 4) went to higher-ranked eligible
+  candidates via promote_and_route_next.sh: BL-1338 (pri 10, defect) and
+  BL-1056 (pri next in order) - active/ is now at cap (4/4), so no slot
+  remains open for this turn regardless of BL-472's own standing. Still
+  human_approval: pending - unchanged, not itself the blocker this time.
+  [2026-09-02T15:12Z coordinator] Ninth open-slot nudge naming this ticket
+  cleared without promotion, still awaiting human_approval (pending,
+  ruling_options unanswered) so this ticket itself is not eligible regardless.
+  A genuine slot WAS open this time (active/ dropped to 3 of effective cap 4
+  after BL-1334 closed), and I attempted the two eligible expedited defects
+  ranked ahead of this chore under Article 3.2.4 (BL-1309 pri 5, BL-1306 pri
+  30) - both still refused by promote_and_route_next.sh's acceptance gate
+  (draft .feature.draft not executable, unchanged from the 10:19Z note).
+  Falling through to normal priority order via `promote_and_route_next.sh`
+  (no arg) hit a DIFFERENT, more fundamental blocker before reaching this
+  ticket's rank: `main_sync_status_cli.bb` now reports
+  `{"ahead":2,"behind":1,"ready":false,"action":"wait-dirty-clear",
+  "reconcile":{"surfaced":"human-merge-in-progress","ticks":23,
+  "escalated":true}}` - a MERGE_HEAD is open on master with conflicts already
+  resolved in backlog/hotfix-ledger.yaml but not committed (BL-891
+  reconcile-daemon territory). `promote_and_route_next.sh BL-1338` failed
+  with `commit-failed` for exactly this reason before I noticed the
+  main-sync state. Per Article 1.1 / the main-sync gate instructions I did
+  NOT merge, commit, or `--ff-only` this myself - the daemon owns non-ff
+  joins and the state is already self-escalated (ticks=23). NO promotion is
+  possible for ANY paused ticket, expedited or not, until this dirty-merge
+  deadlock clears. Reported loudly in-session; not a BL-472-specific hold.
+
   [2026-09-02T10:19Z coordinator] Eighth open-slot nudge naming this ticket
   cleared without promotion: effective cap is now 4 (raised from 1, verified
   via effective_backlog_depth_cli.bb). Re-ranked eligible paused candidates
@@ -161,7 +193,9 @@ qa_e2e: |
   clean .bb change passes; confirm engineering.prompt no longer claims the tooling
   is unwired. Verify against the real hardening path, not a fixture.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Provision a JVM and Clojure CLI on swarm hosts, then build pin install and wire
 approval_context: >
   Your 2026-08-30 activation ("build the Babashka hardening toolchain") is not
   in doubt and is not being second-guessed. Picking the ticket up answered its
