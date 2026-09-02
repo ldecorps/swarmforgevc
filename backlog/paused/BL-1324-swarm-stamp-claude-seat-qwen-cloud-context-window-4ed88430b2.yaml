@@ -19,7 +19,15 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature
 
-human_approval: pending
+human_approval: approved
+ruling: >
+  [2026-09-02] Human ldecorps ruling (option 2 of ruling_options): Certify as
+  landed; also mint a narrow follow-up to match the --model=<value>
+  single-token form and/or document the OpenRouter-precedence caveat. This
+  authorizes the review pass (coder onward) to proceed and, once evidence
+  confirms the landed commit per qa_e2e_procedure, to flip the ledger row to
+  certified — never before a recorded human decision (BL-848). The follow-up
+  ticket itself is routed to the specifier to mint separately.
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 4ed88430b2. Review-only:
   it confirms or refutes the land and never reimplements it. What needs your
