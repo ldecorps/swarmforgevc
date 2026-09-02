@@ -203,6 +203,12 @@ it up from the trailer) and `--link` it to its ticket.
   `property_suite_standing_allowlist.tsv` rows the same commit added citing
   a closed ticket (BL-1175) that does not cover either file; ledger row
   pending until human certify/waive.
+- BL-1321 — stamp-off for hotfix `3d70c0f4ec` (chase rotate yields when the
+  preferred role is already seated, so an actionable poke rotates the poked
+  role instead of redirecting forever into already-active); review also
+  reports, without acting on, the commit's CRLF→LF re-line-ending of two
+  files and one byte-identical duplicate assert among the six the commit
+  added; ledger row pending until human certify/waive.
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 
