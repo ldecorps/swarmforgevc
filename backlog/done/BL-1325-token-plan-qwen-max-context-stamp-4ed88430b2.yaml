@@ -8,7 +8,9 @@ severity: medium
 # pack is being staffed on it; this stamp confirms or refutes the land. Not
 # high: nothing is currently stalled. Not low: an uncertified hotfix keeps
 # resurfacing in the recurrent sweep until a human answers.
-status: todo
+status: done
+closed_as: superseded-by-BL-1324
+closed_at: 2026-09-02
 epic: swarm-reliability
 priority: 20
 direction: aligned
@@ -16,7 +18,11 @@ assigned_to: none
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1325-token-plan-qwen-max-context-stamp-4ed88430b2.feature
+acceptance: specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature
+# Retired: repointed from this ticket's own deleted feature file to BL-1324's,
+# the survivor and the hotfix ledger's actual stamp_ticket for 4ed88430b2.
+# Not a claim of ownership over BL-1324's contract - the BL-1251 rule that a
+# retirement ticket points at the contract it retires into.
 
 human_approval: approved
 approval_context: >
@@ -129,6 +135,46 @@ qa_e2e_procedure: >
   (6) Leave Hotfix-Certification pending until the human ledger decision.
 
 notes: >
+  ## RETIRED 2026-09-02 - duplicate stamp-off for the same hotfix
+
+  BL-1324 (paused, ledger-linked) and this ticket both certify the SAME
+  hotfix commit `4ed88430b2`. Both trace to the same 2026-09-01 coordinator
+  note about the unstamped ledger row, minted by two independent specifier
+  passes. This ticket's own history is unusual: it was originally minted
+  under a different id, then destroyed/orphaned by the same reset-bug class
+  BL-1310 fixed, recovered from the reflog, and remapped to BL-1325 during a
+  2026-09-02 post-fix recovery pass (`796f1f29d8`) because its original id had
+  since been reused by an unrelated, already-shipped ticket. Its
+  `human_approval: approved` was restored at that same remap (`32c7318bc7`) —
+  a real decision, but one that authorized "review this parcel," not a tap on
+  BL-1324's own still-open ruling_options (the two dormant matching-shape/
+  precedence gaps), so it does not resolve BL-1324's pending decision.
+
+  BL-1324 survives: it is the hotfix ledger's actual stamp_ticket for
+  `4ed88430b2` (no repoint needed) and poses the sharper open review question.
+
+  **This retirement drops nothing (Article 5.3).** This ticket carried two
+  pieces of content BL-1324 did not — the cross-pack SWARMFORGE_USE_QWEN=1
+  side-effect note and the 1M-window platform-claim caveat, plus two feature
+  scenarios (the global-flag behaviour and an explicit
+  never-self-certifies scenario) — all carried into BL-1324's
+  approval_context, qa_e2e_procedure and acceptance feature (see BL-1324's
+  own notes for the full accounting).
+
+  RETIRED as already covered, not reworded: scenarios 01-03 and 05 (the
+  qwen-model-detection outline, the mixed-pack remap-only-the-qwen-seat
+  scenario, the pane-env scenario, and the per-role pack-staffing outline)
+  duplicate BL-1324's own scenarios 01-03, 05 and 06 at an equal or coarser
+  grain. This ticket's `required_wiring` anchor
+  (`bl1322TokenPlanMaxContextStampSteps`) was stale from its earlier life as
+  BL-1322 and was never wired to a real handler; neither ticket had reached a
+  coder pass, so nothing live depended on it.
+
+  `specs/features/BL-1325-token-plan-qwen-max-context-stamp-4ed88430b2.feature`
+  is removed with this retirement; git history keeps the original.
+
+  ---
+
   IR-DRY adjudication at mint (do not re-litigate): as with BL-1321, the
   checker's three medium findings pair instantiations of ONE step pattern
   against each other — placeholder vs literal (`a seat whose pack CLI is
