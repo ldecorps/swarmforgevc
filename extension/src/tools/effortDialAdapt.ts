@@ -148,9 +148,20 @@ export function decideAdaptEffort(input: AdaptEffortInput): AdaptEffortDecision 
  * It reuses BL-236's switchRoleEffort verbatim rather than writing the
  * settings file itself, which is what keeps declared invariant 1 true on this
  * side too: that mechanism is the BL-235 in-memory/respawn path, and it never
- * touches swarmforge.conf. Any UI or launch path that wants Adapt calls this
- * rather than composing its own read/decide/write, so there is exactly one
- * Adapt policy in this language.
+ * touches swarmforge.conf.
+ *
+ * NO AUTOMATIC CALLER, DELIBERATELY. The live Adapt consumer today is the
+ * Babashka one - handoff_lib.bb::record-effort-adapt!, wired at
+ * done_with_current_task.bb - which applies the decision itself and whose
+ * climb even survives the ticket's re-claim (seat_difficulty_lib.bb::
+ * claim-effort-decision's `climbed` branch). It writes the SAME
+ * .swarmforge/launch/<role>.claude-settings.json effortLevel this edge does,
+ * so a second AUTOMATIC applier here would double-climb a seat on one outcome
+ * signal. This edge is therefore reserved for an OPERATOR-DRIVEN UI or launch
+ * path (BL-236's manual dial in swarmPanel.ts is the shape) - such a path
+ * calls this rather than composing its own read/decide/write, so there is
+ * exactly one Adapt policy in this language. A comment is not a gate:
+ * test/bl1317AdaptSingleApplierPerLanguage.test.js is.
  */
 export interface AdaptRoleEffortInput {
   /** The seat's backend, e.g. 'claude'. A backend with no dial decides nothing. */
