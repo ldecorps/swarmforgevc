@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c5edaab43edc61bc048f60a0d248e0f5dee345ef466ce70b57aa63ddbe6e9f1f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-02T12:19:36.996092956Z","feature_name":"a claude seat whose --model is qwen* gets Token Plan billing and a real 1M context window","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature","background_hash":"2cc1ed8676ef6e3b4c5e22278d5964dc793a7be13d04f839ac572bb3281674ee","implementation_hash":"unknown","scenarios":[{"index":0,"name":"extra_cli_targets_qwen_cloud detects a qwen* --model token","scenario_hash":"1fd342882715b4939499dfe6e92fe95684e185c5a2dbfe4cb7e1fec1b4323313","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-09-02T12:19:36.996092956Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a claude seat whose --model is qwen* gets Token Plan billing and a real 1M context window
 
   # BL-1324 stamp-off for landed hotfix 4ed88430b2 (BL-848 certification

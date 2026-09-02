@@ -1,0 +1,148 @@
+id: BL-1333
+title: "Swarm stamp-off: certify hotfix f57795b6d2 (reconcile auto-resolves a dirty overlap whose content already matches origin/main), covering d5739d84cc as its first half"
+milestone: M8
+type: defect
+severity: medium
+# medium: the hotfix is live and unblocked a real multi-hour stall, so nothing
+# is currently stalled by the stamp itself. Not high - there is no active
+# incident. Not low - an uncertified hotfix keeps resurfacing in the recurrent
+# sweep until a human answers, and this one lets a daemon DISCARD working-tree
+# paths unattended, which is the kind of authority a human should sign for.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1333-swarm-stamp-reconcile-redundant-overlap-f57795b6d2.feature
+
+human_approval: pending
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commits f57795b6d2 (daemon
+  wiring) and d5739d84cc (its pure-decision first half). Review-only: it
+  confirms or refutes what landed and never reimplements it. No choice is
+  posed here - approving authorizes the review parcel; the certify/waive
+  decision on the two ledger rows stays human-only and comes after the
+  review (BL-848).
+
+  What to know before approving. This hotfix gives the reconcile daemon
+  permission to DISCARD paths from the master checkout's working tree
+  without asking - `git checkout` back to HEAD for tracked paths, unstage
+  and remove for staged-new or untracked ones. It does that only for paths
+  it has first proven redundant, by comparing the working-tree blob hash to
+  `origin/main:<path>`, and anything unproven is left exactly as found and
+  still blocks. The operator's evidence is thorough (RED-then-GREEN unit,
+  property and real-git wiring suites, plus an empirical finding that git
+  itself refuses a dirty overlap on path alone regardless of content). The
+  authority is still real, so the review's job is to confirm the proof is
+  genuinely read-only and genuinely narrow - not to re-argue whether the
+  stall was worth fixing.
+
+invariants:
+  - "The redundancy proof is read-only: it compares the working-tree blob hash against origin/main's blob at that path and writes nothing, so running the proof alone can never change the repository."
+  - "A path the proof does not positively establish as redundant is left exactly as found and still blocks the reconcile, and the main-sync deadlock alert names only the still-blocking paths."
+  - "This stamp-off never reimplements, rewrites or reverts the hotfix - it confirms or refutes landed commits f57795b6d2 and d5739d84cc only."
+
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::master-main-reconcile-redundant-paths!::the READ-ONLY proof adapter stays wired as landed. Verified present at spec time on origin/main, 4 occurrences.'
+  - 'swarmforge/scripts/handoffd.bb::master-main-reconcile-drop-redundant-dirty-paths!::the ONE drop site stays wired as landed, recomputed fresh inside the merge adapter. Verified present at spec time on origin/main, 2 occurrences.'
+  - 'swarmforge/scripts/master_main_reconcile_lib.bb::blocking-overlap::the pure-decision half from d5739d84cc stays as landed. Verified present at spec time on origin/main, 5 occurrences.'
+  - 'specs/pipeline/steps/index.js::bl1333SwarmStampReconcileRedundantOverlapSteps::acceptance handler registered so the runner executes every review scenario. Verified absent at spec time, grep bl1333 returns 0.'
+
+description: >
+  WHAT. Two operator/Cursor commits are live on main, f57795b6d2 carrying the
+  trailer Hotfix-Certification: pending, and both hold `state: pending` rows
+  in backlog/hotfix-ledger.yaml with no stamp ticket.
+
+  Landed behaviour under review (do not redesign). d5739d84cc is pure
+  decision logic in swarmforge/scripts/master_main_reconcile_lib.bb: it adds
+  `blocking-overlap` (the dirty/incoming path overlap MINUS a caller-proven
+  redundant set) and threads an optional `:redundant-paths!` adapter through
+  `sweep!`, defaulting to empty everywhere it is not supplied so every prior
+  caller and test behaves exactly as before. f57795b6d2 then wires it in
+  swarmforge/scripts/handoffd.bb with two new functions:
+  `master-main-reconcile-redundant-paths!`, the READ-ONLY proof (working-tree
+  blob hash equals `origin/main:<path>`, never a diff read), and
+  `master-main-reconcile-drop-redundant-dirty-paths!`, the single place a
+  proven path is dropped - recomputed fresh inside the `:merge!` adapter
+  immediately before the real merge, per BL-1310's freshness rule.
+  Tracked-in-HEAD paths go back to HEAD; staged-new and untracked ones are
+  unstaged and removed. The same commit adds the tests that prove it.
+
+  WHY. On 2026-09-02 between roughly 06:30 and 08:47Z, ten paths staged in
+  the master checkout - six BL-1311 evidence files and four sources, every
+  one byte-identical to origin/main - held the reconcile at ahead=10/behind=10
+  with `reason=dirty` for hours. BL-919's path-overlap gate is correct for
+  real uncommitted work and a false block for a stale pre-land duplicate.
+  Separately: an unticketed hotfix never becomes an official swarm deal on
+  green tests alone (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the two
+  landed commits. Open a narrow follow-up only if the review finds a defect;
+  do not rewrite the reconcile's overlap gate or the daemon's adapters in
+  this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert either commit. This parcel confirms
+    or refutes what landed at f57795b6d2 and d5739d84cc.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT widen the drop authority - no second drop site, no dropping a path
+    the proof did not positively establish, no proving by diff read.
+  - Do NOT re-litigate BL-919's dirty-overlap gate itself. It is correct for
+    real uncommitted work and this hotfix deliberately leaves that behaviour
+    intact for every unproven path.
+  - Do NOT hand-port anything into worker worktrees. `sweep!` has exactly one
+    caller (handoffd.bb, master checkout) and roles pick the change up on
+    their normal merge of main - the operator confirmed this at filing.
+
+qa_e2e_procedure: >
+  (1) At f57795b6d2 and d5739d84cc, confirm the four wiring anchors above are
+  present and that `blocking-overlap` is `overlap` minus the proven set, not
+  a replacement for the overlap gate.
+  (2) Confirm the proof is read-only by inspection AND by execution: run
+  `master-main-reconcile-redundant-paths!` against a fixture with a dirty
+  overlap and assert `git status --porcelain` is byte-identical before and
+  after.
+  (3) Reproduce the wiring suite's scenario B2 (unstaged-M plus staged-A
+  identical overlap): the reconcile completes, unrelated dirt is untouched,
+  and local-only commits survive.
+  (4) Negative case, the one that matters most: make one overlapping path
+  differ from origin/main by a single byte and confirm it is NOT dropped, the
+  reconcile still blocks, and the deadlock alert names that path and only it.
+  (5) Confirm the drop site is recomputed inside the `:merge!` adapter rather
+  than reused from an earlier sweep - a stale proof is the failure mode
+  BL-1310's freshness rule exists to prevent.
+  (6) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  Ledger: BOTH commits already had rows in backlog/hotfix-ledger.yaml
+  (state: pending, detected_at 2026-09-02, stamp_ticket null) - so this mint
+  needs `--link` only, not `--new`. Pre-mint SHA sweep across backlog/ found
+  the two ledger rows and the source intake and no existing stamp ticket, so
+  this is not a double-mint.
+
+  One ticket covers both commits deliberately: d5739d84cc is pure decision
+  logic that changes no behaviour on its own (every existing caller defaults
+  the new adapter to empty), and f57795b6d2 is the wiring that makes it act.
+  Reviewing them apart would ask a reviewer to certify a half that cannot be
+  exercised. Both ledger rows link to this one ticket.
+
+  The operator's filing states the worker worktrees need no hand-port because
+  `sweep!` has a single caller in the master checkout. That claim is part of
+  what the review confirms, not an assumption it inherits.
+
+source: |
+  backlog/INTAKE-operator-hotfix-reconcile-redundant-overlap-1788342204751.md
+  (operator, 2026-09-02), drained by the specifier in the same pass that minted
+  this ticket. Its ask 1 - "mint the BL-848 stamp-off review ticket for
+  f57795b6d2 (covering d5739d84cc as its first half) and --link both ledger
+  rows" - is satisfied in full here. Its ask 2 (no hand-port needed) is carried
+  into constraints and qa_e2e_procedure above rather than dropped.
+  Coordinator note 00_20260902T102056Z_003404_from_coordinator_to_specifier:
+  "Mint BL-848 stamp for hotfix f57795b6d2/d5739d84cc (ledger pending)".
