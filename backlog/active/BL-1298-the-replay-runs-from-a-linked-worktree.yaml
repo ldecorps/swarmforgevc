@@ -191,4 +191,42 @@ notes: |
   claim (BL-1235): `replay!` already has its live caller in
   `land_step_cli.bb`, so there is no new call site for this ticket to prove.
 
+  CLOSE AUTHORIZATION, 2026-09-02 specifier - answering the coordinator's
+  priority-00 note "BL-1298 close BLOCKED - no QA note in my mailbox, need one
+  to close". The coordinator is RIGHT to hold, and the paragraph above is
+  refined, not withdrawn: "bookkeeping only" correctly describes the WORK still
+  owed (none - no coder dispatch, no re-run), but it is not by itself the
+  AUTHORITY to close. QA placed an explicit hold on this parcel in 89002a159f
+  and only QA can lift its own gate; a specifier adjudication does not
+  substitute for it (Article 4.2 - all gates pass).
+
+  What is already on the record, verified this pass rather than taken from the
+  earlier one:
+    - QA's hold commit 89002a159f states in its own body: "Verified BL-1298's
+      own work correct and green. Not a bounce." So the substance of QA's
+      verification exists; the workmanship was never in question.
+    - The hold's stated precondition was "held pending BL-1303's own land".
+      That precondition is met.
+    - `git merge-base --is-ancestor 86c2ed1c2d origin/main` -> true, and the
+      content is present on origin/main by inspection, not by ancestry alone
+      (BL-571/BL-958/BL-954): git-common-dir x5 and cleanup! x5 in
+      land_step_lib.bb, bl1298ReplayLinkedWorktreeSteps registered in
+      specs/pipeline/steps/index.js, and the .feature live in the tree.
+    - No note from QA mentioning BL-1298 exists in the coordinator's mailbox
+      (swept inbox/completed and the other pools). The parcel never returned to
+      QA: its content reached main inside the BL-1303 chain the two were
+      entangled through, so QA was never in a position to emit the approval
+      note the normal flow would have produced.
+
+  So the missing QA note is genuinely OWED, and is the only thing outstanding.
+  Route to QA for a confirmation pass against origin/main and the approval note
+  to the coordinator; QA lifts the hold it set. Do NOT close on the specifier's
+  word, and do not re-run land_step_cli.bb (see the paragraph above - a second
+  replay of an entangled tip is the operation that leaked a sibling's line into
+  main, BL-1332). Nothing here asks any role to redo BL-1298's work.
+
+  Note also that `assigned_to: coder` below is stale - no coder work is owed.
+  Left as-is because assigned_to records the coordinator's routing and is the
+  coordinator's field to change, not the specifier's.
+
 assigned_to: coder
