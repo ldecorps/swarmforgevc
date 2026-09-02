@@ -18,7 +18,11 @@ with the stated acceptance never executed (origin: BL-441).
 Refusal shapes (the message names the path):
 
 1. Pointer to a `.feature` with only its `.feature.draft` beside it
-2. Pointer that *is* a `.feature.draft` (drafts are never executable)
+2. Pointer that *is* a `.feature.draft`, **parked** — no conversion pinned
+   (see [BL-1340](BL-1340-promotion-admits-a-self-converting-acceptance-draft.md):
+   a **self-converting** draft, pinned via `required_wiring:`, is admitted
+   here and refused instead at the documenter→QA edge if it arrives
+   unconverted)
 3. Pointer to a `.feature` with no matching file at all
 
 Still promotes unchanged: a resolving `.feature` pointer, and prose
@@ -42,6 +46,7 @@ Exit `2` lists every dangling pointer; exit `0` prints `ok`.
 Mint-time sibling: [BL-1027](BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md).
 Untracked working-tree half: [BL-533](BL-533-spec-commit-and-runtime-wiring-exit-gates.md).
 Handoff-time existence check: [BL-880 in BL-531](BL-531-handoff-refusal-remedies.md#acceptance-pointer-refusals-bl-880).
+Self-converting draft admission + QA-edge backstop: [BL-1340](BL-1340-promotion-admits-a-self-converting-acceptance-draft.md).
 
 Acceptance:
 `specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature`
