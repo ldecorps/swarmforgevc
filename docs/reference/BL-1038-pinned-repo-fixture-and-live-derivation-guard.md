@@ -7,7 +7,7 @@ contents do not grow as the repository does. A standing gate scans the
 test directory and fails on any file whose cost is a function of the live
 repository's size or history, unless the file records why it must be.
 
-**Last Updated:** 2026-08-22
+**Last Updated:** 2026-09-02
 
 ## Background
 
@@ -52,10 +52,15 @@ it, which is what makes the cost independent of the repository's size.
 
 The closure is computed, never hand-listed: `resolveScriptClosure` walks
 each entry point's `load-file` directives (mirroring
-`master_checkout_drift_lib.bb`'s own dependency extraction) to a fixpoint.
-A dependency the walker cannot resolve is recorded but skipped rather than
-thrown — only a missing *entry point* throws, naming itself, so a fixture
-never goes silently incomplete.
+`master_checkout_drift_lib.bb`'s own dependency extraction) to a fixpoint,
+keeping each dependency's full path relative to the scripts directory
+rather than just its basename — a dependency named from segments (e.g.
+`(fs/path (fs/parent *file*) "test" "x.bb")`) is copied into the same
+subdirectory it lives in live, not flattened to the root (BL-1294). A name
+the walker cannot resolve fails the build naming it — entry point or
+dependency alike — so a fixture never goes silently incomplete (BL-1294;
+before this, only a missing *entry point* threw and an unresolvable
+dependency was silently dropped from the copy).
 
 ### The guard — `extension/test/helpers/liveRepoDerivationGuard.js`
 
@@ -110,11 +115,13 @@ regression test for the indirect case specifically — reading the four
 headline files from disk, stripping their exemption marker in-memory, and
 asserting the guard still flags each — so a future change that blinds the
 scan again fails loud instead of the tree quietly reporting `[]`.
-`extension/test/pinnedRepoFixture.test.js` and
-`extension/test/bl1038PinnedFixture.property.test.js` (property lane)
-assert the fixture's own contract: the closure is derived rather than
-hand-listed, a missing entry point throws, and a missing dependency is
-skipped rather than thrown.
+`extension/test/pinnedRepoFixture.test.js`,
+`extension/test/bl1038PinnedFixture.property.test.js`, and
+`extension/test/bl1294FixtureClosurePathAndFailureInvariants.property.test.js`
+(property lane) assert the fixture's own contract: the closure is derived
+rather than hand-listed, a dependency's path within the scripts tree
+survives the copy, and a missing name — entry point or dependency — fails
+the build naming it rather than yielding a quietly smaller fixture.
 
 ## Scope: creation vs. read, and one file can be both
 
