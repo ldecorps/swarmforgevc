@@ -147,6 +147,19 @@ qa_e2e_procedure: |
      exit with the documented status, not abort mid-script leaving the land
      lock held.
 
+  FIELD OCCURRENCE 2026-09-02, recorded by the specifier (bookkeeping only -
+  no scope, acceptance or design change). BL-1324's content reached
+  origin/main as a passenger on the BL-1254 land rather than through its own
+  land step: its own land attempt returned LAND_ESCALATE at 13:30, and by
+  13:33 the BL-1254 land merge (3259284085) had carried BL-1324's handler,
+  feature file and docs entry onto origin/main, with the close commit
+  7d832d9dbe recording "landed 3259284085" for both tickets at once. The
+  outcome here was benign - BL-1324 was QA-approved and its content is
+  verified correct on origin/main - but it is the same mechanism this ticket
+  describes, and it landed a ticket whose own land step had explicitly
+  refused. Evidence:
+  backlog/evidence/BL-1324-specifier-land-escalate-adjudication-20260902.md.
+
 human_approval: approved
 ruling_options:
   - refuse every entangled tip, so the tip-pure replay becomes the normal land

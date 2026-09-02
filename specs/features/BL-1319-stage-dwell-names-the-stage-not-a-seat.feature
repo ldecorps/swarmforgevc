@@ -2,15 +2,18 @@ Feature: BL-1319 stage-dwell and bottleneck naming key on the stage, never on a 
 
   BL-983 declared that seat identity never escapes the mailbox layer, and
   BL-1040 closes that on the board and stage-map. The optimizer's own dwell
-  instrument is still open: `nameBottleneck` ranks rows keyed on whatever role
-  string the roles table carried, which for a non-bare seat is `coder@sonnet2`.
-  So a two-seat stage reports as two unrelated stages — each row holding only
-  its own seat's parcels — and the coordinator is told a SEAT is the
-  bottleneck. Worse than a cosmetic label: splitting one stage's dwell across
-  its seats understates that stage, so the real bottleneck can be ranked below
-  a single-seat stage that is actually faster. This ticket folds seats onto
-  their stage at the reporting layer, leaving the per-seat records intact
-  underneath for a later ops surface to render.
+  instrument is still open, though not in the way this file first described.
+  `computeStageDwellReportForRoles` selects rows with
+  `PIPELINE_ORDER.includes(r.role)`, and `PIPELINE_ORDER` holds bare stage
+  names only. A non-bare seat such as `coder@sonnet2` fails that membership
+  test, so it is dropped BEFORE its mailbox is read: its parcels never become
+  records at all. A two-seat stage is therefore reported on its bare seat
+  alone, understated by OMISSION rather than split across two rows, and the
+  real bottleneck can still be ranked below a single-seat stage that is
+  actually faster. This ticket makes stage membership and row keying happen on
+  the STAGE, so every seat of a stage is read and folded into that stage's one
+  row, leaving the per-seat records intact underneath for a later ops surface
+  to render.
 
   Background:
     Given a swarm whose coder stage runs the seats "coder" and "coder@sonnet2"
@@ -24,16 +27,26 @@ Feature: BL-1319 stage-dwell and bottleneck naming key on the stage, never on a 
     And that row accounts for the parcels of both seats
 
   # BL-1319 bottleneck-never-names-a-seat-02
+  # A regression guard on the FIX, not a demonstration of the defect: today no
+  # seat-keyed row can exist at all, so this passes before the change. It
+  # exists because an implementation that starts reading seat mailboxes could
+  # key the new row on the seat id. Retire it only with invariant 1.
   Scenario: the named bottleneck is a stage name, never a seat id
     Given the slowest processing belongs to the non-bare coder seat
     When the bottleneck is named
     Then the bottleneck is reported as "coder"
     And no reported stage name or bottleneck name contains an "@"
 
-  # BL-1319 split-no-longer-understates-the-stage-03
-  Scenario: a stage is not ranked below a faster one by having its dwell split
-    Given the coder seats together process slower than every single-seat stage
-    And neither coder seat alone processes slower than the slowest single-seat stage
+  # BL-1319 omission-no-longer-understates-the-stage-03
+  # Corrected 2026-09-02. The original asked for a fixture that cannot exist:
+  # ranking is on MEDIAN processing, and a median over the union of two sets
+  # each with median <= X is itself <= X, so "neither seat alone slower than X"
+  # and "both together slower than X" are mutually exclusive. The satisfiable
+  # form is the one the real defect produces: the BARE seat is fast, the
+  # dropped seat is slow, and only reading both moves the stage to the top.
+  Scenario: a stage is not ranked below a faster one by having a seat's parcels omitted
+    Given the bare coder seat alone processes faster than the slowest single-seat stage
+    And the parcels of both coder seats together process slower than every single-seat stage
     When the bottleneck is named
     Then the bottleneck is reported as "coder"
 

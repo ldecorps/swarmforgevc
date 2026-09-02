@@ -253,6 +253,21 @@ notes: |
   Article 3.1, the coordinator parked it here pending this verdict, and the
   move back is the coordinator's or the human's call.
 
+  FIELD OCCURRENCE 2026-09-02, recorded by the specifier (bookkeeping only -
+  nothing about this ticket's scope, acceptance or design changes). QA's
+  BL-1324 land hit exactly this defect and escalated on it. The land step
+  reported siblings BL-1301 and BL-1314 as ENTANGLED_SIBLING; both were in
+  fact already landed on origin/main and are closed in backlog/done/M8/. QA
+  identified the likely cause unprompted and it matches this ticket: the
+  siblings landed by tip-pure REPLAY, so the commits on origin/main
+  (d7426989b2, c65d8e6728) carry different SHAs from the ones in the parcel's
+  ancestry (90b6ced74f, 23a854cadf), and a SHA-based detector cannot match
+  them. This is the second known occurrence and it cost a full specifier
+  escalation round-trip. Evidence:
+  backlog/evidence/BL-1324-land-escalate-20260902.md and
+  backlog/evidence/BL-1324-specifier-land-escalate-adjudication-20260902.md.
+  Status stays `blocked`; this note is not a request to promote.
+
 assigned_to: documenter
 
 notes_coordinator_hold: >
