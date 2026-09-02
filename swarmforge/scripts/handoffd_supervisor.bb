@@ -171,17 +171,27 @@
    advances with the poll loop's own progress, so a wedged loop cannot
    forge liveness)."
   [{:keys [alive? heartbeat-age-ms pending-outbox-age-ms stall-ms
-           in-flight-sweep-age-ms in-sweep-budget-ms]}]
+           in-flight-sweep-age-ms in-sweep-budget-ms daemon-age-ms]}]
   (let [in-flight? (and (number? in-flight-sweep-age-ms) (number? in-sweep-budget-ms)
                         (<= 0 in-flight-sweep-age-ms))
         under-budget? (and in-flight? (<= in-flight-sweep-age-ms in-sweep-budget-ms))
         ;; over-budget in-flight = the heartbeat evidence is void, exactly
         ;; as if the heartbeat were missing.
-        effective-heartbeat-age-ms (if (and in-flight? (not under-budget?)) nil heartbeat-age-ms)]
+        effective-heartbeat-age-ms (if (and in-flight? (not under-budget?)) nil heartbeat-age-ms)
+        ;; hotfix startup-grace (2026-09-02): -main runs check! before its
+        ;; first sleep, and right after a crash every observation is stale
+        ;; by construction (the dead daemon's heartbeat, the parcel whose
+        ;; delivery crashed it). A daemon younger than one stall window has
+        ;; not yet HAD a stall window in which to write a heartbeat - it
+        ;; cannot be stalled. An unknown age grants nothing (pre-hotfix
+        ;; verdict stands); :dead is untouched.
+        within-startup-grace? (and (number? daemon-age-ms) (<= daemon-age-ms stall-ms))]
     (cond
       (not alive?) :dead
 
       under-budget? :healthy
+
+      within-startup-grace? :healthy
 
       (and pending-outbox-age-ms (> pending-outbox-age-ms stall-ms)
            (or (nil? effective-heartbeat-age-ms) (> effective-heartbeat-age-ms stall-ms)))
@@ -566,6 +576,10 @@
     (let [status (or (read-status) {})
           tracked (daemon-pid)
           verdict (evaluate-health {:alive? (pid-alive? tracked)
+                                    ;; hotfix startup-grace: the daemon's pid
+                                    ;; file is written at its start, so its
+                                    ;; age is the daemon's age.
+                                    :daemon-age-ms (file-age-ms pid-file)
                                     :heartbeat-age-ms (file-age-ms heartbeat-file)
                                     :pending-outbox-age-ms (oldest-pending-outbox-age-ms)
                                     :stall-ms stall-ms

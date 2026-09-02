@@ -652,9 +652,24 @@
                          [role path])]
       (when (and (seq outbox-items) (not (:active ambulance)))
         (log! "ambulance-inactive" "mode not engaged"))
-      (doseq [[role path] outbox-items]
-        (if (ambulance-lib/parcel-held? ambulance (handoff-lib/parse-envelope (slurp (str path))))
+      (doseq [[role path] outbox-items
+              ;; hotfix outbox-race (2026-09-02): the parcel was listed a
+              ;; moment ago but may be gone (or unreadable) by now - the
+              ;; sending role archives its own outbox entries. That read
+              ;; used to sit outside the try below and its
+              ;; FileNotFoundException escaped poll-once! and killed the
+              ;; daemon (4x on 2026-09-02, same signature 2026-08-30). A
+              ;; vanished parcel is skipped THIS poll, left exactly where it
+              ;; is, and re-evaluated next poll - never fatal.
+              :let [read-result (handoff-lib/read-envelope-if-present path)]]
+        (cond
+          (:vanished read-result)
+          (log! "outbox-parcel-unreadable" (str path) "gone or unreadable between listing and read; skipped this poll")
+
+          (ambulance-lib/parcel-held? ambulance (:envelope read-result))
           (log! "deliver-skip-ambulance" (str path) (:ticket ambulance))
+
+          :else
           (try
             (deliver! roles socket role path)
             (catch Exception e

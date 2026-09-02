@@ -1,0 +1,57 @@
+Feature: promotion admits a draft the ticket itself converts, and QA refuses one that never was
+
+  BL-626 closed a real hole: a ticket promoted against an acceptance pointer
+  that resolved to nothing was worked and closed with its contract never once
+  executed. It closed it at PROMOTION, by refusing every `.feature.draft`
+  pointer outright.
+
+  That refusal cannot tell two different tickets apart. A PARKED draft belongs
+  to a slice somebody else builds later - refusing it is right, because nothing
+  in that ticket will ever materialise it. A SELF-CONVERTING draft belongs to
+  the very slice chartered to rename it, register its step handler, and repoint
+  `acceptance:` in the same parcel - the shape `specifier.prompt` has mandated
+  since 2026-08-30, and the only shape available when committing a live
+  `.feature` ahead of its handler would throw the runner for every other parcel
+  (BL-233).
+
+  Refusing the second kind is a deadlock no role can clear: the ticket cannot
+  promote until the draft is converted, and the draft cannot be converted until
+  the ticket promotes. Twelve live tickets sit in it, two of them `high`
+  expedited defects at the head of the Article 3.2.4 lane.
+
+  The gate moves rather than disappears. Promotion admits a draft the ticket
+  pins itself to converting; the documenter->QA edge refuses one that arrives
+  still a draft. Allowed in, forbidden out - so BL-626's silence stays closed
+  at the end where a contract can actually have gone unexecuted.
+
+  Background:
+    Given a ticket eligible for promotion into the active backlog
+
+  # BL-1340 self-converting-draft-01
+  Scenario: a draft the ticket pins itself to converting is promoted
+    Given the candidate's acceptance names its own draft
+    And the candidate pins that draft's conversion in its own charter
+    When the coordinator promotes the next eligible ticket
+    Then the candidate is promoted
+
+  # BL-1340 self-converting-draft-02
+  Scenario: a parked draft the ticket does not convert is still refused
+    Given the candidate's acceptance names its own draft
+    And the candidate pins no conversion of that draft
+    When the coordinator promotes the next eligible ticket
+    Then the promotion is refused
+    And the refusal names the draft as parked with no conversion pinned
+
+  # BL-1340 self-converting-draft-03
+  Scenario: buildability never reorders the expedite lane
+    Given an expedited defect whose acceptance names a self-converting draft
+    And a non-expedited candidate whose acceptance names an existing feature
+    When the coordinator promotes the next eligible ticket
+    Then the expedited defect is promoted first
+
+  # BL-1340 self-converting-draft-04
+  Scenario: a parcel still naming a draft cannot reach QA
+    Given a parcel whose ticket acceptance still names a draft
+    When the documenter sends it to QA
+    Then the handoff is refused
+    And the refusal names the unconverted draft
