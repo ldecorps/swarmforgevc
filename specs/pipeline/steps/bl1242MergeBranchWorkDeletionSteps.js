@@ -12,7 +12,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-const FEATURE = 'A merge never silently drops work the receiving branch introduced';
+const FEATURE = 'A merge never silently drops work either branch carries';
 
 const CLI = path.join(__dirname, 'lib', 'bl1242MergeBranchWorkDeletionCli.sh');
 
@@ -49,7 +49,9 @@ function registerSteps(registry) {
 
   scoped(/^the merge commit is (refused|allowed)$/, (ctx, outcome) => {
     const st = ctx.bl1242;
-    const result = st.matrixResult || st.noRemovalResult;
+    // BL-1341 shares this Then across both directions - one outcome step, as
+    // the ticket asked for one refusal model rather than a parallel set.
+    const result = st.matrixResult || st.noRemovalResult || st.incomingResult;
     if (outcome === 'refused') {
       assert.notEqual(result.exitCode, 0, `expected refusal, got exit ${result.exitCode}`);
     } else {
@@ -79,7 +81,7 @@ function registerSteps(registry) {
     assert.ok(/introduced at [0-9a-f]{6,10} on this branch/.test(stderr), `expected an introducing-commit reference in refusal, got: ${stderr}`);
   });
 
-  scoped(/^the merge would remove no file the branch introduced$/, (ctx) => {
+  scoped(/^the merge would remove no file either branch carries$/, (ctx) => {
     ctx.bl1242.noRemovalResult = runCli('no-removal');
   });
 
@@ -100,6 +102,62 @@ function registerSteps(registry) {
     const { doubleReportResult, expectedFlaggingKey } = ctx.bl1242;
     const otherKey = expectedFlaggingKey === 'ticketGuardFlagged' ? 'mergeGuardFlagged' : 'ticketGuardFlagged';
     assert.equal(doubleReportResult[otherKey], false, `expected the OTHER guard to stay silent, got: ${JSON.stringify(doubleReportResult)}`);
+  });
+
+  // ── BL-1341: the incoming side ────────────────────────────────────────
+
+  scoped(/^a merge in progress on a branch that lacks files the incoming branch carries$/, () => {
+    // The fixture for this scenario family is built by the CLI driver
+    // itself (bl1242MergeBranchWorkDeletionCli.sh's incoming-* modes), so
+    // this Given has nothing to record - the real work happens in the When.
+  });
+
+  scoped(/^the merge result omits those files and the message names "?([a-z]+)"? of them$/, (ctx, tickets) => {
+    const param = TICKETS_TO_PARAM[tickets];
+    assert.ok(param, `unknown tickets cell: ${tickets}`);
+    ctx.bl1242.incomingResult = runCli('incoming-matrix', param);
+  });
+
+  scoped(/^the merge is refused for an unaccounted incoming removal$/, (ctx) => {
+    const result = runCli('incoming-detail');
+    ctx.bl1242.incomingResult = result;
+    assert.notEqual(result.exitCode, 0, `expected a refusal, got: ${JSON.stringify(result)}`);
+  });
+
+  scoped(/^the refusal names every omitted path$/, (ctx) => {
+    assert.ok(
+      ctx.bl1242.incomingResult.stderr.includes('specs/pipeline/steps/bl0006IncomingSteps.js'),
+      `the refusal does not name the omitted path: ${ctx.bl1242.incomingResult.stderr}`,
+    );
+  });
+
+  scoped(/^the refusal names the ticket each omitted path belongs to$/, (ctx) => {
+    assert.ok(
+      ctx.bl1242.incomingResult.stderr.includes('BL-0006'),
+      `the refusal does not name the omitted path's ticket: ${ctx.bl1242.incomingResult.stderr}`,
+    );
+  });
+
+  scoped(/^the refusal says the path came from the incoming branch$/, (ctx) => {
+    assert.match(ctx.bl1242.incomingResult.stderr, /incoming branch/);
+  });
+
+  scoped(/^the merge result keeps every file the incoming branch carries$/, (ctx) => {
+    ctx.bl1242.incomingResult = runCli('incoming-kept');
+  });
+
+  scoped(/^the merge omits a path both branches carry$/, (ctx) => {
+    ctx.bl1242.incomingResult = runCli('incoming-both-sides');
+  });
+
+  scoped(/^the removal is reported once$/, (ctx) => {
+    const result = ctx.bl1242.incomingResult;
+    assert.notEqual(result.exitCode, 0, `expected a refusal, got: ${JSON.stringify(result)}`);
+    assert.equal(
+      result.mentions,
+      1,
+      `a path dropped from both sides must be reported once, got ${result.mentions}`,
+    );
   });
 }
 
