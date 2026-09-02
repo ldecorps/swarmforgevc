@@ -110,3 +110,31 @@ another role running any tests in parallel." Investigation in that session
 found the mechanism does not currently throttle mono-router at all (it was
 never restricted to begin with) and confirmed the gap above — rotation
 mode is computed but not exported to the process env vitest reads.
+
+---
+
+## Drained 2026-09-02 (specifier) → BL-1336
+
+Minted as **BL-1336**
+(`backlog/paused/BL-1336-router-rotation-raises-the-vitest-fork-ceiling.yaml`),
+1:1 — this intake proposed exactly one separable piece of work. Every human
+sentence quoted here is preserved verbatim in that ticket's `source:` field,
+per Article 5.3, including the intake's own low/perf framing of the stakes.
+
+All four technical claims were re-verified against the tree at drain time
+rather than taken from the intake: the ceiling function's logic and line
+range, `MAX_WORKERS = 6`, the `export SWARMFORGE_PACK` line number, and the
+absence of any `SWARMFORGE_ROTATION` anywhere in the tree. All four hold.
+
+The intake's three open questions are handled as follows:
+- **New ceiling value** → `ruling_options` on the ticket. It is a host-owner
+  preference, and the RAM budget caps it either way.
+- **Signal mechanism** → decided as the intake preferred: export a rotation
+  env var rather than pattern-match pack names, pinned by the ticket's
+  `required_wiring` entry.
+- **Coordinator overlap** → dispositioned in the ticket's `notes:` as
+  negligible, matching how the full-forge case already treats it.
+
+The "both lanes" point is carried as invariant 1 rather than an open
+question, since BL-935 invariant 3 and BL-871's property tests already bind
+it.
