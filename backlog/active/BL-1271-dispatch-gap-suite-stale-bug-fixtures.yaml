@@ -271,3 +271,6 @@ notes: |
   parcel is still unlanded - consistent with the BL-1343 hold above.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-02, by: QA, blamed: cleaner, class: behavior, commit: 991ec6ead8, evidence: backlog/evidence/BL-1271-qa-bounce-20260902.md }
