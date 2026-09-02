@@ -334,6 +334,28 @@
                (nil? attribution)
                {:paths nil :warning (str "land-step: could not read " path "'s attribution")}
 
+               ;; BL-1332, human ruling option 1. A path BOTH this ticket and
+               ;; an unlanded sibling own cannot be separated by a per-path
+               ;; decision: write-tree-from-paths! takes the WHOLE blob at the
+               ;; cited commit, so including it ships the sibling's lines and
+               ;; excluding it drops this ticket's. On 2026-09-02 the first of
+               ;; those put an unlanded ticket's require(...) into
+               ;; specs/pipeline/steps/index.js on origin/main and the
+               ;; registration guard then refused every role's commit on main
+               ;; until a human adjudicated. So it refuses, naming the path,
+               ;; the landing ticket and the sibling - never silently shipping
+               ;; either ticket's version of the file. Splitting the file
+               ;; per-hunk is the better end state and is ruling option 2's
+               ;; follow-up slice, not this one.
+               (and (contains? (:owners attribution) task-ticket-id)
+                    (some unlanded-siblings (:owners attribution)))
+               {:paths nil
+                :warning (str "land-step: refusing to replay " task-ticket-id
+                              " - " path " is shared with unlanded sibling(s) "
+                              (str/join "," (sort (filter unlanded-siblings (:owners attribution))))
+                              ", and a replayed path is taken whole, so landing it would carry "
+                              "the sibling's lines into main (BL-1332)")}
+
                (and (seq (:owners attribution))
                     (not (:any-untagged? attribution))
                     (not (contains? (:owners attribution) task-ticket-id))
