@@ -22,8 +22,9 @@ approval_context: >
   human turning the dial. Approved when deps land.
 
 required_wiring:
-  - "extension/src/tools/effortDialAdapt.ts::decideAdaptEffort::pure decide from prior effort + outcome signal (bounce / clean pass); UI and launch paths call it, never embed a second policy."
-  - "swarmforge/scripts/handoff_lib.bb::record-effort-adapt!::CONSUMER anchor when a bounce or clean completion is recorded for the seat's held ticket — same moment the lifecycle ledger already learns the outcome."
+  - 'swarmforge/scripts/seat_difficulty_lib.bb::adapt-effort-decision::the PURE decide from prior effort plus outcome signal, beside BL-1316 claim-effort-decision in the same lib. Name fixed at mint so the pattern is a literal that will exist (BL-874).'
+  - 'swarmforge/scripts/handoff_lib.bb::record-effort-adapt!::the IO edge over that decision, mirroring BL-1316 apply-claim-effort!. Never throws and never blocks the completion path.'
+  - 'swarmforge/scripts/done_with_current_task.bb::record-effort-adapt!::the CONSUMER anchor (BL-1235). A PRE-EXISTING live caller must reach the adapt at the moment a hold ends. The two entries above are satisfied by this parcel own diff and so gate nothing by themselves.'
 
 invariants:
   - "Adapt never silently changes the pack window line on disk; in-memory / respawn only (same BL-235/BL-236 posture)."
@@ -46,3 +47,31 @@ depends_on_note: |
   unrelated pack default.
 
 assigned_to: coder
+
+notes: |
+  Spec amended 2026-09-02 by the specifier, on the coder's priority-00
+  spec-gap note "required_wiring item 1 names an unaddable TS caller". The
+  coder was right and the gap was mine at mint.
+
+  What was wrong. The original item 1 put the pure Adapt decision in a new
+  TypeScript module, extension/src/tools/effortDialAdapt.ts, and asked for
+  "UI and launch paths" to call it. No such caller can exist at the adapt
+  moment. BL-1316, the dependency this slice climbs from, is entirely
+  Babashka: the pure decision is seat_difficulty_lib.bb/claim-effort-decision,
+  the IO edge is handoff_lib.bb/apply-claim-effort!, and the live consumer is
+  ready_for_next_task.bb. The outcome signal Adapt reacts to is recorded on
+  that same Babashka side, so a TS decision module could only be reached by
+  the daemon shelling into node to make a pure choice. The TS effort dial that
+  does exist, extension/src/swarm/effortDial.ts, is BL-236's Suggest-tier UI
+  reached from swarmPanel.ts - a different tier and a different moment, not a
+  home for this.
+
+  What changed. required_wiring only; the feature file is
+  implementation-neutral and needed no edit, and no scenario, invariant or
+  acceptance criterion moved. The decision now sits beside BL-1316's in
+  seat_difficulty_lib.bb as adapt-effort-decision, the IO edge stays
+  handoff_lib.bb/record-effort-adapt!, and a third entry anchors
+  done_with_current_task.bb - a pre-existing live caller - so the wiring is
+  proved by a consumer rather than by the parcel own diff (BL-1235). Nothing
+  the coder had built needed rebuilding; the note arrived before
+  implementation started.
