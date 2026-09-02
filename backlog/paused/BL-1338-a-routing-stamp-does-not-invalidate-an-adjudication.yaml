@@ -13,7 +13,9 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1338-a-routing-stamp-does-not-invalidate-an-adjudication.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Exclude only the routing fields a promotion writes, keeping every spec field in the fingerprint
 approval_context: >
   Small, but it now fires on every deprecator hold, so it will not stay quiet.
 
