@@ -24,7 +24,7 @@ const ROLE = 'coder';
 // "the next higher notch" means - the cross-language parity of the two
 // implementations is gated separately by
 // swarmforge/scripts/test/test_bl1317_effort_ladder_parity.sh.
-const LADDER = ['low', 'medium', 'high'];
+const LADDER = ['low', 'medium', 'high', 'xhigh'];
 const PACK_DEFAULT_EFFORT = 'medium';
 const CLAIM_TIME_EFFORT = 'medium';
 

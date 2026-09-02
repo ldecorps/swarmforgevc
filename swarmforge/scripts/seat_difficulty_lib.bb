@@ -222,9 +222,21 @@
 ;; (the constant-across-a-language-boundary rule, BL-897).
 
 (def adapt-effort-ladder
-  "The effort ladder, weakest first. Derived from cost-rank rather than
-   restated, so the two can never drift apart within this file."
-  (mapv key (sort-by val cost-rank)))
+  "The effort ladder, weakest first. This is BL-236's operator dial scale
+   (extension/src/swarm/effortDial.ts EFFORT_LEVELS), NOT cost-rank: the
+   mutation_cost scale above stops at high, but a seat can already be running
+   at xhigh because the dial can set it there. A ladder that stopped at high
+   would leave Adapt silently inert at exactly the highest-stakes setting -
+   an xhigh seat's bounce would read as an unknown rung and change nothing.
+
+   The mutation_cost baseline still comes from cost-rank; only the rungs Adapt
+   may move BETWEEN come from here."
+  ["low" "medium" "high" "xhigh"])
+
+(def adapt-effort-rank
+  "Rank within adapt-effort-ladder. Separate from cost-rank because the two
+   scales are genuinely different lengths - see adapt-effort-ladder."
+  (into {} (map-indexed (fn [i e] [e i]) adapt-effort-ladder)))
 
 (def adapt-default-clean-streak
   "Clean completions required before a single notch may be given back.
@@ -232,7 +244,7 @@
   3)
 
 (defn- adapt-rank [effort]
-  (get cost-rank (some-> effort str str/trim str/lower-case)))
+  (get adapt-effort-rank (some-> effort str str/trim str/lower-case)))
 
 (defn adapt-effort-decision
   "Pure BL-1317 Adapt decision: where a seat's effort moves given the effort

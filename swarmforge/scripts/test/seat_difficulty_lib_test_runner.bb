@@ -181,9 +181,14 @@
 
 ;; ── BL-1317: Adapt tier ────────────────────────────────────────────────────
 
-(assert= "adapt ladder is exactly the cost-rank order, weakest first"
-         ["low" "medium" "high"]
+(assert= "adapt ladder is BL-236's operator dial scale, weakest first - it must reach xhigh"
+         ["low" "medium" "high" "xhigh"]
          seat-difficulty-lib/adapt-effort-ladder)
+
+(assert= "a bounce at high climbs onto xhigh rather than going inert there"
+         {:apply? true :effort "xhigh" :reason "bounce: climbing one notch"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "high" :baseline-effort "high" :signal "bounce"}))
 
 (assert= "a bounce climbs exactly one notch"
          {:apply? true :effort "high" :reason "bounce: climbing one notch"}
@@ -196,9 +201,15 @@
                    {:backend "claude" :prior-effort "low" :baseline-effort "low" :signal "bounce"})))
 
 (assert= "a bounce at the top of the ladder does not overflow, and applies nothing"
-         {:apply? false :effort "high" :reason "already at the top of the ladder"}
+         {:apply? false :effort "xhigh" :reason "already at the top of the ladder"}
          (seat-difficulty-lib/adapt-effort-decision
-          {:backend "claude" :prior-effort "high" :baseline-effort "medium" :signal "bounce"}))
+          {:backend "claude" :prior-effort "xhigh" :baseline-effort "medium" :signal "bounce"}))
+
+(assert= "a clean streak brings an xhigh seat back down one notch at a time"
+         {:apply? true :effort "high" :reason "clean streak met: dropping one notch"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "xhigh" :baseline-effort "medium"
+           :signal "clean" :clean-streak 3}))
 
 (assert= "a clean completion short of the streak changes nothing"
          false

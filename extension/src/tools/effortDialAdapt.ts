@@ -20,16 +20,27 @@
  * same way BL-1316's claim-time apply does - in memory / on respawn - so
  * declared invariant 1 holds: Adapt never rewrites the pack conf on disk.
  *
- * SINGLE POLICY, ACROSS A LANGUAGE BOUNDARY. The ladder below is mirrored by
- * seat_difficulty_lib.bb's `cost-rank` (low 0, medium 1, high 2), because the
- * Babashka consumer (handoff_lib.bb::record-effort-adapt!) records the outcome
- * signal. A comment claiming the two agree is not a gate - see
+ * SINGLE POLICY, ACROSS A LANGUAGE BOUNDARY. The ladder is BL-236's own
+ * EFFORT_LEVELS, imported rather than restated - Adapt must be able to climb
+ * onto every rung the operator's dial can already select, or it would go
+ * silently inert at exactly the highest-stakes setting. That ladder is
+ * mirrored in Babashka by seat_difficulty_lib.bb's `adapt-effort-ladder`,
+ * because the consumer that records the outcome signal
+ * (handoff_lib.bb::record-effort-adapt!) lives there and cannot import this.
+ * A comment claiming the two agree is not a gate - see
  * swarmforge/scripts/test/test_bl1317_effort_ladder_parity.sh, which asserts
  * both literals agree (the constant-across-a-language-boundary rule, BL-897).
  */
 
-/** The effort ladder, weakest first. Mirrors seat_difficulty_lib.bb cost-rank. */
-export const ADAPT_EFFORT_LADDER: readonly string[] = ['low', 'medium', 'high'];
+import { EFFORT_LEVELS, hasEffortSetting, readCurrentEffort, switchRoleEffort } from '../swarm/effortDial';
+import { RespawnResult } from '../swarm/tmuxClient';
+
+/**
+ * The effort ladder, weakest first. BL-236's EFFORT_LEVELS itself, never a
+ * copy: a fifth rung added to the dial is a rung Adapt can climb the same
+ * day, and the two can never disagree within TypeScript.
+ */
+export const ADAPT_EFFORT_LADDER: readonly string[] = EFFORT_LEVELS;
 
 /**
  * Clean completions required before a single notch may be given back.
@@ -109,4 +120,51 @@ export function decideAdaptEffort(input: AdaptEffortInput): AdaptEffortDecision 
   }
 
   return { apply: false, effort: priorEffort, reason: `unknown signal ${String(signal)}` };
+}
+
+/**
+ * The TypeScript-side APPLY edge over the decision above: read where the seat
+ * is now, decide, and - only when the effort actually changes - rewrite the
+ * settings file and respawn that one pane.
+ *
+ * It reuses BL-236's switchRoleEffort verbatim rather than writing the
+ * settings file itself, which is what keeps declared invariant 1 true on this
+ * side too: that mechanism is the BL-235 in-memory/respawn path, and it never
+ * touches swarmforge.conf. Any UI or launch path that wants Adapt calls this
+ * rather than composing its own read/decide/write, so there is exactly one
+ * Adapt policy in this language.
+ */
+export interface AdaptRoleEffortInput {
+  /** The seat's backend, e.g. 'claude'. A backend with no dial decides nothing. */
+  agent: string;
+  /** BL-1316's claim-time effort for the held ticket: the floor a drop stops at. */
+  baselineEffort?: string;
+  signal?: string;
+  cleanStreak?: number;
+  cleanStreakRequired?: number;
+}
+
+export interface AdaptRoleEffortResult {
+  decision: AdaptEffortDecision;
+  /** Present only when the decision applied and a respawn was attempted. */
+  respawn?: RespawnResult;
+}
+
+export function adaptRoleEffort(
+  targetPath: string,
+  role: string,
+  input: AdaptRoleEffortInput,
+): AdaptRoleEffortResult {
+  const decision = decideAdaptEffort({
+    backendHasLever: hasEffortSetting(input.agent),
+    priorEffort: readCurrentEffort(targetPath, role),
+    baselineEffort: input.baselineEffort,
+    signal: input.signal,
+    cleanStreak: input.cleanStreak,
+    cleanStreakRequired: input.cleanStreakRequired,
+  });
+  if (!decision.apply || !decision.effort) {
+    return { decision };
+  }
+  return { decision, respawn: switchRoleEffort(targetPath, role, decision.effort) };
 }
