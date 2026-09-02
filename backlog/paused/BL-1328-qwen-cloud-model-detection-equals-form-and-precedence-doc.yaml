@@ -1,0 +1,130 @@
+id: BL-1328
+title: "BL-1324 follow-up: qwen-cloud --model detection misses the --model=<value> single-token form; document the OpenRouter/qwen precedence asymmetry"
+milestone: M8
+type: defect
+severity: medium
+# medium: both gaps are real defects in already-landed hotfix 4ed88430b2, but
+# both are confirmed dormant today (no current pack window line uses either
+# the --model=<value> form or combines OpenRouter routing with a qwen*
+# --model) — contained, not a live fault, so not high/critical.
+status: todo
+epic: swarm-intelligence-layer
+priority: 22
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1328-qwen-cloud-model-detection-equals-form-and-precedence-doc.feature
+
+human_approval: approved
+approval_context: >
+  This ticket IS the narrow follow-up BL-1324's human ruling (2026-09-02,
+  option 2 of that ticket's ruling_options) already authorized verbatim:
+  "Certify as landed; also mint a narrow follow-up to match the
+  --model=<value> single-token form and/or document the OpenRouter-
+  precedence caveat." No further approval gate — this scopes exactly that
+  authorization and nothing more.
+
+invariants:
+  - "extra_cli_targets_qwen_cloud detects a qwen* model whether the CLI's --model value arrives as a separate token pair (--model qwen3.8-max) or a single --model=qwen3.8-max token — both forms are treated identically everywhere the function is called."
+  - "The fix never changes matching for a non-qwen --model value, in either token form — a sibling Anthropic seat's own --model stays undetected exactly as before."
+  - "The precedence asymmetry between the billing_guard call site (qwen-cloud-first) and the launch_role pane-env call site (OpenRouter-first) is documented at both sites, not silently reconciled — this ticket changes no precedence, only detection and documentation."
+
+description: |
+  ## What
+
+  BL-1324 certified hotfix `4ed88430b2` as landed and its own
+  `approval_context` named two confirmed-dormant gaps in
+  `swarmforge/scripts/swarmforge.sh`. This ticket closes one and documents
+  the other, per the human's ruling on BL-1324 (see `approval_context`).
+
+  **Gap 1 — detection form.** `extra_cli_targets_qwen_cloud` (line ~1479)
+  splits `extra_cli` on whitespace and only matches when `--model` and a
+  `qwen*` value are two SEPARATE tokens:
+  ```
+  if [[ "${parts[i]}" == "--model" && "${parts[i+1]:-}" == qwen* ]]; then
+  ```
+  A `--model=qwen3.8-max` single-token form never matches — `parts[i]` would
+  be the whole `--model=qwen3.8-max` string, which fails the exact
+  `"--model"` equality check. Every current pack window line
+  (`swarmforge/packs/bob-multi-provider-mono-router.conf`) uses the space
+  form, so this is dormant today: a future pack author using the equals
+  form would silently get NO Token Plan remap and NO
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` declaration, reproducing the exact
+  auto-compaction bug BL-1324's hotfix fixed for the space form.
+
+  **Gap 2 — precedence asymmetry.** The fix has two call sites and they
+  disagree on precedence between OpenRouter routing and qwen-cloud
+  targeting:
+  - The billing_guard construction site (~line 1957) checks qwen-cloud
+    FIRST: `if [[ ... ]] || extra_cli_targets_qwen_cloud "$extra_cli"; then
+    ... elif role_uses_openrouter "$role"; then`.
+  - `launch_role`'s pane-env construction site (~line 2206) checks
+    OpenRouter FIRST: `elif role_uses_openrouter "$role"; then ... elif
+    [[ "$agent" == "claude" ]] && extra_cli_targets_qwen_cloud ...; then`.
+
+  So a role combining OpenRouter routing with a qwen* `--model` would take
+  the qwen-cloud branch at the billing_guard site (remapping
+  `ANTHROPIC_BASE_URL` to the Token Plan endpoint) but the OpenRouter
+  branch at the pane-env site (forwarding `OPENROUTER_API_KEY`, never
+  `QWEN_API_KEY`, and never declaring `CLAUDE_CODE_MAX_CONTEXT_TOKENS`) —
+  a credential/endpoint mismatch, not merely a missing context
+  declaration. No current pack combines the two, so this is dormant, not
+  live; BL-1324's own review named only the pane-env half of this, this
+  ticket's investigation found the billing_guard site takes the opposite
+  order.
+
+  ## How (direction, not mandate)
+
+  Gap 1: extend `extra_cli_targets_qwen_cloud`'s matching to also
+  recognize a single `--model=<value>` token (e.g. split on `=` when the
+  token starts with `--model=`), without changing its behavior for the
+  existing space-separated form or for any non-qwen model.
+
+  Gap 2: add an explicit comment at BOTH call sites naming the other
+  site's precedence, stating plainly that combining OpenRouter routing
+  with a qwen* `--model` is unsupported/dormant today and would produce a
+  credential mismatch if it ever occurred — so a future pack author (or
+  reviewer) sees the trap before shipping that combination, rather than
+  discovering it live.
+
+  ## Not this slice
+
+  - Reconciling the two call sites' precedence so they agree — the human's
+    ruling asked to DOCUMENT the asymmetry, not resolve it; no live pack
+    needs the combination today, and choosing which precedence should win
+    is a design decision for whoever eventually wants that combination.
+  - Any other change to `extra_cli_targets_qwen_cloud`, `role_uses_openrouter`,
+    or the billing_guard/pane-env branches beyond the two items above.
+  - Re-litigating BL-1324's own certification/ledger decision.
+
+source: |
+  BL-1324 `ruling` (human ldecorps, 2026-09-02, option 2 of that ticket's
+  `ruling_options`): "Certify as landed; also mint a narrow follow-up to
+  match the --model=<value> single-token form and/or document the
+  OpenRouter-precedence caveat... The follow-up ticket itself is routed to
+  the specifier to mint separately." This ticket is that follow-up.
+
+notes: |
+  Investigated both call sites directly against `swarmforge/scripts/swarmforge.sh`
+  at mint time (grep for `extra_cli_targets_qwen_cloud` and
+  `role_uses_openrouter`) rather than relying on BL-1324's prose summary
+  alone — confirmed the billing_guard site's precedence is the OPPOSITE of
+  the pane-env site's, which BL-1324's own approval_context did not state
+  explicitly (it only described the pane-env site as "reached only when...
+  NOT already routed through role_uses_openrouter"). Recorded the sharper
+  finding here since it changes what "document the caveat" needs to say —
+  not just "this site is skipped" but "the two sites would disagree if this
+  combination ever occurred."
+
+  IR-DRY adjudication at mint (do not re-litigate): one medium-confidence
+  possible-synonym finding remains after converting the three detection
+  scenarios into a Scenario Outline — it pairs the Given step "billing_guard
+  construction site prefers qwen-cloud over OpenRouter" against "launch_role
+  pane-env construction site prefers OpenRouter over qwen-cloud" within the
+  same scenario. Kept: these are the scenario's whole point — two
+  complementary, genuinely opposite facts about two different call sites,
+  not accidental restatement of one fact.
+
+assigned_to: none
