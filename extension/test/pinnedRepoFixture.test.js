@@ -77,21 +77,22 @@ test('BL-1038: a missing entry point throws rather than yielding a silent partia
   );
 });
 
-test('BL-1038: a missing DEPENDENCY (not an entry point) is skipped, not thrown', () => {
-  // resolveScriptClosure's own doc: "a name the reader cannot resolve is still
-  // included ... but contributes no further edges" - copyScriptClosure must
-  // honour that for anything that is not itself a requested entry point,
-  // rather than throwing on every unresolvable name.
-  const liveScriptsDir = mkTmpDir('bl1038-dep-source-');
+test('BL-1294: a missing DEPENDENCY (not an entry point) fails the copy naming it, not silently skipped', () => {
+  // Was: "a name the reader cannot resolve is still included ... but
+  // contributes no further edges" was read as license for copyScriptClosure to
+  // skip it. That produced exactly the quietly-incomplete fixture the
+  // resolver's own contract promises never to build - see BL-1294.
+  const liveScriptsDir = mkTmpDir('bl1294-dep-source-');
   fs.writeFileSync(
     path.join(liveScriptsDir, 'a.bb'),
     '(load-file (str (fs/path x "missing_dep.bb")))'
   );
-  const target = path.join(mkTmpDir('bl1038-dep-target-'), 'scripts');
-  const copied = copyScriptClosure(liveScriptsDir, target, ['a.bb']);
-  assert.deepEqual(copied, ['a.bb'], 'the entry point is copied and the absent dependency is silently dropped');
-  assert.ok(fs.existsSync(path.join(target, 'a.bb')));
-  assert.ok(!fs.existsSync(path.join(target, 'missing_dep.bb')));
+  const target = path.join(mkTmpDir('bl1294-dep-target-'), 'scripts');
+  assert.throws(
+    () => copyScriptClosure(liveScriptsDir, target, ['a.bb']),
+    /dependency missing_dep\.bb not found/,
+    'an unresolvable dependency must fail the build naming it, never silently shrink the fixture'
+  );
 });
 
 // BL-1240: unregistered_test_gate_lib.bb is the first top-level script under
