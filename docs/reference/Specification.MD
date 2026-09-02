@@ -1,5 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1301: the dropped-parcel chase sweep
+(BL-719) re-flagged a deliberately parked active ticket as a possible drop
+every cooldown window for as long as the park lasted — the live instance,
+BL-1295, was parked in QA behind a blocker and re-nudged the coordinator
+3x/shift with no way for the sweep to represent the park. Fix: `status:
+blocked` (`backlog-schema.md`) is now also read by
+`chase_sweep_lib.bb`'s `decide-dropped-parcel?` (new `parked-ticket?`
+predicate, anchored to exactly `status: blocked` — any other value or an
+absent field is nudged unchanged, fail-closed). A suppressed ticket is never
+silent: the daemon logs `dropped-parcel-suppressed` naming the ticket id and
+reason. The check lives in the decision function alone, not in the shared
+`read-active-items` reader the BL-222 dispatch-gap and unassigned-active
+sweeps also use, so those two sweeps are untouched (whether they should
+honour the marker too is BL-1006, not settled here). No new extension
+command or setting. Acceptance:
+`specs/features/BL-1301-a-parked-ticket-is-not-a-dropped-parcel.feature`.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1311: a Let's Talk turn taken with no
 dedicated Bubble topic bound was reaching no Telegram topic at all, silently
 dropped, instead of falling back to Cursor Remote as documented (BL-709
