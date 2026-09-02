@@ -113,34 +113,45 @@ function registerSteps(registry) {
     writeParcel(path.join(root, 'wt-coder2'), 'seat2', SLOW_MIN);
   });
 
-  scoped(/^the coder seats together process slower than every single-seat stage$/, (ctx) => {
+  // Scenario 03, as AMENDED 2026-09-02 (35d7e4076d). The original asked for
+  // a fixture that cannot exist - ranking is on MEDIAN processing, and a
+  // median over the union of two sets each with median <= X is itself <= X,
+  // so "neither seat alone slower than X" and "both together slower than X"
+  // are mutually exclusive. The amended form is the one the real defect
+  // produces, and it is what these two steps establish.
+  scoped(/^the bare coder seat alone processes faster than the slowest single-seat stage$/, (ctx) => {
     const { root } = ctx.bl1319;
     writeParcel(path.join(root, 'wt-coder'), 'bare1', FAST_MIN);
     writeParcel(path.join(root, 'wt-coder'), 'bare2', FAST_MIN);
-    writeParcel(path.join(root, 'wt-coder2'), 'seat1', SLOW_MIN);
-    writeParcel(path.join(root, 'wt-coder2'), 'seat2', SLOW_MIN);
-    // Honest fixture: with the second seat dropped, cleaner genuinely IS the
-    // bottleneck. The fold is what changes the answer, not the arithmetic.
+    // Asserted, not assumed: with the second seat dropped the coder stage is
+    // genuinely faster than cleaner, so cleaner really is named. A fixture
+    // where the fold changes nothing would prove nothing.
     const bareOnly = ctx.bl1319.roles.filter((r) => r.role !== SECOND_SEAT);
+    const bareReport = computeStageDwellReportForRoles(bareOnly, NOW, 24);
+    const coderRow = bareReport.stages.find((s) => s.role === STAGE);
+    assert.ok(
+      coderRow.processing.medianMs < CLEANER_MIN * 60000,
+      'the bare seat alone must be FASTER than the slowest single-seat stage'
+    );
     assert.equal(
-      computeStageDwellReportForRoles(bareOnly, NOW, 24).bottleneck.role,
+      bareReport.bottleneck.role,
       'cleaner',
-      'the fixture must be one where dropping the seat really does mis-name the bottleneck'
+      'with the seat omitted, cleaner must genuinely be named - that is the defect'
     );
   });
 
-  // NOTE: the feature's scenario 03 also asks that neither coder seat ALONE
-  // process slower than the slowest single-seat stage. That is unsatisfiable
-  // under median ranking - a combined median can never exceed both seats'
-  // medians - so this step asserts what the fixture can honestly establish:
-  // the seat that is slow alone is the one whose loss understated the stage.
-  // Raised to the specifier as a spec gap rather than quietly encoded.
-  scoped(/^neither coder seat alone processes slower than the slowest single-seat stage$/, (ctx) => {
-    const seats = computeSeatDwellDetail(ctx.bl1319.roles, NOW, 24);
-    const bare = seats.find((s) => s.seat === STAGE);
+  scoped(/^the parcels of both coder seats together process slower than every single-seat stage$/, (ctx) => {
+    const { root } = ctx.bl1319;
+    writeParcel(path.join(root, 'wt-coder2'), 'seat1', SLOW_MIN);
+    writeParcel(path.join(root, 'wt-coder2'), 'seat2', SLOW_MIN);
+    // And once BOTH seats are read, the coder stage outranks every
+    // single-seat stage. Only reading both moves it to the top.
+    const whole = computeStageDwellReportForRoles(ctx.bl1319.roles, NOW, 24);
+    const coderRow = whole.stages.find((s) => s.role === STAGE);
+    assert.equal(coderRow.parcelsProcessed, 4, 'both seats\' parcels must be read');
     assert.ok(
-      bare.processing.medianMs < CLEANER_MIN * 60000,
-      'the bare seat alone must not be the bottleneck - that is what made the drop invisible'
+      coderRow.processing.medianMs > CLEANER_MIN * 60000,
+      'together the coder seats must be slower than the slowest single-seat stage'
     );
   });
 

@@ -378,11 +378,13 @@ test('BL-1319: no stage name emitted by the dwell instrument contains a seat id'
 // The wrong-ANSWER consequence, not the wrong-label one. Before the fold the
 // second seat's slow parcels were dropped, so the coder stage reported only
 // its bare seat's fast work and cleaner was named the bottleneck. Whole, the
-// coder stage is slower and is named. NOTE: the feature file's scenario 03
-// also asks that neither seat ALONE be slower than the slowest single-seat
-// stage. That is unsatisfiable under median ranking - a combined median can
-// never exceed both seats' medians - so it is not asserted here; raised to
-// the specifier as a spec gap rather than quietly encoded as something else.
+// coder stage is slower and is named. The feature file's scenario 03 was
+// AMENDED 2026-09-02 (35d7e4076d) after this gap was raised: its original
+// "neither seat alone slower than X" clause was unsatisfiable under median
+// ranking, since a median over the union of two sets each with median <= X
+// is itself <= X. The amended scenario asserts the satisfiable form this
+// test already encoded - fast bare seat, slow dropped seat, and only reading
+// both moves the stage to the top.
 test('BL-1319: a stage understated by dropping a seat is no longer ranked below a faster one', () => {
   const { roles, nowMs } = seatFixture();
   const result = computeStageDwellReportForRoles(roles, nowMs, 24);
