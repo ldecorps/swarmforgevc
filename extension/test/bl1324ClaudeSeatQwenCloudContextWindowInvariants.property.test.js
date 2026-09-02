@@ -275,11 +275,21 @@ describe('BL-1324 stamp-off invariants', () => {
 
   it('invariant 2: no artifact this parcel authors writes certified or waived into the reviewed commit\'s ledger row', () => {
     // The ledger legitimately carries decided rows for OTHER commits, so the
-    // property is scoped to the row for 4ed88430b2 and to any parcel-authored
-    // artifact that so much as names the commit alongside a verdict word.
+    // property is scoped to the row for 4ed88430b2.
+    //
+    // The parcel-artifact face is scoped to files that are LEDGER DATA, not to
+    // every parcel file mentioning the commit. It used to scan any
+    // BL-1324-named file for a `state: certified` line, which read a *prose*
+    // description of a non-vacuity probe in the evidence file as if it were a
+    // ledger write - a false positive that only appeared once the parcel
+    // landed and its own evidence file entered `HOTFIX_COMMIT..HEAD`. What the
+    // face is actually for is catching a parcel that ships a modified hotfix
+    // ledger of its own, so ledger-shaped paths are exactly its scope.
+    const isLedgerPath = (p) => path.basename(p) === 'hotfix-ledger.yaml';
     const parcelPaths = git('diff', '--name-only', `${HOTFIX_COMMIT}..HEAD`)
       .split('\n')
       .filter((p) => p && /BL-1324|bl1324/i.test(p) && fs.existsSync(path.join(REPO_ROOT, p)));
+    const parcelLedgerPaths = parcelPaths.filter(isLedgerPath);
 
     const ledgerRow = () => {
       const lines = fs.readFileSync(LEDGER, 'utf8').split('\n');
@@ -296,14 +306,22 @@ describe('BL-1324 stamp-off invariants', () => {
           new RegExp(`state:\\s*${verdict}\\b`),
           `the ledger row for ${HOTFIX_COMMIT} reads "${verdict}" with no recorded human decision (BL-848)`
         );
-        for (const p of parcelPaths) {
+        // No parcel artifact may BE a hotfix ledger carrying a decided row
+        // for the reviewed commit. (Empty today - the parcel ships no ledger
+        // file at all, which is itself the point; the row assertion above is
+        // the face that bites, as its non-vacuity probe showed.)
+        for (const p of parcelLedgerPaths) {
           const text = fs.readFileSync(path.join(REPO_ROOT, p), 'utf8');
-          for (const line of text.split('\n')) {
-            assert.ok(
-              !(new RegExp(`state:\\s*${verdict}\\b`).test(line) && /4ed88430b2/.test(text)),
-              `${p} writes state: ${verdict} for the reviewed commit`
-            );
-          }
+          const start = text.split('\n').findIndex((l) => l.trim() === `- commit: ${HOTFIX_COMMIT}`);
+          if (start === -1) continue;
+          const lines = text.split('\n');
+          const end = lines.slice(start + 1).findIndex((l) => /^- commit: /.test(l.trim()));
+          const row = lines.slice(start, end === -1 ? lines.length : start + 1 + end).join('\n');
+          assert.doesNotMatch(
+            row,
+            new RegExp(`state:\\s*${verdict}\\b`),
+            `${p} ships a ledger row reading state: ${verdict} for the reviewed commit`
+          );
         }
       }),
       { numRuns: 12 }
