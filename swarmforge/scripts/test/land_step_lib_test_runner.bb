@@ -584,6 +584,115 @@
     (assert= "refusing writes no store at all" false
              (fs/exists? (str (fs/path root ".swarmforge" "land-approvals"))))))
 
+;; ── BL-1343: the replay never drops the landing ticket's own path ────────
+;; The BL-1338 shape: the landing ticket's whole contribution is attributed
+;; to unlanded siblings and subtracted, leaving an empty replay set that the
+;; land step then reports as "nothing to commit" - the same words a genuinely
+;; already-landed ticket produces. The exclusion must speak instead.
+
+;; scenario 01: a path only the landing ticket introduced is replayed.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling unlanded work")
+  (commit! root "specs/pipeline/steps/bl9001Steps.js" "// own\n" "BL-9001: its own new handler")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1343/01: the landing ticket's own new path is replayed" true
+             (boolean (some #{"specs/pipeline/steps/bl9001Steps.js"} paths)))
+    (assert= "BL-1343/01: and that is not a refusal" nil warning)))
+
+;; scenario 02: a path attributed to nobody is still replayed.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling unlanded work")
+  (commit! root "docs/untagged.md" "x\n" "housekeeping with no ticket in the subject")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1343/02: a path attributed to nobody is still replayed" true
+             (boolean (some #{"docs/untagged.md"} paths)))
+    (assert= "BL-1343/02: and that is not a refusal" nil warning)))
+
+;; scenario 03: the landing ticket's contribution is never subtracted in
+;; silence - this is the BL-1338 reproduction, and it FAILS before the fix.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/bl9001Steps.js" "// own\n" "BL-9002: sibling commit that also carries BL-9001's file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1343/03: an exclusion that empties the contribution refuses" nil paths)
+    (assert-includes "BL-1343/03: the refusal names the path" warning "specs/pipeline/steps/bl9001Steps.js")
+    (assert-includes "BL-1343/03: the refusal names the landing ticket" warning "BL-9001")
+    (assert-includes "BL-1343/03: the refusal names the sibling" warning "BL-9002")))
+
+;; scenario 04: an empty replay set is a refusal whenever the tip still
+;; differs from origin/main - and the land step's own decision escalates.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/bl9001Steps.js" "// own\n" "BL-9002: sibling commit carrying it")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "BL-1343/04: an empty replay set on a differing tip escalates" :escalate (:action plan))
+    (assert-includes "BL-1343/04: and says which path it would have dropped"
+                     (:reason plan) "specs/pipeline/steps/bl9001Steps.js")))
+
+;; scenario 05: an empty set on an IDENTICAL tip is a real answer, not a
+;; refusal. The negative case that matters most (qa_e2e_procedure step 3):
+;; the silent no-op must not be traded for a land step that cannot finish.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling work already on main")
+  (mark-origin-main-here! root)
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1343/05: an identical tip answers with an empty set" [] paths)
+    (assert= "BL-1343/05: and does not refuse" nil warning)))
+
+;; scenario 06: unreadable attribution still refuses rather than narrowing
+;; (BL-1272's posture, unchanged by this ticket).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/bl9001Steps.js" "// own\n" "BL-9001: own new handler")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths
+                                 root commit "BL-9001" #{"BL-9002"}
+                                 (fn [_ _ _ _] nil))]
+    (assert= "BL-1343/06: an unreadable attribution refuses" nil paths)
+    (assert-includes "BL-1343/06: and names what it could not read" warning "attribution")))
+
+;; scenario 03b: TWO paths fully subtracted - the refusal names BOTH, not
+;; just the last one folded over. A single-excluded-path fixture (03 above)
+;; cannot tell an accumulator that keeps every exclusion from one that keeps
+;; only the most recent - both produce a warning naming "the" path when
+;; there is only one.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/bl9001Steps.js" "// own\n" "BL-9002: sibling commit carrying BL-9001's handler")
+  (commit! root "docs/how-to/BL-9001-thing.md" "own doc\n" "BL-9003: another sibling commit carrying BL-9001's doc")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002" "BL-9003"})]
+    (assert= "BL-1343/03b: an exclusion that empties the contribution refuses" nil paths)
+    (assert-includes "BL-1343/03b: the refusal names the FIRST excluded path"
+                     warning "specs/pipeline/steps/bl9001Steps.js")
+    (assert-includes "BL-1343/03b: the refusal names the SECOND excluded path"
+                     warning "docs/how-to/BL-9001-thing.md")
+    (assert-includes "BL-1343/03b: and names the sibling that first path was credited to"
+                     warning "BL-9002")
+    (assert-includes "BL-1343/03b: and names the sibling the second path was credited to"
+                     warning "BL-9003")))
+
+;; A partial exclusion is still silent-safe: when the landing ticket keeps
+;; SOME contribution, a genuinely sibling-owned path is excluded as before -
+;; the refusal is scoped to an exclusion that would empty the set, so
+;; tip-pure replay keeps working (BL-1272/BL-1241 untouched).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "sibling/only.txt" "s\n" "BL-9002: sibling-only path")
+  (commit! root "own/file.txt" "o\n" "BL-9001: own path")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "a sibling-only path is still excluded when the ticket keeps its own"
+             ["own/file.txt"] paths)
+    (assert= "and a partial exclusion is not a refusal" nil warning)))
+
 ;; ── report ─────────────────────────────────────────────────────────────────
 
 (if (seq @failures)
