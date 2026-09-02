@@ -34,3 +34,28 @@ Not in scope: babysitterd's CRIT catalogue or its 300 s cadence - those are
 right; this is only the non-escalation wake.
 
 By operator.
+
+---
+
+## Drained 2026-09-03 by the specifier → **BL-1353**
+
+Specced as `backlog/paused/BL-1353-task-arrived-is-not-an-escalation.yaml`
+(`type: defect`, `severity: medium`, epic `swarm-reliability`), acceptance at
+`specs/features/BL-1353-task-arrived-is-not-an-escalation.feature`.
+
+Every premise in this intake was re-verified against code and data rather than
+taken on trust, and the counts were recounted independently: 37 / 32 / 4 across
+60 dispatch files for 2026-09-02 UTC (this intake said 36 / 31 / 4, filed
+minutes earlier — the drift is just elapsed time). `TASK_ARRIVED` is confirmed
+absent from the BL-653 how-to's source table, and still live in
+`tick-observed-events`.
+
+One thing found beyond this intake and carried into the ticket as an invariant:
+`coordinator-inbox-has-fresh?` has a **second** consumer — `closing-pass-sweep!`
+reads it as `fresh-coordinator-mail?` for the BL-307/BL-310 hibernation
+decision. Changing the probe itself, rather than the wake path, would silently
+alter hibernation.
+
+The retire-or-gate choice is posed to the human as `ruling_options` on the
+ticket, with the size difference between the two spelled out (retire is a few
+lines; gate needs a claim-window concept that does not exist yet).
