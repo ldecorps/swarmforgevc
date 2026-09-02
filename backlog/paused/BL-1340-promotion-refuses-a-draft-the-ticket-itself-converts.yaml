@@ -189,7 +189,9 @@ qa_e2e_procedure: |
   6. `bash specs/pipeline/scripts/run_acceptance.sh` green, BL-626's feature
      included, with example row 2 gone and scenarios 01-04 present.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - recognise a required_wiring entry naming a specs/pipeline/steps registration as the pin
 
 approval_context: >
   One ruling needed - how the promotion gate should recognise a self-converting
