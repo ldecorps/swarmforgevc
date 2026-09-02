@@ -162,4 +162,11 @@ qa_e2e_procedure: |
   6. Confirm nothing moved on its own: every running seat is on the model and
      effort it was launched with.
 
+  2026-09-02 19:03Z (coordinator): handoffd "no parcel in flight" nudge answered.
+  Not a drop: QA approved this ticket (review merge 6e6e544400, merge-up
+  broadcast 18:18Z) but the mandatory land step escalated (LAND_ESCALATE,
+  same entangled sibling set as BL-1338). Specifier ruling 18:22Z: hold, no
+  relanding; the blocker is tracked on BL-1343 (active, coder). Ticket stays
+  in active/ awaiting BL-1343's land-step fix, then QA re-lands and closes.
+
 assigned_to: coder
