@@ -28,6 +28,7 @@
 // — never a separate LINKS: footer.
 import { ALL_SWARM_ROLES } from './roleTopicMapStore';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
+import { stageOfSeat } from '../swarm/swarmState';
 
 export interface PipelineBoardRow {
   id: string;
@@ -461,11 +462,40 @@ function recentlyClosedEntryFor(item: PipelineBoardListSourceItem, nowMs: number
 // pipeline_stage_lib.bb's own reconcile-stage-map "most downstream wins"
 // rule - the same guarantee, belt-and-braces at the renderer, whatever the
 // authoritative source's own shape already structurally prevents.
+//
+// BL-1040: a seat-keyed entry (`coder@sonnet2`) folds onto its stage column
+// here too. The reader chokepoint in swarmState already folds, but
+// roleHeldTickets is a plain record any producer can hand in, and this
+// function's ALL_SWARM_ROLES-only iteration is precisely the layer at which
+// a leaked seat key matched nothing and fell through to the not-started
+// sentinel while the seat was busy. Precedence is computed by pipeline rank
+// rather than by iteration order, so folding cannot let a seat key outrank a
+// genuinely more downstream stage. A key that is not a stage even after the
+// fold is still ignored, exactly as an unknown role always was.
+// Split out of heldRoleByTicketId to keep that function's own complexity at
+// its pre-BL-1040 baseline (differential CRAP gate) - folds every key onto
+// its stage in one pass over roleHeldTickets, keeping each id under the
+// key's original position, since heldRoleByTicketId's own per-stage
+// insertion order still needs it.
+function idsByStageFromRoleHeldTickets(roleHeldTickets: Record<string, string[]>): Map<string, string[]> {
+  const idsByStage = new Map<string, string[]>();
+  for (const [roleOrSeat, ids] of Object.entries(roleHeldTickets)) {
+    const stage = stageOfSeat(roleOrSeat);
+    const bucket = idsByStage.get(stage) ?? idsByStage.set(stage, []).get(stage)!;
+    bucket.push(...(ids ?? []));
+  }
+  return idsByStage;
+}
+
 function heldRoleByTicketId(roleHeldTickets: Record<string, string[]>): Map<string, string> {
+  const idsByStage = idsByStageFromRoleHeldTickets(roleHeldTickets);
   const heldRoleById = new Map<string, string>();
-  for (const role of ALL_SWARM_ROLES) {
-    for (const id of roleHeldTickets[role] ?? []) {
-      heldRoleById.set(id, role);
+  // Iterating ALL_SWARM_ROLES in pipeline order is load-bearing twice over:
+  // it is what makes a LATER (more downstream) stage win, and the Map's
+  // insertion order is itself read downstream as the row order.
+  for (const stage of ALL_SWARM_ROLES) {
+    for (const id of idsByStage.get(stage) ?? []) {
+      heldRoleById.set(id, stage);
     }
   }
   return heldRoleById;

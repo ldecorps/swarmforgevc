@@ -1525,3 +1525,56 @@ test('BL-1009: badges never add a grid stage column', () => {
   assert.equal(mixedGrid.length, monoGrid.length);
   assert.ok(mixedGrid.length <= PIPELINE_BOARD_GRID_MAX_WIDTH);
 });
+
+// ── BL-1040: a seat-keyed held-role entry paints on its stage column ──────
+// The renderer knows only bare stage names, so a leaked seat key used to
+// match nothing and fall through to the not-started sentinel while the seat
+// was actively working the ticket. Belt-and-braces at the renderer: the
+// reader chokepoint already folds, but roleHeldTickets is a plain record any
+// producer can hand in, and a source-only fix would still repaint a ticket
+// as not-started if one ever leaked.
+
+test('BL-1040: a ticket held by a second seat paints on the stage column, never as not-started', () => {
+  const { rows } = computePipelineBoard({ 'coder@sonnet2': ['BL-993'] }, [], {}, { activeIds: ['BL-993'] });
+  assert.deepEqual(
+    rows.map((r) => ({ id: r.id, column: r.column })),
+    [{ id: 'BL-993', column: 'coder' }]
+  );
+});
+
+test('BL-1040: two seats of one stage holding two tickets share the one stage column', () => {
+  const { rows } = computePipelineBoard(
+    { coder: ['BL-995'], 'coder@sonnet2': ['BL-993'] },
+    [],
+    {},
+    { activeIds: ['BL-993', 'BL-995'] }
+  );
+  assert.deepEqual(
+    rows.map((r) => `${r.id}:${r.column}`).sort(),
+    ['BL-993:coder', 'BL-995:coder']
+  );
+});
+
+test('BL-1040: the board is not widened by a second seat - exactly one column for the stage', () => {
+  const { rows } = computePipelineBoard(
+    { coder: ['BL-995'], 'coder@sonnet2': ['BL-993'] },
+    [],
+    {},
+    { activeIds: ['BL-993', 'BL-995'] }
+  );
+  assert.equal(new Set(rows.map((r) => r.column)).size, 1);
+  assert.equal(PIPELINE_BOARD_COLUMN_ORDER.filter((c) => c.includes('@')).length, 0);
+});
+
+test('BL-1040: a seat key never outranks a genuinely more downstream stage', () => {
+  const { rows } = computePipelineBoard(
+    { 'coder@sonnet2': ['BL-993'], cleaner: ['BL-993'] },
+    [],
+    {},
+    { activeIds: ['BL-993'] }
+  );
+  assert.deepEqual(
+    rows.map((r) => ({ id: r.id, column: r.column })),
+    [{ id: 'BL-993', column: 'cleaner' }]
+  );
+});
