@@ -1,0 +1,166 @@
+id: BL-1352
+title: "The unanswered-question escalation has never delivered: an unconfigured transport degrades to a status key nothing reads and 7027 identical log lines"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: question-attention-path
+priority: 120
+direction: specifier-found
+depends_on: [GH-25]
+mutation_cost: medium
+slice_size_envelope: low
+assigned_to: none
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1352-escalation-transport-fault-is-visible.feature
+
+invariants:
+  - "The status surface never reads healthy while a past-threshold role question sits unescalated - a transport that cannot deliver is reported as a fault, never as silence."
+  - "Transport state is logged on change only - N consecutive ticks in one state produce one line, so the operator log can never be flooded past usefulness."
+
+required_wiring:
+  - 'swarmforge/scripts/swarm_status.bb::ask_escalation::the human status surface must read the escalation transport state. A pre-existing live consumer humans already run via ./swarm status, not a key only this parcel writes. Absent at mint, grep returns 0.'
+  - 'specs/pipeline/steps/index.js::bl1352EscalationTransportFaultSteps::acceptance handler registered so the runner executes every scenario. Absent at mint, grep bl1352 returns 0.'
+
+human_approval: approved
+human_ruling: |
+  Leave GitHub unconfigured and let BL-1347 email digest become the transport
+approval_context: >
+  GH-25 shipped an escalation that has never fired once. It needs a GitHub ops
+  issue number to post its mention to, that number ships commented out in
+  swarmforge.conf (`# config ask_escalation_issue 25`), the env override is
+  unset, and GH-25 specced a missing value to degrade quietly rather than
+  crash. So every tick since 2026-08-30T06:36Z has logged
+  `ask-escalation WARN ops issue unconfigured - no stamp` and stopped there.
+  7027 lines. status.json carries `ask_escalation.transport=unconfigured` and
+  nothing outside GH-25's own tests reads that key.
+  .
+  The consequence is not theoretical. The specifier asked you a clarifying
+  question on 2026-08-30 at 16:18Z. You were never told. Its role_ask slot has
+  been wedged four days, which blocks the backlog-root intake
+  INTAKE-operator-question-1788082425603 behind it, and the coordinator slot
+  sat wedged the same way.
+  .
+  The visibility half of this ticket is firm and needs no ruling. What I need
+  from you is the transport half, because issue 25 is your feature-request
+  issue for GH-25 itself, not a dedicated ops issue, and BL-1347 separately
+  proposes moving role-ask escalation onto BL-584's stale-approval email
+  digest. Under every option below the visibility half still ships.
+
+ruling_options:
+  - Reuse issue 25 as the ops escalation issue - it is already open and needs no setup
+  - Open a new dedicated ops issue and configure that number instead
+  - Leave GitHub unconfigured and let BL-1347 email digest become the transport
+
+description: |
+  ## What is broken
+
+  `escalate-role-ask-markers!` (operator_runtime.bb) is wired into the live
+  tick at line 2360 and runs every ~31 seconds. On every one of those ticks it
+  resolves the ops issue number, gets nil, logs a warning, and returns without
+  stamping. It has done that continuously since 2026-08-30T06:36:32Z.
+
+  Two separable defects, both in scope:
+
+  1. **The transport ships unconfigured.** `swarmforge.conf` carries
+     `# config ask_escalation_issue 25` - commented out - and
+     `SWARMFORGE_ASK_ESCALATION_ISSUE` is unset. GH-25's own approval_context
+     chose "missing/bad value degrades to a status.json + operator-log warning,
+     never a crash", which is the right instinct for a crash and the wrong one
+     for a safety signal that then disappears.
+
+  2. **The degradation is invisible by construction.** The only two things
+     GH-25 emits on failure are a status.json key and a log line. Nothing reads
+     the key: grepping `ask_escalation` across `extension/src` and
+     `swarmforge/scripts` returns operator_runtime.bb and GH-25's own test
+     runners, nothing else. The log line is emitted once per tick forever,
+     which is why there are 7027 of them and why none of them was ever read.
+
+  ## Why this is severity high
+
+  This is the swarm's only escalation path for an unanswered role question,
+  and it is a safety signal that has been silently dead. Two role question
+  slots wedged for days and a backlog-root intake blocked for four are the
+  observed cost, not a hypothetical one.
+
+  ## What must become true
+
+  A human reading the status surface can tell, without reading a log, whether
+  the escalation can currently deliver - and if it cannot while a question is
+  actually waiting, that reads as a fault rather than as nothing. A transport
+  that is merely unconfigured with nothing waiting is a warning, not a red:
+  the point is a signal that stays meaningful, not one that is permanently on.
+
+  ## How (direction, not mandate)
+
+  - `swarm_status.bb` is `./swarm status`, the surface a human already runs,
+    and it already renders daemon health rows. An ask-escalation row there is
+    the smallest thing that makes the fault visible. It does not currently
+    mention `ask_escalation` at all - that absence is what the required_wiring
+    entry pins.
+  - The log flood is a state-change-vs-per-tick problem. The existing
+    `write-babysitterd-watchdog-state!` in the same file already keeps a
+    last-state for exactly this purpose and is worth reading before inventing
+    a second pattern.
+  - Whether to also fold in `operator_telegram.bb` or the fleet console is
+    open. One surface a human demonstrably reads is the bar; more is optional.
+
+  ## Explicitly NOT in scope
+
+  - Choosing the ultimate escalation transport. BL-1347 (BL-772 slice E) owns
+    moving role asks onto BL-584's email digest. This ticket makes whatever
+    transport is in force honest about whether it can deliver.
+  - Clearing or withdrawing a wedged role_ask slot. That is BL-772 slice D,
+    still unminted - `role_ask.bb` has only `--resolve`, whose contract is
+    "the answer IS on record, just unpaired" (BL-1245), so it is not a
+    legitimate move for a genuinely unanswered question. Making the wait
+    visible is not the same as ending it.
+  - Answering the 2026-08-30 drift question itself. That marker stays exactly
+    as it is.
+
+qa_e2e_procedure: |
+  1. With the swarm running, confirm `.swarmforge/operator/role-awaiting/`
+     holds at least one marker older than the escalation threshold (or place a
+     fixture marker with an `asked_at_ms` well in the past).
+  2. Ensure no ops issue is configured (`ask_escalation_issue` commented out in
+     swarmforge.conf and `SWARMFORGE_ASK_ESCALATION_ISSUE` unset).
+  3. Run `./swarm status`. The ask-escalation row must be present, must read as
+     a fault, and must name the waiting role. Before this ticket the row does
+     not exist at all.
+  4. Note the operator log line count for `ask-escalation`, wait through
+     several ticks (>2 minutes), and count again. The count must not grow while
+     the state is unchanged.
+  5. Configure a valid ops issue number, tick again, and confirm the row turns
+     ok and exactly one further transport line was logged for the change.
+  6. Remove any fixture marker created in step 1.
+
+notes: |
+  Minted 2026-09-03 by the specifier, from evidence read off disk this pass,
+  not recalled:
+  - `.swarmforge/operator/status.json` -> `"ask_escalation":{"transport":"unconfigured"}`
+  - operator log: first `ask-escalation WARN ops issue unconfigured - no stamp`
+    at 2026-08-30T06:36:32.269Z, 7027 lines total as of this pass.
+  - `grep -rn "^[[:space:]]*config[[:space:]]\+ask_escalation" swarmforge/`
+    returns nothing - the key is commented out everywhere.
+  - `gh issue view 25` is OPEN and titled "Email escalation for unanswered role
+    questions (role_ask)", i.e. the feature-request issue, not an ops issue.
+
+  Found while draining the backlog root. The root intake
+  INTAKE-operator-question-1788082425603 has been blocked four days behind the
+  specifier's wedged role_ask slot, and this is why the human was never told
+  the question was waiting. The intake stays in the root, undrained; this
+  ticket does not unblock it.
+
+  IR-DRY: two medium-confidence near-duplicate findings remain on the feature
+  file and are deliberate. Both are the parameterized outline step
+  (`<transport>`, `<questions>`) overlapping the literal form used by the
+  focused scenarios. That is inherent to pairing a state matrix with focused
+  scenarios, not accidental drift, which is the checker's own stated bar for
+  normalizing. The removable duplication - two separate logging scenarios -
+  was collapsed into one outline, taking findings from 5 to 2.
+
+source: |
+  Specifier-found during the 2026-09-03 backlog-root drain. Not from an intake
+  document: the defect was discovered while investigating why the root intake
+  INTAKE-operator-question-1788082425603 had been blocked for four days.

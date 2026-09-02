@@ -151,7 +151,7 @@ qa_e2e_procedure: |
      its swarmforge-managed equivalent) for the new descent-review entry
      installed by `install_swarmforge_crons.sh`.
 
-assigned_to: none
+assigned_to: coder
 
 source_intake_2026_09_02: |
   Drained from `backlog/INTAKE-operator-question-1788334220295.md` (filed by
