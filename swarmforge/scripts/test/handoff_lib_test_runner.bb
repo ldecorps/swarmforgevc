@@ -691,6 +691,32 @@
                   :pack-default-effort "low" :ticket "BL-9003"})]
     (assert= "a recorded effort below the claim-time baseline is ignored" "high" (:effort claimed))))
 
+;; ── hotfix outbox-race: read-envelope-if-present ──────────────────────────
+;; handoffd.bb:656 slurped an outbox parcel OUTSIDE its try; a parcel the
+;; sending role archived between the listing and the read threw
+;; FileNotFoundException straight through poll-once! and killed the daemon
+;; (4x on 2026-09-02, same signature on 2026-08-30). The read now goes
+;; through this helper, which answers {:vanished true} for a path that is
+;; gone or unreadable instead of throwing.
+(let [tmp (str (fs/create-temp-dir {:prefix "handoff-lib-envelope-"}))
+      present (str (fs/path tmp "present.handoff"))
+      unreadable (str (fs/path tmp "unreadable.handoff"))]
+  (spit present "id: g1\nfrom: coder\nto: cleaner\npriority: 50\ntype: note\n\nhello\n")
+  (spit unreadable "id: g2\nfrom: coder\nto: cleaner\n\nx\n")
+  (fs/set-posix-file-permissions unreadable "---------")
+  (let [ok (handoff-lib/read-envelope-if-present present)]
+    (assert-true "read-envelope-if-present: a present parcel is parsed" (map? (:envelope ok)))
+    (assert= "read-envelope-if-present: a present parcel exposes its headers" "cleaner"
+             (get-in ok [:envelope :headers "to"]))
+    (assert-false "read-envelope-if-present: a present parcel is not reported vanished" (:vanished ok)))
+  (assert= "read-envelope-if-present: a path that no longer exists reports vanished instead of throwing"
+           {:vanished true} (handoff-lib/read-envelope-if-present (str (fs/path tmp "gone.handoff"))))
+  (assert= "read-envelope-if-present: an unreadable parcel (the deterministic stand-in for a mid-poll vanish) reports vanished instead of throwing"
+           {:vanished true} (handoff-lib/read-envelope-if-present unreadable))
+  (fs/set-posix-file-permissions unreadable "rw-------")
+  (fs/delete-tree tmp))
+
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")

@@ -19,7 +19,7 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1333-swarm-stamp-reconcile-redundant-overlap-f57795b6d2.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commits f57795b6d2 (daemon
   wiring) and d5739d84cc (its pure-decision first half). Review-only: it
