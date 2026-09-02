@@ -97,3 +97,11 @@ Acceptance:
   — same multi-seat epic, orthogonal (claim ordering, not observation).
 - [Pane-title chrome covers every producible role name](BL-732-pane-title-chrome-covers-every-producible-role-name.md)
   — the `@`-seat family in a different surface (console chrome), no overlap.
+- BL-1319 — the same fold, `stageOfSeat` reused, applied to the
+  coordinator's dwell/bottleneck optimizer instrument
+  (`extension/src/metrics/stageDwell.ts`): a non-bare seat there was
+  DROPPED before its mailbox was ever read (not leaked into the report like
+  this ticket's defect), so a two-seat stage's second seat was silently
+  omitted from the bottleneck ranking. Same family, different files,
+  landed the same day; see `docs/reference/Specification.MD`'s BL-1319
+  entry.
