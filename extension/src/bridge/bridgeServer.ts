@@ -118,8 +118,8 @@ import {
 import { sendBubbleMirrorChunks, telegramMirrorEnv } from './bubbleMirrorDelivery';
 import { appendPendingChoicePoll } from './bubbleMirrorState';
 import {
-  bubbleMirrorTopicForPath,
   effectiveBubbleMirrorTopicId,
+  readCursorBridgeTopicIds,
   type CursorBridgeTopicIds,
 } from './bubbleMirrorTopic';
 import type { MirrorLetsTalkTurnDeps, BubbleMirrorPollFn, BubbleMirrorSendFn } from './bubbleMirrorTypes';
@@ -165,6 +165,11 @@ export function effectiveLetsTalkMirrorTopicId(topicIds: CursorBridgeTopicIds): 
   return typeof topicIds.cursorTopicId === 'number' ? topicIds.cursorTopicId : undefined;
 }
 
+/** BL-1311: Let's Talk mirror destination for a target path — resolves via effectiveLetsTalkMirrorTopicId, not effectiveBubbleMirrorTopicId. */
+function letsTalkMirrorTopicForPath(targetPath: string): number | undefined {
+  return effectiveLetsTalkMirrorTopicId(readCursorBridgeTopicIds(targetPath));
+}
+
 export function formatBubbleMirrorText(transcript: string, replyText: string): string {
   const you = transcript.trim();
   const agent = replyText.trim();
@@ -183,7 +188,7 @@ function choicePollMirrorTarget(
   targetPath: string,
   replyText: string
 ): { topicId: number; spec: LetsTalkChoicePollSpec } | undefined {
-  const topicId = bubbleMirrorTopicForPath(targetPath);
+  const topicId = letsTalkMirrorTopicForPath(targetPath);
   if (topicId === undefined) {
     return undefined;
   }
@@ -248,7 +253,7 @@ export async function mirrorLetsTalkTurnToBubble(
   if (!env) {
     return;
   }
-  const topicId = bubbleMirrorTopicForPath(targetPath);
+  const topicId = letsTalkMirrorTopicForPath(targetPath);
   if (topicId === undefined) {
     return;
   }
