@@ -12,7 +12,7 @@ severity: critical
 # The recovery window is not permanent: the discarded commits are unreachable,
 # so `git gc` ends it. Grading this `high` would say the work is merely
 # degraded; it is gone.
-status: todo
+status: done
 epic: swarm-reliability
 priority: 3
 direction: swarm-reported
@@ -25,15 +25,15 @@ slice_size_envelope: low
 required_stages: [coder, architect, hardender, documenter, qa]
 stage_skip_reasons:
   cleaner: "one helper added beside the reset adapter it guards, in a lib all three call sites already load-file; there is no second copy to de-duplicate and no structure to extract."
-acceptance: specs/features/BL-1310-reconcile-never-discards-a-commit-it-cannot-name.feature.draft
+acceptance: specs/features/BL-1310-reconcile-never-discards-a-commit-it-cannot-name.feature
 
 required_wiring:
-  - "swarmforge/scripts/handoffd.bb::preserve-before-reset!::the CONSUMER anchor (BL-1235). handoffd.bb is pre-existing and is the live daemon: its sweep reaches master-main-reconcile-merge! through the adapter map at :3343-3344, and master-main-rematch-onto-origin! (:3175) is where the reset adapter is built. A marker in THIS file therefore proves a running path reaches the new preservation step. Anchoring in master_main_reconcile_lib.bb instead would be satisfied by the parcel's own diff and prove nothing. The name is fixed here at mint so the pattern is a literal that will exist (BL-874); grep for it today returns 0."
-  - "specs/pipeline/steps/index.js::bl1310ReconcilePreservesDiscardedCommitsSteps::the draft-conversion anchor, doing a DIFFERENT job from the entry above. This ticket's acceptance: starts life pointing at a .feature.draft, which passes every gate vacuously because BL-761 fails closed only on an ABSENT declaration. This entry pins the registration so the rename cannot be forgotten. Deliberately NOT offered as proof of production wiring - see BL-1235."
+  - "swarmforge/scripts/handoffd.bb::refuse-reset-if-local-ahead!::the CONSUMER anchor (BL-1235). handoffd.bb is pre-existing and is the live daemon: its sweep reaches master-main-reconcile-merge! through the adapter map at :3343-3344, and master-main-rematch-onto-origin! (:3175) is where the reset adapter is built. A marker in THIS file therefore proves a running path reaches the new refusal step - the ahead-count check that stops the reset before it fires. Anchoring in master_main_reconcile_lib.bb instead would be satisfied by the parcel's own diff and prove nothing. The name is fixed here at mint so the pattern is a literal that will exist (BL-874); grep for it today returns 0."
+  - "specs/pipeline/steps/index.js::bl1310ReconcileRefusesLocalAheadSteps::the draft-conversion anchor, doing a DIFFERENT job from the entry above. This ticket's acceptance: started life pointing at a .feature.draft, which passes every gate vacuously because BL-761 fails closed only on an ABSENT declaration. This entry pins the registration so the rename cannot be forgotten. Deliberately NOT offered as proof of production wiring - see BL-1235."
 
 invariants:
-  - "After any reconcile that moves local main off commits origin/main does not contain, every such commit is reachable from a ref - never from the reflog alone."
-  - "Work that cannot be preserved is not discarded: if the preservation step fails for any reason, the reconcile leaves local main exactly as found and says why, the same non-destructive shape :verdict-unavailable already uses."
+  - "The reconcile never runs `git reset --hard origin/main` while local main carries a commit not reachable from origin/main - the reset's authority is limited to the ahead=0 case."
+  - "An undeterminable ahead-count is never treated as ahead=0: if the reconcile cannot safely tell whether local main is ahead, it leaves local main exactly as found and reports why, the same non-destructive shape :verdict-unavailable already uses."
 
 source: |
   Found 2026-08-31 by the specifier from an idle ready_for_next.sh returning
@@ -103,25 +103,54 @@ description: |
 
   ## How (direction, not mandate)
 
-  Before the `reset!` adapter runs, make the commits it is about to discard
-  reachable and named - for example a ref under a rescue namespace at the
-  pre-reset HEAD, plus the discarded SHAs and subjects in the reconcile's own
-  log line. A ref is materially stronger than the reflog: reflog entries for
-  unreachable commits expire and `git gc` collects them, whereas a ref makes
-  them permanently reachable and greppable by anyone, without knowing to look
-  in a reflog they may not have.
+  **Human ruling (see `human_ruling` below): never discard local-ahead
+  commits.** Before the `reset!` adapter runs, check whether local main is
+  ahead of origin/main by any commit origin/main does not have. If it is -
+  and the reconcile has predicted a content conflict, which is the only
+  situation that reaches the reset today - refuse: leave local main exactly
+  as found, do not call `reset!`, and report why (naming this ticket) in the
+  reconcile's own log line, the same non-destructive shape `:verdict-unavailable`
+  already uses for an undecidable conflict prediction. The reset stays
+  available only when the ahead-count is genuinely zero - that is the one
+  case where nothing local would be lost.
 
   Two constraints the implementer should not have to rediscover:
 
-  - The preservation step must not itself become a way to block the reconcile
-    on a bad day. See invariant 2 for the direction chosen when it fails: the
-    non-destructive one, matching `:verdict-unavailable`'s existing shape.
+  - The ahead-count check must not itself become a way to silently authorise
+    a reset on a bad day: an undeterminable ahead-count refuses, it does not
+    default to "ahead=0, safe to reset" (invariant 2).
   - `master-main-rematch-onto-origin!` is reached from three call sites that
     all `load-file` `master_main_reconcile_lib.bb` (handoffd, post_hotfix,
-    babysitter). Put the helper there rather than in three copies, exactly as
-    BL-1214's `absorb-with-merge!` already is.
+    babysitter). Put the refusal check there rather than in three copies,
+    exactly as BL-1214's `absorb-with-merge!` already is.
 
 notes: |
+  ## Spec/ruling mismatch corrected [2026-09-01 specifier]
+
+  The draft minted before the human tapped an option (this ticket's
+  `description` "How" section, `required_wiring` anchors, `invariants`, and
+  `qa_e2e_procedure`, plus the `.feature.draft` itself) was written for
+  **Option 1** ("preserve, then discard" - reset still fires, but the
+  discarded commits are written to a rescue ref first). The human's recorded
+  `human_ruling` picked **Option 2** ("never discard local-ahead commits -
+  refuse and surface, a human resolves it"). Nobody had updated the spec body
+  to match the ruling it already carried, which would have sent the coder
+  implementing a rescue-ref mechanism the human explicitly declined.
+  Corrected this pass: feature file converted from `.feature.draft` to
+  `.feature` with refusal-shaped scenarios (`reconcile-refuses-local-ahead-01`
+  through `-04`, the last one new - an undeterminable ahead-count refuses
+  rather than guesses, matching invariant 2's reworded intent), `required_wiring`
+  anchors renamed to `refuse-reset-if-local-ahead!` /
+  `bl1310ReconcileRefusesLocalAheadSteps`, both invariants reworded to state a
+  refusal property instead of a preservation property, the "How" section
+  rewritten, and `qa_e2e_procedure` rewritten to verify non-destruction by
+  ancestry rather than rescue-ref existence. `human_approval`/`human_ruling`/
+  `ruling_options` are untouched - the human's answer was already correct and
+  did not need to be re-asked; only the spec body needed to catch up to it.
+  Gherkin lint gate: clean. IR-DRY checker: 1 finding, the same deliberate
+  Background-vs-scenario-03 overlap already reviewed below, unchanged by the
+  new scenario 04.
+
   ## Deliberately NOT in this slice [2026-08-31 specifier]
 
   1. **Actually replaying the discarded commits** (cherry-picking them onto the
@@ -156,25 +185,27 @@ qa_e2e_procedure: |
      content: commit to `origin/main` and to local `main` touching the same
      lines. Confirm `git rev-list --left-right --count main...origin/main`
      reports both sides non-zero, and that a plain `git push origin main` is
-     rejected non-fast-forward (this is the state that authorises the reset).
-  2. Run the reconcile. It must reset local `main` to `origin/main` AND leave
-     every discarded commit reachable: `git rev-list <rescue-ref>` contains each
-     SHA that was local-only, and `git merge-base --is-ancestor <sha> <ref>` is
-     true for each.
-  3. Read the daemon log for that cycle: it must name the rescue ref and each
-     discarded commit. An operator who never opens a reflog must be able to
-     find the work from this line alone.
-  4. Re-run with no local-ahead commits. No rescue ref may be created - a
-     reconcile that discards nothing must leave no litter behind.
-  5. Failure path: make ref creation fail (a read-only refs directory, or a
-     pre-existing ref name that cannot be replaced). The reconcile must leave
-     local `main` exactly as found, discard nothing, and report why. Confirm by
-     ancestry, not by the log line: the pre-reset HEAD must still be `main`.
-  6. Regression: confirm the four existing guards still hold - a clean
-     fast-forward still pushes without any rescue ref (BL-1198), a
-     non-conflicting divergence still merges (BL-1214), an unavailable verdict
-     still surfaces without touching main (BL-1236), and a push failure that is
-     not a rejection still keeps the commits (BL-1288).
+     rejected non-fast-forward (this is the state that authorises today's reset).
+  2. Run the reconcile. It must NOT reset: `main`'s HEAD sha before and after
+     the run must be identical, by ancestry (`git rev-parse main` unchanged),
+     not by re-reading a log line.
+  3. Read the daemon log for that cycle: it must report the local-ahead refusal
+     and name BL-1310. An operator who never opens a reflog must be able to
+     tell from this line alone why nothing moved.
+  4. Re-run with no local-ahead commits (fast-forwardable local main) and a
+     rejected push. The reconcile must reset local `main` to `origin/main` -
+     the ahead=0 case is unaffected by this ticket.
+  5. Failure path: make the ahead-count determination itself fail (e.g. a
+     corrupted or unreachable ref needed for the comparison). The reconcile
+     must leave local `main` exactly as found, discard nothing, and report why
+     - the same non-destructive shape as step 2, not a silent reset.
+  6. Regression: confirm the other three existing guards still hold - a clean
+     fast-forward still pushes (BL-1198), a non-conflicting divergence still
+     merges (BL-1214), an unavailable conflict-prediction verdict still
+     surfaces without touching main (BL-1236). BL-1288's push-rejection
+     precondition is what this ticket narrows, not removes: verify a push
+     failure that is NOT a rejection (e.g. network error) still keeps the
+     commits and does not reach this refusal path at all.
 
 human_approval: approved
 human_ruling: |

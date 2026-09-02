@@ -38,11 +38,9 @@ const KNOWN_CAUSES = new Set([
   'the remote was unreachable',
   'no credentials were available',
 ]);
-const KNOWN_FATES = new Set(['discarded', 'kept']);
+const KNOWN_FATES = new Set(['kept']);
 
-// Causes that are NOT the remote's rejection. Kept as its own set so the
-// expected fate is derived from the cause's classification rather than
-// restated per row.
+// BL-1310: with local-ahead commits present, every failure keeps them.
 const NON_REJECTION_CAUSES = new Set([
   'the remote was unreachable',
   'no credentials were available',
@@ -166,41 +164,28 @@ function registerSteps(registry) {
         KNOWN_FATES.has(fate),
         `unknown fate "${fate}" - this feature asserts only: ${[...KNOWN_FATES].join(', ')}`
       );
-      // The fate a row claims must be the one its cause's classification
-      // implies; a row pairing a non-rejection cause with "discarded" is the
-      // defect this ticket exists to prevent, and must not be assertable.
-      const expected = NON_REJECTION_CAUSES.has(st.cause) ? 'kept' : 'discarded';
-      assert.equal(
-        fate,
-        expected,
-        `row pairs cause "${st.cause}" with fate "${fate}", but only a rejection may discard`
-      );
+      // BL-1310: local-ahead commits are never discarded; every row keeps them.
+      assert.equal(fate, 'kept', `only "kept" is a valid fate after BL-1310`);
 
       const headNow = git(st.root, ['rev-parse', 'HEAD']);
-      if (fate === 'kept') {
-        assert.equal(
-          st.result.resetAttempted,
-          false,
-          `reset! was invoked for a non-rejection failure: ${JSON.stringify(st.result)}`
-        );
-        assert.equal(
-          headNow,
-          st.aheadSha,
-          `the local-ahead commit was discarded: HEAD moved from ${st.aheadSha} to ${headNow}`
-        );
-        assert.equal(st.result.outcome, 'push-unavailable', `unexpected outcome: ${JSON.stringify(st.result)}`);
-      } else {
-        assert.equal(
-          st.result.resetAttempted,
-          true,
-          `a rejected push did not fall through to reset!: ${JSON.stringify(st.result)}`
-        );
-        assert.equal(
-          headNow,
-          st.originTipSha,
-          `expected local main to land on origin's tip ${st.originTipSha} after the reset, got ${headNow}`
-        );
-      }
+      assert.equal(
+        st.result.resetAttempted,
+        false,
+        `reset! was invoked: ${JSON.stringify(st.result)}`
+      );
+      assert.equal(
+        headNow,
+        st.aheadSha,
+        `the local-ahead commit was discarded: HEAD moved from ${st.aheadSha} to ${headNow}`
+      );
+      const expectedOutcome = NON_REJECTION_CAUSES.has(st.cause)
+        ? 'push-unavailable'
+        : 'local-ahead-refused';
+      assert.equal(
+        st.result.outcome,
+        expectedOutcome,
+        `unexpected outcome: ${JSON.stringify(st.result)}`
+      );
     } finally {
       cleanupFixtureState(ctx);
     }

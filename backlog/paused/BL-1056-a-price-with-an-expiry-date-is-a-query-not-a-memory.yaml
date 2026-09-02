@@ -94,6 +94,14 @@ description: |
   application. This ticket only makes prices honest about time.
 
 notes: |
+  ## Unparked from debt/ 2026-09-01 (human via Cursor)
+
+  `debt/` is invisible to every promotion script. Human asked to keep promoting
+  the cheaper-swap / steward economic path; this ticket is the queryable-price
+  foundation for that path (BL-545 remaining economic-review slice). Moved to
+  `paused/` so the next open active slot can pull it. Do not demote BL-1316
+  (in flight) to make room — wait for the slot.
+
   Source intake:
   `.swarmforge/operator/INTAKE-steward-economic-review-price-windows.md`
   (operator, filed 2026-07-26 ~16:00 on the human's three questions; archived

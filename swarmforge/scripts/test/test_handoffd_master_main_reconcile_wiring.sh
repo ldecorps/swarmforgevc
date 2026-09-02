@@ -6,7 +6,13 @@
 # dirty path actually overlaps a path the incoming merge would change.
 # BL-920 adds a second, additive signal: a block that PERSISTS past the
 # coordinator's first-tick note escalates once to the operator (Telegram
-# OPERATOR topic + email).
+# OPERATOR topic + email). BL-1310 changes what happens once a reset is
+# ABOUT to fire on a genuine content conflict: a local-ahead commit is now
+# refused rather than discarded (human ruling: never discard local-ahead
+# commits - refuse and surface, a human resolves it) - scenario D below was
+# rewritten to prove the refusal, and manually resolves the resulting
+# divergence afterward (playing the human's own resolving action) so later
+# scenarios in this fixture start from a clean divergence again.
 #
 # The DECISION/STATE logic itself (gating on dirty/merge-changed path
 # overlap, self-healing surfaced-once state, BL-920's tick-persistence/
@@ -353,13 +359,18 @@ CLASH_CONTENT_AFTER="$(cat "$ROOT/clash.txt")"
   || fail "expected clash.txt to contain origin's content once the clash-blocked reconcile self-healed, got [$CLASH_CONTENT_AFTER]"
 pass "reconciliation self-heals once the untracked clash is removed, without any further landing"
 
-# ── scenario D (qa_e2e_procedure 5): a genuine content conflict on an
-#    otherwise-clean tree is attempted (never pre-emptively refused), aborts
-#    cleanly (no in-progress merge state), and the reset-to-origin recovery
-#    then completes exactly as it does today (BL-1214 qa_e2e_procedure step
-#    2 - the conflicting-divergence path is a deliberate constraint NOT to
-#    weaken: a real conflict still resolves via reset onto origin/main,
-#    same as before this ticket's :ff-absorb real-merge-attempt change). ──
+# ── scenario D (qa_e2e_procedure 5, superseded by BL-1310): a genuine
+#    content conflict on an otherwise-clean tree is attempted (never
+#    pre-emptively refused BY THE CONFLICT PREDICTION itself) and reported -
+#    that half is unchanged. What changes is the OUTCOME once local main
+#    turns out to carry a commit origin/main does not have: BL-1310's human
+#    ruling ("never discard local-ahead commits - refuse and surface, a
+#    human resolves it") means the reset that used to fire here (BL-1214
+#    qa_e2e_procedure step 2's "unweakened reset recovery") is now REFUSED
+#    instead - local main is left exactly as it was found, and the daemon
+#    surfaces a note naming BL-1310. The ahead=0 case this ticket leaves
+#    unaffected is proven separately (master_main_reconcile_lib_test_runner.bb,
+#    the property runner, and BL-1198's own real-git suite). ─────────────
 echo "root-conflict-line" >> "$ROOT/seed.txt"
 git -C "$ROOT" add seed.txt
 git -C "$ROOT" commit -q -m "root-only conflicting edit to seed.txt"
@@ -376,17 +387,36 @@ wait_for_log "master-main-reconcile conflict" 20 \
   || fail "expected a genuine content conflict on an otherwise-clean tree to be attempted and reported; log: $(cat "$LOG_FILE" 2>/dev/null)"
 pass "a genuine content conflict on an otherwise-clean tree is attempted (never pre-emptively refused) and reported"
 
-wait_for_content "$ROOT/seed.txt" "origin-conflict-line" 20 \
-  || fail "expected the reset-to-origin recovery to complete exactly as it does today once the conflicting merge aborted; log: $(cat "$LOG_FILE" 2>/dev/null)"
+wait_for_log "master-main-reconcile-surfaced BL-1310" 20 \
+  || fail "expected the daemon to surface a note naming BL-1310 for the local-ahead refusal; log: $(cat "$LOG_FILE" 2>/dev/null)"
+pass "a local-ahead commit colliding with origin refuses the reset and names BL-1310 (this ticket's own human ruling)"
+
+sleep 3
 ROOT_HEAD_AFTER_CONFLICT="$(git -C "$ROOT" rev-parse main)"
-[[ "$ROOT_HEAD_AFTER_CONFLICT" == "$LANDED_6_SHA" ]] \
-  || fail "expected ROOT's main to land on origin's tip via the unweakened reset recovery, was $ROOT_HEAD_BEFORE_CONFLICT now $ROOT_HEAD_AFTER_CONFLICT (want $LANDED_6_SHA)"
+[[ "$ROOT_HEAD_AFTER_CONFLICT" == "$ROOT_HEAD_BEFORE_CONFLICT" ]] \
+  || fail "expected ROOT's main to stay exactly where local left it (BL-1310: never discard a local-ahead commit), was $ROOT_HEAD_BEFORE_CONFLICT now $ROOT_HEAD_AFTER_CONFLICT"
 [[ ! -f "$ROOT/.git/MERGE_HEAD" ]] \
   || fail "expected the aborted merge to leave no MERGE_HEAD - checkout left mid-merge"
 CONFLICT_STATUS="$(git -C "$ROOT" status --porcelain)"
 [[ -z "$CONFLICT_STATUS" ]] \
-  || fail "expected the working tree to be clean after the aborted conflict and completed reset recovery, got: $CONFLICT_STATUS"
-pass "an aborted merge conflict leaves no in-progress merge state, and the reset-to-origin recovery completes exactly as it does today"
+  || fail "expected the working tree to be clean after the aborted conflict and refused reset, got: $CONFLICT_STATUS"
+CONFLICT_CONTENT="$(cat "$ROOT/seed.txt")"
+[[ "$CONFLICT_CONTENT" == *"root-conflict-line"* ]] \
+  || fail "expected the local-ahead commit's own content to survive the refusal, got: $CONFLICT_CONTENT"
+pass "an aborted merge conflict leaves no in-progress merge state, and BL-1310's refusal leaves the local-ahead commit exactly as it was found - never discarded"
+
+# The divergence above is now a durable block by design (BL-1310: main
+# stays diverged until a human or a role resolves it) - resolve it here,
+# playing that same human action, so the remaining scenarios below start
+# from a clean divergence again rather than inheriting a permanently
+# blocked master checkout. A direct, deterministic reset (not a further
+# wait_for_log grep - "up-to-date" already recurs earlier in this
+# accumulated log, exactly the false-pass shape wait_for_content's own
+# header comment above warns about) plus a short settle, same posture as
+# this file's other post-config-edit "let the daemon re-read" sleeps.
+git -C "$ROOT" reset --hard "$LANDED_6_SHA"
+sleep 2
+pass "manually resolving the local-ahead divergence (the human's own action) lets the fixture proceed again"
 
 # ── BL-1248 (qa_e2e_procedure scenario 02, "the one that matters"): with
 #    the switch OFF, a genuine two-way divergence is left alone entirely -

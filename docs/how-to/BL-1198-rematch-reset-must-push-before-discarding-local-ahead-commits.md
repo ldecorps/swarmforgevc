@@ -1,5 +1,14 @@
 # Rematch reset pushes local-ahead main before ever discarding it (BL-1198)
 
+> **Superseded on the genuine-rejection case (BL-1310).** "Push rejected
+> (genuine divergence) → today's reset proceeds unchanged" below is no
+> longer true: as of BL-1310 the reset only ever fires when the ahead-count
+> is a known zero. A genuine rejection with `ahead > 0` now refuses instead
+> of resetting. See
+> [BL-1310](BL-1310-reconcile-refuses-instead-of-discarding-local-ahead-commits.md)
+> for the current behavior. The push-first attempt described here is
+> otherwise unchanged.
+
 Every `git reset --hard origin/main` call site in the master/main-rematch
 path used to assume, unconditionally, that any local-ahead commit was
 disposable the moment local `main` and `origin/main` collided. "Local main

@@ -18,6 +18,11 @@
 ;; observed as HEAD still being the commit the caller made, not inferred from
 ;; a flag. headBefore/headAfter are reported for exactly that reason.
 ;;
+;; BL-1310: :reset! is wrapped with master_main_reconcile_lib.bb's own
+;; refuse-reset-if-local-ahead! - the same composition the three production
+;; call sites wire - so every row with local-ahead commits proves current
+;; behaviour (kept/refused), not the pre-BL-1310 discard path.
+;;
 ;; Usage: bb bl1288PushFailureClassificationCli.bb <repo-root>
 ;; Exits 0 always (the push/reset failing is the subject, not an error);
 ;; prints one JSON line to stdout.
@@ -52,15 +57,17 @@
 (def head-before (head))
 (def reset-attempted? (atom false))
 
+(def reset-adapters
+  (master-main-reconcile-lib/real-git-reset-adapters
+   {:sh! sh :reset-attempted? reset-attempted?}))
+
 (def result
   (master-main-reconcile-lib/rematch-with-push-first!
    {:push! (fn []
              (let [r (sh "git" "push" "origin" "main")]
                {:success (zero? (:exit r)) :error (:err r)}))
     :reset! (fn []
-              (reset! reset-attempted? true)
-              (let [r (sh "git" "reset" "--hard" "origin/main")]
-                {:success (zero? (:exit r)) :error (:err r)}))}))
+              (master-main-reconcile-lib/refuse-reset-if-local-ahead! reset-adapters))}))
 
 (println (json/generate-string
           {:pushed (= :pushed (:outcome result))

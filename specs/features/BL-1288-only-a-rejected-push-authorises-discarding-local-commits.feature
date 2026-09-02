@@ -1,6 +1,6 @@
-# mutation-stamp: sha256=56676ff6fe6a74478b6abc21a60d1ec487f7afdb4654ed1df27bf00c0d3f8684
+# mutation-stamp: sha256=6b0fe27735b02368c063cb26cf1d5fa65a27204472c69e513da27f83cd330d08
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-30T20:56:31.190061764Z","feature_name":"Only a rejected push may authorise discarding local-ahead commits","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1288-only-a-rejected-push-authorises-discarding-local-commits.feature","background_hash":"0a0318cdf49dd6776df1020e96d7f48b004b7acd9c9b99cb762ff9047b89c89b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Only a remote's rejection authorises the discard","scenario_hash":"78cb807e8606bdf6c431bb447dd089265a9f34aa45fd5d2bac01c11d5212f77a","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-30T20:56:31.190061764Z"}]}
+# {"version":1,"tested_at":"2026-09-01T22:54:12.110988714Z","feature_name":"Only a rejected push may authorise discarding local-ahead commits","feature_path":"/home/carillon/swarmforgevc/.worktrees/expedite-BL-1310/specs/features/BL-1288-only-a-rejected-push-authorises-discarding-local-commits.feature","background_hash":"0a0318cdf49dd6776df1020e96d7f48b004b7acd9c9b99cb762ff9047b89c89b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Only a remote's rejection authorises the discard","scenario_hash":"382dcd3aef74390e4ac8823982a261ffa618ea7048106898839dbb4b1aa021ac","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-01T22:54:12.110988714Z"}]}
 # acceptance-mutation-manifest-end
 
 Feature: Only a rejected push may authorise discarding local-ahead commits
@@ -40,10 +40,10 @@ Feature: Only a rejected push may authorise discarding local-ahead commits
     Then the local-ahead commits are <fate>
 
     Examples:
-      | cause                          | fate      |
-      | the remote rejected it         | discarded |
-      | the remote was unreachable     | kept      |
-      | no credentials were available  | kept      |
+      | cause                          | fate |
+      | the remote rejected it         | kept |
+      | the remote was unreachable     | kept |
+      | no credentials were available  | kept |
 
   # BL-1288 push-failure-classification-02
   Scenario: The push's own reason survives into the reported outcome

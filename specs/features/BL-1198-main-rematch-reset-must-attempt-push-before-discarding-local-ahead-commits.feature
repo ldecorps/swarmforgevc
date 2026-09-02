@@ -29,8 +29,9 @@ Feature: rematching local main onto origin/main attempts a push before discardin
     And no reset --hard is performed
 
   # BL-1198 genuinely-colliding-ahead-still-recovers-02
-  Scenario: A local-ahead commit that collides with origin still falls back to today's reset recovery
+  Scenario: A local-ahead commit that collides with origin is kept after a rejected push
     Given origin/main has diverged such that pushing local main is rejected
     When the rematch path runs
     Then it attempts the push first
-    And only after that push is rejected does it reset local main to origin/main
+    And local main is left with the local-ahead commit intact
+    And no reset --hard is performed

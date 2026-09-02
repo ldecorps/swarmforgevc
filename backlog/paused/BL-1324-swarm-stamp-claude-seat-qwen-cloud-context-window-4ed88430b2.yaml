@@ -39,6 +39,20 @@ approval_context: >
   window declared. No pack currently combines OpenRouter routing with a
   qwen* --model, so this is also dormant, not live.
 
+  Two more things, carried in from a duplicate stamp-off parcel for this same
+  commit (BL-1325, retired 2026-09-02 as superseded-by-BL-1324 — see notes).
+  (3) a cross-pack side effect: the fix adds the 1M context declaration to the
+  SHARED Token Plan compat branch, so any pack using the global
+  `SWARMFORGE_USE_QWEN=1` flag now also declares
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` on its Claude seats, not only bob's. The
+  commit's own comment says that is intended ("every Qwen Claude seat");
+  reported here, not undone. (4) the 1M figure rests on the platform's own
+  claim that Token Plan qwen3.* is officially a 1M window, and it is
+  operator-overridable (`${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}`). The
+  review records what it can verify about the served window; the gateway's
+  real window size is an operator-platform fact this ticket does not
+  negotiate.
+
 ruling_options:
   - Certify as landed; both dormant gaps are acceptable as-is, open no follow-up
   - Certify as landed; mint a follow-up to also match the --model=<value> single-token form and/or document the OpenRouter-precedence caveat
@@ -139,8 +153,68 @@ qa_e2e_procedure: >
   (approval_context) are confirmed as acceptable-as-is or worth a follow-up,
   per the human's ruling.
   (6) Leave Hotfix-Certification pending until the human ledger decision.
+  (7) Carried from the retired duplicate BL-1325: confirm a seat under the
+  global `SWARMFORGE_USE_QWEN=1` flag also declares
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` on the shared Token Plan compat branch
+  (not only a lone qwen*-targeted seat under scenario 02), and record this as
+  reported behaviour, not a defect. (8) If the bob pack is live, verify a
+  qwen seat's pane env carries `CLAUDE_CODE_MAX_CONTEXT_TOKENS` via read-only
+  `tmux -S <socket> show-environment` (never attach/probe the server,
+  BL-657); otherwise record the simulated `-e` flags from a generated launch
+  script.
 
 notes: >
+  ## RECONCILED 2026-09-02 - duplicate stamp-off for the same hotfix retired into this ticket
+
+  BL-1325 (paused) and this ticket both certified the SAME hotfix commit
+  `4ed88430b2`. Both trace back to the same 2026-09-01 coordinator note about
+  an unstamped ledger row; two independent specifier passes minted two
+  tickets for it (BL-1325's own history shows it was minted first, as an id
+  later remapped by a reset-recovery pass — see
+  backlog/topics/BL-1325.json — and then orphaned by the same class of bug
+  BL-1310 fixed; this ticket, BL-1324, was minted second by the normal
+  pipeline and is the one the hotfix ledger already links).
+
+  BL-1324 survives: it is the ledger's stamp_ticket for `4ed88430b2`, and its
+  approval_context poses the sharper, still-open review question (the two
+  dormant matching-shape/precedence gaps) that BL-1325 never raised. No
+  ledger repoint was needed.
+
+  **This retirement drops nothing (Article 5.3).** BL-1325 carried two pieces
+  of content this ticket did not, folded in above rather than trimmed:
+
+  - The cross-pack `SWARMFORGE_USE_QWEN=1` side-effect note and the
+    1M-window platform-claim caveat (approval_context items 3-4 above).
+  - Two feature scenarios: the global-flag cross-pack behaviour, and an
+    explicit "the review never certifies the hotfix by itself" scenario —
+    both added to this ticket's acceptance feature as scenarios 07-08.
+
+  RETIRED as already covered, not reworded: BL-1325's scenarios 01-03 and 05
+  (the qwen-model-detection outline, the mixed-pack remap-only-the-qwen-seat
+  scenario, the pane-env scenario, and the per-role pack-staffing outline)
+  duplicate this ticket's own scenarios 01-03, 05 and 06 at a coarser or
+  equal grain; carrying the extra per-role effort table from BL-1325's
+  scenario 05 would have manufactured a DRY finding rather than caught a new
+  behaviour, so it was left out.
+
+  `BL-1325`'s own `required_wiring` anchor
+  (`bl1322TokenPlanMaxContextStampSteps`) was stale from its earlier life as
+  a different id and was never wired to a real handler — neither this
+  ticket's nor BL-1325's step handlers have been written yet
+  (`status: todo` on both, no coder pass), so retiring it broke nothing live.
+
+  `specs/features/BL-1325-token-plan-qwen-max-context-stamp-4ed88430b2.feature`
+  is removed with this retirement; git history keeps the original.
+
+  IR-DRY re-run after the merge (`bb run gherkin-parser` then `bb run
+  gherkin-ir-dry-checker` from swarmforge/vendor/aps): 7 medium findings (one
+  more than the original 6). The new one pairs the added scenario 07's
+  `SWARMFORGE_USE_QWEN is set to "1"` against the existing "is not set"
+  precondition — a genuinely distinct value under test (unset vs set=1), the
+  same adjudication pattern as every other finding here.
+
+  ---
+
   IR-DRY adjudication at mint (do not re-litigate): the checker reports six
   medium-confidence near-duplicate/possible-synonym findings, all comparing
   Given/Then steps across scenarios 02-05 that share vocabulary ("claude
