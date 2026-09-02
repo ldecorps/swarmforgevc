@@ -1,5 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1334: `is_qa_ancestor.sh`, the one
+shared "is this sha QA-approved" predicate (BL-925 invariant 2), answers on
+ancestry of `swarmforge-QA` plus a bounce-verdict veto (BL-952) — but the
+land step's tip-pure replay mints a new commit and publishes it to `main`
+without ever advancing that ref, so QA's own just-landed, approved work read
+as unapproved to every ancestry-based consumer
+(`check_pipeline_code_on_main.sh`, `handoffd.bb`'s push-sweep gate,
+`babysitter_check.bb`) until an unrelated later merge closed the window —
+observed live twice (`d7426989b2`/BL-1301, `c65d8e6728`/BL-1314), both
+requiring the sanctioned `build_freshness_cli.bb sync --override` escape
+hatch. Per the human ruling (option 2 of `ruling_options`), the fix does NOT
+hand the land step write access to `swarmforge-QA` itself — that ref
+defines approval, and a careless bump would erode exactly the property
+BL-952 protects. Instead: `land_step_lib.bb`'s new
+`record-land-approval!` appends `{at, ticket, commit, source}` to
+`.swarmforge/land-approvals/<YYYY-MM>.jsonl` (append-only; a missing sha in
+either field is refused rather than written, so a corrupt line can never
+silently open the gate) on the replay success path; `is_qa_ancestor.sh`
+consults that store, after the bounce veto, and grants approval only when
+the record's named SOURCE itself resolves, carries no bounce verdict, and
+is an ancestor of `swarmforge-QA` — checked directly rather than by
+recursing into the predicate, so approval can never chain through a record
+naming another record (the property that makes this still ONE predicate,
+never a second, per the ticket's own constraint). `build_freshness_cli.bb`'s
+drift report was rewritten to ask this predicate in `--batch` mode instead
+of deciding ancestry itself with its own `merge-base` walk — removing a
+second-predicate opinion the review found, not adding one. An unrecorded
+land (write failure) degrades to the pre-fix behaviour
+(`LAND_APPROVAL_UNRECORDED` reported, never fatal) rather than a false
+approval. 48-case exhaustive property sweep (4 commit shapes × 4 land-store
+states × 3 bounce states, including a reachable-but-bounced source, which a
+first draft's weaker sweep could not distinguish from a correct
+implementation). No new extension command or setting. See the [BL-632
+commit-time guard reference](BL-632-commit-time-guard-refuses-pipeline-code-on-main.md)
+for the predicate's now-updated full definition.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1319: the coordinator's dwell/
 bottleneck optimizer instrument (`extension/src/metrics/stageDwell.ts`,
 BL-102) filters roles for `PIPELINE_ORDER` membership — bare stage names
