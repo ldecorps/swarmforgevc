@@ -17,7 +17,9 @@ slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1351-event-snapshot-carries-only-what-consumers-read.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  option 1 - keep every backlog folder on the stream but carry only the per-item fields consumers actually read
 ruling_options:
   - option 1 - keep every backlog folder on the stream but carry only the per-item fields consumers actually read
   - option 2 - drop the done folder from the stream entirely and serve it from a separate on-demand route
