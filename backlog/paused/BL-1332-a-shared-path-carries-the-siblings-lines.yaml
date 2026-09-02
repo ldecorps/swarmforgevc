@@ -108,7 +108,9 @@ qa_e2e: >
   check_feature_handler_registration.sh against the produced tree and confirm
   it passes - that guard is what turned this defect into a swarm-wide freeze.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  option 1 - refuse the land when a shared path mixes the landing ticket with an unlanded sibling, naming both
 approval_context: >
   Sign-off on the new feature file, plus one design ruling that decides what
   the coder builds - please answer it with the buttons rather than in prose.
