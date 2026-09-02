@@ -621,6 +621,121 @@
           (catch Exception _
             (assoc decision :written? false)))))))
 
+(defn active-ticket-mutation-cost
+  "The mutation_cost of the working-tree active ticket whose id: is
+   ticket-id, or nil when there is no such ticket or it declares none.
+
+   Lives here rather than in either caller because BOTH effort sites need
+   exactly this lookup and must agree: BL-1316's claim-time apply
+   (ready_for_next_task.bb) and BL-1317's Adapt baseline
+   (done_with_current_task.bb). Two copies could drift into two different
+   baselines for the same ticket, which is precisely the floor Adapt's
+   declared invariant 2 is measured against."
+  [ticket-id]
+  (when ticket-id
+    (let [active-dir (fs/path (target-root) "backlog" "active")]
+      (when (fs/exists? active-dir)
+        (some (fn [f]
+                (let [content (try (slurp (str f)) (catch Exception _ nil))]
+                  (when (and content
+                             (re-find (re-pattern (str "(?m)^id:\\s*"
+                                                       (java.util.regex.Pattern/quote ticket-id)
+                                                       "\\s*$"))
+                                      content))
+                    (seat-difficulty-lib/parse-mutation-cost content))))
+              (fs/glob active-dir "**.yaml"))))))
+
+(defn effort-adapt-state-path
+  "Where BL-1317's clean-completion streak for role-name is kept. A counter,
+   not a policy: the decision itself stays pure in seat-difficulty-lib. It
+   lives beside the other .swarmforge/ runtime state rather than in the pack
+   conf, because declared invariant 1 forbids Adapt touching the pack window
+   line on disk at all."
+  [role-name]
+  (str (fs/path (target-root) ".swarmforge" "effort-adapt" (str role-name ".json"))))
+
+(defn- read-effort-adapt-state [role-name]
+  (let [f (effort-adapt-state-path role-name)]
+    (try
+      (if (fs/exists? f)
+        (or (json/parse-string (slurp f) true) {})
+        {})
+      (catch Exception _ {}))))
+
+(defn- read-current-effort
+  "The effort the seat is actually running at: the effortLevel BL-1316's
+   claim-time apply last wrote into the launch settings file. Absent or
+   unreadable -> nil, and the decision then fails closed rather than guessing
+   a rung."
+  [role-name]
+  (try
+    (let [f (claude-settings-path role-name)]
+      (when (fs/exists? f)
+        (:effortLevel (json/parse-string (slurp f) true))))
+    (catch Exception _ nil)))
+
+(defn record-effort-adapt!
+  "BL-1317 consumer anchor: the seat's held ticket has just produced an
+   OUTCOME - a bounce, or a clean completion - and the seat's reasoning effort
+   moves accordingly. Called at the same moment the lifecycle ledger already
+   learns that outcome (done_with_current_task.bb), so Adapt observes exactly
+   the outcomes the ledger does and cannot drift into its own notion of what
+   'done' means.
+
+   The pure decision (ladder, one-notch climb, streak-gated drop, baseline
+   floor, lever-less backends) lives entirely in seat-difficulty-lib/adapt-
+   effort-decision; the BL-1316 baseline it may not descend below is derived
+   from claim-effort-decision, never re-derived here - one policy, one place.
+
+   IO edge only, and a deliberately weak one. It writes at most two files:
+   the seat's launch settings (the same effortLevel BL-1316 rewrites, which a
+   respawn reads) and its own streak counter. It NEVER writes the pack conf -
+   declared invariant 1, which is why the pack conf is not even read for
+   writing here. Never throws and never blocks a completion: a lever-less
+   backend, a missing settings file, or unreadable JSON all leave the
+   completion untouched, exactly as apply-claim-effort! leaves a claim.
+
+   Returns the decision map (plus :written? when a settings write was
+   attempted, and :clean-streak as it now stands) so a caller or test can
+   observe what happened without re-deriving it."
+  [{:keys [role backend mutation-cost pack-default-effort signal]}]
+  (try
+    (let [baseline (:effort (seat-difficulty-lib/claim-effort-decision
+                             {:backend backend
+                              :cost mutation-cost
+                              :pack-default-effort pack-default-effort}))
+          state (read-effort-adapt-state role)
+          prior (read-current-effort role)
+          sig (some-> signal str str/trim str/lower-case)
+          ;; A bounce is evidence the seat is under-thinking NOW, so whatever
+          ;; clean run preceded it stops counting toward a descent.
+          streak (if (= sig "clean") (inc (or (:cleanStreak state) 0)) 0)
+          decision (seat-difficulty-lib/adapt-effort-decision
+                    {:backend backend
+                     :prior-effort prior
+                     :baseline-effort baseline
+                     :signal sig
+                     :clean-streak streak})
+          ;; A notch actually given back spends the streak; it must be earned
+          ;; again before the next one, or one long clean run would walk a
+          ;; seat down the whole ladder a completion at a time.
+          next-streak (if (and (:apply? decision) (= sig "clean")) 0 streak)
+          state-file (effort-adapt-state-path role)]
+      (fs/create-dirs (fs/parent state-file))
+      (spit state-file (json/generate-string (assoc state :cleanStreak next-streak) {:pretty true}))
+      (if-not (:apply? decision)
+        (assoc decision :clean-streak next-streak)
+        (let [settings-file (claude-settings-path role)]
+          (if-not (fs/exists? settings-file)
+            (assoc decision :written? false :clean-streak next-streak)
+            (let [current (json/parse-string (slurp settings-file) true)]
+              (spit settings-file
+                    (json/generate-string (assoc current :effortLevel (:effort decision))
+                                          {:pretty true}))
+              (assoc decision :written? true :clean-streak next-streak))))))
+    (catch Exception _
+      {:apply? false :reason "effort adapt failed; completion unaffected"})))
+
 ;; BL-911: rotation is the moment freshness is established, not inherited
 ;; from launch (see rotate-resident-to! below). recompose-role-prompt!
 ;; reuses PromptEngine's compose via the SAME agent/model/two-pack?/

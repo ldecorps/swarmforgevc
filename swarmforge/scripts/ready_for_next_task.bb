@@ -41,26 +41,13 @@
   (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
        (catch Exception _ nil)))
 
-(defn- active-ticket-yaml
-  "Working-tree active ticket whose id: matches ticket-id, or nil."
-  [root ticket-id]
-  (when ticket-id
-    (let [active-dir (fs/path root "backlog" "active")]
-      (when (fs/exists? active-dir)
-        (some (fn [f]
-                (let [content (try (slurp (str f)) (catch Exception _ nil))]
-                  (when (and content
-                             (re-find (re-pattern (str "(?m)^id:\\s*" (java.util.regex.Pattern/quote ticket-id) "\\s*$"))
-                                      content))
-                    content)))
-              (fs/glob active-dir "**.yaml"))))))
-
 (defn- mutation-cost-for-task
+  "BL-1317 moved the active-ticket lookup itself into handoff-lib so the
+   claim-time apply here and Adapt's baseline in done_with_current_task.bb
+   read one ticket the same way."
   [task]
-  (let [root (handoff-lib/target-root)
-        tid (pipeline-stage-lib/extract-ticket-id task)
-        yaml (active-ticket-yaml root tid)]
-    (seat-difficulty-lib/parse-mutation-cost yaml)))
+  (handoff-lib/active-ticket-mutation-cost
+   (pipeline-stage-lib/extract-ticket-id task)))
 
 (defn- apply-effort-for-task!
   "BL-1316: retunes (or restores) this seat's reasoning effort for the

@@ -178,6 +178,95 @@
         {:apply? true :effort effort}
         {:apply? false}))))
 
+;; ── BL-1317: Adapt tier ────────────────────────────────────────────────────
+;; BL-236 shipped Suggest-only and explicitly deferred Adapt. BL-1316 (above)
+;; sets the CLAIM-TIME baseline from the held ticket's mutation_cost. Adapt is
+;; the tier that moves effort around that baseline from OUTCOME signals, so a
+;; hard ticket that keeps bouncing can climb without a human turning the dial.
+;;
+;; The movement is deliberately asymmetric (declared invariant 2): a bounce
+;; climbs ONE notch immediately, a drop needs a whole streak of clean
+;; completions and never lands below the BL-1316 baseline. That is BL-545's
+;; descent-ladder hysteresis - the cost of thinking too little is a bounced
+;; parcel, the cost of thinking too much is only tokens, so evidence to climb
+;; is cheap and evidence to descend is expensive.
+;;
+;; Pure, like claim-effort-decision above: no IO, no respawn, no file write.
+;; handoff_lib.bb::record-effort-adapt! is the single IO edge over it.
+;;
+;; SINGLE POLICY, MIRRORED ACROSS A LANGUAGE BOUNDARY. The same ladder and the
+;; same streak default are stated in TypeScript at
+;; extension/src/tools/effortDialAdapt.ts (ADAPT_EFFORT_LADDER,
+;; ADAPT_DEFAULT_CLEAN_STREAK) because the UI/launch paths decide there while
+;; this consumer decides here. A comment claiming the two agree is not a gate,
+;; so test/test_bl1317_effort_ladder_parity.sh asserts both literals agree
+;; (the constant-across-a-language-boundary rule, BL-897).
+
+(def adapt-effort-ladder
+  "The effort ladder, weakest first. Derived from cost-rank rather than
+   restated, so the two can never drift apart within this file."
+  (mapv key (sort-by val cost-rank)))
+
+(def adapt-default-clean-streak
+  "Clean completions required before a single notch may be given back.
+   Asymmetric with the one-signal climb by design (invariant 2)."
+  3)
+
+(defn- adapt-rank [effort]
+  (get cost-rank (some-> effort str str/trim str/lower-case)))
+
+(defn adapt-effort-decision
+  "Pure BL-1317 Adapt decision: where a seat's effort moves given the effort
+   it is running at, the BL-1316 claim-time baseline for the held ticket, and
+   one outcome signal (\"bounce\" or \"clean\").
+
+   :apply? is true ONLY when the effort actually changes - there is nothing to
+   write otherwise, and an unchanged rung must not look like a retune. A
+   backend with no reasoning-effort lever decides :apply? false and names no
+   effort at all, so no unsupported flag can be built from this (BL-1316
+   invariant 2, carried forward). An unknown prior effort or an unknown signal
+   fails closed for the same reason: an effort token this ladder does not know
+   is not a rung, and guessing one writes a flag the backend may reject."
+  [{:keys [backend prior-effort baseline-effort signal clean-streak
+           clean-streak-required]}]
+  (if-not (effort-lever-backend? backend)
+    {:apply? false :reason "backend has no reasoning-effort lever"}
+    (let [prior (adapt-rank prior-effort)]
+      (if (nil? prior)
+        {:apply? false :effort prior-effort
+         :reason (str "unknown prior effort " (pr-str prior-effort))}
+        ;; An absent baseline is read as the CURRENT effort, never as the
+        ;; bottom rung: reading "no baseline" as low would let a clean streak
+        ;; drag a high-cost seat all the way down, which is exactly the floor
+        ;; invariant 2 exists to hold.
+        (let [floor (or (adapt-rank baseline-effort) prior)
+              top (dec (count adapt-effort-ladder))
+              sig (some-> signal str str/trim str/lower-case)]
+          (case sig
+            "bounce"
+            (let [next (min (inc prior) top)]
+              (if (= next prior)
+                {:apply? false :effort prior-effort
+                 :reason "already at the top of the ladder"}
+                {:apply? true :effort (nth adapt-effort-ladder next)
+                 :reason "bounce: climbing one notch"}))
+
+            "clean"
+            (let [required (or clean-streak-required adapt-default-clean-streak)
+                  streak (or clean-streak 0)]
+              (if (< streak required)
+                {:apply? false :effort prior-effort
+                 :reason (str "clean streak " streak "/" required)}
+                (let [next (max (dec prior) floor)]
+                  (if (= next prior)
+                    {:apply? false :effort prior-effort
+                     :reason "already at the claim-time baseline"}
+                    {:apply? true :effort (nth adapt-effort-ladder next)
+                     :reason "clean streak met: dropping one notch"}))))
+
+            {:apply? false :effort prior-effort
+             :reason (str "unknown signal " (pr-str signal))}))))))
+
 (defn seat-accepts?
   "True when declared tier may take cost. Undeclared tier accepts everything
    (single-seat / legacy window lines stay BL-983-identical)."
