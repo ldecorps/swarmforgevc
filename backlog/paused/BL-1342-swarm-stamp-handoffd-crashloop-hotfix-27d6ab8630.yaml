@@ -20,7 +20,7 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1342-swarm-stamp-handoffd-crashloop-hotfix-27d6ab8630.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 27d6ab8630. Review-only:
   it confirms or refutes what landed and never reimplements it. No choice is
