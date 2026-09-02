@@ -283,7 +283,7 @@ ancillary_provider_default_model() {
       fi
       ;;
     claude_direct)
-      if [[ "$role" == operator ]]; then printf '%s\n' "claude-opus-4-8"
+      if [[ "$role" == operator ]]; then printf '%s\n' "claude-opus-5"
       elif [[ "$role" == front_desk ]]; then printf '%s\n' "claude-haiku-4-5-20251001"
       else printf '%s\n' "claude-sonnet-5"
       fi

@@ -1806,7 +1806,16 @@ You are the hardender.
     sandbox `../..` lands on `.stryker-tmp/`, which is exactly where
     `ensureStrykerSandboxSiblings.js` plants the symlinks. An ENOENT here
     means the sibling is not in `SIBLING_NAMES`; add the name, change no path.
-    This is the bl1300 pair's case: both reach only `swarmforge/scripts/`.
+    **Carve-out, and it is not rare** (found by the hardender applying this
+    rule, 2026-09-02): the symlinks satisfy a plain filesystem read only. A
+    `git` invocation resolves its pathspec inside the TRACKED tree relative to
+    `-C`, never through a symlink planted in `.stryker-tmp`, so `git archive`
+    or `git show` at the shallow root misses every pathspec however the
+    siblings are linked. Escaping to the true repo root IS right there - but
+    only once you have confirmed, per usage, that everything reached through
+    it is data Stryker never mutates (an immutable past commit, a `.sh`, a
+    `.bb`; `--mutate` scopes `out/**/*.js` only). `bl1300HeadroomProofIsPinned`
+    is that case and carries the reasoning inline.
   - **Back into `extension/` itself** — you need the SANDBOX's copy, never the
     real one. Anchor on the `package.json` marker for the extension root and
     resolve from there; do not walk up to a root that contains `extension/`,
@@ -1817,6 +1826,12 @@ You are the hardender.
     `.stryker-tmp/`, so the helper
     returns `''` and the assertion fails on empty output. Repointing it at the
     real repo root would turn that red into a green that tests nothing.
+    Resolution taken there (2026-09-02): no clean fix exists, because
+    `resolveDeprecateCheckCliPath` needs a root with an `extension/` child and
+    a sandbox has none. It keeps the `../..` walk-up - correct outside Stryker,
+    failing LOUD inside it - with the file excluded from the mutation run. A
+    standing known Stryker-only red beats a green that exercises the unmutated
+    build.
 - **The tell that you are about to escape:** the repair makes a previously red
   mutation run go green without you having killed a mutant. Treat a
   root-resolution change that fixes a dry run as suspect until you have
@@ -2312,3 +2327,31 @@ You are the hardender.
   It was found only by hand-mutating and checking both stores, and closed by a
   fixture that puts the record in `bounce_history` with NO JSONL entry
   anywhere (`test/test_is_qa_ancestor_land_replay_store.sh`).
+
+## A sort fixture inserted already-sorted tests nothing (rule_proposal 2026-09-02, accepted)
+- **The shape.** A test that asserts an ordering over a fixture whose entries
+  were WRITTEN in the order the sort already produces is a no-op assertion.
+  Drop the `.sort()`, invert the comparator, return a constant from it — every
+  mutant still yields the expected array, because the input was the answer.
+  The test passes throughout and reads like real coverage.
+- **Scramble the fixture, not the assertion.** Insert the entries in an order
+  the sort must actually change — reversed is the cheap default, and a
+  hand-picked order that also exercises the tie-break is better. The
+  assertion stays exactly as it was; only the input moves. If the fixture is
+  shared and cannot be reordered without breaking other tests, add a second
+  fixture for the ordering test rather than weakening the shared one.
+- **Ties are their own case.** Two entries equal on the sort key exercise a
+  different mutant set (a comparator that returns 0 vs one that returns a
+  sign), so a fixture with a duplicate key and a fixture that is merely
+  unsorted are not substitutes for each other.
+- **Evidence (proposed by the hardender, 2026-09-02, BL-1056-a):**
+  `pricingTable`'s `WINDOWED_TABLE` held two windowed entries sharing one
+  `until`, inserted in the order the sort produces anyway. **All 7 `.sort()`
+  mutants survived** until the insertion order was scrambled — a full mutant
+  family hidden behind a green test.
+- **The general rule this is one instance of:** a fixture that already
+  satisfies the property under test makes the operation under test a no-op,
+  and every mutant of a no-op survives. Before trusting an ordering, filtering,
+  deduplication or normalization assertion, check that the input actually
+  needed the operation. A surviving-mutant family clustered on one operation is
+  the tell — look at the fixture before the code.

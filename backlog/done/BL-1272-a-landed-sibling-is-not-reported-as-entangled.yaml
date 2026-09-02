@@ -3,7 +3,7 @@ title: "The land step names an already-landed sibling as still entangled, sendin
 milestone: M8
 type: defect
 severity: medium
-status: blocked
+status: done
 epic: swarm-reliability
 priority: 20
 direction: agent-reported
@@ -297,3 +297,6 @@ notes_coordinator_hold: >
   should confirm the landing happened rather than trusting this note.
 
   Evidence: backlog/evidence/BL-1295-land-escalate-specifier-adjudication-20260830.md
+  [2026-09-02 coordinator] Landing confirmed positively (not from the note): registration
+  ec0584131b (2026-08-30 07:22Z), handler bl1272 steps file + 3-scenario feature all on origin/main;
+  moved paused/ -> done/ per this ticket's 08-30 adjudication. Trigger: specifier note 001191.

@@ -268,7 +268,14 @@
 - commit: 27d6ab8630
   subject: "Hotfix: handoffd survives a vanished outbox parcel; supervisor grants a startup grace window"
   detected_at: 2026-09-02
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1342
+  human_decision: null
+  decided_at: null
+- commit: 195de28861
+  subject: "Hotfix: swarm ensure's RC repair no longer respawns a stale-marker role into the specifier pane on a standing pack"
+  detected_at: 2026-09-02
+  state: pending
+  stamp_ticket: BL-1346
   human_decision: null
   decided_at: null

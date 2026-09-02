@@ -1,0 +1,148 @@
+id: BL-1344
+title: "A babysitter finding over permanent history re-nudges every 30 minutes forever, because the sweep has a cooldown but no way to record that a finding was investigated and is legitimate"
+milestone: M8
+type: defect
+severity: medium
+# medium, and deliberately not high: the sweep is working exactly as designed
+# and nothing is degraded or at risk. The cost is a coordinator turn every 30
+# minutes and, over time, an Article 4.2 CRIT channel nobody reads - real, but
+# not an incident. The coordinator that reported it sent it at handoff
+# priority 10, explicitly "not a fresh operational emergency", and this
+# severity keeps it out of the expedite lane in front of BL-1343.
+status: todo
+epic: swarm-reliability
+priority: 25
+direction: swarm-reported
+assigned_to: none
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1344-an-investigated-finding-can-be-waived.feature
+
+human_approval: approved
+approval_context: >
+  No choice is posed, so no ruling_options - the shape is settled by the
+  existing precedent (the hotfix ledger's recorded decision) and the remedy's
+  details are the implementer's.
+
+  What to know before approving. This adds a way to SILENCE a health alert,
+  which is worth reading the bounds on. A waive names exactly one finding key
+  and can suppress nothing else; only an explicitly recorded decision creates
+  one, never the sweep; a waived finding stays listed with who waived it and
+  why rather than disappearing; and a waive store that cannot be read alerts
+  instead of going quiet. The failure this prevents is the other kind of
+  silence: an Article 4.2 CRIT that fires forever is one everybody learns to
+  scroll past, and then a real one arrives.
+
+invariants:
+  - "A waive is scoped to the single finding key it names and never suppresses a nudge for any other key, including a later finding of the same class over a different commit."
+  - "The sweep never creates, widens or renews a waive - only an explicitly recorded decision does, the same posture the hotfix ledger takes toward certification."
+  - "A waive store that is missing, unreadable or malformed results in the nudge being sent; suppression requires a positively read waive, never the absence of a readable answer."
+
+required_wiring:
+  - 'swarmforge/scripts/babysitter_check.bb::babysitter-waive-lib::the CONSUMER anchor (BL-1235). The live sweep must consult the waive store at its own nudge decision; a lookup that exists only in the lib suppresses nothing. Alias name fixed at mint so the pattern is a literal that will exist (BL-874).'
+  - 'specs/pipeline/steps/index.js::bl1344BabysitterFindingWaiveSteps::acceptance handler registered so the runner executes every scenario. Absent at spec time, grep bl1344 returns 0.'
+
+description: |
+  ## What is wrong
+
+  `babysitter_check.bb` dedups each finding on a flat 30-minute
+  `nudge-cooldown-ms`, stamping `finding-key -> last-nudged-ms` into
+  `.swarmforge/babysitterd/nudge-dedup.json`. That is the right shape for a
+  condition that will clear: space the reminder out until it does.
+
+  A finding over PERMANENT history never clears. The Article 4.2 detector
+  (pipeline code on `main` outside QA) keys on a commit sha, and a commit is
+  forever, so the cooldown does not eventually stop the nudge - it schedules
+  it, every 30 minutes, for as long as the swarm runs. There is no concept of
+  "investigated, confirmed legitimate or already remediated", nothing
+  analogous to `hotfix_ledger_update.bb --decide approved|waived`.
+
+  ## Observed, 2026-09-02
+
+  The same alert fired three times in one session for `e358e1b46e` (QA's
+  legitimate land) and `b71c941a19` (a hand-merge already root-caused and
+  fixed at `3310a24dfb`, with its systemic guard gap tracked as BL-1341).
+  Both were fully investigated and closed each time. The dedup file confirms
+  both keys ARE being stamped - the mechanism works as designed; the design
+  has no exit.
+
+  ## Why it matters
+
+  The direct cost is a coordinator turn every 30 minutes, indefinitely, on a
+  question already answered twice. The larger one is that a CRIT channel which
+  cannot be closed is a channel that gets ignored, and Article 4.2 findings
+  are the ones that must not be.
+
+  ## How (direction, not mandate)
+
+  Give the finding key a durable, explicitly-recorded waive that the sweep
+  consults before nudging - the hotfix ledger's `--decide` is the working
+  precedent for the posture, not necessarily for the file format. Suggested
+  shape: `swarmforge/scripts/babysitter_waive_lib.bb` holding the pure
+  read/decide, loaded into `babysitter_check.bb` as `babysitter-waive-lib` and
+  consulted at the nudge decision, with a small CLI to record one. Whether the
+  store is JSON beside the dedup file or a tracked YAML is the implementer's
+  call; a tracked store survives a `.swarmforge/` wipe, which is worth
+  weighing.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT change `nudge-cooldown-ms` or the dedup mechanism. It is correct
+    for a clearing condition and this ticket adds a second, separate concept
+    beside it.
+  - Do NOT let the sweep record a waive on its own under any condition,
+    however confident the classification. That is the BL-848 line: a machine
+    may propose, only a recorded decision disposes.
+  - Do NOT make the waive class-wide or pattern-based. One key, one waive. A
+    waive that covers "this kind of finding" would hide the next real one.
+  - Do NOT delete or rewrite dedup or finding history to achieve silence.
+    Suppression is a recorded overlay, never an erasure.
+  - Do NOT extend this to the other detectors' findings in this parcel. If the
+    mechanism generalizes, that is a follow-up with its own evidence.
+
+qa_e2e_procedure: >
+  (1) Reproduce the live case: with no waive recorded, confirm the Article 4.2
+  finding for a permanent-history commit nudges, and nudges again after the
+  cooldown elapses.
+  (2) Record a waive for that finding key and confirm the next sweep sends no
+  nudge for it.
+  (3) The negative case that matters most: with that waive in place, introduce
+  a SECOND Article 4.2 finding over a different commit and confirm it nudges.
+  A waive that silences its own class is worse than the noise it replaced.
+  (4) Confirm the sweep wrote no waive of its own at any point in (1)-(3) -
+  diff the store before and after.
+  (5) Corrupt the waive store (truncate it, then make it unreadable) and
+  confirm the nudge is sent both times. Read the code path as well as the
+  observed behaviour; a fail-open that happens to alert for another reason is
+  not the invariant.
+  (6) Confirm the waived finding is still listable with its key, who waived it
+  and the reason given.
+
+notes: >
+  Pre-mint sweep: grepped backlog/paused, active and hold for babysitter,
+  nudge-dedup, acknowledge and waive. The babysitter hits are epics and
+  unrelated slices; the waive hits are the three BL-848 hotfix stamp tickets.
+  Nothing covers this. Not a re-mint.
+
+  IR-DRY adjudication at mint (do not re-litigate): six medium-confidence
+  findings, every one of them the checker pairing a predicate with its own
+  negation - "a recorded waive" against "no recorded waive", "a nudge is sent"
+  against "no nudge is sent". Those opposites ARE the behaviour under test and
+  collapsing either pair would delete the contract. Similarity scoring does
+  not model negation; nothing here is drift.
+
+source: |
+  Coordinator note 10_20260902T170116Z_003449_from_coordinator_to_specifier:
+  "babysitter Art4.2 CRIT has no ack/suppress - re-fires forever, see
+  evidence", over
+  backlog/evidence/coordinator-babysitter-art42-no-ack-mechanism-repeats-20260902.md
+  (coordinator, 2026-09-02). The coordinator investigated, took the minimal
+  correct action (no re-investigation, nothing changed), and routed the ticket
+  authorship here rather than minting it itself (Article 1.2). Its own framing
+  is carried forward in full: the detector needs an acknowledge/waive path
+  analogous to the hotfix ledger's --decide, so an already-investigated,
+  already-legitimate finding stops costing a coordinator turn every 30 minutes
+  indefinitely.

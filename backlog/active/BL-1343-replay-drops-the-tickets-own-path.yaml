@@ -1,0 +1,205 @@
+id: BL-1343
+title: "The land step subtracts the landing ticket's own path from its own replay when attribution credits it to a sibling, so an approved parcel lands nothing while reading as complete"
+milestone: M8
+type: defect
+severity: critical
+# Raised high -> critical 2026-09-02, same day, on evidence rather than alarm.
+# Minted at high because BL-1338 alone failed CLOSED and no silent loss was
+# observed. Within the hour QA escalated BL-1056-a and then BL-1271 with the
+# same refusal and overlapping entangled sets. Three QA-approved parcels are
+# now held off main, each naming the others as its blocker, so the set cannot
+# clear itself and grows by one every time a further parcel reaches QA on the
+# same branch. Landing is effectively down. The open question from the mint
+# still stands and still matters: if an empty replay set on a differing tip
+# can report success anywhere, silent loss is reachable too.
+status: todo
+epic: swarm-reliability
+priority: 4
+direction: swarm-reported
+assigned_to: coder
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1343-replay-drops-the-tickets-own-path.feature
+
+human_approval: approved
+approval_context: >
+  Minted 2026-09-02 from QA's LAND_ESCALATE on BL-1338 and the coordinator's
+  evidence file. No choice is posed - the behaviour to fix is not in dispute
+  and the remedy is left to the implementer, so there are no ruling_options.
+
+  What to know before approving. BL-1338 was approved by QA at bc1a587622 and
+  could not land: the replay reported "nothing to commit - own-paths identical
+  to origin/main" while a plain two-tree diff of origin/main against that tip
+  shows eight changed paths, including BL-1338's own step handler
+  (specs/pipeline/steps/bl1338RoutingStampFingerprintSteps.js, absent on
+  origin/main, present at the tip). I verified both halves by hand rather than
+  taking the escalation's word. So the ticket's own file was subtracted from
+  its own replay.
+
+  This is not a bug in BL-1272's fail-closed sibling rule, which is behaving
+  exactly as designed, and it is not BL-1332, which is the mirror case (a
+  shared path taken whole, carrying a sibling's line IN, rather than the
+  ticket's own path dropped OUT). It is the attribution walk underneath both.
+  Fixing it should also collapse the eleven-sibling entanglement report on
+  BL-1338 to its real size, because the same unanswered attribution is what
+  inflates it.
+
+invariants:
+  - "A land step never reports a ticket as landed, or as having nothing left to replay, while the approved tip still differs from origin/main on a path that ticket introduced."
+  - "A path the landing ticket's own tip introduces is excluded from its replay only by a positive attribution to an unlanded sibling, and never in silence - an exclusion that would empty the ticket's contribution refuses and names the path, the landing ticket and the sibling."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1343ReplayDropsTheTicketsOwnPathSteps::acceptance handler registered in specs/pipeline/steps/index.js so the runner executes every scenario. Absent at spec time, grep bl1343 returns 0.'
+
+description: |
+  ## What is wrong
+
+  `own-paths` in `swarmforge/scripts/land_step_lib.bb` computes the replay set
+  as the full `origin/main..<tip>` diff minus every path positively attributed
+  to an unlanded sibling and to no other id. Its own docstring promises the
+  landing ticket's paths survive that subtraction, including one "no commit in
+  range tags with its id". On BL-1338 they did not: the whole contribution was
+  subtracted and the replay had nothing to commit.
+
+  ## Verified by hand, 2026-09-02, at the literal shape
+
+  - `git show origin/main:specs/pipeline/steps/bl1338RoutingStampFingerprintSteps.js`
+    -> absent. At `bc1a587622` -> present.
+  - `git diff --name-only origin/main bc1a587622 | grep 1338` -> eight paths,
+    that handler among them.
+  - `land_step_cli.bb` nevertheless reported "land-step replay: nothing to
+    commit for BL-1338 - own-paths identical to origin/main", alongside eleven
+    named unlanded siblings of which only three (BL-1056, BL-1271, BL-1317)
+    are genuinely in flight.
+
+  The two symptoms share one cause. A replay-landed sibling's content reaches
+  main under a NEW commit object, so nothing attributes to its original SHA;
+  `sibling-landed?` correctly refuses to infer landed-ness from that silence
+  (BL-1272, invariant 1) and reports it entangled. The same silence, on the
+  other side of the subtraction, is what let BL-1338's own paths be credited
+  to those siblings instead of to BL-1338.
+
+  ## Why it matters now
+
+  It fails closed here only because the sibling check tripped first. The land
+  step's own message for this state is "nothing to commit", which is also what
+  a genuinely-already-landed ticket produces. A ticket reaching that state
+  without a co-occurring escalation would be indistinguishable from a
+  completed land - approved, closed, and absent from main.
+
+  ## How (direction, not mandate)
+
+  Make the two answers distinguishable and make the subtraction speak. An
+  empty replay set on a tip that still differs from origin/main is a refusal,
+  not a completion; and an exclusion that removes the landing ticket's own
+  contribution says so, naming what it removed and why. Whether that is a
+  richer attribution walk, a guard at the empty-set boundary, or both is the
+  implementer's call.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT relax BL-1272's fail-closed sibling rule. An unanswered attribution
+    reporting a sibling as entangled is deliberate and correct; this ticket
+    fixes what the same silence does to the LANDING ticket's own paths.
+  - Do NOT fold in BL-1332 (a shared path taken whole, leaking a sibling's
+    adjacent line into main). It is the mirror case, separately ruled and
+    separately owned.
+  - Do NOT land BL-1338 as part of this ticket. Unblocking that parcel is a
+    routing decision for the coordinator and QA once this fix exists, and an
+    approval here authorizes only this work (BL-506).
+  - Do NOT reach for a subject grep over origin/main history to decide
+    landed-ness. `sibling-landed?`'s docstring already records why that turns
+    a fail-closed check fail-open.
+
+qa_e2e_procedure: >
+  (1) Rebuild the BL-1338 shape in a fixture: a tip carrying a file absent
+  from origin/main, reached through a branch where sibling-tagged commits also
+  touch it, and confirm the pre-fix behaviour reproduces - own-paths empty,
+  replay nothing to commit.
+  (2) Apply the fix and confirm that same fixture either replays the file or
+  refuses by name. A silent empty set is the failure, whichever way the fix
+  goes.
+  (3) The negative case that matters most: a ticket whose content genuinely IS
+  already on origin/main must still reach "nothing left to replay" without
+  refusing. Do not trade the silent no-op for a land step that cannot finish.
+  (4) Confirm BL-1272's rule is untouched - a sibling with unreadable or
+  unanswered attribution still reports entangled.
+  (5) Re-run the real BL-1338 case against `bc1a587622` and record the
+  entangled-sibling count. It should fall toward the three genuinely in-flight
+  tickets; if it does not, say so rather than adjusting the expectation.
+  (6) Answer the severity question left open above: can an empty replay set on
+  a differing tip report success anywhere in the CLI. Record the answer in the
+  evidence file either way.
+
+notes: >
+  Pre-mint sweep: grepped backlog/paused, active and hold for sibling-landed,
+  LAND_ESCALATE, entangled, own-paths and first-parent. Found BL-1272 (the
+  fail-closed sibling rule, work complete and its fix confirmed on
+  origin/main - 3 BL-1272 mentions in land_step_lib.bb, so its status: blocked
+  note from 2026-08-30 has had its clearing condition met and it is the
+  coordinator's to move to done/), BL-1309 (land_main_publish never asks what
+  the tip carries - a different step), BL-1332 (the mirror case) and BL-1297
+  (done; fixed a merge commit's own paths being empty, not this attribution).
+  None of them covers this. Not a re-mint.
+
+  IR-DRY adjudication at mint (do not re-litigate): three medium-confidence
+  possible-synonym findings, all shared vocabulary rather than drift. "the
+  land step decides" is a When and "the land step refuses" a Then. "a path
+  present at the tip and absent from origin/main" names one path; "the tip
+  still differs from origin/main on at least one path" is an existential over
+  the tip, which is what scenario 04 needs. "no sibling commit touches it" and
+  "no commit is attributed to any ticket for it" are the two distinct
+  preconditions scenarios 01 and 02 exist to separate.
+
+  required_wiring carries the acceptance-handler pin only, deliberately. The
+  fix lands inside own-paths and its callers, which land_step_cli.bb already
+  reaches at land-plan and replay!; an anchor on either is satisfied before
+  and after the fix and would prove nothing (BL-1235). Rather than bank a
+  green that means nothing, this ticket says so. The handler entry is not a
+  wiring proof either - it is the BL-233 pin, because this acceptance file is
+  a live .feature and its handler must land in the same commit.
+
+  ## Second blocked parcel, 2026-09-02 (recorded after mint)
+
+  QA escalated BL-1056-a the same day: approved at `6e6e544400` (140/140 unit
+  and property, 10/10 acceptance, its own qa_e2e_procedure live-checked), and
+  refused by `land_step_cli.bb` with the SAME entangled set as BL-1338 plus
+  BL-1338 itself. Verified by hand: `specs/pipeline/steps/bl1056PriceValidity
+  WindowSteps.js` is present at that tip and absent from origin/main.
+
+  Two approved parcels are now held off main by this, and each names the other
+  in its entangled set, so they cannot clear each other. That is the argument
+  for promoting this ahead of the queue - it is not one stuck ticket, it
+  compounds as every further parcel reaches QA on the same branch.
+
+  One thing NOT claimed: BL-1056-a's evidence shows the entangled-sibling half
+  only. Whether its own-paths also come back empty is unverified, and it may
+  land normally once the sibling set is right. The QA procedure should check
+  BOTH parcels rather than assume one diagnosis covers them.
+
+  ## Third blocked parcel, 2026-09-02 (recorded after mint)
+
+  QA escalated BL-1271's re-fix within the hour: approved at `0ea1c8cb3b`,
+  refused with entangled siblings BL-1040, BL-1056, BL-1283 and the rest of
+  the same set. Three approved parcels now - BL-1338, BL-1056-a, BL-1271 -
+  each naming the others. QA is holding all three correctly and has not
+  force-landed any of them.
+
+  This is what moved the severity to critical. The failure is not one stuck
+  ticket; the entangled set grows by one with every parcel that clears its
+  gates on the same QA branch, and nothing in the set can clear another.
+
+source: |
+  QA note 00_20260902T172849Z_002129_from_QA_to_specifier: "BL-1338 land
+  LAND_ESCALATE: 11 entangled unlanded siblings, see evidence", and
+  backlog/evidence/coordinator-bl1338-land-escalate-facts-for-adjudication-20260902.md
+  (coordinator, 2026-09-02). The coordinator's three findings are carried
+  forward here: its sibling recount and its own-paths finding are the body of
+  this ticket; its third finding, that a live .feature with no handler sits on
+  main from BL-1338's mint, is addressed in the specifier's reply note rather
+  than here - specs/pipeline/generated/ is gitignored and untracked and the
+  acceptance runner takes one feature file at a time, so that is a per-parcel
+  hazard, not a repo-wide red.
