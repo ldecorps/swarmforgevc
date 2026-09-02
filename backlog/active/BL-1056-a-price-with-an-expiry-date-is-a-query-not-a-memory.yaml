@@ -10,6 +10,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1056-a-price-with-an-expiry-date-is-a-query-not-a-memory.feature
+abandoned_commits: [6e6e544400]
 human_approval: approved
 approval_context: >
   This ticket knowingly revisits a decision BL-627 made on purpose, so it
