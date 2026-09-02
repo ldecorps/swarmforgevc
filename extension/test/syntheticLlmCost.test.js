@@ -10,6 +10,7 @@ const {
   isUnknownSyntheticPrice,
   PRICING_TABLE_AS_OF_LABEL,
 } = require('../out/metrics/syntheticLlmCost');
+const { estimateCostUsdAt } = require('../out/metrics/pricingTable');
 
 function origin(overrides = {}) {
   return {
@@ -45,6 +46,39 @@ test('syntheticCostUsd is a positive list-price estimate when tokens are known a
   const synthetic = deriveSyntheticCostUsd(record);
   assert.ok(synthetic > 0);
   assert.equal(record.costUsd, null);
+});
+
+// BL-1056: costed at the invocation's OWN instant, not "now" - the fixture's
+// default `at` ('2026-07-22T12:00:00Z') sits inside Sonnet 5's intro window,
+// which the real clock has since closed, so `> 0` alone cannot tell a correct
+// intro-rate estimate from a silently-wrong list-rate one computed at "now".
+test('BL-1056: synthetic cost is derived at the record\'s OWN instant, not "now"', () => {
+  const record = invocation();
+  const expectedAtRecordTime = estimateCostUsdAt(
+    { inputTokens: 1_000_000, outputTokens: 500_000, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    'claude-sonnet-5',
+    new Date(record.at)
+  );
+  const costIfCostedAtNow = estimateCostUsdAt(
+    { inputTokens: 1_000_000, outputTokens: 500_000, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    'claude-sonnet-5',
+    new Date()
+  );
+  assert.notEqual(
+    expectedAtRecordTime,
+    costIfCostedAtNow,
+    'vacuous unless the real clock has moved past the intro window - if this fires, the window has not yet closed'
+  );
+  assert.equal(deriveSyntheticCostUsd(record), expectedAtRecordTime);
+});
+
+// An unparseable `at` costs at now rather than throwing or returning null -
+// the record's OWN documented fallback (costingInstantFor), otherwise
+// unexercised by any test.
+test('BL-1056: an unparseable record.at still derives a synthetic cost, at now', () => {
+  const record = invocation({ at: 'not-a-timestamp' });
+  const synthetic = deriveSyntheticCostUsd(record);
+  assert.ok(typeof synthetic === 'number' && synthetic > 0, 'must still cost the record, just at now');
 });
 
 test('deriveSyntheticCostUsd stays null for a provider-billed record (billed-cost-unchanged-04)', () => {

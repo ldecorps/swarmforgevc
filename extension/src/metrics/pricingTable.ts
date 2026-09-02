@@ -6,27 +6,59 @@
 // (briefing, bridge) can note "as of pricing table vN" if they choose to.
 //
 // BL-627: rates verified against Anthropic published pricing (2026-07-25).
-// claude-sonnet-5 keeps published list $3/$15 deliberately — introductory
-// $2/$10 through 2026-08-31 is NOT modeled (time-bounded rates stay out of
-// this table; list price during the intro window overstates that seat).
-// No cron / scraper: roster drift is caught by checkPricingCoverage instead.
+// BL-1056 reverses BL-627's one deliberate omission: a rate that is only
+// valid until a date is now expressed HERE, in this table, and nowhere else —
+// the intake's constraint is one source of truth, never a sibling windows
+// file. A row gains `until`/`then` ONLY when it has a window; every other row
+// keeps the one-line shape BL-627 chose, and is costed identically at every
+// instant. No cron / scraper: roster drift is caught by checkPricingCoverage.
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const PRICING_TABLE_VERSION = 2;
+export const PRICING_TABLE_VERSION = 3;
 
-export interface ModelPricing {
+export interface Rates {
   inputPerMTok: number;
   outputPerMTok: number;
   cacheCreatePerMTok: number;
   cacheReadPerMTok: number;
 }
 
+export interface ModelPricing extends Rates {
+  /**
+   * BL-1056, optional: the last day (inclusive, UTC `YYYY-MM-DD`) on which
+   * this row's own rates apply. Absent on every windowless model.
+   */
+  until?: string;
+  /**
+   * The rates that take over the day after `until`. Explicit `null` means the
+   * model has no rate at all after the window, which costs like an unpriced
+   * model — null, never a fallback rate and never zero.
+   */
+  then?: Rates | null;
+}
+
+/** The day Anthropic's introductory Sonnet 5 rate stops applying. */
+export const SONNET_5_INTRO_WINDOW_END = '2026-08-31';
+
+/** How far ahead of a boundary the staleness query starts naming a window. */
+export const PRICING_WINDOW_ALERT_DAYS = 30;
+
 export const PRICING_TABLE: Record<string, ModelPricing> = {
   'claude-opus-4-8': { inputPerMTok: 5, outputPerMTok: 25, cacheCreatePerMTok: 6.25, cacheReadPerMTok: 0.5 },
   'claude-opus-5': { inputPerMTok: 5, outputPerMTok: 25, cacheCreatePerMTok: 6.25, cacheReadPerMTok: 0.5 },
-  'claude-sonnet-5': { inputPerMTok: 3, outputPerMTok: 15, cacheCreatePerMTok: 3.75, cacheReadPerMTok: 0.3 },
+  // The only windowed row: introductory $2/$10 through 2026-08-31, published
+  // list $3/$15 from 2026-09-01. Six of the seven pipeline windows run this
+  // model, so costing it at list inside the window overstated them by 50%.
+  'claude-sonnet-5': {
+    inputPerMTok: 2,
+    outputPerMTok: 10,
+    cacheCreatePerMTok: 2.5,
+    cacheReadPerMTok: 0.2,
+    until: SONNET_5_INTRO_WINDOW_END,
+    then: { inputPerMTok: 3, outputPerMTok: 15, cacheCreatePerMTok: 3.75, cacheReadPerMTok: 0.3 },
+  },
   'claude-haiku-4-5-20251001': { inputPerMTok: 1, outputPerMTok: 5, cacheCreatePerMTok: 1.25, cacheReadPerMTok: 0.1 },
   'claude-fable-5': { inputPerMTok: 10, outputPerMTok: 50, cacheCreatePerMTok: 12.5, cacheReadPerMTok: 1.0 },
 };
@@ -38,20 +70,101 @@ export interface UsageTotalsForCost {
   cacheReadTokens: number;
 }
 
-// Returns null for a model absent from the table rather than guessing a
-// rate or silently reporting zero - an unpriced model must read as "no
-// cost data for this model", never a misleading $0.
-export function estimateCostUsd(usage: UsageTotalsForCost, model: string): number | null {
-  const rates = PRICING_TABLE[model];
-  if (!rates) {
+/** The instant a `YYYY-MM-DD` window stops applying: midnight UTC the next day. */
+function endOfWindow(until: string): number {
+  return Date.parse(`${until}T00:00:00.000Z`) + 24 * 60 * 60 * 1000;
+}
+
+/**
+ * The rates in force for `entry` at `at`, or null when no window covers that
+ * instant. A windowless entry answers its own rates at every instant, exactly
+ * as before BL-1056.
+ */
+export function resolveRatesAt(entry: ModelPricing | undefined, at: Date): Rates | null {
+  if (!entry) {
     return null;
   }
+  if (entry.until === undefined) {
+    return entry;
+  }
+  if (at.getTime() < endOfWindow(entry.until)) {
+    return entry;
+  }
+  return entry.then ?? null;
+}
+
+function costFrom(usage: UsageTotalsForCost, rates: Rates): number {
   return (
     (usage.inputTokens / 1_000_000) * rates.inputPerMTok +
     (usage.outputTokens / 1_000_000) * rates.outputPerMTok +
     (usage.cacheCreationTokens / 1_000_000) * rates.cacheCreatePerMTok +
     (usage.cacheReadTokens / 1_000_000) * rates.cacheReadPerMTok
   );
+}
+
+/**
+ * Cost `usage` for `model` at a named instant. Returns null - never a
+ * fallback rate, never zero - for a model absent from the table AND for one
+ * whose windows leave `at` uncovered: both read as "no cost data for this
+ * model at this instant" (BL-627's honest-null discipline, BL-1056's second
+ * invariant).
+ */
+export function estimateCostUsdAt(
+  usage: UsageTotalsForCost,
+  model: string,
+  at: Date,
+  table: Record<string, ModelPricing> = PRICING_TABLE
+): number | null {
+  const rates = resolveRatesAt(table[model], at);
+  return rates ? costFrom(usage, rates) : null;
+}
+
+/**
+ * Cost `usage` for `model`, at `at` when given and otherwise at the current
+ * instant. Callers that do not care about time keep their one-argument shape
+ * and get the rate in force now.
+ */
+export function estimateCostUsd(
+  usage: UsageTotalsForCost,
+  model: string,
+  at: Date = new Date(),
+  table: Record<string, ModelPricing> = PRICING_TABLE
+): number | null {
+  return estimateCostUsdAt(usage, model, at, table);
+}
+
+export interface PricingWindowAlert {
+  model: string;
+  /** The last day the current rates apply. */
+  until: string;
+  status: 'closed' | 'closing';
+  /** Whole days from `at` to the boundary; negative once it has passed. */
+  daysRemaining: number;
+}
+
+/**
+ * The cliff as a QUERY rather than a memory: every windowed entry whose
+ * boundary has passed, or falls within PRICING_WINDOW_ALERT_DAYS. Windowless
+ * entries are never named - they have nothing to go stale.
+ */
+export function listPricingWindowAlerts(
+  at: Date = new Date(),
+  table: Record<string, ModelPricing> = PRICING_TABLE
+): PricingWindowAlert[] {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const alerts: PricingWindowAlert[] = [];
+  for (const [model, entry] of Object.entries(table)) {
+    if (entry.until === undefined) {
+      continue;
+    }
+    const daysRemaining = Math.floor((endOfWindow(entry.until) - at.getTime()) / dayMs);
+    if (daysRemaining < 0) {
+      alerts.push({ model, until: entry.until, status: 'closed', daysRemaining });
+    } else if (daysRemaining <= PRICING_WINDOW_ALERT_DAYS) {
+      alerts.push({ model, until: entry.until, status: 'closing', daysRemaining });
+    }
+  }
+  return alerts.sort((a, b) => a.daysRemaining - b.daysRemaining || a.model.localeCompare(b.model));
 }
 
 /** Anthropic-native Claude API ids only (bare `claude-…`). */
