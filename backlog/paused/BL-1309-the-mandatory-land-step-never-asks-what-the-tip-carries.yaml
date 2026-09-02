@@ -133,6 +133,11 @@ notes: |
   surface in both directions, which is the point. Per the tool's own
   suggested_action these are not accidental drift, so the wording stands.
 
+  2026-09-02 22:33Z (coordinator): slot opened by BL-1341's close; this ticket is
+  the top expedited candidate (dep BL-1308 done) but SKIPPED for orthogonality
+  (Article 3.2 rule 3): it names land_step_lib.bb / land_step_cli.bb, which
+  BL-1332 (active, coder) is changing now. Re-evaluate once BL-1332 lands.
+  BL-1306 took the slot.
 qa_e2e_procedure: |
   1. On a scratch clone, build a branch tip that merges two tickets' work where
      only one is on `origin/main`. Run
