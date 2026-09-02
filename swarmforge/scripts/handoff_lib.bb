@@ -592,6 +592,23 @@
   [role-name]
   (str (fs/path (target-root) ".swarmforge" "launch" (str role-name ".claude-settings.json"))))
 
+(defn effort-adapt-state-path
+  "Where BL-1317's clean-completion streak for role-name is kept. A counter,
+   not a policy: the decision itself stays pure in seat-difficulty-lib. It
+   lives beside the other .swarmforge/ runtime state rather than in the pack
+   conf, because declared invariant 1 forbids Adapt touching the pack window
+   line on disk at all."
+  [role-name]
+  (str (fs/path (target-root) ".swarmforge" "effort-adapt" (str role-name ".json"))))
+
+(defn- read-effort-adapt-state [role-name]
+  (let [f (effort-adapt-state-path role-name)]
+    (try
+      (if (fs/exists? f)
+        (or (json/parse-string (slurp f) true) {})
+        {})
+      (catch Exception _ {}))))
+
 (defn apply-claim-effort!
   "BL-1316 consumer anchor: retunes (or restores) the current seat's
    reasoning effort at claim/reclaim time from the claimed ticket's
@@ -605,9 +622,16 @@
    Returns the decision map (plus :written? when a file write was
    attempted) so a caller/test can observe what happened without re-deriving
    it."
-  [{:keys [role backend mutation-cost pack-default-effort]}]
-  (let [decision (seat-difficulty-lib/claim-effort-decision
-                  {:backend backend :cost mutation-cost :pack-default-effort pack-default-effort})]
+  [{:keys [role backend mutation-cost pack-default-effort ticket]}]
+  (let [adapted (read-effort-adapt-state role)
+        decision (seat-difficulty-lib/claim-effort-decision
+                  {:backend backend :cost mutation-cost :pack-default-effort pack-default-effort
+                   ;; BL-1317: a climb Adapt recorded for THIS ticket is
+                   ;; carried into its re-claim rather than reset; the pure
+                   ;; decision decides whether it qualifies.
+                   :ticket ticket
+                   :adapted-ticket (:ticket adapted)
+                   :adapted-effort (:effort adapted)})]
     (if-not (:apply? decision)
       decision
       (let [settings-file (claude-settings-path role)]
@@ -645,23 +669,6 @@
                     (seat-difficulty-lib/parse-mutation-cost content))))
               (fs/glob active-dir "**.yaml"))))))
 
-(defn effort-adapt-state-path
-  "Where BL-1317's clean-completion streak for role-name is kept. A counter,
-   not a policy: the decision itself stays pure in seat-difficulty-lib. It
-   lives beside the other .swarmforge/ runtime state rather than in the pack
-   conf, because declared invariant 1 forbids Adapt touching the pack window
-   line on disk at all."
-  [role-name]
-  (str (fs/path (target-root) ".swarmforge" "effort-adapt" (str role-name ".json"))))
-
-(defn- read-effort-adapt-state [role-name]
-  (let [f (effort-adapt-state-path role-name)]
-    (try
-      (if (fs/exists? f)
-        (or (json/parse-string (slurp f) true) {})
-        {})
-      (catch Exception _ {}))))
-
 (defn- read-current-effort
   "The effort the seat is actually running at: the effortLevel BL-1316's
    claim-time apply last wrote into the launch settings file. Absent or
@@ -698,7 +705,7 @@
    Returns the decision map (plus :written? when a settings write was
    attempted, and :clean-streak as it now stands) so a caller or test can
    observe what happened without re-deriving it."
-  [{:keys [role backend mutation-cost pack-default-effort signal]}]
+  [{:keys [role backend mutation-cost pack-default-effort signal ticket]}]
   (try
     (let [baseline (:effort (seat-difficulty-lib/claim-effort-decision
                              {:backend backend
@@ -720,9 +727,18 @@
           ;; again before the next one, or one long clean run would walk a
           ;; seat down the whole ladder a completion at a time.
           next-streak (if (and (:apply? decision) (= sig "clean")) 0 streak)
+          ;; The effort the seat now runs at, remembered against the ticket it
+          ;; was adapted FOR - apply-claim-effort! reads exactly this pair
+          ;; back when that same ticket is re-claimed after a bounce, and
+          ;; ignores it for any other ticket.
+          next-effort (if (:apply? decision) (:effort decision) prior)
           state-file (effort-adapt-state-path role)]
       (fs/create-dirs (fs/parent state-file))
-      (spit state-file (json/generate-string (assoc state :cleanStreak next-streak) {:pretty true}))
+      (spit state-file (json/generate-string (assoc state
+                                                   :cleanStreak next-streak
+                                                   :ticket (when ticket (str ticket))
+                                                   :effort next-effort)
+                                             {:pretty true}))
       (if-not (:apply? decision)
         (assoc decision :clean-streak next-streak)
         (let [settings-file (claude-settings-path role)]

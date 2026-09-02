@@ -170,10 +170,29 @@
    default, so a prior claim's effort never rides into this one unchanged
    (invariant 3). No resolvable effort at all (no cost, no pack default) is
    also :apply? false - nothing to write."
-  [{:keys [backend cost pack-default-effort]}]
+  [{:keys [backend cost pack-default-effort ticket adapted-ticket adapted-effort]}]
   (if-not (effort-lever-backend? backend)
     {:apply? false}
-    (let [effort (or (effort-for-mutation-cost cost) pack-default-effort)]
+    (let [baseline (or (effort-for-mutation-cost cost) pack-default-effort)
+          ;; BL-1317: an Adapt CLIMB recorded for THIS SAME ticket survives
+          ;; its re-claim. Without this the tier would be inert in the only
+          ;; situation it exists for: a bounce sends the same ticket back to
+          ;; the same seat, and the re-claim would reset the effort it just
+          ;; raised, so the seat would rework at exactly the effort that had
+          ;; already proved too low.
+          ;;
+          ;; Deliberately one-directional and ticket-scoped. Only an effort
+          ;; ABOVE the baseline is honoured, so this can never lower a claim
+          ;; below what the ticket's own mutation_cost bought; and only for
+          ;; the same ticket id, so a DIFFERENT ticket's claim still restores
+          ;; its own baseline exactly as before (BL-1316 invariant 3 - a prior
+          ;; ticket's effort never rides into an unrelated claim).
+          climbed (when (and ticket adapted-ticket (= (str ticket) (str adapted-ticket))
+                             (get cost-rank adapted-effort)
+                             (get cost-rank baseline)
+                             (> (get cost-rank adapted-effort) (get cost-rank baseline)))
+                    adapted-effort)
+          effort (or climbed baseline)]
       (if effort
         {:apply? true :effort effort}
         {:apply? false}))))

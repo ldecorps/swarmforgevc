@@ -74,14 +74,15 @@
 (defn record-effort-adapt-for! [target-file]
   (try
     (let [conf (pack-conf-text)
-          me (handoff-lib/current-role)]
+          me (handoff-lib/current-role)
+          ticket (pipeline-stage-lib/extract-ticket-id
+                  (handoff-lib/header-field target-file "task"))]
       (handoff-lib/record-effort-adapt!
        {:role me
         :backend (get (seat-difficulty-lib/parse-seat-backends conf) me)
-        :mutation-cost (handoff-lib/active-ticket-mutation-cost
-                        (pipeline-stage-lib/extract-ticket-id
-                         (handoff-lib/header-field target-file "task")))
+        :mutation-cost (handoff-lib/active-ticket-mutation-cost ticket)
         :pack-default-effort (get (seat-difficulty-lib/parse-seat-efforts conf) me)
+        :ticket ticket
         :signal (if (handoff-lib/non-forwarding? target-file) "bounce" "clean")}))
     (catch Exception _ nil)))
 

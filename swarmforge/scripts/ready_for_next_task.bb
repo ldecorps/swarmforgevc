@@ -42,9 +42,9 @@
        (catch Exception _ nil)))
 
 (defn- mutation-cost-for-task
-  "BL-1317 moved the active-ticket lookup itself into handoff-lib so the
-   claim-time apply here and Adapt's baseline in done_with_current_task.bb
-   read one ticket the same way."
+  "BL-1317 moved the active-ticket lookup itself into handoff-lib, so this
+   claim-time reader and Adapt's baseline in done_with_current_task.bb read
+   one ticket the same way."
   [task]
   (handoff-lib/active-ticket-mutation-cost
    (pipeline-stage-lib/extract-ticket-id task)))
@@ -60,12 +60,18 @@
   (let [me (handoff-lib/current-role)
         backends (seat-difficulty-lib/parse-seat-backends pack-conf)
         efforts (seat-difficulty-lib/parse-seat-efforts pack-conf)
-        cost (mutation-cost-for-task (handoff-lib/header-field handoff-file "task"))]
+        task (handoff-lib/header-field handoff-file "task")
+        ticket (pipeline-stage-lib/extract-ticket-id task)
+        cost (mutation-cost-for-task task)]
     (handoff-lib/apply-claim-effort!
      {:role me
       :backend (get backends me)
       :mutation-cost cost
-      :pack-default-effort (get efforts me)})))
+      :pack-default-effort (get efforts me)
+      ;; BL-1317: named so a climb Adapt recorded for THIS ticket survives
+      ;; its re-claim after a bounce, instead of being reset to the baseline
+      ;; that had already proved too low.
+      :ticket ticket})))
 
 (defn- sibling-busy?
   [ri]
