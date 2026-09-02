@@ -22,6 +22,7 @@ mutation_cost: medium
 slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1343-replay-drops-the-tickets-own-path.feature
+abandoned_commits: [7f9ca8fa99]
 
 human_approval: approved
 approval_context: >
