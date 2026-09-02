@@ -21,6 +21,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1323-main-sync-deadlock-hints-name-overlaps-and-teach-swarm-heal.feature
+abandoned_commits: [409106e775]
 
 human_approval: approved
 human_ruling: |
