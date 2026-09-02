@@ -80,6 +80,24 @@
   [dirty-paths merge-changed-paths]
   (set/intersection (set dirty-paths) (set merge-changed-paths)))
 
+;; ── pure: which of the overlapping paths actually block? ──────────────────
+;; An overlapping path only risks losing something when its dirty content
+;; DIFFERS from what the incoming merge would write there - a dirty path
+;; that already holds byte-for-byte the same content origin/main has at that
+;; path can never be "overwritten with something different" by the merge;
+;; discarding it (git checkout -- <path>, verified empirically: `git merge`
+;; refuses ANY dirty overlap regardless of content equality, so the discard
+;; must happen before the merge is attempted, not left to git to notice on
+;; its own) reproduces exactly the content already there. redundant-paths is
+;; the caller's own PROOF of this (a real content comparison against
+;; origin/main, never inferred) - a path the caller has not checked, or
+;; could not check, is simply absent from redundant-paths and still blocks,
+;; same as today (fail closed, matching unknown-dirty-marker's own posture
+;; one level up in reconcile-decision).
+(defn blocking-overlap
+  [dirty-paths merge-changed-paths redundant-paths]
+  (set/difference (overlapping-paths dirty-paths merge-changed-paths) (set redundant-paths)))
+
 ;; ── sentinel for "the dirty-path check itself could not run" (e.g. `git
 ;;    status` failed) - never a real path, so it can never overlap a real
 ;;    merge-changed path by accident. reconcile-decision special-cases its
@@ -104,11 +122,20 @@
 ;;    that is precisely the state git itself would happily merge. This is a
 ;;    strict widening only: every input that used to reach :should-reconcile
 ;;    (dirty-paths empty) still does, because an empty set overlaps nothing.
+;;
+;;    Second narrowing (this ticket): an overlapping path proven
+;;    content-identical to what the merge would write there (redundant-paths)
+;;    no longer blocks either - it is a stale pre-land duplicate, not
+;;    unsaved work at risk (see blocking-overlap above). redundant-paths
+;;    defaults to empty, so an existing caller that never supplies it - or a
+;;    caller for whom the comparison is uncertain - behaves exactly as
+;;    before: fail closed, never a guess.
 (defn reconcile-decision
-  [{:keys [behind dirty-paths merge-changed-paths]}]
+  [{:keys [behind dirty-paths merge-changed-paths redundant-paths]}]
   (let [behind (or behind 0)
         dirty-paths (or dirty-paths #{})
-        merge-changed-paths (or merge-changed-paths #{})]
+        merge-changed-paths (or merge-changed-paths #{})
+        redundant-paths (or redundant-paths #{})]
     (cond
       (zero? behind) :up-to-date
       (contains? dirty-paths unknown-dirty-marker) :dirty-blocked
@@ -118,7 +145,7 @@
       ;; reconciles (invariant 3: never regress a state the old gate let
       ;; through).
       (and (seq dirty-paths) (contains? merge-changed-paths unknown-dirty-marker)) :dirty-blocked
-      (seq (overlapping-paths dirty-paths merge-changed-paths)) :dirty-blocked
+      (seq (blocking-overlap dirty-paths merge-changed-paths redundant-paths)) :dirty-blocked
       :else :should-reconcile)))
 
 ;; BL-1120: never abort a merge this tick did not start.
@@ -721,6 +748,20 @@
 ;;                                   write to? Only ever called when
 ;;                                   behind>0 - nothing to diff against
 ;;                                   otherwise.
+;;           :redundant-paths!      (fn [overlap-paths] -> coll of path
+;;                                   strings) - of the given overlapping
+;;                                   paths, which are already content-
+;;                                   identical to what the merge would write
+;;                                   there (a real comparison against
+;;                                   origin/main, never a guess)? Read-only -
+;;                                   this adapter must NOT discard anything
+;;                                   itself; the actual discard happens
+;;                                   inside :merge!, immediately before the
+;;                                   real git merge is attempted, so the
+;;                                   discard and the merge cannot drift apart
+;;                                   in time. Only ever called when the
+;;                                   overlap is non-empty - nothing to check
+;;                                   otherwise.
 ;;           :merge!                (fn [] -> {:success bool :error str?}) -
 ;;                                   the SOLE state-mutating call this lib
 ;;                                   ever makes. Called ONLY when
@@ -1006,9 +1047,18 @@
     ((:log! adapters) "master-main-reconcile" "drift" (str "ahead=" ahead " behind=" behind))
     (let [dirty-paths (set ((:dirty-paths! adapters)))
           merge-changed-paths (if (pos? behind) (set ((:merge-changed-paths! adapters))) #{})
+          overlap (overlapping-paths dirty-paths merge-changed-paths)
+          ;; :redundant-paths! is optional (existing callers/tests that never
+          ;; supply it get #{}, so blocking-overlap reduces to overlapping-
+          ;; paths exactly as before this ticket) and only ever invoked when
+          ;; there is something to check.
+          redundant-paths (if (and (seq overlap) (:redundant-paths! adapters))
+                             (set ((:redundant-paths! adapters) overlap))
+                             #{})
           decision (reconcile-decision {:behind behind
                                          :dirty-paths dirty-paths
-                                         :merge-changed-paths merge-changed-paths})
+                                         :merge-changed-paths merge-changed-paths
+                                         :redundant-paths redundant-paths})
           ;; BL-920: shared by both blocked branches below - the first tick
           ;; of a (possibly new) episode still gets exactly the SAME
           ;; coordinator note as before (invariant 1's "additive, never
@@ -1034,8 +1084,11 @@
         :dirty-blocked
         (do
           ((:log! adapters) "master-main-reconcile" "dirty-blocked")
+          ;; Names only the STILL-blocking paths - one already proven
+          ;; content-identical to origin/main (in redundant-paths) is not
+          ;; something the operator needs to go clear by hand.
           (handle-blocked! "dirty" (surface-message {:behind behind :reason :dirty
-                                                       :overlapping-paths (overlapping-paths dirty-paths merge-changed-paths)})))
+                                                       :overlapping-paths (blocking-overlap dirty-paths merge-changed-paths redundant-paths)})))
 
         :should-reconcile
         (if-not enabled?
