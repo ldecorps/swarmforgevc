@@ -1,0 +1,231 @@
+id: BL-1339
+title: "BL-1334's land-approval record is written into the running role's own worktree while every consumer of the approval predicate reads the target root, so the shipped fix never reaches a reader and the false flag it removed is still there"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 16
+direction: agent-reported
+depends_on: [BL-1334]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1339-a-land-approval-record-lands-where-the-predicate-reads.feature
+
+human_approval: approved
+human_ruling: |
+  Writer plus the land-approval store read resolved from the shared root
+approval_context: >
+  How far into the shared predicate the fix should reach. This is the
+  successor to the fork you already ruled on for BL-1334, and it is asked
+  because option 3 edits the code path BL-952 exists to protect.
+
+  Every option writes the record at the one shared root, which is what makes
+  the daemon consumers (handoffd's push sweep, the babysitter's Article 4.2
+  sweep, the deploy freshness gate) work - those are the three that produced
+  the field false-flags, and option 1 alone fixes all of them.
+
+  What option 1 leaves behind is the commit-time guard. It runs in whatever
+  checkout is committing, resolves its stores from there, and so still sees
+  no record. That is not a regression - it sees none today either - but it
+  means the predicate keeps answering differently depending on who asks,
+  which is the property this defect is made of.
+
+  Option 2 resolves the land-approval store from the shared root on the read
+  side too, so the grant half answers the same everywhere. Cost is a visible
+  asymmetry inside one function - one store resolved from the shared root,
+  the bounce stores still from the caller's directory.
+
+  Option 3 removes that asymmetry by moving the machine-local bounce store
+  read onto the shared root as well. Measured while writing this ticket, that
+  also closes a real blind spot: asked from a linked worktree the predicate
+  reads no JSONL bounce store at all, because that store exists only at the
+  target root. In the one case tried the tracked ticket-YAML half still
+  vetoed, which is exactly the union BL-952 built - but the union is running
+  on one leg from every worktree. Against it: this edits the veto path
+  itself, on a ticket whose subject is the grant path.
+
+  Recommendation is option 2. Option 3's finding is real and worth its own
+  ticket where it can be evidenced properly rather than folded into this one.
+ruling_options:
+  - Writer only, the land step writes its record at the shared target root
+  - Writer plus the land-approval store read resolved from the shared root
+  - Writer plus both machine-local stores read from the shared root
+
+invariants:
+  - "A land-approval record has exactly one location, the shared target root, whichever checkout the land step ran from; no second copy is created under a linked worktree."
+  - "Approval never spreads: a record grants approval only while the source it names is itself approved, and a bounce verdict on file still vetoes (BL-952)."
+  - "An unresolvable shared root writes nothing, reports the record as unwritten, and lets the land succeed: the degradation is the sanctioned override, never a guessed path and never a wrong approval (BL-925 invariant 3)."
+
+description: |
+  ## What is wrong
+
+  BL-1334 landed today. Its fix is inert.
+
+  `land_step_lib.bb`'s `record-land-approval!` writes to
+  `<root>/.swarmforge/land-approvals/<YYYY-MM>.jsonl`, where `<root>` is what
+  `land_step_cli.bb`'s `resolve-repo-root` returned: `git rev-parse
+  --show-toplevel` from the invoking process's directory, unless a third
+  argument overrode it. The land step is run by QA (`QA.prompt`: "from the
+  repo root"), and a pipeline role only ever stands in its own linked
+  worktree, so `--show-toplevel` answers
+  `.worktrees/QA` and the record is written there.
+
+  Every consumer resolves the store somewhere else. `is_qa_ancestor.sh` reads
+  the relative path `.swarmforge/land-approvals` from the CALLER's working
+  directory, and all three Babashka callers set that directory to the target
+  root: `handoffd.bb` (`:dir project-root`), `babysitter_check.bb`
+  (`:dir project-root`, with its own comment saying exactly why), and
+  `build_freshness_cli.bb` (`:dir project-root`). The machine-local verdict
+  stores live at the target root - `.swarmforge/bounces/` exists there and
+  nowhere else - so that is the correct root for the readers, and the writer
+  is the half that is wrong.
+
+  Nothing reports the miss. An absent store is "no record ever written" by
+  design, so the predicate falls straight through to plain ancestry - which
+  is precisely the pre-BL-1334 behaviour, with a fully-gated fix on file
+  saying it was removed. The next person to see the babysitter flag a landed
+  replay will be reading a ticket that says this cannot happen any more.
+
+  ## How this got past six stages green
+
+  Every test builds ONE fixture root and runs both the writer and the reader
+  against it, so writer-root and reader-root are the same directory by
+  construction and the defect cannot be expressed. That is true of the
+  acceptance feature, all three shell suites, both Babashka runners and the
+  48-case exhaustive property runner. A single-root fixture cannot fail this
+  way; the acceptance here therefore builds a main checkout AND a linked
+  worktree, and runs the land step from the worktree.
+
+  ## Field state, 2026-09-02
+
+  `.worktrees/QA/.swarmforge/land-approvals/2026-09.jsonl` holds three
+  records (BL-1334's own land `a4b923020c`, and BL-1330's `67eabeafca` and
+  `0a5bffe057`), written by the land step at 15:09-15:12Z.
+
+  An identical file also exists at the target root, mtime 15:20Z - eight
+  minutes later, byte-identical content. That is a hand copy made during the
+  coordinator's investigation, NOT something the land step wrote. Do not read
+  its presence as evidence the writer already resolves the shared root; the
+  worktree copy is the one the tool produced. Leaving the copy in place is
+  fine (it is inert local runtime state) but it is not the fix and it will
+  not survive the next land.
+
+  ## How (direction, not mandate)
+
+  `land_step_lib.bb` ALREADY resolves the shared root correctly, twelve lines
+  above the recorder: `git-common-dir` (BL-1298) answers the same from either
+  checkout and is what `replay!` uses to place its scratch worktree. The
+  recorder does not use it. `handoff-lib/target-root` is the other established
+  resolver for exactly this question - `ready_for_next_task.bb` reaches for it
+  with the comment "the target root (git-common-dir's parent), not in
+  per-worktree .swarmforge state". Either is a fair choice; inventing a third
+  is not.
+
+  Scope on the read side follows the ruling - see `ruling_options`.
+
+constraints: >
+  - Do not weaken the bounce veto. BL-952 exists because reachability from
+    swarmforge-QA was treated as approval and twice-bounced code rode onto
+    origin/main.
+  - Do not add a second approval predicate. One definition, three consumers
+    (BL-925 invariant 2). Moving where a store is resolved is not a second
+    predicate; computing approval anywhere else is.
+  - Fail closed on an unresolvable root (BL-925 invariant 3): unknown is
+    never approved, and an unresolvable root must not fall back to the
+    caller's directory - that silent fallback is this defect.
+  - The land must not die because its bookkeeping did. An unrecorded land
+    still succeeds and still prints its LAND_APPROVAL_UNRECORDED line.
+
+qa_e2e_procedure: >
+  Build a scratch fixture with a main checkout, a `swarmforge-QA` ref, and a
+  linked worktree added with `git worktree add`. Approve a parcel (no bounce
+  record in either store). From INSIDE the linked worktree, run the land
+  step's replay with no explicit repo-root argument. At the parent commit
+  confirm the defect first: the record appears under the linked worktree's
+  `.swarmforge/land-approvals/`, nothing appears under the main checkout's,
+  and `is_qa_ancestor.sh <landed-sha>` run from the main checkout exits
+  non-zero. Repeat at the parcel commit: the record must appear under the
+  main checkout's `.swarmforge/land-approvals/` and NOT under the worktree's,
+  and the same `is_qa_ancestor.sh` call from the main checkout must exit 0
+  with no merge into the QA ref. Then, in the same fixture, land a second
+  parcel from the MAIN checkout and confirm both records are present in the
+  one month file. Write a bounce record for the first landed parcel and
+  confirm the predicate flips back to not-approved. Finally, run the land
+  step with the shared root made unresolvable and confirm it writes no record
+  anywhere, prints LAND_APPROVAL_UNRECORDED, and still exits 0.
+
+out_of_scope: |
+  - Advancing `swarmforge-QA` from the land step. The human ruled that fork on
+    BL-1334 and it is settled; this ticket implements the ruling correctly, it
+    does not reopen it.
+  - The tracked ticket-YAML bounce store (`backlog/**` `bounce_history`). It
+    is tracked content and reading it from the caller's own checkout is
+    intended; only the machine-local JSONL store is at issue, and only under
+    ruling option 3.
+  - The worktree-caller JSONL bounce blind spot as a defect in its own right.
+    Measured and recorded in `notes:` below. Under ruling options 1 and 2 it
+    stays open and wants its own ticket with its own evidence; do not fold it
+    in.
+  - What the replayed tip carries (BL-1309) and sibling reporting (BL-1272),
+    both still paused.
+
+source: |
+  Coordinator `note` (priority 00) to the specifier, 2026-09-02T15:21:09Z:
+
+  > "BL-1334 land-replay approval-record location bug: real defect, needs ticket"
+
+  Investigated from that pointer at mint rather than taken on report; the
+  mechanism below was verified directly and is recorded in `notes:`.
+
+notes: |
+  ## Findings recorded at mint, each verified directly
+
+  - `land_step_cli.bb:36-39` `resolve-repo-root` = `git rev-parse
+    --show-toplevel` from process cwd, overridable only by an explicit third
+    argument. `QA.prompt:153-155` tells QA to run the tool with two arguments.
+  - `git -C .worktrees/QA rev-parse --show-toplevel` ->
+    `/home/carillon/swarmforgevc/.worktrees/QA`. `--git-common-dir` ->
+    `/home/carillon/swarmforgevc/.git`, i.e. the shared root, from either
+    checkout.
+  - `is_qa_ancestor.sh:237` `LAND_DIR=".swarmforge/land-approvals"` - relative,
+    read from the caller's cwd, as its own header states.
+  - `handoffd.bb:2798`, `babysitter_check.bb:341-346`,
+    `build_freshness_cli.bb:182-187` all pass `:dir project-root`.
+  - `.swarmforge/bounces/` exists at the target root only; the QA, coder and
+    architect worktrees each have no `bounces/` directory at all. The
+    machine-local verdict stores are target-root state.
+  - `land_step_lib.bb:382-403` already defines `git-common-dir`;
+    `record-land-approval!` at :405 does not call it.
+
+  ## Adjacent finding, deliberately NOT minted as a sibling
+
+  Asked from a linked worktree the predicate reads no JSONL bounce store,
+  because that store exists only at the target root, so the BL-952 union runs
+  on one leg from every worktree. Tried on `8f19be8a0b` (BL-1324, bounced by
+  the cleaner): from the target root the veto came from the JSONL store; from
+  `.worktrees/QA` the same sha was still vetoed, but by the tracked
+  ticket-YAML half. Both answered 1, so nothing is currently known to have
+  slipped through. That is one observation, not evidence of a class, and the
+  honest disposition is a ticket of its own with a proper sweep behind it -
+  not a fold into this one. Ruling option 3 would close it as a side effect;
+  options 1 and 2 leave it open on purpose.
+
+  ## No `required_wiring:`, deliberately
+
+  Same reasoning BL-1334 recorded, and it still holds. `record-land-approval!`
+  has a live caller today (`land_step_cli.bb:81`) and `is_qa_ancestor.sh` has
+  its three; there is no call site that could be missing, which is the only
+  thing `required_wiring` proves. Any anchor available here would name a
+  resolver call this parcel itself adds, inside the file that declares it, and
+  would go green on its own diff (BL-1235).
+
+  ## Gates at mint
+
+  `gherkin_lint_gate.sh` clean. IR-DRY: 4 findings over 28 step occurrences,
+  all reviewed and intentional - the approved/not-approved polarity pair, the
+  Scenario Outline placeholder against its own concrete instantiation, "a
+  second approved parcel" against "the approved parcel" (scenario 04 needs a
+  distinct second parcel), and "both approval records" against "the approval
+  record" (cardinality is the assertion). No accidental drift.

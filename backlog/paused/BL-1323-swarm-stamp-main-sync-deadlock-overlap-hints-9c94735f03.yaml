@@ -22,7 +22,9 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1323-main-sync-deadlock-hints-name-overlaps-and-teach-swarm-heal.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Certify as landed; mint a follow-up to recompute or clearly label the hint as trip-time-only
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 9c94735f03. Review-only:
   it confirms or refutes the land and never reimplements it. What needs your
@@ -152,6 +154,14 @@ notes: >
   commit's own trailer) — linked to this ticket with `hotfix_ledger_update.bb
   --link` in the same mint, so the recurrent sweep stops nudging the
   coordinator for it.
+
+  Follow-up mint obligation (specifier, 2026-09-02): the recorded
+  human_ruling above is "Certify as landed; mint a follow-up to recompute or
+  clearly label the hint as trip-time-only". That follow-up is deliberately
+  NOT minted yet - it is not Independent until this review has run and said
+  whether the hint is worth recomputing or only worth labelling. The
+  specifier mints it when this parcel lands; this note exists so the
+  obligation is not lost between the tap and the landing.
 
 source: |
   Coordinator note 00_20260901T140203Z_003378_from_coordinator_to_specifier
