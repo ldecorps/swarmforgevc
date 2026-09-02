@@ -197,6 +197,12 @@ it up from the trailer) and `--link` it to its ticket.
   (`3f4f69ec1b`, `70c5e0e5b0`, `5de352ed1d`) reviewed as one resulting state;
   see [BL-1254 how-to](BL-1254-swarm-stamp-expedite-no-verdict-chain.md);
   all three ledger rows pending until human certify/waive.
+- BL-1283 — stamp-off for hotfix `2b67f4b1a2` (freeze the Telegram pipeline
+  board while the pack is asleep, instead of reposting all night against no
+  live seats); review also reports, without acting on, two unrelated
+  `property_suite_standing_allowlist.tsv` rows the same commit added citing
+  a closed ticket (BL-1175) that does not cover either file; ledger row
+  pending until human certify/waive.
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 
