@@ -544,22 +544,39 @@
            {:content "id: BL-E\ntype: feature\nepic: e1\npriority: 1\n"}]
           {"e900" 900 "e1" 1}))
 
-(assert= "top-expedited-paused-candidate-08 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged"
+;; BL-1271 cleaner pass: this assertion and "priority breaks ties among
+;; multiple expedited candidates" (below BL-1271-09) called the identical
+;; 1-arity form against byte-identical fixtures and differed only in name -
+;; duplication the BL-1271 fixture repair exposed, not introduced (both had
+;; built their winner as `type: bug` before that repair). Merged per the
+;; ticket's own invariant 2: the surviving name states BOTH contracts, and
+;; neither original name is dropped.
+(assert= "top-expedited-paused-candidate-08 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged / priority breaks ties among multiple expedited candidates"
          "BL-14"
          (chase-sweep-lib/top-expedited-paused-candidate
           [{:content "id: BL-13\ntype: defect\nseverity: critical\npriority: 90\n"}
-           {:content "id: BL-14\ntype: bug\nseverity: critical\npriority: 5\n"}]))
+           {:content "id: BL-14\ntype: defect\nseverity: critical\npriority: 5\n"}]))
 
 (assert= "top-expedited-paused-candidate: a defect with missing severity: fails CLOSED, not named"
          nil
          (chase-sweep-lib/top-expedited-paused-candidate
           [{:content "id: BL-12\ntype: defect\npriority: 1\n"}]))
 
-(assert= "top-expedited-paused-candidate: priority breaks ties among multiple expedited candidates"
-         "BL-14"
+(assert= "top-expedited-paused-candidate-09 (BL-1271): the RETIRED type: bug never wins the lane, however good its own priority"
+         ;; BL-1095 left expedited-types as #{"defect"} only. The two
+         ;; assertions around this one had been building their winner as
+         ;; `type: bug` and were simply repaired to `defect` - but a repaired
+         ;; literal alone leaves nothing at this call site to notice if the
+         ;; lane were ever widened back, which is the "fixed by widening the
+         ;; guard" failure. So: the bug candidate is given the BETTER own
+         ;; priority (5 vs 90) and the defect the worse one. Under a
+         ;; defect-only lane the bug is filtered out before ranking and BL-B
+         ;; is named; widen expedited-types back to #{"defect" "bug"} and this
+         ;; assertion - and only this one - goes red.
+         "BL-B"
          (chase-sweep-lib/top-expedited-paused-candidate
-          [{:content "id: BL-13\ntype: defect\nseverity: critical\npriority: 90\n"}
-           {:content "id: BL-14\ntype: bug\nseverity: critical\npriority: 5\n"}]))
+          [{:content "id: BL-A\ntype: bug\nseverity: critical\npriority: 5\n"}
+           {:content "id: BL-B\ntype: defect\nseverity: critical\npriority: 90\n"}]))
 
 (let [tmp (mk-tmp)
       paused-dir (str (fs/path tmp "paused"))]
