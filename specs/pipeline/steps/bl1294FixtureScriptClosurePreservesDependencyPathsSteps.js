@@ -31,6 +31,11 @@ function loadFileLine(depPath) {
   return `(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ${quoted})))`;
 }
 
+function cleanupLiveAndFixtureDirs(ctx) {
+  fs.rmSync(ctx.bl1294.liveDir, { recursive: true, force: true });
+  fs.rmSync(ctx.bl1294.fixtureRoot, { recursive: true, force: true });
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -71,19 +76,27 @@ function registerSteps(registry) {
   });
 
   scoped(/^the fixture has a file at "([^"]+)"$/, (ctx, dependency) => {
-    assert.equal(ctx.bl1294.copyError, undefined, `the copy must not fail: ${ctx.bl1294.copyError}`);
-    assert.ok(
-      fs.existsSync(path.join(ctx.bl1294.targetScripts, dependency)),
-      `expected the fixture to have a file at ${dependency}`
-    );
+    try {
+      assert.equal(ctx.bl1294.copyError, undefined, `the copy must not fail: ${ctx.bl1294.copyError}`);
+      assert.ok(
+        fs.existsSync(path.join(ctx.bl1294.targetScripts, dependency)),
+        `expected the fixture to have a file at ${dependency}`
+      );
+    } finally {
+      cleanupLiveAndFixtureDirs(ctx);
+    }
   });
 
   scoped(/^the copy fails naming "([^"]+)"$/, (ctx, dependency) => {
-    assert.ok(ctx.bl1294.copyError, 'expected the copy to fail, but it succeeded');
-    assert.ok(
-      ctx.bl1294.copyError.message.includes(dependency),
-      `the failure must name ${dependency}: ${ctx.bl1294.copyError.message}`
-    );
+    try {
+      assert.ok(ctx.bl1294.copyError, 'expected the copy to fail, but it succeeded');
+      assert.ok(
+        ctx.bl1294.copyError.message.includes(dependency),
+        `the failure must name ${dependency}: ${ctx.bl1294.copyError.message}`
+      );
+    } finally {
+      cleanupLiveAndFixtureDirs(ctx);
+    }
   });
 
   // ── scenario 03: the original incident, reproduced against the real tree ──
@@ -140,6 +153,7 @@ function registerSteps(registry) {
     const queued = fs.readdirSync(outboxDir);
     assert.equal(queued.length, 1, `expected exactly one queued handoff, got: ${JSON.stringify(queued)}`);
     fs.rmSync(ctx.bl1294.root, { recursive: true, force: true });
+    cleanupLiveAndFixtureDirs(ctx);
   });
 }
 
