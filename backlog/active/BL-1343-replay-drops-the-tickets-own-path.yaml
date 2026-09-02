@@ -203,3 +203,6 @@ source: |
   than here - specs/pipeline/generated/ is gitignored and untracked and the
   acceptance runner takes one feature file at a time, so that is a per-parcel
   hazard, not a repo-wide red.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-02, by: architect, blamed: coder, class: behavior, commit: 8916d5cef8, evidence: backlog/evidence/BL-1343-architect-bounce-20260902.md }
