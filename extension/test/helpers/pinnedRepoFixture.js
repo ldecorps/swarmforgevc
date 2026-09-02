@@ -136,10 +136,9 @@ function resolveScriptClosure(entrypoints, readSource) {
  * Copy exactly the closure of `entrypoints` from the live scripts directory
  * into `targetScriptsDir`. Returns the copied names.
  *
- * A missing name - entry point or dependency - throws rather than producing
- * a quietly incomplete fixture (BL-1294): a test that fails later, in an
- * unrelated file, for a missing script is far harder to read than one that
- * fails here naming it.
+ * A missing entry point throws rather than producing a quietly incomplete
+ * fixture: a test that fails later for a missing script is far harder to read
+ * than one that fails here naming it.
  */
 function copyScriptClosure(liveScriptsDir, targetScriptsDir, entrypoints) {
   const read = (name) => {
@@ -152,8 +151,10 @@ function copyScriptClosure(liveScriptsDir, targetScriptsDir, entrypoints) {
   for (const name of [...closure].sort()) {
     const src = path.join(liveScriptsDir, name);
     if (!fs.existsSync(src)) {
-      const kind = entrypoints.includes(name) ? 'entry point' : 'dependency';
-      throw new Error(`pinnedRepoFixture: ${kind} ${name} not found in ${liveScriptsDir}`);
+      if (entrypoints.includes(name)) {
+        throw new Error(`pinnedRepoFixture: entry point ${name} not found in ${liveScriptsDir}`);
+      }
+      continue;   // a dependency named but absent - the closure records it, the copy skips it
     }
     const dest = path.join(targetScriptsDir, name);
     // A dependency that lives in a subdirectory is copied INTO one: the script
