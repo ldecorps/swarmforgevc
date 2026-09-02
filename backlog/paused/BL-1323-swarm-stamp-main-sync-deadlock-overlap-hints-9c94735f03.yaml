@@ -22,7 +22,9 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1323-main-sync-deadlock-hints-name-overlaps-and-teach-swarm-heal.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Certify as landed; mint a follow-up to recompute or clearly label the hint as trip-time-only
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 9c94735f03. Review-only:
   it confirms or refutes the land and never reimplements it. What needs your
