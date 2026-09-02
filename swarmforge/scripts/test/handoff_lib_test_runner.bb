@@ -716,7 +716,6 @@
   (fs/set-posix-file-permissions unreadable "rw-------")
   (fs/delete-tree tmp))
 
-
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")

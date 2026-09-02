@@ -1,0 +1,158 @@
+id: BL-1345
+title: "After the RC-repair hotfix, two halves of the stale-marker failure remain: the health sweep still reads the resident marker on a standing pack, and a pane respawned with another role's script still reports healthy"
+milestone: M8
+type: defect
+severity: medium
+# Lowered high -> medium 2026-09-02 when hotfix 195de28861 landed the CAUSE
+# half. What remains cannot mis-staff a pane; it can only fail to notice one,
+# which is a real gap but not the live outage this was minted for. See the
+# amendment note below - the scope was narrowed, never widened.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+assigned_to: none
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1345-a-stale-router-marker-does-not-staff-a-standing-pack.feature
+
+human_approval: approved
+approval_context: >
+  No choice is posed - the behaviour is not in dispute and the repair is the
+  implementer's, so there are no ruling_options.
+
+  What to know before approving. `.swarmforge/mono-router-active-role` is a
+  rotation-router pack's note of which role its single resident is currently
+  wearing. It is meaningless on a standing pack, where every role has its own
+  pane - but it survives in `.swarmforge/` after the router session that wrote
+  it is gone, and a reader that does not first ask which pack is running will
+  act on it. On 2026-09-02 a marker written at 11:07 reading `coordinator`
+  made both of that day's relaunches staff the specifier's pane with a second
+  coordinator, leaving the swarm with no specifier at all. The failure is
+  quiet from every angle: seven sessions are alive, the pane looks healthy,
+  and only the backing-up inbox eventually says otherwise.
+
+invariants:
+  - "The resident marker is read only where it applies: on a pack that does not declare rotation router, no code path derives a resident role, a resident mailbox state or a dispatch-note state from it."
+  - "A pane running a role other than the one its pack assigns it is never reported healthy by any recheck, however the mismatch arose."
+  - "An absent, unreadable or unknown-role marker yields the same conclusions as no marker at all - never a defaulted role."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1345StaleRouterMarkerStaffingSteps::acceptance handler registered so the runner executes every scenario. Absent at spec time, grep bl1345 returns 0.'
+
+description: |
+  ## Amended 2026-09-02, same day as mint - read this first
+
+  This ticket was minted for the stale-marker outage that produced a duplicate
+  coordinator and zero specifiers twice on 2026-09-02. Roughly twenty minutes
+  later the operator landed hotfix `195de28861`, which fixed the CAUSE:
+  `swarm ensure`'s RC repair classified the first roles.tsv row as the
+  mono-router resident and respawned the marker's launch script into that
+  pane; `rc-launch-role` now resolves through
+  `mono-router-lib/resolve-resident-role`, the one shared BL-1020 decision,
+  which honours the marker only under `rotation-router-mode?`.
+
+  So the original scope is retired, and its certification is BL-1346's
+  (the BL-848 stamp-off for that commit). What follows is the remainder that
+  the hotfix did not touch - narrowed scope, never widened.
+
+  ## What is still wrong
+
+  **1. A third consumer never got BL-1020's rule.** `babysitter_check.bb`
+  resolves `rotation-router?` at line 1110 and then reads
+  `resident-active-role (active-role-marker)` at line 1113 unconditionally,
+  feeding `:resident-active-role` into the sweep along with
+  `:resident-mailbox-empty?` and `:dispatch-note-pending?` derived from it. On
+  a standing pack that is a resident which does not exist, named by a file
+  nobody clears. It is not among `resolve-resident-role`'s callers - verified
+  by grep after the hotfix landed. This cannot mis-staff a pane any more; it
+  can still make the sweep reason from a fiction.
+
+  **2. The recheck called a wrongly-respawned pane healthy.** The operator's
+  own filing records it: after the bad respawn, ensure's report line still
+  read `rc:specifier: HEALTHY`. The post-repair recheck does not notice a pane
+  running a different role's script. With the cause fixed that path is harder
+  to reach, but a health check that cannot see the wrong role in a pane is
+  worth closing on its own - it is the check that would have caught the
+  original outage in twenty minutes rather than two launches.
+
+  ## How (direction, not mandate)
+
+  For 1, route the read through the same shared decision the hotfix used, or
+  gate it on the mode already resolved three lines above. For 2, make the
+  recheck compare the observed process against the role the pack assigns the
+  pane, not merely against "a process is there".
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT re-fix, re-litigate or revert hotfix 195de28861. Its review is
+    BL-1346's, and this ticket assumes it is correct.
+  - Do NOT change what the marker means on a rotation-router pack. Scenario 02
+    is the regression guard; BL-1020 and BL-648 stay exactly as they are.
+  - Do NOT hardcode a per-role expectation. BL-804's invariant 1 forbids a
+    hardcoded per-role standing list and the fix stays derived from topology.
+  - Do NOT take on the RC fixture chore (the operator's side finding 1, that
+    older RC-* fixtures pass vacuously). It is recorded in BL-1346's notes and
+    is its own piece of work.
+
+qa_e2e_procedure: >
+  (1) On a standing pack with a leftover marker naming another role, run the
+  health sweep and confirm no resident role, resident-mailbox state or
+  dispatch-note state is derived from the marker.
+  (2) The negative case that matters most: on a rotation-router pack, the
+  marker must STILL resolve the resident. A fix that makes it inert everywhere
+  has broken BL-1020 and BL-648.
+  (3) Marker absent, unreadable and naming an unknown role: the sweep reaches
+  the same conclusions as with no marker, for both pack shapes.
+  (4) Put a pane into the wrong state deliberately - run one role's launch
+  script in another role's session - and confirm the recheck does NOT report
+  healthy and names expected vs observed.
+  (5) Confirm a correctly staffed pane is still reported healthy. A recheck
+  that cries wolf is worse than the one being replaced.
+  (6) Confirm the hotfix's own RC-7b fixture and `test_swarm_ensure.sh` (51
+  PASS at the hotfix) are still green afterwards.
+
+notes: >
+  Amendment record (Article 3.6 split, specifier, 2026-09-02). Minted at
+  ~18:35 UTC; the coordinator delivered "003452 superseded: marker bug fixed
+  by hotfix 195de28861; stamp via BL-848 only" shortly after. I checked rather
+  than accepting the supersession wholesale: the hotfix does fix the cause, and
+  `git grep resolve-resident-role` confirms `babysitter_check.bb` is still not
+  among its callers and line 1113 is still ungated. So this is a SPLIT, not a
+  retirement - the obsolete half goes to BL-1346, the live remainder stays
+  here under a narrowed scope.
+
+  `human_approval` is deliberately left as it stands. The human approved this
+  ticket before the amendment, and the amendment only NARROWS it - no new
+  choice is posed and nothing was added that they did not approve. Restoring
+  it to pending would read as an erased approval, which is its own hazard.
+
+  IR-DRY: re-run after the rewrite; the remaining findings are the shared
+  phrase "the role its pack assigns it" and the marker-state Given, both
+  deliberate. Not drift.
+
+  required_wiring carries the acceptance-handler pin only. Both fixes change
+  already-wired reads, so an anchor on either file is satisfied before and
+  after and would prove nothing (BL-1235).
+
+source: |
+  Superseding coordinator note
+  10_20260902T181946Z_003456_from_coordinator_to_specifier: "003452
+  superseded: marker bug fixed by hotfix 195de28861; stamp via BL-848 only",
+  and the operator intake
+  backlog/INTAKE-operator-hotfix-rc-launch-role-stale-marker-1788373010454.md,
+  whose side finding 2 ("After the wrong respawn, ensure's report line still
+  read `rc:specifier: HEALTHY` - the post-repair recheck does not catch a pane
+  respawned with a different role's script. Worth its own defect.") is this
+  ticket's second half, quoted verbatim.
+
+  Original mint source, coordinator note
+  10_20260902T180257Z_003452_from_coordinator_to_specifier:
+  "ticket: stale mono-router-active-role marker mis-staffs specifier pane",
+  over backlog/evidence/coordinator-specifier-outage-resolved-root-cause-stale-router-marker-20260902.md
+  (coordinator, 2026-09-02 18:01 UTC), which records the swarm state, the exact
+  operator commands that fixed it, and the two secondary findings carried into
+  notes above rather than dropped.
