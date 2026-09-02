@@ -1,0 +1,181 @@
+id: BL-1336
+title: "Rotation mode is never exported to the process env, so the vitest fork ceiling cannot tell a rotation-router swarm (one live resident) from a full forge (seven live roles) and leaves concurrency on the table"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+priority: 45
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1336-router-rotation-raises-the-vitest-fork-ceiling.feature
+
+human_approval: pending
+approval_context: >
+  Nothing here is broken and nothing is at risk - mono-router packs are not
+  throttled today, they just never got recognised as the roomier topology they
+  are. The whole ticket is a missed opportunity to run the unit suite faster
+  while a router pack is live, and the RAM budget stays the real safety cap
+  whatever ceiling is chosen, so no OOM regression is reachable from this.
+
+  The one thing worth your call is how aggressive to be. A fixed constant is
+  predictable and keeps the ceiling function pure and cheap to test; deriving
+  from the host's core count adapts to whatever machine the swarm runs on but
+  makes the function host-sensitive, which is the sort of thing that turns a
+  deterministic unit test into a flaky one. Option 3 is there because
+  "export the signal now, tune the number later" is a perfectly reasonable
+  answer that still removes the blocker - the missing signal is the actual
+  gap; the number is a preference.
+ruling_options:
+  - Fixed router ceiling above the current default, with the memory budget still the binding cap
+  - Derive the router ceiling from the host core count, with the memory budget still the binding cap
+  - Export the rotation signal now but leave the ceiling at its current default until tuned
+
+invariants:
+  - "Both vitest lanes size their pool through the single resolveVitestWorkerPool composition point: neither lane gains a sizing route the other does not share (BL-935 invariant 3, asserted by BL-871's property lane tests)."
+  - "The memory-derived pool size remains the binding cap - raising the CPU ceiling can never yield a pool larger than the host's RAM budget allows."
+  - "The existing full-forge-on-darwin ceiling of 1 is unchanged by this ticket."
+
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::SWARMFORGE_ROTATION::the rotation signal must be EXPORTED into the role env by the live launcher, beside the existing SWARMFORGE_PACK export - without that line the ceiling logic has nothing to read and the whole ticket is inert'
+
+description: |
+  ## What is wrong
+
+  `resolveVitestForkCeiling`
+  (`extension/src/tools/vitest-worker-memory-budget.ts:93-98`) is BL-935's
+  CPU-axis ceiling, composed into `resolveVitestWorkerPool` and called
+  identically from `extension/vitest.config.mjs` and
+  `extension/vitest.properties.config.mjs`. Verified, it reads in full:
+
+      if (parsedOverride !== undefined) return parsedOverride;
+      if (pack === FULL_FORGE_PACK && platform === MACOS_PLATFORM) return 1;
+      return defaultCeiling;                      // MAX_WORKERS = 6
+
+  It lowers the ceiling for exactly one pack on one platform. Every
+  mono-router pack already falls through to 6 untouched - so this is not a
+  throttle to remove, it is a distinction never drawn.
+
+  Under `config rotation router` the topology is genuinely different.
+  `swarmforge.sh` launches only `swarmforge-coordinator` and ONE resident
+  pane that rotates in place through the pipeline roles; every other role gets
+  `generate_dormant_role_launch_artifacts` - a launch script and settings
+  JSON, with no session and no process. A vitest run inside the resident
+  contends with the coordinator alone, not with seven sibling role sessions,
+  which is the exact contention the ceiling exists to guard against.
+
+  ## The actual blocker: the signal does not exist
+
+  `SWARMFORGE_PACK` is exported into the role env at launch
+  (`swarmforge.sh:2006`, verified). Rotation mode is computed separately
+  (`rotation_value`, `swarmforge.sh:1119-1128`) and written into
+  `$STATE_DIR/swarm-identity` - but never exported. `SWARMFORGE_ROTATION`
+  appears nowhere in the tree. So even if the ceiling logic wanted to know it
+  was under a router, there is no signal for it to read. That missing export
+  is the real content of this ticket; the ceiling number is a preference on
+  top of it.
+
+  Key on ROTATION, not on pack names. Router packs are not a fixed enum -
+  new mono-router packs are minted regularly - so a name-matching predicate
+  would silently miss every future one.
+
+  ## How (direction, not mandate)
+
+  Export the rotation value beside the existing `SWARMFORGE_PACK` export, and
+  read it in `resolveVitestForkCeiling` the same way `pack` and `platform` are
+  read today, inside the SAME single composition point rather than adding a
+  second one. The ceiling value itself is `ruling_options`, above.
+
+constraints: >
+  - Stay inside the one `resolveVitestWorkerPool` composition point. BL-935
+    unified the two lanes precisely so they cannot drift, and BL-871's
+    property tests assert it; adding router logic to one lane only would
+    break that invariant rather than extend it.
+  - Do not pattern-match pack NAMES to detect router mode.
+  - Leave the RAM floor and MAX_WORKERS baseline (BL-422/BL-792) alone. It
+    stays the real safety backstop.
+  - Leave the existing full-forge + darwin special case alone.
+
+qa_e2e_procedure: >
+  Unit-level first, since the ceiling is a pure function: call
+  `resolveVitestForkCeiling` with each combination in the acceptance Examples
+  table and confirm the ceilings, including that full-forge-on-darwin is still
+  1 and that a non-router mono-router pack still gets the default. Then
+  confirm the composition: call `resolveVitestWorkerPool` for a router pack
+  with a `hostRamMB` too small for the raised ceiling and confirm the memory
+  budget wins. For the live signal, launch a swarm under a `config rotation
+  router` pack and confirm `SWARMFORGE_ROTATION` is present in the resident
+  role pane's environment beside `SWARMFORGE_PACK` - at the parent commit it
+  is absent, which is the defect. Finally run both `npm test` and the property
+  lane from `extension/` under that swarm and confirm both report the same
+  resolved pool size.
+
+out_of_scope: |
+  - The RAM-derived floor and the MAX_WORKERS baseline themselves
+    (BL-422/BL-792), referenced but not modified.
+  - The existing full-forge + darwin ceiling of 1.
+  - Stryker's hardcoded `pool: 'threads'` + `maxThreads: 1`, already
+    independent of this mechanism per BL-935's own scoping.
+
+source: |
+  `backlog/INTAKE-raise-vitest-fork-ceiling-under-mono-router-rotation.md`
+  (human ldecorps via Claude Code chat, 2026-09-02), drained 2026-09-02 and
+  archived to `backlog/archive/`.
+
+  Article 5.3 - the human's words, preserved verbatim from that intake:
+
+  > When the live swarm is running a `rotation router` pack, let the vitest
+  > fork pool size above its current default ceiling, because router topology
+  > already guarantees no sibling pipeline role is running tests (or anything
+  > else CPU-heavy) at the same time — the one CPU-contention signal the
+  > ceiling logic exists to protect against does not apply.
+
+  > export a new env var (e.g. `SWARMFORGE_ROTATION`) alongside
+  > `SWARMFORGE_PACK` at `swarmforge.sh:2006`, read the same way
+  > `pack`/`platform` are read today — preferred over pattern-matching pack
+  > *names*, since router packs are not a fixed enum
+
+  > BL-935 deliberately unified the unit and property lanes behind one
+  > `resolveVitestWorkerPool` call so they cannot drift — this change should
+  > stay inside that same single composition point rather than adding a
+  > second one.
+
+  The intake's own framing of the stakes, also verbatim:
+
+  > **Priority:** low/perf — no correctness or safety risk either way; a
+  > missed opportunity to run the unit suite faster while a mono-router pack
+  > is live, not an incident.
+
+notes: |
+  ## Findings recorded at mint — every intake claim re-verified, none assumed
+
+  - `resolveVitestForkCeiling` at `vitest-worker-memory-budget.ts:93-98`
+    matches the intake's quoted logic exactly.
+  - `MAX_WORKERS = 6` at the same file, line 20.
+  - `export SWARMFORGE_PACK='$launch_pack_name'` at `swarmforge.sh:2006` -
+    the exact line the intake cites.
+  - `rotation_value` at `swarmforge.sh:1119-1128`, written into
+    `"$STATE_DIR/swarm-identity"`, and a tree-wide grep for
+    `SWARMFORGE_ROTATION` returns nothing. The signal genuinely does not
+    exist yet.
+
+  ## The intake's open question 3, dispositioned here
+
+  "Coordinator overlap": the coordinator session is live alongside the
+  resident even under router. Treat it as negligible, the same way it is
+  already implicitly treated in the full-forge case (which counts seven
+  sibling ROLES, not eight sessions). The coordinator does bookkeeping, not
+  test runs, and the RAM budget absorbs the difference. Recorded so the
+  implementer does not have to re-derive it; not binding on the operator.
+
+  ## On the `required_wiring` entry
+
+  The anchor names `swarmforge.sh`, the live launcher that runs at every
+  swarm start, and the pattern is the EXPORT itself - which is the production
+  wiring, not a declaration about it. Without that line the ceiling logic has
+  no signal and the ticket is inert, which is exactly the BL-419 shape
+  `required_wiring` exists to catch. This is deliberately NOT an anchor on
+  the ceiling function's own new branch: that branch lives in the module this
+  parcel edits and would go green on its own diff, proving nothing (BL-1235).
