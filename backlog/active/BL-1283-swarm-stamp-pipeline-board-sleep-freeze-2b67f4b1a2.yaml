@@ -116,3 +116,5 @@ source: |
   note "Mint BL-848 stamp ticket for hotfix 2b67f4b1a2 (ledger: pending)",
   2026-08-30. Ledger linked with hotfix_ledger_update.bb --link on mint, so
   the recurrent sweep stops nudging the coordinator for it.
+
+assigned_to: coder
