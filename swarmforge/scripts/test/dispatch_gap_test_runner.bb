@@ -544,7 +544,14 @@
            {:content "id: BL-E\ntype: feature\nepic: e1\npriority: 1\n"}]
           {"e900" 900 "e1" 1}))
 
-(assert= "top-expedited-paused-candidate-08 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged"
+;; BL-1271 cleaner pass: this assertion and "priority breaks ties among
+;; multiple expedited candidates" (below BL-1271-09) called the identical
+;; 1-arity form against byte-identical fixtures and differed only in name -
+;; duplication the BL-1271 fixture repair exposed, not introduced (both had
+;; built their winner as `type: bug` before that repair). Merged per the
+;; ticket's own invariant 2: the surviving name states BOTH contracts, and
+;; neither original name is dropped.
+(assert= "top-expedited-paused-candidate-08 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged / priority breaks ties among multiple expedited candidates"
          "BL-14"
          (chase-sweep-lib/top-expedited-paused-candidate
           [{:content "id: BL-13\ntype: defect\nseverity: critical\npriority: 90\n"}
@@ -570,12 +577,6 @@
          (chase-sweep-lib/top-expedited-paused-candidate
           [{:content "id: BL-A\ntype: bug\nseverity: critical\npriority: 5\n"}
            {:content "id: BL-B\ntype: defect\nseverity: critical\npriority: 90\n"}]))
-
-(assert= "top-expedited-paused-candidate: priority breaks ties among multiple expedited candidates"
-         "BL-14"
-         (chase-sweep-lib/top-expedited-paused-candidate
-          [{:content "id: BL-13\ntype: defect\nseverity: critical\npriority: 90\n"}
-           {:content "id: BL-14\ntype: defect\nseverity: critical\npriority: 5\n"}]))
 
 (let [tmp (mk-tmp)
       paused-dir (str (fs/path tmp "paused"))]
