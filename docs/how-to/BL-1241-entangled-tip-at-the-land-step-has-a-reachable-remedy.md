@@ -129,6 +129,53 @@ specificity of an escalate reason, changed. A landed or byte-identical
 sibling (the `LANDED_SIBLING` line, BL-1272) is still never subtracted —
 `unlanded-siblings` itself is unaffected by this ticket.
 
+## own-paths now refuses a wholesale exclusion by name (BL-1343)
+
+BL-1315 (above) made `own-paths` exclude a path only on positive attribution
+to an unlanded sibling. It left one shape unhandled: what happens when EVERY
+delivered path gets excluded that way. Before BL-1343, that produced
+`{:paths [] :warning nil}` — the exact same shape a tip that is genuinely
+already identical to `origin/main` produces — so `replay!` reported "nothing
+to commit" for both. A landing ticket whose whole contribution had just been
+credited to a sibling was indistinguishable from a ticket with nothing left
+to land: approved, closed, and absent from `origin/main`, with no escalation
+to say so.
+
+Reproduced live on BL-1338's approved tip `bc1a587622`: a plain two-tree diff
+against `origin/main` showed eight changed paths, including BL-1338's own
+step handler, yet the land step reported the empty-replay "nothing to
+commit" message. The same silent-attribution mechanism BL-1272 relies on
+(content that reaches `origin/main` under a replayed sibling's NEW commit
+object attributes to nobody) was crediting BL-1338's own paths away.
+
+`own-paths` now tracks every excluded path alongside the kept set. When the
+loop ends with paths delivered but nothing kept, it returns a refusal
+instead of a silent empty success:
+
+```
+{:paths nil
+ :warning "land-step: refusing to replay <ticket> - every delivered path was
+           attributed to an unlanded sibling, leaving nothing of this
+           ticket's own contribution to land: <path> -> <siblings>; ..."}
+```
+
+`{:paths [] :warning nil}` now means only one thing — the tip really is
+identical to `origin/main` — and a wholesale exclusion always speaks instead
+of reading as a completion. The hardener's own pass on this ticket closed a
+second silent-drop: the warning's path list was built with `(conj excluded
+{...})`, but every pre-existing test exercised exactly one excluded path, so
+a mutant that kept only the LAST exclusion (dropping every earlier one from
+a multi-path refusal) survived unnoticed — a real multi-sibling exclusion
+would have silently under-reported itself, the same silence this ticket
+exists to remove. Scenario 03b now covers two own paths excluded by two
+different siblings and asserts the refusal names both.
+
+This does not touch BL-1272's `LANDED_SIBLING` accounting, or BL-1332 (a
+shared path taken whole, carrying a sibling's line IN) — BL-1343 is BL-1332's
+mirror, the ticket's own path dropped OUT, and fixes the subtraction
+underneath both without relaxing either. Acceptance:
+`specs/features/BL-1343-replay-drops-the-tickets-own-path.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
