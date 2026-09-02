@@ -45,6 +45,12 @@ mk_commit() { # <file> <subject> -> echoes the sha
 # The APPROVED SOURCE: QA's own reviewed commit, and the QA ref is pinned to
 # it. This is the parcel QA approved.
 APPROVED_SOURCE="$(mk_commit src.js 'QA-approved parcel work')"
+# A source that IS reachable from swarmforge-QA (so it would read approved by
+# ancestry alone) but was ALSO bounced - recorded ONLY in a tracked ticket's
+# bounce_history, with NO JSONL entry anywhere. source_is_approved()'s
+# YAML_TOKENS check is the only thing that can catch this; the JSONL-only
+# mutant this file otherwise exercises (row 3 below) would not.
+YAML_BOUNCED_SOURCE="$(mk_commit yaml-bounced.js 'parcel QA bounced via ticket YAML only')"
 g branch swarmforge-QA
 # A source QA bounced - reachable from nothing, approved by nothing.
 BOUNCED_SOURCE="$(mk_commit bounced.js 'parcel QA sent back')"
@@ -54,6 +60,7 @@ REPLAY_SHA="$(mk_commit replay.js 'BL-1: tip-pure replay onto origin/main')"
 REPLAY_OF_BOUNCED="$(mk_commit replay2.js 'BL-2: tip-pure replay onto origin/main')"
 UNRELATED_SHA="$(mk_commit unrelated.js 'pipeline code belonging to no approved parcel')"
 REPLAY_OF_UNAPPROVED="$(mk_commit replay3.js 'BL-3: tip-pure replay onto origin/main')"
+REPLAY_OF_YAML_BOUNCED="$(mk_commit replay4.js 'BL-4: tip-pure replay onto origin/main')"
 
 STORE_DIR="$ROOT/.swarmforge/land-approvals"
 mkdir -p "$STORE_DIR"
@@ -61,12 +68,27 @@ mkdir -p "$STORE_DIR"
   printf '{"at":"2026-09-02T00:00:00Z","ticket":"BL-1","commit":"%s","source":"%s"}\n' "${REPLAY_SHA:0:10}" "${APPROVED_SOURCE:0:10}"
   printf '{"at":"2026-09-02T00:01:00Z","ticket":"BL-2","commit":"%s","source":"%s"}\n' "${REPLAY_OF_BOUNCED:0:10}" "${BOUNCED_SOURCE:0:10}"
   printf '{"at":"2026-09-02T00:02:00Z","ticket":"BL-3","commit":"%s","source":"%s"}\n' "${REPLAY_OF_UNAPPROVED:0:10}" "${UNRELATED_SHA:0:10}"
+  printf '{"at":"2026-09-02T00:05:00Z","ticket":"BL-4","commit":"%s","source":"%s"}\n' "${REPLAY_OF_YAML_BOUNCED:0:10}" "${YAML_BOUNCED_SOURCE:0:10}"
 } > "$STORE_DIR/2026-09.jsonl"
 
 # A bounce on file for BOUNCED_SOURCE, in the JSONL store QA actually writes.
 mkdir -p "$ROOT/.swarmforge/bounces"
 printf '{"at":"2026-09-02T00:03:00Z","by":"QA","commit":"%s","evidence":"x"}\n' "${BOUNCED_SOURCE:0:10}" \
   > "$ROOT/.swarmforge/bounces/2026-09.jsonl"
+
+# A bounce on YAML_BOUNCED_SOURCE, recorded ONLY in a tracked ticket's
+# bounce_history - no JSONL entry for it anywhere in this fixture.
+mkdir -p "$ROOT/backlog/active"
+cat > "$ROOT/backlog/active/BL-9-fixture-ticket.yaml" <<EOF
+id: BL-9
+title: "fixture ticket for test_is_qa_ancestor_land_replay_store.sh"
+status: todo
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-02, by: QA, blamed: coder, class: unit, commit: ${YAML_BOUNCED_SOURCE:0:10}, evidence: backlog/evidence/BL-9-fixture.md }
+EOF
+g add -A
+g commit -q -m "BL-9 bounce_history"
 
 run_predicate() { # <sha> -> sets OUT and EXIT_CODE
   set +e
@@ -94,6 +116,15 @@ check "a pipeline commit belonging to no approved parcel is NOT approved" \
 #    not approved, however cleanly the mapping is recorded.
 run_predicate "$REPLAY_OF_BOUNCED"
 check "a replay whose source carries a bounce verdict is NOT approved" \
+  '[[ $EXIT_CODE -eq 1 ]]'
+
+# ── row 3b: BL-952's veto wins even when the SOURCE's only bounce record ──
+#    lives in a ticket's bounce_history (YAML store), not the JSONL store -
+#    source_is_approved()'s two veto checks are independent guards and each
+#    needs its own fixture (a JSONL-only bounce, row 3 above, cannot exercise
+#    this branch at all).
+run_predicate "$REPLAY_OF_YAML_BOUNCED"
+check "a replay whose source carries a YAML-only bounce verdict is NOT approved" \
   '[[ $EXIT_CODE -eq 1 ]]'
 
 # ── row 4: the store is a MAPPING, not a rubber stamp. A record naming a ───
