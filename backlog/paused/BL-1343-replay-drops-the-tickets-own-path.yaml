@@ -158,6 +158,24 @@ notes: >
   wiring proof either - it is the BL-233 pin, because this acceptance file is
   a live .feature and its handler must land in the same commit.
 
+  ## Second blocked parcel, 2026-09-02 (recorded after mint)
+
+  QA escalated BL-1056-a the same day: approved at `6e6e544400` (140/140 unit
+  and property, 10/10 acceptance, its own qa_e2e_procedure live-checked), and
+  refused by `land_step_cli.bb` with the SAME entangled set as BL-1338 plus
+  BL-1338 itself. Verified by hand: `specs/pipeline/steps/bl1056PriceValidity
+  WindowSteps.js` is present at that tip and absent from origin/main.
+
+  Two approved parcels are now held off main by this, and each names the other
+  in its entangled set, so they cannot clear each other. That is the argument
+  for promoting this ahead of the queue - it is not one stuck ticket, it
+  compounds as every further parcel reaches QA on the same branch.
+
+  One thing NOT claimed: BL-1056-a's evidence shows the entangled-sibling half
+  only. Whether its own-paths also come back empty is unverified, and it may
+  land normally once the sibling set is right. The QA procedure should check
+  BOTH parcels rather than assume one diagnosis covers them.
+
 source: |
   QA note 00_20260902T172849Z_002129_from_QA_to_specifier: "BL-1338 land
   LAND_ESCALATE: 11 entangled unlanded siblings, see evidence", and
