@@ -8,6 +8,7 @@
 
 (ns handoff-lib-test-runner
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "handoff_lib.bb")))
@@ -541,6 +542,154 @@
            {:apply? true :effort "high" :written? false}
            (handoff-lib/apply-claim-effort!
             {:role "coder" :backend "claude" :mutation-cost "high" :pack-default-effort "low"})))
+
+;; ── BL-1317: record-effort-adapt! (the IO edge over adapt-effort-decision) ──
+;; Reuses BL-1316's fixture: the file Adapt rewrites is the SAME launch
+;; settings file the claim-time apply writes, because "in-memory / respawn
+;; only" (declared invariant 1) means the effort reaches the agent through
+;; the file a respawn reads - never through the pack conf.
+
+(defn bl1317-fixture!
+  "BL-1316's launch fixture plus a pack conf, so a test can assert the conf
+   is byte-identical afterwards (declared invariant 1)."
+  [role starting-effort]
+  (let [dir (bl1316-fixture! role starting-effort)
+        conf-dir (fs/path dir "swarmforge")]
+    (fs/create-dirs conf-dir)
+    (spit (str (fs/path conf-dir "swarmforge.conf"))
+          (str "active_backlog_max_depth 2\n"
+               "window " role " claude " role " --effort medium\n"))
+    dir))
+
+(defmacro bl1317-with-fixture [[dir-sym role starting-effort] & body]
+  `(let [~dir-sym (bl1317-fixture! ~role ~starting-effort)]
+     (handoff-lib/set-project-root! ~dir-sym)
+     (try
+       ~@body
+       (finally (handoff-lib/set-project-root! nil)))))
+
+(defn bl1317-conf-text [dir]
+  (slurp (str (fs/path dir "swarmforge" "swarmforge.conf"))))
+
+(defn bl1317-effort [dir role]
+  (-> (slurp (str (fs/path dir ".swarmforge" "launch" (str role ".claude-settings.json"))))
+      (json/parse-string true)
+      :effortLevel))
+
+;; A bounce climbs one notch above the claim-time baseline, and the pack conf
+;; on disk is untouched (feature scenario bounce-climbs-one-notch-01).
+(bl1317-with-fixture [dir "coder" "medium"]
+  (let [before-conf (bl1317-conf-text dir)
+        result (handoff-lib/record-effort-adapt!
+                {:role "coder" :backend "claude" :mutation-cost "medium"
+                 :pack-default-effort "medium" :signal "bounce"})]
+    (assert-true "record-effort-adapt!: a bounce applies" (:apply? result))
+    (assert= "record-effort-adapt!: a bounce climbs one notch" "high" (:effort result))
+    (assert= "record-effort-adapt!: the seat's respawn effort is now high" "high" (bl1317-effort dir "coder"))
+    (assert= "record-effort-adapt! invariant 1: the pack conf on disk is unchanged"
+             before-conf (bl1317-conf-text dir))))
+
+;; A clean completion short of the streak changes nothing but the counter;
+;; the third one gives a notch back, and no further one goes below the
+;; BL-1316 baseline (feature scenario clean-streak-may-drop-02).
+(bl1317-with-fixture [dir "coder" "high"]
+  (let [call (fn [] (handoff-lib/record-effort-adapt!
+                     {:role "coder" :backend "claude" :mutation-cost "medium"
+                      :pack-default-effort "medium" :signal "clean"}))
+        before-conf (bl1317-conf-text dir)
+        r1 (call) r2 (call) r3 (call)]
+    (assert-false "record-effort-adapt!: one clean completion is not a streak" (:apply? r1))
+    (assert-false "record-effort-adapt!: two clean completions are not a streak" (:apply? r2))
+    (assert= "record-effort-adapt!: the counter accumulates across completions" 2 (:clean-streak r2))
+    (assert-true "record-effort-adapt!: the third clean completion drops a notch" (:apply? r3))
+    (assert= "record-effort-adapt!: the notch given back lands on the baseline" "medium" (bl1317-effort dir "coder"))
+    (assert= "record-effort-adapt!: a spent streak starts over, so one long clean run cannot walk the ladder down"
+             0 (:clean-streak r3))
+    (let [r4 (call) r5 (call) r6 (call)]
+      (assert-false "record-effort-adapt!: no further drop below the BL-1316 baseline (r4)" (:apply? r4))
+      (assert-false "record-effort-adapt!: no further drop below the BL-1316 baseline (r5)" (:apply? r5))
+      (assert-false "record-effort-adapt!: no further drop below the BL-1316 baseline (r6)" (:apply? r6))
+      (assert= "record-effort-adapt!: the seat stays at its baseline" "medium" (bl1317-effort dir "coder")))
+    (assert= "record-effort-adapt! invariant 1: a whole clean run still never touches the pack conf"
+             before-conf (bl1317-conf-text dir))))
+
+;; A bounce spends whatever clean run preceded it - under-thinking now
+;; outweighs having been clean before.
+(bl1317-with-fixture [dir "coder" "high"]
+  (handoff-lib/record-effort-adapt!
+   {:role "coder" :backend "claude" :mutation-cost "medium" :pack-default-effort "medium" :signal "clean"})
+  (handoff-lib/record-effort-adapt!
+   {:role "coder" :backend "claude" :mutation-cost "medium" :pack-default-effort "medium" :signal "bounce"})
+  (let [after (handoff-lib/record-effort-adapt!
+               {:role "coder" :backend "claude" :mutation-cost "medium"
+                :pack-default-effort "medium" :signal "clean"})]
+    (assert= "record-effort-adapt!: a bounce resets the clean streak" 1 (:clean-streak after))
+    (assert-false "record-effort-adapt!: so the next clean completion cannot drop a notch" (:apply? after))))
+
+;; A backend with no lever is never sent an effort at all (feature scenario
+;; no-lever-skips-03).
+(bl1317-with-fixture [dir "coder@cursor2" "n/a"]
+  (let [before (slurp (str (fs/path dir ".swarmforge" "launch" "coder@cursor2.claude-settings.json")))
+        before-conf (bl1317-conf-text dir)
+        result (handoff-lib/record-effort-adapt!
+                {:role "coder@cursor2" :backend "cursor" :mutation-cost "high"
+                 :pack-default-effort "low" :signal "bounce"})]
+    (assert-false "record-effort-adapt! invariant 2 carried forward: a lever-less backend applies nothing"
+                  (:apply? result))
+    (assert= "record-effort-adapt!: and names no effort a lever-less backend cannot take" nil (:effort result))
+    (assert= "record-effort-adapt!: its settings file is untouched"
+             before (slurp (str (fs/path dir ".swarmforge" "launch" "coder@cursor2.claude-settings.json"))))
+    (assert= "record-effort-adapt! invariant 1: and so is the pack conf" before-conf (bl1317-conf-text dir))))
+
+;; A missing settings file leaves the completion alone rather than throwing:
+;; the completion has already happened, and a dial that cannot be retuned
+;; must never turn a finished parcel into a failure. It also fails CLOSED
+;; rather than assuming a rung - with no file there is no effort the seat is
+;; known to be running at, and guessing one would write a flag the backend
+;; may not accept. In particular it must not CREATE a settings file the
+;; launcher never wrote.
+(bl1317-with-fixture [dir "coder" nil]
+  (let [result (handoff-lib/record-effort-adapt!
+                {:role "coder" :backend "claude" :mutation-cost "high"
+                 :pack-default-effort "low" :signal "bounce"})]
+    (assert-false "record-effort-adapt!: a missing settings file applies nothing, and does not throw"
+                  (:apply? result))
+    (assert-true "record-effort-adapt!: and says why, rather than guessing a rung"
+                 (str/includes? (str (:reason result)) "unknown prior effort"))
+    (assert-false "record-effort-adapt!: no settings file is invented for a seat the launcher never wrote one for"
+                  (fs/exists? (str (fs/path dir ".swarmforge" "launch" "coder.claude-settings.json"))))))
+
+;; A climb Adapt recorded for a ticket survives that SAME ticket's re-claim -
+;; without this the tier is inert exactly where it matters, because a bounce
+;; sends the same ticket back to the same seat and the re-claim would reset
+;; the effort that had just been raised.
+(bl1317-with-fixture [dir "coder" "medium"]
+  (handoff-lib/record-effort-adapt!
+   {:role "coder" :backend "claude" :mutation-cost "medium" :pack-default-effort "medium"
+    :ticket "BL-9001" :signal "bounce"})
+  (assert= "the bounce climbed the seat to high" "high" (bl1317-effort dir "coder"))
+  (let [same (handoff-lib/apply-claim-effort!
+              {:role "coder" :backend "claude" :mutation-cost "medium"
+               :pack-default-effort "medium" :ticket "BL-9001"})]
+    (assert= "re-claiming the SAME ticket keeps the climbed effort" "high" (:effort same))
+    (assert= "and the settings file still says high" "high" (bl1317-effort dir "coder")))
+  (let [other (handoff-lib/apply-claim-effort!
+               {:role "coder" :backend "claude" :mutation-cost "medium"
+                :pack-default-effort "medium" :ticket "BL-9002"})]
+    (assert= "BL-1316 invariant 3 still holds: a DIFFERENT ticket's claim restores its own baseline"
+             "medium" (:effort other))
+    (assert= "and the settings file is back to the baseline" "medium" (bl1317-effort dir "coder"))))
+
+;; The carry-over is one-directional: it can never pull a claim BELOW what
+;; the ticket's own mutation_cost bought.
+(bl1317-with-fixture [dir "coder" "medium"]
+  (handoff-lib/record-effort-adapt!
+   {:role "coder" :backend "claude" :mutation-cost "low" :pack-default-effort "low"
+    :ticket "BL-9003" :signal "clean"})
+  (let [claimed (handoff-lib/apply-claim-effort!
+                 {:role "coder" :backend "claude" :mutation-cost "high"
+                  :pack-default-effort "low" :ticket "BL-9003"})]
+    (assert= "a recorded effort below the claim-time baseline is ignored" "high" (:effort claimed))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
