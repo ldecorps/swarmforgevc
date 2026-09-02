@@ -204,8 +204,25 @@ export interface TicketStageEntry {
  * predates the qualifier. An entry with no status is reported as `last-known`,
  * which is the honest reading of "we know where it was and nothing more".
  */
+// BL-1040: seat identity never escapes the mailbox layer on the OBSERVATION
+// path either. BL-983 declared that invariant and enforced it only where a
+// seat FORWARDS work; a seat key (`coder@sonnet2`) still survived into the
+// stage map, through the held-role grouping, and reached a renderer that
+// knows only bare stage names - matching nothing and painting the ticket as
+// not-started while the seat was actively working it.
+//
+// This is the READER chokepoint, and folding here is what closes the stale
+// -file case: the stage map is a file on disk that outlives the process
+// which wrote it, so a map recorded by a pre-fix producer must still read
+// correctly. Normalising at the source (pipeline_stage_cli.bb) and folding
+// here are not alternatives - they cover different populations of map.
+export function stageOfSeat(roleOrSeat: string): string {
+  const at = roleOrSeat.indexOf('@');
+  return at === -1 ? roleOrSeat : roleOrSeat.slice(0, at);
+}
+
 function normaliseBareRoleStage(value: string): TicketStageEntry | undefined {
-  return value ? { stage: value, status: TICKET_STAGE_STATUS_LAST_KNOWN } : undefined;
+  return value ? { stage: stageOfSeat(value), status: TICKET_STAGE_STATUS_LAST_KNOWN } : undefined;
 }
 
 function normaliseObjectStage(value: object): TicketStageEntry | undefined {
@@ -214,7 +231,7 @@ function normaliseObjectStage(value: object): TicketStageEntry | undefined {
     return undefined;
   }
   return {
-    stage: entry.stage,
+    stage: stageOfSeat(entry.stage),
     status: (entry.status as TicketStageStatus) ?? TICKET_STAGE_STATUS_LAST_KNOWN,
     asOf: entry.asOf,
     healthDot: entry.healthDot,

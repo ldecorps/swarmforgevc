@@ -13,6 +13,7 @@ const {
   mailboxBaseDir,
   readTicketStageMap,
   invertTicketStageToRoleHeldTickets,
+  normaliseTicketStageEntry,
 } = require('../out/swarm/swarmState');
 
 function mkTmp() {
@@ -359,4 +360,41 @@ test('BL-464: invertTicketStageToRoleHeldTickets groups ticket ids under their r
 
 test('BL-464: invertTicketStageToRoleHeldTickets returns an empty map for an empty stage map', () => {
   assert.deepEqual(invertTicketStageToRoleHeldTickets({}), {});
+});
+
+// ── BL-1040: seat identity never escapes on the OBSERVATION path ──────────
+// BL-983 declared invariant 3 and enforced it only where a seat FORWARDS.
+// Where the board READS who holds what, a seat key (`coder@sonnet2`) used to
+// survive into the stage map and then into the held-role grouping, matching
+// no bare stage name at the renderer and painting a busy ticket as
+// not-started. The reader chokepoint folds the seat onto its stage, which is
+// what closes the STALE-FILE case: the stage map is a file on disk that
+// outlives the producer that wrote it, so a map written before the source
+// fix must still read correctly.
+
+test('BL-1040: normaliseTicketStageEntry folds a seat id onto its stage', () => {
+  assert.equal(normaliseTicketStageEntry('coder@sonnet2')?.stage, 'coder');
+  assert.equal(normaliseTicketStageEntry({ stage: 'coder@sonnet2', status: 'holding' })?.stage, 'coder');
+});
+
+test('BL-1040: a bare stage is unchanged by the seat fold (no regression for the ordinary case)', () => {
+  assert.equal(normaliseTicketStageEntry('coder')?.stage, 'coder');
+  assert.equal(normaliseTicketStageEntry({ stage: 'cleaner', status: 'holding' })?.stage, 'cleaner');
+});
+
+test('BL-1040: invertTicketStageToRoleHeldTickets groups a seat-held ticket under the bare stage, not the seat', () => {
+  assert.deepEqual(
+    invertTicketStageToRoleHeldTickets({ 'BL-995': 'coder', 'BL-993': 'coder@sonnet2' }),
+    { coder: ['BL-995', 'BL-993'] }
+  );
+});
+
+test('BL-1040: a stage map recorded by an older producer still inverts onto the stage (stale file on disk)', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge', 'board'));
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'board', 'ticket-stage-map.json'),
+    JSON.stringify({ 'BL-993': { stage: 'coder@sonnet2', status: 'holding' } })
+  );
+  assert.deepEqual(invertTicketStageToRoleHeldTickets(readTicketStageMap(tmp)), { coder: ['BL-993'] });
 });

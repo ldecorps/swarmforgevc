@@ -128,5 +128,9 @@ still owns it.
 - [One unified pipeline grid across swarms](BL-1009-one-unified-pipeline-grid-across-swarms.md)
   — the caption/badge layer this ticket's data feeds, unchanged by it.
 - [Pipeline Board: current-folder links](BL-513-pipeline-board-current-folder-links.md)
+- [Seat identity never escapes the observation path either](BL-1040-seat-identity-never-escapes-on-the-observation-path.md)
+  — a seat-qualified stage-map key now folds onto its bare stage before the
+  precedence reconciliation this doc describes, closing a separate
+  not-started false-negative for a multi-seat stage.
 
 Acceptance: `specs/features/BL-670-pipeline-board-last-known-stage-and-health.feature`.
