@@ -19,7 +19,7 @@ slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1343-replay-drops-the-tickets-own-path.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted 2026-09-02 from QA's LAND_ESCALATE on BL-1338 and the coordinator's
   evidence file. No choice is posed - the behaviour to fix is not in dispute
