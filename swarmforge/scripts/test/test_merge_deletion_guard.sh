@@ -322,6 +322,13 @@ set -e
 COUNT13="$(echo "$OUT13" | grep -c "bl0007SharedSteps.js" || true)"
 [[ "$COUNT13" -eq 1 ]] || fail "13: a path dropped from both sides must be reported once, got $COUNT13 lines: $OUT13"
 pass "13: a path dropped from both sides is reported once, not twice"
+# The single finding must still name BOTH sides, not just whichever one was
+# seen last - a dedup that overwrites instead of appending would pass the
+# count-of-1 check above while silently losing which side(s) actually
+# carried the drop.
+[[ "$OUT13" == *"this branch"* ]] || fail "13b: the single finding must still name 'this branch': $OUT13"
+[[ "$OUT13" == *"the incoming branch"* ]] || fail "13b: the single finding must still name 'the incoming branch': $OUT13"
+pass "13b: a path dropped from both sides names BOTH sides in its one finding"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
 echo "ALL PASS"
