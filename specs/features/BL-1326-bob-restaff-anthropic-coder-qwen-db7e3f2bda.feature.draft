@@ -1,3 +1,13 @@
+# RETIRED 2026-09-02 (specifier). BL-1326 was retired unbuilt as a duplicate:
+# closed_as superseded-by-BL-1330. See
+# backlog/done/BL-1326-bob-restaff-anthropic-coder-qwen-db7e3f2bda.yaml.
+# Demoted from .feature to .feature.draft so it is off the executable surface.
+# No bl1326 handler was ever registered, so no coverage is lost. Scenarios
+# below are preserved BYTE-IDENTICAL - retired, never reworded. The change
+# these scenarios review is real and IS certified, under BL-1330 against the
+# SHA that actually landed (441fd35112); this file reviews the orphaned twin
+# db7e3f2bda, which is on no branch.
+
 Feature: Swarm stamp-off for the bob pack restaff to an Anthropic starting cast with a coder-only Qwen Token Plan seat
 
   Hotfix db7e3f2bda landed on main outside the pipeline. These scenarios
