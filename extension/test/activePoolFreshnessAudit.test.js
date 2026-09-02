@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   listActiveTicketRefs,
@@ -252,7 +253,14 @@ test('checkFreshnessViaCli runs the real built CLI and returns its stdout', () =
   // Real repo root, a ticket id unlikely to exist — exercises the CLI's own
   // fail-closed "no ticket found" path deterministically, never asserting
   // on a specific real ticket's live verdict.
-  const root = path.join(__dirname, '..', '..');
+  //
+  // BL-1066: a fixed `../..` walk-up from __dirname lands one level too
+  // shallow under a Stryker sandbox (the sandbox dir IS the extension root,
+  // not a child of one), so resolveDeprecateCheckCliPath's
+  // `<root>/extension/out/tools/deprecate-check.js` never resolves there and
+  // checkFreshnessViaCli silently returns ''. `git rev-parse --show-toplevel`
+  // finds the true repo root regardless of sandbox nesting.
+  const root = execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
   const raw = checkFreshnessViaCli(root, 'BL-999999-nonexistent');
   assert.ok(raw.length > 0, 'expected the real CLI to produce output');
   const parsed = JSON.parse(raw);

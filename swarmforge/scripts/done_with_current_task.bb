@@ -10,6 +10,10 @@
 (load-file (str (fs/path script-dir "handoff_lib.bb")))
 (load-file (str (fs/path script-dir "pipeline_stage_lib.bb")))
 (load-file (str (fs/path script-dir "dispatch_lib.bb")))
+;; BL-1317: Adapt reads the seat's backend and the pack/window default effort
+;; off the same effective pack conf BL-1316's claim-time apply reads.
+(load-file (str (fs/path script-dir "backlog_depth_lib.bb")))
+(load-file (str (fs/path script-dir "seat_difficulty_lib.bb")))
 
 (defn run-ready! []
   (process/exec (str (fs/path script-dir "ready_for_next_task.sh")) "--idle-boundary"))
@@ -46,6 +50,42 @@
             (binding [*out* *err*]
               (println "lean-ledger-record-warn:" ticket-id (.getMessage e)))))))))
 
+;; BL-1317 Adapt tier: the same completion the lifecycle ledger observes above
+;; is also the moment the seat learns whether its held ticket went CLEAN or
+;; came back as a bounce, so the effort dial moves here and nowhere else - one
+;; outcome, one observation point, no second notion of "done".
+;;
+;; The signal is read off the completed handoff itself: a non-forwarding
+;; inbound is a reverse hop, i.e. this seat's work coming back, which is the
+;; under-thinking evidence Adapt climbs on. Anything else completing normally
+;; is a clean pass, which only counts toward a descent once a whole streak of
+;; them has accumulated.
+;;
+;; Best-effort and silent, exactly like record-lean-ledger! above: the
+;; completion has ALREADY happened, and a dial that cannot be retuned must
+;; never turn a finished parcel into a failure. All of the deciding lives in
+;; seat-difficulty-lib/adapt-effort-decision (pure) behind
+;; handoff-lib/record-effort-adapt! (the only IO edge) - this call decides
+;; WHEN, never WHAT.
+(defn- pack-conf-text []
+  (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
+       (catch Exception _ nil)))
+
+(defn record-effort-adapt-for! [target-file]
+  (try
+    (let [conf (pack-conf-text)
+          me (handoff-lib/current-role)
+          ticket (pipeline-stage-lib/extract-ticket-id
+                  (handoff-lib/header-field target-file "task"))]
+      (handoff-lib/record-effort-adapt!
+       {:role me
+        :backend (get (seat-difficulty-lib/parse-seat-backends conf) me)
+        :mutation-cost (handoff-lib/active-ticket-mutation-cost ticket)
+        :pack-default-effort (get (seat-difficulty-lib/parse-seat-efforts conf) me)
+        :ticket ticket
+        :signal (if (handoff-lib/non-forwarding? target-file) "bounce" "clean")}))
+    (catch Exception _ nil)))
+
 (defn -main []
   ;; BL-652: family contract — direct helper invocation also refuses argv.
   (dispatch-lib/refuse-unexpected-args!)
@@ -80,6 +120,7 @@
         (handoff-lib/remove-sidecars-of! source-file)
         (println "COMPLETED:" (str target-file))
         (record-lean-ledger! target-file)
+        (record-effort-adapt-for! target-file)
         ;; After completing the current task, immediately ask for the next
         ;; one, marking this call as an idle-boundary so ready_for_next_task
         ;; can consider any configured idle clear behavior.
