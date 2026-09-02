@@ -11,6 +11,7 @@ const {
   nameBottleneck,
   readRoleStageDwellRecords,
   computeStageDwellReportForRoles,
+  computeSeatDwellDetail,
 } = require('../out/metrics/stageDwell');
 
 // BL-102: one command reports where the pipeline's time goes. Header parsing
@@ -312,4 +313,155 @@ test('computeStageDwellReportForRoles surfaces the total unparseable count acros
   const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: worktree }];
   const result = computeStageDwellReportForRoles(roles, Date.now(), 24);
   assert.equal(result.unparseableCount, 1);
+});
+
+// ── BL-1319: the dwell instrument names the STAGE, never a seat ───────────
+// BL-983 declared that seat identity never escapes the mailbox layer;
+// BL-1040 closed the board and stage map. The optimizer's own instrument was
+// still open, and the live shape is WORSE than the split the ticket
+// describes: `computeStageDwellReportForRoles` filters on PIPELINE_ORDER,
+// which holds bare stage names only, so a non-bare seat's row is not merely
+// keyed separately - it is DROPPED, and the stage is reported as though the
+// seat's parcels never happened. An understated stage can then be ranked
+// below a single-seat stage that is actually faster, which makes this a
+// wrong optimizer answer rather than a mislabelled one.
+
+function seatFixture() {
+  const root = mkTmp();
+  const stamp = (dequeued, completed) => ({ dequeued_at: dequeued, completed_at: completed });
+  // Bare coder seat: two FAST parcels.
+  writeHandoff(path.join(root, 'wt-coder', '.swarmforge', 'handoffs', 'inbox', 'completed'), '00_a.handoff', {
+    task: 'BL-901-a', ...stamp('2026-07-09T08:00:00Z', '2026-07-09T08:01:00Z'),
+  });
+  writeHandoff(path.join(root, 'wt-coder', '.swarmforge', 'handoffs', 'inbox', 'completed'), '00_b.handoff', {
+    task: 'BL-902-b', ...stamp('2026-07-09T08:00:00Z', '2026-07-09T08:01:00Z'),
+  });
+  // Second coder seat: two SLOW parcels. Neither seat alone is the slowest;
+  // together the stage is.
+  writeHandoff(path.join(root, 'wt-coder2', '.swarmforge', 'handoffs', 'inbox', 'completed'), '00_c.handoff', {
+    task: 'BL-903-c', ...stamp('2026-07-09T08:00:00Z', '2026-07-09T08:30:00Z'),
+  });
+  writeHandoff(path.join(root, 'wt-coder2', '.swarmforge', 'handoffs', 'inbox', 'completed'), '00_d.handoff', {
+    task: 'BL-904-d', ...stamp('2026-07-09T08:00:00Z', '2026-07-09T08:30:00Z'),
+  });
+  // A single-seat stage that outranks the coder stage while the second
+  // seat's parcels are dropped, and loses to it once the stage is whole.
+  // (15 min vs the folded coder median of 15.5 - the fold decides it.)
+  writeHandoff(path.join(root, 'wt-cleaner', '.swarmforge', 'handoffs', 'inbox', 'completed'), '00_e.handoff', {
+    task: 'BL-905-e', ...stamp('2026-07-09T08:00:00Z', '2026-07-09T08:15:00Z'),
+  });
+  const roles = [
+    { role: 'coder', worktreeName: 'coder', worktreePath: path.join(root, 'wt-coder') },
+    { role: 'coder@sonnet2', worktreeName: 'coder2', worktreePath: path.join(root, 'wt-coder2') },
+    { role: 'cleaner', worktreeName: 'cleaner', worktreePath: path.join(root, 'wt-cleaner') },
+  ];
+  return { root, roles, nowMs: Date.parse('2026-07-09T12:00:00Z') };
+}
+
+test('BL-1319: the two seats of one stage report as a single stage row carrying both seats parcels', () => {
+  const { roles, nowMs } = seatFixture();
+  const result = computeStageDwellReportForRoles(roles, nowMs, 24);
+  const coder = result.stages.filter((s) => s.role === 'coder');
+  assert.equal(coder.length, 1, 'exactly one coder row');
+  assert.equal(coder[0].parcelsProcessed, 4, "the seat's parcels must not be dropped");
+});
+
+test('BL-1319: no stage name emitted by the dwell instrument contains a seat id', () => {
+  const { roles, nowMs } = seatFixture();
+  const result = computeStageDwellReportForRoles(roles, nowMs, 24);
+  for (const s of result.stages) {
+    assert.ok(!s.role.includes('@'), `stage row leaked a seat id: ${s.role}`);
+  }
+  assert.ok(!JSON.stringify(result).includes('@'), 'the served payload must carry no seat id');
+});
+
+// The wrong-ANSWER consequence, not the wrong-label one. Before the fold the
+// second seat's slow parcels were dropped, so the coder stage reported only
+// its bare seat's fast work and cleaner was named the bottleneck. Whole, the
+// coder stage is slower and is named. NOTE: the feature file's scenario 03
+// also asks that neither seat ALONE be slower than the slowest single-seat
+// stage. That is unsatisfiable under median ranking - a combined median can
+// never exceed both seats' medians - so it is not asserted here; raised to
+// the specifier as a spec gap rather than quietly encoded as something else.
+test('BL-1319: a stage understated by dropping a seat is no longer ranked below a faster one', () => {
+  const { roles, nowMs } = seatFixture();
+  const result = computeStageDwellReportForRoles(roles, nowMs, 24);
+  assert.equal(result.bottleneck.role, 'coder');
+  const bareOnly = roles.filter((r) => r.role !== 'coder@sonnet2');
+  assert.equal(
+    computeStageDwellReportForRoles(bareOnly, nowMs, 24).bottleneck.role,
+    'cleaner',
+    'without the second seat cleaner genuinely is the bottleneck - the fixture is honest'
+  );
+});
+
+test('BL-1319: nameBottleneck folds a seat-keyed row rather than naming a seat', () => {
+  const stats = (ms) => ({ medianMs: ms, p90Ms: ms, maxMs: ms, outliersMs: [] });
+  const empty = { medianMs: null, p90Ms: null, maxMs: null, outliersMs: [] };
+  const rows = [
+    { role: 'coder@sonnet2', parcelsProcessed: 1, queueWait: empty, processing: stats(60000), trend: null },
+    { role: 'cleaner', parcelsProcessed: 1, queueWait: empty, processing: stats(1000), trend: null },
+  ];
+  assert.equal(nameBottleneck(rows).role, 'coder');
+});
+
+test('BL-1319: per-seat attribution survives the fold in the underlying dwell records', () => {
+  const { roles } = seatFixture();
+  const seat = roles.find((r) => r.role === 'coder@sonnet2');
+  const { records } = readRoleStageDwellRecords(seat, 0, Date.parse('2026-07-10T00:00:00Z'));
+  assert.equal(records.length, 2);
+  for (const r of records) {
+    assert.equal(r.role, 'coder@sonnet2', 'records keep the seat that worked the parcel');
+  }
+});
+
+test('BL-1319: the fold is lossless for a single-seat swarm - identical output for the same parcels', () => {
+  const { roles, nowMs } = seatFixture();
+  const bareOnly = roles.filter((r) => r.role !== 'coder@sonnet2');
+  const before = computeStageDwellReportForRoles(bareOnly, nowMs, 24);
+  const again = computeStageDwellReportForRoles(bareOnly, nowMs, 24);
+  assert.deepEqual(before, again);
+  assert.deepEqual(before.stages.map((s) => s.role), ['coder', 'cleaner']);
+  assert.equal(before.stages.find((s) => s.role === 'coder').parcelsProcessed, 2);
+});
+
+// ── BL-1319: the ops seat-and-model view (human_ruling: "Fold plus ops
+//    seat-detail - build the seat-and-model view in this same slice") ─────
+// The fold makes the OPTIMIZER answer correct; it also makes per-seat work
+// invisible on every surface. This is the sanctioned seat-level view, and it
+// reads the per-seat attribution the fold deliberately preserved. It is an
+// OPS surface only: the bridge's /stage-dwell payload stays seat-free, which
+// is what the ticket's qa_e2e requires of it.
+
+test('BL-1319 ops view: one row per seat, naming the seat, its stage and its model', () => {
+  const { roles, nowMs } = seatFixture();
+  const withAgents = roles.map((r) => ({ ...r, agent: r.role === 'coder@sonnet2' ? 'aider' : 'claude' }));
+  const seats = computeSeatDwellDetail(withAgents, nowMs, 24);
+  assert.deepEqual(
+    seats.map((s) => `${s.stage}/${s.seat}/${s.agent}/${s.parcelsProcessed}`),
+    ['coder/coder/claude/2', 'coder/coder@sonnet2/aider/2', 'cleaner/cleaner/claude/1']
+  );
+});
+
+test('BL-1319 ops view: a seat row keeps its own dwell, never the folded stage total', () => {
+  const { roles, nowMs } = seatFixture();
+  const seats = computeSeatDwellDetail(roles, nowMs, 24);
+  const bare = seats.find((s) => s.seat === 'coder');
+  const second = seats.find((s) => s.seat === 'coder@sonnet2');
+  assert.equal(bare.processing.medianMs, 60000, 'the bare seat is fast on its own');
+  assert.equal(second.processing.medianMs, 1800000, 'the second seat is slow on its own');
+});
+
+test('BL-1319 ops view: an unconfigured model reports as unknown rather than crashing or inventing one', () => {
+  const { roles, nowMs } = seatFixture();
+  const seats = computeSeatDwellDetail(roles, nowMs, 24);
+  assert.ok(seats.every((s) => typeof s.agent === 'string' && s.agent.length > 0));
+  assert.equal(seats.find((s) => s.seat === 'coder').agent, 'unknown');
+});
+
+test('BL-1319 ops view: a single-seat swarm still gets one row per stage, so the view is not multi-seat-only', () => {
+  const { roles, nowMs } = seatFixture();
+  const bareOnly = roles.filter((r) => r.role !== 'coder@sonnet2');
+  const seats = computeSeatDwellDetail(bareOnly, nowMs, 24);
+  assert.deepEqual(seats.map((s) => s.seat), ['coder', 'cleaner']);
 });
