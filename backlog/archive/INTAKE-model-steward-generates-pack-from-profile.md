@@ -92,3 +92,40 @@ could not be staffed — never emit a conf that lies about availability.
 - Prefer one mintable child (or a thin epic + one vertical slice: “profile →
   conf + handshake CLI”) over boiling the ocean.
 - Firm: handshake before “runnable”; no secret material in generated files.
+
+---
+
+## Drained 2026-09-02 (specifier) → BL-1337
+
+Minted as **BL-1337**
+(`backlog/paused/BL-1337-a-profile-generates-a-handshaken-cast.yaml`) — one
+vertical slice, as this intake's own specifier note asked ("Prefer one
+mintable child ... over boiling the ocean"). Every human sentence quoted here
+is preserved verbatim in that ticket's `source:` field, per Article 5.3,
+including all three firm constraints.
+
+**The slice is smaller than the intake implies, because much of it is built.**
+Verified at drain time: BL-1181's `bob_starting_cast_lib.bb` already
+cherry-picks from the steward registry, exports a cast, converts it to a
+ModelFactory overlay and applies it, with a live cast at
+`.swarmforge/model-steward/casts/bob-multi-provider-20260831.json`. The
+steward lib already provides `role-recommendations`, `assignment-eligible?`,
+`certified?` and `production-adapter-for`.
+
+So the two real gaps are exactly the two this intake names: the policy is
+hard-coded (`export-bob-starting-cast`), and nothing handshakes before apply.
+The second is not hypothetical — the apply path will install a model that is
+registered but unreachable on this host, and the live cast's own note records
+a human doing that reachability reasoning by hand ("not pure steward
+top-pick"). The intake's "Firm: handshake before runnable" closes a real hole.
+
+Dispositions on what this intake left to the specifier:
+- **Profile format** → JSON under `.swarmforge/model-steward/profiles/`,
+  matching the store's existing all-JSON shape, so no new convention enters it.
+- **Output form** (`.conf` versus overlay) → `ruling_options` on the ticket;
+  the overlay path already exists, a launchable conf is a second renderer.
+- **Epic** → assigned to `swarm-intelligence-layer` (BL-1329), which already
+  exists, so no new epic tracker. The intake's "BL-545" is that epic's former
+  id; BL-545 itself is closed and is a Telegram catch-up ticket. The
+  instruction "Do not promote epic BL-545 itself" is honoured — nothing was
+  promoted, and BL-1337 is paused.
