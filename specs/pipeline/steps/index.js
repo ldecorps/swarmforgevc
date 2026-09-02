@@ -916,6 +916,7 @@ const DOMAINS = [
   require('./bl1318PackStaffingGateSteps'),
   require('./bl1322BridgeLazyCursorApiKeySteps'),
   require('./bl1310ReconcileRefusesLocalAheadSteps'),
+  require('./bl1324ClaudeSeatQwenCloudContextWindowSteps'),
 ];
 
 function registerSteps(registry) {
