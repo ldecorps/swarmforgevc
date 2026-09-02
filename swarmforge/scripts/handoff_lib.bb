@@ -1217,6 +1217,25 @@
                         [k v]))]
     {:headers headers :body (or body "")}))
 
+;; hotfix outbox-race (2026-09-02): the one way handoffd.bb reads a listed
+;; outbox parcel. A parcel can legitimately disappear between the outbox
+;; listing and the read (the sending role archives it), and a read that
+;; throws at that moment escaped poll-once! and killed the daemon four times
+;; on 2026-09-02 (same signature 2026-08-30) - taking the whole swarm down
+;; with it via the supervisor's alarm-and-halt. Gone or unreadable is a
+;; per-parcel condition, never a daemon-level failure: answer
+;; {:vanished true} and let the caller log and move on. Everything that is
+;; NOT an I/O condition (a genuine bug) still throws.
+(defn read-envelope-if-present
+  "{:envelope (parse-envelope <content>)} when the file at `path` could be
+   read; {:vanished true} when it is gone or unreadable (java.io.IOException
+   and its subclasses only - FileNotFoundException, AccessDeniedException)."
+  [path]
+  (try
+    {:envelope (parse-envelope (slurp (str path)))}
+    (catch java.io.IOException _
+      {:vanished true})))
+
 (defn corrupt-handoff?
   "True when content structurally cannot be a real handoff: empty, missing
    one of the required envelope headers (covers a truncated-mid-header
