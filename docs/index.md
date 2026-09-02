@@ -289,6 +289,7 @@ expects them, and are not migrated or rewritten here.
 - [Barge-in: stopping Bubble's speech when the human talks over it](how-to/BL-777-barge-in-detector-and-playback-abort.md) — the pure `BargeInDetector` state machine's onset/self-output/session-count invariants, its tuning constants, the `TalkEngine`/`ReplyAudioPlayer` device wiring, and the manual device procedure that verifies it.
 - [The hands-free session state machine: wake once, talk, then go quiet](how-to/BL-844-hands-free-session-state-machine.md) — the `PassiveWake`/`ActiveListen`/`Thinking`/`Speaking` states, the 10-second silence window, why a soft closer doesn't restart it while a hard end phrase skips it, the barge-in/push-to-talk interactions, and the manual device procedure.
 - ["Hey Bubble" — offline, on-device wake spotting](how-to/BL-845-offline-hey-bubble-wake.md) — why the stock cloud-backed `SpeechRecognizer` is unusable for this path, the injected-and-not-yet-chosen spotter engine, the phrase-never-travels and network-silent-passive invariants, the derived-not-hand-assigned colour table, and the manual device procedure.
+- [Querying the price cliff — validity windows in the pricing table](how-to/BL-1056-a-price-with-an-expiry-date.md) — `until`/`then` optional per-row validity metadata, per-instant rate resolution, and the `pricing-windows` CLI that lists closed/closing windows instead of a human having to remember a date (BL-1056; reverses BL-627's one deliberate omission).
 
 ## Reference
 
@@ -305,7 +306,7 @@ expects them, and are not migrated or rewritten here.
 - [BL-010 Spec: Heartbeat Decorator](reference/specs/BL-010-spec.md)
 - [BL-011 Spec: Watchdog](reference/specs/BL-011-spec.md)
 - [BL-012 Spec: Chase and Dead-Letter Escalation](reference/specs/BL-012-spec.md)
-- [BL-627 — Pricing table correctness and coverage invariant](reference/specs/BL-627-pricing-table-correctness-and-coverage-invariant.md) — list-price table version 2; bare `claude-*` roster coverage check (BL-627).
+- [BL-627 — Pricing table correctness and coverage invariant](reference/specs/BL-627-pricing-table-correctness-and-coverage-invariant.md) — list-price table version 2; bare `claude-*` roster coverage check (BL-627). Its one deliberate omission (time-bounded rates) is reversed by [BL-1056](how-to/BL-1056-a-price-with-an-expiry-date.md).
 - [M2 Specification — Reliability Layer](reference/specs/m2-spec.md)
 - [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver; BL-782 root-scoped liveness probes and `--probe-liveness`.
 - [Build Freshness QA Approval Gate (BL-629)](reference/BL-629-build-freshness-qa-approval-gate.md) — the deploy-time gate preventing sync of pre-QA code to daemons.
