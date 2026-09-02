@@ -24,9 +24,18 @@
 // would reach that corner rarely and pass while the defect was live - the
 // "technically reachable but astronomically rare" shape. So the subject of
 // each commit is derived FROM the path it introduces, by the very
-// misattribution the code conflates, and the run FAILS unless the cases
-// actually reached each state: a full subtraction, a partial one, and a
-// replay that keeps everything.
+// misattribution the code conflates.
+//
+// And the corner is reached BY CONSTRUCTION, not by draw. Each of the three
+// shapes - every path credited to a sibling, a genuinely mixed set, none
+// credited to a sibling - gets its own property run; only the file set inside
+// a shape is generated. The earlier version drew each file's credit
+// independently, which left the all-sibling corner at P ~= 0.12 per case, so
+// its own coverage floor red the suite about one run in six (architect bounce
+// D1, 2026-09-02). A floor that bites for no reason is the mirror image of a
+// vacuous one, and on land machinery an intermittent red is how a real
+// regression gets waved through as "just the flaky one". The floors below now
+// hold because every shape ran, not because a draw was lucky.
 
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
@@ -101,13 +110,57 @@ function landPlan(root) {
 // varies is who the subject credits it to - and a "sibling" credit is
 // derived from the file itself rather than drawn independently, so every
 // case is a misattribution candidate by construction.
-const fileArb = fc.record({
-  name: fc.constantFrom('handler.js', 'lib.bb', 'doc.md', 'ticket.yaml', 'runner.sh'),
-  dir: fc.constantFrom('specs/pipeline/steps', 'swarmforge/scripts', 'docs', 'backlog/active'),
-  creditedTo: fc.constantFrom('sibling', 'own', 'nobody'),
-});
+//
+// D1 (architect bounce, 2026-09-02): the credits used to be drawn
+// independently per file, uniformly over three values. Reaching the corner
+// that matters - EVERY path credited to a sibling - then depended on an
+// unlucky-free draw: P ~= 0.12 per case, so P(a 25-run pass never reaches it)
+// ~= 4.6% per test, and the coverage floor itself red the suite about one run
+// in six. A floor assertion that bites for no reason is the mirror image of a
+// vacuous one, and on land machinery an intermittent red is how a real
+// regression gets waved through.
+//
+// So the SHAPE is now drawn, not the credits: the generator picks which of
+// the three shapes a case has, and then constructs credits to match. Every
+// shape is reachable in one draw, and the floors below are satisfied by
+// construction rather than by luck.
+const SHAPES = ['all-sibling', 'mixed', 'none-sibling'];
 
-function toCommits(files) {
+// The shape is not drawn at all - each shape gets its OWN property run, so
+// "did the run reach this corner" stops being a question about luck. Only the
+// file set inside a shape is generated.
+const caseArbFor = (shape) =>
+  fc.record({
+    shape: fc.constant(shape),
+    files: fc.array(
+    fc.record({
+      name: fc.constantFrom('handler.js', 'lib.bb', 'doc.md', 'ticket.yaml', 'runner.sh'),
+      dir: fc.constantFrom('specs/pipeline/steps', 'swarmforge/scripts', 'docs', 'backlog/active'),
+      untaggedWhenFree: fc.boolean(),
+    }),
+      { minLength: 1, maxLength: 4 },
+    ),
+  });
+
+// The shape decides each file's credit. 'mixed' is forced to be genuinely
+// mixed - at least one sibling AND at least one survivor - which an
+// independent draw could not guarantee either.
+function creditsFor(shape, count, freeFlags) {
+  if (shape === 'all-sibling') return Array.from({ length: count }, () => 'sibling');
+  if (shape === 'none-sibling') {
+    return freeFlags.map((untagged) => (untagged ? 'nobody' : 'own'));
+  }
+  if (count === 1) return ['sibling'];
+  return Array.from({ length: count }, (_, i) => {
+    if (i === 0) return 'sibling';
+    if (i === 1) return freeFlags[1] ? 'nobody' : 'own';
+    return freeFlags[i] ? 'sibling' : 'own';
+  });
+}
+
+function toCommits(testCase) {
+  const { shape, files } = testCase;
+  const credits = creditsFor(shape, files.length, files.map((f) => f.untaggedWhenFree));
   // Distinct paths only: two commits on the same path would make "who
   // introduced it" a different question than the one under test.
   const seen = new Set();
@@ -116,26 +169,28 @@ function toCommits(files) {
     const p = `${f.dir}/${i}-${f.name}`;
     if (seen.has(p)) continue;
     seen.add(p);
+    const creditedTo = credits[i];
     const subject =
-      f.creditedTo === 'sibling'
+      creditedTo === 'sibling'
         ? `${SIBLING}: sibling commit carrying ${p}`
-        : f.creditedTo === 'own'
+        : creditedTo === 'own'
           ? `${TICKET}: own work on ${p}`
           : `housekeeping touching ${p}`;
-    out.push({ path: p, subject, creditedTo: f.creditedTo });
+    out.push({ path: p, subject, creditedTo });
   }
   return out;
 }
 
-const filesArb = fc.array(fileArb, { minLength: 1, maxLength: 4 });
+
 
 test('BL-1343/BL-654 invariant 1: a differing tip is never reported as landed or as nothing left to replay', () => {
   sweepStaleFixtures();
   const reach = { fullySubtracted: 0, partiallySubtracted: 0, nothingSubtracted: 0 };
 
-  fc.assert(
-    fc.property(filesArb, (files) => {
-      const commits = toCommits(files);
+  for (const shape of SHAPES) {
+    fc.assert(
+      fc.property(caseArbFor(shape), (testCase) => {
+      const commits = toCommits(testCase);
       const root = buildRepo(commits);
       try {
         const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
@@ -170,9 +225,10 @@ test('BL-1343/BL-654 invariant 1: a differing tip is never reported as landed or
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
-    }),
-    { numRuns: 25 },
-  );
+      }),
+      { numRuns: 9 },
+    );
+  }
 
   assert.ok(reach.fullySubtracted > 0, 'generator never reached a fully-subtracted contribution - the defect corner went untested');
   assert.ok(reach.partiallySubtracted > 0, 'generator never reached a partial subtraction');
@@ -183,9 +239,10 @@ test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution ref
   sweepStaleFixtures();
   const reach = { refusals: 0, kept: 0 };
 
-  fc.assert(
-    fc.property(filesArb, (files) => {
-      const commits = toCommits(files);
+  for (const shape of SHAPES) {
+    fc.assert(
+      fc.property(caseArbFor(shape), (testCase) => {
+      const commits = toCommits(testCase);
       const root = buildRepo(commits);
       try {
         const result = ownPaths(root);
@@ -221,9 +278,10 @@ test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution ref
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
-    }),
-    { numRuns: 25 },
-  );
+      }),
+      { numRuns: 9 },
+    );
+  }
 
   assert.ok(reach.refusals > 0, 'generator never emptied the contribution - the refusal branch never fired');
   assert.ok(reach.kept > 0, 'generator never kept a path - the non-refusal branch never fired');
