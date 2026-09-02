@@ -8,10 +8,14 @@
 ;; catches it today.
 ;;
 ;; EXISTENCE ONLY: no Gherkin parsing, no step resolution, no draft-ness
-;; policing - a legitimately parked .feature.draft (BL-233) passes every
-;; pre-QA hop as long as it exists at the cited commit. Blank/absent and
-;; multi-line (inline Gherkin) declarations are QA-edge concerns only and
-;; are never refused here.
+;; policing here - a .feature.draft passes THIS gate as long as it exists at
+;; the cited commit. Draft-ness is no longer nobody's job, though: since
+;; BL-1340 it is refused one gate over, by acceptance_contract_gate_lib.bb,
+;; which fails closed on a parcel whose acceptance still names a draft at the
+;; cited commit. That is the exit end of the trade BL-1340 made - promotion
+;; admits a draft the ticket pins itself to converting, and this edge refuses
+;; one that arrives unconverted. Blank/absent and multi-line (inline Gherkin)
+;; declarations are QA-edge concerns only and are never refused here.
 ;;
 ;; pre_qa_gate_gather_lib.bb's gather-acceptance-pointer-facts does the
 ;; git legwork (one `git cat-file -e` probe for tree readability, one more
