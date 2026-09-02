@@ -197,3 +197,46 @@ notes: |
   instead is whether the retired thing is being ASSERTED as live (stale) or
   being REMOVED (this ticket). Do not re-hold on the same grounds; if the
   gate fires again, this note is the answer.
+
+  ## Freshness hold RE-FIRED and now properly discharged [2026-09-02] specifier
+
+  The gate held this a SECOND time, with the identical reason, despite the
+  2026-08-30 note above saying not to. That note was not wrong - it was
+  unreadable. `deprecate-check.js` reads a machine-readable record at
+  `.swarmforge/deprecator/adjudications/<BL-id>.json`; it does not read
+  `notes:`. So the prior adjudication cleared nothing and the same hold was
+  guaranteed to recur forever.
+
+  Re-verified from scratch this pass rather than trusting the prior note, and
+  every element still holds:
+    - Both named surfaces exist.
+    - The stale fixture literal is still present, still exactly 2 occurrences.
+    - `expedited-types` is still `#{"defect"}` (promotion_gates_lib.bb:189-191).
+    - Zero live `type: bug` tickets in paused/active/hold.
+    - The suite is still RED with exactly the two documented failures and the
+      exact "BL-14" vs "BL-13" expected/actual pair. Ran it.
+
+  Reproduced the hold verbatim: "stale premise: depends_on done but
+  description still names retired surface(s): type: bug". That is the
+  `retiredSurfaceHits` branch, and it will fire on EVERY pass, because this
+  ticket's whole deliverable is removing a stale expectation about `type: bug`
+  and it therefore names `type: bug` throughout. No amount of rewording fixes
+  that without making the ticket worse.
+
+  Discharged with the mechanism BL-1267 shipped for exactly this:
+  `record-adjudication.js ... BL-1271 confirm_promote specifier`, then verified
+  `deprecate-check.js` returns `"decision": "allow"` naming that record.
+  CONFIRM PROMOTE stands.
+
+  Root cause of the recurrence, fixed in the same pass: `.swarmforge/deprecator/
+  adjudications/` did not exist at all - BL-1267's writer had never been used
+  by anyone, because `specifier.prompt`'s deprecator duty named no CLI. That
+  prose gap is now closed in `swarmforge/roles/specifier.prompt` (BL-798: a
+  prompt deliverable is the specifier's own to land).
+
+  NOTE FOR ANYONE EDITING THIS TICKET: the adjudication record fingerprints the
+  ticket content it was made against, so any further edit to this YAML re-arms
+  the gate. That is the safety property working. Re-run
+  `record-adjudication.js` after the edit.
+
+assigned_to: coder

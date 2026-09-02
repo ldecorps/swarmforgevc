@@ -2241,3 +2241,35 @@ You are the hardender.
   `some` → `every?` survived every test, because none populates `in_process`
   with two files that disagree — and a reverse-hop inbox routinely holds
   several, which is exactly when the mutant would misfire in production.
+
+## A predicate that UNIONS two independent stores needs a fixture per STORE — an "exhaustive" case sweep over one store leaves the other at zero coverage (rule_proposal 2026-09-02, accepted)
+
+- When a predicate reaches a verdict by consulting **more than one independent
+  store** for the same fact — "either store vetoes" — the number of CASES a
+  sweep enumerates says nothing about how many STORES it covers. A 48-case
+  sweep that populates one store has covered one store, 48 times. The other
+  store's branch is never entered, and no case count makes that visible.
+- So the axis to enumerate is the STORE, not just the case. For each store the
+  predicate reads, write at least one fixture where that store ALONE holds the
+  record and every other store is empty. That is the only shape that proves
+  the branch is reachable and load-bearing; a fixture that populates both
+  stores at once passes even if one of them is never read.
+- The tell that you are in this situation: the predicate's own comment says
+  something like "EITHER store naming it vetoes" or "a safety gate unions
+  them". Union language over stores is the signal — treat it the way you
+  already treat a `some`/`every?` fold over a collection (the rule above): the
+  fixture has to be able to DISCRIMINATE, and a single-store fixture cannot.
+- Kill it the usual way rather than trusting the read: delete or short-circuit
+  one store's lookup and re-run. If the suite stays green, that store has zero
+  coverage no matter how large the sweep is.
+- Evidence (proposed by the hardender, 2026-09-02, BL-1334; verified while
+  accepting against the live source): `is_qa_ancestor.sh` decides QA approval
+  from TWO independent bounce-verdict stores — the machine-local JSONL at
+  `.swarmforge/bounces/<YYYY-MM>.jsonl` and the tracked ticket-YAML
+  `bounce_history` entries under `backlog/**` — and its own header states that
+  EITHER store naming the sha vetoes approval, "each store has missed entries
+  the other held; a safety gate unions them". BL-1334's 48-case sweep wrote
+  only the JSONL store, so `source_is_approved`'s YAML veto had zero coverage.
+  It was found only by hand-mutating and checking both stores, and closed by a
+  fixture that puts the record in `bounce_history` with NO JSONL entry
+  anywhere (`test/test_is_qa_ancestor_land_replay_store.sh`).
