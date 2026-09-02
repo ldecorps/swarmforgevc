@@ -13,7 +13,9 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1339-a-land-approval-record-lands-where-the-predicate-reads.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Writer plus the land-approval store read resolved from the shared root
 approval_context: >
   How far into the shared predicate the fix should reach. This is the
   successor to the fork you already ruled on for BL-1334, and it is asked
