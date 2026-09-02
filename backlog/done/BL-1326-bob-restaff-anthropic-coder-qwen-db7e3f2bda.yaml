@@ -8,7 +8,7 @@ severity: medium
 # hotfix keeps resurfacing in the recurrent sweep until a human answers, and
 # this is the SECOND same-day restaff of this pack (after 4ed88430b2/BL-1322)
 # so an unreviewed drift here compounds faster than usual.
-status: todo
+status: done
 epic: swarm-reliability
 priority: 20
 direction: aligned
@@ -16,7 +16,7 @@ assigned_to: coder
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1326-bob-restaff-anthropic-coder-qwen-db7e3f2bda.feature
+acceptance: specs/features/BL-1326-bob-restaff-anthropic-coder-qwen-db7e3f2bda.feature.draft
 
 human_approval: approved
 approval_context: >
@@ -194,3 +194,75 @@ specifier_amendment_2026_09_02: |
   No `record-bounce.js` entry: this arrived as a spec-gap `note`, the correct
   route per Article 4.4, and never became a parcel bounce, so there is no
   bounce commit to cite.
+
+closed_as: superseded-by-BL-1330
+deprecator_adjudication: |
+  RETIRE (specifier, 2026-09-02), answering the coder's priority-00 spec-gap
+  note "BL-1326/1330 review byte-identical dup landings; db7e3f2bda NOT on
+  main". The coder is right on both counts. Retired unbuilt; no work is owed
+  and none was wasted beyond the investigation.
+
+  ## The premise was false: the SHA this ticket certifies never landed
+
+  This ticket's description asserts "hotfix db7e3f2bda is live on main with the
+  trailer Hotfix-Certification: pending". Verified:
+    - `git merge-base --is-ancestor db7e3f2bda main`      -> NO
+    - `git merge-base --is-ancestor db7e3f2bda origin/main` -> NO
+    - `git branch -a --contains db7e3f2bda`               -> no branch at all
+  The commit exists and is reachable by id, but it is orphaned. Certifying it
+  would review an artifact no one can reach from main.
+
+  ## It is the same change as BL-1330's, landed under a different SHA
+
+  `db7e3f2bda` and `441fd35112` are the SAME CHANGE, established by patch-id
+  rather than by eye:
+
+      git show <sha> | git patch-id --stable
+      db7e3f2bda -> 36416556346c0820e501a3cc2acbdebfa405768e
+      441fd35112 -> 36416556346c0820e501a3cc2acbdebfa405768e
+
+  Both carry the identical subject ("Restaff bob BoB starting cast: Anthropic
+  seats, coder on qwen3.8-max."), the identical author timestamp
+  (2026-09-01 12:14:34 +0100), the identical stat (3 files, +250/-26), and the
+  identical resulting `swarmforge/packs/bob-multi-provider-mono-router.conf`.
+  Both carry `Hotfix-Certification: pending`.
+
+  `441fd35112` IS an ancestor of origin/main. So the change is real, it landed,
+  and it genuinely needs a stamp - which is exactly what BL-1330 is. Nothing is
+  lost by retiring this ticket: BL-1330 reviews the same change against the SHA
+  a reviewer can actually reach.
+
+  ## Root cause: the hotfix-ledger holds two rows for one change
+
+  `backlog/hotfix-ledger.yaml` carries both:
+      - commit: db7e3f2bda  detected_at: 2026-09-01  stamp_ticket: BL-1326
+      - commit: 441fd35112  detected_at: 2026-09-02  stamp_ticket: BL-1330
+  The sweep saw the change at its orphaned SHA on the 1st and again at its
+  landed SHA on the 2nd, and minted a stamp ticket for each. The sweep matches
+  on commit SHA, so a rewritten/replayed commit reads as a second, unrelated
+  hotfix.
+
+  DELIBERATELY NOT FIXED HERE. `backlog/hotfix-ledger.yaml` currently carries
+  an unrelated uncommitted modification by another role (BL-1254's rows moving
+  stamp-open -> awaiting-human). Editing the ledger would mean staging that
+  in-progress work into this commit, which the constitution forbids - a
+  ticket-less change an agent did not make is SURFACED, never swept. The
+  duplicate row is reported to the coordinator instead. Until it is corrected,
+  the sweep can re-mint a stamp ticket for db7e3f2bda; if that happens, this
+  record is the answer.
+
+  ## Feature file
+
+  Demoted from `.feature` to `.feature.draft` and `acceptance:` repointed at
+  the draft, so the pointer does not dangle (backlog_hygiene_lib.bb scans
+  done/) and no unrunnable contract is left on the executable surface. No
+  `bl1326` handler was ever registered, so no coverage is lost. Scenarios
+  preserved byte-identical - retired, never reworded.
+
+  ## Note on the anchor fix earlier this same turn
+
+  `ad8bbd3463` corrected this ticket's `required_wiring` anchor from
+  `bl1323…` to `bl1326…` (stale from the BL-1323 -> BL-1326 remap). That fix
+  was correct on the facts then available and is left in place rather than
+  reverted: it costs nothing on a retired ticket, and reverting it would make
+  the historical record harder to read, not easier.

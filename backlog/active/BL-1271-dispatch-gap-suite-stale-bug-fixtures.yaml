@@ -238,3 +238,5 @@ notes: |
   ticket content it was made against, so any further edit to this YAML re-arms
   the gate. That is the safety property working. Re-run
   `record-adjudication.js` after the edit.
+
+assigned_to: coder
