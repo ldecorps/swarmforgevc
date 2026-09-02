@@ -167,3 +167,11 @@ notes: |
   replay against origin/main rather than the role's own worktree HEAD, which
   can already carry the sibling's line, and read every shared registry file's
   diff line by line. That is a habit; this ticket is the machinery.
+
+  Follow-up mint obligation (specifier, 2026-09-02): the Operator's
+  recommendation the human ruled with says of option 2, verbatim, "Option 2
+  (per-hunk replay) is the better end state - mint it as the follow-up, not
+  the fix." Per-hunk replay is therefore a real, owed follow-up ticket, not a
+  discarded alternative. It is deliberately NOT minted yet: it would
+  depends_on this unbuilt slice, which fails INVEST's Independent. The
+  specifier mints it once option 1 lands.

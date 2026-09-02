@@ -1,3 +1,15 @@
+<!-- SPECIFIER DISPOSITION 2026-09-02: drained. Every one of the nine
+     recommendations below was matched exactly by the human's recorded
+     ruling on the ticket itself (human_ruling on BL-1332, BL-1340,
+     BL-1339, BL-1335, BL-1336, BL-1323, BL-472; human_approval:
+     approved on BL-1333 and BL-1331), so no approval_context needed
+     sharpening and no ticket was promoted on the strength of this
+     file. Two follow-up mint obligations the recommendations carry -
+     BL-1323's trip-time-only hint and BL-1332's per-hunk replay - are
+     recorded in those tickets' notes: rather than minted now; both
+     would fail INVEST's Independent against an unbuilt slice.
+     Archived verbatim, nothing trimmed (Article 5.3). -->
+
 # Intake: Operator recommendations on the nine pending approvals (NOT approvals)
 
 Filed by the Operator (2026-09-02, human-directed via Claude Code). These are
