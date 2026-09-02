@@ -1,5 +1,5 @@
 id: BL-1319
-title: "The optimizer's dwell instrument still ranks on seat ids: a two-seat stage reports as two stages, so its split dwell can rank BELOW a single-seat stage that is actually faster"
+title: "The optimizer's dwell instrument drops every non-bare seat before it reads a mailbox, so a two-seat stage is reported on its bare seat alone and can rank BELOW a single-seat stage that is actually slower"
 milestone: M8
 type: defect
 severity: medium
@@ -41,7 +41,7 @@ ruling_options:
 invariants:
   - "No stage name, bottleneck name or trend key emitted by the dwell instrument ever contains a seat id — the fold holds for every stage, not only the one with two seats."
   - "The fold is lossless for a single-seat swarm: with only bare seats the report is byte-identical to the pre-fold output for the same parcels."
-  - "Per-seat attribution is preserved in the underlying dwell records, never discarded — folding happens where the report is assembled, not where records are read."
+  - "Per-seat attribution is preserved in the underlying dwell records, never discarded: every record still names the seat that worked it, even though report rows are keyed by stage."
 
 description: |
   ## What happens
@@ -54,16 +54,38 @@ description: |
   `extension/src/metrics/` folds an `@`: the only two `split('@')` sites in
   `extension/src` are `swarm/respawnPickup.ts` and `swarm/messageBus.ts`.
 
-  Two consequences, and the second is the one that matters:
+  ## CORRECTED 2026-09-02 — the seat is DROPPED, not split
 
-  1. `nameBottleneck` returns `role: top.role`, so the coordinator is told a
-     SEAT is the bottleneck. Cosmetic on its own.
-  2. `nameBottleneck` ranks on median processing per ROW. A two-seat stage
-     contributes two rows, each holding only its own seat's parcels, so the
-     stage's work is split before it is ranked. A stage that is genuinely the
-     bottleneck can therefore be ranked BELOW a single-seat stage that is
-     actually faster. The instrument does not merely mislabel the answer, it
-     can give the wrong one.
+  The paragraph above is the mint-time reading and it is WRONG about what
+  happens next, as the coder found before writing a line of code. The
+  correction is load-bearing, because it changes where the fix has to go.
+
+  `computeStageDwellReportForRoles` opens with, at `stageDwell.ts:276`:
+
+      const pipelineRoles = roles.filter((r) => (PIPELINE_ORDER as string[]).includes(r.role));
+
+  `PIPELINE_ORDER` (`swarmMetrics.ts:60`) holds BARE stage names only:
+  `['specifier','coder','cleaner','architect','hardender','documenter','QA']`.
+  A seat id such as `coder@sonnet2` is not a member, so the entry is filtered
+  out BEFORE `readRoleStageDwellRecords` is ever called on it. Its mailbox is
+  never opened and its parcels never become records.
+
+  So the real consequences are:
+
+  1. A seat is never named as the bottleneck, because no seat-keyed row can
+     exist. The mint-time claim that the coordinator "is told a SEAT is the
+     bottleneck" is false. Invariant 1 and scenario 02 are kept anyway, as a
+     regression guard on the FIX: an implementation that starts reading seat
+     mailboxes could easily key the new row on the seat id.
+  2. A two-seat stage is reported on its BARE seat alone. The second seat's
+     parcels are omitted from the report entirely, so the stage is understated
+     by OMISSION, not by splitting. A stage that is genuinely the bottleneck
+     can still be ranked below a single-seat stage that is actually faster —
+     the wrong-answer consequence survives the correction, which is why this
+     ticket does — but it arrives by dropped data, not divided data.
+
+  The distinction matters: merging rows at the reporting layer would fix
+  nothing, because the second seat's row does not exist to be merged.
 
   ## Why medium and not high
 
@@ -74,13 +96,24 @@ description: |
 
   ## How (direction, not mandate)
 
-  Fold the seat key onto its stage where the report is assembled, so rows for
-  the same stage merge before ranking. The Babashka side already has one
-  chokepoint for this — `handoff_lib.bb`'s `seat-stage` — and the TypeScript
-  side has none; whether to add a shared TS helper or fold at the single
-  assembly point is the implementer's and architect's call. Note only that the
-  merge has to happen before `nameBottleneck` ranks, not after it picks, or
-  consequence 2 survives the fix.
+  CORRECTED 2026-09-02, following the drop-not-split finding above. The fold
+  has to happen at or before the `PIPELINE_ORDER` membership test at
+  `stageDwell.ts:276`, so that a seat entry survives selection, its mailbox is
+  read, and its records are attributed to its stage. Folding only at report
+  assembly is too late — by then the seat's records were never read.
+
+  Concretely, the shape (not a mandate): decide membership on the entry's
+  STAGE rather than its raw role, then group the surviving entries by stage so
+  one report row is built from all of that stage's seats' records. The Babashka
+  side already has the chokepoint — `handoff_lib.bb:403`'s `seat-stage`, which
+  takes the part before the optional `@` and treats a bare id as its own stage
+  — and the TypeScript side has none. Whether to add a shared TS helper or fold
+  inline is the implementer's and architect's call.
+
+  Two things the fix must not do: read a seat's mailbox and then key its row on
+  the seat id (invariant 1), and discard the per-record seat attribution
+  (invariant 3) — `deriveDwellRecords` is passed `entry.role` today, which is
+  exactly what preserves it.
 
   Live consumers already reach this module and need no new wiring:
   `extension/src/bridge/bridgeState.ts` (`buildStageDwellState`, served on the
@@ -113,19 +146,26 @@ source: |
   item 1 was found not to be a defect.
 
 qa_e2e_procedure: >
-  Build a fixture roles table with two coder seats (`coder` and `coder@sonnet2`,
-  each with its own worktree path) plus one bare seat for every other stage, and
-  plant completed handoff audit headers in each seat's mailbox so that the two
-  coder seats together are the slowest stage while neither alone beats the
-  slowest single-seat stage. At the parent commit run
+  CORRECTED 2026-09-02 — the original procedure asked for a fixture that cannot
+  exist (see the amendment note). Build a fixture roles table with two coder
+  seats (`coder` and `coder@sonnet2`, each with its own worktree path) plus one
+  bare seat for every other stage. Plant completed handoff audit headers so
+  that: the BARE `coder` seat's median processing is FASTER than the slowest
+  single-seat stage; the `coder@sonnet2` seat's parcels are slow enough that
+  the median over BOTH seats' parcels together is slower than every single-seat
+  stage. (Both conditions are satisfiable together — e.g. bare seat 1s,1s;
+  second seat 10s,10s; slowest single-seat stage 5s — whereas requiring each
+  seat alone to be faster than that stage is not, since a median over the union
+  of two sets each with median <= X is itself <= X.) At the parent commit run
   `node extension/out/tools/stage-dwell-report.js` against that fixture and
-  confirm the defect is visible first: two rows keyed `coder` and
-  `coder@sonnet2`, and a bottleneck naming a seat or the wrong stage. Repeat at
-  the parcel commit and confirm one `coder` row carrying both seats' parcels and
-  a bottleneck of `coder`. Then re-run against a single-seat fixture and diff the
-  output against the parent commit's for the same parcels — it must be identical.
-  Finally hit the bridge `/stage-dwell` endpoint on the fixture and confirm the
-  served payload carries no `@`.
+  confirm the defect is visible first: exactly ONE `coder` row, carrying the
+  bare seat's parcels only and none of `coder@sonnet2`'s, and a bottleneck
+  naming some stage other than `coder`. Repeat at the parcel commit and confirm
+  one `coder` row carrying both seats' parcels and a bottleneck of `coder`.
+  Then re-run against a single-seat fixture and diff the output against the
+  parent commit's for the same parcels — it must be identical. Finally hit the
+  bridge `/stage-dwell` endpoint on the fixture and confirm the served payload
+  carries no `@`.
 
 notes: |
   ## No `required_wiring:`, deliberately
@@ -154,3 +194,50 @@ notes: |
   BL-981's `decomposes_into` and `remaining_slices` are updated in the same
   commit as this mint. The supervisor/chase/ensure framing in that slice's
   prose is corrected, not silently dropped.
+
+  ## AMENDED 2026-09-02 — specifier, answering the coder's spec-gap note
+
+  The coder raised a priority-00 `note` ("seats are DROPPED not split; sc-03
+  clause unsatisfiable") before writing code. Both findings are correct; both
+  were mint-time specifier defects, not coder error. Verified independently
+  against the live source rather than accepted on report:
+
+  1. DROPPED, not split. `stageDwell.ts:276` filters roles with
+     `PIPELINE_ORDER.includes(r.role)`, and `swarmMetrics.ts:60` defines
+     PIPELINE_ORDER as bare stage names only. `coder@sonnet2` fails the
+     membership test and is dropped before `readRoleStageDwellRecords` runs on
+     it, so its mailbox is never opened. Title, description consequences,
+     "How", the feature narrative and the QA procedure all amended. The mint
+     claim that a seat is named as the bottleneck is withdrawn as false; the
+     wrong-answer consequence survives, by omission instead of division.
+
+  2. sc-03 was unsatisfiable, and provably so. `nameBottleneck`
+     (`stageDwell.ts:217`) ranks on `s.processing.medianMs`. The scenario asked
+     for a fixture where the coder seats TOGETHER are slower than every
+     single-seat stage while NEITHER seat alone is slower than the slowest one.
+     If median(A) <= X and median(B) <= X then at least half of A and half of B
+     lie at or below X, so median(A union B) <= X. The two clauses cannot both
+     hold. Scenario 03 is replaced with the satisfiable form the real defect
+     produces — bare seat fast, dropped seat slow, only reading both moves the
+     stage to the top — and the QA procedure carries a worked fixture
+     (1s,1s / 10s,10s / 5s).
+
+  Invariant 3 was amended too, though the coder did not raise it: its clause
+  "folding happens where the report is assembled, not where records are read"
+  encoded the same wrong model and would have forbidden the only fix that
+  works. The property it was protecting — per-record seat attribution survives
+  — is kept; the mechanism clause is dropped. Invariants 1 and 2 stand
+  unchanged.
+
+  Scenario 02 is deliberately KEPT despite passing before the fix. It is a
+  regression guard on the fix, not a demonstration of the defect, and the
+  feature file says so in a comment above it so nobody later reads it as a
+  vacuous gate.
+
+  No `record-bounce.js` entry: this arrived as a spec-gap `note`, the correct
+  route per Article 4.4, and never became a parcel bounce, so there is no
+  bounce commit to cite. Evidence:
+  `backlog/evidence/BL-1319-specifier-spec-amendment-20260902.md`.
+
+  Gates re-run after the amendment: `gherkin_lint_gate.sh` clean, IR-DRY 0
+  findings over 20 step occurrences / 15 unique steps.
