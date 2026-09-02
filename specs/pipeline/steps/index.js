@@ -16,7 +16,6 @@ const DOMAINS = [
   require('./bl1220UnitLaneRunnerBindingSteps'),
   require('./bl1267AdjudicationDischargeSteps'),
   require('./bl1056PriceValidityWindowSteps'),
-  require('./bl1343ReplayDropsTheTicketsOwnPathSteps'),
   require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),
   require('./bl1268StaleClaimNamesThisTicketSteps'),

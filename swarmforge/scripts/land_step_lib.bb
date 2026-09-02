@@ -276,15 +276,8 @@
    all (absence is not evidence, same posture `sibling-landed?` already
    takes one door up).
 
-   {:paths [...] :warning nil} on success. paths [] is a real answer ONLY
-   when the tip is identical to origin/main - nothing was delivered, so
-   nothing is left to replay. BL-1343: an empty set reached the OTHER way,
-   with paths delivered and every one of them subtracted as a sibling's,
-   is a refusal that names the paths, this ticket and the siblings they were
-   credited to - never a silent no-op, which replay! would then report in
-   the same words a completed land produces.
-
-   {:paths nil :warning \"...\"} on that refusal, and when a diff
+   {:paths [...] :warning nil} on success (paths may be [] - a real answer,
+   nothing left to replay). {:paths nil :warning \"...\"} when a diff
    could not be read - origin/main unresolved, the full diff itself
    unreadable, or one path's attribution unreadable, NAMED in the warning
    text so a caller's refusal can say what it could not read (invariant 2's
@@ -307,27 +300,9 @@
   ([root commit task-ticket-id unlanded-siblings commits-fn]
    (if-let [origin-main (origin-main-sha root)]
      (if-let [delivered (full-delivered-paths root origin-main commit)]
-       (loop [remaining delivered acc [] excluded []]
+       (loop [remaining delivered acc []]
          (if (empty? remaining)
-           ;; BL-1343. An empty set is two different answers wearing the same
-           ;; face. With nothing delivered, the tip IS origin/main and "nothing
-           ;; left to replay" is true (scenario 05). With paths delivered and
-           ;; every one of them subtracted, the landing ticket's whole
-           ;; contribution has just been credited to somebody else - and
-           ;; replay! would report that as "nothing to commit", the very words
-           ;; a completed land produces. So the exclusion speaks: it refuses,
-           ;; and names the path, the landing ticket and the sibling it was
-           ;; credited to (invariant 2), rather than letting an approved parcel
-           ;; land nothing while reading as complete.
-           (if (and (empty? acc) (seq delivered))
-             {:paths nil
-              :warning (str "land-step: refusing to replay " task-ticket-id
-                            " - every delivered path was attributed to an unlanded sibling, "
-                            "leaving nothing of this ticket's own contribution to land: "
-                            (str/join "; " (map (fn [{:keys [path owners]}]
-                                                  (str path " -> " (str/join "," (sort owners))))
-                                                excluded)))}
-             {:paths acc :warning nil})
+           {:paths acc :warning nil}
            (let [path (first remaining)
                  attribution (path-owner-tickets root origin-main commit path commits-fn)]
              (cond
@@ -338,11 +313,10 @@
                     (not (:any-untagged? attribution))
                     (not (contains? (:owners attribution) task-ticket-id))
                     (every? unlanded-siblings (:owners attribution)))
-               (recur (rest remaining) acc
-                      (conj excluded {:path path :owners (:owners attribution)}))
+               (recur (rest remaining) acc)
 
                :else
-               (recur (rest remaining) (conj acc path) excluded)))))
+               (recur (rest remaining) (conj acc path))))))
        {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)})
      {:paths nil :warning "land-step: origin/main could not be resolved"})))
 
