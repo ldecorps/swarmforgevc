@@ -46,3 +46,6 @@ depends_on_note: |
   unrelated pack default.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-02, by: QA, blamed: coder, class: behavior, commit: 1025f6e82b, evidence: backlog/evidence/BL-1317-qa-bounce-20260902.md }
