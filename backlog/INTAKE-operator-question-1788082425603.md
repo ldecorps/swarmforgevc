@@ -95,3 +95,27 @@ This does NOT drain the intake and does not unblock it. BL-1352 makes the wait
 visible; ending it is BL-772 slice D (a withdraw verb for a genuinely unanswered
 question — `--resolve` asserts an answer IS on record, so it is not legitimate
 here), which remains unminted. The marker is untouched, again.
+
+**UNBLOCKED 2026-09-03 — the clarifying question is finally asked.**
+The four-day block is over. Sequence, same pass:
+
+1. The coordinator relayed the stuck 2026-08-30 drift question to the human on
+   its own free ask slot (the specifier's was wedged; BL-1352 explains why no
+   escalation ever surfaced it). The human answered **"Mine - operator/Cursor
+   wrote them, no ticket"** — option 1. No defect ticket for the 08-30 drift
+   storm.
+2. `deliver-role-answer.js --role specifier` still reported `already-consumed`
+   (the store holds the 2026-08-28 reconcile answer; the relayed answer was
+   never paired), which is exactly BL-1245's answered-but-unpaired case. The
+   answer was filed at
+   `backlog/answers-archive/ANSWER-2026-08-30-worktree-drift-attribution-operator-cursor-no-ticket.md`
+   and the marker cleared with `role_ask.bb --resolve`.
+3. With the slot free, this intake's own clarifying question was raised: what
+   "the spec tip text filter" refers to, and which surface it means. Free-text,
+   no options — after four grep passes there is still no such name anywhere in
+   the repo, so offering tappable guesses would be putting words in the
+   Operator's mouth on a question that cannot even be parsed.
+
+This intake stays in the backlog root, undrained, until that question is
+answered. That remains the correct state — but it is now waiting on an answer
+rather than on a wedged channel.
