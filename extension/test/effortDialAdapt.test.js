@@ -65,6 +65,12 @@ test('BL-1317: a bounce at the top of the ladder stays there rather than overflo
   const d = decideAdaptEffort({ ...base, priorEffort: 'xhigh', signal: 'bounce' });
   assert.equal(d.effort, 'xhigh');
   assert.equal(d.apply, false, 'nothing to write when the effort would not change');
+  assert.equal(d.reason, 'already at the top of the ladder');
+});
+
+test('BL-1317: a bounce that climbs names the reason it applied', () => {
+  const d = decideAdaptEffort({ ...base, signal: 'bounce' });
+  assert.equal(d.reason, 'bounce: climbing one notch');
 });
 
 // ── drop ─────────────────────────────────────────────────────────────────
@@ -78,6 +84,7 @@ test('BL-1317: a clean completion short of the streak changes nothing', () => {
   });
   assert.equal(d.apply, false);
   assert.equal(d.effort, 'high');
+  assert.equal(d.reason, `clean streak ${ADAPT_DEFAULT_CLEAN_STREAK - 1}/${ADAPT_DEFAULT_CLEAN_STREAK}`);
 });
 
 test('BL-1317: meeting the clean streak drops exactly one notch', () => {
@@ -89,6 +96,7 @@ test('BL-1317: meeting the clean streak drops exactly one notch', () => {
   });
   assert.equal(d.apply, true);
   assert.equal(d.effort, 'medium');
+  assert.equal(d.reason, 'clean streak met: dropping one notch');
 });
 
 test('BL-1317: a drop never goes below the BL-1316 claim-time baseline', () => {
@@ -101,6 +109,34 @@ test('BL-1317: a drop never goes below the BL-1316 claim-time baseline', () => {
   });
   assert.equal(d.apply, false, 'already at the baseline - there is nowhere to drop to');
   assert.equal(d.effort, 'medium');
+  assert.equal(d.reason, 'already at the claim-time baseline');
+});
+
+// The clean-streak requirement defaults to ADAPT_DEFAULT_CLEAN_STREAK only
+// when cleanStreakRequired is genuinely ABSENT (nullish), never merely
+// falsy - every other test in this file passes it explicitly, which cannot
+// tell `??` apart from `&&` since ADAPT_DEFAULT_CLEAN_STREAK is truthy and
+// equal to what they already pass. Omitting it here is the only input that
+// exercises the real default.
+test('BL-1317: an omitted cleanStreakRequired falls back to the real default, not a falsy short-circuit', () => {
+  const shortOfDefault = decideAdaptEffort({
+    ...base,
+    priorEffort: 'high',
+    signal: 'clean',
+    cleanStreak: ADAPT_DEFAULT_CLEAN_STREAK - 1,
+    cleanStreakRequired: undefined,
+  });
+  assert.equal(shortOfDefault.apply, false, 'the default must still gate a short streak, not admit every clean pass');
+
+  const meetsDefault = decideAdaptEffort({
+    ...base,
+    priorEffort: 'high',
+    signal: 'clean',
+    cleanStreak: ADAPT_DEFAULT_CLEAN_STREAK,
+    cleanStreakRequired: undefined,
+  });
+  assert.equal(meetsDefault.apply, true);
+  assert.equal(meetsDefault.effort, 'medium');
 });
 
 test('BL-1317: a clean streak brings an xhigh seat back down one notch at a time', () => {
@@ -111,6 +147,7 @@ test('BL-1317: a clean streak brings an xhigh seat back down one notch at a time
     cleanStreak: ADAPT_DEFAULT_CLEAN_STREAK,
   });
   assert.equal(d.effort, 'high', 'never straight back to the baseline');
+  assert.equal(d.reason, 'clean streak met: dropping one notch');
 });
 
 test('BL-1317: a high-cost ticket keeps its high baseline however clean the streak', () => {
@@ -132,6 +169,7 @@ test('BL-1317: a backend with no effort lever never decides to apply anything', 
     const d = decideAdaptEffort({ ...base, backendHasLever: false, signal, cleanStreak: 99 });
     assert.equal(d.apply, false, `${signal} must not apply on a lever-less backend`);
     assert.equal(d.effort, undefined, 'and must not name an effort a lever-less backend cannot take');
+    assert.equal(d.reason, 'backend has no reasoning-effort lever');
   }
 });
 
@@ -140,11 +178,18 @@ test('BL-1317: a backend with no effort lever never decides to apply anything', 
 test('BL-1317: an unknown prior effort is not guessed at', () => {
   const d = decideAdaptEffort({ ...base, priorEffort: 'turbo', signal: 'bounce' });
   assert.equal(d.apply, false);
+  assert.equal(d.reason, 'unknown prior effort turbo');
 });
 
-test('BL-1317: an unknown signal changes nothing', () => {
+// The reason must name the SIGNAL, not merely say apply is false - a
+// mutant that quietly re-routes an unrecognized signal into the 'clean'
+// branch (rather than falling through to this reason) still produces
+// apply:false with the same prior effort, and only the reason text differs.
+test('BL-1317: an unknown signal changes nothing, and says why rather than being silently treated as clean', () => {
   const d = decideAdaptEffort({ ...base, signal: 'shrug' });
   assert.equal(d.apply, false);
+  assert.equal(d.effort, base.priorEffort);
+  assert.equal(d.reason, 'unknown signal shrug');
 });
 
 test('BL-1317: a missing baseline is treated as the prior effort, never as low', () => {
