@@ -1806,7 +1806,16 @@ You are the hardender.
     sandbox `../..` lands on `.stryker-tmp/`, which is exactly where
     `ensureStrykerSandboxSiblings.js` plants the symlinks. An ENOENT here
     means the sibling is not in `SIBLING_NAMES`; add the name, change no path.
-    This is the bl1300 pair's case: both reach only `swarmforge/scripts/`.
+    **Carve-out, and it is not rare** (found by the hardender applying this
+    rule, 2026-09-02): the symlinks satisfy a plain filesystem read only. A
+    `git` invocation resolves its pathspec inside the TRACKED tree relative to
+    `-C`, never through a symlink planted in `.stryker-tmp`, so `git archive`
+    or `git show` at the shallow root misses every pathspec however the
+    siblings are linked. Escaping to the true repo root IS right there - but
+    only once you have confirmed, per usage, that everything reached through
+    it is data Stryker never mutates (an immutable past commit, a `.sh`, a
+    `.bb`; `--mutate` scopes `out/**/*.js` only). `bl1300HeadroomProofIsPinned`
+    is that case and carries the reasoning inline.
   - **Back into `extension/` itself** — you need the SANDBOX's copy, never the
     real one. Anchor on the `package.json` marker for the extension root and
     resolve from there; do not walk up to a root that contains `extension/`,
@@ -1817,6 +1826,12 @@ You are the hardender.
     `.stryker-tmp/`, so the helper
     returns `''` and the assertion fails on empty output. Repointing it at the
     real repo root would turn that red into a green that tests nothing.
+    Resolution taken there (2026-09-02): no clean fix exists, because
+    `resolveDeprecateCheckCliPath` needs a root with an `extension/` child and
+    a sandbox has none. It keeps the `../..` walk-up - correct outside Stryker,
+    failing LOUD inside it - with the file excluded from the mutation run. A
+    standing known Stryker-only red beats a green that exercises the unmutated
+    build.
 - **The tell that you are about to escape:** the repair makes a previously red
   mutation run go green without you having killed a mutant. Treat a
   root-resolution change that fixes a dry run as suspect until you have
