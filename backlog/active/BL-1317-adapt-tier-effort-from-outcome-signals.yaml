@@ -12,6 +12,7 @@ mutation_cost: medium
 slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1317-adapt-tier-effort-from-outcome-signals.feature
+abandoned_commits: [00e76c46b1]
 
 human_approval: approved
 approval_context: >
