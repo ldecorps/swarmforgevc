@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1332: a path BOTH the landing ticket
+and an unlanded sibling own now refuses the land instead of shipping the
+sibling's lines. `own-paths` decided inclusion per PATH while
+`write-tree-from-paths!` took the whole blob at the cited commit for every
+included path, so a file both tickets edited was pulled in by the landing
+ticket's ownership and carried the unlanded sibling's lines with it —
+reproduced live on `c65d8e6728`, which put an unlanded ticket's `require(...)`
+into `specs/pipeline/steps/index.js` on `origin/main` and froze every role's
+commits on `main` until a human adjudicated. Per the human's ruling (option 1
+of two offered), a shared-with-unlanded path now refuses by name instead,
+naming the path, the landing ticket, and the sibling(s); per-hunk replay
+(option 2) is a follow-up slice, not built here. Everything else is
+unchanged and pinned by tests: a landing-only path still replays whole, a
+sibling-only path is still excluded (BL-1315), a path shared with an
+ALREADY-landed sibling still replays (BL-1272), and an unreadable
+attribution still refuses first. Acceptance:
+`specs/features/BL-1332-a-shared-path-carries-the-siblings-lines.feature`.
+How-to:
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(new "A path shared with an unlanded sibling refuses instead of carrying its
+lines (BL-1332)" section). No new extension command or setting — this is
+swarm-internal land-step tooling.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1056: reverses BL-627's one
 deliberate omission. `pricingTable.ts` entries now carry optional
 `until`/`then` validity metadata — `claude-sonnet-5` costs at its
