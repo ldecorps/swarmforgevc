@@ -473,19 +473,22 @@ function recentlyClosedEntryFor(item: PipelineBoardListSourceItem, nowMs: number
 // genuinely more downstream stage. A key that is not a stage even after the
 // fold is still ignored, exactly as an unknown role always was.
 function heldRoleByTicketId(roleHeldTickets: Record<string, string[]>): Map<string, string> {
+  // Fold every key onto its stage in one pass over roleHeldTickets, keeping
+  // each id under the key's original position - the per-stage insertion
+  // order below still needs it.
+  const idsByStage = new Map<string, string[]>();
+  for (const [roleOrSeat, ids] of Object.entries(roleHeldTickets)) {
+    const stage = stageOfSeat(roleOrSeat);
+    const bucket = idsByStage.get(stage) ?? idsByStage.set(stage, []).get(stage)!;
+    bucket.push(...(ids ?? []));
+  }
   const heldRoleById = new Map<string, string>();
   // Iterating ALL_SWARM_ROLES in pipeline order is load-bearing twice over:
   // it is what makes a LATER (more downstream) stage win, and the Map's
-  // insertion order is itself read downstream as the row order. Collecting
-  // each stage's ids from every key that folds onto it keeps both.
+  // insertion order is itself read downstream as the row order.
   for (const stage of ALL_SWARM_ROLES) {
-    for (const [roleOrSeat, ids] of Object.entries(roleHeldTickets)) {
-      if (stageOfSeat(roleOrSeat) !== stage) {
-        continue;
-      }
-      for (const id of ids ?? []) {
-        heldRoleById.set(id, stage);
-      }
+    for (const id of idsByStage.get(stage) ?? []) {
+      heldRoleById.set(id, stage);
     }
   }
   return heldRoleById;
