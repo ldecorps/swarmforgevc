@@ -77,6 +77,66 @@
           {:has-trail? true :live-mail? false :newest-trail-ms 95001}
           100000 5000))
 
+;; ── BL-1301: a deliberately parked ticket is not a dropped parcel ─────────
+;; The suppression is opt-in and fails CLOSED: only an explicit
+;; `status: blocked` spares a ticket the nudge - every other status, and the
+;; absence of the field, is nudged exactly as before.
+
+(assert= "bl1301-01: status blocked suppresses the nudge for an otherwise-dropped ticket"
+         false
+         (chase-sweep-lib/decide-dropped-parcel?
+          {:has-trail? true :live-mail? false :newest-trail-ms 1000 :status "blocked"}
+          100000 5000))
+
+(doseq [status ["todo" "needs_design" "superseded" "paused"]]
+  (assert= (str "bl1301-01: status " status " is nudged exactly as before")
+           true
+           (chase-sweep-lib/decide-dropped-parcel?
+            {:has-trail? true :live-mail? false :newest-trail-ms 1000 :status status}
+            100000 5000)))
+
+(assert= "bl1301-02: no status field at all is still nudged (absence buys no silence)"
+         true
+         (chase-sweep-lib/decide-dropped-parcel?
+          {:has-trail? true :live-mail? false :newest-trail-ms 1000}
+          100000 5000))
+
+(assert= "bl1301-02: an explicitly nil status is still nudged"
+         true
+         (chase-sweep-lib/decide-dropped-parcel?
+          {:has-trail? true :live-mail? false :newest-trail-ms 1000 :status nil}
+          100000 5000))
+
+(assert= "bl1301: a blocked ticket that is not otherwise dropped stays a non-candidate"
+         false
+         (chase-sweep-lib/decide-dropped-parcel?
+          {:has-trail? true :live-mail? true :newest-trail-ms 1000 :status "blocked"}
+          100000 5000))
+
+(assert= "bl1301: parked-ticket? recognises exactly the blocked status"
+         [true false false false]
+         [(chase-sweep-lib/parked-ticket? "blocked")
+          (chase-sweep-lib/parked-ticket? "todo")
+          (chase-sweep-lib/parked-ticket? nil)
+          (chase-sweep-lib/parked-ticket? "")])
+
+(assert= "bl1301: parked-ticket? tolerates the trailing whitespace read-yaml-field would leave"
+         true
+         (chase-sweep-lib/parked-ticket? "blocked "))
+
+;; An over-permissive matcher (str/includes?, or a lower-casing one) would
+;; read a park into a status that merely mentions the marker - and silence a
+;; genuinely dropped ticket.
+(doseq [near-miss ["Blocked" "BLOCKED" "not-blocked" "blocked-on-BL-1297" "unblocked"]]
+  (assert= (str "bl1301: status " near-miss " is NOT the park marker")
+           false
+           (chase-sweep-lib/parked-ticket? near-miss))
+  (assert= (str "bl1301: a dropped ticket with status " near-miss " is still nudged")
+           true
+           (chase-sweep-lib/decide-dropped-parcel?
+            {:has-trail? true :live-mail? false :newest-trail-ms 1000 :status near-miss}
+            100000 5000)))
+
 ;; ── within-dropped-parcel-cooldown? (pure) ────────────────────────────────
 ;; BL-719 dropped-parcel-nudge-05: a prior nudge inside the cooldown window
 ;; suppresses a repeat, even for a still-genuinely-dropped ticket.
@@ -162,10 +222,16 @@
   (spit (str (fs/path dir filename))
         (str (str/join "\n" (map (fn [[k v]] (str (name k) ": " v)) headers)) "\n\nbody\n")))
 
-(defn write-active-item! [active-dir id assigned-to]
-  (fs/create-dirs active-dir)
-  (spit (str (fs/path active-dir (str id "-demo.yaml")))
-        (str "id: " id "\ntitle: \"demo\"\nstatus: todo\nassigned_to: " assigned-to "\n")))
+(defn write-active-item!
+  "status defaults to the mint value `todo`; pass nil to write a ticket with
+   no status: line at all (BL-1301 scenario 02 - absence buys no silence)."
+  ([active-dir id assigned-to] (write-active-item! active-dir id assigned-to "todo"))
+  ([active-dir id assigned-to status]
+   (fs/create-dirs active-dir)
+   (spit (str (fs/path active-dir (str id "-demo.yaml")))
+         (str "id: " id "\ntitle: \"demo\"\n"
+              (when status (str "status: " status "\n"))
+              "assigned_to: " assigned-to "\n"))))
 
 (let [tmp (mk-tmp)
       sent-dir (str (fs/path tmp "sent"))]
@@ -247,7 +313,7 @@
                   {:from "documenter" :to "QA" :type "git_handoff" :task "BL-719-demo"
                    :enqueued_at "2020-01-01T00:00:00.000000Z"})
   (assert= "dropped-parcel-items-01: dispatched + no live mail + stale trail → nudge candidate"
-           [{:id "BL-719" :assigned-to "coder"}]
+           [{:id "BL-719" :assigned-to "coder" :status "todo"}]
            (chase-sweep-lib/dropped-parcel-items
             active-dir [sent-dir] [coder-new] far-future-now-ms 5000)))
 
@@ -295,6 +361,87 @@
          []
          (chase-sweep-lib/dropped-parcel-items
           (str (fs/path (mk-tmp) "nonexistent-active")) [] [] far-future-now-ms 5000))
+
+;; ── BL-1301: dropped-parcel-evaluation (full pipeline, fixture-based) ────
+;; The suppression lives in THIS decision only, and a suppressed ticket is
+;; never invisible - it comes back named, with its reason, for the caller to
+;; log (invariant 3).
+
+(defn- bl1301-fixture
+  "An otherwise-textbook dropped parcel (trail, stale, no live mail) whose
+   ticket declares `status`. Returns the evaluation for that tree."
+  [status]
+  (let [tmp (mk-tmp)
+        active-dir (str (fs/path tmp "active"))
+        sent-dir (str (fs/path tmp "sent"))
+        coder-new (str (fs/path tmp "coder-new"))]
+    (write-active-item! active-dir "BL-1301" "coder" status)
+    (write-handoff! sent-dir "00_a.handoff"
+                    {:from "documenter" :to "QA" :type "git_handoff" :task "BL-1301-demo"
+                     :enqueued_at "2020-01-01T00:00:00.000000Z"})
+    (chase-sweep-lib/dropped-parcel-evaluation
+     active-dir [sent-dir] [coder-new] far-future-now-ms 5000)))
+
+(assert= "bl1301-01: a blocked ticket is not a nudge candidate"
+         []
+         (mapv :id (:items (bl1301-fixture "blocked"))))
+
+(assert= "bl1301-03: the suppressed ticket comes back named, so the sweep can log it"
+         ["BL-1301"]
+         (mapv :id (:suppressed (bl1301-fixture "blocked"))))
+
+(doseq [status ["todo" "needs_design" "superseded" "paused"]]
+  (assert= (str "bl1301-01: a " status " ticket is nudged and never suppressed")
+           [["BL-1301"] []]
+           (let [ev (bl1301-fixture status)]
+             [(mapv :id (:items ev)) (mapv :id (:suppressed ev))])))
+
+(assert= "bl1301-02: a ticket with no status line at all is nudged, not suppressed"
+         [["BL-1301"] []]
+         (let [ev (bl1301-fixture nil)]
+           [(mapv :id (:items ev)) (mapv :id (:suppressed ev))]))
+
+(assert= "bl1301: dropped-parcel-items still returns exactly the evaluation's nudge candidates"
+         []
+         (let [tmp (mk-tmp)
+               active-dir (str (fs/path tmp "active"))
+               sent-dir (str (fs/path tmp "sent"))
+               coder-new (str (fs/path tmp "coder-new"))]
+           (write-active-item! active-dir "BL-1301" "coder" "blocked")
+           (write-handoff! sent-dir "00_a.handoff"
+                           {:from "documenter" :to "QA" :type "git_handoff" :task "BL-1301-demo"
+                            :enqueued_at "2020-01-01T00:00:00.000000Z"})
+           (chase-sweep-lib/dropped-parcel-items
+            active-dir [sent-dir] [coder-new] far-future-now-ms 5000)))
+
+;; A blocked ticket whose trail is still FRESH was never a candidate, so it is
+;; not "suppressed" either - suppression names only what the park actually
+;; silenced.
+(assert= "bl1301: a blocked ticket with a fresh trail is neither nudged nor reported suppressed"
+         [[] []]
+         (let [tmp (mk-tmp)
+               active-dir (str (fs/path tmp "active"))
+               sent-dir (str (fs/path tmp "sent"))
+               coder-new (str (fs/path tmp "coder-new"))]
+           (write-active-item! active-dir "BL-1301" "coder" "blocked")
+           (write-handoff! sent-dir "00_a.handoff"
+                           {:from "documenter" :to "QA" :type "git_handoff" :task "BL-1301-demo"
+                            :enqueued_at "2026-08-14T00:00:00.000000Z"})
+           (let [ev (chase-sweep-lib/dropped-parcel-evaluation
+                     active-dir [sent-dir] [coder-new]
+                     (.toEpochMilli (java.time.Instant/parse "2026-08-14T00:00:10.000000Z"))
+                     60000)]
+             [(mapv :id (:items ev)) (mapv :id (:suppressed ev))])))
+
+;; Invariant 2: the dispatch-gap sweep's candidate set is untouched by the
+;; park marker - the same blocked ticket, never dispatched, is still routed.
+(assert= "bl1301-04: the dispatch-gap sweep still claims a blocked, never-dispatched ticket"
+         ["BL-1301"]
+         (let [tmp (mk-tmp)
+               active-dir (str (fs/path tmp "active"))
+               new-dir (str (fs/path tmp "coder-new"))]
+           (write-active-item! active-dir "BL-1301" "coder" "blocked")
+           (mapv :id (chase-sweep-lib/dispatch-gap-items active-dir [new-dir]))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
