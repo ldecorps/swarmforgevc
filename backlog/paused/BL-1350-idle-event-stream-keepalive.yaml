@@ -1,0 +1,185 @@
+id: BL-1350
+title: "The bridge writes no SSE keepalive, so undici's 300 s body timeout kills every idle reply-relay connection and a quiet swarm reads as a chronic outage"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading operator messaging AND a broken health signal.
+# The relay is genuinely dark for each backoff window, and the BL-1111
+# sustained-outage alert now fires on a phantom outage roughly every 2-4 h -
+# so a REAL relay outage is no longer distinguishable from the noise floor.
+status: todo
+epic: swarm-reliability
+priority: 11
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1350-idle-event-stream-keepalive.feature
+
+required_wiring:
+  - extension/src/bridge/bridgeServer.ts::writeSseKeepalive::the keepalive must be written from the live module that owns sseClients and the poll timer, not only from a unit-tested helper no production path calls (BL-1235)
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options. The fix direction is
+  firm and it is mine, not yours to arbitrate: the keepalive goes on the
+  SERVER, because /events has more consumers than the bot (the holistic UI
+  and the Bubble host page both hold the same stream) and a server keepalive
+  fixes all of them at once, where a client-side bodyTimeout override fixes
+  exactly one.
+
+  What needs your eye is the 20000 ms interval in the acceptance. It is not
+  a measured number - it is one fifteenth of the 300000 ms undici default,
+  chosen for margin, and it is the one value here you might want different.
+
+  Worth knowing: this is the answer to BL-1111's own unfinished direction
+  ("Identify why reconnect stayed on terminated"). That ticket shipped the
+  alert and explicitly did not diagnose the cause. The cause is now
+  confirmed by a hold test, not inferred - see the description.
+
+invariants:
+  - "Every open /events connection is written to within the keepalive interval whether or not any bridge state changed - liveness of the socket never depends on swarm activity."
+  - "A frame written only to hold the connection open changes no consumer state: no reply delivered, no reply acknowledged, no reply-outbox cursor advanced, no seenIds entry added."
+
+description: |
+  ## What is wrong
+
+  `bridgeServer.ts`'s `/events` handler writes ONE `data:` frame at connect
+  and then adds the response to `sseClients`. After that the only writers are
+  `broadcastSnapshotIfChanged` - which returns early when the snapshot is
+  byte-identical to the last one - and `relayEntriesFrom`, which writes only
+  when a reply-outbox entry appears. No comment/ping keepalive is written
+  anywhere. A quiet swarm therefore leaves the socket completely silent.
+
+  The front-desk reply-relay consumes that stream with a bare
+  `fetch(`${bridgeUrl}/events`)` (`telegram-front-desk-bot.ts`,
+  `connectAndRelayReplies`) - no `bodyTimeout`, no dispatcher override
+  anywhere in the bot or its core. Node v22.22.3's bundled undici applies its
+  default `bodyTimeout` of 300000 ms BETWEEN BODY CHUNKS, and when that fires
+  inside `fetch` the reader throws `TypeError: terminated`.
+
+  So every relay connection dies after five idle minutes.
+  `attemptReplyRelayConnection` cannot tell that from a real drop: it returns
+  the error message, `computeReplyRelayCycleResult` counts a FAILURE, the
+  backoff runs (2 s to a 60 s cap), and five in a row emit
+  `reply-relay degraded - 5 consecutive reconnect failures, still retrying:
+  terminated`.
+
+  ## The evidence this is the cause, not a guess
+
+  `.swarmforge/operator/front-desk-supervisor.log` carries 43 such lines,
+  first at 2026-08-27T11:44Z and roughly every 2-4 h since, clustered in
+  quiet hours. There is no "recovered" line in that log at all - "degraded"
+  is the only relay message it has ever carried.
+
+  Hold test, 2026-09-02 22:44:48Z: an authenticated
+  `curl -N --max-time 340` against `/events`.
+
+      http=200 t=340.001533s bytes=6764293
+      rc=28   (curl's OWN --max-time; the server never closed)
+
+  The socket stayed open the full 340 s, well past the 300 s at which the
+  bot's fetch dies, and received exactly the connect snapshot and nothing
+  else. The bridge does not close idle SSE connections. The client-side
+  undici bodyTimeout is the sole cause of `terminated`. CONFIRMED.
+
+  ## How (direction, not mandate)
+
+  Write a periodic keepalive to every client in `sseClients` on a timer, at
+  an interval comfortably under the client body-idle timeout. An SSE comment
+  frame is the conventional carrier and is already inert to this repo's own
+  reader: `parseNextSseRecord` finds neither an `event: ` nor a `data: ` line
+  in it, and `relayOneRecord` returns early on `record.event !==
+  'telegram-reply'`. A browser `EventSource` ignores comments natively.
+
+  A client-side `bodyTimeout` override on the relay's fetch is reasonable
+  belt-and-braces and is welcome, but it is not the fix and must not be the
+  only one - see approval_context.
+
+constraints: >
+  - The symbol name `writeSseKeepalive` is fixed by the required_wiring
+    anchor. Rename it and the documenter's handoff to QA is refused. It is
+    pinned in the LIVE server module deliberately: a keepalive helper that
+    exists and is unit-tested but is never reached from the running server is
+    exactly the shape BL-1235 shipped, and it would leave this defect fully
+    unfixed behind a green suite.
+  - No real timers and no real sleeps in the suite (engineering.prompt, Test
+    Speed And Isolation). The 300000 ms elapse in every scenario is fake-clock
+    advancement; the existing `pollIntervalMs` option is the precedent for how
+    the interval reaches the server under test.
+  - The keepalive must not resurrect a client already removed from
+    `sseClients` by the `req.on('close')` handler, and must be cleared by the
+    handle's `stop()` alongside `poll` - a timer surviving `stop()` keeps the
+    process alive and will hang the unit suite.
+  - Do not weaken the BL-1111 sustained-outage alert or the degraded
+    threshold to quiet the symptom. The alert is correct; what it reports is
+    a real reconnect failure. Removing the failure is the fix.
+
+qa_e2e_procedure: >
+  (1) On this host, with the bridge running, hold an authenticated
+  `curl -N --max-time 340 -H "authorization: Bearer $BRIDGE_TOKEN"
+  <bridge>/events` open across a quiet period. Before the fix the stream
+  carries the connect snapshot and nothing else for the full 340 s; after it,
+  keepalive frames arrive throughout and no gap approaches 300 s.
+  (2) Restart the front-desk bot and leave the swarm quiet for at least 20
+  minutes - longer than four body-timeout windows. Confirm
+  `.swarmforge/operator/front-desk-supervisor.log` gains no new
+  "reply-relay degraded ... terminated" line in that window. Baseline for
+  comparison: 43 such lines between 2026-08-27 and 2026-09-02.
+  (3) Send a real Telegram reply during the same quiet window and confirm it
+  still relays and is still acked - the keepalive must not have displaced or
+  reordered the reply path.
+  (4) Open the holistic UI against the same bridge and leave it idle for the
+  same window; it must not disconnect or blank, and its console must show no
+  parse error from the keepalive frame.
+
+out_of_scope: |
+  - The 6.7 MB connect snapshot. That is BL-1351, minted from the same
+    evidence file. It aggravates this defect - every 5-minute reconnect
+    re-sent the whole backlog - but it is a separable fault with its own
+    cause, and fixing either one alone is worth shipping.
+  - The sustained-outage alert shape and its threshold. BL-621 and BL-1111
+    (both done) own that, and both behaved correctly here.
+  - The relay's at-least-once egress and seenIds-across-reconnect discipline.
+    BL-320 (done) owns it and this ticket does not touch it.
+
+source: |
+  `backlog/evidence/coordinator-front-desk-reply-relay-terminated-idle-timeout-20260902.md`
+  (commit 7538cdc3c0), a coordinator investigation opened by the BL-1111
+  sustained-outage escalation at 2026-09-02 ~22:43Z, routed to the specifier
+  by note at 22:51Z with the coordinator's own verdict, preserved verbatim:
+
+  > Domain work (bridge SSE keepalive and/or fetch bodyTimeout override;
+  > snapshot size is a second, separable defect). Routed to the specifier by
+  > note.
+
+  The alert text that opened it, verbatim from that evidence file:
+
+  > the reply-relay loop has been failing continuously for 35m. Last error:
+  > terminated. It keeps retrying on a capped backoff.
+
+  Split 1:2 with BL-1351 on the coordinator's own "second, separable defect"
+  line above.
+
+notes: |
+  ## Verified at mint
+
+  - `bridgeServer.ts:2228` `/events` handler: one connect write, then
+    `sseClients.add(res)`. No keepalive writer exists anywhere in the file.
+  - `telegram-front-desk-bot.ts:2765`: `fetch(`${bridgeUrl}/events`, {headers})`
+    with no dispatcher and no timeout option.
+  - `parseNextSseRecord` / `relayOneRecord` (`telegramFrontDeskBotCore.ts`)
+    confirmed to drop a comment frame harmlessly, so scenario 03 is asserting
+    behaviour the fix must PRESERVE, not behaviour it must add.
+  - `REPLY_RECONNECT_BACKOFF_CONFIG` = base 2000 ms, cap 60000 ms, degraded
+    threshold 5 - which is where the "5 consecutive reconnect failures" in the
+    log line comes from.
+
+  ## IR-DRY
+
+  Run clean: 11 steps, 11 unique, 0 findings. An earlier draft split scenario
+  01 into a 20000 ms and a 300000 ms elapse and the checker flagged the pair
+  as a near-duplicate; folding them into one scenario that asserts the gap
+  bound over a full timeout window is both DRYer and a strictly stronger
+  assertion, so the finding was resolved rather than waived.

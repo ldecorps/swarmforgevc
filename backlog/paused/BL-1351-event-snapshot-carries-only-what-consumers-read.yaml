@@ -1,0 +1,179 @@
+id: BL-1351
+title: "Every /events frame carries the entire backlog including 1200 closed tickets, so one connect costs 6.7 MB and every backlog commit costs it again per client"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. It wastes bandwidth and CPU rather than losing
+# work, and nothing is currently observed to fail because of it - but it
+# multiplies BL-1350's five-minute reconnect cycle by 6.7 MB a time, and it
+# grows monotonically as the done folder grows.
+status: todo
+epic: swarm-reliability
+priority: 35
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1351-event-snapshot-carries-only-what-consumers-read.feature
+
+human_approval: pending
+ruling_options:
+  - option 1 - keep every backlog folder on the stream but carry only the per-item fields consumers actually read
+  - option 2 - drop the done folder from the stream entirely and serve it from a separate on-demand route
+approval_context: >
+  One question, about shape rather than whether the defect is real. The
+  6764293-byte measurement is from a live hold test either way.
+
+  OPTION 1, which the ticket is written for, keeps the stream's shape exactly
+  as consumers see it today and only narrows each item to the fields
+  something actually reads. Lowest risk, no consumer changes, and it is
+  reversible. It leaves the done folder's item COUNT growing on the stream
+  forever, so the frame keeps growing, just far more slowly.
+
+  OPTION 2 is the structurally honest one: roughly 1200 of the 1259 items are
+  long-closed and nothing on a live stream needs them pushed. It bounds the
+  frame permanently rather than slowing its growth. It costs more - every
+  consumer that reads folders.done off the stream needs a new fetch path, and
+  I have not yet enumerated those consumers, so I cannot promise you it is
+  small.
+
+  If you pick option 2 I will re-spec rather than let the coder improvise the
+  boundary; the acceptance scenarios as written gate option 1.
+
+invariants:
+  - "No field leaves the snapshot without an exhaustive enumeration of every /events consumer showing nothing reads it - a sampled sweep is not evidence."
+  - "The connect snapshot and the poll loop's rebroadcast always carry the same per-item shape: a client can never observe a field that only one of the two producers emits."
+
+description: |
+  ## What is wrong
+
+  `buildBridgeState` (`bridgeState.ts:70`) embeds `readBacklogFolders`
+  wholesale, and that reader returns active, paused, hold AND done, each item
+  carrying its full `description`, `notes` and `acceptance` bodies.
+
+  Both `/events` producers serialize that same object:
+
+  - `resolveEventsSnapshot` (`bridgeServer.ts:370`) at connect, and
+  - `broadcastSnapshotIfChanged` (`bridgeServer.ts:2255`), which re-sends the
+    WHOLE frame to every client in `sseClients` whenever the serialized state
+    differs from the last one - so any commit touching `backlog/` re-sends
+    everything.
+
+  Measured on this host, 2026-09-02, by an authenticated hold against
+  `/events`: `bytes=6764293` in a single `data:` frame, for 1259 distinct
+  `BL-` ids. Roughly 1200 of those are in `done/`.
+
+  ## Why it matters now
+
+  It is the aggravator on BL-1350. Until that lands, the relay reconnects
+  every five idle minutes, and each reconnect pays the full 6.7 MB. But the
+  two are independent faults: BL-1350 stops the reconnect churn without
+  making the frame any smaller, and this ticket bounds the frame whether or
+  not the churn is fixed. Either is worth shipping alone.
+
+  ## How (direction, not mandate)
+
+  Enumerate every consumer of `/events` first - `holisticUiHtml.ts`,
+  `bubbleHostUiHtml.ts`, and the front-desk relay are the ones grepped at
+  mint, and that list is a starting point, not a finding. Determine which
+  per-item fields each actually renders or branches on. Then narrow what the
+  stream carries to that union.
+
+  Note that `buildBridgeState` is ALSO the source for the JSON `/state`
+  routes (`bridgeServer.ts:1875`, via `stateForRoute`). Narrowing it at that
+  level silently narrows those routes too. Whether that is correct or whether
+  the stream needs its own projection is a design call for the architect
+  pass; it must be a decided answer either way, not a side effect.
+
+constraints: >
+  - The consumer sweep must be exhaustive, not sampled. A field dropped
+    because a grep missed its reader is a silent, invisible UI regression -
+    invariant 1 exists for exactly this and the architect reviews against it.
+  - No `required_wiring` is declared, deliberately. The change has no new call
+    site: both snapshot producers already exist and are already reached from
+    the live server, and the acceptance gates both directly. An anchor here
+    could only name a symbol this parcel itself introduces, which is a green
+    that proves nothing (BL-1235).
+  - 512000 bytes in the acceptance is a budget, not a measurement. It is
+    roughly one thirteenth of today's frame and is chosen to be comfortably
+    achievable under either ruling option while still failing loudly if the
+    item bodies come back. Do not tune it to whatever the implementation
+    happens to produce.
+  - The fixture backing the Background must build its 1223 items in a temp
+    dir removed in a `finally` and swept by prefix before the run (BL-971),
+    and must not read the real `backlog/` - a test whose size assertion moves
+    with the live repo is not a gate.
+
+qa_e2e_procedure: >
+  (1) Against the running bridge on this host, repeat the mint measurement:
+  `curl -N --max-time 5 -H "authorization: Bearer $BRIDGE_TOKEN"
+  <bridge>/events | wc -c`. The baseline is 6764293 bytes; after the fix it
+  must be materially smaller and under the 512000-byte budget on a backlog of
+  comparable size.
+  (2) Open the holistic UI and the Bubble host page against that same bridge.
+  Every backlog surface each renders - counts, lists, per-item detail,
+  approval state, epic grouping - must show what it showed before. This is
+  the manual half of invariant 1 and it is the one that catches a field
+  dropped by an incomplete sweep.
+  (3) Commit a change to one active ticket while both pages are open and
+  confirm they update, and that the rebroadcast frame is also under budget.
+  (4) Confirm the JSON `/state` routes still answer with what their own
+  consumers read - if the projection was applied at buildBridgeState level,
+  this is where a narrowing leaks out of the stream.
+
+out_of_scope: |
+  - The keepalive and the undici body timeout. That is BL-1350, minted from
+    the same evidence file, and it is the one that stops the reconnect churn.
+  - Delta broadcasting - sending only what changed instead of the whole state
+    on every change. It is the obvious next question once the frame is small,
+    and it is deliberately not scoped here: it changes the wire contract for
+    every consumer, where this ticket changes only what rides it. Worth
+    minting once the measured result of this ticket says whether it is still
+    needed.
+  - Pagination or filtering of the backlog surfaces themselves. This ticket
+    changes what the stream carries, never what the UI chooses to show.
+
+source: |
+  `backlog/evidence/coordinator-front-desk-reply-relay-terminated-idle-timeout-20260902.md`
+  (commit 7538cdc3c0), a coordinator investigation opened by the BL-1111
+  sustained-outage escalation at 2026-09-02 ~22:43Z. The coordinator's own
+  verdict, preserved verbatim:
+
+  > Domain work (bridge SSE keepalive and/or fetch bodyTimeout override;
+  > snapshot size is a second, separable defect). Routed to the specifier by
+  > note.
+
+  The measurement, verbatim from that evidence file:
+
+  > Aggravator: the connect-time snapshot is **6.7 MB** (measured:
+  > `bytes=6764293` in a single `data:` frame) - it embeds the ENTIRE backlog
+  > (1259 distinct `BL-` ids with `description`, `notes`, `acceptance`
+  > bodies). `broadcastSnapshotIfChanged` re-sends that whole frame to every
+  > SSE client on ANY backlog change, so each 5-minute reconnect costs 6.7 MB
+  > plus one more on every commit that touches `backlog/`.
+
+  This ticket is the "second, separable defect" that line names. Split 1:2
+  with BL-1350.
+
+notes: |
+  ## Verified at mint
+
+  - `readBacklogFolders` (`panel/backlogReader.ts:480`) returns active,
+    paused, done and hold - `done` via `readDoneItems`, so the whole closed
+    archive is on the stream.
+  - `buildBridgeState` has two `/events` callers (`bridgeServer.ts:370` and
+    `:2256`) and one JSON-route caller (`:1875`). Invariant 2 covers the first
+    two; the third is the constraint the architect must rule on.
+  - Consumers grepped at mint: `holisticUiHtml.ts`, `bubbleHostUiHtml.ts`,
+    `telegram-front-desk-bot.ts`. Recorded as a starting point only - the
+    ticket requires the implementer's own exhaustive sweep, because a mint-time
+    grep is exactly the sampled evidence invariant 1 refuses.
+
+  ## IR-DRY
+
+  Run clean: 8 steps, 8 unique, 0 findings. An earlier draft phrased the
+  connect and rebroadcast size assertions as two separate scenarios and the
+  checker flagged both the `connects`/`connected` pair and the two size
+  assertions as possible synonyms; folding them into one Scenario Outline over
+  a `<trigger>` column resolved both rather than waiving them.
