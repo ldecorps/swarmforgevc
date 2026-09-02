@@ -3,7 +3,6 @@
 # {"version":1,"tested_at":"2026-09-02T22:06:17.605016411Z","feature_name":"A merge never silently drops work either branch carries","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1242-merge-never-silently-drops-branch-work.feature","background_hash":"3345f26689e75ebd3347f46a9767dfd4a875fe31f8e03183692a6bec9bba4a3f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The commit message decides whether a removal is accounted for","scenario_hash":"bd083b5467f84ca3dcccbd132693c45e541711289158c518e49b87b54d395db0","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"},{"index":3,"name":"Each removed path is reported by exactly one guard","scenario_hash":"f5144d5dd1cc9c6a4d40566e3eb79c2bfa27bf32c2ad83027dc0fa25e137e984","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"},{"index":4,"name":"The commit message decides whether an incoming removal is accounted for","scenario_hash":"00beaeae1b861ef5c312bb0874924e9ef36dc7c8891d615d2582de52cdcebfad","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"}]}
 # acceptance-mutation-manifest-end
 
-
 Feature: A merge never silently drops work either branch carries
 
   QA's merge-up broadcast tells every worktree role to merge the approved

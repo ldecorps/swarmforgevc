@@ -329,7 +329,6 @@ pass "13: a path dropped from both sides is reported once, not twice"
 [[ "$OUT13" == *"this branch"* ]] || fail "13b: the single finding must still name 'this branch': $OUT13"
 [[ "$OUT13" == *"the incoming branch"* ]] || fail "13b: the single finding must still name 'the incoming branch': $OUT13"
 pass "13b: a path dropped from both sides names BOTH sides in its one finding"
-
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
 echo "ALL PASS"
