@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1340: promotion no longer refuses a
+`.feature.draft` acceptance pointer the ticket itself is chartered to
+convert — `promotion_gates_lib.bb`'s `acceptance-executable-refusal` admits a
+draft when `required_wiring:` pins a `specs/pipeline/steps` registration
+(`pins-draft-conversion?`); a draft with no pin still refuses, named as
+parked rather than merely "not executable". `promote_and_route_next.sh`'s
+auto-select no longer partitions candidates into buildable/other ahead of
+`promotion_gates_cli.bb select`, so buildability can no longer silently
+outrank Article 3.2.4 expedite order. The documenter→QA edge
+(`acceptance_contract_gate_lib.bb`) is the backstop making this safe: a
+parcel whose acceptance still names a draft at the cited commit is refused
+there, checked ahead of `wait-bound-hit?` so the finding names the draft
+rather than reading as a transient timeout. Origin: nine coordinator turns
+spent re-attempting promotion of 12 stranded tickets, including two `high`
+expedited defects (BL-1309, BL-1306), because two individually-correct rules
+(BL-626's refusal, `specifier.prompt`'s self-converting-draft minting shape)
+collided with no exit. Acceptance:
+`specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature`
+(BL-1340 lands its four new scenarios in, retires BL-626's own
+every-draft-refused example row). How-to:
+`docs/how-to/BL-1340-promotion-admits-a-self-converting-acceptance-draft.md`.
+Diagram: `docs/diagrams/swarm-flow.mmd`. No new extension command or
+setting.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1056: reverses BL-627's one
 deliberate omission. `pricingTable.ts` entries now carry optional
 `until`/`then` validity metadata — `claude-sonnet-5` costs at its
