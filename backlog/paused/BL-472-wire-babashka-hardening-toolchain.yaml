@@ -161,12 +161,111 @@ qa_e2e: |
   clean .bb change passes; confirm engineering.prompt no longer claims the tooling
   is unwired. Verify against the real hardening path, not a fixture.
 
-human_approval: approved
+human_approval: pending
 approval_context: >
-  Filed as a deferred tracker (human 2026-07-16 chose document-as-not-wired).
-  Operator activated 2026-08-30 via Cursor: build pin+install+wire for
-  clj-mutate/crap4clj/dry4clj. Specifier settles open questions and authors
-  the feature file at pickup; normal human-review of that spec still applies.
+  Your 2026-08-30 activation ("build the Babashka hardening toolchain") is not
+  in doubt and is not being second-guessed. Picking the ticket up answered its
+  own blocking question, and the answer changes what you are buying.
+
+  All three tools exist and all three are JVM tools. Each declares :deps in
+  bb.edn, and babashka resolves those through deps.clj, which shells to the
+  Clojure CLI and needs java. This host has babashka v1.12.218 and no java, no
+  clojure, no clj, no lein - so `bb tasks` dies in all three repos before any
+  tool code runs. clj-mutate even ships a spec suite named for "JVM-only
+  failures under Babashka", so the gap is upstream's own, not a local
+  misconfiguration.
+
+  So this is no longer pin-plus-install-script. It is "put a JVM and the
+  Clojure CLI on every host that runs a hardener .bb pass, and keep them
+  pinned", and that is an infrastructure commitment with an ongoing cost. The
+  ticket itself anticipated this branch and said it "may argue for keeping .bb
+  on unit-tests-only permanently" - which is why this is going back to you
+  rather than being decided here.
+
+  Nothing is broken while you decide. The documented gap stays accurate and
+  .bb scripts keep their unit-test gate.
+ruling_options:
+  - Provision a JVM and Clojure CLI on swarm hosts, then build pin install and wire
+  - Keep .bb on unit-tests-only permanently and retire this ticket
+  - Pin and vendor the tools now but run the gate only where a JVM already exists
 mutation_cost: low
 
 assigned_to: specifier
+
+specifier_pickup_2026_09_02: |
+  Picked up on the coordinator's note "BL-472 promoted (active), author its
+  feature file at pickup". The feature file is deliberately NOT written yet,
+  and the ticket's own text is why: it says the Gherkin is authored at pickup
+  "once the open questions above are resolved", and warns that "a feature file
+  whose scenarios outrun an undesigned build would be premature". Question 1
+  is now resolved; its answer opens a decision that is not the specifier's to
+  take. Writing scenarios now would spec a build that may never happen.
+
+  ## OPEN QUESTION 1 — ANSWERED, empirically
+
+  "Do clj-mutate/crap4clj/dry4clj build+run in THIS environment (babashka, not
+  full Clojure/JVM)? Confirm before pinning."
+
+  **No. All three need a JVM, and this host has none.**
+
+  - All three upstream repos exist: `git ls-remote` succeeds for
+    github.com/unclebob/{clj-mutate,crap4clj,dry4clj}. The premise is sound.
+  - Local toolchain, measured: `bb` = babashka v1.12.218. `java`, `clojure`,
+    `clj`, `lein` are ALL ABSENT.
+  - Each repo's `bb.edn` declares `:deps` — clj-mutate on the Maven coords
+    org.clojure/tools.reader and speclj/speclj; crap4clj and dry4clj on
+    io.github.unclebob/deintroverter4clj by `:git/url` + `:git/sha`. Babashka
+    resolves `:deps` through deps.clj, which shells to the Clojure CLI.
+  - Measured, not inferred: `bb tasks` in each of the three clones fails
+    immediately with
+    `java.lang.Exception: Couldn't find 'java'. Please set JAVA_HOME.`
+    at `borkdude.deps$get_java_cmd`. This is dependency RESOLUTION failing —
+    no tool code is reached at all.
+  - Upstream agrees this is a real boundary, not a local misconfiguration:
+    clj-mutate ships a `spec-bb` suite whose bb.edn task is documented as
+    "Run alternate specs for JVM-only failures under Babashka".
+
+  Consequence: wiring these tools is not "pin + install script". It requires
+  provisioning and pinning a JVM plus the Clojure CLI on every host that runs
+  a hardener .bb pass. That is the branch the ticket flagged in advance ("if
+  they are JVM-only the wiring story changes, and may argue for keeping .bb on
+  unit-tests-only permanently"), so it goes back to the operator as
+  `ruling_options` rather than being decided here.
+
+  ## OPEN QUESTIONS 2 and 3 — provisional specifier disposition
+
+  Recorded now so that if the ruling is "provision the JVM", the spec can be
+  written immediately without another round trip. Neither is binding on the
+  operator.
+
+  - Q2, scope: `swarmforge/scripts/*.bb` only, excluding
+    `swarmforge/scripts/test/`. That is exactly the deployed surface
+    `build_freshness_lib.bb`'s `on-deployed-surface?` already defines, so the
+    gate's scope and the deploy gate's scope agree by construction instead of
+    drifting apart.
+  - Q3, bar: NOT hardener parity on day one. On-touch only, per BL-428 — the
+    existing .bb corpus has never faced a mutation or CRAP gate, so a
+    big-bang flip would block every .bb-touching ticket at once, which the
+    ticket's own "FIRST-PASS COST" note already warns against.
+
+  ## INVEST, if the build is ruled in
+
+  As written the ticket is PIN + INSTALL + WIRE + incremental rollout, which
+  fails S (one sitting) and now also E (the JVM provisioning question
+  dominates the estimate). It must be split 1:N before any parcel moves —
+  provisioning, pin+install, then the on-touch gate — not minted oversized.
+  Deliberately not split yet: option 2 of the ruling retires the whole thing,
+  and splitting first would mint tickets to immediately retire.
+
+  ## Re-pend is DELIBERATE, not an erased approval
+
+  `human_approval` was moved from `approved` back to `pending` on purpose, so
+  that adding `ruling_options` re-fires the ask (BL-1300). The original
+  approval is the operator's activation in commit `aff0125924`
+  ("Unhold BL-472: operator activated Babashka hardening toolchain
+  (hold->paused)", 2026-08-30 16:35:27 +0100), carrying the operator's own
+  words from `notes`: "[2026-08-30T15:35Z] operator (Cursor): activate - build
+  the Babashka hardening toolchain." That activation is not withdrawn and is
+  not disputed; the re-pend exists only because the ticket now poses a choice
+  the plain Approve button cannot record. The specifier will not restore
+  `approved` — only the operator's reply does that.

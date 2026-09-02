@@ -318,6 +318,25 @@ check "BL-1040: adding an idle second seat does not change the stage map" \
   '[[ "$SINGLE_SEAT_OUT" == "$TWO_SEAT_OUT" ]]'
 rm -rf "$ROOT"
 
+# ── BL-1040 (hardener pass): the DURABLE (:sent) trail folds a seat-addressed
+#    `to:` header too, not only a role's own in_process directory. Hand
+#    mutation confirmed this branch was uncovered before this test existed:
+#    folding only the `:role role-info` branch (the `:in_process`/`:new`
+#    read) and leaving `:sent`'s `to:`-header read unfolded left the whole
+#    shell suite green. handoff-lib/seat-stage is the same chokepoint on
+#    both branches; this is what proves the second call site, not just the
+#    first.
+mk_fixture
+printf 'coder@sonnet2\tcoder-sonnet2\t%s/wt-coder-sonnet2\tswarmforge-coder-sonnet2\tCoder2\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+write_backlog_active "BL-996"
+SENT_DIR="$ROOT/wt-cleaner/.swarmforge/handoffs/sent"
+mkdir -p "$SENT_DIR"
+printf 'from: cleaner\nto: coder@sonnet2\ntype: git_handoff\npriority: 50\ntask: BL-996-seat-addressed\ncommit: 3234567890\n\nmerge_and_process cleaner 3234567890\n' > "$SENT_DIR/50_sent.handoff"
+OUT="$(run_cli report)"
+check "BL-1040: a :sent trail addressed to a seat folds onto the stage too" \
+  '[[ "$OUT" == *"\"BL-996\":{\"stage\":\"coder\""* ]] && [[ "$OUT" != *"@"* ]]'
+rm -rf "$ROOT"
+
 if [[ $fail -eq 0 ]]; then
   echo "pipeline_stage_cli: ALL CHECKS PASSED"
 else

@@ -78,3 +78,37 @@ the providers this host actually runs.
   unless an existing explicit escape hatch already covers it.
 - Link related: `INTAKE-model-steward-generates-pack-from-profile.md` (whole
   cast) vs this ticket (single-seat emergency substitute).
+
+---
+
+## Drained 2026-09-02 (specifier) → BL-1335
+
+Minted as **BL-1335** — "Token-exhaustion evidence is never promoted into a
+failover record, so the wired outage-failover consumer only ever acts on
+records a human typed by hand"
+(`backlog/paused/BL-1335-exhaustion-evidence-opens-a-failover-record.yaml`).
+Every human sentence quoted above is preserved verbatim in that ticket's
+`source:` field, per Article 5.3.
+
+**Why the resulting ticket is much smaller than this intake.** The intake's
+"Required behaviour" lists five steps. Investigation at drain time found
+steps 2, 3 and 4 — consult the steward, handshake, propose/apply at idle with
+announcement and auto-revert — are ALREADY BUILT and running as BL-669, which
+`handoffd.bb:3914` genuinely calls. Step 1, detection, is also already built
+and running as BL-840, whose producer writes evidence continuously
+(180KB on 2026-09 at drain time).
+
+What is missing is only the bridge between them: the two use different files,
+and the failover store BL-669 reads holds exactly one line, hand-typed by the
+operator (`"recordedBy": "operator-session"`) for a "Token Plan weekly quota
+exhausted" incident. So the intake's own scenario had already happened once,
+and a human was the missing component. BL-1335 is that bridge alone.
+
+Step 5's remaining half — closing the record when the period resets, so
+BL-669's existing auto-revert fires — is named in BL-1335's `out_of_scope`
+as its own slice, deferred rather than dropped.
+
+One correction recorded for whoever follows the references: BL-669's
+`out_of_scope` names BL-650 as an owner of outage records, but BL-650 is
+"flow-watchdog measures parcel age in WALL-CLOCK time" and is unrelated.
+BL-840 is the real producer.

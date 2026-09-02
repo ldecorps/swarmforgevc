@@ -1,0 +1,195 @@
+id: BL-1335
+title: "Token-exhaustion evidence is never promoted into a failover record, so the wired outage-failover consumer only ever acts on records a human typed by hand"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 8
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1335-token-exhaustion-opens-an-outage-record.feature
+
+human_approval: pending
+approval_context: >
+  One fork, and it is the autonomy bar. Opening a failover record is not
+  inert - BL-669's consumer reads it and will restaff the seat. So the
+  question is how confident the classifier must be before it opens one on its
+  own.
+
+  Two facts that should inform it. Opening a record does NOT cause a mid-turn
+  swap: BL-669 already applies only at an idle boundary, with an announcement
+  and an experiment-log entry, and auto-reverts when the record closes. But a
+  misclassification still costs a real seat swap, and the classifier is
+  reading pane text, which is the least structured signal in the system.
+
+  Nothing is broken while you decide - the operator can keep opening records
+  by hand exactly as they did on 2026-08-31, which is what this ticket
+  automates.
+ruling_options:
+  - Promote automatically only when the classification is unambiguous, otherwise announce for operator confirmation
+  - Promote automatically for every classified exhaustion and rely on BL-669 idle and announce discipline
+  - Announce a suggested record only and leave the operator to open it by hand
+
+invariants:
+  - "A failover record is opened only from evidence classified as period or quota exhaustion; evidence of any other provider failure never opens one."
+  - "The promotion writes into the failover record store BL-669 already reads - no third store and no second assignment path (BL-1178)."
+  - "Promotion is idempotent per open incident: repeated evidence for a seat, provider and model whose failover record is still open never opens a second."
+
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::promote-exhaustion-to-failover!::the promoter must be CALLED from the daemon tick, not merely exist as a lib function - same anchor shape BL-840 used for its own producer, and the reason that producer is live today'
+
+description: |
+  ## What is wrong
+
+  Both halves of this path exist, both run, and nothing connects them.
+
+  The PRODUCER runs. BL-840 (done) wired `record-provider-outage!`
+  (`provider_outage_evidence_lib.bb`) into handoffd's live pane observation
+  at `handoffd.bb:1289`. It writes constantly: on this host
+  `.swarmforge/telemetry/provider-outage-2026-09.jsonl` is 180KB, last
+  written the same day this ticket was minted, and the August file is 581KB.
+
+  The CONSUMER runs. `handoffd.bb:3914` calls
+  `outage-driven-seat-failover!`. Its `evaluate-seat`
+  (`outage_failover_cli.bb:115`) reads the failover records, consults the
+  Model Steward registry, checks `seat-idle?` and attended/unattended, and
+  decides a substitution.
+
+  They use DIFFERENT files. The producer appends to
+  `provider-outage-YYYY-MM.jsonl`, whose own header comment says "nothing
+  else parses that file". The consumer reads
+  `.swarmforge/telemetry/provider-outages.jsonl`. That file holds exactly ONE
+  line on this host, and it was typed by a person:
+
+      "recordedBy": "operator-session"
+      "incident": "Token Plan weekly quota exhausted"
+      "note": "Opened so BL-669 outage failover can restaff documenter"
+
+  A human is the bridge. And the incident they bridged by hand was token
+  exhaustion, which is exactly the case this ticket is filed for.
+
+  ## Why this is neither BL-669's nor BL-840's defect
+
+  Both did what they scoped. BL-669's `out_of_scope` says plainly: "Building
+  outage detection from scratch (BL-650/BL-840 own records)" - it deliberately
+  consumed records someone else writes. BL-840 built the evidence ledger and
+  pinned its producer into the daemon tick. Neither ticket ever claimed the
+  promotion step between them. It is unbuilt, not broken.
+
+  One correction worth recording: BL-669's `out_of_scope` names BL-650 as an
+  owner of outage records. BL-650 is "flow-watchdog measures parcel age in
+  WALL-CLOCK time" and has nothing to do with provider outages. BL-840 is the
+  real producer. Do not follow the BL-650 pointer.
+
+  ## How (direction, not mandate)
+
+  Classify evidence lines as period/quota exhaustion, and promote a
+  classified incident into a failover record in the shape
+  `provider_outage_record_lib.bb`'s `normalize-record` already expects, so
+  the consumer needs no change at all. Reuse the producer's existing
+  throttle discipline rather than inventing a second one. The autonomy bar is
+  `ruling_options`, above.
+
+constraints: >
+  - Do not fork a third assignment path. Extend the consult/apply/announce
+    skeleton BL-669 already runs (BL-1178's warning, restated by the intake).
+  - Do not invent a second quota store. BL-525's quota-state is the existing
+    one; feed or consume it, do not duplicate it.
+  - Handshake before apply, and no mid-turn swap. Both are already BL-669's
+    behaviour and must not be weakened by feeding it automatically.
+  - Classification reads pane text, the least structured signal in the
+    system. Fail closed: unrecognised text opens nothing.
+
+qa_e2e_procedure: >
+  Against a fixture state dir, write evidence lines into
+  `provider-outage-<month>.jsonl` in the shape the live file uses, including
+  one unambiguous period-exhaustion line carrying a reset time and several
+  non-exhaustion lines (network error, auth rejection, malformed output). At
+  the parent commit confirm the defect: `provider-outages.jsonl` stays empty
+  and `outage_failover_cli.bb evaluate --seat <role>` proposes nothing. At the
+  parcel commit confirm exactly one failover record appears, carrying the
+  reset time, and that the same evaluate call now proposes the steward's
+  certified substitute for that seat. Re-run the promoter against the same
+  evidence and confirm no second record is opened. Finally confirm the
+  non-exhaustion lines opened nothing, and that a line whose text matches no
+  known pattern opens nothing rather than defaulting to exhaustion.
+
+out_of_scope: |
+  - Auto-revert when the period resets. BL-669 already auto-reverts when a
+    record closes; CLOSING the record on reset is real remaining work but is
+    its own slice, not this one.
+  - Broader budget management. BL-552 (paused epic) owns that.
+  - Wake deferral when no substitute handshakes. BL-082 (done) already
+    covers it and stays the correct behaviour in that case.
+  - Adding vendors beyond the providers this host actually runs. The intake
+    explicitly says not to require every vendor on day one.
+
+source: |
+  `backlog/INTAKE-token-exhaustion-asks-steward-for-fallback.md` (human via
+  Cursor, 2026-09-01 ~08:36 BST), drained 2026-09-02 and archived to
+  `backlog/archive/`.
+
+  Article 5.3 - the human's own words, preserved verbatim from that intake:
+
+  > When a model **fails in production because tokens (or the plan period
+  > budget) are exhausted for the current period**, **anyone who picks up on
+  > that outage** - babysitter / coordinator / handoffd chase / operator -
+  > **asks Model Steward for a fallback model**. The steward **handshakes**
+  > the substitute (reachable, assignment-eligible for that seat) before
+  > anyone applies it.
+
+  > This intake is the **thin production path**: exhaustion signal → steward
+  > fallback consult → handshake → propose/apply under the same idle /
+  > announce discipline as BL-669 (not a silent mid-turn swap).
+
+  > Specifier should pin the exact signal sources (claude billing, OpenRouter,
+  > Token Plan, Cursor, …) without requiring every vendor on day one - start
+  > with the providers this host actually runs.
+
+  > Prefer extending BL-669's consult/apply/announce skeleton over a
+  > greenfield failover stack.
+
+  > Firm: handshake before apply; no mid-turn swap; no uncertified override
+  > unless an existing explicit escape hatch already covers it.
+
+  The intake's "Required behaviour" listed five numbered steps (detect,
+  consult, handshake, propose-or-apply, never-wait-for-reset). Steps 2, 3 and
+  4 are ALREADY BUILT and running in BL-669 - which is why this ticket is
+  step 1 alone and is small. That is the 1:N split the intake's own size
+  invited, and the remaining piece (closing the record on period reset) is
+  named in `out_of_scope` rather than dropped.
+
+notes: |
+  ## Findings recorded at mint, each verified rather than assumed
+
+  - Producer is live: `handoffd.bb:1289` calls
+    `provider-outage-evidence-lib/record-provider-outage!`, and the evidence
+    files exist and are actively growing (180KB for 2026-09 at mint time).
+  - Consumer is live: `handoffd.bb:3914` calls
+    `outage-failover-cli/outage-driven-seat-failover!`. Loading is not
+    calling, so this was checked as a call, not an import (BL-1235's lesson).
+  - The two stores are different files, and the evidence lib's own header
+    states "nothing else parses that file".
+  - `write-outage-records!` (`outage_failover_store.bb:54`) has NO caller
+    anywhere in the tree outside its own definition. That is the gap.
+  - The single live failover record is `"recordedBy": "operator-session"`,
+    i.e. hand-typed, and its incident is "Token Plan weekly quota exhausted".
+  - Sibling states checked: BL-669 done/M8, BL-840 done, BL-082 done,
+    BL-525 done, BL-552 paused, BL-1178 done.
+  - Gates at mint: `gherkin_lint_gate.sh` clean; IR-DRY 2 findings over 17
+    step occurrences / 12 unique steps, both the deliberate Given-versus-Then
+    contrast shape, neither accidental drift.
+
+  ## On the `required_wiring` entry
+
+  This ticket's value depends entirely on a call site existing - a promoter
+  that only exists as a lib function changes nothing, which is exactly the
+  BL-419 shape. The anchor names `handoffd.bb`, a pre-existing live daemon
+  with a real tick, not a module this parcel introduces, so it is a genuine
+  production-wiring anchor and not the self-satisfied kind BL-1235 warns
+  about. It is the same anchor shape BL-840 used for its own producer, and
+  that producer is live today. The symbol name is fixed here at mint so the
+  pattern is a literal that will exist (BL-874).

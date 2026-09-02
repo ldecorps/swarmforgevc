@@ -152,3 +152,28 @@ qa_e2e_procedure: |
      installed by `install_swarmforge_crons.sh`.
 
 assigned_to: none
+
+source_intake_2026_09_02: |
+  Drained from `backlog/INTAKE-operator-question-1788334220295.md` (filed by
+  the Operator 2026-09-02T07:30:20Z, a Telegram ask it judged it could not
+  answer). That intake asked for exactly this ticket and was already satisfied
+  by this mint (`a390dfa60b`, 2026-09-02 09:05:12 +0100, 35 minutes after the
+  intake was filed), so it is archived with a pointer here rather than minted
+  a second time.
+
+  Article 5.3 — the human's directive, preserved verbatim from that intake:
+
+  > Human directive (resolving the cost-reduction block): mint the
+  > descent-ladder as its own ticket NOW — 'auto-downgrade a seat's model
+  > until bounces rise'. It is currently unminted prose on epic BL-545, gated
+  > by BL-548 (blocked). The human chose minting the descent-ladder ticket
+  > over reprioritizing the existing paused BL-1056 (pri 12) / BL-1317 (pri 2).
+  > Specifier: mint the descent-ladder ticket.
+
+  One scope note, so nothing reads as silently dropped: the intake's phrase is
+  "auto-downgrade", which is broader than this ticket's scope. That narrowing
+  is the HUMAN's own, not the specifier's — the `ruling` field above records
+  ldecorps' later decision that slice 1 is proposal-only and that "guarded
+  auto-apply, if wanted later, is a separate ticket". The ruling post-dates
+  the intake, so it refines it rather than contradicting it. The auto-apply
+  half is deferred by that ruling, not lost.
