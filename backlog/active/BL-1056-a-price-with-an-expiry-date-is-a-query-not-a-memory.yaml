@@ -2,7 +2,7 @@ id: BL-1056
 title: "The Sonnet 5 intro price ends 2026-08-31 and nothing in the swarm will notice: the pricing table deliberately models no validity windows, so the single most consequential dated price fact lives only in the operator's private notes"
 milestone: M8
 type: feature
-status: todo
+status: blocked
 epic: swarm-intelligence-layer
 priority: 12
 direction: human-requested
@@ -168,5 +168,10 @@ qa_e2e_procedure: |
   same entangled sibling set as BL-1338). Specifier ruling 18:22Z: hold, no
   relanding; the blocker is tracked on BL-1343 (active, coder). Ticket stays
   in active/ awaiting BL-1343's land-step fix, then QA re-lands and closes.
+
+  2026-09-02 21:35Z (coordinator): second "no parcel in flight" nudge answered.
+  status set to `blocked` (BL-1301 park, same as BL-1271) so the dropped-parcel
+  sweep stops re-nudging; condition to clear: BL-1343 lands, then QA re-lands
+  review merge 6e6e544400 and closes.
 
 assigned_to: coder
