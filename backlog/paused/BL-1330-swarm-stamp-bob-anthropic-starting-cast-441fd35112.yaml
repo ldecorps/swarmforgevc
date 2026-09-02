@@ -1,0 +1,148 @@
+id: BL-1330
+title: "Swarm stamp-off: certify Cursor hotfix 441fd35112 (bob pack restaffed to Anthropic-everywhere, coder alone on Token Plan qwen3.8-max)"
+milestone: M8
+type: defect
+severity: medium
+# medium: nothing is currently stalled by this landing and the restaff is
+# already live and in use (this specifier is itself running under it); not
+# high because there is no active incident. Not low: an uncertified hotfix
+# keeps resurfacing in the recurrent sweep until a human answers, and this
+# one flips seven seats' provider/model at once.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1330-swarm-stamp-bob-anthropic-starting-cast-441fd35112.feature
+
+human_approval: pending
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 441fd35112. Review-only:
+  it confirms or refutes the land and never reimplements it. No choice is
+  posed here — approving authorizes the review parcel; the certify/waive
+  decision on the ledger row stays human-only and comes after the review
+  (BL-848).
+
+  What to know before approving. The hotfix re-staffs the bob mono-router
+  pack a second time in two days: 2026-08-31's multi-vendor mix was replaced
+  by 2026-09-01's all-qwen3.8-max cast (stamped separately as BL-1322,
+  reviewing commit 4ed88430b2, still pending), and this commit replaces THAT
+  with a third posture — Anthropic claude-sonnet-5 on every seat except the
+  resident coder, which alone stays on Token Plan qwen3.8-max with the 1M
+  context declaration. The commit's own message calls this the "starting
+  cast," i.e. deliberately narrower than the prior all-qwen trial, not a
+  correction of a defect in it. The stamp confirms or refutes what landed —
+  it does not re-litigate the staffing call.
+
+  Also landed in the same commit, not part of this review: the specifier's
+  own mint of BL-1322 (a stamp-off ticket + feature file for the PRIOR
+  hotfix 4ed88430b2). That bundling is reported as an observation in the
+  evidence file, not reviewed as functional code — BL-1322 is its own
+  ticket with its own review.
+
+invariants:
+  - "In the bob-multi-provider-mono-router pack as landed, exactly one window (coder) targets Qwen Token Plan qwen3.8-max; every other window (specifier, cleaner, architect, hardender, documenter, QA) targets claude-sonnet-5 (Anthropic)."
+  - "The CLAUDE_CODE_MAX_CONTEXT_TOKENS 1M declaration and QWEN_API_KEY credential fallback apply only to the coder seat in this pack — no other seat's launch script or pane env carries them, because the launcher's qwen-targeting predicate is keyed off each seat's own --model value and no non-coder window in this pack names a qwen* model."
+  - "This stamp-off never reimplements, rewrites, or reverts the hotfix — review confirms or refutes landed commit 441fd35112 only."
+
+required_wiring:
+  - 'swarmforge/packs/bob-multi-provider-mono-router.conf::claude-sonnet-5::the reviewed pack staffing (six non-coder claude-sonnet-5 windows) stays as landed'
+  - 'swarmforge/packs/bob-multi-provider-mono-router.conf::qwen3.8-max::the coder-only Token Plan window stays as landed'
+  - 'specs/pipeline/steps/index.js::bl1330SwarmStampBobAnthropicStartingCastSteps::acceptance handler registered so the runner executes every review scenario'
+
+description: >
+  WHAT. Operator/Cursor hotfix 441fd35112 is live on main with the trailer
+  Hotfix-Certification: pending. Subject: "Restaff bob BoB starting cast:
+  Anthropic seats, coder on qwen3.8-max."
+
+  Landed behaviour under review (do not redesign).
+  swarmforge/packs/bob-multi-provider-mono-router.conf is re-staffed: the
+  seven pipeline `window` lines now read `specifier`, `cleaner`,
+  `architect`, `hardender`, `documenter`, `QA` all on
+  `claude --model claude-sonnet-5` (efforts unchanged from before: high for
+  specifier/architect/QA, medium for cleaner/hardender/documenter), with
+  only `coder` (the resident HOME window) staying on
+  `claude --model qwen3.8-max --effort high`. `coordinator` is not a window
+  line and remains auto-provisioned on claude-sonnet-5 as before — unchanged
+  by this commit. The file header/comment block and the PREREQ comment are
+  rewritten to describe the new posture (Anthropic subscription for every
+  non-coder seat; Token Plan key for the coder seat only) and to state this
+  is a "starting cast," not a final staffing.
+
+  No script/lib code changed in this commit (no diff to swarmforge.sh,
+  qwen_launch_guard_lib.sh, or any *.bb) — the entire functional change is
+  the conf file's window/model assignments and its explanatory comments.
+
+  WHY. Human directive: BoB starts as Anthropic everywhere except the
+  resident coder on Token Plan qwen3.8-max (Claude agent); keep the 1M
+  context env on that seat only. Separately: an unticketed hotfix never
+  becomes an official swarm deal on green tests alone (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the
+  landed conf at 441fd35112. Open a narrow follow-up only if review finds a
+  defect; do not rewrite the pack's staffing or the launcher's remap
+  predicate in this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite, or revert the hotfix. This parcel confirms
+    or refutes what landed at 441fd35112.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT re-staff the pack again or restore the all-qwen3.8-max cast. The
+    Anthropic-everywhere-except-coder cast is the operator's stated starting
+    point.
+  - Do NOT touch swarmforge.sh, qwen_launch_guard_lib.sh, or launch_role's
+    provider chain — none of them changed in this commit; that surface is
+    BL-1322's review (commit 4ed88430b2), not this ticket's.
+  - Do NOT review or act on the BL-1322 ticket/feature files this same
+    commit happened to add — observe the bundling in the evidence file only.
+
+qa_e2e_procedure: >
+  (1) At commit 441fd35112, confirm bob-multi-provider-mono-router.conf's
+  `window` block: exactly one line (coder) names `--model qwen3.8-max`; the
+  other six pipeline lines (specifier, cleaner, architect, hardender,
+  documenter, QA) name `--model claude-sonnet-5`, and each retains its
+  pre-existing effort (high for specifier/architect/QA, medium for
+  cleaner/hardender/documenter).
+  (2) Confirm `coordinator` has no window line in the conf (auto-provisioned,
+  unaffected by this commit) — diff the file against its parent and confirm
+  no coordinator-related line changed.
+  (3) Confirm no file other than the conf changed anything under
+  swarmforge/scripts/ or extension/ in this commit (`git show --stat
+  441fd35112`) — the review's "no code changed" claim is falsifiable and
+  must be checked, not assumed.
+  (4) If the bob pack is live, verify via read-only `tmux -S <socket>
+  show-environment` (never attach/probe the server, BL-657) that only the
+  coder pane carries CLAUDE_CODE_MAX_CONTEXT_TOKENS/QWEN_API_KEY; otherwise
+  record the simulated launch-script output for each of the seven windows
+  from swarmforge.sh's generator.
+  (5) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  Ledger: commit 441fd35112 already had a row in backlog/hotfix-ledger.yaml
+  (state: pending, detected_at: 2026-09-02, recorded by the coordinator) —
+  link it to this ticket with `hotfix_ledger_update.bb --link` at mint so
+  the recurrent sweep stops nudging the coordinator for it.
+
+  This is the third bob-pack staffing hotfix inside 48 hours
+  (2026-08-31 multi-vendor mix -> 2026-09-01 all-qwen3.8-max, stamped as
+  BL-1322/4ed88430b2, still pending -> 2026-09-01 Anthropic-everywhere +
+  qwen coder, this ticket/441fd35112). All three are review-only stamps per
+  BL-848; none of the three reviews may treat an earlier posture as a defect
+  in a later one — each reviews only what its own pinned commit landed.
+
+  qwen3.8-max coder-seat context: the resident coder pane is currently
+  staffed on qwen3.8-max with the 1M context override per the operator's
+  09-01 hotfix (4ed88430b2, stamped by BL-1322) — this ticket's own review
+  does not touch that mechanism, only confirms the pack conf still targets
+  it for the coder seat alone.
+
+source: |
+  Coordinator note 00_20260902T083057Z_003391_from_coordinator_to_specifier
+  (2026-09-02): "hotfix 441fd35112 unstamped - mint BL-848 review ticket".
+  Satisfied in full by this ticket.
