@@ -153,8 +153,7 @@ qa_e2e_procedure: |
   6. `bash specs/pipeline/scripts/run_acceptance.sh` green with BL-1242's
      feature carrying scenarios 01-04 and its re-tensed narrative.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Feature-file authorship review only - no ruling is being asked for, and there
   is no fork in this ticket to choose between. The diagnosis is measured from
