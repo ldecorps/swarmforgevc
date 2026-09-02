@@ -11,10 +11,12 @@
 
 | Topic | Ruling |
 |---|---|
-| Sonnet 5 intro pricing ($2/$10 through 2026-08-31) | **Ignore** — keep list $3/$15; document the overstatement during the intro window. Time-bounded rates are out of scope for this table. |
+| Sonnet 5 intro pricing ($2/$10 through 2026-08-31) | **Ignore** — keep list $3/$15; document the overstatement during the intro window. Time-bounded rates are out of scope for this table. **Reversed by [BL-1056](../../how-to/BL-1056-a-price-with-an-expiry-date.md):** rows now carry optional `until`/`then` validity metadata, resolved per-instant; `claude-sonnet-5` costs at $2/$10 through 2026-08-31 and $3/$15 from 2026-09-01. Every windowless row keeps this table's one-line shape unchanged. |
 | Coverage scope | Anthropic-native bare `claude-*` ids only. Provider-prefixed pack models (OpenRouter/Mistral/…) are outside this list-price table. |
 | Auto-updater / cron | **Rejected** — no scraper; rates stay human/agent-verified. Roster drift is what the coverage check catches. |
 
 ## Acceptance
 
 `specs/features/BL-627-pricing-table-correctness-and-coverage-invariant.feature`
+
+See also [BL-1056](../../how-to/BL-1056-a-price-with-an-expiry-date.md) for the price-validity-window follow-on that revisits the intro-pricing ruling above.

@@ -1,5 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1056: reverses BL-627's one
+deliberate omission. `pricingTable.ts` entries now carry optional
+`until`/`then` validity metadata — `claude-sonnet-5` costs at its
+introductory $2/$10 through 2026-08-31 and published list $3/$15 from
+2026-09-01, resolved per-instant by `resolveRatesAt`/`estimateCostUsdAt`
+rather than one fixed rate; every windowless model is unchanged, still
+costed identically at every instant. `listPricingWindowAlerts` (CLI:
+`extension/src/tools/pricing-windows.ts`) makes the cliff a query — it
+names every windowed entry whose boundary has closed or falls within 30
+days, so "Sonnet 5 intro pricing ends 2026-08-31" no longer depends on a
+human remembering it. A windows uncovered instant still fails loud (null,
+never a fallback rate, never zero) — BL-627's honest-null discipline
+extended, not relaxed. No autonomous seat mutation: this ticket only makes
+prices honest about time. How-to:
+`docs/how-to/BL-1056-a-price-with-an-expiry-date.md`.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1338: BL-1267's adjudication
 fingerprint (SHA-256 over the ticket YAML) is no longer invalidated by the
 very promotion it authorized. `promote_and_route_next.sh` appends or
@@ -9853,7 +9869,9 @@ Respawn replaces the *process* itself — the orchestrator kills the old backend
 
 **Landed slice:** a per-tile model dropdown, shown only for Claude-backed roles, lets you pick a different model for that one role. The extension rewrites that role's `.swarmforge/launch/<role>.claude-settings.json` `model` field in place (every other field untouched) and respawns just that role's pane via the existing single-agent respawn — no other agent is affected, `swarmforge.conf` and the launch script itself are never touched, and the swap is gone on the next fresh swarm launch (the settings file is regenerated then). Because role prompts and the constitution are re-read at launch, the respawned agent picks up the new model and resumes its in-process work normally. The dropdown's model catalog is the same versioned list `pricingTable.ts` uses for cost estimation — one list, not a second copy that could drift.
 
-**Pricing table correctness and roster coverage (BL-627).** `extension/src/metrics/pricingTable.ts` is the single Anthropic list-price table (`PRICING_TABLE_VERSION` bumped on every rate change). BL-627 corrected wrong Opus/Fable/Haiku rates, added `claude-opus-5`, and exported `checkPricingCoverage` / `collectReferencedClaudeModels`: every bare `claude-*` id referenced by `swarmforge.conf`, `swarmforge/packs/*.conf`, and `.swarmforge/launch/*.claude-settings.json` must have a table entry or the check fails naming the offender — never silent zero attribution for a model in service. Provider-prefixed OpenRouter/Mistral/etc. ids are outside this table's charter. No cron or pricing scraper (operator rejected that shape): rate accuracy stays a human/agent verification against the published page. `claude-sonnet-5` keeps published list $3/$15; its introductory $2/$10 through 2026-08-31 is deliberately not modeled (time-bounded rates stay out of this data table).
+**Pricing table correctness and roster coverage (BL-627).** `extension/src/metrics/pricingTable.ts` is the single Anthropic list-price table (`PRICING_TABLE_VERSION` bumped on every rate change). BL-627 corrected wrong Opus/Fable/Haiku rates, added `claude-opus-5`, and exported `checkPricingCoverage` / `collectReferencedClaudeModels`: every bare `claude-*` id referenced by `swarmforge.conf`, `swarmforge/packs/*.conf`, and `.swarmforge/launch/*.claude-settings.json` must have a table entry or the check fails naming the offender — never silent zero attribution for a model in service. Provider-prefixed OpenRouter/Mistral/etc. ids are outside this table's charter. No cron or pricing scraper (operator rejected that shape): rate accuracy stays a human/agent verification against the published page.
+
+**Price validity windows (BL-1056).** BL-627's deliberate omission — time-bounded rates kept out of the table — is reversed. A `PRICING_TABLE` row may carry optional `until` (last day, inclusive, the row's own rates apply) and `then` (the `Rates` that take over the day after, or explicit `null` for "no rate after this window" — costs like an unpriced model, never a fallback rate and never zero). `claude-sonnet-5` is the one windowed row today: introductory $2/$10 through 2026-08-31, published list $3/$15 from 2026-09-01. `resolveRatesAt`/`estimateCostUsdAt` resolve the rate for the instant being costed rather than reading one fixed rate; a windowless row is costed identically at every instant, exactly as before this ticket. `listPricingWindowAlerts` (CLI `extension/src/tools/pricing-windows.ts [YYYY-MM-DD]`, no argument answers for now) lists every windowed entry whose boundary has closed or falls within `PRICING_WINDOW_ALERT_DAYS` (30) — the cliff is a query, not a memory a human has to hold. No autonomous seat mutation of any kind: this ticket changes no seat and proposes no tier-down. How-to: `docs/how-to/BL-1056-a-price-with-an-expiry-date.md`.
 
 **Deferred (not yet built):** switching a role to a *different backend* (e.g. Claude → Codex, or to an in-process `vscode.lm` runtime) — see the note below and Agent Backends. That needs a TypeScript launch-command builder porting `swarmforge.sh`'s per-agent-CLI case-statement (five different CLIs' exact flags, including a documented past secrets-handling incident), which does not exist yet; a same-agent model switch needed none of that porting, so it shipped first as the safe narrow slice.
 
