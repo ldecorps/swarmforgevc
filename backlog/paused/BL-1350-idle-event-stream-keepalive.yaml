@@ -20,7 +20,7 @@ acceptance: specs/features/BL-1350-idle-event-stream-keepalive.feature
 required_wiring:
   - extension/src/bridge/bridgeServer.ts::writeSseKeepalive::the keepalive must be written from the live module that owns sseClients and the poll timer, not only from a unit-tested helper no production path calls (BL-1235)
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options. The fix direction is
   firm and it is mine, not yours to arbitrate: the keepalive goes on the
