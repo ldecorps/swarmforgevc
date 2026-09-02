@@ -59,3 +59,12 @@ owns (slices BL-836/837/838 - pending clarification read and answered over
 the bridge, and the collapsed Bubble pulsing while one waits). This intake is
 evidence for that epic's value, not a new ticket. The coordinator has been
 notified that the drift question needs a human answer.
+
+**Structural remedy minted 2026-09-02:** the recurring half of this block — an
+unanswered question holding a role's only channel with nothing telling the human
+it is waiting — is now **BL-1347** (BL-772 slice E, `backlog/paused/`), which
+extends BL-584's stale-approval email sweep to cover role asks. That does not
+unblock this intake: BL-1347 makes the wait visible, it does not end it, and
+clearing a wedged slot is deliberately left to slice D. This intake still needs
+the 2026-08-30 drift question answered before its own clarification can be
+raised. The marker is untouched.
