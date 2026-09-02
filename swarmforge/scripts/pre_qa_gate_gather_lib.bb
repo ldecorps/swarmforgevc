@@ -446,9 +446,19 @@
   (let [created-dirs (atom [])]
     (try
       (let [raw-declaration (read-yaml-field yaml-content "acceptance")
+            ;; BL-1340: promotion now admits a draft the ticket pins itself to
+            ;; converting, so the refusal lives at this end instead. Carried as
+            ;; a fact for the pure gate to decide on - this function stays the
+            ;; only half that touches git and fs.
+            declaration-draft (when (and raw-declaration
+                                         (str/ends-with? (str/trim raw-declaration) ".feature.draft"))
+                                (str/trim raw-declaration))
             feature-text (feature-text-at-commit project-root cited-commit raw-declaration)
             parse-result (when feature-text (parse-feature-ir! project-root feature-text created-dirs))]
         (cond
+          declaration-draft
+          {:declaration-readable? true :declaration-draft declaration-draft}
+
           (nil? feature-text)
           {:declaration-readable? false}
 

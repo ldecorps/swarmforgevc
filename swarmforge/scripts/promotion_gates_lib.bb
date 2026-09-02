@@ -343,6 +343,53 @@
 (defn- draft-pointer? [p]
   (str/ends-with? (str p) ".feature.draft"))
 
+(defn pins-draft-conversion?
+  "BL-1340, human ruling A. True when the ticket's own charter pins the
+   conversion of its draft: a `required_wiring:` entry naming a
+   specs/pipeline/steps registration - the ticket saying that THIS parcel
+   lands the step handler that makes the draft executable.
+
+   That is the whole distinction BL-626's refusal could not draw. A PARKED
+   draft belongs to a slice somebody else builds later, and nothing in its
+   ticket will ever materialise it, so refusing it still reproduces BL-441
+   exactly. A SELF-CONVERTING draft belongs to the slice chartered to rename
+   it, register its handler and repoint `acceptance:` in one parcel - the
+   shape specifier.prompt has mandated since 2026-08-30, and the only shape
+   available while committing a live .feature ahead of its handler would
+   throw the runner for every other parcel (BL-233).
+
+   Deliberately narrow. Any required_wiring entry at all would let every
+   wired ticket walk through, which is not a distinction; the entry has to
+   name the steps directory that the conversion actually writes to.
+
+   read-field is unusable here by its own documented design - required_wiring
+   is a block, so it returns nil - hence the line walk: the field's own
+   line and every deeper-indented line under it, stopping at the next
+   top-level key."
+  [content]
+  (let [lines (str/split-lines (or content ""))]
+    (loop [remaining lines inside? false]
+      (if (empty? remaining)
+        false
+        (let [line (first remaining)
+              trimmed (str/trim line)
+              top-level? (and (seq trimmed)
+                              (not (str/starts-with? line " "))
+                              (not (str/starts-with? line "\t")))]
+          (cond
+            (and inside? top-level? (not (str/starts-with? trimmed "required_wiring:")))
+            false
+
+            (or (and inside? (str/includes? line "specs/pipeline/steps"))
+                (and (str/starts-with? trimmed "required_wiring:")
+                     (str/includes? line "specs/pipeline/steps")))
+            true
+
+            :else
+            (recur (rest remaining)
+                   (or (str/starts-with? trimmed "required_wiring:")
+                       (and inside? (not top-level?))))))))))
+
 (defn- specs-features-pointer?
   "True when raw is an applicable single-line pointer under specs/features/."
   [raw]
@@ -377,9 +424,19 @@
         (acceptance-refusal
          (format "cannot verify acceptance path %s without project root" raw))
 
+        ;; BL-1340: a draft is two different tickets wearing one shape. The
+        ;; one that pins its own conversion is admitted here and refused at
+        ;; the OTHER end instead (the documenter->QA edge), where a contract
+        ;; can actually have gone unexecuted; the parked one still fails by
+        ;; name, and says which kind it is rather than only "blocked".
+        (and (draft-pointer? raw) (pins-draft-conversion? content))
+        (when-not (path-exists-under? root raw)
+          (acceptance-refusal (format "missing draft file %s" raw)))
+
         (draft-pointer? raw)
         (acceptance-refusal
-         (format "acceptance names draft %s as not executable" raw))
+         (format "acceptance names draft %s as parked with no conversion pinned, so not executable"
+                 raw))
 
         (path-exists-under? root raw)
         nil
