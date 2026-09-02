@@ -13,7 +13,7 @@ status: todo
 epic: swarm-intelligence-layer
 priority: 20
 direction: aligned
-assigned_to: none
+assigned_to: coder
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -255,3 +255,6 @@ source: |
   Coordinator note (2026-09-01): "hotfix 4ed88430b2 ledger row unstamped -
   mint BL-848 review ticket." Satisfied in full by this ticket (BL-1324;
   see notes on the ticket-number reading).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-02, by: cleaner, blamed: coder, class: invariant-unencoded, commit: 8f19be8a0b, evidence: backlog/evidence/BL-1324-cleaner-bounce-20260902.md }

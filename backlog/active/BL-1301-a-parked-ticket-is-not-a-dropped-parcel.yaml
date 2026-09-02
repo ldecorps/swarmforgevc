@@ -129,3 +129,5 @@ approval_context: >
   field; a dedicated field keeps the sweep's input from ever being changed for
   an unrelated promotion reason. Reply here if you want the dedicated field
   instead - everything else in the ticket stands either way.
+
+assigned_to: coder
