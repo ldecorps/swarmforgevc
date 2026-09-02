@@ -15,6 +15,13 @@ stage_skip_reasons:
   cleaner: "one predicate and one map key; no structure to refactor"
 acceptance: specs/features/BL-1301-a-parked-ticket-is-not-a-dropped-parcel.feature
 
+# BL-1241: this ticket's pipeline tip carried BL-1324's own unlanded coder
+# work, and (via the BL-1314 merge-up broadcast) BL-1314's pre-replay
+# commits, as ancestors. QA's land_step_cli.bb replay landed a tip-pure
+# reconstruction (d7426989b2) instead; none of the named commits are on this
+# ticket's live lineage.
+abandoned_commits: [90b6ced74f]
+
 invariants:
   - "Suppression is opt-in and fails closed: an active ticket with no status field, or any status other than blocked, is nudged exactly as it is today."
   - "The suppression lives in the dropped-parcel decision only - read-active-items stays shared, and the candidate sets of the BL-222 dispatch-gap and unassigned-active sweeps are unchanged."
