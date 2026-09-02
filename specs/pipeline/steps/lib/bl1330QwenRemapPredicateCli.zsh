@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
-# BL-1326 acceptance driver: EXECUTES the REAL extra_cli_targets_qwen_cloud
+# BL-1330 acceptance driver (was BL-1326's until that ticket was retired as a
+# duplicate at ab47a05670, which deleted this file on main; BL-1330's handler
+# depends on it, so BL-1330 owns it now): EXECUTES the REAL extra_cli_targets_qwen_cloud
 # from swarmforge/scripts/swarmforge.sh against each pack window's CLI tokens.
 #
 # The function is EXTRACTED from the live file and eval'd rather than copied
@@ -13,7 +15,7 @@
 # and 1-indexed arrays, so running it under bash would silently answer the
 # wrong thing.
 #
-# Usage: bl1326QwenRemapPredicateCli.zsh <swarmforge.sh path> <role|cli>...
+# Usage: bl1330QwenRemapPredicateCli.zsh <swarmforge.sh path> <role|cli>...
 # Prints one "<role> qwen-cloud|none" line per argument.
 set -euo pipefail
 

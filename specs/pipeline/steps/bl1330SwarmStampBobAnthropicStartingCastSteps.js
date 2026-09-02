@@ -15,9 +15,11 @@
 // specifier by note. This parcel reviews the commit its own ticket names.
 //
 // Scenario 03 EXECUTES the REAL extra_cli_targets_qwen_cloud via
-// lib/bl1326QwenRemapPredicateCli.zsh - deliberately the SAME driver BL-1326
-// uses rather than a second copy, because it is the same shipped predicate
-// and two extractors could drift against each other.
+// lib/bl1330QwenRemapPredicateCli.zsh. That driver was written for BL-1326
+// and shared with it; when BL-1326 was RETIRED as a duplicate (ab47a05670)
+// the retirement deleted it on main, and this handler is its only remaining
+// caller - so BL-1330 owns it now. Left where a retired ticket's cleanup had
+// removed it, this scenario would have broken the moment BL-1330 landed.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -30,7 +32,7 @@ const HOTFIX = '441fd35112';
 const TWIN = 'db7e3f2bda';
 const PACK = 'swarmforge/packs/bob-multi-provider-mono-router.conf';
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
-const PREDICATE_CLI = path.join(__dirname, 'lib', 'bl1326QwenRemapPredicateCli.zsh');
+const PREDICATE_CLI = path.join(__dirname, 'lib', 'bl1330QwenRemapPredicateCli.zsh');
 const SWARMFORGE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarmforge.sh');
 
 const KNOWN_ROLES = ['coder', 'specifier', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
@@ -149,41 +151,24 @@ function registerSteps(registry) {
     assert.equal(windows(ctx.bl1330.text).has(role), false, `${role} must not be a window line`);
   });
 
-  // SCENARIO WORDING vs WHAT LANDED. Read literally ("no coordinator-related
-  // line"), this step is unsatisfiable: the commit rewrites the header
-  // comment block, and six of those COMMENT lines mention the coordinator -
-  // including "(Anthropic Max; auto-provisioned)" losing the word "Max".
-  // What the scenario protects, and what the ticket's own description
-  // claims, is that the coordinator's STAFFING is untouched. That is asserted
-  // here, functionally: no config or window line mentioning the coordinator
-  // changed, and all three coordinator config values are byte-identical
-  // across the commit. The prose delta is surfaced deliberately rather than
-  // matched away, and is raised to the specifier as a wording gap.
-  scoped(/^the diff of commit 441fd35112 touches no coordinator-related line$/, () => {
-    const changed = git('diff', `${HOTFIX}^`, HOTFIX, '--', PACK)
-      .split('\n')
-      .filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l))
-      .filter((l) => /coordinator/i.test(l));
-
-    // The functional claim: nothing but comment prose moved.
-    const nonComment = changed.filter((l) => !/^[+-]\s*#/.test(l));
-    assert.deepEqual(
-      nonComment,
-      [],
-      `a non-comment coordinator line changed: ${nonComment.join(' | ')}`
-    );
-
-    // And the coordinator's own settings are identical either side.
+  // Scenario 02, as AMENDED 2026-09-02 (734f6da6f6) after this parcel
+  // reported the original clause unsatisfiable. The old wording asserted over
+  // diff TEXT ("touches no coordinator-related line") and would have refused
+  // a correct hotfix over comment churn; the amended clause asserts the
+  // BEHAVIOUR that actually matters - the coordinator's staffing did not move.
+  scoped(/^the coordinator agent, model and effort are unchanged by commit 441fd35112$/, () => {
     const coordConfig = (rev) =>
       git('show', `${rev}:${PACK}`)
         .split('\n')
         .filter((l) => /^config coordinator/.test(l))
         .join('\n');
-    assert.equal(coordConfig(`${HOTFIX}^`), coordConfig(HOTFIX));
-    assert.match(coordConfig(HOTFIX), /coordinator_model claude-sonnet-5/);
-
-    // The prose lines DID change; recorded, not hidden.
-    assert.ok(changed.length > 0, 'the header prose about the coordinator did change - this is the reported gap');
+    const before = coordConfig(`${HOTFIX}^`);
+    const after = coordConfig(HOTFIX);
+    assert.equal(after, before, "the coordinator's staffing must not move in a restaff of the other seats");
+    // Named explicitly, so this cannot pass on two identically-empty reads.
+    assert.match(after, /coordinator_agent claude/);
+    assert.match(after, /coordinator_model claude-sonnet-5/);
+    assert.match(after, /coordinator_effort medium/);
   });
 
   scoped(/^only the coder window targets the Qwen cloud gateway$/, (ctx) => {
