@@ -248,6 +248,6 @@
   subject: "Restaff bob BoB starting cast: Anthropic seats, coder on qwen3.8-max."
   detected_at: 2026-09-02
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1330
   human_decision: null
   decided_at: null
