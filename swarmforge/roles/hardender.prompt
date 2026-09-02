@@ -2312,3 +2312,31 @@ You are the hardender.
   It was found only by hand-mutating and checking both stores, and closed by a
   fixture that puts the record in `bounce_history` with NO JSONL entry
   anywhere (`test/test_is_qa_ancestor_land_replay_store.sh`).
+
+## A sort fixture inserted already-sorted tests nothing (rule_proposal 2026-09-02, accepted)
+- **The shape.** A test that asserts an ordering over a fixture whose entries
+  were WRITTEN in the order the sort already produces is a no-op assertion.
+  Drop the `.sort()`, invert the comparator, return a constant from it — every
+  mutant still yields the expected array, because the input was the answer.
+  The test passes throughout and reads like real coverage.
+- **Scramble the fixture, not the assertion.** Insert the entries in an order
+  the sort must actually change — reversed is the cheap default, and a
+  hand-picked order that also exercises the tie-break is better. The
+  assertion stays exactly as it was; only the input moves. If the fixture is
+  shared and cannot be reordered without breaking other tests, add a second
+  fixture for the ordering test rather than weakening the shared one.
+- **Ties are their own case.** Two entries equal on the sort key exercise a
+  different mutant set (a comparator that returns 0 vs one that returns a
+  sign), so a fixture with a duplicate key and a fixture that is merely
+  unsorted are not substitutes for each other.
+- **Evidence (proposed by the hardender, 2026-09-02, BL-1056-a):**
+  `pricingTable`'s `WINDOWED_TABLE` held two windowed entries sharing one
+  `until`, inserted in the order the sort produces anyway. **All 7 `.sort()`
+  mutants survived** until the insertion order was scrambled — a full mutant
+  family hidden behind a green test.
+- **The general rule this is one instance of:** a fixture that already
+  satisfies the property under test makes the operation under test a no-op,
+  and every mutant of a no-op survives. Before trusting an ordering, filtering,
+  deduplication or normalization assertion, check that the input actually
+  needed the operation. A surviving-mutant family clustered on one operation is
+  the tell — look at the fixture before the code.
