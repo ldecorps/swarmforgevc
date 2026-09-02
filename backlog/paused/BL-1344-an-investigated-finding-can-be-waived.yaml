@@ -20,7 +20,7 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1344-an-investigated-finding-can-be-waived.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed, so no ruling_options - the shape is settled by the
   existing precedent (the hotfix ledger's recorded decision) and the remedy's
