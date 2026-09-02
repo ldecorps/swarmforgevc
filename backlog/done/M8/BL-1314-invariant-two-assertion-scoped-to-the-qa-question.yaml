@@ -21,6 +21,12 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1314-invariant-two-assertion-scoped-to-the-qa-question.feature
 
+# BL-1241: this ticket's pipeline tip carried BL-1324's own unlanded coder
+# work as an ancestor (disclosed in BL-1314-coder-pass-20260902.md). QA's
+# land_step_cli.bb replay landed a tip-pure reconstruction (c65d8e6728e5)
+# instead of either named commit; both stay off this ticket's live lineage.
+abandoned_commits: [6bebb929a2, 23a854cadf]
+
 required_wiring:
   - "swarmforge/scripts/test/suite-manifest.tsv::test_pipeline_code_on_main_guard.sh::the changed assertion must stay reachable by the standing suite. The manifest is a pre-existing live consumer - the standing runner reads it, this ticket does not add it - so per BL-1235 this is real reachability proof rather than a line the parcel satisfies by construction. It is also the failure BL-1240 measured on this exact registry: a test quietly dropped from the manifest still passes review and never runs again. Verified present at spec time, line 365."
   - "specs/pipeline/steps/index.js::bl1314::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: this anchor is satisfied by the parcel own diff and so proves nothing about reachability; the manifest entry above is the real wiring proof. Kept because BL-233 requires the handler to land in the SAME commit as the feature file, and BL-1303 is open on main today for exactly the omission this pins. Verified absent from index.js at spec time (grep bl1314 -> 0)."
