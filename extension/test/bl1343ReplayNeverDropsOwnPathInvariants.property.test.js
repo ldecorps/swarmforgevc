@@ -181,8 +181,6 @@ function toCommits(testCase) {
   return out;
 }
 
-
-
 test('BL-1343/BL-654 invariant 1: a differing tip is never reported as landed or as nothing left to replay', () => {
   sweepStaleFixtures();
   const reach = { fullySubtracted: 0, partiallySubtracted: 0, nothingSubtracted: 0 };
@@ -190,41 +188,41 @@ test('BL-1343/BL-654 invariant 1: a differing tip is never reported as landed or
   for (const shape of SHAPES) {
     fc.assert(
       fc.property(caseArbFor(shape), (testCase) => {
-      const commits = toCommits(testCase);
-      const root = buildRepo(commits);
-      try {
-        const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
-        if (survivors.length === 0) reach.fullySubtracted += 1;
-        else if (survivors.length < commits.length) reach.partiallySubtracted += 1;
-        else reach.nothingSubtracted += 1;
+        const commits = toCommits(testCase);
+        const root = buildRepo(commits);
+        try {
+          const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
+          if (survivors.length === 0) reach.fullySubtracted += 1;
+          else if (survivors.length < commits.length) reach.partiallySubtracted += 1;
+          else reach.nothingSubtracted += 1;
 
-        const plan = landPlan(root);
+          const plan = landPlan(root);
 
-        // :land means "merge this tip as it stands", which carries every one
-        // of the ticket's paths onto main - a real completion, admissible
-        // only when no sibling is entangled and so nothing was subtracted.
-        // With a sibling in the range, the tip cannot be taken whole, and
-        // calling it landed is exactly the silent loss this invariant bans.
-        if (plan.action === 'land') {
-          assert.equal(
-            commits.filter((c) => c.creditedTo === 'sibling').length,
-            0,
-            `reported LAND on a tip whose paths a sibling would subtract: ${JSON.stringify(plan)}`,
-          );
+          // :land means "merge this tip as it stands", which carries every one
+          // of the ticket's paths onto main - a real completion, admissible
+          // only when no sibling is entangled and so nothing was subtracted.
+          // With a sibling in the range, the tip cannot be taken whole, and
+          // calling it landed is exactly the silent loss this invariant bans.
+          if (plan.action === 'land') {
+            assert.equal(
+              commits.filter((c) => c.creditedTo === 'sibling').length,
+              0,
+              `reported LAND on a tip whose paths a sibling would subtract: ${JSON.stringify(plan)}`,
+            );
+            return true;
+          }
+          if (plan.action === 'replay') {
+            assert.ok(
+              Array.isArray(plan['own-paths']) && plan['own-paths'].length > 0,
+              `replay with nothing to replay, on a tip that still differs: ${JSON.stringify(plan)}`,
+            );
+          } else {
+            assert.equal(plan.action, 'escalate', `unexpected action: ${JSON.stringify(plan)}`);
+          }
           return true;
+        } finally {
+          fs.rmSync(root, { recursive: true, force: true });
         }
-        if (plan.action === 'replay') {
-          assert.ok(
-            Array.isArray(plan['own-paths']) && plan['own-paths'].length > 0,
-            `replay with nothing to replay, on a tip that still differs: ${JSON.stringify(plan)}`,
-          );
-        } else {
-          assert.equal(plan.action, 'escalate', `unexpected action: ${JSON.stringify(plan)}`);
-        }
-        return true;
-      } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-      }
       }),
       { numRuns: 9 },
     );
@@ -242,42 +240,42 @@ test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution ref
   for (const shape of SHAPES) {
     fc.assert(
       fc.property(caseArbFor(shape), (testCase) => {
-      const commits = toCommits(testCase);
-      const root = buildRepo(commits);
-      try {
-        const result = ownPaths(root);
-        const siblingOnly = commits.filter((c) => c.creditedTo === 'sibling');
-        const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
+        const commits = toCommits(testCase);
+        const root = buildRepo(commits);
+        try {
+          const result = ownPaths(root);
+          const siblingOnly = commits.filter((c) => c.creditedTo === 'sibling');
+          const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
 
-        if (survivors.length === 0) {
-          // Every path credited away: a refusal, and one that says what it
-          // removed - never a silent empty set.
-          reach.refusals += 1;
-          assert.equal(result.paths, null, `a fully-subtracted contribution answered silently: ${JSON.stringify(result)}`);
-          const text = result.warning || '';
-          assert.ok(text.includes(TICKET), `the refusal does not name the landing ticket: ${text}`);
-          assert.ok(text.includes(SIBLING), `the refusal does not name the sibling: ${text}`);
-          for (const c of siblingOnly) {
-            assert.ok(text.includes(c.path), `the refusal does not name ${c.path}: ${text}`);
+          if (survivors.length === 0) {
+            // Every path credited away: a refusal, and one that says what it
+            // removed - never a silent empty set.
+            reach.refusals += 1;
+            assert.equal(result.paths, null, `a fully-subtracted contribution answered silently: ${JSON.stringify(result)}`);
+            const text = result.warning || '';
+            assert.ok(text.includes(TICKET), `the refusal does not name the landing ticket: ${text}`);
+            assert.ok(text.includes(SIBLING), `the refusal does not name the sibling: ${text}`);
+            for (const c of siblingOnly) {
+              assert.ok(text.includes(c.path), `the refusal does not name ${c.path}: ${text}`);
+            }
+          } else {
+            // Something of the ticket's own survives, so the subtraction is
+            // ordinary tip-pure replay and must NOT refuse (BL-1241/BL-1272
+            // untouched).
+            reach.kept += 1;
+            assert.ok(Array.isArray(result.paths), `an ordinary replay refused: ${JSON.stringify(result)}`);
+            assert.equal(result.warning, null);
+            for (const c of survivors) {
+              assert.ok(result.paths.includes(c.path), `${c.path} was dropped from the replay set`);
+            }
+            for (const c of siblingOnly) {
+              assert.ok(!result.paths.includes(c.path), `${c.path} is a sibling's and should not be replayed`);
+            }
           }
-        } else {
-          // Something of the ticket's own survives, so the subtraction is
-          // ordinary tip-pure replay and must NOT refuse (BL-1241/BL-1272
-          // untouched).
-          reach.kept += 1;
-          assert.ok(Array.isArray(result.paths), `an ordinary replay refused: ${JSON.stringify(result)}`);
-          assert.equal(result.warning, null);
-          for (const c of survivors) {
-            assert.ok(result.paths.includes(c.path), `${c.path} was dropped from the replay set`);
-          }
-          for (const c of siblingOnly) {
-            assert.ok(!result.paths.includes(c.path), `${c.path} is a sibling's and should not be replayed`);
-          }
+          return true;
+        } finally {
+          fs.rmSync(root, { recursive: true, force: true });
         }
-        return true;
-      } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-      }
       }),
       { numRuns: 9 },
     );
