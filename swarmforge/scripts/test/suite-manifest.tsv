@@ -228,6 +228,7 @@ test_bounce_drain.sh	standing
 test_branch_claim_guard.sh	standing		
 test_briefing_marker_commit.sh	standing		
 test_build_freshness_cli.sh	standing		
+test_build_freshness_land_replay_approved.sh	standing		
 test_cache_warm_lib.sh	standing		
 test_chase_sweep.sh	standing		
 test_check_branch_namespace.sh	standing		
@@ -315,10 +316,12 @@ test_idle_clear_conf_parsing.sh	standing
 test_idle_clear_respawn.sh	standing		
 test_invariant2_qa_definition_lib.sh	standing		
 test_is_qa_ancestor_expedite_store.sh	standing		
+test_is_qa_ancestor_land_replay_store.sh	standing		
 test_is_qa_ancestor_yaml_store.sh	standing		
 test_issue_intake_loop.sh	standing		
 test_kill_all_swarm_vitest_reap.sh	excluded	2026-08-23	live-only: invokes kill_all_swarm.sh for real; safe only from a detached host shell with env -u TMUX (2026-08-22 session wipe)
 test_kill_pipeline_copilot_scope.sh	standing		
+test_land_step_records_approval.sh	standing		
 test_launch_front_desk.sh	standing		
 test_launch_negotiation_relay.sh	standing		
 test_launch_onboarder.sh	standing		
@@ -352,7 +355,6 @@ test_operator_runtime_bl647_rotation_liveness.sh	standing
 test_operator_runtime_bl653_escalation_driven.sh	standing		
 test_operator_runtime_bl763_cursor_bridge_watchdog.sh	standing		
 test_operator_runtime_control_lost.sh	standing		
-test_operator_runtime_watch_adoption.sh	standing		
 test_operator_runtime_disk_space_sweep.sh	standing		
 test_operator_runtime_events_lock.sh	standing		
 test_operator_runtime_fixture_reaper_sweep.sh	standing		
@@ -364,6 +366,7 @@ test_operator_runtime_sandbox_sweep.sh	standing
 test_operator_runtime_sandbox_sweep_bounded_progress.sh	standing		
 test_operator_runtime_sandbox_sweep_liveness_undetermined.sh	standing		
 test_operator_runtime_tick.sh	standing		
+test_operator_runtime_watch_adoption.sh	standing		
 test_operator_telegram.sh	standing		
 test_operator_tunnel.sh	standing		
 test_pack_staffing_gate.sh	standing		

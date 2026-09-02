@@ -86,6 +86,34 @@
 (assert-true "touches-deployed-surface?: any ONE changed path on the surface -> true"
              (build-freshness-lib/touches-deployed-surface? ["docs/index.md" "extension/src/foo.ts"]))
 
+;; ── BL-1334: a drift commit the shared predicate approves is not offending ──
+;; The land step's replay is necessarily a drift commit (it is on main, after
+;; the merge-base with swarmforge-QA) and it necessarily touches the deployed
+;; surface, so this gate refused every freshly landed replay. The CLI now asks
+;; the ONE approval predicate about each drift sha and passes the answer in;
+;; the filter here is what makes the answer count.
+(assert= "code-drift-shas: a QA-approved drift commit is not offending (BL-1334)"
+         []
+         (build-freshness-lib/code-drift-shas
+          [{:sha "aaa" :touches-surface? true :qa-approved? true}]))
+(assert= "code-drift-shas: an UNapproved surface commit is still offending"
+         ["bbb"]
+         (build-freshness-lib/code-drift-shas
+          [{:sha "bbb" :touches-surface? true :qa-approved? false}]))
+(assert= "code-drift-shas: approval is absent by default - fails CLOSED (BL-925 inv 3)"
+         ["ccc"]
+         (build-freshness-lib/code-drift-shas
+          [{:sha "ccc" :touches-surface? true}]))
+(assert= "code-drift-shas: an approved commit and an unapproved one - only the latter is named"
+         ["bbb"]
+         (build-freshness-lib/code-drift-shas
+          [{:sha "aaa" :touches-surface? true :qa-approved? true}
+           {:sha "bbb" :touches-surface? true :qa-approved? false}]))
+(assert= "tip-approval-status: a landed replay alone reads approved with no offenders"
+         {:approved? true :offending-shas []}
+         (build-freshness-lib/tip-approval-status
+          [{:sha "aaa" :touches-surface? true :qa-approved? true}]))
+
 ;; ── code-drift-shas / tip-approval-status ──────────────────────────────────
 (assert= "code-drift-shas: empty drift names nothing"
          []

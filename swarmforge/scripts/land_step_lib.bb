@@ -402,6 +402,54 @@
         (when (seq reported)
           (str (fs/absolutize (fs/path root reported))))))))
 
+(defn record-land-approval!
+  "BL-1334: record that `commit` (the tip-pure replay this land step is about
+   to publish onto main) stands in for `source` - the QA-approved commit the
+   parcel was cited on.
+
+   WHY A RECORD AND NOT A REF BUMP. The land step publishes a NEW commit to
+   main and nothing advances swarmforge-QA, so at the instant QA's own
+   approved work lands it is not in the QA ref's ancestry and every
+   ancestry-based consumer reads main as carrying unapproved pipeline code
+   until some unrelated later merge closes the window. The other shape - have
+   this tool advance swarmforge-QA - would hand a script write access to the
+   ref that DEFINES approval, and BL-952 is on record that reachability from
+   that ref is not approval. Recording the mapping leaves the ref semantics
+   untouched; is_qa_ancestor.sh resolves it, and grants nothing unless the
+   SOURCE is itself approved, so approval cannot spread to whatever happens
+   to be written here.
+
+   Appends one JSON line to .swarmforge/land-approvals/<YYYY-MM>.jsonl -
+   append, never truncate, or a second land this month erases the first and
+   the predicate stops approving everything landed earlier.
+
+   Refuses (and writes nothing) when either sha is missing: the predicate
+   reads a record with no source as corrupt and fails CLOSED, so writing one
+   would jam the gate rather than open it. Returns {:ok? bool} and never
+   throws - a land must not die because its bookkeeping did, and an
+   unrecorded land degrades to exactly today's behaviour (the override),
+   never to a wrong approval."
+  [{:keys [root commit source task-ticket-id]}]
+  (let [short (fn [sha] (when (and sha (>= (count (str sha)) 7))
+                          (subs (str sha) 0 (min 10 (count (str sha))))))
+        c (short commit)
+        src (short source)]
+    (if (or (nil? c) (nil? src))
+      {:ok? false :reason "land-approval record needs both a replay commit and an approved source"}
+      (try
+        (let [dir (fs/path root ".swarmforge" "land-approvals")
+              month (subs (str (java.time.Instant/now)) 0 7)
+              file (fs/path dir (str month ".jsonl"))
+              line (str "{\"at\":\"" (str (java.time.Instant/now)) "\""
+                        ",\"ticket\":\"" (or task-ticket-id "") "\""
+                        ",\"commit\":\"" c "\""
+                        ",\"source\":\"" src "\"}\n")]
+          (fs/create-dirs dir)
+          (spit (str file) line :append true)
+          {:ok? true :file (str file)})
+        (catch Exception e
+          {:ok? false :reason (str "land-approval record could not be written: " (.getMessage e))})))))
+
 (defn replay!
   "Builds a tip-pure commit for task-ticket-id's own-paths, on top of
    origin/main, in a DEDICATED linked worktree

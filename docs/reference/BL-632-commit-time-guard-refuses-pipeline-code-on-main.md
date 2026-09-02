@@ -118,7 +118,23 @@ byte-identical to what the incoming parent holds:
   re-implements the check; a "kept in sync" comment across that
   bash/Babashka boundary was explicitly rejected as not a gate. BL-1096
   changes only *which* commit is asked about (per path), not the
-  predicate itself.
+  predicate itself. As of BL-1334, ancestry of `swarmforge-QA` is not the
+  only route to approved: the land step's tip-pure replay
+  (`swarmforge/scripts/land_step_lib.bb`, see also
+  [the land-step entangled-tip how-to](../how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md))
+  mints a new commit and publishes it to `main` without advancing the QA
+  ref, so
+  `is_qa_ancestor.sh` also consults a durable land-approval store
+  (`.swarmforge/land-approvals/<YYYY-MM>.jsonl`, written by
+  `land_step_lib.bb`'s `record-land-approval!`) mapping a replayed commit to
+  the approved source commit it replayed. A land record approves ONLY when
+  its named source itself resolves, carries no bounce verdict, and is an
+  ancestor of `swarmforge-QA` — checked directly, not by recursing into the
+  predicate again, so approval can never chain through a record naming
+  another record. Still one predicate, one more approval path into it, per
+  BL-925 invariant 2; `build_freshness_cli.bb`'s own drift report was
+  rewritten to ask this predicate (`--batch`) rather than deciding ancestry
+  itself, closing a second-predicate gap the same ticket found.
 - **A genuine conflict is untouched** — git itself fails the merge before
   any hook runs, so a real conflict still aborts exactly as before.
 
@@ -274,3 +290,8 @@ in series, not one claimed-perfect one.
   chains and extracts the shared `commit_guard_chain_lib.sh` aggregation
   documented above — the first ticket to widen `pre-merge-commit` beyond
   this guard alone.
+- **BL-1334:** Adds the land-approval store described above so a land
+  step's replay commit reads as QA-approved the moment it lands, instead of
+  only once an unrelated later merge advances `swarmforge-QA` past it;
+  `build_freshness_cli.bb`'s drift report now asks `is_qa_ancestor.sh`
+  rather than deciding ancestry itself.

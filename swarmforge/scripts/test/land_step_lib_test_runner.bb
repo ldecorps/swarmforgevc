@@ -541,6 +541,49 @@
     (assert= "own-paths (07): a shared path with a later untagged own edit atop an unlanded sibling's touch is never dropped (invariant 1)"
              true (contains? (set (:paths result)) "shared.txt"))))
 
+;; ── BL-1334: the land step records the replay->approved-source mapping ─────
+;; The land step publishes a tip-pure replay to main and does not advance
+;; swarmforge-QA, so QA's own approved work reads as unapproved at the instant
+;; it lands. Human ruling: record the mapping for the predicate to consult
+;; rather than let a script write the ref that DEFINES approval.
+
+(with-fixture [root]
+  (let [written (land-step-lib/record-land-approval!
+                 {:root root :commit "abcdef0123456789" :source "0123456789abcdef"
+                  :task-ticket-id "BL-9001"})
+        store (str (fs/path root ".swarmforge" "land-approvals"))
+        files (when (fs/exists? store) (mapv str (fs/list-dir store)))
+        content (when (seq files) (slurp (first files)))]
+    (assert-true "record-land-approval! reports success" (:ok? written))
+    (assert= "record-land-approval! writes exactly one store file" 1 (count files))
+    (assert-includes "the record names the replay commit" content "\"commit\":\"abcdef0123\"")
+    (assert-includes "the record names the approved source" content "\"source\":\"0123456789\"")
+    (assert-includes "the record names the ticket, so a reader can audit it" content "\"ticket\":\"BL-9001\"")
+    (assert-includes "the record is stamped with when it was written" content "\"at\":\"")))
+
+(with-fixture [root]
+  ;; Appends, never truncates: a second land must not erase the first, or the
+  ;; predicate stops approving everything landed earlier this month.
+  (land-step-lib/record-land-approval!
+   {:root root :commit "1111111111aaaa" :source "2222222222bbbb" :task-ticket-id "BL-9001"})
+  (land-step-lib/record-land-approval!
+   {:root root :commit "3333333333cccc" :source "4444444444dddd" :task-ticket-id "BL-9002"})
+  (let [store (str (fs/path root ".swarmforge" "land-approvals"))
+        content (str/join "\n" (mapv slurp (mapv str (fs/list-dir store))))]
+    (assert-includes "the first land's record survives a second land" content "1111111111")
+    (assert-includes "the second land's record is present too" content "3333333333")
+    (assert= "one record line per land" 2
+             (count (remove str/blank? (str/split-lines content))))))
+
+(with-fixture [root]
+  ;; A record with no source resolves to nothing and would read as a corrupt
+  ;; line to the predicate, which fails CLOSED - so refuse to write one.
+  (let [written (land-step-lib/record-land-approval!
+                 {:root root :commit "abcdef0123456789" :source nil :task-ticket-id "BL-9001"})]
+    (assert= "record-land-approval! refuses a record with no source" false (:ok? written))
+    (assert= "refusing writes no store at all" false
+             (fs/exists? (str (fs/path root ".swarmforge" "land-approvals"))))))
+
 ;; ── report ─────────────────────────────────────────────────────────────────
 
 (if (seq @failures)
