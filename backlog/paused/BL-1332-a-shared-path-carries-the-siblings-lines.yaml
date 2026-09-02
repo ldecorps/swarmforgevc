@@ -180,3 +180,6 @@ notes: |
   discarded alternative. It is deliberately NOT minted yet: it would
   depends_on this unbuilt slice, which fails INVEST's Independent. The
   specifier mints it once option 1 lands.
+  2026-09-02 20:57Z (coordinator): slot opened by BL-1340's close; still the top
+  expedited candidate, still SKIPPED for orthogonality: BL-1343 (land_step_lib.bb /
+  land_step_cli.bb) is in flight at the architect. BL-1323 took the slot.
