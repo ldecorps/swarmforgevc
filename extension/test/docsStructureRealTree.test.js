@@ -1,6 +1,7 @@
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { computeDocsStructure } = require('../out/docs/docsStructure');
 const {
@@ -11,7 +12,12 @@ const {
   allowlistEntriesHaveDates,
 } = require('../out/docs/docsOrphanAllowlist');
 
-const REPO_ROOT = path.join(__dirname, '..', '..');
+// BL-1066: a fixed `../..` walk-up from __dirname lands one level too
+// shallow under a Stryker sandbox (the sandbox dir IS the extension root,
+// not a child of one), so every REPO_ROOT-relative path below silently
+// missed under Stryker's dry run. `git rev-parse --show-toplevel` finds the
+// true repo root regardless of sandbox nesting.
+const REPO_ROOT = execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const REAL_TREE_TEST = path.join(__dirname, 'docsStructureRealTree.test.js');
 
 const BL756_CLEARED = [

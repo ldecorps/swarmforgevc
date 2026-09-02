@@ -75,6 +75,37 @@ function rankOf(effort: string | undefined): number {
   return effort === undefined ? -1 : ADAPT_EFFORT_LADDER.indexOf(effort);
 }
 
+// Split out of decideAdaptEffort so each branch's own complexity is
+// isolated and CRAP-measured on its own (the hardener's own "extract before
+// measuring" discipline for a function whose branches would otherwise
+// compound one shared complexity score).
+function decideBounce(prior: number, priorEffort: string | undefined): AdaptEffortDecision {
+  const next = Math.min(prior + 1, ADAPT_EFFORT_LADDER.length - 1);
+  if (next === prior) {
+    return { apply: false, effort: priorEffort, reason: 'already at the top of the ladder' };
+  }
+  return { apply: true, effort: ADAPT_EFFORT_LADDER[next], reason: 'bounce: climbing one notch' };
+}
+
+function decideClean(
+  prior: number,
+  priorEffort: string | undefined,
+  floor: number,
+  cleanStreak: number | undefined,
+  cleanStreakRequired: number | undefined,
+): AdaptEffortDecision {
+  const required = cleanStreakRequired ?? ADAPT_DEFAULT_CLEAN_STREAK;
+  const streak = cleanStreak ?? 0;
+  if (streak < required) {
+    return { apply: false, effort: priorEffort, reason: `clean streak ${streak}/${required}` };
+  }
+  const next = Math.max(prior - 1, floor);
+  if (next === prior) {
+    return { apply: false, effort: priorEffort, reason: 'already at the claim-time baseline' };
+  }
+  return { apply: true, effort: ADAPT_EFFORT_LADDER[next], reason: 'clean streak met: dropping one notch' };
+}
+
 export function decideAdaptEffort(input: AdaptEffortInput): AdaptEffortDecision {
   const { backendHasLever, priorEffort, baselineEffort, signal } = input;
 
@@ -99,24 +130,11 @@ export function decideAdaptEffort(input: AdaptEffortInput): AdaptEffortDecision 
   const floor = rankOf(baselineEffort) === -1 ? prior : rankOf(baselineEffort);
 
   if (signal === 'bounce') {
-    const next = Math.min(prior + 1, ADAPT_EFFORT_LADDER.length - 1);
-    if (next === prior) {
-      return { apply: false, effort: priorEffort, reason: 'already at the top of the ladder' };
-    }
-    return { apply: true, effort: ADAPT_EFFORT_LADDER[next], reason: 'bounce: climbing one notch' };
+    return decideBounce(prior, priorEffort);
   }
 
   if (signal === 'clean') {
-    const required = input.cleanStreakRequired ?? ADAPT_DEFAULT_CLEAN_STREAK;
-    const streak = input.cleanStreak ?? 0;
-    if (streak < required) {
-      return { apply: false, effort: priorEffort, reason: `clean streak ${streak}/${required}` };
-    }
-    const next = Math.max(prior - 1, floor);
-    if (next === prior) {
-      return { apply: false, effort: priorEffort, reason: 'already at the claim-time baseline' };
-    }
-    return { apply: true, effort: ADAPT_EFFORT_LADDER[next], reason: 'clean streak met: dropping one notch' };
+    return decideClean(prior, priorEffort, floor, input.cleanStreak, input.cleanStreakRequired);
   }
 
   return { apply: false, effort: priorEffort, reason: `unknown signal ${String(signal)}` };

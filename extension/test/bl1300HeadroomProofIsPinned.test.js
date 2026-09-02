@@ -17,11 +17,18 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 // This test pins the behaviour the Given already claims: the composed size
 // those scenarios measure is the FIX COMMIT's size, not today's.
 
-// realpathSync for the same reason bl643NonPipelineAgentsStepsGuards.test.js
-// uses it: under a Stryker sandbox this file runs from
-// `.stryker-tmp/sandbox-<id>/test/`, where the repo is reached through a
-// sibling symlink.
-const REPO_ROOT = fs.realpathSync(path.join(__dirname, '..', '..'));
+// BL-1066: under a Stryker sandbox this file runs from
+// `.stryker-tmp/sandbox-<id>/test/`, where the sandbox dir IS the extension
+// root rather than a child of one - a fixed `../..` walk-up lands one level
+// too shallow, inside `.stryker-tmp` itself rather than the real repo root.
+// That is harmless for a plain filesystem read (ensureStrykerSandboxSiblingLinks
+// plants `swarmforge`/`specs`/etc as siblings there), but `git archive` below
+// resolves its pathspec relative to `-C`'s cwd within the TRACKED tree, not
+// through those symlinks, so a REPO_ROOT of `.stryker-tmp` makes every
+// pathspec miss ("pathspec '...' did not match any files") regardless of
+// sandbox nesting depth or how many `sandbox-<id>` layers deep this file runs
+// from - the true repo root, unaffected by any of that.
+const REPO_ROOT = execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const GATE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'boot_prefix_budget_gate.sh');
 
 const { createStepRegistry } = require('../../specs/pipeline/stepRegistry');

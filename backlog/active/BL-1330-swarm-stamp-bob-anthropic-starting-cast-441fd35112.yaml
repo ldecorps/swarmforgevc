@@ -18,6 +18,14 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1330-swarm-stamp-bob-anthropic-starting-cast-441fd35112.feature
 
+abandoned_commits: [80f2ff6c3172a5cb3a48c88a41412a562efe97e0]
+# BL-1241 land-step remedy: cited commit was entangled with unlanded
+# siblings BL-1040, BL-1056, BL-1283, BL-1319, BL-1321, BL-1326, BL-1327,
+# BL-1334 as ancestors on the QA branch. land_step_cli.bb replayed BL-1330's
+# own paths tip-pure onto origin/main as
+# 0a5bffe057742bc3b2d111555c348c10913645d6, which is what landed. See
+# backlog/evidence/BL-1330-qa-pass-20260902.md.
+
 human_approval: approved
 approval_context: >
   BL-848 hotfix stamp-off for already-landed commit 441fd35112. Review-only:
