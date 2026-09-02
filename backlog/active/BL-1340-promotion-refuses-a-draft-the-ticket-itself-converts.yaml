@@ -12,6 +12,7 @@ depends_on: []
 assigned_to: coder
 
 acceptance: specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature
+abandoned_commits: [1a2985b4fc]
 
 retires:
   - specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature
