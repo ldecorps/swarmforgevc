@@ -12,7 +12,12 @@ slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1327-scheduled-descent-ladder-proposes-cheaper-notch.feature
 
-human_approval: pending
+human_approval: approved
+ruling: >
+  [2026-09-02] Human ldecorps ruling: Proposal-only. Slice 1 emits a durable
+  proposal record (who/what/why/candidate notch); a human applies it by
+  hand. No autonomous model/effort mutation in this ticket. Guarded
+  auto-apply, if wanted later, is a separate ticket.
 approval_context: >
   Coordinator relayed a human ask (2026-09-02, via Cursor) to bump priority
   on cost-reduction tickets: "downgrade a well-performing seat to the
