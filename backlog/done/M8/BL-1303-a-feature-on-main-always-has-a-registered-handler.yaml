@@ -14,7 +14,7 @@ severity: high
 # file present, registration absent, 8 scenarios 0 pass, red on main since
 # 2026-08-27. Two independent instances in five days is the evidence for the
 # grade, not either one alone.
-status: todo
+status: done
 epic: code-quality-gates
 priority: 28
 direction: swarm-reported

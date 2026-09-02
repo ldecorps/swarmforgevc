@@ -80,12 +80,27 @@
   (let [r (sh root "git" "reset" "--hard" "origin/main")]
     {:success (zero? (:exit r)) :error (str/trim (:err r))}))
 
+;; BL-1310: local main's ahead-count against origin/main, read FRESH right
+;; before the reset would fire - mirrors handoffd.bb's own master-main-
+;; local-ahead-count!. nil (rev-list failed) is never treated as 0. Parse
+;; shared via master_main_reconcile_lib.bb's ahead-count-via-rev-list.
+(defn- local-ahead-count! [root]
+  (master-main-reconcile-lib/ahead-count-via-rev-list
+   {:sh! (fn [] (sh root "git" "rev-list" "--left-right" "--count" "origin/main...main"))}))
+
 (defn- rematch-onto-origin! [root]
   ;; BL-1138: rematch bookkeeping onto origin/main — reset, never conflicted absorb.
   ;; BL-1198: attempt a push first — only reset when that push is rejected.
+  ;; BL-1310: the reset adapter itself is gated by master_main_reconcile_
+  ;; lib.bb's refuse-reset-if-local-ahead! - the SAME shared implementation
+  ;; handoffd.bb and swarm_heal.bb use, not a copy - only a KNOWN ahead=0
+  ;; may actually reset.
   (master-main-reconcile-lib/rematch-with-push-first!
    {:push! (fn [] (push-onto-origin! root))
-    :reset! (fn [] (reset-onto-origin! root))}))
+    :reset! (fn []
+              (master-main-reconcile-lib/refuse-reset-if-local-ahead!
+               {:ahead-count! (fn [] (local-ahead-count! root))
+                :raw-reset! (fn [] (reset-onto-origin! root))}))}))
 
 (defn- real-adapters [root daemon-dir]
   {:daemon-dir daemon-dir

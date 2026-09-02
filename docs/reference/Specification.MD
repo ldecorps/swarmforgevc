@@ -1,5 +1,50 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1311: a Let's Talk turn taken with no
+dedicated Bubble topic bound was reaching no Telegram topic at all, silently
+dropped, instead of falling back to Cursor Remote as documented (BL-709
+scenario 07, BL-718). Both `bridgeServer.ts` call sites that route a Let's
+Talk turn — `mirrorLetsTalkTurnToBubble` and `choicePollMirrorTarget` —
+resolved their destination via `bubbleMirrorTopicForPath` /
+`effectiveBubbleMirrorTopicId`, the resolver for ORDINARY Bubble mirroring,
+which returns `undefined` (by design, never falls back) when unbound. The
+correct resolver for a Let's Talk turn, `effectiveLetsTalkMirrorTopicId`, was
+already exported with the right contract but had zero callers. Fix: a new
+`letsTalkMirrorTopicForPath` sibling routes both call sites through
+`effectiveLetsTalkMirrorTopicId` instead; `effectiveBubbleMirrorTopicId` and
+ordinary Bubble mirroring's never-fall-back contract are untouched.
+`specs/features/BL-709-bubble-its-own-telegram-topic.feature` returns to 8/8
+(previously 7/8, scenario 07 failing on `main`). Restores the fallback
+contract's coverage in both lanes:
+`extension/test/bl709BubbleOwnTelegramTopic.property.test.js` (recreated —
+had been silently lost from `main` in an earlier merge, no ordinary deletion
+commit) and two new cases in `extension/test/letsTalkBridge.test.js`.
+`docs/how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md` already
+described the correct post-fix contract; no doc content change needed there.
+Acceptance: `specs/features/BL-709-bubble-its-own-telegram-topic.feature`.)
+Prior entry —
+**Last Updated:** September 2, 2026 (BL-1310: the master-main reconcile's
+reset call sites (`handoffd.bb`, `swarm_heal.bb`, `post_hotfix_merge_
+origin.bb`) never discard a local-ahead commit again. BL-1198/1214/1236/
+1288 each narrowed WHEN `git reset --hard origin/main` may fire; none
+changed what happened to the commits once it did — on 2026-08-31 the reset
+destroyed seven commits of specifier work, recoverable only by luck from
+the reflog before `git gc` collects it. The new shared gate,
+`refuse-reset-if-local-ahead!` (`master_main_reconcile_lib.bb`), reads
+local main's ahead-count fresh right before the reset would fire and
+authorises the reset only when that count is a known zero; any `ahead > 0`
+— including an undeterminable count — refuses instead, leaving main exactly
+as found and naming the ticket in the daemon log. Per the approved human
+ruling, this supersedes the "genuine rejection → reset proceeds" case in
+BL-1198's and BL-1288's own docs: a rejected push authorises the reset only
+when it turns out `ahead = 0`. No new extension command or setting.
+Acceptance:
+`specs/features/BL-1310-reconcile-never-discards-a-commit-it-cannot-name.feature`.
+How-to: `docs/how-to/BL-1310-reconcile-refuses-instead-of-discarding-local-ahead-commits.md`
+(new); `docs/how-to/BL-1198-rematch-reset-must-push-before-discarding-local-ahead-commits.md`
+and `docs/how-to/BL-1288-only-a-rejected-push-authorises-discarding-local-commits.md`
+(both updated with a supersession note).)
+Prior entry —
 **Last Updated:** September 1, 2026 (BL-1322: bridge startup no longer
 requires `CURSOR_API_KEY` for targets that never touch Let's Talk/Cursor
 routing. `createLiveCursorBridgeAgentSession`

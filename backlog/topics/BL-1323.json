@@ -1,0 +1,1 @@
+{"id":"BL-1323","messages":[{"seq":0,"ts":1788284639442,"author":"swarm","type":"outbound","text":"BL-1323 — Swarm stamp-off: certify Cursor hotfix 9c94735f03 (main-sync deadlock hints name overlaps and teach ./swarm heal)\nHotfix ledger row 9c94735f03 is stamp-open. BL-848 review-only stamp-off; certify/waive stays human-only after the review parcel lands."}]}

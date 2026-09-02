@@ -1,0 +1,201 @@
+id: BL-1325
+title: "Swarm stamp-off: certify Cursor hotfix 4ed88430b2 (Token Plan qwen3.8-max seats with a declared 1M Claude Code window)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the mid-ticket auto-compact it fixes (Claude Code mis-sizes
+# unrecognized qwen* gateway IDs to ~50k) is already fixed on main and the bob
+# pack is being staffed on it; this stamp confirms or refutes the land. Not
+# high: nothing is currently stalled. Not low: an uncertified hotfix keeps
+# resurfacing in the recurrent sweep until a human answers.
+status: done
+closed_as: superseded-by-BL-1324
+closed_at: 2026-09-02
+epic: swarm-reliability
+priority: 20
+direction: aligned
+assigned_to: none
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature
+# Retired: repointed from this ticket's own deleted feature file to BL-1324's,
+# the survivor and the hotfix ledger's actual stamp_ticket for 4ed88430b2.
+# Not a claim of ownership over BL-1324's contract - the BL-1251 rule that a
+# retirement ticket points at the contract it retires into.
+
+human_approval: approved
+approval_context: >
+  BL-848 hotfix stamp-off for already-landed commit 4ed88430b2. Review-only:
+  it confirms or refutes the land and never reimplements it. No choice is
+  posed here — approving authorizes the review parcel; the certify/waive
+  decision on the ledger row stays human-only and comes after the review
+  (BL-848).
+
+  Three things to know before you approve. First, the hotfix re-staffed the
+  bob mono-router pack: every pipeline seat now rides the claude agent with
+  --model qwen3.8-max (Qwen Token Plan via apps/anthropic), and only the
+  coordinator stays on claude-sonnet-5 (Anthropic Max, auto-provisioned) so
+  wake/poke stays Max-backed. That replaces the multi-vendor staffing of
+  2026-08-31; the commit calls this a quality trial. The stamp confirms or
+  refutes what landed — it does not second-guess the trial.
+
+  Second, a cross-pack side effect: the fix adds the 1M context declaration
+  to the SHARED Token Plan compat branch, so packs using the global
+  SWARMFORGE_USE_QWEN=1 flag now also declare CLAUDE_CODE_MAX_CONTEXT_TOKENS
+  on their Claude seats, not just bob. The commit's own comment says that is
+  intended ("every Qwen Claude seat"). Reported by the review, not undone.
+
+  Third, the 1M declaration rests on the platform claim that Token Plan
+  qwen3.* is officially 1M, and it is operator-overridable
+  (${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}). The review records what it
+  can verify about the served window, but the gateway's real window size is
+  an operator-platform fact this ticket does not negotiate.
+
+invariants:
+  - "This stamp-off never reimplements, rewrites or reverts the hotfix — review confirms or refutes landed commit 4ed88430b2 only."
+  - "Green tests alone never write certified or waived into the hotfix ledger; only a recorded human decision does."
+  - "In a mixed pack, only seats whose --model is qwen* ride the Token Plan remap — every other Claude seat keeps first-party subscription auth."
+
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::extra_cli_targets_qwen_cloud::the reviewed predicate and both its launcher call sites stay present'
+  - 'swarmforge/packs/bob-multi-provider-mono-router.conf::qwen3.8-max::the reviewed pack staffing stays as landed'
+  - 'specs/pipeline/steps/index.js::bl1322TokenPlanMaxContextStampSteps::acceptance handler registered so the runner executes every review scenario'
+
+description: >
+  WHAT. Operator/Cursor hotfix 4ed88430b2 is live on main with the trailer
+  Hotfix-Certification: pending. Subject: "Hotfix bob mono-router onto Token
+  Plan qwen3.8-max with a real 1M Claude Code window."
+
+  Landed behaviour under review (do not redesign). swarmforge/scripts/
+  swarmforge.sh gains extra_cli_targets_qwen_cloud(), which is true exactly
+  when a seat's pack CLI tokens contain --model followed by a qwen* value.
+  The launch-script generator's Token Plan anthropic-compat branch now fires
+  on SWARMFORGE_USE_QWEN=1 OR that predicate, and additionally exports
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}"
+  into the seat's launch script. launch_role() gains a final elif: a claude
+  seat whose --model is qwen* gets QWEN_API_KEY (via
+  qwen_guard_apply_credential_fallbacks) and the same 1M declaration passed
+  as pane -e env, even when the pack never set the global flag.
+  swarmforge/packs/bob-multi-provider-mono-router.conf is re-staffed: all
+  seven pipeline windows become claude seats on --model qwen3.8-max (coder
+  home, effort high/medium per role), coordinator stays claude-sonnet-5 and
+  is auto-provisioned outside the window list; the header documents the
+  mis-sizing rationale and warns against setting SWARMFORGE_USE_QWEN=1 at
+  pack launch (that would remap the coordinator too).
+
+  WHY. Pipeline seats were compacting mid-ticket because Claude Code
+  mis-sizes unrecognized qwen* gateway IDs to ~50k and auto-compacts. The
+  declaration gives a Token Plan seat its real 1M window. Coordinator stays
+  Anthropic Max so handoffd wake/poke stays subscription-backed. Separately:
+  an unticketed hotfix never becomes an official swarm deal on green tests
+  alone (BL-848).
+
+  HOW (direction, not mandate). Walk the acceptance feature against the
+  landed sources at 4ed88430b2. Open a narrow follow-up only if review finds
+  a defect; do not rewrite the launcher's remap path in this parcel.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do NOT reimplement, rewrite or revert the hotfix. This parcel confirms or
+    refutes what landed at 4ed88430b2.
+  - Do NOT write certified or waived into backlog/hotfix-ledger.yaml. Only a
+    recorded human decision does that, however green the suite is (BL-848).
+  - Do NOT redesign extra_cli_targets_qwen_cloud, the billing_guard branch,
+    or launch_role's provider elif chain. A design defect found in any of
+    them is a narrow follow-up ticket, not this parcel.
+  - Do NOT re-staff the pack or re-add the multi-vendor window lines. The
+    all-qwen3.8-max cast is the operator's stated quality trial.
+  - Do NOT change the 1000000 default or the override semantics of
+    CLAUDE_CODE_MAX_CONTEXT_TOKENS.
+  - Do NOT restore the removed conf comment pointing at
+    INTAKE-pack-launch-steward-staffing-gate.md — that intake's work is
+    ticketed as BL-1318; the comment removal is consistent, report only.
+
+qa_e2e_procedure: >
+  (1) At commit 4ed88430b2, confirm swarmforge.sh defines
+  extra_cli_targets_qwen_cloud and that it returns true exactly when --model
+  is followed by a qwen* value, including --model as the last token (no
+  value) returning false.
+  (2) Confirm the launch-script Token Plan compat branch fires on
+  SWARMFORGE_USE_QWEN=1 OR the predicate, and exports
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS with the :-1000000 default on both paths.
+  (3) Confirm launch_role's new elif is LAST in the provider chain (after
+  the agent != claude and role_uses_openrouter branches, so nothing shadows
+  it), sources qwen_launch_guard_lib.sh, and passes QWEN_API_KEY and the 1M
+  declaration via -e.
+  (4) Confirm bob-multi-provider-mono-router.conf: seven window lines, all
+  claude seats on --model qwen3.8-max, first line coder home, efforts
+  high/medium as landed, coordinator absent from the window list.
+  (5) If the bob pack is live, verify a qwen seat's pane env carries
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS via read-only `tmux -S <socket>
+  show-environment` (never attach/probe the server, BL-657); otherwise
+  record the simulated -e flags from a generated launch script.
+  (6) Leave Hotfix-Certification pending until the human ledger decision.
+
+notes: >
+  ## RETIRED 2026-09-02 - duplicate stamp-off for the same hotfix
+
+  BL-1324 (paused, ledger-linked) and this ticket both certify the SAME
+  hotfix commit `4ed88430b2`. Both trace to the same 2026-09-01 coordinator
+  note about the unstamped ledger row, minted by two independent specifier
+  passes. This ticket's own history is unusual: it was originally minted
+  under a different id, then destroyed/orphaned by the same reset-bug class
+  BL-1310 fixed, recovered from the reflog, and remapped to BL-1325 during a
+  2026-09-02 post-fix recovery pass (`796f1f29d8`) because its original id had
+  since been reused by an unrelated, already-shipped ticket. Its
+  `human_approval: approved` was restored at that same remap (`32c7318bc7`) —
+  a real decision, but one that authorized "review this parcel," not a tap on
+  BL-1324's own still-open ruling_options (the two dormant matching-shape/
+  precedence gaps), so it does not resolve BL-1324's pending decision.
+
+  BL-1324 survives: it is the hotfix ledger's actual stamp_ticket for
+  `4ed88430b2` (no repoint needed) and poses the sharper open review question.
+
+  **This retirement drops nothing (Article 5.3).** This ticket carried two
+  pieces of content BL-1324 did not — the cross-pack SWARMFORGE_USE_QWEN=1
+  side-effect note and the 1M-window platform-claim caveat, plus two feature
+  scenarios (the global-flag behaviour and an explicit
+  never-self-certifies scenario) — all carried into BL-1324's
+  approval_context, qa_e2e_procedure and acceptance feature (see BL-1324's
+  own notes for the full accounting).
+
+  RETIRED as already covered, not reworded: scenarios 01-03 and 05 (the
+  qwen-model-detection outline, the mixed-pack remap-only-the-qwen-seat
+  scenario, the pane-env scenario, and the per-role pack-staffing outline)
+  duplicate BL-1324's own scenarios 01-03, 05 and 06 at an equal or coarser
+  grain. This ticket's `required_wiring` anchor
+  (`bl1322TokenPlanMaxContextStampSteps`) was stale from its earlier life as
+  BL-1322 and was never wired to a real handler; neither ticket had reached a
+  coder pass, so nothing live depended on it.
+
+  `specs/features/BL-1325-token-plan-qwen-max-context-stamp-4ed88430b2.feature`
+  is removed with this retirement; git history keeps the original.
+
+  ---
+
+  IR-DRY adjudication at mint (do not re-litigate): as with BL-1321, the
+  checker's three medium findings pair instantiations of ONE step pattern
+  against each other — placeholder vs literal (`a seat whose pack CLI is
+  "<cli>"` vs `a claude seat whose pack CLI is "--model qwen3.8-max"`) and
+  literal vs literal (the qwen seat vs the sonnet seat). One step-handler
+  pattern serves both members of every pair — that is the normalised state
+  the checker exists to reach, not accidental drift; paraphrasing to clear
+  the findings would manufacture real synonyms. Re-run at any time with `bb
+  gherkin-parser` then `bb gherkin-ir-dry-checker` from swarmforge/vendor/aps.
+
+  Ledger: commit 4ed88430b2 ALREADY had a row in backlog/hotfix-ledger.yaml
+  (state: pending, recorded by 1070cfc2c2) — unlike BL-1321, no --new was
+  needed. Linked to this ticket with hotfix_ledger_update.bb --link at mint,
+  so the recurrent sweep stops nudging the coordinator for it.
+
+  The conf's removed comment referenced
+  backlog/INTAKE-pack-launch-steward-staffing-gate.md, which no longer
+  exists in the backlog root — its work is ticketed as BL-1318 (paused).
+  Observation for the evidence file, not a defect.
+
+source: |
+  Coordinator note 00_20260901T105446Z_003371_from_coordinator_to_specifier
+  (2026-09-01): "hotfix 4ed88430b2 has no stamp_ticket in ledger - mint one,
+  --link it". Satisfied in full by this ticket.

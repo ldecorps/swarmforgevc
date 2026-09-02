@@ -71,7 +71,12 @@
    :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))})
 
 (defn- finish-rematch-recovery
-  "Shared rematch-or-surface path for refuse-rematch and rematch-bookkeeping."
+  "Shared rematch-or-surface path for refuse-rematch and rematch-bookkeeping.
+   BL-1310: rematch!'s own reset adapter is gated by master_main_reconcile_
+   lib.bb's refuse-reset-if-local-ahead! - a local-ahead refusal reports
+   :local-ahead-refused, not the generic fail-outcome/fail-message (a
+   durable block a human resolves, never a transient failure worth
+   retrying unattended)."
   [daemon-dir rev-counts! mid-merge? rematch!
    {:keys [success-outcome fail-outcome fail-message no-rematch-message]}]
   (cond
@@ -80,9 +85,12 @@
 
     rematch!
     (let [r (rematch!)]
-      (if (:success r)
-        (finish-ok daemon-dir rev-counts! success-outcome)
-        (surface-absorb-failure rev-counts! fail-outcome fail-message)))
+      (cond
+        (:success r) (finish-ok daemon-dir rev-counts! success-outcome)
+        (= :local-ahead-refused (:outcome r))
+        (surface-absorb-failure rev-counts! :local-ahead-refused
+                                 (or (:error r) "BL-1310: local-ahead commits present - refused, not reset"))
+        :else (surface-absorb-failure rev-counts! fail-outcome fail-message)))
 
     :else
     (surface-absorb-failure rev-counts! fail-outcome no-rematch-message)))
