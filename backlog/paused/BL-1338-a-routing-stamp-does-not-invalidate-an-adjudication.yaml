@@ -1,0 +1,146 @@
+id: BL-1338
+title: "The adjudication fingerprint covers the whole ticket, so the routing stamp a promotion writes invalidates the adjudication that authorized that same promotion"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: agent-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1338-a-routing-stamp-does-not-invalidate-an-adjudication.feature
+
+human_approval: pending
+approval_context: >
+  Small, but it now fires on every deprecator hold, so it will not stay quiet.
+
+  The tension worth your eye is that BL-1267 chose the whole-file fingerprint
+  deliberately - its own comment says "one that changes by a single character
+  is not the one that was cleared", and that strictness is the safety
+  property. Any narrowing trades a little of it away. The third option keeps
+  the fingerprint exactly as strict as it is today and moves the work to the
+  promoter instead, at the cost of a script re-stamping a record the
+  specifier owns.
+
+  Nothing is at risk while you decide: the stale record is cosmetic on a
+  ticket that stays active, and the remedy is one command.
+ruling_options:
+  - Exclude only the routing fields a promotion writes, keeping every spec field in the fingerprint
+  - Fingerprint a named allowlist of substantive spec fields and ignore all bookkeeping fields
+  - Leave the fingerprint whole and have the promoter refresh the record after it stamps
+
+invariants:
+  - "A change to the ticket's SUBSTANCE after clearance still re-arms the gate: no narrowing of the fingerprint may let an amended spec ride a stale clearance."
+  - "The routing stamp written by a promotion never invalidates the adjudication that authorized that same promotion."
+
+description: |
+  ## What is wrong
+
+  `computeTicketFingerprint` (`extension/src/tools/deprecate-check.ts:551`) is
+  a SHA-256 over the ENTIRE YAML text:
+
+      return crypto.createHash('sha256').update(yamlText, 'utf8').digest('hex');
+
+  `promote_and_route_next.sh` appends `assigned_to: <role>` to the ticket
+  AFTER the freshness gate has passed. So the record is invalidated by the
+  very promotion it cleared - it goes stale at the moment it is successfully
+  used.
+
+  ## Observed, not theorised
+
+  BL-1271, 2026-09-02. Adjudicated `confirm_promote` and verified clear at
+  fingerprint `a2fff575bfa6`. The coordinator promoted it
+  (`fae46f2c2c`) and the next check reported:
+
+      adjudication .../BL-1271.json no longer matches the ticket content it
+      was made against (recorded a2fff575bfa6, ticket is now 7cc9417b4d88)
+      — re-adjudicate
+
+  Diffing the two versions, the ENTIRE difference is two lines:
+
+      240a241,242
+      >
+      > assigned_to: coder
+
+  Nothing about the ticket's substance changed. The coordinator had to raise a
+  note and the specifier had to re-record.
+
+  ## Why it will not stay a curiosity
+
+  Until 2026-09-02 no adjudication record had ever been written, so this could
+  not bite. `specifier.prompt` now instructs the specifier to record every
+  adjudication with `record-adjudication.js`, which is what makes a hold
+  dischargeable at all. So from now on EVERY adjudicated ticket acquires a
+  stale record the moment it promotes.
+
+  Cosmetic while the ticket stays active - the gate only runs at
+  paused->active. But a ticket demoted back to `paused` (which happens in this
+  repo) is then held, and the reason names re-adjudication, so the remedy
+  looks like a real freshness question when it is a routing stamp. That is a
+  full specifier round trip bought by nothing.
+
+  ## How (direction, not mandate)
+
+  See `ruling_options`. Whichever shape is taken, invariant 1 is the line that
+  must not move: BL-1267's strictness about SUBSTANTIVE change is the whole
+  point of the fingerprint, and this ticket narrows only what the promotion
+  itself writes.
+
+constraints: >
+  - Do not weaken the re-arm on a substantive edit. That is the property
+    BL-1267 exists for.
+  - Keep the fingerprint content-derived, never mtime or commit sha - a ticket
+    rewritten byte-identically is the same ticket (BL-1267's own reasoning).
+  - Do not add a second adjudication store or a second discharge path.
+
+qa_e2e_procedure: >
+  In a fixture repo, write a paused ticket that the freshness gate holds,
+  record a confirm_promote adjudication for it, and confirm the gate then
+  allows. Append `assigned_to: coder` exactly as
+  `promote_and_route_next.sh` does. At the parent commit confirm the defect:
+  the gate reports "no longer matches ... re-adjudicate". At the parcel commit
+  confirm it still allows. Then, in the same fixture, edit the ticket's
+  `description:` and confirm the gate DOES hold and names re-adjudication -
+  the safety property must be demonstrated still working, not assumed. Finally
+  edit only the `acceptance:` pointer and confirm it holds too.
+
+out_of_scope: |
+  - The freshness signals themselves (supersede markers, retired-surface hits,
+    spec-gap bounce counts). This ticket changes only what invalidates a
+    RECORDED adjudication.
+  - `promote_and_route_next.sh`'s routing behaviour. Writing `assigned_to:` on
+    promotion is correct and stays.
+  - The wider question of which fields belong in a ticket at all.
+
+source: |
+  Coordinator `note` (priority 20) to the specifier, 2026-09-02:
+  "BL-1271 promoted; adjudication record stale vs 03d293f2a2, refresh".
+  The refresh was done immediately; this ticket is the recurrence, which the
+  refresh does not address.
+
+notes: |
+  ## Findings recorded at mint, each verified rather than assumed
+
+  - `computeTicketFingerprint` hashes the whole YAML text - read at
+    `deprecate-check.ts:551`, it is a single sha256 over `yamlText`.
+  - The promotion's mutation was diffed exactly: a blank line plus
+    `assigned_to: coder`, nothing else.
+  - The stale-record hold was reproduced verbatim from the live gate, and the
+    refresh (`record-adjudication.js`, then `deprecate-check.js`) was verified
+    to return `allow` naming the new record.
+  - The gate runs at promotion only, which is why this is `severity: low`
+    rather than medium: an active ticket is never re-gated, so the damage is
+    bounded to re-checks and to demote-then-repromote.
+
+  ## No `required_wiring:`, deliberately
+
+  The change lands inside `deprecate-check.ts`, whose callers already exist
+  and are live: `deprecate-check.js` is invoked by
+  `promote_and_route_next.sh`, and `record-adjudication.js` imports
+  `computeTicketFingerprint` from the same module. There is no call site that
+  could be missing, which is the only thing `required_wiring` proves. Any
+  anchor available here would name a symbol inside the module this parcel
+  edits and would go green on its own diff (BL-1235).
