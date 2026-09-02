@@ -3,7 +3,7 @@ title: "The dispatch-gap unit suite is red on main: two fixtures still expect a 
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: blocked
 epic: swarm-reliability
 priority: 25
 direction: agent-reported
@@ -247,6 +247,9 @@ notes: |
   specifier's ruling, no relanding; awaits BL-1343 (active, coder), then QA
   re-lands and closes.
 
+  2026-09-02 20:05Z (coordinator): status set to `blocked` (BL-1301 park) so the
+  dropped-parcel sweep stops re-nudging; condition to clear: BL-1343 lands, then
+  QA re-lands review merge 0ea1c8cb3b and closes. Second nudge answered 20:03Z.
 assigned_to: coder
 bounce_count: 1
 bounce_history:

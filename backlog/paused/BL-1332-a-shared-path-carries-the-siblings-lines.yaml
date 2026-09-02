@@ -135,6 +135,11 @@ ruling_options:
   - option 2 - replay a shared path per-hunk so an entangled parcel still lands its own work
 
 notes: |
+  2026-09-02 20:05Z (coordinator): slot opened by BL-1317's close; this ticket is
+  the top expedited candidate but was SKIPPED for orthogonality (Article 3.2
+  rule 3): it names swarmforge/scripts/land_step_lib.bb / land_step_cli.bb,
+  which BL-1343 (active, in flight coder->cleaner) is changing now. Re-evaluate
+  at the next open slot once BL-1343 lands. BL-1341 took the slot.
   Minted 2026-09-02 by the specifier while adjudicating the coordinator's
   priority-00 escalation that `main` refused all commits. The unwedge itself -
   deleting the leaked require line from `main` - was ruled QA's to execute,
