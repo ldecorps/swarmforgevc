@@ -68,3 +68,30 @@ unblock this intake: BL-1347 makes the wait visible, it does not end it, and
 clearing a wedged slot is deliberately left to slice D. This intake still needs
 the 2026-08-30 drift question answered before its own clarification can be
 raised. The marker is untouched.
+
+**Recheck 2026-09-03 (specifier) — root cause of the block found and ticketed.**
+Still undrained, same wedged slot, but this pass established *why* the drift
+question has gone unanswered for four days, and it is not the human ignoring it:
+**they were never told.**
+
+GH-25 shipped the escalation that is supposed to alert on exactly this — a role
+question unanswered past its threshold — and it has never delivered once. It is
+wired into the live tick (`operator_runtime.bb:2360`) and runs every ~31s, but
+its ops issue number ships commented out (`# config ask_escalation_issue 25`)
+with `SWARMFORGE_ASK_ESCALATION_ISSUE` unset, and GH-25 specced a missing value
+to degrade to a status.json key plus a log line. Nothing outside GH-25's own
+tests reads that key. Evidence off disk this pass:
+`status.json` → `"ask_escalation":{"transport":"unconfigured"}`, and **7027**
+`ask-escalation WARN ops issue unconfigured - no stamp` lines since
+2026-08-30T06:36:32Z — which begins ~10h before the drift question was even
+asked, so no question raised since 08-30 has ever escalated.
+
+Minted as **BL-1352** (`type: defect`, `severity: high`, `backlog/paused/`,
+commit `c436a0d374`). The transport choice is posed to the human there as
+`ruling_options`, which costs no `role_ask` slot — so that decision can be taken
+while this slot is still wedged.
+
+This does NOT drain the intake and does not unblock it. BL-1352 makes the wait
+visible; ending it is BL-772 slice D (a withdraw verb for a genuinely unanswered
+question — `--resolve` asserts an answer IS on record, so it is not legitimate
+here), which remains unminted. The marker is untouched, again.
