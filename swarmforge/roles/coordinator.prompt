@@ -143,6 +143,19 @@ You are the coordinator.
 - **Fail-closed:** missing evidence, ambiguous YAML, or CLI failure is `hold`,
   same posture as the onboarding contract gate — never promote on a gate you
   could not evaluate.
+- **A stale adjudication fingerprint on a ticket already in `backlog/active/`
+  needs no chase (BL-1271, 2026-09-02).** The adjudication record is a
+  PROMOTION-TIME artifact: `deprecate-check.js` is its only reader and
+  `promote_and_route_next.sh` its only production caller. The fingerprint
+  covers the whole YAML, so ANY edit re-arms it — including a pure bookkeeping
+  append to `notes:`, which your own status entries are. An in-flight ticket's
+  record therefore goes stale as a matter of course, and nothing will read it
+  again unless the ticket returns to `paused/`. Do not spend a specifier
+  round-trip re-recording it. If the ticket IS later demoted and re-promoted,
+  the gate re-evaluates against the content as it stands THEN and the
+  specifier adjudicates fresh — which is the right answer anyway, and one an
+  earlier re-record could not have supplied. This narrows nothing at
+  promotion: there the fail-closed posture above is unchanged.
 - **Ordering:** this gate sits above Article 3.2.4 expedited-defect ordering.
   A stale defect is not expedited into the pipeline.
 - Full deprecator activity (on-demand scan, `/deprecate`, `docs/deprecated/`):

@@ -25,8 +25,18 @@
 %% id it cannot resolve. The refusal names every unsatisfied id.
 %% BL-626 (2026-08-25): acceptance joins the refusing gates, between
 %% human_approval and depends_on. An explicit specs/features/ pointer must
-%% resolve to a live .feature (drafts are never executable); no same-id
+%% resolve to a live .feature or an admitted draft (see BL-1340); no same-id
 %% sibling glob rescue. audit-acceptance lists the exposure read-only.
+%% BL-1340 (2026-09-02): a .feature.draft pointer is admitted at promotion
+%% when the ticket's own required_wiring: pins a specs/pipeline/steps
+%% registration (self-converting); a draft with no pin still refuses, named
+%% as parked. promote_and_route_next.sh's auto-select no longer partitions
+%% candidates into buildable/other ahead of promotion_gates_cli.bb select,
+%% so buildability can no longer outrank Article 3.2.4 expedite order. The
+%% documenter->QA edge (acceptance_contract_gate_lib.bb) is the backstop:
+%% a parcel whose acceptance: still names a draft at the cited commit is
+%% refused there, checked ahead of wait-bound-hit? so the finding names the
+%% draft rather than reading as a transient timeout.
 %% cleaner and hardender are batch-mode roles (consume all queued
 %% equal-priority handoffs as one batch); every other pipeline role is
 %% task-mode (one handoff at a time). The coordinator sits outside the
