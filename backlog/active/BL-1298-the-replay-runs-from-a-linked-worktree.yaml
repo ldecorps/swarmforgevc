@@ -229,4 +229,4 @@ notes: |
   Left as-is because assigned_to records the coordinator's routing and is the
   coordinator's field to change, not the specifier's.
 
-assigned_to: coder
+assigned_to: qa
