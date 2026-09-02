@@ -209,6 +209,33 @@ test('re-routing an already-stamped ticket does not change the fingerprint', () 
   );
 });
 
+// A ticket whose spec ALREADY carries `assigned_to:` as a normal, previously
+// promoted field - single-newline separated, exactly the shape BL-1271's own
+// YAML ends in (`...\nassigned_to: coder\n`) - not the double-newline
+// APPENDED shape withRoutingStamp/promote_and_route_next.sh's printf
+// produces. This is the case promote_and_route_next.sh's `sed` in-place
+// rewrite handles, and it is the ONLY case ROUTING_STAMP_LINE (as opposed to
+// APPENDED_ROUTING_STAMP) exists for - a re-route that starts from a fresh
+// printf-append never needs it, because the double-newline signature
+// survives an in-place value edit and APPENDED_ROUTING_STAMP alone would
+// still strip it.
+function withGenuineAssignedTo(ticketText, role) {
+  return `${ticketText}assigned_to: ${role}\n`;
+}
+
+// Exactly what promote_and_route_next.sh's `sed` does: rewrite the line's
+// value, same position, same single-newline spacing either side.
+function reroutedInPlace(ticketText, newRole) {
+  return ticketText.replace(/^assigned_to:.*$/m, `assigned_to: ${newRole}`);
+}
+
+test('BL-1338: re-routing a GENUINELY pre-existing (single-newline, sed-rewritten) assigned_to field does not change the fingerprint', () => {
+  const original = withGenuineAssignedTo(HELD_TICKET, 'specifier');
+  const rerouted = reroutedInPlace(original, 'coder');
+  assert.notEqual(original, rerouted, 'the fixture must actually differ for this to test anything');
+  assert.equal(computeTicketFingerprint(rerouted), computeTicketFingerprint(original));
+});
+
 test('an edit to the ticket spec still changes the fingerprint', () => {
   for (const amended of [
     `${HELD_TICKET}acceptance: specs/features/other.feature\n`,
