@@ -179,6 +179,89 @@
          (seat-difficulty-lib/claim-effort-decision
           {:backend "claude" :cost nil :pack-default-effort nil}))
 
+;; ── BL-1317: Adapt tier ────────────────────────────────────────────────────
+
+(assert= "adapt ladder is BL-236's operator dial scale, weakest first - it must reach xhigh"
+         ["low" "medium" "high" "xhigh"]
+         seat-difficulty-lib/adapt-effort-ladder)
+
+(assert= "a bounce at high climbs onto xhigh rather than going inert there"
+         {:apply? true :effort "xhigh" :reason "bounce: climbing one notch"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "high" :baseline-effort "high" :signal "bounce"}))
+
+(assert= "a bounce climbs exactly one notch"
+         {:apply? true :effort "high" :reason "bounce: climbing one notch"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "medium" :baseline-effort "medium" :signal "bounce"}))
+
+(assert= "a bounce from low climbs to medium, not straight to high"
+         "medium"
+         (:effort (seat-difficulty-lib/adapt-effort-decision
+                   {:backend "claude" :prior-effort "low" :baseline-effort "low" :signal "bounce"})))
+
+(assert= "a bounce at the top of the ladder does not overflow, and applies nothing"
+         {:apply? false :effort "xhigh" :reason "already at the top of the ladder"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "xhigh" :baseline-effort "medium" :signal "bounce"}))
+
+(assert= "a clean streak brings an xhigh seat back down one notch at a time"
+         {:apply? true :effort "high" :reason "clean streak met: dropping one notch"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "xhigh" :baseline-effort "medium"
+           :signal "clean" :clean-streak 3}))
+
+(assert= "a clean completion short of the streak changes nothing"
+         false
+         (:apply? (seat-difficulty-lib/adapt-effort-decision
+                   {:backend "claude" :prior-effort "high" :baseline-effort "medium"
+                    :signal "clean" :clean-streak 2})))
+
+(assert= "meeting the clean streak drops exactly one notch"
+         {:apply? true :effort "medium" :reason "clean streak met: dropping one notch"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "high" :baseline-effort "medium"
+           :signal "clean" :clean-streak 3}))
+
+(assert= "a drop never goes below the BL-1316 claim-time baseline"
+         {:apply? false :effort "medium" :reason "already at the claim-time baseline"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "medium" :baseline-effort "medium"
+           :signal "clean" :clean-streak 99}))
+
+(assert= "a high-cost ticket keeps its high baseline however long the clean run"
+         false
+         (:apply? (seat-difficulty-lib/adapt-effort-decision
+                   {:backend "claude" :prior-effort "high" :baseline-effort "high"
+                    :signal "clean" :clean-streak 500})))
+
+(assert= "an explicit clean-streak-required overrides the default"
+         true
+         (:apply? (seat-difficulty-lib/adapt-effort-decision
+                   {:backend "claude" :prior-effort "high" :baseline-effort "low"
+                    :signal "clean" :clean-streak 1 :clean-streak-required 1})))
+
+(assert= "a lever-less backend applies nothing and names no effort (invariant 2)"
+         {:apply? false :reason "backend has no reasoning-effort lever"}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "cursor" :prior-effort "medium" :baseline-effort "medium" :signal "bounce"}))
+
+(assert= "an unknown prior effort is not guessed at, and says why rather than being silent"
+         {:apply? false :effort "turbo" :reason "unknown prior effort \"turbo\""}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "turbo" :baseline-effort "medium" :signal "bounce"}))
+
+(assert= "an unknown signal changes nothing, and names the signal rather than being silent"
+         {:apply? false :effort "medium" :reason "unknown signal \"shrug\""}
+         (seat-difficulty-lib/adapt-effort-decision
+          {:backend "claude" :prior-effort "medium" :baseline-effort "medium" :signal "shrug"}))
+
+(assert= "an absent baseline is read as the prior effort, never as the bottom rung"
+         false
+         (:apply? (seat-difficulty-lib/adapt-effort-decision
+                   {:backend "claude" :prior-effort "high" :baseline-effort nil
+                    :signal "clean" :clean-streak 9})))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str (count @failures) " failure(s)"))
