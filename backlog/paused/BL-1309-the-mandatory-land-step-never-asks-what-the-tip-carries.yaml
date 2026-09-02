@@ -102,6 +102,11 @@ description: |
     detector from becoming a swarm-wide land outage. See invariant 2.
 
 notes: |
+  2026-09-02 20:05Z (coordinator): slot opened by BL-1317's close; this ticket is
+  the top expedited candidate but was SKIPPED for orthogonality (Article 3.2
+  rule 3): it names swarmforge/scripts/land_step_lib.bb / land_step_cli.bb,
+  which BL-1343 (active, in flight coder->cleaner) is changing now. Re-evaluate
+  at the next open slot once BL-1343 lands. BL-1341 took the slot.
   ## Deliberately NOT in this slice [2026-08-31 specifier]
 
   Two adjacent findings from the same investigation, both real, both separate:
