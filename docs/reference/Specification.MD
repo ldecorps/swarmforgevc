@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1319: the coordinator's dwell/
+bottleneck optimizer instrument (`extension/src/metrics/stageDwell.ts`,
+BL-102) filters roles for `PIPELINE_ORDER` membership — bare stage names
+only — BEFORE reading any mailbox, so a non-bare seat like `coder@sonnet2`
+failed the membership test and was DROPPED, not merged: its mailbox was
+never opened and its parcels never became dwell records. Consequence: a
+two-seat stage was reported on its bare seat's parcels alone, understated by
+omission, and could rank below a single-seat stage that was actually
+faster — `nameBottleneck` ranks by median processing, so this is a wrong
+optimizer decision, not a cosmetic label. Corrected mid-mint (see the
+ticket's own amendment note): the original mint-time read assumed the seat
+id survived into the report row and just needed folding there; the coder
+found it never got that far. Fix: `stageOfSeat` (the same chokepoint BL-1040 added to
+`swarmState.ts` earlier the same day, reused here rather than a third
+hand-rolled `@`-split) now decides `PIPELINE_ORDER` membership and groups
+survivors by stage, so a seat's mailbox is read and its records attributed
+to its bare stage BEFORE the point that used to drop it —
+`computeStageDwellReportForRoles` and `nameBottleneck` both fold this way.
+Per-seat attribution is preserved in the underlying dwell records
+(`deriveDwellRecords` still keyed on `entry.role`, and the new
+`computeSeatDwellDetail` export keeps a seat-level view available for a
+later ops surface) — only the report ROW is stage-keyed, never a seat id.
+Single-seat output is byte-identical to before. Latent, not live, at ship
+time, for the same reason as BL-1040 (no non-bare seat configured today);
+live consumers (`bridge/bridgeState.ts`'s `/stage-dwell` endpoint and
+`tools/stage-dwell-report.ts`) needed no new wiring, since both already call
+into this module. Out of scope, checked and confirmed correct as-is:
+supervisor, chase, ensure, and the babysitter already fold or iterate seats
+correctly for their own purposes; BL-1040's board/stage-map path is the
+same family, different files, landed separately the same day. No new
+extension command or setting.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1040: BL-983 closed its "seat
 identity never escapes the mailbox layer" invariant only on the FORWARD
 path; the OBSERVATION path leaked a seat-qualified key (e.g.
