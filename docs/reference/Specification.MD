@@ -1,5 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1341: `check_merge_deletion.sh`
+(BL-1242) now covers BOTH merge directions, not only the receiving branch.
+Its original predicate read `git diff --name-status HEAD` — HEAD is the
+pre-merge tip, so a deletion it sees is a path HEAD had that the merge
+result does not — which is structurally blind to a path that exists ONLY on
+the branch being merged IN: `HEAD` never had it, the diff is empty, and a
+hand-resolved conflict that drops it sails through. On `main` the incoming
+branch is `origin/main`, the branch QA pushes approved work onto, so this
+was the direction that lost reviewed work: merge `b71c941a19` (2026-09-02)
+dropped 9 of BL-1330's already-landed paths this way — zero deletions
+against `HEAD`, nine against `MERGE_HEAD` — with no conflict marker, no
+failing hook, and a commit subject describing unrelated, correct work; QA
+had already restored the lost content in `e358e1b46e` before this ticket was
+minted, so this closes why nothing stopped the drop, not the drop itself.
+The guard now runs `collect_deletions` against both `HEAD` and
+`MERGE_HEAD`, folding a path dropped from both sides into ONE finding that
+names both (`"on this branch and the incoming branch"`) rather than two
+separate refusals; ticket attribution falls back from `HEAD`'s history to
+`MERGE_HEAD`'s for an incoming-only path, so it is never reported as
+unexemptable `(unattributed)` merely for having no history on the receiving
+side. The hardener's own pass closed a further gap in the same commit: the
+both-sides dedup fold could silently drop the first-seen side's name on a
+hand-mutated overwrite, which the pre-existing test suite (asserting only
+that a both-sides path appears once) did not catch — new test 13b now
+asserts the message names both sides. BL-1341's own acceptance scenarios
+were folded into the existing BL-1242 feature file rather than kept as a
+separate one (its `.feature.draft` retired), which now also carries a
+mutation-manifest stamp for the first time (14/14 clean). Deliberately kept
+in ONE script, not a fourth sibling guard, per the ticket's own explicit
+constraint. Acceptance:
+`specs/features/BL-1242-merge-never-silently-drops-branch-work.feature`.
+How-to: `docs/how-to/BL-1242-merge-deletion-guard.md` (rewritten for both
+directions). No new extension command or setting — this is a commit-msg
+git-hook guard.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1343: the land step's `own-paths`
 subtraction now refuses by name instead of reporting a completed land when
 every one of a landing ticket's own delivered paths gets excluded as a
