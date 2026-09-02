@@ -58,6 +58,15 @@ source: |
     ModelFactory  = Given the current task, which model should we choose?
 
 notes: |
+  [2026-09-02T06:xxZ coordinator] Human asked to bump priority on cost-
+  reduction tickets ("downgrade a well-performing seat to the cheapest model
+  that still keeps its bounce guard clean"). That is exactly the "descent
+  LADDER" remaining_slice above, but it is unminted epic text, not a
+  promotable ticket, and is recorded as blocked on unparking BL-548. Sent a
+  priority-00 note asking the specifier to mint it as its own ticket (or
+  confirm it genuinely cannot be sliced out yet) so it can be prioritized
+  and promoted the way BL-1056/BL-1317 already are.
+
   UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
   promotes CHILD slices, never this. Children carry `epic: swarm-intelligence-layer`
   and are listed in `decomposes_into`.
