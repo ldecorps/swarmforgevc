@@ -9,7 +9,7 @@ mutation_cost: medium
 slice_size_envelope: medium
 direction: specifier-found
 depends_on: []
-assigned_to: null
+assigned_to: coder
 
 acceptance: specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature
 
