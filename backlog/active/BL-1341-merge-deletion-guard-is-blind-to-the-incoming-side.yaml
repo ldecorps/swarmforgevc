@@ -12,6 +12,7 @@ depends_on: []
 assigned_to: coder
 
 acceptance: specs/features/BL-1242-merge-never-silently-drops-branch-work.feature
+abandoned_commits: [f27ad4b607]
 
 retires:
   - specs/features/BL-1242-merge-never-silently-drops-branch-work.feature

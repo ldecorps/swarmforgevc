@@ -143,6 +143,31 @@ notes: |
   states the time-bounded exclusion this ticket revisits, and that
   `claude-sonnet-5` carries list $3/$15 in the live table.
 
+  2026-09-02 19:03Z (coordinator): handoffd "no parcel in flight" nudge answered.
+  Not a drop: QA approved this ticket (review merge 6e6e544400, merge-up
+  broadcast 18:18Z) but the mandatory land step escalated (LAND_ESCALATE,
+  same entangled sibling set as BL-1338). Specifier ruling 18:22Z: hold, no
+  relanding; the blocker is tracked on BL-1343 (active, coder). Ticket stays
+  in active/ awaiting BL-1343's land-step fix, then QA re-lands and closes.
+
+  2026-09-02 21:35Z (coordinator): second "no parcel in flight" nudge answered.
+  status set to `blocked` (BL-1301 park, same as BL-1271) so the dropped-parcel
+  sweep stops re-nudging; condition to clear: BL-1343 lands, then QA re-lands
+  review merge 6e6e544400 and closes.
+
+  2026-09-02 22:23Z (specifier): the two coordinator entries above had been
+  appended INSIDE the `qa_e2e_procedure:` block rather than `notes:`, which put
+  coordinator bookkeeping into the procedure QA runs. Moved here, where park
+  notes belong; the procedure's six steps are byte-identical and nothing anyone
+  builds changes.
+
+  Also asked to re-record a stale deprecator adjudication: there is none.
+  `.swarmforge/deprecator/adjudications/BL-1056.json` has never existed, and
+  `deprecate-check.js . BL-1056` returns `allow` on its own merits - no
+  stale-premise signal fires here, so no adjudication was ever required. Were
+  there one, `coordinator.prompt` af719edee0 says an active ticket's stale
+  fingerprint needs no chase regardless.
+
 qa_e2e_procedure: |
   On the live host:
 
@@ -161,17 +186,5 @@ qa_e2e_procedure: |
      unpriced model does today.
   6. Confirm nothing moved on its own: every running seat is on the model and
      effort it was launched with.
-
-  2026-09-02 19:03Z (coordinator): handoffd "no parcel in flight" nudge answered.
-  Not a drop: QA approved this ticket (review merge 6e6e544400, merge-up
-  broadcast 18:18Z) but the mandatory land step escalated (LAND_ESCALATE,
-  same entangled sibling set as BL-1338). Specifier ruling 18:22Z: hold, no
-  relanding; the blocker is tracked on BL-1343 (active, coder). Ticket stays
-  in active/ awaiting BL-1343's land-step fix, then QA re-lands and closes.
-
-  2026-09-02 21:35Z (coordinator): second "no parcel in flight" nudge answered.
-  status set to `blocked` (BL-1301 park, same as BL-1271) so the dropped-parcel
-  sweep stops re-nudging; condition to clear: BL-1343 lands, then QA re-lands
-  review merge 6e6e544400 and closes.
 
 assigned_to: coder
