@@ -93,40 +93,45 @@
 ;; ── the defect: a rerouted forward never queues ──────────────────────────
 ;; required_stages [coder, qa] skips cleaner, so a coder drafting to: cleaner
 ;; is routed to qa. Before the fix, BOTH calls printed AUDIT_REQUIRED.
-(let [root (fixture! ["coder" "qa"])
-      d (draft! root "cleaner" (head root))
-      first-call (invoke root d)
-      second-call (invoke root d)]
-  (check "BL-1306: the first invocation challenges"
-         (str/includes? (:text first-call) "AUDIT_REQUIRED"))
-  (check "BL-1306: the first invocation queues nothing"
-         (str/includes? (:text first-call) "HANDOFF_NOT_QUEUED"))
-  (check "BL-1306: an identical second invocation QUEUES rather than re-challenging"
-         (and (not (str/includes? (:text second-call) "AUDIT_REQUIRED"))
-              (queued? root)))
-  (fs/delete-tree root))
+;; Each fixture root is deleted in a finally (BL-971/tempDirTrapGuard): a
+;; check failure or thrown exception must not leak the temp root.
+(let [root (fixture! ["coder" "qa"])]
+  (try
+    (let [d (draft! root "cleaner" (head root))
+          first-call (invoke root d)
+          second-call (invoke root d)]
+      (check "BL-1306: the first invocation challenges"
+             (str/includes? (:text first-call) "AUDIT_REQUIRED"))
+      (check "BL-1306: the first invocation queues nothing"
+             (str/includes? (:text first-call) "HANDOFF_NOT_QUEUED"))
+      (check "BL-1306: an identical second invocation QUEUES rather than re-challenging"
+             (and (not (str/includes? (:text second-call) "AUDIT_REQUIRED"))
+                  (queued? root))))
+    (finally (fs/delete-tree root))))
 
 ;; ── the unrouted case must keep working exactly as before ────────────────
-(let [root (fixture! ["coder" "cleaner" "architect" "hardender" "documenter" "qa"])
-      d (draft! root "cleaner" (head root))
-      first-call (invoke root d)
-      second-call (invoke root d)]
-  (check "BL-1306: a non-skipping ticket still challenges once"
-         (str/includes? (:text first-call) "AUDIT_REQUIRED"))
-  (check "BL-1306: and its identical second invocation still queues" (queued? root))
-  (fs/delete-tree root))
+(let [root (fixture! ["coder" "cleaner" "architect" "hardender" "documenter" "qa"])]
+  (try
+    (let [d (draft! root "cleaner" (head root))
+          first-call (invoke root d)
+          second-call (invoke root d)]
+      (check "BL-1306: a non-skipping ticket still challenges once"
+             (str/includes? (:text first-call) "AUDIT_REQUIRED"))
+      (check "BL-1306: and its identical second invocation still queues" (queued? root)))
+    (finally (fs/delete-tree root))))
 
 ;; ── scenario 03: an EDITED draft must still invalidate the challenge, or
 ;;    the fix bought queueing by disabling the audit ────────────────────────
-(let [root (fixture! ["coder" "qa"])
-      d (draft! root "cleaner" (head root))
-      _ (invoke root d)
-      _ (spit d (str (slurp d) "\n"))
-      edited (invoke root d)]
-  (check "BL-1306: an edited draft still re-challenges"
-         (str/includes? (:text edited) "AUDIT_REQUIRED"))
-  (check "BL-1306: and queues nothing" (not (queued? root)))
-  (fs/delete-tree root))
+(let [root (fixture! ["coder" "qa"])]
+  (try
+    (let [d (draft! root "cleaner" (head root))
+          _ (invoke root d)
+          _ (spit d (str (slurp d) "\n"))
+          edited (invoke root d)]
+      (check "BL-1306: an edited draft still re-challenges"
+             (str/includes? (:text edited) "AUDIT_REQUIRED"))
+      (check "BL-1306: and queues nothing" (not (queued? root))))
+    (finally (fs/delete-tree root))))
 
 (if (pos? @fails)
   (do (println (str @fails " failure(s)")) (System/exit 1))
