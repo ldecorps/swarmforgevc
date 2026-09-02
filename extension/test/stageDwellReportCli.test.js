@@ -266,3 +266,44 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
   assert.match(output, /coder: 1 parcel\(s\)/);
   assert.doesNotMatch(output, /NaN|Infinity|undefined/);
 });
+
+// ── BL-1319: the ops seat-and-model section ──────────────────────────────
+// The optimizer report names stages only. This CLI is an OPS surface, so it
+// also renders each seat and its model behind the fold - the half the human
+// ruling asked for in this same slice. It appears only when a stage actually
+// runs more than one seat: a single-seat swarm's report is unchanged, which
+// is what keeps the fold lossless on this surface too.
+
+const { formatSeatDwellDetail } = require('../out/tools/stage-dwell-report');
+
+const stats = (ms) => ({ medianMs: ms, p90Ms: ms, maxMs: ms, outliersMs: [] });
+
+test('BL-1319: the seat section names each seat, its model and its own dwell', () => {
+  const text = formatSeatDwellDetail([
+    { stage: 'coder', seat: 'coder', agent: 'claude', parcelsProcessed: 2, queueWait: stats(1000), processing: stats(60000) },
+    { stage: 'coder', seat: 'coder@sonnet2', agent: 'aider', parcelsProcessed: 3, queueWait: stats(2000), processing: stats(1800000) },
+  ]);
+  assert.match(text, /Seats:/);
+  assert.match(text, /coder@sonnet2 \(aider\)/);
+  assert.match(text, /coder \(claude\)/);
+  assert.match(text, /3 parcel\(s\)/);
+});
+
+test('BL-1319: a single-seat swarm renders no seat section at all - the ops view never pads a one-seat report', () => {
+  assert.equal(
+    formatSeatDwellDetail([
+      { stage: 'coder', seat: 'coder', agent: 'claude', parcelsProcessed: 2, queueWait: stats(1000), processing: stats(60000) },
+      { stage: 'cleaner', seat: 'cleaner', agent: 'claude', parcelsProcessed: 1, queueWait: stats(1000), processing: stats(60000) },
+    ]),
+    ''
+  );
+});
+
+test('BL-1319: the seat section groups seats under their stage, so the fold is legible rather than implied', () => {
+  const text = formatSeatDwellDetail([
+    { stage: 'coder', seat: 'coder', agent: 'claude', parcelsProcessed: 2, queueWait: stats(1000), processing: stats(60000) },
+    { stage: 'coder', seat: 'coder@sonnet2', agent: 'aider', parcelsProcessed: 3, queueWait: stats(2000), processing: stats(1800000) },
+  ]);
+  const lines = text.split('\n');
+  assert.match(lines[1], /^ {2}coder: 2 seat\(s\)/);
+});

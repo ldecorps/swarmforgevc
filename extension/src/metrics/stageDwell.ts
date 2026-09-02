@@ -1,6 +1,6 @@
 import { extractTicketId, PIPELINE_ORDER, readHandoffHeaderRecordsWithBatches } from './swarmMetrics';
 import { computeTrend, TrendResult, TrendSeriesPoint } from './trend';
-import { RoleEntry, mailboxDir } from '../swarm/swarmState';
+import { RoleEntry, mailboxDir, stageOfSeat } from '../swarm/swarmState';
 
 // BL-102: the coordinator's core optimizer instrument - per-stage queue-wait
 // and processing dwell, a bottleneck line, and outlier honesty - derived
@@ -214,9 +214,15 @@ export function buildStageDwellReport(
 // formula for every dormant role rather than exclude any one of them. The
 // per-stage lines still report queue wait alongside processing (unchanged);
 // only which stage gets named, and its multiple, ranks on processing.
+//
+// BL-1319: the role a row carries is folded to its STAGE before ranking.
+// computeStageDwellReportForRoles below already hands this function
+// stage-keyed rows, but nameBottleneck is exported and ranks whatever it is
+// given, and naming a SEAT as the bottleneck tells the coordinator to
+// optimize something that is not a stage.
 export function nameBottleneck(stages: StageDwellReport[]): BottleneckSummary | null {
   const withProcessing = stages
-    .map((s) => ({ role: s.role, processingMs: s.processing.medianMs, totalMs: stageTotalDwellMs(s.queueWait, s.processing) }))
+    .map((s) => ({ role: stageOfSeat(s.role), processingMs: s.processing.medianMs, totalMs: stageTotalDwellMs(s.queueWait, s.processing) }))
     .filter((s): s is { role: string; processingMs: number; totalMs: number } => s.processingMs !== null && s.processingMs > 0)
     .sort((a, b) => b.processingMs - a.processingMs);
 
@@ -230,6 +236,51 @@ export function nameBottleneck(stages: StageDwellReport[]): BottleneckSummary | 
     processingDwellMs: top.processingMs,
     multipleOverNext: next ? top.processingMs / next.processingMs : null,
   };
+}
+
+// BL-1319 ops seat-detail (human ruling: "Fold plus ops seat-detail - build
+// the seat-and-model view in this same slice"). The stage fold above is what
+// makes the OPTIMIZER's answer correct; it also makes per-seat work invisible
+// everywhere, and this is the sanctioned surface that brings it back. It
+// reads the per-seat attribution the fold deliberately preserved rather than
+// re-deriving anything.
+//
+// Deliberately NOT folded into StageDwellReportResult: the bridge serves that
+// shape on /stage-dwell, and this ticket requires that payload to carry no
+// seat id. Ops surfaces may show seat detail; the optimizer payload may not.
+export interface SeatDwellDetail {
+  /** The stage this seat belongs to - the fold's key, so ops and optimizer agree. */
+  stage: string;
+  /** The seat id as roles.tsv spells it. Bare for a single-seat stage. */
+  seat: string;
+  /** The configured agent/provider brand. 'unknown' for a short TSV row - never invented. */
+  agent: string;
+  parcelsProcessed: number;
+  queueWait: DwellStats;
+  processing: DwellStats;
+}
+
+export const SEAT_DWELL_UNKNOWN_AGENT = 'unknown';
+
+export function computeSeatDwellDetail(
+  roles: Array<Pick<RoleEntry, 'role' | 'worktreeName' | 'worktreePath' | 'agent'>>,
+  nowMs: number = Date.now(),
+  windowHours: number = DEFAULT_STAGE_DWELL_WINDOW_HOURS
+): SeatDwellDetail[] {
+  const windowStartMs = nowMs - windowHours * 60 * 60 * 1000;
+  return roles
+    .filter((entry) => (PIPELINE_ORDER as string[]).includes(stageOfSeat(entry.role)))
+    .map((entry) => {
+      const { records } = readRoleStageDwellRecords(entry, windowStartMs, nowMs);
+      return {
+        stage: stageOfSeat(entry.role),
+        seat: entry.role,
+        agent: entry.agent && entry.agent.length > 0 ? entry.agent : SEAT_DWELL_UNKNOWN_AGENT,
+        parcelsProcessed: records.length,
+        queueWait: computeDwellStats(records.map((r) => r.queueWaitMs).filter((v): v is number => v !== null)),
+        processing: computeDwellStats(records.map((r) => r.processingMs)),
+      };
+    });
 }
 
 // ── fs adapter: completed handoffs, including batch_* dirs (dwell-04) ───
@@ -273,15 +324,40 @@ export function computeStageDwellReportForRoles(
   const priorStartMs = windowStartMs - windowMs;
   const windowStartIso = toIso(windowStartMs);
 
-  const pipelineRoles = roles.filter((r) => (PIPELINE_ORDER as string[]).includes(r.role));
+  // BL-1319: seats of one stage merge into ONE row, and the merge happens
+  // BEFORE nameBottleneck ranks - after it picks would leave the wrong-answer
+  // consequence intact. Filtering on the FOLDED stage matters as much as the
+  // merge: PIPELINE_ORDER holds bare stage names only, so a non-bare seat
+  // used to fail this filter and be dropped entirely, reporting the stage as
+  // though the seat's parcels never happened. Per-seat attribution stays in
+  // the DwellRecords themselves (record.role is the seat that worked the
+  // parcel) - folding is a REPORTING concern, and the ops seat view below
+  // reads exactly those preserved records.
+  const seatsByStage = new Map<string, Array<Pick<RoleEntry, 'role' | 'worktreeName' | 'worktreePath'>>>();
+  for (const entry of roles) {
+    const stage = stageOfSeat(entry.role);
+    if (!(PIPELINE_ORDER as string[]).includes(stage)) {
+      continue;
+    }
+    const seats = seatsByStage.get(stage);
+    if (seats) {
+      seats.push(entry);
+    } else {
+      seatsByStage.set(stage, [entry]);
+    }
+  }
   let unparseableCount = 0;
 
-  const stages = pipelineRoles.map((entry) => {
-    const { records, unparseableCount: roleUnparseable } = readRoleStageDwellRecords(entry, priorStartMs, nowMs);
-    unparseableCount += roleUnparseable;
+  const stages = [...seatsByStage.entries()].map(([stage, seats]) => {
+    const records: DwellRecord[] = [];
+    for (const entry of seats) {
+      const read = readRoleStageDwellRecords(entry, priorStartMs, nowMs);
+      unparseableCount += read.unparseableCount;
+      records.push(...read.records);
+    }
     const currentRecords = records.filter((r) => r.completedAtMs >= windowStartMs);
     const priorRecords = records.filter((r) => r.completedAtMs < windowStartMs);
-    return buildStageDwellReport(entry.role, currentRecords, priorRecords, windowStartIso, toIso(priorStartMs));
+    return buildStageDwellReport(stage, currentRecords, priorRecords, windowStartIso, toIso(priorStartMs));
   });
 
   return {
