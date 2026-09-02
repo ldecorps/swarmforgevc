@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1040: BL-983 closed its "seat
+identity never escapes the mailbox layer" invariant only on the FORWARD
+path; the OBSERVATION path leaked a seat-qualified key (e.g.
+`coder@sonnet2`) at three layers — `pipeline_stage_cli.bb` wrote it verbatim
+into the stage map and widened the reconciler's precedence order,
+`swarmState.ts`'s `invertTicketStageToRoleHeldTickets` propagated it, and
+`pipelineBoard.ts`'s `heldRoleByTicketId` (iterating bare `ALL_SWARM_ROLES`
+only) matched nothing, painting the ticket not-started while the seat
+actively held it. Fix: a seat key now folds onto its bare stage at three
+chokepoints, all reusing the existing `seat-stage` (Babashka) /
+new `stageOfSeat` (`swarmState.ts`) chokepoint rather than a fourth
+hand-rolled `indexOf('@')` — the `bb` source (`role-for-observation`, both
+its `:sent` and held branches, plus `compute-stage-map`'s deduped
+`role-order`), the TS reader (`normaliseBareRoleStage` /
+`normaliseObjectStage`, which is what covers the stale-file case: a stage
+map written before this fix still folds correctly when read after it), and
+the renderer (`heldRoleByTicketId`). A multi-seat stage still occupies
+exactly one board column and one position in the precedence order; BL-670's
+`claimed`/`in-transit-to`/`last-known` reconciliation is unchanged.
+Latent, not live, at ship time: the `coder@sonnet2` seat was removed
+2026-08-21, so no non-bare seat currently exists; sequenced to land before
+BL-1001 (paused) brings seats back. Scoped to the board and stage-map
+observation path only — BL-981's remaining surfaces (supervisor, chase,
+ensure, stage-dwell) stay open, and BL-732's `@`-seat console pane-title
+chrome regex is a different, untouched surface. No new extension command or
+setting. See [the BL-1040
+how-to](../how-to/BL-1040-seat-identity-never-escapes-on-the-observation-path.md).)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1301: the dropped-parcel chase sweep
 (BL-719) re-flagged a deliberately parked active ticket as a possible drop
 every cooldown window for as long as the park lasted — the live instance,
