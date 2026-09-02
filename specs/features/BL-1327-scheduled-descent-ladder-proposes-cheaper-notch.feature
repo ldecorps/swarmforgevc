@@ -1,6 +1,6 @@
 Feature: BL-1327 Scheduled descent ladder proposes a cheaper effort-then-model notch per seat
 
-  BL-545's epic remaining_slices names a periodic descent ladder: walk a
+  BL-1329's (BL-545 at the time) epic remaining_slices names a periodic descent ladder: walk a
   well-performing seat down through effort notches before model notches,
   one notch per review period, with asymmetric hysteresis — a guard trip
   climbs back immediately, a further descent requires several clean

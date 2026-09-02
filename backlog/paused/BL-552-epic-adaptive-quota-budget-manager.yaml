@@ -5,7 +5,7 @@ status: todo
 type: epic
 epic: quota-budget-manager
 priority: 156
-depends_on: [BL-545]
+depends_on: [BL-1329]
 decomposes_into: [BL-553, BL-619]
 human_approval: approved
 source: "Backlog root intake 003-adaptive-quota-budget-manager.md, drained by specifier 2026-07-22."
@@ -14,7 +14,7 @@ approval_context: |
   This vision proposes a QuotaManager that owns quotas/budgets/cooldowns
   "independently of the ModelFactory" and a Scheduler that asks it for
   eligible models. That overlaps three things already in the
-  swarm-intelligence-layer family (BL-545 umbrella, operator-ordered
+  swarm-intelligence-layer family (BL-1329 umbrella, renumbered from BL-545 2026-09-02, operator-ordered
   2026-07-22):
     - BL-525 ModelFactory's own notes already list "provider dry/quota
       signals" as a factory input.
@@ -30,12 +30,12 @@ approval_context: |
   existing cooldown files rather than introducing a third state store?
   Recommend the latter to avoid a fourth place providers' state lives, but
   filing the epic here first so a human can rule on nesting. Also confirm
-  this does not jump the operator's fixed BL-545 promotion order
+  this does not jump the operator's fixed BL-1329 promotion order
   (BL-546 -> BL-551 -> BL-547 -> BL-525 -> BL-548) — this epic's child stays
   paused until explicitly promoted, never ahead of that order.
 
 notes: |
-  SUB-TRACKER nested under BL-545 Swarm Intelligence Layer. UMBRELLA / tracking
+  SUB-TRACKER nested under BL-1329 Swarm Intelligence Layer (renumbered from BL-545). UMBRELLA / tracking
   item (type: epic), NOT directly promotable — the coordinator promotes CHILD
   slices, never this. Slice 1 (BL-553) is scoped narrow: a read-only
   availability check that reuses existing cooldown/ledger state rather than

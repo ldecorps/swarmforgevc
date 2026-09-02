@@ -21,8 +21,8 @@ ruling: >
 approval_context: >
   Coordinator relayed a human ask (2026-09-02, via Cursor) to bump priority
   on cost-reduction tickets: "downgrade a well-performing seat to the
-  cheapest model that still keeps its bounce guard clean." That is BL-545's
-  epic remaining_slices "descent LADDER" bullet, which was unminted epic
+  cheapest model that still keeps its bounce guard clean." That is BL-1329's
+  (BL-545 at the time) epic remaining_slices "descent LADDER" bullet, which was unminted epic
   prose, not a promotable ticket. This mint slices it out.
 
   The epic's own remaining_slices bullet says the descent ladder "depends
@@ -60,7 +60,7 @@ invariants:
 description: |
   ## What
 
-  BL-545's epic remaining_slices names a periodic "descent LADDER": walk a
+  BL-1329's (BL-545 at the time) epic remaining_slices names a periodic "descent LADDER": walk a
   seat down through effort notches (xhigh -> high -> medium -> low) before
   trying a cheaper model (at high effort again, never low — "a smaller
   brain may need MORE deliberation"), one notch per review period, only
@@ -102,11 +102,14 @@ description: |
   - Whichever half of the ruling_options choice the human does NOT pick.
 
 source: |
-  BL-545 epic (`backlog/paused/BL-545-epic-swarm-intelligence-layer.yaml`)
-  `remaining_slices` bullet 2, "The descent LADDER..." (operator addendum
-  2026-07-26 16:20). Sliced out per coordinator note 2026-09-02T07:34Z
-  (priority-00, "Mint BL-545's descent-ladder remaining_slice as its own
-  ticket"), itself relaying a human ask via Cursor 2026-09-02 to bump
+  BL-545 epic (`backlog/paused/BL-545-epic-swarm-intelligence-layer.yaml` at
+  the time; that file is now `BL-1329-epic-swarm-intelligence-layer.yaml` —
+  renumbered 2026-09-02 after a duplicate-id defect surfaced, see BL-1329's
+  own notes) `remaining_slices` bullet 2, "The descent LADDER..." (operator
+  addendum 2026-07-26 16:20). Sliced out per coordinator note
+  2026-09-02T07:34Z (priority-00, "Mint BL-545's descent-ladder remaining_slice
+  as its own ticket" — verbatim from the note as received, before the
+  rename), itself relaying a human ask via Cursor 2026-09-02 to bump
   priority on cost-reduction/downgrade tickets.
 
 notes: |
@@ -121,9 +124,10 @@ notes: |
   on by default) before build starts — do not let Slice 1 begin coding
   against an undecided default.
 
-  Epic BL-545's remaining_slices / decomposes_into should list BL-1327 once
-  this lands in paused/; leaving that epic-bookkeeping edit for a documenter
-  pass is fine, it does not block promotion of this ticket.
+  Epic bookkeeping done in the same pass: decomposes_into and the
+  remaining_slices bullet were updated on the epic tracker (renumbered
+  BL-545 -> BL-1329 shortly after, see that file's notes) to record this
+  minting.
 
 qa_e2e_procedure: |
   On the live host, once built:

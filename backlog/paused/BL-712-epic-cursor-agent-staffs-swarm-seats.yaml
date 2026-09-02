@@ -6,7 +6,7 @@ status: todo
 epic: swarm-intelligence-layer
 priority: 3
 direction: queue-jump
-depends_on: [BL-545]
+depends_on: [BL-1329]
 decomposes_into: [BL-713, BL-1078, BL-1079, BL-1080, BL-1081]
 mutation_cost: high
 
@@ -58,7 +58,7 @@ description: |
 
   ## Placement
 
-  Sub-tracker under BL-545 (Swarm Intelligence Layer), alongside BL-542
+  Sub-tracker under BL-1329 (Swarm Intelligence Layer, renumbered from BL-545 2026-09-02), alongside BL-542
   (model routing / ModelFactory), BL-546 (PromptEngine) and BL-547 (Model
   Steward) — the same nesting BL-542 uses. Not a parallel epic namespace.
 

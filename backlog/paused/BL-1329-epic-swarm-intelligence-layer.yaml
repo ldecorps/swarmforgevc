@@ -1,4 +1,4 @@
-id: BL-545
+id: BL-1329
 title: "EPIC — Swarm Intelligence Layer: PromptEngine + Model Steward + ModelFactory; do not promote directly; tracks children"
 milestone: M5
 status: todo
@@ -58,6 +58,45 @@ source: |
     ModelFactory  = Given the current task, which model should we choose?
 
 notes: |
+  [2026-09-02 specifier] RENUMBERED from BL-545 to BL-1329 (this file moved
+  from backlog/paused/BL-545-epic-swarm-intelligence-layer.yaml). Cause:
+  minting BL-1327 (below) surfaced that id BL-545 was already permanently
+  used by a shipped, closed ticket — backlog/done/M8/BL-545-telegram-catch-up.yaml
+  ("Telegram catch-up pager"), landed 2026-07/08 and referenced by name in
+  live shipped code (extension/src/bridge/catchUp{Live,ReadState,UiHtml}.ts,
+  specs/pipeline/steps/bl545CatchUpPagerSteps.js, its own .feature file) —
+  both tickets have carried id BL-545 since their own first commit; this was
+  not a recent corruption, just two independent mints that were never
+  cross-checked against `done/`. specifier_backlog_hygiene_gate.sh's
+  DUPLICATE-ID check caught it while I was staging BL-1327's edits to this
+  file; coordinator confirmed and delegated the renumbering call to me
+  (2026-09-02T08:07Z note, "your call").
+
+  Judgment: renumber THIS epic tracker, not the telegram-catch-up ticket.
+  This epic is `type: epic`, `status: todo`, never promoted (constitution:
+  "never promote BL-545/BL-1329 itself") and has never shipped code under
+  its own literal id — only its `epic: swarm-intelligence-layer` SLUG is
+  referenced by children, which is untouched by this rename. The
+  telegram-catch-up ticket is done, closed, and its id is baked into
+  shipped filenames and a registered step-handler symbol
+  (bl545CatchUpPagerSteps.js) — renaming that would risk breaking a live
+  acceptance registration for no benefit. Updated in the same pass: this
+  file's own `id:` and three internal self-references ("do not promote
+  BL-545/BL-1329 itself", the SUPERSEDES line); the three tickets whose
+  `depends_on:` named the epic by id (BL-712, BL-552, BL-542, all in
+  backlog/paused/); BL-1327 and BL-1328's own prose references to this
+  epic's id (both minted by me minutes earlier in the same session);
+  evidence file backlog/evidence/model-intelligence-layer-prioritization-20260722.md;
+  and an illustrative code comment in swarmforge/scripts/promotion_gates_lib.bb.
+  Deliberately NOT touched: backlog/topics/BL-545.json (the live Telegram
+  topic message history for both tickets is intermixed there; rewriting
+  runtime-generated chat-history data is out of scope and risks corrupting
+  a real record — a fresh topic file will be created under BL-1329 the next
+  time this epic's tile posts, and BL-545's existing topic thread stays
+  correctly addressable for the closed telegram-catch-up ticket going
+  forward). Also not touched: any shipped code, since none referenced this
+  epic by literal id.
+
   [2026-09-02T06:xxZ coordinator] Human asked to bump priority on cost-
   reduction tickets ("downgrade a well-performing seat to the cheapest model
   that still keeps its bounce guard clean"). That is exactly the "descent
@@ -85,7 +124,7 @@ notes: |
 
   2026-08-25T20:42Z coordinator (BL-798): open-slot nudge cleared — epic tracker
   not promotable; sweep top-ranked this id with "awaiting approval" suffix.
-  Slots filled by JumpQ BL-1144+BL-1145; do not promote BL-545 itself.
+  Slots filled by JumpQ BL-1144+BL-1145; do not promote BL-1329 itself.
 
   ## Onboarder-orbit reshape, 2026-07-26 (BL-680 authority, coordinator-invited)
 
@@ -164,11 +203,12 @@ notes: |
          (b) BL-547 Slice 2 is on main (model-steward evaluate ingestion).
        Ticket-level depends_on [BL-546, BL-547] means those tickets reach done/ — but
        BL-548 Slice 1 additionally needs their Slice 2 code. Verify before promoting.
-    Never promote BL-545 itself (epic tracker). Never promote BL-548 before its
+    Never promote BL-1329 itself (epic tracker). Never promote BL-548 before its
     block_until conditions are met even if depends_on tickets are merely active.
 
-  SUPERSEDES: BL-542 remains as the model-routing sub-tracker for BL-525 only; BL-545
-  is the umbrella epic for the full intelligence layer. New children use
+  SUPERSEDES: BL-542 remains as the model-routing sub-tracker for BL-525 only; BL-1329
+  is the umbrella epic for the full intelligence layer (renumbered from BL-545
+  2026-09-02 — see notes on the duplicate-id resolution). New children use
   `epic: swarm-intelligence-layer`.
 
 acceptance:
