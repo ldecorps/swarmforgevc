@@ -903,6 +903,7 @@ const DOMAINS = [
   require('./bl1250ExpediteRoleAgentCountSteps'),
   require('./bl1253DeadFeederOwnsGetUpdatesStampSteps'),
   require('./bl1224WatchAdoptsRestartedRuntimeSteps'),
+  require('./bl1040SeatIdentityObservationPathSteps'),
   require('./bl1254ExpediteNoVerdictChainStampSteps'),
   require('./bl1272LandedSiblingSteps'),
   require('./bl1183BobGoLiveGateSteps'),
