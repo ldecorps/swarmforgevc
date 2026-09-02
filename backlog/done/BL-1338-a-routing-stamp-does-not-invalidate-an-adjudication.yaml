@@ -156,3 +156,5 @@ abandoned_commits: [bc1a587622]
 # second-parent edge), so QA hand-landed the same content as 95e96ef217
 # instead. Recorded so the ancestry-based gates read the severed descent
 # as intentional. By QA.
+  [2026-09-02 coordinator] QA hand-landed on origin/main at a1450efaa3 (95e96ef217; land_step_cli attributed nothing on the merge tip - BL-1343). Closed on QA note 002134.
+  CAVEAT: local main lineage a427bacdb4 (specifier merge) dropped the pipeline half of that landing; origin/main is complete; local rebuild pending human ruling (coordinator role_ask 18:31Z).
