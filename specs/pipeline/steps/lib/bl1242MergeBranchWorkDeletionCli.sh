@@ -214,5 +214,4 @@ case "$MODE" in
     echo "unknown mode: $MODE" >&2
     exit 2
     ;;
-
 esac
