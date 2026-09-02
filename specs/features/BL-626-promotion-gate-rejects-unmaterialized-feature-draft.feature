@@ -6,12 +6,19 @@
 Feature: promotion refuses a ticket whose acceptance names no executable feature
 
   A ticket's acceptance field advertises a contract the coder runs and QA
-  gates on. When it points at a file that is not there, or at a parked draft
-  the runner will not execute, nothing errors: the ticket is promoted, worked,
-  and can reach done with its stated acceptance never once executed.
+  gates on. When it points at a file that is not there, nothing errors: the
+  ticket is promoted, worked, and can reach done with its stated acceptance
+  never once executed.
 
-  The gate closes that silence at promotion time, and names the offending
-  path. A refusal that says only "blocked" reproduces the silence it removes.
+  The gate closes that silence, and names the offending path. A refusal that
+  says only "blocked" reproduces the silence it removes.
+
+  A parked draft the runner will not execute is the same silence, but it is
+  no longer refused at promotion outright (BL-1340): that refusal could not
+  tell a parked draft from one the ticket is itself chartered to convert, and
+  refusing the second deadlocked it with no exit. Promotion now admits a draft
+  whose ticket pins its conversion, and the documenter->QA edge refuses one
+  that arrives still unconverted - allowed in, forbidden out.
 
   Background:
     Given a ticket eligible for promotion into the active backlog
@@ -27,7 +34,6 @@ Feature: promotion refuses a ticket whose acceptance names no executable feature
     Examples:
       | pointer           | present            | named                                 |
       | a feature file    | only its draft     | the missing feature and its draft     |
-      | its own draft     | that draft         | the draft as not executable           |
       | a feature file    | no matching file   | the missing feature                   |
 
   # BL-626 promotion-gate-02
@@ -56,3 +62,32 @@ Feature: promotion refuses a ticket whose acceptance names no executable feature
     Given tickets in paused and active whose acceptance resolves to no feature
     When the backfill audit runs
     Then every one of those tickets is listed with the path that failed to resolve
+
+  # BL-1340 self-converting-draft-01
+  Scenario: a draft the ticket pins itself to converting is promoted
+    Given the candidate's acceptance names its own draft
+    And the candidate pins that draft's conversion in its own charter
+    When the coordinator promotes the next eligible ticket
+    Then the candidate is promoted
+
+  # BL-1340 self-converting-draft-02
+  Scenario: a parked draft the ticket does not convert is still refused
+    Given the candidate's acceptance names its own draft
+    And the candidate pins no conversion of that draft
+    When the coordinator promotes the next eligible ticket
+    Then the promotion is refused
+    And the refusal names the draft as parked with no conversion pinned
+
+  # BL-1340 self-converting-draft-03
+  Scenario: buildability never reorders the expedite lane
+    Given an expedited defect whose acceptance names a self-converting draft
+    And a non-expedited candidate whose acceptance names an existing feature
+    When the coordinator promotes the next eligible ticket
+    Then the expedited defect is promoted first
+
+  # BL-1340 self-converting-draft-04
+  Scenario: a parcel still naming a draft cannot reach QA
+    Given a parcel whose ticket acceptance still names a draft
+    When the documenter sends it to QA
+    Then the handoff is refused
+    And the refusal names the unconverted draft

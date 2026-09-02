@@ -548,6 +548,66 @@
            {"shared" ["BL-3" "BL-4"]}
            (promotion-gates-lib/active-epics root)))
 
+;; ── BL-1340: a self-converting draft is admitted, a parked one is not ────
+;; Human ruling A: the pin is a required_wiring entry naming a
+;; specs/pipeline/steps registration - the ticket saying, in its own charter,
+;; that THIS parcel lands the handler that makes the draft executable.
+
+(defn- bl1340-ticket [acceptance & {:keys [pin]}]
+  (str "id: BL-6340\nhuman_approval: approved\nepic: solo\n"
+       "acceptance: " acceptance "\n"
+       (when pin
+         (str "required_wiring:\n  - '" pin "'\n"))))
+
+(let [root (mk-root)
+      draft "specs/features/BL-6340-self-converting.feature.draft"]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (spit (str (fs/path root draft)) "Feature: the slice this ticket builds\n")
+  (let [r (promotion-gates-lib/evaluate
+           {:content (bl1340-ticket draft :pin "specs/pipeline/steps/index.js::bl6340Steps::registered here")
+            :held? false :root root :active-count 0 :max-depth 5 :active-epics {}})]
+    (assert-true "BL-1340: a draft the ticket pins itself to converting is admitted" (:ok r))
+    (assert= "BL-1340: and carries no acceptance refusal" nil (:gate r))))
+
+(let [root (mk-root)
+      draft "specs/features/BL-6340-parked.feature.draft"]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (spit (str (fs/path root draft)) "Feature: somebody else's slice\n")
+  (let [r (promotion-gates-lib/evaluate
+           {:content (bl1340-ticket draft) :held? false :root root
+            :active-count 0 :max-depth 5 :active-epics {}})]
+    (assert-false "BL-1340: a parked draft with no conversion pinned is still refused" (:ok r))
+    (assert= "BL-1340: gate name is acceptance" "acceptance" (:gate r))
+    (assert-true "BL-1340: and the refusal says the draft is parked with no conversion pinned"
+                 (boolean (and (str/includes? (or (:reason r) "") draft)
+                               (str/includes? (or (:reason r) "") "parked")
+                               (str/includes? (or (:reason r) "") "no conversion pinned"))))))
+
+;; A required_wiring that pins something else entirely is not a conversion
+;; pin - otherwise every ticket with any wiring entry would walk through.
+(let [root (mk-root)
+      draft "specs/features/BL-6340-unrelated-pin.feature.draft"]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (spit (str (fs/path root draft)) "Feature: parked\n")
+  (let [r (promotion-gates-lib/evaluate
+           {:content (bl1340-ticket draft :pin "swarmforge/scripts/handoff_lib.bb::record-something!::an unrelated anchor")
+            :held? false :root root :active-count 0 :max-depth 5 :active-epics {}})]
+    (assert-false "BL-1340: an unrelated required_wiring entry is not a conversion pin" (:ok r))
+    (assert-true "BL-1340: and it refuses as parked" 
+                 (str/includes? (or (:reason r) "") "no conversion pinned"))))
+
+;; The pin does not conjure a file: a draft that is not on disk is still the
+;; missing-pointer refusal, never an admitted ghost.
+(let [root (mk-root)
+      draft "specs/features/BL-6340-absent.feature.draft"]
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (let [r (promotion-gates-lib/evaluate
+           {:content (bl1340-ticket draft :pin "specs/pipeline/steps/index.js::bl6340Steps::registered here")
+            :held? false :root root :active-count 0 :max-depth 5 :active-epics {}})]
+    (assert-false "BL-1340: a pinned draft that does not exist is still refused" (:ok r))
+    (assert-true "BL-1340: and the refusal names the missing draft"
+                 (str/includes? (or (:reason r) "") draft))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))

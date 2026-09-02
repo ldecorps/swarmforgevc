@@ -148,36 +148,6 @@ announce_skip() {
   echo "skip $id gate=$gate" >&2
 }
 
-is_buildable() {
-  local f="$1"
-  local id
-  id="$(ticket_id_of "$f")"
-  if grep -qE '^acceptance:' "$f"; then
-    # acceptance may be a path on the next line or inline
-    local acc
-    acc="$(awk '/^acceptance:/{if ($2!="") {print $2; exit} getline; gsub(/^[ \t]+/,"",$0); print; exit}' "$f")"
-    acc="${acc%\"}"
-    acc="${acc#\"}"
-    acc="${acc%\'}"
-    acc="${acc#\'}"
-    # Explicit path pointer is authoritative (BL-626): never glob-rescue a
-    # dangling acceptance via specs/features/<id>-*.feature.
-    if [[ -n "$acc" && "$acc" != ">" && "$acc" != "|" && "$acc" == */* ]]; then
-      if [[ "$acc" == *.feature.draft ]]; then
-        return 1
-      fi
-      if [[ -f "$ROOT/$acc" || -f "$acc" ]]; then
-        return 0
-      fi
-      return 1
-    fi
-  fi
-  if [[ -n "$id" ]] && compgen -G "$ROOT/specs/features/${id}-*.feature" >/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
-}
-
 # promotion_gates: the BL-663 chokepoint (promotion_gates_cli.bb) is the ONE
 # place human_approval / Article 3.2.4 expedite ordering / depth /
 # orthogonality / hold marker are decided — both invocation modes below call
@@ -197,8 +167,7 @@ gates_evaluate() {
 
 pick_candidate() {
   local f
-  local buildable=()
-  local other=()
+  local candidates=()
 
   if [[ -n "$ITEM" ]]; then
     local located held
@@ -240,26 +209,26 @@ pick_candidate() {
       ticket_id_of "$f"
       continue
     fi
-    if is_buildable "$f"; then
-      buildable+=("$f")
-    else
-      other+=("$f")
-    fi
+    candidates+=("$f")
   done < <(find "$PAUSED_DIR" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | sort)
 
   if [[ "$LIST_CANDIDATES" -eq 1 ]]; then
     return 0
   fi
 
+  # BL-1340 invariant 2. The whole eligible set goes to the ONE chokepoint,
+  # in one call. This used to partition candidates into buildable[] and
+  # other[] first and offer buildable[] alone, reaching other[] only if that
+  # yielded nothing - which with ~100 paused tickets it never did. That
+  # partition ran BEFORE `select`, so it silently outranked Article 3.2.4:
+  # an expedited defect whose acceptance named a draft lost its place in the
+  # lane to any non-expedited ticket that happened to be buildable, and
+  # BL-663's own comment names promotion_gates_cli.bb as the one place that
+  # ordering is decided. Buildability may break a tie WITHIN equal expedite
+  # rank; it may never filter ahead of the ordering.
   local picked
-  if ((${#buildable[@]} > 0)); then
-    if picked="$(bb "$SCRIPT_DIR/promotion_gates_cli.bb" select "$ROOT" "$CAP" "${buildable[@]}")"; then
-      echo "$picked"
-      return 0
-    fi
-  fi
-  if ((${#other[@]} > 0)); then
-    if picked="$(bb "$SCRIPT_DIR/promotion_gates_cli.bb" select "$ROOT" "$CAP" "${other[@]}")"; then
+  if ((${#candidates[@]} > 0)); then
+    if picked="$(bb "$SCRIPT_DIR/promotion_gates_cli.bb" select "$ROOT" "$CAP" "${candidates[@]}")"; then
       echo "$picked"
       return 0
     fi

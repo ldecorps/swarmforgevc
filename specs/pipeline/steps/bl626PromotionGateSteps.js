@@ -38,12 +38,22 @@ const NAMED = {
     assert.ok(out.includes(ctx.pointer), out);
     assert.ok(out.includes(`${ctx.pointer}.draft`) || out.includes(ctx.presentDraft), out);
   },
-  'the draft as not executable': (ctx, out) => {
-    assert.ok(out.includes(ctx.pointer), out);
-    assert.match(out, /not executable/);
-  },
   'the missing feature': (ctx, out) => {
     assert.ok(out.includes(ctx.pointer), out);
+  },
+  // BL-1340: a parked draft still fails, and says which kind of draft it is.
+  // "not executable" alone was the old text, and it read the same for a draft
+  // the ticket was itself chartered to convert.
+  'the draft as parked with no conversion pinned': (ctx, out) => {
+    assert.ok(out.includes(ctx.pointer), out);
+    assert.match(out, /parked/);
+    assert.match(out, /no conversion pinned/);
+  },
+  // Scenario 04's refusal comes from the pre-QA gate, not the promotion CLI,
+  // so it reads the gate's own findings rather than `out`.
+  'the unconverted draft': (ctx) => {
+    const detail = ctx.qaResult.findings.map((f) => f.detail).join('\n');
+    assert.ok(detail.includes(ctx.qaDraft), `the refusal does not name the draft: ${detail}`);
   },
 };
 
@@ -202,7 +212,9 @@ function registerSteps(registry) {
     withCleanup(ctx, (st) => {
       const check = NAMED[named.trim()];
       assert.ok(check, `unknown named cell: ${named}`);
-      check(st, st.result.out);
+      // Scenario 04's refusal comes from the pre-QA gate, which never ran the
+      // promotion CLI, so there is no st.result to read.
+      check(st, st.result ? st.result.out : '');
     });
   });
 
@@ -228,6 +240,115 @@ function registerSteps(registry) {
       assert.ok(st.result.out.includes('BL-9626B'), st.result.out);
     });
   });
+
+  // ── BL-1340: promotion admits a self-converting draft ──────────────────
+
+  scoped(/^the candidate pins that draft's conversion in its own charter$/, (ctx) => {
+    const st = ensure(ctx);
+    // The draft exists - a pin never conjures a file, and admitting a pointer
+    // to nothing would be BL-441 again by another door.
+    writeRel(st.root, st.pointer, 'Feature: the slice this ticket builds\n');
+    // Human ruling A: the pin is a required_wiring entry naming a
+    // specs/pipeline/steps registration - this parcel landing the handler
+    // that makes the draft executable.
+    writeCandidate(
+      ctx,
+      `acceptance: ${st.pointer}\nrequired_wiring:\n  - 'specs/pipeline/steps/index.js::bl9626Steps::the handler this parcel registers'`,
+    );
+  });
+
+  scoped(/^the candidate pins no conversion of that draft$/, (ctx) => {
+    const st = ensure(ctx);
+    writeRel(st.root, st.pointer, 'Feature: somebody else\'s slice\n');
+    writeCandidate(ctx, `acceptance: ${st.pointer}`);
+  });
+
+  scoped(/^an expedited defect whose acceptance names a self-converting draft$/, (ctx) => {
+    const st = ensure(ctx);
+    const draft = `specs/features/${st.id}-expedited.feature.draft`;
+    writeRel(st.root, draft, 'Feature: the slice this ticket builds\n');
+    // A LOW ticket priority deliberately: if buildability or priority - not
+    // the expedite lane - were deciding, this ticket would lose.
+    st.expedited = path.join(st.root, 'backlog', 'paused', 'BL-9627-expedited.yaml');
+    fs.writeFileSync(
+      st.expedited,
+      [
+        'id: BL-9627',
+        'type: defect',
+        'severity: high',
+        'human_approval: approved',
+        'epic: solo',
+        'priority: 90',
+        `acceptance: ${draft}`,
+        "required_wiring:",
+        "  - 'specs/pipeline/steps/index.js::bl9627Steps::the handler this parcel registers'",
+        '',
+      ].join('\n'),
+    );
+  });
+
+  scoped(/^a non-expedited candidate whose acceptance names an existing feature$/, (ctx) => {
+    const st = ensure(ctx);
+    const feature = `specs/features/${st.id}-buildable.feature`;
+    writeRel(st.root, feature, 'Feature: already executable\n');
+    st.buildable = path.join(st.root, 'backlog', 'paused', 'BL-9628-buildable.yaml');
+    fs.writeFileSync(
+      st.buildable,
+      [
+        'id: BL-9628',
+        'type: feature',
+        'human_approval: approved',
+        'epic: solo',
+        'priority: 1',
+        `acceptance: ${feature}`,
+        '',
+      ].join('\n'),
+    );
+  });
+
+  scoped(/^the expedited defect is promoted first$/, (ctx) => {
+    withCleanup(ctx, (st) => {
+      const result = runGatesCli(['select', st.root, '5', st.buildable, st.expedited]);
+      assert.equal(result.status, 0, `select refused outright:\n${result.stdout}${result.stderr}`);
+      const picked = `${result.stdout || ''}`.trim();
+      assert.ok(
+        picked.includes('BL-9627'),
+        `the expedited draft-pointer defect was not selected first; got: ${picked}`,
+      );
+    });
+  });
+
+  // Scenario 04: the exit end. Driven against the pure gate that decides it,
+  // with the fact the gatherer supplies for a parcel whose acceptance still
+  // names a draft at the cited commit.
+  scoped(/^a parcel whose ticket acceptance still names a draft$/, (ctx) => {
+    const st = ensure(ctx);
+    st.qaDraft = `specs/features/${st.id}-unconverted.feature.draft`;
+  });
+
+  scoped(/^the documenter sends it to QA$/, (ctx) => {
+    const st = ensure(ctx);
+    const program = `
+(require '[cheshire.core :as json])
+(load-file "${path.join(REPO_ROOT, 'swarmforge', 'scripts', 'acceptance_contract_gate_lib.bb')}")
+(println (json/generate-string
+  (acceptance-contract-gate-lib/evaluate
+    {:ticket-id "${st.id}" :declaration-readable? true
+     :declaration-draft "${st.qaDraft}" :registry-loadable? true
+     :unresolved-steps []})))`;
+    const result = spawnSync('bb', ['-e', program], { encoding: 'utf8' });
+    assert.equal(result.status, 0, `bb failed: ${result.stderr}`);
+    st.qaResult = JSON.parse(`${result.stdout}`.trim());
+  });
+
+  scoped(/^the handoff is refused$/, (ctx) => {
+    const st = ensure(ctx);
+    assert.ok(
+      Array.isArray(st.qaResult.findings) && st.qaResult.findings.length > 0,
+      `the pre-QA gate did not refuse: ${JSON.stringify(st.qaResult)}`,
+    );
+  });
+
 }
 
 module.exports = { registerSteps };
