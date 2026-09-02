@@ -2245,25 +2245,6 @@ You are the hardender.
   against an assertion demanding `false`. Deleting the guard then flipped it
   red, which is what made the test real.
 
-## A skipped next stage makes your handoff unqueueable — address the routed one (BL-1306)
-- If your ticket's `required_stages` SKIPS the role that comes next in the
-  chain, do not draft `to:` at that skipped role. `swarm_handoff.bb` looks the
-  audit challenge up under the drafted recipient but stores it under the ROUTED
-  one, so it deletes its own challenge every invocation: you get
-  `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`, re-audit, re-invoke byte-identically
-  as Article 2.3 instructs, and get the same refusal forever. No number of
-  correct retries queues it.
-- Address the draft at the next stage the ticket actually DECLARES and the two
-  keys agree on the first retry.
-- **This is a workaround for a live defect, not how handoffs ought to be
-  addressed.** BL-1306 fixes the key mismatch; when it lands, retire this rule
-  and its fuller statement in `swarmforge/handoff-protocol.md` (grep `BL-1306`).
-- Evidence (proposed by the hardender, 2026-08-30, BL-1293; verified while
-  accepting against BL-1306's own analysis of `swarm_handoff.bb` — the lookup
-  key takes `:recipients` from the raw `to:` header, the storage key from
-  `(:recipients routed)`): `to: documenter`, a stage BL-1293 skips, looped three
-  identical `AUDIT_REQUIRED` refusals; `to: QA` converged on the next call.
-
 ## A predicate the caller FOLDS over a collection needs a fixture whose members DISAGREE — one member cannot tell `some` from `every?` (rule_proposal 2026-08-31, accepted)
 - When a caller folds a shared predicate over a collection (`some`, `every?`,
   `filter`, `remove`), the fixture must contain at least two members that

@@ -24,16 +24,30 @@ const HANDOFFD = path.join(SCRIPTS, 'handoffd.bb');
 const FIXTURE_PREFIX = 'bl1323-acceptance-';
 
 // BL-971: a killed run traps nothing, so sweep by prefix before creating.
+// BL-971 wants stale fixture roots swept BEFORE a run, because a killed run
+// traps nothing. The sweep is AGE-GUARDED rather than prefix-only: scenarios
+// run concurrently and this module can be loaded more than once in a run, so
+// an unguarded prefix sweep deletes a sibling scenario's live root out from
+// under it - which is a flake that reads as a missing file, not as a sweep.
+const STALE_AFTER_MS = 10 * 60 * 1000;
+
 function sweepStaleFixtures() {
+  const now = Date.now();
   for (const entry of fs.readdirSync(os.tmpdir())) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
+    if (!entry.startsWith(FIXTURE_PREFIX)) continue;
+    const full = path.join(os.tmpdir(), entry);
+    try {
+      if (now - fs.statSync(full).mtimeMs > STALE_AFTER_MS) {
+        fs.rmSync(full, { recursive: true, force: true });
+      }
+    } catch {
+      // A root another scenario is removing right now is not this sweep's
+      // business.
     }
   }
 }
 
 function newRoot() {
-  sweepStaleFixtures();
   return fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX));
 }
 
@@ -66,6 +80,8 @@ function reconcileLib(expression) {
   if (r.status !== 0) throw new Error(`bb failed: ${r.stderr}`);
   return JSON.parse(r.stdout.trim().split('\n').pop());
 }
+
+sweepStaleFixtures();
 
 function git(root, ...args) {
   execFileSync('git', args, { cwd: root, stdio: 'pipe' });

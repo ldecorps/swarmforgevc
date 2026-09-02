@@ -869,16 +869,30 @@
     (fs/delete-if-exists path))
   (remove-empty-sender-audit-dir! sender))
 
-(defn invocation-fingerprint [draft sender headers]
-  {:sender sender
-   :task-id (audit-task-id headers)
-   :type (get headers "type")
-   :recipients (vec (str/split (or (get headers "to") "") #"," -1))
-   :priority (get headers "priority")
-   :task (get headers "task")
-   :commit (get headers "commit")
-   :non-forwarding (= "true" (get headers "non-forwarding"))
-   :draft-fingerprint (sha256 (slurp (str draft)))})
+(declare audit-candidate)
+
+(defn invocation-fingerprint
+  "The key the standing challenge is looked up under. BL-1306: it is DERIVED
+   from audit-candidate, the shape the challenge was stored under, so the two
+   can never again disagree about how a field is computed.
+
+   They used to. This read :recipients from the raw `to:` header and :commit
+   from the raw `commit:` header, while audit-candidate stored the POST-routing
+   recipients and the canonical commit. Whenever BL-606's required_stages
+   routing rewrote the recipient the two differed, invalidate-changed-
+   invocation-audits! deleted the standing challenge at the top of every
+   invocation, and the sender got AUDIT_REQUIRED forever - no number of
+   correct, byte-identical retries could queue the parcel. Article 2.3's own
+   instruction became a loop, and an idle re-invocation loop is what the
+   daemon halts the whole swarm for.
+
+   Callers must therefore pass the same post-routing values submit! will use.
+   :version is dropped because the lookup compares only the keys it carries,
+   and a stored candidate's :version is not part of what identifies an
+   invocation."
+  [draft sender headers recipients canonical-commit]
+  (dissoc (audit-candidate draft sender headers recipients canonical-commit)
+          :version))
 
 (defn invalidate-changed-invocation-audits! [sender invocation]
   (with-audit-lock
@@ -1082,8 +1096,6 @@
         (when (and (= "git_handoff" (get headers "type"))
                    (inbound-non-forwarding?))
           (exit! 1 "Current inbound handoff is non-forwarding; do not send a git_handoff. Merge, then done_with_current."))
-        (invalidate-changed-invocation-audits!
-         sender (invocation-fingerprint draft sender headers))
         (let [routed (route-required-stages {:type (get headers "type")
                                              :task (get headers "task")
                                              :recipients (:recipients validation)
@@ -1100,6 +1112,14 @@
                             (log-routing-skip! (project-root)
                                                (assoc skip :sender sender :created_at (timestamp))))
                           files))
+              ;; BL-1306: invalidate AFTER routing, on the same post-routing
+              ;; values the challenge is stored under. Doing it before routing
+              ;; compared the drafted recipient against the routed one and
+              ;; deleted every standing challenge a reroute had produced.
+              _ (invalidate-changed-invocation-audits!
+                 sender (invocation-fingerprint draft sender headers
+                                                (:recipients routed)
+                                                (:canonical-commit validation)))
               outbox-files (if (= "git_handoff" (get headers "type"))
                              (submit-after-audit!
                               (audit-candidate draft sender headers
