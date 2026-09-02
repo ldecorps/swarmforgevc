@@ -176,6 +176,44 @@ mirror, the ticket's own path dropped OUT, and fixes the subtraction
 underneath both without relaxing either. Acceptance:
 `specs/features/BL-1343-replay-drops-the-tickets-own-path.feature`.
 
+## A path shared with an unlanded sibling refuses instead of carrying its lines (BL-1332)
+
+BL-1315 (above) excludes a path only when EVERY owner is an unlanded sibling.
+It left the opposite mix unhandled: a path BOTH the landing ticket and an
+unlanded sibling own. `own-paths` decides inclusion per PATH, but
+`write-tree-from-paths!` takes the whole blob at the cited commit for every
+included path — there is no way to include the landing ticket's lines in a
+shared file without also including the sibling's.
+
+Reproduced live: `c65d8e6728` ("BL-1314: tip-pure replay onto origin/main")
+added two `require(...)` lines to `specs/pipeline/steps/index.js` — one
+belonging to the landing ticket, one to BL-1324, still mid-pipeline with its
+handler file absent from `main`. The landing ticket's ownership of the shared
+path pulled the whole file in, including BL-1324's line, straight onto
+`origin/main`. `check_feature_handler_registration.sh` then refused every
+role's commit on `main` — backlog bookkeeping included — until a specifier
+adjudicated by hand.
+
+Per the human's ruling (option 1 of two offered — option 2, replaying a
+shared path per-hunk so an entangled parcel still lands its own work, is a
+follow-up slice, not built here): a path whose owners include both the
+landing ticket and an unlanded sibling now refuses the land outright, naming
+the path, the landing ticket, and the sibling(s):
+
+```
+land-step: refusing to replay <ticket> - <path> is shared with unlanded
+sibling(s) <sibling-ids>, and a replayed path is taken whole, so landing it
+would carry the sibling's lines into main (BL-1332)
+```
+
+This sits ahead of BL-1315's exclusion check in `own-paths`'s `cond`, so a
+shared-with-unlanded path is caught before it could otherwise be reasoned
+about as sibling-only or landing-only. Everything else is unchanged: a
+landing-only path still replays whole, a sibling-only path is still excluded
+(BL-1315), a path shared with an ALREADY-landed sibling still replays
+(`LANDED_SIBLING`, BL-1272), an unattributed path still replays, and an
+unreadable attribution still refuses first.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
