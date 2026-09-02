@@ -23,8 +23,9 @@ required_wiring:
   - 'swarmforge/scripts/swarm_status.bb::ask_escalation::the human status surface must read the escalation transport state. A pre-existing live consumer humans already run via ./swarm status, not a key only this parcel writes. Absent at mint, grep returns 0.'
   - 'specs/pipeline/steps/index.js::bl1352EscalationTransportFaultSteps::acceptance handler registered so the runner executes every scenario. Absent at mint, grep bl1352 returns 0.'
 
-human_approval: pending
-
+human_approval: approved
+human_ruling: |
+  Leave GitHub unconfigured and let BL-1347 email digest become the transport
 approval_context: >
   GH-25 shipped an escalation that has never fired once. It needs a GitHub ops
   issue number to post its mention to, that number ships commented out in
