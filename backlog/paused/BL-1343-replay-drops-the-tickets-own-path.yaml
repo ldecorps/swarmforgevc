@@ -2,12 +2,16 @@ id: BL-1343
 title: "The land step subtracts the landing ticket's own path from its own replay when attribution credits it to a sibling, so an approved parcel lands nothing while reading as complete"
 milestone: M8
 type: defect
-severity: high
-# high: a live fault that leaves QA-approved work off main while every stage
-# upstream reads clean. Not critical - it failed CLOSED on BL-1338, so no
-# silent loss is yet observed. Read the coder's finding on scenario 04 before
-# leaving it here: if an empty replay set on a differing tip can report
-# success anywhere, this is critical and should be re-severitied.
+severity: critical
+# Raised high -> critical 2026-09-02, same day, on evidence rather than alarm.
+# Minted at high because BL-1338 alone failed CLOSED and no silent loss was
+# observed. Within the hour QA escalated BL-1056-a and then BL-1271 with the
+# same refusal and overlapping entangled sets. Three QA-approved parcels are
+# now held off main, each naming the others as its blocker, so the set cannot
+# clear itself and grows by one every time a further parcel reaches QA on the
+# same branch. Landing is effectively down. The open question from the mint
+# still stands and still matters: if an empty replay set on a differing tip
+# can report success anywhere, silent loss is reachable too.
 status: todo
 epic: swarm-reliability
 priority: 4
@@ -175,6 +179,18 @@ notes: >
   only. Whether its own-paths also come back empty is unverified, and it may
   land normally once the sibling set is right. The QA procedure should check
   BOTH parcels rather than assume one diagnosis covers them.
+
+  ## Third blocked parcel, 2026-09-02 (recorded after mint)
+
+  QA escalated BL-1271's re-fix within the hour: approved at `0ea1c8cb3b`,
+  refused with entangled siblings BL-1040, BL-1056, BL-1283 and the rest of
+  the same set. Three approved parcels now - BL-1338, BL-1056-a, BL-1271 -
+  each naming the others. QA is holding all three correctly and has not
+  force-landed any of them.
+
+  This is what moved the severity to critical. The failure is not one stuck
+  ticket; the entangled set grows by one with every parcel that clears its
+  gates on the same QA branch, and nothing in the set can clear another.
 
 source: |
   QA note 00_20260902T172849Z_002129_from_QA_to_specifier: "BL-1338 land
