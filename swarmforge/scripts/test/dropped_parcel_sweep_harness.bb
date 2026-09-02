@@ -29,6 +29,14 @@
     chase-sweep-lib/dropped-parcel-cooldown-default-ms))
 (def swarm-handoff-script (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "swarm_handoff.bb")))
 (def cooldown-file (fs/path project-root ".swarmforge" "daemon" "dropped-parcel-nudge-cooldown.json"))
+;; BL-1301: the same daemon log handoffd.bb's log! appends to, so a
+;; suppression is asserted on the real artefact the daemon writes, not a
+;; harness-only invention.
+(def log-file (fs/path project-root ".swarmforge" "daemon" "handoffd.log"))
+
+(defn log! [& parts]
+  (fs/create-dirs (fs/parent log-file))
+  (spit (str log-file) (str (java.time.Instant/now) " " (str/join " " parts) "\n") :append true))
 
 (defn load-roles []
   (let [tsv (fs/path project-root ".swarmforge" "roles.tsv")]
@@ -79,9 +87,17 @@
 (defn -main []
   (let [roles (load-roles)
         now-ms (System/currentTimeMillis)
-        candidates (chase-sweep-lib/dropped-parcel-items
-                    (str (fs/path project-root "backlog" "active"))
-                    (all-scan-dirs roles) (live-mail-dirs roles) now-ms stall-threshold-ms)]
+        {:keys [items suppressed]} (chase-sweep-lib/dropped-parcel-evaluation
+                                    (str (fs/path project-root "backlog" "active"))
+                                    (all-scan-dirs roles) (live-mail-dirs roles) now-ms stall-threshold-ms)
+        candidates items]
+    ;; BL-1301 invariant 3, mirroring dropped-parcel-sweep! exactly: a park
+    ;; silences the nudge, never the record.
+    (doseq [item suppressed]
+      (when-not (chase-sweep-lib/within-dropped-parcel-cooldown? (last-sent-ms (:id item)) now-ms cooldown-ms)
+        (log! "dropped-parcel-suppressed" (:id item) chase-sweep-lib/dropped-parcel-park-suppression-reason)
+        (write-last-sent! (:id item) now-ms)
+        (println "SUPPRESSED" (:id item) chase-sweep-lib/dropped-parcel-park-suppression-reason)))
     (doseq [item candidates]
       (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
                  (last-sent-ms (:id item)) now-ms cooldown-ms)
