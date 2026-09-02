@@ -1,0 +1,165 @@
+id: BL-1341
+title: "The merge-deletion guard is blind to the incoming side, so a hand-resolved merge on main silently drops QA-landed work"
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 6
+mutation_cost: medium
+slice_size_envelope: low
+direction: specifier-found
+depends_on: []
+assigned_to: null
+
+acceptance: specs/features/BL-1242-merge-never-silently-drops-branch-work.feature
+
+retires:
+  - specs/features/BL-1242-merge-never-silently-drops-branch-work.feature
+
+invariants:
+  - "No merge commit lands a tree missing a path that EITHER parent contained, unless the commit message names the ticket that path belongs to."
+
+source: |
+  Found by the specifier 2026-09-02 while working the coordinator's priority-00
+  note about merge `b71c941a19` dropping BL-1330's landed content on `main`.
+  The content loss itself is already closed - QA restored it in `e358e1b46e`,
+  verified present on `main` this pass. What is NOT closed is why nothing
+  stopped it, and that is a live hole every future merge on `main` still falls
+  through.
+
+  `check_merge_deletion.sh` (BL-1242) exists, is tested
+  (`swarmforge/scripts/test/test_merge_deletion_guard.sh`), and IS correctly
+  wired - `swarmforge/git-hooks/commit-msg` line 29 calls it on every merge
+  commit, so it ran on `b71c941a19` and passed. This is not a wiring gap.
+
+  It passed because its predicate cannot see this shape. Measured, not inferred:
+
+  - the 9 dropped paths were ABSENT from parent 1 (`0132715d1e`, the local
+    `main` tip = HEAD at merge time) and PRESENT on parent 2 (`0a5bffe057`,
+    `origin/main`);
+  - `git diff --name-status HEAD` - the guard's own predicate, quoted from its
+    header - reports ZERO deletions for that merge;
+  - the same diff against parent 2 reports 9.
+
+  So the guard is exactly right about what it was built for and structurally
+  blind to the mirror case. BL-1242's own feature file says so in its title
+  ("work the receiving branch introduced") and in scenario 03 - the
+  one-directionality was deliberate, not an oversight, and closing the other
+  direction was simply never ticketed.
+
+description: |
+  ## The hole
+
+  `check_merge_deletion.sh` refuses a merge that drops a path the RECEIVING
+  branch introduced ("theirs deleted, ours unchanged" - the BL-1227 incident it
+  was built for). It reads `git diff --name-status HEAD`, where HEAD is still
+  the pre-merge tip, so a deletion it sees is a path HEAD had that the result
+  does not.
+
+  A path that exists ONLY on the incoming branch is invisible to that diff. If
+  the resolution drops it, HEAD never had it, the diff is empty, and the merge
+  is waved through.
+
+  On `main` that is the dangerous direction, because the incoming branch is
+  `origin/main` - the branch QA pushes approved work onto. The receiving side is
+  a local tip that may be hours stale. So the guard protects the unreviewed side
+  and waves through losses on the approved one.
+
+  ## Why it is reachable in practice
+
+  It needs a merge whose resolution drops incoming paths, which a clean
+  auto-merge will not do - it takes a CONFLICTED merge finished by hand, where
+  the resolver keeps "ours" for paths that only "theirs" had. That is precisely
+  what `b71c941a19` was: the coordinator had already reported an open
+  `MERGE_HEAD` with conflicts resolved but uncommitted, and the completion
+  dropped BL-1330's content.
+
+  Nothing about the merge looked wrong afterwards. No conflict marker survived,
+  no hook failed, and the commit's own subject (`BL-1339: mint`) described real,
+  correct work. It was caught only because the coder happened to read the diff.
+
+  ## How (direction, not mandate)
+
+  Give the guard its second direction. It already has every ingredient: it fires
+  only under `MERGE_HEAD`, it derives a path's owning ticket from history, and
+  it has the name-it-to-mean-it exemption. What it lacks is the second
+  comparison - the merge result against the OTHER parent (`MERGE_HEAD`), not
+  only against `HEAD`.
+
+  Keep both directions under one refusal and one exemption model; a path dropped
+  from both sides is one finding, not two. Report which side a dropped path came
+  from, so a resolver can tell an intended drop from an accident.
+
+  Do NOT split this into a second script. The whole failure mode here is a guard
+  family whose members each look complete in isolation - `check_ticket_deletion.sh`
+  for ticket YAMLs, `check_merge_deletion.sh` for receiving-side paths,
+  `check_retirement_readdition.sh` for the addition side - while the union still
+  leaves a reachable hole. A fourth sibling would make the same shape worse.
+
+  ## Contract to land
+
+  `acceptance:` points at BL-1242's feature file, whose contract this ticket
+  extends, with the matching `retires:` entry for the task-scope exemption. Four
+  new scenarios are parked in
+  `specs/features/BL-1341-merge-never-silently-drops-incoming-work.feature.draft`
+  (lint-clean this pass). Land them INTO BL-1242's feature file in the SAME
+  commit as their step handlers (BL-233), then delete the draft.
+
+  Re-tense, do not silently leave, the two places BL-1242's feature states a
+  now-false present (BL-1006):
+  - the `Feature:` title and narrative, both scoped to "work the receiving
+    branch introduced";
+  - scenario `merge-branch-work-deletion-guard-03`, "A merge that removes
+    nothing the branch introduced is allowed" - post-fix that is only true if
+    the merge also keeps every incoming path, so as written it asserts a
+    permission the guard no longer grants.
+
+  Re-stamp the mutation manifest at the head of that feature file.
+
+  ## Not in scope
+
+  The fast-forward path. `swarmforge/git-hooks/pre-merge-commit` records it as a
+  KNOWN RESIDUAL - a fast-forward fires neither `pre-merge-commit` nor
+  `pre-commit` - but a fast-forward cannot drop content by construction, so it
+  is not this defect. It is also not fixable by changing a guard, only by
+  changing which hooks exist, and that is its own slice.
+
+notes: |
+  [2026-09-02 specifier] No `required_wiring:` on this ticket, deliberately, per
+  BL-1235. The guard is ALREADY called from `swarmforge/git-hooks/commit-msg`
+  and this ticket adds no call site, so every anchor available here would be
+  satisfied by the parcel's own diff and would bank a green that means nothing.
+
+  Guard against a plausible misreading while implementing: this is NOT a wiring
+  defect and NOT a re-mint of BL-1242. The guard ran on `b71c941a19` and
+  returned success. A first pass over this incident that assumes the guard was
+  unwired will "fix" it by adding it to `pre-commit`/`run_commit_guards.sh` and
+  change nothing, because the predicate - not the invocation - is what missed.
+
+qa_e2e_procedure: |
+  1. Reconstruct the shape from live history: `git diff --name-status
+     0132715d1e b71c941a19` lists no deletions, while `git diff --name-status
+     0a5bffe057 b71c941a19` lists 9. Post-fix, a merge of that shape must be
+     refused.
+  2. `bash swarmforge/scripts/test/test_merge_deletion_guard.sh` green, with new
+     cases for the incoming side alongside the existing receiving-side ones.
+  3. In a throwaway fixture repo: branch A adds `specs/pipeline/steps/
+     bl0001ExampleSteps.js`, branch B does not; merge A into B resolving that
+     path away; the commit must be refused and the refusal must name the path,
+     its ticket, and the incoming side.
+  4. Same fixture, message naming the ticket - the commit is allowed.
+  5. Regression: a receiving-side drop is still refused exactly as before, and a
+     path dropped from both sides is reported once.
+  6. `bash specs/pipeline/scripts/run_acceptance.sh` green with BL-1242's
+     feature carrying scenarios 01-04 and its re-tensed narrative.
+
+human_approval: pending
+
+approval_context: >
+  Feature-file authorship review only - no ruling is being asked for, and there
+  is no fork in this ticket to choose between. The diagnosis is measured from
+  live history rather than argued: the guard ran on the offending merge and its
+  predicate reported zero deletions, while the same diff against the other
+  parent reports nine. What needs your eye is that BL-1242's title, narrative
+  and scenario 03 are being re-tensed as part of this slice, since they are
+  another ticket's shipped contract and post-fix they state a false present.
