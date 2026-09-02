@@ -1,0 +1,152 @@
+id: BL-1349
+title: "One property file spawns real processes for 79 seconds, so the property lane's wall clock has a hard floor no fork count can lower - three files carry 148 of its 532 seconds of work"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+priority: 40
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1349-spawn-heavy-property-files-fit-a-budget.feature
+
+human_approval: pending
+approval_context: >
+  No choice is posed here and there are no ruling_options: the work to do is
+  not in dispute and how to do it is left to the implementer. What needs your
+  eye is the 15 second per-file budget in the acceptance, which is the
+  operator's number from the intake rather than anything derived, and the
+  no-deletion scenario, which is how your "same coverage" constraint is
+  actually gated rather than merely promised.
+
+  Worth knowing: this is the binding half of your ask, not the cheap one. The
+  property lane measured 143 s wall against 532 s of summed work. Its wall
+  clock can never fall below its single longest file, and that file is 79 s -
+  fifteen fast-check samples, each spawning seven processes, plus a sleep. So
+  even a perfectly parallel lane on twenty cores cannot reach the 40-50 s you
+  expect until this file comes down. BL-1348 raises the fork count; it cannot
+  substitute for this.
+
+invariants:
+  - "No property is deleted, and no property's assertion is weakened, to meet the budget: every property present at the parent commit is still present and still asserts the same invariant."
+  - "A reduced sample count is applied only to a property whose body spawns a real process or otherwise does real IO; a pure property keeps its run count."
+
+description: |
+  ## What is wrong
+
+  `npm run test:properties` measured 143 s wall on 2026-09-02 across 336
+  files and 870 tests, against 532 s of summed per-file work on six forks.
+  Ideal at six forks would be about 89 s, so 54 s of the 143 s is tail, not
+  parallel work.
+
+  106 of the files spawn real processes inside a fast-check sampled property
+  and account for 428 s of the 532 s. Three dominate:
+
+  - `onboarderLauncherPidGuard.property.test.js` - 79 s. Fifteen samples,
+    seven spawns each, plus a sleep. This one file is a hard floor on the
+    whole lane: no fork count makes a lane finish faster than its longest
+    single file.
+  - `bl1252CommitGuardAggregationInvariants.property.test.js` - 37 s. Five
+    properties at numRuns 120, each spawning.
+  - `bl787NamedTunnelInvariants.property.test.js` - 32 s.
+
+  Sampling a subprocess spawn 120 times buys nothing a smaller sample does
+  not already buy: the generator's job is to reach the interesting states, and
+  the states here are shaped by the spawn's arguments, not by the count of
+  identical spawns.
+
+  ## How (direction, not mandate)
+
+  Reduce the sample count on properties whose body spawns, remove real sleeps
+  in favour of the existing fake-clock seams, and split a file whose remaining
+  cost is genuinely several independent properties so the lane can parallelise
+  them. Do not reach the budget by deleting a property or by loosening what it
+  asserts - that is what invariant 1 and acceptance scenario 02 exist to catch.
+
+constraints: >
+  - Same coverage. The human's constraint on the parent epic, restated here
+    because it is the one way this ticket could be "achieved" dishonestly.
+  - No real timers and no real sleeps (engineering.prompt, Test Speed And
+    Isolation). A sleep removed here must not come back as a polling loop.
+  - A fixture directory stays removed in a finally and swept by prefix before
+    the run (BL-971), and any file split must keep that discipline in both
+    halves rather than leaving one half sweeping for the other.
+  - The known-benign `[vitest-worker]: Timeout calling "onTaskUpdate"` is the
+    only allowlisted unhandled error in this lane (BL-871); a file that stops
+    blocking its worker for 79 s should reduce it, and must never be made to
+    pass by adding another allowlist entry.
+
+qa_e2e_procedure: >
+  Per file first: from extension/, run each of the three named files alone
+  through the property lane and record its wall clock. At the parent commit
+  they measure about 79 s, 37 s and 32 s; each must come in under 15 s and
+  report no failing test. Then the no-deletion check - diff each file against
+  the parent commit and confirm every `fc.property` / `fc.assert` present
+  before is still present, and that no assertion inside one has been removed
+  or relaxed; a reduced numRuns is the expected change, a deleted property is
+  a bounce. Then the whole lane: run `npm run test:properties` and confirm the
+  wall clock is materially below the 143 s baseline, the pass/fail verdict is
+  unchanged, and the 17 pre-existing failures on the BL-1175 standing
+  allowlist are still exactly 17 - neither more, nor fewer by suppression.
+
+out_of_scope: |
+  - The fork count and the per-worker memory reservation. That is BL-1348.
+  - The other 103 spawn-heavy files. Only the three that dominate the tail are
+    scoped; whether the rest are worth a follow-on is a question the measured
+    result of this ticket answers, not one to pre-judge now.
+  - The unit lane and its 13 second ceiling. That is BL-791 and its slices,
+    a different lane with its own gate.
+  - A two-tier split of pure versus process-spawning properties, the intake's
+    optional directive 3. Deliberately not minted - see BL-1348's source note.
+
+source: |
+  `backlog/INTAKE-vitest-fork-ceiling-memory-is-not-a-constraint-1788375503388.md`
+  (human ldecorps via Claude Code, filed by the Operator 2026-09-02), drained
+  2026-09-02 and split 1:2 into BL-1348 and this ticket.
+
+  Article 5.3 - the human's words, preserved verbatim from that intake:
+
+  > memory should not be an issue on this host.
+
+  The operator's own target for this half, also verbatim from that intake:
+
+  > **Tame the spawn-heavy properties**: drop `numRuns` on properties whose
+  > body spawns a process (sampling a spawn 120x buys nothing over ~20x),
+  > remove sleeps, split the 30-80 s files so vitest can parallelise them.
+  > Target: no single file > 15 s.
+
+  This ticket takes the intake's directive 2. BL-1348 takes directive 1.
+
+notes: |
+  ## Verified at mint
+
+  - All three named files exist at
+    `extension/test/{onboarderLauncherPidGuard,bl1252CommitGuardAggregationInvariants,bl787NamedTunnelInvariants}.property.test.js`.
+  - 305 files match `extension/test/*.property.test.js`.
+  - The intake's own timings are the operator's measurement, not re-measured
+    here; the acceptance re-measures each file directly, so a stale number in
+    the description cannot make the gate pass or fail.
+
+  ## Why the per-file budget is not a new gate
+
+  This ticket tunes three files. It deliberately does NOT add a per-file
+  duration gate to the lane, even though that is the obvious durable fix.
+  BL-378's per-file budget already exists and, measured 2026-08-22, has 19
+  live offenders and therefore fails every `npm test` through
+  `computeFinalExitCode` - it is already a permanently-red gate. Adding a
+  second one beside a red one makes the red harder to read, not easier.
+  Holding the line is BL-791's unminted slice C, which exists precisely to
+  answer why the two existing ratchets did not stop a regression, and that
+  question is not this ticket's to answer.
+
+  ## Why there is no required_wiring
+
+  Deliberate. The deliverable is a change to three existing test files that
+  are already collected by the lane's own `include` glob; there is no new
+  mechanism and so no call site to prove. An anchor on the acceptance
+  handler's registration would be satisfied by this parcel's own diff and
+  would gate nothing (BL-1235), and is unnecessary because `acceptance:`
+  points at a real `.feature` from the start - the runner throws on an
+  unregistered scenario, so the acceptance run is itself the gate.
