@@ -918,6 +918,7 @@ const DOMAINS = [
   require('./bl1310ReconcileRefusesLocalAheadSteps'),
   require('./bl1324ClaudeSeatQwenCloudContextWindowSteps'),
   require('./bl1314InvariantTwoQaQuestionSteps'),
+  require('./bl1301ParkedTicketSteps'),
 ];
 
 function registerSteps(registry) {

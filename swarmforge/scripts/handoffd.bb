@@ -2055,10 +2055,26 @@
       (let [now-ms (System/currentTimeMillis)
             all-dirs (dispatch-gap-scan-dirs roles)
             live-dirs (dropped-parcel-live-mail-dirs roles)
-            candidates (chase-sweep-lib/dropped-parcel-items
-                        (active-backlog-dir) all-dirs live-dirs now-ms (dropped-parcel-stall-threshold-ms))
+            {:keys [items suppressed]} (chase-sweep-lib/dropped-parcel-evaluation
+                                        (active-backlog-dir) all-dirs live-dirs now-ms
+                                        (dropped-parcel-stall-threshold-ms))
             cooldown-ms (dropped-parcel-cooldown-ms)]
-        (doseq [item candidates]
+        ;; BL-1301 invariant 3: a park silences the nudge, never the record -
+        ;; every suppression is logged with the ticket id and the reason, on
+        ;; the SAME per-ticket cooldown clock the nudge itself runs on. The
+        ;; sweep ticks every chase-sweep-every-cycles poll cycles, so logging
+        ;; per tick would write thousands of identical lines a day for one
+        ;; parked ticket - the record appears exactly where the nudge it
+        ;; replaced would have: once per window, per ticket.
+        (doseq [item suppressed]
+          (try
+            (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
+                       (read-dropped-parcel-last-sent-ms (:id item)) now-ms cooldown-ms)
+              (log! "dropped-parcel-suppressed" (:id item) chase-sweep-lib/dropped-parcel-park-suppression-reason)
+              (write-dropped-parcel-last-sent! (:id item) now-ms))
+            (catch Exception e
+              (log! "dropped-parcel-suppressed-error" (:id item) (.getMessage e)))))
+        (doseq [item items]
           (try
             (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
                        (read-dropped-parcel-last-sent-ms (:id item)) now-ms cooldown-ms)

@@ -908,7 +908,12 @@
 (defn- read-active-item [yaml-file]
   (let [content (slurp (str yaml-file))]
     {:id (read-yaml-field content "id")
-     :assigned-to (read-yaml-field content "assigned_to")}))
+     :assigned-to (read-yaml-field content "assigned_to")
+     ;; BL-1301: carried for the dropped-parcel decision's park check only.
+     ;; Reading it here is additive - no sweep FILTERS on it in this shared
+     ;; reader, so the dispatch-gap and unassigned-active candidate sets are
+     ;; byte-identical to before (BL-1301 invariant 2).
+     :status (read-yaml-field content "status")}))
 
 ;; BL-1093: shared "names nobody" predicate — must sit above read-active-items
 ;; / dispatch-gap-draft-lines (SCI resolves symbols at analysis time).
@@ -1395,19 +1400,45 @@
    "priority: 00"
    (str "message: " (dropped-parcel-note-message (:id item)))])
 
+(def dropped-parcel-park-status
+  "The one ticket status that states a deliberate park (backlog-schema.md:
+   \"park a ticket under a stated condition the coordinator may later
+   clear\"). BL-1301 reuses it rather than minting a park-specific field, so
+   one concept lives in one place - promotion_gates_lib.bb already refuses to
+   auto-promote on the same value."
+  "blocked")
+
+(def dropped-parcel-park-suppression-reason
+  "Logged verbatim beside the ticket id whenever a park silences a nudge, so
+   a suppression is recorded rather than silent (BL-1301 invariant 3)."
+  "status: blocked - deliberately parked")
+
+(defn parked-ticket?
+  "Pure. True only when the ticket declares exactly `status: blocked`.
+   Opt-in and fail-closed (BL-1301 invariant 1): a nil, blank, or any other
+   status - including an absent field, and including a differently-cased
+   spelling promotion_gates_lib.bb would not honour either - is NOT a park,
+   and is nudged exactly as it is today. Absence must never buy silence, the
+   same posture Article 3.2.4 gives a defect with no severity."
+  [status]
+  (= dropped-parcel-park-status (some-> status str/trim)))
+
 (defn decide-dropped-parcel?
   "Pure. has-trail?: some handoff anywhere has ever referenced this id (the
    same dispatch-trail definition BL-222 uses). live-mail?: a parcel for
    this id currently sits in ANY role's new or in_process. newest-trail-ms:
    epoch ms of the freshest trail event EXCLUDING this sweep's own prior
    nudges (nil when no qualifying event exists - see newest-trail-event-ms).
-   Returns true only when the item has a trail, no live mail anywhere, and
-   that trail has gone stale past stall-threshold-ms - never on missing
-   data (a nil newest-trail-ms fails closed, not open)."
-  [{:keys [has-trail? live-mail? newest-trail-ms]} now-ms stall-threshold-ms]
+   status: the ticket's own `status:` field, or nil when it declares none.
+   Returns true only when the item has a trail, no live mail anywhere, that
+   trail has gone stale past stall-threshold-ms, and the ticket is not
+   deliberately parked (BL-1301) - never on missing data (a nil
+   newest-trail-ms fails closed, not open; so does a nil status)."
+  [{:keys [has-trail? live-mail? newest-trail-ms status]} now-ms stall-threshold-ms]
   (boolean
    (and has-trail?
         (not live-mail?)
+        (not (parked-ticket? status))
         (number? newest-trail-ms)
         (number? now-ms)
         (number? stall-threshold-ms)
@@ -1587,6 +1618,30 @@
      {:trail {} :live-ids #{}}
      (distinct (map str (concat all-scan-dirs live-mail-dirs))))))
 
+(defn dropped-parcel-evaluation
+  "One evaluation tick, in the shape the caller needs to both nudge AND
+   record: {:items [nudge candidates] :suppressed [parked tickets a nudge
+   would otherwise have named]}. Arguments are dropped-parcel-items' own
+   (see its docstring). :suppressed holds exactly the items that ARE dropped
+   by every other measure but declare a deliberate park - never a parked
+   ticket the sweep would have passed over anyway - so the caller's log line
+   names only what the park actually silenced (BL-1301 invariant 3). One
+   trail index pass serves both keys, so BL-978's single-read guarantee is
+   unchanged."
+  [active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
+  (let [items (read-active-items active-dir)
+        {:keys [trail live-ids]} (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)
+        facts (fn [item]
+                {:has-trail? (contains? trail (:id item))
+                 :live-mail? (contains? live-ids (:id item))
+                 :newest-trail-ms (get-in trail [(:id item) :newest-trail-ms])
+                 :status (:status item)})]
+    {:items (filterv #(decide-dropped-parcel? (facts %) now-ms stall-threshold-ms) items)
+     :suppressed (filterv #(and (parked-ticket? (:status %))
+                                (decide-dropped-parcel? (dissoc (facts %) :status)
+                                                        now-ms stall-threshold-ms))
+                          items)}))
+
 (defn dropped-parcel-items
   "Full pipeline for one evaluation tick. active-dir: backlog/active/.
    all-scan-dirs: every role's :new/:in_process/:completed/:sent/:outbox
@@ -1594,21 +1649,16 @@
    and newest-trail-ms). live-mail-dirs: every role's :new/:in_process
    ONLY (used for live-mail?). Returns the active items with a trail, no
    live mail anywhere, and a trail gone stale past stall-threshold-ms - the
-   dropped-parcel candidates for a coordinator nudge. BL-978: the evidence
+   dropped-parcel candidates for a coordinator nudge, minus any ticket
+   declaring a deliberate park (BL-1301 - dropped-parcel-evaluation returns
+   those separately, as :suppressed, so the caller can log them).
+   BL-978: the evidence
    comes from build-dropped-parcel-trail-index's single pass; the decision
    (decide-dropped-parcel?) and every definition it consumes are unchanged
    (invariant 2 - the candidate set is the contract)."
   [active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
-  (let [items (read-active-items active-dir)
-        {:keys [trail live-ids]} (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)]
-    (filterv
-     (fn [item]
-       (decide-dropped-parcel?
-        {:has-trail? (contains? trail (:id item))
-         :live-mail? (contains? live-ids (:id item))
-         :newest-trail-ms (get-in trail [(:id item) :newest-trail-ms])}
-        now-ms stall-threshold-ms))
-     items)))
+  (:items (dropped-parcel-evaluation active-dir all-scan-dirs live-mail-dirs
+                                     now-ms stall-threshold-ms)))
 
 ;; ── BL-678: batch-claim-progress sidecar (live-owner half of BL-648's ──────
 ;; source near-miss) ─────────────────────────────────────────────────────────
