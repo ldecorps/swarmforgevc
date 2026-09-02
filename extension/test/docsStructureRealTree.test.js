@@ -15,8 +15,24 @@ const {
 // BL-1066: a fixed `../..` walk-up from __dirname lands one level too
 // shallow under a Stryker sandbox (the sandbox dir IS the extension root,
 // not a child of one), so every REPO_ROOT-relative path below silently
-// missed under Stryker's dry run. `git rev-parse --show-toplevel` finds the
-// true repo root regardless of sandbox nesting.
+// missed under Stryker's dry run.
+//
+// `git rev-parse --show-toplevel` is otherwise the WRONG general fix for
+// this class (specifier correction, rule_proposal accepted-with-fix-amended
+// 2026-09-02): it always answers the true repo root and can silently spare
+// every mutant in code reached through it. It is safe HERE specifically,
+// verified per-usage: `computeDocsStructure(REPO_ROOT)` reads only `docs/`,
+// a repo-root SIBLING Stryker never mutates (already reachable through the
+// `docs` symlink `ensureStrykerSandboxSiblingLinks` plants, so this escape
+// changes nothing there); `loadKnownOrphanAllowlist(REPO_ROOT)` reads
+// `extension/test/docs_orphan_known_debt.tsv`, a static TSV FIXTURE
+// (never a Stryker mutation target) whose content is identical in the
+// sandbox and the real tree - the escape only changes WHICH COPY of
+// identical data is read, never which CODE runs (the parsing logic in
+// `../out/docs/docsOrphanAllowlist` still loads from this sandbox, in every
+// case). Contrast `activePoolFreshnessAudit.test.js`, where this same fix
+// would be wrong: it spawns the compiled, mutatable CLI itself as a
+// subprocess.
 const REPO_ROOT = execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const REAL_TREE_TEST = path.join(__dirname, 'docsStructureRealTree.test.js');
 

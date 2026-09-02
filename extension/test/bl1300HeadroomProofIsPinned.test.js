@@ -21,13 +21,24 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 // `.stryker-tmp/sandbox-<id>/test/`, where the sandbox dir IS the extension
 // root rather than a child of one - a fixed `../..` walk-up lands one level
 // too shallow, inside `.stryker-tmp` itself rather than the real repo root.
-// That is harmless for a plain filesystem read (ensureStrykerSandboxSiblingLinks
-// plants `swarmforge`/`specs`/etc as siblings there), but `git archive` below
+// The `swarmforge/` sibling symlink (ensureStrykerSandboxSiblingLinks) would
+// paper over a PLAIN fs read at that shallow root, but `git archive` below
 // resolves its pathspec relative to `-C`'s cwd within the TRACKED tree, not
 // through those symlinks, so a REPO_ROOT of `.stryker-tmp` makes every
 // pathspec miss ("pathspec '...' did not match any files") regardless of
-// sandbox nesting depth or how many `sandbox-<id>` layers deep this file runs
-// from - the true repo root, unaffected by any of that.
+// sandbox nesting depth.
+//
+// `git rev-parse --show-toplevel` is otherwise the WRONG general fix for
+// this class (specifier correction, rule_proposal accepted-with-fix-amended
+// 2026-09-02): it always answers the true repo root and can silently spare
+// every mutant in code reached through it. It is safe HERE specifically,
+// verified per-usage rather than assumed: everything REPO_ROOT reaches in
+// this file is DATA Stryker never mutates - `git archive` below extracts
+// `BL1227_FIX_COMMIT`, an IMMUTABLE past commit unrelated to any current
+// mutation, and GATE_SH is a plain bash script (Stryker's `--mutate` scopes
+// only `out/**/*.js`, never `swarmforge/scripts/*.sh`). Contrast
+// `activePoolFreshnessAudit.test.js`, where this same fix would be wrong:
+// it spawns the compiled, mutatable CLI itself as a subprocess.
 const REPO_ROOT = execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const GATE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'boot_prefix_budget_gate.sh');
 
