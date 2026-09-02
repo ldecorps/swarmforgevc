@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 2, 2026 (BL-1343: the land step's `own-paths`
+subtraction now refuses by name instead of reporting a completed land when
+every one of a landing ticket's own delivered paths gets excluded as a
+sibling's. An empty replay set (`{:paths [] :warning nil}`) used to mean only
+one thing — "tip identical to origin/main, nothing left to replay" — but the
+same shape was also reachable when the tip DID differ and every delivered
+path was subtracted as attributed to an unlanded sibling, leaving the landing
+ticket's own contribution credited away entirely; `replay!` would then report
+"nothing to commit" in the exact words a genuinely completed land produces.
+Reproduced live on BL-1338's approved tip `bc1a587622`: eight paths differed
+from `origin/main`, including the ticket's own step handler
+(`specs/pipeline/steps/bl1338RoutingStampFingerprintSteps.js`, absent on
+`origin/main`), yet `land_step_cli.bb` reported "nothing to commit — own-paths
+identical to origin/main." `own-paths` now tracks its exclusions and, when the
+accumulated kept set is empty but paths WERE delivered, returns a refusal
+(`{:paths nil :warning "..."}`) naming every excluded path and the sibling it
+was attributed to — never silently. The hardener's own pass (BL-1343) closed
+a second gap in the fix itself: the refusal's warning folded exclusions with
+`(conj excluded ...)` but every existing test exercised only one excluded
+path, so a mutant keeping only the last exclusion survived — a multi-path
+refusal would have silently named only its final entry. Scenario 03b (two own
+paths, two different siblings) now asserts a multi-path refusal names both.
+BL-1272's `LANDED_SIBLING` accounting and BL-1332's shared-path-taken-whole
+case are both unaffected — this ticket is the mirror of BL-1332 (a path
+dropped OUT of the landing ticket's own replay, not a sibling's line taken IN)
+and fixes the subtraction under both, not BL-1272's fail-closed sibling rule
+itself. Acceptance:
+`specs/features/BL-1343-replay-drops-the-tickets-own-path.feature`. How-to:
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(new "own-paths now refuses a wholesale exclusion by name (BL-1343)"
+section). No new extension command or setting — this is swarm-internal
+land-step tooling.)
+Prior entry —
 **Last Updated:** September 2, 2026 (BL-1340: promotion no longer refuses a
 `.feature.draft` acceptance pointer the ticket itself is chartered to
 convert — `promotion_gates_lib.bb`'s `acceptance-executable-refusal` admits a
