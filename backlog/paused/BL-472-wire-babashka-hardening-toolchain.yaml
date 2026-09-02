@@ -193,7 +193,9 @@ qa_e2e: |
   clean .bb change passes; confirm engineering.prompt no longer claims the tooling
   is unwired. Verify against the real hardening path, not a fixture.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Provision a JVM and Clojure CLI on swarm hosts, then build pin install and wire
 approval_context: >
   Your 2026-08-30 activation ("build the Babashka hardening toolchain") is not
   in doubt and is not being second-guessed. Picking the ticket up answered its
