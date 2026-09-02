@@ -28,6 +28,7 @@
 // — never a separate LINKS: footer.
 import { ALL_SWARM_ROLES } from './roleTopicMapStore';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
+import { stageOfSeat } from '../swarm/swarmState';
 
 export interface PipelineBoardRow {
   id: string;
@@ -461,11 +462,30 @@ function recentlyClosedEntryFor(item: PipelineBoardListSourceItem, nowMs: number
 // pipeline_stage_lib.bb's own reconcile-stage-map "most downstream wins"
 // rule - the same guarantee, belt-and-braces at the renderer, whatever the
 // authoritative source's own shape already structurally prevents.
+//
+// BL-1040: a seat-keyed entry (`coder@sonnet2`) folds onto its stage column
+// here too. The reader chokepoint in swarmState already folds, but
+// roleHeldTickets is a plain record any producer can hand in, and this
+// function's ALL_SWARM_ROLES-only iteration is precisely the layer at which
+// a leaked seat key matched nothing and fell through to the not-started
+// sentinel while the seat was busy. Precedence is computed by pipeline rank
+// rather than by iteration order, so folding cannot let a seat key outrank a
+// genuinely more downstream stage. A key that is not a stage even after the
+// fold is still ignored, exactly as an unknown role always was.
 function heldRoleByTicketId(roleHeldTickets: Record<string, string[]>): Map<string, string> {
   const heldRoleById = new Map<string, string>();
-  for (const role of ALL_SWARM_ROLES) {
-    for (const id of roleHeldTickets[role] ?? []) {
-      heldRoleById.set(id, role);
+  // Iterating ALL_SWARM_ROLES in pipeline order is load-bearing twice over:
+  // it is what makes a LATER (more downstream) stage win, and the Map's
+  // insertion order is itself read downstream as the row order. Collecting
+  // each stage's ids from every key that folds onto it keeps both.
+  for (const stage of ALL_SWARM_ROLES) {
+    for (const [roleOrSeat, ids] of Object.entries(roleHeldTickets)) {
+      if (stageOfSeat(roleOrSeat) !== stage) {
+        continue;
+      }
+      for (const id of ids ?? []) {
+        heldRoleById.set(id, stage);
+      }
     }
   }
   return heldRoleById;

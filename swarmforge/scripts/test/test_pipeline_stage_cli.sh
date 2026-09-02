@@ -277,6 +277,47 @@ check "BL-1048: a delivered batch_* subdirectory's tickets are all visible" \
   '[[ "$OUT" == *"\"BL-1046\":{\"stage\":\"cleaner\""* ]] && [[ "$OUT" == *"\"BL-1047\":{\"stage\":\"cleaner\""* ]]'
 rm -rf "$ROOT"
 
+# ── BL-1040: seat identity never escapes on the OBSERVATION path ─────────
+#    BL-983 enforced its invariant 3 only where a seat FORWARDS. A second
+#    seat of a stage (`coder@sonnet2`, BL-982's seat syntax) still wrote its
+#    own id into the stage map, so the board - which knows only bare stage
+#    names - matched nothing and painted the ticket as not-started while the
+#    seat was actively working it. The stage map must carry the STAGE only,
+#    and a multi-seat stage must take exactly ONE position in the precedence
+#    order the reconciler uses to decide "most downstream wins".
+mk_fixture
+printf 'coder@sonnet2\tcoder-sonnet2\t%s/wt-coder-sonnet2\tswarmforge-coder-sonnet2\tCoder2\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+write_backlog_active "BL-993"
+write_backlog_active "BL-995"
+DIR="$(role_in_process_dir coder)"
+mkdir -p "$DIR"
+printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-995-bare-seat\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$DIR/50_bare.handoff"
+DIR2="$ROOT/wt-coder-sonnet2/.swarmforge/handoffs/inbox/in_process"
+mkdir -p "$DIR2"
+printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-993-second-seat\ncommit: 2234567890\n\nmerge_and_process specifier 2234567890\n' > "$DIR2/50_seat.handoff"
+OUT="$(run_cli report)"
+check "BL-1040: the bare seat's ticket reports under the stage" \
+  '[[ "$OUT" == *"\"BL-995\":{\"stage\":\"coder\""* ]]'
+check "BL-1040: the second seat's ticket reports under the STAGE, never the seat id" \
+  '[[ "$OUT" == *"\"BL-993\":{\"stage\":\"coder\""* ]]'
+check "BL-1040: the emitted stage map carries no seat id at all" \
+  '[[ "$OUT" != *"@"* ]]'
+rm -rf "$ROOT"
+
+# ── BL-1040: no regression for the ordinary single-seat case - the stage map
+#    is byte-identical to what the same fixture produced without a seat row.
+mk_fixture
+write_backlog_active "BL-995"
+DIR="$(role_in_process_dir coder)"
+mkdir -p "$DIR"
+printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-995-bare-seat\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$DIR/50_bare.handoff"
+SINGLE_SEAT_OUT="$(run_cli report)"
+printf 'coder@sonnet2\tcoder-sonnet2\t%s/wt-coder-sonnet2\tswarmforge-coder-sonnet2\tCoder2\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+TWO_SEAT_OUT="$(run_cli report)"
+check "BL-1040: adding an idle second seat does not change the stage map" \
+  '[[ "$SINGLE_SEAT_OUT" == "$TWO_SEAT_OUT" ]]'
+rm -rf "$ROOT"
+
 if [[ $fail -eq 0 ]]; then
   echo "pipeline_stage_cli: ALL CHECKS PASSED"
 else
