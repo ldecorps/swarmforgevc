@@ -188,6 +188,11 @@ it up from the trailer) and `--link` it to its ticket.
   numeric `&#160;`; ledger pending until human certify/waive).
 - BL-1116 — batch stamp-off for five extension WIP hotfixes
   (`b81334b107` … `f88913a3df`); ledger pending until human certify/waive.
+- BL-1324 — stamp-off for hotfix `4ed88430b2` (bob mono-router onto Token
+  Plan qwen3.8-max with a real 1M Claude Code context window); human ruling
+  recorded certify, with a narrow follow-up (BL-1328) minted for the two
+  dormant matching-shape/precedence gaps found during review; ledger
+  decision still pending the QA-reached `done` state.
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 
