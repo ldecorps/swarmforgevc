@@ -693,6 +693,92 @@
              ["own/file.txt"] paths)
     (assert= "and a partial exclusion is not a refusal" nil warning)))
 
+;; ── BL-1332: a shared path mixes two tickets, and the blob is indivisible ─
+;; own-paths decides per PATH and write-tree-from-paths! then takes the WHOLE
+;; blob at the cited commit, so a file BOTH tickets edited is pulled in by the
+;; landing ticket's ownership and carries the sibling's lines with it. On
+;; 2026-09-02 that shipped an unlanded ticket's require(...) into
+;; specs/pipeline/steps/index.js on origin/main and froze every role's commits.
+;; Human ruling: option 1 - refuse, naming the path and the sibling.
+
+;; scenario 01: single-owner paths keep BL-1315's landed decision.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own/only.txt" "a\n" "BL-9001: the landing ticket's own path")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1332/01: a path owned only by the landing ticket is replayed whole"
+             ["own/only.txt"] paths)
+    (assert= "BL-1332/01: and that is not a refusal" nil warning)))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "sibling/only.txt" "s\n" "BL-9002: the sibling's own path")
+  (commit! root "own/only.txt" "a\n" "BL-9001: the landing ticket's own path")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1332/01: a path owned only by the unlanded sibling is still excluded"
+             ["own/only.txt"] paths)
+    (assert= "BL-1332/01: and excluding it is not a refusal" nil warning)))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "nobody/owns.txt" "n\n" "housekeeping naming no ticket")
+  (commit! root "own/only.txt" "a\n" "BL-9001: the landing ticket's own path")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1332/01: a path attributed to nobody is replayed whole"
+             ["nobody/owns.txt" "own/only.txt"] (vec (sort paths)))))
+
+;; scenario 02 (tightened to the human's ruling - option 1): a shared path
+;; refuses the land rather than shipping either ticket's version of the blob.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/index.js" "// base\n" "BL-9001: the landing ticket adds its handler")
+  (commit! root "specs/pipeline/steps/index.js" "// base\n// sibling line\n"
+           "BL-9002: the unlanded sibling adds its handler to the same file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1332/02: a shared path refuses rather than shipping the sibling's line" nil paths)
+    (assert-includes "BL-1332/02: the refusal names the shared path" warning "specs/pipeline/steps/index.js")
+    (assert-includes "BL-1332/02: the refusal names the landing ticket" warning "BL-9001")
+    (assert-includes "BL-1332/02: the refusal names the unlanded sibling" warning "BL-9002")))
+
+;; The refusal reaches the land step's own decision, so no tip is built.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/index.js" "// base\n" "BL-9001: the landing ticket adds its handler")
+  (commit! root "specs/pipeline/steps/index.js" "// base\n// sibling line\n"
+           "BL-9002: the unlanded sibling adds its handler to the same file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "BL-1332/02: the land step escalates rather than replaying" :escalate (:action plan))
+    (assert-includes "BL-1332/02: and its reason names the shared path"
+                     (:reason plan) "specs/pipeline/steps/index.js")))
+
+;; scenario 03: an unreadable attribution on a shared path still refuses -
+;; BL-1272's fail-closed posture is unchanged by this slice.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/index.js" "// base\n" "BL-9001: shared file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths
+                                 root commit "BL-9001" #{"BL-9002"} (fn [_ _ _ _] nil))]
+    (assert= "BL-1332/03: an unreadable attribution refuses" nil paths)
+    (assert-includes "BL-1332/03: and names what it could not read" warning "attribution")))
+
+;; A sibling that is NOT unlanded shares a path harmlessly: the refusal is
+;; about unlanded siblings only, so a landed one must not block the land.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\n" "BL-9001: the landing ticket")
+  (commit! root "shared.txt" "base\nlanded sibling line\n" "BL-9003: a sibling that already landed")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1332: a shared path whose other owner is NOT unlanded still replays"
+             ["shared.txt"] paths)
+    (assert= "BL-1332: and does not refuse" nil warning)))
+
 ;; ── report ─────────────────────────────────────────────────────────────────
 
 (if (seq @failures)
