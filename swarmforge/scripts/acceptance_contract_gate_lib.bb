@@ -36,6 +36,13 @@
           :detail (unresolved-step-detail step)}
          step))
 
+(defn- unconverted-draft-detail [draft]
+  (format (str "acceptance: still names the parked draft %s at the cited commit - "
+               "the runner globs *.feature and will never execute it, so this "
+               "contract would ship unexecuted (BL-441). Convert it in this parcel: "
+               "rename it to its live .feature alongside the step handler, and repoint acceptance:.")
+          draft))
+
 (def ^:private unreadable-declaration-detail
   "acceptance: declaration is unreadable at the cited commit (absent, inline Gherkin, or naming a feature file that does not exist there)")
 
@@ -49,6 +56,13 @@
    - declaration-readable? false -> one :acceptance-contract finding, fails
      CLOSED; registry-loadable?/unresolved-steps are never consulted (there
      is nothing to resolve steps against).
+   - declaration-draft (BL-1340) -> one :acceptance-contract finding naming
+     the draft, fails CLOSED. This is the exit end of the gate BL-1340 opened
+     at promotion: a draft the ticket pinned itself to converting is admitted
+     into the backlog, and refused here if it arrives still unconverted. It
+     is checked BEFORE the step resolution below on purpose - every step
+     resolving is not a rescue, because the runner globs *.feature and never
+     executes a draft at all, which is precisely BL-441's silence.
    - wait-bound-hit? true (BL-1031 ruling b) -> one :acceptance-contract
      finding naming the wait-bound, fails CLOSED — \"we could not check\"
      must never look like a clean pass or a silent fail-open warning.
@@ -60,10 +74,15 @@
      gathered. Empty unresolved-steps -> a clean pass: no findings, no
      warnings."
   [{:keys [ticket-id declaration-readable? registry-loadable? registry-load-error
-           unresolved-steps wait-bound-hit?]}]
+           unresolved-steps wait-bound-hit? declaration-draft]}]
   (cond
     (not declaration-readable?)
     {:findings [{:class :acceptance-contract :ticket-id ticket-id :detail unreadable-declaration-detail}]
+     :warnings []}
+
+    (and declaration-draft (not (clojure.string/blank? (str declaration-draft))))
+    {:findings [{:class :acceptance-contract :ticket-id ticket-id
+                 :detail (unconverted-draft-detail declaration-draft)}]
      :warnings []}
 
     wait-bound-hit?
