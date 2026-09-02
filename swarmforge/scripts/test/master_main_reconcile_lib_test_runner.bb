@@ -1169,6 +1169,109 @@
 (let [msg (master-main-reconcile-lib/surface-message {:behind 123456789 :reason :local-ahead-refused})]
   (assert-true "bl1310: the note still fits when `behind` is long" (<= (count msg) 80)))
 
+;; ── hotfix redundant-overlap: blocking-overlap + :redundant-paths! ───────
+;; A dirty path the incoming merge would change, whose dirty content is
+;; ALREADY byte-identical to origin/main's version (a stale pre-land
+;; duplicate), is not unsaved work at risk - it must not block. The proof
+;; (redundant-paths) comes from the caller; the pure gate only subtracts it.
+
+(assert= "blocking-overlap: no redundant proof -> identical to overlapping-paths"
+         #{"a.txt"} (master-main-reconcile-lib/blocking-overlap #{"a.txt" "b.txt"} #{"a.txt" "c.txt"} #{}))
+(assert= "blocking-overlap: an overlapping path proven redundant stops blocking"
+         #{} (master-main-reconcile-lib/blocking-overlap #{"a.txt"} #{"a.txt"} #{"a.txt"}))
+(assert= "blocking-overlap: proof for a NON-overlapping path changes nothing (proof never reaches beyond the overlap)"
+         #{"a.txt"} (master-main-reconcile-lib/blocking-overlap #{"a.txt" "b.txt"} #{"a.txt"} #{"b.txt"}))
+(assert= "blocking-overlap: partial proof leaves the unproven overlap blocking"
+         #{"b.txt"} (master-main-reconcile-lib/blocking-overlap #{"a.txt" "b.txt"} #{"a.txt" "b.txt"} #{"a.txt"}))
+
+(assert= "reconcile-decision: overlap fully proven redundant -> should-reconcile (the hotfix's own existence proof)"
+         :should-reconcile (master-main-reconcile-lib/reconcile-decision
+                            {:behind 10 :dirty-paths #{"e.md" "s.ts"}
+                             :merge-changed-paths #{"e.md" "s.ts" "x.js"}
+                             :redundant-paths #{"e.md" "s.ts"}}))
+(assert= "reconcile-decision: overlap only partly proven -> still dirty-blocked"
+         :dirty-blocked (master-main-reconcile-lib/reconcile-decision
+                         {:behind 10 :dirty-paths #{"e.md" "s.ts"}
+                          :merge-changed-paths #{"e.md" "s.ts"}
+                          :redundant-paths #{"e.md"}}))
+(assert= "reconcile-decision: proof never overrides an uncertain dirty check (unknown-dirty-marker still blocks)"
+         :dirty-blocked (master-main-reconcile-lib/reconcile-decision
+                         {:behind 10 :dirty-paths #{"e.md" master-main-reconcile-lib/unknown-dirty-marker}
+                          :merge-changed-paths #{"e.md"}
+                          :redundant-paths #{"e.md"}}))
+(assert= "reconcile-decision: proof never overrides an uncertain merge-changed computation"
+         :dirty-blocked (master-main-reconcile-lib/reconcile-decision
+                         {:behind 10 :dirty-paths #{"e.md"}
+                          :merge-changed-paths #{"e.md" master-main-reconcile-lib/unknown-dirty-marker}
+                          :redundant-paths #{"e.md"}}))
+(assert= "reconcile-decision: no :redundant-paths key at all -> exactly the pre-hotfix answer"
+         :dirty-blocked (master-main-reconcile-lib/reconcile-decision
+                         {:behind 10 :dirty-paths #{"e.md"} :merge-changed-paths #{"e.md"}}))
+
+(defn mk-redundant-adapters
+  "Like mk-adapters, plus an optional :redundant-paths! proof adapter that
+   records what overlap it was asked about."
+  [{:keys [behind dirty-paths merge-changed-paths proof]}]
+  (let [calls (atom {:redundant-paths! 0 :merge! 0 :surface! 0})
+        asked (atom nil)
+        surfaced (atom [])
+        base {:rev-counts! (fn [] {:ahead 4 :behind behind})
+              :dirty-paths! (fn [] dirty-paths)
+              :merge-changed-paths! (fn [] merge-changed-paths)
+              :merge! (fn [] (swap! calls update :merge! inc) {:success true})
+              :surface! (fn [msg] (swap! calls update :surface! inc) (swap! surfaced conj msg))
+              :escalate! (fn [_] nil)
+              :log! (fn [& _] nil)}]
+    {:calls calls :asked asked :surfaced surfaced
+     :adapters (if proof
+                 (assoc base :redundant-paths! (fn [overlap]
+                                                 (swap! calls update :redundant-paths! inc)
+                                                 (reset! asked overlap)
+                                                 (proof overlap)))
+                 base)}))
+
+;; fully-redundant overlap: the proof adapter is asked exactly once, about
+;; exactly the overlap (never the whole dirty set), and merge! fires.
+(let [{:keys [calls asked adapters]}
+      (mk-redundant-adapters {:behind 10
+                              :dirty-paths #{"e.md" "s.ts" "unrelated.txt"}
+                              :merge-changed-paths #{"e.md" "s.ts" "x.js"}
+                              :proof (fn [overlap] overlap)})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold adapters)
+  (assert= "sweep! hotfix: the proof adapter is consulted exactly once when there is an overlap" 1 (:redundant-paths! @calls))
+  (assert= "sweep! hotfix: the proof adapter is asked about exactly the overlap, not the whole dirty set" #{"e.md" "s.ts"} @asked)
+  (assert= "sweep! hotfix: a fully-redundant overlap reconciles (merge! fires once)" 1 (:merge! @calls))
+  (assert= "sweep! hotfix: a fully-redundant overlap never surfaces a block" 0 (:surface! @calls)))
+
+;; no overlap at all: the proof adapter is never consulted (nothing to check)
+(let [{:keys [calls adapters]}
+      (mk-redundant-adapters {:behind 10 :dirty-paths #{"unrelated.txt"}
+                              :merge-changed-paths #{"x.js"}
+                              :proof (fn [_] (throw (ex-info "must not be called" {})))})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold adapters)
+  (assert= "sweep! hotfix: no overlap -> the proof adapter is never invoked" 0 (:redundant-paths! @calls))
+  (assert= "sweep! hotfix: no overlap still reconciles as before" 1 (:merge! @calls)))
+
+;; partial proof: still blocked, and the surfaced note names ONLY the path
+;; that is genuinely still in the way.
+(let [{:keys [calls surfaced adapters]}
+      (mk-redundant-adapters {:behind 10 :dirty-paths #{"e.md" "s.ts"}
+                              :merge-changed-paths #{"e.md" "s.ts"}
+                              :proof (fn [_] #{"e.md"})})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold adapters)
+  (assert= "sweep! hotfix: a partly-proven overlap never merges" 0 (:merge! @calls))
+  (assert= "sweep! hotfix: a partly-proven overlap surfaces exactly once" 1 (:surface! @calls))
+  (assert-true "sweep! hotfix: the surfaced note names the still-blocking path" (clojure.string/includes? (first @surfaced) "s.ts"))
+  (assert-true "sweep! hotfix: the surfaced note does NOT name the already-proven path" (not (clojure.string/includes? (first @surfaced) "e.md"))))
+
+;; adapter absent (every pre-hotfix caller): an overlap blocks exactly as it
+;; always did - the hotfix is opt-in by construction.
+(let [{:keys [calls adapters]}
+      (mk-redundant-adapters {:behind 10 :dirty-paths #{"e.md"} :merge-changed-paths #{"e.md"}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) default-threshold adapters)
+  (assert= "sweep! hotfix: without a proof adapter an overlap still blocks (no behaviour change for old callers)" 0 (:merge! @calls))
+  (assert= "sweep! hotfix: without a proof adapter the block still surfaces" 1 (:surface! @calls)))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")

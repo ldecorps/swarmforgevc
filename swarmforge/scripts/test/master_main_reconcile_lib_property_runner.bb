@@ -756,6 +756,84 @@
 
 (non-vacuity-check-bl1310-invariant-2)
 
+;; ── hotfix redundant-overlap invariant (coder-authored first, per BL-654):
+;;    "merge! fires iff behind>0 AND every overlapping dirty path is proven
+;;    content-identical to origin/main (redundant); one unproven overlapping
+;;    path is enough to block, and a proof for a path outside the overlap
+;;    changes nothing." The generator adds an independent per-path
+;;    redundant-paths draw over the same 3-path pool, so "all overlap
+;;    proven", "partly proven", "proof outside the overlap" and "no proof"
+;;    are all common outcomes, not corners. ───────────────────────────────
+(defn gen-redundant-scenario [s]
+  (let [[behind s1] (gen-pick s behind-pool)
+        [dirty-paths s2] (gen-subset s1 path-pool)
+        [merge-changed-paths s3] (gen-subset s2 path-pool)
+        [redundant-paths s4] (gen-subset s3 path-pool)]
+    [{:behind behind :dirty-paths dirty-paths :merge-changed-paths merge-changed-paths
+      :redundant-paths redundant-paths}
+     s4]))
+
+;; Independent oracle: restated fresh, never via blocking-overlap itself.
+(defn- oracle-blocking? [{:keys [dirty-paths merge-changed-paths redundant-paths]}]
+  (boolean (seq (set/difference (set/intersection (set dirty-paths) (set merge-changed-paths))
+                                (set redundant-paths)))))
+
+(defn- oracle-redundant-should-mutate? [{:keys [behind] :as scenario}]
+  (and (pos? behind) (not (oracle-blocking? scenario))))
+
+(defn- run-sweep-with-proof [{:keys [behind dirty-paths merge-changed-paths redundant-paths]} sweep-fn]
+  (let [merge-calls (atom 0)
+        adapters {:rev-counts! (fn [] {:ahead 2 :behind behind})
+                  :dirty-paths! (fn [] dirty-paths)
+                  :merge-changed-paths! (fn [] merge-changed-paths)
+                  ;; the proof adapter answers only about what it is asked
+                  :redundant-paths! (fn [overlap] (set/intersection (set overlap) (set redundant-paths)))
+                  :merge! (fn [] (swap! merge-calls inc) {:success true})
+                  :surface! (fn [_msg] nil)
+                  :escalate! (fn [_payload] nil)
+                  :log! (fn [& _parts] nil)}]
+    (sweep-fn (mk-tmp) single-tick-threshold adapters)
+    @merge-calls))
+
+(check-all "hotfix redundant-overlap invariant: merge! fires iff (behind>0 AND every overlapping dirty path is proven redundant) - a single unproven overlap still blocks"
+  gen-redundant-scenario
+  (fn [scenario]
+    (let [merge-calls (run-sweep-with-proof scenario master-main-reconcile-lib/sweep!)
+          expect-mutate? (oracle-redundant-should-mutate? scenario)]
+      (cond
+        (and expect-mutate? (not= 1 merge-calls))
+        (str "LIVENESS VIOLATION: every overlapping path is proven redundant but merge! fired " merge-calls " time(s)")
+
+        (and (not expect-mutate?) (pos? merge-calls))
+        (str "SAFETY VIOLATION: an unproven overlapping dirty path remains but merge! fired " merge-calls " time(s)")
+
+        :else true))))
+
+;; Non-vacuity, two directions:
+;; Mutant R1 ignores the proof entirely (pre-hotfix behaviour) - the
+;; invariant must catch the LIVENESS half on a fully-proven overlap.
+(defn- mutant-ignores-proof! [dir threshold adapters]
+  (master-main-reconcile-lib/sweep! dir threshold (dissoc adapters :redundant-paths!)))
+;; Mutant R2 treats every overlap as proven - the invariant must catch the
+;; SAFETY half on a partly-proven overlap.
+(defn- mutant-trusts-everything! [dir threshold adapters]
+  (master-main-reconcile-lib/sweep! dir threshold
+                                    (assoc adapters :redundant-paths! (fn [overlap] (set overlap)))))
+
+(defn- non-vacuity-check-redundant-overlap []
+  (let [proven {:behind 22 :dirty-paths #{"a.txt" "b.txt"} :merge-changed-paths #{"a.txt" "b.txt"} :redundant-paths #{"a.txt" "b.txt"}}
+        partial {:behind 22 :dirty-paths #{"a.txt" "b.txt"} :merge-changed-paths #{"a.txt" "b.txt"} :redundant-paths #{"a.txt"}}
+        r1 (run-sweep-with-proof proven mutant-ignores-proof!)
+        r2 (run-sweep-with-proof partial mutant-trusts-everything!)]
+    (if (and (oracle-redundant-should-mutate? proven) (zero? r1))
+      (println "non-vacuity confirmed: a mutant that ignores the redundancy proof is flagged (merge! did NOT fire on a fully-proven overlap)")
+      (do (println (str "NON-VACUITY FAILURE (ignores-proof mutant): merge-calls=" r1)) (System/exit 1)))
+    (if (and (not (oracle-redundant-should-mutate? partial)) (pos? r2))
+      (println "non-vacuity confirmed: a mutant that treats every overlap as proven is flagged (merge! fired past an unproven overlapping path)")
+      (do (println (str "NON-VACUITY FAILURE (trusts-everything mutant): merge-calls=" r2)) (System/exit 1)))))
+
+(non-vacuity-check-redundant-overlap)
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "master_main_reconcile_lib property: " runs " runs"))
 (if (empty? @failures)

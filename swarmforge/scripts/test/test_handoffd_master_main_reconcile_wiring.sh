@@ -321,6 +321,58 @@ git -C "$ROOT" merge-base --is-ancestor "$LANDED_4_SHA" main \
   || fail "expected landed-4 (the seed.txt-modifying commit) to reach ROOT's main once unblocked"
 pass "reconciliation self-heals once the overlapping path is clean again, without any further landing"
 
+# ── scenario B2 (hotfix redundant-overlap): a dirty path the incoming merge
+#    DOES change, whose dirty content is ALREADY byte-identical to what
+#    origin will carry (a stale pre-land duplicate - the 2026-09-02 live
+#    incident: six BL-1311 evidence files + four sources staged in the
+#    master checkout, all identical to origin/main, blocked the reconcile
+#    for hours), reconciles automatically: the daemon proves each
+#    overlapping path redundant against origin/main, drops ONLY those,
+#    merges, and ends with the file byte-identical to origin and local
+#    history intact. Both dirt shapes from the incident are covered: an
+#    unstaged modification (seed.txt) and a staged brand-new file
+#    (dup-new.txt). Dirtied BEFORE landing, same race-window reasoning as
+#    A/B - the content is known in advance because this test authors both
+#    sides. ──────────────────────────────────────────────────────────────
+ROOT_HEAD_BEFORE_B2="$(git -C "$ROOT" rev-parse main)"
+echo "origin-changes-seed-again" >> "$ROOT/seed.txt"
+echo "dup-new" > "$ROOT/dup-new.txt"
+git -C "$ROOT" add dup-new.txt
+echo "b2-unrelated-local-dirt" > "$ROOT/b2-unrelated.txt"   # non-overlapping dirt: must survive untouched
+
+git -C "$CLONE" pull -q origin main
+echo "origin-changes-seed-again" >> "$CLONE/seed.txt"
+echo "dup-new" > "$CLONE/dup-new.txt"
+git -C "$CLONE" add seed.txt dup-new.txt
+git -C "$CLONE" commit -q -m "QA lands landed-5 (modifies seed.txt, adds dup-new.txt)"
+git -C "$CLONE" push -q origin main
+LANDED_5_SHA="$(git -C "$CLONE" rev-parse HEAD)"
+
+wait_for_log "master-main-reconcile redundant-overlap-discarded" 20 \
+  || fail "expected the daemon to prove the identical overlapping paths redundant and drop them (hotfix redundant-overlap); log: $(cat "$LOG_FILE" 2>/dev/null)"
+B2_WAITED=0
+until git -C "$ROOT" merge-base --is-ancestor "$LANDED_5_SHA" main 2>/dev/null; do
+  sleep 0.25; B2_WAITED=$((B2_WAITED + 1))
+  (( B2_WAITED < 80 )) || fail "expected landed-5 to reach ROOT's main once the redundant overlap was dropped; log: $(cat "$LOG_FILE" 2>/dev/null)"
+done
+pass "an overlapping dirty path whose content already matches origin reconciles automatically instead of blocking (hotfix redundant-overlap)"
+
+grep -q "master-main-reconcile-surfaced BL-891.*dup-new.txt" "$LOG_FILE" \
+  && fail "expected the identical-content overlap never to be surfaced as a dirty block"
+grep -q "master-main-reconcile-sweep-error" "$LOG_FILE" && fail "the reconcile sweep threw during the redundant-overlap reconcile; got: $(cat "$LOG_FILE")"
+[[ "$(grep -c "origin-changes-seed-again" "$ROOT/seed.txt")" == "1" ]] \
+  || fail "expected seed.txt to end byte-identical to origin (the line exactly once), got: $(cat "$ROOT/seed.txt")"
+[[ "$(cat "$ROOT/dup-new.txt")" == "dup-new" ]] \
+  || fail "expected dup-new.txt to end byte-identical to origin"
+[[ -z "$(git -C "$ROOT" status --porcelain -- seed.txt dup-new.txt)" ]] \
+  || fail "expected the redundant paths to be clean after the reconcile, got: $(git -C "$ROOT" status --porcelain -- seed.txt dup-new.txt)"
+git -C "$ROOT" merge-base --is-ancestor "$ROOT_HEAD_BEFORE_B2" main \
+  || fail "expected ROOT's prior local history to stay reachable (a merge, never a reset)"
+[[ "$(cat "$ROOT/b2-unrelated.txt")" == "b2-unrelated-local-dirt" && -n "$(git -C "$ROOT" status --porcelain -- b2-unrelated.txt)" ]] \
+  || fail "expected the NON-overlapping dirt to survive untouched and still uncommitted"
+pass "only the proven-redundant paths were dropped: files end identical to origin, local history intact, unrelated dirt untouched"
+rm -f "$ROOT/b2-unrelated.txt"
+
 # ── scenario C (qa_e2e_procedure 3): an untracked file sitting exactly
 #    where the incoming merge would create one blocks reconciliation rather
 #    than letting a real `git merge` fail mid-operation. Created BEFORE

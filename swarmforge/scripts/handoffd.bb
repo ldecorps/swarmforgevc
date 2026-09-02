@@ -3137,6 +3137,58 @@
           (into #{} (remove str/blank?) (str/split-lines out))
           #{master-main-reconcile-lib/unknown-dirty-marker})))))
 
+;; hotfix redundant-overlap (2026-09-02): of the paths that are BOTH dirty
+;; and merge-changed, which ones already hold byte-for-byte the content
+;; origin/main has at that path? Proven by blob identity - the working-tree
+;; file's own `git hash-object` against `origin/main:<path>` - never by a
+;; diff read or a guess. A path git cannot hash, or that origin/main does
+;; not carry, is simply not proven and keeps blocking (fail closed). This
+;; is the READ-ONLY :redundant-paths! adapter sweep! consults to decide;
+;; it discards nothing.
+(defn- master-main-reconcile-redundant-paths! [overlap]
+  (into #{}
+        (filter (fn [path]
+                  (let [local (daemon-cycle-guard-lib/sh! ["git" "hash-object" "--" path] {:dir (str project-root)})
+                        origin (daemon-cycle-guard-lib/sh! ["git" "rev-parse" "-q" "--verify" (str "origin/main:" path)]
+                                                           {:dir (str project-root)})]
+                    (and (zero? (:exit local)) (zero? (:exit origin))
+                         (not (str/blank? (str (:out local))))
+                         (= (str/trim (str (:out local))) (str/trim (str (:out origin))))))))
+        overlap))
+
+;; The one place a proven-redundant dirty path is actually dropped, and it
+;; sits INSIDE the :merge! adapter (master-main-reconcile-merge! below),
+;; immediately before the real merge - recomputed FRESH here rather than
+;; carried over from sweep!'s decision, the same freshness rule BL-1310's
+;; ahead-count read follows, so the proof and the drop cannot drift apart.
+;; Verified empirically (2026-09-02, scratch clone): `git merge` refuses ANY
+;; dirty overlap regardless of content equality, and staging origin's blob
+;; does NOT unblock it - only dropping the path does. Dropping a path whose
+;; content equals origin's reproduces exactly that content once the merge
+;; lands, so nothing is lost. A path tracked in HEAD goes back to HEAD's
+;; version (`git checkout HEAD -- <path>`); a path HEAD does not carry (a
+;; staged new file, or an untracked one) is unstaged and removed. Every
+;; other dirty path - including an overlapping one this proof did not
+;; cover - is left exactly as found.
+(defn- master-main-reconcile-drop-redundant-dirty-paths! []
+  (let [dirty (master-main-reconcile-dirty-paths!)
+        merge-changed (master-main-reconcile-merge-changed-paths!)
+        overlap (master-main-reconcile-lib/overlapping-paths dirty merge-changed)
+        proven (if (or (contains? dirty master-main-reconcile-lib/unknown-dirty-marker)
+                       (contains? merge-changed master-main-reconcile-lib/unknown-dirty-marker))
+                 #{}
+                 (master-main-reconcile-redundant-paths! overlap))]
+    (doseq [path (sort proven)]
+      (let [in-head? (zero? (:exit (daemon-cycle-guard-lib/sh! ["git" "cat-file" "-e" (str "HEAD:" path)]
+                                                               {:dir (str project-root)})))]
+        (if in-head?
+          (daemon-cycle-guard-lib/sh! ["git" "checkout" "HEAD" "--" path] {:dir (str project-root)})
+          (do (daemon-cycle-guard-lib/sh! ["git" "rm" "-q" "--cached" "--" path] {:dir (str project-root)})
+              (fs/delete-if-exists (fs/path project-root path))))))
+    (when (seq proven)
+      (log! "master-main-reconcile" "redundant-overlap-discarded" (str/join "," (sort proven))))
+    proven))
+
 ;; Never --force, --reset, --rebase, or --stash (BL-891 invariant 1): a
 ;; plain `git merge` either fast-forwards (no local-only commits) or
 ;; creates a real merge commit (local-only bookkeeping commits preserved
@@ -3226,6 +3278,11 @@
                     failure-outcome)}))))
 
 (defn- master-main-reconcile-merge! []
+  ;; hotfix redundant-overlap: sweep! only reaches this adapter once every
+  ;; overlapping dirty path is proven redundant (or there is no overlap);
+  ;; drop those proven paths NOW, fresh, so the real merge below is not
+  ;; refused by git on a path whose content it would only have reproduced.
+  (master-main-reconcile-drop-redundant-dirty-paths!)
   (let [{:keys [ahead behind]} (push-sweep-rev-counts!)
         tip-ok? (master-main-origin-is-ancestor?)
         verdict (master-main-merge-verdict)
@@ -3372,6 +3429,7 @@
      {:rev-counts! push-sweep-rev-counts!
       :dirty-paths! master-main-reconcile-dirty-paths!
       :merge-changed-paths! master-main-reconcile-merge-changed-paths!
+      :redundant-paths! master-main-reconcile-redundant-paths!
       :merge! master-main-reconcile-merge!
       :surface! master-main-reconcile-surface!
       :escalate! master-main-reconcile-escalate!
@@ -3479,8 +3537,16 @@
                 merge-changed (if (pos? behind)
                                 (master-main-reconcile-merge-changed-paths!)
                                 #{})
+                raw-overlap (master-main-reconcile-lib/overlapping-paths dirty merge-changed)
+                ;; hotfix redundant-overlap: the tripped alert names only the
+                ;; paths genuinely still in the way - a proven-redundant one
+                ;; is dropped by the next reconcile tick, not by the operator.
+                proven (if (or (contains? dirty master-main-reconcile-lib/unknown-dirty-marker)
+                               (contains? merge-changed master-main-reconcile-lib/unknown-dirty-marker))
+                         #{}
+                         (master-main-reconcile-redundant-paths! raw-overlap))
                 overlap (master-main-reconcile-lib/normalize-overlapping-paths
-                         (master-main-reconcile-lib/overlapping-paths dirty merge-changed))
+                         (master-main-reconcile-lib/blocking-overlap dirty merge-changed proven))
                 payload {:active true
                          :reason (or (:surfaced reconcile) "diverged")
                          :ahead ahead :behind behind
