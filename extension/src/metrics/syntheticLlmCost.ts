@@ -16,6 +16,16 @@ export function tokensToUsage(tokens: LlmInvocationTokens): UsageTotalsForCost |
   };
 }
 
+/**
+ * BL-1056: the invocation's own instant, so a record from inside a rate's
+ * validity window is costed at that rate however long ago it was written. An
+ * unparseable timestamp costs at now rather than not at all.
+ */
+function costingInstantFor(record: LlmInvocationRecord): Date {
+  const at = new Date(record.at);
+  return Number.isNaN(at.getTime()) ? new Date() : at;
+}
+
 export function deriveSyntheticCostUsd(record: LlmInvocationRecord): number | null {
   if (record.costUsd !== null) {
     return null;
@@ -28,7 +38,7 @@ export function deriveSyntheticCostUsd(record: LlmInvocationRecord): number | nu
   if (!usage) {
     return null;
   }
-  const estimate = estimateCostUsd(usage, model);
+  const estimate = estimateCostUsd(usage, model, costingInstantFor(record));
   if (estimate === null || estimate <= 0) {
     return null;
   }

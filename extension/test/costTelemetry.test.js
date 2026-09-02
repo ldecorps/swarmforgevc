@@ -9,6 +9,7 @@ const {
   attributeUsageToTickets,
   computeCostTelemetry,
 } = require('../out/metrics/costTelemetry');
+const { estimateCostUsdAt } = require('../out/metrics/pricingTable');
 
 function usageRecord(overrides = {}) {
   return {
@@ -72,6 +73,29 @@ test('computeDailyRoleUsage reports estimated cost alongside tokens for a priced
   const dayKey = new Date(dayStart).toISOString();
   assert.ok(typeof result.coder[dayKey].costUsd === 'number');
   assert.ok(result.coder[dayKey].costUsd > 0);
+});
+
+// BL-1056: a record is costed at ITS OWN timestamp, not at "now" - previously
+// sumCost called estimateCostUsd(usage, model) with no `at`, defaulting to
+// the current instant, so a record from inside a since-closed rate window
+// silently drifted onto the wrong rate as soon as the real clock crossed the
+// boundary. `> 0` assertions can never catch this (a wrong rate is still a
+// positive number), so this pins the EXACT value against the same production
+// oracle (estimateCostUsdAt) called with the record's own timestamp.
+test('BL-1056: daily usage is costed at the RECORD\'S timestamp, not "now"', () => {
+  const dayStart = Date.parse('2026-07-09T00:00:00Z'); // inside Sonnet 5's intro window
+  const record = usageRecord({ timestampMs: dayStart, model: 'claude-sonnet-5' });
+  const expectedAtRecordTime = estimateCostUsdAt(record.usage, record.model, new Date(dayStart));
+  const costIfCostedAtNow = estimateCostUsdAt(record.usage, record.model, new Date());
+  assert.notEqual(
+    expectedAtRecordTime,
+    costIfCostedAtNow,
+    'vacuous unless the real clock has moved past the intro window - if this fires, the window has not yet closed'
+  );
+
+  const dayKey = new Date(dayStart).toISOString();
+  const result = computeDailyRoleUsage({ coder: [record] });
+  assert.equal(result.coder[dayKey].costUsd, expectedAtRecordTime);
 });
 
 // ── attributeUsageToTickets (pure) — cost-02 ────────────────────────────

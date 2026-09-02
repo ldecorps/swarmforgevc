@@ -1063,7 +1063,10 @@ test('BL-338: computeCostHealthSidecar accepts an injectable claudeProjectsDir, 
   );
 
   const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], Date.parse('2026-07-09T18:00:00Z'), claudeProjectsDir);
-  assert.equal(sidecar.agents[0].costUsd.value, 3, 'expected the injected 1M priced input tokens ($3/Mtok) to reach the sidecar via the injected claudeProjectsDir');
+  // BL-1056: the record is dated 2026-07-09, inside claude-sonnet-5's
+  // introductory window, so the rate in force for it is $2/Mtok - not the
+  // $3 list price that applies from 2026-09-01.
+  assert.equal(sidecar.agents[0].costUsd.value, 2, 'expected the injected 1M priced input tokens ($2/Mtok inside the intro window) to reach the sidecar via the injected claudeProjectsDir');
 });
 
 // ── BL-551 (sidecar-09): top expensive LLM-invocation origins per horizon ─

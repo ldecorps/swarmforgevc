@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+// BL-1056: the price cliff as a query rather than a memory. Prints every
+// pricing entry whose validity window has closed or is about to, so
+// "Sonnet 5 intro pricing ends 2026-08-31" is something the swarm can be
+// ASKED instead of something a human has to remember.
+//
+// Usage: node pricing-windows.js [YYYY-MM-DD]
+// With no argument, answers for now. Reads only PRICING_TABLE - there is no
+// sibling windows file to drift against.
+import { listPricingWindowAlerts, PricingWindowAlert } from '../metrics/pricingTable';
+import { printJsonToStdout, runCliMain } from './swarm-metrics';
+
+const USAGE = 'Usage: pricing-windows.js [YYYY-MM-DD]\n';
+
+/**
+ * Null for an argument that is not a plain calendar day - never a silent
+ * "now". A shape-valid but calendar-invalid day (e.g. `2026-02-30`) is
+ * refused too, not silently rolled over: JS's Date constructor accepts
+ * `2026-02-30T00:00:00.000Z` and rolls it to March 2nd rather than
+ * returning Invalid Date, which would otherwise answer for a day the
+ * operator never typed with no error at all (found by the hardener,
+ * BL-1056 - the exact silent-misread this function's own doc comment
+ * already disclaimed, via a different avenue than NaN).
+ */
+export function parsePricingWindowsAt(argv: string[], now: Date = new Date()): Date | null {
+  const [day] = argv;
+  if (day === undefined) {
+    return now;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    return null;
+  }
+  const parsed = new Date(`${day}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  // Reject any rollover: the parsed instant's own UTC calendar day must
+  // read back exactly the day the operator typed.
+  return parsed.toISOString().slice(0, 10) === day ? parsed : null;
+}
+
+export interface PricingWindowsReport {
+  at: string;
+  alerts: PricingWindowAlert[];
+}
+
+export function runPricingWindows(at: Date): PricingWindowsReport {
+  return { at: at.toISOString(), alerts: listPricingWindowAlerts(at) };
+}
+
+export function main(): void {
+  const at = parsePricingWindowsAt(process.argv.slice(2));
+  if (!at) {
+    process.stderr.write(USAGE);
+    process.exitCode = 1;
+    return;
+  }
+  printJsonToStdout(runPricingWindows(at));
+}
+
+if (require.main === module) {
+  runCliMain(main);
+}
