@@ -183,3 +183,5 @@ notes: |
   as a near-duplicate; folding them into one scenario that asserts the gap
   bound over a full timeout window is both DRYer and a strictly stronger
   assertion, so the finding was resolved rather than waived.
+
+assigned_to: coder
