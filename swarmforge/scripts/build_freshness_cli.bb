@@ -157,6 +157,42 @@
 ;; conservative default for THAT one commit), independently of the overall
 ;; facts-complete? flag - it still counts as an offending sha if the drift
 ;; is otherwise approved, so it is not lost even when override is used.
+;; BL-1334: which of these drift shas does the SHARED approval predicate
+;; already call QA-approved?
+;;
+;; This is the fix for the land step's replay reading as unapproved at the
+;; instant it lands, and it is deliberately a CALL to is_qa_ancestor.sh
+;; rather than a computation here: that script is the one definition of
+;; approval (BL-925 invariant 2), and this file previously decided the
+;; question on its own with a merge-base walk. Asking it removes a second
+;; opinion rather than adding one.
+;;
+;; --batch (BL-1086) answers every sha in ONE process: the verdict stores are
+;; read once instead of once per sha, which is what kept the babysitter's
+;; own gather inside its freshness threshold. Output is "<sha> <code>" per
+;; line, code 0 = approved.
+;;
+;; Fails CLOSED, every way it can fail: a non-zero batch exit (a store-level
+;; problem), an unparseable line, or a missing script all yield the EMPTY
+;; set, so every drift commit stays offending. Unknown is never approved
+;; (BL-925 invariant 3).
+(defn- qa-approved-shas! [project-root shas]
+  (if (empty? shas)
+    #{}
+    (let [script (str (fs/path project-root "swarmforge" "scripts" "is_qa_ancestor.sh"))]
+      (if-not (fs/exists? script)
+        #{}
+        (let [{:keys [exit out]} (apply process/sh
+                                        {:continue true :dir project-root}
+                                        "bash" script "--batch" shas)]
+          (if-not (zero? exit)
+            #{}
+            (into #{}
+                  (keep (fn [line]
+                          (let [[sha code] (str/split (str/trim line) #"\s+")]
+                            (when (and sha code (= "0" code)) sha))))
+                  (remove str/blank? (str/split-lines out)))))))))
+
 (defn- drift-facts! [project-root]
   (if-let [qa-sha (qa-ref-sha! project-root)]
     (let [base (merge-base! project-root "main" "swarmforge-QA")]
@@ -165,12 +201,17 @@
         (let [{shas-ok? :ok? shas :shas} (commit-shas-since! project-root base "main")]
           (if-not shas-ok?
             {:qa-ref-exists? true :drift-commits [] :facts-complete? false}
-            (let [drift-commits (mapv (fn [sha]
+            (let [approved (qa-approved-shas! project-root shas)
+                  drift-commits (mapv (fn [sha]
                                          (let [{paths-ok? :ok? paths :paths} (changed-paths-for-commit! project-root sha)]
                                            {:sha sha
                                             :touches-surface? (if paths-ok?
                                                                  (build-freshness-lib/touches-deployed-surface? paths)
                                                                  true)
+                                            ;; BL-1334: the ONE approval
+                                            ;; predicate's answer, not a
+                                            ;; second opinion computed here.
+                                            :qa-approved? (contains? approved sha)
                                             :ok? paths-ok?}))
                                        shas)]
               {:qa-ref-exists? true

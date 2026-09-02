@@ -67,6 +67,23 @@
                                                   :own-paths (:own-paths plan)})]
               (if (:success result)
                 (do
+                  ;; BL-1334: record WHICH approved source this replay stands
+                  ;; in for, before announcing it. The replay is a new commit
+                  ;; that no ref makes approved, so without this record every
+                  ;; ancestry-based gate reads QA's own landed work as
+                  ;; unapproved until an unrelated later merge closes the
+                  ;; window - and the override becomes the habit.
+                  ;;
+                  ;; A failure here is REPORTED, never fatal: the land itself
+                  ;; is sound, and an unrecorded land degrades to exactly the
+                  ;; pre-BL-1334 behaviour (the sanctioned --override), never
+                  ;; to a wrong approval.
+                  (let [rec (land-step-lib/record-land-approval!
+                             {:root project-root :commit (:commit result)
+                              :source canonical :task-ticket-id task-ticket-id})]
+                    (when-not (:ok? rec)
+                      (binding [*out* *err*]
+                        (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
                   (println (str "LAND_REPLAY " (:branch result) " " (:commit result)))
                   (doseq [id (sort (:unlanded plan))] (println (str "ENTANGLED_SIBLING " id)))
                   (doseq [id (sort (:landed plan))] (println (str "LANDED_SIBLING " id)))
