@@ -157,8 +157,9 @@ qa_e2e_procedure: |
   7. `bash specs/pipeline/scripts/run_acceptance.sh` green with all six
      scenarios of this feature file executing.
 
-human_approval: pending
-
+human_approval: approved
+human_ruling: |
+  A - email only, the slot is cleared by a human answer or by the role itself
 approval_context: >
   One ruling, and it is the only thing here a coder cannot decide: whether this
   slice may also END a wait, or only make it visible.
