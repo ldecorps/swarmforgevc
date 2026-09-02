@@ -1,0 +1,216 @@
+id: BL-1340
+title: "Promotion refuses a draft acceptance the ticket itself is chartered to convert, deadlocking 12 tickets including two expedited defects"
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 4
+mutation_cost: medium
+slice_size_envelope: medium
+direction: specifier-found
+depends_on: []
+assigned_to: null
+
+acceptance: specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature
+
+retires:
+  - specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature
+
+invariants:
+  - "No live ticket is refused promotion for a condition that no action available to any role can clear while it stays unpromoted."
+  - "Article 3.2.4 expedite ordering is decided over the full eligible candidate set - no earlier filter may drop or deprioritise an expedited defect before that ordering runs."
+
+source: |
+  Found by the specifier 2026-09-02 while draining an idle turn, starting from
+  the coordinator's ninth consecutive open-slot nudge on BL-472. That note
+  reported BL-1309 and BL-1306 as "still refused by promote_and_route_next.sh's
+  acceptance gate (draft .feature.draft not executable)" for the second pass
+  running. Both are `high` expedited defects at the head of the Article 3.2.4
+  lane; neither had moved.
+
+  Two shipped rules collide, and each is individually right about its own hazard:
+
+  - BL-626 (operator-requested 2026-07-25, shipped): refuse promotion of a
+    ticket whose `acceptance:` names a `.feature.draft`. Origin incident BL-441
+    - a ticket promoted, worked and closed against a pointer that resolved to
+    nothing, with the contract never executed. Recorded at the time as SYSTEMIC.
+  - `specifier.prompt` (2026-08-30): when THIS ticket is the slice that builds
+    the feature, mint pointing at the `.feature.draft` and spell out the
+    in-parcel conversion - rename, register the handler, repoint `acceptance:`.
+    Written because committing a live `.feature` before its handler exists makes
+    `specs/pipeline/runtime.js` THROW for every other parcel (BL-233).
+
+  The second rule instructs minting exactly the shape the first rule refuses, so
+  the population grows on its own. Verified this pass, not inferred:
+
+  - `bb swarmforge/scripts/promotion_gates_cli.bb audit-acceptance .` lists 12
+    live tickets: BL-1332 (critical), BL-1309 and BL-1306 (high), BL-1312,
+    BL-875, BL-889 (medium), BL-799 (low), BL-816, BL-676, BL-677, BL-693,
+    GH-24. The audit is read-only and nothing acts on it.
+  - Explicit-id promotion is refused at the BL-663 chokepoint itself:
+    `promotion_gates_cli.bb evaluate . backlog/paused/BL-1309-*.yaml false 4`
+    returns `REFUSE|acceptance|acceptance names draft ... as not executable`.
+    (BL-1332 refuses one gate earlier on `human_approval: pending` - a separate
+    blocker on a critical defect, surfaced to the operator alongside this.)
+  - Auto-select is blocked a second, independent way: `is_buildable()` in
+    `promote_and_route_next.sh` partitions candidates into `buildable[]` and
+    `other[]` and calls `promotion_gates_cli.bb select` on `buildable[]` FIRST,
+    reaching `other[]` only if that yields no selection. With ~100 paused
+    tickets it never does. So a draft-pointer ticket is starved even where the
+    chokepoint would have allowed it - and because the partition happens BEFORE
+    `select`, it silently outranks the whole expedite lane. BL-663's own comment
+    names `promotion_gates_cli.bb` "the ONE place ... Article 3.2.4 expedite
+    ordering ... [is] decided"; this bash partition overrides it.
+
+  Nine coordinator turns have now been spent re-attempting these promotions.
+
+description: |
+  ## What is wrong
+
+  The promotion gate cannot distinguish two different tickets that look
+  identical to it:
+
+  - a **parked** draft - the Gherkin of a slice somebody else builds later
+    (BL-233's own case). Refusing it is correct: nothing in that ticket will
+    ever materialise it, so promoting it reproduces BL-441 exactly.
+  - a **self-converting** draft - the ticket IS the slice chartered to rename
+    the draft, land and register its step handler, and repoint `acceptance:`,
+    all in one parcel.
+
+  Refusing the second is a deadlock with no exit: the ticket cannot promote
+  until the draft is converted, and nothing converts the draft until the ticket
+  promotes. No role can clear it - not the coordinator (both promotion paths
+  refuse), not the coder (never receives it), not the specifier (rewriting
+  `acceptance:` to name a not-yet-existing `.feature` would throw the runner for
+  every other parcel, and naming an unrelated existing feature would be a lie).
+
+  ## Why relaxing promotion is safe here
+
+  BL-626's hazard is a contract that goes UNEXECUTED, and promotion time is not
+  where that becomes true - closing time is. The exit-end machinery is already
+  most of the way there: `pre_qa_gate_gather_lib.bb`'s
+  `gather-acceptance-contract-facts` reads whatever path `acceptance:` names at
+  the cited commit, parses it with the vendored APS parser, and resolves every
+  step against the registry, so a draft arriving at the documenter->QA edge with
+  unregistered handlers already fails closed.
+
+  What it does NOT do is police draft-ness itself - `acceptance_pointer_gate_lib.bb`
+  says so in its own header ("no draft-ness policing - a legitimately parked
+  .feature.draft (BL-233) passes every pre-QA hop"), and `grep -n draft` over
+  `acceptance_contract_gate_lib.bb` returns nothing. So a draft whose steps all
+  happen to resolve to already-registered handlers still ships without the
+  runner - which globs `*.feature` - ever executing it. Narrow, but it is
+  precisely BL-441's silence, and it is the residue that must close as promotion
+  opens.
+
+  ## How (direction, not mandate)
+
+  Move the gate rather than delete it - admitted at the entrance, refused at the
+  exit:
+
+  1. `promotion_gates_lib.bb`'s `acceptance-executable-refusal` stops refusing a
+     draft the ticket pins itself to converting, and keeps refusing a parked one.
+     The refusal text should distinguish the two, so a genuinely parked draft
+     still fails by name (BL-626's "a refusal that says only blocked reproduces
+     the silence it removes").
+  2. `is_buildable()` in `promote_and_route_next.sh` must stop pre-partitioning
+     the candidate set ahead of `select`. Buildability may act as a tiebreaker
+     WITHIN equal expedite rank, never as a filter applied before ordering -
+     invariant 2. Deleting the partition and letting the one chokepoint decide
+     is the smaller change and is preferred if it holds.
+  3. The documenter->QA edge refuses a parcel whose ticket `acceptance:` still
+     names a `.feature.draft` at the cited commit. `acceptance_contract_gate_lib.bb`
+     is the natural seat; the header comment in `acceptance_pointer_gate_lib.bb`
+     that delegates draft-ness away must be re-tensed to match wherever it lands.
+
+  ## Contract to land
+
+  This ticket's `acceptance:` points at BL-626's feature file, per the BL-1251
+  pattern: the contract it must satisfy is that file post-amendment, and the
+  `retires:` entry earns the task-scope exemption for the path. That is not a
+  claim of ownership over BL-626's contract.
+
+  The four new scenarios are parked in
+  `specs/features/BL-1340-promotion-admits-a-self-converting-acceptance-draft.feature.draft`
+  (lint-clean this pass). Land them INTO BL-626's feature file in the SAME
+  commit as their step handlers - a `.feature` scenario committed ahead of its
+  handler turns the suite red for every other parcel (BL-233) - then delete the
+  draft.
+
+  Retire, do not reword, BL-626 example row 2
+  (`| its own draft | that draft | the draft as not executable |`): it asserts
+  the behaviour this ticket removes, and would be red-when-correct if kept
+  (BL-1006). Its replacement is scenarios 01 and 02, which assert the finer
+  distinction. Re-tense the `Feature:` narrative sentence "or at a parked draft
+  the runner will not execute" - post-fix it states a false present, and a
+  durable contract carrying a false sentence is still a lie.
+
+  Re-stamp the mutation manifest at the head of that feature file; the current
+  stamp covers the pre-amendment scenario set.
+
+  ## Not in scope
+
+  Draining the 12 stranded tickets. Once this lands they promote on their own
+  merits in normal priority order; each still needs its own conversion done in
+  its own parcel. BL-1332's separate `human_approval: pending` block is not
+  touched here.
+
+notes: |
+  [2026-09-02 specifier] No `required_wiring:` on this ticket, deliberately, per
+  BL-1235. The decision surface being changed - `acceptance-executable-refusal`
+  - is ALREADY called by both live consumers (`evaluate` and
+  `acceptance-audit-findings`); there is no new call site to prove, so every
+  anchor available here would be satisfied by the parcel's own diff and would
+  bank a green that means nothing. Saying so rather than arming a vacuous entry.
+
+  Both promotion paths were confirmed refusing by running them read-only this
+  pass, not read off the coordinator's report - the report said "refused", which
+  is true of the chokepoint but understates the auto-select path, where the
+  failure is starvation by pre-partition and is the half that silently defeats
+  Article 3.2.4.
+
+  This ticket is itself promotable: its `acceptance:` names an existing,
+  executable feature file, so it does not fall into the deadlock it describes.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/promotion_gates_cli.bb audit-acceptance .` - note the
+     12 listed ids before the change.
+  2. `bb swarmforge/scripts/promotion_gates_cli.bb evaluate . backlog/paused/BL-1309-*.yaml false 4`
+     must no longer return `REFUSE|acceptance|...`; BL-1309 pins its conversion
+     in `required_wiring` and is the live self-converting case.
+  3. Construct a paused fixture whose acceptance names a draft it pins NO
+     conversion of; `evaluate` must still refuse it, and the refusal must say
+     the draft is parked with no conversion pinned - not merely "not executable".
+  4. `promote_and_route_next.sh --list-candidates` with an expedited
+     draft-pointer defect and a non-expedited buildable ticket both eligible -
+     the expedited defect must be selected first.
+  5. Send a `git_handoff` to QA for a parcel whose ticket acceptance still names
+     a `.feature.draft`; the pre-QA gate must refuse and name the draft.
+  6. `bash specs/pipeline/scripts/run_acceptance.sh` green, BL-626's feature
+     included, with example row 2 gone and scenarios 01-04 present.
+
+human_approval: approved
+human_ruling: |
+  A - recognise a required_wiring entry naming a specs/pipeline/steps registration as the pin
+
+approval_context: >
+  One ruling needed - how the promotion gate should recognise a self-converting
+  draft. It changes what the coder builds, so it is asked here rather than left
+  to be discovered. Everything else in this ticket is firm - the deadlock, the
+  expedite-lane subversion, and the documenter->QA backstop that makes relaxing
+  promotion safe are not up for a vote.
+  Option A reuses `required_wiring:`, which BL-1309 already carries for exactly
+  this purpose and which the pre-QA gate independently enforces, so the pin is
+  load-bearing rather than decorative - but it overloads a field whose stated
+  job is proving production wiring. Option B is a new explicit schema field,
+  unambiguous to read and to audit, but it is a bare declaration nothing else
+  checks, so a careless mint sets it and buys promotion with nothing behind it.
+  Option C keeps promotion strict and instead removes the need for parked
+  drafts altogether - honest, but it needs a real answer to BL-233 first and
+  strands the 12 tickets until that lands.
+  Specifier recommends A.
+
+ruling_options:
+  - A - recognise a required_wiring entry naming a specs/pipeline/steps registration as the pin
+  - B - add an explicit schema field such as converts_acceptance_draft
+  - C - keep promotion strict and retire the mint-a-draft rule instead

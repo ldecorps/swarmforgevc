@@ -12,7 +12,9 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1335-token-exhaustion-opens-an-outage-record.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Promote automatically only when the classification is unambiguous, otherwise announce for operator confirmation
 approval_context: >
   One fork, and it is the autonomy bar. Opening a failover record is not
   inert - BL-669's consumer reads it and will restaff the seat. So the

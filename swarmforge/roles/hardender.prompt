@@ -1783,6 +1783,45 @@ You are the hardender.
   (Proposed by the hardender, accepted 2026-08-22; fix `findExtensionRoot` in
   `extension/test/helpers/materializedRegistryGuard.js` at b53875b71.)
 
+### `git rev-parse --show-toplevel` is the WRONG repair for it (rule_proposal 2026-09-02, accepted with its fix amended)
+- **The reported symptom is real.** A day after BL-1066 landed, two more files
+  hit this class through a `git`/CLI spawn rather than a plain `fs` read:
+  `extension/test/bl1300HeadroomProofIsPinned.test.js` and
+  `bl1300SingleEnforceableBudget.property.test.js` (both
+  `REPO_ROOT = fs.realpathSync(path.join(__dirname,'..','..'))`), and
+  `activePoolFreshnessAudit.test.js` (`const root = path.join(__dirname,'..','..')`,
+  then `checkFreshnessViaCli(root, ...)`). ~5 min to diagnose each, and 115+
+  files share the `path.join(__dirname,'..','..')` shape. Worth a rule.
+- **But do NOT repair it with `git -C __dirname rev-parse --show-toplevel`.**
+  Stryker's `tempDirName` is `.stryker-tmp` UNDER `extension/`, i.e. inside the
+  work tree, so from anywhere in a sandbox that command always answers the
+  TRUE repo root. It cannot ever name the sandbox — there is no argument that
+  makes it — so as a general fix it is the sandbox escape the section above
+  forbids, dressed as a path helper. Where the escaped path leads back into
+  mutated code it does not fail loudly; the test reads the UNMUTATED build,
+  passes under every mutant, and spares them silently.
+- **Ask what the path is reaching for, then pick:**
+  - **A repo-root sibling Stryker never mutates** (`swarmforge/`, `docs/`,
+    `specs/`, `pwa/`, `.github/`) — the parent count is already RIGHT. In a
+    sandbox `../..` lands on `.stryker-tmp/`, which is exactly where
+    `ensureStrykerSandboxSiblings.js` plants the symlinks. An ENOENT here
+    means the sibling is not in `SIBLING_NAMES`; add the name, change no path.
+    This is the bl1300 pair's case: both reach only `swarmforge/scripts/`.
+  - **Back into `extension/` itself** — you need the SANDBOX's copy, never the
+    real one. Anchor on the `package.json` marker for the extension root and
+    resolve from there; do not walk up to a root that contains `extension/`,
+    because in a sandbox no such root exists and every root that does contain
+    one is unmutated. This is `activePoolFreshnessAudit.test.js`'s case:
+    `resolveDeprecateCheckCliPath` builds
+    `<root>/extension/out/tools/deprecate-check.js`, absent under
+    `.stryker-tmp/`, so the helper
+    returns `''` and the assertion fails on empty output. Repointing it at the
+    real repo root would turn that red into a green that tests nothing.
+- **The tell that you are about to escape:** the repair makes a previously red
+  mutation run go green without you having killed a mutant. Treat a
+  root-resolution change that fixes a dry run as suspect until you have
+  confirmed the resolved path still lies inside `.stryker-tmp/`.
+
 ## `--ignoreStatic` buys its speed by EXCLUDING mutants from the score — read the Ignored count, never the score alone (rule_proposal 2026-08-23, accepted with its scope amended)
 - **The technique, and it is a real win.** On a QUIET multi-core host, a
   perTest run can spend most of its wall clock on static mutants — those

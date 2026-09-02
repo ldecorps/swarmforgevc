@@ -17,8 +17,14 @@
 // process replays a whole generated signal sequence, so a long sequence
 // costs one subprocess rather than one per signal.
 //
-// Invariant 2 is a property of the pure decision, so it runs in-process
-// against the compiled module the UI and launch paths call.
+// Invariant 2 is a property of the pure decision, which after the 2026-09-02
+// spec amendment lives in Babashka too (seat_difficulty_lib.bb
+// ::adapt-effort-decision) - there is no TypeScript caller at the adapt
+// moment, so there is no TypeScript decision to test. One bb process folds a
+// whole generated sequence and reports, per step, BOTH the inputs it used and
+// the decision it made; the JS side then replays its own loop against those
+// recorded decisions and asserts the inputs agree, so a divergence between
+// the two loops fails loudly instead of hiding behind a replayed answer.
 //
 // GENERATOR REACH (the asserted floor, never a hoped-for one). An invariant
 // about a FLOOR and a CEILING is only tested if the generator actually
@@ -35,14 +41,27 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
-const {
-  decideAdaptEffort,
-  ADAPT_EFFORT_LADDER,
-  ADAPT_DEFAULT_CLEAN_STREAK,
-} = require('../out/tools/effortDialAdapt');
-
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const HANDOFF_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'handoff_lib.bb');
+const SEAT_DIFFICULTY_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'seat_difficulty_lib.bb');
+
+// Read the ladder and the streak length OUT of the Babashka lib rather than
+// restating them here: a second copy in JS is exactly the mirrored-constant
+// shape that drifts silently (BL-897), and there is no longer a TS module for
+// it to be mirrored in.
+function readAdaptConstants() {
+  const program = `
+(load-file "${SEAT_DIFFICULTY_LIB}")
+(require '[cheshire.core :as json])
+(println (json/generate-string
+  {:ladder seat-difficulty-lib/adapt-effort-ladder
+   :streak seat-difficulty-lib/adapt-default-clean-streak}))`;
+  const r = spawnSync('bb', ['-e', program], { encoding: 'utf8' });
+  assert.equal(r.status, 0, `bb constants read failed: ${r.stderr}`);
+  return JSON.parse(r.stdout.trim());
+}
+
+const { ladder: ADAPT_EFFORT_LADDER, streak: ADAPT_DEFAULT_CLEAN_STREAK } = readAdaptConstants();
 
 const ROLE = 'coder';
 const rank = (e) => ADAPT_EFFORT_LADDER.indexOf(e);
@@ -111,13 +130,60 @@ function checkAsymmetry(decide, signals, baselineEffort, reach) {
   }
   return true;
 }
+// Folds the sequence through the REAL pure decision in one bb process,
+// recording the inputs each step used alongside the decision it produced.
+function bbDecideSequence(signals, baselineEffort) {
+  const program = `
+(load-file "${SEAT_DIFFICULTY_LIB}")
+(require '[cheshire.core :as json])
+(let [ladder seat-difficulty-lib/adapt-effort-ladder
+      required seat-difficulty-lib/adapt-default-clean-streak
+      baseline "${baselineEffort}"]
+  (println
+    (json/generate-string
+      (:steps
+        (reduce
+          (fn [{:keys [effort streak steps]} signal]
+            (let [streak (if (= signal "clean") (inc streak) 0)
+                  d (seat-difficulty-lib/adapt-effort-decision
+                      {:backend "claude" :prior-effort effort :baseline-effort baseline
+                       :signal signal :clean-streak streak
+                       :clean-streak-required required})
+                  applied (boolean (:apply? d))
+                  next-effort (if applied (:effort d) effort)]
+              {:effort next-effort
+               :streak (if (and applied (= signal "clean")) 0 streak)
+               :steps (conj steps {:priorEffort effort :baselineEffort baseline
+                                   :signal signal :cleanStreak streak
+                                   :cleanStreakRequired required
+                                   :apply applied :effort (:effort d)})}))
+          {:effort baseline :streak 0 :steps []}
+          ${JSON.stringify(signals)})))))`;
+  const r = spawnSync('bb', ['-e', program], { encoding: 'utf8' });
+  assert.equal(r.status, 0, `bb decision fold failed: ${r.stderr}`);
+  return JSON.parse(r.stdout.trim());
+}
+
 test('BL-1317/BL-654 invariant 2: a climb is one notch per signal, a drop needs the whole streak, and neither leaves the ladder', () => {
   const reach = { top: 0, floor: 0, drops: 0, climbs: 0 };
 
   fc.assert(
-    fc.property(sequenceArb, effortArb, (signals, baselineEffort) =>
-      checkAsymmetry(decideAdaptEffort, signals, baselineEffort, reach)),
-    { numRuns: 300 },
+    fc.property(sequenceArb, effortArb, (signals, baselineEffort) => {
+      const steps = bbDecideSequence(signals, baselineEffort);
+      assert.equal(steps.length, signals.length, 'bb fold skipped a signal');
+      let i = 0;
+      // The seam: each answer comes from the real Babashka decision, and the
+      // inputs the JS loop built must match the ones bb actually decided on.
+      const decide = (input) => {
+        const step = steps[i++];
+        for (const key of ['priorEffort', 'baselineEffort', 'signal', 'cleanStreak', 'cleanStreakRequired']) {
+          assert.equal(input[key], step[key], `JS and bb folds diverged on ${key} at step ${i - 1}`);
+        }
+        return { apply: step.apply, effort: step.effort };
+      };
+      return checkAsymmetry(decide, signals, baselineEffort, reach);
+    }),
+    { numRuns: 40 },
   );
 
   // The asserted reachability floor.

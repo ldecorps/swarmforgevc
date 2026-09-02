@@ -17,11 +17,11 @@ At the same moment a seat's held ticket completes — the point
 `done_with_current_task.bb` already records the lifecycle ledger entry — the
 seat's effort now also moves in response to how that completion went:
 
-1. **Pure decision** — `extension/src/tools/effortDialAdapt.ts`
-   (`decideAdaptEffort`, TypeScript side) and
-   `swarmforge/scripts/seat_difficulty_lib.bb` (`adapt-effort-decision`, bb
-   side) hold the same policy, expressed twice because the two consumers
-   live in different languages:
+1. **Pure decision** — `swarmforge/scripts/seat_difficulty_lib.bb`
+   (`adapt-effort-decision`), beside BL-1316's `claim-effort-decision`. It
+   is stated once, in Babashka only: the outcome signal Adapt reacts to is
+   recorded on the Babashka side, so there is no caller at the adapt moment
+   for a TypeScript copy to serve. The policy:
    - a **bounce** (the completed handoff is a reverse hop — this seat's own
      work coming back) climbs the seat's effort **one notch** above wherever
      it is now;
