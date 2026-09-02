@@ -247,7 +247,7 @@ notes: |
   specifier's ruling, no relanding; awaits BL-1343 (active, coder), then QA
   re-lands and closes.
 
-assigned_to: coder
   2026-09-02 20:05Z (coordinator): status set to `blocked` (BL-1301 park) so the
   dropped-parcel sweep stops re-nudging; condition to clear: BL-1343 lands, then
   QA re-lands review merge 0ea1c8cb3b and closes. Second nudge answered 20:03Z.
+assigned_to: coder
