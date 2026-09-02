@@ -1,0 +1,145 @@
+id: BL-1327
+title: "Scheduled descent ladder: propose (never silently apply) a cheaper effort-then-model notch for a seat that stays guard-clean"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 6
+direction: human-requested
+depends_on: [BL-1056, BL-1317]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1327-scheduled-descent-ladder-proposes-cheaper-notch.feature
+
+human_approval: pending
+approval_context: >
+  Coordinator relayed a human ask (2026-09-02, via Cursor) to bump priority
+  on cost-reduction tickets: "downgrade a well-performing seat to the
+  cheapest model that still keeps its bounce guard clean." That is BL-545's
+  epic remaining_slices "descent LADDER" bullet, which was unminted epic
+  prose, not a promotable ticket. This mint slices it out.
+
+  The epic's own remaining_slices bullet says the descent ladder "depends
+  on the economic review slice above," and that economic-review bullet says
+  it is "Blocked on unparking BL-548 (the evaluation arm)." I read that as
+  over-broad for THIS slice specifically: BL-548 is the prompt-CALIBRATION
+  loop (testing adapter variants offline via Model Steward evaluate before
+  promoting them to the catalogue) — a different concern from walking a
+  seat's own effort/model assignment down a ladder using guard-window
+  cleanliness the swarm already tracks (bounce history, QA outcomes). The
+  descent ladder's own text frames each notch as "an annotated experiment
+  with its own guard window," i.e. a live, reversible, guarded trial — not
+  an offline pre-evaluation via BL-548. So I have scoped Slice 1 to what is
+  independently buildable now (once BL-1056 and BL-1317 land): compute
+  ladder position and clean-streak/guard-trip state, and PROPOSE the next
+  notch. I have NOT scoped it to auto-apply that notch.
+
+  What still needs your ruling is which posture Slice 1 should take once
+  it proposes a notch — see ruling_options. Both keep the firm boundary
+  from BL-1056/the epic ("no autonomous seat mutation of any kind" beyond
+  what is explicitly opted into and immediately guarded/reversible).
+
+ruling_options:
+  - "Proposal-only — Slice 1 emits a durable proposal record (who/what/why/candidate notch) that a human applies by hand; live-apply is a separate, later-minted ticket."
+  - "Guarded auto-apply — Slice 1 applies the proposed notch directly, gated behind an explicit swarmforge.conf opt-in, inside its own guard window, auto-reverting immediately on a guard trip (same reversibility posture BL-1317 already uses for effort climbs)."
+
+required_wiring:
+  - "swarmforge/scripts/install_swarmforge_crons.sh::install_descent_review_cron.sh::the pre-existing cron dispatcher already wires in the freshness and shift-schedule crons; a periodic descent review nothing schedules is dead code (the BL-419/BL-1235 shape) — this ticket's coder names and adds install_descent_review_cron.sh here in the same parcel that builds the review."
+
+invariants:
+  - "A descent notch is proposed only after the seat has stayed guard-clean for the configured number of consecutive review periods at its current notch — a single clean period never proposes a move (asymmetric hysteresis, matching the epic's own framing)."
+  - "A guard trip discards any partial clean-period progress and returns ladder state to the last known-good notch immediately, regardless of the ruling on auto-apply — climbs are single-period, descents require the full streak."
+  - "Effort notches for the current model are exhausted before a cheaper model is ever proposed — the ladder never proposes a model change while a cheaper effort notch on the current model is still untried."
+
+description: |
+  ## What
+
+  BL-545's epic remaining_slices names a periodic "descent LADDER": walk a
+  seat down through effort notches (xhigh -> high -> medium -> low) before
+  trying a cheaper model (at high effort again, never low — "a smaller
+  brain may need MORE deliberation"), one notch per review period, only
+  while the seat's bounce/QA guard stays clean. A guard trip climbs back to
+  the last known-good notch immediately; a further descent needs several
+  clean periods again (asymmetric hysteresis). Terminal state per seat is
+  re-walked whenever a price validity window shifts (BL-1056).
+
+  This ticket slices that remaining_slices bullet out as its own
+  promotable, buildable unit, separate from the still-blocked "scheduled
+  ECONOMIC REVIEW" bullet above it on the epic (which needs BL-548).
+
+  ## Why now
+
+  Direct human ask, relayed by the coordinator 2026-09-02: prioritize
+  cost-reduction tickets, specifically "downgrade a well-performing seat to
+  the cheapest model that still keeps its bounce guard clean." This is
+  exactly that mechanism.
+
+  ## How (direction, not mandate)
+
+  Reuse BL-1317's Adapt-tier notch state machine and BL-1316's claim-time
+  baseline rather than inventing a second effort/model ladder representation.
+  Compute each seat's guard window from the same bounce/QA-outcome signals
+  BL-635/BL-819 already track — no new signal source. Consult BL-1056's
+  price-window query for the "re-walked on a price shift" terminal-state
+  behaviour. Register the periodic review as a real cron job through the
+  existing dispatcher (see required_wiring) rather than a standalone script
+  nothing ever invokes.
+
+  ## Not this slice
+
+  - BL-548's prompt-adapter calibration loop (a different evaluation
+    concern; still blocked, untouched by this ticket).
+  - The "scheduled ECONOMIC REVIEW" bullet's proposal-emission-from-
+    measured-performance-need half that explicitly needs BL-548 — this
+    ticket only reads existing guard/bounce signals, it does not run a new
+    performance evaluation.
+  - Whichever half of the ruling_options choice the human does NOT pick.
+
+source: |
+  BL-545 epic (`backlog/paused/BL-545-epic-swarm-intelligence-layer.yaml`)
+  `remaining_slices` bullet 2, "The descent LADDER..." (operator addendum
+  2026-07-26 16:20). Sliced out per coordinator note 2026-09-02T07:34Z
+  (priority-00, "Mint BL-545's descent-ladder remaining_slice as its own
+  ticket"), itself relaying a human ask via Cursor 2026-09-02 to bump
+  priority on cost-reduction/downgrade tickets.
+
+notes: |
+  Sibling slices already minted under the same epic orbit: BL-1316 (claim-
+  time effort from mutation_cost, done) and BL-1317 (bounce-driven climb,
+  paused) — BL-1316's own "Not this slice" section names this exact ladder
+  and says it "stays on the epic's remaining_slices until separately
+  minted." This ticket is that minting.
+
+  Once a human answers ruling_options, if "Guarded auto-apply" is chosen,
+  confirm swarmforge.conf gets an explicit, default-off opt-in key (never
+  on by default) before build starts — do not let Slice 1 begin coding
+  against an undecided default.
+
+  Epic BL-545's remaining_slices / decomposes_into should list BL-1327 once
+  this lands in paused/; leaving that epic-bookkeeping edit for a documenter
+  pass is fine, it does not block promotion of this ticket.
+
+qa_e2e_procedure: |
+  On the live host, once built:
+
+  1. Seed a seat's guard-window history with N consecutive clean periods at
+     its current notch and run the descent review; confirm a proposal names
+     the next lower effort notch and that the seat's live model/effort (or,
+     under the guarded-auto-apply ruling, the applied notch plus its guard
+     window) matches exactly what the chosen ruling_option specifies — never
+     more.
+  2. Seed a seat already at its lowest effort notch for its current model;
+     run the review; confirm the proposal names a cheaper model at HIGH
+     effort, never low, with the stated reason.
+  3. Seed partial clean-period progress at a descended notch, record a guard
+     trip, and confirm ladder state returns to the last known-good notch
+     immediately with the partial progress discarded.
+  4. Shift a seat's model's price validity window (via BL-1056's query) and
+     confirm the next review re-evaluates and surfaces a new proposal rather
+     than silently keeping the old terminal notch.
+  5. Confirm the review is actually scheduled: inspect the live crontab (or
+     its swarmforge-managed equivalent) for the new descent-review entry
+     installed by `install_swarmforge_crons.sh`.
+
+assigned_to: none

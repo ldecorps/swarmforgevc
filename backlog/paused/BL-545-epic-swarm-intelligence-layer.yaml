@@ -6,7 +6,7 @@ type: epic
 epic: swarm-intelligence-layer
 priority: 30
 depends_on: []
-decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-590, BL-624, BL-625, BL-643, BL-684, BL-1052, BL-1053, BL-1056, BL-1317]
+decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-590, BL-624, BL-625, BL-643, BL-684, BL-1052, BL-1053, BL-1056, BL-1317, BL-1327]
 # ^ BL-590 and BL-684 added 2026-07-26: both carry `epic: swarm-intelligence-layer`
 #   but were absent from this list, so the epic under-reported its own orbit — the
 #   Onboarder half of it entirely, including the slice already on `main`.
@@ -28,7 +28,7 @@ promotion_order:
       - "BL-547 Slice 2 merged (model-steward evaluate)"
 remaining_slices:
   - "Scheduled ECONOMIC REVIEW (monthly + on any price validity-window boundary): for each seat, compare its model price tier against measured performance need (BL-635 roundsPerClose by blamed role, think-share profiles, QA bounce rates) and emit PROPOSALS - never an application. Blocked on unparking BL-548 (the evaluation arm): the operator gate is il faudrait l evaluer, so a tier-down proposal with no evaluation plan is refused by format. Split from INTAKE-steward-economic-review-price-windows.md; the queryable half is BL-1056."
-  - "The descent LADDER, effort first then model: M@xhigh -> M@high -> M@medium -> M@low -> (M-1)@high (not @low - a smaller brain may need MORE deliberation). ONE notch per review period, each an annotated experiment with its own guard window; ASYMMETRIC hysteresis - a tripped guard climbs back one notch immediately, descending again requires N clean periods. Terminal state per seat is the cheapest (model, effort) whose guard stays clean, re-walked when a price window shifts. Operator addendum 2026-07-26 16:20; depends on the economic review slice above. Related claim-time lever (not this periodic ladder): BL-1316; Adapt-tier climb on bounces: BL-1317."
+  - "The descent LADDER, effort first then model: M@xhigh -> M@high -> M@medium -> M@low -> (M-1)@high (not @low - a smaller brain may need MORE deliberation). ONE notch per review period, each an annotated experiment with its own guard window; ASYMMETRIC hysteresis - a tripped guard climbs back one notch immediately, descending again requires N clean periods. Terminal state per seat is the cheapest (model, effort) whose guard stays clean, re-walked when a price window shifts. Operator addendum 2026-07-26 16:20; depends on the economic review slice above. Related claim-time lever (not this periodic ladder): BL-1316; Adapt-tier climb on bounces: BL-1317. MINTED 2026-09-02 as BL-1327, paused, human_approval: pending on a proposal-only-vs-guarded-auto-apply ruling — see BL-1327 for why the specifier judged this slice buildable now despite this bullet's own BL-548 dependency note (BL-548 is the offline prompt-adapter calibration loop, a different concern from a live guarded ladder walk over existing bounce/QA guard signals)."
   - "PromptEngine Slice 2: fragment registry + per-model adapters"
   - "PromptEngine Slice 3: versioning, validation, inspect CLI"
   - "Model Steward Slice 2: recruiter/bakeoff evaluate ingestion (drained -> BL-556, paused)"
@@ -66,6 +66,18 @@ notes: |
   priority-00 note asking the specifier to mint it as its own ticket (or
   confirm it genuinely cannot be sliced out yet) so it can be prioritized
   and promoted the way BL-1056/BL-1317 already are.
+
+  [2026-09-02 specifier] Minted as BL-1327 (paused, depends_on [BL-1056,
+  BL-1317], human_approval: pending). Judged independently sliceable:
+  the descent ladder's "BL-548" dependency note applies to the offline
+  prompt-CALIBRATION arm, not to a live guarded ladder walk driven by
+  bounce/QA guard signals the swarm already tracks — those are the same
+  signals the epic's economic-review bullet cites (BL-635/BL-819), and
+  BL-1327's own governance posture (proposal-only, or guarded auto-apply
+  under an explicit conf opt-in with immediate revert on a guard trip)
+  matches the "no autonomous seat mutation" firm boundary BL-1056 already
+  established for this epic. Left the choice between those two postures to
+  a human ruling (BL-1327 `ruling_options`) rather than deciding it myself.
 
   UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
   promotes CHILD slices, never this. Children carry `epic: swarm-intelligence-layer`
