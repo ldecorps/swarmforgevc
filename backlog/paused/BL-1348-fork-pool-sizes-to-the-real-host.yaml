@@ -1,0 +1,199 @@
+id: BL-1348
+title: "The vitest worker pool reserves 1280 MB a fork against a measured 298 MB peak, so an explicit operator fork override is silently clamped to seven and fourteen of twenty cores idle through every property run"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+priority: 42
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature
+
+human_approval: approved
+human_ruling: |
+  Lower the per-worker heap reservation and also raise the default ceiling so the pool follows the host core count with no override set
+approval_context: >
+  Your directive, verbatim, is preserved in source: below. Nothing here is
+  broken and nothing is at risk either way - the pool is behaving exactly as
+  BL-422 designed it after the 13 GB OOM incident, on a RAM model that has
+  simply never been re-measured. The whole ticket is a missed opportunity to
+  use the host you have.
+
+  What needs your call is which of three shapes to take, because they differ
+  in who accepts the memory risk and on which hosts. Option 1 changes nothing
+  by default and makes SWARMFORGE_VITEST_MAX_FORKS - which already exists and
+  is already read by both lanes - genuinely effective: you opt in per run, and
+  a host that has not opted in behaves exactly as today. Option 2 additionally
+  raises the default so every host follows its cores with no opt-in, which is
+  the only shape that delivers a faster run without anyone setting an env var,
+  and also the only one that changes behaviour on hosts nobody has measured.
+  Option 3 is your own wording from the intake - the override wins outright and
+  the RAM budget becomes a warning rather than a clamp; simplest to reason
+  about, and it is the one shape where a mistyped override can genuinely
+  exhaust a small host.
+
+  One thing worth knowing before you choose, because it changes what this
+  ticket is worth on its own. The measured 143 s property run cannot fall
+  below its longest single file, and that file is 79 s. No fork count reaches
+  the 40-50 s you expect while that stands. BL-1349 is the ticket for it, and
+  it is the binding half; this one is the cheaper half.
+ruling_options:
+  - Lower the per-worker heap reservation to the measured footprint, leaving the default pool at six and making the existing fork override genuinely effective
+  - Lower the per-worker heap reservation and also raise the default ceiling so the pool follows the host core count with no override set
+  - Leave both constants and let an explicit operator override win outright, keeping the memory budget as a warning rather than a clamp
+
+invariants:
+  - "Both vitest lanes size their pool through the single resolveVitestWorkerPool composition point: neither lane gains a sizing route the other does not share (BL-935 invariant 3)."
+  - "A resolved pool is never smaller than one worker, whatever the host RAM and whatever the override."
+  - "The existing full-forge-on-darwin ceiling of one is unchanged by this ticket."
+
+description: |
+  ## What is wrong
+
+  `resolveVitestWorkerPool` (`extension/src/tools/vitest-worker-memory-budget.ts`)
+  composes two independent caps and returns the smaller:
+
+      safeCount = floor(hostRamMB * SAFE_HOST_RAM_FRACTION / PER_WORKER_HEAP_MB)
+      pool      = max(1, min(ceiling, safeCount))
+
+  with `PER_WORKER_HEAP_MB = 1280`, `SAFE_HOST_RAM_FRACTION = 0.5` and
+  `MAX_WORKERS = 6` as the default ceiling. Verified on this host
+  (20 cores, 19904 MB): `safeCount` is `floor(9952 / 1280)` = 7, the ceiling
+  is 6, so the pool is 6.
+
+  The CPU ceiling is what binds the DEFAULT. The RAM reservation is what binds
+  an OVERRIDE: `resolveVitestForkCeiling` returns an explicit
+  `SWARMFORGE_VITEST_MAX_FORKS` unchanged, but `resolveWorkerPoolSize` then
+  takes `min(override, 7)`. So 8, 12 and 16 all resolve to 7 - measured, and
+  the reason the env var appears not to work.
+
+  The reservation itself is the stale part. Sampled every 2 s through a full
+  `npm run test:properties`: peak 298 MB for the largest fork, 1.26 GB for all
+  forks together, 14 GB still available. The model over-reserves by roughly
+  four times. It was sized against the reference 15360 MB host of the BL-422
+  OOM incident and has not been re-measured since.
+
+  ## How (direction, not mandate)
+
+  Whichever option is chosen, the change belongs inside the one
+  `resolveVitestWorkerPool` composition BL-935 established, not in a second
+  route added beside it. If the per-worker figure moves, derive it from the
+  measured peak with real margin rather than picking a round number - 298 MB
+  observed argues for something near 640, not for removing the cap.
+
+constraints: >
+  - Stay inside the single resolveVitestWorkerPool composition point. Adding
+    router or host logic to one lane only would break BL-935 invariant 3
+    rather than extend it.
+  - Do not remove the memory budget. Whichever option is chosen, a host that
+    genuinely cannot fit the pool must still be protected, and under option 3
+    the budget must still be computed and reported even though it no longer
+    clamps.
+  - Leave the full-forge + darwin ceiling of 1 alone.
+  - Keep the module free of process.env and os reads. Every environment input
+    is passed in by the caller today, which is what makes it unit-testable.
+
+qa_e2e_procedure: >
+  Unit-level first, since the whole mechanism is a pure function. Call
+  resolveVitestWorkerPool with each row of the acceptance Examples table and
+  confirm the resolved pool, including that full-forge on darwin is still 1.
+  Then confirm the clamp is genuinely gone in the direction the ruling chose -
+  at the parent commit, SWARMFORGE_VITEST_MAX_FORKS=12 on a 19904 MB host
+  resolves to 7, which is the defect. Then live - from extension/, run
+  `SWARMFORGE_VITEST_MAX_FORKS=12 npm run test:properties` and confirm from
+  the run's own reporting that twelve forks were used, that the suite's
+  pass/fail verdict is unchanged from the parent commit, and that the host
+  does not swap. Finally run `npm test` under the same override and confirm
+  both lanes report the same resolved pool size, which is BL-935 invariant 3
+  observed rather than asserted.
+
+out_of_scope: |
+  - The property lane's spawn-heavy files and its 79 s longest file. That is
+    BL-1349, and it is the half that actually binds the lane's wall clock.
+  - The router-rotation CPU ceiling. That is BL-1336, already approved with a
+    human ruling, and it deliberately leaves the RAM model alone.
+  - Stryker's pool, which hardcodes threads with maxThreads 1 and is
+    independent of this mechanism.
+
+source: |
+  `backlog/INTAKE-vitest-fork-ceiling-memory-is-not-a-constraint-1788375503388.md`
+  (human ldecorps via Claude Code, filed by the Operator 2026-09-02), drained
+  2026-09-02 and split 1:2 into this ticket and BL-1349.
+
+  Article 5.3 - the human's words, preserved verbatim from that intake:
+
+  > memory should not be an issue on this host.
+
+  The operator's framing of the ask, also from that intake:
+
+  > make `npm run test:properties` (and `npm test`) use the cores this host has.
+
+  This ticket takes the intake's directive 1 (the fork ceiling and the memory
+  model). BL-1349 takes its directive 2 (the spawn-heavy property files).
+  Directive 3, the optional two-tier split of pure versus process-spawning
+  properties, is deliberately not minted: it is a scheduling change worth
+  revisiting only if BL-1349 fails to bring the tail down, and minting it now
+  would be speculative.
+
+notes: |
+  ## Every intake measurement re-verified at mint, none taken on trust
+
+  - `PER_WORKER_HEAP_MB = 1280`, `SAFE_HOST_RAM_FRACTION = 0.5`,
+    `MAX_WORKERS = 6` - all three at
+    `extension/src/tools/vitest-worker-memory-budget.ts` lines 20-26.
+  - `resolveWorkerPoolSize` takes `min(ceiling, safeCount)`, so the override
+    returned by `resolveVitestForkCeiling` is clamped by RAM afterwards. This
+    is the mechanism behind "override 8/12/16 all resolve to 7".
+  - This host measures 20 cores and 19904 MB, so `safeCount` is 7 and the
+    default pool is 6. Both numbers reproduce exactly.
+  - `extension/vitest.properties.config.mjs` already reads
+    `process.env.SWARMFORGE_VITEST_MAX_FORKS` and passes it as `override`.
+    The env var is wired; it is the clamp downstream of it that defeats it.
+  - 305 property files under `extension/test/*.property.test.js`.
+
+  ## One correction to the intake's own diagnosis, recorded so it is not
+  ## re-derived
+
+  The intake reads as though the RAM model alone produces the 6. It does not:
+  6 is `MAX_WORKERS`, the CPU ceiling, and RAM independently allows 7. That is
+  why option 1 raises no default - lowering the heap reservation moves
+  `safeCount` from 7 to 15 but `min(6, 15)` is still 6. Only option 2 moves
+  the default. The intake's own "so the default lands at ~cores/2 here" needs
+  the ceiling raised as well, which is why that is written as its own option
+  rather than folded into the first.
+
+  ## Why this is not merged into BL-1336
+
+  BL-1336 touches the same file and the intake suggests folding. It should not
+  be. BL-1336 is already human-approved with a recorded `human_ruling`, its
+  `out_of_scope` explicitly excludes the RAM floor and the MAX_WORKERS
+  baseline, and one of its invariants is that the memory-derived size REMAINS
+  the binding cap - which options 2 and 3 here would contradict. Folding would
+  silently rewrite an approved ruling. They are sequenced instead, and they
+  overlap on one file, so the coordinator should not co-promote them
+  (Concurrent Work Orthogonality). Whichever lands second merges first.
+
+  ## Why there is no required_wiring
+
+  Deliberate, and recorded so its absence does not read as an oversight. The
+  mechanism has no new call site: `resolveVitestWorkerPool` is already the
+  live composition point and both `extension/vitest.config.mjs` and
+  `extension/vitest.properties.config.mjs` already call it. An anchor on
+  either would match identically before and after the fix and would gate
+  nothing (BL-1235). An anchor on the acceptance handler's own registration
+  would be satisfied by this parcel's own diff, and is unnecessary anyway
+  because `acceptance:` points at a real `.feature` from the start - the
+  runner throws on an unregistered scenario, so the acceptance run is itself
+  the gate.
+
+  ## On the acceptance file's three IR-DRY findings
+
+  Three medium-confidence findings remain, all of the same shape: the outline
+  step with its `<placeholder>` paired against scenario 02's concrete
+  instance. Reviewed and deliberately kept. Scenario 02 asserts a BOUND (at
+  least one, and within the safe fraction) rather than a value, because the
+  value depends on which option is ruled - so it cannot join the outline
+  without pinning a number this ticket has no authority to pin yet.
