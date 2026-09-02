@@ -148,6 +148,7 @@ notes: |
   edits and would go green on its own diff (BL-1235).
 
 assigned_to: coder
+<<<<<<<< HEAD:backlog/done/BL-1338-a-routing-stamp-does-not-invalidate-an-adjudication.yaml
 
 abandoned_commits: [bc1a587622]
 # BL-1241/BL-1343: the QA-approved merge tip. land_step_cli.bb attributed
@@ -158,3 +159,5 @@ abandoned_commits: [bc1a587622]
 # as intentional. By QA.
   [2026-09-02 coordinator] QA hand-landed on origin/main at a1450efaa3 (95e96ef217; land_step_cli attributed nothing on the merge tip - BL-1343). Closed on QA note 002134.
   CAVEAT: local main lineage a427bacdb4 (specifier merge) dropped the pipeline half of that landing; origin/main is complete; local rebuild pending human ruling (coordinator role_ask 18:31Z).
+========
+>>>>>>>> 00e76c46b1:backlog/active/BL-1338-a-routing-stamp-does-not-invalidate-an-adjudication.yaml
