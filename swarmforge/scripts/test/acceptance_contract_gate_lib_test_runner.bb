@@ -141,6 +141,23 @@
                                          "specs/features/BL-9340-thing.feature.draft"))
   (assert= "BL-1340: a closed failure is never softened into a warning" [] (:warnings result)))
 
+;; The declared ordering (draft checked BEFORE wait-bound-hit?) is itself an
+;; observable contract, not just prose: a ticket that hits BOTH must surface
+;; the draft finding, which tells the human what to actually fix ("convert
+;; your draft"), not the wait-bound message, which reads as a transient
+;; infrastructure hiccup and would send them chasing the wrong thing.
+(let [result (acceptance-contract-gate-lib/evaluate
+              {:ticket-id "BL-9340"
+               :declaration-readable? true
+               :declaration-draft "specs/features/BL-9340-thing.feature.draft"
+               :registry-loadable? true
+               :wait-bound-hit? true
+               :unresolved-steps []})]
+  (assert= "BL-1340: draft outranks wait-bound-hit? when both are true" 1 (count (:findings result)))
+  (assert-true "BL-1340: and the surfaced finding is the draft one, not the wait-bound one"
+               (clojure.string/includes? (:detail (first (:findings result)))
+                                         "specs/features/BL-9340-thing.feature.draft")))
+
 ;; Every step resolving is not a rescue: the runner still never executes a
 ;; .feature.draft, so a clean resolution must not turn this into a pass.
 (let [result (acceptance-contract-gate-lib/evaluate
