@@ -27,11 +27,18 @@ Feature: Swarm stamp-off for the bob pack Anthropic-starting-cast restaff
       | QA         | claude-sonnet-5  | high   |
 
   # BL-1330 swarm-stamp-bob-anthropic-starting-cast-02
-  Scenario: the coordinator is untouched by this commit
+  # Corrected 2026-09-02. The original second clause read "the diff of commit
+  # 441fd35112 touches no coordinator-related line" and is unsatisfiable: the
+  # commit reworded six coordinator COMMENT lines while describing the new
+  # cast, which is exactly what a restaff commit should do. That clause
+  # asserted over diff TEXT rather than behaviour, so it would have refused a
+  # correct hotfix over comment churn. What matters, and what is true, is that
+  # the coordinator's staffing itself did not move.
+  Scenario: the coordinator's staffing is unchanged by this commit
     Given the bob-multi-provider-mono-router pack
     When the window block is read
     Then no window line names role "coordinator"
-    And the diff of commit 441fd35112 touches no coordinator-related line
+    And the coordinator agent, model and effort are unchanged by commit 441fd35112
 
   # BL-1330 swarm-stamp-bob-anthropic-starting-cast-03
   Scenario: exactly one seat targets the Qwen Token Plan gateway

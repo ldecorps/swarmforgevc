@@ -146,3 +146,50 @@ source: |
   Coordinator note 00_20260902T083057Z_003391_from_coordinator_to_specifier
   (2026-09-02): "hotfix 441fd35112 unstamped - mint BL-848 review ticket".
   Satisfied in full by this ticket.
+
+specifier_amendment_2026_09_02: |
+  CORRECTED scenario 02, answering the coder's priority-00 spec-gap note
+  "BL-1330 sc-02 unsatisfiable: header prose about coordinator did change".
+  The coder is right and this was a specifier defect, not a finding against
+  the hotfix.
+
+  The original second clause read "the diff of commit 441fd35112 touches no
+  coordinator-related line". Verified false: the commit touches SIX
+  coordinator lines, e.g. dropping "# with Anthropic Max coordinator only."
+  and rewording "(Anthropic Max; auto-provisioned)" to "(Anthropic;
+  auto-provisioned)".
+
+  But those are all COMMENTS - checked explicitly, every touched
+  coordinator line in the diff begins with `#`. The coordinator's staffing is
+  byte-identical across the commit:
+
+      before: config coordinator_agent claude / coordinator_model
+              claude-sonnet-5 / coordinator_effort medium
+      after:  identical
+
+  So the hotfix is correct and the scenario was wrong. A restaff commit that
+  rewrites the cast SHOULD reword the prose describing the cast. The clause
+  asserted over diff TEXT rather than over behaviour, which is the defect:
+  it would have refused certification of a correct hotfix over comment churn,
+  and no rewording of the commit could ever have satisfied it.
+
+  Replaced with the assertion that carries the real contract - the
+  coordinator's agent, model and effort are unchanged. The first clause ("no
+  window line names role coordinator") is TRUE and is kept: the coordinator is
+  configured by `config coordinator_*` keys, never as a rotating window seat.
+
+  Complete inventory, not a one-at-a-time fix (Article 4.4): every other
+  scenario was checked against the landed commit in the same pass and all are
+  satisfiable. Scenario 01's seven-row staffing table matches the landed
+  `window` lines exactly. Scenario 05 holds - under `swarmforge/` only the
+  pack conf changed, and no `swarmforge/scripts/` or `extension/` path appears
+  in the diff. Scenarios 03, 04 and 06 assert over the landed conf and the
+  generated launch scripts rather than over diff text, so they do not share
+  the defect class at all. Scenario 02 was the only one.
+
+  Gates re-run after the amendment: `gherkin_lint_gate.sh` clean, IR-DRY 1
+  finding over 23 step occurrences / 20 unique steps.
+
+  No `record-bounce.js` entry: this arrived as a spec-gap `note`, the correct
+  route per Article 4.4, and never became a parcel bounce, so there is no
+  bounce commit to cite.
