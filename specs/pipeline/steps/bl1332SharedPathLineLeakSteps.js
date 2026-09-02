@@ -24,7 +24,6 @@ const LANDING = 'BL-9332';
 const SIBLING = 'BL-9333';
 const SIBLING_LINE = "require('./bl9333SiblingSteps')";
 
-// BL-971: a killed run traps nothing, so sweep by prefix before creating.
 // BL-971 wants stale fixture roots swept BEFORE a run, because a killed run
 // traps nothing. The sweep is AGE-GUARDED rather than prefix-only: scenarios
 // run concurrently and this module can be loaded more than once in a run, so
@@ -238,6 +237,18 @@ function registerSteps(registry) {
       r.status,
       null,
       'the registration guard did not run at all, so its pass proves nothing',
+    );
+    // st.root's own committed HEAD carries the dangerous shape by
+    // construction (the sibling's require with no backing handler file), so
+    // the guard is EXPECTED to reject it here (architect verified this by
+    // hand: BL-1332-architect-pass-20260903.md). A pass (status 0) would
+    // mean this fixture stopped reproducing the shape that froze main, which
+    // would make the earlier ownPaths.paths===null assertion the only thing
+    // still proving anything in this scenario.
+    assert.notEqual(
+      r.status,
+      0,
+      `the registration guard passed against a fixture that should reproduce the shape that froze main: ${r.stdout}${r.stderr}`,
     );
     fs.rmSync(st.root, { recursive: true, force: true });
   });
