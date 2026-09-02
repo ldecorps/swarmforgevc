@@ -109,9 +109,18 @@ match_bounce_token() {
 BOUNCE_TOKENS=""
 EXPEDITE_TOKENS=""
 YAML_TOKENS=""
+# BL-1334: the land step's replay->approved-source mapping. Same posture as
+# EXPEDITE_TOKENS - a durable record read AFTER the bounce vetoes - so this
+# stays ONE predicate with one more approval path, never a second definition
+# of approval (BL-925 invariant 2).
+LAND_TOKENS=""
 # Set when the expedite store cannot be consulted. Raised per sha, AFTER the
 # bounce checks, so the original ordering survives batching (see below).
 EXPEDITE_PROBLEM=""
+# Same deferred-raise posture as EXPEDITE_PROBLEM, and for the same reason:
+# a bounce on file must still answer a clean "no" even when this store is
+# unreadable.
+LAND_PROBLEM=""
 
 collect_verdict_stores() {
   # ── bounce verdict: the JSONL store record-bounce.js appends ────────────
@@ -212,6 +221,74 @@ collect_verdict_stores() {
 "
     done
   fi
+
+  # ── approval: the land step's replay->approved-source mapping (BL-1334) ──
+  # The land step publishes a tip-pure replay to main and does NOT advance
+  # swarmforge-QA, so QA's own approved work is not in the QA ref's ancestry
+  # at the instant it lands. Rather than let a script write the ref that
+  # DEFINES approval (which is what BL-952 says must not erode), the land
+  # step records WHICH approved source each replay stands in for, and this
+  # predicate resolves that mapping.
+  #
+  # The mapping is not a rubber stamp: a record grants approval only when the
+  # SOURCE it names is itself approved, checked below in answer_one. A record
+  # naming an unapproved source grants nothing, which is what keeps approval
+  # from spreading to anything written into the store.
+  LAND_DIR=".swarmforge/land-approvals"
+  if [[ -e "$LAND_DIR" && ! -d "$LAND_DIR" ]]; then
+    LAND_PROBLEM="is_qa_ancestor.sh: undeterminable - land-replay store $LAND_DIR exists but is not a directory (missing/obstructed record store)"
+    return 0
+  fi
+  if [[ -d "$LAND_DIR" ]]; then
+    for f in "$LAND_DIR"/*.jsonl; do
+      [[ -e "$f" ]] || continue  # bash 3.2: unmatched glob stays literal
+      if [[ ! -r "$f" ]]; then
+        LAND_PROBLEM="is_qa_ancestor.sh: undeterminable - land-replay store $f is unreadable"
+        return 0
+      fi
+      # BOTH fields are the verdict here: a record with no source names no
+      # approved parcel and cannot be resolved, so a line missing either is a
+      # corrupt record and the store cannot be trusted either way. Same
+      # 7-40 prefix tolerance as every other store (recorders abbreviate).
+      if grep -v -E '^\{.*"commit":"[0-9a-fA-F]{7,40}".*\}$' "$f" | grep -q -E '.'; then
+        LAND_PROBLEM="is_qa_ancestor.sh: undeterminable - land-replay store $f holds a record line with no commit field"
+        return 0
+      fi
+      if grep -v -E '^\{.*"source":"[0-9a-fA-F]{7,40}".*\}$' "$f" | grep -q -E '.'; then
+        LAND_PROBLEM="is_qa_ancestor.sh: undeterminable - land-replay store $f holds a record line with no source field"
+        return 0
+      fi
+      # "<replay-token> <source-token> <store>" per line.
+      LAND_TOKENS="$LAND_TOKENS$(sed -E 's/.*"commit":"([0-9a-fA-F]+)".*"source":"([0-9a-fA-F]+)".*/\1 \2/' "$f" \
+                 | awk -v store="$f" 'NF==2 {print $0" "store}' || true)
+"
+    done
+  fi
+}
+
+# BL-1334: is the SOURCE a land record names itself approved? A mapping is
+# only as good as what it points at. The source must resolve, carry no bounce
+# verdict in either store, and be an ancestor of swarmforge-QA - which is the
+# ordinary approval question, asked of the source rather than the replay.
+# Deliberately NOT a recursive call into answer_one: a land record whose
+# source is itself a replay would otherwise chain, and approval that can be
+# reached through a chain of records is approval that spreads.
+source_is_approved() {
+  local source_token="$1" full_source token rc
+  if ! full_source="$(git rev-parse --verify -q "${source_token}^{commit}" 2>/dev/null)"; then
+    return 1
+  fi
+  while read -r token _rest; do
+    [[ -n "$token" ]] || continue
+    case "$full_source" in "$token"*) return 1 ;; esac
+  done <<< "$BOUNCE_TOKENS"
+  while read -r token; do
+    [[ -n "$token" ]] || continue
+    case "$full_source" in "$token"*) return 1 ;; esac
+  done <<< "$YAML_TOKENS"
+  rc=0
+  git merge-base --is-ancestor "$full_source" swarmforge-QA || rc=$?
+  return "$rc"
 }
 
 # One SHA's verdict against the already-collected stores. Echoes the same
@@ -255,6 +332,29 @@ answer_one() {
         ;;
     esac
   done <<< "$EXPEDITE_TOKENS"
+
+  # ── the land step's replay->approved-source mapping (BL-1334) ──────────
+  if [[ -n "$LAND_PROBLEM" ]]; then
+    echo "$LAND_PROBLEM" >&2
+    return 2
+  fi
+
+  while read -r token source_token f; do
+    [[ -n "$token" ]] || continue
+    case "$FULL_SHA" in
+      "$token"*)
+        if source_is_approved "$source_token"; then
+          echo "approved: $SHORT_SHA is a land-step replay of approved source $source_token ($f, recorded as $token) - BL-1334" >&2
+          return 0
+        fi
+        # A record naming an unapproved source grants nothing. Said out loud
+        # rather than falling silently through to ancestry, because a store
+        # that looks like it should have approved this is exactly the thing a
+        # reader will otherwise assume worked.
+        echo "not approved: $SHORT_SHA has a land-replay record naming source $source_token, which is not itself approved ($f)" >&2
+        ;;
+    esac
+  done <<< "$LAND_TOKENS"
 
   # ── ancestry (unchanged from BL-925): git's own exit code passes through -
   #    0 ancestor, 1 clean no, anything else a real failure callers must
