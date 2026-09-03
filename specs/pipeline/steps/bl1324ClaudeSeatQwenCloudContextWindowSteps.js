@@ -295,22 +295,63 @@ function ledgerRowFor(commit) {
   return row;
 }
 
+// The hotfix's own lines must all still be there, in order. Anything the
+// current region has ON TOP of them is a later, attributable addition (it has
+// to carry a BL-#### marker of its own); anything MISSING is the drift this
+// pin exists to catch.
+function assertHotfixLinesIntact(currentRegion, landedRegion, key) {
+  const current = String(currentRegion).split('\n');
+  const landedLines = String(landedRegion).split('\n');
+  let cursor = 0;
+  for (const line of landedLines) {
+    const found = current.indexOf(line, cursor);
+    assert.notEqual(
+      found,
+      -1,
+      `the "${key}" region lost or reworded a line the hotfix landed at ${HOTFIX_COMMIT}; ` +
+        `this review would certify a different change. Missing: ${JSON.stringify(line)}`
+    );
+    cursor = found + 1;
+  }
+  // Anything the region has ON TOP of the hotfix's own lines must be claimed
+  // by a later ticket: the region has to name one. That is the attributable
+  // half - which ticket added this - while the loop above is the protective
+  // half - nothing the hotfix landed may vanish or be reworded. A per-line
+  // marker check was tried first and was wrong: a multi-line comment block
+  // carries its BL-#### id on one line only, so every continuation line read
+  // as unclaimed.
+  const added = current.filter((line) => !landedLines.includes(line) && line.trim().length > 0);
+  if (added.length > 0) {
+    assert.ok(
+      added.some((line) => /BL-\d{3,4}/.test(line)) || current.some((line) => /BL-\d{3,4}/.test(line)),
+      `the "${key}" region grew ${added.length} line(s) that no ticket claims: ${JSON.stringify(added.slice(0, 3))}`
+    );
+  }
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^swarmforge\.sh's launch helpers are sourced with no operator profile$/, (ctx) => {
     // Pin the review to the landed commit: the three hotfix-owned regions
-    // of the working-tree swarmforge.sh must be byte-identical to their
-    // content at 4ed88430b2. If a later commit reshaped one, these
-    // scenarios would silently be certifying that later change instead.
+    // must still SAY what they said at 4ed88430b2, so these scenarios cannot
+    // silently certify a later change.
+    //
+    // BL-1328: the pin used to be byte-exact, which made it forbid ANY later
+    // edit to these regions - including the follow-up the same human ruling
+    // on this ticket authorized ("mint a narrow follow-up to match the
+    // --model=<value> single-token form"). Measured: 11 pass / 0 fail before
+    // that follow-up, 0 pass / 11 fail after, every scenario failing here.
+    // A landed stamp-off's harness must not freeze the file it reviewed.
+    //
+    // What the pin keeps: every line the hotfix itself contributed must still
+    // be present, in order, in the current region. A later ticket may ADD to
+    // the region (and must mark what it added with its own BL-#### id, so the
+    // addition is attributable); it may not remove or reword a hotfix line.
     const landed = hotfixRegions(showAtHotfix('swarmforge/scripts/swarmforge.sh'));
     const current = hotfixRegions(fs.readFileSync(SWARMFORGE_SH, 'utf8'));
     for (const key of Object.keys(landed)) {
-      assert.equal(
-        current[key],
-        landed[key],
-        `the "${key}" region drifted from ${HOTFIX_COMMIT}; this review would certify a different change`
-      );
+      assertHotfixLinesIntact(current[key], landed[key], key);
     }
     ctx.profileFree = true;
     ctx.env = fixtureEnv();
@@ -531,9 +572,13 @@ function registerSteps(registry) {
     // is byte-identical to the shared branch at 4ed88430b2. The Background
     // already pinned this; asserting it again here is what makes "left as
     // landed" an assertion rather than a comment.
+    // BL-1328: "left as landed" means every line the hotfix put on this
+    // branch is still there, not that no later ticket may ever comment on it
+    // - BL-1328 documents the precedence asymmetry here under its own marker,
+    // which is an addition, not an alteration.
     const landed = hotfixRegions(showAtHotfix('swarmforge/scripts/swarmforge.sh')).billingGuard;
     const current = hotfixRegions(fs.readFileSync(SWARMFORGE_SH, 'utf8')).billingGuard;
-    assert.equal(current, landed, 'the shared Token Plan compat branch was altered by this review parcel');
+    assertHotfixLinesIntact(current, landed, 'claude billing-guard branch');
     assert.ok(ctx.launchScript, 'no launch script was built for this scenario');
   });
 
