@@ -14,6 +14,7 @@ assigned_to: coder
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1352-escalation-transport-fault-is-visible.feature
+abandoned_commits: [b04b3c53af]
 
 invariants:
   - "The status surface never reads healthy while a past-threshold role question sits unescalated - a transport that cannot deliver is reported as a fault, never as silence."

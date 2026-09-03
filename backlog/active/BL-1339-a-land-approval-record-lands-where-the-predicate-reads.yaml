@@ -229,3 +229,5 @@ notes: |
   second approved parcel" against "the approved parcel" (scenario 04 needs a
   distinct second parcel), and "both approval records" against "the approval
   record" (cardinality is the assertion). No accidental drift.
+
+assigned_to: coder
