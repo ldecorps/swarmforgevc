@@ -13,9 +13,9 @@
 // script against a throwaway project root. A stamp-off that re-specified the
 // behaviour would certify its own copy rather than what is in production.
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { SHORT_FIXTURE_BASE, mkSocketFixtureRoot, releaseSocketFixtureRoot } = require('./socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -31,9 +31,9 @@ const STALE_AFTER_MS = 10 * 60 * 1000;
 
 function sweepStaleFixtures() {
   const now = Date.now();
-  for (const entry of fs.readdirSync(os.tmpdir())) {
+  for (const entry of fs.readdirSync(SHORT_FIXTURE_BASE)) {
     if (!entry.startsWith(FIXTURE_PREFIX)) continue;
-    const full = path.join(os.tmpdir(), entry);
+    const full = path.join(SHORT_FIXTURE_BASE, entry);
     try {
       if (now - fs.statSync(full).mtimeMs > STALE_AFTER_MS) {
         fs.rmSync(full, { recursive: true, force: true });
@@ -48,8 +48,11 @@ function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+// BL-948: rooted under the shared short base (never os.tmpdir()) - this
+// fixture's `root` writes a `.swarmforge/tmux-socket` pointer file, and a
+// macOS os.tmpdir() root would overrun swarm_socket_lib.bb's 100-char guard.
 function mkroot(suffix) {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${FIXTURE_PREFIX}${suffix}-`)));
+  return mkSocketFixtureRoot(`${FIXTURE_PREFIX}${suffix}-`);
 }
 
 function write(root, rel, content) {
@@ -130,6 +133,7 @@ function removeFixture(fx) {
   if (!fx) return;
   for (const dir of [fx.root, fx.remote, fx.clone]) {
     fs.rmSync(dir, { recursive: true, force: true });
+    releaseSocketFixtureRoot(dir);
   }
 }
 
