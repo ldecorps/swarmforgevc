@@ -146,13 +146,47 @@
 (defn- note-ticket-moved! [moved?]
   (swap! leavings #(some-> % (assoc :ticket-moved? moved?))))
 
+(defn- run-branch-facts
+  "BL-1376: how far the run branch is ahead of origin/main, read at report
+   time so it reflects what the run actually produced rather than what it
+   planned to.
+
+   Reads only. `git rev-list --count` cannot merge, push, or check anything
+   out; nothing on this path may ever do so (invariant 2). A read that does
+   not answer - no origin/main, no branch yet, an unreadable repo - yields a
+   REASON rather than a zero, and outstanding-work reports the branch on the
+   strength of it."
+  [project-root ticket]
+  (let [branch (expedite-lib/run-branch-name ticket)]
+    (if-not (seq (str project-root))
+      {:name branch :reason "the project root was not recorded for this run"}
+      (if-not (zero? (:exit (sh {:dir (str project-root)}
+                                "git" "rev-parse" "--verify" "--quiet" (str branch "^{commit}"))))
+        ;; No branch at all: a run that refused before it ever made a worktree
+        ;; left nothing on one. A definite answer, so the handover stays quiet.
+        {:name branch :absent? true}
+        (let [{:keys [exit out err]} (sh {:dir (str project-root)}
+                                       "git" "rev-list" "--count" (str "origin/main.." branch))
+            counted (some-> out str/trim not-empty parse-long)]
+        (if (and (zero? exit) counted)
+          {:name branch :ahead counted}
+          {:name branch
+           :reason (let [detail (str/trim (str (not-empty err) (when-not (seq (str err)) out)))]
+                     (if (seq detail)
+                       (str "git rev-list origin/main.." branch " could not answer: " (first (str/split-lines detail)))
+                       (str "git rev-list origin/main.." branch " could not answer")))}))))))
+
 (defn- outstanding-now
   "The leavings as of right now. One derivation, read by both the terminal
-   summary and the run record, so the two can never disagree."
+   summary and the run record, so the two can never disagree - and, since
+   BL-1376, by both the run tail and the pre-flight refusal path, so a
+   refusal names the same three leavings the tail would."
   []
-  (when-let [{:keys [ticket parked ticket-moved? dry-run?]} @leavings]
+  (when-let [{:keys [ticket parked ticket-moved? dry-run? project-root]} @leavings]
     (expedite-lib/outstanding-work {:ticket ticket :parked parked
-                                    :ticket-moved? ticket-moved? :dry-run? dry-run?})))
+                                    :ticket-moved? ticket-moved? :dry-run? dry-run?
+                                    :branch (when-not dry-run?
+                                              (run-branch-facts project-root ticket))})))
 
 (defn- report-leavings! [exit-code]
   (when-let [{:keys [run-dir ticket parked park]} @leavings]
@@ -409,6 +443,7 @@
     ;; this line may refuse and exit, and every one of those exits now reports
     ;; what is already parked and staged.
     (register-leavings! {:run-dir run-dir
+                         :project-root (str project-root)
                          :ticket ticket
                          :parked (vec (:park plan))
                          :ticket-moved? false
@@ -510,7 +545,7 @@
 ;; ── worktree ──────────────────────────────────────────────────────────────
 
 (defn ensure-worktree! [{:keys [project-root ticket dry-run?]}]
-  (let [branch (str "expedite/" ticket)
+  (let [branch (expedite-lib/run-branch-name ticket)
         dir (fs/path project-root ".worktrees" (str "expedite-" ticket))]
     (when-not (or dry-run? (fs/exists? dir))
       (let [{:keys [exit err]} (sh {:dir (str project-root)} "git" "worktree" "add" "-b" branch (str dir) "main")]
