@@ -17,7 +17,7 @@ invariants:
   - "A recorded baseline can only ever excuse a red it actually names, at the same base sha and the same suite-config hash. A red that is not in the record is new, and the diff names it — the cache can shrink a run, never widen an excuse."
   - "Absent, unreadable, or config-mismatched record falls back to today's two runs. No path through this feature turns a missing baseline into a green."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your question - "why did BL-1375's coder pass take over an hour?" - produced
   this. It is a straight efficiency ticket with no fork in it, so there is
