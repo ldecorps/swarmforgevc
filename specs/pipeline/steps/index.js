@@ -951,6 +951,7 @@ const DOMAINS = [
   require('./bl1330SwarmStampBobAnthropicStartingCastSteps'),
   require('./bl1354SharedPathLandedSiblingSteps'),
   require('./bl1309LandDecideStepEntanglementSteps'),
+  require('./bl1356StampOffWatchesTheRunSteps'),
 ];
 
 function registerSteps(registry) {
