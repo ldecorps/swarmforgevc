@@ -2,7 +2,7 @@ id: BL-1296
 title: "Bubble gets its own answering seat so it stays answerable while the Cursor seat is busy, while remaining a mirror of the front desk"
 milestone: M8
 type: feature
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 50
 direction: human-requested
@@ -125,6 +125,10 @@ notes: |
 
   Half two - the turn function - waits on the ruling now posed in
   `ruling_options`. Do NOT build it against a guess.
+
+  2026-09-03 07:48Z (coordinator): status -> blocked. Re-pended by specifier
+  (2302c234b2) for the echo-vs-worker ruling; stays active, coder not to
+  resume this half. Clears when human_approval is restored.
 
   **The seat binding must not ship on its own.** A bound seat with no worker is
   a mechanism with no live consumer - the BL-1235 shape this swarm has shipped
