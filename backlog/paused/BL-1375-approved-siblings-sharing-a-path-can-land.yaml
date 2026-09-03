@@ -1,0 +1,161 @@
+id: BL-1375
+title: "Four approved tickets sharing one path have deadlocked the land queue: each refuses because the others are unlanded, a combined commit is refused by the scope gate, and the land step takes one task name"
+milestone: M8
+type: defect
+severity: critical
+# critical: the land queue is STOPPED, not slowed. Four approved tickets cannot
+# reach main by any route available to QA, and every further ticket touching
+# the same path joins the jam. It fails closed - nothing wrong lands - but a
+# pipeline that cannot deliver approved work is the definition of swarm-down
+# for delivery, and it is live right now.
+status: todo
+epic: swarm-reliability
+priority: 1
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1375-approved-siblings-sharing-a-path-can-land.feature
+
+invariants:
+  - "Nothing the human has not approved reaches main, by any route this ticket opens - the refusal exists for that and must keep doing it (BL-1332)."
+  - "A sibling that is withheld, in backlog/hold, or awaiting approval still blocks, and is still named in the refusal."
+  - "No route added here bypasses the task-scope gate's own refusal of out-of-scope content (BL-1192) - it is satisfied, never skipped."
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_lib.bb::entangled-siblings::the refusal predicate this ticket changes or the batch path it feeds'
+  - 'specs/pipeline/steps/index.js::bl1375ApprovedSiblingsCanLandSteps::acceptance handler registered so the runner executes every scenario'
+
+human_approval: pending
+approval_context: >
+  This one is urgent and the decision is genuinely yours, because the cleanest
+  fix revisits a ruling you gave today - with information that was not in the
+  options when you gave it.
+  .
+  On BL-1309 you chose option 1, "refuse every entangled tip", whose stated cost
+  was "a slower land, every time". It is not only slower. When several APPROVED
+  tickets share one path, it is circular: four are stuck on
+  `specs/pipeline/steps/index.js` right now and none can go first. Option 2 -
+  refuse only when the sibling is WITHHELD or awaiting approval - dissolves this
+  case, because all four are approved.
+  .
+  I am not treating that as a reason to reverse you. You may well still prefer
+  the strict rule and want the deadlock solved another way, which is why the
+  batch route is offered as its own option.
+  .
+  What does not change under any option: nothing you have not approved reaches
+  main. That is invariant 1 and it is the reason the refusal exists at all.
+
+ruling_options:
+  - Narrow the refusal to withheld or unapproved siblings, per BL-1309 option 2 (recommended)
+  - Keep the strict refusal and add a batch land for approved siblings sharing a path
+  - Keep the strict refusal and let the shared-path fix in BL-1371 resolve it over time
+
+description: |
+  ## What is happening, right now
+
+  Four approved tickets each add one `require(...)` line to
+  `specs/pipeline/steps/index.js` on `swarmforge-QA`, and none has landed:
+  BL-1296, BL-1309, BL-1356, BL-1359. All four are `human_approval: approved`,
+  `status: todo`, in `backlog/active/`.
+
+  `land_step_cli.bb` builds a tip-pure commit "containing only this ticket's own
+  paths". BL-1332's rule is that a replayed path is taken WHOLE, so a tip-pure
+  commit for any one of the four carries the other three's lines. Each returns
+  `LAND_ESCALATE` naming the others. QA has reported three of the four.
+
+  Both escapes are closed, each for its own good reason:
+
+  - A combined multi-ticket commit is refused by the task-scope gate (BL-1192).
+  - `land_step_cli.bb` takes ONE task name and one commit. There is no
+    multi-ticket land.
+
+  So there is no order in which any of them can go first, and every further
+  ticket touching that path joins the jam.
+
+  ## Why this is new information rather than a settled question
+
+  BL-1309 put the refusal width to the human. Option 1's stated cost was "a
+  slower land, every time, including the many where the entangled sibling was
+  going to land ten minutes later anyway". Nobody wrote down that it is
+  circular when N approved tickets share a path - I did not, and I wrote the
+  options.
+
+  Option 2 as originally worded - "refuse only when the entangled sibling is
+  withheld or awaiting approval" - dissolves this case exactly, because every
+  sibling here is approved. That is why it is the recommended option, and why
+  this is surfaced rather than worked around.
+
+  ## Not a QA error
+
+  QA diagnosed each escalation correctly, declined to hand-roll a replay, and
+  declined to rebase to reword a merge - both out of policy. The escalations are
+  the gate behaving exactly as ruled. Recorded because a stalled queue invites
+  the assumption that whoever reported it did something wrong.
+
+  ## How (direction, not mandate)
+
+  - The predicate is `entangled-siblings` in `land_step_lib.bb`. Option 1 of the
+    ruling asks it to consult ticket approval state; that is more state to read
+    and more ways to be wrong, which is exactly the risk BL-1309's own
+    approval_context named. Invariant 2 is the guard: a sibling withheld in any
+    way the predicate does not recognise must still block.
+  - If the batch route is chosen instead, it satisfies the task-scope gate
+    rather than bypassing it (invariant 3). A route that skips a gate to unjam a
+    queue is how the queue becomes the reason the gate stopped working.
+  - Whichever is chosen, the four tickets in the jam are the regression fixture.
+
+  ## Explicitly NOT in scope
+
+  - The shared-registry coupling itself (BL-1371). That would prevent this class
+    over time and does not unjam anything today.
+  - The delivered-side attribution over-inclusion (BL-1374), a different cause
+    of a similar-looking refusal.
+
+qa_e2e_procedure: |
+  1. Fixture: three approved tickets each adding a line to one shared file, none
+     landed. Confirm the current behaviour - every one escalates - then confirm
+     that after the change a land is available for each.
+  2. Add a fourth sibling that is NOT approved. Confirm every other land is now
+     refused naming it (invariant 2), and confirm its lines are not on main
+     after the approved ones land (invariant 1). This is the test that matters.
+  3. Repeat 2 with the sibling in `backlog/hold` rather than pending approval.
+  4. Confirm the task-scope gate still refuses genuinely out-of-scope content on
+     whatever route is added (invariant 3) - satisfied, never skipped.
+  5. Live regression: re-run the land classification for BL-1296, BL-1309,
+     BL-1356 and BL-1359 and confirm the jam clears.
+  6. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier on QA's third priority-00 escalation note
+  for the same file. Evidence:
+  `backlog/evidence/BL-1375-land-queue-deadlock-20260903.md`.
+
+  Verified this pass rather than assumed:
+  - The four `+ require(...)` lines in `git diff origin/main swarmforge-QA --
+    specs/pipeline/steps/index.js`.
+  - All four tickets read `human_approval: approved`, `status: todo`,
+    `backlog/active/` - so this is not a blocked-ticket problem. My earlier
+    report that BL-1296 was still awaiting a tap is out of date; the human
+    tapped it.
+  - `land_step_cli.bb`'s usage line takes one task name and one commit; its
+    header documents the tip-pure contract that makes a shared path unlandable.
+
+  Priority 1 and severity critical are deliberate and are the only such grading
+  I have given today. Everything else this session fails closed and costs turns;
+  this one stops delivery outright while remaining perfectly safe, which is a
+  combination that invites being left alone because nothing looks broken.
+
+  IR-DRY: two findings, max 0.71, both approved/withheld contrasts the scenarios
+  exist to draw.
+
+source: |
+  QA note 2026-09-03 (priority 00): "BL-1359 LAND_ESCALATE 3rd time on index.js,
+  queued behind 1296/1309/1356", after the two earlier escalations on BL-1356
+  and BL-1309. Fourth land-step attribution ticket in the family: BL-1332 the
+  write side, BL-1354 the sibling read side, BL-1374 the delivered path set,
+  this the mutual-block case.
