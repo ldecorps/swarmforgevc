@@ -572,6 +572,34 @@
     (when (zero? (:exit res))
       (remove str/blank? (str/split-lines (:out res))))))
 
+(defn- merge-authored-paths
+  "BL-1374: the paths a MERGE actually wrote a line at - the paths its dense
+   combined diff produces a PATCH for.
+
+   Not its `--cc --name-only` list, which is a different question and the one
+   that misleads. `--name-only` names every path whose result differs from all
+   parents, and a clean auto-merge of two sides' edits to different parts of
+   one file does that without the merger writing anything: every line came
+   from one side or the other. Dense simplification drops exactly those hunks,
+   so the patch is empty while the name list is not.
+
+   Measured on the tip that produced this ticket's report (5d4486eb08, \"Merge
+   main into swarmforge-QA for BL-1309 human_approval restore\"): the name list
+   holds BL-1296's and BL-1309's ticket files; the patch holds not one hunk.
+   BL-1309's own commits never touched BL-1296's file, and the replay refused
+   its land over that.
+
+   `diff --cc <path>` for a two-parent merge, `diff --combined <path>` for an
+   octopus. nil (never #{}) when the read failed - this file's fail-open
+   convention throughout, and the caller refuses rather than reading blindness
+   as \"the merge wrote nothing\"."
+  [root commit]
+  (let [res (git! root "diff-tree" "--no-commit-id" "--cc" "-r" commit)]
+    (when (zero? (:exit res))
+      (into #{}
+            (keep #(second (re-matches #"^diff --(?:cc|combined) (.+)$" %)))
+            (str/split-lines (:out res))))))
+
 (defn- path-owner-tickets
   "The attribution of `path`'s changes: every commit `commits-fn` reports for
    `path`, run through this file's own commit-ticket-id extractor.
@@ -595,9 +623,30 @@
    unaccounted for (invariant 1)."
   [root origin-main commit path commits-fn]
   (when-let [commits (commits-fn root origin-main commit path)]
-    (let [ids (map #(commit-ticket-id root %) commits)]
-      {:owners (into #{} (remove nil? ids))
-       :any-untagged? (boolean (some nil? ids))})))
+    ;; BL-1374. git's path-scoped walk already elides a merge TREESAME to a
+    ;; parent on this path, so a sync merge that merely carried a passenger
+    ;; through is invisible here. What it does NOT elide is the clean
+    ;; auto-merge: both sides changed the same file in different places, the
+    ;; result differs from both parents, and the merge's subject then decides
+    ;; the owner of content its merger never wrote. `sibling-own-line-changes`
+    ;; skips merges outright for exactly this reason ("a merge authors no lines
+    ;; of its own"); the delivered side keeps the one exception a merge really
+    ;; can author - a conflict it resolved - because invariant 3 forbids
+    ;; dropping any path this ticket's own work changed.
+    (let [attributing (reduce (fn [acc c]
+                                (if-not (merge-commit? root c)
+                                  (conj acc c)
+                                  (if-let [wrote (merge-authored-paths root c)]
+                                    (cond-> acc (contains? wrote path) (conj c))
+                                    ;; unreadable combined diff: blindness, not
+                                    ;; "the merge wrote nothing"
+                                    (reduced nil))))
+                              []
+                              commits)]
+      (when attributing
+        (let [ids (map #(commit-ticket-id root %) attributing)]
+          {:owners (into #{} (remove nil? ids))
+           :any-untagged? (boolean (some nil? ids))})))))
 
 (defn own-paths
   "This ticket's own changed paths since origin/main - the tip-pure replay
