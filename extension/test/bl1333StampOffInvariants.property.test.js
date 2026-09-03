@@ -38,6 +38,7 @@ const {
   callLandedFns,
   status,
   write,
+  git,
 } = require('../../specs/pipeline/steps/lib/bl1333ReconcileStampFixture');
 
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
@@ -52,7 +53,11 @@ const REVIEWED_SOURCES = [
   'swarmforge/scripts/test/master_main_reconcile_lib_property_runner.bb',
 ];
 
-const INCOMING = { 'dup.txt': 'landed by QA\n', 'shared.txt': 'incoming\n' };
+const INCOMING = {
+  'dup.txt': 'landed by QA\n',
+  'shared.txt': 'incoming\n',
+  'staged-new.txt': 'staged new file from QA\n',
+};
 
 // One fixture per property case: origin one commit ahead on both overlap
 // paths, the working tree dirtied as the drawn case describes.
@@ -61,6 +66,7 @@ function withFixture(caseSpec, body) {
   try {
     landOnOrigin(fx, INCOMING);
     for (const [rel, content] of Object.entries(caseSpec.tree)) write(fx.root, rel, content);
+    for (const rel of caseSpec.stage || []) git(fx.root, 'add', '--', rel);
     fetchOrigin(fx.root);
     return body(fx);
   } finally {
@@ -76,7 +82,7 @@ test('BL-1333/BL-654 invariant 1: running the redundancy proof alone never chang
   // one that is not in the working tree either. A weighted draw over these
   // leaves the rare corners at a few percent per run, which is how a
   // property passes hundreds of times against a live defect.
-  const reach = { matches: 0, differs: 0, notInOrigin: 0, absent: 0 };
+  const reach = { matches: 0, stagedNew: 0, differs: 0, notInOrigin: 0, absent: 0 };
 
   const SHAPES = {
     matches: fc.constant({
@@ -91,6 +97,15 @@ test('BL-1333/BL-654 invariant 1: running the redundancy proof alone never chang
         ask: ['shared.txt', 'dup.txt'],
         expected: ['dup.txt'],
       })),
+    // A staged-new file holding origin's exact bytes - the drop's other
+    // branch, and a shape whose dirt is in the INDEX rather than only the
+    // working tree.
+    stagedNew: fc.constant({
+      tree: { 'staged-new.txt': INCOMING['staged-new.txt'] },
+      stage: ['staged-new.txt'],
+      ask: ['staged-new.txt'],
+      expected: ['staged-new.txt'],
+    }),
     // origin/main carries no blob at this path: unprovable, so unproven.
     notInOrigin: fc.constant({
       tree: { 'local-only.txt': 'never landed\n' },
@@ -131,7 +146,8 @@ test('BL-1333/BL-654 invariant 1: running the redundancy proof alone never chang
     );
   }
 
-  assert.ok(reach.matches > 0, 'never exercised a path whose content matches origin');
+  assert.ok(reach.matches > 0, 'never exercised a tracked path whose content matches origin');
+  assert.ok(reach.stagedNew > 0, 'never exercised a staged-new path whose content matches origin');
   assert.ok(reach.differs > 0, 'never exercised a path whose content differs');
   assert.ok(reach.notInOrigin > 0, 'never exercised a path origin does not carry - the fail-closed corner');
   assert.ok(reach.absent > 0, 'never exercised a path absent from the working tree');

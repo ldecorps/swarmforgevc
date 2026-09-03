@@ -41,10 +41,23 @@ const KNOWN_OUTCOMES = new Set(['dropped and no longer blocks', 'left as found a
 // The path the incoming merge carries AND the working tree is dirty on -
 // the overlap the hotfix is about. `redundant` holds origin's exact bytes;
 // `divergent` holds something else.
+// `redundant` is TRACKED and modified in the working tree to exactly
+// origin's incoming bytes (the drop's tracked-in-HEAD branch);
+// `stagedRedundant` is a staged-new file holding origin's bytes (the
+// unstage-and-remove branch) - the hotfix has both, so the review drives
+// both. `divergent` differs from origin by a SINGLE byte, the negative case
+// qa_e2e_procedure calls the one that matters most.
 const REDUNDANT_PATH = 'dup.txt';
+const STAGED_REDUNDANT_PATH = 'staged-new.txt';
 const DIVERGENT_PATH = 'shared.txt';
 const UNRELATED_PATH = 'unrelated.txt';
-const INCOMING = { [REDUNDANT_PATH]: 'landed by QA\n', [DIVERGENT_PATH]: 'incoming\n' };
+const INCOMING = {
+  [REDUNDANT_PATH]: 'landed by QA\n',
+  [STAGED_REDUNDANT_PATH]: 'staged new file from QA\n',
+  [DIVERGENT_PATH]: 'incoming\n',
+};
+// One byte apart from INCOMING[DIVERGENT_PATH].
+const ONE_BYTE_OFF = 'incominh\n';
 
 function state(ctx) {
   if (!ctx.bl1333) ctx.bl1333 = { shape: {} };
@@ -67,8 +80,12 @@ function ensureFixture(ctx) {
     st.localSha = git(fx.root, 'rev-parse', 'HEAD').trim();
   }
   landOnOrigin(fx, INCOMING);
-  if (shape.redundant !== false) write(fx.root, REDUNDANT_PATH, INCOMING[REDUNDANT_PATH]);
-  if (shape.divergent) write(fx.root, DIVERGENT_PATH, 'a local edit origin does not carry\n');
+  if (shape.redundant !== false) {
+    write(fx.root, REDUNDANT_PATH, INCOMING[REDUNDANT_PATH]);
+    write(fx.root, STAGED_REDUNDANT_PATH, INCOMING[STAGED_REDUNDANT_PATH]);
+    git(fx.root, 'add', '--', STAGED_REDUNDANT_PATH);
+  }
+  if (shape.divergent) write(fx.root, DIVERGENT_PATH, ONE_BYTE_OFF);
   if (shape.unrelatedDirt) write(fx.root, UNRELATED_PATH, 'uncommitted work the merge never carries\n');
   fetchOrigin(fx.root);
   st.statusBefore = status(fx.root);
@@ -114,7 +131,7 @@ function registerSteps(registry) {
     // running the proof alone.
     const [proven] = callLandedFns(
       fx,
-      `(emit (vec (sort (#'handoffd/master-main-reconcile-redundant-paths! ["${REDUNDANT_PATH}" "${DIVERGENT_PATH}" "${UNRELATED_PATH}"]))))`,
+      `(emit (vec (sort (#'handoffd/master-main-reconcile-redundant-paths! ["${REDUNDANT_PATH}" "${STAGED_REDUNDANT_PATH}" "${DIVERGENT_PATH}" "${UNRELATED_PATH}"]))))`,
     );
     st.proven = proven;
   });
@@ -123,8 +140,25 @@ function registerSteps(registry) {
     const st = state(ctx);
     // The proof having produced a real answer is what makes the unchanged
     // tree evidence rather than a no-op: it read every path and proved one.
-    assert.deepEqual(st.proven, [REDUNDANT_PATH], `the proof did not run over the overlap: ${JSON.stringify(st.proven)}`);
+    assert.deepEqual(
+      st.proven,
+      [REDUNDANT_PATH, STAGED_REDUNDANT_PATH].sort(),
+      `the proof did not run over the overlap: ${JSON.stringify(st.proven)}`,
+    );
     assert.equal(status(st.fx.root), st.statusBeforeProof, 'the redundancy proof changed the working tree');
+
+    // By inspection as well as by execution (qa_e2e_procedure 2): the proof's
+    // body reads blob identity and nothing else - no checkout, no rm, no
+    // spit, and not a diff read either.
+    const proofBody = fs.readFileSync(HANDOFFD, 'utf8');
+    const start = proofBody.indexOf("(defn- master-main-reconcile-redundant-paths! [overlap]");
+    const body = proofBody.slice(start, proofBody.indexOf('\n\n;;', start));
+    assert.match(body, /"git" "hash-object"/, 'the proof no longer establishes redundancy by blob identity');
+    assert.match(body, /"git" "rev-parse" "-q" "--verify" \(str "origin\/main:" path\)/, 'the proof no longer reads origin/main\'s blob');
+    for (const writeVerb of ['"checkout"', '"rm"', '"reset"', '"stash"', '"add"', 'spit', 'delete']) {
+      assert.ok(!body.includes(writeVerb), `the proof body contains a writing operation: ${writeVerb}`);
+    }
+    assert.ok(!body.includes('"diff"'), 'the proof establishes redundancy by a diff read');
     teardown(ctx);
   });
 
@@ -170,18 +204,23 @@ function registerSteps(registry) {
     const dirty = status(st.fx.root);
     if (outcome === 'dropped and no longer blocks') {
       assert.ok(reconciled(st), `the reconcile did not complete: ${st.tick.log}`);
-      assert.match(st.tick.log, new RegExp(`redundant-overlap-discarded [^\\n]*${st.subject}`));
-      assert.ok(!dirty.includes(st.subject), `the dropped path is still dirty: ${dirty}`);
-      assert.equal(
-        fs.readFileSync(path.join(st.fx.root, st.subject), 'utf8'),
-        INCOMING[st.subject],
-        'the merge did not reproduce the content the drop discarded',
-      );
+      // BOTH drop branches, in one tick: the tracked path went back to HEAD
+      // and the staged-new one was unstaged and removed - and the merge then
+      // reproduced exactly the content each drop discarded.
+      for (const dropped of [REDUNDANT_PATH, STAGED_REDUNDANT_PATH]) {
+        assert.match(st.tick.log, new RegExp(`redundant-overlap-discarded [^\\n]*${dropped}`));
+        assert.ok(!dirty.includes(dropped), `the dropped path is still dirty: ${dirty}`);
+        assert.equal(
+          fs.readFileSync(path.join(st.fx.root, dropped), 'utf8'),
+          INCOMING[dropped],
+          'the merge did not reproduce the content the drop discarded',
+        );
+      }
     } else {
       assert.ok(!reconciled(st), `the reconcile completed over an unproven path: ${st.tick.log}`);
       assert.match(st.tick.log, /master-main-reconcile dirty-blocked/);
       assert.ok(dirty.includes(st.subject), `the unproven path was not left as found: ${dirty}`);
-      assert.equal(fs.readFileSync(path.join(st.fx.root, st.subject), 'utf8'), 'a local edit origin does not carry\n');
+      assert.equal(fs.readFileSync(path.join(st.fx.root, st.subject), 'utf8'), ONE_BYTE_OFF);
     }
     teardown(ctx);
   });
@@ -202,7 +241,9 @@ function registerSteps(registry) {
     //     still-blocking path and not the proven-redundant one.
     const surfaced = st.tick.log.split('\n').filter((l) => l.includes('master-main-reconcile-surfaced')).join('\n');
     assert.ok(surfaced.includes(DIVERGENT_PATH), `the surfaced block does not name the blocking path: ${surfaced}`);
-    assert.ok(!surfaced.includes(REDUNDANT_PATH), `the surfaced block names a proven-redundant path: ${surfaced}`);
+    for (const dropped of [REDUNDANT_PATH, STAGED_REDUNDANT_PATH]) {
+      assert.ok(!surfaced.includes(dropped), `the surfaced block names a proven-redundant path: ${surfaced}`);
+    }
 
     // (b) The operator alert body for the same state, composed the way the
     //     landed trip block composes it: the real formatter over the real
@@ -219,10 +260,16 @@ function registerSteps(registry) {
                 :alert (master-main-reconcile-lib/deadlock-alert-text
                         {:ahead 0 :behind 1 :reason "dirty" :overlapping-paths blocking})}))`,
     );
-    assert.deepEqual(computed.proven, [REDUNDANT_PATH], 'the proof no longer establishes the redundant path');
+    assert.deepEqual(
+      computed.proven,
+      [REDUNDANT_PATH, STAGED_REDUNDANT_PATH].sort(),
+      'the proof no longer establishes the redundant paths',
+    );
     assert.deepEqual(computed.blocking, [DIVERGENT_PATH], 'the blocking overlap is not the overlap minus the proven set');
     assert.ok(computed.alert.includes(DIVERGENT_PATH), `the alert omits the blocking path: ${computed.alert}`);
-    assert.ok(!computed.alert.includes(REDUNDANT_PATH), `the alert names a dropped path: ${computed.alert}`);
+    for (const dropped of [REDUNDANT_PATH, STAGED_REDUNDANT_PATH]) {
+      assert.ok(!computed.alert.includes(dropped), `the alert names a dropped path: ${computed.alert}`);
+    }
 
     // And the composition above is the daemon's, not this test's: the landed
     // trip block feeds blocking-overlap the proven set before it writes the
@@ -254,9 +301,13 @@ function registerSteps(registry) {
     const fx = ensureFixture(ctx);
     const [earlier] = callLandedFns(
       fx,
-      `(emit (vec (sort (#'handoffd/master-main-reconcile-redundant-paths! ["${REDUNDANT_PATH}"]))))`,
+      `(emit (vec (sort (#'handoffd/master-main-reconcile-redundant-paths! ["${REDUNDANT_PATH}" "${STAGED_REDUNDANT_PATH}"]))))`,
     );
-    assert.deepEqual(earlier, [REDUNDANT_PATH], 'the earlier proof did not establish the path it is meant to');
+    assert.deepEqual(
+      earlier,
+      [REDUNDANT_PATH, STAGED_REDUNDANT_PATH].sort(),
+      'the earlier proof did not establish the paths it is meant to',
+    );
     st.earlierProof = earlier;
   });
 
@@ -279,7 +330,13 @@ function registerSteps(registry) {
 
   scoped(/^the stale proof is not reused$/, (ctx) => {
     const st = state(ctx);
-    assert.deepEqual(st.dropped, [], `a path proven earlier was dropped on the stale proof: ${JSON.stringify(st.dropped)}`);
+    // The drifted path is gone from the drop set; the one that still matches
+    // is still dropped, because the recompute is a fresh proof and not a
+    // refusal to prove anything.
+    assert.ok(
+      !st.dropped.includes(REDUNDANT_PATH),
+      `a path proven earlier was dropped on the stale proof: ${JSON.stringify(st.dropped)}`,
+    );
     // Structural half of the same claim: the drop site takes no proven set
     // and is called from inside the merge adapter, so freshness is not a
     // property of this fixture's timing alone (BL-1310's freshness rule).

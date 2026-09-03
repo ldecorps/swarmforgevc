@@ -78,7 +78,13 @@ function makeFixture() {
   git(root, 'config', 'user.name', 'Test');
   git(root, 'config', 'commit.gpgsign', 'false');
   write(root, 'seed.txt', 'first\n');
-  git(root, 'add', 'seed.txt');
+  // Both overlap paths start TRACKED, so a scenario can exercise the drop's
+  // tracked-in-HEAD branch (`git checkout HEAD -- <path>` on an unstaged
+  // modification) and not only the staged-new/untracked branch - the hotfix
+  // has two, and qa_e2e_procedure (3) names the unstaged-M half by name.
+  write(root, 'dup.txt', 'base\n');
+  write(root, 'shared.txt', 'base\n');
+  git(root, 'add', 'seed.txt', 'dup.txt', 'shared.txt');
   git(root, 'commit', '-q', '-m', 'seed commit');
   git(root, 'remote', 'add', 'origin', remote);
   git(root, 'push', '-q', 'origin', 'main');
