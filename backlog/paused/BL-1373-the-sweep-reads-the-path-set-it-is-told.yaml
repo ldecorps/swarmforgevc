@@ -27,7 +27,7 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1373PathSetFromSingleSourceSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options.
   .
