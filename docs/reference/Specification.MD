@@ -1,5 +1,42 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1335: token-exhaustion evidence now
+promotes into the failover record BL-669's consumer already reads, closing
+the missing middle between BL-840's producer (`record-provider-outage!`,
+appending to `provider-outage-YYYY-MM.jsonl`) and BL-669's consumer
+(`outage_failover_cli.bb`, reading `provider-outages.jsonl`) — previously
+the only bridge between those two files was a human typing a record by
+hand, exactly what this ticket automates. New
+`exhaustion_failover_promotion_lib.bb`'s `classify-evidence` gives every
+evidence line one of three answers, per the human's ruling ("promote
+automatically only when the classification is unambiguous, otherwise
+announce for operator confirmation"): unambiguous period/quota exhaustion
+text opens a record; suspected-but-not-conclusive text (rate limit, 429,
+"usage limit") is announced only, never acted on; anything else — including
+text matching no known pattern — opens nothing, so an unrecognised pane
+line fails CLOSED by construction rather than defaulting to exhaustion.
+`promotion-decision` builds the record in `provider_outage_record_lib`'s own
+`normalize-record` shape and `promote-exhaustion-to-failover!` appends it to
+the same file `outage_failover_store` already points at — the consumer
+needs no code change, and no second store or second assignment path is
+forked (BL-1178). Idempotent per open incident: a still-open record for the
+same seat/provider/model suppresses a repeat; a closed one, a different
+model, or a different seat does not. `promote-exhaustion-to-failover!` is
+CALLED from the live daemon tick inside `handoffd.bb`'s
+`observe-pane-provider-outage!` — the same pane snapshot that already
+produces the BL-840 evidence also asks whether it should open a record, no
+second capture and no separate scanner (the `required_wiring` anchor,
+matching the shape BL-840 used for its own producer); a promotion that
+cannot be written never takes the pane observation down with it. Closing a
+record on period reset stays out of scope (BL-669 already auto-reverts when
+a record closes; the close-on-reset step is its own future slice).
+Acceptance:
+`specs/features/BL-1335-token-exhaustion-opens-an-outage-record.feature`.
+How-to: the "Automated promotion (BL-1335)" section added to
+`docs/how-to/BL-669-outage-driven-seat-failover-via-steward.md`. No new
+extension command or setting — swarm-internal daemon behavior; no diagram
+depicts per-incident failover-record state.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1350: the bridge's `/events` SSE
 stream now writes a periodic keepalive comment frame (`: keepalive\n\n`,
 default every 20000 ms) to every open connection, whether or not any bridge
