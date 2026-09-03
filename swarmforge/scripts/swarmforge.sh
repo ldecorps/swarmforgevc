@@ -1114,12 +1114,20 @@ absolute_config_file() {
   fi
 }
 
+# BL-1336: the swarm's rotation mode, normalised ONCE. swarm-identity records
+# it and the role launch scripts export it as SWARMFORGE_ROTATION; those two
+# must never disagree about what "router" means, so both read it from here
+# rather than each normalising ROTATION_MODE themselves.
+rotation_signal() {
+  if [[ "${ROTATION_MODE:-}" == "router" || "${ROTATION_MODE:-}" == "sequential" ]]; then
+    printf '%s' "$ROTATION_MODE"
+  fi
+}
+
 write_swarm_identity_file() {
   resolve_effective_backlog_max_depth
-  local rotation_value=""
-  if [[ "$ROTATION_MODE" == "router" || "$ROTATION_MODE" == "sequential" ]]; then
-    rotation_value="$ROTATION_MODE"
-  fi
+  local rotation_value
+  rotation_value="$(rotation_signal)"
   local launch_pack=""
   if [[ "$CONFIG_FILE" == *"/packs/"* ]]; then
     launch_pack="$(basename "$CONFIG_FILE" .conf)"
@@ -2004,6 +2012,14 @@ export OPENAI_BASE_URL='${lm_url}'
 set -euo pipefail
 export SWARMFORGE_ROLE='$role'
 export SWARMFORGE_PACK='$launch_pack_name'
+# BL-1336: the swarm's rotation mode, exported beside the pack so a process
+# inside a role can tell a mono-router topology (this resident plus the
+# coordinator) from a full forge (seven live role sessions). It was written
+# into swarm-identity and nowhere else, so nothing running inside a role could
+# read it - which is why the vitest fork ceiling could not tell the two apart
+# and left concurrency on the table. Empty when the mode is neither router nor
+# sequential, exactly as swarm-identity records it.
+export SWARMFORGE_ROTATION='$(rotation_signal)'
 # BL-913/BL-985: the swarm's own record of where this role lives, exported
 # from the SAME WORKTREE_PATHS this script's own `cd` line below uses. The
 # tool_miss_heal_hook.bb PreToolUse wrapper re-anchors a command whose

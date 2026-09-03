@@ -33,6 +33,10 @@ const UNIT_LANE_TIMEOUT = resolveUnitLaneTimeout(20000);
 // rather than by keeping two copies in step).
 const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   pack: process.env.SWARMFORGE_PACK,
+  // BL-1336: both lanes read the rotation signal through the SAME
+  // resolveVitestWorkerPool composition point - neither gains a sizing route
+  // the other lacks (BL-935 invariant 3).
+  rotation: process.env.SWARMFORGE_ROTATION,
   platform: os.platform(),
   override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
   hostRamMB: os.totalmem() / (1024 * 1024),
