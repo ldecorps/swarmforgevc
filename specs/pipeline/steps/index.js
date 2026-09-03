@@ -33,6 +33,7 @@ const DOMAINS = [
   require('./bl1346SwarmStampRcLaunchRoleSteps'),
   require('./bl1344BabysitterFindingWaiveSteps'),
   require('./bl1351EventSnapshotConsumersSteps'),
+  require('./bl1328QwenModelTokenFormsSteps'),
   require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),
   require('./bl1268StaleClaimNamesThisTicketSteps'),

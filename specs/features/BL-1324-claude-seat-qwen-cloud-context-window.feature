@@ -1,6 +1,6 @@
-# mutation-stamp: sha256=c5edaab43edc61bc048f60a0d248e0f5dee345ef466ce70b57aa63ddbe6e9f1f
+# mutation-stamp: sha256=d662098909933bbba8ed8551bf1d61422a48e02e63c8e71b828bac12594dde26
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-09-02T12:19:36.996092956Z","feature_name":"a claude seat whose --model is qwen* gets Token Plan billing and a real 1M context window","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature","background_hash":"2cc1ed8676ef6e3b4c5e22278d5964dc793a7be13d04f839ac572bb3281674ee","implementation_hash":"unknown","scenarios":[{"index":0,"name":"extra_cli_targets_qwen_cloud detects a qwen* --model token","scenario_hash":"1fd342882715b4939499dfe6e92fe95684e185c5a2dbfe4cb7e1fec1b4323313","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-09-02T12:19:36.996092956Z"}]}
+# {"version":1,"tested_at":"2026-09-03T04:32:22.511949291Z","feature_name":"a claude seat whose --model is qwen* gets Token Plan billing and a real 1M context window","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature","background_hash":"2cc1ed8676ef6e3b4c5e22278d5964dc793a7be13d04f839ac572bb3281674ee","implementation_hash":"unknown","scenarios":[{"index":0,"name":"extra_cli_targets_qwen_cloud detects a qwen* --model token","scenario_hash":"a488a7ca4a90f7527a9d5e85c5c71fb3187931ff16f125290290b9ac197b442c","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-03T04:32:22.511949291Z"}]}
 # acceptance-mutation-manifest-end
 
 Feature: a claude seat whose --model is qwen* gets Token Plan billing and a real 1M context window
@@ -30,7 +30,17 @@ Feature: a claude seat whose --model is qwen* gets Token Plan billing and a real
       | --model qwen3.8-max --effort high        | true   |
       | --model claude-sonnet-5 --effort high    | false  |
       | --effort high                            | false  |
-      | --model=qwen3.8-max --effort high        | false  |
+      # RETIRED by BL-1328 (2026-09-03): the row asserting
+      # `--model=qwen3.8-max --effort high -> false` documented the
+      # single-token detection GAP as certified behaviour. BL-1324's own human
+      # ruling authorized closing that gap, and BL-1328 did; the assertion is
+      # therefore superseded, and BL-1006 retires a superseded boundary rather
+      # than rewording it (flipping false->true would have left this contract
+      # asserting behaviour BL-1324 never shipped). The successor coverage is
+      # BL-1328's own Outline, which asserts `--model=qwen3.8-max -> reports`
+      # and `--model=claude-sonnet-5 -> does not report`. The other three rows
+      # above stay: each is still true, and the space-form negative and the
+      # no-model case exist nowhere else.
 
   # BL-1324 qwen-targeted-claude-seat-remaps-billing-guard-02
   Scenario: a claude seat whose own --model is qwen* rides the Token Plan endpoint without the global opt-in
