@@ -27,7 +27,9 @@ invariants:
   - "Nothing is restored until the expedition's approved commit is an ancestor of main. An expedition that never lands leaves the park in place and reported, never silently reversed."
   - "The reversal is idempotent, and refuses rather than guesses: a parked ticket that has since moved, been closed, or been edited by a human is left exactly where it is and named in the report."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Restore to the prior folder but mark each restored ticket as needing a freshness check before it may be worked
 approval_context: >
   Your instruction is clear and I am not asking whether to do it. I am asking
   one question about where the tickets should land, because the answer changes
