@@ -28,7 +28,9 @@ required_wiring:
   - 'swarmforge/scripts/land_step_lib.bb::own-commit-changed-paths::the delivered-side path set this ticket narrows'
   - 'specs/pipeline/steps/index.js::bl1374SyncMergePassengersSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Both - the code fix, with the rule written as belt and braces
 approval_context: >
   One decision is yours, posed as ruling_options, because the two remedies
   trade robustness against discipline and the cheap one is not obviously wrong.
