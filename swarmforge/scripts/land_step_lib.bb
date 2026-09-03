@@ -38,6 +38,18 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
+;; BL-1375: "is this sibling approved?" is promotion_gates_lib.bb's OWN
+;; already-shipped question (read-human-approval, and the backlog-schema rule
+;; that an absent field means "no approval needed"). Loading it costs a
+;; handful of pure libs and buys the guarantee this file never grows a second
+;; YAML-field parser whose comment/quote handling can drift from the one the
+;; promotion gate decides on.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "promotion_gates_lib.bb")))
+
+;; This lib's own directory, captured at load time: the tree guards the land
+;; step runs (BL-1375 invariant 2) are its siblings, and *file* is no longer
+;; this file once a caller is running.
+(def ^:private script-dir (str (fs/parent (fs/canonicalize *file*))))
 
 (defn- git! [root & args]
   (apply daemon-cycle-guard-lib/sh! (into ["git" "-C" (str root)] args)))
@@ -368,6 +380,165 @@
            :warning nil})))
     {:entangled nil :warning "land-step: origin/main could not be resolved"}))
 
+
+;; ── BL-1375: is an unlanded sibling APPROVED, or is it withheld? ─────────
+;; BL-1332 refused every shared path with an unlanded co-owner. That is
+;; circular when several APPROVED tickets share one path: each refuses
+;; because the others are unlanded, and no order lets any go first (four
+;; deadlocked on specs/pipeline/steps/index.js, 2026-09-03). The human's
+;; ruling narrows the refusal to a sibling that is WITHHELD, awaiting
+;; approval, or whose approval state cannot be read.
+;;
+;; Every unknown is a BLOCKING state. The narrowing may only ever be applied
+;; on a POSITIVE reading of "this sibling is approved" - absence, ambiguity
+;; and an unreadable file all keep the old refusal, which is the posture
+;; sibling-landed? already takes one door up (invariant 1: nothing the human
+;; has not approved reaches main, and a check that could not run is never
+;; collected as a pass).
+
+(def ^:private backlog-folders ["active" "paused" "hold" "done" "archive"])
+
+(defn- ticket-file-name?
+  "`<id>.yaml` or `<id>-<slug>.yaml`, matched exactly so BL-90020's file never
+   answers for BL-9002."
+  [ticket-id file-name]
+  (some? (re-matches (re-pattern (str "^" (java.util.regex.Pattern/quote (str ticket-id)) "(-[^/]*)?\\.yaml$"))
+                     (str file-name))))
+
+(defn- worktree-ticket-sources
+  "The ticket's backlog files as the checkout the land is running from has
+   them: {:where \"the worktree\" :folder \"active\" :content \"...\"}."
+  [root ticket-id]
+  (->> backlog-folders
+       ;; RECURSIVELY: backlog/done/ nests by milestone
+       ;; (backlog/done/M8/BL-....yaml), so listing only the immediate folder
+       ;; finds nothing for every landed sibling.
+       (mapcat (fn [folder]
+                 (let [dir (fs/path root "backlog" folder)]
+                   (when (fs/directory? dir)
+                     (->> (file-seq (fs/file dir))
+                          (filter #(.isFile %))
+                          (filter #(ticket-file-name? ticket-id (.getName %)))
+                          (map (fn [f]
+                                 {:where "the worktree"
+                                  :folder folder
+                                  :content (try (slurp f) (catch Exception _ nil))})))))))
+       vec))
+
+(defn- main-ticket-sources
+  "The same, as origin/main has them.
+
+   Reading BOTH trees is not belt-and-braces. A sibling's ticket file MOVES
+   between backlog folders on main - a landed one is in backlog/done/ there
+   while the branch the land runs from still predates the move, or never
+   carried the file at all. Reading only the checkout would report `unreadable`
+   for tickets that are approved and already landed, and the deadlock this
+   ticket exists to clear would stay shut for a second reason (measured
+   2026-09-03 against the live jam: BL-1328, BL-1346 and BL-1351 all read
+   unreadable from the QA tip while their work was on main).
+
+   nil signals the tree could not be listed at all, which the caller treats as
+   no source rather than as an answer."
+  [root ticket-id]
+  (when-let [origin-main (origin-main-sha root)]
+    (->> backlog-folders
+         (mapcat (fn [folder]
+                   ;; -r for the same reason worktree-ticket-sources walks:
+                   ;; backlog/done/ nests by milestone.
+                   (let [listed (git! root "ls-tree" "-r" "--name-only" origin-main (str "backlog/" folder "/"))]
+                     (when (zero? (:exit listed))
+                       (->> (str/split-lines (str/trim (:out listed)))
+                            (remove str/blank?)
+                            (filter #(ticket-file-name? ticket-id (fs/file-name %)))
+                            (map (fn [path]
+                                   (let [shown (git! root "show" (str origin-main ":" path))]
+                                     {:where "origin/main"
+                                      :folder folder
+                                      :content (when (zero? (:exit shown)) (:out shown))}))))))))
+         vec)))
+
+(defn- source-verdict
+  "One tree's answer about one ticket."
+  [ticket-id {:keys [where folder content]}]
+  (cond
+    (nil? content)
+    {:state :unreadable :blocking? true
+     :reason (str ticket-id "'s ticket file could not be read in " where)}
+
+    ;; The FOLDER decides ahead of the field: a held ticket can still read
+    ;; `human_approval: approved` from before a human pulled it, and the hold
+    ;; is the later, stronger statement.
+    (= "hold" folder)
+    {:state :withheld :blocking? true
+     :reason (str ticket-id " is withheld in backlog/hold (" where ")")}
+
+    :else
+    (let [approval (promotion-gates-lib/read-human-approval content)]
+      (if (or (nil? approval) (= "approved" approval))
+        {:state :approved :blocking? false
+         :reason (str ticket-id " is approved" (when (nil? approval) " (no approval required)"))}
+        {:state :awaiting-approval :blocking? true
+         :reason (str ticket-id "'s human_approval is " approval ", not approved (" where ")")}))))
+
+(defn ticket-approval-state
+  "{:state :approved|:withheld|:awaiting-approval|:unreadable :blocking? bool
+   :reason \"...\"} for one sibling ticket id.
+
+   :approved (the ONLY non-blocking answer) needs the ticket to be found in at
+   least one tree, filed unambiguously in each tree that has it, outside
+   backlog/hold, with human_approval either the literal `approved` or absent.
+   Absent is not a gap being waved through: backlog-schema.md defines it as
+   \"no approval needed\" and promotion_gates_lib.bb's own human_approval gate
+   already passes it, so a sibling with no approval field is neither withheld
+   nor awaiting one. read-human-approval is that gate's own reader, reused
+   rather than re-implemented, so an inline comment or a quoted value cannot
+   be read differently here than at promotion.
+
+   BOTH the worktree and origin/main are consulted (see main-ticket-sources),
+   and EITHER of them saying blocking blocks. That needs no judgment about
+   which tree is fresher - the question here is only ever whether anything
+   says this sibling may not ride, and nothing one tree says can read away a
+   hold the other is carrying.
+
+   :unreadable - found in no tree, filed in more than one folder within a
+   tree, or a file that could not be read. Two copies in different folders is
+   a state nobody can act on, and guessing which is current is precisely how a
+   withheld ticket would ride."
+  [root ticket-id]
+  (let [worktree (worktree-ticket-sources root ticket-id)
+        on-main (or (main-ticket-sources root ticket-id) [])
+        ambiguous (->> [worktree on-main]
+                       (filter #(> (count %) 1))
+                       first)]
+    (cond
+      ambiguous
+      {:state :unreadable :blocking? true
+       :reason (str ticket-id " is filed in more than one backlog folder in "
+                    (:where (first ambiguous)) " ("
+                    (str/join ", " (sort (map :folder ambiguous))) ")")}
+
+      (empty? (concat worktree on-main))
+      {:state :unreadable :blocking? true
+       :reason (str "no backlog ticket file found for " ticket-id)}
+
+      :else
+      (let [verdicts (map #(source-verdict ticket-id %) (concat worktree on-main))]
+        (or (first (filter :blocking? verdicts))
+            (first verdicts))))))
+
+(defn blocking-siblings
+  "The subset of `sibling-ids` whose approval state still blocks a land,
+   each with the reason, sorted so a refusal reads the same twice.
+   `approval-fn` is injected for tests; it defaults to the real read."
+  ([root sibling-ids] (blocking-siblings root sibling-ids nil))
+  ([root sibling-ids approval-fn]
+   (let [read-state (or approval-fn #(ticket-approval-state root %))]
+     (->> (sort sibling-ids)
+          (keep (fn [id]
+                  (let [state (read-state id)]
+                    (when (:blocking? state) (assoc state :ticket id)))))
+          vec))))
+
 (defn- full-delivered-paths
   "The two-tree diff between origin-main and commit - literally 'what
    differs between origin/main's tree and this tip's tree', the ticket's
@@ -471,9 +642,14 @@
   ([root commit task-ticket-id unlanded-siblings]
    (own-paths root commit task-ticket-id unlanded-siblings path-attributing-commits))
   ([root commit task-ticket-id unlanded-siblings commits-fn]
+   (own-paths root commit task-ticket-id unlanded-siblings commits-fn nil))
+  ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn]
    (if-let [origin-main (origin-main-sha root)]
      (if-let [delivered (full-delivered-paths root origin-main commit)]
-       (loop [remaining delivered acc [] excluded []]
+       ;; BL-1375: memoized so N shared paths read one sibling's ticket file
+       ;; once, and so every path in one run answers from the same read.
+       (let [blocking-for (memoize #(blocking-siblings root % approval-fn))]
+        (loop [remaining delivered acc [] excluded [] passengers #{}]
          (if (empty? remaining)
            ;; BL-1343. An empty set is two different answers wearing the same
            ;; face. With nothing delivered, the tip IS origin/main and "nothing
@@ -493,7 +669,11 @@
                             (str/join "; " (map (fn [{:keys [path owners]}]
                                                   (str path " -> " (str/join "," (sort owners))))
                                                 excluded)))}
-             {:paths acc :warning nil})
+             ;; BL-1375: :passengers is the set of APPROVED unlanded siblings
+             ;; whose own lines ride into main on a path this replay includes.
+             ;; The caller owes them the tree guard before publish (invariant
+             ;; 2) and owes QA their names either way.
+             {:paths acc :warning nil :passengers passengers})
            (let [path (first remaining)
                  attribution (path-owner-tickets root origin-main commit path commits-fn)]
              (cond
@@ -513,24 +693,48 @@
                ;; either ticket's version of the file. Splitting the file
                ;; per-hunk is the better end state and is ruling option 2's
                ;; follow-up slice, not this one.
+               ;; BL-1332, as narrowed by BL-1375's human ruling. A path
+               ;; BOTH this ticket and an unlanded sibling own cannot be
+               ;; separated by a per-path decision: write-tree-from-paths!
+               ;; takes the WHOLE blob at the cited commit, so including it
+               ;; ships the sibling's lines and excluding it drops this
+               ;; ticket's. BL-1332 refused outright. That is circular when
+               ;; the co-owners are all APPROVED - each refuses because the
+               ;; others are unlanded and none can go first - so the refusal
+               ;; now asks WHICH sibling rides: one that is withheld,
+               ;; awaiting approval, or unreadable still refuses, naming
+               ;; itself and its reason; approved ones ride as passengers and
+               ;; the caller runs the tree guards against the replayed tree
+               ;; before publish (invariant 2, the BL-1324 shape).
                (and (contains? (:owners attribution) task-ticket-id)
-                    (some unlanded-siblings (:owners attribution)))
-               {:paths nil
-                :warning (str "land-step: refusing to replay " task-ticket-id
-                              " - " path " is shared with unlanded sibling(s) "
-                              (str/join "," (sort (filter unlanded-siblings (:owners attribution))))
-                              ", and a replayed path is taken whole, so landing it would carry "
-                              "the sibling's lines into main (BL-1332)")}
+                    (some unlanded-siblings (:owners attribution))
+                    (seq (blocking-for (filter unlanded-siblings (:owners attribution)))))
+               (let [blockers (blocking-for (filter unlanded-siblings (:owners attribution)))]
+                 {:paths nil
+                  :warning (str "land-step: refusing to replay " task-ticket-id
+                                " - " path " is shared with unlanded sibling(s) "
+                                (str/join "; " (map (fn [{:keys [ticket state reason]}]
+                                                      (str ticket " (" (name state) ": " reason ")"))
+                                                    blockers))
+                                ", and a replayed path is taken whole, so landing it would carry "
+                                "the sibling's lines into main (BL-1332/BL-1375)")})
 
                (and (seq (:owners attribution))
                     (not (:any-untagged? attribution))
                     (not (contains? (:owners attribution) task-ticket-id))
                     (every? unlanded-siblings (:owners attribution)))
                (recur (rest remaining) acc
-                      (conj excluded {:path path :owners (:owners attribution)}))
+                      (conj excluded {:path path :owners (:owners attribution)})
+                      passengers)
 
                :else
-               (recur (rest remaining) (conj acc path) excluded)))))
+               (recur (rest remaining) (conj acc path) excluded
+                      ;; Every approved unlanded co-owner of an INCLUDED path
+                      ;; rides. A path this ticket does not own is excluded
+                      ;; above and boards nobody.
+                      (if (contains? (:owners attribution) task-ticket-id)
+                        (into passengers (filter unlanded-siblings (:owners attribution)))
+                        passengers)))))))
        {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)})
      {:paths nil :warning "land-step: origin/main could not be resolved"})))
 
@@ -551,12 +755,15 @@
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
         :else
-        (let [{:keys [paths warning]} (own-paths root commit task-ticket-id unlanded)]
+        (let [{:keys [paths warning passengers]} (own-paths root commit task-ticket-id unlanded)]
           (if (nil? paths)
             {:action :escalate
              :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
+            ;; BL-1375: :passengers are the approved unlanded siblings whose
+            ;; lines ride on an included shared path. replay! owes them the
+            ;; tree guards before it hands QA a commit to publish.
             {:action :replay :entangled entangled :landed landed :unlanded unlanded
-             :own-paths paths}))))))
+             :own-paths paths :passengers (or passengers #{})}))))))
 
 (defn entanglement-note
   "The text QA sends when replay itself cannot be completed cleanly (BL-1241
@@ -695,6 +902,55 @@
         (catch Exception e
           {:ok? false :reason (str "land-approval record could not be written: " (.getMessage e))})))))
 
+
+;; ── BL-1375 invariant 2: the replayed tree is guarded BEFORE publish ─────
+;; The human's rider on the option-1 ruling: "approved" means approved to be
+;; WORKED, not landed. A passenger's shared-path content may ride into main
+;; only if the replayed tree is SELF-CONSISTENT there. This is the BL-1324
+;; shape - on 2026-09-02 an approved, mid-pipeline sibling's require(...)
+;; line rode into specs/pipeline/steps/index.js ahead of the handler file it
+;; requires, and the registration guard then refused every role's commit on
+;; main until a human adjudicated. The narrowing above must not re-enable it.
+;;
+;; Only TREE guards belong here. The rest of run_commit_guards.sh's chain
+;; reads the git INDEX at commit time and has no question to ask of a tree
+;; that already exists; check_feature_handler_registration.sh reads the tree,
+;; which is why the rider names it. The list is a def so a second tree guard
+;; is one entry, never a second call site.
+;;
+;; BL-1242/BL-1252: a chain of N independent guards must not short-circuit on
+;; the first failure - every guard runs and every refusal is reported in one
+;; answer (Article 4.4's shape in a gate). Running them as separate processes
+;; and collecting each status individually is that rule satisfied; no guard's
+;; exit aborts another.
+
+(def ^:private replayed-tree-guards
+  [{:script "check_feature_handler_registration.sh"
+    :why "a feature file whose step handler is not registered on the replayed tree (BL-1303/BL-1324)"}])
+
+(defn run-replayed-tree-guards
+  "Runs every tree guard against `tree-root` and returns a vector of refusal
+   strings - empty means every guard passed.
+
+   `--assume-main` is passed because the replay stands on a scratch branch
+   while being exactly the tree about to become main's tip; without it the
+   guard's own branch gate exits 0 and collects a pass it never performed.
+
+   A guard that cannot be RUN is a refusal, not a skip: an uncompiled checker
+   or a missing script would otherwise silently re-open the very window this
+   invariant closes."
+  [tree-root]
+  (->> replayed-tree-guards
+       (keep (fn [{:keys [script why]}]
+               (let [path (str (fs/path script-dir script))]
+                 (if-not (fs/exists? path)
+                   (str script " could not be run against the replayed tree: " path " is missing")
+                   (let [res (daemon-cycle-guard-lib/sh! "bash" path (str tree-root) "--assume-main")]
+                     (when-not (zero? (:exit res))
+                       (str script " refused the replayed tree (" why "): "
+                            (str/trim (str (:err res) " " (:out res))))))))))
+       vec))
+
 (defn replay!
   "Builds a tip-pure commit for task-ticket-id's own-paths, on top of
    origin/main, in a DEDICATED linked worktree
@@ -710,9 +966,10 @@
    (QA's own land action reads it) and is deleted on EVERY failure - including
    a failure to create the checkout, which `worktree add -b` reaches only
    after it has already made the branch (BL-1298)."
-  [{:keys [root commit task-ticket-id own-paths]}]
+  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn]}]
   (let [origin-main (origin-main-sha root)
-        common-dir (git-common-dir root)]
+        common-dir (git-common-dir root)
+        run-guards (or tree-guards-fn (fn [tree-root _] (run-replayed-tree-guards tree-root)))]
     (cond
       (nil? origin-main)
       {:success false :reason "land-step replay: could not resolve origin/main"}
@@ -748,6 +1005,21 @@
                   (do (cleanup!)
                       (drop-branch!)
                       {:success false :reason (str "land-step replay: nothing to commit for " task-ticket-id " - own-paths identical to origin/main")})
-                  (let [sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))]
+                  (let [sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))
+                        ;; BL-1375 invariant 2. Run ONLY when a passenger's
+                        ;; lines actually ride: with nothing riding, the tree
+                        ;; is this ticket's own content on origin/main, and a
+                        ;; main that is already inconsistent would otherwise
+                        ;; start refusing every land - a second deadlock in
+                        ;; place of the one this ticket dissolves.
+                        refusals (if (seq passengers) (run-guards scratch passengers) [])]
                     (cleanup!)
-                    {:success true :commit sha :branch branch}))))))))))
+                    (if (seq refusals)
+                      (do (drop-branch!)
+                          {:success false
+                           :reason (str "land-step replay: refusing to publish " task-ticket-id
+                                        " - the replayed tree is not self-consistent with passenger sibling(s) "
+                                        (str/join "," (sort passengers))
+                                        " riding on a shared path (BL-1375 invariant 2 / BL-1324): "
+                                        (str/join "; " refusals))})
+                      {:success true :commit sha :branch branch :passengers (set passengers)})))))))))))
