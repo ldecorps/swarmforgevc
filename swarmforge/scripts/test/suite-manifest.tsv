@@ -71,6 +71,7 @@ briefing_generation_schedule_test_runner.bb	standing
 briefing_generation_sidecar_test_runner.bb	standing		
 build_freshness_lib_test_runner.bb	standing		
 cache_warm_test_runner.bb	standing		
+ceremony_handoff_lib_test_runner.bb	standing		
 chase_activity_nudge_test_runner.bb	standing		
 chase_sweep_test_runner.bb	standing		
 claim_progress_lib_test_runner.bb	standing		
@@ -232,6 +233,7 @@ test_briefing_marker_commit.sh	standing
 test_build_freshness_cli.sh	standing		
 test_build_freshness_land_replay_approved.sh	standing		
 test_cache_warm_lib.sh	standing		
+test_ceremony_handoff_cli.sh	standing		
 test_chase_sweep.sh	standing		
 test_check_branch_namespace.sh	standing		
 test_check_feature_handler_registration.sh	standing		
