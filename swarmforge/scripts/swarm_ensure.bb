@@ -784,11 +784,41 @@
                             (remote-control-health/footer-status (rc-capture-pane socket session)))
             check (remote-control-health/check-role
                    state-dir socket launch-role session rc-cmdline-fn footer-streak)
-            status (:status check)]
+            status (:status check)
+            ;; BL-1345: the observed process is compared against the role the
+            ;; PACK assigns this pane, not only against launch-role. On
+            ;; 2026-09-02 a pane respawned with the coordinator's script was
+            ;; reported `rc:specifier: HEALTHY`, because the check had been
+            ;; pointed at the coordinator by a stale marker and so compared
+            ;; that role against itself. Silent on a rotation-router pack,
+            ;; where a rotated resident legitimately runs another role's
+            ;; script (BL-1020/BL-648 unchanged).
+            mismatch (remote-control-health/assigned-role-mismatch
+                      {:rotation-router? (rotation-router-mode?)
+                       :pane session
+                       :assigned-rc-name (remote-control-health/expected-rc-name state-dir role)
+                       :observed-rc-name (:actual check)})]
         (cond
           ;; "worth repairing at all" is decided ONCE, through actionable? -
           ;; :healthy/:off need nothing and :down is the agent:<role> check's
           ;; job, so anything actionable? refuses is left alone here.
+          ;; BL-1345: a pane the RC check is content with, running a role
+          ;; this pack does not assign it, is NOT healthy. That is the exact
+          ;; 2026-09-02 shape - `rc:specifier: HEALTHY` printed over a pane
+          ;; running the coordinator's script, because the check had been
+          ;; pointed at the coordinator by a stale marker and so compared that
+          ;; role against itself.
+          ;;
+          ;; Placed AFTER actionable?, deliberately: a :degraded or
+          ;; :session-dead pane already has a repair path, and pre-empting it
+          ;; would turn every ordinary RC repair into a failure report (caught
+          ;; by RC-2 while building this).
+          (and (not (remote-control-health/actionable? status)) mismatch)
+          {:component component :status :failed
+           :action (str "pane " (:pane mismatch) " is running " (:observed mismatch)
+                        " but this pack assigns it " (:expected mismatch)
+                        " - respawn it with " role "'s launch script")}
+
           (not (remote-control-health/actionable? status))
           {:component component :status (if (= status :off) :off :healthy)
            :action (when (= status :off) rc-non-claude-off-action)}
