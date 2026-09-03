@@ -76,6 +76,21 @@ async function teardown(ctx) {
   ctx.bl1351 = {};
 }
 
+// BL-686 hardening precedent (bl687EpicReorderIncludesActiveChildrenSteps.js):
+// every step that runs while the bridge may already be live wraps its body
+// with this, so a mutated/bad example value throwing anywhere in the
+// scenario still closes the server and removes the fixture, rather than
+// leaving an open listening socket that hangs the whole node --test process
+// (the exact BL-788 hazard - start and stop live in DIFFERENT steps here).
+async function teardownOnError(ctx, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    await teardown(ctx);
+    throw err;
+  }
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -93,70 +108,95 @@ function registerSteps(registry) {
     state(ctx).fatBodies = true;
   });
 
-  scoped(/^a client connected to \/events$/, async (ctx) => {
-    await ensureConnected(ctx);
+  // Deliberately lazy: does NOT connect here. The runtime resolves a step
+  // by matching its exact text (runtime.js's registry.resolve, called
+  // BEFORE any handler runs) - a mutated Outline trigger cell that no
+  // longer matches this feature's "When <trigger>" pattern throws "no step
+  // handler matched" from OUTSIDE every handler body, so no per-step
+  // try/finally (teardownOnError included) can react to it. If this
+  // Background step opened the real bridge eagerly, that failure would
+  // leave it open with no later step ever reached to close it - and this
+  // fixture's bridge is not cheap to leak: pollIntervalMs:20 makes
+  // broadcastSnapshotIfChanged rescan and reserialize all 1223 real
+  // backlog items every 20ms, synchronously, for as long as the process
+  // runs, pinning the single JS thread and starving every other scenario
+  // in the same file. Every step that actually needs the connection
+  // (`ensureConnected` inside the "When" handler and the field-presence
+  // Then) already calls `ensureConnected(ctx)` itself, memoized - so
+  // deferring it here changes no scenario's behavior, and a step-match
+  // failure before any of those steps run now leaks nothing at all.
+  scoped(/^a client connected to \/events$/, (ctx) => {
+    state(ctx).willConnect = true;
   });
 
   // ── When ─────────────────────────────────────────────────────────────
   scoped(/^(nothing changes|one active item changes and the poll loop rebroadcasts)$/, async (ctx, trigger) => {
-    assert.ok(KNOWN_TRIGGERS.has(trigger), `unknown trigger cell: ${trigger}`);
-    if (trigger === 'nothing changes') {
-      const st = await ensureConnected(ctx);
-      st.latest = st.connectSnapshot;
-      return;
-    }
-    await rebroadcastAfterChange(ctx);
+    await teardownOnError(ctx, async () => {
+      assert.ok(KNOWN_TRIGGERS.has(trigger), `unknown trigger cell: ${trigger}`);
+      if (trigger === 'nothing changes') {
+        const st = await ensureConnected(ctx);
+        st.latest = st.connectSnapshot;
+        return;
+      }
+      await rebroadcastAfterChange(ctx);
+    });
   });
 
   // ── Thens ────────────────────────────────────────────────────────────
   scoped(/^the latest snapshot is under (\d+) bytes$/, async (ctx, budget) => {
-    assert.equal(Number(budget), BUDGET_BYTES, 'the feature and the handler disagree on the budget');
-    const st = state(ctx);
-    const bytes = Buffer.byteLength(st.latest);
-    assert.ok(bytes < BUDGET_BYTES, `the snapshot is ${bytes} bytes, over the ${BUDGET_BYTES}-byte budget`);
-    // The frame is small because the bodies are gone, not because the fixture
-    // is small: every item is still there.
-    const parsed = JSON.parse(st.latest);
-    assert.equal(parsed.backlog.done.length, DONE_ITEMS, 'the done folder left the stream - that is option 2, not the ruling');
-    await teardown(ctx);
+    await teardownOnError(ctx, async () => {
+      assert.equal(Number(budget), BUDGET_BYTES, 'the feature and the handler disagree on the budget');
+      const st = state(ctx);
+      const bytes = Buffer.byteLength(st.latest);
+      assert.ok(bytes < BUDGET_BYTES, `the snapshot is ${bytes} bytes, over the ${BUDGET_BYTES}-byte budget`);
+      // The frame is small because the bodies are gone, not because the fixture
+      // is small: every item is still there.
+      const parsed = JSON.parse(st.latest);
+      assert.equal(parsed.backlog.done.length, DONE_ITEMS, 'the done folder left the stream - that is option 2, not the ruling');
+      await teardown(ctx);
+    });
   });
 
   scoped(/^every field the enumerated \/events consumers read is present for every item in the latest snapshot$/, async (ctx) => {
-    const st = await ensureConnected(ctx);
-    const parsed = JSON.parse(st.latest);
-    const folders = Object.keys(parsed.backlog);
-    assert.deepEqual(folders.sort(), ['active', 'done', 'hold', 'paused'], 'a backlog folder left the stream');
-    for (const folder of folders) {
-      for (const item of parsed.backlog[folder]) {
-        for (const field of FIELDS_CONSUMERS_READ) {
-          assert.ok(
-            Object.hasOwn(item, field) && item[field] !== undefined && item[field] !== '',
-            `a ${folder} item lost the ${field} its consumer reads: ${JSON.stringify(item)}`,
-          );
+    await teardownOnError(ctx, async () => {
+      const st = await ensureConnected(ctx);
+      const parsed = JSON.parse(st.latest);
+      const folders = Object.keys(parsed.backlog);
+      assert.deepEqual(folders.sort(), ['active', 'done', 'hold', 'paused'], 'a backlog folder left the stream');
+      for (const folder of folders) {
+        for (const item of parsed.backlog[folder]) {
+          for (const field of FIELDS_CONSUMERS_READ) {
+            assert.ok(
+              Object.hasOwn(item, field) && item[field] !== undefined && item[field] !== '',
+              `a ${folder} item lost the ${field} its consumer reads: ${JSON.stringify(item)}`,
+            );
+          }
         }
       }
-    }
-    // ...and the prose the fixture wrote into every ticket really was on the
-    // reader's side of this - so the small frame is a projection, not an
-    // empty backlog.
-    assert.ok(!st.latest.includes('prose that nothing on the stream ever displays'), 'the item bodies are back on the stream');
-    await teardown(ctx);
+      // ...and the prose the fixture wrote into every ticket really was on the
+      // reader's side of this - so the small frame is a projection, not an
+      // empty backlog.
+      assert.ok(!st.latest.includes('prose that nothing on the stream ever displays'), 'the item bodies are back on the stream');
+      await teardown(ctx);
+    });
   });
 
   scoped(/^the latest snapshot carries the same per-item fields as the connect snapshot$/, async (ctx) => {
-    const st = state(ctx);
-    const connect = JSON.parse(st.connectSnapshot);
-    const latest = JSON.parse(st.latest);
-    const shapeOf = (snapshot) =>
-      Object.fromEntries(
-        Object.entries(snapshot.backlog).map(([folder, items]) => [
-          folder,
-          [...new Set(items.flatMap((item) => Object.keys(item)))].sort(),
-        ]),
-      );
-    assert.deepEqual(shapeOf(latest), shapeOf(connect), 'a client can observe a field only one producer emits');
-    assert.deepEqual(shapeOf(latest).active, FIELDS_CONSUMERS_READ.slice().sort());
-    await teardown(ctx);
+    await teardownOnError(ctx, async () => {
+      const st = state(ctx);
+      const connect = JSON.parse(st.connectSnapshot);
+      const latest = JSON.parse(st.latest);
+      const shapeOf = (snapshot) =>
+        Object.fromEntries(
+          Object.entries(snapshot.backlog).map(([folder, items]) => [
+            folder,
+            [...new Set(items.flatMap((item) => Object.keys(item)))].sort(),
+          ]),
+        );
+      assert.deepEqual(shapeOf(latest), shapeOf(connect), 'a client can observe a field only one producer emits');
+      assert.deepEqual(shapeOf(latest).active, FIELDS_CONSUMERS_READ.slice().sort());
+      await teardown(ctx);
+    });
   });
 }
 

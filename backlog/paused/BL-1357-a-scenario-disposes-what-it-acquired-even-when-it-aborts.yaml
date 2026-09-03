@@ -1,0 +1,162 @@
+id: BL-1357
+title: "runScenario has no finally, so a resource a Background acquired outlives any scenario that aborts - and the no-handler-match throw it aborts on is raised before the handler, outside every try/catch a step could write"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 29
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: none
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1357-a-scenario-disposes-what-it-acquired-even-when-it-aborts.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1357::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: satisfied by this parcel's own diff, so it proves nothing about reachability; runScenario already has a live caller and there is no new call site to anchor. Kept because BL-233 requires the handler to land in the SAME commit as the feature file. Verified absent at spec time, grep bl1357 returns 0."
+
+invariants:
+  - "Disposal happens exactly once per scenario that acquired something, on every exit path - normal completion, a handler throw, and a no-handler-match throw alike."
+  - "A disposal failure never replaces the failure that caused the abort: the original failure is always what the runner reports."
+
+human_approval: pending
+approval_context: >
+  A new feature file, so it needs a look. No ruling is posed and no
+  ruling_options are declared - how a step signals that it holds something
+  disposable is an implementation shape, and the constraint that matters
+  (exactly-once on every exit path, never masking the original failure) is
+  stated as invariants rather than as a design.
+
+  The one judgement worth stating plainly: this is offered INSTEAD of the
+  authoring rule the hardener proposed ("keep expensive or polling acquisition
+  lazy, never in Background"). That rule would work, but it permanently narrows
+  what Background is for in order to route around a fixable defect, and it would
+  have to be remembered by every future author. With a teardown seam, acquiring
+  in Background is fine again - which is what Background is for.
+
+source: |
+  Raised by the hardender as a `rule_proposal` (scope `role:hardener`,
+  2026-09-03T04:30:07Z), rejected as scoped and minted as a mechanism instead.
+  See `backlog/evidence/BL-1357-BL-1358-rule-proposal-disposition-20260903.md`.
+
+  Every claim below was verified off disk this pass, not taken from the report:
+
+  - `specs/pipeline/runtime.js` is 34 lines. `runScenario` builds
+    `const context = {}`, walks `[...background, ...scenario.steps]`, and
+    returns. There is no `finally` and no teardown call anywhere in it - and
+    none in `specs/pipeline/cli.js` either (`grep -n 'cleanup|teardown|finally'`
+    over both returns nothing).
+  - Line 24 throws `no step handler matched` when `registry.resolve` returns
+    nothing. It is raised BEFORE `resolved.handler` is called on line 27, so it
+    sits outside the per-step `try/catch` on lines 26-31. No care taken inside
+    any handler can intercept it. That is the hardener's central point and it
+    is correct.
+  - Step files that hold real resources already hand-roll cleanup - e.g.
+    `specs/pipeline/steps/bl1305FixtureAgentBinarySteps.js` defines
+    `function teardown(ctx)` at line 103 and calls it at lines 162, 225, 281 and
+    294. Those calls are STEPS. They run only if the walk reaches them, which is
+    exactly what an abort prevents. There is no runtime-level convention for
+    them to hook into: `grep -rln 'context.__cleanup|afterScenario'` across
+    `specs/pipeline/` finds no such seam.
+  - The trigger measured: BL-1351's Background ends `And a client connected to
+    /events` - a real client polling a real bridge every 20ms across 1223 items.
+    Under Gherkin mutation a mutated Outline cell stops matching, line 24
+    throws, and the client is left connected with nothing to close it. It held a
+    mutation worker for 808 seconds.
+
+description: |
+  ## What is broken
+
+  A scenario's `context` is the only handle a step has on anything it opened,
+  and the runner never looks at it again after the walk. On the happy path this
+  is invisible, because step files that hold real resources close them from a
+  late step. On an abort it is a leak, and the leak is unbounded: nothing in the
+  runner, the CLI, or the mutation harness reclaims it.
+
+  Two abort paths, and the second is the one that makes this routine rather than
+  rare:
+
+  1. **A handler throws** (`runtime.js:29`). The late cleanup step never runs.
+  2. **No handler matches the step text** (`runtime.js:24`). Raised *before*
+     `resolved.handler` is called, so it is outside the per-step `try/catch`
+     entirely. Nothing a handler author can write will catch it.
+
+  Gherkin mutation exists to change step text, so path 2 is not an edge case
+  under the hardener's own gate - it is the normal outcome of mutating an
+  Outline cell. That is how one leaked `/events` client came to hold a mutation
+  worker for 808 seconds.
+
+  ## What must be true afterwards
+
+  A scenario that acquired something disposes it on **every** exit path, exactly
+  once - completion, handler throw, and no-handler-match alike. And disposal is
+  subordinate to the failure that triggered it: if disposal itself throws, the
+  original failure is still what the runner reports, with the disposal failure
+  reported alongside rather than instead. A runner that swallows the real
+  failure to surface a cleanup error would be worse than the leak.
+
+  A scenario that acquired nothing must be unaffected - no ceremony, no
+  attempted disposal, no change to any of the existing step files that do not
+  opt in. Adoption is incremental by design: this ticket lands the seam, not a
+  sweep of every handler.
+
+  ## How (direction, not mandate)
+
+  - The natural shape is a `finally` in `runScenario` around the step walk,
+    disposing whatever the context registered. How a step registers - a
+    documented array on `context`, a returned disposer, something else - is the
+    implementer's call; the invariants are the contract.
+  - Outline rows each get their own scenario run and their own context, so
+    exactly-once is per row, not per Outline. Scenario 05 pins that.
+  - Do NOT reach for `process.on('exit')` as the mechanism. It is the wrong
+    scope (per-process, not per-scenario), it does not run on every path, and
+    this repo already has the scar: BL-1312 is open precisely because an exit
+    hook was mistaken for signal coverage.
+  - The existing hand-rolled `teardown(ctx)` step calls can stay exactly as they
+    are; nothing in this ticket requires touching them.
+
+out_of_scope: |
+  - A per-mutant time ceiling in the mutation harness. That is BL-1358, minted
+    from the same report, and it is the safety net for hangs this ticket does
+    not cause - deliberately separate, because either is worth having alone.
+  - Converting existing step files onto the new seam. The seam is opt-in; a
+    sweep would be its own slice and is not needed for the fix to be real.
+  - BL-1351's own payload-size defect, which is the ticket whose Background
+    happened to expose this. Nothing here changes what /events sends.
+  - Any rule about what may or may not appear in a Background. See
+    `approval_context` - the point of this ticket is that no such rule is needed.
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1357-a-scenario-disposes-what-it-acquired-even-when-it-aborts.feature`
+     - all five scenarios pass.
+  2. The abort paths, proved against the real runner rather than a fake: add a
+     throwaway feature whose Background acquires a tracked resource and whose
+     last step text matches no handler. Run it. Expect the runner to report the
+     no-handler-match error AND the resource to be disposed. Delete the
+     throwaway afterwards.
+  3. Regression on the real trigger: run the Gherkin mutation for BL-1351's
+     feature file and confirm no worker outlives the run, and that no `/events`
+     client remains connected after it finishes (check open sockets before and
+     after).
+  4. `bash specs/pipeline/scripts/run_acceptance.sh` green - the seam must not
+     disturb the step files that already hand-roll their own teardown.
+  5. Confirm the runner's reported failure text for an ordinary failing step is
+     unchanged from before the parcel (invariant 2's everyday face).
+
+notes: |
+  Minted 2026-09-03 from the hardender's rule proposal, which was rejected as
+  scoped rather than dismissed. The observation was sound and well evidenced;
+  what it proposed was authoring guidance filed at the role that CATCHES this,
+  and this ticket is the mechanism that makes the guidance unnecessary. Full
+  reasoning: `backlog/evidence/BL-1357-BL-1358-rule-proposal-disposition-20260903.md`.
+
+  Split 1:2 (BL-680 consolidation authority). The report names two independent
+  missing mechanisms - no scenario teardown, and no mutation ceiling - in
+  different files, each valuable without the other. Bundling them would fail
+  INVEST's Independent and Small. BL-1358 is the sibling; neither depends on the
+  other, and `depends_on` is empty on both deliberately.
+
+  IR-DRY: 0 findings.
