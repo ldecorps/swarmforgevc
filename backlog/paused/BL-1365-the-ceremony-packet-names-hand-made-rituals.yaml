@@ -23,7 +23,7 @@ required_wiring:
   - 'extension/src/metrics/closingCeremonyRun.ts::determinismCandidates::the packet ASSEMBLY populates the field, proving more than the type declaring it'
   - 'specs/pipeline/steps/index.js::bl1365CeremonyNamesHandMadeRitualsSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options - you already settled the
   governing question, and this ticket follows your ruling rather than
