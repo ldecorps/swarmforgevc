@@ -122,3 +122,5 @@ notes: |
   "a message arrives in the Bubble topic". Reviewed and deliberately kept: the outline is
   the parameterized form of the same step and one handler pattern serves both, so this is
   not accidental drift.
+
+assigned_to: coder
