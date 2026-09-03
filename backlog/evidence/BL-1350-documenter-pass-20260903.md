@@ -32,6 +32,15 @@ drop behavior, and that the BL-1111 alert/backoff is untouched (the failure
 it reports is removed, not silenced). `**Last Updated**` bumped in the same
 commit as the content change.
 
+## Self-audit (Article 2.3)
+
+Re-read the entry against the live source before re-sending the handoff:
+caught and fixed one inexact path — `extension/src/telegram-front-desk-bot.ts`
+corrected to `extension/src/tools/telegram-front-desk-bot.ts` (commit
+`4d354bdd18`). Re-verified `parseNextSseRecord`, `relayOneRecord`, and the
+newly-exported `drainBufferedRecords` all live in
+`extension/src/tools/telegramFrontDeskBotCore.ts` as cited.
+
 ## Verdict
 
 No documenter-domain defect found. Forwarding to QA.
