@@ -164,3 +164,6 @@ source: |
   Specifier-found during the 2026-09-03 backlog-root drain. Not from an intake
   document: the defect was discovered while investigating why the root intake
   INTAKE-operator-question-1788082425603 had been blocked for four days.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-03, by: cleaner, blamed: coder, class: invariant-unencoded, commit: bfd1f1b613, evidence: backlog/evidence/BL-1352-cleaner-bounce-20260903.md }
