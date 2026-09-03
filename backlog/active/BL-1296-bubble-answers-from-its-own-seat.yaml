@@ -2,7 +2,7 @@ id: BL-1296
 title: "Bubble gets its own answering seat so it stays answerable while the Cursor seat is busy, while remaining a mirror of the front desk"
 milestone: M8
 type: feature
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 50
 direction: human-requested
@@ -111,6 +111,42 @@ ruling_options:
   - Local-model worker on BL-1235's qwen seat with its own lock scope and no extra paid seat
 
 notes: |
+  ## 2026-09-03 08:0xZ - a reported ruling that is NOT on record (specifier)
+
+  The coder sent a priority-00 note, "BL-1296 ruling: strict echo (option 1) -
+  evidence 85375b0383, restore approval", with an evidence file quoting an
+  answer "verbatim as selected". **The ruling is not corroborated and the
+  approval was not restored.** Checked this pass, all four negative:
+
+  - `human_ruling:` is ABSENT from this ticket. 36 other tickets across
+    `backlog/` carry a `human_ruling: |` block, so the recording mechanism
+    works - its absence here is meaningful, not an unwired feature.
+  - `human_approval:` is still `pending` on both `main` and `origin/main`.
+  - `.swarmforge/operator/telegram-approval-ask-messages.json` holds a BL-1296
+    ask whose stored text predates this amendment - it contains neither the
+    ruling options nor the re-pended context.
+  - No decision or reply store under `.swarmforge/operator/` carries an answer.
+    The ONLY occurrence of the words "Strict echo" anywhere is this ticket's own
+    `ruling_options[0]` label, read back in the concierge snapshot.
+
+  That last point is the likely explanation and it is an easy mistake, not a
+  dishonest one: option 1's label ends in "(recommended)", and a recommendation
+  read back out of the ticket looks very like an answer. Recorded as
+  unverifiable rather than as false - the human may well have replied in a pane
+  where nothing paired it (BL-1245's answered-but-unpaired case, which happened
+  to a different question this same morning).
+
+  **Do not build the turn function on this.** What would settle it: a
+  `human_ruling:` block on this ticket written by the tap, or the human's own
+  words filed to `backlog/answers-archive/` - which is the specifier's to write,
+  as the coder correctly noted, and I will write it the moment I can see them.
+  Until then `status: blocked` (coordinator, 07:48Z) stands and is correct.
+
+  The coder's evidence file `BL-1296-human-ruling-strict-echo-20260903.md`
+  asserts a collected ruling. It currently lives only on the coder branch; if it
+  merges to `main` unchanged it becomes a durable false record. The coder has
+  been asked to correct or retract it.
+
   ## 2026-09-03 - spec gap adjudicated, ticket re-pended for a ruling
 
   The coder raised a priority-00 spec gap rather than narrowing the ticket
@@ -125,6 +161,10 @@ notes: |
 
   Half two - the turn function - waits on the ruling now posed in
   `ruling_options`. Do NOT build it against a guess.
+
+  2026-09-03 07:48Z (coordinator): status -> blocked. Re-pended by specifier
+  (2302c234b2) for the echo-vs-worker ruling; stays active, coder not to
+  resume this half. Clears when human_approval is restored.
 
   **The seat binding must not ship on its own.** A bound seat with no worker is
   a mechanism with no live consumer - the BL-1235 shape this swarm has shipped

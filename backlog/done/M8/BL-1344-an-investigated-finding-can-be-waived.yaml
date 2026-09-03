@@ -10,6 +10,7 @@ severity: medium
 # priority 10, explicitly "not a fresh operational emergency", and this
 # severity keeps it out of the expedite lane in front of BL-1343.
 status: todo
+abandoned_commits: [3bfb1d0287]
 epic: swarm-reliability
 priority: 25
 direction: swarm-reported

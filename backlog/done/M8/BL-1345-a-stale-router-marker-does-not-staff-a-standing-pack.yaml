@@ -8,6 +8,7 @@ severity: medium
 # which is a real gap but not the live outage this was minted for. See the
 # amendment note below - the scope was narrowed, never widened.
 status: todo
+abandoned_commits: [53eea8b35c]
 epic: swarm-reliability
 priority: 6
 direction: swarm-reported

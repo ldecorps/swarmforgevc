@@ -10,6 +10,7 @@ severity: medium
 # is the kind of authority a human should sign for, and an uncertified hotfix
 # keeps resurfacing in the recurrent sweep until they do.
 status: todo
+abandoned_commits: [5b48d4d584]
 epic: swarm-reliability
 priority: 20
 direction: aligned
