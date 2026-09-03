@@ -33,9 +33,10 @@ config ask_escalation_minutes 30
 Threshold minutes are taken from `SWARMFORGE_ASK_ESCALATION_MINUTES`, else
 default 30.)
 
-**Missing / bad ops issue:** no crash. The tick logs a warning, leaves markers
-unstamped, and surfaces `ask_escalation.transport: unconfigured` in
-`status.json`.
+**Missing / bad ops issue:** no crash. The tick leaves markers unstamped and
+surfaces `ask_escalation.transport: unconfigured` in `status.json` — see
+"Transport visibility (BL-1352)" below for how that degradation is now
+reported.
 
 ## What you see
 
@@ -46,20 +47,53 @@ unstamped, and surfaces `ask_escalation.transport: unconfigured` in
 3. Operator `status.json` carries:
    - `role_questions.<role>.state`: `pending` or `escalated`
    - `ask_escalation.transport`: configured vs `unconfigured`
+   - `ask_escalation.state`/`ask_escalation.detail`/`ask_escalation.waiting_roles`
+     — the human-facing health, see below.
+
+## Transport visibility (BL-1352)
+
+GH-25 shipped with this degradation path invisible: an unconfigured
+transport wrote only `status.json` and a per-tick operator-log `WARN` line
+that nothing ever read (7027 identical lines accumulated across four days
+while two role questions sat wedged). Two fixes:
+
+- **`./swarm status` renders an "Ask escalation" row**, always — not only
+  when something is wrong, since a row that appears only on failure is one
+  a human never learns to look for:
+  - `ok` — transport configured (whether or not anything is currently waiting).
+  - `warn` — transport unconfigured, but nothing is waiting yet. Worth
+    saying, not a fault — a signal that is permanently on is how the
+    original one went unread.
+  - `FAULT` — transport unconfigured **and** at least one question is past
+    the escalation threshold; the detail names every waiting role, not just
+    the first.
+- **The operator log line is written on state CHANGE only**, the same
+  last-state pattern the babysitterd watchdog already used — N ticks in one
+  state produce one line, not N lines.
 
 ## Operator check
 
 ```bash
-# See pending / escalated ask surface
+# See pending / escalated ask surface, and the transport's own health
 jq '.role_questions, .ask_escalation' .swarmforge/operator/status.json
+
+# Human-readable row (state + which roles, if any, are waiting):
+./swarm status | grep -A1 "Ask escalation"
 
 # Synthetic overdue marker (live swarm): back-date asked_at_ms, omit escalated_at_ms,
 # wait one operator tick, confirm one GH comment + stamp; next tick silent.
+# With no ops issue configured, the same overdue marker turns the status row
+# FAULT instead, naming the role.
 ```
 
 ## Related
 
 - [Coordinator `role_ask.bb`](BL-773-coordinator-role-ask-clarifying-question.md) — how asks are raised.
 - [Stale approval-ask email escalation](BL-584-stale-approval-ask-email-escalation.md) — Approvals topic, different path.
+- BL-1347 owns moving this transport onto BL-584's stale-approval email
+  digest; BL-1352 only makes whatever transport is currently in force
+  honest about whether it can deliver.
 
 Acceptance: `specs/features/GH-25-role-ask-email-escalation.feature`.
+Acceptance (transport visibility):
+`specs/features/BL-1352-escalation-transport-fault-is-visible.feature`.
