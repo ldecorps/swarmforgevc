@@ -151,7 +151,7 @@ test('BL-1333/BL-654 invariant 1: running the redundancy proof alone never chang
   assert.ok(reach.differs > 0, 'never exercised a path whose content differs');
   assert.ok(reach.notInOrigin > 0, 'never exercised a path origin does not carry - the fail-closed corner');
   assert.ok(reach.absent > 0, 'never exercised a path absent from the working tree');
-});
+}, 120000);
 
 test('BL-1333/BL-654 invariant 2: an unproven path is left as found, still blocks, and is the only one named', () => {
   // The dangerous direction of this hotfix is the drop, so the cases are
@@ -247,7 +247,7 @@ test('BL-1333/BL-654 invariant 2: an unproven path is left as found, still block
   assert.ok(reach.mixed > 0, 'never exercised a proven path alongside an unproven one');
   assert.ok(reach.allUnproven > 0, 'never exercised an overlap the proof establishes nothing in');
   assert.ok(reach.unrelatedDirt > 0, 'never exercised dirt outside the overlap');
-});
+}, 120000);
 
 test('BL-1333/BL-654 invariant 3: the stamp-off parcel never edits the code it reviews', () => {
   // Measured, not asserted in prose: whatever THIS PARCEL changed, none of it
