@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d325e559bcf8e34eea04f044e884b7c5e733b4fc194809abb6edf648ebfa68e5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T02:26:26.014894572Z","feature_name":"Stamp-off review of the reconcile redundant-overlap hotfix","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1333-swarm-stamp-reconcile-redundant-overlap-f57795b6d2.feature","background_hash":"3a71be9fddac987783f21ee8976cb8fc9bb8c5dafd190f9128f122ddc9edcb49","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A path is dropped only when its content already matches origin/main","scenario_hash":"8e1771fb1d80acae745f12f8759244b5c7d3b012fbde77b307a0f46c85729058","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-03T02:26:26.014894572Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Stamp-off review of the reconcile redundant-overlap hotfix
 
   BL-848 review-only certification of landed commits f57795b6d2 (handoffd.bb

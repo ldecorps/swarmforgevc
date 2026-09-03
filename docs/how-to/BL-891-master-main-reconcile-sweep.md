@@ -55,6 +55,23 @@ push-sweep, flow watchdog, master-checkout drift). Each tick:
    touch the checkout — it sends a `note` (priority `00`) naming the
    offending path(s) to the coordinator and stops. Uncertainty always fails
    closed to blocked, never to reconciling.
+   **(BL-1333/f57795b6d2, hotfix, ledger decision pending human
+   certify/waive)** Before that block fires, each overlapping path is
+   checked for a narrow exception: a **read-only** proof (`master-main-
+   reconcile-redundant-paths!`) hashes the working-tree blob and compares it
+   to `origin/main:<path>` — never a diff read, and it writes nothing.
+   `blocking-overlap` (`master_main_reconcile_lib.bb`) is the real overlap
+   MINUS this proven-redundant set, so a path this proof does not positively
+   establish stays exactly as found and still blocks; there is no
+   fallback-to-drop on an uncertain proof. Any path it DOES prove redundant
+   — a stale pre-land duplicate byte-identical to what's already incoming,
+   the shape ten evidence-file/source paths took on 2026-09-02 and stalled
+   the reconcile for hours — is dropped immediately before the real merge,
+   inside the `:merge!` adapter itself, recomputed fresh every tick rather
+   than reused from an earlier one (BL-1310's freshness rule: a stale proof
+   is the one thing this must never act on). A tracked path goes back to
+   `HEAD` (`git checkout`); a staged-new or untracked one is unstaged and
+   removed. The merge then proceeds exactly as step 3 already does.
 5. **(BL-1130)** Before starting a merge, merge-tree foresight refuses a
    known content conflict with `:refuse-rematch` (clean worktree — no
    `MERGE_HEAD`). If a merge this tick started still conflicts, it aborts
@@ -86,7 +103,7 @@ genuine content conflict still aborts exactly as before.
 |---|---|
 | up to date | Local `main` already has everything `origin/main` has. Nothing emitted. |
 | reconciled | Local `main` was behind and no dirty path overlapped a path the merge would change (clean tree, or dirty-but-non-overlapping) — merged forward automatically. Nothing emitted; check `git log` if you want to see it happen. |
-| dirty overlap, not reconciled | Local `main` is behind and a dirty (or untracked) path collides with a path the incoming merge would write to — the one case a plain `git merge` would itself refuse. The sweep leaves the checkout exactly as it found it and surfaces a `note` naming the offending path(s) (a count, past the first, if naming them all would blow the note's 80-char budget) to the coordinator. |
+| dirty overlap, not reconciled | Local `main` is behind and a dirty (or untracked) path collides with a path the incoming merge would write to — the one case a plain `git merge` would itself refuse. **(BL-1333/f57795b6d2)** Any overlapping path proven byte-identical to `origin/main` is dropped and the merge proceeds anyway; this verdict/note fires only for paths that survive that proof — genuinely differing local work, never a stale duplicate. The sweep leaves the (still-blocking) checkout exactly as it found it and surfaces a `note` naming the offending path(s) (a count, past the first, if naming them all would blow the note's 80-char budget) to the coordinator. |
 | merge conflict / refuse-rematch (BL-1130 / BL-1141) | Predicted or real conflict on the **automated** path. Aborted (or never started); checkout has no `MERGE_HEAD` / unmerged paths. **(BL-1141)** live handoffd / Process B then **execute** rematch onto `origin/main` so `behind=0` — not a standing Cursor wait-reconcile. Do not finish a daemon merge in an editor. |
 | human merge in progress (BL-1120) | `MERGE_HEAD` was already set when the tick ran. The sweep does **not** merge and does **not** abort — a human (or other agent) owns the join. Surfaces a note; finish or abort the merge yourself. |
 
@@ -125,6 +142,13 @@ push-sweep's own alarm flags use).
 - Never `reset --hard`, `rebase`, `stash`, or force-updates the ref — a
   checkout the sweep declines to touch is left byte-identical, never
   partially updated (this is BL-891's own two declared invariants).
+  **(BL-1333/f57795b6d2)** The one narrow exception is a path the read-only
+  proof above has established is already byte-identical to `origin/main`:
+  that path IS discarded (tracked → `git checkout` back to `HEAD`;
+  staged-new/untracked → unstaged and removed) so the merge can proceed —
+  but since its content already matches what's incoming, discarding it
+  changes no content the tree doesn't already have. A path the proof does
+  not positively establish is still left exactly as found.
 - Never pushes anything — that direction is push-sweep's job (BL-356); this
   sweep only ever merges `origin/main` **forward into** local `main`.
 - Does not resolve conflicted file contents. Automated path aborts/refuses
