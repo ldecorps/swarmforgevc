@@ -190,9 +190,28 @@
           (or type "?")
           (or ticket "(no task)")))
 
+(def ^:private ask-escalation-state-glyph
+  {:ok "ok" :warn-unconfigured "warn" :fault "FAULT"})
+
+(defn ask-escalation-row
+  "BL-1352: the ask-escalation row for the human status surface. The escalation
+   used to report a transport it could not use only into status.json and the
+   operator log, neither of which anyone read - so a question could sit
+   undelivered for days with the surface showing nothing at all. This row is
+   the smallest thing that makes it visible where a human already looks."
+  [{:keys [state detail]}]
+  {:label "ask escalation"
+   :state (or state :unknown)
+   :detail (or detail "")})
+
+(defn- format-ask-escalation-line [{:keys [label state detail]}]
+  (str "  " label ": "
+       (get ask-escalation-state-glyph state (name (or state :unknown)))
+       (when-not (str/blank? (str detail)) (str " — " detail))))
+
 (defn render-status-report
   "Render the full human-readable status block."
-  [{:keys [project-root agents daemons telegram handoffs generated-at]}]
+  [{:keys [project-root agents daemons telegram handoffs generated-at ask-escalation]}]
   (str/join
    "\n"
    (concat
@@ -208,6 +227,15 @@
     (if (seq daemons)
       (map format-component-line daemons)
       ["  (none)"])
+    [""
+     "Ask escalation"]
+    ;; BL-1352: always rendered, even with nothing to report - a row that
+    ;; appears only when something is wrong is a row a human never learns to
+    ;; look for.
+    [(format-ask-escalation-line
+      (ask-escalation-row (or ask-escalation
+                              {:state :unknown
+                               :detail "no escalation state reported by this tick"})))]
     [""
      "Telegram bridge"]
     (if (seq telegram)
