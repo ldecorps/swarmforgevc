@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1371: `specs/pipeline/steps/index.js`'s
+hand-maintained `DOMAINS` array of 937 `require('./blNNNSteps')` lines is
+replaced by directory discovery — the module reads its own directory for
+top-level `*Steps.js` files and loads each one, eagerly, at module load, still
+exporting `registerSteps` unchanged. Registration cannot now be lost, leaked
+by a replay, or removed by a revert independently of the handler file itself,
+because there is nothing to be absent from — the structural cause behind
+three prior incident classes (a merge-adjudication over-charge, a land-replay
+leak (BL-1324), and BL-1356's land-queue deadlock with no first mover).
+Verified as a SET comparison, never a count (937 handler identities / 13754
+registrations, empty difference both directions) plus a per-step
+resolution-parity check across all 1059 feature files / 19693 steps: zero
+steps changed which file and pattern answers them. `check_feature_handler_registration.sh`
+(BL-1303) is narrowed, not retired — it still refuses a handler file present
+but unreachable from a conforming discovery predicate. The
+`required_wiring: specs/pipeline/steps/index.js::blNNNSteps` anchor pattern —
+this backlog's single most common `required_wiring` entry, and one that
+proved nothing even before this change — is retired for new tickets; point a
+new handler's `required_wiring` at the handler file's own export instead.
+Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature`.
+How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
+diagram depicts step-handler registration.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
 refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
 refuse outright whenever a path was owned by both the landing ticket and
