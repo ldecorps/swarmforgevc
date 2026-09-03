@@ -21,6 +21,7 @@ mutation_cost: medium
 slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1332-a-shared-path-carries-the-siblings-lines.feature
+abandoned_commits: [6fd46b37c3]
 
 required_wiring:
   - 'swarmforge/scripts/land_step_cli.bb::land-step-lib/replay!::the CONSUMER anchor (BL-1235). land_step_cli.bb is pre-existing and is the only live caller of the replay, so anchoring the call here proves the changed shared-path handling sits on a path that actually runs. Anchoring inside land_step_lib.bb would be satisfied by this parcel own diff and prove nothing. Verified present at spec time, land_step_cli.bb line 65.'
