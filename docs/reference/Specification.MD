@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1367: the paused-pager Mini App
+approve route (`computePausedPagerApproveOutcome`,
+`extension/src/bridge/bridgeServer.ts`) used to call
+`recordApprovalReply(targetPath, backlogId)` — a signature with no ruling
+argument — so a ticket declaring `ruling_options` approved from the phone
+flipped `human_approval` to `approved` and silently discarded the choice it
+posed; BL-1309 was approved this way on 2026-09-01 and its question was
+never answered. `recordApprovalReply`
+(`extension/src/concierge/pendingApprovalReply.ts`) now takes an optional
+`ruling`, the one writer both the bot's callback path and the pager route
+call. Before writing, `classifyApprovalRulingRequirement(rulingOptions,
+ruling)` classifies the tap as `ok`, `ruling-required`, or
+`unknown-option`; only `ok` proceeds — the other two refuse with HTTP `409`
+naming the outstanding options, never a bare status (BL-572/BL-662),
+instead of half-recording. A ticket with no `ruling_options` behaves
+exactly as before; an existing `human_ruling:` is never overwritten by a
+later plain approval. Hardened: `classifyApprovalRulingRequirement` and
+`computePausedPagerApproveOutcome` both reduced from CRAP 7.00 to <=5.20
+(`matchesRulingOption`/`buildRulingRefusalBody` split out). Acceptance:
+`specs/features/BL-1367-an-approval-from-any-surface-carries-its-ruling.feature`.
+How-to:
+`docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md`. No
+diagram depicts the approval/ruling write path.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1360: three fixed pipeline sends —
 the QA merge-up broadcast, the QA-to-coordinator bookkeeping note, and the
 specifier's spec-ready note — carry no judgement at all, yet were
