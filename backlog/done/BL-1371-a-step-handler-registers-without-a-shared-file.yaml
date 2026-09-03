@@ -9,7 +9,7 @@ severity: critical
 # unrelated mechanisms (merge adjudication, land replay, land entanglement) and
 # each recurrence costs a full investigation; and rather than high because a
 # blocked land always has a documented remedy.
-status: todo
+status: done
 epic: code-quality-gates
 priority: 1
 direction: swarm-reported
