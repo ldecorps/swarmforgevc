@@ -450,14 +450,21 @@
 ;; ancestor of swarmforge-QA (via is_qa_ancestor.sh, the ONE shared
 ;; predicate - BL-925 invariant 2), and touch a QA-exclusive path read at
 ;; runtime from BL-632's own check_pipeline_code_on_main.sh --list-paths
-;; (never restated here - invariant 2) - merge commits diffed with
-;; `git diff-tree -m --first-parent`, never plain `git show`, which is
-;; blind to a merge's own content (BL-590's f8dc07963: 0 files plain, 13
-;; via --first-parent).
+;; (never restated here - invariant 2) - merge commits diffed as a TWO-TREE
+;; diff against their first parent, never plain `git show`, which is blind to
+;; a merge's own content (BL-590's f8dc07963: 0 files plain, 20 against its
+;; first parent).
 ;;
-;; BL-962: that first-parent diff attributes everything a QA-side parent
-;; brought in to the merge itself, which raised a false CRIT on every
-;; operator reconciliation merge of QA-landed work. The gatherer now
+;; BL-1359: this paragraph used to say `git diff-tree -m --first-parent`, and
+;; so did the gatherer. That flag is a revision-TRAVERSAL option and does
+;; nothing on a single named commit, so `-m` alone decided the output - the
+;; union of the diffs against EVERY parent. The gatherer now takes the
+;; two-tree diff against the resolved first parent, which is what both
+;; comments always claimed.
+;;
+;; BL-962: a merge's first-parent diff still legitimately includes everything
+;; a QA-side parent brought in, which raised a false CRIT on every operator
+;; reconciliation merge of QA-landed work. The gatherer now
 ;; adjudicates each merge's offending paths against its non-first parents
 ;; BEFORE handing them here: a path is exempt only when some parent is BOTH
 ;; QA-approved (the same is_qa_ancestor.sh predicate) AND holds
