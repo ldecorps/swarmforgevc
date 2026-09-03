@@ -114,6 +114,36 @@ run_guard "$repo"
 [ -z "$OUT" ] || fail "05: the guard spoke on a branch other than main: $OUT"
 pass "05 the guard is silent on a branch other than main"
 
+# ── 05b: --assume-main assesses a non-main branch (BL-1375) ────────────────
+# The land step's tip-pure replay stands on a scratch `land-replay/...` branch
+# while BEING the tree about to become main's tip. Case 05 above is exactly
+# why it cannot be assessed without saying so: the branch gate would exit 0 on
+# the name alone and the land would collect a pass the guard never performed.
+run_guard_assume_main() {
+  OUT=""
+  STATUS=0
+  OUT="$(bash "$GUARD" "$1" --assume-main 2>&1)" || STATUS=$?
+}
+
+repo="$(build_repo replay_bad land-replay/BL-9001-abc123 1)"
+run_guard_assume_main "$repo"
+[ "$STATUS" -eq 1 ] || fail "05b: --assume-main did not assess an unrunnable replay tree: $OUT"
+names "BL-901-fixture.feature" || fail "05b: refusal did not name the offending feature: $OUT"
+
+repo="$(build_repo replay_good land-replay/BL-9001-abc123 1 bl901FixtureSteps)"
+run_guard_assume_main "$repo"
+[ "$STATUS" -eq 0 ] || fail "05b: --assume-main refused a self-consistent replay tree: $OUT"
+pass "05b --assume-main assesses a replay branch, and still passes a consistent tree"
+
+# The flag must not be mistaken for the repo root when it comes first.
+repo="$(build_repo replay_argorder land-replay/BL-9001-abc123 1)"
+OUT=""
+STATUS=0
+OUT="$(bash "$GUARD" --assume-main "$repo" 2>&1)" || STATUS=$?
+[ "$STATUS" -eq 1 ] || fail "05c: --assume-main before the root was misread: $OUT"
+names "BL-901-fixture.feature" || fail "05c: refusal did not name the offending feature: $OUT"
+pass "05c --assume-main is recognised in either argument position"
+
 # ── 06: an unreadable step registry is refused, never waved through ─────────
 repo="$(build_repo noregistry main 1 bl901FixtureSteps)"
 rm "$repo/specs/pipeline/steps/index.js"

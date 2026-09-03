@@ -25,11 +25,19 @@
 # (extension/src/tools/featureHandlerRegistrationCheck.ts, unit-tested under
 # extension/test/); this script owns the branch gate and the delegation.
 #
-# Usage: check_feature_handler_registration.sh [repo-root]
+# Usage: check_feature_handler_registration.sh [repo-root] [--assume-main]
 #   repo-root defaults to `git rev-parse --show-toplevel`.
 #
-# Exit 0: any branch other than `main`, or a tree whose every feature file
-#         resolves to a registered, runnable handler.
+#   --assume-main (BL-1375) skips the branch gate below and assesses the tree
+#   whatever branch it is checked out on. The land step's tip-pure replay is
+#   built on a scratch `land-replay/...` branch while BEING the tree about to
+#   become main's tip, so without this the guard exits 0 on the branch name
+#   alone and the land collects a pass it never performed. It can only ever
+#   make the guard RUN where it would have skipped - there is no path here
+#   that changes what the checker decides.
+#
+# Exit 0: any branch other than `main` (unless --assume-main), or a tree whose
+#         every feature file resolves to a registered, runnable handler.
 # Exit 1: at least one offender - ALL of them named in one refusal (Article
 #         4.4's shape applied in a gate; a guard that stopped at the first
 #         would reproduce the one-defect-at-a-time loop that rule prevents) -
@@ -44,16 +52,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # script's own checkout, so a caller may point the guard at any repository
 # (the acceptance fixture points it at a scratch one) without that repository
 # needing a compiled extension of its own.
-REPO_ROOT="${1:-$(git rev-parse --show-toplevel)}"
+ASSUME_MAIN=0
+REPO_ROOT_ARG=""
+for arg in "$@"; do
+  if [ "$arg" = "--assume-main" ]; then
+    ASSUME_MAIN=1
+  elif [ -z "$REPO_ROOT_ARG" ]; then
+    REPO_ROOT_ARG="$arg"
+  fi
+done
+
+REPO_ROOT="${REPO_ROOT_ARG:-$(git rev-parse --show-toplevel)}"
 CHECKER="$SCRIPT_DIR/../../extension/out/tools/check-feature-handler-registration.js"
 
 # A hook runs with GIT_DIR (and sometimes GIT_WORK_TREE) already exported, so
 # `git -C` alone would not decide which repository is being asked about.
 unset GIT_DIR GIT_WORK_TREE
 
-BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
-if [[ "$BRANCH" != "main" ]]; then
-  exit 0
+if [[ "$ASSUME_MAIN" != "1" ]]; then
+  BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+  if [[ "$BRANCH" != "main" ]]; then
+    exit 0
+  fi
 fi
 
 refuse() {
