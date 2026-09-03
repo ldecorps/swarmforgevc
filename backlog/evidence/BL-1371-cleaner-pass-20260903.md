@@ -33,3 +33,38 @@ list they loaded themselves.
 Forwarding to architect unchanged (no functional or structural change from
 this stage) — the received commit already satisfies the cleaner's
 checklist, so committing a no-op diff would violate the No-Op Rule.
+
+## Re-run, 2026-09-03 (expedite re-run, stage 02)
+
+First run passed all six stage verdicts and failed on its ticket half
+(`run.json`: failed-half=ticket, exit-code 1) — nothing structural to
+redo. Production code (`specs/pipeline/steps/index.js`,
+`specs/pipeline/steps/bl1371StepDiscoverySteps.js`) is byte-identical to
+this stage's own commit `b8eac3c258` and to the coder's `5a54d66774`. The
+only change since the first cleaner pass is the hardener's own addition —
+one new unit test (`featureHandlerRegistrationCheck.test.js`, the nested-
+subdirectory-is-not-discovered case) and a mutation-manifest header on the
+feature file — both hardener-domain, nothing for cleaner to act on.
+
+Every check below was re-run from scratch against the branch tip rather
+than trusting the first pass's numbers.
+
+| Check | Result |
+|---|---|
+| `npm run compile` (from `extension/`) | clean |
+| `npx vitest run` — `bl1371StepDiscovery.test.js`, `featureHandlerRegistrationCheck.test.js`, `checkFeatureHandlerRegistrationCli.test.js` | 46 pass (was 45; +1 is the hardener's new nested-subdirectory case) |
+| `npx vitest run --config vitest.properties.config.mjs` — `bl1371StepDiscoveryInvariants.property.test.js`, `bl1303FeatureHandlerRegistration.property.test.js` | 6 pass, same reach floors as the first pass |
+| `swarmforge/scripts/test/test_check_feature_handler_registration.sh` | ALL PASS (9 cases) |
+| `node extension/out/tools/check-feature-handler-registration.js .` | exit 0 |
+| `specs/pipeline/scripts/run_acceptance.sh` BL-1371 feature | 5/5 pass |
+| Mutation-site count (BL-485): `featureHandlerRegistrationCheck.js` | 130 sites, still `over` — unchanged from the first pass, still pre-existing (109 at `main` before this parcel), still not a split candidate: no production line changed this pass |
+| Mutation-site count: `featureHandlerRegistrationTypes.js` | 5 sites, within |
+| `node scripts/crapReport.js src/tools/featureHandlerRegistrationCheck.ts src/tools/featureHandlerRegistrationTypes.ts` | every function CRAP ≤ 6.00 (max still `collectUnregisteredHandlers` at 6.00, 100% covered); `isDiscovered`'s subdirectory branch now has an explicit unit case behind it from the hardener |
+| `git diff main --stat` (production files only) | unchanged from the coder's commit — no new commit from this stage |
+
+## Verdict
+
+Forwarding to architect unchanged, same as the first pass — no functional
+or structural change for cleaner to make. The hardener's post-cleaner
+addition is test-only and stays in the hardener's domain; re-verified
+green rather than assumed.
