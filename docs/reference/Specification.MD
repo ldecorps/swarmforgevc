@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1360: three fixed pipeline sends —
+the QA merge-up broadcast, the QA-to-coordinator bookkeeping note, and the
+specifier's spec-ready note — carry no judgement at all, yet were
+hand-assembled every time (one QA seat spent 16m06s/58.6k tokens composing
+two of them, 2026-09-03). `swarmforge/scripts/ceremony_handoff.sh
+<ceremony> --ticket BL-042 [--commit ...] [--dry-run]` composes the draft
+from one definition (`ceremony_handoff_lib.bb`, pure) and shells out to the
+real `swarm_handoff.sh` (`ceremony_handoff.bb`) — a thin front end, never a
+second way into a mailbox: every send-time gate still arms, the tmux wake
+still fires, and a refusal is the gate's own text passed through unchanged.
+The message is composed from `message-forms` tried longest-prose first;
+neither the ticket id nor the commit is ever truncated to fit the
+80-character note cap — if no form fits, composition fails and the sender
+falls back to an ordinary note. The `merge-up`/`bookkeep` recipient lists
+and priorities have one definition, checked by a test against
+`handoff-protocol.md` rather than restated (BL-897). Wiring role prompts to
+make this the standard route is a separate, specifier-owned follow-up
+(BL-798) — not part of this build. Acceptance:
+`specs/features/BL-1360-a-ceremony-handoff-is-composed-not-retyped.feature`.
+How-to: `docs/how-to/BL-1360-ceremony-handoff-compose-not-retype.md`. No
+diagram depicts handoff-composition internals — `handoff-flow.mmd`'s
+change-trigger is the mailbox lifecycle/state machine, unchanged here.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1296: Bubble gets its own answering
 seat so it stays answerable while the Cursor seat is mid-turn, while
 remaining a mirror of the front desk — the human's ruling (option 1 of
