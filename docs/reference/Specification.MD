@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1336: the vitest fork ceiling can
+now tell a `config rotation router` swarm — one live resident pane plus the
+coordinator — from a full forge's seven live role sessions, and sizes its
+worker pool wider under router, where the CPU-contention risk the ceiling
+exists to guard against does not apply. Previously `ROTATION_MODE` was
+computed in `swarmforge.sh` and written only into
+`$STATE_DIR/swarm-identity`; nothing running inside a role could read it,
+so `resolveVitestForkCeiling` fell through to the same default ceiling
+under every mono-router pack, leaving concurrency on the table. Fixed with
+one export: `swarmforge.sh` now exports `SWARMFORGE_ROTATION` beside the
+existing `SWARMFORGE_PACK` in every role launch script, sourced from a new
+`rotation_signal()` helper that `write_swarm_identity_file` also calls —
+the identity file and the exported env read the same normalisation and can
+never disagree about what "router" means. `resolveVitestForkCeiling`
+(`vitest-worker-memory-budget.ts`) gains a `rotation` input read the same
+way `pack`/`platform` already are, inside the SAME `resolveVitestWorkerPool`
+composition point both lanes share (BL-935) — no second sizing route.
+Per the human's ruling, the router ceiling is a FIXED
+`ROUTER_FORK_CEILING = 10` (not derived from host core count, which would
+make the function host-sensitive and turn a deterministic unit test flaky),
+checked only after the pre-existing full-forge-on-darwin rule (still 1,
+unchanged, and evaluated first so a future router variant of full-forge
+could not silently widen it), and keyed on the rotation VALUE rather than
+matching pack names — router packs are not a fixed enum and new ones are
+minted regularly. The memory-derived count stays the binding cap regardless
+of the CPU ceiling: `resolveVitestWorkerPool` still takes the MINIMUM of
+the two, so a raised ceiling can never grow the pool past what the host's
+RAM budget (BL-422/BL-792) allows. An absent rotation signal — the ordinary
+developer shell outside any swarm — behaves exactly as before. Acceptance:
+`specs/features/BL-1336-router-rotation-raises-the-vitest-fork-ceiling.feature`.
+No new extension command or setting — internal test-tooling concurrency
+only; no diagram depicts test-runner sizing.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1352: the ask-escalation transport's
 own health is now visible where a human actually looks, closing a defect
 that left a role question undelivered for four days. GH-25's escalation
@@ -9341,6 +9374,37 @@ runaway agent, was the OOM source.
   freshly generated `.swarmforge/launch/<role>.sh` is. No extension
   command, setting, or UI changes — launcher wiring for a signal the
   extension's own test tooling consumes.
+
+- **The CPU ceiling widens under a router topology (BL-1336).** The
+  full-forge-on-darwin rule above shrinks the ceiling for one crowded
+  topology; nothing raised it for a roomier one. Under `config rotation
+  router` the launcher starts only the coordinator and ONE resident pane
+  that rotates through the pipeline roles — every other role is a dormant
+  launch artifact with no session and no process — so a vitest run inside
+  the resident contends with the coordinator alone, not seven sibling role
+  sessions, which is the exact contention this ceiling exists to guard
+  against. The rotation mode was computed in `swarmforge.sh` and written
+  only into `$STATE_DIR/swarm-identity`; nothing running inside a role
+  could read it, so the ceiling could not tell a router swarm from a full
+  forge and left concurrency on the table. `swarmforge.sh` now exports
+  `SWARMFORGE_ROTATION` beside `SWARMFORGE_PACK` in every generated role
+  launch script, sourced from a new `rotation_signal()` helper that
+  `write_swarm_identity_file` also calls, so the identity file and the
+  exported env read the same normalisation and can never disagree about
+  what "router" means. `resolveVitestForkCeiling` gains a `rotation` input,
+  read the same way `pack`/`platform` already are, checked only AFTER the
+  full-forge-on-darwin rule (so a future router variant of that pack could
+  not silently widen it) and keyed on the rotation VALUE rather than a
+  pack-name match — router packs are not a fixed enum and new ones are
+  minted regularly. Per the human's ruling, the router ceiling is a FIXED
+  `ROUTER_FORK_CEILING = 10` rather than derived from host core count,
+  which would make the function host-sensitive and turn a deterministic
+  unit test flaky. `resolveVitestWorkerPool` still takes the MINIMUM of
+  this ceiling and the RAM-derived count, so the memory budget above
+  remains the binding cap regardless of rotation. An absent rotation
+  signal — the ordinary developer shell outside any swarm — behaves
+  exactly as before. No extension command, setting, or UI change —
+  internal test-tooling concurrency only.
 
 ### Whole-suite duration budget verdict (BL-445)
 
