@@ -166,15 +166,15 @@
         ;; left nothing on one. A definite answer, so the handover stays quiet.
         {:name branch :absent? true}
         (let [{:keys [exit out err]} (sh {:dir (str project-root)}
-                                       "git" "rev-list" "--count" (str "origin/main.." branch))
-            counted (some-> out str/trim not-empty parse-long)]
-        (if (and (zero? exit) counted)
-          {:name branch :ahead counted}
-          {:name branch
-           :reason (let [detail (str/trim (str (if (seq (str/trim (str err))) err out)))]
-                     (if (seq detail)
-                       (str "git rev-list origin/main.." branch " could not answer: " (first (str/split-lines detail)))
-                       (str "git rev-list origin/main.." branch " could not answer")))}))))))
+                                         "git" "rev-list" "--count" (str "origin/main.." branch))
+              counted (some-> out str/trim not-empty parse-long)]
+          (if (and (zero? exit) counted)
+            {:name branch :ahead counted}
+            {:name branch
+             :reason (let [detail (str/trim (str (if (seq (str/trim (str err))) err out)))]
+                       (if (seq detail)
+                         (str "git rev-list origin/main.." branch " could not answer: " (first (str/split-lines detail)))
+                         (str "git rev-list origin/main.." branch " could not answer")))}))))))
 
 (defn- outstanding-now
   "The leavings as of right now. One derivation, read by both the terminal
