@@ -175,6 +175,7 @@ single_role_repair_lib_test_runner.bb	standing
 standing_rule_violations_files_test_runner.bb	standing		
 standing_rule_violations_lib_test_runner.bb	standing		
 stuck_escalation_email_lib_test_runner.bb	standing		
+suite_baseline_lib_test_runner.bb	standing		
 suite_inventory_lib_test_runner.bb	standing		
 supersede_lib_test_runner.bb	standing		
 support_lib_test_runner.bb	standing		
@@ -443,6 +444,7 @@ test_stop_ancillary_services_onboarder_dual_clear.sh	standing
 test_stop_ancillary_services_tunnel_orphan_reap.sh	standing		
 test_stop_operator_runtime_watch_first.sh	standing		
 test_stop_swarm_freshness_cron.sh	standing		
+test_suite_baseline_cli.sh	standing		
 test_supersede_guard.sh	standing		
 test_support_runtime_tick.sh	standing		
 test_swarm_ensure.sh	standing		
