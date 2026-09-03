@@ -940,6 +940,294 @@
     (assert-true "sibling-own-line-changes: the sibling's own real commit still counts"
                  (contains? (get-in changes ["shared.txt" :added]) "sib line"))))
 
+
+;; ── BL-1375: approved siblings sharing a path can land ────────────────────
+;; BL-1332 refused EVERY shared path with an unlanded sibling. When several
+;; APPROVED tickets share one path that is circular: each refuses because the
+;; others are unlanded, and no order lets any of them go first (four stuck on
+;; specs/pipeline/steps/index.js, 2026-09-03). Human ruling: narrow the
+;; refusal to siblings that are WITHHELD, awaiting approval, or whose
+;; approval state cannot be read - plus the rider, that a passenger rides
+;; only if the replayed tree passes the registration guard before publish.
+
+(defn- write-ticket! [root folder id body]
+  (fs/create-dirs (fs/path root "backlog" folder))
+  (spit (str (fs/path root "backlog" folder (str id "-x.yaml"))) body))
+
+;; ── ticket-approval-state: the state read, fail-closed ────────────────────
+
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (assert= "BL-1375: an approved sibling is not blocking"
+           false (:blocking? (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: pending\n")
+  (let [state (land-step-lib/ticket-approval-state root "BL-9002")]
+    (assert= "BL-1375: a sibling awaiting approval blocks" true (:blocking? state))
+    (assert= "BL-1375: and says why" :awaiting-approval (:state state))))
+
+(with-fixture [root]
+  (write-ticket! root "hold" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (let [state (land-step-lib/ticket-approval-state root "BL-9002")]
+    (assert= "BL-1375: a withheld sibling blocks even when its field reads approved"
+             true (:blocking? state))
+    (assert= "BL-1375: and says it is withheld" :withheld (:state state))))
+
+(with-fixture [root]
+  (let [state (land-step-lib/ticket-approval-state root "BL-9002")]
+    (assert= "BL-1375: a sibling with no readable ticket file blocks" true (:blocking? state))
+    (assert= "BL-1375: and says the state could not be read" :unreadable (:state state))))
+
+;; Two copies disagreeing is not a state anyone can act on - fail closed.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (write-ticket! root "hold" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (assert= "BL-1375: a sibling filed in two folders at once blocks"
+           :unreadable (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+;; backlog-schema.md: an ABSENT human_approval means "no approval needed",
+;; which promotion_gates_lib.bb's own gate already passes. It is neither
+;; withheld nor awaiting, so it is not one of the blocking states.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nstatus: todo\n")
+  (assert= "BL-1375: an absent human_approval is not a blocking state"
+           false (:blocking? (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+;; A near-miss id must not answer for the id actually asked about.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-90020" "id: BL-90020\nhuman_approval: approved\n")
+  (assert= "BL-1375: BL-90020's file does not answer for BL-9002"
+           :unreadable (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+
+;; The ticket file a sibling is filed under moves on main - a landed sibling's
+;; YAML is in backlog/done/ there while the branch tree still predates the
+;; move, or does not carry it at all. Reading only the checkout the land runs
+;; from therefore reports "unreadable" for tickets that are approved and
+;; already landed, and the jam this ticket exists to clear stays shut. Both
+;; trees are read, and EITHER saying blocking blocks - no judgment about which
+;; is fresher, and no way for a hold on one side to be read away by the other.
+
+(defn- commit-ticket-onto-main! [root folder id body]
+  (write-ticket! root folder id body)
+  (sh! root "git" "add" "-A")
+  (sh! root "git" "commit" "-q" "-m" (str "file " id " under " folder))
+  (mark-origin-main-here! root)
+  (fs/delete-tree (fs/path root "backlog" folder)))
+
+(with-fixture [root]
+  (commit-ticket-onto-main! root "done" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (assert= "BL-1375: a sibling filed only on origin/main is read there, not called unreadable"
+           :approved (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+(with-fixture [root]
+  (commit-ticket-onto-main! root "hold" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  ;; The branch tree still has it in active/ and reading only that would let a
+  ;; ticket a human has since pulled ride.
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (assert= "BL-1375: a hold on origin/main blocks even when the branch tree says active"
+           :withheld (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+(with-fixture [root]
+  (commit-ticket-onto-main! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  ;; ...and the other way round: approval withdrawn on the branch, not yet on
+  ;; main. Either side saying blocking is enough.
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: pending\n")
+  (assert= "BL-1375: a pending value in the branch tree blocks even when main says approved"
+           :awaiting-approval (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+(with-fixture [root]
+  (commit-ticket-onto-main! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (assert= "BL-1375: agreeing on both sides is approved, and read once"
+           :approved (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+
+;; backlog/done/ nests by milestone (backlog/done/M8/BL-....yaml), so a reader
+;; that lists only the immediate folder finds nothing for every landed
+;; sibling. Measured on the live jam 2026-09-03: BL-1328, BL-1346 and BL-1351
+;; all read "no ticket file found" while sitting in backlog/done/M8 on
+;; origin/main, which fails closed into exactly the deadlock being cleared.
+
+(with-fixture [root]
+  (fs/create-dirs (fs/path root "backlog" "done" "M8"))
+  (spit (str (fs/path root "backlog" "done" "M8" "BL-9002-x.yaml"))
+        "id: BL-9002\nhuman_approval: approved\n")
+  (assert= "BL-1375: a ticket nested under a milestone folder is found in the worktree"
+           :approved (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+(with-fixture [root]
+  (fs/create-dirs (fs/path root "backlog" "hold" "M8"))
+  (spit (str (fs/path root "backlog" "hold" "M8" "BL-9002-x.yaml"))
+        "id: BL-9002\nhuman_approval: approved\n")
+  (assert= "BL-1375: and a nested hold is still a hold"
+           :withheld (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+(with-fixture [root]
+  (fs/create-dirs (fs/path root "backlog" "done" "M8"))
+  (spit (str (fs/path root "backlog" "done" "M8" "BL-9002-x.yaml"))
+        "id: BL-9002\nhuman_approval: approved\n")
+  (sh! root "git" "add" "-A")
+  (sh! root "git" "commit" "-q" "-m" "file BL-9002 under done/M8")
+  (mark-origin-main-here! root)
+  (fs/delete-tree (fs/path root "backlog"))
+  (assert= "BL-1375: a nested ticket is found on origin/main too"
+           :approved (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
+
+;; ── own-paths: the narrowed refusal ───────────────────────────────────────
+
+(defn- shared-path-fixture!
+  "The deadlock's own shape: the landing ticket and one unlanded sibling both
+   edit specs/pipeline/steps/index.js. The sibling's TICKET file is written
+   before origin/main is marked, so it is not itself delivered content."
+  [root folder approval]
+  (write-ticket! root folder "BL-9002" (str "id: BL-9002\n" approval))
+  (commit! root "seed.txt" "seed\n" "seed before origin/main")
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/index.js" "// base\n" "BL-9001: the landing ticket adds its handler")
+  (commit! root "specs/pipeline/steps/index.js" "// base\n// sibling line\n"
+           "BL-9002: the unlanded sibling adds its handler to the same file")
+  (:out (sh! root "git" "rev-parse" "HEAD")))
+
+(with-fixture [root]
+  (let [commit (shared-path-fixture! root "active" "human_approval: approved\n")
+        {:keys [paths warning passengers]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1375/01: an approved sibling no longer blocks the shared path"
+             nil warning)
+    (assert-true "BL-1375/01: and the shared path is replayed"
+                 (contains? (set paths) "specs/pipeline/steps/index.js"))
+    (assert= "BL-1375/01: the approved sibling is named as a passenger"
+             #{"BL-9002"} passengers)))
+
+(with-fixture [root]
+  (let [commit (shared-path-fixture! root "active" "human_approval: pending\n")
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1375/02: a sibling awaiting approval still refuses" nil paths)
+    (assert-includes "BL-1375/02: and the refusal names it" warning "BL-9002")))
+
+(with-fixture [root]
+  (let [commit (shared-path-fixture! root "hold" "human_approval: approved\n")
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1375/03: a withheld sibling still refuses" nil paths)
+    (assert-includes "BL-1375/03: and the refusal names it" warning "BL-9002")))
+
+(with-fixture [root]
+  ;; No ticket file at all for BL-9002: the state cannot be read.
+  (commit! root "seed.txt" "seed\n" "seed before origin/main")
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/index.js" "// base\n" "BL-9001: the landing ticket adds its handler")
+  (commit! root "specs/pipeline/steps/index.js" "// base\n// sibling line\n"
+           "BL-9002: the unlanded sibling adds its handler to the same file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1375/05: an unreadable approval state still refuses" nil paths)
+    (assert-includes "BL-1375/05: and the refusal names the sibling" warning "BL-9002")
+    (assert-includes "BL-1375/05: and says the state could not be read" warning "unreadable")))
+
+;; Mixed owners: one approved, one awaiting. The refusal names only the one
+;; that is actually blocking - Article 4.4's shape, an actionable refusal.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (write-ticket! root "active" "BL-9003" "id: BL-9003\nhuman_approval: pending\n")
+  (commit! root "seed.txt" "seed\n" "seed before origin/main")
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/index.js" "// base\n" "BL-9001: landing ticket")
+  (commit! root "specs/pipeline/steps/index.js" "// base\n// s2\n" "BL-9002: approved sibling")
+  (commit! root "specs/pipeline/steps/index.js" "// base\n// s2\n// s3\n" "BL-9003: pending sibling")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002" "BL-9003"})]
+    (assert= "BL-1375: one blocking co-owner among approved ones still refuses" nil paths)
+    (assert-includes "BL-1375: and the refusal names the blocking sibling" warning "BL-9003")))
+
+;; ── land-plan carries the passengers forward ──────────────────────────────
+
+(with-fixture [root]
+  (let [commit (shared-path-fixture! root "active" "human_approval: approved\n")
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "BL-1375: an all-approved shared path plans a replay, not an escalation"
+             :replay (:action plan))
+    (assert= "BL-1375: and the plan names the passengers riding on it"
+             #{"BL-9002"} (:passengers plan))))
+
+;; ── the rider: the replayed tree is guarded before publish ────────────────
+
+(with-fixture [root]
+  ;; A replayed tree that leaves a feature file with no registered handler.
+  ;; The guard refuses, so the land refuses, naming the passenger (BL-1324).
+  (let [commit (shared-path-fixture! root "active" "human_approval: approved\n")
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+        result (land-step-lib/replay! {:root root :commit commit
+                                       :task-ticket-id "BL-9001"
+                                       :own-paths (:own-paths plan)
+                                       :passengers (:passengers plan)
+                                       :tree-guards-fn (fn [_ _] ["registration guard: no handler for x.feature"])})]
+    (assert= "BL-1375/06: a failing tree guard refuses the land" false (:success result))
+    (assert-includes "BL-1375/06: and the refusal names the passenger" (:reason result) "BL-9002")
+    (assert-includes "BL-1375/06: and reports what the guard said"
+                     (:reason result) "no handler for x.feature")))
+
+(with-fixture [root]
+  (let [commit (shared-path-fixture! root "active" "human_approval: approved\n")
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+        result (land-step-lib/replay! {:root root :commit commit
+                                       :task-ticket-id "BL-9001"
+                                       :own-paths (:own-paths plan)
+                                       :passengers (:passengers plan)
+                                       :tree-guards-fn (fn [_ _] [])})]
+    (assert-true "BL-1375/07: a passing tree guard lets the passenger ride" (:success result))
+    (sh! root "git" "branch" "-q" "-D" (:branch result))))
+
+;; No passengers, no guard run: an ordinary tip-pure replay is unchanged, and
+;; a main that is already inconsistent must not start refusing every land.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own/only.txt" "a\n" "BL-9001: the landing ticket's own path")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        ran (atom false)
+        result (land-step-lib/replay! {:root root :commit commit
+                                       :task-ticket-id "BL-9001"
+                                       :own-paths ["own/only.txt"]
+                                       :passengers #{}
+                                       :tree-guards-fn (fn [_ _] (reset! ran true) ["boom"])})]
+    (assert-true "BL-1375: a replay with no passenger still succeeds" (:success result))
+    (assert= "BL-1375: and the tree guard is not run when nothing rides" false @ran)
+    (sh! root "git" "branch" "-q" "-D" (:branch result))))
+
+
+;; ── the REAL guard wiring, not the injected one ───────────────────────────
+;; tree-guards-fn above keeps the refusal/pass paths drivable; this pins that
+;; the default actually reaches check_feature_handler_registration.sh and
+;; actually assesses a non-main tree. Without --assume-main the guard's own
+;; branch gate exits 0 on the scratch branch's name and this would pass
+;; vacuously - so the FIRST case here must be a refusal.
+
+(with-fixture [root]
+  ;; On a `land-replay/...` branch, exactly where the real replay stands. The
+  ;; fixture's default branch is main, on which the guard would run anyway and
+  ;; this case would say nothing about --assume-main.
+  (sh! root "git" "checkout" "-q" "-b" "land-replay/BL-9001-abc1234567")
+  (fs/create-dirs (fs/path root "specs" "features"))
+  (fs/create-dirs (fs/path root "specs" "pipeline" "steps"))
+  (spit (str (fs/path root "specs" "features" "BL-9009-fixture.feature")) "Feature: fixture\n")
+  (spit (str (fs/path root "specs" "pipeline" "steps" "bl9009FixtureSteps.js"))
+        "module.exports = { registerSteps() {} };\n")
+  (spit (str (fs/path root "specs" "pipeline" "steps" "index.js")) "const DOMAINS = [\n];\n")
+  (sh! root "git" "add" "-A")
+  (sh! root "git" "commit" "-q" "-m" "fixture: a feature with no registered handler")
+  (let [refusals (land-step-lib/run-replayed-tree-guards root)]
+    (assert-true "BL-1375: the real tree guard refuses an unregistered handler on a non-main tree"
+                 (boolean (seq refusals)))
+    (assert-includes "BL-1375: and the refusal names the offending feature"
+                     (str/join " " refusals) "BL-9009-fixture.feature"))
+  ;; Registering it clears the refusal - the guard is deciding, not just failing.
+  (spit (str (fs/path root "specs" "pipeline" "steps" "index.js"))
+        "const DOMAINS = [\n  require('./bl9009FixtureSteps'),\n];\n")
+  (sh! root "git" "add" "-A")
+  (sh! root "git" "commit" "-q" "-m" "fixture: register the handler")
+  (assert= "BL-1375: and a self-consistent tree passes"
+           [] (land-step-lib/run-replayed-tree-guards root)))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))

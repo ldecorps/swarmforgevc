@@ -35,6 +35,13 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   keeps BL-1192's and `pre_qa_gate_lib.bb`'s own ancestry walks from
   mis-reading the deliberately severed descent.
 
+  `<new-commit>` may also carry one `PASSENGER_SIBLING <ticket-id>` line per
+  APPROVED unlanded sibling whose own lines rode in on a shared path this
+  replay had to take whole — see
+  "An approved sibling can ride as a passenger, guarded before publish
+  (BL-1375)" below. QA owes each named passenger the same
+  `abandoned_commits:` bookkeeping its own land would have produced.
+
   A `LANDED_SIBLING` line does not change what action `land-plan` returns —
   the sibling's original commit remains an ancestor, and its content may
   differ from the replay, so the action stays `:land` — only the report.
@@ -200,10 +207,14 @@ follow-up slice, not built here): a path whose owners include both the
 landing ticket and an unlanded sibling now refuses the land outright, naming
 the path, the landing ticket, and the sibling(s):
 
+(Narrowed by BL-1375, below: this refusal now applies only when the
+unlanded co-owner is itself withheld, awaiting approval, or unreadable — an
+APPROVED unlanded co-owner rides as a passenger instead.)
+
 ```
 land-step: refusing to replay <ticket> - <path> is shared with unlanded
 sibling(s) <sibling-ids>, and a replayed path is taken whole, so landing it
-would carry the sibling's lines into main (BL-1332)
+would carry the sibling's lines into main (BL-1332/BL-1375)
 ```
 
 This sits ahead of BL-1315's exclusion check in `own-paths`'s `cond`, so a
@@ -213,6 +224,11 @@ landing-only path still replays whole, a sibling-only path is still excluded
 (BL-1315), a path shared with an ALREADY-landed sibling still replays
 (`LANDED_SIBLING`, BL-1272), an unattributed path still replays, and an
 unreadable attribution still refuses first.
+
+(As of BL-1375, "shared with unlanded sibling(s)" in the refusal message
+means specifically a co-owner that is withheld, awaiting approval, or
+unreadable — see the next section but one, below, for the narrowed rule and
+the passenger it now lets ride instead of refusing.)
 
 ## A shared path no longer hides a landed sibling behind a co-owner's unlanded lines (BL-1354)
 
@@ -272,6 +288,81 @@ shape, and the `LANDED_SIBLING` / `ENTANGLED_SIBLING` lines, are unchanged.
 Wiring this same detector into the mandatory land-step decide path is
 BL-1309, a separate ticket, not built here. Acceptance:
 `specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature`.
+
+## An approved sibling can ride as a passenger, guarded before publish (BL-1375)
+
+BL-1332 (above) made a path shared between the landing ticket and ANY
+unlanded sibling refuse outright. That is circular exactly when every
+co-owner is otherwise approved: each refuses because the others are
+unlanded, and none of them can go first, so a whole family of siblings that
+share one hot file (`docs/reference/Specification.MD`, `docs/index.md`,
+cross-ticket backlog yaml — the same files BL-1354 names) could deadlock the
+land queue on that one shared path indefinitely. Reproduced live on
+2026-09-03: `BL-1296`, `BL-1309`, `BL-1356` and `BL-1359` all shared a path
+and all four `LAND_ESCALATE`'d against each other.
+
+Per the human's ruling (option 1 of two offered for BL-1332's refusal —
+option 2, splitting a shared path per-hunk, remains a follow-up slice, not
+built here) plus the human's rider on that ruling: `own-paths`' shared-path
+check now asks **which** unlanded co-owner it is, via a new
+`ticket-approval-state` (`land_step_lib.bb`):
+
+| sibling state | rides as a passenger? |
+|---|---|
+| `human_approval: approved` | yes |
+| `human_approval` absent | yes — `swarmforge/backlog-schema.md` defines absent as "no approval needed", the same reading `promotion_gates_lib.bb`'s own promotion gate already uses (`read-human-approval`, reused here rather than re-implemented) |
+| present and not `approved` (pending / amending / rejected / unrecognised) | **no** — still refuses |
+| filed in `backlog/hold` | **no**, regardless of what `human_approval` says — the folder decides ahead of the field, since a held ticket can still read a pre-hold `approved` |
+| found in no tree, filed in more than one backlog folder, or otherwise unreadable | **no** — fails closed |
+
+Both the worktree and `origin/main` are consulted for each sibling (a
+sibling's ticket file *moves* on `main` when it lands, and `backlog/done/`
+nests by milestone, so both readers recurse), and either tree saying
+blocking blocks — nothing one tree says can read away a hold the other is
+carrying. Only a POSITIVE read of "approved" (or "no approval needed")
+narrows anything; every other or unknown state keeps BL-1332's refusal
+exactly as before.
+
+A path landing on the passenger side is still taken whole — `own-paths`
+returns the passenger sibling id(s) alongside the path set (`:passengers`),
+so `land_step_cli.bb` prints one `PASSENGER_SIBLING <ticket-id>` line per
+approved unlanded sibling whose lines rode in, and QA owes each one the same
+`abandoned_commits:` bookkeeping its own land would have produced — a
+passenger is not a bystander, its content just reached `main` on someone
+else's commit.
+
+### The rider: the replayed tree is guarded before it can be published
+
+Letting an unapproved sibling's lines ride sight-unseen is exactly the
+BL-1324 shape (an unregistered feature-file step handler landing on `main`
+and jamming every subsequent commit). The human's rider on this ruling
+closes that: `replay!` runs `check_feature_handler_registration.sh` against
+the tree it just built, **only when at least one passenger actually rides**
+— with nothing riding, the tree is this ticket's own content already
+destined for `origin/main`, and guarding it anyway would make an
+already-inconsistent `main` start refusing every land, trading one deadlock
+for another. A guard refusal at this point aborts the whole replay (`{:success
+false ...}`, naming the passengers and the refusal) rather than publishing a
+now-known-bad tree.
+
+`check_feature_handler_registration.sh` gained a `--assume-main` flag for
+this call. The replay tree stands on a scratch `land-replay/...` branch, not
+`main`, so without the flag the guard's own branch gate would exit 0 on the
+branch *name* alone and the land would collect a pass it never actually
+performed — the exact vacuous-guard shape this rider exists to prevent. The
+flag only ever makes the guard **run** where it would otherwise have
+skipped; it never changes what the guard decides once it runs. The guard
+list (`replayed-tree-guards` in `land_step_lib.bb`) is a plain `def`, so
+adding a second tree guard later is one list entry, not a second call site,
+and each guard runs as its own process with its own status collected
+individually (BL-1242/BL-1252's shape, satisfied by construction).
+
+None of this changes `land_step_cli.bb`'s three top-level outcomes —
+`LAND_CLEAN`, `LAND_REPLAY <branch> <new-commit>`, `LAND_ESCALATE` — only
+what can follow a `LAND_REPLAY` (an added `PASSENGER_SIBLING` line per
+approved rider) and what `own-paths`/`replay!` decide about a shared path
+that used to be an unconditional refusal. Acceptance:
+`specs/features/BL-1375-approved-siblings-sharing-a-path-can-land.feature`.
 
 ## What this does not change
 

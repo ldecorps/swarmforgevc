@@ -21,15 +21,33 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1375-approved-siblings-sharing-a-path-can-land.feature
 
 invariants:
-  - "Nothing the human has not approved reaches main, by any route this ticket opens - the refusal exists for that and must keep doing it (BL-1332)."
-  - "A sibling that is withheld, in backlog/hold, or awaiting approval still blocks, and is still named in the refusal."
+  - "Nothing the human has not approved reaches main by any route this ticket opens: a sibling that is withheld, in backlog/hold, awaiting approval, or whose approval state cannot be READ still blocks, and is still named in the refusal (BL-1332)."
+  - "A passenger's content rides into main only if the replayed tree is self-consistent on main: the land runs check_feature_handler_registration.sh (and its other tree guards) against the replayed tree before publish, and a failure refuses the land naming the passenger - never a raw publish (BL-1324)."
   - "No route added here bypasses the task-scope gate's own refusal of out-of-scope content (BL-1192) - it is satisfied, never skipped."
 
 required_wiring:
   - 'swarmforge/scripts/land_step_lib.bb::entangled-siblings::the refusal predicate this ticket changes or the batch path it feeds'
   - 'specs/pipeline/steps/index.js::bl1375ApprovedSiblingsCanLandSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Option 1 (recommended) - narrow the refusal to withheld or unapproved
+  siblings, per BL-1309 option 2. This REVISES the BL-1309 ruling recorded
+  minutes earlier ("refuse every entangled tip") in light of the deadlock it
+  caused - the human made this call directly, aware it reopens BL-1309's
+  refusal width.
+
+  Recorded 2026-09-03 by direct instruction from the human (t / ldecorps@gmail.com)
+  in a Claude Code coordinator chat session, not via Telegram.
+
+  Rider (human, 2026-09-03, via the Operator): "approved" means approved to be
+  WORKED, not landed. A passenger sibling's shared-path content may ride into
+  main only if the replayed tree is self-consistent on main - run
+  check_feature_handler_registration.sh (and the land's other tree guards)
+  against the replayed tree BEFORE publish, and refuse naming the passenger
+  when it fails. This is the BL-1324 shape (approved, mid-pipeline sibling's
+  require line rode in ahead of its handler file and froze every commit); the
+  narrowing must not re-enable it. Belongs in this parcel, not a follow-up.
 approval_context: >
   This one is urgent and the decision is genuinely yours, because the cleanest
   fix revisits a ruling you gave today - with information that was not in the
@@ -106,6 +124,18 @@ description: |
   - If the batch route is chosen instead, it satisfies the task-scope gate
     rather than bypassing it (invariant 3). A route that skips a gate to unjam a
     queue is how the queue becomes the reason the gate stopped working.
+  - Invariant 2's guard run is NOT wired today: `check_feature_handler_
+    registration.sh` is reached only from `run_commit_guards.sh` and the commit
+    hooks, never from the land. The natural seam is `land_step_lib.bb`'s
+    `replay!` (line ~698) or its CLI caller, before publish. Which of the two is
+    the implementer's call, which is exactly why no `required_wiring:` entry
+    pins it - BL-874 forbids arming a gate on a name or path that is still a
+    guess, and a wrong guess here false-blocks the documenter's send to QA. The
+    invariant is gated by its own acceptance scenarios instead (BL-1235: an
+    anchor that cannot fail is worse than a stated absence).
+  - If several guards are run at once, the shell chain must NOT run under
+    `set -e` - the first failure would abort the rest and mask their violations
+    (BL-1242/BL-1252). Capture each status, exit the combined one.
   - Whichever is chosen, the four tickets in the jam are the regression fixture.
 
   ## Explicitly NOT in scope
@@ -123,11 +153,31 @@ qa_e2e_procedure: |
      refused naming it (invariant 2), and confirm its lines are not on main
      after the approved ones land (invariant 1). This is the test that matters.
   3. Repeat 2 with the sibling in `backlog/hold` rather than pending approval.
-  4. Confirm the task-scope gate still refuses genuinely out-of-scope content on
+  4. Repeat 2 with the sibling's approval state UNREADABLE - its ticket file
+     absent, or its `human_approval` present but unparseable. Confirm the land
+     is still refused naming it. This guards the risk the ruling introduces:
+     reading approval state is more state to read and more ways to be wrong,
+     and a read that could not run must never be scored as "nothing found" -
+     `entangled-siblings`' own documented posture.
+  5. The rider (invariant 2), and the step that matters most after 2: fixture a
+     passenger whose shared-path line references a handler file that is NOT on
+     main - the BL-1324 shape exactly. Confirm the land refuses naming the
+     passenger rather than publishing. Then put the handler file on main and
+     confirm the same land now succeeds. A green here that never ran
+     `check_feature_handler_registration.sh` against the REPLAYED tree is not
+     this invariant tested; confirm the guard actually ran.
+  6. Confirm the task-scope gate still refuses genuinely out-of-scope content on
      whatever route is added (invariant 3) - satisfied, never skipped.
-  5. Live regression: re-run the land classification for BL-1296, BL-1309,
-     BL-1356 and BL-1359 and confirm the jam clears.
-  6. Remove the fixture root in a `finally`, sweeping by prefix before the run
+  7. Live regression: re-run the land classification for BL-1296, BL-1309,
+     BL-1356 and BL-1359 and confirm the jam clears. READ THIS BEFORE SCORING
+     IT: the expedited run that delivered this ticket parked all four into
+     `backlog/hold/` (see `.swarmforge/expedite/BL-1375/park-record.json`), and
+     under invariant 1 a sibling in hold still blocks. Restore the four to
+     `backlog/active/` first - they are `human_approval: approved` and were
+     parked by the expeditor, not held by a human. If they are still in hold, a
+     refusal naming them is invariant 1 working correctly and is NOT this fix
+     failing; do not weaken the predicate to make this step go green.
+  8. Remove the fixture root in a `finally`, sweeping by prefix before the run
      too (BL-971).
 
 notes: |
@@ -150,8 +200,55 @@ notes: |
   this one stops delivery outright while remaining perfectly safe, which is a
   combination that invites being left alone because nothing looks broken.
 
-  IR-DRY: two findings, max 0.71, both approved/withheld contrasts the scenarios
-  exist to draw.
+  IR-DRY, re-run after this pass's amendments: five findings, max 0.714, all
+  possible-synonym/medium. Reviewed and none resolved by merging: every one is
+  a contrast the scenarios exist to draw - approved vs withheld vs unreadable,
+  on-main vs not-on-main, and "decides for one of them" vs "for another of
+  them", which is the acting ticket vs its sibling. Collapsing any of them
+  would delete the distinction under test. Background was left as it is: the
+  "every sibling is approved" Given is shared by scenarios 01, 06 and 07 but
+  contradicted by 02-05, so lifting it would change what those assert.
+
+  Amended 2026-09-03 by the specifier stage of the expedited run, before the
+  coder started - no stage held the parcel, so nothing was rebuilt and no
+  bounce correction is owed.
+
+  (a) The human's rider, filed as
+  `backlog/INTAKE-operator-bl1375-passenger-must-pass-registration-guard-1788427676244.md`,
+  is now invariant 2, quoted from that intake. The intake is drained (removed
+  from the backlog root) per the root-drain rule; its directive survives
+  verbatim here and in `human_ruling` (Article 5.3). Invariants stay capped at
+  3 because old 1 and 2 were the same property at two granularities - "nothing
+  unapproved reaches main" and "the refusal that enforces it" - and merging
+  them was meaning-preserving. The rider needed its own slot: it is a distinct
+  property (tree self-consistency, not approval) and so a distinct architect
+  pass.
+
+  (b) The unreadable-approval-state case was in the "How" prose ("withheld in
+  any way the predicate does not recognise must still block") but in no
+  invariant and no scenario, so nothing gated the one property most likely to
+  be got wrong. Invariant 1 now names it and scenario 05 exercises it.
+
+  (c) qa_e2e step 5 was unrunnable as written: this run's own park moved all
+  four regression siblings into `backlog/hold/`, which invariant 1 requires to
+  keep blocking. Rewritten as step 7 so QA restores them first rather than
+  reading a correct refusal as a failed fix.
+
+  (d) The duplicate `backlog/paused/` copy of this ticket is removed on this
+  branch. The rider commit f41838e127 added the `active/` copy without deleting
+  the `paused/` one, which `specifier_backlog_hygiene_gate.sh` refuses as a
+  duplicate ticket id; the expeditor's own uncommitted park intends the same
+  deletion.
+
+  All five new scenarios (05-07 and the two rider cases) ship their step
+  handlers in this parcel - a scenario without a handler hard-fails the runner
+  for every other parcel too (BL-233).
+
+  Nothing here touches `human_approval`, `human_ruling` or `ruling_options`.
+  Every amendment strengthens the fail-closed side, which the approval_context
+  put outside the choice ("what does not change under any option: nothing you
+  have not approved reaches main"), so no re-pend is warranted and none was
+  done.
 
 source: |
   QA note 2026-09-03 (priority 00): "BL-1359 LAND_ESCALATE 3rd time on index.js,
