@@ -484,3 +484,4 @@ bl1352_escalation_transport_test_runner.bb	standing
 bl1335_exhaustion_promotion_test_runner.bb	standing		
 bl1345_stale_marker_test_runner.bb	standing		
 bl1344_waive_lib_test_runner.bb	standing		
+test_bl1328_qwen_model_token_forms.sh	standing		
