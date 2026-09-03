@@ -214,6 +214,65 @@ landing-only path still replays whole, a sibling-only path is still excluded
 (`LANDED_SIBLING`, BL-1272), an unattributed path still replays, and an
 unreadable attribution still refuses first.
 
+## A shared path no longer hides a landed sibling behind a co-owner's unlanded lines (BL-1354)
+
+`sibling-landed?` (above) decides whether a sibling's attributed content is
+already on `origin/main`. Before this ticket, `landed-siblings` answered that
+per PATH by whole-blob equality: `(= (blob-at commit p) (blob-at
+origin-main p))`. On a path only one ticket touches that is exactly right;
+on a path several tickets touch, every co-owner's edits are baked into the
+same blob, so while ANY co-owner's lines are still unlanded the shared
+file's blob differs from `origin/main` for every co-owner — including
+siblings whose own lines are fully landed. The more tickets share a hot
+file (`docs/reference/Specification.MD`, `docs/index.md`, cross-ticket
+backlog yaml/topics are the recurring offenders), the more mutually-blocking
+false-unlanded verdicts it produced. Reproduced live on BL-1332's own land
+(2026-09-03): all six siblings `LAND_ESCALATE` named as unlanded were
+already in `backlog/done/`; QA hand-built the tip-pure commit rather than
+trust the tool.
+
+The fix is scoped to the sibling's OWN attributed lines, not the whole file
+blob — BL-1272's invariant that landed stays a positive finding, and every
+unanswerable case still fails closed, is unchanged and unrelaxed.
+`sibling-landed?`'s public shape (`{:paths :complete? :same-content?}`) and
+`attribution-complete?` are untouched; what changed is what
+`landed-siblings` injects as `same-content?`:
+
+- `diff-line-changes` parses a unified diff into per-path `{:added
+  :removed}` line sets.
+- `sibling-own-line-changes` merges those across the sibling's own
+  NON-MERGE commits only — a merge authors no lines, and its first-parent
+  diff is everything its second parent brought in regardless of author, so
+  crediting a merge's lines to the sibling was inflating attribution and had
+  charged one ticket's own still-unlanded lines to an unrelated sibling.
+  `nil` (an unread diff) still propagates rather than being read as "no
+  change".
+- `sibling-path-verdict` scores each of the sibling's own paths
+  three-valued against what survives at the tip: `:landed`, `:unlanded`, or
+  `:vacuous` (the sibling has nothing left of its own at that path — a line
+  it once added was since rewritten by a later commit — so the path is
+  silent rather than an obstacle).
+- `landed-siblings` drops the `:vacuous` paths before scoring; a sibling
+  left with nothing but vacuous paths still reports unlanded through the
+  existing empty-paths fail-closed row — silence is never scored as
+  evidence.
+
+Regression against the real repository, same commit BL-1332 escalated on:
+before the fix, all six named siblings reported unlanded; after, five
+(`BL-1056`, `BL-1271`, `BL-1340`, `BL-1341`, `BL-1343`) report landed and two
+(`BL-1317`, `BL-1323`) still correctly report unlanded — checked by hand and
+confirmed as real content differences (a file genuinely absent from
+`origin/main`, and a path renamed between the cited tip and `origin/main`,
+which is not answerable by content-at-a-path and fails closed rather than
+guessing).
+
+This changes only what the detector CONCLUDES, not where it runs or what it
+outputs — `land_step_cli.bb`'s `LAND_CLEAN` / `LAND_REPLAY` / `LAND_ESCALATE`
+shape, and the `LANDED_SIBLING` / `ENTANGLED_SIBLING` lines, are unchanged.
+Wiring this same detector into the mandatory land-step decide path is
+BL-1309, a separate ticket, not built here. Acceptance:
+`specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds

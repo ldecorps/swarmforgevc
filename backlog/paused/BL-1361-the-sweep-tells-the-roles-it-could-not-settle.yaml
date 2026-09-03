@@ -1,0 +1,172 @@
+id: BL-1361
+title: "The post-QA branch sweep surfaces a role by writing a log line nobody reads: 125 surfacings against 3 fast-forwards, and not one role was ever told its branch was left behind"
+milestone: M8
+type: defect
+severity: medium
+# medium, not high: nothing is corrupted and the branch is not damaged - the
+# sweep is ff-only and leaves a surfaced branch untouched. The role also
+# usually merges anyway on its next parcel, because a forwarded commit must
+# carry the received commit as an ancestor. What is lost is the sweep's whole
+# purpose for 97% of its runs, silently, which is why it went a week without
+# anyone noticing.
+status: todo
+epic: deterministic-transit-assist
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1361-the-sweep-tells-the-roles-it-could-not-settle.feature
+
+invariants:
+  - "What the sweep DOES to a branch is unchanged: fast-forward only, never a merge, reset, rebase or stash, and a surfaced worktree is still left untouched (BL-668 invariant 1, carried forward)."
+  - "A role is told at most once per landed commit per reason - the existing surfaced record stays authoritative, so a repeat sweep of the same state is silent."
+  - "A role that cannot be told is logged and the sweep continues for every other role - one unreachable mailbox never withholds the rest."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1361SweepTellsSurfacedRolesSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
+
+human_approval: approved
+human_ruling: |
+  Wake only for a dirty worktree and defer the other reasons (recommended)
+approval_context: >
+  One decision is yours and it is posed as ruling_options below, because it
+  trades the thing this whole epic exists to reduce - agent turns - against
+  how quickly a stranded branch gets fixed.
+  .
+  A surfaced role needs to do something a script must not do for it - resolve
+  a dirty worktree, or merge a branch that cannot fast-forward. Telling it
+  costs a turn. Waking it immediately fixes the branch soonest and spends a
+  turn on something the role could have handled for free on its next natural
+  turn. Deferring costs nothing and leaves the branch behind for longer.
+  .
+  My recommendation is the middle option, and it is listed first. A dirty
+  worktree is the reason that does not resolve itself and is worth a turn; a
+  branch that merely cannot fast-forward gets merged anyway the next time that
+  role receives a parcel, because a forwarded commit must carry the received
+  commit as an ancestor.
+  .
+  What to know either way. This changes nothing about what the sweep does to a
+  branch - it stays fast-forward-only and still never touches a surfaced
+  worktree. It only decides who hears about it.
+
+ruling_options:
+  - Wake only for a dirty worktree and defer the other reasons (recommended)
+  - Wake the role immediately for every surfacing reason
+  - Never wake - surface it on the role's next ready_for_next turn
+
+description: |
+  ## What is wrong
+
+  BL-668 ships a post-QA sweep whose contract is: fast-forward every clean
+  pipeline role branch to the landed commit, and a branch it cannot settle is
+  "surfaced to its role untouched". The first half works. The second half was
+  built as a log line.
+
+  `record-surface!` (`post_qa_branch_sweep_lib.bb:94`) appends the role and
+  reason to the sweep's own state file and calls `log!`. There is no send, no
+  note, no wake. The role is never told. Contrast the sibling sweep
+  immediately below it in `handoffd.bb` - `main-sync-deadlock-sweep!` writes
+  to the operator's Telegram reply outbox when it trips.
+
+  ## Observed
+
+  Counted across the daemon logs, 2026-09-03:
+
+  | outcome | count |
+  |---|---|
+  | `post-qa-branch-sweep-surfaced` | 125 |
+  | `post-qa-branch-sweep-settled` | 3 (logged 6 times) |
+
+  Surfacing reasons: 87 `branch cannot fast-forward to landed commit`, 32
+  `dirty worktree`, 6 `in_process work present`. On 2026-08-27T16:41:56Z all
+  six roles surfaced in a single pass and nobody heard about any of them.
+
+  ## The larger finding this slice does NOT fix
+
+  97% surfaced is not a bug in the notification - it is the sweep's ff-only
+  contract meeting the normal state of a role branch. A pipeline role branch
+  almost always carries its own commits ahead of `origin/main`, so a
+  fast-forward is impossible by definition and the sweep can never help. The
+  five LLM merge-up turns per landing that BL-668 was filed to eliminate are
+  therefore still being spent.
+
+  Fixing THAT means attempting a real merge in a clean worktree and surfacing
+  only genuine conflicts - which is precisely BL-667's still-unfiled
+  "delivery-time pre-merge" slice, with the guards the epic already spells
+  out. It is a bigger slice and it is not this one. This slice makes the
+  sweep's own verdict visible, which is also what makes that next slice's
+  before/after measurable.
+
+  ## How (direction, not mandate)
+
+  - The sweep already knows the role and the reason and already dedupes via
+    `surface-already-recorded?`. The missing piece is a send, and the daemon
+    already has one - `operator_handoff.bb` is how handoffd puts a parcel in a
+    role's mailbox today. Reuse it rather than writing a mailbox directly.
+  - The dedupe record is what keeps a per-second sweep from becoming a nudge
+    storm. Whatever is added must key off it, not off a fresh check.
+  - Message content is a one-liner within the note cap - the landed commit,
+    the reason, and what the role must do. BL-1360's composer is the natural
+    place for it if that slice lands first; neither slice blocks the other.
+
+  ## Explicitly NOT in scope
+
+  - Changing the sweep's ff-only behaviour, or attempting a real merge. That
+    is the epic's delivery-time pre-merge slice.
+  - The merge-up broadcast QA sends by hand. That is BL-1360.
+
+qa_e2e_procedure: |
+  1. Build a fixture with several role worktrees and a landed commit: one
+     branch cleanly fast-forwardable, one dirty, one holding an in_process
+     parcel, one whose branch has diverged.
+  2. Run the sweep. The fast-forwardable branch settles and its role is told
+     nothing. Each surfaced role is told once, and the message names the
+     reason and the landed commit.
+  3. Run the sweep again with nothing changed. No role is told a second time.
+  4. Resolve one surfaced role's state, land a new commit, and re-run:
+     that role settles, and a role still surfaced for a NEW reason is told
+     again.
+  5. Make one role's mailbox unwritable. Confirm the failure is logged, every
+     other role is still told, and the sweep completes.
+  6. Confirm no branch was merged, reset, rebased or stashed at any point, and
+     that a surfaced worktree is byte-identical before and after.
+  7. Remove the fixture root in a `finally`, and sweep by prefix before the
+     run too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier while acting on the operator directive
+  about wasted agentic effort on mechanistic steps. Found by checking whether
+  BL-668 had already removed the merge-up turns the operator was complaining
+  about - it had not, and the reason it had not was measurable off disk.
+
+  Verified this pass rather than assumed:
+  - `post_qa_branch_sweep_lib.bb` contains no send of any kind; `record-surface!`
+    and `log!` are the whole of "surfaced".
+  - `handoffd.bb:4347` runs the sweep on the shared daemon cadence, not on a
+    landing event, so a sweep can also run when nothing landed.
+  - The 125/3 counts and the reason breakdown come from
+    `post-qa-branch-sweep-*` lines in the daemon logs, not from an estimate.
+
+  **No production-wiring anchor is declared (BL-1235).** The call site is
+  `post-qa-branch-sweep-sweep!`, which already exists and already calls into
+  the lib; an anchor there matches identically before and after the fix. A new
+  anchor on the send would be satisfied by this parcel's own diff. The single
+  entry is the acceptance-handler registration.
+
+  IR-DRY: clean, zero findings. An earlier draft had scenario 01 subsumed by
+  the reason outline; it was deleted rather than reworded and the remaining
+  scenarios renumbered.
+
+source: |
+  Operator directive 2026-09-03: "we have to make an effort to make these
+  mecanistic steps more deterministic. this is a clear waste of agentic
+  effort." Sibling of BL-1360 - that slice makes the hand-composed ceremony
+  cheap, this one makes the automated sweep's verdict visible.
+
+  Child of BL-667 (EPIC - deterministic transit assist). Regression against
+  BL-668 (post-QA deterministic branch sweep, landed), whose invariant 1
+  promised a surfaced branch would reach "its role" and delivered a log line.
