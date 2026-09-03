@@ -113,6 +113,32 @@ to home, so a legitimately rotated resident is never misclassified as
 component: it never aborts the sweep on one `FAILED`, and the overall exit
 status is non-zero iff any component (RC included) is `FAILED`.
 
+## New: assigned-role mismatch — the flag is fine, the role isn't (BL-1345)
+
+Every check above classifies the pane the CALLER was already pointed at —
+it never asks whether that pane is even running the role the pack thinks it
+is. A 2026-09-02 incident showed the gap: a stale `mono-router-active-role`
+marker (see [BL-1020](BL-1020-stale-mono-router-marker-is-not-topology.md))
+made `swarm ensure`'s RC repair respawn the specifier's pane with the
+coordinator's launch script — and the RC check, pointed AT the coordinator
+by that same stale marker, compared the coordinator's role against itself
+and printed `rc:specifier: HEALTHY` over a pane running no specifier at
+all.
+
+`remote_control_health_lib.bb`'s `assigned-role-mismatch` is the
+independent second check this closes: it compares the OBSERVED `--remote-
+control` name against `expected-rc-name` — the role the PACK actually
+assigns this pane, read fresh, never the role the caller happened to be
+asking about. Wired into `swarm_ensure.bb`'s per-role RC loop, evaluated
+only AFTER `actionable?` declines to act (so an ordinary `:degraded`/
+`:session-dead` repair isn't pre-empted into a failure report), it reports
+`:failed` naming both the expected and observed role. Silent in three
+cases, each of which would otherwise cry wolf: a rotation-router pack (a
+rotated resident legitimately runs another role's script — BL-1020/BL-648
+unchanged), no observed RC name (that's the `:down`/`:off` path above, not
+a mismatch), and no expected RC name (a launch script with no
+`--remote-control` flag at all).
+
 ## New: `:session-dead` — the flag is fine, the cloud session isn't (BL-898)
 
 `classify` (above) trusts argv alone: the live `claude` process still
