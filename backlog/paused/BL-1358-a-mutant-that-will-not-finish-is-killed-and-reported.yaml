@@ -22,7 +22,16 @@ invariants:
   - "The ceiling never silently changes a mutant's verdict: a timed-out mutant is reported as timed out, never folded into detected or into surviving."
   - "One mutant hitting the ceiling never invalidates the rest of the run - every other mutant still carries its ordinary outcome."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Option 1 - a timed-out mutant fails the gate, the same as a surviving mutant.
+  Ceiling: 300 seconds (accepting the specifier's suggested default - generous
+  headroom over the 10-20s fixture scenarios, catches a wedge in minutes
+  rather than the 808s the incident ran).
+
+  Recorded 2026-09-03 by direct instruction from the human (t / ldecorps@gmail.com)
+  in a Claude Code coordinator chat session, not via Telegram (human reported
+  being unable to find the pending approvals there).
 approval_context: >
   Two things need your eye, one of them a genuine fork.
 
