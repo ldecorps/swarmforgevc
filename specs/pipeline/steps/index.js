@@ -20,6 +20,7 @@ const DOMAINS = [
   require('./bl1323MainSyncDeadlockOverlapHintsStampSteps'),
   require('./bl1332SharedPathLineLeakSteps'),
   require('./bl1306HandoffAuditRerouteSteps'),
+  require('./bl1320SeatOperatorStepSteps'),
   require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),
   require('./bl1268StaleClaimNamesThisTicketSteps'),
