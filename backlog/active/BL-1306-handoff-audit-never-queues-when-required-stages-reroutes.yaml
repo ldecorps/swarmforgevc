@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1306-handoff-audit-reroute.feature.draft
+acceptance: specs/features/BL-1306-handoff-audit-reroute.feature
 
 invariants:
   - "A challenge is stored and looked up on the same basis: every field the lookup compares is computed from the same post-routing values the store used, or is excluded from both."
