@@ -1,0 +1,150 @@
+id: BL-1376
+title: "An expedite run closes its ticket into backlog/done/ while its branch sits unlanded, and the closing handover — whose whole job is naming what the run left for someone else — never mentions the branch"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: nothing is lost or destroyed - the branch exists and the
+# swarm runs. What is broken is a completion signal. The run reports seven
+# passing stages, marks the ticket done, prints its OUTSTANDING handover, and
+# every one of those is true except that the code is not on main and nothing
+# says so. A wrong "delivered" is worse than a loud failure because nobody
+# goes looking.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1376-the-expedite-handover-never-names-the-unlanded-branch.feature
+
+invariants:
+  - "The handover is silent only when the branch genuinely has nothing to land: no commits ahead of origin/main, or the run changed nothing (--dry-run). An unreadable ancestry check reports the branch as outstanding rather than omitting it."
+  - "The handover never claims a land happened - it names a leaving and its owner, the same shape as the two items already there. This ticket adds no merge, push, or publish to the expeditor."
+
+human_approval: approved
+approval_context: >
+  Two feature files are new this pass and both want your eye; this is the one
+  with a design decision inside it.
+  .
+  The obvious alternative is to make the expeditor LAND its own branch instead
+  of merely naming it. I considered that and did not offer it as a choice,
+  because it contradicts settled law rather than trading off against it:
+  Article 1.8 and 4.2 make QA the integration point (BL-247), and the
+  expeditor's own how-to says it works on expedite/<BL-id>, "Never main". So
+  this ticket makes the handover honest and leaves landing where the
+  constitution already put it. If you disagree with that reading, this is the
+  place to say so - it would change the ticket, not just its wording.
+  .
+  What is firm either way: naming a leaving is not performing it, and no merge,
+  push, or publish is added to the driver (invariant 2).
+
+description: |
+  ## What happened
+
+  BL-1375's expedite run (2026-09-03) walked a CRITICAL ticket through all
+  seven role hats, recorded `"verdict": "pass"` for each, moved the ticket
+  from `backlog/active/` to `backlog/done/`, restarted the swarm, and printed
+  its OUTSTANDING handover. Everything it said was true. What it did not say
+  is that `expedite/BL-1375` is three commits ahead of `origin/main` and on no
+  other branch, so the fix — for a live land-queue deadlock that is still
+  deadlocked — reached nobody.
+
+  Full evidence, verified off disk rather than inferred:
+  `backlog/evidence/BL-1375-expedite-branch-unlanded-20260903.md`.
+
+  ## Why the report is where the defect lives, not the land
+
+  The expeditor deliberately does not land. `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`
+  is explicit: the run works on `expedite/<BL-id>`, "Never `main`" (line 75),
+  and "It does not push. Publishing local `main` is your call on the next boot"
+  (line 204). `grep -nE '"main"' swarmforge/scripts/expedite_cli.bb` has exactly
+  one hit — the `git worktree add -b <branch> <dir> main` starting point. That
+  is a design decision and this ticket does not reopen it.
+
+  The same how-to sets the standard this misses, in its own words:
+
+      Each of these is a **handover**, not a drop — the closing summary names
+      the owner of the two that leave state behind.
+
+  Landing the branch is a third thing that leaves state behind. It is named
+  nowhere: not in `outstanding`, not in `deferred` (which lists
+  `bl-topic-record`, `briefing-hooks`, `pipeline-stage-sync`), not in the
+  closing summary a human actually reads.
+
+  ## Why it went unnoticed for so long
+
+  It has been running on operator memory. `expedite/BL-1310` and
+  `expedite/BL-1315` are both ancestors of `origin/main` — landed by hand
+  afterwards (`607084ab95 Close BL-1310: status done after expedite land on
+  main.`). Those runs' OUTSTANDING blocks were equally silent; the human simply
+  remembered. BL-1375 is the run where memory did not fire, and there was
+  nothing else in the system to notice.
+
+  ## How (direction, not mandate)
+
+  - The report is built by `outstanding-work` in `swarmforge/scripts/expedite_lib.bb`
+    (a pure function over `{:ticket :parked :ticket-moved? :dry-run?}`) and
+    rendered by `format-outstanding-summary` beside it. A third item in the
+    same shape — subject, what, owner — is the whole change. The owner phrasing
+    should say what the two existing owners say: who must act, and under which
+    rule. Landing pipeline code on `main` is QA's (Article 1.8/4.2, BL-247), and
+    the expeditor's own QA-hat verdict is already durable in
+    `.swarmforge/expedite-approvals/<month>.jsonl` for `is_qa_ancestor.sh` to read.
+  - Deciding whether there is anything to land is one ancestry question against
+    `origin/main`. Invariant 1 is about the answer it cannot get: an unreadable
+    ref reports the branch, it does not omit it. This file's own convention is
+    that a check which could not run never reads as "nothing found".
+  - `outstanding-work` is called from two places in `expedite_cli.bb` (the
+    pre-flight refusal path and the run tail). Both must produce the same
+    answer — the refusal path is the one that bit before (BL-1023's note that
+    a refusal fires after tickets are already parked and never reaches the
+    run's own tail).
+
+  ## Explicitly NOT in scope
+
+  - Making the expeditor land, push, or publish. Invariant 2.
+  - The stranded `expedite/BL-1375` branch itself. That is a live incident
+    being surfaced to the coordinator separately; this ticket is the reason it
+    will not happen silently again.
+  - The parked-ticket restore (`backlog/hold/`), which is already reported and
+    already correctly owned by a human.
+
+qa_e2e_procedure: |
+  1. Fixture repo, expedite run that produces at least one commit on its
+     branch. Confirm the closing summary now names the branch, how far ahead it
+     is, and its owner — and that the run record JSON carries the same item.
+  2. Run that produces NO commit on the branch. Confirm the handover is silent
+     about landing (invariant 1) and does not manufacture a leaving.
+  3. `--dry-run`. Confirm `nothing outstanding`, unchanged from today.
+  4. Break the ancestry read (unresolvable `origin/main`). Confirm the branch is
+     reported as outstanding with the reason named, never omitted.
+  5. Take the pre-flight refusal path (a refusal that fires after parking).
+     Confirm it prints the same three items the run tail would.
+  6. Confirm no `git merge`, `git push`, or checkout of `main` was added
+     anywhere in the driver (invariant 2) — grep the diff, not the behaviour.
+  7. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  No `required_wiring:` on purpose. Both call sites of `outstanding-work`
+  already exist in `expedite_cli.bb` (lines 149 and 917 at mint), so any
+  anchor I could write would be satisfied by code that is already there and
+  would gate nothing — the BL-1235 fail-open shape. The reachability this
+  ticket needs is proved by the acceptance scenarios exercising the real
+  closing summary, not by a pattern match.
+
+  Mint-time INVEST: one observable outcome (the handover names the branch), one
+  sitting, no unbuilt sibling, and every scenario is externally visible text
+  from a real run.
+
+source: |
+  Specifier backlog-root drain, 2026-09-03. Not filed by anyone — found while
+  establishing whether the rider intake
+  (`INTAKE-operator-bl1375-passenger-must-pass-registration-guard-1788427676244.md`)
+  still needed draining. It did not: it was already drained by `22e28654fb`,
+  which is one of the three commits stranded on `expedite/BL-1375`.
+
+assigned_to: coder
