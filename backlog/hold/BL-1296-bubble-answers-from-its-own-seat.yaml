@@ -227,6 +227,20 @@ notes: |
   the parameterized form of the same step and one handler pattern serves both, so this is
   not accidental drift.
 
+abandoned_commits: [6077a6bfbc]
+# BL-1192's documented escape for a deliberate rebuild-off-main. 6077a6bfbc is
+# the architect's bounce revert and was this task's last handoff commit at the
+# time, so the send-time task-scope gate walked every commit on the coder
+# branch since it - including main-sync merges whose subjects named BL-1296
+# while their merge resolution authored another ticket's file. 68da935d5d is
+# the tip-pure rebuild on origin/main that replaces it (already merged
+# forward through cleaner/architect/hardener/documenter); recording the
+# dropped base here is what redirects the gate's walk, exactly as the BL-1241
+# replay path does. Restored here (documenter pass, 2026-09-03) after the
+# coder's own bookkeeping commit (1d9c96fe6b) that first recorded this was
+# left behind on the coder branch and never merged forward with the rebuild
+# it describes.
+
 assigned_to: coder
 bounce_count: 1
 bounce_history:
