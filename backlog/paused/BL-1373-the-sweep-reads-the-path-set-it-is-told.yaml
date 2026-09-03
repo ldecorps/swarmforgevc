@@ -1,0 +1,133 @@
+id: BL-1373
+title: "BL-631 scenario 07 has been failing deterministically: the babysitter sweep does not answer to a QA-exclusive path set BL-632's single source reports and it has never seen, and the cause is not the one a grep would guess"
+milestone: M8
+type: defect
+severity: medium
+# medium: the sweep's real-world classification is correct today, because the
+# live path set has not changed - this is a latent break that fires the day
+# BL-632's list does change, and a red scenario nobody tracks in the meantime.
+# Not high: nothing is currently misclassified. Not low: a standing red in an
+# acceptance suite trains everyone to read 16/17 as green.
+status: todo
+epic: code-quality-gates
+priority: 18
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1373-the-sweep-reads-the-path-set-it-is-told.feature
+
+invariants:
+  - "The classified path set is whatever BL-632's single source reports at runtime, including a set the sweep has never seen before - never a value fixed at any earlier moment."
+  - "A path the single source does not report produces no finding, so widening the set is never achieved by classifying everything."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1373PathSetFromSingleSourceSteps::acceptance handler registered so the runner executes every scenario'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options.
+  .
+  What to know before approving, and it is the unusual part of this ticket: I
+  am NOT telling the coder what the cause is, because I could not establish it
+  and I will not guess. The scenario is red, deterministically, and reproduced
+  independently by the architect on a clean tree. A grep of the two obvious
+  files found no hardcoded path list, so the mechanism is not the one everybody
+  would assume.
+  .
+  That means the first deliverable is a diagnosis, and it is genuinely possible
+  the fix turns out to be small or that the scenario itself is asserting
+  something the design never promised. Either outcome is legitimate and should
+  come back as a finding rather than be forced into a fix. If the diagnosis
+  shows the work is bigger than one sitting, say so and I will split it.
+
+description: |
+  ## What is wrong
+
+  BL-631 scenario 07 states the contract:
+
+      Scenario: the QA-exclusive path set comes from BL-632's single source, not a copy
+        Given check_pipeline_code_on_main.sh --list-paths reports a path set the sweep has never seen
+        When the babysitter sweep runs
+        Then a commit touching only a path from that reported set fires a critical finding
+        And a commit touching extension/src/ produces no finding
+
+  It fails. `run_acceptance.sh` on the BL-631 feature reports 16/17,
+  deterministically, on a clean tree with no parcel applied.
+
+  ## What is deliberately not asserted
+
+  The cause. `babysitter_check.bb`'s `qa-exclusive-paths` does call
+  `check_pipeline_code_on_main.sh --list-paths`, and a grep of it and
+  `babysitterd_sweep_lib.bb` found no hardcoded path list - so the obvious
+  mechanism, a literal copy of the path set, is not what is happening. Naming a
+  cause I could not verify would send the fix at the wrong file, which is a
+  failure mode this backlog has already paid for.
+
+  Establish the cause first, in the parcel, and record it. Candidate directions
+  worth ruling in or out early: a cached path set (BL-1086 memoises the whole
+  gather on the three tips), the step handler's own fixture setup not actually
+  reaching the live reader, or the scenario asserting something the sweep was
+  never built to do.
+
+  ## Why it matters even though classification is right today
+
+  The live QA-exclusive set - `extension/src/`, `extension/test/`,
+  `specs/pipeline/steps/` - has not changed in a long time, so nothing is
+  currently misclassified. The scenario exists to catch the day it does. A
+  latent break plus a standing red is the combination that produces a
+  confident 16/17 read as green.
+
+  ## Explicitly NOT in scope
+
+  - The invariant-two assertion red surfaced in the same architect pass, which
+    is BL-1372.
+  - Changing what the QA-exclusive path set CONTAINS. BL-632 owns that list;
+    this is about who reads it and when.
+
+qa_e2e_procedure: |
+  1. Run `bash specs/pipeline/scripts/run_acceptance.sh` on the BL-631 feature
+     on a clean tree and confirm the 16/17 baseline before any change.
+  2. After the fix, confirm 17/17 and that scenario 07 is the one that moved.
+  3. Drive the single source to report a path set the sweep has never seen, and
+     confirm a commit touching only a path from THAT set fires a finding
+     (invariant 1) - not a set captured at startup or at first call.
+  4. Confirm a path the single source does NOT report still produces no finding
+     (invariant 2), so the fix is not "classify everything".
+  5. Confirm the parcel records the diagnosis it established, whatever it was -
+     including a finding that the scenario, not the code, was wrong.
+  6. Run the babysitter sweep's own tests and `test_babysitter_check.sh` for
+     regression.
+  7. Remove any fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier from an architect priority-00 note on the
+  BL-1359 pass, finding 2 of 2. The architect reproduced it independently and
+  grepped `backlog/` before reporting: no ticket named this gap, only BL-631's
+  and BL-632's own done tickets.
+
+  Verified this pass rather than assumed:
+  - Scenario 07's exact text in the BL-631 feature file.
+  - `qa-exclusive-paths` (`babysitter_check.bb:340`) does shell out to
+    `check_pipeline_code_on_main.sh --list-paths`, so the single-source call
+    exists; the failure is not a missing call.
+  - No hardcoded QA-exclusive path list in `babysitter_check.bb` or
+    `babysitterd_sweep_lib.bb`.
+
+  Split from BL-1372 deliberately, though both came from one architect pass and
+  both are single-source violations in the same subsystem. BL-1372 is estimable
+  at mint - the ruling is settled and the change is one assertion. This one is
+  not: its first deliverable is a diagnosis. Bundling an estimable fix with an
+  unestimable investigation fails INVEST-E for the combined slice, and would
+  have let the easy half carry the hard one through the gates.
+
+  IR-DRY: clean.
+
+source: |
+  Architect note 2026-09-03 (priority 00), evidence
+  `backlog/evidence/BL-1359-architect-pass-20260903.md`, finding 2 of 2.
+  Sibling of BL-1372 (finding 1).
