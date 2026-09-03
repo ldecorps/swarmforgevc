@@ -1,5 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1344: an investigated babysitter
+finding can now be waived so it stops re-nudging every 30 minutes forever.
+The Article 4.2 pipeline-code-on-main detector keys each finding on a
+commit sha, and a commit is permanent, so `nudge-cooldown-ms`'s dedup never
+actually clears the nudge — it only reschedules it for as long as the
+swarm runs, even after a human has fully investigated and confirmed the
+commit is a legitimate QA land or an already-tracked incident (observed
+firing three times for the same two commits on 2026-09-02). New
+`babysitter_waive_lib.bb` holds the pure read/decide over a tracked YAML
+store, `backlog/babysitter-waives.yaml` — the hotfix ledger's posture and
+neighbourhood, so a waive survives a `.swarmforge/` wipe. A new
+`babysitter_waive.bb` CLI (`--record`/`--list`/`--withdraw`) is the ONLY
+way a waive is written; the sweep itself never creates, widens, or renews
+one — the same BL-848 line, a machine may propose, only a recorded
+decision disposes. `babysitter_check.bb` applies the waive BEFORE the
+cooldown decision (`partition-findings`): a waived finding neither nudges
+nor stamps the dedup file, but it is still printed in the sweep's finding
+list and reported as `WAIVED`, so suppression is a visible overlay on the
+record, never an erasure of it. Scoped to exactly the finding key named —
+a second finding of the same class over a different commit still nudges,
+so a waive can never hide a class of finding, only the one instance
+investigated. A missing, unreadable or malformed store nudges every
+finding and prints `WAIVE-STORE-UNUSABLE` rather than silently suppressing
+anything — suppression requires a positively read waive, never the
+absence of a readable answer. Scope note carried from the ticket: this
+silences the coordinator nudge only; the same finding's operator
+`BABYSITTER_ESCALATION` (if crossed) still fires, and extending the waive
+there is an explicit future follow-up. Acceptance:
+`specs/features/BL-1344-an-investigated-finding-can-be-waived.feature`.
+How-to: new "Waiving an investigated, permanent-history finding" section
+in `docs/how-to/BL-611-babysitterd-runbook.md`. No extension command or
+setting — a new swarm-internal CLI a human/coordinator runs by hand; no
+diagram depicts this internal decision.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1345: two remaining halves of the
 2026-09-02 stale-router-marker outage — the failure that respawned the
 specifier's pane with the coordinator's launch script, twice, and left the
