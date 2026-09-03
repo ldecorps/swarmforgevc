@@ -233,6 +233,65 @@ notes: |
   human already approved the work and Article 3.2.4 derives the ordering from
   severity mechanically.
 
+  ## Expedite specifier stage, 2026-09-03: premises re-verified
+
+  Stage 00 of the expedite run re-checked every premise rather than trusting
+  the mint. What holds, and what drifted:
+
+  - The registry is 937 `require('./...')` lines now, not 936. It grows daily;
+    invariant 1 is a SET comparison for exactly this reason, so the number in
+    the description is context and never a target.
+  - Both runners still default `STEPS_MODULE` to `specs/pipeline/steps/index.js`
+    (`specs/pipeline/scripts/run_acceptance.sh:19`,
+    `specs/pipeline/scripts/run_gherkin_mutation.sh:34`). Unchanged.
+  - Freshness gate (Article 3.6): `deprecate-check BL-1371` returns `allow`
+    against the ticket's own content - verified it really read it (13573 bytes,
+    no supersede marker, no retired-surface hit, no spec-gap bounce, deps
+    empty). No hold, so there is nothing to discharge and no adjudication
+    record is required. Note `allow` alone is weak evidence: the same CLI
+    allows a ticket id that does not exist, so the facts were read directly.
+  - `required_wiring` parses through the real block reader, not just the entry
+    parser: `read-required-wiring` returns `:present? true` with a one-item
+    vector, path `specs/pipeline/steps/index.js`, pattern
+    `bl1371StepDiscoverySteps`. It is one physical line and single-quoted, so
+    none of BL-874/BL-960/wrapped-entry applies. It remains provisional and
+    green-by-construction as the mint said - update it in-parcel if the array
+    goes.
+  - The re-grade's "ONLY exit from a stopped land queue" is narrower than
+    written. Commit 9b4f200609 (2026-09-03) verified the handler-files-first
+    route: the unlanded handler modules on `swarmforge-QA` are each their own
+    path and can land alone. Read "only" as "the only STRUCTURAL exit".
+    Severity stays critical / priority 1 - that route is a per-jam manual land
+    and the jam is compounding (5 require lines and 10 handler files unlanded
+    as of this pass), not a fix.
+  - `check_feature_handler_registration.sh` refuses LESS than the description
+    implies, which matters to the "retire or narrow" bullet. Its assessor
+    (`featureHandlerRegistrationCheck.ts`, `collectUnregisteredHandlers`) skips
+    a feature whose own handler file does not exist at all (`own.length === 0`),
+    so it catches "handler file present but unreachable from the registry", not
+    "feature file with no handler". Discovery retires the first kind entirely
+    and leaves the second untouched, so the honest answer to that bullet is
+    NARROW rather than retire - still a decision to state in the parcel, not a
+    side effect. Related: this ticket's own feature file is on main with no
+    handler yet and the gate is green on main, which is that same gap.
+  - Acceptance: scenario 05 added this pass. The description requires both
+    runners to move together and `qa_e2e_procedure` step 6 obliges QA to check
+    it, but no scenario asserted it - so that step had nothing to gate. It is
+    written as a set-parity assertion between the two runners rather than a
+    mutation run, so it does not drag a mutation lane into the acceptance
+    suite. Scope, the three invariants and the other four scenarios are
+    untouched, and `human_approval` stays `approved` for the same reason the
+    re-grade did not reopen it.
+
+  Transition hazard for whoever lands this, not for the implementer:
+  `swarmforge-QA:specs/pipeline/steps/index.js` carries 5 require lines
+  `origin/main` does not have, and that branch carries 10 handler files main
+  lacks. If this parcel thins or removes the array, merging main into that
+  branch conflicts on index.js, and a resolution that keeps the incoming array
+  resurrects it. Removing the array is precisely what lets those 10 files land
+  as their own paths - that is the payoff - but the merge resolution must not
+  restore it.
+
 source: |
   QA note 2026-09-03 (priority 00): "BL-1356 LAND_ESCALATE index.js shared w/
   unlanded BL-1296,BL-1309". The land question was answered to QA directly; the

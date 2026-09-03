@@ -47,3 +47,9 @@ Feature: A step handler registers without a shared file
     When the runner loads the handlers
     Then the run fails naming that file
     And no scenario is reported as passing
+
+  # BL-1371 a-step-handler-registers-without-a-shared-file-05
+  Scenario: both runners find handlers the same way
+    Given a new step handler file is added to the steps directory
+    When each runner resolves its handlers
+    Then the acceptance runner and the Gherkin mutation runner load the same handler set
