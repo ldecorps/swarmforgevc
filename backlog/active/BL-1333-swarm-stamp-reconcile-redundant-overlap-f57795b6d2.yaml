@@ -18,6 +18,7 @@ mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1333-swarm-stamp-reconcile-redundant-overlap-f57795b6d2.feature
+abandoned_commits: [04cb33cd05]
 
 human_approval: approved
 approval_context: >
