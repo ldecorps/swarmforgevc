@@ -3822,7 +3822,13 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
 
 // Drains every complete record out of buffer, relaying each in turn, and
 // returns the remaining (incomplete) buffer.
-async function drainBufferedRecords(buffer: string, adapters: ReplyRelayAdapters, seenIds: Set<string>): Promise<string> {
+//
+// Exported for BL-1350: its declared invariant is that a frame written only to
+// hold the connection open delivers no reply, acknowledges none, and advances
+// no cursor. That can only be proved against the REAL consumer path with stub
+// adapters - asserting it against a re-implementation of this loop would prove
+// something about the test instead.
+export async function drainBufferedRecords(buffer: string, adapters: ReplyRelayAdapters, seenIds: Set<string>): Promise<string> {
   let parsed = parseNextSseRecord(buffer);
   while (parsed) {
     buffer = parsed.rest;
