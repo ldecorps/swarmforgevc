@@ -17,6 +17,14 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1328-qwen-cloud-model-detection-equals-form-and-precedence-doc.feature
 
+# BL-1276: both paths belong to BL-1324 and this ticket is chartered to retire
+# the assertions in them that its own fix falsifies (see "Sibling assertions
+# this ticket must retire" below). Without this declaration the pre-handoff
+# task-scope gate refuses the send as a foreign path.
+retires:
+  - specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature
+  - extension/test/bl1324ClaudeSeatQwenCloudContextWindowInvariants.property.test.js
+
 human_approval: approved
 approval_context: >
   This ticket IS the narrow follow-up BL-1324's human ruling (2026-09-02,
@@ -99,6 +107,65 @@ description: |
     or the billing_guard/pane-env branches beyond the two items above.
   - Re-litigating BL-1324's own certification/ledger decision.
 
+  ## Sibling assertions this ticket must retire (added 2026-09-03, spec gap)
+
+  This section was missing at mint and the coder was right to stop rather than
+  guess. BL-1324's parcel froze the CURRENT behaviour into executable assertions,
+  so a correct fix here reds them. Retiring them is part of THIS parcel — not a
+  follow-up ticket, and not something to leave for a reviewer to discover.
+
+  **Three concrete sites, all in BL-1324's parcel:**
+
+  1. `specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature`,
+     scenario `BL-1324 extra-cli-detects-qwen-model-flag-01`, the Examples row
+
+         | --model=qwen3.8-max --effort high        | false  |
+
+     **Retire the row — do not flip `false` to `true`.** BL-1006 is explicit
+     that a superseded boundary assertion is retired rather than reworded,
+     because the successor's own scenarios are the coverage. They are: this
+     ticket's own Outline already asserts `--model=qwen3.8-max -> reports` and
+     `--model=claude-sonnet-5 -> does not report`, so nothing is lost. Flipping
+     it instead would leave BL-1324's contract asserting behaviour BL-1324 never
+     shipped.
+
+  2. `extension/test/bl1324ClaudeSeatQwenCloudContextWindowInvariants.property.test.js`,
+     invariant 1's `content` and `worktree` faces. They assert `hotfixRegions()`
+     of `swarmforge/scripts/swarmforge.sh` is **byte-identical to 4ed88430b2** at
+     HEAD, in the working tree, and at every revision touching the path since.
+     One of those regions is `matcher` — the whole `extra_cli_targets_qwen_cloud()`
+     body, which is exactly what this ticket changes. This is the blocking one,
+     and it cannot be fixed forward: the walk covers every future revision too.
+
+     The invariant BL-1324 actually declared is *"this stamp-off never
+     reimplements, rewrites or reverts the hotfix"* — a statement about the
+     STAMP-OFF PARCEL, not a freeze on the file for all time. The `attribution`
+     face already says exactly that, and the same file already reached this
+     conclusion once, for the pack conf, in its own comment: *"content equality
+     is the wrong test for it; who changed it is the right one."* Apply that
+     reasoning to `swarmforge.sh`. Do NOT re-baseline the pin onto the new bytes
+     — that is rewording, and it rebuilds the identical wall in front of the next
+     follow-up.
+
+  3. The same file's `decoy` generator, which lists
+     `` `--model=${qwen}` // the single-token form the matcher does not read ``
+     among inputs a qwen seat must NOT be detected by. After this fix it IS
+     detected, so that decoy is false and the generator must stop producing it.
+     Easy to miss because it is generator data rather than an assertion.
+
+  **Non-weakening is the constraint on all three.** Retire what this fix
+  falsifies and nothing else. BL-1324's invariants 2 and 3, the `attribution`
+  face, and every scenario about billing-guard remapping and context-window
+  export are untouched by this ticket and must still fail if violated. A change
+  that makes BL-1324's suite green by asserting less is the failure mode here,
+  and the architect should review the retirement against that specifically.
+
+  **One consequence worth knowing before the hardener's pass:** BL-1324's feature
+  file carries an `acceptance-mutation-manifest` header whose `scenario_hash`
+  covers that Outline. Retiring a row invalidates it. Per the engineering rules
+  the manifest is never hand-edited — the Gherkin mutation run is redone for that
+  file so the stamp is regenerated.
+
 source: |
   BL-1324 `ruling` (human ldecorps, 2026-09-02, option 2 of that ticket's
   `ruling_options`): "Certify as landed; also mint a narrow follow-up to
@@ -107,6 +174,32 @@ source: |
   the specifier to mint separately." This ticket is that follow-up.
 
 notes: |
+  2026-09-03 spec gap, raised by the coder as a priority-00 `note`
+  ("spec-gap BL-1328: BL-1324 byte-pin blocks its own authorized follow-up") and
+  adjudicated the same pass. The coder was correct and was right not to guess:
+  BL-1324's invariant-1 byte-pin covers the exact function this ticket is
+  chartered to change, so there was no correct implementation available under the
+  spec as written.
+
+  **This is a specifier defect at mint, not a coder or reviewer miss.** BL-1006
+  puts the obligation on whoever mints the successor: grep the sibling feature
+  files for boundary assertions the new slice falsifies and scope their
+  retirement into it. That was not done here, and the ticket shipped with a
+  contradiction inside it. Verified this pass rather than assumed - the pinned
+  `matcher` region is `extra_cli_targets_qwen_cloud()` verbatim, and BL-1324's
+  Examples table really does assert the `=` form returns false.
+
+  Two blockers, not one, and only the first was named in the coder's note: the
+  property-test byte-pin AND the feature Examples row. A third, the decoy
+  generator, is data rather than an assertion and would likely have been found
+  only by a red run. All three are now scoped above.
+
+  `retires:` was also absent, which is an independent blocker: without it the
+  pre-handoff task-scope gate refuses the send the moment the parcel touches a
+  BL-1324-owned path. Per BL-1276 that declaration is read from the ticket as
+  LANDED, so it takes effect for the gate as soon as this amendment is on main -
+  the holder does not need to merge for the exemption, only to read the scope.
+
   Investigated both call sites directly against `swarmforge/scripts/swarmforge.sh`
   at mint time (grep for `extra_cli_targets_qwen_cloud` and
   `role_uses_openrouter`) rather than relying on BL-1324's prose summary
