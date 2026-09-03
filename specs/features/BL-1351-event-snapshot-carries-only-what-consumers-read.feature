@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=90fe5f0984f5ea608c88dbb1074ae552248028a44e49cd5af38e132f99f24fdd
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T04:27:52.240605683Z","feature_name":"The bridge event snapshot carries only what its consumers read","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1351-event-snapshot-carries-only-what-consumers-read.feature","background_hash":"854783c1505d6f1a5de6b897c6185c91de59023c7d3c3adcae47f3d33c23f16f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Every snapshot the stream emits fits the budget","scenario_hash":"2151de46a3df3781ddbb51d47fb2a521e1c6dc9a3d284e41f8f3f2bc4a622cf6","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-03T04:27:52.240605683Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The bridge event snapshot carries only what its consumers read
   buildBridgeState embeds readBacklogFolders whole - active, paused, hold
   AND done - so the /events connect frame measured 6764293 bytes on

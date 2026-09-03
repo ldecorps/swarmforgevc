@@ -1,5 +1,45 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1351: the bridge's `/events` stream
+now carries only the per-item backlog fields something actually reads,
+closing the aggravator on BL-1350's reconnect churn — a connect frame
+measured 6764293 bytes on 2026-09-02 for 1259 tickets (roughly 1200
+long-closed), each carrying its full `description`, `notes`, `acceptance`
+and `approval_context` prose, and `broadcastSnapshotIfChanged` re-sent
+that whole frame to every SSE client on any `backlog/` commit. Per the
+human's ruling (option 1 of two — keep every backlog folder on the
+stream, narrow only the per-item fields, rather than dropping `done/`
+from the stream entirely), new `streamSnapshot.ts`'s
+`projectBridgeStateForStream` is the ONE producer of a stream frame; both
+`/events` producers (the connect snapshot and the poll loop's rebroadcast)
+now go through it, so the two can never emit different per-item shapes
+(invariant 2 holds by construction, not by two call sites agreeing). The
+consumer sweep behind the projection is exhaustive, not sampled
+(invariant 1): `holisticUiHtml.ts` is the only state-frame consumer and
+reads only `item.id`/`item.title` off `backlog.active`;
+`bubbleHostUiHtml.ts` processes only `host-activity` blocks, skipping the
+state frame entirely; the front-desk reply relay reads its backlog data
+from disk via `readBacklogFolders`, never from a stream frame. The union
+is `{id, title}` — `STREAM_BACKLOG_ITEM_FIELDS` — and every other folder
+item field is dropped from the stream only, never from the folder set
+itself (option 1 narrows items, never folders). Scope decided rather than
+left as a side effect: `buildBridgeState` also feeds the JSON `/state`
+routes (`/pipeline`, `/agents`, `/backlog`, `/runlog`), and the architect
+pass ruled those keep full fidelity — the projection applies at the
+stream producers only, so narrowing the stream can never silently narrow
+a route nothing asked to narrow. Measured on the acceptance fixture (1223
+items, ~2.8 KB of prose each): connect frame 57750 bytes, rebroadcast
+57760 — both far under the 512000-byte acceptance budget (one thirteenth
+of the original measurement, chosen for margin rather than tuned to the
+implementation). Delta broadcasting (sending only what changed) and
+backlog pagination/filtering are both explicitly out of scope — the
+former changes the wire contract for every consumer and is a future
+question once the frame is small; the latter is a UI concern this ticket
+doesn't touch. Acceptance:
+`specs/features/BL-1351-event-snapshot-carries-only-what-consumers-read.feature`.
+No new extension command or setting; no diagram depicts SSE frame-level
+content.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1344: an investigated babysitter
 finding can now be waived so it stops re-nudging every 30 minutes forever.
 The Article 4.2 pipeline-code-on-main detector keys each finding on a
