@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1306: the two-call handoff audit
+challenge (Article 2.3) now stores and looks up its `AUDIT_REQUIRED` /
+`HANDOFF_NOT_QUEUED` challenge on the same basis, so a `git_handoff` that
+`required_stages` routing reroutes to a different recipient than the
+drafted `to:` can queue. `swarm_handoff.bb` computed the invalidation
+LOOKUP fingerprint from the raw `to:` header but the STORAGE key from the
+routed recipients; whenever the two disagreed, every invocation deleted
+its own standing challenge before checking it, so a byte-identical retry —
+exactly what Article 2.3 instructs — got `AUDIT_REQUIRED` forever, with no
+way to queue. Fix computes both sides from the same post-routing
+recipients; scenario 03 keeps a sender-EDITED draft invalidating the
+challenge, so the audit itself is unweakened. The two workaround
+paragraphs this defect forced (`swarmforge/handoff-protocol.md`,
+`swarmforge/roles/hardender.prompt`: "draft `to:` at the routed
+destination, not the skipped one") are retired in the same change.
+Acceptance:
+`specs/features/BL-1306-handoff-audit-reroute.feature`. No new extension
+command or setting — this is swarm-internal handoff-machinery tooling; no
+diagram depicts the audit challenge.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1332: a path BOTH the landing ticket
 and an unlanded sibling own now refuses the land instead of shipping the
 sibling's lines. `own-paths` decided inclusion per PATH while
