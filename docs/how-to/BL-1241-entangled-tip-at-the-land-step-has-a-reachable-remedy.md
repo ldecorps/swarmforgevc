@@ -289,6 +289,51 @@ Wiring this same detector into the mandatory land-step decide path is
 BL-1309, a separate ticket, not built here. Acceptance:
 `specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature`.
 
+## A sync merge is not credited with its passengers (BL-1374)
+
+`own-commit-changed-paths` (`task_scope_gate_lib.bb`) answers a merge's
+`:delivered` diff against its FIRST parent alone — which is everything the
+SECOND parent brought in, whoever authored it. `path-owner-tickets`
+(`land_step_lib.bb`, feeding `own-paths`) walked exactly that view for
+attribution, so a routine `git merge main` tagged with a subject naming the
+ticket you're working on swept every unlanded file that sync carried into
+that ticket's own path set — refusing a land over an entanglement that
+wasn't real. Reproduced on the tip that produced this ticket's report
+(`5d4486eb08`, "Merge main into swarmforge-QA for BL-1309 human_approval
+restore"): its `--name-only` list held BL-1296's and BL-1309's ticket
+files, but its combined patch held not one hunk — BL-1309's own commits
+never touched BL-1296's file, and the replay refused the land over it
+anyway. `sibling-landed?`'s sibling-side fix (BL-1354, above) already
+carried this exact reasoning — `sibling-own-line-changes` skips merges
+outright, "a merge authors no lines of its own" — but the delivered side
+never got it.
+
+The fix is `merge-authored-paths`: for a merge commit, `path-owner-tickets`
+now checks whether the merge's own DENSE COMBINED diff (`git diff-tree
+--cc`/`--combined`) produces a patch for the path in question — not
+whether the path merely appears in its `--name-only` list. A clean
+auto-merge (two sides edited different parts of the same file; the result
+differs from both parents, but the merger wrote nothing) produces a
+`--name-only` entry with an empty patch, and is now correctly not credited.
+The one case a merge really CAN author is a genuine conflict it resolved —
+that still shows up as a real hunk in the combined diff and is still
+credited, so invariant 3 (never drop a path this ticket's own work
+changed) holds. An unreadable combined diff is blindness, not "the merge
+wrote nothing", and propagates as a read failure the same way every other
+unanswerable case in this file does.
+
+Detection (BL-1308's widened candidate walk) is untouched — a passenger
+ticket is still *reported* as unlanded even once it's no longer credited as
+this ticket's own path; only the credit narrowed, not the visibility. The
+human's ruling (2026-09-03) took both remedies on the table: this code fix,
+plus the discipline rule as belt and braces — a sync merge's subject must
+still never name a ticket (standing practice already, see the workflow
+article's "Never name a ticket in a main-sync merge subject" rule); that
+habit stays worth keeping even with this code fix in place, since
+`own-commit-changed-paths` itself — the send-time task-scope gate's own
+call site — is a distinct read this ticket does not touch. Acceptance:
+`specs/features/BL-1374-a-sync-merge-is-not-credited-with-its-passengers.feature`.
+
 ## An approved sibling can ride as a passenger, guarded before publish (BL-1375)
 
 BL-1332 (above) made a path shared between the landing ticket and ANY
