@@ -22,7 +22,7 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1362ReviewPassEvidenceByToolSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options - the shape is fixed by
   the gate this has to satisfy, and the remedy's details are the implementer's.
