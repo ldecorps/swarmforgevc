@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1327: a scheduled, PROPOSAL-ONLY
+descent ladder — human ruling 2026-09-02, "Proposal-only... no autonomous
+model/effort mutation in this ticket." A new daily cron
+(`swarmforge/scripts/install_descent_review_cron.sh`, wired through
+`install_swarmforge_crons.sh` alongside the existing freshness/shift-schedule
+crons) runs `descent_review_cli.bb review <root>`, which reads each seat's
+ladder position and guard window (bounce/QA-outcome signals BL-635/BL-819
+already track) and writes `.swarmforge/descent-ladder/proposals.json` —
+`applied: false` always, no code path in this parcel edits a pack conf,
+launch settings, or a live seat. The pure decision
+(`descent_ladder_lib.bb`'s `descent-decision`) reuses BL-1317's own effort
+ladder rather than a second representation: a seat descends effort notches
+one per review period only after `required_clean_periods` (default 3)
+consecutive clean periods at its current notch (asymmetric hysteresis — a
+climb needs one signal, a descent needs the whole streak); once effort is
+exhausted on the current model, the next cheaper model is proposed at HIGH
+effort, never low, because a smaller model may need more deliberation, not
+less; a guard trip discards partial clean-period progress and climbs back to
+the last known-good notch immediately regardless of the auto-apply ruling;
+and a terminal seat is re-evaluated whenever its model's BL-1056 price
+validity window shifts, rather than staying frozen. Acceptance:
+`specs/features/BL-1327-scheduled-descent-ladder-proposes-cheaper-notch.feature`.
+How-to:
+`docs/how-to/BL-1327-scheduled-descent-ladder-proposes-cheaper-notch.md`. No
+new extension command or setting — this is swarm-internal cron/CLI tooling;
+no diagram depicts per-seat cost-tuning state.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1306: the two-call handoff audit
 challenge (Article 2.3) now stores and looks up its `AUDIT_REQUIRED` /
 `HANDOFF_NOT_QUEUED` challenge on the same basis, so a `git_handoff` that
