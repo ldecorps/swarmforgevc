@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=382223941aceb38e101b6196b9e6e97f2061bcc1b9b3c9d22dc002c40871db42
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T00:33:58.191108539Z","feature_name":"An idle bridge event stream stays alive","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1350-idle-event-stream-keepalive.feature","background_hash":"717ce43ef9feed13d91c6f9b31e55f906d4c247433ce5f7a650ac69eb4a63d1c","implementation_hash":"unknown","scenarios":[{"index":2,"name":"The reply relay ignores a frame that carries no reply","scenario_hash":"cc0ad4860b0a1453a88a7c11dc17e540cad644eb4f763c425f6da0baff118dd9","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-03T00:33:58.191108539Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: An idle bridge event stream stays alive
   The bridge's /events SSE endpoint writes a frame only when the bridge
   snapshot CHANGES or a reply-outbox entry appears, so a quiet swarm leaves
