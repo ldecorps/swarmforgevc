@@ -15,8 +15,14 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { assertRunWritesNoDecision, hotfixRow, findTicketYaml } = require('./helpers/stampOff');
+const {
+  assertRunWritesNoDecision,
+  hotfixRow,
+  findTicketYaml,
+  assertParcelDoesNotEditReviewedSources,
+} = require('./helpers/stampOff');
 
 const HOTFIX = 'abc1234567';
 
@@ -146,4 +152,84 @@ test('findTicketYaml locates a ticket wherever its workflow has moved it', () =>
 
 test('findTicketYaml fails loudly for a ticket that does not exist', () => {
   assert.throws(() => findTicketYaml('BL-000000'), /no ticket yaml/);
+});
+
+// ── assertParcelDoesNotEditReviewedSources (hardener-found gap) ──────────
+// Zero direct test coverage before this pass: only exercised incidentally by
+// the family files running against THIS repo's real history, where
+// `origin/main..HEAD` frequently contains no commit naming the ticket at
+// all - the early-return path - so the substantive assertion could go
+// untested indefinitely. A hand-mutation sweep over stampOff.js found two
+// survivors here: dropping `--first-parent` and inverting `includes()`.
+// Both are closed with a real git fixture below.
+function gitFixture() {
+  const dir = mkTmpDir('bl1356-git-fixture-');
+  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+  git('init', '-q', '-b', 'main');
+  git('config', 'user.email', 't@t');
+  git('config', 'user.name', 't');
+  git('config', 'commit.gpgsign', 'false');
+  fs.writeFileSync(path.join(dir, 'reviewed.txt'), 'reviewed\n');
+  fs.writeFileSync(path.join(dir, 'other.txt'), 'other\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'seed');
+  git('branch', '-f', 'origin/main', 'HEAD');
+  return { dir, git };
+}
+
+test('no commit naming the ticket in range: returns empty, never throws', () => {
+  const { dir, git } = gitFixture();
+  fs.writeFileSync(path.join(dir, 'other.txt'), 'unrelated change\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'BL-0000: unrelated ticket, does not name our ticket');
+  const result = assertParcelDoesNotEditReviewedSources('BL-9999', ['reviewed.txt'], { repoRoot: dir });
+  assert.deepEqual(result, { commits: [], changed: [] });
+});
+
+test('a commit naming the ticket that does not touch the reviewed path passes', () => {
+  const { dir, git } = gitFixture();
+  fs.writeFileSync(path.join(dir, 'other.txt'), 'touched by the review\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'BL-9999: stamp-off review, touches only other.txt');
+  assert.doesNotThrow(() =>
+    assertParcelDoesNotEditReviewedSources('BL-9999', ['reviewed.txt'], { repoRoot: dir })
+  );
+});
+
+test('a commit naming the ticket that DOES touch the reviewed path fails, naming it', () => {
+  const { dir, git } = gitFixture();
+  fs.writeFileSync(path.join(dir, 'reviewed.txt'), 'edited by the review\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'BL-9999: stamp-off review, but rewrites reviewed.txt');
+  assert.throws(
+    () => assertParcelDoesNotEditReviewedSources('BL-9999', ['reviewed.txt'], { repoRoot: dir }),
+    /BL-9999 stamp-off parcel edits reviewed\.txt/
+  );
+});
+
+// The --first-parent mutant. Measured directly before writing this test
+// (git's own behavior, not assumed): `git show <merge>` with NO diff option
+// defaults to a COMBINED diff, which shows nothing here because the merge
+// result matches the side branch's content exactly - no conflict, no
+// divergence from either parent to report. `--first-parent` instead diffs
+// the merge result against its FIRST parent alone, which DOES show
+// reviewed.txt as changed, because relative to main-before-the-merge, the
+// content did change - exactly what BL-1354's own investigation found
+// ("a merge's first-parent diff is everything its second parent brought
+// in"). So --first-parent here is the STRONGER, more cautious check: a
+// review parcel whose merge silently carries in someone else's edit to a
+// reviewed path must still be flagged, and dropping --first-parent would
+// let it through via the empty combined diff.
+test('a merge naming the ticket that silently carries in a reviewed-path edit is still flagged (--first-parent)', () => {
+  const { dir, git } = gitFixture();
+  git('checkout', '-q', '-b', 'side');
+  fs.writeFileSync(path.join(dir, 'reviewed.txt'), 'edited on the side branch\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'BL-0000: unrelated side-branch work touching reviewed.txt');
+  git('checkout', '-q', 'main');
+  git('merge', '-q', '--no-ff', '-m', 'BL-9999: stamp-off review merges in unrelated side work', 'side');
+  assert.throws(
+    () => assertParcelDoesNotEditReviewedSources('BL-9999', ['reviewed.txt'], { repoRoot: dir }),
+    /BL-9999 stamp-off parcel edits reviewed\.txt/
+  );
 });
