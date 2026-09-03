@@ -29,7 +29,7 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1371StepDiscoverySteps::acceptance handler registered so the runner executes every scenario. If the parcel replaces the array with discovery, update this entry in-parcel to the anchor that then proves loading - see notes.'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options - whether discovery is a
   directory glob, a manifest generated at build time, or something else is the
