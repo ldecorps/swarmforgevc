@@ -7,7 +7,7 @@ epic: deterministic-transit-assist
 priority: 1
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-668, BL-1360, BL-1361, BL-1362, BL-1363]
+decomposes_into: [BL-668, BL-1360, BL-1361, BL-1362, BL-1363, BL-1366]
 remaining_slices: |
   - BL-668 (LANDED, and it did not work): post-QA deterministic branch sweep.
     Shipped and running on the handoffd cadence, but measured 2026-09-03 across
@@ -95,7 +95,7 @@ notes: |
   | 2 | Ceremony handoff sends | ~2 per ticket | none | **BL-1360** |
   | 3 | Ticket close and bookkeeping | 409 commits | promote scripted, close not | **BL-1363** |
   | 4 | Post-QA merge-up | 5 turns per landing | BL-668, near-inert | **BL-1361** + pre-merge |
-  | 5 | QA land sequence | ~1 per ticket | primitives only, no whole-land mode | unfiled, see below |
+  | 5 | QA land sequence | ~1 per ticket | primitives only, no whole-land mode | **BL-1366** |
 
   ### Already deterministic - do NOT propose these again
 
@@ -106,15 +106,19 @@ notes: |
     human's tap (295 commits).
   - Daily briefings - generated (882 commits).
 
-  ### Opportunity 5, unfiled: the QA land sequence
+  ### Opportunity 5: the QA land sequence - UNBLOCKED and filed as BL-1366
 
   `land_main_publish.sh` exposes `--acquire-lock`, `--decide-only` and
-  `--release-lock` but has no mode that performs a whole land. QA orchestrates
-  the five steps by hand after every approval, and BL-1354 records that it has
-  stopped trusting the sibling verdict and hand-builds each one. Not filed here
-  because BL-1354 is ACTIVE and changes what that step concludes - filing a
-  wrapper around it first would spec against a moving contract. File it once
-  BL-1354 lands.
+  `--release-lock` but has no mode that performs a whole land; its own header
+  states the caller protocol nothing implements. QA orchestrates the five steps
+  by hand after every approval.
+
+  Held back at sweep time because BL-1354 was ACTIVE and changing what the
+  entanglement verdict concludes. **BL-1354 landed the same day**, and QA
+  reported the resulting contract by `note`: the landed-sibling verdict is
+  **per-ticket, not per-path** - a sibling is judged on its own attributed
+  lines, merge commits excluded. That is the contract worth wrapping, so the
+  slice was filed as **BL-1366** on 2026-09-03.
 
   ### The pattern behind all five
 
