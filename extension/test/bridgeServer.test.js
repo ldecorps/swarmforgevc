@@ -1041,6 +1041,75 @@ test('a second client connecting mid-stream does not starve an already-connected
   });
 });
 
+// BL-1350: an idle /events connection is written to on a periodic keepalive,
+// so a quiet swarm does not read as an outage to the front-desk relay's
+// undici bodyTimeout. Drives the REAL server-side writeSseKeepalive/timer
+// (via the injectable keepaliveIntervalMs, same precedent as pollIntervalMs
+// above) over a real HTTP connection - not a step-file reimplementation of
+// the loop, which is all the acceptance/property suites exercise.
+test('an idle /events connection receives a periodic keepalive comment frame, with no snapshot re-sent', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20, keepaliveIntervalMs: 15 }, async (handle) => {
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: controller.signal,
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const connectSnapshot = decoder.decode((await reader.read()).value);
+    assert.match(connectSnapshot, /^data: /, 'setup: expected the connect snapshot first');
+
+    const buffer = await readUntil(reader, decoder, (b) => b.includes(': keepalive\n\n'));
+    assert.match(buffer, /: keepalive\n\n/, 'no keepalive frame arrived on an otherwise-silent stream');
+    // The keepalive is an SSE COMMENT, inert to this repo's own reader
+    // (parseNextSseRecord matches neither `event: ` nor `data: `) - assert
+    // that directly, not just that SOME frame arrived.
+    assert.doesNotMatch(buffer, /^data: /m, 'a keepalive tick must never carry a second snapshot frame');
+
+    controller.abort();
+  });
+});
+
+test('a disconnected client is dropped from the keepalive loop without throwing, and later clients are unaffected', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20, keepaliveIntervalMs: 15 }, async (handle) => {
+    const firstController = new AbortController();
+    const first = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: firstController.signal,
+    });
+    const firstReader = first.body.getReader();
+    await firstReader.read(); // initial snapshot
+
+    // A real socket reset (not a clean end), the same shape the
+    // reply-relay-at-least-once tests above use - the response the server
+    // holds becomes destroyed mid-flight, exactly the race the
+    // writableEnded/destroyed guard in writeSseKeepalive exists for.
+    firstController.abort();
+
+    // Give several keepalive ticks a real chance to run against the now-dead
+    // client before asserting the loop kept going.
+    await new Promise((resolve) => setTimeout(resolve, 15 * 5));
+
+    // If the dead client's write threw out of the timer callback instead of
+    // being caught and dropped, the loop stops firing entirely and this
+    // second, healthy client would never receive its own keepalive.
+    const secondController = new AbortController();
+    const second = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: secondController.signal,
+    });
+    const secondReader = second.body.getReader();
+    const secondDecoder = new TextDecoder();
+    await secondReader.read(); // initial snapshot
+    const buffer = await readUntil(secondReader, secondDecoder, (b) => b.includes(': keepalive\n\n'));
+    assert.match(buffer, /: keepalive\n\n/, 'the keepalive loop must still be running for a healthy client after a peer disconnected');
+
+    secondController.abort();
+  });
+});
+
 // BL-265 slice 1: GET /gates lists the currently-pending to-human gates -
 // same token-gated, computed-only-on-request posture as /stage-dwell above.
 
