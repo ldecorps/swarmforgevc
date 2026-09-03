@@ -11,6 +11,7 @@ mutation_cost: medium
 slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1327-scheduled-descent-ladder-proposes-cheaper-notch.feature
+abandoned_commits: [711a269e55]
 
 human_approval: approved
 ruling: >

@@ -195,3 +195,5 @@ notes: |
   about. It is the same anchor shape BL-840 used for its own producer, and
   that producer is live today. The symbol name is fixed here at mint so the
   pattern is a literal that will exist (BL-874).
+
+assigned_to: coder
