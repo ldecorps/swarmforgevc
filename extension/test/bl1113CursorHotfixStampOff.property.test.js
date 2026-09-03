@@ -19,6 +19,10 @@
 
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
+const {
+  assertRunWritesNoDecision,
+  assertParcelDoesNotEditReviewedSources,
+} = require('./helpers/stampOff');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
@@ -51,46 +55,48 @@ function ledgerEntry() {
   return slice;
 }
 
-test('BL-1113/BL-654 invariant 1: stamp-off tree keeps hotfix blobs for landed paths', () => {
-  let draws = 0;
+test('BL-1113/BL-654 invariant 1: this stamp-off parcel never rewrites the hotfix it reviews', () => {
+  // BL-1356: this used to compare the WORKING TREE against 27273f2b0a's blobs,
+  // so it went red the moment ANY later ticket legitimately edited a hotfix
+  // path - which is the same defect as pinning a moving ledger state, one door
+  // down. The invariant is about THIS PARCEL, so the range is too
+  // (`49fca1c741`, BL-1323's reference shape).
+  //
+  // Generator reach is unchanged in substance: every hotfix path is checked,
+  // and the draw asserts each is genuinely considered rather than sampled.
+  // Reach by CONSTRUCTION, not by draw: every hotfix path is asserted in the
+  // loop below, and the drawn property is the redundant pass. A reach floor
+  // tied to what fast-check happened to sample is exactly the shape the
+  // constitution's generator-reach rule forbids - and it failed here on the
+  // first run, 5 of 6 paths drawn in 18 tries.
+  for (const file of HOTFIX_PATHS) {
+    assertParcelDoesNotEditReviewedSources('BL-1113', [file]);
+  }
   fc.assert(
     fc.property(fc.constantFrom(...HOTFIX_PATHS), (file) => {
-      draws += 1;
-      const hotfixBlob = gitShow(HOTFIX, file);
-      const headBlob = fs.readFileSync(path.join(REPO, file), 'utf8');
-      // Stamp-off may add review harnesses elsewhere, but must not rewrite
-      // the hotfix paths themselves in this parcel's working tree relative
-      // to the landed commit (allow identical content).
-      assert.equal(headBlob, hotfixBlob, `${file} diverged from ${HOTFIX}`);
+      assertParcelDoesNotEditReviewedSources('BL-1113', [file]);
     }),
     { numRuns: HOTFIX_PATHS.length * 3 }
   );
-  assert.ok(draws >= HOTFIX_PATHS.length);
+  assertParcelDoesNotEditReviewedSources('BL-1113', HOTFIX_PATHS);
 });
 
 test('BL-1113/BL-654 invariant 2: green tests do not certify or waive the ledger row', () => {
-  const entry = ledgerEntry();
-  // Live ledger schema (hotfix-ledger.yaml): state + human_decision, not status.
-  assert.match(entry, /\bstate:\s*pending\b/);
-  assert.match(entry, /\bhuman_decision:\s*null\b/);
-  assert.doesNotMatch(entry, /\bstate:\s*certified\b/);
-  assert.doesNotMatch(entry, /\bstate:\s*waived\b/);
-  assert.doesNotMatch(entry, /\bhuman_decision:\s*certified\b/);
-  assert.doesNotMatch(entry, /\bhuman_decision:\s*waived\b/);
-
-  fc.assert(
-    fc.property(fc.constantFrom('certified', 'waived'), (forbidden) => {
-      assert.doesNotMatch(
-        entry,
-        new RegExp(`\\bstate:\\s*${forbidden}\\b`),
-        `ledger must not show state ${forbidden} without a human decision`
-      );
-      assert.doesNotMatch(
-        entry,
-        new RegExp(`\\bhuman_decision:\\s*${forbidden}\\b`),
-        `ledger must not show human_decision ${forbidden} from green tests alone`
-      );
-    }),
-    { numRuns: 20 }
-  );
+  // BL-1356: this file used to pin its row's CURRENT state literal
+  // (`state: pending`), which made it go red the moment the row legitimately
+  // advanced through its own workflow - jamming the whole swarm's commit gate
+  // until a standing-allowlist row absorbed it. The invariant was never wrong;
+  // the assertion was. It now asks whether THIS RUN wrote a decision, via the
+  // shared helper, so what the row said beforehand is the expected value.
+  //
+  // The whole of this test's own work is bracketed, so the assertion spans a
+  // run that really did something rather than an empty window.
+  assertRunWritesNoDecision(HOTFIX, () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...HOTFIX_PATHS), (file) => {
+        assert.equal(typeof gitShow(HOTFIX, file), 'string');
+      }),
+      { numRuns: 20 }
+    );
+  });
 });
