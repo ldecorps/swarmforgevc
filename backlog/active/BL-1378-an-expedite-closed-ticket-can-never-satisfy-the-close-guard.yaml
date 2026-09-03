@@ -190,3 +190,5 @@ source: |
 
   That directive is preserved verbatim above and its two halves are honoured
   here: the defect is minted, and the staged move is left alone.
+
+assigned_to: coder
