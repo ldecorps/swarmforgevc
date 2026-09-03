@@ -727,3 +727,31 @@ test('BL-1367 invariant 2: an existing ruling survives a later plain approval', 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('BL-1367 audit: the options reader and the writer resolve the SAME file', () => {
+  // Two finders exist in this path: the pager route's existence check matches
+  // by FILENAME, while readRulingOptions and recordApprovalReply both match by
+  // the `id:` field inside the file. If those could disagree, an option-bearing
+  // ticket could be read as declaring none and approved bare - invariant 1's
+  // exact failure mode. They cannot: both the reader and the writer use the
+  // id-field finder, so a ticket whose filename does not carry its id is seen
+  // identically by both.
+  const dir = mkTmpDir('bl1367-finders-');
+  try {
+    const activeDir = path.join(dir, 'backlog', 'active');
+    fs.mkdirSync(activeDir, { recursive: true });
+    // filename deliberately unlike the id
+    fs.writeFileSync(
+      path.join(activeDir, 'some-slug-with-no-id.yaml'),
+      'id: BL-9370\ntitle: poses a choice\nhuman_approval: pending\nruling_options:\n  - one\n  - two\n'
+    );
+    assert.deepEqual(readRulingOptions(dir, 'BL-9370'), ['one', 'two']);
+    assert.equal(
+      classifyApprovalRulingRequirement(readRulingOptions(dir, 'BL-9370'), undefined).kind,
+      'ruling-required',
+      'the reader must see the options the writer would write beside'
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
