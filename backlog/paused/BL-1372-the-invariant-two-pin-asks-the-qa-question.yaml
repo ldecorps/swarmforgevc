@@ -27,7 +27,7 @@ required_wiring:
   - 'swarmforge/scripts/test/bl962_merge_adjudication_test_runner.bb::second ancestry predicate::the over-broad assertion this ticket narrows lives here'
   - 'specs/pipeline/steps/index.js::bl1372InvariantTwoPinSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options, because you already ruled
   on this exact question. BL-1314 offered you the two readings - narrow the

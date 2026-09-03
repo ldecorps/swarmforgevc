@@ -29,7 +29,7 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1371StepDiscoverySteps::acceptance handler registered so the runner executes every scenario. If the parcel replaces the array with discovery, update this entry in-parcel to the anchor that then proves loading - see notes.'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options - whether discovery is a
   directory glob, a manifest generated at build time, or something else is the
@@ -76,6 +76,27 @@ description: |
   they are all reporting is a coupling that exists for no reason except that
   registration is manual.
 
+  ## A fourth class, and a whole gate built to police the array
+
+  `check_feature_handler_registration.sh` (BL-1303) is a commit gate on `main`
+  whose entire job is refusing "a feature file with no runnable step handler",
+  because a handler can be registered in the array or not, independently of
+  whether its file exists. Its own header records the incident: on 2026-08-30 a
+  bounce-revert removed a handler from the array and the failure surfaced later,
+  to whichever role next ran the suite, against a parcel that had not caused it.
+
+  A handler discovered from its own file cannot be unregistered. That gate's
+  failure mode stops existing rather than being guarded.
+
+  This is the sweep's pattern again, one layer down: rather than remove a manual
+  step, the swarm built enforcement around it - a commit gate, plus a
+  `required_wiring` convention every ticket in this backlog repeats, all
+  policing an array that need not be hand-maintained at all.
+
+  (`unreachableStepHandlerCheck` is NOT retired by this: it asks whether a
+  registered regex matches any feature step, which is a live question however
+  handlers are found.)
+
   ## How (direction, not mandate)
 
   - A handler discovered from its own file needs no shared edit. A directory
@@ -88,8 +109,25 @@ description: |
   - Load order may matter to handlers that register overlapping step patterns.
     Check before assuming a glob's ordering is safe; if it does matter, that is
     a finding worth stating rather than a reason to abandon discovery.
+  - Weigh what the array genuinely buys before removing it: it is explicit and
+    greppable, and a file only joins the suite when someone adds a line. Under
+    discovery a half-finished handler on a branch joins by existing. Invariant 2
+    is what makes that acceptable - it fails the run loudly rather than silently
+    - but the trade is real and should be stated in the parcel, not glossed.
+  - Check whether `check_feature_handler_registration.sh` can be retired or
+    narrowed once registration cannot be lost. Do not delete a gate as a side
+    effect; if it should go, say so and let it be a decision.
   - Both runners must move together, or the mutation lane silently keeps the
     old registry.
+
+  ## Sequencing, for the coordinator rather than the implementer
+
+  This touches `specs/pipeline/steps/index.js`, which is currently a co-owner
+  on several in-flight parcels (BL-1359's sweep fix, BL-1372/BL-1373, and any
+  ticket adding a handler). Promoting it while those are in flight guarantees
+  the orthogonality conflict Article 3.2 rule 3 exists to avoid. Approval does
+  not schedule it; this note is here so promotion is a deliberate choice about
+  timing.
 
   ## Explicitly NOT in scope
 
