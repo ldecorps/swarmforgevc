@@ -2,7 +2,7 @@ id: BL-1296
 title: "Bubble gets its own answering seat so it stays answerable while the Cursor seat is busy, while remaining a mirror of the front desk"
 milestone: M8
 type: feature
-status: blocked
+status: todo
 epic: local-llm-swarm
 priority: 50
 direction: human-requested
@@ -70,7 +70,18 @@ qa_e2e: >
   confirm only one getUpdates owner exists (no 409s in the bridge log) and that the
   bridge does not restart — the dead-feeder/409 classes must not reopen.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Strict echo (option 1) - the Bubble seat relays the front desk's own answer
+  and produces none of its own.
+
+  Recorded 2026-09-03 by direct instruction from the human (t / ldecorps@gmail.com)
+  in a Claude Code coordinator chat session, NOT via the Telegram bot or pager
+  tap (human reported being unable to find the pending approvals there). Text
+  matches backlog/answers-archive/ANSWER-2026-09-03-bl1296-echo-vs-worker-strict-echo-relayed.md,
+  which the specifier had already filed from an earlier answer. This entry is
+  the explicit record of the restoring action per BL-1367's finding that the
+  approval-commit byline cannot discriminate who tapped.
 approval_context: >
   Re-pended DELIBERATELY on 2026-09-03 to collect a ruling. Your approval was
   real and is not erased - it is commit `9adf88994d`. The ask has to re-fire to
@@ -165,6 +176,12 @@ notes: |
   2026-09-03 07:48Z (coordinator): status -> blocked. Re-pended by specifier
   (2302c234b2) for the echo-vs-worker ruling; stays active, coder not to
   resume this half. Clears when human_approval is restored.
+
+  2026-09-03 09:0xZ (coordinator): UNBLOCKED. Human restored human_approval
+  directly in this chat session (not via Telegram - reported unable to find
+  the pending approvals there), selecting strict echo (option 1), matching the
+  specifier's already-filed answers-archive text and recommendation. status ->
+  todo. Coder may resume the turn-function half now.
 
   **The seat binding must not ship on its own.** A bound seat with no worker is
   a mechanism with no live consumer - the BL-1235 shape this swarm has shipped

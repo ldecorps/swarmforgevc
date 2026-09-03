@@ -29,7 +29,7 @@ required_wiring:
   - 'extension/src/tools/telegramFrontDeskBotCore.ts::record human_approval::the bot path composes the other'
   - 'specs/pipeline/steps/index.js::bl1368ApprovalCommitNamesDeciderSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options. The remedy is a string
   and the only real question - what it should say instead - is the

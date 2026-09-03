@@ -1,0 +1,155 @@
+id: BL-1370
+title: "The per-pass orphan check is a gate with no tool: every orphan mechanism in the repo is a daemon sweep library, so each role hand-runs pgrep, hand-scopes it away from other worktrees, and hand-words the result 326 times over"
+milestone: M8
+type: feature
+status: todo
+epic: deterministic-transit-assist
+priority: 13
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1370-a-role-checks-its-own-worktree-for-strays.feature
+
+invariants:
+  - "Scope comes from the ONE shared classifier (process_table_lib's project-scoped-process?, BL-887): another worktree's legitimate run is never reported and never killed, and this tool never grows a second notion of what is mine."
+  - "Reaping is by process group, never by pid - an orphaned run reparents to the OS and its children outlive a bare pid kill."
+  - "A stray found is a refusal, not a warning: the check exits non-zero, so a pass cannot be approved with test or mutation processes still alive."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1370WorktreeStrayCheckSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected - see notes.'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options. The remedy's shape is
+  fixed by an existing prompt requirement and an existing classifier.
+  .
+  What to know before approving. This tool kills processes, so the bound that
+  matters is invariant 1. It reuses the same classifier the orphan janitor and
+  the supervisor already defer to, rather than deciding for itself what counts
+  as "mine" - a second notion of scope is exactly how a tool like this ends up
+  killing a colleague's running suite. Scenario 05 pins that directly.
+  .
+  It does not replace the background janitor, which reclaims what nobody is
+  watching on its own cadence. This is the per-pass gate a role runs before and
+  after its own verification - a different job, and the one that is currently
+  done entirely by hand.
+
+description: |
+  ## What is wrong
+
+  QA's prompt states the ritual precisely: no leftover test or mutation
+  processes BEFORE verification, because a run on top of one skews results and
+  pins cores; none alive AFTER it, because an orphaned run reparents to the OS
+  and burns cores for hours; and stragglers are reaped by process group
+  (`kill -- -<pgid>`), never by pid.
+
+  Every clause is mechanical. None of it has a tool. A role runs
+  `pgrep -fl 'node --test|stryker'` by hand, reasons by hand about which of the
+  hits belong to another worktree's legitimate concurrent run, and writes the
+  outcome into its evidence file in whatever words it reaches for.
+
+  ## Observed
+
+  326 evidence files record an orphan check, and the wording is different
+  almost every time: `Orphans | NONE |` (42), `Orphan check` (22),
+  `Orphan test procs | none |` (19), `Orphans | NONE after verification |`
+  (11), ``Orphan mutation/`node --test` | none |`` (8), and a long tail. That
+  spread is the signature of a step composed from scratch each pass rather than
+  emitted.
+
+  Meanwhile every orphan mechanism in the repo is a daemon sweep library -
+  `orphan_janitor_lib.bb`, `orphan_janitor_sweep_lib.bb`,
+  `orphan_agent_reaper_lib.bb`, `fixture_reaper_lib.bb` and their sweeps. There
+  is no entry point a role can call about its own pass.
+
+  ## What this is NOT
+
+  It is not a replacement for the janitor, and the janitor is not failing. It
+  swept 8402 times for 27546 candidates and reaped 3 - which looks damning until
+  you read it: "candidates" are scanned pids, and its predicates are
+  deliberately conservative (live-window, staleness, project scope, parent
+  orphaned). Reaping almost nothing is most likely correct behaviour for a
+  background reclaimer that must never kill live work. Checked before assuming.
+
+  The janitor reclaims what nobody is watching. This is a GATE a role runs on
+  its own pass, which is a different question and the one with no tool.
+
+  ## How (direction, not mandate)
+
+  - One entry point a role calls before and after verifying, answering about
+    its own worktree only, with a separate explicit reap.
+  - Scope must delegate to `process_table_lib`'s `project-scoped-process?` -
+    the same classifier the janitor and the supervisor already share so they
+    "can never disagree" (its own comment). Growing a second notion here is the
+    one change that could make this tool dangerous.
+  - The patterns to match (`node --test`, `stryker`, the property-lane vitest
+    trees) already exist in the janitor's own definitions. Read them from one
+    place rather than restating them (BL-897).
+  - Emit a recordable result line, so the evidence file gets one wording rather
+    than 326. If BL-1362's evidence writer lands, that is its natural consumer;
+    neither slice blocks the other.
+
+  ## Explicitly NOT in scope
+
+  - Changing the background janitor, its cadence, or its predicates.
+  - The acceptance runner's missing teardown (BL-1357) and the Gherkin mutation
+    harness's missing per-mutant ceiling (BL-1358). Those two reduce the
+    NUMBER of orphans created; this one is about detecting and reaping what
+    still escapes.
+
+qa_e2e_procedure: |
+  1. In a fixture worktree with nothing running, run the check. Confirm it
+     reports clean and exits zero.
+  2. Start a long-lived process matching the test patterns in that worktree.
+     Confirm the check names it WITH its process group and exits non-zero
+     (invariant 3).
+  3. Start an equivalent process scoped to a DIFFERENT worktree. Confirm the
+     check reports clean and, crucially, that a reap leaves it running
+     (invariant 1, scenarios 03 and 05). This is the test that matters.
+  4. Reap a stray that has spawned children. Confirm the whole process group is
+     gone, not just the named pid (invariant 2), and that a re-check is clean.
+  5. Confirm the emitted result line is stable across runs - the same wording
+     for the same state, which is the point.
+  6. Run the whole procedure while another worktree is genuinely running its
+     suite, and confirm that suite completes normally.
+  7. Kill every process the procedure started in a `finally`, and sweep by
+     prefix before the run too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier on the operator's direction: "another case
+  to move into the deterministic camp: killing orphan processes", with a QA
+  pane showing `sleep 15; ps -o pid,pgid,etimes,cmd -p 7759,7992` mid-pass.
+
+  Verified this pass rather than assumed:
+  - QA.prompt lines 44-49 state the before/after gate, the `pgrep` command and
+    the `kill -- -<pgid>` remedy.
+  - Every orphan/reaper artefact in `swarmforge/scripts/` is a `*_lib.bb` or
+    `*_sweep_lib.bb`; no CLI serves a role's own pass.
+  - `process_table_lib`'s `project-scoped-process?` is the shared classifier,
+    and `orphan_janitor_lib.bb` documents that it delegates there specifically
+    so it and the supervisor "can never disagree".
+  - The janitor's own numbers (8402 sweeps / 27546 candidates / 3 reaps) were
+    read off the daemon logs and are NOT evidence it is broken - see the
+    description. Checked so this ticket does not repeat today's earlier mistake
+    of reading a conservative mechanism as an inert one.
+
+  **A production anchor IS expected**, unlike most of this epic's slices: the
+  new CLI must reach the shared classifier, and an entry naming that call in the
+  file the parcel creates is the one thing that would prove invariant 1 holds by
+  construction. Left off at mint because the filename is the implementer's and
+  arming a gate against a string nobody will write is worse than none (BL-874);
+  add it in the same pass that creates the file.
+
+  IR-DRY: four findings, max 0.75, all clean/stray and own/other contrasts the
+  scenarios exist to draw.
+
+source: |
+  Operator directive 2026-09-03: "another case to move into the deterministic
+  camp: killing orphan processes." Sixth opportunity in the determinism sweep
+  recorded on BL-667, and the first found by the operator rather than by the
+  commit-classification pass - the sweep's method counts commits, and this
+  ritual leaves none.

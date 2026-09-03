@@ -28,7 +28,7 @@ required_wiring:
   - 'extension/src/bridge/bridgeServer.ts::computePausedPagerApproveOutcome::the pager route is the live consumer that must reach the ruling writer'
   - 'specs/pipeline/steps/index.js::bl1367ApprovalCarriesItsRulingSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options - which matters here,
   because this is the ticket about rulings being dropped and it must not model
