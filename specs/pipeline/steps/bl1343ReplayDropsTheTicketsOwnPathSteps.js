@@ -23,21 +23,36 @@ const OWN_PATH = 'specs/pipeline/steps/bl9343Steps.js';
 
 // BL-971: sweep any fixture a killed run left behind BEFORE creating a new
 // one - a trap catches nothing when the process is killed.
+// BL-971 wants stale fixture roots swept BEFORE a run, because a killed run
+// traps nothing. The sweep is AGE-GUARDED rather than prefix-only: scenarios
+// run concurrently and this module can be loaded more than once in a run, so
+// an unguarded prefix sweep deletes a sibling scenario's live root out from
+// under it - which is a flake that reads as a missing file, not as a sweep.
+const STALE_AFTER_MS = 10 * 60 * 1000;
+
 function sweepStaleFixtures() {
-  const base = os.tmpdir();
-  for (const entry of fs.readdirSync(base)) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(base, entry), { recursive: true, force: true });
+  const now = Date.now();
+  for (const entry of fs.readdirSync(os.tmpdir())) {
+    if (!entry.startsWith(FIXTURE_PREFIX)) continue;
+    const full = path.join(os.tmpdir(), entry);
+    try {
+      if (now - fs.statSync(full).mtimeMs > STALE_AFTER_MS) {
+        fs.rmSync(full, { recursive: true, force: true });
+      }
+    } catch {
+      // A root another scenario is removing right now is not this sweep's
+      // business.
     }
   }
 }
+
+sweepStaleFixtures();
 
 function git(root, ...args) {
   execFileSync('git', args, { cwd: root, stdio: 'pipe' });
 }
 
 function newRepo() {
-  sweepStaleFixtures();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX));
   git(root, 'init', '-q', '-b', 'main', '.');
   git(root, 'config', 'user.email', 't@t');
