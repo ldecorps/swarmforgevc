@@ -1,5 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1352: the ask-escalation transport's
+own health is now visible where a human actually looks, closing a defect
+that left a role question undelivered for four days. GH-25's escalation
+degraded silently when no ops issue was configured: a `status.json` key
+nothing read, and a per-tick `WARN` operator-log line that accumulated 7027
+identical copies since 2026-08-30T06:36Z without ever being noticed. Two
+fixes, both scoped away from choosing a transport (that stays BL-1347's,
+per the human's own ruling: "leave GitHub unconfigured and let BL-1347
+email digest become the transport"). Visibility: `swarm_status.bb`'s new
+`ask-escalation` function — the `required_wiring` anchor — reads a
+three-way `escalation-transport-state` (`role_ask_escalation_lib.bb`) so
+`./swarm status` renders an "Ask escalation" row, unconditionally (a row
+that appears only on failure is one a human never learns to look for):
+`ok` when the transport is configured; `warn` when unconfigured but nothing
+is waiting — a signal that is permanently on is how the original one went
+unread; `FAULT` when unconfigured AND at least one role question is past
+the escalation threshold, naming every waiting role, not just the first. An
+absent or unreadable `status.json` reports `unknown`, never `healthy`.
+Flood: the per-tick `WARN` is deleted outright, not throttled —
+`log-ask-escalation-transport!`/`transport-log-due?` write the operator log
+only on state CHANGE, reusing the same last-state-file pattern the
+babysitterd watchdog already established in `operator_runtime.bb`, rather
+than inventing a second one. Bounced once at cleaner (invariant 1's `waiting-roles` set came from
+`fc.uniqueArray` with no `minLength`, so the empty-array/"idle" corner was
+only sometimes sampled — measured 5/15 failing runs, ~33%); the coder's
+rework enumerates all four transport×waiting corners explicitly so the
+corner that matters is reached by construction, with no production-code
+change from the reviewed commit. Acceptance:
+`specs/features/BL-1352-escalation-transport-fault-is-visible.feature`.
+How-to: the "Transport visibility (BL-1352)" section added to
+`docs/how-to/GH-25-email-escalation-for-unanswered-role-questions.md`. No
+new extension command or setting — `./swarm status` output only; no
+diagram depicts CLI-surface content.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1335: token-exhaustion evidence now
 promotes into the failover record BL-669's consumer already reads, closing
 the missing middle between BL-840's producer (`record-provider-outage!`,
