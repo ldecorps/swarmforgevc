@@ -912,6 +912,34 @@
     (assert= "entangled-siblings: and both are named"
              #{"BL-9002" "BL-9003"} (:unlanded result))))
 
+;; sibling-own-line-changes excludes MERGE commits even when the merge's own
+;; subject names the sibling - the shape this repo's own handoff merges take
+;; ("Merge branch (BL-9002 ...) into cleaner."). Without the exclusion, a
+;; merge's first-parent diff shows EVERYTHING its second parent brought in,
+;; so a sibling's "own" lines would be inflated with whatever else rode in on
+;; that branch - exactly how BL-1354's docstring says the landing ticket's
+;; own unlanded content once got mis-charged to sibling BL-1341.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "combo")
+  ;; The landing ticket's OWN unlanded content, riding on the same branch a
+  ;; sibling's work later merges in on.
+  (commit! root "own2.txt" "own2 unlanded\n" "BL-9001: own extra work on the combo branch")
+  (commit! root "shared.txt" "sib line\n" "BL-9002: sibling's own real work")
+  (sh! root "git" "checkout" "-q" "main")
+  ;; The merge SUBJECT names the sibling, not the landing ticket - this
+  ;; repo's own "Merge <role> <sha> (BL-9002 ...) into <role>." convention.
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "Merge branch (BL-9002 sibling work) into cleaner." "combo")
+  (let [candidates (str/split-lines
+                     (:out (sh! root "git" "rev-list"
+                                (str (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+                                     ".." "HEAD"))))
+        changes (land-step-lib/sibling-own-line-changes root candidates "BL-9002")]
+    (assert= "sibling-own-line-changes: a merge commit citing the sibling contributes no lines of its own"
+             nil (get-in changes ["own2.txt" :added]))
+    (assert-true "sibling-own-line-changes: the sibling's own real commit still counts"
+                 (contains? (get-in changes ["shared.txt" :added]) "sib line"))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
