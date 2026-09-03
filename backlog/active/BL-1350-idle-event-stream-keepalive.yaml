@@ -16,6 +16,7 @@ mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1350-idle-event-stream-keepalive.feature
+abandoned_commits: [431f950cd0]
 
 required_wiring:
   - extension/src/bridge/bridgeServer.ts::writeSseKeepalive::the keepalive must be written from the live module that owns sseClients and the poll timer, not only from a unit-tested helper no production path calls (BL-1235)
