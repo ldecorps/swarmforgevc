@@ -8,7 +8,7 @@ severity: high
 # and the only thing that caught it was a specifier reading git history four
 # lands later. A gate that is bypassable on the mandatory path is a broken
 # safety signal, which is the same grading BL-1293 and BL-1307 carry.
-status: blocked
+status: todo
 epic: swarm-reliability
 priority: 5
 direction: swarm-reported
@@ -145,6 +145,10 @@ notes: |
   detector into the mandatory land-decide step, so landing it first would make
   the false refusal mandatory. depends_on now lists BL-1354. Stays active,
   unclaimed; coder told not to start it. Clears when BL-1354 is in done/.
+
+  2026-09-03 07:21Z (coordinator): UNBLOCKED. BL-1354 QA-approved and closed to
+  backlog/done/ (landed 80d26b9ae8). Both depends_on entries (BL-1308, BL-1354)
+  are now done. status -> todo, routed to coder.
 
 qa_e2e_procedure: |
   1. On a scratch clone, build a branch tip that merges two tickets' work where
