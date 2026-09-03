@@ -181,20 +181,35 @@ expedite     owner: a human - Article 3.1 makes backlog/hold/ human-held ...
 expedite   the uncommitted backlog moves:
 expedite     backlog/active/ -> backlog/hold/  (BL-586)
 expedite     owner: whoever next commits in the master checkout ...
+expedite   the run branch:
+expedite     expedite/BL-1375  3 commits ahead of origin/main
+expedite     owner: QA - Article 1.8/4.2 make QA the integration point ...
 ```
 
-**Two things there need you, not the swarm.** The parked tickets sit in
+**Three things there need you, not the swarm.** The parked tickets sit in
 `backlog/hold/`, which Article 3.1 forbids the coordinator promoting from — so
 if you do not move them back, `active/` can stay empty and the pipeline idles
-(this is what happened on 2026-08-21). And the backlog moves are **staged, not
+(this is what happened on 2026-08-21). The backlog moves are **staged, not
 committed**, in the shared master checkout: commit them deliberately, or the
-next role to commit anything there sweeps them into an unrelated commit.
+next role to commit anything there sweeps them into an unrelated commit. And
+the run branch (`expedite/<BL-id>`) is **never landed by the run itself** —
+the expeditor works there deliberately and never touches `main` (see "Things
+it will not do" below) — so if it carries any commits ahead of
+`origin/main`, that work reaches nobody until QA lands it (BL-1376,
+2026-09-03: a run's branch used to sit unlanded with nothing saying so —
+`expedite/BL-1375` was exactly this case, caught only by memory on an
+earlier run). The item names the distance when it can read it, or the
+reason it couldn't when it can't — never a number nobody measured, and
+never silently omitted just because the check failed.
 
 It prints on every ending, including a failed restart and each of the
 pre-flight refusals below — which is exactly when it matters, since a
 refusal fires after tickets are already parked and never reaches the run's
 own tail. `nothing outstanding` means there is genuinely nothing, and a
-`--dry-run` always says that, because it changed nothing.
+`--dry-run` always says that, because it changed nothing. The branch item
+itself is silent only when there is genuinely nothing to land: no commits
+ahead of `origin/main`, or the branch never existed (an early refusal, before
+any worktree was created).
 
 ## Things it will not do
 
