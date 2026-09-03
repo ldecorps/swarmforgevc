@@ -27,3 +27,29 @@ BL-1332's qa_e2e already asks for this as a verification step; this makes it a
 gate. One guard run per land.
 
 By operator.
+
+---
+
+## Specifier status (2026-09-03) — ALREADY DRAINED, on a commit that has not landed
+
+Do not re-drain this. The rider was lifted into BL-1375's `invariants:` and its
+acceptance feature by commit **`22e28654fb`** ("BL-1375: lift the human's rider
+into invariants, gate the fail-closed cases, drain the intake"), which also
+deletes this file. That commit is real and correct — it is simply not on `main`.
+
+`22e28654fb` is one of three commits stranded on the branch `expedite/BL-1375`,
+which is 3 ahead of `origin/main` and contained by no other branch. The expedite
+run that produced them passed all seven stages, moved BL-1375 into
+`backlog/done/`, and never named the unlanded branch in its closing handover.
+Full evidence: `backlog/evidence/BL-1375-expedite-branch-unlanded-20260903.md`;
+the reporting gap is minted as **BL-1376**.
+
+So this file is left in the backlog root deliberately. Re-minting the rider now
+would produce a second, conflicting version of work that already exists, and
+when `expedite/BL-1375` lands, this file disappears with it — this appended
+section included. A modify/delete conflict at that point resolves in favour of
+the delete; that is the intended outcome, not a problem to fix.
+
+The correct next action is not a specifier action: landing that branch on `main`
+is QA's (Article 1.8/4.2, BL-247). Surfaced to the coordinator by priority-`00`
+note the same pass.
