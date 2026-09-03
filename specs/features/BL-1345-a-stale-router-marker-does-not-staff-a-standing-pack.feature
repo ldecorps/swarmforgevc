@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=81d96eaad15078dc632c492aa17b44b090ab9fe7e0110a8563658e365842e38d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T02:36:03.829517208Z","feature_name":"BL-1345 a mis-staffed pane is detected, and the resident marker is not read where it does not apply","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1345-a-stale-router-marker-does-not-staff-a-standing-pack.feature","background_hash":"2644daf382c84862a0b66c9cb2469f86aa14b0a552423ad4fd85066e98141526","implementation_hash":"unknown","scenarios":[{"index":4,"name":"An unusable marker changes nothing the sweep concludes","scenario_hash":"bdb1a833dcf220b242f77755aa2009287d4073ea21aa751529e850669a9d47ca","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-03T02:36:03.829517208Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1345 a mis-staffed pane is detected, and the resident marker is not read where it does not apply
 
   Hotfix 195de28861 stopped `swarm ensure`'s RC repair respawning a

@@ -156,3 +156,6 @@ source: |
   (coordinator, 2026-09-02 18:01 UTC), which records the swarm state, the exact
   operator commands that fixed it, and the two secondary findings carried into
   notes above rather than dropped.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-03, by: architect, blamed: coder, class: invariant-unencoded, commit: 7ed58805ff, evidence: backlog/evidence/BL-1345-architect-bounce-20260903.md }
