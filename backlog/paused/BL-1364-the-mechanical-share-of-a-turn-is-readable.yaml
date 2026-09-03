@@ -29,7 +29,7 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1364MechanicalShareReadableSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected here - see notes.'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options. This is a wiring defect
   with one obvious remedy - give an existing, tested, unreachable function a
