@@ -1537,6 +1537,25 @@ export interface CursorBridgeLoopDeps {
   qwenLocalTopicId?: number;
   /** Seam for the seat's whole turn - injected so tests need no ollama. */
   runLocalSeatTurnFn?: typeof runLocalSeatTurn;
+  /**
+   * BL-1296: Bubble's own answering seat. Handled here, ahead of cursor's
+   * decision, so a message in the Bubble topic is answered by Bubble's worker
+   * while the Cursor seat is mid-turn - which is the whole point of the
+   * ticket: the two used to share one responder and one turn at a time.
+   *
+   * Same posture as the qwen seat above, for the same reason: it runs inside
+   * THIS poll, so it opens no second getUpdates consumer (invariant 3).
+   * Bubble stays a MIRROR - the seat answers from the front desk's shared
+   * context, never from a context of its own (invariant 1, structural in
+   * bubbleSeat.ts's own type).
+   */
+  bubbleSeatTopicId?: number;
+  /** Seam for the Bubble seat's turn - injected so tests need no live agent. */
+  runBubbleSeatTurnFn?: (input: {
+    topicId: number;
+    text: string;
+    post: (topicId: number, message: string) => Promise<void>;
+  }) => Promise<void>;
 }
 
 function resolveInboundQueueFromFeeder(opDir: string): boolean {
@@ -2014,6 +2033,25 @@ async function processInboundUpdates(
         text: inbound.text ?? '',
         // The loop's own chunked sender, so the seat's replies ride exactly
         // the path every other reply in this topic does.
+        post: async (topicId: number, message: string) => {
+          await handlerCtx.post(deps.botToken, deps.chatId, topicId, message, inbound.messageId);
+        },
+      });
+      continue;
+    }
+    // BL-1296: Bubble's topic, handled by Bubble's own worker BEFORE cursor's
+    // decision is consulted - so cursor is never asked about it, and being
+    // mid-turn cannot delay it. `ctx.busy` is deliberately not consulted:
+    // waiting on it is the defect this ticket exists to remove.
+    if (
+      deps.bubbleSeatTopicId !== undefined &&
+      deps.runBubbleSeatTurnFn &&
+      inbound.kind !== 'callback' &&
+      inbound.topicId === deps.bubbleSeatTopicId
+    ) {
+      await deps.runBubbleSeatTurnFn({
+        topicId: inbound.topicId,
+        text: inbound.text ?? '',
         post: async (topicId: number, message: string) => {
           await handlerCtx.post(deps.botToken, deps.chatId, topicId, message, inbound.messageId);
         },

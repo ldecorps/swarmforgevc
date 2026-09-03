@@ -57,6 +57,14 @@ ${forms}`;
 // A generated seat: a ranked candidate list, each entry carrying whether it is
 // certified (the registry bar) and reachable (the host bar), so the property
 // can compute the expected verdict independently of the lib.
+//
+// Model ids are made UNIQUE PER SEAT below (uniqueModels): certification and
+// reachability are properties of a MODEL in the registry, not of a
+// (role, model) pair, so a draw that gave two seats the same model id with
+// different flags described a registry that cannot exist - and the property
+// then measured the lib against an impossible expectation. Found by the
+// property itself on a shrunk counterexample; the generator was the defect,
+// not the lib.
 const seatArb = fc.record({
   role: fc.constantFrom(...ROLES),
   candidates: fc.array(
@@ -116,6 +124,15 @@ function generateForm(seats, floor) {
 
 // The same decision, computed here from the drawn data - so the property
 // compares the lib against an independent expectation, not against itself.
+// Gives every candidate a model id unique across the whole draw, so no model
+// carries two different certification/reachability answers.
+function uniqueModels(seats) {
+  return seats.map((seat, seatIndex) => ({
+    ...seat,
+    candidates: seat.candidates.map((c, i) => ({ ...c, model: `${c.model}-s${seatIndex}c${i}` })),
+  }));
+}
+
 function expectedFor(seats, floor) {
   const byRole = new Map();
   for (const seat of seats) {
@@ -135,13 +152,12 @@ test('BL-1337/BL-654 invariant 1: runnable only when every seat passed BOTH bars
   fc.assert(
     fc.property(fc.array(seatArb, { minLength: 1, maxLength: 3 }), fc.constantFrom(0, 0.5, 0.9), (seats, floor) => {
       // One seat per role: a repeated role would make "the seat" ambiguous.
-      const unique = [...new Map(seats.map((s) => [s.role, s])).values()];
+      const unique = uniqueModels([...new Map(seats.map((s) => [s.role, s])).values()]);
       const expected = expectedFor(unique, floor);
       const [got] = callCastLib(generateForm(unique, floor));
 
       const expectRunnable = [...expected.values()].every((m) => m !== null);
       assert.equal(got.runnable, expectRunnable, `runnable disagreed: ${JSON.stringify({ got, expected: [...expected] })}`);
-      if (expectRunnable) reach.runnable += 1;
 
       for (const [role, model] of expected) {
         if (model === null) {
@@ -151,19 +167,61 @@ test('BL-1337/BL-654 invariant 1: runnable only when every seat passed BOTH bars
           assert.equal(got.staffed[role], model, `${role} was staffed by the wrong model`);
         }
       }
-      for (const seat of unique) {
-        const ranked = [...seat.candidates].sort((a, b) => b.score - a.score);
-        if (ranked.some((c) => c.score >= floor && !c.certified)) reach.blockedByRegistry += 1;
-        if (ranked.some((c) => c.score >= floor && c.certified && !c.reachable)) reach.blockedByHost += 1;
-      }
       return true;
     }),
     { numRuns: 12 },
   );
 
+  // GENERATOR REACH, by CONSTRUCTION rather than by luck: the three shapes the
+  // gate turns on are each driven as their own case below, so a run cannot
+  // pass without having seen a candidate rejected on the registry bar, one
+  // rejected on the host bar, and a fully staffable cast. Leaving those floors
+  // to the random draws above made them a ~1-in-N coin flip - the same
+  // luck-based-floor defect that bounced BL-1345, and it flaked here once
+  // before this was written.
+  const CONSTRUCTED = [
+    {
+      label: 'blockedByRegistry',
+      seats: [{ role: 'coder', candidates: [
+        { provider: 'anthropic', model: 'top', score: 0.9, certified: false, reachable: true },
+        { provider: 'cerebras', model: 'next', score: 0.8, certified: true, reachable: true },
+      ] }],
+      expect: { runnable: true, staffed: { coder: 'next' } },
+    },
+    {
+      label: 'blockedByHost',
+      seats: [{ role: 'coder', candidates: [
+        { provider: 'mistral', model: 'top', score: 0.9, certified: true, reachable: false },
+        { provider: 'anthropic', model: 'next', score: 0.8, certified: true, reachable: true },
+      ] }],
+      expect: { runnable: true, staffed: { coder: 'next' } },
+    },
+    {
+      label: 'runnable',
+      seats: [{ role: 'coder', candidates: [
+        { provider: 'anthropic', model: 'top', score: 0.9, certified: true, reachable: true },
+      ] }],
+      expect: { runnable: true, staffed: { coder: 'top' } },
+    },
+    {
+      label: 'bothBarsFail',
+      seats: [{ role: 'coder', candidates: [
+        { provider: 'mistral', model: 'top', score: 0.9, certified: false, reachable: false },
+      ] }],
+      expect: { runnable: false, staffed: {} },
+    },
+  ];
+  for (const { label, seats, expect } of CONSTRUCTED) {
+    const [got] = callCastLib(generateForm(seats, 0.5));
+    assert.equal(got.runnable, expect.runnable, `${label}: runnable disagreed (${JSON.stringify(got)})`);
+    assert.deepEqual(got.staffed, expect.staffed, `${label}: staffed disagreed`);
+    reach[label] = (reach[label] ?? 0) + 1;
+  }
+
   assert.ok(reach.runnable > 0, 'never reached a fully staffable cast');
   assert.ok(reach.blockedByRegistry > 0, 'never exercised a candidate failing the REGISTRY bar');
   assert.ok(reach.blockedByHost > 0, 'never exercised a candidate failing the HOST bar');
+  assert.ok(reach.bothBarsFail > 0, 'never exercised a seat that fails both bars');
 }, 120000);
 
 test('BL-1337/BL-654 invariant 2: an unmeetable floor fails loud, naming the seats, never substituting below it', () => {
@@ -189,7 +247,7 @@ test('BL-1337/BL-654 invariant 2: an unmeetable floor fails loud, naming the sea
         { minLength: 1, maxLength: 3 },
       ),
       (seats) => {
-        const unique = [...new Map(seats.map((s) => [s.role, s])).values()];
+        const unique = uniqueModels([...new Map(seats.map((s) => [s.role, s])).values()]);
         const floor = 0.5;
         const [got] = callCastLib(generateForm(unique, floor));
         assert.equal(got.runnable, false, 'a cast nothing could staff above the floor was offered as runnable');
