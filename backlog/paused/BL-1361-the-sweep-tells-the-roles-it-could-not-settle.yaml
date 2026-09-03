@@ -29,7 +29,9 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1361SweepTellsSurfacedRolesSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Wake only for a dirty worktree and defer the other reasons (recommended)
 approval_context: >
   One decision is yours and it is posed as ruling_options below, because it
   trades the thing this whole epic exists to reduce - agent turns - against
