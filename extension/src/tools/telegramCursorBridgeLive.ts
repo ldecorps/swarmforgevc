@@ -4,6 +4,7 @@ import { CursorAgentError, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
 import { readQwenLocalTopicId, runLocalSeatTurn } from './localQwenSeatLive';
 import { bubbleMirrorTopicForPath } from '../bridge/bubbleMirrorTopic';
+import { runBubbleSeatTurn } from './bubbleSeatLive';
 import {
   answerCallbackQuery,
   createForumTopicWithRateLimitRetry,
@@ -1551,12 +1552,13 @@ export interface CursorBridgeLoopDeps {
    * bubbleSeat.ts's own type).
    */
   bubbleSeatTopicId?: number;
-  /** Seam for the Bubble seat's turn - injected so tests need no live agent. */
-  runBubbleSeatTurnFn?: (input: {
-    topicId: number;
-    text: string;
-    post: (topicId: number, message: string) => Promise<void>;
-  }) => Promise<void>;
+  /**
+   * Seam for the Bubble seat's turn - injected so tests need no live agent.
+   * Defaults to the REAL `runBubbleSeatTurn` at the dispatch site, the same
+   * posture `runLocalSeatTurnFn` takes: a seam with no default is a branch
+   * that never runs in production.
+   */
+  runBubbleSeatTurnFn?: typeof runBubbleSeatTurn;
 }
 
 function resolveInboundQueueFromFeeder(opDir: string): boolean {
@@ -2046,12 +2048,19 @@ async function processInboundUpdates(
     // waiting on it is the defect this ticket exists to remove.
     if (
       deps.bubbleSeatTopicId !== undefined &&
-      deps.runBubbleSeatTurnFn &&
       inbound.kind !== 'callback' &&
       inbound.topicId === deps.bubbleSeatTopicId
     ) {
-      await deps.runBubbleSeatTurnFn({
+      // The default is the REAL turn, exactly as the sibling BL-1235 seat
+      // defaults to runLocalSeatTurn. Requiring an injected fn here is what
+      // made this branch dead in production and cost this ticket an architect
+      // bounce: the guard was unconditionally false in the live bridge.
+      const runTurn = deps.runBubbleSeatTurnFn ?? runBubbleSeatTurn;
+      await runTurn({
+        targetPath: deps.repoRoot,
         topicId: inbound.topicId,
+        seatTopicId: deps.bubbleSeatTopicId,
+        cursorTopicId: holder.state.cursorTopicId,
         text: inbound.text ?? '',
         post: async (topicId: number, message: string) => {
           await handlerCtx.post(deps.botToken, deps.chatId, topicId, message, inbound.messageId);

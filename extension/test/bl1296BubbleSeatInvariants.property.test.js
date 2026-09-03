@@ -28,6 +28,7 @@ const {
   BUBBLE_SEAT_NAME,
   CURSOR_SEAT_NAME,
 } = require('../out/tools/bubbleSeat');
+const { runBubbleSeatTurn } = require('../out/tools/bubbleSeatLive');
 
 const SRC = path.join(__dirname, '..', 'src', 'tools');
 const BUBBLE_TOPIC = 11810;
@@ -80,6 +81,67 @@ test('BL-1296/BL-654 invariant 1: every answer is the front desk mirror, whateve
   const seatSource = fs.readFileSync(path.join(SRC, 'bubbleSeat.ts'), 'utf8');
   const viaValues = [...seatSource.matchAll(/via:\s*'([a-z-]+)'/g)].map((m) => m[1]);
   assert.deepEqual([...new Set(viaValues)], ['front-desk-mirror'], 'a second answer source appeared');
+});
+
+// Invariant 1's strongest form, now that the live turn exists (the human's
+// ruling: strict echo, "relays the front desk's own answer and produces none
+// of its own"). Divergence is not merely absent from the decision type - the
+// TEXT that reaches the topic is the front desk's own, byte for byte, for any
+// reply the front desk can return.
+test("BL-1296/BL-654 invariant 1: the posted text is the front desk's own, byte for byte", async () => {
+  const reach = { busy: 0, idle: 0 };
+  await fc.assert(
+    fc.asyncProperty(
+      fc.string({ minLength: 1, maxLength: 200 }).filter((t) => t.trim().length > 0),
+      fc.boolean(),
+      async (replyText, cursorBusy) => {
+        reach[cursorBusy ? 'busy' : 'idle'] += 1;
+        const posted = [];
+        await runBubbleSeatTurn({
+          targetPath: '/nowhere',
+          topicId: BUBBLE_TOPIC,
+          seatTopicId: BUBBLE_TOPIC,
+          cursorTopicId: CURSOR_TOPIC,
+          cursorBusy,
+          text: 'anything',
+          post: async (topicId, message) => posted.push({ topicId, message }),
+          frontDeskTurnFn: async () => ({ success: true, replyText }),
+        });
+        assert.deepEqual(posted, [{ topicId: BUBBLE_TOPIC, message: replyText }]);
+        return true;
+      },
+    ),
+    { numRuns: 30 },
+  );
+  assert.ok(reach.busy > 0 && reach.idle > 0, JSON.stringify(reach));
+});
+
+// And the seat never invents an answer when the front desk has none: the only
+// text it authors is a refusal that names the reason it was given.
+test('BL-1296/BL-654 invariant 1: a front desk that cannot answer yields a refusal naming its reason', async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.string({ minLength: 1, maxLength: 80 }).filter((r) => r.trim().length > 0 && !/[\n\r]/.test(r)),
+      async (reason) => {
+        const posted = [];
+        await runBubbleSeatTurn({
+          targetPath: '/nowhere',
+          topicId: BUBBLE_TOPIC,
+          seatTopicId: BUBBLE_TOPIC,
+          cursorTopicId: CURSOR_TOPIC,
+          text: 'anything',
+          post: async (topicId, message) => posted.push({ topicId, message }),
+          frontDeskTurnFn: async () => ({ success: false, reason }),
+        });
+        assert.equal(posted.length, 1);
+        assert.equal(posted[0].topicId, BUBBLE_TOPIC);
+        assert.ok(posted[0].message.includes(reason), posted[0].message);
+        assert.ok(posted[0].message.includes('No other seat has been asked.'), posted[0].message);
+        return true;
+      },
+    ),
+    { numRuns: 25 },
+  );
 });
 
 test('BL-1296/BL-654 invariant 2: a seat answers only its own topic', () => {

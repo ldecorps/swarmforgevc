@@ -60,6 +60,27 @@ test('a binding that puts Bubble on cursor\'s own topic gives the seat no topic'
 // bridge construction site. Asserted against the source because that is where
 // the defect lived — the module's own unit tests were all green while the
 // production path was dead.
+// The other half of the architect's D1, and the half that made the branch dead
+// even once the topic was wired: the turn function had NO default, so the
+// dispatch guard `deps.runBubbleSeatTurnFn &&` was unconditionally false in
+// production. The sibling seat's `?? runLocalSeatTurn` is the reference shape.
+test('the live bridge defaults the Bubble seat turn to the real implementation', () => {
+  const live = fs.readFileSync(path.join(SRC, 'telegramCursorBridgeLive.ts'), 'utf8');
+  assert.match(
+    live,
+    /deps\.runBubbleSeatTurnFn\s*\?\?\s*runBubbleSeatTurn/,
+    'the Bubble seat turn has no real default, so the dispatch branch is dead in production'
+  );
+  assert.doesNotMatch(
+    live,
+    /deps\.bubbleSeatTopicId !== undefined &&\s*\n\s*deps\.runBubbleSeatTurnFn &&/,
+    'the dispatch guard still requires an injected turn fn, which production never provides'
+  );
+  // The sibling's own wiring is the reference; if it goes, this comparison is
+  // vacuous and should fail loudly rather than pass.
+  assert.match(live, /deps\.runLocalSeatTurnFn \?\? runLocalSeatTurn/);
+});
+
 test('the live bridge populates bubbleSeatTopicId from that reader', () => {
   const live = fs.readFileSync(path.join(SRC, 'telegramCursorBridgeLive.ts'), 'utf8');
   assert.match(

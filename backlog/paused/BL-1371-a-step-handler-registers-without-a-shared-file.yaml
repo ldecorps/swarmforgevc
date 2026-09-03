@@ -1,0 +1,195 @@
+id: BL-1371
+title: "936 step handlers register by appending to one hand-maintained array, so every ticket edits the same file and every gate reports the coupling - three distinct incident classes so far, none of them a bug in the gates"
+milestone: M8
+type: defect
+severity: medium
+# medium: every gate involved is behaving correctly and nothing wrong has
+# landed because of this - the failures are false blocks and correct refusals,
+# not corruption. Graded medium rather than low because it recurs across three
+# unrelated mechanisms (merge adjudication, land replay, land entanglement) and
+# each recurrence costs a full investigation; and rather than high because a
+# blocked land always has a documented remedy.
+status: todo
+epic: code-quality-gates
+priority: 16
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature
+
+invariants:
+  - "The set of handlers loaded after this change equals or contains the set loaded today, compared as a SET of handler identities and never as a count - a scenario that silently loses its handler is the one outcome worse than the coupling."
+  - "A handler file that cannot be loaded fails the run loudly, naming the file; discovery never silently skips what it could not require."
+  - "Registering a new handler requires editing no file that another ticket also edits - a design that keeps any shared list has not delivered this ticket."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1371StepDiscoverySteps::acceptance handler registered so the runner executes every scenario. If the parcel replaces the array with discovery, update this entry in-parcel to the anchor that then proves loading - see notes.'
+
+human_approval: approved
+approval_context: >
+  No choice is posed and there are no ruling_options - whether discovery is a
+  directory glob, a manifest generated at build time, or something else is the
+  implementer's call, bounded by the three invariants.
+  .
+  What to know before approving. This touches how EVERY acceptance scenario in
+  the project finds its steps, which is the whole suite. That is why invariant 1
+  is written as a set comparison rather than a count: 936 handlers is exactly
+  the scale at which "the suite still passes" can hide a handler that quietly
+  stopped loading because nothing referenced its scenarios that day.
+  .
+  It is worth doing rather than living with, because the coupling is not
+  costing one gate - it has now produced three unrelated incident classes, and
+  each one presented as a different mystery. It would also retire the most
+  common `required_wiring` anchor in this backlog, which I have repeatedly had
+  to note proves nothing because the parcel's own diff satisfies it.
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/index.js` holds a hand-maintained `DOMAINS` array of
+  936 `require('./blNNNSteps')` lines. Every ticket that adds an acceptance
+  scenario appends to it. The acceptance runner and the Gherkin mutation runner
+  both load that one module (`run_acceptance.sh:19`,
+  `run_gherkin_mutation.sh:34`).
+
+  So every ticket in the project edits one shared file, and every gate that
+  reasons about "whose work is in this commit" then reports the coupling.
+
+  ## Three incident classes, all observed, none a gate defect
+
+  - **Merge adjudication.** The Article 4.2 sweep charges essentially every
+    merge-up with this path, because it is the file both sides always touched.
+    That is BL-1359's over-charge, and this file is why it fires so widely.
+  - **Land replay.** A tip-pure replay leaked an unlanded sibling's require
+    line into it and blocked every commit to `main` until it was found
+    (BL-1324, 2026-09-02).
+  - **Land entanglement.** BL-1356's land escalated on 2026-09-03 because two
+    BLOCKED tickets - BL-1296 and BL-1309, each waiting on a human tap - carry
+    require lines in the same file as the approved ticket trying to land.
+
+  Each gate is right. The land step is correctly refusing to carry a blocked
+  ticket's work onto `main`; the sweep is correctly noting a shared path. What
+  they are all reporting is a coupling that exists for no reason except that
+  registration is manual.
+
+  ## A fourth class, and a whole gate built to police the array
+
+  `check_feature_handler_registration.sh` (BL-1303) is a commit gate on `main`
+  whose entire job is refusing "a feature file with no runnable step handler",
+  because a handler can be registered in the array or not, independently of
+  whether its file exists. Its own header records the incident: on 2026-08-30 a
+  bounce-revert removed a handler from the array and the failure surfaced later,
+  to whichever role next ran the suite, against a parcel that had not caused it.
+
+  A handler discovered from its own file cannot be unregistered. That gate's
+  failure mode stops existing rather than being guarded.
+
+  This is the sweep's pattern again, one layer down: rather than remove a manual
+  step, the swarm built enforcement around it - a commit gate, plus a
+  `required_wiring` convention every ticket in this backlog repeats, all
+  policing an array that need not be hand-maintained at all.
+
+  (`unreachableStepHandlerCheck` is NOT retired by this: it asks whether a
+  registered regex matches any feature step, which is a live question however
+  handlers are found.)
+
+  ## How (direction, not mandate)
+
+  - A handler discovered from its own file needs no shared edit. A directory
+    glob over `specs/pipeline/steps/*Steps.js` is the obvious shape; a
+    generated manifest is another. The invariants do not pick.
+  - Invariant 1 is the one to build the verification around first. Capture the
+    loaded handler identities from today's array, capture them again after, and
+    compare as sets. Do not compare counts - two changes that cancel out is
+    exactly the failure that survives a count.
+  - Load order may matter to handlers that register overlapping step patterns.
+    Check before assuming a glob's ordering is safe; if it does matter, that is
+    a finding worth stating rather than a reason to abandon discovery.
+  - Weigh what the array genuinely buys before removing it: it is explicit and
+    greppable, and a file only joins the suite when someone adds a line. Under
+    discovery a half-finished handler on a branch joins by existing. Invariant 2
+    is what makes that acceptable - it fails the run loudly rather than silently
+    - but the trade is real and should be stated in the parcel, not glossed.
+  - Check whether `check_feature_handler_registration.sh` can be retired or
+    narrowed once registration cannot be lost. Do not delete a gate as a side
+    effect; if it should go, say so and let it be a decision.
+  - Both runners must move together, or the mutation lane silently keeps the
+    old registry.
+
+  ## Sequencing, for the coordinator rather than the implementer
+
+  This touches `specs/pipeline/steps/index.js`, which is currently a co-owner
+  on several in-flight parcels (BL-1359's sweep fix, BL-1372/BL-1373, and any
+  ticket adding a handler). Promoting it while those are in flight guarantees
+  the orthogonality conflict Article 3.2 rule 3 exists to avoid. Approval does
+  not schedule it; this note is here so promotion is a deliberate choice about
+  timing.
+
+  ## Explicitly NOT in scope
+
+  - BL-1359's merge over-charge, which is its own defect in the sweep and would
+    still be worth fixing if this file vanished tomorrow.
+  - Unblocking BL-1356's specific land - that has its own documented remedy
+    (a tip-pure replay, BL-1241) and does not wait on this.
+  - Changing what a step handler looks like or how it declares its patterns.
+
+qa_e2e_procedure: |
+  1. Record the set of handler identities the current `DOMAINS` array loads.
+     After the change, record it again and confirm the sets are equal or the
+     new one is a strict superset (invariant 1). Compare as sets; a count match
+     is not evidence.
+  2. Run the full acceptance suite before and after and confirm the same
+     scenarios execute - not merely that both runs are green.
+  3. Add a new handler file without touching any other file. Confirm its steps
+     resolve (invariant 3), and confirm `git status` shows exactly one new file.
+  4. Put a file in the steps directory that exports no steps. Confirm it
+     contributes nothing and does not fail the run.
+  5. Put a file there that throws on require. Confirm the run FAILS naming that
+     file and that no scenario is reported passing (invariant 2).
+  6. Run the Gherkin mutation lane and confirm it loads handlers the same way -
+     both runners moved together.
+  7. Remove every fixture file created above in a `finally`, sweeping by prefix
+     before the run too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier from a QA priority-00 note reporting
+  BL-1356's LAND_ESCALATE. The escalation itself is correct and was answered
+  separately; this ticket is the structural cause behind it.
+
+  Verified this pass rather than assumed:
+  - 936 `require('./...')` entries in `specs/pipeline/steps/index.js`.
+  - Both `run_acceptance.sh:19` and `run_gherkin_mutation.sh:34` default
+    `STEPS_MODULE` to that one file.
+  - QA's own worktree index.js carries `bl1296BubbleSeatSteps` (line 38),
+    `bl1309LandDecideStepEntanglementSteps` (953) and
+    `bl1356StampOffWatchesTheRunSteps` (954) - the approved ticket's line
+    sharing a file with two blocked tickets' lines, which is the escalation.
+  - BL-1354's per-ticket line-scoped sibling fix IS an ancestor of the QA
+    branch, so the escalation is not the old whole-blob behaviour.
+
+  **The `required_wiring` entry here is deliberately provisional**, which is
+  unusual and worth reading. It anchors the handler's registration in the array
+  this ticket may delete. If the parcel keeps `index.js` as a discovery shim the
+  entry stands as written; if it removes the array, the entry must be updated
+  in the SAME parcel to whatever then proves the handler loads. The gate reads
+  `required_wiring` from the sender's checkout, so an entry pointing at a
+  deleted array would block the documenter's forward to QA (BL-874's shape).
+  Flagged at mint rather than left to be discovered at the last hop.
+
+  Worth noting what this would retire: the handler-registration entry is the
+  single most common `required_wiring` anchor in this backlog, and I have had to
+  note repeatedly that it is green-by-construction and proves nothing (BL-1235).
+  Discovery removes the need for it entirely.
+
+  IR-DRY: one finding at 0.57, between "a file that exports no steps" and "that
+  file contributes no steps" - the setup and its assertion. Left as written.
+
+source: |
+  QA note 2026-09-03 (priority 00): "BL-1356 LAND_ESCALATE index.js shared w/
+  unlanded BL-1296,BL-1309". The land question was answered to QA directly; the
+  recurring structural cause is this ticket. Third observed incident class from
+  the same file, after BL-1324 (replay leak) and BL-1359 (merge over-charge).
