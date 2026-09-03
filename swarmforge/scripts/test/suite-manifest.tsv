@@ -479,3 +479,4 @@ wake_attribution_lib_test_runner.bb	standing
 wake_dedup_lib_test_runner.bb	standing		
 worktree_drift_lib_test_runner.bb	standing		
 bl1306_audit_reroute_test_runner.bb	standing		
+descent_ladder_lib_test_runner.bb	standing		
