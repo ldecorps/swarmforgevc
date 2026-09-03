@@ -321,6 +321,28 @@
        (= "running" (str (:status entry)))
        (pid-alive? (:pid entry))))
 
+(defn ask-escalation
+  "BL-1352: the ask-escalation transport's health, read off the operator
+   runtime's own status.json for `./swarm status` to render.
+
+   This is the required_wiring anchor, and the point of it: GH-25's escalation
+   reported an unusable transport only into status.json and the operator log,
+   and NOTHING read either - so a role question sat undelivered for four days
+   with the surface a human actually runs showing nothing at all. A key nobody
+   reads is not a signal.
+
+   An absent or unreadable status.json is reported as unknown rather than as
+   healthy: a status surface that cannot tell must never claim it can."
+  []
+  (let [st (read-json (fs/path state-dir "operator" "status.json"))
+        esc (:ask_escalation st)]
+    (if-not (map? esc)
+      {:state :unknown
+       :detail "no ask-escalation state in the operator status file"}
+      {:state (keyword (or (:state esc) "unknown"))
+       :detail (or (:detail esc)
+                   (str "transport " (or (:transport esc) "unknown")))})))
+
 (defn gather-telegram [now]
   (let [status-path (fs/path state-dir "operator" "front-desk-supervisor.status.json")
         st (read-json status-path)
@@ -406,7 +428,8 @@
                  :agents agents
                  :daemons (gather-daemons)
                  :telegram (gather-telegram now)
-                 :handoffs (gather-handoffs now)})]
+                 :handoffs (gather-handoffs now)
+                 :ask-escalation (ask-escalation)})]
     (print report)
     (flush)))
 
