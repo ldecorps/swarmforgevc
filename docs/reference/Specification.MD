@@ -1,5 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1328: the narrow follow-up BL-1324's
+own human ruling authorized — closes one of the two confirmed-dormant gaps
+that hotfix `4ed88430b2` left in `swarmforge.sh`'s qwen-cloud (Token Plan)
+detection, and documents the other rather than resolving it.
+`extra_cli_targets_qwen_cloud` matched `--model` and a `qwen*` value only
+as two separate tokens; a future pack author writing the single-token
+`--model=qwen3.8-max` form would silently get no Token Plan remap and no
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` declaration, reproducing the exact
+auto-compaction bug the hotfix fixed for the space form. The function now
+recognizes both forms identically, changing nothing for a non-qwen
+`--model` value in either form. The second gap — a genuine precedence
+ASYMMETRY between the `billing_guard` construction site (checks qwen-cloud
+before OpenRouter) and `launch_role`'s pane-env site (checks OpenRouter
+before qwen-cloud) — is deliberately documented, not reconciled, per the
+human's ruling: a role that ever combined OpenRouter routing with a qwen*
+`--model` would take opposite branches at the two sites (Token Plan
+endpoint remapped at one, `OPENROUTER_API_KEY` forwarded at the other), a
+credential/endpoint mismatch rather than a missing declaration, but no
+live pack combines the two today. Explicit comments at both call sites
+now name the other site's precedence and the dormant trap, so a future
+pack author or reviewer sees it before shipping that combination rather
+than discovering it live. A specifier spec-gap surfaced mid-parcel and was
+adjudicated in the same pass: BL-1324's own suite had frozen the
+PRE-fix behaviour into executable assertions — a feature Examples row
+(`--model=qwen3.8-max` → `false`), a property test's byte-exact pin over
+the exact function this ticket changes, and a decoy generator still
+producing the now-detected form — all three retired (never reworded) as
+part of this parcel per BL-1006, since BL-1328's own scenarios are the
+successor coverage; BL-1324's other invariants, its `attribution` face,
+and every billing-guard/context-window scenario are untouched. Acceptance:
+`specs/features/BL-1328-qwen-cloud-model-detection-equals-form-and-precedence-doc.feature`.
+No new extension command or setting — swarm-launcher shell logic; the
+precedence documentation lives as inline comments at both call sites in
+`swarmforge.sh` itself, per the ticket's own directive, not a separate doc
+page. No diagram depicts pack-launch env-variable precedence.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1351: the bridge's `/events` stream
 now carries only the per-item backlog fields something actually reads,
 closing the aggravator on BL-1350's reconnect churn — a connect frame
