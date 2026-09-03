@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c16f532f6a5963a9224f8f71b54a339b25fa5991e0631d9164d62d74934f82c9
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T09:12:15.076545879Z","feature_name":"A merge is charged only with the pipeline paths it introduced","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1359-a-merge-is-charged-only-with-what-it-introduced.feature","background_hash":"aac76e5e34a392a9aed8aba418c78d68139aebb916886685eb28a501c9fe5073","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a git call that cannot answer withholds the whole sweep","scenario_hash":"603e7612b535ae3b349482a6aedbcedc4afd3063da1f7f468cb16b3a3da0ef05","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-03T09:12:15.076545879Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A merge is charged only with the pipeline paths it introduced
 
   The Article 4.2 sweep asks, for each commit reachable from a main ref but
