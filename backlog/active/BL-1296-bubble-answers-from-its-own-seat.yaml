@@ -70,28 +70,75 @@ qa_e2e: >
   confirm only one getUpdates owner exists (no 409s in the bridge log) and that the
   bridge does not restart — the dead-feeder/409 classes must not reopen.
 
-human_approval: approved
+human_approval: pending
 approval_context: >
-  The A/B shape question is already answered by you directly (2026-08-30, option B),
-  archived verbatim at
-  backlog/answers-archive/ANSWER-2026-08-30-bubble-seat-option-b-dedicated-worker.md,
-  and I am not re-asking it.
+  Re-pended DELIBERATELY on 2026-09-03 to collect a ruling. Your approval was
+  real and is not erased - it is commit `9adf88994d`. The ask has to re-fire to
+  record an answer, and only you can restore an approval, never me.
+  .
+  Why. The previous approval_context asked you a question in prose - whether
+  "same answers as the front desk" meant strict echo or a mirror-contexted
+  worker, "a materially different build" - and offered no ruling_options. So
+  the Approve tap recorded `approved` and nothing else, and the question went
+  nowhere. The coder reached that exact fork today and correctly refused to
+  guess. My mistake, not theirs, and the fix is below.
+  .
+  What the coder established, which narrows the choice. A second Cursor agent
+  session built the obvious way does NOT run in parallel: `promptAgent` runs
+  inside `withAgentLock(targetPath)` and that lock is ONE file per repo root.
+  A Bubble worker built that way would serialize behind the Cursor seat's turn
+  - reproducing the exact blocking this ticket exists to remove, while looking
+  fully wired. Real parallelism needs its own lock scope, its own agent-id
+  state, and a model choice.
+  .
+  My recommendation is option 1, listed first, because it is your own words
+  read literally - "Same answers as the front desk, just not blocked behind
+  Cursor's current turn" - and it is the only option that cannot diverge, which
+  invariant 1 forbids. Be aware of its cost, which the coder found and I am not
+  hiding: the front desk answers asynchronously by routing to roles, so a
+  question asked only on the phone has no front-desk answer to echo. Option 3
+  is the pragmatic middle if you want the phone answered directly without a
+  second paid seat, at qwen3:14b's measured ~2.8 tok/s on this host.
+  .
+  Nothing else about the ticket changes. Milestone M8 and epic local-llm-swarm
+  stand as previously confirmed, and the A/B shape decision (option B,
+  dedicated worker, Bubble stays a mirror) is untouched - this ruling decides
+  HOW that worker answers, not whether Bubble stays a mirror.
 
-  What is worth a look on the feature file: your selected acceptance shape included
-  "Bubble's answer == front desk's answer". I have written that as invariant 1 (no
-  divergence, a mirror with its own worker) rather than as literal answer-string
-  equality, because a question asked only on the phone has no front-desk answer to be
-  equal to. If you did mean strict echo — the Bubble worker relays the front desk's
-  own answer rather than producing one — say so and I will tighten it, since that is a
-  materially different build.
-
-  Also confirming two classifications I chose rather than inherited: milestone M8 (the
-  intake guessed M3, marked "Specifier to confirm"; the sibling BL-1235 it rides on is
-  M8), and epic local-llm-swarm (BL-1235's epic, the seat/lifecycle machinery this
-  reuses). The bubble-control epic BL-841 is the phone-drives-the-swarm control-verbs
-  plane, which this is not.
+ruling_options:
+  - Strict echo - the Bubble seat relays the front desk's own answer and produces none (recommended)
+  - Dedicated paid agent session with its own lock scope and its own agent-id state
+  - Local-model worker on BL-1235's qwen seat with its own lock scope and no extra paid seat
 
 notes: |
+  ## 2026-09-03 - spec gap adjudicated, ticket re-pended for a ruling
+
+  The coder raised a priority-00 spec gap rather than narrowing the ticket
+  alone (evidence `backlog/evidence/BL-1296-coder-rework-20260903.md`, the
+  choice the architect bounce's own remediation pointer 2 offers). That was the
+  right call and this amendment answers it.
+
+  Half one of the architect's D1 is FIXED and stays: the seat now reads its
+  topic at the live construction site through the SAME shipped reader the
+  Bubble mirror already uses, with a non-vacuous test that fails when the
+  wiring line is deleted.
+
+  Half two - the turn function - waits on the ruling now posed in
+  `ruling_options`. Do NOT build it against a guess.
+
+  **The seat binding must not ship on its own.** A bound seat with no worker is
+  a mechanism with no live consumer - the BL-1235 shape this swarm has shipped
+  three times already this week (BL-668 near-inert, BL-664 unwired, BL-1235
+  itself). The coder's guard makes it inert-SAFE, not useful: with no topic the
+  poll behaves exactly as before and cursor keeps answering. That is a good
+  guard, not a delivery. This parcel completes when the seat answers.
+
+  Also recorded: the commit for this parcel's rework was made with
+  `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` and the coder documented why - the
+  guard named a different unrelated passing file on each run, which is the
+  known jam on BL-1356. Legitimate use of the documented override, recorded
+  rather than silent.
+
   Operator did NOT implement or pre-spec this (out of bounds without a spec). Feasibility
   read given to the human: conceptually straightforward and already patterned on BL-1235,
   but a real ticket, not a quick edit — a second agent session bound to the Bubble topic,
