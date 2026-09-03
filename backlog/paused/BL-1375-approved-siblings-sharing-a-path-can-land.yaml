@@ -29,7 +29,16 @@ required_wiring:
   - 'swarmforge/scripts/land_step_lib.bb::entangled-siblings::the refusal predicate this ticket changes or the batch path it feeds'
   - 'specs/pipeline/steps/index.js::bl1375ApprovedSiblingsCanLandSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Option 1 (recommended) - narrow the refusal to withheld or unapproved
+  siblings, per BL-1309 option 2. This REVISES the BL-1309 ruling recorded
+  minutes earlier ("refuse every entangled tip") in light of the deadlock it
+  caused - the human made this call directly, aware it reopens BL-1309's
+  refusal width.
+
+  Recorded 2026-09-03 by direct instruction from the human (t / ldecorps@gmail.com)
+  in a Claude Code coordinator chat session, not via Telegram.
 approval_context: >
   This one is urgent and the decision is genuinely yours, because the cleanest
   fix revisits a ruling you gave today - with information that was not in the

@@ -274,6 +274,12 @@ qa_e2e_procedure: |
 human_approval: approved
 human_ruling: |
   refuse every entangled tip, so the tip-pure replay becomes the normal land
+
+  REVISED 2026-09-03 via BL-1375: this option deadlocked the land queue when
+  N approved tickets share one path (four did, immediately). The human
+  narrowed the refusal to option 2 - refuse only when the entangled sibling
+  is withheld or awaiting approval - superseding the "refuse every entangled
+  tip" choice above. See BL-1375's own human_ruling for the direct record.
 ruling_options:
   - refuse every entangled tip, so the tip-pure replay becomes the normal land
   - refuse only when the entangled sibling is withheld or awaiting approval
