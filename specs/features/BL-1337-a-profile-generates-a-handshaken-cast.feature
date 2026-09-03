@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=975c24b1499696ac4ef5fbf6b324495642a6432dac8fd8fc20a610c0de184ce3
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T06:32:47.410109019Z","feature_name":"BL-1337 a named profile generates a cast, and no seat is runnable unhandshaken","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1337-a-profile-generates-a-handshaken-cast.feature","background_hash":"05f7604165945dfd2b580084fbbe6a3476023dd1b80636d72ac525151e2482f7","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a pick that fails its handshake never reaches the cast","scenario_hash":"4c1d54318b19239b0370a7c710eb2efa773f1a51026fb207c10fef05a565144d","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-03T06:32:47.410109019Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1337 a named profile generates a cast, and no seat is runnable unhandshaken
 
   BL-1181 already ships the generator half: `bob_starting_cast_lib.bb` cherry-
