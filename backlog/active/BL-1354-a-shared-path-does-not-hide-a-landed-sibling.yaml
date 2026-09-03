@@ -15,7 +15,7 @@ direction: swarm-reported
 depends_on: [BL-1332, BL-1272]
 mutation_cost: medium
 slice_size_envelope: medium
-assigned_to: none
+assigned_to: coder
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature
