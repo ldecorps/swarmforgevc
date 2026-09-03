@@ -1,0 +1,172 @@
+id: BL-1354
+title: "A shared path hides a landed sibling: whole-blob equality makes every co-owner of a hot file read unlanded, so the land step refuses on tickets already in done/"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: it fails CLOSED, so nothing is corrupted and no wrong
+# content lands. It is graded high because a safety gate that refuses on
+# already-landed tickets is a gate the operator routes around - QA has stopped
+# trusting its verdict and hand-builds every land - and BL-1309, now ACTIVE,
+# makes this same detector unskippable on the mandatory land path.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: [BL-1332, BL-1272]
+mutation_cost: medium
+slice_size_envelope: medium
+assigned_to: none
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature
+
+invariants:
+  - "Landed stays a POSITIVE finding, never an inference from silence: a walk that failed, an empty attributed path set and an unreadable diff each still report the sibling as unlanded (BL-1272 invariant 1, carried forward unchanged)."
+  - "A sibling is judged on its OWN attributed content only - another ticket's lines in a shared file never make a landed sibling read unlanded, and never make an unlanded sibling read landed."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1354SharedPathLandedSiblingSteps::acceptance handler registered so the runner executes every scenario. Absent at mint, grep bl1354 returns 0. This is deliberately the ONLY entry - see notes for why no production-wiring anchor is offered.'
+
+human_approval: pending
+
+approval_context: >
+  No decision needed from you - this is a straight defect report and I am not
+  asking you to choose anything. Flagging it only because of a sequencing
+  hazard that is now live and is the coordinator's call, not mine.
+  .
+  BL-1309 went ACTIVE today. It wires this same sibling detector into
+  land_main_publish.sh's decide step - the one landing step QA cannot skip.
+  The detector currently refuses on tickets that are already in backlog/done/.
+  If BL-1309 lands before this ticket, that false refusal becomes mandatory on
+  every land instead of advisory. I have told the coordinator; ordering is its
+  decision.
+
+description: |
+  ## What is wrong
+
+  `sibling-landed?` (`swarmforge/scripts/land_step_lib.bb:104`) asks whether a
+  sibling's attributed content is already on `origin/main`. It answers by
+  comparing, for each attributed path, the WHOLE blob:
+
+      same-content? = (= (blob-at commit p) (blob-at origin-main p))
+
+  On a path only one ticket touches, that is exactly right. On a path several
+  tickets touch it is decided by every co-owner at once. While any co-owner's
+  lines are still unlanded, the shared file's blob differs, so `every?
+  same-content?` is false for **every** sibling that touches it - including
+  siblings whose own lines are fully landed.
+
+  The failure is self-reinforcing: the more tickets share a hot file, the more
+  mutually-blocking false verdicts it produces.
+
+  ## Observed
+
+  On BL-1332's own land, 2026-09-03 (`backlog/evidence/BL-1332-land-success-20260903.md`):
+
+      LAND_ESCALATE
+      land-step: refusing to replay BL-1332 - docs/reference/Specification.MD
+      is shared with unlanded sibling(s) BL-1056,BL-1317,BL-1334,BL-1340,
+      BL-1341,BL-1343
+
+  Checked this pass: **all six are in `backlog/done/`**, and all six touch
+  `docs/reference/Specification.MD`. QA hand-built the tip-pure commit instead,
+  and recorded that it has stopped trusting the tool's verdict without
+  independent verification.
+
+  ## A diagnosis correction, deliberately recorded
+
+  QA's note attributes this to the attribution walk being unable to see a
+  sibling that reached `main` via a tip-pure REPLAY (a new SHA) rather than as
+  a literal ancestor. That reading does not survive contact with the code:
+  `sibling-landed?` is explicitly NOT an ancestry test, and `entangled-siblings`'
+  own comment says "a sibling's original commit is still an ancestor after its
+  replay lands". The shared path is the common factor in all six, not the
+  replay.
+
+  This is a hypothesis from reading, not from running the detector. It is
+  strongly supported - six for six on a shared file - but the coder should
+  confirm before building, and say so if it turns out the replay path
+  contributes too. Do not treat this section as settled fact.
+
+  ## The trap
+
+  The obvious fix - relax the comparison until the six stop being reported - is
+  the wrong one and would reopen exactly what BL-1332 just closed. BL-1272's
+  invariant 1 is load-bearing: landed must stay a positive finding, and every
+  unanswerable case must still fail closed. The bar is a comparison scoped to
+  the sibling's OWN attributed lines, not a weaker whole-file check.
+
+  ## How (direction, not mandate)
+
+  - The classification functions are already built for injection:
+    `sibling-landed?` is pure over `{:paths :complete? :same-content?}`, and
+    `landed-siblings` takes an injectable `paths-fn`. The whole behaviour is
+    testable without touching a repository, which is where the scenarios should
+    drive from.
+  - `attribution-complete?` and the walk-failed / empty-paths rows must keep
+    behaving exactly as they do now. Those are invariant 1 and already have
+    coverage worth preserving rather than rewriting.
+  - Whether the per-sibling comparison is done on attributed hunks, on a
+    three-way merge-base diff, or another way is open. What matters is that the
+    verdict depends on that sibling's lines alone.
+
+  ## Explicitly NOT in scope
+
+  - Wiring the detector into the mandatory decide step. That is BL-1309, now
+    active. This slice changes what the detector CONCLUDES, not where it runs.
+  - The refusal message and the `LAND_ESCALATE` / `LAND_REPLAY` protocol
+    (BL-1332, landed). Only the landed/unlanded split feeding it changes.
+
+qa_e2e_procedure: |
+  1. Build a fixture repo with two tickets whose commits both edit one shared
+     file on different lines, plus one private file each.
+  2. Land the first ticket's lines onto `origin/main` by tip-pure replay,
+     leaving the second's unlanded.
+  3. Run the land step's classification for a commit carrying both. The first
+     ticket must be reported LANDED and the second UNLANDED. Before this
+     ticket both are reported unlanded.
+  4. Re-run with the attribution walk forced to fail, then with an empty
+     attributed path set, then with an unreadable diff. Each must still report
+     the sibling unlanded - the fail-closed rows must not have moved.
+  5. Regression against the real repo: re-run the classification for BL-1332's
+     recorded commit and confirm the six done/ siblings no longer appear in the
+     unlanded list.
+  6. Remove the fixture repo in a `finally`, and sweep by prefix before the run
+     too.
+
+notes: |
+  Minted 2026-09-03 by the specifier from a QA `note` (priority 00):
+  "land_step_cli.bb can't see a replay-landed sibling - see BL-1332 evidence".
+  QA deliberately left this un-ticketed and asked for the ticket, recording:
+  "Continuing to hand-build and diff-verify against origin/main for future
+  lands until that gap has its own ticket".
+
+  Verified this pass rather than assumed:
+  - `sibling-landed?` is content equality, not ancestry (`land_step_lib.bb:104-120`).
+  - All six named siblings resolve to `backlog/done/`, and all six touch
+    `docs/reference/Specification.MD`.
+  - BL-1309 moved from `paused/` to `active/` DURING this drafting pass, which
+    is what makes the ordering hazard live rather than theoretical.
+
+  **No production-wiring anchor is declared, on purpose.** The fix lives inside
+  `sibling-landed?`/`landed-siblings`, which `land_step_cli.bb` already calls.
+  An anchor on either function would be satisfied by this parcel's own diff and
+  would prove nothing (BL-1235), and anchoring the pre-existing call site gates
+  nothing either since it matches identically before and after. Declaring a
+  green-by-construction entry is worse than declaring none, so the only entry
+  is the acceptance-handler registration.
+
+  IR-DRY: three possible-synonym findings remain, all between the positive and
+  negative forms of the same setup ("lines are all present" / "are absent" /
+  "neither ... are present") and between the outline's "that sibling" and the
+  named "second sibling". I tried normalizing the wording and it made things
+  WORSE - 3 findings became 4, because more parallel phrasing raises pairwise
+  similarity. Reverted. These are contrasts the scenarios exist to draw, not
+  accidental drift.
+
+source: |
+  QA note 2026-09-03, evidence `backlog/evidence/BL-1332-land-success-20260903.md`
+  ("Note for future lands"). Sibling defect to BL-1332: that ticket fixed the
+  WRITE side of shared-path entanglement (refuse rather than carry a co-owner's
+  lines in); this is the READ side (deciding whether a co-owner is already
+  landed).
