@@ -1,0 +1,150 @@
+id: BL-1364
+title: "BL-664's turn profiler is unreachable: buildTurnProfileSeries has zero production importers, so the measurement two epics named as the thing that would size their slices has never produced a number"
+milestone: M8
+type: defect
+severity: medium
+# medium: nothing is degraded and no wrong number is published - there is no
+# number at all. Graded here rather than low because two epics wrote their
+# sequencing around this measurement (BL-667 "BL-664 profiler first; its
+# measured turn-overhead and mechanical share size and order the remaining
+# slices before they are specced"), and both proceeded without it. It is also
+# why BL-668 shipped near-inert and went a week unnoticed.
+status: todo
+epic: swarm-behaviour-trends
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1364-the-mechanical-share-of-a-turn-is-readable.feature
+
+invariants:
+  - "A stage with no classified turns in the window is ABSENT from the series, never reported as a zero share - silence and a measured zero must never be confused."
+  - "A window containing an unreadable or partial transcript is reported incomplete and contributes no share, rather than diluting one (the fail-closed posture every other sweep in this repo takes)."
+  - "The category set comes from the walker's own definition; the series never restates it, so the two cannot drift apart (BL-897)."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1364MechanicalShareReadableSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected here - see notes.'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options. This is a wiring defect
+  with one obvious remedy - give an existing, tested, unreachable function a
+  live caller and somewhere to write.
+  .
+  What to know before approving. This adds no new classifier and no new
+  instrumentation. BL-664 already built and tested the walker and the series
+  builder; what is missing is that nothing calls the second one. The work is
+  a producer on an existing cadence plus a durable store, in the shape the
+  sibling telemetry producers already use.
+  .
+  Why it is worth a slice on its own. You asked, on 2026-09-03, whether more
+  telemetry was needed to decide where determinism work should live. The
+  honest answer is that the telemetry was commissioned a month ago and never
+  connected - so the answer is to collect what exists before commissioning
+  more.
+
+description: |
+  ## What is wrong
+
+  BL-664 shipped `extension/src/metrics/transcriptWalker.ts` (classifies every
+  turn interval as git-mechanical, test-run, file-read, thinking-writing,
+  turn-overhead or provider-outage) and
+  `extension/src/metrics/turnProfile.ts`'s `buildTurnProfileSeries` (folds
+  those into a per-stage trend).
+
+  `buildTurnProfileSeries` has **zero importers** outside its own module. The
+  walker has three consumers; the series builder has none. So no trend is
+  written, nothing reads a mechanical share, and the measurement exists only
+  as a function nobody calls.
+
+  ## What it cost
+
+  - BL-667 explicitly sequenced itself behind this: *"BL-664 profiler first;
+    its measured turn-overhead and mechanical share size and order the
+    remaining slices before they are specced."* Four of its slices have now
+    been specced without it.
+  - BL-668 shipped and scored 3 fast-forwards against 125 surfacings. A live
+    mechanical-share trend per stage is exactly the signal that would have
+    shown the merge-up turns never went away. It went a week unnoticed.
+  - The 2026-09-03 determinism sweep had to count commits off `git log`
+    instead. Commits are a poor proxy: the QA ceremony turn that prompted the
+    whole exercise - 16m06s, 58.6k tokens - produced no commit at all and is
+    invisible to that method.
+
+  ## How (direction, not mandate)
+
+  - A producer that walks the transcripts, builds the series, and writes it
+    durably, on an existing cadence. `contextTelemetryProducer.ts` and its
+    `run-context-telemetry-producer.js` CLI are the sibling shape and already
+    call the same walker - follow them rather than inventing a new pattern.
+  - Where the series is stored and who reads it first is open. The briefing
+    and the closing-ceremony packet are both plausible consumers; BL-1365
+    would use it if it lands, and neither slice blocks the other.
+  - Invariant 1 is the one to design for first. The natural implementation of
+    "share per stage" produces `0` for a stage with no turns, which reads as
+    "this stage did no mechanical work" when it means "this stage did not
+    work". Those must be distinguishable in the stored shape, not only in a
+    renderer.
+
+  ## Explicitly NOT in scope
+
+  - Changing what the walker classifies, or its category set. It is built and
+    tested; this slice connects it.
+  - Acting on the numbers. Sizing decisions stay the specifier's, informed by
+    the trend once it exists.
+
+qa_e2e_procedure: |
+  1. Point the producer at a fixture transcript set covering two stages, one
+     with mixed mechanical and thinking intervals and one with none. Confirm
+     the first reports a share and the second is ABSENT from the series, not
+     zero.
+  2. Corrupt one transcript in the window. Confirm the window is reported
+     incomplete and that no stage from it reports a share.
+  3. Run the producer twice over the same transcripts and confirm it is
+     idempotent - no duplicated records (the sibling producer's own contract).
+  4. Run against the live repo and confirm a real series appears with a
+     plausible per-stage mechanical share.
+  5. Confirm the category names in the stored series match
+     `transcriptWalker`'s own definition exactly, with no second list.
+  6. Remove any fixture root in a `finally`, and sweep by prefix before the
+     run too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier, in answer to the operator's question of
+  whether more telemetry was needed to decide where determinism work belongs.
+
+  Verified this pass rather than assumed:
+  - `grep -rn "from '.*turnProfile'" extension/src --include=*.ts` returns
+    nothing outside the module's own re-export shim; `buildTurnProfileSeries`
+    has no production caller.
+  - `transcriptWalker.ts` DOES have live consumers
+    (`contextTelemetryProducer.ts`, `budgetShiftGovernor.ts`), so the walker
+    half is wired and only the series half is not.
+  - No trend or metrics store on disk holds a mechanical-share series.
+
+  **A production-wiring anchor IS expected on this ticket, unlike its
+  siblings.** The whole defect is the absence of a call site, so the anchor
+  must name the CONSUMER that will call `buildTurnProfileSeries` - not the
+  function itself, and not a constant this parcel adds (BL-1235's fail-open
+  trap). The implementer picks the producer file; the anchor goes on that
+  file's call, and it is the one entry that would actually prove the fix.
+  Left off at mint because naming a file that does not exist yet would arm
+  the gate against a string nobody will write (BL-874) - add it in the same
+  pass that creates the producer.
+
+  IR-DRY: two findings, both possible-synonym at 0.5, between "reports a
+  mechanical share", "reports its whole share as <category>" and the negative
+  "no stage from that window reports a share". Positive and negative forms of
+  the assertion under test. Left as written.
+
+source: |
+  Operator question 2026-09-03: "if we need more telemetry to inform the
+  decision lets add them." The answer this ticket encodes is that the
+  telemetry was already commissioned as BL-664 and never connected.
+
+  Sibling in kind to BL-1361 (BL-668 shipped near-inert). Both are the BL-1235
+  shape - a mechanism built, gated, landed, and reachable by nothing.

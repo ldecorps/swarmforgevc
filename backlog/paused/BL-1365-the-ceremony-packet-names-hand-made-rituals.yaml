@@ -1,0 +1,183 @@
+id: BL-1365
+title: "The closing-ceremony packet names hand-made rituals: a ritual done by script collapses to one commit subject and one done by an agent has a long tail, so the determinism sweep is computable rather than an occasional manual exercise"
+milestone: M8
+type: feature
+status: todo
+epic: lean-aware-coordinator
+priority: 13
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: medium
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1365-the-ceremony-packet-names-hand-made-rituals.feature
+
+invariants:
+  - "Candidates are computed outside the ceremony on an independent cadence and merely READ by it - a ceremony that does not run delays adjudication and loses no measurement."
+  - "A ritual class an open ticket already names is never offered again: the packet carries what is NEW, never a standing restatement that becomes the alert nobody reads."
+  - "The ledger proposes and the specifier disposes - a candidate is evidence for a ticket, never an auto-minted one."
+
+required_wiring:
+  - 'extension/src/metrics/closingCeremonyRun.ts::determinismCandidates::the packet ASSEMBLY populates the field, proving more than the type declaring it'
+  - 'specs/pipeline/steps/index.js::bl1365CeremonyNamesHandMadeRitualsSteps::acceptance handler registered so the runner executes every scenario'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options - you already settled the
+  governing question, and this ticket follows your ruling rather than
+  reopening it.
+  .
+  On 2026-09-03 you asked whether the determinism sweep should be part of the
+  closing ceremony, part of the lean coordinator's job, or a new daily role.
+  BL-818 records your own answer from 2026-08-05, quoted there verbatim -
+  a first-class duty of the existing coordinator, "not a ninth standing
+  pipeline agent unless the specifier can prove a separate seat is required",
+  and the shift closing ceremony locked as "the main optimisation window". I
+  cannot prove a separate seat is required, and this ticket explains why in
+  the description. So: no new role, and it rides the ceremony you already
+  built.
+  .
+  What to know before approving. The packet gains one field. Nothing about the
+  ceremony's existing shape, its outcome CLI, or the coordinator's within-power
+  adjustments changes. The candidate detector is a heuristic and will be wrong
+  sometimes - which is why invariant 3 keeps it advisory and why a candidate
+  it offers costs a specifier judgement, not an automatic ticket.
+
+description: |
+  ## What this is
+
+  On 2026-09-03 a manual sweep classified 45 days of commits and found five
+  rituals still performed by hand, four of which became tickets. The finding
+  worth keeping is not the list - it is that the list was computable, and was
+  computed by an agent.
+
+  ## The detector
+
+  A ritual performed by a script produces one commit subject. A ritual
+  performed by an agent produces a different subject every time. Measured on
+  real history:
+
+  | ritual | commits | top subject | dominance |
+  |---|---|---|---|
+  | promotion (`promote_and_route_next.sh`) | 484 | 484 | ~1.00 |
+  | topic records (`blTopicStore.ts`) | 2290 | 2228 | 0.97 |
+  | pass/bounce evidence (no writer) | 2182 | 29 | **0.01** |
+
+  Dominance - the share of a class's commits carrying its single most common
+  normalized subject - separates them cleanly, needs no new instrumentation,
+  and is computed straight from `git log --name-only`.
+
+  ## Why the ceremony and not a new role
+
+  The judgement half already has a home. BL-820's ceremony computes a packet
+  mechanically, delivers it to the specifier as a `note`, and forces a
+  recorded outcome - `process_ticket`, `spec_gate_tweak`, or a reasoned
+  `no_change`. That is exactly the division this work needs: a computed
+  candidate list plus a minting judgement only the specifier can make.
+
+  A daily role would add a seat, a boot and a context window to re-derive a
+  measure that changes slowly - the sweep's window is 45 days - and would
+  usually find nothing. The ceremony's existing empty-packet path already
+  handles "nothing to say" for free.
+
+  ## The coupling to design around
+
+  Verified 2026-09-03: `.swarmforge/lean/ceremony/` holds five run records,
+  the most recent 2026-08-30, and no cron entry triggers the ceremony. Whether
+  that is a defect or simply how shifts have been closed is not established
+  here and is not this ticket's to answer - but it is why invariant 1 keeps
+  the measurement OUT of the ceremony. The ledger accrues on its own cadence;
+  the ceremony reads current state. A ceremony that does not fire then costs a
+  delay, never a gap in the record.
+
+  ## How (direction, not mandate)
+
+  - The packet field is named `determinismCandidates` and that name is FIXED
+    at mint, not the implementer's to choose - it is what `required_wiring`
+    anchors, so the gate has a literal that will exist (BL-874). Its shape is
+    open; the name is not.
+  - A ritual ledger built on the same sweep cadence the daemon already runs
+    others on, classifying commits by path area and computing volume plus
+    subject dominance per class.
+  - Thresholds - the volume floor and the dominance ceiling above which a
+    class counts as scripted - are the implementer's to pick and should be
+    readable, not buried. They will need tuning; make that cheap.
+  - Suppression by open ticket (invariant 2) is what keeps the packet quiet.
+    The four tickets from the 2026-09-03 sweep are the natural fixture: with
+    them open, the packet should offer nothing.
+  - If BL-1364 lands, the mechanical-share trend is a strictly better ranking
+    signal than commit volume, because it sees turns that produce no commit.
+    Neither slice blocks the other; prefer the trend when it is there.
+
+  ## Explicitly NOT in scope
+
+  - Auto-minting a ticket from a candidate. Invariant 3.
+  - Changing the ceremony's outcome CLI, its storage, or the coordinator's
+    within-power adjustments.
+  - Fixing the ceremony's trigger cadence. Named above as observed, not
+    diagnosed.
+
+qa_e2e_procedure: |
+  1. Build a fixture history with three ritual classes: one whose commits all
+     share a subject, one high-volume class with widely varying subjects, and
+     one low-volume varied class below the threshold.
+  2. Assemble a packet. Only the second class is offered, and its candidate
+     carries the volume and the subject spread that justified it.
+  3. Open a ticket naming that class, re-assemble, and confirm it is no longer
+     offered.
+  4. With every class scripted or ticketed, confirm no candidate is offered
+     and that the ceremony can still record a reasoned no-change.
+  5. Skip a ceremony entirely for one window, then assemble the next one.
+     Confirm the skipped window's candidates are still offered.
+  6. Run against the live repo with BL-1360, BL-1361, BL-1362 and BL-1363
+     open, and confirm the packet offers nothing - those four are the
+     2026-09-03 sweep's own findings and must read as already handled.
+  7. Remove any fixture root in a `finally`, and sweep by prefix before the
+     run too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier in answer to the operator's question:
+  "can this exercise be part of the closing ceremony? maybe part of the lean
+  coordinator job? or do we need a special role that runs once a day whose
+  responsibility would be to turn agentic repeated tasks into deterministic
+  scripts?"
+
+  The answer is the operator's own, already on record. BL-818's locked
+  decisions quote them from 2026-08-05: a "New rôle for the coordinator"
+  meaning a duty of the existing coordinator, "not a ninth standing pipeline
+  agent unless the specifier can prove a separate seat is required"; and the
+  shift closing ceremony locked as "the main optimisation window". This ticket
+  does not re-litigate that - it applies it.
+
+  Verified this pass rather than assumed:
+  - The dominance figures come from classifying 12903 non-merge commits over
+    45 days and clustering normalized subjects per class.
+  - The ceremony is real and produces outcomes: the 2026-08-30 run carries a
+    packet with 7 dwell hotspots, 2 bounce classes, 4 stalls and 3 hypotheses,
+    and a recorded `spec_gate_tweak` outcome. It is not another shipped-inert
+    mechanism.
+  - Five run records exist, most recent 2026-08-30, and `crontab` has no
+    ceremony entry - the basis for invariant 1.
+
+  Two `required_wiring` entries here, unlike the sweep's other tickets. The
+  first anchors `closingCeremonyRun.ts`, which ASSEMBLES the packet, while the
+  `CeremonyPacket` type is declared in `quality/closingCeremony.ts:85`. That
+  separation is deliberate: an anchor on the declaring file would be satisfied
+  by merely adding a field to an interface, which proves nothing (BL-1235).
+  Anchoring the assembler proves the field is populated. `determinismCandidates`
+  is fixed at mint precisely so the pattern is a literal that will exist
+  (BL-874).
+
+  IR-DRY: one finding, near-duplicate at 0.83, between "that class is offered
+  as a candidate" and "that class is not offered as a candidate". That is the
+  behaviour under test, stated in both directions. Left as written.
+
+source: |
+  Operator question 2026-09-03 (see notes for the verbatim ask), following the
+  determinism sweep recorded on BL-667.
+
+  Child of BL-818 (EPIC - lean-aware coordinator), whose ceremony this
+  extends. Cousin of BL-667's slices, which are what its detector would have
+  surfaced automatically.
