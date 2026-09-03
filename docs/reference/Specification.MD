@@ -1,5 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1354: the land step's sibling-landed
+detector (`land_step_lib.bb`) no longer judges a shared file by whole-blob
+equality against `origin/main` — a defect that made EVERY co-owner of a hot
+file (`docs/reference/Specification.MD`, `docs/index.md`, cross-ticket
+backlog yaml/topics) read unlanded while ANY one co-owner's lines were still
+unlanded, self-reinforcing on every ticket that shared the file. Reproduced
+live on BL-1332's land: all six siblings its `LAND_ESCALATE` named as
+unlanded were already in `backlog/done/`. `landed-siblings` now scores each
+sibling on its OWN attributed lines: `diff-line-changes` parses a unified
+diff into per-path line sets, `sibling-own-line-changes` merges the
+sibling's own NON-MERGE commits only (a merge's first-parent diff carries
+its second parent's content regardless of author, which was inflating
+attribution the other direction — one ticket's own unlanded lines were
+being charged to an unrelated sibling), and `sibling-path-verdict` scores
+each path three-valued (`:landed`/`:unlanded`/`:vacuous`, the last for a
+line the sibling once added that a later commit rewrote) against what
+survives at the tip; vacuous paths are dropped before scoring so a sibling
+left with nothing is still judged unlanded through the existing
+empty-paths fail-closed row — landed stays a positive finding, never an
+inference from silence (BL-1272 invariant 1, unrelaxed). `land_step_cli.bb`'s
+`LAND_CLEAN`/`LAND_REPLAY`/`LAND_ESCALATE` output shape is unchanged; only
+what feeds the landed/unlanded split changed. Wiring this detector into the
+mandatory land decide step is the separate, still-active BL-1309, not built
+here. Acceptance:
+`specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(extended in place — same detector, same doc). No diagram depicts land-step
+internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1337: the BoB starting cast generator
 (BL-1181) now takes a named, steward-owned **profile** instead of one
 hard-coded policy, and gates every pick on a **handshake** before the cast is

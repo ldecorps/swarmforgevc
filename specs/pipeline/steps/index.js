@@ -948,6 +948,7 @@ const DOMAINS = [
   require('./bl1314InvariantTwoQaQuestionSteps'),
   require('./bl1301ParkedTicketSteps'),
   require('./bl1330SwarmStampBobAnthropicStartingCastSteps'),
+  require('./bl1354SharedPathLandedSiblingSteps'),
 ];
 
 function registerSteps(registry) {
