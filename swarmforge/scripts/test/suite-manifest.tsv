@@ -216,6 +216,7 @@ test_bl1154_build_stale_not_crash_giveup_budget.sh	standing
 test_bl1159_bridge_child_survives_without_crash_giveup_loop.sh	standing		
 test_bl1162_start_stop_swarm_cron_lifecycle.sh	standing		
 test_bl1317_effort_ladder_parity.sh	standing		
+test_bl1374_sync_merge_passengers.sh	standing		
 test_bl1376_expedite_branch_handover.sh	standing		
 test_bl1378_expedite_close_guard.sh	standing		
 test_bl648_resident_boot_role_override.sh	standing		
