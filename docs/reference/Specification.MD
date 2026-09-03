@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1356: the six BL-654 "stamp-off"
+property tests (`bl1113`/`bl1115`/`bl1116`/`bl1117`/`bl1136`/`bl1323`) that
+defend "a green suite must never write a decision into
+`backlog/hotfix-ledger.yaml`" no longer pin their watched row's CURRENT
+state as a fixed literal (`/state: pending/`, `/state: stamp-open/`) — a row
+is not a constant, advancing it through `stamp-open` → `awaiting-human` →
+`certified`/`waived` is exactly the ledger's own workflow, so every one of
+these tests was pre-red and jammed the repo-wide property-suite commit gate
+(BL-1175) the moment its row legitimately moved; five of six had already
+accumulated identical standing-allowlist waivers, and the sixth jammed four
+unrelated commits on 2026-09-02 with none yet. Per the ticket's human ruling
+(option 1 of two offered), the invariants stay on the LIVE ledger and the
+assertion changed instead: `extension/test/helpers/stampOff.js`'s
+`assertRunWritesNoDecision(hotfix, work, opts)` is now the one place all six
+call — it snapshots the watched row before `work()` runs and asserts it is
+byte-identical after, so the row's pre-run state (whatever it is) becomes
+the expected value rather than a hard-coded literal, while a run that
+genuinely stamps a decision (`state: certified`/`waived`, non-null
+`human_decision`, non-null `decided_at`) still fails from ANY starting
+state — the non-weakening half is checked independently, not implied by the
+before/after comparison alone. The five allowlist rows this discharged
+(`bl1113`, `bl1115`, `bl1116`, `bl1117`, `bl1136`) came out of
+`property_suite_standing_allowlist.tsv` in the same parcel, since a waiver
+whose reason is gone would hide a future genuine stamp-off regression
+behind it; `bl1323` never had one. Acceptance:
+`specs/features/BL-1356-stamp-off-invariant-watches-the-run-not-the-row.feature`.
+How-to:
+`docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`
+(extended in place — same allowlist/guard mechanism, one more shape of
+standing red resolved rather than parked). No diagram depicts property-suite
+gating internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1309: `land_main_publish.sh`
 `--decide-only` — the one landing step `QA.prompt` cannot skip — now
 consults BL-1241/BL-1308/BL-1354's `entangled-siblings` detector before
