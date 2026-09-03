@@ -171,7 +171,7 @@
         (if (and (zero? exit) counted)
           {:name branch :ahead counted}
           {:name branch
-           :reason (let [detail (str/trim (str (not-empty err) (when-not (seq (str err)) out)))]
+           :reason (let [detail (str/trim (str (if (seq (str/trim (str err))) err out)))]
                      (if (seq detail)
                        (str "git rev-list origin/main.." branch " could not answer: " (first (str/split-lines detail)))
                        (str "git rev-list origin/main.." branch " could not answer")))}))))))
