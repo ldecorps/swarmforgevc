@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=1567cbf41d21ac7bffca4f7a3b5a28eb58ab8afbfe25a0ab6ae29ca01c899c42
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T08:50:20.195773423Z","feature_name":"A stamp-off invariant watches what the run writes, not what the ledger currently says","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1356-stamp-off-invariant-watches-the-run-not-the-row.feature","background_hash":"8ab52d8b932ec842f4a57fc2dbb47aa67101f92683d517d5a598403ba7dae50c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a row that legitimately advanced is not a violation","scenario_hash":"6aeaf0d2b1c6c5576703155c7a54ca06d9ef3f50b9efbf8ba099bfadab480437","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-03T08:50:20.195773423Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A stamp-off invariant watches what the run writes, not what the ledger currently says
   BL-654 stamp-off property tests defend a real invariant - a green suite must
   never write a decision into backlog/hotfix-ledger.yaml. They encode it by
