@@ -101,3 +101,28 @@ notes: |
   runs the suite rather than to the author who introduced it - the same shape
   BL-1240 is fixing for the manifest. If that per-parcel approach generalises,
   these three are its natural next call sites.
+
+  2026-09-03 (specifier): the cost of leaving this red is now MEASURED, not
+  merely predicted. The hardener sent a `rule_proposal` reporting that the
+  os.tmpdir()-socket antipattern was authored TWICE in one session in the BL-848
+  stamp-off family, and caught both times only by its own manual sweep - never by
+  this guard, because this guard is red before the author starts and a third
+  violation is indistinguishable from the standing two. Re-verified the same
+  pass: `npx vitest run test/socketFixtureShortRootGuard.test.js` gives 1 failed
+  / 15 passed, and the scan still returns exactly the 2 files named above, so
+  nothing has accrued - both new hits were fixed in-parcel (BL-1333's `mkroot()`
+  now calls `mkSocketFixtureRoot`). The standing red is not costing debt; it is
+  costing a hardener sweep per parcel to do a green gate's job, and it is why the
+  earlier roles cannot see the violation at all.
+
+  That proposal was REJECTED as scoped - prose in `hardender.prompt` would
+  instruct the role that already catches this and leave the mechanism inert. Full
+  reasoning, and why the blame does not belong to coder/cleaner/architect:
+  `backlog/evidence/BL-1290-rule-proposal-disposition-20260903.md`.
+
+  Severity deliberately NOT raised. A red gate is a broken safety signal, which
+  is the schema's `high` bar, but the hazard it guards is macOS-only and this
+  swarm runs on Linux - the reasoning this ticket's own `approval_context`
+  already records. The new evidence concerns DETECTION, not the hazard, so it is
+  not grounds to reverse that call silently. Noted here so the next pass weighing
+  the queue has the fact.
