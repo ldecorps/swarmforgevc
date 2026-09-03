@@ -101,9 +101,150 @@
   (let [res (git! root "rev-parse" "--verify" "-q" (str rev ":" path))]
     (if (zero? (:exit res)) (str/trim (:out res)) ::absent)))
 
+(defn- blob-lines
+  "The set of lines `rev` holds at `path`. #{} when the path is absent there -
+   a real answer (a sibling whose landed content was a deletion really is
+   landed), never a read failure. nil when the blob exists but could not be
+   read, which the caller must fail closed on."
+  [root rev path]
+  (let [blob (blob-at root rev path)]
+    (if (= ::absent blob)
+      #{}
+      (let [res (git! root "cat-file" "blob" blob)]
+        (when (zero? (:exit res))
+          (into #{} (str/split-lines (:out res))))))))
+
+(defn diff-line-changes
+  "Parse one unified diff into {path {:added #{lines} :removed #{lines}}}.
+
+   Pure over the diff text so the parse itself is pinnable without a
+   repository. `--- `/`+++ ` are read as file headers ONLY outside a hunk: a
+   removed content line can itself begin `--- ` once git's own `-` prefix is
+   applied, and misreading that as a header would silently re-point every
+   following line at the wrong file."
+  [diff-text]
+  (loop [lines (str/split-lines (or diff-text "")) cur nil in-hunk? false acc {}]
+    (if (empty? lines)
+      acc
+      (let [line (first lines) rest-lines (rest lines)]
+        (cond
+          (str/starts-with? line "diff --git ")
+          (recur rest-lines nil false acc)
+
+          (str/starts-with? line "@@")
+          (recur rest-lines cur true acc)
+
+          (and (not in-hunk?) (str/starts-with? line "--- "))
+          (let [p (subs line 4)]
+            (recur rest-lines (when-not (= p "/dev/null") (str/replace-first p #"^a/" "")) false acc))
+
+          (and (not in-hunk?) (str/starts-with? line "+++ "))
+          (let [p (subs line 4)]
+            (recur rest-lines
+                   (if (= p "/dev/null") cur (str/replace-first p #"^b/" ""))
+                   false acc))
+
+          (and in-hunk? cur (str/starts-with? line "+"))
+          (recur rest-lines cur in-hunk? (update-in acc [cur :added] (fnil conj #{}) (subs line 1)))
+
+          (and in-hunk? cur (str/starts-with? line "-"))
+          (recur rest-lines cur in-hunk? (update-in acc [cur :removed] (fnil conj #{}) (subs line 1)))
+
+          :else (recur rest-lines cur in-hunk? acc))))))
+
+(defn- merge-commit? [root commit]
+  (let [res (git! root "rev-list" "--no-walk" "--parents" "-1" commit)]
+    (and (zero? (:exit res))
+         (> (count (str/split (str/trim (:out res)) #"\s+")) 2))))
+
+(defn- commit-line-changes
+  "{path {:added #{} :removed #{}}} for one commit's own first-parent diff -
+   the SAME view `own-commit-changed-paths :delivered` attributes paths by, so
+   a path the attribution credits to a sibling always has its lines read from
+   the same edge. nil (never {}) when the diff could not be read."
+  [root commit]
+  (let [res (git! root "log" "-1" "--format=" "-p" "--unified=0" "--first-parent" commit)]
+    (when (zero? (:exit res))
+      (diff-line-changes (:out res)))))
+
+(defn sibling-own-line-changes
+  "The line changes `sibling-id`'s OWN commits among `candidates` made, merged
+   across those commits: {path {:added #{} :removed #{}}}.
+
+   MERGE commits are skipped: a merge authors no lines of its own, while its
+   first-parent diff is everything its second parent brought in, whoever wrote
+   it (`ancestry-commits`' own docstring, from the other side). Crediting a
+   merge's passengers to whichever ticket its subject names is how the landing
+   ticket's OWN unlanded lines got charged to sibling BL-1341 and made it read
+   unlanded - the very confusion this ticket exists to end.
+
+   nil when ANY of those commits' diffs could not be read - a partially-read
+   attribution must never be scored as if it were whole (invariant 1, the same
+   posture `attribution-complete?` already takes one door up)."
+  [root candidates sibling-id]
+  (let [own (->> candidates
+                 (filter #(= sibling-id (commit-ticket-id root %)))
+                 (remove #(merge-commit? root %)))
+        diffs (map #(commit-line-changes root %) own)]
+    (when (every? some? diffs)
+      (reduce (fn [acc d]
+                (reduce-kv (fn [a p {:keys [added removed]}]
+                             (-> a
+                                 (update-in [p :added] (fnil into #{}) (or added #{}))
+                                 (update-in [p :removed] (fnil into #{}) (or removed #{}))))
+                           acc d))
+              {} diffs))))
+
+(defn sibling-path-verdict
+  "Pure over the injected facts: what does ONE attributed path say about
+   whether this sibling has landed? `:landed`, `:unlanded`, or `:vacuous` -
+   the sibling has nothing left to land there, so the path is silent rather
+   than an obstacle (its content at the tip owes the sibling nothing; a ticket
+   file the sibling later moved away is the everyday case). A sibling every
+   one of whose paths is vacuous still reports unlanded: `landed-siblings`
+   drops the vacuous ones and `sibling-landed?`s empty-paths row then fails
+   closed, so silence is never scored as evidence.
+
+   BL-1354. The predicate this replaces compared the path's WHOLE blob, so a
+   file several tickets touch was judged by every co-owner at once and a
+   sibling whose own lines were all landed still read unlanded whenever any
+   co-owner's were not. Six-for-six on `docs/reference/Specification.MD`
+   during BL-1332's own land.
+
+   Scored against what SURVIVES at the tip (`tip-lines`), not against every
+   intermediate state the sibling passed through: a line one of its commits
+   added and a later commit rewrote is not part of what this parcel would
+   land, and demanding it on origin/main reports a landed sibling as unlanded
+   for the second time in the same defect's shape. Measured on BL-1271's real
+   attribution, where a superseded `abandoned_commits:` line was the sole
+   miss.
+
+   Fail-closed, unchanged from BL-1272 invariant 1: an unread diff
+   (`changes` nil), an unread blob (`main-lines` or `tip-lines` nil), and a
+   surviving contribution of nothing at all (only blank lines, or every change
+   reverted before the tip) each answer false. Landed stays a POSITIVE
+   finding - every surviving line the sibling added is present, and every line
+   it removed is still absent."
+  [{:keys [changes main-lines tip-lines]}]
+  (if-not (and changes main-lines tip-lines)
+    :unlanded
+    (let [added (into #{} (remove str/blank?) (:added changes))
+          removed (into #{} (remove str/blank?) (:removed changes))
+          ;; What the sibling actually contributes to this tip: added lines
+          ;; still standing there, removed lines still gone from there.
+          surviving-added (filter tip-lines (remove removed added))
+          surviving-removed (remove tip-lines (remove added removed))]
+      (cond
+        (and (empty? surviving-added) (empty? surviving-removed)) :vacuous
+        (and (every? main-lines surviving-added)
+             (not-any? main-lines surviving-removed)) :landed
+        :else :unlanded))))
+
 (defn sibling-landed?
   "Pure over the injected facts: is this sibling's attributed content ALREADY
-   on origin/main, byte for byte?
+   on origin/main? `same-content?` answers that for one attributed path;
+   BL-1354 made what it asks the sibling's OWN lines rather than the path's
+   whole blob, which on a shared file was decided by every co-owner at once.
 
    BL-1272, invariant 1: landed is a POSITIVE finding, never an inference from
    silence. `paths` nil (the attribution walk could not run) and `paths` empty
@@ -148,24 +289,49 @@
           candidates))
 
 (defn landed-siblings
-  "The subset of `siblings` whose attributed content between origin/main and
-   `commit` is already byte-identical in origin/main's tree.
+  "The subset of `siblings` whose OWN attributed line changes between
+   origin/main and `commit` are already reflected in origin/main's tree
+   (BL-1354 - never the whole blob of a path they merely share).
 
    Attribution reuses task_scope_gate_lib.bb's own walk (BL-1192), the same
    one `own-paths` delegates to - never a second implementation. `paths-fn` is
    injected so the walk-failed row is drivable without corrupting a
-   repository; it defaults to that real walk."
+   repository; it defaults to that real walk. `lines-fn` is injected the same
+   way for the per-sibling line attribution (BL-1354)."
   ([root commit origin-main candidates siblings]
    (landed-siblings root commit origin-main candidates siblings nil))
   ([root commit origin-main candidates siblings paths-fn]
+   (landed-siblings root commit origin-main candidates siblings paths-fn nil))
+  ([root commit origin-main candidates siblings paths-fn lines-fn]
    (let [walk (or paths-fn
                   #(task-scope-gate-lib/task-tagged-changed-paths root origin-main commit % :delivered))
-         same-content? (fn [p] (= (blob-at root commit p) (blob-at root origin-main p)))]
+         lines (or lines-fn #(sibling-own-line-changes root candidates %))
+         main-lines (memoize #(blob-lines root origin-main %))
+         tip-lines (memoize #(blob-lines root commit %))]
      (->> siblings
-          (filter #(sibling-landed?
-                    {:paths (walk %)
-                     :complete? (attribution-complete? root candidates %)
-                     :same-content? same-content?}))
+          (filter (fn [sibling]
+                    ;; BL-1354: the content question is asked per SIBLING, not
+                    ;; per path alone. A shared path's blob is decided by every
+                    ;; co-owner at once; this sibling's own lines are not.
+                    (let [changes (lines sibling)
+                          ;; A path the shipped attribution walk credits to
+                          ;; this sibling only through a MERGE carries no line
+                          ;; the sibling authored - `{}`, a real answer, not
+                          ;; the unread `nil` that fails the whole sibling
+                          ;; closed.
+                          verdict (memoize
+                                   #(if (nil? changes)
+                                      :unlanded
+                                      (sibling-path-verdict
+                                       {:changes (get changes % {})
+                                        :main-lines (main-lines %)
+                                        :tip-lines (tip-lines %)})))
+                          attributed (walk sibling)]
+                      (sibling-landed?
+                       {:paths (when attributed
+                                 (remove #(= :vacuous (verdict %)) attributed))
+                        :complete? (attribution-complete? root candidates sibling)
+                        :same-content? #(= :landed (verdict %))}))))
           set))))
 
 (defn entangled-siblings
