@@ -317,11 +317,6 @@
 (def babysitterd-watchdog-cooldown-ms (env-ms "OPERATOR_BABYSITTERD_WATCHDOG_COOLDOWN_MS" 1800000))
 (def babysitterd-pid-file (fs/path state-dir "babysitterd" "babysitterd.pid"))
 (def babysitterd-watchdog-state-file (fs/path op-dir "babysitterd-watchdog.json"))
-;; BL-1352: the last ask-escalation transport state that was logged. Same
-;; last-state pattern the babysitterd watchdog above already uses, deliberately
-;; rather than a second invention: the escalation used to log its refusal on
-;; EVERY tick, which produced 7027 identical lines nobody read.
-(def ask-escalation-state-file (fs/path op-dir "ask-escalation-transport.json"))
 (def ^:private babysitterd-watchdog-snap* (atom nil))
 ;; BL-848: hotfix certification recurrent check - own cadence (R3), never the
 ;; every-30s tick default, plus a per-entry resurfacing cooldown so an open
@@ -2134,37 +2129,12 @@
                                (when-let [o (escalate-one-role-ask! role marker now thresh issue)]
                                  [role o])))
                        markers)]
-    ;; BL-1352: the per-tick WARN that used to live here is gone. It fired on
-    ;; every tick forever - 7027 identical lines - which is why nobody ever
-    ;; read the one that mattered. The transport state is now logged on change
-    ;; only, by log-ask-escalation-transport! below.
+    (when (and (nil? issue) (seq outcomes))
+      (log! "ask-escalation" "WARN ops issue unconfigured - no stamp"))
     {:transport (if issue :configured :unconfigured)
      :outcomes outcomes
      :markers (read-role-awaiting-markers)
      :threshold_ms thresh}))
-
-(defn read-ask-escalation-transport-state []
-  (if (fs/exists? ask-escalation-state-file)
-    (try (json/parse-string (slurp (str ask-escalation-state-file)) true) (catch Exception _ nil))
-    nil))
-
-(defn write-ask-escalation-transport-state! [state]
-  (atomic-spit!
-   ask-escalation-state-file
-   (str (json/generate-string {:state (name (:state state))
-                               :detail (:detail state)
-                               :updated_at (now-iso)}) "\n")))
-
-(defn log-ask-escalation-transport!
-  "BL-1352 invariant 2: write the transport state to the operator log ON CHANGE
-   ONLY. Ten ticks in one state produce one line; a change produces one more.
-   Returns the state so callers can put it straight into status.json."
-  [state]
-  (let [last (read-ask-escalation-transport-state)]
-    (when (role-ask-escalation-lib/transport-log-due? last state)
-      (log! "ask-escalation" (str "transport " (name (:state state)) " - " (:detail state)))
-      (write-ask-escalation-transport-state! state)))
-  state)
 
 (defn read-role-questions-undeliverable []
   (if-not (fs/exists? role-awaiting-dir)
@@ -2448,24 +2418,8 @@
                        telegram-console (assoc :telegram_console telegram-console)
                        (seq role-questions-undeliverable) (assoc :role_questions_undeliverable role-questions-undeliverable)
                        (seq role-questions) (assoc :role_questions role-questions)
-                       ;; BL-1352: the transport's own health, computed and
-                       ;; logged on change, so ./swarm status can show a fault
-                       ;; instead of the silence that hid this for four days.
                        true (assoc :ask_escalation
-                                   (let [waiting (->> (:markers ask-escalation)
-                                                      (keep (fn [[role marker]]
-                                                              (when (role-ask-escalation-lib/escalation-due?
-                                                                     marker now (:threshold_ms ask-escalation))
-                                                                (name role))))
-                                                      vec)
-                                         health (log-ask-escalation-transport!
-                                                 (role-ask-escalation-lib/escalation-transport-state
-                                                  {:transport (:transport ask-escalation)
-                                                   :waiting-roles waiting}))]
-                                     {:transport (name (:transport ask-escalation))
-                                      :state (name (:state health))
-                                      :detail (:detail health)
-                                      :waiting_roles waiting}))
+                                   {:transport (name (:transport ask-escalation))})
                        true (assoc :miniapp_watchdog miniapp-watchdog)
                        true (assoc :cursor_bridge_watchdog cursor-bridge-watchdog)
                        true (assoc :babysitterd_watchdog babysitterd-watchdog)
