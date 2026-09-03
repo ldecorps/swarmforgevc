@@ -108,10 +108,35 @@ description: |
   factored, unit-tested library behind the test is still welcome; what is not
   acceptable is a mechanism whose only caller is an instruction in prose.
 
+  ## In-parcel draft conversion — part of THIS slice, not a follow-up
+
+  `acceptance:` above points at a `.feature.draft`, and this ticket is the
+  slice chartered to build what that draft describes. A draft pointer is a
+  contract nobody ever runs, so converting it is an in-parcel step, in the
+  SAME commit as the guard:
+
+  1. Write `specs/pipeline/steps/bl693DocsDuplicateParagraphGuardSteps.js`
+     with a handler for every step in the draft (six scenarios; scenario 03
+     is a Scenario Outline over seven structural-line kinds, so validate its
+     `<line>` column against an explicit `KNOWN_VALUES` set — no passthrough
+     check).
+  2. Register it: add `require('./bl693DocsDuplicateParagraphGuardSteps'),`
+     to the `DOMAINS` list in `specs/pipeline/steps/index.js`. File presence
+     is not registration — `specs/pipeline/runtime.js` resolves handlers only
+     through that list.
+  3. Rename `specs/features/BL-693-repeated-paragraph-gate.feature.draft` to
+     `.feature` and repoint this ticket's `acceptance:` at the renamed path.
+
+  **Do the rename and the registration in one commit.** A live `.feature`
+  whose handlers are not yet registered makes `specs/pipeline/runtime.js`
+  THROW on collection, turning the acceptance suite red for every other
+  parcel in flight, not just this one (BL-233).
+
 acceptance: specs/features/BL-693-repeated-paragraph-gate.feature.draft
 
 required_wiring:
   - "extension/test/docsDuplicateParagraphGuard.test.js::docs::the zero-duplicate assertion must sit in the suite every parcel runs — its absence is exactly why one botched insertion went unnoticed for 17 days. The filename is fixed by this declaration."
+  - "specs/pipeline/steps/index.js::bl693DocsDuplicateParagraphGuardSteps::the registration line that makes this ticket's own six scenarios executable. This is BL-1340's draft-conversion pin, not a production-wiring proof: it is satisfied by this parcel's own diff by construction, and its job is to stop the draft being renamed without a registered handler (or left a draft and never run at all)."
 
 out_of_scope: |
   - Near-duplicate / fuzzy matching. Exact line match is what the evidence
@@ -180,3 +205,27 @@ notes: |
   inventing a third design. BL-873's other approved call — severity `medium`
   on explicit anti-inflation reasoning — is recorded on BL-692, which is the
   ticket that carries a severity.
+
+  ## Amendment 2026-09-03 (specifier) — unblocked from promotion
+
+  This ticket was one of two left starved by the draft-acceptance promotion
+  gate after BL-1340 landed: `promotion_gates_cli.bb audit-acceptance` refused
+  it as "acceptance names draft ... as parked with no conversion pinned". The
+  ticket always INTENDED the conversion — the previous note already said "the
+  coder promotes it and wires handlers in the same commit" — but prose in
+  `notes:` is not what the gate reads. It reads a `required_wiring:` entry
+  naming `specs/pipeline/steps`. That entry is now declared, and the
+  conversion is spelled out as numbered in-parcel steps under the description's
+  "In-parcel draft conversion" heading.
+
+  Freshness re-checked this pass, not assumed: `depends_on: [BL-692]` is
+  satisfied (BL-692 is in `backlog/done/M8/`), and a fresh scan of every
+  markdown file under `docs/` for a trimmed line over 200 characters repeating
+  within one file finds ZERO groups — so scenario 01 ("the real docs tree
+  repeats no substantial paragraph") passes on today's tree and the guard is
+  green-on-arrival with no exemption list, exactly as the 2026-08-10
+  measurement predicted.
+
+  No new human approval requested: the amendment adds a mechanical build step
+  the ticket already implied and poses no choice, so re-pending `human_approval`
+  would erase a real approval to collect nothing.
