@@ -23,8 +23,9 @@ required_wiring:
   - 'docs/how-to/BL-653-operator-escalation-driven-wake-model.md::TASK_ARRIVED::the documented wake-source model must name TASK_ARRIVED, in either its legitimate-sources table or its What-retired list. Absent at mint - the doc does not mention it at all, which is the divergence this ticket closes. Holds under either ruling.'
   - 'specs/pipeline/steps/index.js::bl1353TaskArrivedIsNotAnEscalationSteps::acceptance handler registered so the runner executes every scenario. Absent at mint, grep bl1353 returns 0.'
 
-human_approval: pending
-
+human_approval: approved
+human_ruling: |
+  Retire TASK_ARRIVED entirely as an LLM Operator wake source
 approval_context: >
   You asked whether the Operator wakes on a cron or on babysitterd's word, and
   said you want it to wake when babysitterd finds something odd. That is already
