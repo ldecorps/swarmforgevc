@@ -32,6 +32,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -66,7 +67,7 @@ function commitFile(root, rel, body, message) {
 }
 
 function newFixture() {
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX));
+  const work = mkTmpDir(FIXTURE_PREFIX);
   const origin = path.join(work, 'origin.git');
   const root = path.join(work, 'repo');
   git(work, 'init', '-q', '--bare', '-b', 'main', origin);
