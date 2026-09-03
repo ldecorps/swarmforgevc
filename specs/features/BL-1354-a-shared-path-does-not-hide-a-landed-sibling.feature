@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a2c6a3b4d9b45a6fb2cacf128550cee677e9fa5b2355e640287415c059fcf73a
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T06:56:16.002034618Z","feature_name":"A shared path does not hide a landed sibling","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature","background_hash":"7d11255fc5c4a006bbefbd80f2672e3f85e4b0c72106f5dc6a4de7c1ce00b476","implementation_hash":"unknown","scenarios":[{"index":2,"name":"an unanswered attribution still fails closed","scenario_hash":"cdfa7be415cb37e9ac56d1e9ceb9321516d90a0b2caf3c715410c7c44e34a8bc","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-03T06:56:16.002034618Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A shared path does not hide a landed sibling
 
   BL-1332 closed the write side of shared-path entanglement: a replayed path

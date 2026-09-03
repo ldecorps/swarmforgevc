@@ -7,21 +7,38 @@ epic: deterministic-transit-assist
 priority: 1
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-668]
+decomposes_into: [BL-668, BL-1360, BL-1361]
 remaining_slices: |
-  - BL-668 (filed): post-QA deterministic branch sweep — fast-forward every
-    clean role branch to main after a landing; kills the trickle-all-night
-    merge-up broadcast turns (5 turns per landed ticket).
-  - Delivery-time pre-merge (unfiled — size with BL-664 data first):
-    handoffd delivery attempts the merge in the RECIPIENT's worktree
-    (computed from roles.tsv, never a cd habit) + compile/unit smoke;
-    parcel arrives annotated "pre-merged <sha>, suite green" or "conflict
-    in <files>" with the merge unapplied. Guards non-negotiable: the
-    merge-drops-fix trap means pre-merge NEVER absolves re-running tests
-    on bounce merges; refuses dirty worktrees; git-only state moves.
-  - Handoff tail command (unfiled — smallest): one script does
-    commit --only <declared paths> + draft template + swarm_handoff.sh; the
-    LLM supplies message and paths only.
+  - BL-668 (LANDED, and it did not work): post-QA deterministic branch sweep.
+    Shipped and running on the handoffd cadence, but measured 2026-09-03 across
+    the daemon logs at 125 surfacings against 3 fast-forwards. Its ff-only
+    contract meets the normal state of a role branch - carrying its own commits
+    ahead of origin/main - so a fast-forward is impossible by definition and the
+    five merge-up turns per landing are still being spent. Do not count this
+    slice as delivering its intent.
+  - BL-1360 (filed 2026-09-03): handoff tail command, send half - the merge-up
+    broadcast, the bookkeeping note and the spec-ready note are composed from
+    one definition instead of hand-written, re-checked against the protocol and
+    character-counted every time. This is the "handoff tail command (unfiled -
+    smallest)" slice below, now filed.
+  - BL-1361 (filed 2026-09-03): the post-QA sweep tells the roles it could not
+    settle. BL-668 surfaces by writing a log line nobody reads; this makes its
+    verdict visible, which is also what makes the pre-merge slice's before/after
+    measurable.
+  - Delivery-time pre-merge (STILL UNFILED - now the highest-value child, and
+    BL-664 has landed so the sizing gate this epic set is satisfied): handoffd
+    delivery attempts the merge in the RECIPIENT's worktree (computed from
+    roles.tsv, never a cd habit) + compile/unit smoke; parcel arrives annotated
+    "pre-merged <sha>, suite green" or "conflict in <files>" with the merge
+    unapplied. Guards non-negotiable: the merge-drops-fix trap means pre-merge
+    NEVER absolves re-running tests on bounce merges; refuses dirty worktrees;
+    git-only state moves. BL-1361's measurement is the argument for it: the
+    ff-only sweep cannot reach 97% of cases and a real merge in a clean
+    worktree is what can.
+  - Commit half of "commit and hand off" (unfiled): commit --only <declared
+    paths> before the send. Split out of BL-1360 deliberately - staging on an
+    agent's behalf in a shared checkout is where BL-506 ticket-scope discipline
+    lives and it needs its own guards.
 
 source: |
   .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md
