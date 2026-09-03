@@ -194,8 +194,7 @@
                              ;; it was a two-run pass however it ends, and the
                              ;; evidence must not claim a base run was skipped.
                              :second-run? true
-                             :reason (:reason decision)
-                             :ran-base? true)))]
+                             :reason (:reason decision))))]
         (when (:json? opts)
           (println (json/generate-string (dissoc final :key)))
           (println (json/generate-string {:key key})))
