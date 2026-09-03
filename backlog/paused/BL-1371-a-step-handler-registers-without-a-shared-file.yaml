@@ -292,6 +292,40 @@ notes: |
   as their own paths - that is the payoff - but the merge resolution must not
   restore it.
 
+  ## Expedite specifier re-run, 2026-09-03: two copies of this ticket exist
+
+  The first expedite run finished all six stage passes and failed on its
+  ticket half; this is the re-run's stage 00. Every spec-stage check is green
+  again against the branch tip (gherkin lint clean, hygiene ok, freshness
+  facts read directly, the wiring block parses through the real block reader,
+  and all five scenarios of the feature file execute and pass). One thing
+  drifted underneath the branch and it is a land-time problem, not a spec one:
+
+  - `main` is NOT an ancestor of `expedite/BL-1371`. Main carries exactly one
+    commit the branch lacks, `9421e47147`, and that commit ADDED
+    `backlog/active/BL-1371-...yaml` - it did not edit an existing file. The
+    main checkout also holds a STAGED, uncommitted deletion of
+    `backlog/paused/BL-1371-...yaml`, so the intended end state on main is the
+    active copy alone; the committed tree currently shows both.
+  - So two copies of this ticket exist with different `required_wiring`.
+    `main:active` declares two anchors, `index.js::discoverHandlerFiles` and
+    `index.js::loadHandlers`. The branch copy here declares one,
+    `bl1371StepDiscoverySteps.js::module.exports = { registerSteps };`. All
+    three literals were checked against the branch tip and all three match
+    real code, so neither copy false-blocks a gate - the hazard is duplication,
+    not an unmatchable pattern.
+  - Apart from that block, the two copies differ only in that this one carries
+    the stage-00 notes above and `main:active` does not.
+
+  What this means for the land, which is where it has to be resolved: merging
+  this branch into main yields BOTH files, one ticket in two folders with two
+  different wiring declarations. Whoever lands it should keep the ACTIVE copy
+  as authoritative (that is where the promotion put it), carry this notes
+  section across, and confirm exactly one BL-1371 yaml exists in the merged
+  tree before pushing. Moving or deleting a backlog file between folders is
+  coordinator bookkeeping and was deliberately not done from this stage,
+  especially with a half-staged move sitting in the shared main checkout.
+
 source: |
   QA note 2026-09-03 (priority 00): "BL-1356 LAND_ESCALATE index.js shared w/
   unlanded BL-1296,BL-1309". The land question was answered to QA directly; the
