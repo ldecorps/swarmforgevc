@@ -245,6 +245,26 @@ it up from the trailer) and `--link` it to its ticket.
   caught was, again, a socket-path-length violation in the review harness's
   own fixture (same class as BL-1333's), fixed by the hardener before
   reaching documenter. Ledger row pending until human certify/waive.
+- BL-1346 — stamp-off for hotfix `195de28861` (`swarm ensure`'s RC repair
+  no longer respawns a stale-marker role into another role's pane on a
+  standing pack): `rc-launch-role` used to classify the first `roles.tsv`
+  row as the mono-router "resident" and hand the RC check whatever launch
+  script `.swarmforge/mono-router-active-role` named, honouring a leftover
+  marker even on a standing pack — BL-1020 had already ruled a stale
+  marker is not topology there, but the RC repair path never got that
+  rule. Twice on 2026-09-02 this killed and respawned the specifier's
+  pane with the coordinator's script, leaving the swarm with no
+  specifier — the same incident BL-1345 closed the remaining halves of
+  (a third marker consumer, and an assigned-role health recheck).
+  `rc-launch-role` now resolves the
+  resident's launch role through the same shared
+  `mono-router-lib/resolve-resident-role` decision every other consumer
+  uses (see the [BL-1020 how-to](BL-1020-stale-mono-router-marker-is-not-topology.md)).
+  Clean review — no defect found in the landed hotfix itself; the one
+  real gap the pipeline caught was, a third time this session, the same
+  socket-path-length violation in the review harness's own fixture
+  (BL-1333/BL-1342's class), fixed by the hardener before reaching
+  documenter. Ledger row pending until human certify/waive.
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 
