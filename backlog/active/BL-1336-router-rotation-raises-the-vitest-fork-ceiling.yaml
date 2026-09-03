@@ -181,3 +181,5 @@ notes: |
   `required_wiring` exists to catch. This is deliberately NOT an anchor on
   the ceiling function's own new branch: that branch lives in the module this
   parcel edits and would go green on its own diff, proving nothing (BL-1235).
+
+assigned_to: coder
