@@ -483,3 +483,4 @@ descent_ladder_lib_test_runner.bb	standing
 bl1352_escalation_transport_test_runner.bb	standing		
 bl1335_exhaustion_promotion_test_runner.bb	standing		
 bl1345_stale_marker_test_runner.bb	standing		
+bl1344_waive_lib_test_runner.bb	standing		
