@@ -1,0 +1,155 @@
+id: BL-1362
+title: "A review pass records its evidence by tool: Article 4.4's evidence file has a gate hardened three times and no writer, so every role hand-derives the filename, structure and commit - 2182 of 12903 commits in 45 days carry nothing else"
+milestone: M8
+type: feature
+status: todo
+epic: deterministic-transit-assist
+priority: 9
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1362-a-review-pass-records-its-evidence-by-tool.feature
+
+invariants:
+  - "A recorded evidence commit always satisfies the review-forward evidence gate: it is committed and it contributes content, so the role can forward THAT commit rather than the bare received hash (BL-536/BL-1293)."
+  - "NONE and a D1..Dn inventory take the same path - a clean sweep is recorded, never skipped, and never through a second code path."
+  - "The tool records the verdict it is given and never derives one: an inventory that is neither NONE nor a defect list is refused, never written as empty."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1362ReviewPassEvidenceByToolSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options - the shape is fixed by
+  the gate this has to satisfy, and the remedy's details are the implementer's.
+  .
+  What to know before approving. This tool writes and commits a file on a
+  role's behalf, which is worth reading the bounds on. It records only what the
+  role supplies; it never decides whether a pass was clean, never authors a
+  defect item, and refuses rather than inventing a verdict when given neither.
+  It touches exactly one path under `backlog/evidence/` and commits that path
+  alone, so it cannot fold unrelated work into a parcel (BL-506).
+  .
+  It also removes no gate. `review_forward_evidence_gate_lib.bb` still refuses
+  a forward that contributed nothing - the point is that a role using the tool
+  passes that gate by construction instead of by remembering.
+
+description: |
+  ## What is wrong
+
+  Article 4.4 makes every review pass leave one evidence file - items `D1..Dn`
+  with their fixed fields plus blamed role and remediation pointer, or an
+  explicit NONE for a clean sweep - and BL-536 makes the forward name the
+  commit carrying it, never the bare received hash.
+
+  All of that is enforced and none of it is assisted.
+  `review_forward_evidence_gate_lib.bb` refuses a forward whose commit
+  contributed nothing, and its own header records that it has been hardened
+  three times: BL-536 (both architect and hardener forwarded the received
+  hash), BL-806 (the structural send-time backstop), BL-1293 (a bare merge
+  commit passed while the role authored nothing). Each hardening followed a
+  role getting the ritual wrong. There is still no writer.
+
+  ## Observed
+
+  Counted across `git log --since='45 days ago' --no-merges`:
+
+  | | |
+  |---|---|
+  | non-merge commits | 12903 |
+  | commits whose ONLY paths are `backlog/evidence/` | **2182 (16.9%)** |
+  | evidence files on disk | 3145 |
+
+  The pass evidence dominates: 317 hardener-pass, 316 qa-pass, 276
+  architect-pass, 177 documenter-pass, 165 cleaner-pass. Their commit subjects
+  are all different - the top repeated subject appears 29 times against 2182
+  commits - which is the signature of each one being composed from scratch
+  rather than emitted.
+
+  ## Why this one is first
+
+  Compare the two rituals the coordinator performs. Promotion has
+  `promote_and_route_next.sh` and its 484 commits carry the script's own
+  generated subject. Evidence has a gate, three incidents, and nothing to call.
+  The asymmetry is the finding: this swarm reliably builds the ENFORCEMENT for
+  a ritual and leaves the PERFORMANCE of it to an LLM turn.
+
+  ## How (direction, not mandate)
+
+  - One entry point taking the ticket, the reviewing role, and either NONE or
+    the defect items; it writes `backlog/evidence/<ticket>-<role>-<YYYYMMDD>.md`
+    to the corpus's existing convention, commits that path alone, and prints
+    the commit for the role to forward.
+  - The item fields are Article 4.4's, which the QA prompt's bounce evidence
+    contract already states. Read them from one place rather than restating
+    them - a second copy will drift from the constitution (BL-897).
+  - The date suffix and the collision case (two passes by one role on one day,
+    which the corpus already contains) need a rule; the corpus's own
+    qualifier form is the precedent.
+  - Refusing is a feature. A role that supplies no verdict is a role that has
+    not finished its pass, and the gate would refuse the forward anyway - one
+    turn later and with less information.
+
+  ## Explicitly NOT in scope
+
+  - The bounce ritual's other halves - `record-bounce.js` and the revert of the
+    bounced commit. Both already have tooling or prompt-level discipline, and
+    bundling them makes this slice a rewrite of the bounce path.
+  - Any change to `review_forward_evidence_gate_lib.bb`. The gate is correct;
+    it has no counterpart, which is what this fixes.
+
+qa_e2e_procedure: |
+  1. Record a clean sweep for a fixture ticket. Confirm the file exists at the
+     conventional path, records NONE, is committed alone, and that the printed
+     commit is the one carrying it.
+  2. Forward that printed commit through `swarm_handoff.sh` as a review role
+     and confirm the review-forward evidence gate does not refuse it. Repeat
+     with the bare received hash and confirm it still DOES refuse - the gate
+     must not have been weakened.
+  3. Record a two-item inventory. Confirm both items appear with their blamed
+     role and remediation pointer.
+  4. Record with no verdict supplied. Confirm the refusal names what a verdict
+     must be and that no file was written.
+  5. Record twice for the same ticket, role and day. Confirm the second does
+     not overwrite the first.
+  6. Confirm `git status` shows nothing staged beyond the evidence path in
+     every case above.
+
+notes: |
+  Minted 2026-09-03 by the specifier, from the operator directive to sweep for
+  repeatable agentic tasks that could be deterministic scripts. This is the
+  highest-volume gap the sweep found.
+
+  Verified this pass rather than assumed:
+  - The commit counts above come from `git log --name-only` over 45 days,
+    classifying each commit by whether every path it touched shares one area.
+  - `review_forward_evidence_gate_lib.bb` exists and is a refusal only; no
+    file in `swarmforge/scripts` or `extension/out/tools` writes an evidence
+    file. `perHatRolePromptEvidenceCheck.js` checks prompts, not evidence.
+  - Promotion's 484 commits match `promote_and_route_next.sh:405`'s generated
+    subject exactly, which is what makes the asymmetry measurable rather than
+    impressionistic.
+
+  **No production-wiring anchor is declared (BL-1235).** The tool is a new
+  entry point roles call from their prompts; the only call site an anchor
+  could name is one this parcel creates, which is green by construction. The
+  prompt changes that make it the standard route are the specifier's to land
+  and cannot be pinned to a parcel commit (BL-798).
+
+  IR-DRY: one finding, possible-synonym at 0.5, between scenario 01's Then
+  ("the commit is reported for the role to forward") and scenario 04's When
+  ("the role forwards the reported commit"). That is a produce/consume pair
+  across two scenarios, not drift. Left as written.
+
+source: |
+  Operator directive 2026-09-03: "make the rounds and collect opportunities
+  across the board to turn agentic repeatable tasks into deterministic scripts
+  wherever possible." Ranked first of the opportunities that sweep found; the
+  full inventory is recorded on BL-667.
+
+  Child of BL-667 (EPIC - deterministic transit assist). Sibling of BL-1360
+  (ceremony sends) and BL-1361 (the sweep's silent verdict).

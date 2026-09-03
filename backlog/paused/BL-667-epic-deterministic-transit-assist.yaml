@@ -7,7 +7,7 @@ epic: deterministic-transit-assist
 priority: 1
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-668, BL-1360, BL-1361]
+decomposes_into: [BL-668, BL-1360, BL-1361, BL-1362, BL-1363]
 remaining_slices: |
   - BL-668 (LANDED, and it did not work): post-QA deterministic branch sweep.
     Shipped and running on the handoffd cadence, but measured 2026-09-03 across
@@ -25,6 +25,14 @@ remaining_slices: |
     settle. BL-668 surfaces by writing a log line nobody reads; this makes its
     verdict visible, which is also what makes the pre-merge slice's before/after
     measurable.
+  - BL-1362 (filed 2026-09-03): a review pass records its evidence by tool.
+    Highest-volume gap in the sweep - 2182 of 12903 non-merge commits in 45 days
+    carry nothing but a hand-written evidence file, against a gate hardened three
+    times with no writer behind it.
+  - BL-1363 (filed 2026-09-03): closing a ticket is one command, the mirror of
+    promote_and_route_next.sh. 409 hand-made close commits against 484 generated
+    promotion commits, and a done area split 665 loose against 516 in milestone
+    directories.
   - Delivery-time pre-merge (STILL UNFILED - now the highest-value child, and
     BL-664 has landed so the sizing gate this epic set is satisfied): handoffd
     delivery attempts the merge in the RECIPIENT's worktree (computed from
@@ -68,3 +76,59 @@ description: |
   worktrees computed from roles.tsv — structurally eliminating the cd-habit
   class behind the BL-590 main contamination.
 mutation_cost: low
+
+notes: |
+  ## Sweep of repeatable agentic work, 2026-09-03 (operator-directed)
+
+  Directive: "make the rounds and collect opportunities across the board to
+  turn agentic repeatable tasks into deterministic scripts wherever possible."
+
+  Method: classify every non-merge commit over 45 days by whether all its paths
+  sit in one area, then check each repeated ritual against the existing tool
+  inventory. 12903 non-merge commits; 81% are single-purpose.
+
+  ### Ranked gaps (ritual performed by hand, no tool)
+
+  | # | Ritual | Volume / 45d | Tooling today | Status |
+  |---|---|---|---|---|
+  | 1 | Pass and bounce evidence file | 2182 commits (16.9%) | gate only, hardened 3x | **BL-1362** |
+  | 2 | Ceremony handoff sends | ~2 per ticket | none | **BL-1360** |
+  | 3 | Ticket close and bookkeeping | 409 commits | promote scripted, close not | **BL-1363** |
+  | 4 | Post-QA merge-up | 5 turns per landing | BL-668, near-inert | **BL-1361** + pre-merge |
+  | 5 | QA land sequence | ~1 per ticket | primitives only, no whole-land mode | unfiled, see below |
+
+  ### Already deterministic - do NOT propose these again
+
+  - Promotion and routing - `promote_and_route_next.sh` (484 generated commits).
+  - `backlog/topics/` records - `extension/src/concierge/blTopicStore.ts`
+    (2228 uniform commits).
+  - `human_approval` recording - the bridge and front-desk bot write it on the
+    human's tap (295 commits).
+  - Daily briefings - generated (882 commits).
+
+  ### Opportunity 5, unfiled: the QA land sequence
+
+  `land_main_publish.sh` exposes `--acquire-lock`, `--decide-only` and
+  `--release-lock` but has no mode that performs a whole land. QA orchestrates
+  the five steps by hand after every approval, and BL-1354 records that it has
+  stopped trusting the sibling verdict and hand-builds each one. Not filed here
+  because BL-1354 is ACTIVE and changes what that step concludes - filing a
+  wrapper around it first would spec against a moving contract. File it once
+  BL-1354 lands.
+
+  ### The pattern behind all five
+
+  This swarm reliably builds the ENFORCEMENT for a ritual and leaves the
+  PERFORMANCE of it to an LLM turn. Evidence has a gate hardened three times
+  and no writer; the handoff draft has six send-time gates and no composer;
+  closing has an integrity CLI and no caller. Where both halves exist -
+  promotion - the ritual costs no agent turn at all and drifts nowhere.
+
+  ### Third instance of a related failure, found while sweeping
+
+  `buildTurnProfileSeries` (BL-664, the profiler this epic named as the
+  measurement that would size its own slices) has ZERO production importers.
+  BL-668 shipped and is near-inert; BL-664 shipped and is unwired. Both are the
+  BL-1235 shape - a mechanism built, gated, landed, and reachable by nothing.
+  It is why BL-668's ineffectiveness went a week without notice, and why this
+  sweep had to be done by hand off git history instead of read off a trend.
