@@ -22,7 +22,7 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1370WorktreeStrayCheckSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected - see notes.'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options. The remedy's shape is
   fixed by an existing prompt requirement and an existing classifier.
