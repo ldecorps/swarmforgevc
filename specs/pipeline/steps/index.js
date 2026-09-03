@@ -35,7 +35,6 @@ const DOMAINS = [
   require('./bl1351EventSnapshotConsumersSteps'),
   require('./bl1328QwenModelTokenFormsSteps'),
   require('./bl1337ProfileCastSteps'),
-  require('./bl1296BubbleSeatSteps'),
   require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),
   require('./bl1268StaleClaimNamesThisTicketSteps'),
