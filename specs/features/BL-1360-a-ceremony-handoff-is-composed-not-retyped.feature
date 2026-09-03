@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=12e1c50e266d4a14a8fd08edaa32fc4e19d5eaaae7db88801becac53dee8e6e1
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T13:25:14.974521783Z","feature_name":"A ceremony handoff is composed, not retyped","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1360-a-ceremony-handoff-is-composed-not-retyped.feature","background_hash":"3636d7d1a1397a05fff1b99eba015f0b160864232e238a4affd72167ebbc3baf","implementation_hash":"unknown","scenarios":[{"index":4,"name":"each defined ceremony carries the facts its recipient acts on","scenario_hash":"a32830ebda4e15b14b39ce7d62b440ec146de7bcfc2ebcbd34870cb4ede28827","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-03T13:25:14.974521783Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A ceremony handoff is composed, not retyped
 
   Several pipeline handoffs carry no judgement at all. The QA merge-up

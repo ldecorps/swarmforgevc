@@ -105,7 +105,163 @@
           ["backlog/active/BL-857-a.yaml" "backlog/active/BL-849-b.yaml"
            "backlog/done/BL-849-b.yaml" "backlog/done/BL-857-a.yaml"]))
 
-;; ── validate-close-allowed ───────────────────────────────────────────────
+;; ── BL-1378: the expedite verdict record as a second approval PATH ───────
+;;
+;; The mailbox check asks for a QA git_handoff or note in the coordinator's
+;; mailbox. An expedite run is forbidden by design from touching the mailboxes
+;; at all (BL-567), so it can never produce one, and no ticket it finishes
+;; could be committed to done/ by any route. The expeditor does already write a
+;; durable QA-hat verdict record (BL-1025) that the ONE approval predicate
+;; reads, so the guard reads the same store - an additional PATH to approval,
+;; never a second definition of it (BL-925 invariant 2).
+;;
+;; close-verdict is the pure decision: three answers in, one verdict out. The
+;; fs and git legwork is beside it, so every branch below is checked without a
+;; fixture.
+
+(defn- verdict [& {:as over}]
+  (ticket-close-guard-lib/close-verdict
+   (merge {:qa-mailbox? false :store {:kind :absent} :ancestor? nil} over)))
+
+;; The mailbox path decides first and decides alone. A store that cannot be
+;; read must never break a close the mailbox already approved: invariant 1
+;; says the normal path is exactly as it was, and an unrelated corrupt file
+;; taking the pipeline's own close route down would be a far worse defect than
+;; the one this ticket fixes.
+(assert-true "a QA mailbox handoff still allows the close"
+             (:allowed? (verdict :qa-mailbox? true)))
+(assert-true "and it allows it even when the expedite store is unusable"
+             (:allowed? (verdict :qa-mailbox? true :store {:kind :problem :detail "unreadable"})))
+
+;; The new path.
+(let [v (verdict :store {:kind :approved :commit "c370d1e28a" :store-file ".swarmforge/expedite-approvals/2026-09.jsonl"}
+                 :ancestor? true)]
+  (assert-true "an approved expedite record whose commit reached main allows the close" (:allowed? v))
+  (assert-true "and the verdict names the record it relied on"
+               (str/includes? (str (:detail v)) "c370d1e28a"))
+  (assert-true "including the store it came from"
+               (str/includes? (str (:detail v)) "expedite-approvals")))
+
+;; The human's ruling (option 1, 2026-09-03): the record is not enough on its
+;; own. A ticket in backlog/done/ whose code is on no branch anyone reads is
+;; exactly the BL-1375 situation this must not make official.
+(let [v (verdict :store {:kind :approved :commit "c370d1e28a"} :ancestor? false)]
+  (assert-false "an approved commit that never reached main does not close its ticket" (:allowed? v))
+  (assert= "and the refusal says so" :expedite-commit-not-on-main (:reason v))
+  (assert-true "naming the commit, so it can be looked up"
+               (str/includes? (str (:detail v)) "c370d1e28a")))
+
+;; An ancestry question that could not be answered is not a yes.
+(let [v (verdict :store {:kind :approved :commit "c370d1e28a"} :ancestor? nil)]
+  (assert-false "an unanswerable ancestry check refuses" (:allowed? v))
+  (assert= "as its own reason, not as 'not on main'" :expedite-ancestry-undeterminable (:reason v)))
+
+;; Invariant 2, every shape.
+(doseq [detail ["the store is obstructed by a file"
+                "the store is unreadable"
+                "a record line has no commit field"
+                "a record line has no approval field"]]
+  (let [v (verdict :store {:kind :problem :detail detail})]
+    (assert-false (str "an unusable store refuses: " detail) (:allowed? v))
+    (assert= (str "and says it is a store problem: " detail) :expedite-store-problem (:reason v))
+    (assert-true (str "naming the problem: " detail) (str/includes? (str (:detail v)) detail))))
+
+;; Invariant 2's other half: absence is never approval, and never a store
+;; problem either - it is simply no expedite path, so the mailbox answer stands.
+(let [v (verdict :store {:kind :absent})]
+  (assert-false "an absent store is not an approval" (:allowed? v))
+  (assert= "and it reports the missing QA approval, not a store problem"
+           :missing-qa-approval (:reason v)))
+
+(let [v (verdict :store {:kind :no-match})]
+  (assert-false "a readable store with no matching record is not an approval" (:allowed? v))
+  (assert= "and that too is a missing QA approval" :missing-qa-approval (:reason v)))
+
+;; Invariant 3, checked where the matching happens.
+(let [line {:ticket "BL-9001" :stage "QA" :approval true :commit "c370d1e28a"}]
+  (assert-true "a QA record with approval true matches its own ticket"
+               (ticket-close-guard-lib/expedite-record-approves? line "BL-9001"))
+  (assert-false "one ticket's record never closes another's"
+                (ticket-close-guard-lib/expedite-record-approves? line "BL-9002"))
+  (assert-false "a record from another stage never closes a ticket"
+                (ticket-close-guard-lib/expedite-record-approves? (assoc line :stage "coder") "BL-9001"))
+  (assert-false "and approval false never closes one"
+                (ticket-close-guard-lib/expedite-record-approves? (assoc line :approval false) "BL-9001"))
+  (assert-false "a record with no ticket field matches nothing"
+                (ticket-close-guard-lib/expedite-record-approves? (dissoc line :ticket) "BL-9001")))
+
+;; ── the store reader ─────────────────────────────────────────────────────
+
+(let [root (mk-root)]
+  (assert= "no store at all is :absent"
+           :absent (:kind (ticket-close-guard-lib/expedite-approval root "BL-9001"))))
+
+(let [root (mk-root)]
+  (fs/create-dirs (fs/path root ".swarmforge"))
+  (spit (str (fs/path root ".swarmforge" "expedite-approvals")) "not a directory
+")
+  (let [v (ticket-close-guard-lib/expedite-approval root "BL-9001")]
+    (assert= "a store obstructed by a file is a problem" :problem (:kind v))
+    (assert-true "and the problem names the obstruction" (str/includes? (:detail v) "not a directory"))))
+
+(defn- write-store! [root filename lines]
+  (let [dir (fs/path root ".swarmforge" "expedite-approvals")]
+    (fs/create-dirs dir)
+    (spit (str (fs/path dir filename)) (str (str/join "
+" lines) "
+"))
+    (str (fs/path dir filename))))
+
+(let [root (mk-root)]
+  (write-store! root "2026-09.jsonl"
+                ["{\"at\":\"x\",\"ticket\":\"BL-9001\",\"stage\":\"QA\",\"approval\":true,\"verdict\":\"pass\",\"commit\":\"c370d1e28a\"}"])
+  (let [v (ticket-close-guard-lib/expedite-approval root "BL-9001")]
+    (assert= "a matching record is :approved" :approved (:kind v))
+    (assert= "and carries the commit it approved" "c370d1e28a" (:commit v))
+    (assert-true "and the file it came from" (str/includes? (str (:store-file v)) "2026-09.jsonl"))))
+
+(let [root (mk-root)]
+  (write-store! root "2026-09.jsonl"
+                ["{\"ticket\":\"BL-9002\",\"stage\":\"QA\",\"approval\":true,\"commit\":\"c370d1e28a\"}"])
+  (assert= "a store naming only other tickets is :no-match"
+           :no-match (:kind (ticket-close-guard-lib/expedite-approval root "BL-9001"))))
+
+(let [root (mk-root)]
+  (write-store! root "2026-09.jsonl" ["{\"ticket\":\"BL-9001\",\"stage\":\"QA\",\"approval\":true}"])
+  (let [v (ticket-close-guard-lib/expedite-approval root "BL-9001")]
+    (assert= "a line with no commit field makes the store untrusted" :problem (:kind v))
+    (assert-true "and says which field" (str/includes? (:detail v) "commit"))))
+
+(let [root (mk-root)]
+  (write-store! root "2026-09.jsonl" ["{\"ticket\":\"BL-9001\",\"stage\":\"QA\",\"commit\":\"c370d1e28a\"}"])
+  (let [v (ticket-close-guard-lib/expedite-approval root "BL-9001")]
+    (assert= "a line with no approval field makes the store untrusted" :problem (:kind v))
+    (assert-true "and says which field" (str/includes? (:detail v) "approval"))))
+
+(let [root (mk-root)]
+  (write-store! root "2026-09.jsonl" ["this is not json"])
+  (assert= "an unparseable line makes the store untrusted"
+           :problem (:kind (ticket-close-guard-lib/expedite-approval root "BL-9001"))))
+
+;; A corrupt line ANYWHERE poisons the store, even beside a record that would
+;; have matched: a store that cannot be trusted either way must not hand out
+;; the half of itself that happens to parse.
+(let [root (mk-root)]
+  (write-store! root "2026-09.jsonl"
+                ["{\"ticket\":\"BL-9001\",\"stage\":\"QA\",\"approval\":true,\"commit\":\"c370d1e28a\"}"
+                 "half a line"])
+  (assert= "a matching record beside a corrupt one is still a problem"
+           :problem (:kind (ticket-close-guard-lib/expedite-approval root "BL-9001"))))
+
+;; Blank lines are not corruption - a jsonl file ends in a newline.
+(let [root (mk-root)]
+  (write-store! root "2026-09.jsonl"
+                ["{\"ticket\":\"BL-9001\",\"stage\":\"QA\",\"approval\":true,\"commit\":\"c370d1e28a\"}"
+                 ""])
+  (assert= "a trailing blank line is not corruption"
+           :approved (:kind (ticket-close-guard-lib/expedite-approval root "BL-9001"))))
+
+;; ── validate-close-allowed ───────────────────────────────────────────────;; ── validate-close-allowed ───────────────────────────────────────────────
 
 (let [root (mk-root)]
   (write-ticket! root "active" "BL-551")

@@ -442,3 +442,142 @@ test('paused-pager Expedite route rejects an oversized body without parsing it o
     assert.equal(yamlAfter, originalYaml);
   });
 });
+
+// ── BL-1367: an approval from any surface carries its ruling ───────────────
+//
+// The pager's Approve called recordApprovalReply(targetPath, backlogId) - a
+// signature with no ruling parameter - so a ticket that posed a choice read as
+// fully approved with the choice silently discarded. BL-1309, 2026-09-01.
+
+test('BL-1367: the pager refuses to record consent alone for a ticket that poses a choice', async () => {
+  const target = mkGitTmpWithCli();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-1367',
+    'id: BL-1367\ntitle: poses a choice\nstatus: paused\nhuman_approval: pending\nruling_options:\n  - do it in code\n  - do it by rule\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-1367' }),
+    });
+    // 409, not 500: the request was well formed and the system is healthy; a
+    // rule said no - the same posture the promotion gate takes one route up.
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.reason, 'ruling required');
+    // The pager shows the gate's own words, so the operator learns WHICH
+    // options and where to answer them (BL-572/BL-662).
+    assert.deepEqual(body.options, ['do it in code', 'do it by rule']);
+    assert.match(body.detail, /ruling keyboard/i);
+
+    // Nothing recorded. Half-recording is the state this ticket removes.
+    const yaml = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-1367.yaml'), 'utf8');
+    assert.match(yaml, /^human_approval: pending$/m);
+    assert.equal(/human_ruling/.test(yaml), false);
+  });
+});
+
+test('BL-1367: the pager records the ruling when the tap carries one', async () => {
+  const target = mkGitTmpWithCli();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-1368',
+    'id: BL-1368\ntitle: poses a choice\nstatus: paused\nhuman_approval: pending\nruling_options:\n  - do it in code\n  - do it by rule\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-1368', ruling: 'do it by rule' }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { success: true, id: 'BL-1368' });
+
+    const yaml = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-1368.yaml'), 'utf8');
+    assert.match(yaml, /^human_approval: approved$/m);
+    assert.match(yaml, /^human_ruling: \|\n {2}do it by rule$/m);
+    // HEAD, not the working tree, is the source of truth (BL-892).
+    const headYaml = execFileSync('git', ['show', 'HEAD:backlog/paused/BL-1368.yaml'], { cwd: target, encoding: 'utf8' });
+    assert.match(headYaml, /^human_ruling: \|\n {2}do it by rule$/m);
+  });
+});
+
+test('BL-1367: the pager refuses a ruling the ticket never offered', async () => {
+  const target = mkGitTmpWithCli();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-1369',
+    'id: BL-1369\ntitle: poses a choice\nstatus: paused\nhuman_approval: pending\nruling_options:\n  - do it in code\n  - do it by rule\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-1369', ruling: 'a third way nobody offered' }),
+    });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.equal(body.reason, 'unknown ruling option');
+
+    const yaml = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-1369.yaml'), 'utf8');
+    assert.match(yaml, /^human_approval: pending$/m);
+    assert.equal(/human_ruling/.test(yaml), false);
+  });
+});
+
+test('BL-1367 invariant 3: a ticket posing no choice approves from the pager exactly as before', async () => {
+  const target = mkGitTmpWithCli();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-1370',
+    'id: BL-1370\ntitle: poses no choice\nstatus: paused\nhuman_approval: pending\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-1370' }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { success: true, id: 'BL-1370' });
+
+    const yaml = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-1370.yaml'), 'utf8');
+    assert.match(yaml, /^human_approval: approved$/m);
+    assert.equal(/human_ruling/.test(yaml), false, 'a ticket posing no choice must gain no ruling');
+  });
+});
+
+test('BL-1367 invariant 2: a pager approval never disturbs a ruling already recorded', async () => {
+  const target = mkGitTmpWithCli();
+  // The live shape this guards: BL-1296 was re-pended AFTER a ruling existed.
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-1371',
+    'id: BL-1371\ntitle: re-pended after a ruling\nstatus: paused\nhuman_approval: pending\nhuman_ruling: |\n  the answer already given\nruling_options:\n  - do it in code\n  - do it by rule\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-1371' }),
+    });
+    assert.equal(res.status, 409);
+
+    const yaml = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-1371.yaml'), 'utf8');
+    assert.match(yaml, /^human_ruling: \|\n {2}the answer already given$/m);
+    assert.match(yaml, /^human_approval: pending$/m);
+  });
+});
