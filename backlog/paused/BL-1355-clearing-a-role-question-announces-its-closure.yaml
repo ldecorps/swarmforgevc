@@ -1,0 +1,185 @@
+id: BL-1355
+title: "Clearing a role's question slot tells nobody: the human keeps looking at a question that no longer exists, and an answer typed into it is discarded"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: question-attention-path
+priority: 126
+direction: specifier-found
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: none
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1355-clearing-a-role-question-announces-its-closure.feature
+
+invariants:
+  - "Clearing a role's question slot never fails because the human could not be told - an announcement that cannot be written is reported and the slot still clears."
+  - "A closure is announced only for a clearing that actually happened, and only on the thread the question was asked on - never for a refused or no-op clear, and never on a second channel."
+
+human_approval: pending
+approval_context: >
+  A new feature file needs a look, and one design call inside it is worth stating
+  rather than leaving to be discovered at review. When the closure announcement
+  cannot be written, this ticket clears the slot anyway and reports the failure,
+  rather than refusing the clear. The alternative - refuse the clear until the
+  human can be told - would hold a role's only question channel shut on a
+  transport fault, which is the precise harm epic question-attention-path exists
+  to remove, so it is not offered as a fork. Everything else here is firm: the
+  defect, the single-message fix, and the scope boundary against slice B.
+
+source: |
+  Specifier-found, 2026-09-03, while the specifier's own question slot was the
+  live example. Read off disk this pass, not recalled:
+
+  - `swarmforge/scripts/role_ask.bb`'s `preserve-and-clear!` writes the archive
+    record and deletes `.swarmforge/operator/role-awaiting/<role>.json`. It makes
+    no call to `append-to-outbox!`. The resolve leg is the ONLY path that removes
+    a live marker without the human being party to it: `deliverRoleAnswer`
+    (`extension/src/tools/telegram-front-desk-bot.ts:1782`) clears it on a
+    successful pairing, which by construction means the human just answered, and
+    GH-26's undeliverable path sets `:state` rather than removing the marker.
+  - The ask posts under a synthetic threadId `role-ask-<role>`
+    (`role_ask.bb:104`), which is STABLE for a role across questions. So the
+    question the human is looking at keeps its tappable options after the clear
+    and reads as live.
+  - An answer typed after the clear is stored by `writeRoleAnswerFile` against an
+    `askedAtMs` that no longer has a marker. `deliverRoleAnswer`'s fail-closed
+    pairing (`telegram-front-desk-bot.ts:1777`) then returns `mismatch`, and the
+    answer is discarded with nothing told to the human or the role.
+
+  This is BL-772 slice D's first named half - "stale/superseded closure on
+  Telegram" - and only that half. The rest of slice D (a single source of truth
+  for "is a question outstanding" across role-awaiting, the Cursor bridge queue
+  and the approvals path) stays unminted and is deliberately not folded in here.
+
+description: |
+  ## What is broken
+
+  A role raises a clarifying question with `role_ask.bb --role <r> --question
+  <q>`; it lands in that role's own Telegram topic with buttons and a free-text
+  fallback, and the marker holds the role's single pending slot. When the slot is
+  later cleared with `--resolve`, the marker is deleted and a preserved record is
+  archived - and the topic is never told. Nothing distinguishes, on the human's
+  screen, a question still waiting on them from one that was settled days ago.
+
+  ## Why it matters more than a missing courtesy
+
+  The whole point of epic question-attention-path is that a question raised by
+  the swarm has a guaranteed attention path. A path that opens and never closes
+  is only half of that. Concretely, two costs:
+
+  1. **The human answers into the void.** The buttons stay live-looking, an
+     answer typed against them is recorded, and `deliver-role-answer.js` then
+     refuses it as a `mismatch` because the marker it would pair against is gone.
+     Nobody is told - not the human, not the role.
+  2. **Old questions look live.** The role topic is long-lived and carries every
+     question that role has ever asked. With no closure line, the only way to
+     know whether the top one still wants an answer is to ask someone.
+
+  ## What must be true afterwards
+
+  Clearing a live marker posts ONE message into the same thread the question was
+  asked on, naming the question that was closed and the reason given for closing
+  it. A clear that does not happen - a blank `--reason`, which is refused, or a
+  resolve when nothing was pending - says nothing at all. That asymmetry is the
+  point: the human must never be told a question is closed while it is still
+  holding the slot.
+
+  ## The one failure mode that must not bite
+
+  The announcement is best-effort and never gatekeeps the clear. If the outbox
+  cannot be written, `--resolve` still removes the marker, still archives the
+  preserved record, and reports that the closure could not be announced. Refusing
+  the clear on a failed write would wedge the role's only question channel behind
+  a transport fault - exactly the failure this epic exists to remove, and exactly
+  what a specifier lived through for four days between 2026-08-30 and 2026-09-03.
+  This is invariant 1, and it is the property most worth a generative test: over
+  every combination of marker state and outbox state, a clear that would have
+  succeeded still succeeds.
+
+  ## How (direction, not mandate)
+
+  - The closure belongs on the SAME `append-to-outbox!` and the SAME
+    `(ask-thread-id role)` the ask already uses. Do not add a second outbox, a
+    second thread naming scheme, or a second store. Carrying a marker field such
+    as `roleQuestionClosed` alongside the existing `roleQuestion` is one obvious
+    way to let the bot render it distinctly; the shape is the coder's call.
+  - Order the resolve leg so the announcement is attempted BEFORE the marker is
+    deleted, matching `preserve-and-clear!`'s own existing reasoning: a crash
+    between the two must leave the slot retryable rather than silently cleared.
+    A duplicated closure line on a retry is acceptable noise; a missing one is
+    the defect.
+  - For the unwritable-outbox scenario, `chmod`-based failure simulation is
+    forbidden by the engineering rules. A fixture that creates the outbox PATH as
+    a directory makes the append throw deterministically and portably, with no
+    permission games; any equivalent seam is fine.
+  - Long question text should be truncated in the closure rather than reposted
+    whole; the human needs to recognise which question, not re-read it.
+
+out_of_scope: |
+  - Making the ORIGINAL ask's buttons inert. Editing or removing a posted
+    message's inline keyboard is BL-772 slice B ("a superseded ask's buttons stop
+    being live"), needs message-id tracking this slice does not build, and is not
+    required for the human to know the question is closed.
+  - A `--withdraw` verb distinct from `--resolve`. Today `--resolve` is the one
+    clearing verb and its archive record carries a free-text `reason`; giving
+    "answered out of band" and "no longer wanted" separate, machine-readable
+    dispositions is worth doing and is NOT done here. This slice announces
+    whatever clearing happens, and a later verb inherits the announcement for
+    free.
+  - The single-source-of-truth half of BL-772 slice D across role-awaiting, the
+    Cursor bridge queue and the approvals path.
+  - Anything about whether an unanswered question escalates. That is BL-1347
+    (slice E) and BL-1352, both already minted.
+
+qa_e2e_procedure: |
+  In a live swarm, in the repo root:
+
+  1. `bb swarmforge/scripts/role_ask.bb . --role specifier --question "BL-1355 e2e probe, ignore" --options '["a","b"]'`
+     Expect `{"asked":true,...}`; confirm the question appears in the specifier's
+     own Telegram topic with two buttons.
+  2. `cat .swarmforge/operator/role-awaiting/specifier.json` - note `asked_at_ms`.
+  3. `bb swarmforge/scripts/role_ask.bb . --role specifier --resolve --reason "BL-1355 e2e probe"`
+     Expect `{"resolved":true,...}`.
+  4. `tail -2 .swarmforge/operator/telegram-reply-outbox.jsonl` - the last line
+     must be a closure carrying `"threadId":"role-ask-specifier"`, the probe
+     question text, and the reason. Confirm the closure appears in that same
+     Telegram topic, under the original question.
+  5. Confirm `.swarmforge/operator/role-awaiting/specifier.json` is gone and
+     `.swarmforge/operator/role-awaiting-archive/specifier-<asked_at_ms>.json`
+     exists with the probe question preserved.
+  6. Re-run step 3 with nothing pending: expect `{"resolved":false,"reason":"nothing-pending",...}`
+     and NO new outbox line.
+  7. Run step 3 with `--reason ""` against a fresh pending question: expect exit 2,
+     NO new outbox line, and the marker still present.
+
+notes: |
+  No `required_wiring:` on this ticket, deliberately, per BL-1235. The behaviour
+  changes inside `role_ask.bb`'s own resolve leg, which is already reached by that
+  script's live `-main`; there is no new call site to prove, so every anchor
+  available here would be one this parcel satisfies by construction and would gate
+  nothing. The acceptance runner's own hard failure on an unregistered step handler
+  is the backstop for the handler, and it fires at the hardener's gate rather than
+  silently.
+
+  Acceptance file is a real `.feature`, not a `.feature.draft` - every scenario is
+  bindable today against the existing shell/bb fixture seam that
+  `specs/pipeline/steps/bl1245RoleReopensOwnQuestionSlotSteps.js` already
+  establishes for this exact store. BL-233's parking rule therefore does not apply.
+
+  IR-DRY reviewed 2026-09-03, 5 medium-confidence findings, all deliberate and none
+  actioned: three are the same step text with a different quoted `reason` argument
+  (that argument IS the Gherkin parameter), and two are polarity pairs that must
+  read as opposites (`has no pending question` vs `still has a pending question`;
+  `a closure message is appended` vs `no closure message is appended`). A Scenario
+  Outline does not fit - the scenarios differ in their Given and Then, not only in
+  the argument.
+
+  Consolidation record (BL-680): 1:1 from BL-772's own slice D text, split rather
+  than merged - only slice D's first named half is taken, and the epic's
+  `remaining_slices` entry is amended in the same pass to say so. No operator
+  sentence is dropped: slice D's wording survives verbatim in that entry, with the
+  minted half marked.

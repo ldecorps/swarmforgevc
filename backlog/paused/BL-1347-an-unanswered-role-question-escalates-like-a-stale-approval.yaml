@@ -8,7 +8,7 @@ priority: 125
 direction: specifier-found
 depends_on: [BL-584]
 mutation_cost: medium
-slice_size_envelope: small
+slice_size_envelope: low
 assigned_to: none
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
