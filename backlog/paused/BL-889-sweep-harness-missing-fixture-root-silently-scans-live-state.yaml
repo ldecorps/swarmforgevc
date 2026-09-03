@@ -75,6 +75,34 @@ notes: |
      same probe. Resolve the file against `origin/main` (or your own role
      branch, which has BL-719 merged), not against a stale local `main`.
 
+  ## Amendment 2026-09-03 (specifier) — unblocked from promotion
+
+  This ticket was one of two left starved by the draft-acceptance promotion
+  gate after BL-1340 landed: `promotion_gates_cli.bb audit-acceptance` refused
+  it as "acceptance names draft ... as parked with no conversion pinned". The
+  two `System/exit` wiring entries it already carried are the right anchors for
+  the GUARD, but the gate looks for a `required_wiring:` entry naming
+  `specs/pipeline/steps` — the pin that the draft gets converted rather than
+  shipped unrun. That entry is now declared, and the conversion is spelled out
+  as numbered in-parcel steps under the description's "In-parcel draft
+  conversion" heading.
+
+  Freshness re-checked this pass, not assumed. All three in-scope harnesses
+  still carry the unguarded `(def project-root (first *command-line-args*))`
+  shape today: `dispatch_gap_sweep_harness.bb:25`,
+  `dropped_parcel_sweep_harness.bb:21`, `commit_integrity_856_scenarios_cli.bb:22`.
+  The first two still have ZERO `System/exit` occurrences, so both existing
+  wiring anchors remain live and meaningful rather than pre-satisfied. The
+  third's `System/exit 1` at line 63 is a pre-existing unrelated failure exit,
+  not a missing-root guard — do not read it as the guard already present.
+  `notes:` item 5's local-vs-`origin/main` caveat is now moot:
+  `dropped_parcel_sweep_harness.bb` is present in this checkout.
+
+  No new human approval requested: the amendment adds a mechanical build step
+  the ticket already implied and poses no choice, so re-pending `human_approval`
+  would erase a real approval to collect nothing. The severity question the
+  original `approval_context` raised was already answered at `medium`.
+
 invariants:
   - "No harness under swarmforge/scripts/test/ ever resolves its fixture root relative to the process working directory: an absent root is refused, never defaulted."
   - "A refused invocation is inert — it reads no mailbox, writes no state, and sends no handoff, so the filesystem is byte-identical before and after it."
@@ -82,6 +110,7 @@ invariants:
 required_wiring:
   - "swarmforge/scripts/test/dispatch_gap_sweep_harness.bb::System/exit::the mandated non-zero refusal; this file has zero System/exit occurrences today, so the entry is only satisfied once the guard is actually wired into this harness and not merely into a shared helper"
   - "swarmforge/scripts/test/dropped_parcel_sweep_harness.bb::System/exit::same mandated refusal in the harness the incident actually happened in; also zero System/exit occurrences today"
+  - "specs/pipeline/steps/index.js::bl889HarnessRefusesMissingFixtureRootSteps::the registration line that makes this ticket's own three scenarios executable. This is BL-1340's draft-conversion pin, not a production-wiring proof: it is satisfied by this parcel's own diff by construction, and its job is to stop the draft being renamed without a registered handler (or left a draft and never run at all)."
 
 description: |
   ## What
@@ -130,6 +159,40 @@ description: |
   it covers rather than carry a hardcoded list, so a harness added later
   with the same unguarded shape fails the check instead of shipping the
   hazard again.
+
+  ## In-parcel draft conversion — part of THIS slice, not a follow-up
+
+  `acceptance:` above points at a `.feature.draft`, and this ticket is the
+  slice chartered to build what that draft describes. A draft pointer is a
+  contract nobody ever runs, so converting it is an in-parcel step, in the
+  SAME commit as the guard:
+
+  1. Write `specs/pipeline/steps/bl889HarnessRefusesMissingFixtureRootSteps.js`
+     with a handler for every step in the draft. Scenario 01 is a Scenario
+     Outline over the three in-scope harnesses, so validate its `<harness>`
+     column against an explicit `KNOWN_VALUES` set — no passthrough check.
+     Scenario 03 must drive the real enumerating check, not a stub that
+     returns the same hardcoded list the scenario forbids.
+  2. Register it: add
+     `require('./bl889HarnessRefusesMissingFixtureRootSteps'),` to the
+     `DOMAINS` list in `specs/pipeline/steps/index.js`. File presence is not
+     registration — `specs/pipeline/runtime.js` resolves handlers only
+     through that list.
+  3. Rename
+     `specs/features/BL-889-harness-refuses-missing-fixture-root.feature.draft`
+     to `.feature` and repoint this ticket's `acceptance:` at the renamed
+     path.
+
+  **Do the rename and the registration in one commit.** A live `.feature`
+  whose handlers are not yet registered makes `specs/pipeline/runtime.js`
+  THROW on collection, turning the acceptance suite red for every other
+  parcel in flight, not just this one (BL-233).
+
+  Scenario 01 and 02 both run harnesses that can WRITE. Drive them from a
+  `fs.mkdtempSync` fixture root removed in a `finally` and swept by prefix
+  before the run too, and never let a step resolve a harness root to the
+  repository — an acceptance test for this defect that reproduces the defect
+  is the one failure mode worth designing against here.
 
   ## Constraints
 
