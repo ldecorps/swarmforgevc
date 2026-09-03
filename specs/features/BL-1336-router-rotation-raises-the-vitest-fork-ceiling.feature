@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T01:23:06.185499577Z","feature_name":"BL-1336 a rotation-router pack raises the vitest fork ceiling","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1336-router-rotation-raises-the-vitest-fork-ceiling.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1336 a rotation-router pack raises the vitest fork ceiling
 
   `resolveVitestForkCeiling` is BL-935's CPU-axis ceiling and today reads only
