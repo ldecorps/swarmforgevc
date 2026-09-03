@@ -146,3 +146,5 @@ source: |
   (`INTAKE-operator-bl1375-passenger-must-pass-registration-guard-1788427676244.md`)
   still needed draining. It did not: it was already drained by `22e28654fb`,
   which is one of the three commits stranded on `expedite/BL-1375`.
+
+assigned_to: coder
