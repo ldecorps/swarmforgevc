@@ -600,6 +600,13 @@
             (keep #(second (re-matches #"^diff --(?:cc|combined) (.+)$" %)))
             (str/split-lines (:out res))))))
 
+;; Memoized per (root, commit). `path-owner-tickets` is asked once per
+;; delivered path, and a tip with many paths and a few merges would otherwise
+;; recompute the same whole-merge combined diff dozens of times - on the land
+;; step's critical path, which the BL-1309 ruling already made the everyday
+;; one. Same posture as `own-paths`' own memoized `blocking-for`.
+(def ^:private merge-authored-paths* (memoize merge-authored-paths))
+
 (defn- path-owner-tickets
   "The attribution of `path`'s changes: every commit `commits-fn` reports for
    `path`, run through this file's own commit-ticket-id extractor.
@@ -636,7 +643,7 @@
     (let [attributing (reduce (fn [acc c]
                                 (if-not (merge-commit? root c)
                                   (conj acc c)
-                                  (if-let [wrote (merge-authored-paths root c)]
+                                  (if-let [wrote (merge-authored-paths* root c)]
                                     (cond-> acc (contains? wrote path) (conj c))
                                     ;; unreadable combined diff: blindness, not
                                     ;; "the merge wrote nothing"
