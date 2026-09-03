@@ -71,6 +71,7 @@ briefing_generation_schedule_test_runner.bb	standing
 briefing_generation_sidecar_test_runner.bb	standing		
 build_freshness_lib_test_runner.bb	standing		
 cache_warm_test_runner.bb	standing		
+ceremony_handoff_lib_test_runner.bb	standing		
 chase_activity_nudge_test_runner.bb	standing		
 chase_sweep_test_runner.bb	standing		
 claim_progress_lib_test_runner.bb	standing		
@@ -174,6 +175,7 @@ single_role_repair_lib_test_runner.bb	standing
 standing_rule_violations_files_test_runner.bb	standing		
 standing_rule_violations_lib_test_runner.bb	standing		
 stuck_escalation_email_lib_test_runner.bb	standing		
+suite_baseline_lib_test_runner.bb	standing		
 suite_inventory_lib_test_runner.bb	standing		
 supersede_lib_test_runner.bb	standing		
 support_lib_test_runner.bb	standing		
@@ -214,6 +216,9 @@ test_bl1154_build_stale_not_crash_giveup_budget.sh	standing
 test_bl1159_bridge_child_survives_without_crash_giveup_loop.sh	standing		
 test_bl1162_start_stop_swarm_cron_lifecycle.sh	standing		
 test_bl1317_effort_ladder_parity.sh	standing		
+test_bl1374_sync_merge_passengers.sh	standing		
+test_bl1376_expedite_branch_handover.sh	standing		
+test_bl1378_expedite_close_guard.sh	standing		
 test_bl648_resident_boot_role_override.sh	standing		
 test_bl657_harness_env_scrub_wiring.sh	standing		
 test_bl657_wait_for_ready_sustained_check.sh	standing		
@@ -232,6 +237,7 @@ test_briefing_marker_commit.sh	standing
 test_build_freshness_cli.sh	standing		
 test_build_freshness_land_replay_approved.sh	standing		
 test_cache_warm_lib.sh	standing		
+test_ceremony_handoff_cli.sh	standing		
 test_chase_sweep.sh	standing		
 test_check_branch_namespace.sh	standing		
 test_check_feature_handler_registration.sh	standing		
@@ -440,6 +446,7 @@ test_stop_ancillary_services_onboarder_dual_clear.sh	standing
 test_stop_ancillary_services_tunnel_orphan_reap.sh	standing		
 test_stop_operator_runtime_watch_first.sh	standing		
 test_stop_swarm_freshness_cron.sh	standing		
+test_suite_baseline_cli.sh	standing		
 test_supersede_guard.sh	standing		
 test_support_runtime_tick.sh	standing		
 test_swarm_ensure.sh	standing		

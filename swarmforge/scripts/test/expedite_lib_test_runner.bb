@@ -803,6 +803,102 @@
              (str/includes? (expedite-lib/format-outstanding-summary {:items [] :parked [] :dry-run? true})
                             "nothing outstanding"))
 
+;; ── BL-1376: the run branch is the THIRD named leaving ────────────────────
+;; BL-1375's run walked all seven hats, recorded pass for each, moved the
+;; ticket into backlog/done/ and printed its handover - while expedite/BL-1375
+;; sat three commits ahead of origin/main, on no other branch. Everything the
+;; run said was true; the code had reached nobody. The expeditor deliberately
+;; does not land (Article 1.8/4.2 put integration with QA), so the fix is that
+;; the branch becomes a named leaving with an owner, exactly like the two
+;; already there. Naming a leaving is not performing it.
+
+(defn- bl1376-item [items] (first (filter #(= "the run branch" (:subject %)) items)))
+
+(def bl1376-ahead
+  (expedite-lib/outstanding-work
+   {:ticket "BL-1375" :parked [] :ticket-moved? true
+    :branch {:name "expedite/BL-1375" :ahead 3}}))
+
+(assert-true "bl1376: a branch ahead of origin/main is an outstanding item"
+             (some? (bl1376-item bl1376-ahead)))
+(assert= "bl1376: the item names the branch"
+         "expedite/BL-1375" (:branch (bl1376-item bl1376-ahead)))
+(assert= "bl1376: the item carries how far ahead it is, not just that it is ahead"
+         3 (:ahead (bl1376-item bl1376-ahead)))
+(assert-true "bl1376: the item names an owner - a leaving without one is a drop"
+             (seq (:owner (bl1376-item bl1376-ahead))))
+(assert-true "bl1376: the owner is QA, where the constitution already puts integration"
+             (str/includes? (:owner (bl1376-item bl1376-ahead)) "QA"))
+
+;; Invariant 1, the silent half.
+(assert-true "bl1376: a branch level with origin/main is NOT reported - nothing is left"
+             (nil? (bl1376-item (expedite-lib/outstanding-work
+                                 {:ticket "BL-1375" :parked [] :ticket-moved? true
+                                  :branch {:name "expedite/BL-1375" :ahead 0}}))))
+
+(assert= "bl1376: a DRY run reports nothing at all, branch included"
+         []
+         (expedite-lib/outstanding-work
+          {:ticket "BL-1375" :parked ["BL-586"] :ticket-moved? true :dry-run? true
+           :branch {:name "expedite/BL-1375" :ahead 3}}))
+
+;; Invariant 1, the fail-open half: a check that could not run never reads as
+;; "nothing found".
+(def bl1376-unreadable
+  (expedite-lib/outstanding-work
+   {:ticket "BL-1375" :parked [] :ticket-moved? false
+    :branch {:name "expedite/BL-1375" :reason "origin/main could not be resolved"}}))
+
+(assert-true "bl1376: an unreadable ancestry check REPORTS the branch rather than omitting it"
+             (some? (bl1376-item bl1376-unreadable)))
+(assert= "bl1376: and it carries the reason the distance could not be read"
+         "origin/main could not be resolved" (:reason (bl1376-item bl1376-unreadable)))
+(assert= "bl1376: an unreadable check claims no distance it does not know"
+         nil (:ahead (bl1376-item bl1376-unreadable)))
+
+(assert-true "bl1376: a branch that does not exist yet is silent, not 'unreadable'"
+             (nil? (bl1376-item (expedite-lib/outstanding-work
+                                 {:ticket "BL-1375" :parked [] :ticket-moved? false
+                                  :branch {:name "expedite/BL-1375" :absent? true}}))))
+
+(assert= "bl1376: one definition of the run branch name, shared with the worktree setup"
+         "expedite/BL-1375" (expedite-lib/run-branch-name "BL-1375"))
+
+;; A run with no branch fact at all behaves exactly as it did before this
+;; ticket - the common path is untouched.
+(assert= "bl1376: no branch fact means no branch item, unchanged from BL-1024"
+         2
+         (count (expedite-lib/outstanding-work
+                 {:ticket "BL-1021" :parked ["BL-586"] :ticket-moved? true})))
+
+;; The rendered channel, which is the only one a human reads.
+(def bl1376-text
+  (expedite-lib/format-outstanding-summary
+   {:items (expedite-lib/outstanding-work
+            {:ticket "BL-1375" :parked ["BL-586"] :ticket-moved? true
+             :branch {:name "expedite/BL-1375" :ahead 3}})
+    :parked ["BL-586"]}))
+
+(assert-true "bl1376: the summary names the branch" (str/includes? bl1376-text "expedite/BL-1375"))
+(assert-true "bl1376: the summary states the distance from origin/main"
+             (str/includes? bl1376-text "3 commits ahead of origin/main"))
+(assert-true "bl1376: the summary names an owner for all three leavings"
+             (<= 3 (count (re-seq #"owner:" bl1376-text))))
+;; Naming is not landing: the handover must never read as though it acted.
+(assert-false "bl1376: the summary never claims the branch was landed, merged or pushed"
+              (boolean (re-find #"(?i)\b(landed|merged|pushed)\b" bl1376-text)))
+
+(def bl1376-unreadable-text
+  (expedite-lib/format-outstanding-summary
+   {:items bl1376-unreadable :parked []}))
+
+(assert-true "bl1376: the unreadable case names the branch"
+             (str/includes? bl1376-unreadable-text "expedite/BL-1375"))
+(assert-true "bl1376: the unreadable case names WHY the distance is unknown"
+             (str/includes? bl1376-unreadable-text "origin/main could not be resolved"))
+(assert-false "bl1376: and it never invents a distance"
+              (str/includes? bl1376-unreadable-text "commits ahead of origin/main"))
+
 ;; ── missing-verdict recovery (hotfix: claude -p exits without verdict.json) ─
 ;; BL-1248 cleaner/hardender exited 0 after parking on Monitor/background work,
 ;; wrote no verdict, and the driver hard-failed :no-verdict. Class of failure:
