@@ -1,11 +1,6 @@
 file	disposition	rationale
 test/alertTelemetry.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/bl1012FreshnessSelfInflictedIncidents.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1113CursorHotfixStampOff.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1115MainSyncStatusCliStampOff.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1116ExtensionWipHotfixStampOff.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1117PipelineBoardNumericNbspStampOff.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1136BabysitterdCursorForgeStampOff.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/bl1146HostQueueEnqueueNext.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/bl1147ProbeLegacyTopicAdoption.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
 test/bl1150OutageFailoverCliLoadFileSafe.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
