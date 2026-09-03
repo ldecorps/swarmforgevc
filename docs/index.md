@@ -154,7 +154,7 @@ expects them, and are not migrated or rewritten here.
 - [Local Agent Telegram turn reliability](how-to/BL-1126-local-agent-telegram-turn-reliability.md) — fast-path probes skip Ollama; real turns stream progress and abort cleanly (BL-1126).
 - [Local Ollama mono vs forge under CPU](how-to/BL-1142-local-ollama-mono-vs-forge-cpu.md) — durable decision: mono-router depth 1; uncapped / qwen-forge substitutes refused (BL-1142).
 - [Cold-swap day-shift to Ollama Qwen mono-router](how-to/BL-1143-cold-swap-day-shift-ollama-qwen.md) — verified pack switch + rollback; no qwen-forge thrash (BL-1143).
-- [Reduce frequent QA push-race rematch storms](how-to/BL-1144-frequent-qa-push-races-on-main-land.md) — publish-time rematch + land/close lock; tip purity mandatory (BL-1144).
+- [Reduce frequent QA push-race rematch storms](how-to/BL-1144-frequent-qa-push-races-on-main-land.md) — publish-time rematch + land/close lock; tip purity mandatory (BL-1144); `--decide-only` now also refuses a tip carrying any unlanded sibling's content, unconditionally, fail-open on an unreadable input (BL-1309).
 - [Morning briefing handoff-mechanism diagram](how-to/BL-579-handoff-mechanism-briefing-diagram.md) — HOW a parcel travels; allowlist entry `handoff-mechanism` (BL-579).
 - [Morning briefing front-desk mechanism diagram](how-to/BL-580-front-desk-mechanism-briefing-diagram.md) — Telegram in → answer out; allowlist entry `front-desk` (BL-580).
 - [Mean ticket time ends at close, not a later re-file](how-to/BL-1074-post-close-refile-inflates-measured-ticket-duration.md) — duration ignores post-close `done/` moves (BL-1074).

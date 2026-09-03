@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1309: `land_main_publish.sh`
+`--decide-only` — the one landing step `QA.prompt` cannot skip — now
+consults BL-1241/BL-1308/BL-1354's `entangled-siblings` detector before
+printing a decision, closing the gap that let three tickets QA had
+explicitly held for a human ruling (BL-1300, BL-1307, BL-1295) reach
+`origin/main` anyway as passengers on an unrelated land, over two days,
+each caught only after the fact by a specifier reading git history. Per the
+ticket's human ruling (option 1 of two offered): refusal is unconditional —
+ANY unlanded sibling on the tip, via any route (plain commit, second-parent
+merge, or rematch), prints `ENTANGLED_SIBLING_BLOCK` plus one
+`entangled-sibling: <id>` line per sibling and the tip-pure-replay remedy,
+exits status `3`, and never advises a push; no withheld-vs-ordinary
+predicate exists or is planned, since the point of option 1 is having no
+judgment left to get wrong. `DECISION` (the pre-existing BL-1144 purity
+call) is computed and held before this check runs, so a refusal is never
+preceded by stale push advice, and the land lock is never left held on a
+refusal. Fails open on anything unreadable (no tip SHA, no detector on
+disk, an unticketed tip subject, an unreadable range, a detector error) —
+only a positive finding refuses, matching BL-806/BL-1293/BL-1307's
+tip-purity posture; a blind detector must never become a land outage.
+Measured cost: ~12x slower per `--decide-only` call (1.1s → 13.7s on a real
+tip), inherent to the detector's per-candidate-commit `git log` calls and
+accepted as the ruling's cost, not fixed in this slice. Acceptance:
+`specs/features/BL-1309-the-mandatory-land-decide-step-is-blind-to-entanglement.feature`.
+How-to: `docs/how-to/BL-1144-frequent-qa-push-races-on-main-land.md`
+(extended in place — same script, same operator-facing decide-only call).
+No diagram depicts land-step internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1354: the land step's sibling-landed
 detector (`land_step_lib.bb`) no longer judges a shared file by whole-blob
 equality against `origin/main` — a defect that made EVERY co-owner of a hot
