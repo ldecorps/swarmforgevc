@@ -182,13 +182,18 @@ function registerSteps(registry) {
     assert.equal(p.model, 'claude-opus-5', 'the model moved while effort notches remained');
   });
 
+  // Terminal step of its scenario (BL-971/tempDirTrapGuard, same reasoning as
+  // BL-1320's cleaner pass): a failing assertion above must not skip cleanup.
   scoped(/^no seat's live model or effort changes as a result of the proposal$/, (ctx) => {
     const st = state(ctx);
-    for (const [file, before] of st.before) {
-      assert.ok(before.equals(fs.readFileSync(file)), `the review mutated a live seat file: ${file}`);
+    try {
+      for (const [file, before] of st.before) {
+        assert.ok(before.equals(fs.readFileSync(file)), `the review mutated a live seat file: ${file}`);
+      }
+      assert.equal(st.record.applied, false, 'the proposal record marks itself applied');
+    } finally {
+      fs.rmSync(st.root, { recursive: true, force: true });
     }
-    assert.equal(st.record.applied, false, 'the proposal record marks itself applied');
-    fs.rmSync(st.root, { recursive: true, force: true });
   });
 
   scoped(/^the proposal names the next cheaper model at high effort, not at low effort$/, (ctx) => {
@@ -197,14 +202,18 @@ function registerSteps(registry) {
     assert.equal(p.effort, 'high', 'a cheaper model must start at high effort, never at low');
   });
 
+  // Terminal step of its scenario - same try/finally reasoning as above.
   scoped(/^the proposal records the reason a smaller model starts at higher effort$/, (ctx) => {
-    const p = onlyProposal(ctx);
-    assert.match(p.reason, /deliberation/i, `the proposal does not record why: ${p.reason}`);
     const st = state(ctx);
-    for (const [file, before] of st.before) {
-      assert.ok(before.equals(fs.readFileSync(file)), `the review mutated a live seat file: ${file}`);
+    try {
+      const p = onlyProposal(ctx);
+      assert.match(p.reason, /deliberation/i, `the proposal does not record why: ${p.reason}`);
+      for (const [file, before] of st.before) {
+        assert.ok(before.equals(fs.readFileSync(file)), `the review mutated a live seat file: ${file}`);
+      }
+    } finally {
+      fs.rmSync(st.root, { recursive: true, force: true });
     }
-    fs.rmSync(st.root, { recursive: true, force: true });
   });
 
   scoped(/^the seat's ladder position climbs back to the last known-good notch immediately$/, (ctx) => {
@@ -213,23 +222,31 @@ function registerSteps(registry) {
     assert.equal(after.model, 'claude-opus-5');
   });
 
+  // Terminal step of its scenario - same try/finally reasoning as above.
   scoped(/^the discarded clean-period progress does not carry forward$/, (ctx) => {
     const st = state(ctx);
-    assert.equal(st.afterTrip['clean-periods'], 0, `progress carried forward: ${JSON.stringify(st.afterTrip)}`);
-    fs.rmSync(st.root, { recursive: true, force: true });
+    try {
+      assert.equal(st.afterTrip['clean-periods'], 0, `progress carried forward: ${JSON.stringify(st.afterTrip)}`);
+    } finally {
+      fs.rmSync(st.root, { recursive: true, force: true });
+    }
   });
 
+  // Terminal step of its scenario - same try/finally reasoning as above.
   scoped(/^a changed terminal notch is surfaced as a new proposal, not silently adopted$/, (ctx) => {
     const st = state(ctx);
-    const p = onlyProposal(ctx);
-    assert.equal(p.model, 'cheaper-after-shift', `the re-walk proposed nothing new: ${JSON.stringify(p)}`);
-    assert.match(p.reason, /price/i, 'the proposal does not name the price window as the reason it moved');
-    // The lib's field is :applied?, so the JSON key carries the question mark.
-    assert.equal(p['applied?'], false, 'the re-walked notch marks itself applied');
-    for (const [file, before] of st.before) {
-      assert.ok(before.equals(fs.readFileSync(file)), `the review mutated a live seat file: ${file}`);
+    try {
+      const p = onlyProposal(ctx);
+      assert.equal(p.model, 'cheaper-after-shift', `the re-walk proposed nothing new: ${JSON.stringify(p)}`);
+      assert.match(p.reason, /price/i, 'the proposal does not name the price window as the reason it moved');
+      // The lib's field is :applied?, so the JSON key carries the question mark.
+      assert.equal(p['applied?'], false, 'the re-walked notch marks itself applied');
+      for (const [file, before] of st.before) {
+        assert.ok(before.equals(fs.readFileSync(file)), `the review mutated a live seat file: ${file}`);
+      }
+    } finally {
+      fs.rmSync(st.root, { recursive: true, force: true });
     }
-    fs.rmSync(st.root, { recursive: true, force: true });
   });
 }
 
