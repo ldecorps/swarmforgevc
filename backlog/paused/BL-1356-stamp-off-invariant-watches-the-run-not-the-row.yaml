@@ -38,6 +38,14 @@ approval_context: >
   invariant itself is intact, and that the allowlist has absorbed five instances
   of this already.
 
+  Worth knowing before you rule (2026-09-03): option 1 now has a working
+  precedent. The coder fixed the bl1323 instance in flight - see notes: - and
+  did it the option-1 way, keeping the live ledger and asserting the decision
+  fields instead of a state name. That is one of the six already shipped in
+  that shape, so option 2 would mean converting it back. It is offered as
+  information, not as the answer: nobody has ruled, and a choice made under
+  commit-gate pressure on one file is not a decision about the other five.
+
 ruling_options:
   - option 1 - keep the invariants on the live ledger and assert non-mutation across the run instead of a state literal
   - option 2 - gate on a fixture ledger and move the live-ledger check to a separate non-gating audit
@@ -170,7 +178,8 @@ qa_e2e_procedure: |
      `ps_allowlist_file_is_allowlisted "$tsv" "$file"`. No stamp-off file may
      appear as failing, and none may need an allowlist row to avoid it.
   3. Confirm `property_suite_standing_allowlist.tsv` no longer carries bl1113,
-     bl1115, bl1116, bl1117, bl1136 or bl1323.
+     bl1115, bl1116, bl1117 or bl1136. (bl1323 was never in it - it is the
+     instance that jammed the gate precisely because it had no row.)
   4. Non-weakening check, the important one: in a scratch copy of the repo, edit
      a watched row's `state:` to `certified` and its `human_decision:` to a
      non-null value MID-RUN (a fixture that writes it while the suite executes),
@@ -180,6 +189,55 @@ qa_e2e_procedure: |
      `backlog/hotfix-ledger.yaml` byte-identical (BL-1124 canary territory).
 
 notes: |
+  ## 2026-09-03, same day: the bl1323 instance was fixed out of band
+
+  The coder reported back ("the blocking file was my BL-1323 test; both causes
+  fixed") and it verifies. Two things happened, neither of them this ticket:
+
+  1. The coordinator committed the ledger row (`4fbbd1c03c`, stamp-open ->
+     awaiting-human). That makes the advanced state permanent on main - so the
+     "revert the dirt" option below is gone, correctly.
+  2. The coder rescoped bl1323's assertion inside the **BL-1336 parcel**
+     (`49fca1c741`, `extension/test/bl1323StampOffInvariants.property.test.js`).
+
+  Reviewed the diff: it is the right shape and it does NOT weaken invariant 2.
+  It drops the `/state: stamp-open/` pin, keeps `human_decision: null`, ADDS
+  `decided_at: null`, and tightens the loose `!/certified|waived/` (which
+  matched those words anywhere in the row, including a commit subject) to an
+  anchored `/state:\s*(certified|waived)\b/`. Non-vacuity re-confirmed by the
+  coder and the ledger restored byte-for-byte. **Treat `49fca1c741` as the
+  reference shape** for the five files this ticket still owns.
+
+  WHAT THIS DOES NOT DO. `49fca1c741` is on `master` and the architect, cleaner,
+  documenter and hardender branches - it is NOT an ancestor of `main` yet. And
+  it fixes ONE of six. Re-measured this pass, the other five still pin a moving
+  state literal on BOTH main and master:
+
+      bl1113  state:\s*pending      bl1116  state: pending
+      bl1115  state:\s*pending      bl1117  state: pending
+      bl1136  state:\s*pending
+
+  All five remain in `property_suite_standing_allowlist.tsv`. So this ticket's
+  scope is unchanged in substance - five files plus five allowlist rows - and
+  only its first instance is discharged.
+
+  MEASURE WITH BOTH SPELLINGS. The family writes the pin two ways:
+  `/state: pending/` and `/\bstate:\s*pending\b/`. A grep for the literal form
+  alone finds three of six and reads as if bl1113/bl1115/bl1136 were red for
+  some other reason - this pass made exactly that mistake and caught it only by
+  re-reading the run output. Match `state:[^/]{0,12}(pending|stamp-open)`.
+
+  ONE EXPOSURE WORTH WATCHING. `extension/test/bl1323StampOffInvariants.property.test.js`
+  is not a path BL-1336's ticket declares - no `retires:`, no mention of BL-1323
+  - so the fix rides an undeclared path in someone else's parcel. The coder had
+  little choice: that file was the one thing refusing every commit, so BL-1336's
+  own work could not land without it. If a reviewer bounces the parcel on scope
+  and the revert takes the fix with it (BL-490), the jam returns. Flagged to QA
+  by note rather than adjudicated here - scope is the reviewers' call, not this
+  ticket's.
+
+  ## Original immediate-unblock note, kept for the record
+
   Immediate unblock, separate from this ticket and not waiting on it: as of
   2026-09-03 `backlog/hotfix-ledger.yaml` carries an UNCOMMITTED working-tree
   edit in the shared master checkout advancing the BL-1323 row from `stamp-open`
