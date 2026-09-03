@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c8a460705e3e5cdee777cf621eec3d0fe3af461839a67890e8b40644cc94c513
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T13:26:32.625367292Z","feature_name":"BL-1376 The expedite closing handover names the branch it left unlanded","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1376-the-expedite-handover-never-names-the-unlanded-branch.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the branch is reported unless it genuinely carries nothing","scenario_hash":"d5dfd00648b5ee1b5cc03ac674575069d7942f0c1e3d6a843f10c3985af76d0b","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-03T13:26:32.625367292Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1376 The expedite closing handover names the branch it left unlanded
 
   An expedite run works on expedite/<BL-id> and never lands it - that is
