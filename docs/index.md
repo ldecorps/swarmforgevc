@@ -293,6 +293,7 @@ expects them, and are not migrated or rewritten here.
 - [The hands-free session state machine: wake once, talk, then go quiet](how-to/BL-844-hands-free-session-state-machine.md) — the `PassiveWake`/`ActiveListen`/`Thinking`/`Speaking` states, the 10-second silence window, why a soft closer doesn't restart it while a hard end phrase skips it, the barge-in/push-to-talk interactions, and the manual device procedure.
 - [Querying the price cliff — validity windows in the pricing table](how-to/BL-1056-a-price-with-an-expiry-date.md) — `until`/`then` optional per-row validity metadata, per-instant rate resolution, and the `pricing-windows` CLI that lists closed/closing windows instead of a human having to remember a date (BL-1056; reverses BL-627's one deliberate omission).
 - ["Hey Bubble" — offline, on-device wake spotting](how-to/BL-845-offline-hey-bubble-wake.md) — why the stock cloud-backed `SpeechRecognizer` is unusable for this path, the injected-and-not-yet-chosen spotter engine, the phrase-never-travels and network-silent-passive invariants, the derived-not-hand-assigned colour table, and the manual device procedure.
+- [Querying the price cliff — validity windows in the pricing table](how-to/BL-1056-a-price-with-an-expiry-date.md) — `until`/`then` optional per-row validity metadata, per-instant rate resolution, and the `pricing-windows` CLI that lists closed/closing windows instead of a human having to remember a date (BL-1056; reverses BL-627's one deliberate omission).
 
 ## Reference
 

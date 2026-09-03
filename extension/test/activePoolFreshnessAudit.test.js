@@ -252,6 +252,27 @@ test('checkFreshnessViaCli runs the real built CLI and returns its stdout', () =
   // Real repo root, a ticket id unlikely to exist — exercises the CLI's own
   // fail-closed "no ticket found" path deterministically, never asserting
   // on a specific real ticket's live verdict.
+  //
+  // BL-1066: a fixed `../..` walk-up from __dirname lands one level too
+  // shallow under a Stryker sandbox (the sandbox dir IS the extension root,
+  // not a child of one), so resolveDeprecateCheckCliPath's
+  // `<root>/extension/out/tools/deprecate-check.js` never resolves there and
+  // checkFreshnessViaCli silently returns ''.
+  //
+  // Deliberately NOT `git rev-parse --show-toplevel` here (specifier
+  // correction, rule_proposal accepted-with-fix-amended 2026-09-02): this
+  // test SPAWNS the CLI as a subprocess — `checkFreshnessViaCli` execs
+  // `node <root>/extension/out/tools/deprecate-check.js`, which is exactly
+  // the compiled, Stryker-mutated code this test exists to exercise. A
+  // real-repo-root escape would always run the UNMUTATED build, silently
+  // sparing every mutant deprecate-check.js carries — the sandbox-escape
+  // hazard the BL-1066 section above forbids, not a false alarm here. There
+  // is no clean fix: `resolveDeprecateCheckCliPath` needs a root containing
+  // an `extension/` child, and no such root exists inside a sandbox (the
+  // sandbox dir IS the extension root). Left at the original `../..`
+  // walk-up, which is CORRECT outside Stryker and fails loud (not silently)
+  // inside it — a standing, known Stryker-only red, not a defect to route
+  // around; exclude this file when running Stryker rather than "fixing" it.
   const root = path.join(__dirname, '..', '..');
   const raw = checkFreshnessViaCli(root, 'BL-999999-nonexistent');
   assert.ok(raw.length > 0, 'expected the real CLI to produce output');
