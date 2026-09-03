@@ -450,6 +450,38 @@
         (when (seq reported)
           (str (fs/absolutize (fs/path root reported))))))))
 
+(defn shared-target-root
+  "BL-1339: the ONE root a land-approval record belongs at - git-common-dir's
+   parent, which answers the same from the main checkout and from any linked
+   worktree.
+
+   A pipeline role only ever stands in a linked worktree, so `git rev-parse
+   --show-toplevel` (what the CLI resolves) answers `.worktrees/<role>` and a
+   record written there reaches no consumer: handoffd's push sweep, the
+   babysitter's Article 4.2 sweep and the deploy freshness gate all resolve
+   the store from the target root. BL-1334 therefore shipped fully gated and
+   inert.
+
+   nil when git cannot answer - the caller refuses rather than guessing, since
+   a silent fallback to the caller's directory is precisely this defect."
+  [root]
+  (when-let [common (git-common-dir root)]
+    (str (fs/parent common))))
+
+(defn- append-land-approval! [root c src task-ticket-id]
+  (let [dir (fs/path root ".swarmforge" "land-approvals")
+        month (subs (str (java.time.Instant/now)) 0 7)
+        file (fs/path dir (str month ".jsonl"))
+        line (str "{\"at\":\"" (str (java.time.Instant/now)) "\""
+                  ",\"ticket\":\"" (or task-ticket-id "") "\""
+                  ",\"commit\":\"" c "\""
+                  ",\"source\":\"" src "\"}\n")]
+    (fs/create-dirs dir)
+    ;; append, never truncate - a second land this month must not erase the
+    ;; first and stop the predicate approving everything landed earlier.
+    (spit (str file) line :append true)
+    {:ok? true :file (str file)}))
+
 (defn record-land-approval!
   "BL-1334: record that `commit` (the tip-pure replay this land step is about
    to publish onto main) stands in for `source` - the QA-approved commit the
@@ -467,9 +499,9 @@
    SOURCE is itself approved, so approval cannot spread to whatever happens
    to be written here.
 
-   Appends one JSON line to .swarmforge/land-approvals/<YYYY-MM>.jsonl -
-   append, never truncate, or a second land this month erases the first and
-   the predicate stops approving everything landed earlier.
+   Appends one JSON line to <shared-target-root>/.swarmforge/land-approvals/<YYYY-MM>.jsonl.
+   BL-1339: the SHARED root, not the caller's - see shared-target-root above
+   for why the caller's own worktree reaches no reader.
 
    Refuses (and writes nothing) when either sha is missing: the predicate
    reads a record with no source as corrupt and fails CLOSED, so writing one
@@ -485,16 +517,15 @@
     (if (or (nil? c) (nil? src))
       {:ok? false :reason "land-approval record needs both a replay commit and an approved source"}
       (try
-        (let [dir (fs/path root ".swarmforge" "land-approvals")
-              month (subs (str (java.time.Instant/now)) 0 7)
-              file (fs/path dir (str month ".jsonl"))
-              line (str "{\"at\":\"" (str (java.time.Instant/now)) "\""
-                        ",\"ticket\":\"" (or task-ticket-id "") "\""
-                        ",\"commit\":\"" c "\""
-                        ",\"source\":\"" src "\"}\n")]
-          (fs/create-dirs dir)
-          (spit (str file) line :append true)
-          {:ok? true :file (str file)})
+        ;; BL-1339 invariant 1: exactly ONE location, the shared target root,
+        ;; whichever checkout the land step ran from. Invariant 3: an
+        ;; unresolvable root writes nothing and says so - never a guessed path,
+        ;; and the land still succeeds on the sanctioned override.
+        (if-let [shared (shared-target-root root)]
+          (append-land-approval! shared c src task-ticket-id)
+          {:ok? false
+           :reason (str "land-approval record not written: the shared target root could not be resolved from "
+                        root " - refusing to guess a path (BL-1339)")})
         (catch Exception e
           {:ok? false :reason (str "land-approval record could not be written: " (.getMessage e))})))))
 

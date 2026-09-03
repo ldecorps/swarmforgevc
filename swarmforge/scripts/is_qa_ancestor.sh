@@ -234,7 +234,26 @@ collect_verdict_stores() {
   # SOURCE it names is itself approved, checked below in answer_one. A record
   # naming an unapproved source grants nothing, which is what keeps approval
   # from spreading to anything written into the store.
-  LAND_DIR=".swarmforge/land-approvals"
+  # BL-1339 (human ruling, option 2): the land-approval store is resolved
+  # from the SHARED TARGET ROOT - git-common-dir's parent - not from the
+  # caller's working directory. The writer records there because a pipeline
+  # role only ever stands in a linked worktree, and a predicate that answered
+  # differently depending on who asked is the property this defect is made of.
+  #
+  # Falls back to the relative path when git cannot answer, which is the
+  # pre-existing behaviour for a caller outside a repository: no store found
+  # is "no record ever written", the same fall-through as today. The BOUNCE
+  # stores below deliberately stay on the caller's directory - moving them is
+  # ruling option 3 and its own ticket.
+  LAND_ROOT="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  if [[ -n "$LAND_ROOT" ]]; then
+    LAND_ROOT="$(cd "$(dirname "$LAND_ROOT")" 2>/dev/null && pwd -P || true)"
+  fi
+  if [[ -n "$LAND_ROOT" ]]; then
+    LAND_DIR="$LAND_ROOT/.swarmforge/land-approvals"
+  else
+    LAND_DIR=".swarmforge/land-approvals"
+  fi
   if [[ -e "$LAND_DIR" && ! -d "$LAND_DIR" ]]; then
     LAND_PROBLEM="is_qa_ancestor.sh: undeterminable - land-replay store $LAND_DIR exists but is not a directory (missing/obstructed record store)"
     return 0
