@@ -22,7 +22,7 @@ invariants:
   - "Disposal happens exactly once per scenario that acquired something, on every exit path - normal completion, a handler throw, and a no-handler-match throw alike."
   - "A disposal failure never replaces the failure that caused the abort: the original failure is always what the runner reports."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file, so it needs a look. No ruling is posed and no
   ruling_options are declared - how a step signals that it holds something
@@ -152,6 +152,10 @@ notes: |
   what it proposed was authoring guidance filed at the role that CATCHES this,
   and this ticket is the mechanism that makes the guidance unnecessary. Full
   reasoning: `backlog/evidence/BL-1357-BL-1358-rule-proposal-disposition-20260903.md`.
+
+  2026-09-03 09:0xZ (coordinator): human_approval -> approved, direct chat
+  confirmation (not Telegram - human reported unable to find pending approvals
+  there). No ruling_options on this ticket, so no human_ruling entry.
 
   Split 1:2 (BL-680 consolidation authority). The report names two independent
   missing mechanisms - no scenario teardown, and no mutation ceiling - in

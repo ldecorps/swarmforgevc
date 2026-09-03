@@ -8,7 +8,7 @@ severity: high
 # and the only thing that caught it was a specifier reading git history four
 # lands later. A gate that is bypassable on the mandatory path is a broken
 # safety signal, which is the same grading BL-1293 and BL-1307 carry.
-status: blocked
+status: todo
 epic: swarm-reliability
 priority: 5
 direction: swarm-reported
@@ -232,6 +232,13 @@ notes: |
   is my call once the specifier rules; until then this stays blocked and no
   role should resume it.
 
+  2026-09-03 09:0xZ (coordinator): UNBLOCKED. human_approval was restored via
+  a genuine tap (bb42148fbf, ruling: option 1 - refuse every entangled tip),
+  landing between my checks - confirmed matches the specifier's already-filed
+  answers-archive text. status -> todo. Coder may resume/re-verify against
+  option 1 (the shipped code already matches this shape per QA's technical
+  review; the gap was legitimacy, not correctness).
+
 qa_e2e_procedure: |
   1. On a scratch clone, build a branch tip that merges two tickets' work where
      only one is on `origin/main`. Run
@@ -264,7 +271,9 @@ qa_e2e_procedure: |
   refused. Evidence:
   backlog/evidence/BL-1324-specifier-land-escalate-adjudication-20260902.md.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  refuse every entangled tip, so the tip-pure replay becomes the normal land
 ruling_options:
   - refuse every entangled tip, so the tip-pure replay becomes the normal land
   - refuse only when the entangled sibling is withheld or awaiting approval
