@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5348aee98fb5b07697444b26e6d395c5abb5b355113da8398c8eea53318939f2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T00:55:23.150435889Z","feature_name":"BL-1335 exhaustion evidence is promoted into the outage record BL-669 acts on","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1335-token-exhaustion-opens-an-outage-record.feature","background_hash":"bfea8417ce97bca9aa3abe54618f3f30307e1a3b4f140a75ff78f7caf661c84e","implementation_hash":"unknown","scenarios":[{"index":1,"name":"evidence that is not exhaustion opens no failover record","scenario_hash":"98714f02c5bc36defab3f56c2ec89a15f77522b6dce84b1cbc5da1838d3e2bfc","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-03T00:55:23.150435889Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1335 exhaustion evidence is promoted into the outage record BL-669 acts on
 
   Both halves of this path already exist and neither is broken. They are

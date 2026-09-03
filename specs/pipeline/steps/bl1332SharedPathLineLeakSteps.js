@@ -24,6 +24,7 @@ const LANDING = 'BL-9332';
 const SIBLING = 'BL-9333';
 const SIBLING_LINE = "require('./bl9333SiblingSteps')";
 
+// BL-971: a killed run traps nothing, so sweep by prefix before creating.
 // BL-971 wants stale fixture roots swept BEFORE a run, because a killed run
 // traps nothing. The sweep is AGE-GUARDED rather than prefix-only: scenarios
 // run concurrently and this module can be loaded more than once in a run, so
