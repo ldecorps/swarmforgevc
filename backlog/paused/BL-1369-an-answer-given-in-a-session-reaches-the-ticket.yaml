@@ -1,0 +1,175 @@
+id: BL-1369
+title: "A human answering ruling_options inside an agent session has no path to the ticket: the answer is real, no store witnesses it, and an honest report is indistinguishable from an unverifiable claim"
+milestone: M8
+type: defect
+severity: medium
+# medium: no wrong content lands and the fail is closed - an unrecorded answer
+# leaves the ticket pending, which is safe. The cost is turns and trust: one
+# answered question consumed four agent turns and produced a false accusation
+# against the reporting role before the truth came out. Not high because
+# nothing is corrupted and the human can always re-answer on the ask.
+status: todo
+epic: question-attention-path
+priority: 15
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1369-an-answer-given-in-a-session-reaches-the-ticket.feature
+
+invariants:
+  - "Relaying an answer NEVER records approval: human_approval is the human's own tap and no relay path may write it, however well attested the answer is."
+  - "A recorded ruling always carries its provenance - relayed or tapped, and by whom - so a reader can weigh it rather than having to trust it."
+  - "A relay never overwrites a tapped ruling, and a later tap always supersedes a relayed one - the human's own hand wins in both directions."
+
+required_wiring:
+  - 'extension/src/concierge/pendingApprovalReply.ts::human_ruling::the sole existing ruling writer is the live consumer a relay must go through, never a second writer'
+  - 'specs/pipeline/steps/index.js::bl1369SessionAnswerReachesTicketSteps::acceptance handler registered so the runner executes every scenario'
+
+human_approval: approved
+approval_context: >
+  No choice is posed and there are no ruling_options - deliberately, since this
+  is the ticket about answers going missing and it should not add another
+  question that can go missing.
+  .
+  What to know before approving. This builds a path for an agent to write a
+  ruling you gave in conversation onto a ticket. That is worth reading the
+  bounds on, because it is a mechanism for an agent to record something you
+  said, and the obvious failure is an agent recording something you did not.
+  .
+  The bounds are the three invariants. It can never write `human_approval` -
+  that stays your tap, always. Every recorded ruling says whether it was
+  relayed or tapped and by whom, so nothing pretends to be your own hand. It
+  cannot overwrite a ruling you tapped, and any later tap of yours supersedes a
+  relayed one. And an answer matching none of the declared options is refused
+  rather than interpreted.
+  .
+  If you would rather no agent could ever write that field, say so on approval
+  and I will retire this in favour of the manual archive route - which works
+  today, and which is what I did for BL-1296 by hand.
+
+description: |
+  ## What is wrong
+
+  A ticket poses a choice through `ruling_options`. The answer is recorded when
+  the human taps the ask. But the human does not always answer there - they
+  answer in whichever agent session they are already talking to, and that
+  channel writes to no swarm store.
+
+  From the swarm's side, an in-session answer is byte-for-byte identical to no
+  answer at all: `human_ruling:` absent, `human_approval:` untouched, the
+  stored Telegram ask stale, no operator decision record. There is no way to
+  tell an honest report of a real answer from an unverifiable claim.
+
+  ## Observed - the full cost, 2026-09-03
+
+  BL-1296's echo-vs-worker fork was re-pended to collect a ruling. The operator
+  answered it in the coder's interactive session. Then:
+
+  1. The coder reported the ruling and asked for the approval to be restored.
+  2. The specifier checked four stores, found nothing, declined to restore the
+     approval, and recorded the claim as unverifiable - proposing, wrongly,
+     that the coder had read option 1's "(recommended)" label back out of the
+     ticket as if it were an answer.
+  3. The coder corrected its own evidence file rather than defending it, and
+     stated the real provenance.
+  4. The specifier filed the answer to `backlog/answers-archive/` by hand.
+
+  Four turns, one already-answered question, and a false inference about a
+  colleague's conduct committed to `main` on the way. Every step was reasonable
+  on the evidence available; the evidence was simply not there to be had.
+
+  ## A second instance, the same day, before this was even committed
+
+  BL-1309's refusal-width fork went the same way: answered by the operator in
+  the coder's session, invisible to every store, and read by QA, the
+  coordinator and the specifier as work built on an assumed option. A false
+  statement about the coder's conduct reached `main` and had to be withdrawn
+  (`backlog/answers-archive/ANSWER-2026-09-03-bl1309-refusal-width-refuse-every-entangled-tip-relayed.md`).
+
+  Two tickets in one day, and the second only surfaced because the coder
+  volunteered provenance rather than letting the record stand. That is not a
+  control - it is a colleague being scrupulous. This ticket exists so the swarm
+  does not depend on that.
+
+  Same family from the other end as BL-1245 (a role-ask answer that reaches the
+  human but pairs with nothing), and a sibling of BL-1367 (an approval surface
+  that cannot record a ruling at all).
+
+  ## How (direction, not mandate)
+
+  - A CLI an agent runs to relay an answer it was given: the ticket, the option,
+    who relayed it. It goes through `pendingApprovalReply.ts`'s existing
+    `human_ruling:` writer rather than growing a second one - a second writer is
+    how the two drift and how invariant 3 quietly stops holding.
+  - Matching the answer to a declared option should be exact or refused, never
+    fuzzy. An agent paraphrasing the human into the nearest option is precisely
+    the failure this must not enable.
+  - The provenance field is invariant 2 and is the whole reason this is safe to
+    build. A relayed ruling that reads identically to a tapped one would be
+    worse than no mechanism.
+  - Filing the human's words to `backlog/answers-archive/` stays the
+    specifier's, and stays a separate act from writing the field.
+
+  ## Explicitly NOT in scope
+
+  - Writing `human_approval` from any relay path. Invariant 1, and not
+    negotiable.
+  - The paused-pager route that cannot record a ruling at all (BL-1367) and the
+    hardcoded approval byline (BL-1368).
+  - A general capture of everything the human says in a session. This records
+    an answer to a question a ticket actually asked, and nothing else.
+
+qa_e2e_procedure: |
+  1. Fixture ticket declaring three options, pending. Relay option 2. Confirm
+     `human_ruling:` holds option 2, carries relayed-provenance and the relaying
+     role, and that `human_approval:` is untouched (invariants 1 and 2).
+  2. Relay an answer matching no declared option. Confirm refusal naming the
+     options, and no field written.
+  3. Tap option 1 on the ask, then relay option 3. Confirm the relay is refused
+     and the tapped ruling is byte-identical afterwards (invariant 3).
+  4. Relay option 2, then tap option 1. Confirm the tapped ruling wins and its
+     provenance says tapped (invariant 3, other direction).
+  5. Attempt to relay on a ticket declaring no `ruling_options`. Confirm refusal.
+  6. Grep the implementation for any write to `human_approval` on the relay
+     path and confirm there is none.
+  7. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier, from a coder note flagging the gap after
+  correcting its own evidence file on BL-1296. The coder raised it rather than
+  minting it, which is the right split - and it is worth recording that the
+  correction came voluntarily, because this ticket's whole premise is that the
+  swarm cannot otherwise distinguish an honest relay from a careless one.
+
+  Verified this pass rather than assumed:
+  - `pendingApprovalReply.ts:142` is the sole `human_ruling: |` writer.
+  - No CLI under `extension/out/tools/` records a ruling; `deliver-role-answer.js`
+    serves role asks only, a different store and a different question.
+  - BL-772's slices were checked for overlap before minting: slice D covers a
+    single source of truth for whether a question is OUTSTANDING, which is the
+    other side of this. No slice covers capturing an answer given out of band.
+
+  Both `required_wiring` entries are real. The first anchors
+  `pendingApprovalReply.ts`'s existing writer - a pre-existing live consumer the
+  relay must route through, not a symbol this parcel introduces (BL-1235).
+
+  IR-DRY: nine findings after one fix, max 0.75, all contrasts the scenarios
+  exist to draw (relayed vs tapped, records vs records-no, pending before vs
+  still-pending after). One genuine exact duplicate at 1.0 - "an answer is
+  relayed" against "the answer is relayed" - was fixed by giving scenario 03 the
+  Given the other scenarios have, rather than by rewording the step.
+
+source: |
+  Coder note 2026-09-03 (priority 00) after correcting
+  `backlog/evidence/BL-1296-human-ruling-strict-echo-20260903.md` (`f46f181e02`):
+  "A human answering a ticket's ruling_options inside an agent's interactive
+  session has no path to the ticket's human_ruling: field - the answer is real
+  and the swarm cannot see it."
+
+  The BL-1296 answer itself is filed at
+  `backlog/answers-archive/ANSWER-2026-09-03-bl1296-echo-vs-worker-strict-echo-relayed.md`.
