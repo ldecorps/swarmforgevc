@@ -2003,6 +2003,55 @@ async function processChoicePollAnswer(
   );
 }
 
+// Split out so its `??` fallback is unit-testable as a pure SELECTION,
+// without ever invoking the real (live-agent-spawning) default - the
+// selection is what a test can safely pin; the invocation is what the
+// dispatch tests above already drive via an injected fake.
+export function resolveBubbleSeatTurnFn(
+  deps: Pick<CursorBridgeLoopDeps, 'runBubbleSeatTurnFn'>
+): typeof runBubbleSeatTurn {
+  return deps.runBubbleSeatTurnFn ?? runBubbleSeatTurn;
+}
+
+// BL-1296: the Bubble seat's whole dispatch decision, extracted so the
+// caller's own branch count does not inherit this ticket's complexity on top
+// of `processInboundUpdates`'s pre-existing debt (differential complexity
+// gate, hardener pass). Mirrors the shape of the sibling BL-1235 qwen-seat
+// block still inline above it - not touched here, since it did not regress.
+// Returns whether this event was the Bubble seat's to handle.
+export async function tryDispatchToBubbleSeat(
+  deps: CursorBridgeLoopDeps,
+  // Never undefined at the call site: the caller already returns early on a
+  // falsy `inbound` before either seat-dispatch branch is reached.
+  inbound: CursorBridgeInboundEvent & { messageId?: number },
+  holder: { state: CursorBridgePersistedState; busy: boolean },
+  handlerCtx: ReturnType<typeof makePollHandlerContext>
+): Promise<boolean> {
+  const isBubbleSeatTurn =
+    deps.bubbleSeatTopicId !== undefined &&
+    inbound.kind !== 'callback' &&
+    inbound.topicId === deps.bubbleSeatTopicId;
+  if (!isBubbleSeatTurn) {
+    return false;
+  }
+  // The default is the REAL turn, exactly as the sibling BL-1235 seat
+  // defaults to runLocalSeatTurn. Requiring an injected fn here is what made
+  // this branch dead in production and cost this ticket an architect bounce:
+  // the guard was unconditionally false in the live bridge.
+  const runTurn = resolveBubbleSeatTurnFn(deps);
+  await runTurn({
+    targetPath: deps.repoRoot,
+    topicId: inbound.topicId,
+    seatTopicId: deps.bubbleSeatTopicId,
+    cursorTopicId: holder.state.cursorTopicId,
+    text: inbound.text ?? '',
+    post: async (topicId: number, message: string) => {
+      await handlerCtx.post(deps.botToken, deps.chatId, topicId, message, inbound.messageId);
+    },
+  });
+  return true;
+}
+
 async function processInboundUpdates(
   deps: CursorBridgeLoopDeps,
   updates: TelegramUpdate[],
@@ -2046,26 +2095,7 @@ async function processInboundUpdates(
     // decision is consulted - so cursor is never asked about it, and being
     // mid-turn cannot delay it. `ctx.busy` is deliberately not consulted:
     // waiting on it is the defect this ticket exists to remove.
-    if (
-      deps.bubbleSeatTopicId !== undefined &&
-      inbound.kind !== 'callback' &&
-      inbound.topicId === deps.bubbleSeatTopicId
-    ) {
-      // The default is the REAL turn, exactly as the sibling BL-1235 seat
-      // defaults to runLocalSeatTurn. Requiring an injected fn here is what
-      // made this branch dead in production and cost this ticket an architect
-      // bounce: the guard was unconditionally false in the live bridge.
-      const runTurn = deps.runBubbleSeatTurnFn ?? runBubbleSeatTurn;
-      await runTurn({
-        targetPath: deps.repoRoot,
-        topicId: inbound.topicId,
-        seatTopicId: deps.bubbleSeatTopicId,
-        cursorTopicId: holder.state.cursorTopicId,
-        text: inbound.text ?? '',
-        post: async (topicId: number, message: string) => {
-          await handlerCtx.post(deps.botToken, deps.chatId, topicId, message, inbound.messageId);
-        },
-      });
+    if (await tryDispatchToBubbleSeat(deps, inbound, holder, handlerCtx)) {
       continue;
     }
     const pending = readPendingOperatorConfirm(deps.repoRoot);

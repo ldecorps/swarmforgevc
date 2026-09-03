@@ -99,7 +99,16 @@ test('a front desk that returns an empty answer refuses rather than posting noth
     frontDeskTurnFn: async () => ({ success: true, replyText: '   ' }),
   });
   assert.equal(posted.length, 1);
-  assert.match(posted[0].message, /cannot answer/);
+  // Pin the exact reason text mirrorUnavailableReasonFor's success branch
+  // produces - a bare /cannot answer/ match still passes when that branch is
+  // mutated to '', because decideBubbleSeatTurn's own truthy check on
+  // mirrorUnavailableReason then omits `reason` entirely and
+  // formatBubbleSeatRefusal falls back to its OWN default text, which also
+  // contains "cannot answer".
+  assert.equal(
+    posted[0].message,
+    'Bubble seat cannot answer: the front desk returned an empty answer. No other seat has been asked.'
+  );
 });
 
 // The regression this ticket exists to remove, kept as a test rather than a
