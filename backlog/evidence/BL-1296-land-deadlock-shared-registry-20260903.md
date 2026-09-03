@@ -114,3 +114,73 @@ than an expedite; if not, the expeditor stands.
 - Coordinator notified priority `00`: promote BL-1371, and expect to expedite
   rather than route it.
 - BL-1296's QA approval stands. Nothing in its own domain failed.
+
+---
+
+# Addendum, same pass: BL-1360 escalates identically, and the fast route is verified clean
+
+QA's second priority-`00` escalation of this class arrived while the first was
+being adjudicated (`backlog/evidence/BL-1360-land-escalate-20260903.md`, on
+`swarmforge-QA`). Same mechanism, larger: **9 missing handler modules** now.
+
+    bl1296BubbleSeatSteps.js  bl1309LandDecideStepEntanglementSteps.js
+    bl1356StampOffWatchesTheRunSteps.js
+    bl1359MergeChargedOnlyWithIntroducedSteps.js
+    bl1367ApprovalCarriesItsRulingSteps.js  bl1374SyncMergePassengersSteps.js
+    bl1376ExpediteBranchHandoverSteps.js    bl1377SuiteBaselineSteps.js
+    bl1378ExpediteCloseGuardSteps.js
+
+QA is right that it is compounding rather than steady-state: three of those nine
+are handlers for tickets minted **this morning** (BL-1376/1377/1378), which
+means every ticket that reaches QA joins the jam. Since essentially every ticket
+carries a new acceptance handler, the practical reading is that the land queue is
+closed to new work until this clears.
+
+## The guard is one-directional — checked in the assessor, not the docstring
+
+My first note flagged the handler-files-first route as needing the guard checked
+in both directions before anyone relied on it. Done, against
+`extension/src/tools/featureHandlerRegistrationCheck.ts`:
+
+- `collectUnregisteredHandlers` iterates `tree.featureFiles` and computes a
+  ticket's `own` handlers only for a feature that is present. **A handler file
+  whose `.feature` is not on the tree is never examined**, so it cannot be an
+  `unregistered-handler` offender.
+- `const scanned = registryReadable ? handlers.filter((p) => reachable.has(p)) : handlers`
+  (line 208). An unregistered handler is unreachable, so it is not scanned for
+  `missing-sibling-script` either — while the registry is readable.
+
+So landing the nine handler `.js` files **alone** — no `index.js` edit, no
+`.feature` files — offends nothing, and afterwards every replayed tree's
+`require(...)` lines resolve. Each of the nine tickets can then land normally,
+in any order, with no first-mover problem.
+
+## The two caveats that had to be cleared, both now clear
+
+1. **Sibling lib scripts.** Once a later land makes those handlers *reachable*,
+   they ARE scanned, so anything they reach under `specs/pipeline/steps/lib/`
+   must be on main. Checked all nine against `extractSiblingScripts`'s three
+   quoted forms: **none references a sibling lib script.**
+2. **Transitive requires.** `visitRequiredModule` walks requires from the
+   registry, so a handler's own `require('./x')` must resolve too. Checked all
+   nine: one dependency exists — `bl1359MergeChargedOnlyWithIntroducedSteps`
+   requires `./lib/fixtureReaper` — and
+   `specs/pipeline/steps/lib/fixtureReaper.js` is **already on `origin/main`.**
+
+Nothing else is needed. Note that caveat 2 would NOT have been caught by
+`extractSiblingScripts`, which only reads `path.join(__dirname,'lib',…)`-style
+forms and not a plain `require('./lib/…')` — worth remembering before reusing
+this check.
+
+## Still QA's call, not mine
+
+Landing pipeline code on `main` is QA's (Article 1.8/4.2, BL-247) and I am not
+directing it. What changes with this addendum is that the route is no longer
+speculative: the one question I could not answer in the first note is answered,
+and the residual judgment is the narrower one of whether landing nine tickets'
+handler files ahead of their own lands is acceptable. They are inert until
+required, and each ticket's own approval is unaffected.
+
+If QA judges it acceptable it clears all nine at once. If not, the expeditor
+route on BL-1371 stands — but note BL-1371's parcel registers a handler in the
+same deadlocked file, so it cannot travel the normal pipeline either.
