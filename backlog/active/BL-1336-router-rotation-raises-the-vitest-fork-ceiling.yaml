@@ -11,6 +11,7 @@ mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1336-router-rotation-raises-the-vitest-fork-ceiling.feature
+abandoned_commits: [189a44f6de]
 
 human_approval: approved
 human_ruling: |
