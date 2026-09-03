@@ -1,0 +1,220 @@
+id: BL-1359
+title: "The Article 4.2 sweep charges a merge with paths it never introduced: --first-parent is a no-op on git diff-tree -m, so a merge is judged on the union of every parent's diff"
+milestone: M8
+type: defect
+severity: high
+# high, not critical: it fails CLOSED, so nothing is corrupted and no
+# unapproved code lands. It is graded high because it is a broken health
+# signal, not a nuisance: `specs/pipeline/steps/index.js` is the registry
+# every ticket appends to, so the false charge fires on essentially every
+# merge-up and does not self-clear with time. BL-1344's waive names ONE
+# finding key, so a systematically recurring false positive cannot be
+# absorbed by it - each merge-up would need a fresh waive forever. The
+# failure BL-1344's own approval context named ("an Article 4.2 CRIT that
+# fires forever is one everybody learns to scroll past, and then a real one
+# arrives") is this ticket's actual cost.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1359-a-merge-is-charged-only-with-what-it-introduced.feature
+
+invariants:
+  - "A merge is charged with exactly the QA-exclusive paths it introduced relative to its FIRST parent: never a path whose merge result is byte-identical to that parent, and never fewer paths than that two-tree diff contains."
+  - "Fail-closed is unchanged (BL-962 invariant 3): any git call that cannot answer still withholds the WHOLE sweep as ancestry-unavailable - a narrowed charge set never becomes a silent clean."
+  - "Non-merge commits are charged exactly as they are today; only the merge branch of the touched-path read changes."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1359MergeChargedOnlyWithIntroducedSteps::acceptance handler registered so the runner executes every scenario. Deliberately the only entry - see notes for why no production anchor is offered.'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options, deliberately: the one
+  alternative shape was checked and does not work. Widening the BL-962
+  exemption to also consult the FIRST parent would leave the inflated charge
+  set in place and clear a path only when that parent is itself QA-approved -
+  and the first parent of a role-branch merge-up usually is not, so the false
+  CRITs would survive. Narrowing what a merge is charged with is the only
+  shape that fixes it. The rest is the implementer's.
+  .
+  What to know before approving. This makes a safety gate report LESS, so the
+  bounds are worth reading. It does not touch the BL-962 exemption, the
+  fail-closed rule, or non-merge commits. It removes exactly one class of
+  charge: a QA-exclusive path whose content in the merge is byte-identical to
+  what was already on the branch being merged into - i.e. content the merge
+  demonstrably did not carry in. Measured on live history this pass: two of
+  the three findings the Operator's 2026-09-03 sweep raised drop out, and the
+  third is untouched by this change.
+  .
+  It also must not swing the other way. BL-590 fixed the opposite bug - a
+  plain `diff-tree` reports ZERO files for a merge, making a merge's own
+  content invisible. Its own case (`f8dc07963`) still reports 20 paths under
+  the corrected comparison, and scenario 02 pins that it stays reported.
+
+description: |
+  ## What is wrong
+
+  `commit-touched-paths` (`swarmforge/scripts/babysitter_check.bb:487`) asks
+  which paths a commit touched. For a merge it asks:
+
+      git diff-tree -m --first-parent --no-commit-id --name-only -r <sha>
+
+  `--first-parent` is a revision-traversal option. For a single named commit
+  no traversal happens, so it has no effect on `diff-tree`; `-m` alone decides
+  the output, and `-m` emits one diff section per parent. The answer is the
+  UNION of the diffs against every parent, not the diff against the first one.
+
+  The file's own comment at lines 480-486 states the opposite ("--first-parent
+  restricts that to the ONE comparison that matters here ... matching a
+  non-merge commit's own single-parent diff exactly"). It is that comment, not
+  the behaviour, that everything downstream was reasoned from - which is how
+  this survived BL-962's adjudication being built on top of it.
+
+  ## Why the BL-962 exemption cannot rescue it
+
+  `merge-parent-facts` adjudicates against the NON-first parents only, which
+  is correct once the charge set is right. In this shape it is the FIRST
+  parent that the merge result matches, and it is never consulted - so a path
+  the merge did not introduce can never be cleared.
+
+  ## Measured, not inferred (2026-09-03, live history)
+
+      git diff-tree -m --first-parent ... -r X   vs   git diff-tree ... -r <p1> X
+
+  For `15dc336877` the two forms are byte-identical to each other (54 files
+  both ways, proving --first-parent is a no-op) while the true first-parent
+  diff is 7 files. Restricted to QA-exclusive paths:
+
+  | commit | charged today | truly introduced |
+  |---|---|---|
+  | `15dc336877` merge-up BL-1346 | 7 | **0** |
+  | `e3ce579112` merge-up BL-1344 | 4 | **0** |
+  | `c2cd0ca698` morning briefing  | 4 | 4 |
+  | `f8dc07963` (BL-590's own case) | 38 | 20 (0 with a plain diff-tree) |
+
+  So two of the three findings are pure artefacts of the over-charge, and
+  BL-590's catch survives the correction.
+
+  ## A diagnosis correction, deliberately recorded
+
+  The Operator's evidence note
+  (`backlog/evidence/babysitter-article42-union-merge-false-positive-20260903.md`)
+  attributes this to a UNION merge - both parents editing the shared registry,
+  so the result matches neither parent and byte-identity can never fire. That
+  reading does not survive measurement: for both false-positive commits the
+  merge result IS byte-identical to the first parent for
+  `specs/pipeline/steps/index.js` (blob `99d98d075a` on `15dc336877` and on
+  its first parent `082b70699c`). Nothing was unioned into those paths. The
+  `git diff f1e6a3fd92 e3ce579112` the note offers as proof is precisely the
+  second-parent section that `-m` emits - it is the symptom, read as the cause.
+  The note's proposed remedy (a three-way merge-base comparison) is therefore
+  aimed at a shape these findings do not have.
+
+  A genuine union merge over a QA-exclusive path is still possible and would
+  still be charged after this fix - correctly, since the merge really would be
+  introducing content over its first parent. Adjudicating THAT case is not
+  this slice.
+
+  ## How (direction, not mandate)
+
+  - The comparison that answers both halves is the two-tree diff between the
+    first parent and the merge (`diff-tree ... -r <p1> <sha>`), which matches a
+    non-merge commit's own single-parent diff exactly - the thing the current
+    comment claims and the current command does not do.
+  - Resolving the first parent is one more git call that can fail. It fails
+    closed like every other (invariant 2); a merge whose first parent cannot be
+    resolved is not silently treated as clean.
+  - `merge-parent-facts`, `adjudicate-merge-paths` and `assemble-offending-commits`
+    should not need to change. If the fix reaches them, that is worth saying
+    out loud in the parcel rather than doing quietly.
+  - Both comments that state the false claim are part of this parcel, not a
+    follow-up: `babysitter_check.bb:480-486` and the paragraph in
+    `babysitterd_sweep_lib.bb:449-456` that restates it for the classifier.
+
+  ## Explicitly NOT in scope
+
+  - The back-merge-lag timing blind spot (a non-first parent that is
+    byte-identical but not yet a QA ancestor). That is `c2cd0ca698`'s row above,
+    it self-clears, and it is already on file.
+  - The two TypeScript adapters carrying the same misuse -
+    `extension/src/metrics/bounceRevertGitAdapter.ts:106` and
+    `bounceResurrectionGitAdapter.ts:124`. Same incantation, different consumer
+    (bounce metrics, not the Article 4.2 gate) and no evidence of a live cost
+    yet. Named in notes so they are not lost; they need their own slice if
+    confirmed.
+  - `task_scope_gate_lib.bb`'s opposite-direction bug (`--first-parent` WITHOUT
+    `-m`, which prints nothing for a merge and fails OPEN). That is BL-1297.
+
+qa_e2e_procedure: |
+  1. Build a fixture repo with a `swarmforge-QA` branch and a `main` ahead of
+     it. Add a QA-exclusive path (`specs/pipeline/steps/` or `extension/test/`
+     per `check_pipeline_code_on_main.sh --list-paths`, read at runtime, never
+     restated).
+  2. Create a merge whose result for that path is byte-identical to its FIRST
+     parent while a non-first parent's version differs. Run the sweep: the
+     merge must NOT be reported for that path. Before this ticket it is.
+  3. Create a merge that genuinely adds that path over its first parent, with
+     no QA-approved parent holding it identically. It must still be reported -
+     and confirm a plain `diff-tree` reports zero files for it, so the
+     scenario would catch a regression to BL-590's bug.
+  4. Re-run step 3 with a QA-approved non-first parent holding the path
+     byte-identically: not reported (BL-962's exemption intact).
+  5. Force each git call in turn to fail (touched-path read, ancestry call,
+     content diff). Each must yield ancestry-unavailable with NO offending
+     commit reported.
+  6. Regression against the real repo: re-run the sweep and confirm
+     `15dc336877` and `e3ce579112` no longer appear, that `c2cd0ca698` is
+     unchanged by this ticket, and that `f8dc07963` still reports its paths.
+  7. Remove the fixture repo in a `finally`, and sweep by prefix BEFORE the
+     run too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier while draining a routed Operator health
+  sweep. Verified this pass by running the commands rather than reading the
+  code alone:
+  - `git diff-tree -m --first-parent ... -r 15dc336877` and the same command
+    without `--first-parent` return byte-identical output (54 files), and the
+    raw form prints the commit id twice - one section per parent. That is the
+    whole defect, demonstrated.
+  - `specs/pipeline/steps/index.js` is QA-exclusive
+    (`check_pipeline_code_on_main.sh --list-paths` returns `extension/src/`,
+    `extension/test/`, `specs/pipeline/steps/`).
+  - Blob identity for the two false positives, given in the description.
+
+  **No production-wiring anchor is declared, on purpose (BL-1235).** The fix
+  lives inside `commit-touched-paths`, which `offender-row` already calls. An
+  anchor on either symbol matches identically before and after the fix and
+  would gate nothing, and a green-by-construction entry is worse than none.
+  The only entry is the acceptance-handler registration.
+
+  IR-DRY: three findings, all medium confidence, all between the positive and
+  negative forms of the same assertion or setup ("is reported" / "is not
+  reported", "a QA-approved parent holds" / "no QA-approved parent holds").
+  Those contrasts are what the scenarios exist to draw, not accidental drift -
+  the checker's own suggested action is to normalize only when it is drift.
+  Left as written. The repeated "differs from its first parent" Given cannot
+  move to `Background:` because scenario 01 asserts the OPPOSITE setup, so
+  extracting it would not be meaning-preserving.
+
+  Out of scope but found while verifying, so it is not lost: the same
+  `-m --first-parent` misuse is at `bounceRevertGitAdapter.ts:106` and
+  `bounceResurrectionGitAdapter.ts:124`. Both over-charge a merge the same
+  way; neither has a recorded live cost yet.
+
+source: |
+  Operator health sweep 2026-09-03, evidence
+  `backlog/evidence/babysitter-article42-union-merge-false-positive-20260903.md`
+  ("the remedy is a design question for the specifier, not a loosening the
+  Operator may make"), which refines the Article 4.2 gate-accuracy gap routed
+  to the specifier as `71f7723848` and evidenced in
+  `coordinator-babysitter-article42-false-positive-20260902.md`. Sibling of
+  BL-1334 (a landed replay is QA-approved when it lands) and BL-1344 (an
+  investigated finding can be waived), both landed: those covered the OTHER
+  two sub-causes of the same false-CRIT channel. This is the third and the
+  only one that recurs on every merge-up.
