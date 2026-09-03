@@ -8,6 +8,7 @@ severity: medium
 # multiplies BL-1350's five-minute reconnect cycle by 6.7 MB a time, and it
 # grows monotonically as the done folder grows.
 status: todo
+abandoned_commits: [9c685a0d2e]
 epic: swarm-reliability
 priority: 35
 direction: swarm-reported

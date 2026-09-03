@@ -9,6 +9,7 @@ severity: medium
 # a repair path permission to kill and respawn a live agent pane, which is
 # authority worth a signature.
 status: todo
+abandoned_commits: [0e08407fe9]
 epic: swarm-reliability
 priority: 20
 direction: aligned

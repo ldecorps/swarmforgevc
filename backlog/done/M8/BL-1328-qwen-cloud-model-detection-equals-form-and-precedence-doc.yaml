@@ -8,6 +8,7 @@ severity: medium
 # the --model=<value> form or combines OpenRouter routing with a qwen*
 # --model) — contained, not a live fault, so not high/critical.
 status: todo
+abandoned_commits: [2e359b4302]
 epic: swarm-intelligence-layer
 priority: 22
 direction: human-requested

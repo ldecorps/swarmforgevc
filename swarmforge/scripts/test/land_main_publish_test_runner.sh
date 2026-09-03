@@ -155,4 +155,40 @@ set -e
 grep -q 'ENTANGLED_SIBLING_BLOCK' <<<"$OUT07" && fail "07: unknown ticket refused: $OUT07"
 pass "07 tip naming no ticket → fails OPEN"
 
+# ── 08: FAIL OPEN. A detector that is PRESENT but throws when RUN ────────
+# (hardener-found gap.) Row 06 only tests a MISSING detector, which never
+# even reaches `entangled_sibling_report` - the presence guard short-circuits
+# it, so `|| true` on the substitution is never exercised. A detector that
+# exists but errors partway through (a corrupt land_step_lib.bb, or a real
+# runtime exception inside entangled-siblings) is a DIFFERENT unreadable
+# input, and it is the one `|| true` exists to catch: without it, the
+# substitution's failing exit status trips `set -euo pipefail` and aborts
+# the whole script with NO decision printed at all - neither the ordinary
+# EDN nor the refusal marker - which the caller cannot distinguish from a
+# hang. Confirmed empirically before writing this row: removing `|| true`
+# from the shipped script turns this fixture's exit 0 into exit 1 with
+# empty output.
+FAKE_SCRIPTS08="$(cd "$(mktemp -d -t bl1309-crashlib-XXXXXX)" && pwd -P)"
+cp "$CLI" "$FAKE_SCRIPTS08/land_main_publish.sh"
+cp "$SCRIPT_DIR/../master_main_reconcile_lib.bb" "$FAKE_SCRIPTS08/"
+echo '(throw (ex-info "simulated detector crash" {}))' >"$FAKE_SCRIPTS08/land_step_lib.bb"
+# Non-vacuity: this fixture's tip is currently clean (07 landed the sibling's
+# housekeeping commit on top of an already-fetched origin/main), so confirm
+# the REAL detector, run against this same state, does not refuse either -
+# otherwise row 08 would prove nothing about the crash path specifically.
+set +e
+OUT08PRE="$(bash "$CLI" "$E_ROOT" --decide-only 2>&1)"
+CODE08PRE=$?
+set -e
+[[ "$CODE08PRE" -eq 0 ]] || fail "08: precondition broken - the real detector already refuses here: $OUT08PRE"
+set +e
+OUT08="$(bash "$FAKE_SCRIPTS08/land_main_publish.sh" "$E_ROOT" --decide-only 2>&1)"
+CODE08=$?
+set -e
+rm -rf "$FAKE_SCRIPTS08"
+[[ "$CODE08" -eq 0 ]] || fail "08: a crashing detector aborted the script instead of failing open, got $CODE08: $OUT08"
+grep -q 'ENTANGLED_SIBLING_BLOCK' <<<"$OUT08" && fail "08: a crashing detector still refused: $OUT08"
+grep -q ':purity-action' <<<"$OUT08" || fail "08: no ordinary decision when the detector crashed: $OUT08"
+pass "08 detector present but crashes when run → fails OPEN, ordinary decision printed"
+
 echo "ALL PASS: land_main_publish.sh"
