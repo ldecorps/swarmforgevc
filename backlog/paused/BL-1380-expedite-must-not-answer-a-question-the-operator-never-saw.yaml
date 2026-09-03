@@ -23,7 +23,9 @@ invariants:
   - "A refusal here leaves the ticket exactly where it was and names the gate and the options - never a silent no-op. This is BL-1083 invariant 2 unchanged, not a new rule."
   - "A ticket with no ruling_options expedites exactly as it does today, including the case where it was never pending approval at all."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Refuse with a 409 naming the gate and the ruling options, so you answer and then expedite (recommended)
 approval_context: >
   This one is about your phone, which is why the shape is yours rather than
   mine. The defect is not in question and I am not asking about it.
