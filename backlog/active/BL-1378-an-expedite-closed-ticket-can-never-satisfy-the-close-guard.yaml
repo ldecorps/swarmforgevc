@@ -1,0 +1,194 @@
+id: BL-1378
+title: "The close guard demands a QA handoff in the coordinator's mailbox, which an expedite run is forbidden by design from ever placing there, so no expedite-closed ticket can be committed to backlog/done/ by any route"
+milestone: M8
+type: defect
+severity: high
+# high: it fails CLOSED, which is why nothing is at risk - but it is a
+# permanent, structural block on a whole sanctioned delivery route, not a
+# flake. Every ticket the expeditor has ever finished is in this state, and
+# the only ways past it are bypassing the guard that stops silent closes or
+# forging a QA handoff. Not critical: the pipeline's normal path is unaffected
+# and no work is lost.
+status: todo
+epic: swarm-reliability
+priority: 11
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1378-an-expedite-closed-ticket-can-never-satisfy-the-close-guard.feature
+
+required_wiring:
+  - 'swarmforge/scripts/ticket_close_guard_lib.bb::expedite-approvals::the close guard must itself read the expedite verdict store - today the file has no mention of it, and its one live caller commit_integrity_cli.bb already reaches it'
+
+invariants:
+  - "This adds an approval PATH, never a second definition of approval (BL-925 invariant 2). A close with no expedite verdict record still requires a QA git_handoff or note in the coordinator's mailbox naming the ticket, exactly as today."
+  - "A verdict store that is missing, obstructed, unreadable, or holds a malformed record refuses the close and says why - it is never read as absent, and absence is never read as approval."
+  - "An expedite record closes only the ticket id it names, and only when it is a QA-stage record with approval true. One ticket's record can never close another's."
+
+human_approval: approved
+human_ruling: |
+  Require both the expedite QA verdict record and the approved commit being an ancestor of main (recommended) - BL-1375 stays blocked until QA lands its branch
+approval_context: >
+  Routed to me by the coordinator on your ruling of 2026-09-03, so the defect
+  itself is settled and is not what I am asking about. Two things are.
+  .
+  First, a correction you should have before you decide. The evidence I was
+  handed says "The fix landed on main". It did not, and still has not:
+  expedite/BL-1375 is three commits ahead of origin/main and contained by no
+  other branch. That is a separate defect, minted as BL-1376. It matters here
+  because it turns the choice below from bookkeeping into something real.
+  .
+  Second, the choice. The expeditor already writes a durable QA verdict record
+  that the one approval predicate (is_qa_ancestor.sh) reads, so the fix is to
+  let the close guard read that same store rather than parse a log or invent a
+  marker. The open question is whether the close should ALSO require that the
+  approved commit actually reached main.
+  .
+  I recommend requiring it, because otherwise this ticket makes the BL-1375
+  situation official: a ticket in backlog/done/ whose code is on no branch
+  anyone reads. But it is genuinely arguable that this ticket should fix the
+  gate and leave landing to BL-1376, and the two options differ in what happens
+  to BL-1375 today, so it is yours.
+
+ruling_options:
+  - Require both the expedite QA verdict record and the approved commit being an ancestor of main (recommended) - BL-1375 stays blocked until QA lands its branch
+  - Require the expedite QA verdict record only - BL-1375 becomes closable as soon as this lands, and an unlanded branch is left for BL-1376 to catch
+  - Neither - reject the expedite exception and require expedite runs to route a real QA handoff to the coordinator instead
+
+description: |
+  ## The block
+
+  `commit_integrity_cli.bb` refuses any `active/` -> `done/` commit unless
+  `qa-approved-ticket?` (`swarmforge/scripts/ticket_close_guard_lib.bb`, BL-419
+  / BL-869) finds a `git_handoff` or `note` **from QA** in the coordinator's own
+  mailbox naming the ticket id:
+
+      (and (= "QA" from)
+           (contains? #{"git_handoff" "note"} typ)
+           (contains? (set (... ticket-ids-from-headers ...)) ticket-id))
+
+  `expedite.sh` runs with the whole stack stopped and is forbidden by design
+  from touching "handoffd, the mailboxes, tmux, rotation or the coordinator"
+  (`expedite_lib.bb`; BL-567). So an expedite run can never put that handoff
+  where the guard looks. The precondition is not merely unmet for BL-1375 — it
+  is unsatisfiable for **every** expedite-closed ticket, permanently.
+
+  Verified rather than assumed: the only handoffs naming BL-1375 in
+  `.swarmforge/handoffs/coordinator/inbox/` are two from the **specifier**.
+  There is no QA one and there structurally cannot be.
+
+  ## Correction to the evidence I was handed
+
+  `backlog/evidence/expedite-close-gate-qa-mailbox-gap-20260903.md` states "The
+  fix landed on `main`." It did not. `expedite/BL-1375` is **3 commits ahead of
+  `origin/main`** and `git branch -a --contains c370d1e28a` returns that branch
+  alone. That is its own defect (**BL-1376**: the expedite handover never names
+  the branch it left unlanded) and is why the correction is load-bearing here
+  rather than pedantic — see `ruling_options`.
+
+  ## How (direction, not mandate)
+
+  The suggested shape was a run-log parse or a new marker file. Neither is
+  needed, because the durable record already exists and is already trusted:
+
+      .swarmforge/expedite-approvals/2026-09.jsonl
+      {"at":"...","ticket":"BL-1375","stage":"QA","approval":true,
+       "verdict":"pass","commit":"c370d1e28a"}
+
+  Written only by `expedite_lib.bb` at the QA hat, never hand-authored (BL-1025),
+  and already consulted by `is_qa_ancestor.sh` — the ONE approval predicate
+  (BL-925 invariant 2), whose own comment says it "stays ONE predicate with one
+  more approval path, never a second definition of approval". That is precisely
+  the posture this ticket needs, so:
+
+  - Have `qa-approved-ticket?` consult that store by ticket id, alongside — not
+    instead of — the mailbox check. Invariant 1.
+  - Copy `is_qa_ancestor.sh`'s undeterminable handling verbatim in spirit: it
+    raises `EXPEDITE_PROBLEM` when the store is obstructed, unreadable, or holds
+    a line with no `commit` or no `approval` field, and refuses rather than
+    guessing. Invariant 2 is that behaviour, not a new idea.
+  - `is_qa_ancestor.sh` keys on the commit sha and this guard keys on the ticket
+    id. The record carries both, so no new key is invented — but the record must
+    match on `ticket`, `stage: QA` and `approval: true` together. Invariant 3.
+
+  ## Scope note on the feature file
+
+  The acceptance file as written assumes ruling option 1 (record **and**
+  landed). If option 2 is chosen, scenario
+  `BL-1378 landed-on-main-is-also-required-04` is **retired** — retired, not
+  reworded — and the rest stands unchanged. Nothing here is built yet, so this
+  is an amendment before the coder starts, not a BL-233 slice-boundary problem.
+
+  ## Explicitly NOT in scope
+
+  - Making the expeditor use the mailboxes. That reverses BL-567's whole premise
+    (it exists to work when the machinery it repairs is stopped) and is offered
+    only as ruling option 3, for completeness.
+  - Landing `expedite/BL-1375` itself. That is QA's (Article 1.8/4.2, BL-247);
+    already surfaced to the coordinator by priority-`00` note.
+  - The handover reporting gap (BL-1376).
+
+qa_e2e_procedure: |
+  1. Fixture: a ticket with an expedite QA verdict record and an `active/` ->
+     `done/` move. Confirm `commit_integrity_cli.bb` now allows the close, and
+     that its output names the record it relied on rather than saying nothing.
+  2. Same fixture with NO expedite record and no QA mailbox handoff. Confirm it
+     still refuses with today's `missing-qa-approval` reason (invariant 1).
+  3. Normal-path fixture: QA handoff present, no expedite record. Confirm the
+     close is allowed exactly as today — the regression that matters most.
+  4. Record present but `approval:false`, then `stage` not QA, then naming a
+     DIFFERENT ticket. Confirm each refuses (invariant 3).
+  5. Store obstructed (a file where the directory should be), then unreadable,
+     then a line missing `commit`, then a line missing `approval`. Confirm each
+     refuses and names the problem (invariant 2). Confirm an absent store is
+     treated as "no expedite path", falling back to the mailbox check, and is
+     never itself an approval.
+  6. Under ruling option 1 only: record present and valid, but the named commit
+     is NOT an ancestor of main. Confirm the close is refused naming the commit.
+  7. Live regression: BL-1375's own `active/`+`paused/` -> `done/` move. Under
+     option 1 it stays refused until `expedite/BL-1375` lands; under option 2 it
+     is allowed. Confirm whichever the ruling selected, and do not bypass the
+     guard to make it pass.
+  8. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  `required_wiring` is a genuine anchor here, not the BL-1235 fail-open shape:
+  `ticket_close_guard_lib.bb` contains no mention of `expedite` today (verified
+  by grep this pass), and its one live caller — `commit_integrity_cli.bb:98`,
+  which the coordinator runs on every close — already reaches it. So the
+  pattern can only appear if the guard actually reads the store, and the code
+  it lands in is already on a production path. Single physical line, single
+  YAML quotes, no apostrophes in the why.
+
+  BL-1375's close move stays staged and uncommitted until this lands. That is
+  the human's ruling and is recorded here so nobody "tidies" it away: the
+  correct state of that move is uncommitted, not forced through.
+
+  IR-DRY: 5 findings, max 0.80 - "the approved commit is an ancestor of main"
+  against its own negation, which is the contrast scenarios 01 and 04 exist to
+  draw. Deliberately NOT collapsed into one outline: the ticket may retire
+  scenario 04 whole if ruling option 2 is chosen, and a fused outline could
+  only be reworded, which the retire-never-reword rule forbids. The remaining
+  four are present/absent and placeholder/literal contrasts.
+
+  Mint-time INVEST: one observable outcome (an expedite-closed ticket can be
+  committed to done/ by the normal guard), one sitting, no unbuilt sibling —
+  the store it reads has existed since BL-1025.
+
+source: |
+  Coordinator note (priority 00, 2026-09-03T11:08Z): "DEFECT: expedite closes
+  fail QA close gate. grep evidence/ 20260903." pointing at
+  `backlog/evidence/expedite-close-gate-qa-mailbox-gap-20260903.md`, which
+  records the human's ruling of 2026-09-03 via the coordinator's `role_ask`:
+
+    "Route this as a defect for the specifier to mint. BL-1375's own close move
+    stays staged, uncommitted, until this lands - do not bypass the gate."
+
+  That directive is preserved verbatim above and its two halves are honoured
+  here: the defect is minted, and the staged move is left alone.
+
+assigned_to: coder

@@ -24,7 +24,7 @@ invariants:
   - "The handover is silent only when the branch genuinely has nothing to land: no commits ahead of origin/main, or the run changed nothing (--dry-run). An unreadable ancestry check reports the branch as outstanding rather than omitting it."
   - "The handover never claims a land happened - it names a leaving and its owner, the same shape as the two items already there. This ticket adds no merge, push, or publish to the expeditor."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two feature files are new this pass and both want your eye; this is the one
   with a design decision inside it.
