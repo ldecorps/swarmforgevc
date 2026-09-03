@@ -141,6 +141,7 @@ original process is left running. A second start while the pidfile is
 .swarmforge/babysitterd/nudge-dedup.json      {finding-key -> last-nudged-ms}
 .swarmforge/babysitterd/pane-hash-<role>      last 3 stable content hashes (check 7)
 .swarmforge/babysitterd/session-repairs.json  {role -> {"attempts" n "last-ms" ms}} — the repair cooldown budget (BL-1017)
+backlog/babysitter-waives.yaml                {finding-key -> {waived-by reason waived-at}} — tracked, survives a .swarmforge/ wipe (BL-1344, below)
 ```
 
 This is deliberately **not** `.swarmforge/babysitter/` (no `d`) — that
@@ -593,6 +594,67 @@ Verify with `bash swarmforge/scripts/test/test_babysitter_check.sh` and
 `bb swarmforge/scripts/test/bl1086_cache_and_batch_property_runner.bb`.
 Acceptance feature:
 [`specs/features/BL-1086-babysitterd-caches-and-batches-its-qa-ancestry-gather.feature`](../../specs/features/BL-1086-babysitterd-caches-and-batches-its-qa-ancestry-gather.feature).
+
+## Waiving an investigated, permanent-history finding (BL-1344)
+
+The nudge cooldown (`nudge-dedup.json`, above) is right for a condition that
+will clear — it spaces the reminder out until it does. Check 13's own finding
+key (`pipeline-code-on-main-<sha>`, above) never clears: a commit is
+permanent, so the cooldown only reschedules the nudge every 30 minutes for as
+long as the swarm runs, even after a human has investigated and confirmed the
+commit is a legitimate QA land or an already-fixed, already-tracked incident.
+
+`babysitter_waive.bb` is the one mechanical way to close that out. It never
+runs itself — only a human or the coordinator runs it, after investigating:
+
+```bash
+# Record a waive (waived-at defaults to today, YYYY-MM-DD)
+bb swarmforge/scripts/babysitter_waive.bb <project-root> --record <finding-key> <waived-by> "<reason>" [<YYYY-MM-DD>]
+
+# List every recorded waive
+bb swarmforge/scripts/babysitter_waive.bb <project-root> --list
+
+# Withdraw one, e.g. because the underlying commit needs re-litigating
+bb swarmforge/scripts/babysitter_waive.bb <project-root> --withdraw <finding-key>
+```
+
+The store is a tracked YAML, `backlog/babysitter-waives.yaml` — deliberately
+in the same neighbourhood and posture as the hotfix ledger
+([BL-848](BL-848-certify-an-operator-hotfix.md)) this ticket names as
+precedent, so a waive survives a `.swarmforge/` wipe. `babysitter_check.bb`
+applies it BEFORE the cooldown decision (`babysitter_waive_lib.bb`'s
+`partition-findings`): a waived finding neither nudges nor stamps the dedup
+file, but it is still printed in the sweep's finding list and reported as
+`WAIVED [<finding-key>] nudge suppressed by a recorded waive` — suppression
+is a visible overlay on the record, never an erasure of it.
+
+Three bounds, each load-bearing:
+
+- **One key, one waive.** A waive names exactly the finding key it was
+  recorded against; a second finding of the same class over a **different**
+  commit still nudges. A waive that covered "this kind of finding" would hide
+  the next real one.
+- **The sweep never creates, widens or renews a waive.** Only the CLI, run by
+  a human, writes the store — the same BL-848 posture: a machine may
+  propose, only a recorded decision disposes.
+- **Unreadable means nudge, not silence.** A missing, unreadable or malformed
+  store nudges every finding and prints `WAIVE-STORE-UNUSABLE <reason>` —
+  suppression requires a positively read waive, never the absence of a
+  readable answer.
+
+Scope: the waive silences the coordinator **nudge** only. The same finding's
+operator `BABYSITTER_ESCALATION` (if it has crossed that separate threshold)
+still fires — extending the waive there is an explicit follow-up, not this
+mechanism's job yet.
+
+Verify:
+
+```bash
+bb swarmforge/scripts/test/bl1344_waive_lib_test_runner.bb
+```
+
+Acceptance feature:
+[`specs/features/BL-1344-an-investigated-finding-can-be-waived.feature`](../../specs/features/BL-1344-an-investigated-finding-can-be-waived.feature).
 
 ## Verify
 
