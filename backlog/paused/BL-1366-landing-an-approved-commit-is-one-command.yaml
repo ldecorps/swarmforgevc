@@ -1,0 +1,161 @@
+id: BL-1366
+title: "land_main_publish.sh documents a caller protocol nothing implements: QA hand-orchestrates lock, decide, rematch, push FF-only and release after every approval, with force-push and a stuck lock one slip away"
+milestone: M8
+type: feature
+status: todo
+epic: deterministic-transit-assist
+priority: 12
+direction: human-requested
+depends_on: [BL-1354]
+mutation_cost: low
+slice_size_envelope: medium
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1366-landing-an-approved-commit-is-one-command.feature
+
+invariants:
+  - "Never force-push and never retry unboundedly: at most ONE rematch onto the current origin tip, then wait on the lock - exactly the protocol land_main_publish.sh's own header states."
+  - "The land lock is released on EVERY exit path, including a rejected push, an escalation, and an unexpected error - a failed land never leaves the lock held for the next one."
+  - "A LAND_ESCALATE verdict is never auto-resolved: the command stops, reports it, and leaves main untouched. That judgement is QA's, and taking it would be the tool deciding what to land."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1366LandingIsOneCommandSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
+
+human_approval: approved
+approval_context: >
+  No choice is posed and there are no ruling_options. One scope question came
+  up and is settled in the ticket rather than asked.
+  .
+  Settled - this lands, it does not notify. The merge-up broadcast and the
+  coordinator's bookkeeping note are BL-1360's, and the two compose cleanly
+  once both exist. Bundling them now would make a mid-sequence failure
+  ambiguous about what did and did not happen.
+  .
+  What to know before approving. This is the riskiest slice of the determinism
+  sweep, because it is the one that pushes. It adds no new git behaviour: every
+  primitive already exists and the sequence is already written down in
+  `land_main_publish.sh`'s own header. What changes is that the sequence stops
+  being retyped from memory after every approval. The three invariants are the
+  three ways a hand-run land goes wrong - a force-push, a lock left held, and
+  an escalation quietly pushed past - and they are stated so a reviewer can
+  check each one rather than trust the orchestration.
+
+description: |
+  ## What is wrong
+
+  `land_main_publish.sh` states the protocol its callers must follow, in its
+  own header:
+
+  > Callers that push must acquire the land lock first, rematch if advised,
+  > then push FF-only (never force). Residual races rematch at most once then
+  > wait on the lock.
+
+  It exposes `--acquire-lock`, `--decide-only` and `--release-lock`. There is
+  no mode that performs a land, and no caller in the repo implements the
+  protocol. QA performs it by hand after every approval - and alongside it runs
+  `land_step_cli.bb` for the entanglement verdict and `issue_done.sh` for a
+  `GH-`-seeded ticket.
+
+  ## Why now, and not a month ago
+
+  This was the fifth opportunity in the 2026-09-03 determinism sweep and the
+  one deliberately left unfiled, because BL-1354 was active and changing what
+  the entanglement verdict CONCLUDES. Wrapping a moving contract would have
+  specced against the wrong semantics.
+
+  BL-1354 has since landed. QA reported the resulting contract directly:
+  **the landed-sibling verdict is per-ticket, not per-path** - a sibling is now
+  judged on its own attributed lines rather than on whole-blob equality of a
+  shared file, and merge commits are excluded from that attribution. The
+  verdict the wrapper consumes is now the one worth acting on, which is
+  precisely what made it safe to file.
+
+  ## The three hazards this must not reintroduce
+
+  Each invariant is a real failure this swarm has already had.
+
+  1. **Force-push.** Forbidden by BL-1144 and by QA's own prompt. A wrapper
+     that retries a rejected push is one bad branch away from reaching for it.
+  2. **A lock left held.** `release_lock` is `rm -rf` on a directory; a land
+     that dies between acquire and release blocks every subsequent land until
+     someone clears it by hand.
+  3. **An escalation pushed past.** `LAND_ESCALATE` means the tool could not
+     establish that the tip is clean. Landing anyway is how another ticket's
+     unlanded work reaches `main`.
+
+  ## How (direction, not mandate)
+
+  - A mode on `land_main_publish.sh` or a sibling script that performs the
+    documented sequence. Reuse the existing primitives; do not reimplement the
+    decision, the lock, or the rematch.
+  - `land_step_cli.bb`'s three outcomes are the branch points: `LAND_CLEAN`
+    lands the cited commit, `LAND_REPLAY` lands the replayed one it names,
+    `LAND_ESCALATE` stops (invariant 3).
+  - Release via a trap or equivalent, so invariant 2 holds on paths nobody
+    enumerated.
+  - Bounded waiting, with a deadline rather than an unbounded loop - the
+    repo-wide guardrail for lock loops.
+
+  ## Explicitly NOT in scope
+
+  - The merge-up broadcast and the coordinator bookkeeping note (BL-1360).
+  - Anything about what the entanglement verdict concludes. BL-1354 settled
+    that; this consumes it.
+  - The approval decision itself, which is QA's alone.
+
+qa_e2e_procedure: |
+  1. Fixture repo with an origin. Land a clean approved commit; confirm it
+     reaches main, the push used no force, and the lock directory is gone.
+  2. Move origin between the check and the push. Confirm exactly one rematch
+     onto the new tip, then a successful FF-only push.
+  3. Move origin again immediately after that rematch. Confirm the land WAITS
+     on the lock rather than rematching a second time, and that it gives up on
+     a deadline rather than spinning.
+  4. Force `land_step_cli.bb` to `LAND_ESCALATE`. Confirm main is byte-identical
+     before and after, the escalation is reported, and the lock is released.
+  5. Kill the land mid-sequence between acquire and push. Confirm no lock
+     directory survives, and that a subsequent land succeeds.
+  6. Land a `GH-`-seeded ticket and confirm the issue is closed; land a
+     non-`GH-` ticket and confirm no issue call is attempted.
+  7. Grep the implementation for `--force` and `-f` on any push path and
+     confirm there is none.
+  8. Remove the fixture root in a `finally`, and sweep by prefix before the
+     run too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier on a QA `note` (priority 00): "Landed-
+  sibling verdict is per-ticket not per-path - see BL-1354 land-success". That
+  note lifted the blocker BL-667's sweep inventory recorded against this
+  opportunity.
+
+  Verified this pass rather than assumed:
+  - `land_main_publish.sh` has exactly three modes (`--decide-only`,
+    `--acquire-lock`, `--release-lock`) and no land mode; its header states the
+    caller protocol quoted in the description.
+  - `.swarmforge/land-main.publish.lock` is referenced by that script and by
+    QA's prompt, and by nothing else in the repo - so no existing caller
+    implements the protocol.
+  - `land_step_cli.bb` prints `LAND_CLEAN` / `LAND_REPLAY` / `LAND_ESCALATE`
+    (lines 62, 87, 92/99), which are this wrapper's branch points.
+  - BL-1354 is in `backlog/done/` with a full QA approval recording 5/5
+    acceptance, both invariants green over three isolated runs, and the fix
+    read directly rather than trusted from the evidence chain.
+
+  **No production-wiring anchor is declared (BL-1235).** The only call site is
+  the one this parcel creates, and an anchor on the existing primitives matches
+  identically before and after. The prompt change making this QA's standard
+  route is the specifier's to land (BL-798).
+
+  IR-DRY: two findings at 0.8 and 0.5 - "origin has moved" against "origin has
+  not moved", and the Background's "QA has approved a commit" against the
+  action "QA lands the approved commit". A negation pair and a setup/action
+  pair. Left as written.
+
+source: |
+  QA note 2026-09-03. Fifth and last opportunity of the determinism sweep
+  recorded on BL-667, held back at mint because BL-1354 was active and moving
+  the contract this consumes.
+
+  Child of BL-667 (EPIC - deterministic transit assist). Sibling of BL-1360,
+  BL-1361, BL-1362, BL-1363.
