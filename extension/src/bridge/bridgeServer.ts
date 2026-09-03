@@ -129,6 +129,14 @@ import { execFileSync } from 'child_process';
 import { estimateEpicEta } from '../metrics/epicEta';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
+// BL-1350: how often an idle /events connection is written to. Node's bundled
+// undici applies a 300000 ms bodyTimeout BETWEEN BODY CHUNKS, and a silent
+// stream therefore dies with `TypeError: terminated` after five idle minutes -
+// which the front-desk relay counts as a reconnect FAILURE, so a quiet swarm
+// read as a chronic outage and BL-1111's sustained-outage alert fired on a
+// phantom one every 2-4 hours. 20000 ms is one fifteenth of that timeout,
+// chosen for margin rather than measured.
+const DEFAULT_SSE_KEEPALIVE_INTERVAL_MS = 20000;
 const LOCALHOST = '127.0.0.1';
 // BL-240: the gate-answer body is a short {role, answer} JSON payload (a
 // human-typed reply) - capped well above any realistic answer so a
@@ -287,6 +295,10 @@ export interface BridgeHandle {
 export interface StartBridgeOptions {
   port?: number;
   pollIntervalMs?: number;
+  // BL-1350: injectable so the suite can drive the keepalive on a fake clock
+  // rather than waiting 20 s of real time (engineering.prompt, Test Speed And
+  // Isolation - no real timers). pollIntervalMs is the precedent.
+  keepaliveIntervalMs?: number;
   // BL-270: injectable evaluation instant for /stage-dwell (and any future
   // route that reads the clock), so a test can pin the SAME instant its
   // fixture timestamps are built from - two independent real `new Date()`
@@ -2000,6 +2012,7 @@ export function startBridge(
 ): Promise<BridgeHandle> {
   const port = options.port ?? 0;
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  const keepaliveIntervalMs = options.keepaliveIntervalMs ?? DEFAULT_SSE_KEEPALIVE_INTERVAL_MS;
 
   return new Promise((resolve) => {
     const sseClients = new Set<http.ServerResponse>();
@@ -2274,6 +2287,44 @@ export function startBridge(
       return totalLines;
     }
 
+    // BL-1350. Named `writeSseKeepalive` and defined HERE, in the module that
+    // owns sseClients and the timers, because a keepalive helper that is
+    // unit-tested but never reached from the running server would leave the
+    // defect fully unfixed behind a green suite (BL-1235).
+    //
+    // The frame is an SSE COMMENT, which is inert to every consumer of this
+    // stream: a browser EventSource ignores comments natively, and this repo's
+    // own reader finds neither an `event: ` nor a `data: ` line in it, so no
+    // reply is delivered, none acknowledged, and no cursor moves. Holding the
+    // socket open is all it does.
+    function writeSseKeepalive(clients: Iterable<http.ServerResponse>): number {
+      let written = 0;
+      for (const client of clients) {
+        // A client that has gone away is dropped rather than written to: the
+        // close handler removes it, but a write racing that removal must not
+        // throw out of the timer and kill the loop for every other client.
+        if (client.writableEnded || client.destroyed) {
+          sseClients.delete(client);
+          continue;
+        }
+        try {
+          client.write(': keepalive\n\n');
+          written += 1;
+        } catch {
+          sseClients.delete(client);
+        }
+      }
+      return written;
+    }
+
+    const keepalive = setInterval(() => {
+      if (sseClients.size === 0) {
+        return;
+      }
+      writeSseKeepalive(sseClients);
+    }, keepaliveIntervalMs);
+    keepalive.unref();
+
     const poll = setInterval(() => {
       if (sseClients.size === 0) {
         return;
@@ -2310,6 +2361,7 @@ export function startBridge(
         getRegistry: () => registry,
         stop: () => {
           clearInterval(poll);
+          clearInterval(keepalive);
           unsubscribeHostActivity();
           for (const client of sseClients) {
             client.end();
