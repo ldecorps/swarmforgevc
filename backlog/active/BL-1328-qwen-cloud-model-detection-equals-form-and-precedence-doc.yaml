@@ -129,6 +129,20 @@ description: |
      it instead would leave BL-1324's contract asserting behaviour BL-1324 never
      shipped.
 
+     **The ROW, not the Scenario Outline.** Retire one Examples row. The Outline
+     `extra_cli_targets_qwen_cloud detects a qwen* --model token` stays, and so do
+     its other three rows, every one of which is still true after this fix:
+
+         | --model qwen3.8-max --effort high        | true   |
+         | --model claude-sonnet-5 --effort high    | false  |
+         | --effort high                            | false  |
+
+     Deleting the whole Outline would drop live coverage this ticket does not
+     replace: its own Outline uses the `=` spelling for the negative case
+     (`--model=claude-sonnet-5`), so BL-1324's SPACE-form negative and its
+     no-model-at-all case exist nowhere else. That would be exactly the
+     assert-less "fix" the non-weakening constraint below forbids.
+
   2. `extension/test/bl1324ClaudeSeatQwenCloudContextWindowInvariants.property.test.js`,
      invariant 1's `content` and `worktree` faces. They assert `hotfixRegions()`
      of `swarmforge/scripts/swarmforge.sh` is **byte-identical to 4ed88430b2** at
