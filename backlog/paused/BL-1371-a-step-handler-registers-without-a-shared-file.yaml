@@ -2,7 +2,7 @@ id: BL-1371
 title: "936 step handlers register by appending to one hand-maintained array, so every ticket edits the same file and every gate reports the coupling - three distinct incident classes so far, none of them a bug in the gates"
 milestone: M8
 type: defect
-severity: medium
+severity: critical
 # medium: every gate involved is behaving correctly and nothing wrong has
 # landed because of this - the failures are false blocks and correct refusals,
 # not corruption. Graded medium rather than low because it recurs across three
@@ -11,7 +11,7 @@ severity: medium
 # blocked land always has a documented remedy.
 status: todo
 epic: code-quality-gates
-priority: 16
+priority: 1
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
@@ -187,6 +187,51 @@ notes: |
 
   IR-DRY: one finding at 0.57, between "a file that exports no steps" and "that
   file contributes no steps" - the setup and its assertion. Left as written.
+
+  ## Re-graded 2026-09-03 (specifier): medium -> critical, priority 16 -> 1
+
+  Filed as a coupling every gate reports. It is now the ONLY exit from a
+  stopped land queue, so the old grading no longer describes it.
+
+  BL-1375 fixed the first shared-path deadlock (approval-state narrowing, which
+  works - verified). The human's rider on it then added a registration-guard
+  check on the replayed tree, and that correct guard combines with BL-1332's
+  replay-a-shared-path-WHOLE rule into a second deadlock that no ruling about
+  refusal width can reach:
+
+  - a sibling's `require(...)` line lives in the shared `index.js` and rides
+    whole; its handler `.js` file is its own path and cannot follow;
+  - so the replayed tree has a dangling module and is refused - correctly.
+
+  Proved circular on four tickets today. `swarmforge-QA:index.js` carries the
+  requires for BL-1296/1309/1356/1359; `origin/main:index.js` carries none of
+  them and all four handler files are absent from main. Whichever lands first
+  is refused on the other three. There is no first mover.
+
+  Evidence: `backlog/evidence/BL-1296-land-deadlock-shared-registry-20260903.md`
+  and QA's own `backlog/evidence/BL-1296-land-escalate-20260903.md`.
+
+  ## It cannot travel the normal pipeline - expect to expedite it
+
+  This ticket's own `required_wiring` names
+  `specs/pipeline/steps/index.js::bl1371StepDiscoverySteps`, so its parcel
+  registers a handler in the very file that is deadlocked and its own land
+  would be refused for the same reason. That is the expeditor's charter
+  verbatim - the fix cannot ride the pipeline it is repairing - and an expedite
+  merges its branch rather than replaying tip-pure, so it can land the handler
+  file and its require line together.
+
+  Three known costs of that route, all ticketed today, none a blocker:
+  BL-1376 (the run will not name its unlanded branch - check
+  `git branch --contains` after), BL-1378 (its active->done close move will be
+  refused by the QA-mailbox guard), BL-1379 (it parks the active queue into
+  `backlog/hold/` and does not reverse it).
+
+  `human_approval` is untouched. Nothing about the ticket's scope, invariants or
+  acceptance changed - only its grading and this record. If the re-grade alone
+  needed a fresh human decision I would have asked; it does not, because the
+  human already approved the work and Article 3.2.4 derives the ordering from
+  severity mechanically.
 
 source: |
   QA note 2026-09-03 (priority 00): "BL-1356 LAND_ESCALATE index.js shared w/
