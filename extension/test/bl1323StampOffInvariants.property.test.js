@@ -53,14 +53,36 @@ function reconcileLib(expression) {
 }
 
 test('BL-1323/BL-654 invariant 1: the stamp-off parcel never edits the code it reviews', () => {
-  // Measured against origin/main rather than asserted in prose: whatever this
-  // parcel changed, none of it may be the hotfix's own sources.
-  const changed = execFileSync('git', ['diff', '--name-only', 'origin/main...HEAD'], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-  })
+  // Measured, not asserted in prose: whatever THIS PARCEL changed, none of it
+  // may be the hotfix's own sources.
+  //
+  // Scoped to the stamp-off's own commits, not to `origin/main...HEAD`. The
+  // branch-wide diff was wrong the moment any LATER ticket on the same branch
+  // touched a reviewed file - BL-1335 legitimately edits handoffd.bb, and this
+  // invariant went red on work that has nothing to do with the stamp-off. The
+  // invariant is about this parcel, so the range must be too.
+  const commits = execFileSync(
+    'git',
+    ['log', '--format=%H', '--grep', 'BL-1323', 'origin/main..HEAD'],
+    { cwd: REPO_ROOT, encoding: 'utf8' },
+  )
     .split('\n')
     .filter(Boolean);
+
+  // No BL-1323 commit in range means the parcel has landed and the question is
+  // settled elsewhere - not that it edited something.
+  if (commits.length === 0) return;
+
+  const changed = commits
+    .flatMap((sha) =>
+      execFileSync('git', ['show', '--first-parent', '--name-only', '--format=', sha], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+      })
+        .split('\n')
+        .filter(Boolean),
+    )
+    .filter((v, i, a) => a.indexOf(v) === i);
 
   for (const reviewed of REVIEWED_SOURCES) {
     assert.ok(
