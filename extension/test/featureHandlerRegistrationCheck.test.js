@@ -30,6 +30,14 @@ function tree(files) {
   };
 }
 
+// BL-1371: registration is DISCOVERY - a top-level `*Steps.js` file in the
+// steps directory is registered by existing. The registry file itself is still
+// walked for explicit `require` hops (a handler pulled in by another file, a
+// module the tree does not carry), which is the half these fixtures drive; the
+// real index.js no longer has any. A handler that discovery cannot reach is
+// therefore one named OUTSIDE the predicate - `...Handler.js` below, never
+// `...Steps.js` - which is exactly what the narrowed 'unregistered-handler'
+// offender is now about.
 function registry(...modules) {
   return `const DOMAINS = [\n${modules.map((m) => `  require('./${m}'),`).join('\n')}\n];\n`;
 }
@@ -50,19 +58,32 @@ test('a feature whose handler is registered reports no offender', () => {
   assert.deepEqual(offenders, []);
 });
 
-// ── 02: handler file present, registration absent ───────────────────────────
-test('a handler file present but absent from the registry is an offender naming both', () => {
+// ── 02: handler file present, discovery cannot reach it ─────────────────────
+test('a handler file present but unreachable from the registry is an offender naming both', () => {
   const offenders = assessFeatureHandlerRegistration(
     tree({
       'specs/features/BL-1253-dead-feeder.feature': 'Feature: dead feeder',
       [`${STEPS}/index.js`]: registry('backlogSteps'),
       [`${STEPS}/backlogSteps.js`]: 'module.exports = {};',
-      [`${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampSteps.js`]: 'module.exports = {};',
+      [`${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampHandler.js`]: 'module.exports = {};',
     })
   );
   assert.deepEqual(kinds(offenders), ['unregistered-handler']);
-  assert.equal(offenders[0].path, `${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampSteps.js`);
+  assert.equal(offenders[0].path, `${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampHandler.js`);
   assert.equal(offenders[0].feature, 'specs/features/BL-1253-dead-feeder.feature');
+});
+
+// ── 02b: the same handler NAMED so discovery reaches it is no offender ──────
+test('a handler file discovery reaches needs no registration entry at all', () => {
+  const offenders = assessFeatureHandlerRegistration(
+    tree({
+      'specs/features/BL-1253-dead-feeder.feature': 'Feature: dead feeder',
+      // The registry names nothing: under discovery it does not have to.
+      [`${STEPS}/index.js`]: registry(),
+      [`${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampSteps.js`]: 'module.exports = {};',
+    })
+  );
+  assert.deepEqual(offenders, []);
 });
 
 // ── 03: registered handler reaching for an absent sibling script ────────────
@@ -131,9 +152,9 @@ test('one pass reports every offending feature, not only the first', () => {
       'specs/features/BL-3-three.feature': 'Feature: three',
       [`${STEPS}/index.js`]: registry('backlogSteps'),
       [`${STEPS}/backlogSteps.js`]: 'module.exports = {};',
-      [`${STEPS}/bl1OneSteps.js`]: 'module.exports = {};',
-      [`${STEPS}/bl2TwoSteps.js`]: 'module.exports = {};',
-      [`${STEPS}/bl3ThreeSteps.js`]: 'module.exports = {};',
+      [`${STEPS}/bl1OneHandler.js`]: 'module.exports = {};',
+      [`${STEPS}/bl2TwoHandler.js`]: 'module.exports = {};',
+      [`${STEPS}/bl3ThreeHandler.js`]: 'module.exports = {};',
     })
   );
   assert.equal(offenders.length, 3);
@@ -151,8 +172,8 @@ test('offenders of different kinds are reported together in one pass', () => {
   const offenders = assessFeatureHandlerRegistration(
     tree({
       'specs/features/BL-1-one.feature': 'Feature: one',
-      [`${STEPS}/index.js`]: registry('bl2TwoSteps', 'bl4GoneSteps'),
-      [`${STEPS}/bl1OneSteps.js`]: 'module.exports = {};',
+      [`${STEPS}/index.js`]: registry('bl4GoneSteps'),
+      [`${STEPS}/bl1OneHandler.js`]: 'module.exports = {};',
       [`${STEPS}/bl2TwoSteps.js`]: "const CLI = path.join(__dirname, 'lib', 'bl2Cli.sh');",
     })
   );
@@ -211,6 +232,29 @@ test('a handler kept in a subdirectory of steps/ resolves like any other', () =>
       })[p] ?? null,
   });
   assert.deepEqual(offenders, []);
+});
+
+// BL-1371 hardening: isDiscovered's guard is `startsWith(prefix) &&
+// !includes('/')` - a *Steps.js file sitting in a SUBDIRECTORY of steps/
+// starts with the prefix but fails the second half, so it must NOT be
+// auto-discovered even though nothing excludes it by suffix. The `tree()`
+// helper above can never build this case (its stepFiles regex forbids any
+// slash after steps/), so this fixture is built directly, listing the nested
+// file in stepFiles the way real discovery would find it on disk.
+test('a *Steps.js file nested one level under steps/ is not auto-discovered', () => {
+  const offenders = assessFeatureHandlerRegistration({
+    featureFiles: ['specs/features/BL-9999-nested.feature'],
+    stepFiles: [`${STEPS}/index.js`, `${STEPS}/sub/bl9999NestedSteps.js`],
+    libFiles: [],
+    readFile: (p) =>
+      ({
+        'specs/features/BL-9999-nested.feature': 'Feature: nested',
+        [`${STEPS}/index.js`]: 'const DOMAINS = [];',
+        [`${STEPS}/sub/bl9999NestedSteps.js`]: 'module.exports = {};',
+      })[p] ?? null,
+  });
+  assert.deepEqual(kinds(offenders), ['unregistered-handler']);
+  assert.equal(offenders[0].path, `${STEPS}/sub/bl9999NestedSteps.js`);
 });
 
 test("a require inside steps/lib/ resolves against lib/, not against steps/", () => {
@@ -394,8 +438,8 @@ test('the refusal names every offender and says the report is complete', () => {
       'specs/features/BL-2-two.feature': 'Feature: two',
       [`${STEPS}/index.js`]: registry('backlogSteps'),
       [`${STEPS}/backlogSteps.js`]: 'module.exports = {};',
-      [`${STEPS}/bl1OneSteps.js`]: 'module.exports = {};',
-      [`${STEPS}/bl2TwoSteps.js`]: 'module.exports = {};',
+      [`${STEPS}/bl1OneHandler.js`]: 'module.exports = {};',
+      [`${STEPS}/bl2TwoHandler.js`]: 'module.exports = {};',
     })
   );
   const text = formatFeatureHandlerRefusal(offenders);

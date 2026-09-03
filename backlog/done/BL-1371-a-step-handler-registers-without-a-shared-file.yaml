@@ -29,6 +29,7 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::discoverHandlerFiles::handlers are discovered from their own files - the shared DOMAINS array is gone, so this is the anchor that proves loading (updated in-parcel per notes; the provisional bl1371StepDiscoverySteps array entry could not survive the array it named)'
   - 'specs/pipeline/steps/index.js::loadHandlers::every discovered file is required and registered; a file that cannot be loaded fails loudly, naming it (invariant 1)'
+  - 'specs/pipeline/steps/bl1371StepDiscoverySteps.js::module.exports = { registerSteps };::UPDATED IN-PARCEL (coder, 2026-09-03) as the mint instructed: this parcel removed the DOMAINS array, so the old anchor (index.js::bl1371StepDiscoverySteps) names a file that no longer mentions any handler and the entry would have blocked the documenter forward. Under discovery the handler file existing in specs/pipeline/steps/ with a registerSteps export IS its registration, so that export is the anchor that now proves loading. Still green-by-construction, as the mint noted of the old one - the durable check is the acceptance feature plus P1/P3 in extension/test/bl1371StepDiscoveryInvariants.property.test.js.'
 
 human_approval: approved
 approval_context: >
@@ -233,6 +234,99 @@ notes: |
   needed a fresh human decision I would have asked; it does not, because the
   human already approved the work and Article 3.2.4 derives the ordering from
   severity mechanically.
+
+  ## Expedite specifier stage, 2026-09-03: premises re-verified
+
+  Stage 00 of the expedite run re-checked every premise rather than trusting
+  the mint. What holds, and what drifted:
+
+  - The registry is 937 `require('./...')` lines now, not 936. It grows daily;
+    invariant 1 is a SET comparison for exactly this reason, so the number in
+    the description is context and never a target.
+  - Both runners still default `STEPS_MODULE` to `specs/pipeline/steps/index.js`
+    (`specs/pipeline/scripts/run_acceptance.sh:19`,
+    `specs/pipeline/scripts/run_gherkin_mutation.sh:34`). Unchanged.
+  - Freshness gate (Article 3.6): `deprecate-check BL-1371` returns `allow`
+    against the ticket's own content - verified it really read it (13573 bytes,
+    no supersede marker, no retired-surface hit, no spec-gap bounce, deps
+    empty). No hold, so there is nothing to discharge and no adjudication
+    record is required. Note `allow` alone is weak evidence: the same CLI
+    allows a ticket id that does not exist, so the facts were read directly.
+  - `required_wiring` parses through the real block reader, not just the entry
+    parser: `read-required-wiring` returns `:present? true` with a one-item
+    vector, path `specs/pipeline/steps/index.js`, pattern
+    `bl1371StepDiscoverySteps`. It is one physical line and single-quoted, so
+    none of BL-874/BL-960/wrapped-entry applies. It remains provisional and
+    green-by-construction as the mint said - update it in-parcel if the array
+    goes.
+  - The re-grade's "ONLY exit from a stopped land queue" is narrower than
+    written. Commit 9b4f200609 (2026-09-03) verified the handler-files-first
+    route: the unlanded handler modules on `swarmforge-QA` are each their own
+    path and can land alone. Read "only" as "the only STRUCTURAL exit".
+    Severity stays critical / priority 1 - that route is a per-jam manual land
+    and the jam is compounding (5 require lines and 10 handler files unlanded
+    as of this pass), not a fix.
+  - `check_feature_handler_registration.sh` refuses LESS than the description
+    implies, which matters to the "retire or narrow" bullet. Its assessor
+    (`featureHandlerRegistrationCheck.ts`, `collectUnregisteredHandlers`) skips
+    a feature whose own handler file does not exist at all (`own.length === 0`),
+    so it catches "handler file present but unreachable from the registry", not
+    "feature file with no handler". Discovery retires the first kind entirely
+    and leaves the second untouched, so the honest answer to that bullet is
+    NARROW rather than retire - still a decision to state in the parcel, not a
+    side effect. Related: this ticket's own feature file is on main with no
+    handler yet and the gate is green on main, which is that same gap.
+  - Acceptance: scenario 05 added this pass. The description requires both
+    runners to move together and `qa_e2e_procedure` step 6 obliges QA to check
+    it, but no scenario asserted it - so that step had nothing to gate. It is
+    written as a set-parity assertion between the two runners rather than a
+    mutation run, so it does not drag a mutation lane into the acceptance
+    suite. Scope, the three invariants and the other four scenarios are
+    untouched, and `human_approval` stays `approved` for the same reason the
+    re-grade did not reopen it.
+
+  Transition hazard for whoever lands this, not for the implementer:
+  `swarmforge-QA:specs/pipeline/steps/index.js` carries 5 require lines
+  `origin/main` does not have, and that branch carries 10 handler files main
+  lacks. If this parcel thins or removes the array, merging main into that
+  branch conflicts on index.js, and a resolution that keeps the incoming array
+  resurrects it. Removing the array is precisely what lets those 10 files land
+  as their own paths - that is the payoff - but the merge resolution must not
+  restore it.
+
+  ## Expedite specifier re-run, 2026-09-03: two copies of this ticket exist
+
+  The first expedite run finished all six stage passes and failed on its
+  ticket half; this is the re-run's stage 00. Every spec-stage check is green
+  again against the branch tip (gherkin lint clean, hygiene ok, freshness
+  facts read directly, the wiring block parses through the real block reader,
+  and all five scenarios of the feature file execute and pass). One thing
+  drifted underneath the branch and it is a land-time problem, not a spec one:
+
+  - `main` is NOT an ancestor of `expedite/BL-1371`. Main carries exactly one
+    commit the branch lacks, `9421e47147`, and that commit ADDED
+    `backlog/active/BL-1371-...yaml` - it did not edit an existing file. The
+    main checkout also holds a STAGED, uncommitted deletion of
+    `backlog/paused/BL-1371-...yaml`, so the intended end state on main is the
+    active copy alone; the committed tree currently shows both.
+  - So two copies of this ticket exist with different `required_wiring`.
+    `main:active` declares two anchors, `index.js::discoverHandlerFiles` and
+    `index.js::loadHandlers`. The branch copy here declares one,
+    `bl1371StepDiscoverySteps.js::module.exports = { registerSteps };`. All
+    three literals were checked against the branch tip and all three match
+    real code, so neither copy false-blocks a gate - the hazard is duplication,
+    not an unmatchable pattern.
+  - Apart from that block, the two copies differ only in that this one carries
+    the stage-00 notes above and `main:active` does not.
+
+  What this means for the land, which is where it has to be resolved: merging
+  this branch into main yields BOTH files, one ticket in two folders with two
+  different wiring declarations. Whoever lands it should keep the ACTIVE copy
+  as authoritative (that is where the promotion put it), carry this notes
+  section across, and confirm exactly one BL-1371 yaml exists in the merged
+  tree before pushing. Moving or deleting a backlog file between folders is
+  coordinator bookkeeping and was deliberately not done from this stage,
+  especially with a half-staged move sitting in the shared main checkout.
 
 source: |
   QA note 2026-09-03 (priority 00): "BL-1356 LAND_ESCALATE index.js shared w/

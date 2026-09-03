@@ -137,18 +137,36 @@ function registryLoadVerdict(pipelineDir, workDir) {
   return verdict;
 }
 
-// Plants one offender step file into a materialized tree and registers it
-// FIRST in steps/index.js's DOMAINS list. `files` maps a steps/-relative
-// path to its source, so an offender can also live in a lib module a
-// clean-looking step file requires (the chain-depth axis). Returns a
-// restore() that unpatches the index and removes every planted file, so a
-// shared tree can be reused across draws.
+// Plants one offender step file into a materialized tree. `files` maps a
+// steps/-relative path to its source, so an offender can also live in a lib
+// module a clean-looking step file requires (the chain-depth axis). Returns a
+// restore() that removes every planted file, so a shared tree can be reused
+// across draws.
+//
+// BL-1371: the plant used to also patch a `require('./<registerRelPath>')`
+// line into steps/index.js's DOMAINS array, because registration was manual.
+// Registration is now discovery - a top-level `*Steps.js` file in the steps
+// directory IS registered - so writing the file is the whole plant. What the
+// old DOMAINS marker bought (this guard notices when index.js stops working
+// the way it assumes, instead of silently planting nothing) is kept as the
+// discovery-marker assertion plus the check that `registerRelPath` really
+// names a discoverable file among `files`.
+const DISCOVERY_MARKER = "const HANDLER_SUFFIX = 'Steps.js';";
+const HANDLER_SUFFIX = 'Steps.js';
+
 function plantOffender(pipelineDir, { registerRelPath, files }) {
   const indexPath = path.join(pipelineDir, 'steps', 'index.js');
-  const originalIndex = fs.readFileSync(indexPath, 'utf8');
-  const marker = 'const DOMAINS = [';
-  if (!originalIndex.includes(marker)) {
-    throw new Error(`steps/index.js no longer carries the '${marker}' registration marker the guard patches`);
+  if (!fs.readFileSync(indexPath, 'utf8').includes(DISCOVERY_MARKER)) {
+    throw new Error(
+      `steps/index.js no longer carries the '${DISCOVERY_MARKER}' discovery marker this guard plants against`
+    );
+  }
+  const registerRel = registerRelPath.endsWith('.js') ? registerRelPath : `${registerRelPath}.js`;
+  if (!registerRel.endsWith(HANDLER_SUFFIX) || registerRel.includes('/')) {
+    throw new Error(`plantOffender: '${registerRel}' is not a top-level *${HANDLER_SUFFIX} file, so discovery would not load it`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(files, registerRel)) {
+    throw new Error(`plantOffender: '${registerRel}' is not among the planted files, so nothing would be registered`);
   }
   const planted = [];
   for (const [rel, source] of Object.entries(files)) {
@@ -157,10 +175,8 @@ function plantOffender(pipelineDir, { registerRelPath, files }) {
     fs.writeFileSync(full, source);
     planted.push(full);
   }
-  fs.writeFileSync(indexPath, originalIndex.replace(marker, `${marker}\n  require('./${registerRelPath}'),`));
   return {
     restore() {
-      fs.writeFileSync(indexPath, originalIndex);
       for (const full of planted) {
         fs.rmSync(full, { force: true });
       }
