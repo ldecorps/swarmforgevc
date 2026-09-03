@@ -950,6 +950,7 @@ const DOMAINS = [
   require('./bl1301ParkedTicketSteps'),
   require('./bl1330SwarmStampBobAnthropicStartingCastSteps'),
   require('./bl1354SharedPathLandedSiblingSteps'),
+  require('./bl1309LandDecideStepEntanglementSteps'),
 ];
 
 function registerSteps(registry) {
