@@ -47,6 +47,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_outage_evidence_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "exhaustion_failover_promotion_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "outage_failover_cli.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_attribution_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_dedup_lib.bb")))
@@ -1286,6 +1287,52 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
+(defn promote-exhaustion-to-failover!
+  "BL-1335: the missing middle. BL-840's producer writes evidence to
+   provider-outage-YYYY-MM.jsonl and BL-669's consumer reads
+   provider-outages.jsonl, and nothing joined them - so the one failover
+   record on this host was typed by a human, whose own note said why.
+
+   Called from the live tick (see observe-pane-provider-outage! below), never
+   only from a lib nobody runs - that anchor shape is why BL-840's producer is
+   live today and the reason this ticket's required_wiring pins it here.
+
+   Human ruling 2026-09-03: promote automatically ONLY on an unambiguous
+   classification; a merely suspicious line is ANNOUNCED for operator
+   confirmation, and anything else does nothing at all. Opening a record is
+   not inert - BL-669 restaffs the seat off it - and the input is pane text.
+
+   Never throws: a promotion that cannot be written must not take the pane
+   observation down with it."
+  [role provider model pane now-ms]
+  (try
+    (let [records (or (outage-failover-store/read-jsonl
+                       (outage-failover-store/outages-path project-root))
+                      [])
+          decision (exhaustion-failover-promotion-lib/promotion-decision
+                    {:evidence {:text pane}
+                     :records records
+                     :seat role
+                     :provider provider
+                     :model model
+                     :now-ms now-ms})]
+      (case (:action decision)
+        :promote
+        (do (outage-failover-store/append-jsonl!
+             (outage-failover-store/outages-path project-root)
+             (:record decision))
+            (log! "exhaustion-failover" role provider model "record opened")
+            decision)
+
+        :announce
+        (do (log! "exhaustion-failover" role "suspected exhaustion, not promoted -" (:reason decision))
+            decision)
+
+        decision))
+    (catch Exception e
+      (log! "exhaustion-failover-error" role (.getMessage e))
+      {:action :none :reason (str "promotion failed: " (.getMessage e))})))
+
 (defn observe-pane-provider-outage!
   "BL-840: feed one pane snapshot (the SAME one observe-pane-auth! above
    already captured - no second tmux capture) into the provider-outage
@@ -1304,6 +1351,11 @@
         (provider-outage-evidence-lib/record-provider-outage!
          (str state-dir) role provider pane (System/currentTimeMillis)
          (provider-outage-observe-min-interval-ms))
+        ;; BL-1335: the same observation that produces the evidence also asks
+        ;; whether it should open a failover record. Same pane, same tick - no
+        ;; second capture and no separate scanner over the evidence file.
+        (promote-exhaustion-to-failover!
+         role provider (:model role-info) pane (System/currentTimeMillis))
         (catch Exception e (log! "provider-outage-observe-error" role (.getMessage e)))))))
 
 (defn observe-standing-role-auth!
