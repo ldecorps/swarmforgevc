@@ -1110,29 +1110,7 @@
         rotation-router? (rotation-router-mode?)
         ordered-roles (mapv :role role-rows)
         resident-home (resident-home-role ordered-roles)
-        ;; BL-1345: the marker is a ROTATION-ROUTER cache, and this was the
-        ;; third consumer that never got BL-1020's rule - it read the file
-        ;; unconditionally, so on a standing pack the sweep reasoned about a
-        ;; resident that does not exist, named by a file nobody clears. It
-        ;; goes through the same shared decision the RC-repair hotfix uses
-        ;; (195de28861), rather than a fourth copy of the mode check.
-        resident-decision (mono-router-lib/resolve-resident-role
-                           {:rotation-router? rotation-router?
-                            :recorded-role (active-role-marker)
-                            :home-role resident-home})
-        ;; nil, not the home role, when the marker must not be honoured: every
-        ;; consumer below asks "which role is the resident RIGHT NOW", and on a
-        ;; standing pack the answer is none. Handing them home-role here would
-        ;; swap one fiction for another.
-        ;; Invariant 3: an absent, unreadable or UNKNOWN-role marker reaches
-        ;; the same conclusions as no marker at all. resolve-resident-role
-        ;; honours any non-blank value on a router pack (it is a cache of a
-        ;; role this swarm rotates through), so "is this actually one of our
-        ;; roles" is asked here, against the pack's own roles - never against
-        ;; a hardcoded list (BL-804 invariant 1).
-        resident-active-role (let [candidate (when (:honour-marker? resident-decision)
-                                               (:role resident-decision))]
-                               (when (some #(= candidate %) ordered-roles) candidate))
+        resident-active-role (active-role-marker)
         ;; BL-1017: the same per-role stamping pass carries the persisted
         ;; repair budget in, so check-live-session decides the bound purely
         ;; (no clock read, no fs, inside the testability boundary) while this
