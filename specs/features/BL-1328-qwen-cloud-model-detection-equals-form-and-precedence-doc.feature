@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=072ace0c0410fb10acc80df0f84a73177c6bc18d07e8c4015e5363df1be70a41
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T04:31:44.862976463Z","feature_name":"BL-1328 Qwen-cloud --model detection covers the equals-sign form; OpenRouter/qwen precedence documented","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1328-qwen-cloud-model-detection-equals-form-and-precedence-doc.feature","background_hash":"f309b5f5261cb985226dc1aa97ea4fef549beef87c329c3b8169efa6445725ab","implementation_hash":"unknown","scenarios":[{"index":0,"name":"qwen-cloud detection covers both --model token forms and rejects non-qwen models","scenario_hash":"bf60d3633ab1e54f88d50e6b668281d7e5b76a3651a2e74a8833e174b8dd45c2","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-03T04:31:44.862976463Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1328 Qwen-cloud --model detection covers the equals-sign form; OpenRouter/qwen precedence documented
 
   BL-1324 certified hotfix 4ed88430b2's `extra_cli_targets_qwen_cloud`
