@@ -27,7 +27,7 @@ invariants:
   - "Registering a new handler requires editing no file that another ticket also edits - a design that keeps any shared list has not delivered this ticket."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1371StepDiscoverySteps::acceptance handler registered so the runner executes every scenario. If the parcel replaces the array with discovery, update this entry in-parcel to the anchor that then proves loading - see notes.'
+  - 'specs/pipeline/steps/bl1371StepDiscoverySteps.js::module.exports = { registerSteps };::UPDATED IN-PARCEL (coder, 2026-09-03) as the mint instructed: this parcel removed the DOMAINS array, so the old anchor (index.js::bl1371StepDiscoverySteps) names a file that no longer mentions any handler and the entry would have blocked the documenter forward. Under discovery the handler file existing in specs/pipeline/steps/ with a registerSteps export IS its registration, so that export is the anchor that now proves loading. Still green-by-construction, as the mint noted of the old one - the durable check is the acceptance feature plus P1/P3 in extension/test/bl1371StepDiscoveryInvariants.property.test.js.'
 
 human_approval: approved
 approval_context: >
