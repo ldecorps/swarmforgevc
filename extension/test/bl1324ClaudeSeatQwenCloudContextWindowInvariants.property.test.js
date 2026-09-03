@@ -77,32 +77,6 @@ function git(...args) {
   });
 }
 
-// BL-1328: the region comparison below is "every line the hotfix landed is
-// still there, in order", not byte equality. Byte equality made this
-// invariant forbid ANY later edit to the reviewed code - including the narrow
-// follow-up the same human ruling on BL-1324 authorized - which is a claim
-// about the file's future, not about whether THIS parcel rewrote the hotfix.
-// What the invariant actually says is the latter, and the attribution face
-// below (no BL-1324-attributed commit touches a hotfix path) is its other
-// half.
-function assertHotfixLinesIntact(currentRegion, landedRegion, label) {
-  const current = String(currentRegion).split('\n');
-  const landedLines = String(landedRegion).split('\n');
-  let cursor = 0;
-  for (const line of landedLines) {
-    const found = current.indexOf(line, cursor);
-    assert.notEqual(found, -1, `${label} lost or reworded a line the hotfix landed: ${JSON.stringify(line)}`);
-    cursor = found + 1;
-  }
-  const added = current.filter((line) => !landedLines.includes(line) && line.trim().length > 0);
-  if (added.length > 0) {
-    assert.ok(
-      current.some((line) => /BL-\d{3,4}/.test(line)),
-      `${label} grew ${added.length} line(s) that no ticket claims: ${JSON.stringify(added.slice(0, 3))}`
-    );
-  }
-}
-
 // Anchored extraction, so the comparison survives unrelated edits moving
 // the code and still catches an edit to the hotfix's own lines.
 function hotfixRegions(text) {
@@ -226,16 +200,9 @@ const noiseFlag = fc.constantFrom(
 const siblingSeat = fc
   .tuple(anthropicModel, qwenModel, fc.constantFrom(0, 1, 2, 3, 4), fc.array(noiseFlag, { maxLength: 2 }))
   .map(([model, qwen, shape, noise]) => {
-    // BL-1328: `--model=<qwen*>` LEFT this list. It used to sit here as a
-    // decoy precisely because the matcher could not read the single-token
-    // form - which was the dormant defect BL-1328 (authorized by this
-    // ticket's own human ruling) closed. A seat carrying `--model=qwen*` IS a
-    // qwen-targeted seat now, so keeping it here would assert the bug back
-    // into existence. Every remaining decoy is still a genuine near miss:
-    // qwen* appears, but never as the value of a --model flag.
     const decoy = [
       `--fallback-model ${qwen}`, // qwen* as ANOTHER flag's value
-      `--model-name ${qwen}`, // a flag whose NAME merely starts with --model
+      `--model=${qwen}`, // the single-token form the matcher does not read
       `${qwen}`, // a bare positional token
       `--notes for-${qwen}-seats`, // qwen* embedded mid-value
       `--model-hint ${qwen}`, // a flag whose NAME merely starts with --model
@@ -292,7 +259,7 @@ describe('BL-1324 stamp-off invariants', () => {
             : git('show', `${rev}:${p}`);
           const seen = hotfixRegions(text);
           for (const key of Object.keys(landedRegions)) {
-            assertHotfixLinesIntact(seen[key], landedRegions[key], `region "${key}" of ${p} at ${rev}`);
+            assert.equal(seen[key], landedRegions[key], `region "${key}" of ${p} differs at ${rev}`);
           }
           return;
         }

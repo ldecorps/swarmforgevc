@@ -1484,14 +1484,6 @@ swarm_only_strip_seat_tier() {
 # True when this role's pack CLI names a Qwen Cloud model (Token Plan). Used so
 # a Claude seat can ride apps/anthropic without SWARMFORGE_USE_QWEN=1 remapping
 # every other Anthropic seat in a mixed pack (bob mono-router 2026-09-01).
-# BL-1328: BOTH token forms count. `--model qwen3.8-max` (a separate pair) is
-# what every pack window line uses today; `--model=qwen3.8-max` (one token) is
-# just as reasonable a thing for a future pack author to write, and it used to
-# fall straight through this loop - no Token Plan remap, no
-# CLAUDE_CODE_MAX_CONTEXT_TOKENS, and so the same ~50k auto-compaction bug
-# hotfix 4ed88430b2 fixed for the space form. Only the qwen* VALUE decides in
-# either form: a non-qwen --model stays undetected exactly as before, so a
-# sibling Anthropic seat keeps its subscription auth.
 extra_cli_targets_qwen_cloud() {
   local extra_cli="$1"
   local -a parts
@@ -1499,10 +1491,6 @@ extra_cli_targets_qwen_cloud() {
   parts=(${=extra_cli})
   while (( i <= ${#parts} )); do
     if [[ "${parts[i]}" == "--model" && "${parts[i+1]:-}" == qwen* ]]; then
-      return 0
-    fi
-    # BL-1328: the single-token form, e.g. --model=qwen3.8-max.
-    if [[ "${parts[i]}" == --model=qwen* ]]; then
       return 0
     fi
     (( i++ ))
@@ -1975,20 +1963,6 @@ export OPENAI_BASE_URL='${lm_url}'
 "
   fi
   if [[ "$agent" == "claude" ]]; then
-    # BL-1328 PRECEDENCE ASYMMETRY, documented deliberately rather than
-    # reconciled (the human's BL-1324 ruling asked for exactly this): THIS
-    # site checks qwen-cloud FIRST and role_uses_openrouter second. The
-    # pane-env site in launch_role does the OPPOSITE - see its matching
-    # comment. A role that combines OpenRouter routing with a qwen* --model
-    # would therefore take the qwen-cloud branch here (remapping
-    # ANTHROPIC_BASE_URL to the Token Plan endpoint) and the OpenRouter branch
-    # there (forwarding OPENROUTER_API_KEY, never QWEN_API_KEY, never
-    # declaring CLAUDE_CODE_MAX_CONTEXT_TOKENS): a credential/endpoint
-    # mismatch, not merely a missing context declaration. No live pack
-    # combines the two today, which is the only reason this is dormant rather
-    # than broken. Choosing which precedence should win is a design decision
-    # for whoever first wants that combination - do not silently make the two
-    # sites agree while leaving both untested.
     if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" ]] || extra_cli_targets_qwen_cloud "$extra_cli"; then
       # Token Plan Anthropic-compat (Claude Code → SEA apps/anthropic). Prefer
       # over OpenRouter / first-party Max when the Qwen wrapper opted in, OR
@@ -2259,17 +2233,6 @@ launch_role() {
       provider_env_flags+=(-e "CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS}")
     fi
   elif [[ "$agent" == "claude" ]] && extra_cli_targets_qwen_cloud "${EXTRA_CLI_ARGS[$index]:-}"; then
-    # BL-1328 PRECEDENCE ASYMMETRY, documented deliberately rather than
-    # reconciled: THIS site checks role_uses_openrouter FIRST (the elif above)
-    # and qwen-cloud second. The billing_guard construction site does the
-    # OPPOSITE - see its matching comment. A role combining OpenRouter routing
-    # with a qwen* --model never reaches this branch at all, so it would get
-    # OPENROUTER_API_KEY in its pane env while its launch script had already
-    # been written for the Token Plan endpoint: a credential/endpoint
-    # mismatch. No live pack combines the two today, which is the only reason
-    # this is dormant rather than broken; reconciling the two orders is a
-    # design decision for whoever first wants that combination.
-    #
     # Mixed pack: Claude seat with --model qwen* needs the Token Plan key in
     # pane env even when the pack did not set SWARMFORGE_USE_QWEN=1 globally.
     # shellcheck source=qwen_launch_guard_lib.sh

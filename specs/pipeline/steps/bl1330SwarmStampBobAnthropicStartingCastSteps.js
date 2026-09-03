@@ -209,16 +209,9 @@ function registerSteps(registry) {
   scoped(/^only the coder seat's pane env carries QWEN_API_KEY$/, (ctx) => {
     assert.deepEqual(ctx.bl1330.remapMatching, ['coder']);
     // The pane-env branch is gated on the SAME predicate, per seat index.
-    // BL-1328: the window was {0,700} and broke on DOCUMENTATION - that
-    // ticket added a twelve-line comment naming the OpenRouter/qwen
-    // precedence asymmetry between this branch and the billing_guard one,
-    // which pushed QWEN_API_KEY= past the cap while the wiring it asserts was
-    // untouched. What this claim is about is that the pane-env branch gates
-    // the credential on the per-seat predicate; the distance between them is
-    // not the claim, so the window is generous enough to survive a comment.
     assert.match(
       ctx.bl1330.launcher,
-      /elif \[\[ "\$agent" == "claude" \]\] && extra_cli_targets_qwen_cloud "\$\{EXTRA_CLI_ARGS\[\$index\]:-\}"; then[\s\S]{0,1600}?QWEN_API_KEY=/,
+      /elif \[\[ "\$agent" == "claude" \]\] && extra_cli_targets_qwen_cloud "\$\{EXTRA_CLI_ARGS\[\$index\]:-\}"; then[\s\S]{0,700}?QWEN_API_KEY=/,
       'the QWEN_API_KEY pane env must be gated on the per-seat qwen predicate'
     );
   });
