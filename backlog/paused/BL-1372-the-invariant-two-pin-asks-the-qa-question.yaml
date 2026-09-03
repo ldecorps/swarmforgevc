@@ -1,0 +1,120 @@
+id: BL-1372
+title: "The babysitter sweep's invariant-two assertion greps for any ancestry call at all, so a legitimate main-sync merge-base fails an invariant that is intact - the same defect BL-1314 already fixed for handoffd.bb"
+milestone: M8
+type: defect
+severity: medium
+# medium: a false red, not a real breach - BL-925 invariant 2 holds and no
+# second QA-ancestry predicate exists. Graded medium not low because a standing
+# red assertion gates nothing: every role that runs this test learns to expect
+# a failure, which is how a REAL breach would arrive unnoticed.
+status: todo
+epic: code-quality-gates
+priority: 17
+direction: swarm-reported
+depends_on: [BL-1314]
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1372-the-invariant-two-pin-asks-the-qa-question.feature
+
+invariants:
+  - "A second QA-ancestry predicate still fails the assertion - narrowing the pin must not blind it to the breach it exists to catch."
+  - "The narrowed assertion asks the QA question only; a call that decides anything else about git ancestry is out of its scope, exactly as BL-1314 scoped its sibling."
+
+required_wiring:
+  - 'swarmforge/scripts/test/bl962_merge_adjudication_test_runner.bb::second ancestry predicate::the over-broad assertion this ticket narrows lives here'
+  - 'specs/pipeline/steps/index.js::bl1372InvariantTwoPinSteps::acceptance handler registered so the runner executes every scenario'
+
+human_approval: approved
+approval_context: >
+  No choice is posed and there are no ruling_options, because you already ruled
+  on this exact question. BL-1314 offered you the two readings - narrow the
+  assertion, or keep it strict and refactor the code it flags - and you chose
+  option 1, "scope the assertion to the QA question, leave handoffd.bb alone".
+  This applies that same ruling to the sibling assertion that never got it.
+  .
+  What to know before approving. This makes a test assertion accept something
+  it currently rejects, which is worth a second look on principle. The bound is
+  invariant 1: a genuine second QA-ancestry predicate must still fail it. The
+  call being accepted is `merge-base HEAD origin/main` - whether local main has
+  diverged from origin, which is not a QA-ancestry question at all.
+
+description: |
+  ## What is wrong
+
+  `bl962_merge_adjudication_test_runner.bb:171` asserts that the text
+  `merge-base` or `--is-ancestor` never appears in `babysitter_check.bb`,
+  "string arguments included". `babysitter_check.bb:817` invokes
+  `merge-base HEAD origin/main`, introduced by BL-1187 (`ec2416a9d6`), so the
+  assertion fails.
+
+  BL-925 invariant 2 is about the QA-ancestry decision having ONE shared
+  predicate (`is_qa_ancestor.sh`). A main-versus-origin divergence check is a
+  different question, decided about different refs, for a different purpose.
+  The invariant holds; the assertion overreaches.
+
+  ## Already ruled, for the sibling
+
+  BL-1314 is the identical defect in `handoffd.bb`: "the BL-925 invariant-2
+  assertion greps handoffd.bb for any ancestry call at all, so two legitimate
+  helpers fail an invariant that is intact". It put both readings to the human,
+  who ruled **option 1 — scope the assertion to the QA question**. That ticket
+  is done. Its sibling assertion here was never brought into line.
+
+  ## How (direction, not mandate)
+
+  - Narrow the assertion to what invariant 2 actually claims: no second
+    decision of QA ancestry. BL-1314's own narrowed assertion is the shape to
+    follow rather than invent - and reading it first is cheaper than rederiving
+    the distinction.
+  - Invariant 1 is the trap to design against. The lazy narrowing - allowlisting
+    the one offending line - passes today and blinds the assertion tomorrow.
+
+  ## Explicitly NOT in scope
+
+  - Changing `babysitter_check.bb:817` itself. The human's BL-1314 ruling was
+    explicitly to leave the legitimate call alone.
+  - BL-631 scenario 07's separate red, which the same architect pass surfaced
+    and which is BL-1373.
+
+qa_e2e_procedure: |
+  1. Run `bb swarmforge/scripts/test/bl962_merge_adjudication_test_runner.bb`
+     on a clean tree. Before this ticket it reports the "no second ancestry
+     predicate" failure; after, ALL PASS.
+  2. Add a genuine second QA-ancestry decision to `babysitter_check.bb` in a
+     scratch copy - one that answers "is this an ancestor of swarmforge-QA"
+     without the shared predicate - and confirm the narrowed assertion still
+     FAILS, naming it (invariant 1). This is the test that matters; revert it.
+  3. Confirm `babysitter_check.bb:817`'s `merge-base HEAD origin/main` is
+     untouched by the parcel.
+  4. Run `bash swarmforge/scripts/test/test_babysitter_check.sh` and confirm no
+     regression.
+  5. Read BL-1314's narrowed assertion and confirm the two now express the same
+     rule, so a third copy cannot drift from them independently.
+
+notes: |
+  Minted 2026-09-03 by the specifier from an architect priority-00 note on the
+  BL-1359 pass, which surfaced two pre-existing untracked reds rather than
+  dropping them. The architect grepped `backlog/` for both before reporting and
+  confirmed neither had a ticket.
+
+  Verified this pass rather than assumed:
+  - The assertion at `bl962_merge_adjudication_test_runner.bb:171-174`, its
+    exact wording, and the `merge-base HEAD origin/main` call at
+    `babysitter_check.bb:817`.
+  - BL-1314 is `backlog/done/M8/`, carries `human_ruling: option 1 - scope the
+    assertion to the QA question, leave handoffd.bb alone`, and is scoped to
+    `handoffd.bb` - a sibling, not this file. Checked specifically because a
+    memory note warned this was already ticketed; it was, for the other file.
+
+  `depends_on: [BL-1314]` names a LANDED ticket, per INVEST-I - it is cited for
+  its ruling and its narrowed assertion, not waited on.
+
+  IR-DRY: clean.
+
+source: |
+  Architect note 2026-09-03 (priority 00), evidence
+  `backlog/evidence/BL-1359-architect-pass-20260903.md`, finding 1 of 2.
+  Sibling of BL-1373 (finding 2).
