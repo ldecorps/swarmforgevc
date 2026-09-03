@@ -182,6 +182,23 @@ You are QA.
          come clean, is still NOT a bounce to the author: send the
          **specifier** a `note` (priority `00`) naming the conflicting paths,
          and stop.
+      4. **A STRUCTURAL cause is escalated ONCE per class, not once per
+         ticket.** Some `LAND_ESCALATE` causes are not ticket-specific: the
+         same blocker will refuse every ticket that shares it. Before sending,
+         check whether the specifier has already adjudicated this class — a
+         reply `note`, or a committed adjudication under `backlog/evidence/`.
+         If one exists, do NOT send another priority-`00` note: append this
+         instance to that existing evidence file and carry on. Escalate again
+         only when the instance carries genuinely NEW information — a
+         different blocker, a new offender class, or a change that invalidates
+         the route already adjudicated — and say in the note what is new.
+         This is Article 4.4's one-bounce-per-review-pass discipline applied
+         to escalations. On 2026-09-03 three identical escalations arrived in
+         one session (BL-1296, BL-1360, BL-1367) for one shared-registry
+         deadlock, with six more in-flight tickets each able to produce
+         another; every one after the first cost a full specifier round trip
+         and told it nothing it had not already recorded and answered.
+         Adjudication: `backlog/evidence/BL-1296-land-deadlock-shared-registry-20260903.md`.
       Name every entangled sibling ticket in whatever you send — the CLI's
       `ENTANGLED_SIBLING` lines are that list. A silent rebuild loses the
       signal that the branch was entangled at all, which is the signal the
