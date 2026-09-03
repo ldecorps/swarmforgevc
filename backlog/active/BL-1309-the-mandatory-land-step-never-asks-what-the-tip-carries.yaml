@@ -21,7 +21,7 @@ slice_size_envelope: low
 required_stages: [coder, architect, hardender, documenter, qa]
 stage_skip_reasons:
   cleaner: "one guard added to one 60-line shell script beside the decision it already computes; there is no second copy to de-duplicate and no structure to extract."
-acceptance: specs/features/BL-1309-the-mandatory-land-decide-step-is-blind-to-entanglement.feature.draft
+acceptance: specs/features/BL-1309-the-mandatory-land-decide-step-is-blind-to-entanglement.feature
 
 required_wiring:
   - "swarmforge/scripts/land_main_publish.sh::ENTANGLED_SIBLING_BLOCK::the CONSUMER anchor (BL-1235). land_main_publish.sh is pre-existing and is the only land step QA.prompt makes mandatory, so a marker in THIS file proves a live path reaches the new decision. Anchoring in land_step_lib.bb instead would be satisfied by the parcel's own diff and prove nothing. The marker string is fixed here at mint so the pattern is a literal that will exist (BL-874); grep for it today returns 0."
