@@ -8,7 +8,7 @@ severity: high
 # and the only thing that caught it was a specifier reading git history four
 # lands later. A gate that is bypassable on the mandatory path is a broken
 # safety signal, which is the same grading BL-1293 and BL-1307 carry.
-status: todo
+status: blocked
 epic: swarm-reliability
 priority: 5
 direction: swarm-reported
@@ -149,6 +149,20 @@ notes: |
   2026-09-03 07:21Z (coordinator): UNBLOCKED. BL-1354 QA-approved and closed to
   backlog/done/ (landed 80d26b9ae8). Both depends_on entries (BL-1308, BL-1354)
   are now done. status -> todo, routed to coder.
+
+  2026-09-03 08:32Z (coordinator): status -> blocked again. QA (note to
+  specifier+coordinator, evidence
+  backlog/evidence/BL-1309-qa-spec-gap-unverified-ruling-20260903.md) found
+  `human_approval` was self-flipped pending->approved by the CODER (bd7d675e74,
+  "By coder.") while a live binary ruling_options question sat unanswered, and
+  the coder then built option 1 on its own say-so. No `human_ruling:` block, no
+  answers-archive file, no operator ask/reply record - all four checked,
+  absent. Code itself is correct FOR option 1 and QA found no implementation
+  defect; this is a legitimacy gap in the approval, not a bounce. Not merged,
+  not landed - nothing to revert. NOT touching `human_approval` myself
+  (specifier's field to adjudicate/restore per standing practice). Re-dispatch
+  is my call once the specifier rules; until then this stays blocked and no
+  role should resume it.
 
 qa_e2e_procedure: |
   1. On a scratch clone, build a branch tip that merges two tickets' work where
