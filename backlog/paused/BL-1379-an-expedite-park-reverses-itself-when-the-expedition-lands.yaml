@@ -1,0 +1,209 @@
+id: BL-1379
+title: "An expedition parks every other active ticket into the human-held hold/ folder and never reverses it, so mechanically-parked work becomes indistinguishable from a human hold and sits there until somebody notices"
+milestone: M8
+type: defect
+severity: high
+# high: the swarm silently loses its whole active queue to a folder nothing
+# will ever move it out of. Five tickets have been stranded this way since
+# 12:02 today. Not critical - nothing is lost or corrupted, every ticket is
+# intact and a human can move them back in seconds. What is broken is that
+# nothing will ever tell them to.
+status: todo
+epic: swarm-reliability
+priority: 11
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1379-an-expedite-park-reverses-itself-when-the-expedition-lands.feature
+
+retires:
+  - specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature
+
+invariants:
+  - "Only tickets THIS run parked, named in the run's own durable park record, are ever moved out of hold/. A ticket a human put there is never touched - Article 3.1 is unchanged for everything except the driver reversing its own move."
+  - "Nothing is restored until the expedition's approved commit is an ancestor of main. An expedition that never lands leaves the park in place and reported, never silently reversed."
+  - "The reversal is idempotent, and refuses rather than guesses: a parked ticket that has since moved, been closed, or been edited by a human is left exactly where it is and named in the report."
+
+human_approval: pending
+approval_context: >
+  Your instruction is clear and I am not asking whether to do it. I am asking
+  one question about where the tickets should land, because the answer changes
+  whether this fix is safe.
+  .
+  The current behaviour is not an oversight. It was specced deliberately as
+  BL-567 scenario 18, whose stated reason is "the parked ticket may be stale
+  against what this run changed, so promotion stays a human or coordinator
+  decision". That reason is not hypothetical - it is live in the very set your
+  instruction is about. BL-1309 is sitting in hold/ right now and its own
+  human_ruling reads "REVISED 2026-09-03 via BL-1375: this option deadlocked
+  the land queue". The expedition that parked it is the expedition that
+  invalidated it.
+  .
+  So: restoring straight back to active/ does exactly what you asked, and would
+  put a ticket carrying a superseded ruling back into the pipeline with no
+  freshness check, because the Article 3.6 deprecator gate only runs on
+  promotion out of paused/. Restoring to paused/ instead gets every ticket out
+  of the human-held folder just the same, and the coordinator re-promotes them
+  through that gate within its normal depth.
+  .
+  I recommend paused/, and I want to be straight that it is a deliberate
+  softening of your words rather than a reading of them - which is why it is
+  your call and not mine.
+
+ruling_options:
+  - Restore parked tickets to backlog/paused/ so the coordinator re-promotes them through the Article 3.6 freshness gate (recommended)
+  - Restore parked tickets to the exact folder they were parked from, reinstating the prior state literally
+  - Restore to the prior folder but mark each restored ticket as needing a freshness check before it may be worked
+
+description: |
+  ## The human's instruction, verbatim
+
+  > when the swarm holds ticket to make way for an expedition, it shoud unhold
+  > the tickets as part of finishing the expedition. so that it reinstate the
+  > original state. (minus the one ticket that was expedited)
+
+  ## What happens today
+
+  `park-plan` (`swarmforge/scripts/expedite_lib.bb`) moves **every** ticket in
+  `backlog/active/` except the run ticket into `backlog/hold/` at initiation.
+  Nothing ever moves them back. `parked-report` reports them and hard-codes
+  `:promoted []` with the note "left in hold/ deliberately; promotion is not
+  the expeditor's call".
+
+  `backlog/hold/` is defined by Article 3.1 as **human-held**: "Never
+  auto-promote from here; they sit until a human moves them back to `paused/`
+  or `active/`." So a mechanical, temporary, non-human park lands in a folder
+  whose entire contract is that only a human moves things out of it. The park
+  has no self-healing path and, worse, becomes visually indistinguishable from a
+  deliberate human hold the moment the run ends.
+
+  Live instance: BL-1375's run parked BL-1296, BL-1309, BL-1356, BL-1359 and
+  BL-1360 at 12:02 today. BL-1375 has since landed (`c370d1e28a` is an ancestor
+  of `origin/main`). All five are still in `backlog/hold/` on `origin/main`,
+  all still `human_approval: approved`, `status: todo` — nothing
+  ticket-specific holds any of them. The reason for the park is gone and
+  nothing noticed.
+
+  ## This reverses a deliberate decision, and says why
+
+  BL-567 scenario 18 asserts today's behaviour outright:
+
+      # BL-567 restart-reports-parked-work-without-promoting-18
+      Scenario: the restart reports parked tickets instead of silently re-promoting them
+        ...
+        And that ticket is still in backlog/hold/ after the restart
+
+  That scenario is **retired** by this ticket (see `retires:`) — retired, never
+  reworded, because this ticket's own scenarios are the replacement coverage
+  (BL-1006). Its stated worry — staleness — is real and is addressed by the
+  ruling above rather than dismissed. The `parked-report` note string changes
+  with it; a docstring left asserting "promotion is not the expeditor's call"
+  after this lands is a false sentence in a durable contract.
+
+  ## How (direction, not mandate)
+
+  - **Durable park record.** Write, at park time, which tickets this run parked
+    and where each came from, into the run's own `.swarmforge/expedite/<id>/`
+    directory. Today `park-plan` only ever parks out of `active/`, so the origin
+    is uniform and the record is small — record it anyway rather than assume it,
+    since that assumption is exactly what would rot.
+  - **One explicit reversal.** A single unpark operation reading that record.
+    Invariant 1 is why it must be driven by the record and never by "everything
+    in hold/".
+  - **Trigger: the land.** Teardown is the wrong moment and the intake is right
+    about why — teardown happens before the branch lands (BL-1376), so a
+    teardown-time restore reinstates the queue into exactly the broken world the
+    expedition existed to repair. In BL-1375's case all five parked tickets
+    touch the shared path the expedition was fixing; restoring them before the
+    fix landed would have fed them straight back into the deadlock. Invariant 2.
+  - **An expedition that never lands must not strand them silently.** It does
+    not need new machinery: the closing `OUTSTANDING` block already names the
+    parked tickets on every ending, including the unhappy ones. Keep that.
+
+  ## Scope note on the feature file
+
+  The acceptance file is written for ruling option 1. Only ONE scenario depends
+  on that choice — `BL-1379 the-restore-destination-re-enters-the-freshness-gate-02`
+  — and it is deliberately isolated so options 2 and 3 amend that scenario
+  alone, leaving the other six untouched. Nothing is built yet, so this is an
+  amendment before the coder starts, not a BL-233 slice-boundary problem.
+
+  ## Explicitly NOT in scope
+
+  - Whether the five currently-stranded tickets are un-held by hand right now.
+    That is a coordinator action under Article 3.1 and needs no ticket; the
+    intake explicitly leaves it out and so does this.
+  - Changing Article 3.1's human-held contract. Invariant 1 keeps it intact:
+    the driver reverses only its own move.
+  - The unlanded-branch reporting gap (BL-1376) and the close-guard block
+    (BL-1378), both from this same run and both separately ticketed.
+
+qa_e2e_procedure: |
+  1. Fixture: two active tickets, expedite one. Confirm the other is parked to
+     hold/ and a durable park record names it and its origin folder.
+  2. Land the expedition's commit. Confirm the parked ticket is restored to the
+     folder the ruling selected, and that the report names what it restored.
+  3. Do NOT land. Confirm the parked ticket stays in hold/ and is still named in
+     the closing OUTSTANDING block (invariant 2).
+  4. Put a ticket in hold/ by hand, unrelated to the run. Confirm the reversal
+     never touches it, before or after the land (invariant 1). This is the test
+     that matters.
+  5. Run the reversal twice. Confirm the second run changes nothing and reports
+     nothing restored (idempotence, invariant 3).
+  6. Between park and land, move a parked ticket by hand and separately close
+     another. Confirm each is left where it is and named in the report, never
+     forced back (invariant 3).
+  7. Confirm BL-567 scenario 18 is gone from its feature file, not reworded, and
+     that the file's mutation manifest was REGENERATED by the toolchain — never
+     hand-edited (engineering.prompt Guardrails).
+  8. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  No `required_wiring:`. The reversal's call site is the land step, which is
+  itself being changed by this ticket, so any anchor would be satisfied by the
+  parcel's own diff — the BL-1235 fail-open shape. The acceptance scenarios
+  exercise the real land path instead, which is what actually proves
+  reachability here.
+
+  `retires:` names the exact feature-file path and nothing else, per
+  backlog-schema.md ("Exact strings only, one path per entry", no glob, no
+  prefix). It is read RAW by `task_scope_gate_lib.bb/declared-retires-paths` to
+  grant the scope exemption for editing another ticket's `.feature` file, so a
+  `path::scenario-name` entry would match no path, grant no exemption, and
+  refuse the coder's send. The SCENARIO being retired is named in the
+  description and in step 7 of the e2e; add the human-facing `RETIRE-WITH:
+  BL-1379` comment beside it in the target file, which the schema is explicit
+  is documentation only and is never read by the gate.
+
+  The gate reads `retires:` from the ticket as LANDED (freshest of
+  main/origin/main), not from the sender's checkout — so this ticket must be on
+  main before the coder sends, which it is: minted and pushed at spec time.
+
+  `retires:` is declared at mint on purpose. A successor that falsifies a
+  sibling's boundary assertion owns its retirement (BL-1006), and BL-567
+  scenario 18 goes red the moment this ships — red-when-correct, green again
+  only if this were reverted. Retiring it is in THIS parcel, not a follow-up.
+
+  IR-DRY: 6 findings, max 0.83 — "the expedition's approved commit is an
+  ancestor of main" against its own negation, the contrast invariant 2 exists
+  to draw. One genuine drift was found and normalized rather than defended
+  ("is where the first reversal left it" -> "is left exactly where it is");
+  the rest are restored/skipped, hold/paused and BL-9002/BL-9003 contrasts.
+
+  Mint-time INVEST: one observable outcome (a park reverses itself), one
+  sitting, and it depends on nothing unbuilt — the park record it needs is a
+  few lines beside a park step that already exists.
+
+source: |
+  Backlog-root intake
+  `INTAKE-human-expedite-park-must-unhold-on-finish-1788436320924.md`, filed by
+  QA 2026-09-03 while landing the stranded `expedite/BL-1375` branch
+  (`backlog/evidence/BL-1375-qa-land-20260903.md`). Human-directed via Claude
+  Code, direct instruction in that session, not via Telegram.
+
+  The human's sentence is quoted verbatim at the top of `description:` and is
+  not paraphrased anywhere in this ticket (Article 5.3).

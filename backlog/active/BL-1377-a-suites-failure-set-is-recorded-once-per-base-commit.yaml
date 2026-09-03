@@ -1,0 +1,128 @@
+id: BL-1377
+title: "Every stage of every parcel re-derives the same fact — which tests were already red at this base commit — by running each suite a second time, costing about three minutes a stage to write one evidence sentence"
+milestone: M8
+type: feature
+status: todo
+epic: deterministic-transit-assist
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1377-a-suites-failure-set-is-recorded-once-per-base-commit.feature
+
+invariants:
+  - "A recorded baseline can only ever excuse a red it actually names, at the same base sha and the same suite-config hash. A red that is not in the record is new, and the diff names it — the cache can shrink a run, never widen an excuse."
+  - "Absent, unreadable, or config-mismatched record falls back to today's two runs. No path through this feature turns a missing baseline into a green."
+
+human_approval: approved
+approval_context: >
+  Your question - "why did BL-1375's coder pass take over an hour?" - produced
+  this. It is a straight efficiency ticket with no fork in it, so there is
+  nothing here for you to choose between; the review you are being asked for is
+  of the acceptance scenarios, and of one judgement I made.
+  .
+  The judgement: the intake offered two writers for the record - whichever
+  stage first runs the suite at that base, or the land step when main moves. I
+  specced the first, because it works even when nothing lands, and it does not
+  preclude the land step writing too. The architect may still prefer the other.
+  .
+  What is firm: a cached baseline can never excuse a red it does not name, and
+  every way of not having a usable record runs both suites exactly as today.
+  Those are the two invariants and they are not negotiable at review.
+
+description: |
+  ## What this costs today, measured
+
+  BL-1375's coder pass (2026-09-03, 10:38-11:41, evidence
+  `backlog/evidence/BL-1375-coder-20260903.md`) ran `npm run test:properties`
+  (143 s) and `npm test` (~30 s) **twice each** — once at the parcel's base and
+  once with the parcel — to be able to write the evidence sentence "identical
+  failure set with and without this parcel".
+
+  That is the evidence rule working exactly as designed: a pre-existing red must
+  be *shown* to be pre-existing (BL-1063), never asserted. But the second run
+  re-computes a fact that does not change — the failure set of a given suite at
+  a given base commit — and coder, cleaner, hardener and QA each re-derive the
+  same one for the same base.
+
+  ## What is wanted
+
+  Record that fact once, keyed so it cannot be misapplied, and let a stage that
+  finds a fresh record run the suite **once** (with the parcel) and diff against
+  it. Only a mismatch — a new red, or a red that vanished — forces the second
+  run.
+
+  Expected saving: 2.5-3 min per stage per parcel at today's suite speed, still
+  about 1 min after BL-1348 and BL-1349 land. The roles' evidence sentence
+  becomes "baseline <sha> recorded by <stage>: N reds; with parcel: N reds, same
+  set" — strictly more informative than today's, because it names the base.
+
+  ## How (direction, not mandate)
+
+  - Key the record by suite name + base sha + a hash of the suite's own config,
+    so a config change can never make an old set apply. That triple is invariant
+    1's whole enforcement surface.
+  - Store it where the roles already read: beside `extension/.test-durations.jsonl`
+    or under `.swarmforge/`. Written by whichever stage first runs that suite at
+    that base — or by the land step at publish time, when main moves.
+  - Fail closed, three ways: no record, stale config hash, unreadable record →
+    today's behaviour, run both. Invariant 2.
+  - BL-1175's standing allowlist stays the second input it already is. This
+    caches the *observed* set; it does not replace the allowlist and does not
+    change what counts as a pre-existing red.
+
+  ## Explicitly NOT in scope
+
+  - Changing what counts as a pre-existing red (BL-1063).
+  - Making the suites themselves faster (BL-1348, BL-1349).
+
+qa_e2e_procedure: |
+  1. Record a baseline for a suite at a base sha. Confirm a stage on that same
+     base runs the suite once, and that its evidence line names the base sha,
+     the recorded count and the observed count.
+  2. Introduce a genuinely new red on top of that base. Confirm the stage does
+     NOT excuse it: the diff names the new red and the second run happens.
+  3. Fix a red that the baseline records. Confirm the vanished red is also a
+     mismatch and is named, not silently absorbed.
+  4. Change the suite config so its hash moves, leaving the sha alone. Confirm
+     the record is refused and both runs happen.
+  5. Delete the record, then corrupt it. Confirm both cases fall back to two
+     runs (invariant 2) and neither is reported as a pass on a cached set.
+  6. Confirm the standing allowlist still applies unchanged alongside the cache.
+  7. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  No `required_wiring:` on purpose, and this one deserves the explanation
+  rather than a reflex anchor. The consumer of this mechanism is a role's
+  evidence step, which is prose in a role prompt, not a call site in code — so
+  every pattern I could pin would match only the module that declares it, which
+  is the BL-1235 fail-open shape: green, and proving nothing.
+
+  That leaves a real risk this ships with no caller (the BL-419 shape). Two
+  things address it and both are named here rather than assumed:
+  - The evidence-sentence wording in the role prompts is a **specifier**
+    deliverable and mine to land (BL-798). No `required_stages` value can
+    schedule it, so it is written here: when this ticket activates I land the
+    prompt change on `main` myself and record the commit in this ticket's
+    `notes:`.
+  - The CLI should be the thing a role runs *instead of* the bare suite command,
+    so adopting it is one substitution in that prose, not a new habit.
+
+  IR-DRY: findings are all Given/Then contrasts between a recorded set and an
+  observed one, which is the distinction every scenario here exists to draw.
+
+source: |
+  Backlog-root intake `INTAKE-cached-suite-baseline-so-a-stage-runs-each-suite-once-1788432576144.md`,
+  filed by the Operator 2026-09-03 (human-directed), from the human's question
+  "why did BL-1375's coder pass take over an hour?". Part of the
+  repeatable-agentic-effort sweep (BL-667 inventory; siblings BL-1348/BL-1349
+  speed the suite itself, BL-1360/BL-1363 remove hand-made ceremony).
+
+  The intake's own words for the ask are preserved above in "How (direction, not
+  mandate)" and in the two invariants; nothing in it was dropped or narrowed.
+
+assigned_to: coder
