@@ -812,7 +812,7 @@
          (land-step-lib/diff-line-changes
           (str "diff --git a/gone.txt b/gone.txt\n--- a/gone.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-body\n")))
 
-;; sibling-lines-landed? is pure over the injected facts, so every fail-closed
+;; sibling-path-verdict is pure over the injected facts, so every fail-closed
 ;; row is pinned without a repository.
 (assert= "sibling-path-verdict: every surviving added line present -> landed"
          :landed

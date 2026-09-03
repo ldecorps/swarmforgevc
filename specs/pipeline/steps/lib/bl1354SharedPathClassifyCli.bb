@@ -33,6 +33,16 @@
 (def OWN "BL-9301")
 (def SHARED "shared.md")
 
+(def FIXTURE-PREFIX "bl1354-acceptance-")
+
+(defn- sweep-fixtures!
+  "A killed run traps no `finally`, so a leftover fixture from a previous run is
+   removed by PREFIX before this one starts as well (BL-971)."
+  []
+  (doseq [d (fs/list-dir (fs/temp-dir))
+          :when (str/starts-with? (fs/file-name d) FIXTURE-PREFIX)]
+    (fs/delete-tree d)))
+
 (defn- sh! [dir & args]
   (apply process/sh {:dir (str dir) :continue true} args))
 
@@ -50,7 +60,7 @@
   "{:work .. :root .. :commit ..}. `land-first?` replays the FIRST sibling's
    own lines onto origin/main as a different commit object."
   [land-first?]
-  (let [work (str (fs/create-temp-dir {:prefix "bl1354-acceptance-"}))
+  (let [work (str (fs/create-temp-dir {:prefix FIXTURE-PREFIX}))
         root (str (fs/path work "repo"))]
     (fs/create-dirs root)
     (sh! root "git" "init" "-q" "-b" "main" ".")
@@ -121,6 +131,7 @@
       (finally (fs/delete-tree work)))))
 
 (let [[query payload] *command-line-args*]
+  (sweep-fixtures!)
   (case query
     "classify" (println (json/generate-string (classify (= "true" payload))))
     "attribution" (println (json/generate-string (attribution payload)))
