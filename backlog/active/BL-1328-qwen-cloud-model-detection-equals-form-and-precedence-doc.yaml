@@ -235,3 +235,6 @@ notes: |
   not accidental restatement of one fact.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-03, by: cleaner, blamed: coder, class: behavior, commit: e82c939e28, evidence: backlog/evidence/BL-1328-cleaner-bounce-20260903.md }
