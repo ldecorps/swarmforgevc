@@ -102,14 +102,33 @@
   (assert-true "the failure text names the seat"
                (str/includes? (bob-starting-cast-lib/generation-failure-text result) "QA"))
   ;; The cast must not pretend: no seat entry for a seat nothing could staff.
+  ;; Checked by KEY ABSENCE, not by a nil value - a map that keeps the key
+  ;; with a nil entry would pass a bare `nil?` check just as well as true
+  ;; omission, but a downstream consumer iterating `(:roles cast)` would see
+  ;; a "QA" entry that is not there in any usable sense (hardener-found gap).
   (assert-true "no cast entry is emitted for the unstaffable seat"
-               (nil? (get-in result [:cast :roles "QA"]))))
+               (nil? (get-in result [:cast :roles "QA"])))
+  (assert-true "the unstaffable seat's key is truly absent, not nil-valued"
+               (not (contains? (get-in result [:cast :roles]) "QA"))))
 
 ;; ── the provider allow list is part of the bar ───────────────────────────
 (let [result (bob-starting-cast-lib/generate-cast-from-profile
               (reg) (assoc profile :roles ["architect"] :providers ["mistral"]) {:reachable? reachable?})]
   (assert-true "a profile that allows only an unreachable provider is not runnable" (not (:runnable? result)))
   (assert= "and names the seat" ["architect"] (:unstaffable result)))
+
+;; ── the quality floor is a MINIMUM: a score exactly at the floor passes ──
+;; (hardener-found boundary gap: `<` vs `<=` are indistinguishable without a
+;; candidate scoring exactly the floor).
+(let [reg-at-floor (-> model-steward-lib/empty-registry
+                       (model-steward-lib/register-model "anthropic" "claude-opus-5" {})
+                       (model-steward-lib/certify "anthropic" "claude-opus-5" {:scorecard-id "sc-1"})
+                       (model-steward-lib/add-role-ranking "coder" "anthropic" "claude-opus-5" 0.5 {:scorecard_id "sc-1"}))
+      result (bob-starting-cast-lib/generate-cast-from-profile
+              reg-at-floor (assoc profile :roles ["coder"] :quality-floor 0.5) {:reachable? reachable?})]
+  (assert-true "a score exactly at the floor is accepted, not rejected as below it"
+               (:runnable? result))
+  (assert= "the at-floor candidate is staffed" "claude-opus-5" (get-in result [:cast :roles "coder" :model])))
 
 ;; ── registry-only is the WEAKER bar, and says so ─────────────────────────
 (let [result (bob-starting-cast-lib/generate-cast-from-profile
@@ -139,6 +158,18 @@
   (doseq [secretish ["API_KEY" "sk-" "Bearer " "token="]]
     (assert-true (str "the note carries no credential material: " secretish)
                  (not (str/includes? note secretish)))))
+
+;; ── CLI: host-reachable? fails CLOSED on a provider the map doesn't know ──
+;; (hardener-found gap: no fixture registry ever names a provider outside
+;; `provider-credential-env`, so the docstring's "fails closed" claim had no
+;; test able to see it flip.) Loaded directly rather than via the acceptance
+;; subprocess, per the CLI thin-wrapper rule - this is the exported adapter
+;; function itself, no argv or process boundary involved.
+(load-file (str (fs/path scripts-dir "bob_starting_cast_cli.bb")))
+(assert-true "an unrecognised provider is NOT assumed reachable"
+             (not (bob-starting-cast-cli/host-reachable? "some-unknown-provider" "some-model")))
+(assert-true "a known provider with no credential requirement is reachable by definition"
+             (bob-starting-cast-cli/host-reachable? "local" "any-model"))
 
 (if (seq @failures)
   (do (doseq [f @failures] (println f))

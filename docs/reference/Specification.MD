@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1337: the BoB starting cast generator
+(BL-1181) now takes a named, steward-owned **profile** instead of one
+hard-coded policy, and gates every pick on a **handshake** before the cast is
+offered as runnable. `bob_starting_cast_lib.bb` adds `parse-profile`,
+`handshake-role` and `generate-cast-from-profile`: for each role in the
+profile it walks the role's ranked recommendations in order and accepts the
+first candidate that passes registry eligibility, the profile's quality
+floor, its provider allow-list, and — unless the profile declares the weaker
+`registry-only` bar — host reachability, via a `reachable?` predicate injected
+by the CLI rather than read from a key. A seat with no passing candidate gets
+no cast entry at all (never a `nil`-valued or substituted one) and makes the
+whole cast **not runnable**, naming every unstaffable seat and, for each, the
+provider/model/verdict trail that lost. `bob_starting_cast_cli.bb export
+--profile <name>` and `apply --profile <name>` read the profile from
+`.swarmforge/model-steward/profiles/<name>.json`; `apply` refuses a
+not-runnable cast rather than installing it, reusing the same
+`apply-via-modelfactory-overlay` door BL-1181 already ships (the
+`required_wiring` anchor), so the handshake gates the real apply path rather
+than a parallel one. A generated cast never touches the live pack config
+(propose-only) and no file the generator writes carries credential material
+— reachability is a boolean, never a key value. Acceptance:
+`specs/features/BL-1337-a-profile-generates-a-handshaken-cast.feature`.
+How-to: `docs/how-to/BL-1181-bob-starting-cast-cherry-pick-apply.md`
+(extended in place rather than forked, since this is the same CLI/lib pair
+gaining a second, profile-driven mode — the un-profiled `export`/`apply`
+verbs are unchanged). No diagram depicts Model Steward cast generation.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1328: the narrow follow-up BL-1324's
 own human ruling authorized — closes one of the two confirmed-dormant gaps
 that hotfix `4ed88430b2` left in `swarmforge.sh`'s qwen-cloud (Token Plan)
