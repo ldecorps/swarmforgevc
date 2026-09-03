@@ -37,6 +37,10 @@
 ;; BL-1081: the deterministic layer's view of an ACP-hosted seat.
 (load-file (str (fs/path script-dir "acp_session_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_nudge_lib.bb")))
+;; BL-1344: the durable close-out beside the rolling cooldown - a finding over
+;; permanent history never clears, so the cooldown only reschedules its nudge
+;; forever. Consulted at the nudge decision below, never written from here.
+(load-file (str (fs/path script-dir "babysitter_waive_lib.bb")))
 (load-file (str (fs/path script-dir "operator_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
 ;; BL-958: shared control-plane classify / response-policy — babysitterd is
@@ -1274,14 +1278,30 @@
         (let [dedup-state (read-dedup-state)
               escalation-dedup (read-escalation-dedup-state)
               now (now-ms)
+              ;; BL-1344: an investigated, recorded waive silences ONE finding
+              ;; key. It is applied BEFORE the cooldown decision, so a waived
+              ;; finding neither nudges nor stamps the dedup file, and it is
+              ;; still printed above as a finding - suppression is an overlay
+              ;; on the record, never an erasure of it. A store that cannot be
+              ;; read positively suppresses nothing and says so: failing quiet
+              ;; is the failure this whole mechanism exists to prevent.
+              waive-read (babysitter-waive-lib/read-waive-store
+                          (babysitter-waive-lib/waive-store-path project-root))
+              {waived-out :suppressed nudgeable :to-nudge waive-store-error :store-error}
+              (babysitter-waive-lib/partition-findings findings waive-read)
               nudge-opts {:last-nudged-ms-by-key dedup-state :now-ms now :cooldown-ms nudge-cooldown-ms}
               {:keys [to-nudge new-dedup-state]}
-              (babysitterd-sweep-lib/decide-nudges findings nudge-opts)
+              (babysitterd-sweep-lib/decide-nudges nudgeable nudge-opts)
               {:keys [to-escalate new-escalation-dedup-state]}
               (babysitterd-sweep-lib/decide-escalations findings
                                                          {:last-escalated-ms-by-key escalation-dedup
                                                           :now-ms now
                                                           :cooldown-ms nudge-cooldown-ms})]
+          (when waive-store-error
+            (println (str ts " WAIVE-STORE-UNUSABLE " (name waive-store-error)
+                          " — nudging every finding; no waive was applied")))
+          (doseq [f waived-out]
+            (println (str ts " WAIVED [" (:key f) "] nudge suppressed by a recorded waive")))
           (doseq [f to-escalate]
             (try
               (enqueue-operator-escalation! f)
