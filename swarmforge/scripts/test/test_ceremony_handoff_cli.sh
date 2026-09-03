@@ -85,6 +85,22 @@ grep -q "^message: .*$TICKET.*$COMMIT_ABBREV" "$DRY" \
 [[ -z "$(mailbox_files)" ]] || fail "--dry-run delivered to a mailbox: $(mailbox_files)"
 pass "--dry-run prints the composed draft and sends nothing"
 
+# EVERY defined ceremony is inspectable this way, not just the one above -
+# the composer's own list drives the loop, so a ceremony added later without
+# a working dry run fails here rather than shipping unexercised.
+CEREMONIES="$(run_ceremony merge-sideways --ticket "$TICKET" 2>&1 | sed -n 's/.*defined ceremonies are //p' | tr ',' ' ' || true)"
+[[ -n "$CEREMONIES" ]] || fail "the composer would not name its defined ceremonies"
+for name in $CEREMONIES; do
+  OUT="$(run_ceremony "$name" --ticket "$TICKET" --commit "$COMMIT_ABBREV" --dry-run)"     || fail "the '$name' ceremony could not be composed at all"
+  grep -q '^type: note$' <<<"$OUT" || fail "the '$name' draft is not a note: $OUT"
+  grep -q '^to: [a-z,]\+$' <<<"$OUT" || fail "the '$name' draft has no recipient list: $OUT"
+  grep -q '^priority: 00$' <<<"$OUT" || fail "the '$name' draft is not priority 00: $OUT"
+  grep -q "^message: .*$TICKET" <<<"$OUT" || fail "the '$name' message does not name the ticket: $OUT"
+  [[ "$(grep -c '' <<<"$OUT")" -eq 4 ]] || fail "the '$name' draft is not four header lines: $OUT"
+done
+[[ -z "$(mailbox_files)" ]] || fail "composing every ceremony delivered to a mailbox: $(mailbox_files)"
+pass "every defined ceremony composes a four-header priority-00 note draft"
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 2. a real send reaches the mailbox through swarm_handoff.sh
 # ═══════════════════════════════════════════════════════════════════════════
