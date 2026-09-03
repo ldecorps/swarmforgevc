@@ -227,6 +227,24 @@ it up from the trailer) and `--link` it to its ticket.
   fixture (a socket-path-length violation, BL-948's class), fixed by the
   hardener before reaching documenter. Ledger rows pending until human
   certify/waive.
+- BL-1342 — stamp-off for hotfix `27d6ab8630` (handoffd survives a vanished
+  outbox parcel; supervisor grants a startup grace window): two changes
+  that compounded into a crash loop which halted the whole swarm six times
+  on 2026-09-02. First, `handoffd.bb`'s `poll-once!` now reads each outbox
+  parcel through a new `read-envelope-if-present`, which answers
+  `{:vanished true}` for a file gone or unreadable (`java.io.IOException`
+  and subclasses only — any other exception still propagates) instead of
+  a bare `slurp` throwing straight out of the poll loop; a vanished parcel
+  is logged and skipped for that poll, left untouched for the next one.
+  Second, `handoffd_supervisor.bb`'s `evaluate-health` gains a
+  `:daemon-age-ms` input (the pid file's age) and grants `:healthy` instead
+  of `:stalled` to a daemon younger than one stall window — right after a
+  restart every observation is stale by construction — while an unknown
+  age grants nothing and `:dead` stays unreachable by it. Clean review — no
+  defect found in the landed hotfix itself; the one real gap the pipeline
+  caught was, again, a socket-path-length violation in the review harness's
+  own fixture (same class as BL-1333's), fixed by the hardener before
+  reaching documenter. Ledger row pending until human certify/waive.
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 

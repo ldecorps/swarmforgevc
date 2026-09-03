@@ -179,3 +179,5 @@ notes: |
   checker flagged both the `connects`/`connected` pair and the two size
   assertions as possible synonyms; folding them into one Scenario Outline over
   a `<trigger>` column resolved both rather than waiving them.
+
+assigned_to: coder
