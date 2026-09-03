@@ -25,7 +25,7 @@ invariants:
   - "The replay still reproduces what the parcel put on the branch: no path the ticket's own commits changed is dropped from the replay."
 
 required_wiring:
-  - 'swarmforge/scripts/land_step_lib.bb::own-commit-changed-paths::the delivered-side path set this ticket narrows'
+  - 'swarmforge/scripts/land_step_lib.bb::merge-authored-paths::the combined-diff discriminator this ticket adds - the narrowing lives here, and the previously named own-commit-changed-paths matched only a neighbouring call plus comments'
   - 'specs/pipeline/steps/index.js::bl1374SyncMergePassengersSteps::acceptance handler registered so the runner executes every scenario'
 
 human_approval: approved
@@ -170,6 +170,37 @@ notes: |
   builds on, per INVEST-I - neither is waited on.
 
   IR-DRY: clean.
+
+  ## Amendment 2026-09-03 (specifier) - required_wiring anchor corrected, no rebuild
+
+  The first anchor named `own-commit-changed-paths` as "the delivered-side path
+  set this ticket narrows". That was wrong at mint. The narrowing landed in
+  `merge-authored-paths` and its use inside `path-owner-tickets`; the old
+  pattern still matched the file for a coincidental reason - one neighbouring
+  call to `task-scope-gate-lib/own-commit-changed-paths` (line 285) plus four
+  comments - so the gate went green without pinning the mechanism the ticket
+  delivers. That is the BL-1235 fail-open shape and it was mine, not the
+  implementers'. Worse, the function it named works the way (`--cc
+  --name-only`) that would reinstate the very over-report this ticket fixes.
+
+  Found by the architect, who passed the parcel and filed a spec-gap `note`
+  rather than bouncing it - correct on both counts: the code is right and the
+  defect is in my text. Coder and cleaner had both flagged it earlier.
+
+  **Nothing anyone builds changes.** This is a bookkeeping correction to the
+  anchor string only. Neither the old nor the new anchor can block the
+  documenter to QA hop: the old one matched, and the new one matches on the
+  parcel's current tip (`31f43a2841`, shared by the cleaner and architect
+  branches - 3 occurrences, verified this pass), which every later stage
+  descends from. Merge `main` and
+  re-read when convenient; there is no rework and no rebuild.
+
+  The second anchor (`bl1374SyncMergePassengersSteps` in
+  `specs/pipeline/steps/index.js`) is deliberately left as it stands. It is
+  satisfied by the parcel's own diff, so per BL-1235 it proves no wiring - but
+  it does gate that the acceptance handler is registered and therefore executed,
+  which is worth keeping. It is recorded here as a known-weak anchor rather than
+  churned mid-flight.
 
 source: |
   QA note 2026-09-03 (priority 00): "BL-1309 LAND_ESCALATE - my merge subject
