@@ -209,6 +209,24 @@ it up from the trailer) and `--link` it to its ticket.
   reports, without acting on, the commit's CRLF→LF re-line-ending of two
   files and one byte-identical duplicate assert among the six the commit
   added; ledger row pending until human certify/waive.
+- BL-1333 — stamp-off for hotfixes `f57795b6d2` (daemon wiring) and
+  `d5739d84cc` (its pure-decision first half): the master-main reconcile
+  daemon may now DISCARD a dirty-overlap path from the master checkout's
+  working tree — `git checkout` back to HEAD for tracked paths, unstage and
+  remove for staged-new/untracked ones — but only after a read-only proof
+  that the working-tree blob hash equals `origin/main`'s blob at that path;
+  any unproven path is left untouched and still blocks the reconcile, and
+  the drop set is recomputed fresh inside the merge adapter immediately
+  before the real merge (BL-1310's freshness rule), never reused from an
+  earlier sweep. Fixes the class of stall where paths byte-identical to
+  `origin/main` (e.g. stale pre-land evidence-file duplicates) held the
+  reconcile at `reason=dirty` for hours — ten such paths did on
+  2026-09-02 06:30-08:47Z. Clean review — no defect found in the landed
+  hotfix itself; the
+  one real gap the pipeline caught was in the review harness's own test
+  fixture (a socket-path-length violation, BL-948's class), fixed by the
+  hardener before reaching documenter. Ledger rows pending until human
+  certify/waive.
 
 ## Post-batch merge of origin/main (BL-1118 process B)
 
