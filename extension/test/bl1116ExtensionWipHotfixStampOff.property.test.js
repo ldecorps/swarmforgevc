@@ -8,7 +8,11 @@
 // Non-vacuity: break 1 — compare a tip path against empty → RED; break 2 —
 // assert state === 'certified' → RED while pending. Restored.
 //
-// Runs via `npm run test:properties` and standalone node.
+// Runs ONLY via `npm run test:properties`. BL-1356 wrapped these assertions
+// in a `test()`: at module level vitest reported "No test suite found in
+// file" and counted the file as a failing suite, which is why it needed a
+// standing-allowlist row on top of the ledger pin. Nothing runs it under bare
+// node - grep found no caller.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
