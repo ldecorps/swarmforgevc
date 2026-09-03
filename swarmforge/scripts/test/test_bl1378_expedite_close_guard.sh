@@ -76,7 +76,10 @@ write_qa_handoff() {
 
 close_it() {
   local root="$1"
-  git -C "$root" mv "backlog/active/$TICKET-slug.yaml" "backlog/done/$TICKET-slug.yaml"
+  # a failed `git mv` would leave the guard deciding about a move that never
+  # happened, and every assertion below would then be about nothing.
+  git -C "$root" mv "backlog/active/$TICKET-slug.yaml" "backlog/done/$TICKET-slug.yaml" \
+    || { echo "fixture: git mv failed in $root"; return 99; }
   bb "$CLI" "$root" \
     --message "Close $TICKET: move to done" \
     --path "backlog/active/$TICKET-slug.yaml" \
@@ -89,11 +92,14 @@ close_it() {
 # ═══════════════════════════════════════════════════════════════════════════
 echo "01: an expedite verdict record allows the close"
 R="$(mk_fixture)"
-write_record "$R" "$TICKET" QA true "$(landed_commit "$R")"
+# captured BEFORE the close, which makes its own commit and moves HEAD - the
+# record names the commit that was approved, not whatever HEAD became.
+APPROVED="$(landed_commit "$R")"
+write_record "$R" "$TICKET" QA true "$APPROVED"
 OUT="$(close_it "$R")"; STATUS=$?
 if [[ $STATUS -eq 0 ]]; then pass "01: the close is allowed"; else fail "01: the close was refused: $OUT"; fi
 contains "01: and the guard names the record it relied on" "$OUT" "expedite-qa-verdict"
-contains "01: naming the approved commit" "$OUT" "$(git -C "$R" rev-parse HEAD~1 >/dev/null 2>&1; landed_commit "$R" | cut -c1-10)"
+contains "01: naming the approved commit" "$OUT" "$APPROVED"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 02: the mailbox path keeps deciding every close with no expedite record
