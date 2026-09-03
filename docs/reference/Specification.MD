@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1374: the land step's replay
+credited a tagged sync merge with everything it carried —
+`path-owner-tickets` (`land_step_lib.bb`) walked `own-commit-changed-paths`'s
+(`task_scope_gate_lib.bb`) `:delivered` diff, which for a merge answers
+against its first parent alone (everything the second parent brought in,
+whoever authored it), so a routine `git merge main` tagged with a ticket
+subject swept every unlanded file that sync carried into that ticket's own
+path set and refused a land with no real entanglement in it — reproduced on
+`5d4486eb08`, whose `--name-only` list held two tickets' files but whose
+combined patch held not one hunk. `merge-authored-paths` fixes it: for a
+merge commit, attribution now checks whether the merge's own DENSE COMBINED
+diff (`git diff-tree --cc`/`--combined`) produces a patch for the path, not
+whether the path merely appears in `--name-only` — a clean auto-merge
+(different parts of one file, the merger wrote nothing) is no longer
+credited, while a genuine conflict resolution (a real hunk in the combined
+diff) still is, so invariant 3 (never drop a path this ticket's own work
+changed) holds. Detection (BL-1308's widened candidate walk) is unchanged —
+a passenger is still reported as unlanded, only the credit narrowed. Per
+the human's ruling (2026-09-03, option 3 of three): both remedies landed —
+this code fix, plus the discipline rule as belt and braces (a sync merge's
+subject must still never name a ticket). Acceptance:
+`specs/features/BL-1374-a-sync-merge-is-not-credited-with-its-passengers.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(extended in place — same remedy chain, one more entry). No diagram depicts
+land-step internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1378: the close guard
 (`ticket_close_guard_lib.bb`, `commit_integrity_cli.bb`) required a QA
 `git_handoff`/`note` in the coordinator's own mailbox before allowing an
