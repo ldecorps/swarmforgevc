@@ -30,6 +30,7 @@ const DOMAINS = [
   require('./bl1339LandApprovalSharedRootSteps'),
   require('./bl1333SwarmStampReconcileRedundantOverlapSteps'),
   require('./bl1342SwarmStampHandoffdCrashloopHotfixSteps'),
+  require('./bl1346SwarmStampRcLaunchRoleSteps'),
   require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),
   require('./bl1268StaleClaimNamesThisTicketSteps'),
