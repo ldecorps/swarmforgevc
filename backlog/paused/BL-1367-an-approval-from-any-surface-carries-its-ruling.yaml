@@ -1,0 +1,151 @@
+id: BL-1367
+title: "The paused-pager Approve route cannot record a ruling: recordApprovalReply takes no ruling argument, so a ticket approved from the phone reads fully approved while the choice it posed is silently discarded"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in a decision path, not a cosmetic one. Nothing is
+# corrupted, but the ticket reads APPROVED with its question unanswered, which
+# is worse than an obvious failure - the next role cannot tell consent from a
+# complete answer and builds on a guess. Demonstrated: BL-1309.
+status: todo
+epic: question-attention-path
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1367-an-approval-from-any-surface-carries-its-ruling.feature
+
+invariants:
+  - "A ticket declaring ruling_options is never left approved with no human_ruling: either the ruling is recorded with the approval, or the approval is not recorded."
+  - "An existing human_ruling is never overwritten or cleared by a later approval from any surface."
+  - "A ticket declaring no ruling_options approves from every surface exactly as it does today - this changes the ruling path only."
+
+required_wiring:
+  - 'extension/src/bridge/bridgeServer.ts::computePausedPagerApproveOutcome::the pager route is the live consumer that must reach the ruling writer'
+  - 'specs/pipeline/steps/index.js::bl1367ApprovalCarriesItsRulingSteps::acceptance handler registered so the runner executes every scenario'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options - which matters here,
+  because this is the ticket about rulings being dropped and it must not model
+  the failure it fixes.
+  .
+  What to know before approving. Invariant 1 says an approval that cannot carry
+  its ruling should not be recorded at all. That is deliberately the stricter
+  reading: it means a pager tap on a ticket that poses a choice will REFUSE
+  rather than half-record, and you would then answer it from the bot's ruling
+  keyboard instead. The alternative - record consent now, chase the ruling
+  later - is what produces exactly the state this ticket exists to remove, so
+  it is not offered.
+  .
+  If you would rather the pager grew the option buttons instead of refusing,
+  say so on approval and I will amend - that is a bigger slice and a UI
+  question, which is why it is not the shape proposed here.
+
+description: |
+  ## What is wrong
+
+  Two surfaces can record an approval and only one can record a ruling.
+
+  - The bot's callback path reaches `pendingApprovalReply.ts`, which owns the
+    `human_ruling: |` writer (line 142).
+  - The paused-pager Mini App route
+    (`bridgeServer.ts` `computePausedPagerApproveOutcome`, the
+    `/paused-pager/approve` handler) calls
+    `recordApprovalReply(targetPath, backlogId)` - and that signature takes NO
+    ruling argument. It calls `approveHumanApprovalText` and returns.
+
+  So an approval tapped on the phone pager flips `human_approval` and discards
+  the answer, for any ticket, however many options it declares. Nothing warns.
+
+  ## Observed
+
+  BL-1309 declares two `ruling_options` - a binary question about how wide the
+  mandatory land step's refusal should be, which decides what gets built. It
+  was approved 2026-09-01 03:54 and carries no `human_ruling:`. The coder then
+  built option 1 on its own reading, and QA caught it two days later while the
+  work was in flight.
+
+  The cost was not only the wrong-option risk. QA read the approval commit's
+  `By coder.` byline as proof an agent had self-flipped the field and reported
+  a legitimacy breach; the coordinator committed that conclusion into the
+  ticket. The approval was genuine. Three roles spent a turn each on a false
+  trail. (The byline half is BL-1368; this ticket is the dropped ruling.)
+
+  Counted this pass: 36 tickets carry a `human_ruling:` block, so the mechanism
+  works. Exactly three live tickets declare options with no ruling, and two of
+  them (BL-1296, BL-1358) are correctly still pending. BL-1309 is the one that
+  slipped, and the pager route explains precisely how.
+
+  ## How (direction, not mandate)
+
+  - The narrow fix is that the pager route must not record a bare approval for
+    a ticket that declares options. Whether it refuses with a message pointing
+    at the bot's keyboard, or grows the options itself, is open - invariant 1
+    only forbids the half-recorded state.
+  - `recordApprovalReply`'s signature is the seam. Widening it to carry an
+    optional ruling puts both entry points on one writer, which is the shape
+    that stops a third surface reintroducing this.
+  - Invariant 2 matters because BL-1296 is live evidence that a ticket can be
+    re-pended AFTER a ruling exists; a later plain approval must not erase it.
+
+  ## Explicitly NOT in scope
+
+  - Building option buttons into the pager UI, unless the human asks for it on
+    approval (see approval_context).
+  - BL-1309's own ruling, which is re-pended and waiting.
+  - The `By coder.` byline on approval commits - BL-1368.
+
+qa_e2e_procedure: |
+  1. Fixture ticket declaring two ruling options, pending. Approve it through
+     the pager route. Confirm the outcome satisfies invariant 1 - either the
+     ruling is recorded alongside the approval, or nothing is recorded and the
+     refusal says why.
+  2. Approve the same ticket from the bot's ruling keyboard choosing option 2.
+     Confirm `human_ruling:` holds option 2 and `human_approval: approved`.
+  3. With a ruling already recorded, fire a plain pager approval. Confirm the
+     recorded ruling is byte-identical afterwards (invariant 2).
+  4. A ticket declaring NO options: approve from the pager. Confirm it behaves
+     exactly as today, with no `human_ruling:` written (invariant 3).
+  5. Live: sweep `backlog/active` and `backlog/paused` for any ticket that is
+     approved and declares options with no ruling. Confirm the set is empty
+     apart from tickets deliberately re-pended.
+  6. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier from a QA priority-00 note on BL-1309.
+  QA's substantive finding was right and its attribution was wrong; the root
+  cause below was found by following the second half rather than the first.
+
+  Verified this pass rather than assumed:
+  - `recordApprovalReply(targetPath: string, backlogId: string): boolean`
+    (`pendingApprovalReply.ts:358`) - no ruling parameter, calls
+    `approveHumanApprovalText` and nothing else.
+  - `bridgeServer.ts` calls exactly that, at line 830 and line 783.
+  - `pendingApprovalReply.ts:142` is the sole `human_ruling: |` writer.
+  - 36 tickets across `backlog/` carry a `human_ruling:` block; BL-1361 and
+    BL-1363, both answered today on the bot keyboard, recorded within minutes.
+  - BL-1309 approved `bd7d675e74` at 2026-09-01 03:54 with options declared
+    since mint (`a756daa0bd`), and carries no ruling.
+
+  Both `required_wiring` entries are real anchors. The first names
+  `computePausedPagerApproveOutcome`, a PRE-EXISTING live route this parcel
+  must change - not a symbol it introduces (BL-1235).
+
+  IR-DRY: five findings, all 0.5-0.8, every one a positive/negative pair the
+  scenarios exist to draw ("declares ruling options" / "declares no ruling
+  options", "records that option" / "records no human ruling", "approves"
+  / "approves choosing an option"). An earlier draft had one genuine 0.88 drift
+  where a scenario restated the Background with a negation; that was fixed by
+  moving the options clause out of `Background:` into each scenario.
+
+source: |
+  QA note 2026-09-03 (priority 00) on BL-1309, evidence
+  `backlog/evidence/BL-1309-qa-spec-gap-unverified-ruling-20260903.md`.
+  Sibling of BL-1368 (the misleading byline that sent QA down the wrong trail).
+  Same family as BL-1300 - a human's answer with nowhere to land.

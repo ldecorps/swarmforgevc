@@ -1,0 +1,141 @@
+id: BL-1368
+title: "Every approval commit claims 'By coder.' because the byline is a hardcoded literal, so a decision only a human can make is recorded in git as an agent's work"
+milestone: M8
+type: defect
+severity: medium
+# medium: nothing is corrupted and no decision is lost - the approval itself is
+# correct. The cost is that the only attribution a reader has for the most
+# consequential class of commit is false, and it has already produced a
+# confident, wrong accusation between roles. Not high: no live behaviour is
+# degraded and the remedy is a string.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1368-an-approval-commit-names-the-decider.feature
+
+invariants:
+  - "A commit recording a human decision never carries a pipeline role byline - the byline is the only attribution a reader has, and on this class it must not name someone who did not decide."
+  - "A pipeline role's own commits keep their role byline exactly as today; this changes the human-decision class only."
+
+required_wiring:
+  - 'extension/src/bridge/bridgeServer.ts::record human_approval::the pager route composes one of the two approval commit messages'
+  - 'extension/src/tools/telegramFrontDeskBotCore.ts::record human_approval::the bot path composes the other'
+  - 'specs/pipeline/steps/index.js::bl1368ApprovalCommitNamesDeciderSteps::acceptance handler registered so the runner executes every scenario'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options. The remedy is a string
+  and the only real question - what it should say instead - is the
+  implementer's, bounded by invariant 1.
+  .
+  What to know before approving. This is small and it is not cosmetic. Every
+  agent in this swarm commits as `t <t@t>`, so git authorship already proves
+  nothing about who did what; the `By <role>.` byline is the entire remaining
+  attribution. Hardcoding `By coder.` onto the one commit class that records
+  YOUR decision means the record positively asserts something false about the
+  most consequential thing in the backlog.
+  .
+  It has already cost real turns, which is why it is filed rather than noted.
+
+description: |
+  ## What is wrong
+
+  Both approval entry points hardcode the byline:
+
+  - `extension/src/bridge/bridgeServer.ts:834` -
+    `Approve ${backlogId}: record human_approval\n\nBy coder.`
+  - `extension/src/tools/telegramFrontDeskBotCore.ts:1321` -
+    `${verb} ${backlogId}: record human_approval\n\nBy coder.` where `verb` is
+    Approve, Reject or Amend.
+
+  It is a literal in both, not a lookup. So every human decision - approve,
+  reject, amend - is committed to git claiming a coder wrote it.
+
+  ## Why it matters more than it looks
+
+  Every agent and the human commit as `t <t@t>`. Authorship is already
+  useless for telling them apart, which makes the role byline the only
+  attribution a reader has. On this one class it is not merely absent - it is
+  false, and confidently so.
+
+  ## Observed
+
+  2026-09-03. QA reviewed BL-1309, found `human_approval` flipped by a commit
+  whose body read `By coder.`, and reported that an agent had self-flipped a
+  human's approval - a legitimacy breach, correctly escalated at priority 00.
+  The coordinator marked the ticket blocked and committed that conclusion into
+  its notes. Both roles did careful work: four independent checks for a
+  recorded ruling, all correctly negative, and neither touched
+  `human_approval` themselves.
+
+  The approval was genuine. The byline is simply a literal in the bot. Three
+  roles - QA, coordinator, specifier - spent a turn each following it, and a
+  false statement about a colleague's conduct was committed to `main` before
+  the source was read.
+
+  ## How (direction, not mandate)
+
+  - Give the human-decision commit a byline that names the decider, or no role
+    byline at all. Invariant 1 only forbids naming a pipeline role.
+  - Both sites must change together; leaving one is how the next reader is
+    misled by the surviving half.
+  - Check whether any gate or parser keys off `By coder.` on these commits
+    before changing them - a byline check that treats a missing role as a
+    violation would turn this fix into a red gate.
+
+  ## Explicitly NOT in scope
+
+  - The dropped ruling on the pager route. That is BL-1367, the sibling defect
+    found in the same investigation.
+  - The `t <t@t>` git identity itself, which is a swarm-wide condition and not
+    this slice's to change.
+
+qa_e2e_procedure: |
+  1. Approve a fixture ticket through the bot path. Read the resulting commit
+     message and confirm it carries no pipeline role byline.
+  2. Repeat for Reject and for Amend - the bot composes all three from the same
+     template, so all three must be checked, not just Approve.
+  3. Approve through the paused-pager route and confirm the same.
+  4. Make an ordinary pipeline commit as a role and confirm its `By <role>.`
+     byline is untouched (invariant 2).
+  5. Grep the repo for anything that parses `By coder.` out of a commit body,
+     and confirm no gate goes red - in particular any commit-byline check.
+  6. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier while adjudicating QA's BL-1309 note. The
+  investigation had to read the bot's source to discover the byline was a
+  literal; until then the evidence genuinely did read as an agent self-flip,
+  which is the whole point of filing this.
+
+  Verified this pass rather than assumed:
+  - Both literals read directly at `bridgeServer.ts:834` and
+    `telegramFrontDeskBotCore.ts:1321`.
+  - Sampled eight consecutive `Approve BL-*: record human_approval` commits;
+    all eight carry the identical `By coder.` body, including tickets whose
+    rulings recorded correctly - confirming the byline is template output and
+    carries no information at all.
+
+  Three `required_wiring` entries. The first two anchor the two PRE-EXISTING
+  message-composition sites that must both change - real anchors, not symbols
+  this parcel introduces (BL-1235). The pattern is the message literal's stable
+  half, which survives whatever the byline becomes.
+
+  IR-DRY: clean, zero findings. An earlier draft had a 0.88 near-duplicate
+  between a standalone Approve scenario and the verb outline's Approve row;
+  the standalone scenario was deleted rather than reworded, since the outline
+  already covers it.
+
+source: |
+  Found 2026-09-03 while adjudicating QA's priority-00 note on BL-1309.
+  Sibling of BL-1367 (the pager route that drops the ruling) - one
+  investigation, two independent defects: one hid a human's answer, the other
+  misnamed who gave it.

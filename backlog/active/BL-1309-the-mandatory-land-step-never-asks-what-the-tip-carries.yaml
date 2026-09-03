@@ -8,7 +8,7 @@ severity: high
 # and the only thing that caught it was a specifier reading git history four
 # lands later. A gate that is bypassable on the mandatory path is a broken
 # safety signal, which is the same grading BL-1293 and BL-1307 carry.
-status: todo
+status: blocked
 epic: swarm-reliability
 priority: 5
 direction: swarm-reported
@@ -102,6 +102,48 @@ description: |
     detector from becoming a swarm-wide land outage. See invariant 2.
 
 notes: |
+  ## 2026-09-03 - re-pended to collect the ruling that was never recorded
+
+  Raised by QA (priority-00 note). QA's substantive finding is CORRECT: this
+  ticket declares `ruling_options` and carries no `human_ruling:`, so the fork
+  in `approval_context` - how wide the land refusal should be - has never been
+  answered, and it is being built right now.
+
+  Re-pended deliberately. The approval was real: commit `bd7d675e74`,
+  2026-09-01 03:54. Only the human restores it, never an agent.
+
+  **QA's attribution is mistaken, and the mistake is the system's fault, not
+  QA's.** QA read the approval commit's `By coder.` byline as proof an agent
+  self-flipped the field. That byline is HARDCODED IN THE BOT -
+  `extension/src/bridge/bridgeServer.ts:834` and
+  `extension/src/tools/telegramFrontDeskBotCore.ts:1321` both commit
+  `Approve <id>: record human_approval\n\nBy coder.` So every genuine
+  human tap produces a commit that claims a coder wrote it, and the byline
+  cannot discriminate. Ticketed separately as BL-1367.
+
+  **Root cause found, and nobody guessed it: there are TWO approval entry
+  points and only one can record a ruling.** The paused-pager Mini App's
+  Approve route (`bridgeServer.ts` `computePausedPagerApproveOutcome`) calls
+  `recordApprovalReply(targetPath, backlogId)` - a signature with NO ruling
+  parameter, which only flips `human_approval`. The bot's own callback path
+  reaches `pendingApprovalReply.ts`'s `human_ruling:` writer; the pager path
+  cannot, for any ticket, however many options it declares. So a ticket
+  approved from the phone pager loses its ruling silently.
+
+  That fits every observation: this ticket was approved 2026-09-01 03:54 and
+  lost its ruling, while BOTH rulings raised today (BL-1361, BL-1363) recorded
+  correctly within minutes because they were answered on the bot's ruling
+  keyboard. 36 tickets carry a `human_ruling:` block, so the mechanism works -
+  it is one entry point that bypasses it. Ticketed as BL-1367.
+
+  Nobody self-flipped anything. The approval is genuine; only its ruling was
+  dropped in transit.
+
+  **Do not finish the refusal predicate on a guess.** Option 1 and option 2
+  differ in exactly what the mandatory decide step refuses, which is the whole
+  deliverable. If work has already been built against an assumed option, say so
+  rather than quietly keeping it.
+
   2026-09-02 20:05Z (coordinator): slot opened by BL-1317's close; this ticket is
   the top expedited candidate but was SKIPPED for orthogonality (Article 3.2
   rule 3): it names swarmforge/scripts/land_step_lib.bb / land_step_cli.bb,
@@ -150,6 +192,20 @@ notes: |
   backlog/done/ (landed 80d26b9ae8). Both depends_on entries (BL-1308, BL-1354)
   are now done. status -> todo, routed to coder.
 
+  2026-09-03 08:32Z (coordinator): status -> blocked again. QA (note to
+  specifier+coordinator, evidence
+  backlog/evidence/BL-1309-qa-spec-gap-unverified-ruling-20260903.md) found
+  `human_approval` was self-flipped pending->approved by the CODER (bd7d675e74,
+  "By coder.") while a live binary ruling_options question sat unanswered, and
+  the coder then built option 1 on its own say-so. No `human_ruling:` block, no
+  answers-archive file, no operator ask/reply record - all four checked,
+  absent. Code itself is correct FOR option 1 and QA found no implementation
+  defect; this is a legitimacy gap in the approval, not a bounce. Not merged,
+  not landed - nothing to revert. NOT touching `human_approval` myself
+  (specifier's field to adjudicate/restore per standing practice). Re-dispatch
+  is my call once the specifier rules; until then this stays blocked and no
+  role should resume it.
+
 qa_e2e_procedure: |
   1. On a scratch clone, build a branch tip that merges two tickets' work where
      only one is on `origin/main`. Run
@@ -182,7 +238,7 @@ qa_e2e_procedure: |
   refused. Evidence:
   backlog/evidence/BL-1324-specifier-land-escalate-adjudication-20260902.md.
 
-human_approval: approved
+human_approval: pending
 ruling_options:
   - refuse every entangled tip, so the tip-pure replay becomes the normal land
   - refuse only when the entangled sibling is withheld or awaiting approval
