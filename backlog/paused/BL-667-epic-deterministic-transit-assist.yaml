@@ -7,7 +7,7 @@ epic: deterministic-transit-assist
 priority: 1
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-668, BL-1360, BL-1361, BL-1362, BL-1363, BL-1366]
+decomposes_into: [BL-668, BL-1360, BL-1361, BL-1362, BL-1363, BL-1366, BL-1370]
 remaining_slices: |
   - BL-668 (LANDED, and it did not work): post-QA deterministic branch sweep.
     Shipped and running on the handoffd cadence, but measured 2026-09-03 across
@@ -96,6 +96,7 @@ notes: |
   | 3 | Ticket close and bookkeeping | 409 commits | promote scripted, close not | **BL-1363** |
   | 4 | Post-QA merge-up | 5 turns per landing | BL-668, near-inert | **BL-1361** + pre-merge |
   | 5 | QA land sequence | ~1 per ticket | primitives only, no whole-land mode | **BL-1366** |
+  | 6 | Per-pass orphan check | 326 evidence files | daemon sweep libs only, no per-pass CLI | **BL-1370** |
 
   ### Already deterministic - do NOT propose these again
 
@@ -120,7 +121,22 @@ notes: |
   lines, merge commits excluded. That is the contract worth wrapping, so the
   slice was filed as **BL-1366** on 2026-09-03.
 
-  ### The pattern behind all five
+  ### Opportunity 6, added 2026-09-03 by the operator: the per-pass orphan check
+
+  Found by the operator watching a QA pane run `sleep 15; ps -o pid,pgid,etimes,cmd`
+  mid-pass, not by the commit sweep - and that is the methodological lesson.
+  This ritual leaves NO commit, so counting commits could never have surfaced
+  it. 326 evidence files record an orphan check in a dozen different hand-written
+  phrasings; every orphan mechanism in the repo is a daemon sweep library with
+  no entry point for a role's own pass. Minted as BL-1370.
+
+  **The sweep's method has a known blind spot because of this.** Commit volume
+  misses every ritual that produces no commit - the orphan check, the ceremony
+  sends (BL-1360, found from a screenshot), the land sequence. BL-1364's
+  mechanical-share trend is the signal that would see them, which is a second
+  argument for wiring it.
+
+  ### The pattern behind all six
 
   This swarm reliably builds the ENFORCEMENT for a ritual and leaves the
   PERFORMANCE of it to an LLM turn. Evidence has a gate hardened three times
