@@ -233,6 +233,14 @@ function registerSteps(registry) {
       /within-startup-grace\?\s+\(and \(number\? daemon-age-ms\) \(<= daemon-age-ms stall-ms\)\)/,
       'the startup grace is no longer bounded by a known age within one stall window',
     );
+    // The age evaluate-health judges is the REAL daemon's age, fed by check!
+    // from the pid file written at daemon start - without that wiring the
+    // grace would be keyed on nothing this daemon actually did.
+    assert.match(
+      source,
+      /:daemon-age-ms \(file-age-ms pid-file\)/,
+      'check! no longer feeds the real daemon age into evaluate-health',
+    );
     const cond = source.slice(source.indexOf('(cond\n      (not alive?) :dead'));
     assert.ok(
       cond.indexOf('(not alive?) :dead') < cond.indexOf('within-startup-grace? :healthy'),
