@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0bfe03bd0a1d45b864bbc46f327b5777a55f2e17fa9a513daf135f102d4e5302
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T13:27:54.408490061Z","feature_name":"BL-1377 A suite's failure set is recorded once per base commit","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1377-a-suites-failure-set-is-recorded-once-per-base-commit.feature","background_hash":"9a300b1900a1382ee29c3714d9f008e799ac677db0ea20c6b541ddb1a7ae4232","implementation_hash":"unknown","scenarios":[{"index":1,"name":"any difference from the recorded set is named and forces the second run","scenario_hash":"3b2bdd190082b6358dec1e28f08f8167d6b7af0c50ca15e64f73d31e028a0baf","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-03T13:27:54.408490061Z"},{"index":2,"name":"every way of not having a usable record falls back to today's two runs","scenario_hash":"80df7cef3c710fa31337ff87436c11744f849957c7c0dad4fae4524086a7aa0c","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-03T13:27:54.408490061Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1377 A suite's failure set is recorded once per base commit
 
   A stage must show that a red was already red before its parcel, and today it
