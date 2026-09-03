@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1376: an expedite run's closing
+OUTSTANDING handover — whose whole job is naming what the run left for
+someone else — never named its own run branch, so BL-1375's run (2026-09-03)
+walked all seven role hats, moved the ticket to `backlog/done/`, and
+printed a handover that was true in every word except that
+`expedite/BL-1375` was three commits ahead of `origin/main` and on no other
+branch; the fix for a live land-queue deadlock reached nobody. The
+expeditor deliberately does not land (Article 1.8/4.2 make QA the
+integration point, BL-247; `docs/how-to/BL-567-...md` already says "Never
+main") — this ticket does not reopen that, it only makes the report honest.
+`branch-outstanding` (`swarmforge/scripts/expedite_lib.bb`) adds a third
+`outstanding-work` item, same shape as the two that already existed
+(subject/what/owner): the run branch, its distance ahead of `origin/main`
+when readable, owner "QA". Silent only when genuinely nothing to land: zero
+commits ahead, or the branch never existed (an early refusal before any
+worktree). An unreadable ancestry check reports the branch with the reason
+it couldn't be read — never omits it, matching the ticket's invariant that
+a check which cannot answer must never read as "nothing found". No merge,
+push, or publish is added anywhere in the driver (invariant 2) — naming a
+leaving is not performing it. `outstanding-work`'s two existing call sites
+(pre-flight refusal path and run tail) both pick this up automatically,
+closing BL-1023's earlier note that the refusal path could diverge from the
+tail. Acceptance:
+`specs/features/BL-1376-the-expedite-handover-never-names-the-unlanded-branch.feature`.
+How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`
+(extended in place — same OUTSTANDING block, one more item type). No
+diagram depicts expeditor internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1367: the paused-pager Mini App
 approve route (`computePausedPagerApproveOutcome`,
 `extension/src/bridge/bridgeServer.ts`) used to call
