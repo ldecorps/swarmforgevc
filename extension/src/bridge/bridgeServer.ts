@@ -18,6 +18,7 @@ import {
   buildBubbleHealthTrendsState,
   BridgeState,
 } from './bridgeState';
+import { buildStreamSnapshot } from './streamSnapshot';
 import { extractBearerToken, isAuthorizedByQueryToken, parseQueryCredential } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
 import { getResidentSpyUiHtml } from './residentSpyUiHtml';
@@ -378,8 +379,13 @@ function isStateRoute(url: string): url is StateRoute {
 // Split out of the request handler below so its own complexity stays under
 // the CRAP<=6 gate (BL-096's added /metrics branch pushed it to 7) - the
 // cached-snapshot-or-compute-fresh choice for a new SSE subscriber.
+//
+// BL-1351: the fresh path goes through buildStreamSnapshot, the ONE producer
+// of a stream frame, so a connecting client and an already-connected one see
+// the same per-item shape (invariant 2). The cached `lastSnapshot` was
+// produced by the same function in broadcastSnapshotIfChanged below.
 function resolveEventsSnapshot(lastSnapshot: string | undefined, targetPath: string, runLogPath: string): string {
-  return lastSnapshot ?? JSON.stringify(buildBridgeState(targetPath, runLogPath));
+  return lastSnapshot ?? buildStreamSnapshot(targetPath, runLogPath);
 }
 
 function isRootPath(url: string): boolean {
@@ -2266,7 +2272,8 @@ export function startBridge(
     let emittedIndex = readPersistedCursor(targetPath).ackedIndex;
 
     function broadcastSnapshotIfChanged(previousSnapshot: string | undefined): string {
-      const snapshot = JSON.stringify(buildBridgeState(targetPath, runLogPath));
+      // BL-1351: same single producer the connect frame uses.
+      const snapshot = buildStreamSnapshot(targetPath, runLogPath);
       if (snapshot === previousSnapshot) {
         return previousSnapshot;
       }
