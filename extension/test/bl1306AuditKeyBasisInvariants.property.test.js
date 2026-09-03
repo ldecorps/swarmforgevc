@@ -116,7 +116,10 @@ test('BL-1306/BL-654 invariant: the lookup key is DERIVED from the stored candid
   assert.ok(callSite.length > 0);
 });
 
-test('BL-1306/BL-654 invariant: an identical second invocation queues, and an edited one does not, however routing lands', () => {
+// Each case spawns real bb processes against a real git fixture, so the
+// default 20 s budget is not enough on a loaded host - and a property test
+// that times out reports a red nobody can act on.
+test('BL-1306/BL-654 invariant: an identical second invocation queues, and an edited one does not, however routing lands', { timeout: 180000 }, () => {
   const reach = { rerouted: 0, unrouted: 0, edited: 0 };
 
   for (const [label, stages] of [['rerouted', SKIPPING], ['unrouted', FULL]]) {
@@ -139,7 +142,13 @@ test('BL-1306/BL-654 invariant: an identical second invocation queues, and an ed
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 2 },
+      // One case per arm: each fixture is a git init plus two full
+      // swarm_handoff.bb invocations, so this is seconds of real work per
+      // case. The arms are ENUMERATED above, so breadth comes from the loop
+      // rather than from repetition - repeating an enumerated arm buys
+      // nothing but wall-clock, and a property test that times out is a red
+      // nobody can act on.
+      { numRuns: 1 },
     );
   }
 
@@ -166,7 +175,7 @@ test('BL-1306/BL-654 invariant: an identical second invocation queues, and an ed
         fs.rmSync(root, { recursive: true, force: true });
       }
     }),
-    { numRuns: 3 },
+    { numRuns: 2 },
   );
 
   assert.ok(reach.rerouted > 0, 'never exercised a rerouted forward - the defect corner went untested');

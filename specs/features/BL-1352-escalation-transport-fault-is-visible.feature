@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=cee84b8270308cc810c1b76f1a75ef90c7abdf1bc9a14e348157107fe105e26e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T01:10:42.373332039Z","feature_name":"An unanswered-question escalation whose transport cannot deliver is a visible fault","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1352-escalation-transport-fault-is-visible.feature","background_hash":"0517cc2972d346626d1534adef3dcefb65dde83bce2e33d78470374b396dab9c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the status surface distinguishes healthy, latent and losing","scenario_hash":"98ec133a663b29f5c7a767dd7b21f245a689f12255185a3dee655aa1551b0ae9","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-09-03T01:10:42.373332039Z"},{"index":2,"name":"the transport line is logged on change, never once per tick","scenario_hash":"19af6de4b07089edd1b1409390a3f180a64af1fa0af11af35069d46b45b14215","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-03T01:10:42.373332039Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: An unanswered-question escalation whose transport cannot deliver is a visible fault
 
   GH-25 shipped the escalation that tells the human a role question has gone
