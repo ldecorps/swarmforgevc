@@ -1,5 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
+refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
+refuse outright whenever a path was owned by both the landing ticket and
+ANY unlanded sibling — circular exactly when every co-owner was otherwise
+approved, since each refused because the others were unlanded and none
+could go first, deadlocking the land queue on one shared hot file. A new
+`ticket-approval-state` now asks WHICH sibling: one that is withheld
+(`backlog/hold` decides ahead of the field), awaiting approval, or
+unreadable still refuses, naming itself and its reason; one that is
+`approved` or has no `human_approval` field at all (`backlog-schema.md`'s
+"no approval needed", the same reading `promotion_gates_lib.bb`'s own
+promotion gate already uses) rides as a passenger instead. Both the
+worktree and `origin/main` are consulted for each sibling — a landed
+sibling's ticket file has moved, and `backlog/done/` nests by
+milestone, so both readers now recurse — and either tree saying blocking
+blocks. Per the human's rider on the ruling, a passenger only ever rides
+through a guard: `replay!` runs `check_feature_handler_registration.sh`
+(now `--assume-main`-aware, so its branch gate cannot pass vacuously on the
+replay's own scratch branch name) against the tree it just built, and only
+when at least one passenger actually rides — an already-inconsistent `main`
+must not start refusing every land when nothing is riding. `land_step_cli.bb`
+prints one `PASSENGER_SIBLING <ticket-id>` line per approved rider on a
+`LAND_REPLAY`; QA owes each named passenger the same `abandoned_commits:`
+bookkeeping its own land would have produced. `LAND_CLEAN` / `LAND_REPLAY`
+/ `LAND_ESCALATE` and the existing `ENTANGLED_SIBLING` / `LANDED_SIBLING`
+lines are unchanged. Live regression against the real jammed QA tip
+(`794ebe4426`): four mutually-entangled siblings (`BL-1296`, `BL-1309`,
+`BL-1356`, `BL-1359`) went from all-`:escalate` to all-`:replay`.
+Acceptance:
+`specs/features/BL-1375-approved-siblings-sharing-a-path-can-land.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(extended in place — same detector, same doc). No diagram depicts land-step
+internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1354: the land step's sibling-landed
 detector (`land_step_lib.bb`) no longer judges a shared file by whole-blob
 equality against `origin/main` — a defect that made EVERY co-owner of a hot
